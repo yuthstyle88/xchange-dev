@@ -180,11 +180,14 @@ impl PagedView for AdminBookingsPagedView {
                                     let per_one = CompatRate::per_one(buy_rate, unit_size)
                                         .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
                                     let cr = format_per_one_rate(per_one);
-                                    let cp = ExchangeArithmetic::thb(
+                                    let cp = ExchangeArithmetic::try_thb(
                                         ForeignAmount::from_decimal(amount),
                                         buy_rate,
                                         unit_size,
                                     )
+                                    .map_err(|e| {
+                                        AppError::Internal(format!("invalid principal: {e}"))
+                                    })?
                                     .to_string();
                                     (Some(cr), Some(cp))
                                 } else {
@@ -196,11 +199,14 @@ impl PagedView for AdminBookingsPagedView {
                                     let per_one = CompatRate::per_one(sell_rate, unit_size)
                                         .map_err(|e| AppError::Internal(format!("invalid rate: {e}")))?;
                                     let cr = format_per_one_rate(per_one);
-                                    let cp = ExchangeArithmetic::thb(
+                                    let cp = ExchangeArithmetic::try_thb(
                                         ForeignAmount::from_decimal(amount),
                                         sell_rate,
                                         unit_size,
                                     )
+                                    .map_err(|e| {
+                                        AppError::Internal(format!("invalid principal: {e}"))
+                                    })?
                                     .to_string();
                                     (Some(cr), Some(cp))
                                 } else {

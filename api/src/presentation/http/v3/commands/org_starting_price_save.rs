@@ -3,8 +3,8 @@
 //! Enters central organisation-level starting prices, mirrors them to rate references,
 //! and prices unpublished branches that have an active policy.
 
+use std::collections::HashSet;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
@@ -16,7 +16,7 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, Rate};
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::draft::reference_base::ReferenceBase;
 use xc_rate::application::publication::publish_service::PublishService;
@@ -83,24 +83,31 @@ impl CommandAction for OrgStartingPriceSaveCommand {
             raw: serde_json::Value,
         }
 
+        let mut seen_currencies = HashSet::with_capacity(input.prices.len());
         let mut validated = Vec::with_capacity(input.prices.len());
         for p in &input.prices {
             let currency = p.currency.trim().to_uppercase();
             if currency.len() != 3 {
                 return Err(validation_failed("currency", "invalid currency code"));
             }
+            if !seen_currencies.insert(currency.clone()) {
+                return Err(validation_failed(
+                    "prices",
+                    "currency appears more than once",
+                ));
+            }
 
             let buy = match &p.buy {
-                Some(s) => match Decimal::from_str(s.trim()) {
-                    Ok(d) => Some(d),
+                Some(s) => match Rate::parse(s.trim()) {
+                    Ok(r) => Some(r.value()),
                     Err(_) => return Err(validation_failed("buy", "invalid buy rate")),
                 },
                 None => None,
             };
 
             let sell = match &p.sell {
-                Some(s) => match Decimal::from_str(s.trim()) {
-                    Ok(d) => Some(d),
+                Some(s) => match Rate::parse(s.trim()) {
+                    Ok(r) => Some(r.value()),
                     Err(_) => return Err(validation_failed("sell", "invalid sell rate")),
                 },
                 None => None,
@@ -151,13 +158,16 @@ impl CommandAction for OrgStartingPriceSaveCommand {
         let now = Utc::now();
         let source_date = now.date_naive();
         let provider = format!("START:{}", org_id);
+        let batch_id = Uuid::new_v4();
 
         let raw_checksum = {
             let bytes = serde_json::to_vec(&input.prices).map_err(|_| server_error())?;
-            format!("{:x}", Sha256::digest(&bytes))
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            hasher.update(batch_id.as_bytes());
+            format!("{:x}", hasher.finalize())
         };
 
-        let batch_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO rate_reference_batches (id, provider, source_date, fetched_at, raw_checksum, status) \
              VALUES ($1, $2, $3, $4, $5, 'COMPLETE')",
@@ -222,6 +232,12 @@ impl CommandAction for OrgStartingPriceSaveCommand {
         .await
         .map_err(|_| server_error())?;
 
+        let all_currencies: Vec<(String,)> =
+            sqlx::query_as("SELECT code FROM currencies ORDER BY code")
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(|_| server_error())?;
+
         let mut unpriced = Vec::new();
         for (b_id,) in unpublished {
             let b = BranchId::new(&b_id);
@@ -243,15 +259,8 @@ impl CommandAction for OrgStartingPriceSaveCommand {
                 continue;
             }
 
-            let all_currencies: Vec<(String,)> = sqlx::query_as(
-                "SELECT code FROM currencies ORDER BY code",
-            )
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
-
             let mut lines = Vec::new();
-            for (code_str,) in all_currencies {
+            for (code_str,) in &all_currencies {
                 if let Ok(c) = CurrencyCode::parse(code_str.trim()) {
                     let ref_line = ReferenceBase::newest_in(tx, &b, &c)
                         .await

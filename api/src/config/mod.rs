@@ -75,12 +75,21 @@ impl Default for AuthSettings {
     }
 }
 
+fn default_passport_drawer_read_window_ms() -> u64 {
+    5000
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct DevicesSettings {
     #[serde(rename = "printerModels")]
     pub printer_models: Vec<PrinterModel>,
     #[serde(default, rename = "passportDrawerBranches")]
     pub passport_drawer_branches: Vec<String>,
+    #[serde(
+        default = "default_passport_drawer_read_window_ms",
+        rename = "passportDrawerReadWindowMs"
+    )]
+    pub passport_drawer_read_window_ms: u64,
 }
 
 impl Default for DevicesSettings {
@@ -88,6 +97,7 @@ impl Default for DevicesSettings {
         Self {
             printer_models: PrinterModels::built_in_models(),
             passport_drawer_branches: Vec::new(),
+            passport_drawer_read_window_ms: default_passport_drawer_read_window_ms(),
         }
     }
 }
@@ -235,6 +245,7 @@ impl Settings {
             env_map.get("XC_LOYALTY_TENANT_ID").map(|s| s.as_str()),
             env_map.get("XC_LOYALTY_WEBHOOK_SECRET").map(|s| s.as_str()),
             env_map.get("XC_LOYALTY_TIMEOUT_MS").map(|s| s.as_str()),
+            env_map.get("XC_LOYALTY_SERVICE_TOKEN").map(|s| s.as_str()),
         );
 
         let bot_token = env_map
@@ -303,6 +314,13 @@ impl Settings {
                     "devices.passportDrawerBranches contains invalid branch id `{branch}`"
                 )));
             }
+        }
+        if settings.devices.passport_drawer_read_window_ms == 0
+            || settings.devices.passport_drawer_read_window_ms > 10_000
+        {
+            return Err(config::ConfigError::Message(
+                "devices.passportDrawerReadWindowMs must be in 1..=10000".to_string(),
+            ));
         }
         if !settings.database.require_ssl && !is_local_database_host(&settings.database.host) {
             return Err(config::ConfigError::Message(format!(

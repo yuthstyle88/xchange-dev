@@ -18,12 +18,15 @@ use xc_exchange::domain::settings::repository::SettingsRepository;
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side};
+use xc_kernel::money::{
+    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
+};
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
+use xc_marketing::domain::coupon::benefit_error::BenefitError;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 use xc_marketing::domain::engine::active_rules::{ActiveRule, ActiveRules};
 use xc_marketing::domain::engine::engine::{BenefitEngine, EvalContext, QuoteLineInput};
-use xc_marketing::domain::engine::snapshot::SkippedRule;
+use xc_marketing::domain::engine::snapshot::{AppliedBenefit, SkippedRule};
 use xc_marketing::infrastructure::pg_budget_ledger::{
     BudgetLedger, ReserveOutcome, ReserveRequest,
 };
@@ -36,6 +39,21 @@ use crate::application::workflows::save_step::SaveActor;
 use crate::infrastructure::marketing::consent_gate::MarketingConsentGate;
 use crate::infrastructure::marketing::referral_source::MarketingReferralSource;
 use crate::infrastructure::marketing::tier_source::MarketingTierSource;
+
+fn thb_or_refuse(q: ForeignAmount, r: Rate, u: UnitSize) -> AppResult<Money> {
+    ExchangeArithmetic::try_thb(q, r, u).map_err(|_| {
+        AppError::Domain("validationFailed: quantity overflows thb amount".to_string())
+    })
+}
+
+fn reserved_amount(applied: &AppliedBenefit) -> AppResult<Decimal> {
+    Decimal::from_str(&applied.amount_thb).map_err(|_| {
+        AppError::Internal(format!(
+            "applied benefit {} has an unreadable amountThb {:?}",
+            applied.rule_id, applied.amount_thb
+        ))
+    })
+}
 
 #[derive(Debug, Clone)]
 pub struct QuoteRequestLine {
@@ -120,7 +138,6 @@ impl ActiveRules for AvailableActiveRules {
 }
 
 pub struct QuoteService {
-    pool: PgPool,
     published_rates: PgPublishedRates,
     quote_repo: PgQuoteRepository,
     settings_repo: PgSettingsRepository,
@@ -135,8 +152,7 @@ impl QuoteService {
             quote_repo: PgQuoteRepository::new(pool.clone()),
             settings_repo: PgSettingsRepository::new(pool.clone()),
             campaign_repo: Arc::new(PgCampaignRepository::new()),
-            budget_ledger: Arc::new(BudgetLedger::new(pool.clone())),
-            pool,
+            budget_ledger: Arc::new(BudgetLedger::new(pool)),
         }
     }
 
@@ -221,11 +237,11 @@ impl QuoteService {
         };
 
         // Step 4: Arithmetic
-        let thb_amount = ExchangeArithmetic::thb(
+        let thb_amount = thb_or_refuse(
             line_req.quantity,
             published_side.rate,
             published_side.unit_size,
-        );
+        )?;
 
         let fee_thb = line_req.fee_thb.unwrap_or(Money::ZERO);
         if fee_thb > thb_amount {
@@ -331,7 +347,7 @@ impl QuoteService {
 
         let tier_source = MarketingTierSource::new();
         let consent_gate = match req.customer_id.as_deref() {
-            Some(cid) => MarketingConsentGate::prefetch_in(&self.pool, tx, cid).await?,
+            Some(cid) => MarketingConsentGate::prefetch_in(tx, cid).await?,
             None => MarketingConsentGate::new(),
         };
         let referral_source = match req.customer_id.as_deref() {
@@ -437,7 +453,7 @@ impl QuoteService {
         let mut final_rate = eval.lines[0].final_rate;
         let mut final_fee_thb = eval.lines[0].fee_thb;
         let mut final_thb_amount =
-            ExchangeArithmetic::thb(line_req.quantity, final_rate, published_side.unit_size);
+            thb_or_refuse(line_req.quantity, final_rate, published_side.unit_size)?;
         let mut final_settle_thb = match line_req.shop_side {
             Side::Buy => {
                 let settle_minor = final_thb_amount.minor() - final_fee_thb.minor();
@@ -501,7 +517,7 @@ impl QuoteService {
             let mut recompute_needed = false;
 
             for mut applied in eval.snapshot.applied {
-                let amount_thb = Decimal::from_str(&applied.amount_thb).unwrap_or(Decimal::ZERO);
+                let amount_thb = reserved_amount(&applied)?;
                 let reserve_coupon_id = if let Some((cid, crule_id)) = coupon_info {
                     if crule_id == applied.rule_id {
                         Some(cid)
@@ -536,6 +552,7 @@ impl QuoteService {
                         });
                         recompute_needed = true;
                     }
+                    Err(BenefitError::Store(e)) => return Err(e),
                     Err(e) => return Err(AppError::Domain(e.to_string())),
                 }
             }
@@ -563,11 +580,8 @@ impl QuoteService {
                     final_fee_thb = re_eval.lines[0].fee_thb;
                 }
 
-                final_thb_amount = ExchangeArithmetic::thb(
-                    line_req.quantity,
-                    final_rate,
-                    published_side.unit_size,
-                );
+                final_thb_amount =
+                    thb_or_refuse(line_req.quantity, final_rate, published_side.unit_size)?;
                 final_settle_thb = match line_req.shop_side {
                     Side::Buy => {
                         let settle_minor = final_thb_amount.minor() - final_fee_thb.minor();
@@ -614,5 +628,80 @@ impl QuoteService {
         }
 
         Ok(quote)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xc_marketing::domain::benefit::rule::BenefitClass;
+
+    fn sample_applied(rule_id: Uuid, amount_thb: &str) -> AppliedBenefit {
+        AppliedBenefit {
+            rule_id,
+            version_id: Uuid::new_v4(),
+            benefit_type: "RATE_IMPROVEMENT".to_string(),
+            benefit_class: BenefitClass::Price,
+            coupon_id: None,
+            reservation_id: None,
+            amount_thb: amount_thb.to_string(),
+            rate_before: "35.00".to_string(),
+            rate_after: "35.50".to_string(),
+            fee_before: "0.00".to_string(),
+            fee_after: "0.00".to_string(),
+            floor_capped: false,
+        }
+    }
+
+    #[test]
+    fn r1_unreadable_alphabetic_amount_returns_internal_error_naming_rule_id() {
+        let rule_id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
+        let applied = sample_applied(rule_id, "abc");
+        let err = reserved_amount(&applied).expect_err("non-decimal amountThb must be refused");
+        match err {
+            AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&rule_id.to_string()),
+                    "expected error message to name rule_id {rule_id}, got {msg:?}"
+                );
+                assert!(
+                    msg.contains("abc"),
+                    "expected error message to name unreadable text, got {msg:?}"
+                );
+            }
+            other => panic!("expected AppError::Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn r2_empty_amount_returns_internal_error_naming_rule_id() {
+        let rule_id = Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap();
+        let applied = sample_applied(rule_id, "");
+        let err = reserved_amount(&applied).expect_err("empty amountThb must be refused");
+        match err {
+            AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&rule_id.to_string()),
+                    "expected error message to name rule_id {rule_id}, got {msg:?}"
+                );
+            }
+            other => panic!("expected AppError::Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn k1_valid_decimal_amount_returns_parsed_decimal() {
+        let rule_id = Uuid::new_v4();
+        let applied = sample_applied(rule_id, "12.50");
+        let amount = reserved_amount(&applied).expect("valid decimal amountThb");
+        assert_eq!(amount, Decimal::new(1250, 2));
+    }
+
+    #[test]
+    fn k2_zero_amount_returns_real_zero() {
+        let rule_id = Uuid::new_v4();
+        let applied = sample_applied(rule_id, "0.00");
+        let amount = reserved_amount(&applied).expect("0.00 is a valid zero amountThb");
+        assert_eq!(amount, Decimal::ZERO);
     }
 }

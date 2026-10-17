@@ -29,18 +29,22 @@ export function LoginScreen(props: {
 }): JSX.Element {
   const form = useForm();
   let formEl: HTMLFormElement | undefined;
+  let submitted = false;
   const [pending, setPending] = createSignal(false);
   const [errorKey, setErrorKey] = createSignal<keyof typeof loginI18n.th | undefined>(undefined);
 
   onMount(async () => {
     try {
       const res = await props.auth.session();
+      if (submitted) return;
       if (res.user) {
         const target = safeNext(props.next) ?? homeOf(res.user);
         props.navigate(target);
       }
     } catch (err) {
-      setErrorKey(toErrorKey(err));
+      if (!submitted) {
+        setErrorKey(toErrorKey(err));
+      }
     }
   });
 
@@ -49,9 +53,10 @@ export function LoginScreen(props: {
     if (!formEl) return;
 
     const data = new FormData(formEl);
-    const identifier = String(data.get('identifier') ?? '');
+    const identifier = String(data.get('identifier') ?? '').trim();
     const password = String(data.get('password') ?? '');
 
+    submitted = true;
     setPending(true);
     setErrorKey(undefined);
 

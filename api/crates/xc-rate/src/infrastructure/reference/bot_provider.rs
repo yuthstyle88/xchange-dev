@@ -19,6 +19,26 @@ fn parse_decimal(val: &Value) -> Option<Decimal> {
     }
 }
 
+fn unit_size(code: &str, row: &Value) -> Result<Decimal, RateEngineError> {
+    let Some(v) = row.get("unit").or_else(|| row.get("unit_size")) else {
+        return Ok(Decimal::ONE);
+    };
+    if v.is_null() {
+        return Ok(Decimal::ONE);
+    }
+    let parsed = match v {
+        Value::Number(n) => Decimal::from_str(&n.to_string()).ok(),
+        Value::String(s) => Decimal::from_str(s.trim()).ok(),
+        _ => None,
+    };
+    match parsed.filter(|d| *d > Decimal::ZERO) {
+        Some(d) => Ok(d),
+        None => Err(RateEngineError::RateUnavailable(format!(
+            "BOT row {code}: unit {v} is not a positive number"
+        ))),
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BotProvider;
 
@@ -76,19 +96,7 @@ impl ReferenceProvider for BotProvider {
                 continue;
             }
 
-            let unit_size = r
-                .get("unit")
-                .or_else(|| r.get("unit_size"))
-                .and_then(|v| {
-                    if let Some(u) = v.as_u64() {
-                        Some(Decimal::from(u))
-                    } else if let Some(s) = v.as_str() {
-                        Decimal::from_str(s).ok()
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(Decimal::ONE);
+            let unit_size = unit_size(&code, r)?;
 
             let buy = r
                 .get("buyingTransfer")

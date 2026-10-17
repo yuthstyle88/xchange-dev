@@ -21,6 +21,7 @@ export const th = {
   'error.stockInsufficient': 'ธนบัตรในลิ้นชักไม่เพียงพอต่อการคืนเงิน',
   'error.staleVersion': 'ข้อมูลมีการเปลี่ยนแปลง กรุณารีเฟรชแล้วลองใหม่',
   'error.idempotencyConflict': 'รายการซ้ำหรือกำลังประมวลผลอยู่',
+  'error.receiptMissing': 'ไม่พบใบคืนเงินของรายการนี้ กรุณาลองใหม่หรือแจ้งผู้ดูแล',
   'error.unknown': 'เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง',
 };
 
@@ -47,5 +48,6 @@ export const en = {
   'error.stockInsufficient': 'Insufficient stock in drawer for refund',
   'error.staleVersion': 'Data has changed, please refresh and try again',
   'error.idempotencyConflict': 'Transaction conflict or currently processing',
+  'error.receiptMissing': 'No refund slip was found for this refund. Try again or tell an admin.',
   'error.unknown': 'Connection error occurred, please try again',
 };

@@ -57,12 +57,15 @@ async fn handle_content(
     let access = DocumentAccess::new(pool.clone(), doc_store, audit, download_link);
 
     match access.open(token, &session, now).await {
-        Ok(content) => HttpResponse::Ok()
-            .content_type(content.mime)
-            .insert_header((header::CACHE_CONTROL, "private, no-store"))
-            .insert_header(("x-content-type-options", "nosniff"))
-            .insert_header((header::CONTENT_DISPOSITION, "attachment"))
-            .body(content.bytes),
+        Ok(content) => {
+            let disposition = content_disposition_for(&content.mime);
+            HttpResponse::Ok()
+                .content_type(content.mime)
+                .insert_header((header::CACHE_CONTROL, "private, no-store"))
+                .insert_header(("x-content-type-options", "nosniff"))
+                .insert_header((header::CONTENT_DISPOSITION, disposition))
+                .body(content.bytes)
+        }
         Err(AccessError::LinkExpired) => HttpResponse::Gone().json(json!({
             "error": { "code": "linkExpired", "message": "the link has expired" }
         })),
@@ -78,5 +81,50 @@ async fn handle_content(
         Err(AccessError::Internal(msg)) => HttpResponse::InternalServerError().json(json!({
             "error": { "code": "serverError", "message": msg }
         })),
+    }
+}
+
+fn content_disposition_for(mime: &str) -> &'static str {
+    let essence = mime.split(';').next().unwrap_or("").trim();
+    if essence.eq_ignore_ascii_case("application/pdf")
+        || essence.eq_ignore_ascii_case("image/jpeg")
+        || essence.eq_ignore_ascii_case("image/png")
+    {
+        "inline"
+    } else {
+        "attachment"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_application_pdf_disposition_is_inline() {
+        assert_eq!(content_disposition_for("application/pdf"), "inline");
+    }
+
+    #[test]
+    fn test_image_jpeg_disposition_is_inline() {
+        assert_eq!(content_disposition_for("image/jpeg"), "inline");
+    }
+
+    #[test]
+    fn test_image_png_disposition_is_inline() {
+        assert_eq!(content_disposition_for("image/png"), "inline");
+    }
+
+    #[test]
+    fn test_other_mime_disposition_is_attachment() {
+        assert_eq!(content_disposition_for("text/html"), "attachment");
+    }
+
+    #[test]
+    fn test_mime_with_parameters_disposition_is_inline() {
+        assert_eq!(
+            content_disposition_for("application/pdf; charset=binary"),
+            "inline"
+        );
     }
 }

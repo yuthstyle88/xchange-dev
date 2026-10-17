@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type {
   ConsentTextsData,
@@ -23,6 +24,11 @@ interface RetentionRowProps {
 }
 
 function RetentionRow(props: RetentionRowProps): JSX.Element {
+  const saveRetention = keyedWrite(
+    props.client,
+    'PUT',
+    `/api/retention-policies/${props.dataType}`,
+  );
   const [days, setDays] = createSignal('');
   const [error, setError] = createSignal<unknown>(null);
   const [busy, setBusy] = createSignal(false);
@@ -45,16 +51,10 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
 
     setBusy(true);
     try {
-      const key = crypto.randomUUID();
-      await props.client.command(
-        'PUT',
-        `/api/retention-policies/${props.dataType}`,
-        {
-          periodDays,
-          branch: props.branch(),
-        },
-        key,
-      );
+      await saveRetention.send({
+        periodDays,
+        branch: props.branch(),
+      });
       toast(t('save'));
     } catch (err: unknown) {
       setError(err);
@@ -95,6 +95,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
 
 export function Consent(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
+  const publishWrite = keyedWrite(client, 'POST', '/api/consent-texts');
 
   const [texts, setTexts] = createSignal<ConsentTextViewItem[]>([]);
   const [purpose, setPurpose] = createSignal('MARKETING');
@@ -103,13 +104,19 @@ export function Consent(props: AdminMenuProps): JSX.Element {
   const [publishError, setPublishError] = createSignal<unknown>(null);
   const [publishing, setPublishing] = createSignal(false);
 
+  let loadSeq = 0;
+  let loadedBranch: string | undefined;
+
   const loadTexts = async (branchName: string) => {
+    const seq = ++loadSeq;
     try {
       const res = await client.view<ConsentTextsData>('consent_texts', { branch: branchName });
+      if (seq !== loadSeq) return;
       if (res.data?.texts) {
         setTexts(res.data.texts);
       }
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       setTexts([]);
       toast(wordedError(err));
     }
@@ -118,6 +125,11 @@ export function Consent(props: AdminMenuProps): JSX.Element {
   createEffect(() => {
     const b = props.branch();
     const s = props.shown ? props.shown() : true;
+    if (b !== loadedBranch) {
+      loadedBranch = b;
+      setTexts([]);
+      setPublishError(null);
+    }
     if (s) {
       loadTexts(b);
     }
@@ -148,25 +160,24 @@ export function Consent(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const sent = props.branch();
     setPublishing(true);
     try {
-      const key = crypto.randomUUID();
-      await client.command(
-        'POST',
-        '/api/consent-texts',
-        {
-          purpose: purpose(),
-          lang: lang(),
-          body: textBody,
-          branch: props.branch(),
-        },
-        key,
-      );
-      setBody('');
-      await loadTexts(props.branch());
+      await publishWrite.send({
+        purpose: purpose(),
+        lang: lang(),
+        body: textBody,
+        branch: sent,
+      });
+      if (props.branch() === sent) {
+        setBody('');
+        await loadTexts(props.branch());
+      }
     } catch (err: unknown) {
-      setPublishError(err);
-      toast(wordedError(err));
+      if (props.branch() === sent) {
+        setPublishError(err);
+        toast(wordedError(err));
+      }
     } finally {
       setPublishing(false);
     }

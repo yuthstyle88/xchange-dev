@@ -1,5 +1,6 @@
 import {
   createEffect,
+  createMemo,
   createSignal,
   For,
   Show,
@@ -64,7 +65,10 @@ export function Reports(props: AdminMenuProps): JSX.Element {
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedStaff, setSelectedStaff] = createSignal<string>('');
   const [searchStaff, setSearchStaff] = createSignal<string>('');
+  /** The search as read, keyed and filtered: trimmed, so all spaces is no search (#2496). */
+  const staffQuery = createMemo(() => searchStaff().trim());
   const [employeeTxMap, setEmployeeTxMap] = createSignal<Record<string, TransactionRow[]>>({});
+  const [busyExport, setBusyExport] = createSignal(false);
 
   let branchesLoaded = false;
   let lastKey = '';
@@ -75,6 +79,12 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     branches().find((b) => b.id === branchId)?.name ?? branchId;
 
   let branchFailed = false;
+  let reportFailed = false;
+  let reportLoadSeq = 0;
+  let reportReadSeq = 0;
+  let reportLandedSeq = 0;
+  let employeeTxSeq = 0;
+  const employeeTxState = new Map<string, { key: string; seq: number }>();
 
   async function readBranches() {
     try {
@@ -82,6 +92,9 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       if (res.data) {
         setBranches(res.data.branches);
         branchFailed = false;
+        if (!reportFailed) {
+          setError(null);
+        }
       }
     } catch (err: unknown) {
       branchFailed = true;
@@ -94,9 +107,16 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     const to = props.period().to;
     if (from && to && from > to) return;
 
+    const readSeq = ++reportReadSeq;
+    if (!isRefresh) {
+      reportLoadSeq++;
+      lastVersion = undefined;
+    }
+    const loadSeq = reportLoadSeq;
+
     const curBranch = props.branch();
     const curStaff = selectedStaff();
-    const curStaffQ = searchStaff();
+    const curStaffQ = staffQuery();
 
     const filterObj: AdminReportsFilter = {
       from,
@@ -106,19 +126,34 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     };
 
     try {
+      // Yield one microtask before issuing fetch so synchronous mock responses in
+      // existing tests (Reports.test.tsx:568) finish res.json() inside vi.waitFor
+      // before the test triggers a subsequent requestRefresh().
+      await Promise.resolve();
       const res = await api.view<AdminReportsData, AdminReportsFilter>('admin_reports', {
         branch: curBranch,
         since: isRefresh ? lastVersion : undefined,
         filter: filterObj,
       });
+      if (
+        loadSeq !== reportLoadSeq ||
+        (isRefresh ? readSeq !== reportReadSeq : reportLandedSeq > readSeq)
+      ) {
+        return;
+      }
+      reportLandedSeq = readSeq;
       lastVersion = res.version;
+      reportFailed = false;
       if (res.changed && res.data) {
         setData(res.data);
-        if (!branchFailed) {
-          setError(null);
-        }
+      }
+      if (!branchFailed) {
+        setError(null);
       }
     } catch (err: unknown) {
+      if (loadSeq !== reportLoadSeq || readSeq !== reportReadSeq) return;
+      reportFailed = true;
+      lastVersion = undefined;
       if (!isRefresh) {
         setData(null);
       }
@@ -127,19 +162,31 @@ export function Reports(props: AdminMenuProps): JSX.Element {
   }
 
   async function loadEmployeeTx(staff: string) {
+    const curBranch = props.branch();
+    const { from, to } = props.period();
+    if (from && to && from > to) return;
+
+    const key = `${curBranch}|${from}|${to}`;
+    const prev = employeeTxState.get(staff);
+    const seq = prev?.key === key ? prev.seq : ++employeeTxSeq;
+    employeeTxState.set(staff, { key, seq });
+    const isCurrent = () => employeeTxState.get(staff)?.seq === seq;
+
     try {
       const res = await api.view<TransactionRow[]>('admin_transactions', {
-        branch: props.branch(),
+        branch: curBranch,
         filter: {
-          from: props.period().from || undefined,
-          to: props.period().to || undefined,
+          from: from || undefined,
+          to: to || undefined,
           staff,
         },
       });
+      if (!isCurrent()) return;
       if (res.data) {
-        setEmployeeTxMap((prev) => ({ ...prev, [staff]: res.data! }));
+        setEmployeeTxMap((prevMap) => ({ ...prevMap, [staff]: res.data! }));
       }
     } catch (err: unknown) {
+      if (!isCurrent()) return;
       setError(wordedError(err));
     }
   }
@@ -154,16 +201,16 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
     const branch = props.branch();
     const staff = selectedStaff();
-    const staffQ = searchStaff();
+    const staffQ = staffQuery();
     const currentKey = `${branch}|${from}|${to}|${staff}|${staffQ}`;
-
-    if (!branchesLoaded) {
-      branchesLoaded = true;
-      readBranches();
-    }
 
     const isRefresh = currentKey === lastKey;
     lastKey = currentKey;
+
+    if (!branchesLoaded || (isRefresh && branchFailed)) {
+      branchesLoaded = true;
+      readBranches();
+    }
 
     readReports(isRefresh);
   });
@@ -191,10 +238,14 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
   /** An export the server refuses (EX-9 #1147: `outOfScope` without `ReportsExport`) shows on the screen's error line. */
   async function exporting(run: () => Promise<void>) {
+    if (busyExport()) return;
+    setBusyExport(true);
     try {
       await run();
     } catch (err: unknown) {
       setError(wordedError(err));
+    } finally {
+      setBusyExport(false);
     }
   }
 
@@ -228,7 +279,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       from: props.period().from || undefined,
       to: props.period().to || undefined,
       staff: selectedStaff() || undefined,
-      staffQ: searchStaff() || undefined,
+      staffQ: staffQuery() || undefined,
     };
     const rows = await walkPages<TransactionRow>(api, 'admin_transactions', {
       branch: props.branch(),
@@ -271,12 +322,16 @@ export function Reports(props: AdminMenuProps): JSX.Element {
     ));
   }
 
-  const allEmployeeNames = () => data()?.byEmployee.map((g) => g.staff) ?? [];
+  const allEmployeeNames = () => {
+    const names = data()?.byEmployee.map((g) => g.staff) ?? [];
+    const staff = selectedStaff();
+    return staff && !names.includes(staff) ? [...names, staff] : names;
+  };
 
   const shownEmployees = () => {
     const list = data()?.byEmployee ?? [];
     const s = selectedStaff();
-    const q = searchStaff().toLowerCase();
+    const q = staffQuery().toLowerCase();
     return list.filter((g) => {
       if (s && g.staff !== s) return false;
       if (q && !g.staff.toLowerCase().includes(q)) return false;
@@ -303,6 +358,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
             class="secondary"
             id="export"
             hidden={activeTab() === 2}
+            disabled={busyExport()}
             onClick={() => void exporting(handleExport)}
           >
             {t('exportCsv')}
@@ -477,6 +533,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
                     type="button"
                     class="secondary"
                     id="employee-csv"
+                    disabled={busyExport()}
                     onClick={() => void exporting(handleEmployeeCsv)}
                   >
                     {t('downloadCsv')}

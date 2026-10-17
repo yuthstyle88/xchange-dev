@@ -185,6 +185,7 @@ impl PagedView for AdminShiftsPagedView {
                                             format!(
                                                 "{}",
                                                 MoneyDelta::from_minor(
+                                                    // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2865).
                                                     c.minor_i128() - d.minor()
                                                 )
                                             )

@@ -72,11 +72,33 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
     | undefined
   >(undefined);
 
-  onMount(async () => {
+  const MAX_HOST_BACKOFF_MS = 300_000;
+  let disposed = false;
+  let hostRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let hostBackoffMs = Math.min(props.ratesIntervalMs ?? 60_000, MAX_HOST_BACKOFF_MS);
+
+  const scheduleHostRetry = () => {
+    if (disposed) return;
+    setHostState('error');
+    const delay = hostBackoffMs;
+    hostBackoffMs = Math.min(hostBackoffMs * 2, MAX_HOST_BACKOFF_MS);
+    if (hostRetryTimer !== undefined) {
+      clearTimeout(hostRetryTimer);
+    }
+    hostRetryTimer = setTimeout(() => {
+      hostRetryTimer = undefined;
+      void loadHost();
+    }, delay);
+  };
+
+  const loadHost = async () => {
+    if (disposed) return;
     try {
       const res = await props.fetch('/api/public/host');
+      if (disposed) return;
       if (res.status === 200) {
         const json = (await res.json()) as { org?: string };
+        if (disposed) return;
         if (json && typeof json.org === 'string' && json.org.length > 0) {
           const org = json.org;
           setHostState('ready');
@@ -88,7 +110,7 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
             ratesUrl,
             props.fetch,
             props.ratesIntervalMs ?? 60_000,
-            300_000,
+            MAX_HOST_BACKOFF_MS,
           );
           const bPoller = new PublicPoller<PublicBranchesData>(
             branchesUrl,
@@ -102,14 +124,29 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
           bPoller.start();
           return;
         }
+        setHostState('notFound');
+        return;
       }
-      setHostState('notFound');
+      if (res.status === 404) {
+        setHostState('notFound');
+        return;
+      }
+      scheduleHostRetry();
     } catch {
-      setHostState('error');
+      scheduleHostRetry();
     }
+  };
+
+  onMount(() => {
+    void loadHost();
   });
 
   onCleanup(() => {
+    disposed = true;
+    if (hostRetryTimer !== undefined) {
+      clearTimeout(hostRetryTimer);
+      hostRetryTimer = undefined;
+    }
     const current = pollers();
     current?.rates.stop();
     current?.branches.stop();
@@ -156,8 +193,12 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
         <div class="xc-rate-display-loading">{t('loading')}</div>
       </Show>
 
-      <Show when={hostState() === 'notFound' || hostState() === 'error'}>
+      <Show when={hostState() === 'notFound'}>
         <div class="xc-rate-display-message">{t('notLinked')}</div>
+      </Show>
+
+      <Show when={hostState() === 'error'}>
+        <div class="xc-rate-display-message">{t('loadFailed')}</div>
       </Show>
 
       <Show when={hostState() === 'ready'}>

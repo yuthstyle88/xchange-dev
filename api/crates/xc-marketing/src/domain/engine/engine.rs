@@ -8,7 +8,7 @@ use xc_kernel::money::{
     CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
 };
 
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 
 use super::active_rules::ActiveRules;
@@ -121,7 +121,9 @@ impl BenefitEngine {
         let mut applied_rule_ids = HashSet::new();
 
         for line in lines {
-            let line_thb = ExchangeArithmetic::thb(line.quantity, line.base_rate, line.unit_size);
+            let line_thb =
+                ExchangeArithmetic::try_thb(line.quantity, line.base_rate, line.unit_size)
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
             let thb_amount = Some(
                 Decimal::try_from_i128_with_scale(line_thb.minor_i128(), 2)
                     .unwrap_or(Decimal::ZERO),
@@ -172,53 +174,72 @@ impl BenefitEngine {
             let mut line_applied = Vec::new();
 
             for &winning_rule in &winners {
-                if let Some(calc) = self.registry.get(&winning_rule.rule.benefit_type) {
-                    let effect = calc.apply(line, &winning_rule.rule.calculation);
-                    let rf_result = RateFloor::apply(
-                        line,
-                        &effect,
-                        winning_rule.rule.benefit_class,
-                        ctx.max_spread_share,
-                    );
+                let calc = self
+                    .registry
+                    .get(&winning_rule.rule.benefit_type)
+                    .ok_or_else(|| {
+                        pos_error::AppError::Internal(format!(
+                            "unknown benefit_type {:?} on benefit_rule {}",
+                            winning_rule.rule.benefit_type, winning_rule.rule.id
+                        ))
+                    })?;
+                let effect = calc
+                    .apply(line, &winning_rule.rule.calculation)
+                    .map_err(|e| {
+                        pos_error::AppError::Internal(format!(
+                            "invalid calculation parameter {:?} on {} benefit_rule {}: {}",
+                            e.field, winning_rule.rule.benefit_type, winning_rule.rule.id, e.reason
+                        ))
+                    })?;
+                let rf_result = RateFloor::apply(
+                    line,
+                    &effect,
+                    winning_rule.rule.benefit_class,
+                    ctx.max_spread_share,
+                )
+                .map_err(|e| AppError::Internal(e.to_string()))?;
 
+                if winning_rule.rule.benefit_class
+                    == crate::domain::benefit::rule::BenefitClass::Price
+                {
                     current_final_rate = rf_result.final_rate;
                     current_fee_thb = rf_result.fee_thb;
-
-                    let (rate_after, fee_after) = match winning_rule.rule.benefit_class {
-                        crate::domain::benefit::rule::BenefitClass::Price => (
-                            rf_result.final_rate.to_string(),
-                            rf_result.fee_thb.to_string(),
-                        ),
-                        crate::domain::benefit::rule::BenefitClass::Reward => {
-                            (line.base_rate.to_string(), line.fee_thb.to_string())
-                        }
-                    };
-
-                    let applied = AppliedBenefit {
-                        rule_id: winning_rule.rule.id,
-                        version_id: winning_rule.version_id,
-                        benefit_type: winning_rule.rule.benefit_type.clone(),
-                        benefit_class: winning_rule.rule.benefit_class,
-                        coupon_id: None,
-                        reservation_id: None,
-                        amount_thb: rf_result.amount_thb.to_string(),
-                        rate_before: line.base_rate.to_string(),
-                        rate_after,
-                        fee_before: line.fee_thb.to_string(),
-                        fee_after,
-                        floor_capped: rf_result.floor_capped,
-                    };
-
-                    if let Some(snap_id) = winning_rule.segment_snapshot_id {
-                        if !segment_snapshot_ids.contains(&snap_id) {
-                            segment_snapshot_ids.push(snap_id);
-                        }
-                    }
-
-                    applied_rule_ids.insert(winning_rule.rule.id);
-                    all_applied.push(applied.clone());
-                    line_applied.push(applied);
                 }
+
+                let (rate_after, fee_after) = match winning_rule.rule.benefit_class {
+                    crate::domain::benefit::rule::BenefitClass::Price => (
+                        rf_result.final_rate.to_string(),
+                        rf_result.fee_thb.to_string(),
+                    ),
+                    crate::domain::benefit::rule::BenefitClass::Reward => {
+                        (line.base_rate.to_string(), line.fee_thb.to_string())
+                    }
+                };
+
+                let applied = AppliedBenefit {
+                    rule_id: winning_rule.rule.id,
+                    version_id: winning_rule.version_id,
+                    benefit_type: winning_rule.rule.benefit_type.clone(),
+                    benefit_class: winning_rule.rule.benefit_class,
+                    coupon_id: None,
+                    reservation_id: None,
+                    amount_thb: rf_result.amount_thb.to_string(),
+                    rate_before: line.base_rate.to_string(),
+                    rate_after,
+                    fee_before: line.fee_thb.to_string(),
+                    fee_after,
+                    floor_capped: rf_result.floor_capped,
+                };
+
+                if let Some(snap_id) = winning_rule.segment_snapshot_id {
+                    if !segment_snapshot_ids.contains(&snap_id) {
+                        segment_snapshot_ids.push(snap_id);
+                    }
+                }
+
+                applied_rule_ids.insert(winning_rule.rule.id);
+                all_applied.push(applied.clone());
+                line_applied.push(applied);
             }
 
             evaluated_lines.push(EvaluatedLine {

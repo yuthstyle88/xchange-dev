@@ -138,6 +138,7 @@ struct Plan {
     costs: Vec<LineCost>,
     reversed: Vec<ReversedCost>,
     goes_negative: bool,
+    missing_buy_rate: Option<AppError>,
 }
 
 impl Plan {
@@ -267,8 +268,10 @@ impl Plan {
         line: Option<Uuid>,
         movement_type: MovementType,
     ) -> AppResult<Decimal> {
-        let pos = self.position(tx, branch, currency).await?;
-        let before = pos.now;
+        let (before, last_average) = {
+            let pos = self.position(tx, branch, currency).await?;
+            (pos.now, pos.last_average)
+        };
         let cost = if before.quantity == q {
             before.cost_thb
         } else if let Some(c) = at_cost {
@@ -279,10 +282,15 @@ impl Plan {
             let unit = before.cost_thb / before.quantity;
             before.cost_thb + round2((q - before.quantity) * unit)
         } else if before.quantity.is_zero() {
-            round2(q * pos.last_average.unwrap_or(Decimal::ZERO))
+            let unit = match last_average {
+                Some(avg) => avg,
+                None => self.no_history_unit_cost(tx, branch, currency).await?,
+            };
+            round2(q * unit)
         } else {
             round2(q * before.cost_thb / before.quantity)
         };
+        let pos = self.position(tx, branch, currency).await?;
         pos.now = WeightedAverage {
             quantity: before.quantity - q,
             cost_thb: before.cost_thb - cost,
@@ -325,14 +333,20 @@ impl Plan {
         currency: CurrencyCode,
         q: Decimal,
     ) -> AppResult<Decimal> {
-        let pos = self.position(tx, branch, currency).await?;
-        let before = pos.now;
+        let (before, last_average) = {
+            let pos = self.position(tx, branch, currency).await?;
+            (pos.now, pos.last_average)
+        };
         let unit = if before.quantity.is_zero() {
-            pos.last_average.unwrap_or(Decimal::ZERO)
+            match last_average {
+                Some(avg) => avg,
+                None => self.no_history_unit_cost(tx, branch, currency).await?,
+            }
         } else {
             before.cost_thb / before.quantity
         };
         let cost = round2(q * unit);
+        let pos = self.position(tx, branch, currency).await?;
         pos.now = WeightedAverage {
             quantity: before.quantity + q,
             cost_thb: before.cost_thb + cost,
@@ -352,6 +366,29 @@ impl Plan {
             average_after,
         });
         Ok(cost)
+    }
+
+    /// The unit cost when a position has no cost history (`last_average` is `None`): the branch's
+    /// current published BUY rate (`round8(buy_rate / unit_size)`). When there is none, records the
+    /// `validationFailed` refusal to be raised after the §4.5 negative-stock gate.
+    async fn no_history_unit_cost(
+        &mut self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &str,
+        currency: CurrencyCode,
+    ) -> AppResult<Decimal> {
+        if let Some(unit) =
+            published_buy_unit_cost(tx, &self.organization_id, branch, currency).await?
+        {
+            return Ok(unit);
+        }
+        if self.missing_buy_rate.is_none() {
+            self.missing_buy_rate = Some(validation(&format!(
+                "no published BUY rate for {} at branch {branch} to cost stock with no history",
+                currency.as_str()
+            )));
+        }
+        Ok(Decimal::ZERO)
     }
 
     /// The line of the latest disposal that left this position below zero: the one Q-4's `ADJUST`
@@ -385,6 +422,35 @@ impl Plan {
         .await?;
         Ok(line.flatten())
     }
+}
+
+/// The branch's current published BUY unit cost (`round8(buy_rate / unit_size)`) on the `ALL`
+/// denomination group and `ALL` value tier (`docs/design/blueprint/ledger-inventory.md` §4.5, #2794).
+async fn published_buy_unit_cost(
+    tx: &mut Transaction<'_, Postgres>,
+    organization_id: &str,
+    branch: &str,
+    currency: CurrencyCode,
+) -> AppResult<Option<Decimal>> {
+    let row = sqlx::query(
+        "SELECT l.buy_rate, l.unit_size \
+         FROM branches b \
+         JOIN rate_publications p ON p.id = b.current_publication_id \
+         JOIN published_rate_lines l ON l.publication_id = p.id \
+         WHERE b.organization_id = $1::uuid AND b.id = $2 AND l.currency_code = $3 \
+           AND l.denomination_group = 'ALL' AND l.value_tier = 'ALL'",
+    )
+    .bind(organization_id)
+    .bind(branch)
+    .bind(currency.as_str())
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let buy_rate: Option<Decimal> = row.try_get("buy_rate")?;
+    let unit_size: Decimal = row.try_get("unit_size")?;
+    Ok(buy_rate.map(|buy| round8(buy / unit_size)))
 }
 
 /// The branch a place belongs to; `None` for `Customer` and `Bank`, which take the posting's.
@@ -585,6 +651,7 @@ impl LedgerCashPostings {
             costs: Vec::new(),
             reversed: Vec::new(),
             goes_negative: false,
+            missing_buy_rate: None,
         };
 
         for (r, (from_branch, to_branch)) in req.iter().zip(places) {
@@ -785,6 +852,9 @@ impl LedgerCashPostings {
             return Err(stock_insufficient(
                 "the posting takes a drawer, a safe or a position below zero",
             ));
+        }
+        if let Some(err) = plan.missing_buy_rate {
+            return Err(err);
         }
 
         write(tx, &plan, source).await

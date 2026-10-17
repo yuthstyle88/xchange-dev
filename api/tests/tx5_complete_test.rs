@@ -651,7 +651,7 @@ async fn the_payment_step_refuses_a_live_method_that_is_off_in_before_in() {
         BranchSettingStore::new(pool.clone()),
         PgBranchRepository::new(pool.clone()),
     ));
-    let form = TransactionForm::from_transaction(&t);
+    let form = TransactionForm::from_transaction(&t).expect("stored form");
     let extras = SaveExtras::default();
     let actor = teller();
     let ctx = SaveContext {

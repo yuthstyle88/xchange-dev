@@ -75,13 +75,14 @@ describe('SignUp worded error handling (#1779)', () => {
     });
 
     it('(2) 500 server error shows error.serverError in TH', async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        status: 500,
-        ok: false,
-        json: async () => ({
-          error: { code: 'serverCrash', message: 'Internal registration database dead' },
-        }),
-      });
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: 'serverCrash', message: 'Internal registration database dead' },
+          }),
+          { status: 500 },
+        ),
+      );
       mount(mockFetch as unknown as typeof fetch);
 
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
@@ -95,13 +96,14 @@ describe('SignUp worded error handling (#1779)', () => {
     });
 
     it('(3) refusal with unshared code and server message shows that message', async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        status: 400,
-        ok: false,
-        json: async () => ({
-          error: { code: 'customUnsharedCode', message: 'เบอร์โทรศัพท์นี้ถูกระงับการใช้งาน' },
-        }),
-      });
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: 'customUnsharedCode', message: 'เบอร์โทรศัพท์นี้ถูกระงับการใช้งาน' },
+          }),
+          { status: 400 },
+        ),
+      );
       mount(mockFetch as unknown as typeof fetch);
 
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');

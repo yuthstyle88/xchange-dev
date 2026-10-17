@@ -1,7 +1,5 @@
 //! Postgres implementation of `TransferRepository`.
 
-use std::collections::HashMap;
-
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
@@ -51,22 +49,44 @@ struct LineRow {
     qty_received: Option<i32>,
 }
 
-fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> CashTransfer {
-    let kind = TransferKind::parse(&row.kind).unwrap_or(TransferKind::Branch);
-    let status = TransferStatus::parse(&row.status).unwrap_or(TransferStatus::Draft);
+fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTransfer> {
+    let kind = TransferKind::parse(&row.kind).ok_or_else(|| {
+        pos_error::AppError::Internal(format!(
+            "cash_transfer {} has unknown kind {:?}",
+            row.id, row.kind
+        ))
+    })?;
+    let status = TransferStatus::parse(&row.status).ok_or_else(|| {
+        pos_error::AppError::Internal(format!(
+            "cash_transfer {} has unknown status {:?}",
+            row.id, row.status
+        ))
+    })?;
 
-    let lines = line_rows
-        .into_iter()
-        .map(|lr| TransferLine {
-            currency: CurrencyCode::parse(lr.currency.trim()).expect("valid currency"),
+    let mut lines = Vec::with_capacity(line_rows.len());
+    for lr in line_rows {
+        let face_value = Money::parse(&lr.face_value.to_string()).map_err(|e| {
+            pos_error::AppError::Internal(format!(
+                "invalid face_value {} for denomination {}: {e}",
+                lr.face_value, lr.denomination_id
+            ))
+        })?;
+        let currency = CurrencyCode::parse(lr.currency.trim()).map_err(|e| {
+            pos_error::AppError::Internal(format!(
+                "cash_transfer {} line has invalid currency {:?}: {e}",
+                row.id, lr.currency
+            ))
+        })?;
+        lines.push(TransferLine {
+            currency,
             denomination_id: lr.denomination_id,
-            face_value: Money::parse(&lr.face_value.to_string()).unwrap_or(Money::ZERO),
+            face_value,
             qty_sent: lr.qty_sent,
             qty_received: lr.qty_received,
-        })
-        .collect();
+        });
+    }
 
-    CashTransfer {
+    Ok(CashTransfer {
         id: row.id.to_string(),
         kind,
         from_branch: BranchId::new(row.from_branch_id),
@@ -76,17 +96,26 @@ fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> CashTransfer {
         status,
         created_by: row.created_by.to_string(),
         lines,
-    }
+    })
+}
+
+fn parse_id(id: &str) -> Option<Uuid> {
+    Uuid::parse_str(id).ok()
 }
 
 impl TransferRepository for PgTransferRepository {
     fn find_by_id<'a>(&'a self, id: &'a str) -> BoxFuture<'a, AppResult<Option<CashTransfer>>> {
         Box::pin(async move {
+            let uuid = match parse_id(id) {
+                Some(u) => u,
+                None => return Ok(None),
+            };
+
             let row: Option<TransferRow> = sqlx::query_as(
                 "SELECT id, kind, from_branch_id, to_branch_id, from_shift_id, to_shift_id, status, created_by \
-                 FROM cash_transfers WHERE id = $1::uuid",
+                 FROM cash_transfers WHERE id = $1",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_optional(&self.pool)
             .await?;
 
@@ -99,14 +128,14 @@ impl TransferRepository for PgTransferRepository {
                 "SELECT l.currency, l.denomination_id, d.face_value, l.qty_sent, l.qty_received \
                  FROM cash_transfer_lines l \
                  JOIN denominations d ON d.id = l.denomination_id \
-                 WHERE l.transfer_id = $1::uuid \
+                 WHERE l.transfer_id = $1 \
                  ORDER BY l.currency, d.face_value",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_all(&self.pool)
             .await?;
 
-            Ok(Some(map_transfer(row, line_rows)))
+            Ok(Some(map_transfer(row, line_rows)?))
         })
     }
 
@@ -116,11 +145,16 @@ impl TransferRepository for PgTransferRepository {
         id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<CashTransfer>>> {
         Box::pin(async move {
+            let uuid = match parse_id(id) {
+                Some(u) => u,
+                None => return Ok(None),
+            };
+
             let row: Option<TransferRow> = sqlx::query_as(
                 "SELECT id, kind, from_branch_id, to_branch_id, from_shift_id, to_shift_id, status, created_by \
-                 FROM cash_transfers WHERE id = $1::uuid",
+                 FROM cash_transfers WHERE id = $1",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_optional(&mut **tx)
             .await?;
 
@@ -133,14 +167,14 @@ impl TransferRepository for PgTransferRepository {
                 "SELECT l.currency, l.denomination_id, d.face_value, l.qty_sent, l.qty_received \
                  FROM cash_transfer_lines l \
                  JOIN denominations d ON d.id = l.denomination_id \
-                 WHERE l.transfer_id = $1::uuid \
+                 WHERE l.transfer_id = $1 \
                  ORDER BY l.currency, d.face_value",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_all(&mut **tx)
             .await?;
 
-            Ok(Some(map_transfer(row, line_rows)))
+            Ok(Some(map_transfer(row, line_rows)?))
         })
     }
 
@@ -401,21 +435,11 @@ impl TransferRepository for PgTransferRepository {
                 None => return Ok(None),
             };
 
-            let mut limits: HashMap<CurrencyCode, Money> = HashMap::new();
-            if let Value::Object(map) = limits_val {
-                for (cur_str, val) in map {
-                    if let Ok(code) = CurrencyCode::parse(cur_str.trim()) {
-                        let amount_str = match val {
-                            Value::String(s) => s,
-                            Value::Number(n) => n.to_string(),
-                            _ => continue,
-                        };
-                        if let Ok(m) = Money::parse(&amount_str) {
-                            limits.insert(code, m);
-                        }
-                    }
-                }
-            }
+            let limits = TransferPolicy::parse_limits(&limits_val).map_err(|invalid| {
+                pos_error::AppError::Internal(format!(
+                    "malformed cash transfer policy {version} for organization {org_id}: {invalid}"
+                ))
+            })?;
 
             Ok(Some(TransferPolicy::new(version, limits)))
         })
@@ -439,13 +463,134 @@ async fn refuse_if_already_moved(
             .bind(id)
             .fetch_optional(&mut **tx)
             .await?;
-    let Some(from) = status.as_deref().and_then(TransferStatus::parse) else {
-        return Err(pos_error::AppError::NotFound {
+    Err(already_moved_error(id, status.as_deref(), step))
+}
+
+fn already_moved_error(id: Uuid, status: Option<&str>, step: TransferStep) -> pos_error::AppError {
+    match status {
+        None => pos_error::AppError::NotFound {
             entity: "CashTransfer",
             id: id.to_string(),
-        });
-    };
-    Err(pos_error::AppError::Domain(
-        TransferError::IllegalTransition { from, step }.to_string(),
-    ))
+        },
+        Some(raw) => match TransferStatus::parse(raw) {
+            Some(from) => pos_error::AppError::Domain(
+                TransferError::IllegalTransition { from, step }.to_string(),
+            ),
+            None => pos_error::AppError::Internal(format!(
+                "cash_transfer {id} has unknown status {raw:?}"
+            )),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn behavior_table_case_no_row_returns_not_found() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, None, TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::NotFound {
+                entity,
+                id: not_found_id,
+            } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(not_found_id, id.to_string());
+            }
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn behavior_table_case_readable_status_returns_illegal_transition() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("RECEIVED"), TransferStep::Dispatch);
+        let expected = TransferError::IllegalTransition {
+            from: TransferStatus::Received,
+            step: TransferStep::Dispatch,
+        }
+        .to_string();
+        match err {
+            pos_error::AppError::Domain(msg) => {
+                assert_eq!(msg, expected);
+            }
+            other => panic!("expected Domain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn behavior_table_case_unreadable_status_lost_returns_internal_error() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("LOST"), TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&id.to_string()),
+                    "message should contain transfer id: {msg}"
+                );
+                assert!(
+                    msg.contains("\"LOST\""),
+                    "message should contain status text: {msg}"
+                );
+            }
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn edge_case_empty_string_status_returns_internal_error() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some(""), TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&id.to_string()),
+                    "message should contain transfer id: {msg}"
+                );
+                assert!(
+                    msg.contains("\"\""),
+                    "message should contain empty status text: {msg}"
+                );
+            }
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn edge_case_lowercase_draft_status_returns_internal_error() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("draft"), TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&id.to_string()),
+                    "message should contain transfer id: {msg}"
+                );
+                assert!(
+                    msg.contains("\"draft\""),
+                    "message should contain lowercase draft: {msg}"
+                );
+            }
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn edge_case_lost_race_target_state_returns_illegal_transition() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("DISPATCHED"), TransferStep::Dispatch);
+        let expected = TransferError::IllegalTransition {
+            from: TransferStatus::Dispatched,
+            step: TransferStep::Dispatch,
+        }
+        .to_string();
+        match err {
+            pos_error::AppError::Domain(msg) => {
+                assert_eq!(msg, expected);
+            }
+            other => panic!("expected Domain, got {other:?}"),
+        }
+    }
 }

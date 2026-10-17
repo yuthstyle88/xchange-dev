@@ -2,6 +2,7 @@
 // (design `docs/design/blueprint/marketing-campaigns.md` §4.5, §9.1 MK-8; D-4, D-9, D-15).
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   CampaignData,
   CampaignDetail,
@@ -106,8 +107,103 @@ function toBangkokEnd(dateStr: string): string {
   return `${dateStr}T23:59:59+07:00`;
 }
 
+const BANGKOK_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+function toBangkokWallClock(isoStr: string | null | undefined): string {
+  if (!isoStr) return '';
+  if (!isoStr.includes('T')) return isoStr;
+  const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime())) return isoStr;
+  const parts: Record<string, string> = {};
+  for (const p of BANGKOK_PARTS.formatToParts(d)) {
+    parts[p.type] = p.value;
+  }
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}+07:00`;
+}
+
+function toBangkokDate(isoStr: string | null | undefined): string {
+  const wallClock = toBangkokWallClock(isoStr);
+  return wallClock.includes('T') ? wallClock.slice(0, 10) : wallClock;
+}
+
+function parseInteger(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^-?\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 export function Campaigns(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+
+  const createWrite = keyedWrite<CampaignCreateInput, CampaignCreateOutput>(api, 'POST', '/api/campaigns');
+  const saveWrite = keyedWrite<CampaignVersionSaveInput, CampaignVersionSaveOutput>(
+    api,
+    'PUT',
+    (b) => `/api/campaigns/${b.campaignId}/draft`,
+  );
+  const simulateWrite = keyedWrite<CampaignSimulateInput, CampaignSimulateOutput>(
+    api,
+    'POST',
+    (b) => `/api/campaigns/${b.campaignId}/simulate`,
+  );
+  const submitWrite = keyedWrite<CampaignSubmitInput, CampaignSubmitOutput>(
+    api,
+    'POST',
+    (b) => `/api/campaigns/${b.campaignId}/submit`,
+  );
+  const pauseWrite = keyedWrite<CampaignPauseInput, CampaignPauseOutput>(
+    api,
+    'POST',
+    (b) => `/api/campaigns/${b.campaignId}/pause`,
+  );
+  const resumeWrite = keyedWrite<CampaignResumeInput, CampaignResumeOutput>(
+    api,
+    'POST',
+    (b) => `/api/campaigns/${b.campaignId}/resume`,
+  );
+  const newVersionWrite = keyedWrite<CampaignVersionNewInput, CampaignVersionNewOutput>(
+    api,
+    'POST',
+    (b) => `/api/campaigns/${b.campaignId}/versions`,
+  );
+  const issueCouponsWrites = new Map<
+    string,
+    { send(body: { ruleId: string; count: number; expiresAt: string }): Promise<CouponIssueOutput>; reset(): void }
+  >();
+
+  function issueCouponsWriteFor(campaignId: string) {
+    let w = issueCouponsWrites.get(campaignId);
+    if (!w) {
+      w = keyedWrite<{ ruleId: string; count: number; expiresAt: string }, CouponIssueOutput>(
+        api,
+        'POST',
+        `/api/campaigns/${campaignId}/coupons`,
+      );
+      issueCouponsWrites.set(campaignId, w);
+    }
+    return w;
+  }
+
+  function resetWrites(): void {
+    createWrite.reset();
+    saveWrite.reset();
+    simulateWrite.reset();
+    submitWrite.reset();
+    pauseWrite.reset();
+    resumeWrite.reset();
+    newVersionWrite.reset();
+    for (const w of issueCouponsWrites.values()) w.reset();
+  }
 
   // M01 List state
   const [campaignsList, setCampaignsList] = createSignal<CampaignListItem[]>([]);
@@ -121,7 +217,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [createStartsAt, setCreateStartsAt] = createSignal('');
   const [createEndsAt, setCreateEndsAt] = createSignal('');
   const [createStackGroup, setCreateStackGroup] = createSignal('DEFAULT');
-  const [createPriority, setCreatePriority] = createSignal<number>(10);
+  const [createPriority, setCreatePriority] = createSignal('10');
   const [createBranches, setCreateBranches] = createSignal<string[]>(['MAIN']);
   const [createError, setCreateError] = createSignal<string | null>(null);
 
@@ -130,6 +226,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [campaignDetail, setCampaignDetail] = createSignal<CampaignDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = createSignal(false);
   const [detailError, setDetailError] = createSignal<string | null>(null);
+  // #2441: id of the campaign whose detail fills the form; null until its read answers.
+  const [loadedDetailId, setLoadedDetailId] = createSignal<string | null>(null);
 
   // Detail Form inputs
   const [formName, setFormName] = createSignal('');
@@ -137,36 +235,20 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [formStartsAt, setFormStartsAt] = createSignal('');
   const [formEndsAt, setFormEndsAt] = createSignal('');
   const [formStackGroup, setFormStackGroup] = createSignal('DEFAULT');
-  const [formPriority, setFormPriority] = createSignal(0);
+  const [formPriority, setFormPriority] = createSignal('0');
   const [formBranches, setFormBranches] = createSignal<string[]>([]);
   const [isEditedAfterSimulation, setIsEditedAfterSimulation] = createSignal(false);
 
   // Coupon issue inputs
   const [couponRuleId, setCouponRuleId] = createSignal('');
-  const [couponCount, setCouponCount] = createSignal(1);
+  const [couponCount, setCouponCount] = createSignal('1');
   const [couponExpiresAt, setCouponExpiresAt] = createSignal('');
 
   // Issued coupons from couponIssue
   const [issuedCoupons, setIssuedCoupons] = createSignal<IssuedCouponDto[] | null>(null);
 
-  // Retain Idempotency-Key across retries
-  let pendingKey: { action: string; bodyString: string; key: string } | null = null;
-
-  function getIdempotencyKey(action: string, body: unknown): string {
-    const bodyString = JSON.stringify(body ?? {});
-    if (!pendingKey || pendingKey.action !== action || pendingKey.bodyString !== bodyString) {
-      pendingKey = {
-        action,
-        bodyString,
-        key: crypto.randomUUID(),
-      };
-    }
-    return pendingKey.key;
-  }
-
-  function clearPendingKey(): void {
-    pendingKey = null;
-  }
+  // #2426: true while a campaign write is in flight; blocks a second write (reads stay unblocked).
+  const [writing, setWriting] = createSignal(false);
 
   let readingList = 0;
   async function loadList(branch: string | undefined, from: string, to: string) {
@@ -205,16 +287,17 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       if (mine !== readingDetail) return;
       const detail = res.data?.campaign ?? null;
       setCampaignDetail(detail);
+      setLoadedDetailId(detail ? id : null);
 
       if (detail) {
         const v = detail.versions[0];
         if (!keepUnsaved) {
           setFormName(detail.name ?? '');
           setFormBudgetThb(v?.budgetThb ?? '');
-          setFormStartsAt(v?.startsAt ?? '');
-          setFormEndsAt(v?.endsAt ?? '');
+          setFormStartsAt(toBangkokWallClock(v?.startsAt));
+          setFormEndsAt(toBangkokWallClock(v?.endsAt));
           setFormStackGroup(v?.stackGroup ?? 'DEFAULT');
-          setFormPriority(v?.priority ?? 0);
+          setFormPriority(String(v?.priority ?? 0));
           setFormBranches(v?.branches ? [...v.branches] : []);
           setIsEditedAfterSimulation(false);
         }
@@ -224,7 +307,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
           setCouponRuleId('');
         }
         if (v?.endsAt) {
-          setCouponExpiresAt(v.endsAt.includes('T') ? v.endsAt.slice(0, 10) : v.endsAt);
+          setCouponExpiresAt(toBangkokDate(v.endsAt));
         }
       }
     } catch (err: unknown) {
@@ -237,6 +320,27 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  // #2441: forget the shown campaign so its values can never be shown or sent for another one.
+  // Bumping `readingDetail` drops any detail read still in flight.
+  function resetDetailForm(): void {
+    readingDetail++;
+    setLoadingDetail(false);
+    setCampaignDetail(null);
+    setLoadedDetailId(null);
+    setFormName('');
+    setFormBudgetThb('');
+    setFormStartsAt('');
+    setFormEndsAt('');
+    setFormStackGroup('DEFAULT');
+    setFormPriority('0');
+    setFormBranches([]);
+    setIsEditedAfterSimulation(false);
+    setCouponRuleId('');
+    setCouponCount('1');
+    setCouponExpiresAt('');
+    setIssuedCoupons(null);
+  }
+
   let lastBranch: string | undefined = undefined;
   createEffect(() => {
     if (props.shown && !props.shown()) return;
@@ -244,7 +348,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const p = props.period();
     if (lastBranch !== undefined && branch !== lastBranch) {
       setSelectedCampaignId(null);
-      setCampaignDetail(null);
+      resetDetailForm();
       setCampaignsList([]);
     }
     lastBranch = branch;
@@ -273,19 +377,25 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setCreateStartsAt('');
     setCreateEndsAt('');
     setCreateStackGroup('DEFAULT');
-    setCreatePriority(10);
+    setCreatePriority('10');
     setCreateBranches(['MAIN']);
     setCreateError(null);
-    clearPendingKey();
+    resetWrites();
   }
 
   function openCampaign(campaignId: string) {
     setIsCreating(false);
+    resetDetailForm();
     setSelectedCampaignId(campaignId);
-    setIssuedCoupons(null);
-    clearPendingKey();
+    resetWrites();
     void loadCampaignDetail(campaignId, false);
   }
+
+  // #2441: Save / Issue coupons only send once the selected campaign's own detail is loaded.
+  const detailReady = () => {
+    const id = selectedCampaignId();
+    return id !== null && loadedDetailId() === id && campaignDetail() !== null;
+  };
 
   function handleInputEdit(setter: (val: string) => void, val: string) {
     setter(val);
@@ -293,6 +403,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleCreate() {
+    const priority = parseInteger(createPriority());
+    if (priority === null) {
+      setCreateError(t('error.validationFailed'));
+      return;
+    }
     const rawBranches = createBranches() as unknown;
     const branches: string[] = Array.isArray(rawBranches)
       ? rawBranches.map(String)
@@ -305,19 +420,14 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       endsAt: toBangkokEnd(createEndsAt()),
       budgetThb: createBudgetThb(),
       stackGroup: createStackGroup() || 'DEFAULT',
-      priority: Number(createPriority()) || 0,
+      priority,
       branches,
     };
-    const key = getIdempotencyKey('create', body);
+    if (writing()) return;
+    setWriting(true);
     setCreateError(null);
     try {
-      const res = await api.command<CampaignCreateInput, CampaignCreateOutput>(
-        'POST',
-        '/api/campaigns',
-        body,
-        key,
-      );
-      clearPendingKey();
+      const res = await createWrite.send(body);
       setIsCreating(false);
       if (res?.id) {
         openCampaign(res.id);
@@ -326,12 +436,22 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       }
     } catch (err: unknown) {
       setCreateError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
+  // #2438: a write's answer applies only while the campaign it was sent for is still shown.
+  const stillShowing = (campaignId: string) => selectedCampaignId() === campaignId;
+
   async function handleSave() {
     const campaignId = selectedCampaignId();
-    if (!campaignId) return;
+    if (!campaignId || !detailReady()) return;
+    const priority = parseInteger(formPriority());
+    if (priority === null) {
+      setDetailError(t('error.validationFailed'));
+      return;
+    }
     const rawBranches = formBranches() as unknown;
     const branches: string[] = Array.isArray(rawBranches)
       ? rawBranches.map(String)
@@ -344,26 +464,25 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       endsAt: toBangkokEnd(formEndsAt()),
       budgetThb: formBudgetThb(),
       stackGroup: formStackGroup(),
-      priority: Number(formPriority()) || 0,
+      priority,
       branches,
     };
-    const key = getIdempotencyKey('save', body);
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
-      await api.command<CampaignVersionSaveInput, CampaignVersionSaveOutput>(
-        'PUT',
-        `/api/campaigns/${campaignId}/draft`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      await saveWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       setIsEditedAfterSimulation(false);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       if (err instanceof ApiError && err.code === 'staleVersion') {
         await loadCampaignDetail(campaignId, true);
       }
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -374,20 +493,19 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       campaignId,
       scenarios: [],
     };
-    const key = getIdempotencyKey('simulate', body);
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
-      await api.command<CampaignSimulateInput, CampaignSimulateOutput>(
-        'POST',
-        `/api/campaigns/${campaignId}/simulate`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      await simulateWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       setIsEditedAfterSimulation(false);
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -397,19 +515,18 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignSubmitInput = {
       campaignId,
     };
-    const key = getIdempotencyKey('submit', body);
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
-      await api.command<CampaignSubmitInput, CampaignSubmitOutput>(
-        'POST',
-        `/api/campaigns/${campaignId}/submit`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      await submitWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -419,19 +536,18 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignPauseInput = {
       campaignId,
     };
-    const key = getIdempotencyKey('pause', body);
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
-      await api.command<CampaignPauseInput, CampaignPauseOutput>(
-        'POST',
-        `/api/campaigns/${campaignId}/pause`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      await pauseWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -441,19 +557,18 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignResumeInput = {
       campaignId,
     };
-    const key = getIdempotencyKey('resume', body);
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
-      await api.command<CampaignResumeInput, CampaignResumeOutput>(
-        'POST',
-        `/api/campaigns/${campaignId}/resume`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      await resumeWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -463,46 +578,48 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const body: CampaignVersionNewInput = {
       campaignId,
     };
-    const key = getIdempotencyKey('newVersion', body);
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
-      await api.command<CampaignVersionNewInput, CampaignVersionNewOutput>(
-        'POST',
-        `/api/campaigns/${campaignId}/versions`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      await newVersionWrite.send(body);
+      if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleIssueCoupons() {
     const campaignId = selectedCampaignId();
-    if (!campaignId) return;
+    if (!campaignId || !detailReady()) return;
+    const count = parseInteger(couponCount());
+    if (count === null || count < 1) {
+      setDetailError(t('error.validationFailed'));
+      return;
+    }
     const ruleId = couponRuleId() || currentVersion()?.rules?.[0]?.id || '';
-    const count = Number(couponCount()) || 1;
     const expiresAt = toBangkokEnd(couponExpiresAt());
     const body = {
       ruleId,
       count,
       expiresAt,
     };
-    const key = getIdempotencyKey('issue', body);
+    if (writing()) return;
+    setWriting(true);
     setDetailError(null);
     try {
-      const res = await api.command<typeof body, CouponIssueOutput>(
-        'POST',
-        `/api/campaigns/${campaignId}/coupons`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      const res = await issueCouponsWriteFor(campaignId).send(body);
+      if (!stillShowing(campaignId)) return;
       setIssuedCoupons(res?.coupons ?? []);
     } catch (err: unknown) {
+      if (!stillShowing(campaignId)) return;
       setDetailError(campaignError(err));
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -618,6 +735,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-primary"
+                  disabled={writing()}
                   onClick={handleCreate}
                 >
                   {t('create')}
@@ -707,8 +825,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   data-field="priority"
                   class="xc-input"
                   value={createPriority()}
-                  onInput={(e) => setCreatePriority(Number(e.currentTarget.value))}
-                  onChange={(e) => setCreatePriority(Number(e.currentTarget.value))}
+                  onInput={(e) => setCreatePriority(e.currentTarget.value)}
+                  onChange={(e) => setCreatePriority(e.currentTarget.value)}
                 />
               </div>
 
@@ -745,8 +863,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 class="xc-btn-secondary"
                 onClick={() => {
                   setSelectedCampaignId(null);
-                  setCampaignDetail(null);
-                  setIssuedCoupons(null);
+                  resetDetailForm();
                   void loadList(props.branch?.(), props.period().from, props.period().to);
                 }}
               >
@@ -764,6 +881,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-primary"
+                disabled={writing() || !detailReady()}
                 onClick={handleSave}
               >
                 {t('save')}
@@ -772,6 +890,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-secondary"
+                disabled={writing()}
                 onClick={handleSimulate}
               >
                 {t('simulate')}
@@ -780,7 +899,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="xc-btn-success"
-                disabled={isSubmitDisabled()}
+                disabled={writing() || isSubmitDisabled()}
                 onClick={handleSubmit}
               >
                 {t('submit')}
@@ -790,6 +909,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-warning"
+                  disabled={writing()}
                   onClick={handlePause}
                 >
                   {t('pause')}
@@ -800,6 +920,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-success"
+                  disabled={writing()}
                   onClick={handleResume}
                 >
                   {t('resume')}
@@ -810,6 +931,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="xc-btn-secondary"
+                  disabled={writing()}
                   onClick={handleNewVersion}
                 >
                   {t('newVersion')}
@@ -899,10 +1021,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 data-field="priority"
                 class="xc-input"
                 value={formPriority()}
-                onInput={(e) => {
-                  setFormPriority(Number(e.currentTarget.value));
-                  setIsEditedAfterSimulation(true);
-                }}
+                onInput={(e) => handleInputEdit(setFormPriority, e.currentTarget.value)}
+                onChange={(e) => handleInputEdit(setFormPriority, e.currentTarget.value)}
               />
             </div>
           </div>
@@ -938,8 +1058,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   class="xc-input"
                   min="1"
                   value={couponCount()}
-                  onInput={(e) => setCouponCount(Number(e.currentTarget.value))}
-                  onChange={(e) => setCouponCount(Number(e.currentTarget.value))}
+                  onInput={(e) => setCouponCount(e.currentTarget.value)}
+                  onChange={(e) => setCouponCount(e.currentTarget.value)}
                 />
               </div>
 
@@ -959,6 +1079,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="xc-btn-secondary"
+              disabled={writing() || !detailReady()}
               onClick={handleIssueCoupons}
             >
               {t('issueCoupons')}

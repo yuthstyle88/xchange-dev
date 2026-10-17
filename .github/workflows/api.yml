@@ -25,38 +25,31 @@ jobs:
   # A FAILED `changes` job leaves skip_build empty => the full api job runs.
   changes:
     name: changes
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, light]  # light job: Jam + Studio runners carry `light` (owner 2026-10-17)
     timeout-minutes: 5
     outputs:
       skip_build: ${{ steps.filter.outputs.skip_build }}
       test_args: ${{ steps.filter.outputs.test_args }}
       runs_on: ${{ steps.pool.outputs.runs_on }}
+      cargo_jobs: ${{ steps.pool.outputs.cargo_jobs }}
     steps:
-      # Spread the heavy `test` job over the pools that finish it, weighted by runner count:
-      # Dell 4 (dell-org-ci), Warut's MacBook 2 (warut-mbp). Owner's order 2026-10-15 to spread load.
-      # Mac Studio is out of the test pool: measured 2026-10-15, its test job ran past the 90-min
-      # timeout (PR 1797, studio-org-1, 02:30-04:01Z) while Dell finished in ~26-31 min.
-      # No API call: the slot is (run_id + run_attempt) mod 6, so a rerun can land elsewhere.
-      # If this step does not run, `test` falls back to the Dell pool.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The heavy `test` job runs on ONE pool, the runners labelled heavy-build (#2574). The number a machine carries
+      # caps its concurrent heavy builds (owner 2026-10-16: Dell 2, Studio 2, Warut 1, MacBook 1; Mac mini none); GitHub
+      # hands each build to whichever is idle. cargo-jobs.sh then sizes compile jobs to that machine's free cores.
+      # If this step does not run, `test` falls back to the Dell pool with 12 jobs.
       - name: Select runner pool
         id: pool
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          slot=$(( (RUN_ID + RUN_ATTEMPT) % 6 ))
-          if [ "$slot" -lt 4 ]; then
-            pool='["self-hosted","Linux","X64","dell-org-ci"]'
-          else
-            pool='["self-hosted","macOS","ARM64","warut-mbp"]'
-          fi
-          echo "slot $slot -> $pool"
-          echo "runs_on=$pool" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+          bash .github/scripts/select-pool.test.sh
+          bash .github/scripts/select-pool.sh >> "$GITHUB_OUTPUT"
 
       - name: Self-test should-build
         run: bash .github/scripts/should-build.test.sh
@@ -115,6 +108,7 @@ jobs:
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
           REF: ${{ github.ref }}
+          HEAD_REF: ${{ github.head_ref }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
@@ -168,6 +162,7 @@ jobs:
           fi
           test_args="${test_args:-}"
           echo "test_args=$test_args" >> "$GITHUB_OUTPUT"
+
           echo "skip_build=$skip_build test_args=$test_args"
 
   test:
@@ -177,7 +172,8 @@ jobs:
     runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64","dell-org-ci"]') }}
     timeout-minutes: 90
     env:
-      CARGO_BUILD_JOBS: 12
+      # Ceiling from select-pool.sh; the "Set cargo jobs" step lowers it to this machine's free cores (#2574).
+      CARGO_JOBS_CAP: ${{ needs.changes.outputs.cargo_jobs || 12 }}
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
@@ -214,7 +210,15 @@ jobs:
       - name: Self-test api-test-plan
         run: bash .github/scripts/api-test-plan.test.sh
 
+      - name: Self-test pg-sweep-stale
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          bash .github/scripts/pg-sweep-stale.test.sh
+          bash .github/scripts/pg-sweep-stale-foreign.test.sh
+
       - name: Start postgres (per run)
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         env:
           LC_ALL: C
         run: |
@@ -229,11 +233,14 @@ jobs:
             if [ "$major" -ge 16 ]; then PGBIN=$(dirname "$(command -v pg_ctl)"); fi
           fi
 
+          PGBIN="$PGBIN" bash .github/scripts/pg-sweep-stale.sh || true
+
           PGPORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 
           if [ -n "$PGBIN" ]; then
             # Short path under /tmp: the unix socket path must stay under macOS's 104-byte limit.
             PGROOT=$(mktemp -d /tmp/xcpg.XXXXXX)
+            printf '%s\n' "$RUNNER_NAME" > "$PGROOT/runner"
             {
               echo "XC_PGBIN=$PGBIN"
               echo "XC_PGROOT=$PGROOT"
@@ -257,6 +264,7 @@ jobs:
             echo "no postgres >= 16 on runner $RUNNER_NAME; starting docker postgres:17 (container: $CONTAINER_NAME) on port $PGPORT"
             docker run --rm -d \
               --name "$CONTAINER_NAME" \
+              --label "xc.runner=${RUNNER_NAME}" \
               -p "127.0.0.1:$PGPORT:5432" \
               -e POSTGRES_PASSWORD=pg \
               -e POSTGRES_HOST_AUTH_METHOD=trust \
@@ -321,6 +329,13 @@ jobs:
             exit 1
           fi
 
+      - name: Set cargo jobs from this machine's free cores
+        run: |
+          bash .github/scripts/cargo-jobs.test.sh
+          jobs=$(bash .github/scripts/cargo-jobs.sh "$CARGO_JOBS_CAP")
+          echo "cargo jobs: $jobs (cap $CARGO_JOBS_CAP) on $RUNNER_NAME"
+          echo "CARGO_BUILD_JOBS=$jobs" >> "$GITHUB_ENV"
+
       - name: Check formatting
         working-directory: api
         run: cargo fmt --all --check
@@ -340,6 +355,7 @@ jobs:
           npm --prefix web run build
 
       - name: Install cargo-nextest
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         run: |
           VERSION="0.9.137"
@@ -353,6 +369,7 @@ jobs:
           echo "$ROOT/bin" >> "$GITHUB_PATH"
 
       - name: Test
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         env:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ env.XC_PGPORT }}/xchange_test
@@ -373,6 +390,7 @@ jobs:
           npm --prefix api/web/forms run check
 
       - name: Form validation JS tests
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         run: node --test api/tests/js/*.test.mjs
 
       - name: "Release check refuses no screens"
@@ -393,7 +411,7 @@ jobs:
           "$BIN" check
 
       - name: Stop postgres and remove its data
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: |
           if [ -n "${XC_PGROOT:-}" ] && [ -d "$XC_PGROOT" ]; then
             if [ -n "${XC_PGBIN:-}" ] && [ -x "$XC_PGBIN/pg_ctl" ]; then
@@ -458,6 +476,7 @@ jobs:
         run: cargo clippy -p xc-device-agent --all-targets -- -D warnings
 
       - name: Install cargo-nextest
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         run: |
           VERSION="0.9.137"
@@ -471,6 +490,7 @@ jobs:
           echo "$ROOT/bin" >> "$GITHUB_PATH"
 
       - name: Test
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         run: cargo nextest run -p xc-device-agent
 
@@ -478,7 +498,7 @@ jobs:
     name: api
     needs: [changes, test, device-agent-linux]
     if: ${{ always() }}
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, light]  # light job: Jam + Studio runners carry `light` (owner 2026-10-17)
     timeout-minutes: 5
     steps:
       - name: Refuse to report green when the run was cancelled

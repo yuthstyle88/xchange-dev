@@ -40,6 +40,13 @@ fn dom(e: impl ToString) -> AppError {
     AppError::Domain(e.to_string())
 }
 
+fn handover_id(id: &str) -> AppResult<uuid::Uuid> {
+    uuid::Uuid::parse_str(id).map_err(|_| AppError::NotFound {
+        entity: "handover",
+        id: id.to_string(),
+    })
+}
+
 type Row = (
     String,
     String,
@@ -109,6 +116,8 @@ impl HandoverService {
     }
 }
 
+pub const INVALID_RECEIVER: &str = "ผู้รับมอบกะไม่ถูกต้องหรือไม่มีสิทธิ์ปฏิบัติงานกะในสาขานี้";
+
 /// The CA-7c forms (design §4.9): all their work, reads included, on the caller's transaction. They open no
 /// transaction and take no lock; the caller (the CM-1 seam, or the wrapper above) holds both.
 impl HandoverService {
@@ -128,14 +137,30 @@ impl HandoverService {
         Authorizer::check(Some(actor), permission, &target, now)
             .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
 
-        let shift_teller: Option<String> =
-            sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
-                .bind(&cmd.from_shift_id)
-                .fetch_optional(&mut **tx)
-                .await?;
-        let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
-        PersonRules::teller_owns_shift(&teller_id, actor)
-            .map_err(|e| AppError::Domain(e.to_string()))?;
+        let receiver_uuid = uuid::Uuid::parse_str(&cmd.receiver_id)
+            .map_err(|_| AppError::Validation(INVALID_RECEIVER.to_owned()))?;
+        let valid_receiver: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+                 SELECT 1 FROM users u \
+                 JOIN user_roles r ON r.user_id = u.id \
+                 WHERE u.id = $1 \
+                   AND u.status = 'ACTIVE' \
+                   AND u.organization_id::text = $2 \
+                   AND r.organization_id = u.organization_id \
+                   AND r.role_code IN ('TELLER', 'BRANCH_MANAGER') \
+                   AND (r.branch_id = $3 OR r.branch_id IS NULL) \
+                   AND (r.valid_to IS NULL OR r.valid_to > $4) \
+             )",
+        )
+        .bind(receiver_uuid)
+        .bind(&actor.organization_id)
+        .bind(cmd.branch.as_str())
+        .bind(now)
+        .fetch_one(&mut **tx)
+        .await?;
+        if !valid_receiver {
+            return Err(AppError::Validation(INVALID_RECEIVER.to_owned()));
+        }
 
         if let Some(existing_count) = self
             .counts
@@ -154,9 +179,22 @@ impl HandoverService {
             }
         }
 
+        let shift_teller: Option<String> = sqlx::query_scalar(
+            "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
+        )
+        .bind(&cmd.from_shift_id)
+        .bind(cmd.branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await?;
+        let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
+        PersonRules::teller_owns_shift(&teller_id, actor)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
+
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
         let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
+        let mut seen_denominations: std::collections::HashSet<i64> =
+            std::collections::HashSet::with_capacity(cmd.lines.len());
 
         let denom_ids: Vec<i64> = cmd
             .lines
@@ -180,6 +218,13 @@ impl HandoverService {
             .collect();
 
         for line in &cmd.lines {
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in handover lines: {}",
+                    line.denomination_id
+                )));
+            }
+
             if line.qty < 0 {
                 return Err(AppError::Validation(format!(
                     "line qty cannot be negative: {}",
@@ -298,13 +343,19 @@ impl HandoverService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Handover> {
-        let r: Row = sqlx::query_as(
+        let handover_uuid = handover_id(id)?;
+        let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
-             FROM handovers WHERE id = $1::uuid FOR UPDATE",
+             FROM handovers WHERE id = $1 FOR UPDATE",
         )
-        .bind(id)
-        .fetch_one(&mut **tx)
+        .bind(handover_uuid)
+        .fetch_optional(&mut **tx)
         .await?;
+
+        let r = r.ok_or_else(|| AppError::NotFound {
+            entity: "handover",
+            id: id.to_string(),
+        })?;
 
         let h = Handover {
             id: r.0,
@@ -321,6 +372,13 @@ impl HandoverService {
         }
 
         PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
+        Authorizer::check(
+            Some(actor),
+            Permission::ShiftOperate,
+            &Target::new(&actor.organization_id, Some(h.branch_id.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
 
         let repo = self.counts.repo().clone();
         let mut totals = repo.get_count_totals(&mut *tx, &h.count_id).await?;
@@ -432,15 +490,21 @@ impl HandoverService {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         actor: &Actor,
         id: &str,
-        _now: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> AppResult<Handover> {
-        let r: Row = sqlx::query_as(
+        let handover_uuid = handover_id(id)?;
+        let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
-             FROM handovers WHERE id = $1::uuid FOR UPDATE",
+             FROM handovers WHERE id = $1 FOR UPDATE",
         )
-        .bind(id)
-        .fetch_one(&mut **tx)
+        .bind(handover_uuid)
+        .fetch_optional(&mut **tx)
         .await?;
+
+        let r = r.ok_or_else(|| AppError::NotFound {
+            entity: "handover",
+            id: id.to_string(),
+        })?;
 
         let h = Handover {
             id: r.0,
@@ -457,6 +521,13 @@ impl HandoverService {
         }
 
         PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
+        Authorizer::check(
+            Some(actor),
+            Permission::ShiftOperate,
+            &Target::new(&actor.organization_id, Some(h.branch_id.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
 
         let res = sqlx::query(
             "UPDATE handovers SET status = 'REJECTED', updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",

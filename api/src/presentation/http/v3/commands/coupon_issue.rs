@@ -95,14 +95,29 @@ impl CommandAction for CouponIssueCommand {
             )
         })?;
 
+        let campaign_id = input
+            .id
+            .as_deref()
+            .or(input.campaign_id.as_deref())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| {
+                V3Error::new(
+                    "ruleNotFound",
+                    Some("ruleId"),
+                    "benefit rule not found",
+                    StatusCode::NOT_FOUND,
+                )
+            })?;
+
         let rule_exists: Option<Uuid> = sqlx::query_scalar(
             "SELECT br.id \
              FROM benefit_rules br \
              JOIN campaign_versions cv ON br.campaign_version_id = cv.id \
-             WHERE br.id = $1 AND cv.organization_id = $2",
+             WHERE br.id = $1 AND cv.organization_id = $2 AND cv.campaign_id = $3",
         )
         .bind(rule_id)
         .bind(org_id)
+        .bind(campaign_id)
         .fetch_optional(&mut **tx)
         .await
         .map_err(|e| {
@@ -121,6 +136,33 @@ impl CommandAction for CouponIssueCommand {
                 "benefit rule not found",
                 StatusCode::NOT_FOUND,
             ));
+        }
+
+        if let Some(ref cid) = input.customer_id {
+            let customer_exists: Option<i32> = sqlx::query_scalar(
+                "SELECT 1 FROM customers WHERE id = $1 AND organization_id = $2",
+            )
+            .bind(cid)
+            .bind(org_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+
+            if customer_exists.is_none() {
+                return Err(V3Error::new(
+                    "notFound",
+                    Some("customerId"),
+                    "customer not found",
+                    StatusCode::NOT_FOUND,
+                ));
+            }
         }
 
         let expires_at = chrono::DateTime::parse_from_rfc3339(&input.expires_at)

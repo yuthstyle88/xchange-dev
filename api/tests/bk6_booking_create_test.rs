@@ -110,6 +110,7 @@ async fn booking_create_refuses_when_bookings_closed() {
     .await;
 
     let payload = json!({
+        "branch": B01,
         "branchId": B01,
         "slotId": slot_id,
         "shopSide": "BUY",
@@ -155,6 +156,7 @@ async fn app_booking_create_starts_confirmed() {
     .await;
 
     let payload = json!({
+        "branch": B01,
         "branchId": B01,
         "slotId": slot_id,
         "shopSide": "BUY",
@@ -328,6 +330,7 @@ async fn booking_create_idempotency_replay_returns_stored_answer_without_qr_toke
     .await;
 
     let payload = json!({
+        "branch": B01,
         "branchId": B01,
         "slotId": slot_id,
         "shopSide": "BUY",
@@ -397,6 +400,7 @@ async fn booking_create_idempotency_conflict_refuses_same_key_different_body() {
 
     let key = "key-conflict-create-1";
     let payload1 = json!({
+        "branch": B01,
         "branchId": B01,
         "slotId": slot_id,
         "shopSide": "BUY",
@@ -415,6 +419,7 @@ async fn booking_create_idempotency_conflict_refuses_same_key_different_body() {
     assert_eq!(res1.status, StatusCode::OK);
 
     let payload2 = json!({
+        "branch": B01,
         "branchId": B01,
         "slotId": slot_id,
         "shopSide": "BUY",
@@ -462,6 +467,7 @@ async fn booking_create_refuses_when_slot_capacity_full() {
     .await;
 
     let payload = json!({
+        "branch": B01,
         "branchId": B01,
         "slotId": slot_id,
         "shopSide": "BUY",

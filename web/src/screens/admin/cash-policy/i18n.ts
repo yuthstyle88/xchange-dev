@@ -13,6 +13,9 @@ export const th = {
   saved: 'บันทึกวงเงินแล้ว',
   'error.roleNotAllowedHere': 'บัญชีนี้ไม่มีสิทธิ์ตั้งวงเงินโอนเงินสด',
   'error.idempotencyConflict': 'คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลอื่น กรุณาโหลดหน้าใหม่แล้วบันทึกอีกครั้ง',
+  'error.limits': 'วงเงินไม่ถูกต้อง ต้องเป็นจำนวนตั้งแต่ 0 ถึง 100,000,000 และมีทศนิยมไม่เกิน 2 ตำแหน่ง',
+  'error.currency': 'รหัสสกุลเงินไม่ถูกต้อง กรุณาตรวจสอบสกุลเงินอีกครั้ง',
+  invalidPolicyNote: 'การบันทึกวงเงินจะเขียนทับนโยบายทั้งหมด และตัดรายการที่ไม่ถูกต้องด้านล่างนี้ออก',
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
 };
 
@@ -30,5 +33,8 @@ export const en: Record<keyof typeof th, string> = {
   saved: 'Limits saved',
   'error.roleNotAllowedHere': 'This account may not set the cash transfer limits',
   'error.idempotencyConflict': 'This request was already sent with other data; reload the page and save again',
+  'error.limits': 'Invalid limit amount: enter a number from 0 to 100,000,000 with at most 2 decimal places',
+  'error.currency': 'Invalid currency code: check the currency entries and try again',
+  invalidPolicyNote: 'Saving the form replaces the whole policy and drops the invalid entries listed below',
   connectionError: 'Connection error',
 };

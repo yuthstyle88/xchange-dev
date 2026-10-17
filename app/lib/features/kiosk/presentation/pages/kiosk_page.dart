@@ -58,7 +58,7 @@ class KioskPage extends ConsumerWidget {
                       Expanded(
                         child: SingleChildScrollView(
                           // A new screen starts at its top.
-                          key: ValueKey(s.screen),
+                          key: ValueKey((s.screen, s.resetGeneration)),
                           padding: narrow
                               ? const EdgeInsets.fromLTRB(16, 22, 16, 36)
                               : const EdgeInsets.fromLTRB(32, 28, 32, 36),
@@ -197,6 +197,14 @@ class _HeaderState extends ConsumerState<_Header> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<KioskState>(kioskControllerProvider, (prev, next) {
+      if (prev != null &&
+          (prev.languageCode != next.languageCode ||
+              prev.screen != next.screen ||
+              prev.resetGeneration != next.resetGeneration)) {
+        setState(_search.clear);
+      }
+    });
     final s = ref.watch(kioskControllerProvider);
     final c = ref.read(kioskControllerProvider.notifier);
     final l = ref.watch(kioskTextsProvider);

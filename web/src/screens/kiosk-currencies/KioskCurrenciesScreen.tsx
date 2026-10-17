@@ -155,30 +155,44 @@ export function KioskCurrenciesScreen(props: {
   const [freshness, setFreshness] = createSignal<RateFreshnessDto | null>(null);
   const [searchQuery, setSearchQuery] = createSignal('');
   const [loadError, setLoadError] = createSignal<string | undefined>(undefined);
+  const [loaded, setLoaded] = createSignal(false);
   const [cardStatuses, setCardStatuses] = createSignal<
     Record<string, CardStatusState | undefined>
   >({});
   const [savingCodes, setSavingCodes] = createSignal<Record<string, boolean>>({});
 
   let readingBranch = '';
+  // Bumped by every list read (first read and toggle re-read); a list read
+  // (first read or toggle re-read) applies only if it is still the latest.
+  // When a newer toggle re-read supersedes the first read, that re-read
+  // ends the loading state.
+  let listReadSeq = 0;
   const fetchCurrencies = async (branchId: string) => {
     readingBranch = branchId;
+    listReadSeq += 1;
+    const seq = listReadSeq;
+    setLoaded(false);
     setCurrencies([]);
     setKbankRef(null);
     setFreshness(null);
     setLoadError(undefined);
+    setCardStatuses({});
+    setSavingCodes({});
     try {
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
         branch: branchId,
       });
       if (readingBranch !== branchId) return;
+      if (seq !== listReadSeq) return;
       if (res.data) {
         setCurrencies(res.data.currencies);
         setKbankRef(res.data.kbank);
         setFreshness(res.data.freshness);
       }
+      setLoaded(true);
     } catch (err: unknown) {
       if (readingBranch !== branchId) return;
+      if (seq !== listReadSeq) return;
       setLoadError(wordedError(err));
       setCurrencies([]);
       setKbankRef(null);
@@ -189,10 +203,13 @@ export function KioskCurrenciesScreen(props: {
   createEffect(() => {
     const b = props.branch;
     if (!b) {
+      setLoaded(false);
       setCurrencies([]);
       setKbankRef(null);
       setFreshness(null);
       setLoadError(undefined);
+      setCardStatuses({});
+      setSavingCodes({});
       return;
     }
     void fetchCurrencies(b);
@@ -208,29 +225,56 @@ export function KioskCurrenciesScreen(props: {
     if (err) {
       return err;
     }
+    if (!loaded()) {
+      return '';
+    }
     return t('found', { n: filteredCurrencies().length });
   });
 
   const handleToggle = async (code: string, isEnabled: boolean) => {
-    if (!props.branch) return;
+    const branchId = props.branch;
+    if (!branchId) return;
     setSavingCodes((prev) => ({ ...prev, [code]: true }));
     setCardStatuses((prev) => ({ ...prev, [code]: undefined }));
 
     try {
       await configure(props.api, {
-        branchId: props.branch,
+        branchId,
         code,
         enabled: isEnabled,
       });
+    } catch (err: unknown) {
+      if (props.branch === branchId) {
+        const msg = wordedError(err);
+        setCardStatuses((prev) => ({
+          ...prev,
+          [code]: { kind: 'message', text: msg },
+        }));
+        setSavingCodes((prev) => ({ ...prev, [code]: false }));
+      }
+      return;
+    }
 
+    if (props.branch !== branchId) {
+      return;
+    }
+
+    listReadSeq += 1;
+    const seq = listReadSeq;
+    try {
       const res = await props.api.view<KioskCurrencies>('kiosk_currencies', {
-        branch: props.branch,
+        branch: branchId,
       });
+      if (props.branch !== branchId) return;
+      const latest = seq === listReadSeq;
 
+      if (latest) setLoadError(undefined);
       if (res.data) {
-        setCurrencies(res.data.currencies);
-        setKbankRef(res.data.kbank);
-        setFreshness(res.data.freshness);
+        if (latest) {
+          setCurrencies(res.data.currencies);
+          setKbankRef(res.data.kbank);
+          setFreshness(res.data.freshness);
+        }
         const thisCurrency = res.data.currencies.find((c) => c.code === code);
         const active = thisCurrency ? thisCurrency.enabled : isEnabled;
         setCardStatuses((prev) => ({
@@ -238,14 +282,24 @@ export function KioskCurrenciesScreen(props: {
           [code]: active ? { kind: 'savedOn' } : { kind: 'savedOff' },
         }));
       }
+      // This re-read may have superseded the first read: it ends loading.
+      if (latest) setLoaded(true);
     } catch (err: unknown) {
-      const msg = wordedError(err);
+      if (props.branch !== branchId) return;
+      if (seq === listReadSeq) {
+        setCurrencies((prev) =>
+          prev.map((c) => (c.code === code ? { ...c, enabled: isEnabled } : c)),
+        );
+        setLoadError(wordedError(err));
+      }
       setCardStatuses((prev) => ({
         ...prev,
-        [code]: { kind: 'message', text: msg },
+        [code]: isEnabled ? { kind: 'savedOn' } : { kind: 'savedOff' },
       }));
     } finally {
-      setSavingCodes((prev) => ({ ...prev, [code]: false }));
+      if (props.branch === branchId) {
+        setSavingCodes((prev) => ({ ...prev, [code]: false }));
+      }
     }
   };
 
@@ -272,7 +326,7 @@ export function KioskCurrenciesScreen(props: {
       <section aria-label={t('bankReference')} id="bank-reference">
         <Show
           when={kbankRef()}
-          fallback={t('kbankFailed')}
+          fallback={loaded() || loadError() ? t('kbankFailed') : ''}
         >
           {(ref) => (
             <>

@@ -12,8 +12,9 @@ export interface BookingQrProps {
 }
 
 export function BookingQr(props: BookingQrProps): JSX.Element {
-  const targetUrl = () => `${window.location.origin}/app/book?branch=${props.branchCode ?? ''}`;
-  const captionPath = () => `/app/book?branch=${props.branchCode ?? ''}`;
+  const q = () => encodeURIComponent(props.branchCode ?? '');
+  const targetUrl = () => `${window.location.origin}/app/book?branch=${q()}`;
+  const captionPath = () => `/app/book?branch=${q()}`;
 
   return (
     <Show when={props.bookingEnabled && props.branchCode}>

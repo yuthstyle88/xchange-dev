@@ -654,3 +654,193 @@ async fn the_same_key_applies_once_and_another_body_conflicts() {
     assert_eq!(code(&other), "idempotencyConflict", "{}", other.text);
     db.finish().await;
 }
+
+// ------------------------------------------------------------ #2390: userGrant creator scope check (G1–G7)
+
+#[actix_web::test]
+async fn g1_branch_admin_cannot_grant_org_wide_executive() {
+    let db = TestDb::start().await;
+    let user = a_teller(&db).await;
+    let a = post(
+        &db,
+        "ADMIN@XC-B01",
+        Method::POST,
+        "/api/users/grant",
+        json!({ "userId": user, "role": "EXECUTIVE", "branch": Value::Null }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "outOfScope", "{}", a.text);
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'EXECUTIVE' AND valid_to IS NULL"
+        ))
+        .await,
+        0
+    );
+    assert_eq!(db.version(&user).await, 1);
+    db.finish().await;
+}
+
+#[actix_web::test]
+async fn g2_branch_admin_cannot_grant_org_wide_admin() {
+    let db = TestDb::start().await;
+    let user = a_teller(&db).await;
+    let a = post(
+        &db,
+        "ADMIN@XC-B01",
+        Method::POST,
+        "/api/users/grant",
+        json!({ "userId": user, "role": "ADMIN", "branch": Value::Null }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "outOfScope", "{}", a.text);
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'ADMIN' AND valid_to IS NULL"
+        ))
+        .await,
+        0
+    );
+    assert_eq!(db.version(&user).await, 1);
+    db.finish().await;
+}
+
+#[actix_web::test]
+async fn g3_branch_admin_cannot_grant_org_wide_verification_reviewer() {
+    let db = TestDb::start().await;
+    let user = a_teller(&db).await;
+    let a = post(
+        &db,
+        "ADMIN@XC-B01",
+        Method::POST,
+        "/api/users/grant",
+        json!({ "userId": user, "role": "VERIFICATION_REVIEWER", "branch": Value::Null }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "outOfScope", "{}", a.text);
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'VERIFICATION_REVIEWER' AND valid_to IS NULL"
+        ))
+        .await,
+        0
+    );
+    assert_eq!(db.version(&user).await, 1);
+    db.finish().await;
+}
+
+#[actix_web::test]
+async fn g4_branch_admin_grants_finance_on_own_branch() {
+    let db = TestDb::start().await;
+    let user = a_teller(&db).await;
+    let a = post(
+        &db,
+        "ADMIN@XC-B01",
+        Method::POST,
+        "/api/users/grant",
+        json!({ "userId": user, "role": "FINANCE", "branch": B01 }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(
+        a.body,
+        json!({ "userId": user, "status": "ACTIVE", "version": 2 })
+    );
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'FINANCE' AND branch_id = '{B01}' AND valid_to IS NULL"
+        ))
+        .await,
+        1
+    );
+    db.finish().await;
+}
+
+#[actix_web::test]
+async fn g5_branch_admin_cannot_grant_finance_on_other_branch() {
+    let db = TestDb::start().await;
+    let user = a_teller(&db).await;
+    let a = post(
+        &db,
+        "ADMIN@XC-B01",
+        Method::POST,
+        "/api/users/grant",
+        json!({ "userId": user, "role": "FINANCE", "branch": B09 }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "outOfScope", "{}", a.text);
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'FINANCE' AND valid_to IS NULL"
+        ))
+        .await,
+        0
+    );
+    assert_eq!(db.version(&user).await, 1);
+    db.finish().await;
+}
+
+#[actix_web::test]
+async fn g6_org_wide_admin_grants_org_wide_executive() {
+    let db = TestDb::start().await;
+    let user = a_teller(&db).await;
+    let a = post(
+        &db,
+        ADMIN,
+        Method::POST,
+        "/api/users/grant",
+        json!({ "userId": user, "role": "EXECUTIVE", "branch": Value::Null }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(
+        a.body,
+        json!({ "userId": user, "status": "ACTIVE", "version": 2 })
+    );
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'EXECUTIVE' AND branch_id IS NULL AND valid_to IS NULL"
+        ))
+        .await,
+        1
+    );
+    db.finish().await;
+}
+
+#[actix_web::test]
+async fn g7_org_wide_admin_grants_branch_scoped_finance() {
+    let db = TestDb::start().await;
+    let user = a_teller(&db).await;
+    let a = post(
+        &db,
+        ADMIN,
+        Method::POST,
+        "/api/users/grant",
+        json!({ "userId": user, "role": "FINANCE", "branch": B01 }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(
+        a.body,
+        json!({ "userId": user, "status": "ACTIVE", "version": 2 })
+    );
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'FINANCE' AND branch_id = '{B01}' AND valid_to IS NULL"
+        ))
+        .await,
+        1
+    );
+    db.finish().await;
+}

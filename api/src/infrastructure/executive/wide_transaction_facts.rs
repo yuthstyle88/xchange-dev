@@ -99,7 +99,9 @@ impl ExchangeFacts for WideTransactionFacts {
             v.by_branch = by_branch;
 
             let rev_sql = format!(
-                "SELECT l.shop_side, coalesce(sum(r.amount_thb), 0) FROM {} GROUP BY l.shop_side",
+                "SELECT side, coalesce(sum(amount_thb), 0) \
+                 FROM (SELECT DISTINCT r.id, l.shop_side AS side, r.amount_thb FROM {}) x \
+                 GROUP BY side",
                 reversed_in_period(filter)
             );
             let rev_rows: Vec<(String, Decimal)> = sqlx::query_as(AssertSqlSafe(rev_sql))

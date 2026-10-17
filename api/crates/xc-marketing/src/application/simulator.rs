@@ -40,6 +40,8 @@ pub struct SimulationResult {
 pub enum SimulationError {
     #[error("versionNotFound")]
     VersionNotFound,
+    #[error("rateUnavailable: no published line")]
+    RateUnavailable,
     #[error("database: {0}")]
     Database(String),
 }
@@ -238,23 +240,21 @@ impl CampaignSimulator {
                 .await
                 .map_err(|e| SimulationError::Database(e.to_string()))?;
 
-                let (buy_rate_str, sell_rate_str, unit_size_val) = match rate_row {
-                    Some(r) => {
-                        let buy_dec: Decimal = r.get("buy_rate");
-                        let sell_dec: Decimal = r.get("sell_rate");
-                        let u_size: Decimal = r.get("unit_size");
-                        (
-                            buy_dec.to_string(),
-                            sell_dec.to_string(),
-                            u_size.to_string(),
-                        )
-                    }
-                    None => (
-                        "1.00000000".to_string(),
-                        "1.00000000".to_string(),
-                        "1".to_string(),
-                    ),
+                let Some(r) = rate_row else {
+                    return Err(SimulationError::RateUnavailable);
                 };
+                let buy_opt: Option<Decimal> = r.get("buy_rate");
+                let Some(buy_dec) = buy_opt else {
+                    return Err(SimulationError::RateUnavailable);
+                };
+                let sell_opt: Option<Decimal> = r.get("sell_rate");
+                let sell_dec = sell_opt.unwrap_or(buy_dec);
+                let u_size: Decimal = r.get("unit_size");
+                let (buy_rate_str, sell_rate_str, unit_size_val) = (
+                    buy_dec.to_string(),
+                    sell_dec.to_string(),
+                    u_size.to_string(),
+                );
 
                 let curr = CurrencyCode::parse(&s.currency)
                     .map_err(|e| SimulationError::Database(format!("invalid currency: {e}")))?;

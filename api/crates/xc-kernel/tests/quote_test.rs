@@ -72,6 +72,7 @@ fn outcome(case: &Case) -> Result<Quote, &'static str> {
     per_one(side, amount, rate, fee).map_err(|e| match e {
         QuoteError::ZeroAmount => "INVALID_NUMBER",
         QuoteError::FeeExceedsPrincipal => "FEE_EXCEEDS_PRINCIPAL",
+        QuoteError::ArithmeticOverflow => "ARITHMETIC_OVERFLOW",
     })
 }
 

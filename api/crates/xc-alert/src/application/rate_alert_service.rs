@@ -69,6 +69,21 @@ fn settings_missing() -> RateAlertError {
     )
 }
 
+async fn branch_in_organisation_in(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    organization_id: Uuid,
+) -> Result<bool, RateAlertError> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM branches WHERE id = $1 AND organization_id = $2)",
+    )
+    .bind(branch.as_str())
+    .bind(organization_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| storage(AppError::Database(e)))
+}
+
 pub struct RateAlertService {
     repository: Arc<dyn RateAlertRepository>,
     register: Arc<dyn CurrencyRegister>,
@@ -254,6 +269,16 @@ impl RateAlertService {
                 reason: None,
                 message: format!("currency {} not registered", input.currency),
             })?;
+        let not_publishing = || RateAlertError::ValidationFailed {
+            reason: None,
+            message: format!(
+                "branch {} does not publish {} {:?}",
+                input.branch, input.currency, shop_side
+            ),
+        };
+        if !branch_in_organisation_in(tx, &input.branch, organization_id).await? {
+            return Err(not_publishing());
+        }
         let current = self
             .observe_current_in(
                 tx,
@@ -265,13 +290,7 @@ impl RateAlertService {
                 settings.observe_policy,
             )
             .await?
-            .ok_or_else(|| RateAlertError::ValidationFailed {
-                reason: None,
-                message: format!(
-                    "branch {} does not publish {} {:?}",
-                    input.branch, input.currency, shop_side
-                ),
-            })?;
+            .ok_or_else(not_publishing)?;
 
         let mut alert = RateAlert {
             id: RateAlertId::new(Uuid::new_v4()),

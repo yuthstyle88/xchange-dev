@@ -150,7 +150,7 @@ class QuoteSummary extends StatelessWidget {
           ),
           _Row(
             l10n.text('rate'),
-            '1 ${quote.currency} = ${quote.rate.toStringAsFixed(4)} THB',
+            '1 ${quote.currency} = ${_formatRate(quote.rate)} THB',
           ),
           _Row(l10n.text('youReceive'), receive),
         ],
@@ -293,4 +293,12 @@ class QueueNumber extends StatelessWidget {
       letterSpacing: 2,
     ),
   );
+}
+
+String _formatRate(double rate) {
+  final s = rate.toString();
+  final dot = s.indexOf('.');
+  if (dot < 0) return '$s.0000';
+  final decimals = s.length - dot - 1;
+  return decimals < 4 ? s.padRight(dot + 5, '0') : s;
 }

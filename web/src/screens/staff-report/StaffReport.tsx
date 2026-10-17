@@ -147,17 +147,21 @@ export function StaffReport(): JSX.Element {
   const api = new ApiClient();
   const [state, setState] = createSignal<State>({ kind: 'loading' });
   const [day, setDay] = createSignal('');
+  let latestRead = 0;
 
   async function read(chosen?: string): Promise<void> {
+    const seq = ++latestRead;
     setState({ kind: 'loading' });
     const filter: StaffDailyReportFilter = chosen ? { day: chosen } : {};
     try {
       const answer = await api.view<StaffDailyReportData, StaffDailyReportFilter>(VIEW, { filter });
+      if (seq !== latestRead) return;
       if (answer.data) {
         setDay(answer.data.day);
         setState({ kind: 'ready', report: answer.data });
       }
     } catch (e) {
+      if (seq !== latestRead) return;
       const message =
         e instanceof ApiError && e.code === 'roleNotAllowed'
           ? t('roleNotAllowed')
@@ -181,7 +185,7 @@ export function StaffReport(): JSX.Element {
             onChange={(e) => {
               const v = e.currentTarget.value;
               setDay(v);
-              if (v) void read(v);
+              void read(v);
             }}
           />
         </label>

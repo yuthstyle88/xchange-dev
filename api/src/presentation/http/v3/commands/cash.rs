@@ -28,7 +28,7 @@ use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
 use xc_cash::domain::transfer::cash_transfer::TransferError;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, Money, NumberError};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -313,8 +313,15 @@ impl CommandAction for TransferPolicySave {
         let user_uuid = Uuid::parse_str(&who.user_id).map_err(|_| server_error())?;
 
         for (curr, amount_str) in &input.limits {
-            let code = CurrencyCode::parse(curr.trim())
+            let code = CurrencyCode::parse(curr)
                 .map_err(|_| validation_failed("currency", "unknown currency"))?;
+
+            Money::parse(amount_str).map_err(|e| match e {
+                NumberError::TooManyDecimals => {
+                    validation_failed("limits", CashError::TooManyDecimals.to_string())
+                }
+                NumberError::Invalid => validation_failed("limits", e.to_string()),
+            })?;
 
             let minor_unit: Option<i16> =
                 sqlx::query_scalar("SELECT minor_unit FROM currencies WHERE code = $1")
@@ -328,7 +335,7 @@ impl CommandAction for TransferPolicySave {
                 None => return Err(validation_failed("currency", "unknown currency")),
             };
 
-            let dec = Decimal::from_str(amount_str.trim())
+            let dec = Decimal::from_str(amount_str)
                 .map_err(|e| validation_failed("limits", e.to_string()))?;
 
             if dec < Decimal::ZERO {
@@ -336,7 +343,10 @@ impl CommandAction for TransferPolicySave {
             }
 
             if dec.scale() > (minor as u32) {
-                return Err(from_cash_error(CashError::TooManyDecimals.into()));
+                return Err(validation_failed(
+                    "limits",
+                    CashError::TooManyDecimals.to_string(),
+                ));
             }
         }
 
@@ -359,6 +369,8 @@ impl CommandAction for TransferPolicySave {
         Ok(CashTransferPolicyData {
             version,
             limits: input.limits,
+            valid: true,
+            invalid_entries: Vec::new(),
             set_by: who.user_id.clone(),
             created_at: created_at.to_rfc3339(),
         })

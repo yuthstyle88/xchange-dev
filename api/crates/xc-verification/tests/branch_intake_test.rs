@@ -704,7 +704,11 @@ async fn existing_open_case_in_draft_attaches_and_submits() {
 
     assert_eq!(case.id, existing_case_id);
     assert_eq!(case.status, CaseStatus::Submitted);
-    assert_eq!(case.branch_id, None);
+    let expected_branch = match &reviewer.scope {
+        ReviewerScope::Branch { branch_id, .. } => branch_id.clone(),
+        _ => unreachable!(),
+    };
+    assert_eq!(case.branch_id, Some(expected_branch.clone()));
     assert_eq!(document.case_id, existing_case_id);
     assert_eq!(db.cases_count().await, 1);
     assert_eq!(db.documents_count().await, 1);
@@ -716,9 +720,10 @@ async fn existing_open_case_in_draft_attaches_and_submits() {
     .await
     .expect("fetch case");
     assert_eq!(status, "SUBMITTED");
-    assert!(
-        branch_id.is_none(),
-        "verification_cases.branch_id must remain NULL for existing case"
+    assert_eq!(
+        branch_id.as_deref(),
+        Some(expected_branch.as_str()),
+        "verification_cases.branch_id must be the intake branch for existing case"
     );
 
     db.finish().await;
@@ -745,7 +750,11 @@ async fn existing_open_case_in_needs_update_attaches_and_submits() {
 
     assert_eq!(case.id, existing_case_id);
     assert_eq!(case.status, CaseStatus::Submitted);
-    assert_eq!(case.branch_id, None);
+    let expected_branch = match &reviewer.scope {
+        ReviewerScope::Branch { branch_id, .. } => branch_id.clone(),
+        _ => unreachable!(),
+    };
+    assert_eq!(case.branch_id, Some(expected_branch.clone()));
     assert_eq!(document.case_id, existing_case_id);
     assert_eq!(db.cases_count().await, 1);
     assert_eq!(db.documents_count().await, 1);
@@ -757,9 +766,10 @@ async fn existing_open_case_in_needs_update_attaches_and_submits() {
     .await
     .expect("fetch case");
     assert_eq!(status, "SUBMITTED");
-    assert!(
-        branch_id.is_none(),
-        "verification_cases.branch_id must remain NULL for existing case"
+    assert_eq!(
+        branch_id.as_deref(),
+        Some(expected_branch.as_str()),
+        "verification_cases.branch_id must be the intake branch for existing case"
     );
 
     db.finish().await;

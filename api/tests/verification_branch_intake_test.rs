@@ -380,6 +380,7 @@ impl TestEnv {
             .insert_header((header::HOST, HOST))
             .insert_header(("origin", ORIGIN))
             .insert_header(("x-xchange-request", "1"))
+            .insert_header(("x-forwarded-proto", "https"))
             .insert_header((
                 header::CONTENT_TYPE,
                 format!("multipart/form-data; boundary={boundary}"),
@@ -946,5 +947,439 @@ async fn idempotency_replay_answers_200_with_same_case_and_conflict_answers_409(
         .unwrap_or_else(|| a3.json["error"].as_str().unwrap_or(""));
     assert_eq!(code, "idempotencyConflict");
 
+    env.finish().await;
+}
+
+// ── same-origin rule (added: the route skipped `same_origin`, origin.rs:33) ──
+//
+// Every other cookie-session write refuses a cross-site request with 400 `ORIGIN_REJECTED`
+// before it reads or stores anything. These tests pin that for this route. They build their own
+// request (the helper `call_intake` above is left as it is) and count every write the route can
+// make: case rows, document rows, audit rows, and `DocumentStore::put` calls.
+
+const FOREIGN_ORIGIN: &str = "https://evil.example";
+
+/// Wraps the state's real store and counts `put` calls.
+struct CountingStore {
+    inner: Arc<dyn xc_kernel::document_store::DocumentStore>,
+    puts: AtomicU64,
+}
+
+type StoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+impl xc_kernel::document_store::DocumentStore for CountingStore {
+    fn put<'a>(
+        &'a self,
+        doc_ref: &'a str,
+        bytes: &'a [u8],
+    ) -> StoreFuture<'a, Result<String, xc_kernel::document_store::DocumentStoreError>> {
+        self.puts.fetch_add(1, Ordering::SeqCst);
+        self.inner.put(doc_ref, bytes)
+    }
+
+    fn get<'a>(
+        &'a self,
+        doc_ref: &'a str,
+    ) -> StoreFuture<'a, Result<Vec<u8>, xc_kernel::document_store::DocumentStoreError>> {
+        self.inner.get(doc_ref)
+    }
+
+    fn delete<'a>(
+        &'a self,
+        doc_ref: &'a str,
+    ) -> StoreFuture<'a, Result<(), xc_kernel::document_store::DocumentStoreError>> {
+        self.inner.delete(doc_ref)
+    }
+}
+
+/// Calls the route with exactly the origin headers given (none added), a counting store, and a
+/// valid branch reviewer, customer, idempotency key and multipart body otherwise.
+async fn call_with_origin_headers(
+    env: &TestEnv,
+    origin_headers: &[(&str, &str)],
+) -> (HttpAnswer, Arc<CountingStore>) {
+    env.branch(ORG_1, B01).await;
+    let (customer_id, _) = env.customer(ORG_1).await;
+    let user_id = env.user(ORG_1).await;
+    let spec = format!("{user_id}|VERIFICATION_REVIEWER|{B01}|{ORG_1}");
+    let boundary = "bound123";
+    let payload = build_multipart(
+        boundary,
+        Some(&customer_id),
+        Some("PASSPORT"),
+        Some(("file", "passport.png", &png())),
+    );
+
+    let state = AppState::new(Arc::new(common::settings(&[])), env.pool.clone());
+    let store = Arc::new(CountingStore {
+        inner: state.document_store.clone(),
+        puts: AtomicU64::new(0),
+    });
+    let state = state.with_document_store(store.clone());
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderUsers);
+    let app = atest::init_service(
+        App::new()
+            .configure(move |cfg| xchange::bootstrap::configure(cfg, state))
+            .app_data(web::Data::from(reader)),
+    )
+    .await;
+
+    let mut req = atest::TestRequest::post()
+        .uri(ROUTE)
+        .insert_header((header::HOST, HOST))
+        .insert_header((AS, spec.as_str()))
+        .insert_header(("idempotency-key", unique("origin-key").as_str()))
+        .insert_header((
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload);
+    for (name, value) in origin_headers {
+        req = req.insert_header((*name, *value));
+    }
+
+    let resp = atest::call_service(&app, req.to_request()).await;
+    let status = resp.status();
+    let bytes = atest::read_body(resp).await;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (HttpAnswer { status, text, json }, store)
+}
+
+/// 400 with code `ORIGIN_REJECTED`, in either shape the API uses: this file's
+/// `{"error":{"code":..}}` or bookings' `{"error":".."}`.
+fn assert_origin_rejected(answer: &HttpAnswer) {
+    assert_eq!(
+        answer.status,
+        StatusCode::BAD_REQUEST,
+        "a cross-site write must be refused 400, got {} {}",
+        answer.status,
+        answer.text
+    );
+    let code = answer.json["error"]["code"]
+        .as_str()
+        .or_else(|| answer.json["error"].as_str())
+        .unwrap_or("");
+    assert_eq!(code, "ORIGIN_REJECTED", "body: {}", answer.text);
+}
+
+async fn assert_nothing_written(env: &TestEnv, store: &CountingStore) {
+    assert_eq!(
+        env.count("SELECT count(*) FROM verification_cases").await,
+        0,
+        "no case may be opened"
+    );
+    assert_eq!(
+        env.count("SELECT count(*) FROM verification_documents")
+            .await,
+        0,
+        "no document row may be written"
+    );
+    assert_eq!(
+        env.count("SELECT count(*) FROM audit_events").await,
+        0,
+        "no audit row may be written"
+    );
+    assert_eq!(
+        store.puts.load(Ordering::SeqCst),
+        0,
+        "no document may be stored"
+    );
+}
+
+#[actix_web::test]
+async fn request_without_marker_header_from_foreign_origin_is_refused_and_writes_nothing() {
+    let env = TestEnv::start().await;
+    let (answer, store) = call_with_origin_headers(
+        &env,
+        &[("origin", FOREIGN_ORIGIN), ("x-forwarded-proto", "https")],
+    )
+    .await;
+    assert_origin_rejected(&answer);
+    assert_nothing_written(&env, &store).await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn request_with_marker_header_from_foreign_origin_is_refused_and_writes_nothing() {
+    let env = TestEnv::start().await;
+    let (answer, store) = call_with_origin_headers(
+        &env,
+        &[
+            ("origin", FOREIGN_ORIGIN),
+            ("x-xchange-request", "1"),
+            ("x-forwarded-proto", "https"),
+        ],
+    )
+    .await;
+    assert_origin_rejected(&answer);
+    assert_nothing_written(&env, &store).await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn request_with_wrong_marker_value_from_own_origin_is_refused_and_writes_nothing() {
+    let env = TestEnv::start().await;
+    let (answer, store) = call_with_origin_headers(
+        &env,
+        &[
+            ("origin", ORIGIN),
+            ("x-xchange-request", "true"),
+            ("x-forwarded-proto", "https"),
+        ],
+    )
+    .await;
+    assert_origin_rejected(&answer);
+    assert_nothing_written(&env, &store).await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn same_origin_request_with_marker_header_still_opens_a_case() {
+    let env = TestEnv::start().await;
+    let (answer, store) = call_with_origin_headers(
+        &env,
+        &[
+            ("origin", ORIGIN),
+            ("x-xchange-request", "1"),
+            ("x-forwarded-proto", "https"),
+        ],
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::OK, "body: {}", answer.text);
+    let parsed: BranchCaseOpenAnswer =
+        serde_json::from_value(answer.json.clone()).expect("parse BranchCaseOpenAnswer");
+    assert_eq!(parsed.case.status, "SUBMITTED");
+    assert_eq!(
+        env.count("SELECT count(*) FROM verification_cases").await,
+        1
+    );
+    assert_eq!(
+        env.count("SELECT count(*) FROM verification_documents")
+            .await,
+        1
+    );
+    assert_eq!(env.count("SELECT count(*) FROM audit_events").await, 1);
+    assert_eq!(store.puts.load(Ordering::SeqCst), 1);
+    env.finish().await;
+}
+
+// ── session-branch scope resolution (#2137, §9 rows 1–7) ─────────────────────
+
+const B02: &str = "B02";
+const B03: &str = "B03";
+
+struct FixedActorReader(AccessActor);
+
+impl SessionReader for FixedActorReader {
+    fn sessions<'a>(
+        &'a self,
+        _req: &'a HttpRequest,
+    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+        Box::pin(async move {
+            Sessions {
+                owner: None,
+                staff: None,
+            }
+        })
+    }
+
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        let user = Some(self.0.clone());
+        Box::pin(async move {
+            Callers {
+                owner: None,
+                staff: None,
+                user: user.clone(),
+                staff_user: user,
+            }
+        })
+    }
+}
+
+fn active_reviewer_role(branch: Option<&str>) -> ScopedRole {
+    let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    ScopedRole::new(
+        Role::VerificationReviewer,
+        branch.map(BranchId::new),
+        from,
+        None,
+    )
+}
+
+async fn call_intake_as_actor(
+    env: &TestEnv,
+    roles: Vec<ScopedRole>,
+    session_branch: Option<&str>,
+) -> HttpAnswer {
+    env.branch(ORG_1, B01).await;
+    env.branch(ORG_1, B02).await;
+    env.branch(ORG_1, B03).await;
+    let (customer_id, _) = env.customer(ORG_1).await;
+    let user_id = env.user(ORG_1).await;
+    let actor = AccessActor::new(&user_id.to_string(), ORG_1, roles, None)
+        .with_branch(session_branch.map(BranchId::new));
+
+    let boundary = "bound123";
+    let payload = build_multipart(
+        boundary,
+        Some(&customer_id),
+        Some("PASSPORT"),
+        Some(("file", "passport.png", &png())),
+    );
+
+    let state = AppState::new(Arc::new(common::settings(&[])), env.pool.clone());
+    let reader: Arc<dyn SessionReader> = Arc::new(FixedActorReader(actor));
+    let app = atest::init_service(
+        App::new()
+            .configure(move |cfg| xchange::bootstrap::configure(cfg, state))
+            .app_data(web::Data::from(reader)),
+    )
+    .await;
+
+    let req = atest::TestRequest::post()
+        .uri(ROUTE)
+        .insert_header((header::HOST, HOST))
+        .insert_header(("origin", ORIGIN))
+        .insert_header(("x-xchange-request", "1"))
+        .insert_header(("x-forwarded-proto", "https"))
+        .insert_header(("idempotency-key", unique("s2137-key").as_str()))
+        .insert_header((
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload);
+
+    let resp = atest::call_service(&app, req.to_request()).await;
+    let status = resp.status();
+    let bytes = atest::read_body(resp).await;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    HttpAnswer { status, text, json }
+}
+
+async fn assert_opened_under_branch(env: &TestEnv, answer: &HttpAnswer, expected_branch: &str) {
+    assert_eq!(answer.status, StatusCode::OK, "body: {}", answer.text);
+    let parsed: BranchCaseOpenAnswer =
+        serde_json::from_value(answer.json.clone()).expect("parse BranchCaseOpenAnswer");
+    assert_eq!(parsed.case.branch_id.as_deref(), Some(expected_branch));
+    let (db_branch_id,): (Option<String>,) =
+        sqlx::query_as("SELECT branch_id FROM verification_cases WHERE id = $1")
+            .bind(parsed.case.id)
+            .fetch_one(&env.pool)
+            .await
+            .expect("fetch verification_cases.branch_id");
+    assert_eq!(db_branch_id.as_deref(), Some(expected_branch));
+}
+
+async fn assert_refused_403_no_case(env: &TestEnv, answer: &HttpAnswer, expected_code: &str) {
+    assert_eq!(
+        answer.status,
+        StatusCode::FORBIDDEN,
+        "expected 403 {expected_code}, got {} {}",
+        answer.status,
+        answer.text
+    );
+    let code = answer.json["error"]["code"]
+        .as_str()
+        .unwrap_or_else(|| answer.json["error"].as_str().unwrap_or(""));
+    assert_eq!(code, expected_code, "body: {}", answer.text);
+    assert_eq!(
+        env.count("SELECT count(*) FROM verification_cases").await,
+        0,
+        "no case row may be written on 403 refusal"
+    );
+}
+
+#[actix_web::test]
+async fn row_1_two_branches_signed_in_at_b2_files_case_under_b2() {
+    let env = TestEnv::start().await;
+    let answer = call_intake_as_actor(
+        &env,
+        vec![
+            active_reviewer_role(Some(B01)),
+            active_reviewer_role(Some(B02)),
+        ],
+        Some(B02),
+    )
+    .await;
+    assert_opened_under_branch(&env, &answer, B02).await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn row_2_two_branches_signed_in_at_b1_files_case_under_b1() {
+    let env = TestEnv::start().await;
+    let answer = call_intake_as_actor(
+        &env,
+        vec![
+            active_reviewer_role(Some(B01)),
+            active_reviewer_role(Some(B02)),
+        ],
+        Some(B01),
+    )
+    .await;
+    assert_opened_under_branch(&env, &answer, B01).await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn row_3_two_branches_with_no_session_branch_answers_403_out_of_scope() {
+    let env = TestEnv::start().await;
+    let answer = call_intake_as_actor(
+        &env,
+        vec![
+            active_reviewer_role(Some(B01)),
+            active_reviewer_role(Some(B02)),
+        ],
+        None,
+    )
+    .await;
+    assert_refused_403_no_case(&env, &answer, "outOfScope").await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn row_4_single_branch_with_no_session_branch_files_case_under_b1() {
+    let env = TestEnv::start().await;
+    let answer = call_intake_as_actor(&env, vec![active_reviewer_role(Some(B01))], None).await;
+    assert_opened_under_branch(&env, &answer, B01).await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn row_5_org_wide_and_b1_with_b1_first_answers_403_out_of_scope() {
+    let env = TestEnv::start().await;
+    let answer = call_intake_as_actor(
+        &env,
+        vec![active_reviewer_role(Some(B01)), active_reviewer_role(None)],
+        Some(B01),
+    )
+    .await;
+    assert_refused_403_no_case(&env, &answer, "outOfScope").await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn row_6_expired_role_row_at_b1_answers_403_role_not_allowed_here() {
+    let env = TestEnv::start().await;
+    let from = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+    let expired_to = Utc.with_ymd_and_hms(2025, 6, 1, 0, 0, 0).unwrap();
+    let expired_role = ScopedRole::new(
+        Role::VerificationReviewer,
+        Some(BranchId::new(B01)),
+        from,
+        Some(expired_to),
+    );
+    let answer = call_intake_as_actor(&env, vec![expired_role], Some(B01)).await;
+    assert_refused_403_no_case(&env, &answer, "roleNotAllowedHere").await;
+    env.finish().await;
+}
+
+#[actix_web::test]
+async fn row_7_b1_only_with_session_branch_b3_answers_403_out_of_scope() {
+    let env = TestEnv::start().await;
+    let answer = call_intake_as_actor(&env, vec![active_reviewer_role(Some(B01))], Some(B03)).await;
+    assert_refused_403_no_case(&env, &answer, "outOfScope").await;
     env.finish().await;
 }

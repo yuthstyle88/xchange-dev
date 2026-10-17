@@ -14,7 +14,7 @@ use std::sync::Arc;
 use serde_json::{Map, Value};
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 use xc_booking::application::lifecycle::BookingLifecycle;
-use xc_exchange::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_shift::application::custody::service::CustodyService;

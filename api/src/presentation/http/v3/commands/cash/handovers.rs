@@ -4,14 +4,16 @@
 
 use actix_web::http::Method;
 use chrono::Utc;
+use pos_error::AppError;
 use sqlx::PgPool;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_cash::application::handover::handover_service::INVALID_RECEIVER;
 use xc_cash::application::handover::{HandoverService, StartHandover};
 use xc_cash::domain::handover::Handover;
 use xc_kernel::ids::BranchId;
 
-use super::{caller_in, count_lines, from_cash_error};
+use super::{caller_in, count_lines, from_cash_error, validation_failed};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::cash::{CashRecordInput, CashRecordOutput, HandoverStartInput};
 use crate::presentation::http::v3::command::CommandAction;
@@ -71,7 +73,12 @@ impl CommandAction for HandoverStart {
                 now,
             )
             .await
-            .map_err(from_cash_error)?;
+            .map_err(|e| match e {
+                AppError::Validation(ref msg) if msg == INVALID_RECEIVER => {
+                    validation_failed("receiverId", msg.clone())
+                }
+                other => from_cash_error(other),
+            })?;
         Ok(answer(h))
     }
 }

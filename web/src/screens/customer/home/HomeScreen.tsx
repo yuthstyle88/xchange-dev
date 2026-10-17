@@ -11,6 +11,9 @@ import {
   type JSX,
 } from 'solid-js';
 import { fill, lang, screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/public/public_branches';
@@ -46,6 +49,7 @@ export function branchFromSearch(search?: string): string | null {
 export function HomeScreen(props: HomeScreenProps): JSX.Element {
   const t = screenT('customer.home', { th, en, zh });
   const doFetch = props.fetch ?? ((url, init) => fetch(url, init));
+  const api = new ApiClient(doFetch);
 
   const [org, setOrg] = createSignal<string | null>(props.org ?? null);
   const [orgState, setOrgState] = createSignal<'loading' | 'ready' | 'error'>(
@@ -133,6 +137,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         const fromSearch = branchFromSearch(props.search);
         const searchMatch = fromSearch ? branches.find((b) => b.code === fromSearch) : undefined;
         setSelectedBranchCode(searchMatch ? searchMatch.code : branches[0]!.code);
+        clearPreview();
       }
     }
   });
@@ -231,6 +236,32 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
   };
 
+  const savePlan = keyedWrite<Record<string, unknown>, PlannerDraftDto>(
+    api,
+    'POST',
+    '/api/app/planner-drafts',
+  );
+
+  let calcSeq = 0;
+
+  const clearPreview = () => {
+    calcSeq += 1;
+    setPreviewLoading(false);
+    setPreviewResult(null);
+    setPreviewError(null);
+    setSavedPlanId(null);
+    setSavePlanError(null);
+  };
+
+  createEffect(() => {
+    const list = availableCurrencies();
+    const curr = calcCurrency();
+    if (list.length > 0 && !list.includes(curr)) {
+      setCalcCurrency(list[0]!);
+      clearPreview();
+    }
+  });
+
   const handleCalculate = async () => {
     const amtStr = amount().trim();
     const isNum = /^\d+(\.\d+)?$/.test(amtStr) && parseFloat(amtStr) > 0;
@@ -247,6 +278,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
       return;
     }
 
+    const seq = ++calcSeq;
     setPreviewLoading(true);
     setPreviewError(null);
     setPreviewResult(null);
@@ -259,32 +291,30 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     };
 
     try {
-      const res = await doFetch('/api/v3/compute/planner_preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 200) {
-        const json = (await res.json()) as PlannerPreviewAnswer;
-        setPreviewResult(json);
+      const json = await api.act<Record<string, unknown>, PlannerPreviewAnswer>(
+        'compute',
+        'planner_preview',
+        body,
+      );
+      if (seq !== calcSeq) return;
+      setPreviewResult(json);
+    } catch (err) {
+      if (seq !== calcSeq) return;
+      if (err instanceof ApiError && !isServerFailure(err) && err.code === 'rateUnavailable') {
+        setPreviewError(t('rateUnavailable'));
+      } else if (
+        err instanceof ApiError &&
+        !isServerFailure(err) &&
+        err.code === 'validationFailed'
+      ) {
+        setPreviewError(t('validationError'));
       } else {
-        const errJson = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
-        };
-        const code = errJson?.error?.code;
-        if (code === 'rateUnavailable') {
-          setPreviewError(t('rateUnavailable'));
-        } else if (code === 'validationFailed') {
-          setPreviewError(t('validationError'));
-        } else {
-          setPreviewError(t('rateUnavailable'));
-        }
+        setPreviewError(wordedError(err));
       }
-    } catch {
-      setPreviewError(t('networkError'));
     } finally {
-      setPreviewLoading(false);
+      if (seq === calcSeq) {
+        setPreviewLoading(false);
+      }
     }
   };
 
@@ -297,14 +327,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
 
     const branch = selectedBranchCode();
+    const seq = calcSeq;
     setSavingPlan(true);
     setSavedPlanId(null);
     setSavePlanError(null);
-
-    const idempotencyKey =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     const body: Record<string, unknown> = {
       branch: branch || undefined,
@@ -314,23 +340,12 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     };
 
     try {
-      const res = await doFetch('/api/app/planner-drafts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 200 || res.status === 201) {
-        const draft = (await res.json()) as PlannerDraftDto;
-        setSavedPlanId(draft.id);
-      } else {
-        setSavePlanError(t('planSaveFailed'));
-      }
-    } catch {
-      setSavePlanError(t('planSaveFailed'));
+      const draft = await savePlan.send(body);
+      if (seq !== calcSeq) return;
+      setSavedPlanId(draft.id);
+    } catch (err) {
+      if (seq !== calcSeq) return;
+      setSavePlanError(wordedError(err));
     } finally {
       setSavingPlan(false);
     }
@@ -384,7 +399,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="branch-select"
                 class="xc-home-select"
                 value={selectedBranchCode()}
-                onChange={(e) => setSelectedBranchCode(e.currentTarget.value)}
+                onChange={(e) => {
+                  setSelectedBranchCode(e.currentTarget.value);
+                  clearPreview();
+                }}
               >
                 <For each={branches()}>
                   {(b) => <option value={b.code}>{b.name} ({b.code})</option>}
@@ -434,7 +452,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               <button
                 type="button"
                 class={`xc-home-toggle-btn ${customerSide() === 'CUSTOMER_BUY' ? 'active' : ''}`}
-                onClick={() => setCustomerSide('CUSTOMER_BUY')}
+                onClick={() => {
+                  setCustomerSide('CUSTOMER_BUY');
+                  clearPreview();
+                }}
                 aria-pressed={customerSide() === 'CUSTOMER_BUY'}
               >
                 {t('customerBuy')}
@@ -442,7 +463,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               <button
                 type="button"
                 class={`xc-home-toggle-btn ${customerSide() === 'CUSTOMER_SELL' ? 'active' : ''}`}
-                onClick={() => setCustomerSide('CUSTOMER_SELL')}
+                onClick={() => {
+                  setCustomerSide('CUSTOMER_SELL');
+                  clearPreview();
+                }}
                 aria-pressed={customerSide() === 'CUSTOMER_SELL'}
               >
                 {t('customerSell')}
@@ -457,7 +481,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="currency-select"
                 class="xc-home-select"
                 value={calcCurrency()}
-                onChange={(e) => setCalcCurrency(e.currentTarget.value)}
+                onChange={(e) => {
+                  setCalcCurrency(e.currentTarget.value);
+                  clearPreview();
+                }}
               >
                 <For each={availableCurrencies()}>
                   {(c) => <option value={c}>{c}</option>}
@@ -471,7 +498,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="amount-type-select"
                 class="xc-home-select"
                 value={amountType()}
-                onChange={(e) => setAmountType(e.currentTarget.value as 'quantity' | 'budgetThb')}
+                onChange={(e) => {
+                  setAmountType(e.currentTarget.value as 'quantity' | 'budgetThb');
+                  clearPreview();
+                }}
               >
                 <option value="quantity">{t('quantity')}</option>
                 <option value="budgetThb">{t('budgetThb')}</option>
@@ -488,7 +518,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 inputmode="decimal"
                 class="xc-home-input"
                 value={amount()}
-                onInput={(e) => setAmount(e.currentTarget.value)}
+                onInput={(e) => {
+                  setAmount(e.currentTarget.value);
+                  clearPreview();
+                }}
               />
               <span class="xc-home-input-suffix">
                 {amountType() === 'quantity' ? calcCurrency() : 'THB'}
