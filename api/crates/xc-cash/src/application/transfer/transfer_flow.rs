@@ -1,6 +1,6 @@
 //! `TransferFlow`: orchestrates cash transfers across the 5 states (D:§4.5, §9.1 CA-5).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -446,23 +446,48 @@ impl TransferFlow {
             return Ok(t);
         }
 
+        let mut seen_denominations: HashSet<i64> = HashSet::with_capacity(cmd.lines.len());
         let mut totals: HashMap<CurrencyCode, i64> = HashMap::new();
         for line in &cmd.lines {
-            let face_dec: Option<Decimal> =
-                sqlx::query_scalar("SELECT face_value FROM denominations WHERE id = $1")
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in transfer lines: {}",
+                    line.denomination_id
+                )));
+            }
+
+            let row: Option<(Decimal, String)> =
+                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
                     .bind(line.denomination_id)
                     .fetch_optional(&mut **tx)
                     .await?;
-            if let Some(face_dec) = face_dec {
-                let face_value = Money::parse(&face_dec.to_string()).map_err(|e| {
-                    AppError::Internal(format!(
-                        "invalid face_value {face_dec} for denomination {}: {e}",
-                        line.denomination_id
-                    ))
-                })?;
-                add_line_minor(&mut totals, line.currency, face_value, line.qty)
-                    .map_err(from_transfer_error)?;
+
+            let (face_dec, denom_currency) = match row {
+                Some(r) => r,
+                None => {
+                    return Err(AppError::NotFound {
+                        entity: "denomination",
+                        id: line.denomination_id.to_string(),
+                    });
+                }
+            };
+
+            let denom_currency = denom_currency.trim();
+            let line_currency = line.currency.as_str().trim();
+            if !denom_currency.eq_ignore_ascii_case(line_currency) {
+                return Err(AppError::Validation(format!(
+                    "line currency '{line_currency}' does not match denomination currency '{denom_currency}'"
+                )));
             }
+
+            let face_value = Money::parse(&face_dec.to_string()).map_err(|e| {
+                AppError::Internal(format!(
+                    "invalid face_value {face_dec} for denomination {}: {e}",
+                    line.denomination_id
+                ))
+            })?;
+            add_line_minor(&mut totals, line.currency, face_value, line.qty)
+                .map_err(from_transfer_error)?;
         }
 
         self.repo.insert(tx, &cmd, who, now).await
