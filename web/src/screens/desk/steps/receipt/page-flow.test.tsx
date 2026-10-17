@@ -101,8 +101,9 @@ function fakeServer() {
       if (method === "POST" && path === "/api/quotes") return json(200, QUOTE);
       if (method === "POST" && (path === "/api/rpc" || path === "/api/staff/rpc")) {
         if (body?.action === "reserveCustomer") return json(200, { customerId: "c-1", existing: false });
-        if (body?.action === "opsBeginTransaction") return json(200, { staffDraftId: "d-1" });
       }
+      // #3008: the staff draft is v3 draftBegin, not the retired opsBeginTransaction RPC.
+      if (method === "POST" && path === "/api/tx-drafts") return json(200, { id: "d-1" });
       if (method === "POST" && (path === "/api/upload" || path === "/api/staff/upload")) return json(200, { uploadKey: `k-${calls.length}` });
       if (method === "POST" && path === "/api/transactions") return json(200, tx("DRAFT"));
       if (method === "POST" && path === "/api/transactions/tx-1/confirm") return json(200, tx("CONFIRMED"));

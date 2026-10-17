@@ -221,6 +221,44 @@ async fn both_desk_pages_load_the_desk_script_last() {
 }
 
 #[actix_web::test]
+async fn the_staff_draft_hook_begins_the_draft_through_draft_begin() {
+    // #3008: CA-10 retires `opsBeginTransaction`, so the /staff/desk hook begins its draft through v3 `draftBegin`
+    // (`POST /api/tx-drafts`, `http/v3/commands/branch_day.rs:404-478`): the branch the page was given
+    // (`window.XC_BRANCH`), the side, currency and amount, and an Idempotency-Key. The answer's `id` is the draft id.
+    let app = app!(&fixtures().join("web"));
+    let body = get!(&app, "/staff/desk", "staff:FRONT:XC-B01").text();
+    let at = body
+        .find("staffDraftId")
+        .expect("the /staff/desk draft hook is inserted");
+    let start = body[..at]
+        .rfind("<script>")
+        .expect("the hook is a <script> element");
+    let end = at
+        + body[at..]
+            .find("</script>")
+            .expect("the hook's script ends");
+    let hook = &body[start..end];
+    assert!(
+        !hook.contains("opsBeginTransaction"),
+        "the hook no longer calls opsBeginTransaction: {hook}"
+    );
+    for needle in [
+        "/api/tx-drafts",
+        "idempotency-key",
+        "XC_BRANCH",
+        "side:",
+        "currency:",
+        "amount:",
+        "staffDraftId",
+    ] {
+        assert!(
+            hook.contains(needle),
+            "the hook's draftBegin call carries {needle:?}: {hook}"
+        );
+    }
+}
+
+#[actix_web::test]
 async fn no_other_page_loads_the_desk_script() {
     let app = app!(&fixtures().join("web"));
     for (path, who) in [
