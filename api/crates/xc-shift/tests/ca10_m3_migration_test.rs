@@ -1,4 +1,4 @@
-//! CA-10 (#626): migration M3 (`api/migrations/20261214100000_retire_custody_requests.sql`), which drops the request
+//! CA-10 (#626): migration M3 (`api/migrations/20261218100000_retire_custody_requests.sql`), which drops the request
 //! model and finishes M2's end state. Design `docs/design/blueprint/cash-shift-transfer.md` (#582): §6 (what is
 //! retired), §8 M2 "CA-10's part of M2's end state" and §8 M3, §9.1 row CA-10. File name: the lane controller's
 //! ruling of 2026-10-13 on #626 (the design's `20261030110000` sorts before M2).
@@ -29,8 +29,8 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 
 /// M3 (§8, file name as ruled on #626).
-const M3_FILE: &str = "20261214100000_retire_custody_requests.sql";
-const M3: i64 = 20261214100000;
+const M3_FILE: &str = "20261218100000_retire_custody_requests.sql";
+const M3: i64 = 20261218100000;
 
 /// M3's precheck (§8), word for word.
 const PRECHECK: &str =
@@ -389,7 +389,7 @@ async fn m3_is_refused_while_a_teller_holds_two_open_shifts_and_changes_nothing(
         "a refused M3 keeps the v2 index"
     );
     assert_eq!(
-        db.count("SELECT count(*) FROM _sqlx_migrations WHERE version = 20261214100000")
+        db.count("SELECT count(*) FROM _sqlx_migrations WHERE version = 20261218100000")
             .await,
         0,
         "a refused M3 is not recorded as applied"
