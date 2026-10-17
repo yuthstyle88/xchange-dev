@@ -213,7 +213,9 @@ jobs:
       - name: Self-test pg-sweep-stale
         env:
           TMPDIR: ${{ runner.temp }}
-        run: bash .github/scripts/pg-sweep-stale.test.sh
+        run: |
+          bash .github/scripts/pg-sweep-stale.test.sh
+          bash .github/scripts/pg-sweep-stale-foreign.test.sh
 
       - name: Start postgres (per run)
         if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
