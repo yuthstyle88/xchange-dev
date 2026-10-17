@@ -84,7 +84,7 @@ async fn a_reference_rate_at_the_units_limit_is_stored_per_unit() {
         .await
         .expect("10 places per 1 is 8 places per 100: the save is accepted");
     let reference: Option<Decimal> =
-        sqlx::query_scalar("SELECT reference_rate FROM transactions WHERE document_ref = $1")
+        sqlx::query_scalar("SELECT l.reference_rate FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id WHERE t.document_ref = $1")
             .bind(&saved.document_ref)
             .fetch_one(&shop.pool)
             .await

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::application::executive::channel::Channel;
-use crate::presentation::dto::v3::common::Period;
+use crate::presentation::dto::v3::common::{OpenShiftDto, Period};
 use crate::presentation::dto::v3::transaction_row::TransactionRow;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::ViewFilter;
@@ -97,7 +97,7 @@ pub struct AdminOverviewTotals {
 pub struct AdminOverviewStatus {
     pub shift_open: bool,
     pub pending_count: u32,
-    pub opened_by: Option<String>,
+    pub open_shifts: Vec<OpenShiftDto>,
 }
 
 /// Complete response data for `admin_overview`.

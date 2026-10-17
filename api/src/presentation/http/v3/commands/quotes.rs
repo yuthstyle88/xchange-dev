@@ -1,7 +1,6 @@
 //! Quotes command (TX-3, §4.2, §6).
 
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
@@ -14,7 +13,9 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
+use xc_kernel::money::{
+    CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, Money, Side, UnitSize,
+};
 
 use xc_rate::domain::currency::denomination_groups::GroupCode;
 
@@ -137,25 +138,56 @@ impl CommandAction for QuotesCommand {
             }
         };
 
-        let qty_dec = Decimal::from_str(&raw_line.quantity).map_err(|_| {
+        let (unit_size_dec, minor_unit_i16): (Decimal, i16) =
+            sqlx::query_as("SELECT unit_size, minor_unit FROM currencies WHERE code = $1")
+                .bind(curr.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    V3Error::new(
+                        "serverError",
+                        None,
+                        e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                })?
+                .ok_or_else(|| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("currency"),
+                        "unknown currency",
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?;
+
+        let unit_size = UnitSize::from_decimal(unit_size_dec).map_err(|e| {
             V3Error::new(
-                "validationFailed",
-                Some("quantity"),
-                "invalid quantity",
-                StatusCode::BAD_REQUEST,
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
             )
         })?;
 
-        if qty_dec <= Decimal::ZERO {
-            return Err(V3Error::new(
+        let minor_unit = MinorUnit::new(minor_unit_i16 as u8).map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+        let units = CurrencyUnits::new(curr, unit_size, minor_unit);
+
+        let quantity = ForeignAmount::parse(&raw_line.quantity, &units).map_err(|_| {
+            V3Error::new(
                 "validationFailed",
                 Some("quantity"),
-                "quantity must be greater than zero",
+                "ข้อมูลไม่ถูกต้อง",
                 StatusCode::BAD_REQUEST,
-            ));
-        }
-
-        let quantity = ForeignAmount::from_decimal(qty_dec);
+            )
+        })?;
 
         let fee_thb = match raw_line.fee_thb.as_deref() {
             Some(s) if !s.trim().is_empty() => {

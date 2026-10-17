@@ -15,10 +15,13 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_app::domain::planner::planner_draft::{DraftAmount, DraftPlan, PlannerDraft};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, CustomerSide, ForeignAmount, Money};
+use xc_kernel::money::{Bound, CurrencyCode, CustomerSide, ForeignAmount, Money, Sign};
 
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
 use crate::presentation::http::v3::view::ViewFilter;
+
+const QUANTITY: Bound = Bound::numeric(20, 4, Sign::Positive).at_most(Money::MAX_INPUT_UNITS);
 
 /// The one input of a plan: a foreign amount or a THB budget (`DraftAmount`), as decimal strings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -42,9 +45,9 @@ impl PlannerAmount {
             _ => Err(invalid(field)),
         };
         match self {
-            PlannerAmount::Quantity(text) => Ok(DraftAmount::Quantity(ForeignAmount::from_decimal(
-                positive(text, "quantity")?,
-            ))),
+            PlannerAmount::Quantity(text) => input::decimal("quantity", text, QUANTITY)
+                .map(ForeignAmount::from_decimal)
+                .map(DraftAmount::Quantity),
             PlannerAmount::BudgetThb(text) => {
                 positive(text, "budgetThb")?;
                 Money::parse(text.trim())

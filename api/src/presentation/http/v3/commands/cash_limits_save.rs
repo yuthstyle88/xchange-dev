@@ -4,10 +4,9 @@
 //! view's shape. `null` stores NULL: no limit, so every non-zero difference goes to FINANCE.
 
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use actix_web::http::{Method, StatusCode};
+use actix_web::http::Method;
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -15,41 +14,25 @@ use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{Bound, Sign};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::cash_limits::{CashLimitsData, CashLimitsSaveInput};
+use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
-const FIELD: &str = "countDifferenceLimitThb";
-
 pub struct CashLimitsSaveCommand;
-
-const MAX_INTEGER: i64 = 1_000_000_000_000_000_000;
 
 /// A limit in baht: a decimal string, zero or more, with at most 18 integer digits and at most
 /// two decimal places (the column is `numeric(20,2)` with `CHECK (>= 0)`).
 fn parse_limit(text: &str) -> Result<Decimal, V3Error> {
-    let refuse = |message: &str| {
-        V3Error::new(
-            "validationFailed",
-            Some(FIELD),
-            message.to_owned(),
-            StatusCode::BAD_REQUEST,
-        )
-    };
-    let limit = Decimal::from_str(text).map_err(|_| refuse("not an amount"))?;
-    if limit.is_sign_negative() && !limit.is_zero() {
-        return Err(refuse("must be zero or more"));
-    }
-    if limit.scale() > 2 {
-        return Err(refuse("at most two decimal places"));
-    }
-    if limit >= Decimal::from(MAX_INTEGER) {
-        return Err(refuse("at most 18 integer digits"));
-    }
-    Ok(limit)
+    v3::input::decimal(
+        "countDifferenceLimitThb",
+        text,
+        Bound::numeric(20, 2, Sign::NonNegative),
+    )
 }
 
 impl CommandAction for CashLimitsSaveCommand {

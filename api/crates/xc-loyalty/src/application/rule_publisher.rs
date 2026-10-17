@@ -86,6 +86,16 @@ impl RuleVersion {
             .ok_or_else(|| {
                 LoyaltyRuleError::Invalid("missing or invalid rule version id".to_owned())
             })?;
+        if obj
+            .get("version")
+            .and_then(Value::as_i64)
+            .and_then(|n| i32::try_from(n).ok())
+            .is_none()
+        {
+            return Err(LoyaltyRuleError::Invalid(
+                "missing or invalid rule version number".to_owned(),
+            ));
+        }
         let status = obj
             .get("status")
             .and_then(Value::as_str)
@@ -118,6 +128,20 @@ pub enum LoyaltyRuleError {
     Invalid(String),
     NotFound,
     InvalidTransition(String),
+}
+
+impl LoyaltyRuleError {
+    /// Fixed client-safe message for each error variant, omitting upstream detail.
+    pub fn client_message(&self) -> &'static str {
+        match self {
+            Self::Unavailable(_) => "the loyalty service is not available, try again later",
+            Self::Invalid(_) => "the loyalty service refused the rule",
+            Self::NotFound => "loyalty rule version not found",
+            Self::InvalidTransition(_) => {
+                "the loyalty rule version cannot move from its current status"
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for LoyaltyRuleError {
@@ -193,4 +217,9 @@ pub trait LoyaltyRuleWriter: Send + Sync {
         kind: RuleKind,
         id: Uuid,
     ) -> BoxFuture<'a, Result<Option<RuleVersion>, LoyaltyRuleError>>;
+
+    fn list<'a>(
+        &'a self,
+        kind: RuleKind,
+    ) -> BoxFuture<'a, Result<Vec<RuleVersion>, LoyaltyRuleError>>;
 }

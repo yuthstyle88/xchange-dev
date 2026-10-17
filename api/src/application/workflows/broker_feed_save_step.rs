@@ -65,7 +65,11 @@ impl SaveStep for BrokerFeedSaveStep {
                 pos_error::AppError::Internal(format!("invalid transaction uuid {tx_id_str}: {e}"))
             })?;
 
-            let principal = Decimal::new(saved.principal.minor(), 2);
+            let principal_minor = saved
+                .principal
+                .try_minor()
+                .map_err(|e| pos_error::AppError::Internal(format!("principal overflow: {e}")))?;
+            let principal = Decimal::new(principal_minor, 2);
             let value_satang = FeedValue::of(principal)?;
 
             let keys = BookingMemberKeys.keys_in(tx, tx_id).await?;

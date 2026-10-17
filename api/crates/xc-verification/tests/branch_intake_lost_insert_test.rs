@@ -165,6 +165,18 @@ impl CaseRepository for LostInsertCaseRepository {
             .update_case_submitted(tx, case_id, submitted_at, version)
     }
 
+    fn update_case_submitted_with_branch<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        case_id: Uuid,
+        submitted_at: DateTime<Utc>,
+        version: i32,
+        branch_id: Option<&'a BranchId>,
+    ) -> BoxFuture<'a, Result<(), CaseError>> {
+        self.inner
+            .update_case_submitted_with_branch(tx, case_id, submitted_at, version, branch_id)
+    }
+
     fn find_document_by_ref<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,

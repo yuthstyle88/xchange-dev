@@ -8,6 +8,7 @@ use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 
+use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
 use crate::domain::shift::entities::stock_movement::StockMovement;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
@@ -48,7 +49,15 @@ type MovementRow = (
     String,        // request_id
 );
 
+type OpenShiftSqlRow = (
+    String,         // id
+    Option<String>, // teller_id
+    Option<String>, // teller_name
+    DateTime<Utc>,  // opened_at
+);
+
 fn format_delta(d: MoneyDelta) -> String {
+    // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2857).
     let minor = d.minor();
     let sign = if minor < 0 { "-" } else { "" };
     let abs = minor.unsigned_abs();
@@ -393,6 +402,81 @@ impl ShiftRepository for PgShiftRepository {
             Some(r) => Ok(Some(shift_from_row(&self.pool, r).await?)),
             None => Ok(None),
         }
+    }
+
+    async fn open_of_teller(&self, teller: &str) -> AppResult<Option<Shift>> {
+        let mut rows: Vec<ShiftRow> = sqlx::query_as(select_shifts!(
+            "WHERE teller_id = $1::uuid AND status = 'OPEN'"
+        ))
+        .bind(teller)
+        .fetch_all(&self.pool)
+        .await?;
+
+        if rows.len() > 1 {
+            return Err(AppError::Internal(format!(
+                "teller {teller} has {} OPEN shifts",
+                rows.len()
+            )));
+        }
+
+        match rows.pop() {
+            Some(r) => Ok(Some(shift_from_row(&self.pool, r).await?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn open_of_teller_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        teller: &str,
+    ) -> AppResult<Option<Shift>> {
+        let mut rows: Vec<ShiftRow> = sqlx::query_as(select_shifts!(
+            "WHERE teller_id = $1::uuid AND status = 'OPEN'"
+        ))
+        .bind(teller)
+        .fetch_all(&mut **tx)
+        .await?;
+
+        if rows.len() > 1 {
+            return Err(AppError::Internal(format!(
+                "teller {teller} has {} OPEN shifts",
+                rows.len()
+            )));
+        }
+
+        match rows.pop() {
+            Some(r) => Ok(Some(shift_from_row(&mut **tx, r).await?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn open_of_branch(&self, branch: &BranchId) -> AppResult<Vec<OpenShiftRow>> {
+        let rows: Vec<OpenShiftSqlRow> = sqlx::query_as(
+            "SELECT s.id, s.teller_id::text, u.name, s.opened_at \
+             FROM shifts s \
+             LEFT JOIN users u ON u.id = s.teller_id \
+             WHERE s.branch_id = $1 AND s.status = 'OPEN' \
+             ORDER BY s.opened_at ASC, s.id ASC",
+        )
+        .bind(branch.as_str())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for (shift_id, teller_id, teller_name, opened_at) in rows {
+            let (Some(teller_id), Some(teller_name)) = (teller_id, teller_name) else {
+                return Err(AppError::Internal(format!(
+                    "OPEN shift {shift_id} has no teller user"
+                )));
+            };
+            out.push(OpenShiftRow {
+                shift_id,
+                teller_id,
+                teller_name,
+                opened_at,
+            });
+        }
+        Ok(out)
     }
 
     async fn shifts(&self, branch: &BranchId) -> AppResult<Vec<Shift>> {

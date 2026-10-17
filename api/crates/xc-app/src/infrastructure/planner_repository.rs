@@ -71,10 +71,17 @@ fn draft_of(row: &PgRow) -> Result<PlannerDraft, CustomerAppError> {
 }
 
 /// `(quantity, budget_thb)` as stored: exactly one is set.
-fn amount_columns(amount: &DraftAmount) -> (Option<Decimal>, Option<Decimal>) {
+fn amount_columns(
+    amount: &DraftAmount,
+) -> Result<(Option<Decimal>, Option<Decimal>), CustomerAppError> {
     match amount {
-        DraftAmount::Quantity(q) => (Some(q.value()), None),
-        DraftAmount::BudgetThb(m) => (None, Some(Decimal::new(m.minor(), 2))),
+        DraftAmount::Quantity(q) => Ok((Some(q.value()), None)),
+        DraftAmount::BudgetThb(m) => {
+            let minor = m
+                .try_minor()
+                .map_err(|_| CustomerAppError::ValidationFailed { field: "budgetThb" })?;
+            Ok((None, Some(Decimal::new(minor, 2))))
+        }
     }
 }
 
@@ -125,7 +132,7 @@ impl PlannerRepository for PgPlannerRepository {
                 DraftOwner::Customer(id) => (Some(id.as_str()), None),
                 DraftOwner::Session(hash) => (None, Some(hash.as_str())),
             };
-            let (quantity, budget) = amount_columns(&draft.plan.amount);
+            let (quantity, budget) = amount_columns(&draft.plan.amount)?;
             sqlx::query(
                 "INSERT INTO planner_drafts (id, organization_id, customer_id, session_hash, \
                      branch_id, currency_code, customer_side, quantity, budget_thb, version, \
@@ -158,7 +165,7 @@ impl PlannerRepository for PgPlannerRepository {
         expected: i32,
     ) -> BoxFuture<'a, Result<bool, CustomerAppError>> {
         Box::pin(async move {
-            let (quantity, budget) = amount_columns(&draft.plan.amount);
+            let (quantity, budget) = amount_columns(&draft.plan.amount)?;
             let done = sqlx::query(
                 "UPDATE planner_drafts SET branch_id = $3, currency_code = $4, \
                      customer_side = $5, quantity = $6, budget_thb = $7, \

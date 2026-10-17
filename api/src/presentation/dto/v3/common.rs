@@ -164,6 +164,28 @@ pub struct RateFreshnessDto {
     pub published_at: Option<String>,
 }
 
+/// One OPEN shift of a branch with its teller (CA-10p, design `cash-shift-transfer.md` §4.7).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "common.ts")]
+pub struct OpenShiftDto {
+    pub shift_id: String,
+    pub teller_id: String,
+    pub teller_name: String,
+    pub opened_at: String,
+}
+
+impl From<xc_shift::domain::shift::entities::open_shift_row::OpenShiftRow> for OpenShiftDto {
+    fn from(row: xc_shift::domain::shift::entities::open_shift_row::OpenShiftRow) -> Self {
+        Self {
+            shift_id: row.shift_id,
+            teller_id: row.teller_id,
+            teller_name: row.teller_name,
+            opened_at: row.opened_at.to_rfc3339(),
+        }
+    }
+}
+
 /// Exports shared v3 types to `common.ts` in `dir`.
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
@@ -176,5 +198,6 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     NoFilter::export_all(&cfg)?;
     Period::export_all(&cfg)?;
     RateFreshnessDto::export_all(&cfg)?;
+    OpenShiftDto::export_all(&cfg)?;
     Ok(())
 }
