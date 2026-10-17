@@ -283,7 +283,7 @@ mod tests {
             .expect_err("on_decided without request must refuse");
         assert!(
             matches!(err, AppError::Internal(ref msg) if msg == "loyalty rule versions are decided through ApprovalService::decide"),
-            "got {err:?}"
+            "got {err}"
         );
     }
 }
