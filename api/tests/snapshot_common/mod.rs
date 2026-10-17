@@ -1737,9 +1737,18 @@ async fn v2_admin_write_in(
             } else {
                 format!("-{amount}")
             };
+            // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
+            // ON CONFLICT is reached), then the move, as v2's `update_expected` left it
             sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, $3::numeric) \
-                 ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
+                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, 0) \
+                 ON CONFLICT (shift_id, code) DO NOTHING",
+            )
+            .bind(shift)
+            .bind(code)
+            .execute(&mut **tx)
+            .await?;
+            sqlx::query(
+                "UPDATE shift_balances SET expected = expected + $3::numeric WHERE shift_id = $1 AND code = $2",
             )
             .bind(shift)
             .bind(code)
