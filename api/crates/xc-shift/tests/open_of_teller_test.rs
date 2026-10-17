@@ -283,12 +283,5 @@ async fn open_of_branch_is_empty_without_an_open_shift() {
     db.drop_schema().await;
 }
 
-/// Row 7: an OPEN shift with no teller is a fault naming the shift, not a row with an empty name.
-#[tokio::test]
-async fn an_open_shift_without_a_teller_is_a_fault() {
-    let db = TestDb::start().await;
-    let main = db.branch("MAIN").await;
-    let id = shift(&db, &main, None, "OPEN", at(0, 0), Opened::V2).await;
-    internal_naming(repo(&db).open_of_branch(&main).await, &id);
-    db.drop_schema().await;
-}
+// Row 7 (an OPEN shift with no teller, or a teller that is no user) has no test on purpose: `shifts.teller_id` is
+// NOT NULL and references `users` (`api/migrations/20261012100000_cash.sql:6`, `:115`), so the row cannot be stored.
