@@ -265,11 +265,14 @@ impl SessionService {
         self.identity.is_some()
     }
 
-    async fn fetch_user_roles(
-        pool: &PgPool,
+    async fn fetch_user_roles<'e, E>(
+        executor: E,
         user_id: &str,
         now: DateTime<Utc>,
-    ) -> Result<Vec<SessionUserRole>, sqlx::Error> {
+    ) -> Result<Vec<SessionUserRole>, sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let rows: Vec<(String, Option<String>)> = sqlx::query_as(
             "SELECT role_code, branch_id FROM user_roles \
              WHERE user_id = $1::uuid AND valid_from <= $2 AND (valid_to IS NULL OR valid_to > $2) \
@@ -277,7 +280,7 @@ impl SessionService {
         )
         .bind(user_id)
         .bind(now)
-        .fetch_all(pool)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows
@@ -362,7 +365,7 @@ impl SessionService {
         .await
         .map_err(|e| SessionError::Database(e.to_string()))?;
 
-        let roles = Self::fetch_user_roles(&self.pool, user_id, now)
+        let roles = Self::fetch_user_roles(&mut *conn, user_id, now)
             .await
             .map_err(|e| SessionError::Database(e.to_string()))?;
 

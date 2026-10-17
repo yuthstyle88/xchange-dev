@@ -71,11 +71,8 @@ async fn create_with_phone(app: &App, token: &str, phone: &str) -> Reply {
     .await
 }
 
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 /// §8 rows 1–3: the account is created and Identity receives exactly `expected`.
 async fn assert_sent_as(typed: &str, expected: &str) {
-    let _serial = SERIAL.lock().await;
     let (desk, identity, app) = setup().await;
     let token = owner_session(&desk, &identity, &app).await;
     identity.answer(
@@ -101,7 +98,6 @@ async fn assert_sent_as(typed: &str, expected: &str) {
 
 /// §8 rows 4–5 and §9: refused on `phone` with `message`; Identity is not called and no `users` row is written.
 async fn assert_refused(typed: &str, message: &str) {
-    let _serial = SERIAL.lock().await;
     let (desk, identity, app) = setup().await;
     let token = owner_session(&desk, &identity, &app).await;
     let before = users_count(&desk).await;
@@ -185,25 +181,33 @@ async fn a_bare_zero_is_refused_and_nothing_is_written() {
 }
 
 #[actix_web::test]
-async fn owner_session_prewarms_two_pool_connections_before_login() {
-    let _serial = SERIAL.lock().await;
-    let (desk, identity, app) = setup().await;
-    assert!(
-        desk.pool.size() >= 2,
-        "setup pre-warms at least 2 DB connections so create_session_for_user does not open a 2nd connection mid-login (got {})",
-        desk.pool.size()
-    );
+async fn login_succeeds_with_a_pool_of_one_connection() {
+    use std::str::FromStr;
+    use std::time::Duration;
+
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+    let desk = Desk::start().await;
+    let identity = FakeIdentity::start();
+    let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
+    let options = PgConnectOptions::from_str(&url)
+        .expect("PostgreSQL URL")
+        .options([("search_path", desk.schema.as_str())]);
+    let single_conn_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(2))
+        .connect_with(options)
+        .await
+        .expect("connect 1-connection pool to test schema");
+
+    let app = app(state_with(
+        &single_conn_pool,
+        &identity_env(&identity.url()),
+    ))
+    .await;
     let token = owner_session(&desk, &identity, &app).await;
     assert!(!token.is_empty());
-    for _ in 0..5 {
-        let reply = app
-            .send(Req::post(
-                "/api/auth/login",
-                json!({ "identifier": "+66811111111", "password": "pw-owner-01" }),
-            ))
-            .await;
-        assert_eq!(reply.status, 200, "burst login succeeded: {}", reply.text);
-        assert!(!reply.session().is_empty());
-    }
+
+    single_conn_pool.close().await;
     desk.drop_schema().await;
 }
