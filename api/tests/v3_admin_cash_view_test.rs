@@ -62,6 +62,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -685,10 +686,11 @@ impl Room {
             .await
             .expect("reserve the customer")
             .customer_id;
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let rate = if ex.side == "BUY" {
@@ -703,7 +705,7 @@ impl Room {
             Some(
                 self.desk
                     .files
-                    .upload(&here, "owner", "image/jpeg", JPEG, t)
+                    .upload(&here, &saver, "image/jpeg", JPEG, t)
                     .await
                     .expect("upload a slip"),
             )
@@ -742,7 +744,7 @@ impl Room {
         };
         self.desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange in {branch}: {e:?}"))
             .document_ref
@@ -1765,18 +1767,6 @@ async fn ca10q_the_branchs_cash_adds_up_every_open_shift() {
     let first = room
         .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
         .await;
-    // Setup only, before CA-10's M3: `open_shift_by_count` clears the first shift's `opened_by_count` (the #626
-    // stopgap), and `shifts_one_open_per_branch_v2` refuses a second marker-less OPEN shift at one branch. Restore the
-    // first shift's marker from its OPEN count. CA-10 (#626) deletes this statement with M3 (a setup-only edit).
-    sqlx::query(
-        "UPDATE shifts SET opened_by_count = (SELECT c.id FROM cash_counts c \
-         WHERE c.branch_id = $1 AND c.kind = 'OPEN' ORDER BY c.counted_at DESC LIMIT 1) WHERE id = $2",
-    )
-    .bind(MAIN)
-    .bind(&first)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("restore the first shift's marker");
     let second = room
         .open_shift_with(MAIN, json!({ "THB": 50000, "USD": 250 }))
         .await;
@@ -1853,17 +1843,6 @@ async fn ca10q_last_counted_sums_each_tellers_newest_closed_shift() {
         .await;
 
     let a = room.open_shift_with(MAIN, json!({ "THB": 2000 })).await;
-    // Setup only, before CA-10's M3: restore A's marker (the #626 stopgap cleared it) so that a second count-opened
-    // OPEN shift at MAIN is not refused by `shifts_one_open_per_branch_v2`. CA-10 (#626) deletes this statement with M3.
-    sqlx::query(
-        "UPDATE shifts SET opened_by_count = (SELECT c.id FROM cash_counts c \
-         WHERE c.branch_id = $1 AND c.kind = 'OPEN' ORDER BY c.counted_at DESC LIMIT 1) WHERE id = $2",
-    )
-    .bind(MAIN)
-    .bind(&a)
-    .execute(pool)
-    .await
-    .expect("restore A's marker");
     let b = room.open_shift_with(MAIN, json!({ "THB": 500 })).await;
 
     // the setup this test relies on: X and A are one teller's, B another's
@@ -1897,7 +1876,7 @@ async fn ca10q_last_counted_sums_each_tellers_newest_closed_shift() {
 #[actix_web::test]
 async fn ca10q_stats_and_reference_count_every_open_shifts_transactions() {
     let room = Room::open().await;
-    let a = room
+    let _a = room
         .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
         .await;
     room.save(MAIN, Ex::sell("10", "20")).await; // on A, MAIN's only OPEN shift
@@ -1915,18 +1894,6 @@ async fn ca10q_stats_and_reference_count_every_open_shifts_transactions() {
     );
     assert!(lines_one > 0, "the sale is a reference line: {one}");
 
-    // Setup only, before CA-10's M3: restore A's marker (see `ca10q_the_branchs_cash_adds_up_every_open_shift`).
-    // With A marked, the save path's per-branch read sees B, so the second sale lands on B. CA-10 (#626) deletes this
-    // statement with M3.
-    sqlx::query(
-        "UPDATE shifts SET opened_by_count = (SELECT c.id FROM cash_counts c \
-         WHERE c.branch_id = $1 AND c.kind = 'OPEN' ORDER BY c.counted_at DESC LIMIT 1) WHERE id = $2",
-    )
-    .bind(MAIN)
-    .bind(&a)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("restore A's marker");
     let b = room
         .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
         .await;
