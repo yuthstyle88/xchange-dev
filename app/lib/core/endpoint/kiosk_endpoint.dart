@@ -46,7 +46,8 @@ class KioskEndpoint {
       throw const EndpointFormatException(EndpointProblem.serverMissing);
     }
 
-    if (trimmedServer.contains(' ') || trimmedServer.startsWith('://')) {
+    if (trimmedServer.contains(RegExp(r'\s')) ||
+        trimmedServer.startsWith('://')) {
       throw const EndpointFormatException(EndpointProblem.serverInvalid);
     }
 
@@ -69,7 +70,9 @@ class KioskEndpoint {
       throw const EndpointFormatException(EndpointProblem.serverInvalid);
     }
 
-    if (uri.host.isEmpty || uri.userInfo.isNotEmpty || uri.host.contains(' ')) {
+    if (uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.host.contains(RegExp(r'\s'))) {
       throw const EndpointFormatException(EndpointProblem.serverInvalid);
     }
 
