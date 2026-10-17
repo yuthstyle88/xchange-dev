@@ -26,7 +26,7 @@ use xc_marketing::domain::coupon::benefit_error::BenefitError;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 use xc_marketing::domain::engine::active_rules::{ActiveRule, ActiveRules};
 use xc_marketing::domain::engine::engine::{BenefitEngine, EvalContext, QuoteLineInput};
-use xc_marketing::domain::engine::snapshot::SkippedRule;
+use xc_marketing::domain::engine::snapshot::{AppliedBenefit, SkippedRule};
 use xc_marketing::infrastructure::pg_budget_ledger::{
     BudgetLedger, ReserveOutcome, ReserveRequest,
 };
@@ -43,6 +43,15 @@ use crate::infrastructure::marketing::tier_source::MarketingTierSource;
 fn thb_or_refuse(q: ForeignAmount, r: Rate, u: UnitSize) -> AppResult<Money> {
     ExchangeArithmetic::try_thb(q, r, u).map_err(|_| {
         AppError::Domain("validationFailed: quantity overflows thb amount".to_string())
+    })
+}
+
+fn reserved_amount(applied: &AppliedBenefit) -> AppResult<Decimal> {
+    Decimal::from_str(&applied.amount_thb).map_err(|_| {
+        AppError::Internal(format!(
+            "applied benefit {} has an unreadable amountThb {:?}",
+            applied.rule_id, applied.amount_thb
+        ))
     })
 }
 
@@ -508,7 +517,7 @@ impl QuoteService {
             let mut recompute_needed = false;
 
             for mut applied in eval.snapshot.applied {
-                let amount_thb = Decimal::from_str(&applied.amount_thb).unwrap_or(Decimal::ZERO);
+                let amount_thb = reserved_amount(&applied)?;
                 let reserve_coupon_id = if let Some((cid, crule_id)) = coupon_info {
                     if crule_id == applied.rule_id {
                         Some(cid)
@@ -619,5 +628,80 @@ impl QuoteService {
         }
 
         Ok(quote)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xc_marketing::domain::benefit::rule::BenefitClass;
+
+    fn sample_applied(rule_id: Uuid, amount_thb: &str) -> AppliedBenefit {
+        AppliedBenefit {
+            rule_id,
+            version_id: Uuid::new_v4(),
+            benefit_type: "RATE_IMPROVEMENT".to_string(),
+            benefit_class: BenefitClass::Price,
+            coupon_id: None,
+            reservation_id: None,
+            amount_thb: amount_thb.to_string(),
+            rate_before: "35.00".to_string(),
+            rate_after: "35.50".to_string(),
+            fee_before: "0.00".to_string(),
+            fee_after: "0.00".to_string(),
+            floor_capped: false,
+        }
+    }
+
+    #[test]
+    fn r1_unreadable_alphabetic_amount_returns_internal_error_naming_rule_id() {
+        let rule_id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
+        let applied = sample_applied(rule_id, "abc");
+        let err = reserved_amount(&applied).expect_err("non-decimal amountThb must be refused");
+        match err {
+            AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&rule_id.to_string()),
+                    "expected error message to name rule_id {rule_id}, got {msg:?}"
+                );
+                assert!(
+                    msg.contains("abc"),
+                    "expected error message to name unreadable text, got {msg:?}"
+                );
+            }
+            other => panic!("expected AppError::Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn r2_empty_amount_returns_internal_error_naming_rule_id() {
+        let rule_id = Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap();
+        let applied = sample_applied(rule_id, "");
+        let err = reserved_amount(&applied).expect_err("empty amountThb must be refused");
+        match err {
+            AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&rule_id.to_string()),
+                    "expected error message to name rule_id {rule_id}, got {msg:?}"
+                );
+            }
+            other => panic!("expected AppError::Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn k1_valid_decimal_amount_returns_parsed_decimal() {
+        let rule_id = Uuid::new_v4();
+        let applied = sample_applied(rule_id, "12.50");
+        let amount = reserved_amount(&applied).expect("valid decimal amountThb");
+        assert_eq!(amount, Decimal::new(1250, 2));
+    }
+
+    #[test]
+    fn k2_zero_amount_returns_real_zero() {
+        let rule_id = Uuid::new_v4();
+        let applied = sample_applied(rule_id, "0.00");
+        let amount = reserved_amount(&applied).expect("0.00 is a valid zero amountThb");
+        assert_eq!(amount, Decimal::ZERO);
     }
 }
