@@ -20,15 +20,13 @@ use crate::application::workflows::disable_employee::{DisableEmployee, DisableOu
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::employee_custody::PgEmployeeCustody;
 use crate::presentation::extractors::actor::{
-    BAD_REQUEST, OWNER_ID, accounts, answer, failure, password_session, payload_of, read, refuse,
-    same_origin, server_error,
+    OWNER_ID, accounts, answer, failure, password_session, payload_of, read, refuse, same_origin,
+    server_error,
 };
 use crate::presentation::http::auth::employee_json;
 use crate::presentation::pages;
 
 const HOLDS_CASH: &str = "ส่งมอบเงินและงานค้างก่อนปิดบัญชี หากเข้าระบบไม่ได้ให้รีเซ็ตรหัสผ่าน";
-const SIX_ROLES: &str =
-    "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน";
 
 pub use crate::application::custody::employee_custody::EmployeeCustody;
 
@@ -163,37 +161,6 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                     return failure(e);
                 }
             }
-        }
-        "entity" => {
-            return match custody {
-                None => refuse(400, BAD_REQUEST),
-                Some(custody) => match custody.set_entity(&payload, actor).await {
-                    Ok(body) => answer(200, body, false),
-                    Err(e) => failure(e),
-                },
-            };
-        }
-        "enable" => {
-            let people = match everyone(&req).await {
-                Ok(people) => people,
-                Err(response) => return response,
-            };
-            let branch = payload["branchId"].as_str();
-            for role in ["FRONT", "BACKEND", "MANAGER", "RATES", "MONITOR", "FINANCE"] {
-                if !people
-                    .iter()
-                    .any(|e| Some(e.branch_id.as_str()) == branch && e.active && e.role == role)
-                {
-                    return refuse(400, SIX_ROLES);
-                }
-            }
-            return match custody {
-                None => refuse(400, BAD_REQUEST),
-                Some(custody) => match custody.enable(&payload, actor).await {
-                    Ok(body) => answer(200, body, false),
-                    Err(e) => failure(e),
-                },
-            };
         }
         _ => {}
     }
