@@ -168,6 +168,14 @@ export function Reports(props: AdminMenuProps): JSX.Element {
 
     const key = `${curBranch}|${from}|${to}`;
     const prev = employeeTxState.get(staff);
+    if (prev?.key !== key) {
+      setEmployeeTxMap((prevMap) => {
+        if (!(staff in prevMap)) return prevMap;
+        const next = { ...prevMap };
+        delete next[staff];
+        return next;
+      });
+    }
     const seq = prev?.key === key ? prev.seq : ++employeeTxSeq;
     employeeTxState.set(staff, { key, seq });
     const isCurrent = () => employeeTxState.get(staff)?.seq === seq;
