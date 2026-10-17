@@ -400,7 +400,7 @@ impl HandoverService {
             }
         }
         let open: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN' AND opened_by_count IS NOT NULL \
+            "SELECT count(*) FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN' \
              AND id <> $2",
         )
         .bind(&h.receiver_id)

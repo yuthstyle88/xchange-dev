@@ -997,7 +997,7 @@ impl CashCountService {
         if count.kind == CountKind::Open {
             let open_shift_count: i64 = sqlx::query_scalar(
                 "SELECT count(*) FROM shifts \
-                 WHERE teller_id = $1::uuid AND status = 'OPEN' AND opened_by_count IS NOT NULL",
+                 WHERE teller_id = $1::uuid AND status = 'OPEN'",
             )
             .bind(&count.counted_by)
             .fetch_one(&mut **tx)
