@@ -15,4 +15,5 @@ pub mod loyalty;
 pub mod marketing;
 pub mod notify;
 pub mod rate_feed;
+pub mod recognize;
 pub mod settings;

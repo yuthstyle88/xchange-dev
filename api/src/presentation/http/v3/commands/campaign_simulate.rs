@@ -1,7 +1,6 @@
 //! `campaignSimulate` (MK-4, design `marketing-campaigns.md` §4.5, §7).
 
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
@@ -14,7 +13,7 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, UnitSize};
 use xc_marketing::application::simulator::{
     CampaignSimulator, SimulationError, SimulationScenario,
 };
@@ -137,7 +136,7 @@ impl CommandAction for CampaignSimulateCommand {
 
         let mut scenarios = Vec::new();
         for s in input.scenarios {
-            CurrencyCode::parse(&s.currency).map_err(|e| {
+            let code = CurrencyCode::parse(&s.currency).map_err(|e| {
                 V3Error::new(
                     "validationFailed",
                     Some("currency"),
@@ -145,14 +144,54 @@ impl CommandAction for CampaignSimulateCommand {
                     StatusCode::BAD_REQUEST,
                 )
             })?;
-            let amount = Decimal::from_str(&s.amount).map_err(|e| {
+            let (unit_size_dec, minor_unit_i16): (Decimal, i16) =
+                sqlx::query_as("SELECT unit_size, minor_unit FROM currencies WHERE code = $1")
+                    .bind(code.as_str())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        V3Error::new(
+                            "database",
+                            None,
+                            e.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("currency"),
+                            "unknown currency",
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
+            let unit_size = UnitSize::from_decimal(unit_size_dec).map_err(|e| {
                 V3Error::new(
-                    "validationFailed",
-                    Some("amount"),
+                    "database",
+                    None,
                     e.to_string(),
-                    StatusCode::BAD_REQUEST,
+                    StatusCode::INTERNAL_SERVER_ERROR,
                 )
             })?;
+            let minor_unit = MinorUnit::new(minor_unit_i16 as u8).map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+            let units = CurrencyUnits::new(code, unit_size, minor_unit);
+            let amount = ForeignAmount::parse(&s.amount, &units)
+                .map_err(|e| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("amount"),
+                        e.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?
+                .value();
             if CampaignBranchScope::first_outside_org_in(
                 tx,
                 org_id,

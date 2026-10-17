@@ -331,8 +331,12 @@ async fn a_hook_that_fails_rolls_the_close_back() {
         "the hook's refusal must be the close's answer, got {refused:?}"
     );
     assert_eq!(
-        service.active(&branch).await.unwrap().map(|s| s.id),
-        Some(shift.id),
+        service
+            .shift(&branch, &shift.id)
+            .await
+            .unwrap()
+            .map(|s| s.status),
+        Some(xc_shift::domain::shift::entities::shift::ShiftStatus::Open),
         "a refused hook leaves the shift OPEN"
     );
     assert_eq!(

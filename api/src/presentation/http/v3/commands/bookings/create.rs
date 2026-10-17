@@ -18,12 +18,13 @@ use xc_booking::domain::booking::booking_error::BookingError;
 use xc_booking::domain::booking::source_channel::SourceChannel;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::Side;
+use xc_kernel::money::{Bound, Side, Sign};
 
 use super::BookingServices;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, RowRef};
 
 pub struct BookingCreate {
     services: Arc<BookingServices>,
@@ -46,7 +47,7 @@ pub struct BookingCreateInput {
     pub shop_side: String,
     pub currency: String,
     #[ts(type = "number")]
-    pub quantity: Decimal,
+    pub quantity: Value,
     #[ts(type = "string")]
     pub quote_id: Option<Uuid>,
     pub referral_code: Option<String>,
@@ -157,7 +158,13 @@ impl CommandAction for BookingCreate {
             }
         };
 
-        let qty = input.quantity;
+        let qty_text = match &input.quantity {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            _ => String::new(),
+        };
+        let qty = input::decimal("quantity", &qty_text, Bound::numeric(20, 4, Sign::Positive))?;
+        input::must_exist(tx, "currency", RowRef::Currency, &input.currency).await?;
 
         BranchTx::lock_also(tx, &input.branch_id).await.map_err(|e| {
             V3Error::new(

@@ -327,7 +327,7 @@ impl ApprovalService {
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
         subject
-            .on_decided_or_unavailable(tx, &request.object_id, outcome)
+            .on_decided_or_unavailable(tx, &request, outcome)
             .await
             .map_err(|e| match e {
                 SubjectError::DependencyUnavailable { code, message } => {

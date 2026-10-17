@@ -35,6 +35,7 @@ impl BranchView for VerificationPolicyView {
     const NAME: &'static str = VIEW_NAME;
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, VIEW_NAME);
     const VERSIONED: bool = true;
+    const ORG_WIDE: bool = true;
     type Filter = VerificationPolicyFilter;
     type Data = VerificationPolicyData;
 

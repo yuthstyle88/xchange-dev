@@ -18,6 +18,7 @@ use shift_service_common::{TestDb, at, refusal};
 use xc_kernel::ids::BranchId;
 use xc_shift::domain::shift::commands::close_shift::CloseShift;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
+use xc_shift::domain::shift::entities::shift::ShiftStatus;
 
 const EXPECTED_CHANGED: &str = "ยอดเปลี่ยนระหว่างตรวจนับ กรุณารีเฟรชและตรวจสอบอีกครั้ง";
 
@@ -61,10 +62,12 @@ async fn close_claiming(
         .await
         .map(|_| ());
     let still_open = service
-        .active(&branch)
+        .shift(&branch, &opened.id)
         .await
-        .expect("read the open shift")
-        .is_some();
+        .expect("read the shift")
+        .expect("the shift exists")
+        .status
+        == ShiftStatus::Open;
     (closed, still_open)
 }
 

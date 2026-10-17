@@ -38,12 +38,10 @@ async fn completed(db: &TestDb, n: u32) -> String {
     ))
     .await;
     db.exec(&format!(
-        "INSERT INTO transactions (id, document_ref, branch_id, mode, submission_id, payload_hash, \
-            customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-            bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-            value_date, paid_at, recorded_at, recorded_by, status, completed_at) \
-         VALUES ('{id}', '{number}', 'MAIN', 'DEMO', 'sub-{n}', 'h', 'CU-{n}', 'Somchai', 'THA', \
-            'BUY', 'USD', 100, 32.1, 3210, 0, 0, 0, 3210, 'Cash', '', 'Cash drawer 1', 'EMP-001', \
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, submission_id, payload_hash, customer_id, \
+            customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+            recorded_by, status, completed_at) \
+         VALUES ('{id}', '{number}', 'MAIN', 'DEMO', 'sub-{n}', 'h', 'CU-{n}', 'Somchai', 'THA', 'EMP-001', \
             'WALK-IN', '', '2026-10-06', now(), now(), 'owner', 'COMPLETED', now())"
     ))
     .await;

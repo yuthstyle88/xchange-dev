@@ -12,11 +12,13 @@ use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::IntBound;
 
 use super::{BookingOkOutput, BookingServices};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
 
 pub struct BookingPolicySet {
     services: Arc<BookingServices>,
@@ -60,6 +62,22 @@ impl CommandAction for BookingPolicySet {
         ) {
             return Err(out_of_scope());
         }
+
+        input::integer(
+            "cancelCutoffMinutes",
+            i64::from(input.cancel_cutoff_minutes),
+            IntBound::integer(0, i64::MAX),
+        )?;
+        input::integer(
+            "noShowGraceMinutes",
+            i64::from(input.no_show_grace_minutes),
+            IntBound::integer(0, i64::MAX),
+        )?;
+        input::integer(
+            "confirmExpiryMinutes",
+            i64::from(input.confirm_expiry_minutes),
+            IntBound::integer(1, i64::MAX),
+        )?;
 
         let services = self.services.services()?;
 
