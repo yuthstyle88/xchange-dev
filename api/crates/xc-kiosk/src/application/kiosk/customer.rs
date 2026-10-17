@@ -237,11 +237,13 @@ impl KioskService {
                             let mut f =
                                 view.facts(&currencies, request.quote.currency, request.quote.side);
                             if f.line.is_some() {
-                                let foreign_minor = request
-                                    .quote
-                                    .foreign
-                                    .try_minor()
-                                    .map_err(|_| refuse(KioskError::AmountOrCurrencyInvalid))?;
+                                let foreign_minor =
+                                    request.quote.foreign.try_minor().map_err(|_| {
+                                        AppError::Internal(format!(
+                                            "stored quote foreign amount {} overflows hundredths",
+                                            request.quote.foreign
+                                        ))
+                                    })?;
                                 let foreign =
                                     ForeignAmount::from_decimal(Decimal::new(foreign_minor, 2));
                                 if let Some(tier_line) = ports
