@@ -1,14 +1,16 @@
 //! Specification tests for `PgShiftRepository` row-to-`Shift` mapping and `SELECT` clauses (#1888).
+//!
+//! CA-10 (#626, #2955) restated these on SQL-seeded shifts: v2's `ShiftService::{open, close}` and the per-branch
+//! `ShiftRepository::{active, active_in}` are deleted. The reads of an OPEN shift are now the per-teller ones
+//! (`open_of_teller`, `open_of_teller_in`, CA-10p #2916). `a_count_opened_shift_is_not_the_active_one` is retired:
+//! its subject was `active`'s `opened_by_count IS NULL` filter, which goes with `active` and with the column (M3).
 
 mod shift_service_common;
 
 use pos_error::{AppError, AppResult};
-use serde_json::json;
 use shift_service_common::{TestDb, at, code, money};
 use xc_kernel::money::MoneyDelta;
-use xc_shift::domain::shift::commands::close_shift::CloseShift;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::entities::shift::{Shift, ShiftStatus};
+use xc_shift::domain::shift::entities::shift::ShiftStatus;
 use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
@@ -28,30 +30,30 @@ fn assert_internal_fault<T: std::fmt::Debug>(res: AppResult<T>, column: &str, ba
 async fn the_six_reads_return_the_same_shift() {
     let db = TestDb::start().await;
     let branch = db.branch("MAIN").await;
-    let open = OpenShift::from_payload(&json!({
-        "requestId": "req-open-0001-000000000000",
-        "opening": { "USD": "100.00" }
-    }))
-    .unwrap();
-    let opened: Shift = db
-        .service()
-        .open(&branch, open, "opener", at(0, 0))
-        .await
-        .unwrap();
+    let id = db
+        .seed_open_shift(
+            &branch,
+            "opener",
+            "req-open-0001-000000000000",
+            &[("USD", "100.00")],
+            at(0, 0),
+        )
+        .await;
+    let teller = db.teller("opener").await;
 
     let repo = PgShiftRepository::new(db.pool.clone());
     let usd = code("USD");
 
     // Verify the 5 reads applicable before any close_request_id is set on the row.
     let from_active = repo
-        .active(&branch)
+        .open_of_teller(&teller)
         .await
         .unwrap()
-        .expect("active shift exists");
+        .expect("the teller's open shift exists");
     let from_shifts = repo.shifts(&branch).await.unwrap();
     assert_eq!(from_shifts.len(), 1);
     let from_shift_by_id = repo
-        .shift(&branch, &opened.id)
+        .shift(&branch, &id)
         .await
         .unwrap()
         .expect("shift by id exists");
@@ -62,10 +64,10 @@ async fn the_six_reads_return_the_same_shift() {
         .unwrap()
         .expect("shift by open_request_id exists");
     let from_active_in = repo
-        .active_in(&mut tx, &branch)
+        .open_of_teller_in(&mut tx, &teller)
         .await
         .unwrap()
-        .expect("active_in shift exists");
+        .expect("open_of_teller_in shift exists");
     tx.commit().await.unwrap();
 
     assert_eq!(from_active.status, ShiftStatus::Open);
@@ -74,8 +76,10 @@ async fn the_six_reads_return_the_same_shift() {
     assert_eq!(from_active.close_request_id, None);
     assert_eq!(from_active.opening.get(usd), money("100.00"));
     assert_eq!(from_active.expected.get(usd), money("100.00"));
+    assert_eq!(from_active.id, id);
+    assert_eq!(from_active.opened_at, at(0, 0));
+    assert_eq!(from_active.open_request_id, "req-open-0001-000000000000");
 
-    assert_eq!(from_active, opened);
     assert_eq!(from_shifts[0], from_active);
     assert_eq!(from_shift_by_id, from_active);
     assert_eq!(from_open_req, from_active);
@@ -83,14 +87,14 @@ async fn the_six_reads_return_the_same_shift() {
 
     // Stamp close_request_id on the open row so all six read methods can read the exact same row.
     sqlx::query("UPDATE shifts SET close_request_id = 'req-close-0001-000000000000' WHERE id = $1")
-        .bind(&opened.id)
+        .bind(&id)
         .execute(&db.pool)
         .await
         .unwrap();
 
-    let s_active = repo.active(&branch).await.unwrap().unwrap();
+    let s_active = repo.open_of_teller(&teller).await.unwrap().unwrap();
     let s_shifts = repo.shifts(&branch).await.unwrap();
-    let s_by_id = repo.shift(&branch, &opened.id).await.unwrap().unwrap();
+    let s_by_id = repo.shift(&branch, &id).await.unwrap().unwrap();
     let mut tx = db.pool.begin().await.unwrap();
     let s_by_open = repo
         .find_shift_by_open_request_id(&mut tx, &branch, "req-open-0001-000000000000")
@@ -102,7 +106,11 @@ async fn the_six_reads_return_the_same_shift() {
         .await
         .unwrap()
         .unwrap();
-    let s_active_in = repo.active_in(&mut tx, &branch).await.unwrap().unwrap();
+    let s_active_in = repo
+        .open_of_teller_in(&mut tx, &teller)
+        .await
+        .unwrap()
+        .unwrap();
     tx.commit().await.unwrap();
 
     assert_eq!(
@@ -122,36 +130,30 @@ async fn the_six_reads_return_the_same_shift() {
 async fn a_closed_shift_reads_the_same_by_id_and_in_the_list() {
     let db = TestDb::start().await;
     let branch = db.branch("MAIN").await;
-    let open = OpenShift::from_payload(&json!({
-        "requestId": "req-open-0001-000000000000",
-        "opening": { "USD": "100.00" }
-    }))
-    .unwrap();
     let opened = db
-        .service()
-        .open(&branch, open, "opener", at(0, 0))
-        .await
-        .unwrap();
-
-    let close = CloseShift::from_payload(&json!({
-        "requestId": "req-close-0001-000000000000",
-        "shiftId": opened.id,
-        "counted": { "USD": "95.00" },
-        "expected": { "USD": "100.00" },
-        "note": "short 5"
-    }))
-    .unwrap();
-    let closed = db
-        .service()
-        .close(&branch, close, "b", at(0, 30))
-        .await
-        .unwrap();
+        .seed_open_shift(
+            &branch,
+            "opener",
+            "req-open-0001-000000000000",
+            &[("USD", "100.00")],
+            at(0, 0),
+        )
+        .await;
+    db.seed_close(
+        &opened,
+        "b",
+        "req-close-0001-000000000000",
+        &[("USD", "95.00")],
+        "short 5",
+        at(0, 30),
+    )
+    .await;
 
     let repo = PgShiftRepository::new(db.pool.clone());
     let usd = code("USD");
 
     let by_id = repo
-        .shift(&branch, &closed.id)
+        .shift(&branch, &opened)
         .await
         .unwrap()
         .expect("closed shift by id");
@@ -183,7 +185,8 @@ async fn a_closed_shift_reads_the_same_by_id_and_in_the_list() {
         Some("req-close-0001-000000000000")
     );
 
-    assert_eq!(by_id, closed);
+    assert_eq!(by_id.closed_at, Some(at(0, 30)));
+    assert_eq!(by_id.closed_by.as_deref(), Some("b"));
     assert_eq!(list[0], by_id);
     assert_eq!(by_close_req, by_id);
 
@@ -194,16 +197,15 @@ async fn a_closed_shift_reads_the_same_by_id_and_in_the_list() {
 async fn an_undecodable_status_is_a_fault_on_every_read() {
     let db = TestDb::start().await;
     let branch = db.branch("MAIN").await;
-    let open = OpenShift::from_payload(&json!({
-        "requestId": "req-open-broken-000000000000",
-        "opening": { "USD": "50.00" }
-    }))
-    .unwrap();
     let s = db
-        .service()
-        .open(&branch, open, "opener", at(0, 0))
-        .await
-        .unwrap();
+        .seed_open_shift(
+            &branch,
+            "opener",
+            "req-open-broken-000000000000",
+            &[("USD", "50.00")],
+            at(0, 0),
+        )
+        .await;
 
     sqlx::query("ALTER TABLE shifts DROP CONSTRAINT shifts_status_check")
         .execute(&db.pool)
@@ -212,7 +214,7 @@ async fn an_undecodable_status_is_a_fault_on_every_read() {
     sqlx::query(
         "UPDATE shifts SET status = 'BROKEN', close_request_id = 'req-close-broken-000000000000' WHERE id = $1",
     )
-    .bind(&s.id)
+    .bind(&s)
     .execute(&db.pool)
     .await
     .unwrap();
@@ -220,7 +222,7 @@ async fn an_undecodable_status_is_a_fault_on_every_read() {
     let repo = PgShiftRepository::new(db.pool.clone());
 
     assert_internal_fault(repo.shifts(&branch).await, "shifts.status", "BROKEN");
-    assert_internal_fault(repo.shift(&branch, &s.id).await, "shifts.status", "BROKEN");
+    assert_internal_fault(repo.shift(&branch, &s).await, "shifts.status", "BROKEN");
 
     let mut tx = db.pool.begin().await.unwrap();
     assert_internal_fault(
@@ -236,78 +238,6 @@ async fn an_undecodable_status_is_a_fault_on_every_read() {
         "BROKEN",
     );
     drop(tx);
-
-    db.drop_schema().await;
-}
-
-#[tokio::test]
-async fn a_count_opened_shift_is_not_the_active_one() {
-    let db = TestDb::start().await;
-    let branch = db.branch("MAIN").await;
-    let open = OpenShift::from_payload(&json!({
-        "requestId": "req-open-count-000000000000",
-        "opening": { "USD": "100.00" }
-    }))
-    .unwrap();
-    let s = db
-        .service()
-        .open(&branch, open, "opener", at(0, 0))
-        .await
-        .unwrap();
-
-    let org_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM organizations WHERE code = 'XC'")
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
-    let teller_id = uuid::Uuid::new_v4();
-    let count_id = uuid::Uuid::new_v4();
-
-    sqlx::query(
-        "INSERT INTO users (id, organization_id, name, status, created_by) \
-         VALUES ($1, $2, 'Alice Teller', 'ACTIVE', 'test')",
-    )
-    .bind(teller_id)
-    .bind(org_id)
-    .execute(&db.pool)
-    .await
-    .unwrap();
-
-    sqlx::query(
-        "INSERT INTO cash_counts (id, organization_id, branch_id, kind, counted_by, counted_at, idempotency_key) \
-         VALUES ($1, $2, $3, 'OPEN', $4, now(), $5)",
-    )
-    .bind(count_id)
-    .bind(org_id)
-    .bind(branch.as_str())
-    .bind(teller_id)
-    .bind(format!("idem-{count_id}"))
-    .execute(&db.pool)
-    .await
-    .unwrap();
-
-    sqlx::query("UPDATE shifts SET teller_id = $1, opened_by_count = $2 WHERE id = $3")
-        .bind(teller_id)
-        .bind(count_id)
-        .bind(&s.id)
-        .execute(&db.pool)
-        .await
-        .unwrap();
-
-    let repo = PgShiftRepository::new(db.pool.clone());
-
-    assert_eq!(repo.active(&branch).await.unwrap(), None);
-
-    let mut tx = db.pool.begin().await.unwrap();
-    assert_eq!(repo.active_in(&mut tx, &branch).await.unwrap(), None);
-    tx.commit().await.unwrap();
-
-    // Still readable by ID as an OPEN shift.
-    let by_id = repo
-        .shift(&branch, &s.id)
-        .await
-        .unwrap()
-        .expect("count-opened shift still exists by id");
-    assert_eq!(by_id.status, ShiftStatus::Open);
 
     db.drop_schema().await;
 }
