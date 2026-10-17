@@ -131,7 +131,8 @@ const TOTALS_COUNTS: [&str; 5] = [
     "cancelledCount",
     "pendingCount",
 ];
-const STATUS_FIELDS: [&str; 3] = ["shiftOpen", "pendingCount", "openedBy"];
+/// CA-10p (design `cash-shift-transfer.md` §4.7): `openedBy` (one name) gave way to `openShifts`.
+const STATUS_FIELDS: [&str; 3] = ["shiftOpen", "pendingCount", "openShifts"];
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
@@ -628,7 +629,7 @@ async fn an_empty_period_answers_zero_totals_no_rows_and_the_period_asked() {
     assert_eq!(keys(&data["status"]), set_of(&STATUS_FIELDS), "{data}");
     assert_eq!(
         data["status"],
-        json!({ "shiftOpen": false, "pendingCount": 0, "openedBy": null }),
+        json!({ "shiftOpen": false, "pendingCount": 0, "openShifts": [] }),
         "{data}"
     );
 
@@ -899,29 +900,26 @@ async fn status_is_the_branchs_shift_now_whatever_the_period() {
     let far = "branch=MAIN&from=2020-01-01&to=2020-01-01";
     assert_eq!(
         room.data("OWNER", far).await["status"],
-        json!({ "shiftOpen": false, "pendingCount": 0, "openedBy": null })
+        json!({ "shiftOpen": false, "pendingCount": 0, "openShifts": [] })
     );
     room.open_shift(MAIN).await;
-    let shift_id = room.open_shift_id(MAIN).await;
-    let teller_id: String = sqlx::query_scalar(
-        "SELECT counted_by::text FROM cash_counts WHERE shift_id = $1 AND kind = 'OPEN'",
-    )
-    .bind(&shift_id)
-    .fetch_one(&room.desk.db.pool)
-    .await
-    .expect("open count teller");
     room.save(MAIN, Ex::buy("10", "0", "2026-10-06")).await;
     let data = room.data("OWNER", far).await;
+    assert_eq!(keys(&data["status"]), set_of(&STATUS_FIELDS), "{data}");
     assert_eq!(
-        data["status"],
-        json!({ "shiftOpen": true, "pendingCount": 0, "openedBy": teller_id }),
+        (
+            &data["status"]["shiftOpen"],
+            &data["status"]["pendingCount"]
+        ),
+        (&json!(true), &json!(0)),
         "a period with nothing in it still shows the open shift: {data}"
     );
+    assert_open_shifts(&room, MAIN, &data["status"]["openShifts"], 1).await;
     assert_eq!(data["latest"], json!([]), "{data}");
     room.close_shift(MAIN).await;
     assert_eq!(
         room.data("OWNER", far).await["status"],
-        json!({ "shiftOpen": false, "pendingCount": 0, "openedBy": null })
+        json!({ "shiftOpen": false, "pendingCount": 0, "openShifts": [] })
     );
     room.finish().await;
 }
@@ -1078,6 +1076,9 @@ fn admin_overviews_types_carry_the_fields_money_as_strings_counts_as_numbers() {
         has_field(ts, field, &["number"]);
     }
     has_field(ts, "shiftOpen", &["boolean"]);
+    // CA-10p (design §4.7): the list, and no single opener
+    has_field(ts, "openShifts", &["Array<OpenShiftDto>", "OpenShiftDto[]"]);
+    assert!(!ts.contains("openedBy"), "openedBy is gone:\n{ts}");
     // the period answered: V0-C's shared `Period`, or its two strings
     if !ts.contains("period: Period,") {
         has_field(ts, "from", &["string"]);
@@ -1091,40 +1092,81 @@ fn admin_overviews_types_carry_the_fields_money_as_strings_counts_as_numbers() {
     );
 }
 
-/// Decision 2 (issuecomment-6067199516): status.openedBy carries the shift opener's name
-/// when a shift is open, and is absent/null when closed.
+/// CA-10p (design §4.7), replacing Decision 2's `status.openedBy` (issuecomment-6067199516): with one shift
+/// per teller a branch has no single opener, so the status lists every OPEN shift with its teller's name.
+/// No shift ⇒ `[]`; one open ⇒ that shift and its teller; closed again ⇒ `[]`.
 #[actix_web::test]
-async fn status_opened_by_shows_opener_when_open() {
+async fn status_open_shifts_lists_each_open_shift_with_its_teller() {
     let room = Room::open().await;
-    let data = room
-        .data("OWNER", "branch=MAIN&from=2026-10-01&to=2026-10-06")
-        .await;
-    assert_eq!(data["status"]["openedBy"], Value::Null);
+    let period = "branch=MAIN&from=2026-10-01&to=2026-10-06";
+    let data = room.data("OWNER", period).await;
+    assert_eq!(data["status"]["openShifts"], json!([]), "{data}");
     assert_eq!(data["status"]["shiftOpen"], json!(false));
+    assert!(
+        data["status"].get("openedBy").is_none(),
+        "openedBy is gone: {data}"
+    );
 
     room.open_shift(MAIN).await;
-    let shift_id = room.open_shift_id(MAIN).await;
-    let teller_id: String = sqlx::query_scalar(
-        "SELECT counted_by::text FROM cash_counts WHERE shift_id = $1 AND kind = 'OPEN'",
-    )
-    .bind(&shift_id)
-    .fetch_one(&room.desk.db.pool)
-    .await
-    .expect("open count teller");
-    let data = room
-        .data("OWNER", "branch=MAIN&from=2026-10-01&to=2026-10-06")
-        .await;
+    let data = room.data("OWNER", period).await;
     assert_eq!(data["status"]["shiftOpen"], json!(true));
-    assert_eq!(data["status"]["openedBy"], json!(teller_id));
+    assert_open_shifts(&room, MAIN, &data["status"]["openShifts"], 1).await;
+    assert!(
+        data["status"].get("openedBy").is_none(),
+        "openedBy is gone: {data}"
+    );
 
     room.close_shift(MAIN).await;
-    let data = room
-        .data("OWNER", "branch=MAIN&from=2026-10-01&to=2026-10-06")
-        .await;
+    let data = room.data("OWNER", period).await;
     assert_eq!(data["status"]["shiftOpen"], json!(false));
-    assert_eq!(data["status"]["openedBy"], Value::Null);
+    assert_eq!(data["status"]["openShifts"], json!([]), "{data}");
 
     room.finish().await;
+}
+
+/// The branch's OPEN shifts as the database holds them, in the view's order (`opened_at`, then id).
+async fn open_shifts_in_db(
+    room: &Room,
+    branch: &str,
+) -> Vec<(String, String, String, DateTime<Utc>)> {
+    sqlx::query_as(
+        "SELECT s.id, s.teller_id::text, u.name, s.opened_at FROM shifts s JOIN users u ON u.id = s.teller_id \
+         WHERE s.branch_id = $1 AND s.status = 'OPEN' ORDER BY s.opened_at, s.id",
+    )
+    .bind(branch)
+    .fetch_all(&room.desk.db.pool)
+    .await
+    .expect("read the branch's OPEN shifts")
+}
+
+/// `openShifts` is exactly the branch's OPEN shifts (`want` of them), each `{ shiftId, tellerId, tellerName,
+/// openedAt }`, `openedAt` RFC 3339 for the stored instant.
+async fn assert_open_shifts(room: &Room, branch: &str, list: &Value, want: usize) {
+    let db = open_shifts_in_db(room, branch).await;
+    assert_eq!(
+        db.len(),
+        want,
+        "the seed opened {want} shift(s) at {branch}"
+    );
+    let got = list
+        .as_array()
+        .unwrap_or_else(|| panic!("openShifts is a list: {list}"));
+    assert_eq!(got.len(), db.len(), "{list}");
+    for (row, (id, teller, name, at)) in got.iter().zip(&db) {
+        assert_eq!(
+            keys(row),
+            set_of(&["openedAt", "shiftId", "tellerId", "tellerName"]),
+            "{row}"
+        );
+        assert_eq!(row["shiftId"], json!(id), "{row}");
+        assert_eq!(row["tellerId"], json!(teller), "{row}");
+        assert_eq!(row["tellerName"], json!(name), "{row}");
+        let opened =
+            DateTime::parse_from_rfc3339(row["openedAt"].as_str().expect("openedAt is a string"))
+                .unwrap_or_else(|e| panic!("openedAt is RFC 3339: {row}: {e}"))
+                .with_timezone(&Utc);
+        assert_eq!(opened, *at, "{row}");
+    }
 }
 
 /// Midpoint rounding test (ruling item 4): proves half-away-from-zero is used

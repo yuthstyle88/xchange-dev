@@ -8,6 +8,7 @@ use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 
+use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
 use crate::domain::shift::entities::stock_movement::StockMovement;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
@@ -393,6 +394,23 @@ impl ShiftRepository for PgShiftRepository {
             Some(r) => Ok(Some(shift_from_row(&self.pool, r).await?)),
             None => Ok(None),
         }
+    }
+
+    // Stubs of the CA-10p up-front test commit: the implementer replaces these three bodies.
+    async fn open_of_teller(&self, _teller: &str) -> AppResult<Option<Shift>> {
+        Ok(None)
+    }
+
+    async fn open_of_teller_in(
+        &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _teller: &str,
+    ) -> AppResult<Option<Shift>> {
+        Ok(None)
+    }
+
+    async fn open_of_branch(&self, _branch: &BranchId) -> AppResult<Vec<OpenShiftRow>> {
+        Ok(Vec::new())
     }
 
     async fn shifts(&self, branch: &BranchId) -> AppResult<Vec<Shift>> {
