@@ -346,6 +346,38 @@ describe('BookingsScreen in-flight double-click protection (#2890)', () => {
     expect(posts().filter((p) => p.body?.action === 'confirm')).toHaveLength(1);
   });
 
+  it('row 2: Confirm succeeds / fails -> succeeds: dialog closes and list is read again; fails: error shows in dialog and button is enabled again so retry works', async () => {
+    // 2a. Confirm succeeds
+    await opened();
+    const row = rowOf('BK-p1');
+    const confirmBtn = buttonsIn(row, 'ยืนยันเรทและเวลา')[0]!;
+    confirmBtn.click();
+    await vi.waitFor(() => expect(theDialog()).not.toBeNull());
+
+    setValue(openDialogEl().querySelector<HTMLInputElement>('input[type="datetime-local"]')!, '2026-10-20T10:00');
+    const initialReads = reads(BOOKINGS).length;
+    dialogButton('ยืนยันล็อกเรท').click();
+    await vi.waitFor(() => expect(theDialog()).toBeNull());
+    await vi.waitFor(() => expect(reads(BOOKINGS).length).toBeGreaterThan(initialReads));
+
+    // 2b. Confirm fails, shows error in dialog, button enabled, retry works
+    server.post = () => ({ status: 400, body: { error: 'เรทเปลี่ยน กรุณาโหลดใหม่' } });
+    buttonsIn(rowOf('BK-p1'), 'ยืนยันเรทและเวลา')[0]!.click();
+    await vi.waitFor(() => expect(theDialog()).not.toBeNull());
+    setValue(openDialogEl().querySelector<HTMLInputElement>('input[type="datetime-local"]')!, '2026-10-20T10:00');
+
+    const lockRateBtn = dialogButton('ยืนยันล็อกเรท');
+    lockRateBtn.click();
+
+    await vi.waitFor(() => expect(openDialogEl().querySelector('.error')?.textContent).toContain('เรทเปลี่ยน'));
+    expect(lockRateBtn.disabled).toBe(false);
+
+    // Retry succeeds
+    server.post = () => ({ status: 200, body: { ok: true } });
+    lockRateBtn.click();
+    await vi.waitFor(() => expect(theDialog()).toBeNull());
+  });
+
   it('row 3: Click "Confirm cancel" twice before the answer -> exactly one POST with action: cancel; button is disabled while in flight; on success no error toast appears', async () => {
     const deferred = createDeferred<Reply>();
     server.post = () => deferred.promise;
@@ -378,6 +410,22 @@ describe('BookingsScreen in-flight double-click protection (#2890)', () => {
     expect(toastText()).toBeNull();
   });
 
+  it('row 4: Cancel fails -> the dialog closes and the error toast is shown', async () => {
+    server.post = () => ({ status: 400, body: { error: 'การจองนี้ถูกยกเลิกไปแล้ว' } });
+
+    await opened();
+    const row = rowOf('BK-c1');
+    const cancelBtn = buttonsIn(row, 'ยกเลิก')[0]!;
+    cancelBtn.click();
+    await vi.waitFor(() => expect(theDialog()).not.toBeNull());
+
+    const confirmCancelBtn = dialogButton('ยืนยันยกเลิก');
+    confirmCancelBtn.click();
+
+    await vi.waitFor(() => expect(theDialog()).toBeNull());
+    await vi.waitFor(() => expect(toastText()).toBe('การจองนี้ถูกยกเลิกไปแล้ว'));
+  });
+
   it('row 5: Click "Save" in the settings dialog twice before the answer -> exactly one POST with action: settings; button is disabled while in flight', async () => {
     const deferred = createDeferred<Reply>();
     server.post = () => deferred.promise;
@@ -406,5 +454,33 @@ describe('BookingsScreen in-flight double-click protection (#2890)', () => {
 
     // After resolution, still exactly 1 POST
     expect(posts().filter((p) => p.body?.action === 'settings')).toHaveLength(1);
+  });
+
+  it('row 6: Settings save succeeds / fails -> succeeds: dialog closes and settings are read again; fails: error shows in dialog and Save is enabled again', async () => {
+    // 6a. Settings save succeeds
+    await opened();
+    menuButton('ตั้งค่าการจอง').click();
+    await vi.waitFor(() => expect(theDialog()).not.toBeNull());
+
+    const initialSettingsReads = reads(SETTINGS).length;
+    dialogButton('บันทึก').click();
+    await vi.waitFor(() => expect(theDialog()).toBeNull());
+    await vi.waitFor(() => expect(reads(SETTINGS).length).toBeGreaterThan(initialSettingsReads));
+
+    // 6b. Settings save fails
+    server.post = () => ({ status: 400, body: { error: 'ค่าไม่ถูกต้อง' } });
+    menuButton('ตั้งค่าการจอง').click();
+    await vi.waitFor(() => expect(theDialog()).not.toBeNull());
+
+    const saveBtn = dialogButton('บันทึก');
+    saveBtn.click();
+
+    await vi.waitFor(() => expect(openDialogEl().querySelector('.error')?.textContent).toContain('ค่าไม่ถูกต้อง'));
+    expect(saveBtn.disabled).toBe(false);
+
+    // Retry succeeds
+    server.post = () => ({ status: 200, body: { ok: true } });
+    saveBtn.click();
+    await vi.waitFor(() => expect(theDialog()).toBeNull());
   });
 });
