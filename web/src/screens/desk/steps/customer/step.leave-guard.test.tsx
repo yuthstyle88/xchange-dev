@@ -34,12 +34,10 @@ function deferredRpcServer() {
     (input: RequestInfo | URL, init?: RequestInit) =>
       new Promise<Response>((resolve, reject) => {
         const body = JSON.parse(String(init?.body ?? '{}')) as { action: string; payload: unknown };
-        // #3008: the staff draft is v3 draftBegin (POST /api/tx-drafts), not the retired opsBeginTransaction RPC.
-        const isDraft = String(input) === '/api/tx-drafts';
         calls.push({
           path: String(input),
-          action: isDraft ? 'draftBegin' : body.action,
-          payload: isDraft ? body : body.payload,
+          action: body.action,
+          payload: body.payload,
           resolve: (resBody: unknown, status = 200) => {
             resolve(
               new Response(JSON.stringify(resBody ?? {}), {
@@ -75,7 +73,6 @@ function createTestStore(path: (typeof PATHS)[keyof typeof PATHS], api: ApiClien
   const store = {
     api,
     path,
-    branch: () => 'XC-B01',
     type: () => 'BUY',
     currency: () => 'USD',
     amount: () => '100.50',
@@ -248,7 +245,7 @@ describe('steps/customer leave guard and Back disabled state (#2404)', () => {
     expect(store2.go).not.toHaveBeenCalledWith(2);
   });
 
-  it('row 3: Step left while draftBegin is in flight -> staffDraftId stays ""', async () => {
+  it('row 3: Step left while opsBeginTransaction is in flight -> staffDraftId stays ""', async () => {
     const s = deferredRpcServer();
     const store = createTestStore(PATHS.STAFF_DESK, s.api);
     mountStep(store);
@@ -256,9 +253,9 @@ describe('steps/customer leave guard and Back disabled state (#2404)', () => {
     submit();
 
     expect(s.calls).toHaveLength(1);
-    expect(s.calls[0]!.action).toBe('draftBegin');
+    expect(s.calls[0]!.action).toBe('opsBeginTransaction');
 
-    // Leave step 1 while draftBegin is still in flight
+    // Leave step 1 while opsBeginTransaction is still in flight
     store.go(0);
     expect(store.step()).toBe(0);
 

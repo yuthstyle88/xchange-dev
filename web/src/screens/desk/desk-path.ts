@@ -20,7 +20,7 @@ export interface DeskPath {
   fileUrl(key: string): string;
   /** `ดูงานพิมพ์และบันทึกหลังบ้าน →` on /desk only (desk-devices.js:5). */
   devicesLink: boolean;
-  /** Staff: draftBegin before the first reserveCustomer (X5, #3008). */
+  /** Staff: opsBeginTransaction before the first reserveCustomer (X5). */
   usesDraft: boolean;
 }
 

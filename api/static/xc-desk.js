@@ -20,9 +20,6 @@
     } catch {
       return null;
     }
-    if (pathname === '/api/tx-drafts') {
-      return 'draftBegin';
-    }
     if (pathname !== '/api/rpc' && pathname !== '/api/staff/rpc') {
       return null;
     }
@@ -54,12 +51,6 @@
           isJson = true;
           if (typeof parsed.error === 'string') {
             error = parsed.error;
-          } else if (
-            parsed.error &&
-            typeof parsed.error === 'object' &&
-            typeof parsed.error.message === 'string'
-          ) {
-            error = parsed.error.message;
           }
         }
       } catch {
@@ -199,11 +190,11 @@
                   : false;
         let observed = null;
         if (
-          lastActionAnswer['draftBegin'] &&
-          (lastActionAnswer['draftBegin'].status >= 400 ||
-            lastActionAnswer['draftBegin'].failed)
+          lastActionAnswer['opsBeginTransaction'] &&
+          (lastActionAnswer['opsBeginTransaction'].status >= 400 ||
+            lastActionAnswer['opsBeginTransaction'].failed)
         ) {
-          observed = lastActionAnswer['draftBegin'];
+          observed = lastActionAnswer['opsBeginTransaction'];
         } else if (lastActionAnswer['reserveCustomer']) {
           observed = lastActionAnswer['reserveCustomer'];
         }
@@ -223,7 +214,7 @@
 
       const origOnSubmit = form.onsubmit;
       const wrapped = async function () {
-        lastActionAnswer['draftBegin'] = null;
+        lastActionAnswer['opsBeginTransaction'] = null;
         lastActionAnswer['reserveCustomer'] = null;
         try {
           if (typeof origOnSubmit === 'function') {

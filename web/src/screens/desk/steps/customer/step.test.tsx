@@ -11,11 +11,9 @@
 //   (a picker of ISO 3166 alpha-3 codes, never free text), `input[name=birthDate]`, `input[name=passportExpiry]`,
 //   `input[type=checkbox][name=identityChecked]`, the form's `button[type=submit]`, a button reading
 //   `ข้ามข้อมูลลูกค้า →` (skip) and one reading `← กลับไปเลือกเรท` (back to step 0).
-// - Calls go through `store.api`:
-//   - staff (`path.usesDraft`): v3 `draftBegin` (#3008, replacing `opsBeginTransaction`, which CA-10 retires):
-//     `POST /api/tx-drafts { branch, side, currency, amount }` with the amount **as a string** and an Idempotency-Key,
-//     once, before the first `reserveCustomer`, then `setStaffDraftId(<answer id>)` (X5);
-//   - everything else goes to `store.path.rpc` as v2's RPC `{ action, payload }`:
+// - Calls go through `store.api` to `store.path.rpc` as v2's RPC `{ action, payload }`:
+//   - staff (`path.usesDraft`): `opsBeginTransaction { type, currency, amount }` with the amount **as a string**, once,
+//     before the first `reserveCustomer`, then `setStaffDraftId(<answer id>)` (X5);
 //   - `reserveCustomer { name, passportNo, nationality, birthDate, passportExpiry, mode: "LIVE" }` → `{ customerId,
 //     existing }` → `setCustomerId`, then `go(2)`;
 //   - `entry()?.beforeReserve(store)` is awaited before `reserveCustomer`.
@@ -63,23 +61,14 @@ const PATHS = {
 
 const JPEG = new File([new Uint8Array([0xff, 0xd8, 0xff, 1])], "passport.jpg", { type: "image/jpeg" });
 
-type RpcCall = { path: string; action: string; payload: any; at: number; key: string | null; xr: string | null };
+type RpcCall = { path: string; action: string; payload: any; at: number };
 
 function rpcServer(answer: (action: string, payload: any) => { status: number; body?: unknown; raw?: string; throws?: boolean }) {
   const calls: RpcCall[] = [];
   let clock = 0;
   const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}"));
-    const headers = new Headers(init?.headers ?? {});
-    const isDraft = String(input) === "/api/tx-drafts";
-    const call = {
-      path: String(input),
-      action: isDraft ? "draftBegin" : body.action,
-      payload: isDraft ? body : body.payload,
-      at: clock++,
-      key: headers.get("idempotency-key"),
-      xr: headers.get("x-xchange-request"),
-    };
+    const call = { path: String(input), action: body.action, payload: body.payload, at: clock++ };
     calls.push(call);
     const a = answer(call.action, call.payload);
     if (a.throws) throw new TypeError("Failed to fetch");
@@ -92,7 +81,7 @@ function rpcServer(answer: (action: string, payload: any) => { status: number; b
 }
 
 const OK = (action: string) =>
-  action === "draftBegin"
+  action === "opsBeginTransaction"
     ? { status: 200, body: { id: "draft-9" } }
     : { status: 200, body: { customerId: "CX-00000042", existing: false } };
 
@@ -106,7 +95,6 @@ function stubStore(path: (typeof PATHS)[keyof typeof PATHS], api: ApiClient, opt
   const store = {
     api,
     path,
-    branch: () => "XC-B01",
     type: () => "BUY",
     currency: () => "USD",
     amount: () => "100.50",
@@ -292,22 +280,19 @@ for (const [which, path] of Object.entries(PATHS)) {
       expect(store.setCustomerId).toHaveBeenCalledWith("CX-00000042");
     });
 
-    it(`C8 ${path.usesDraft ? "staff: draftBegin (POST /api/tx-drafts) first, the amount as a string, with an Idempotency-Key, then the draft id is kept" : "owner: no draftBegin"}`, async () => {
+    it(`C8 ${path.usesDraft ? "staff: opsBeginTransaction first, the amount as a string, then the draft id is kept" : "owner: no opsBeginTransaction"}`, async () => {
       const s = rpcServer((a) => OK(a));
       const store = stubStore(path, s.api);
       await mount(store);
       fillAll();
       submit();
       await vi.waitFor(() => expect(store.go).toHaveBeenCalledWith(2));
-      const begin = s.calls.filter((c) => c.action === "draftBegin");
-      expect(s.calls.filter((c) => c.action === "opsBeginTransaction"), "the retired RPC is never called").toHaveLength(0);
+      const begin = s.calls.filter((c) => c.action === "opsBeginTransaction");
       if (path.usesDraft) {
         expect(begin).toHaveLength(1);
-        expect(begin[0].path).toBe("/api/tx-drafts");
-        expect(begin[0].payload).toEqual({ branch: "XC-B01", side: "BUY", currency: "USD", amount: "100.50" });
+        expect(begin[0].path).toBe(path.rpc);
+        expect(begin[0].payload).toEqual({ type: "BUY", currency: "USD", amount: "100.50" });
         expect(typeof begin[0].payload.amount).toBe("string");
-        expect(begin[0].key, "an Idempotency-Key header").toBeTruthy();
-        expect(begin[0].xr).toBe("1");
         const reserve = s.calls.find((c) => c.action === "reserveCustomer")!;
         expect(begin[0].at).toBeLessThan(reserve.at);
         expect(store.setStaffDraftId).toHaveBeenCalledWith("draft-9");
@@ -324,7 +309,7 @@ for (const [which, path] of Object.entries(PATHS)) {
         fillAll();
         submit();
         await vi.waitFor(() => expect(store.go).toHaveBeenCalledWith(2));
-        expect(s.calls.filter((c) => c.action === "draftBegin")).toHaveLength(0);
+        expect(s.calls.filter((c) => c.action === "opsBeginTransaction")).toHaveLength(0);
       });
     }
 

@@ -3,8 +3,6 @@
 // alpha-3 picker, never free text (CI-4 ruling (a)); the skip sends `XXX` (owner 2026-10-11). No arithmetic (W7).
 import { createSignal, For, onCleanup, Show, type Component, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import type { DraftBeginInput } from '../../../../shared/api/generated/branch_day';
-import { keyedWrite } from '../../../../shared/api/keyed-write';
 import { screenT } from '../../../../shared/i18n';
 import { wordedError } from '../../../../shared/i18n/worded-error';
 import type { DeskStore, PassportFields } from '../../desk-store';
@@ -66,7 +64,6 @@ async function noPassportImage(): Promise<File> {
 
 function CustomerStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
-  const draftWrite = keyedWrite<DraftBeginInput, { id?: unknown }>(store.api, 'POST', '/api/tx-drafts');
   const [error, setError] = createSignal<string | undefined>();
   const [fileError, setFileError] = createSignal<string | undefined>();
   const [sending, setSending] = createSignal(false);
@@ -93,17 +90,18 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
     store.setPassport(file);
   }
 
-  /** draftBegin for staff (X5, #3008), the entry's own step, then reserveCustomer; step 2 on success. */
+  /** opsBeginTransaction for staff (X5), the entry's own step, then reserveCustomer; step 2 on success. */
   async function reserve(prefix?: (reason: string) => string): Promise<void> {
     setSending(true);
     setError(undefined);
     try {
       if (store.path.usesDraft && store.staffDraftId() === '') {
-        const draft = await draftWrite.send({
-          branch: store.branch(),
-          side: store.type(),
-          currency: store.currency(),
-          amount: store.amount(),
+        const draft = await store.api.post<
+          { action: string; payload: { type: string; currency: string; amount: string } },
+          { id?: unknown }
+        >(store.path.rpc, {
+          action: 'opsBeginTransaction',
+          payload: { type: store.type(), currency: store.currency(), amount: store.amount() },
         });
         if (!alive) return;
         if (typeof draft.id === 'string' && draft.id !== '') store.setStaffDraftId(draft.id);

@@ -23,14 +23,7 @@ function rpcServer(
       action: string;
       payload: Record<string, unknown>;
     };
-    // #3008: the staff draft is v3 draftBegin (POST /api/tx-drafts), not the retired opsBeginTransaction RPC.
-    const isDraft = String(input) === '/api/tx-drafts';
-    const call: RpcCall = {
-      path: String(input),
-      action: isDraft ? 'draftBegin' : body.action,
-      payload: isDraft ? (body as unknown as Record<string, unknown>) : body.payload,
-      at: clock++,
-    };
+    const call: RpcCall = { path: String(input), action: body.action, payload: body.payload, at: clock++ };
     calls.push(call);
     const a = answer(call.action, call.payload);
     return new Response(JSON.stringify(a.body ?? {}), {
@@ -42,7 +35,7 @@ function rpcServer(
 }
 
 const OK = (action: string): { status: number; body: unknown } =>
-  action === 'draftBegin'
+  action === 'opsBeginTransaction'
     ? { status: 200, body: { id: 'draft-9' } }
     : { status: 200, body: { customerId: 'CX-00000042', existing: false } };
 
@@ -62,7 +55,6 @@ function stubStore(path: DeskPath, api: ApiClient): DeskStore {
   const store = {
     api,
     path,
-    branch: () => 'XC-B01',
     type: () => 'BUY' as const,
     currency: () => 'USD',
     amount: () => '100.50',
@@ -156,7 +148,7 @@ function fillAll(): void {
 }
 
 describe('steps/customer: skip in-flight guard (#2315)', () => {
-  it('two Skip clicks before the image is made: one reserveCustomer and one draftBegin', async () => {
+  it('two Skip clicks before the image is made: one reserveCustomer and one opsBeginTransaction', async () => {
     const pendingBlobs: BlobCallback[] = [];
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(stubCanvasContext() as never);
     vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((cb: BlobCallback) => {
@@ -185,7 +177,7 @@ describe('steps/customer: skip in-flight guard (#2315)', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(s.calls.filter((c) => c.action === 'draftBegin')).toHaveLength(1);
+    expect(s.calls.filter((c) => c.action === 'opsBeginTransaction')).toHaveLength(1);
     expect(s.calls.filter((c) => c.action === 'reserveCustomer')).toHaveLength(1);
     expect(pendingBlobs).toHaveLength(1);
     expect(skipDisabledWhileMakingImage).toBe(true);
@@ -228,7 +220,7 @@ describe('steps/customer: skip in-flight guard (#2315)', () => {
 
     const reserves = s.calls.filter((c) => c.action === 'reserveCustomer');
     expect(reserves).toHaveLength(1);
-    expect(s.calls.filter((c) => c.action === 'draftBegin')).toHaveLength(1);
+    expect(s.calls.filter((c) => c.action === 'opsBeginTransaction')).toHaveLength(1);
     expect(reserves[0].payload.name).toBe('WALK-IN');
     expect(reserves[0].payload.passportNo).toBe('WALKIN');
     expect(reserves[0].payload.nationality).toBe('XXX');
