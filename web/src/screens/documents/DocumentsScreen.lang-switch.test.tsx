@@ -4,7 +4,7 @@ import { ApiError, type ApiClient, type ViewParams } from '../../shared/api/clie
 import { en } from '../../shared/i18n/en';
 import { th } from '../../shared/i18n/th';
 import { screenLookup, setLang } from '../../shared/i18n';
-import { OWNER } from './audiences';
+import { OWNER, STAFF } from './audiences';
 import { DocumentsScreen } from './DocumentsScreen';
 
 let dispose: (() => void) | undefined;
@@ -100,5 +100,28 @@ describe('DocumentsScreen language switch on refusal line', () => {
     setLang('en');
     await settle();
     expect(refusalEl!.textContent).toBe(en['error.serverError']);
+  });
+
+  it('row 4: 4xx ApiError with server message keeps the message as given across language switch', async () => {
+    setLang('th');
+    const serverMessage = 'ไม่พบเอกสารรายการ';
+    const err = new ApiError({ status: 404, code: 'documentsNotFound', message: serverMessage, field: 'ref' });
+    const { el } = await mountScreen(err);
+
+    const refusalEl = el.querySelector('.documents-refusal');
+    expect(refusalEl).not.toBeNull();
+    expect(refusalEl!.textContent).toBe(serverMessage);
+
+    setLang('en');
+    await settle();
+    expect(refusalEl!.textContent).toBe(serverMessage);
+  });
+
+  it('row 5: audience with refusalGoesTo replaces and shows no refusal line', async () => {
+    const err = new ApiError({ status: 400, code: 'invalidRequest', message: 'คำขอไม่ถูกต้อง' });
+    const { el, replace } = await mountScreen(err, STAFF);
+
+    expect(replace).toHaveBeenCalledWith('/staff');
+    expect(el.querySelector('.documents-refusal')).toBeNull();
   });
 });
