@@ -14,6 +14,7 @@ use xc_kernel::shift_hook::{NoShiftLifecycleHook, ShiftLifecycleHook};
 use crate::domain::shift::commands::close_shift::CloseShift;
 use crate::domain::shift::commands::move_stock::MoveStock;
 use crate::domain::shift::commands::open_shift::OpenShift;
+use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
 use crate::domain::shift::entities::shift_ledger::ShiftLedger;
 use crate::domain::shift::entities::stock_movement::StockMovement;
@@ -497,6 +498,26 @@ impl<R: ShiftRepository> ShiftService<R> {
 
     pub async fn active(&self, branch: &BranchId) -> AppResult<Option<Shift>> {
         self.repo.active(branch).await
+    }
+
+    pub async fn open_of_teller(&self, teller: &str) -> AppResult<Option<Shift>> {
+        self.repo.open_of_teller(teller).await
+    }
+
+    pub async fn open_of_teller_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        teller: &str,
+    ) -> AppResult<Option<Shift>> {
+        self.repo.open_of_teller_in(tx, teller).await
+    }
+
+    pub async fn open_of_branch(&self, branch: &BranchId) -> AppResult<Vec<OpenShiftRow>> {
+        self.repo.open_of_branch(branch).await
+    }
+
+    pub async fn shift(&self, branch: &BranchId, id: &str) -> AppResult<Option<Shift>> {
+        self.repo.shift(branch, id).await
     }
 
     pub async fn shifts(&self, branch: &BranchId) -> AppResult<Vec<Shift>> {
