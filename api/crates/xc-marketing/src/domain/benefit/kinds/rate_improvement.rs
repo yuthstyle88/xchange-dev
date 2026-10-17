@@ -17,9 +17,21 @@ enum RateImprovementParams {
 
 fn parse_params(params: &serde_json::Value) -> Result<RateImprovementParams, ParamError> {
     if let Some(delta) = decimal_param(params, "delta", "delta")? {
+        if delta <= Decimal::ZERO {
+            return Err(ParamError {
+                field: "delta",
+                reason: "RATE_IMPROVEMENT delta must be greater than 0".into(),
+            });
+        }
         return Ok(RateImprovementParams::Delta(delta));
     }
     if let Some(pct) = decimal_param(params, "percent", "percent")? {
+        if pct <= Decimal::ZERO || pct >= Decimal::ONE {
+            return Err(ParamError {
+                field: "percent",
+                reason: "RATE_IMPROVEMENT percent must be greater than 0 and less than 1".into(),
+            });
+        }
         return Ok(RateImprovementParams::Percent(pct));
     }
     Err(ParamError {
