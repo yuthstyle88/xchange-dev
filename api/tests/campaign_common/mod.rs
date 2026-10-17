@@ -115,10 +115,20 @@ impl Answer {
     pub fn field(&self) -> &str {
         self.body["error"]["field"].as_str().unwrap_or("")
     }
+
+    pub fn message(&self) -> &str {
+        self.body["error"]["message"].as_str().unwrap_or("")
+    }
 }
 
 pub type QuoteAnswer = Answer;
 pub type SaveAnswer = Answer;
+pub type HeaderCallers = MarketingCallers;
+pub const ORG: &str = ORG_1;
+
+pub async fn save(db: &TestDb, campaign_id: Uuid, body: &Value) -> Answer {
+    save_draft(db, campaign_id, body).await
+}
 
 pub async fn quote(db: &TestDb, fee_thb: &str) -> Answer {
     common::install_test_pii_keys();
