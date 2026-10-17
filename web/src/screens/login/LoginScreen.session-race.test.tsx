@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiError } from '../../shared/api/client';
 import { setLang } from '../../shared/i18n';
