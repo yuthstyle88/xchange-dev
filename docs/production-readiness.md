@@ -1,7 +1,7 @@
 # XCHANGE v3 — the road to the production release order
 
 > written-by: claude/c5ca141a · owner's order 2026-10-17 ~05:0xZ, in that session: *"วางแผน ปิดงาน และจ่ายงาน เพื่อให้เอเย่นเป็นแนวทางในการออก production"* (plan the close-out and the dispatch, so that the agents have a guideline for going to production).
-> Measured 2026-10-17T05:0xZ–05:1xZ: `origin/main` `abc46caf`, tq `GET /v1/snapshot` at 05:06:34Z, `gh issue list` / `gh pr list` on `108-Plaza/xchange`, `curl https://xc-v3.spacing.cloud/health/ready`, `ssh Dell-server uptime` at 05:13Z.
+> Corrected 2026-10-17 ~05:5xZ after the merger's review (PR 2834 PASS+follow-up): #1413 is not in tq. Measured 2026-10-17T05:0xZ–05:1xZ: `origin/main` `abc46caf`, tq `GET /v1/snapshot` at 05:06:34Z, `gh issue list` / `gh pr list` on `108-Plaza/xchange`, `curl https://xc-v3.spacing.cloud/health/ready`, `ssh Dell-server uptime` at 05:13Z.
 
 **Who this is for.** Every agent working on `108-Plaza/xchange`: the BE controller, the FE controller, the merge lane, the reviewers, and the Gemini implementers. It does not add rules. It says, in one place, what has to be true before the owner can give the order to push `release/prod`, which open ticket belongs to which of those conditions, and in what order the lanes release them.
 
@@ -71,7 +71,7 @@ The owner approved on 2026-10-17 ~04:4xZ (recorded on #564, issuecomment-6229594
 | Ledger readers | #1043, #1044, #1046 in parallel after #626; then #1047 | `shift_balances`, `stock_movements`, `ops_state.safe` (migration 3) |
 | Identity | #1023 in parallel after #626; then #1026 → #1027 | old `Actor`/`Role`, `legacy_actor` bridge, password login, `owners`/`employees`/sessions/`auth_attempts`, `users.legacy_employee_id` (migration 3) |
 | Transactions | #677 TX-9, now | the wide figure and payment columns (migration 3) |
-| Booking | #1413 BK-11, now | v2's rate-lock booking (M2) |
+| Booking | #1413 BK-11 — released by the owner 2026-10-17; up-front tests on `test/bk11-1413-upfront` (`77a28ef7`); **not in tq yet**: the BE controller settles the five open points on the ticket, then adds `ready` | v2's rate-lock booking (M2) |
 
 Why this is a production gate and not a clean-up: `STATE.md` says this is the cheapest moment to drop old shapes, and a schema that still carries two models forces every future fix to choose one. The drop migrations are deployed **on staging first (G2 step 3)** and the smoke plus a day of use there is the evidence for the prod order.
 
@@ -167,7 +167,7 @@ The target is the fleet rule: ≥80 % of a lane's usable workers busy at the sam
 | Wave | Lane | Tickets | Scopes | Gate |
 |---|---|---|---|---|
 | 0 — now | merger (claude/5781a09c) | re-bind + merge PR 2050; batch the 6 PRs without a verdict as their PASSes arrive; 3 FAIL PRs go back through rework | — | G1/G4 |
-| 1 — now | BE (claude/56a74fcd) | #626 · #677 · #1413 (running, approved) | `xc-shift`/custody · `transactions` writers · v2 booking module | G3 |
+| 1 — now | BE (claude/56a74fcd) | #626 · #677 (in tq, approved) · #1413 (approved; tests pushed, not in tq until the BE controller settles its five points and adds `ready`) | `xc-shift`/custody · `transactions` writers · v2 booking module | G3 |
 | 2 — after #626 merges | BE | #1043 · #1044 · #1046 · #1023 in parallel | `xc-shift` shift repo · `ops_state` paths · `stock_movements` readers · custody role mapping — **check `scope_prefixes` of all four before pinning**; #1043 and #1044 both name `xc-shift` | G3 |
 | 3 — after wave 2 | BE | #1026 → #1027; #1047 after #1043/#1044/#1046 | extractor → drop migrations | G3 |
 | 2' — parallel with 2 | BE | #2126 · #2127 (after 2050) · the first #2108 BUG-row tickets and the #2063 xc-cash transfer-math ticket as the controller cuts them | loyalty · ledger_postings / transfer math — disjoint from wave 2 by file | G4 |
