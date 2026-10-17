@@ -180,7 +180,8 @@ async fn feed_of(replay: &Replay<'_>, document: &str) -> Option<Value> {
                 f.phone, f.status, f.value_satang, f.reversed_satang, \
                 f.completed_at = t.recorded_at AS at_ok, \
                 f.organization_id = b.organization_id AS org_ok, \
-                f.value_satang = (t.principal * 100)::bigint AS value_ok \
+                f.value_satang = (SELECT (sum(l.thb_amount) * 100)::bigint FROM transaction_lines l \
+                                  WHERE l.transaction_id = t.id) AS value_ok \
          FROM transactions t \
          JOIN broker_exchange_feed f ON f.transaction_id = t.id \
          JOIN branches b ON b.id = t.branch_id \

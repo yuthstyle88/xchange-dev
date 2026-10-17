@@ -229,9 +229,14 @@ async fn an_open_shift_is_the_desks_active_shift_and_a_closed_one_is_not() {
     replay.run_range(1, 2).await;
     let desk = replay.shop.builder().desk_config(&branch(MAIN)).await;
     let desk = desk.expect("desk").to_value();
-    let open = replay.shop.shifts.active(&branch(MAIN)).await;
-    let open = open.expect("active").expect("a shift is open");
-    assert_eq!(desk["activeShift"], json!(open.id));
+    let open = replay
+        .shop
+        .shifts
+        .open_of_branch(&branch(MAIN))
+        .await
+        .expect("open_of_branch");
+    assert_eq!(open.len(), 1, "a shift is open");
+    assert_eq!(desk["activeShift"], json!(open[0].shift_id));
 
     // #37 closes it
     replay.run_range(3, 37).await;

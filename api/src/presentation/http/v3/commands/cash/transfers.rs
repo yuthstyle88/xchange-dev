@@ -169,7 +169,7 @@ impl CommandAction for TransferDispatch {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &BranchId,
+        branch: &BranchId,
         who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
@@ -178,7 +178,7 @@ impl CommandAction for TransferDispatch {
         let user = caller_in(tx, who, now).await?;
         let t = self
             .flow
-            .dispatch_in(tx, &user, &input.id, now)
+            .dispatch_in(tx, branch, &user, &input.id, now)
             .await
             .map_err(from_cash_error)?;
         Ok(answer(t))

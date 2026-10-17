@@ -150,12 +150,15 @@ async fn row(shop: &Shop, document_ref: &str) -> Row {
         Decimal,
     );
     let (line_id, rate, unit_size, amount, principal, received, paid): Raw = sqlx::query_as(
-        // TX-9 #677: the published line is read through the line's quote line, not the wide column.
-        "SELECT (SELECT ql.published_rate_line_id::text FROM transaction_lines l \
-                 JOIN quote_lines ql ON ql.id = l.quote_line_id \
-                 WHERE l.transaction_id = transactions.id AND l.line_no = 1), \
-                rate, unit_size, amount, principal, received, paid \
-         FROM transactions WHERE document_ref = $1",
+        // TX-9 #677: every figure is read off the first line, the published line through its
+        // quote line; received/paid are the line's settled THB on its side.
+        "SELECT ql.published_rate_line_id::text, l.rate_snapshot, l.unit_size, l.quantity, \
+                l.thb_amount, \
+                CASE l.shop_side WHEN 'SELL' THEN l.settle_thb ELSE 0 END, \
+                CASE l.shop_side WHEN 'BUY' THEN l.settle_thb ELSE 0 END \
+         FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id \
+         LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id \
+         WHERE t.document_ref = $1 AND l.line_no = 1",
     )
     .bind(document_ref)
     .fetch_one(&shop.pool)
@@ -839,7 +842,7 @@ async fn a_reference_rate_sent_per_1_is_stored_per_unit() {
         .await
         .expect("the save is accepted");
     let (rate, reference, unit_size): (Decimal, Option<Decimal>, Decimal) = sqlx::query_as(
-        "SELECT rate, reference_rate, unit_size FROM transactions WHERE document_ref = $1",
+        "SELECT l.rate_snapshot, l.reference_rate, l.unit_size FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id WHERE t.document_ref = $1",
     )
     .bind(&saved.document_ref)
     .fetch_one(&shop.pool)

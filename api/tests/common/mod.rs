@@ -8,7 +8,7 @@
 
 use std::future::Future;
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,6 +20,54 @@ use xchange::bootstrap::{AppState, BuildInfo, DatabaseProbe};
 use xchange::config::Settings;
 
 static TEST_DOCS_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// The root directory for temporary test document stores (`<temp_dir>/xc-test-docs`).
+pub fn test_docs_root() -> PathBuf {
+    std::env::temp_dir().join("xc-test-docs")
+}
+
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::path::Path::new("/proc").join(pid.to_string()).exists()
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        std::process::Command::new("ps")
+            .args(["-p", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(true)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
+/// Removes `<root>/<pid>` children whose `<pid>` is a `u32` other than the
+/// current process ID and whose process is no longer alive.
+pub fn reap_dead_test_docs(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    let own_pid = std::process::id();
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        let Ok(pid) = name.parse::<u32>() else {
+            continue;
+        };
+        if pid != own_pid && !pid_alive(pid) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
 
 /// The committed `api/configuration` directory.
 pub fn config_dir() -> PathBuf {
@@ -45,9 +93,13 @@ pub fn settings(pairs: &[(&str, &str)]) -> Settings {
         .iter()
         .any(|(k, _)| k == "APP_VERIFICATION__STORE_DIR")
     {
+        static REAP_ONCE: std::sync::Once = std::sync::Once::new();
+        let root = test_docs_root();
+        REAP_ONCE.call_once(|| reap_dead_test_docs(&root));
         let n = TEST_DOCS_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let temp_dir =
-            std::env::temp_dir().join(format!("xc-test-docs-{}-{}", std::process::id(), n));
+        let temp_dir = root
+            .join(std::process::id().to_string())
+            .join(n.to_string());
         let _ = std::fs::create_dir_all(&temp_dir);
         env_pairs.push((
             "APP_VERIFICATION__STORE_DIR".to_string(),

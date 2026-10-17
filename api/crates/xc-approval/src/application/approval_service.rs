@@ -73,6 +73,7 @@ use crate::domain::approval_repository::ApprovalRepository;
 use crate::domain::audit_log::{AuditEvent, AuditLog};
 use crate::domain::redactor::Redactor;
 use crate::domain::request::{ApprovalRequest, Outcome, RequestId};
+use crate::domain::subject::SubjectError;
 
 /// Errors produced by the approval core.
 #[derive(Debug, thiserror::Error)]
@@ -85,6 +86,8 @@ pub enum ApprovalError {
     IdempotencyConflict(String),
     #[error("policy refused: {code}: {message}")]
     PolicyRefused { code: &'static str, message: String },
+    #[error("dependency unavailable: {code}: {message}")]
+    DependencyUnavailable { code: &'static str, message: String },
     #[error("another request is already pending for this object: {0}")]
     AlreadyPending(String),
     #[error("request not found: {0}")]
@@ -105,6 +108,7 @@ impl ApprovalError {
             Self::StaleVersion(_) => "staleVersion",
             Self::IdempotencyConflict(_) => "idempotencyConflict",
             Self::PolicyRefused { code, .. } => code,
+            Self::DependencyUnavailable { code, .. } => code,
             Self::AlreadyPending(_) => "alreadyPending",
             Self::NotFound(_) => "notFound",
             Self::UnknownType(_) => "unknownType",
@@ -182,9 +186,16 @@ impl ApprovalService {
         })?;
 
         let version_hash = subject
-            .version_hash(tx, object_id)
+            .version_hash_or_unavailable(tx, object_id)
             .await
-            .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
+            .map_err(|e| match e {
+                SubjectError::DependencyUnavailable { code, message } => {
+                    ApprovalError::DependencyUnavailable { code, message }
+                }
+                SubjectError::Failed(err) => {
+                    ApprovalError::Internal(format!("failed to fetch version hash: {err}"))
+                }
+            })?;
 
         let policy_version = policy.policy_version();
         let proposed_payload = Redactor::redact(payload);
@@ -281,9 +292,16 @@ impl ApprovalService {
             })?;
 
         let current_hash = subject
-            .version_hash(tx, &request.object_id)
+            .version_hash_or_unavailable(tx, &request.object_id)
             .await
-            .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
+            .map_err(|e| match e {
+                SubjectError::DependencyUnavailable { code, message } => {
+                    ApprovalError::DependencyUnavailable { code, message }
+                }
+                SubjectError::Failed(err) => {
+                    ApprovalError::Internal(format!("failed to fetch version hash: {err}"))
+                }
+            })?;
         if current_hash != request.object_version_hash {
             return Err(ApprovalError::StaleVersion(format!(
                 "object version hash moved from {} to {current_hash}",
@@ -309,9 +327,16 @@ impl ApprovalService {
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
         subject
-            .on_decided(tx, &request.object_id, outcome)
+            .on_decided_or_unavailable(tx, &request, outcome)
             .await
-            .map_err(|e| ApprovalError::Internal(format!("on_decided failed: {e}")))?;
+            .map_err(|e| match e {
+                SubjectError::DependencyUnavailable { code, message } => {
+                    ApprovalError::DependencyUnavailable { code, message }
+                }
+                SubjectError::Failed(err) => {
+                    ApprovalError::Internal(format!("on_decided failed: {err}"))
+                }
+            })?;
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),

@@ -1,5 +1,6 @@
 //! The devices' part in the save of an exchange (T8c-2b, `docs/design/xchange-v3.md` §5.4).
 
+use pos_error::AppError;
 use rust_decimal::Decimal;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::mode::Mode;
@@ -24,17 +25,21 @@ impl DeviceSaveStep {
 /// The saved exchange as the device log sees it. `Money::value` is still
 /// `pub(crate)`, so the amount returns from its hundredths; `Rate::value()`
 /// provides the rate directly — both exact, never a float.
-fn saved_exchange(saved: &Transaction) -> SavedExchange {
-    SavedExchange {
+fn saved_exchange(saved: &Transaction) -> Result<SavedExchange, AppError> {
+    let minor = saved
+        .amount
+        .try_minor()
+        .map_err(|e| AppError::Internal(format!("saved exchange amount: {e}")))?;
+    Ok(SavedExchange {
         cash: saved.method.is_cash(),
         submission_id: saved.submission_id.clone(),
         document_ref: saved.document_ref.clone(),
         currency: saved.currency.clone(),
-        amount: Decimal::new(saved.amount.minor(), 2),
+        amount: Decimal::new(minor, 2),
         rate: saved.rate.value(),
         passport_key: Some(saved.passport_key.clone()),
         slip_key: saved.slip_key.clone(),
-    }
+    })
 }
 
 impl SaveStep for DeviceSaveStep {
@@ -72,14 +77,9 @@ impl SaveStep for DeviceSaveStep {
             if ctx.form.customer.mode != Mode::Live {
                 return Ok(());
             }
+            let saved_ex = saved_exchange(saved)?;
             self.devices
-                .after_save_in(
-                    tx,
-                    ctx.branch,
-                    &saved_exchange(saved),
-                    &ctx.actor.id,
-                    ctx.now,
-                )
+                .after_save_in(tx, ctx.branch, &saved_ex, &ctx.actor.id, ctx.now)
                 .await
         })
     }

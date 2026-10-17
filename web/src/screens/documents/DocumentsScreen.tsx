@@ -22,7 +22,7 @@ export interface DocumentsScreenProps {
 
 export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
   const [data, setData] = createSignal<DocumentsData | null>(null);
-  const [refused, setRefused] = createSignal<string | null>(null);
+  const [refused, setRefused] = createSignal<{ err: unknown } | null>(null);
 
   onMount(async () => {
     const { api, audience, reference, branch } = props;
@@ -37,7 +37,7 @@ export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
         props.replace(audience.refusalGoesTo);
         return;
       }
-      setRefused(refusalText(err, tr));
+      setRefused({ err });
     }
   });
 
@@ -51,9 +51,11 @@ export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
       </Show>
 
       <Show when={refused()}>
-        <p class="documents-refusal" role="alert">
-          {refused()}
-        </p>
+        {(r) => (
+          <p class="documents-refusal" role="alert">
+            {refusalText(r().err, tr)}
+          </p>
+        )}
       </Show>
 
       <Show when={data()}>

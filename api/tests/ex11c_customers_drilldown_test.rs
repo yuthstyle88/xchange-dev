@@ -409,18 +409,7 @@ impl Room {
             other => panic!("a status this file seeds: {other}"),
         }
         tx.commit().await.expect("commit");
-        // every figure of the wide row now differs from the line and the payment
-        sqlx::query(
-            "UPDATE transactions SET type = CASE type WHEN 'BUY' THEN 'SELL' ELSE 'BUY' END, code = 'EUR', \
-               amount = amount * 7 + 3, rate = rate * 7 + 3, principal = principal * 7 + 3, fee = fee * 7 + 3, \
-               bank_fee = bank_fee * 7 + 3, received = received * 7 + 3, paid = paid * 7 + 3, \
-               method = 'MUTATED', payment_ref = 'MUTATED', account = 'MUTATED' \
-             WHERE id = $1",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .expect("overwrite the wide figures");
+        // TX-9 (#677): the wide figures are gone, so there is no wide row left to make differ.
         (id.to_string(), doc)
     }
 

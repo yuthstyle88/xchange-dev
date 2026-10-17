@@ -201,6 +201,17 @@ impl BranchIntake {
             .find_open_case_by_customer(&mut tx, customer_id)
             .await
             .map_err(BranchIntakeError::Case)?;
+        // Re-read the open case under its row lock (#2876): a concurrent intake at another branch
+        // waits here, then sees the case already SUBMITTED and filed at that branch, and answers
+        // `CaseLocked` below instead of overwriting its branch.
+        let open_case = match open_case {
+            Some(c) => self
+                .cases
+                .find_case_by_id_for_update(&mut tx, c.id)
+                .await
+                .map_err(BranchIntakeError::Case)?,
+            None => None,
+        };
 
         let mut case_id_hasher = Sha256::new();
         case_id_hasher
@@ -250,12 +261,16 @@ impl BranchIntake {
             }
         }
 
-        let case_to_submit = if let Some(existing) = open_case {
-            if existing.status == CaseStatus::Submitted
-                || existing.status == CaseStatus::UnderReview
+        let case_to_submit = if let Some(mut existing) = open_case {
+            if !matches!(existing.status, CaseStatus::Draft | CaseStatus::NeedsUpdate)
+                || existing
+                    .branch_id
+                    .as_ref()
+                    .is_some_and(|b| b != &rev_branch_id)
             {
                 return Err(BranchIntakeError::CaseLocked);
             }
+            existing.branch_id = Some(rev_branch_id.clone());
             existing
         } else {
             VerificationCase {
@@ -334,7 +349,13 @@ impl BranchIntake {
                 .await
                 .map_err(BranchIntakeError::Case)?;
             self.cases
-                .update_case_submitted(&mut tx, submitted_case.id, now, submitted_case.version)
+                .update_case_submitted_with_branch(
+                    &mut tx,
+                    submitted_case.id,
+                    now,
+                    submitted_case.version,
+                    submitted_case.branch_id.as_ref(),
+                )
                 .await
                 .map_err(BranchIntakeError::Case)?;
             submitted_case

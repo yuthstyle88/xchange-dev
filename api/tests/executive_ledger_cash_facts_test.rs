@@ -326,17 +326,10 @@ impl Room {
         };
 
         sqlx::query(
-            "INSERT INTO transactions ( \
-                 id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-                 customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-                 bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-                 value_date, paid_at, recorded_at, recorded_by, completed_at, status, organization_id \
-             ) VALUES ( \
-                 $1, $2, $3, $4, $5, $6, 'hash', \
-                 $7, 'Test Customer', 'THA', $8, $9, 100.0, 1.0, 100.0, 0, \
-                 0, 100.0, 0, 'Cash', '', '', 'staff', '', '', \
-                 $10, $11, $11, 'staff', $11, 'COMPLETED', $12::uuid \
-             )",
+            "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+                 customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+                 recorded_by, completed_at, status, organization_id) VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, 'Test Customer', 'THA', 'staff', '', '', $8, $9, \
+                 $9, 'staff', $9, 'COMPLETED', $10::uuid)",
         )
         .bind(tx_id)
         .bind(unique("TX"))
@@ -345,8 +338,6 @@ impl Room {
         .bind(shift_id)
         .bind(unique("sub"))
         .bind(customer_id)
-        .bind(shop_side)
-        .bind(currency)
         .bind(date)
         .bind(recorded_at)
         .bind(ORG)

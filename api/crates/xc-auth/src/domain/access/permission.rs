@@ -66,4 +66,6 @@ pub enum Permission {
     RateAlertSettingsSave,
     /// SP-1 (#1585, rates design §12.6, §12.10): enter org starting prices. EXECUTIVE only.
     OrgStartingPricesManage,
+    /// LY-6 (#1411, membership-points design §3, §4.6): draft and submit loyalty rule versions. EXECUTIVE only.
+    LoyaltyRulesManage,
 }

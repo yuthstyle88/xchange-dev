@@ -142,6 +142,15 @@ async fn claim_handler(
     let Ok(body) = serde_json::from_slice::<ClaimRequest>(&bytes) else {
         return bad_request();
     };
+    if crate::presentation::http::v3::input::one_of(
+        "drawer.transport",
+        &body.drawer.transport,
+        &["CUPS", "TCP"],
+    )
+    .is_err()
+    {
+        return bad_request();
+    }
 
     let clock = req.app_data::<web::Data<dyn RpcClock>>().cloned();
     let now = clock.as_ref().map_or_else(Utc::now, |c| c.now());

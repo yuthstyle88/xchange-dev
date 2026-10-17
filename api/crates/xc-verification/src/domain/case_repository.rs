@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+use xc_kernel::ids::BranchId;
 
 use crate::domain::case::case_error::CaseError;
 use crate::domain::case::verification_case::VerificationCase;
@@ -65,6 +66,19 @@ pub trait CaseRepository: Send + Sync {
         case_id: Uuid,
         submitted_at: DateTime<Utc>,
         version: i32,
+    ) -> BoxFuture<'a, Result<(), CaseError>>;
+
+    /// Update case to SUBMITTED status and record `branch_id` when given.
+    ///
+    /// No default body on purpose (#2841): a default that ignored `branch_id` let an implementor
+    /// drop the reviewer's branch silently. Every implementor must decide what to do with it.
+    fn update_case_submitted_with_branch<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        case_id: Uuid,
+        submitted_at: DateTime<Utc>,
+        version: i32,
+        branch_id: Option<&'a BranchId>,
     ) -> BoxFuture<'a, Result<(), CaseError>>;
 
     /// Find a document by its encrypted object ref.

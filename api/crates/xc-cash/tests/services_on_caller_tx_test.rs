@@ -165,8 +165,8 @@ impl Db {
         .await
         .expect("insert a user");
         sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
+            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+             VALUES ($1::uuid, $2, $3::uuid, $4, '2026-01-01T00:00:00Z')",
         )
         .bind(&id)
         .bind(role.as_str())
@@ -1081,7 +1081,7 @@ async fn dispatch_in_runs_on_the_source_locked_caller_tx_and_rolls_back_with_it(
     let t = within(
         "dispatch_in",
         db.transfers()
-            .dispatch_in(&mut tx, &m.creator, &m.id, at(30)),
+            .dispatch_in(&mut tx, &m.from, &m.creator, &m.id, at(30)),
     )
     .await
     .expect("dispatch_in on a caller holding the source branch's lock");
@@ -1118,7 +1118,7 @@ async fn dispatch_in_beyond_the_safe_is_refused_and_posts_nothing() {
     let result = within(
         "dispatch_in",
         db.transfers()
-            .dispatch_in(&mut tx, &m.creator, &m.id, at(30)),
+            .dispatch_in(&mut tx, &m.from, &m.creator, &m.id, at(30)),
     )
     .await;
     match result {
@@ -1497,8 +1497,8 @@ async fn other_org_person(
     .await
     .expect("insert a user in the other organisation");
     sqlx::query(
-        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-         VALUES ($1::uuid, $2, $3::uuid, $4)",
+        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+         VALUES ($1::uuid, $2, $3::uuid, $4, '2026-01-01T00:00:00Z')",
     )
     .bind(&id)
     .bind(role.as_str())

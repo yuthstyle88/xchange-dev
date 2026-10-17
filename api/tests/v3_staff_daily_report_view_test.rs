@@ -366,8 +366,8 @@ impl Day {
         .await
         .expect("insert a user");
         sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
+            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+             VALUES ($1::uuid, $2, $3::uuid, $4, '2026-01-01T00:00:00Z')",
         )
         .bind(&id)
         .bind(role.as_str())
@@ -2356,8 +2356,14 @@ async fn verified_close_whose_shift_is_v2_opened_is_excluded_from_both_days() {
     let open_req = unique("open-req");
     d.db()
         .exec(&format!(
+            "UPDATE shifts SET status = 'CLOSED' WHERE id = '{}'",
+            d.c.shift
+        ))
+        .await;
+    d.db()
+        .exec(&format!(
             "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count) \
-             VALUES ('{shift_id}', '{MAIN}', 'CLOSED', '{}', 'owner', '{open_req}', '{}'::uuid, NULL)",
+             VALUES ('{shift_id}', '{MAIN}', 'OPEN', '{}', 'owner', '{open_req}', '{}'::uuid, NULL)",
             local(bangkok(), day(), 10, 0, 0),
             teller.id
         ))

@@ -19,19 +19,16 @@ use save_common::*;
 
 const ORG_1: &str = "00000000-0000-0000-0000-000000000001";
 
-/// The wide row and its children as one comparable text per exchange.
+/// The header row and its children as one comparable text per exchange. TX-9 (#677) dropped the
+/// wide figures, so the line-equals-wide and payment-bank-fee-equals-wide comparisons retired.
 async fn joined(shop: &Shop, number: &str) -> String {
     sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT concat_ws('|', \
             t.status, (t.completed_at = t.recorded_at)::text, \
-            (l.shop_side = t.type)::text, (l.currency = t.code)::text, (l.quantity = t.amount)::text, \
-            (l.unit_size = t.unit_size)::text, (l.rate_snapshot = t.rate)::text, \
-            (l.reference_rate IS NOT DISTINCT FROM t.reference_rate)::text, \
-            (l.thb_amount = t.principal)::text, (l.fee_thb = t.fee)::text, \
             l.settle_thb::text, l.line_no::text, coalesce(l.quote_line_id::text, 'NULL'), \
             (l.organization_id = t.organization_id)::text, \
             p.method, p.reference, p.account, coalesce(p.slip_file_key, 'NULL'), \
-            (p.amount_thb = l.settle_thb)::text, (p.bank_fee_thb = t.bank_fee)::text, \
+            (p.amount_thb = l.settle_thb)::text, \
             (p.paid_at = t.paid_at)::text, p.payment_no::text, \
             r.number, r.revision::text, (r.issued_at = t.recorded_at)::text, \
             (r.document_ref = (SELECT file_key FROM transaction_files f \
@@ -111,14 +108,6 @@ async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide
         [
             "COMPLETED",
             t,
-            t,
-            t,
-            t,
-            t,
-            t,
-            t,
-            t,
-            t,
             "3210.00",
             "1",
             &buy_quote_line,
@@ -127,7 +116,6 @@ async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide
             "",
             "Cash drawer 1",
             "NULL",
-            t,
             t,
             t,
             "1",
@@ -144,14 +132,6 @@ async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide
         [
             "COMPLETED",
             t,
-            t,
-            t,
-            t,
-            t,
-            t,
-            t,
-            t,
-            t,
             "8276.50",
             "1",
             &sell_quote_line,
@@ -160,7 +140,6 @@ async fn a_compat_save_writes_one_line_one_payment_and_one_receipt_with_the_wide
             "TRX-1",
             "Cash drawer 1",
             &slip,
-            t,
             t,
             t,
             "1",

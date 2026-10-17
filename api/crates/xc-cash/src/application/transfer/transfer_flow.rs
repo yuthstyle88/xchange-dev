@@ -20,6 +20,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 
@@ -214,9 +215,12 @@ impl TransferFlow {
         let parts = self.parts();
         let who = who.clone();
         let id_owned = id.to_owned();
+        let at = t.from_branch.clone();
         self.branch_tx
             .run(&t.from_branch, move |tx| {
-                Box::pin(async move { Self::dispatch_on(&parts, tx, &who, &id_owned, now).await })
+                Box::pin(
+                    async move { Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now).await },
+                )
             })
             .await
     }
@@ -568,11 +572,12 @@ impl TransferFlow {
     pub async fn dispatch_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        Self::dispatch_on(&self.parts(), tx, who, id, now).await
+        Self::dispatch_on(&self.parts(), tx, branch, who, id, now).await
     }
 
     /// `branch` is the caller's (the session) branch. A transfer whose destination is another branch is refused
@@ -605,11 +610,22 @@ impl TransferFlow {
     async fn dispatch_on(
         parts: &FlowParts,
         tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        let t = locked(parts.repo.as_ref(), tx, id, TransferStep::Dispatch).await?;
+        let t = parts
+            .repo
+            .find_by_id_in(tx, id)
+            .await?
+            .ok_or_else(|| not_found(id))?;
+        if t.from_branch != *branch {
+            return Err(AppError::Forbidden);
+        }
+        t.status
+            .next(TransferStep::Dispatch)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
         require(who, Permission::CashManage, &t.from_branch, now)?;
         let ends = parts
             .kinds
@@ -678,11 +694,13 @@ impl TransferFlow {
 
         // Person rule (ruling Q1): cash entering a drawer is received by that shift's own teller, by user id.
         if let Some(ref shift_id) = t.to_shift {
-            let shift_teller: String =
-                sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
-                    .bind(shift_id)
-                    .fetch_one(&mut **tx)
-                    .await?;
+            let shift_teller: String = sqlx::query_scalar(
+                "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN'",
+            )
+            .bind(shift_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| AppError::Domain(ShiftError::NoOpenShift.to_string()))?;
             if shift_teller != who.user_id {
                 return Err(AppError::Domain(
                     "only the shift's teller may receive into drawer".into(),
@@ -713,9 +731,10 @@ impl TransferFlow {
         note: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
+        let transfer_uuid = Uuid::parse_str(id).map_err(|_| not_found(id))?;
         let org_uuid: Uuid =
-            sqlx::query_scalar("SELECT organization_id FROM cash_transfers WHERE id = $1::uuid")
-                .bind(id)
+            sqlx::query_scalar("SELECT organization_id FROM cash_transfers WHERE id = $1")
+                .bind(transfer_uuid)
                 .fetch_optional(&mut **tx)
                 .await?
                 .ok_or_else(|| not_found(id))?;
@@ -725,12 +744,11 @@ impl TransferFlow {
         }
         locked(parts.repo.as_ref(), tx, id, TransferStep::Reconcile).await?;
 
-        let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) = sqlx::query_as(
-            "SELECT created_by, received_by FROM cash_transfers WHERE id = $1::uuid",
-        )
-        .bind(id)
-        .fetch_one(&mut **tx)
-        .await?;
+        let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) =
+            sqlx::query_as("SELECT created_by, received_by FROM cash_transfers WHERE id = $1")
+                .bind(transfer_uuid)
+                .fetch_one(&mut **tx)
+                .await?;
         if creator_uuid.to_string() == who.user_id {
             return Err(AppError::Domain("creator cannot reconcile transfer".into()));
         }
@@ -1007,6 +1025,48 @@ mod tests {
                 assert_eq!(id, unknown);
             }
             other => panic!("expected AppError::NotFound on unknown transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
+    }
+
+    #[tokio::test]
+    async fn finance_reconciles_non_uuid_id_gets_not_found() {
+        let pool = test_pool().await;
+        let now = Utc.with_ymd_and_hms(2026, 10, 16, 12, 0, 0).unwrap();
+        let branch = BranchId::new("XC-B01");
+        sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $1)")
+            .bind(branch.as_str())
+            .execute(&pool)
+            .await
+            .expect("branch of org A");
+        let user_id: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        )
+        .bind(ORG_A)
+        .bind(unique("orga-fin"))
+        .fetch_one(&pool)
+        .await
+        .expect("org A finance user");
+        let finance = Actor::new(
+            &user_id,
+            ORG_A,
+            vec![ScopedRole::new(Role::Finance, Some(branch), now, None)],
+            None,
+        );
+
+        let flow = TransferFlow::pg(pool.clone());
+        let mut tx = pool.begin().await.expect("begin");
+        let err = flow
+            .reconcile_in(&mut tx, &finance, "abc", "probe", now)
+            .await
+            .expect_err("non-UUID transfer id must be refused");
+        match err {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, "abc");
+            }
+            other => panic!("expected AppError::NotFound on non-UUID id, got {other:?}"),
         }
         tx.rollback().await.expect("rollback");
     }

@@ -151,6 +151,7 @@ impl std::fmt::Debug for BrokerSettings {
     }
 }
 
+pub use crate::infrastructure::recognize::settings::{RecognizeConfigError, RecognizeSettings};
 pub use xc_loyalty::infrastructure::config::LoyaltyConfig as LoyaltySettings;
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -175,6 +176,10 @@ pub struct Settings {
     pub broker: Option<BrokerSettings>,
     #[serde(skip)]
     pub loyalty: Option<LoyaltySettings>,
+    /// `XC_RECOGNIZE_*` (design `recognize-passport-read.md` §6). `Err` never stops the server:
+    /// the passport read answers 503 instead.
+    #[serde(skip, default = "crate::infrastructure::recognize::settings::unset")]
+    pub recognize: Result<RecognizeSettings, RecognizeConfigError>,
 }
 
 impl Settings {
@@ -245,6 +250,15 @@ impl Settings {
             env_map.get("XC_LOYALTY_TENANT_ID").map(|s| s.as_str()),
             env_map.get("XC_LOYALTY_WEBHOOK_SECRET").map(|s| s.as_str()),
             env_map.get("XC_LOYALTY_TIMEOUT_MS").map(|s| s.as_str()),
+            env_map.get("XC_LOYALTY_SERVICE_TOKEN").map(|s| s.as_str()),
+        );
+
+        let recognize = RecognizeSettings::from_raw(
+            env_map.get("XC_RECOGNIZE_BASE_URL").map(|s| s.as_str()),
+            env_map.get("XC_RECOGNIZE_TOKEN").map(|s| s.as_str()),
+            env_map.get("XC_RECOGNIZE_PROVIDER").map(|s| s.as_str()),
+            env_map.get("XC_RECOGNIZE_MODEL").map(|s| s.as_str()),
+            env_map.get("XC_RECOGNIZE_TIMEOUT_MS").map(|s| s.as_str()),
         );
 
         let bot_token = env_map
@@ -298,6 +312,7 @@ impl Settings {
         settings.identity = identity;
         settings.broker = broker;
         settings.loyalty = loyalty;
+        settings.recognize = recognize;
         settings.bot.api_token = bot_token;
         if settings.auth.purge_interval_secs == 0 {
             return Err(config::ConfigError::Message(

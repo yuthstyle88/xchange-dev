@@ -363,6 +363,56 @@ async fn started_handover_for(room: &Room, receiver_branch: &str) -> (Who, Who, 
     (teller, receiver, shift, id)
 }
 
+async fn seeded_handover_for(room: &Room, receiver_branch: &str) -> (Who, Who, String, String) {
+    let (teller, _, shift) = opened_shift(room).await;
+    let receiver = room.person(Role::Teller, Some(receiver_branch)).await;
+    let thb1000 = room.denomination("THB", "1000").await;
+    let count_id: String = sqlx::query_scalar(
+        "INSERT INTO cash_counts (organization_id, branch_id, shift_id, kind, counted_by, counted_at, idempotency_key) \
+         VALUES ($1::uuid, $2, $3, 'HANDOVER_OUT', $4::uuid, now(), $5) RETURNING id::text",
+    )
+    .bind(ORG)
+    .bind(B01)
+    .bind(&shift)
+    .bind(&teller.id)
+    .bind(unique("seed_count"))
+    .fetch_one(&room.pool)
+    .await
+    .expect("seed HANDOVER_OUT count");
+    sqlx::query(
+        "INSERT INTO cash_count_lines (count_id, organization_id, currency, denomination_id, qty) \
+         VALUES ($1::uuid, $2::uuid, 'THB', $3, 2)",
+    )
+    .bind(&count_id)
+    .bind(ORG)
+    .bind(thb1000)
+    .execute(&room.pool)
+    .await
+    .expect("seed HANDOVER_OUT count line");
+    sqlx::query(
+        "INSERT INTO cash_count_totals (count_id, organization_id, currency, counted, expected) \
+         VALUES ($1::uuid, $2::uuid, 'THB', 2000, 2300)",
+    )
+    .bind(&count_id)
+    .bind(ORG)
+    .execute(&room.pool)
+    .await
+    .expect("seed HANDOVER_OUT count total");
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO handovers (organization_id, branch_id, from_shift_id, count_id, receiver_id, status) \
+         VALUES ($1::uuid, $2, $3, $4::uuid, $5::uuid, 'PENDING') RETURNING id::text",
+    )
+    .bind(ORG)
+    .bind(B01)
+    .bind(&shift)
+    .bind(&count_id)
+    .bind(&receiver.id)
+    .fetch_one(&room.pool)
+    .await
+    .expect("seed PENDING handover");
+    (teller, receiver, shift, id)
+}
+
 async fn handover_status(room: &Room, id: &str) -> Option<String> {
     room.text(&format!(
         "SELECT status FROM handovers WHERE id = '{id}'::uuid"
@@ -413,7 +463,7 @@ async fn lg4_fund(
 #[actix_web::test]
 async fn h1_receiver_of_another_branch_cannot_accept_handover() {
     let room = Room::start().await;
-    let (_, receiver, shift, id) = started_handover_for(&room, B09).await;
+    let (_, receiver, shift, id) = seeded_handover_for(&room, B09).await;
 
     let a = post(
         &room,
@@ -458,7 +508,7 @@ async fn h1_receiver_of_another_branch_cannot_accept_handover() {
 #[actix_web::test]
 async fn h2_receiver_of_another_branch_cannot_reject_handover() {
     let room = Room::start().await;
-    let (_, receiver, _, id) = started_handover_for(&room, B09).await;
+    let (_, receiver, _, id) = seeded_handover_for(&room, B09).await;
 
     let a = post(
         &room,

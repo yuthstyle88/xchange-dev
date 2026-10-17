@@ -88,8 +88,8 @@ async fn the_rest(db: &TestDb) -> Result<(), String> {
     m.run(&db.pool).await.map_err(|e| e.to_string())
 }
 
-/// A DEMO customer, a receipt file, and a COMPLETED exchange at MAIN with receipt revision 1;
-/// answers the exchange id.
+/// A DEMO customer, a receipt file, and a COMPLETED exchange at MAIN with its line, payment and
+/// receipt revision 1; answers the exchange id.
 async fn completed(db: &TestDb, n: u32) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     let number = format!("TEST-XC-20261006-{n:06}");
@@ -104,14 +104,45 @@ async fn completed(db: &TestDb, n: u32) -> String {
          VALUES ('R-{n}', 'MAIN', 'owner', 'text/html', 'sha-{n}', now())"
     ))
     .await;
+    // TX-9 (#677) drops the wide figures; `before_it` still has them, `TestDb::start` does not.
+    let wide = db
+        .count(
+            "SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() \
+             AND table_name = 'transactions' AND column_name = 'type'",
+        )
+        .await
+        == 1;
+    let (wide_cols, wide_vals) = if wide {
+        (
+            "type, code, amount, rate, principal, fee, bank_fee, received, paid, method, \
+             payment_ref, account, ",
+            "'BUY', 'USD', 100, 32.1, 3210, 0, 0, 0, 3210, 'Cash', '', 'Cash drawer 1', ",
+        )
+    } else {
+        ("", "")
+    };
     db.exec(&format!(
         "INSERT INTO transactions (id, document_ref, branch_id, mode, submission_id, payload_hash, \
-            customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-            bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
+            customer_id, customer_name, nationality, {wide_cols}staff_id, booking_no, notes, \
             value_date, paid_at, recorded_at, recorded_by, status, completed_at) \
          VALUES ('{id}', '{number}', 'MAIN', 'DEMO', 'sub-{n}', 'h', 'CU-{n}', 'Somchai', 'THA', \
-            'BUY', 'USD', 100, 32.1, 3210, 0, 0, 0, 3210, 'Cash', '', 'Cash drawer 1', 'EMP-001', \
-            'WALK-IN', '', '2026-10-06', now(), now(), 'owner', 'COMPLETED', now())"
+            {wide_vals}'EMP-001', 'WALK-IN', '', '2026-10-06', now(), now(), 'owner', 'COMPLETED', \
+            now())"
+    ))
+    .await;
+    db.exec(&format!(
+        "INSERT INTO transaction_lines (id, organization_id, transaction_id, shop_side, currency, \
+            quantity, unit_size, rate_snapshot, thb_amount, fee_thb, settle_thb, line_no, \
+            created_at, updated_at) \
+         VALUES (gen_random_uuid(), '{ORG_1}', '{id}', 'BUY', 'USD', 100, 1, 32.1, 3210, 0, 3210, \
+            1, now(), now())"
+    ))
+    .await;
+    db.exec(&format!(
+        "INSERT INTO transaction_payments (id, organization_id, transaction_id, payment_no, \
+            method, reference, account, amount_thb, bank_fee_thb, paid_at, created_at, updated_at) \
+         VALUES (gen_random_uuid(), '{ORG_1}', '{id}', 1, 'Cash', '', 'Cash drawer 1', 3210, 0, \
+            now(), now(), now())"
     ))
     .await;
     db.exec(&format!(

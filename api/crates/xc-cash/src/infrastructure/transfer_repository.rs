@@ -463,13 +463,134 @@ async fn refuse_if_already_moved(
             .bind(id)
             .fetch_optional(&mut **tx)
             .await?;
-    let Some(from) = status.as_deref().and_then(TransferStatus::parse) else {
-        return Err(pos_error::AppError::NotFound {
+    Err(already_moved_error(id, status.as_deref(), step))
+}
+
+fn already_moved_error(id: Uuid, status: Option<&str>, step: TransferStep) -> pos_error::AppError {
+    match status {
+        None => pos_error::AppError::NotFound {
             entity: "CashTransfer",
             id: id.to_string(),
-        });
-    };
-    Err(pos_error::AppError::Domain(
-        TransferError::IllegalTransition { from, step }.to_string(),
-    ))
+        },
+        Some(raw) => match TransferStatus::parse(raw) {
+            Some(from) => pos_error::AppError::Domain(
+                TransferError::IllegalTransition { from, step }.to_string(),
+            ),
+            None => pos_error::AppError::Internal(format!(
+                "cash_transfer {id} has unknown status {raw:?}"
+            )),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn behavior_table_case_no_row_returns_not_found() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, None, TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::NotFound {
+                entity,
+                id: not_found_id,
+            } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(not_found_id, id.to_string());
+            }
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn behavior_table_case_readable_status_returns_illegal_transition() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("RECEIVED"), TransferStep::Dispatch);
+        let expected = TransferError::IllegalTransition {
+            from: TransferStatus::Received,
+            step: TransferStep::Dispatch,
+        }
+        .to_string();
+        match err {
+            pos_error::AppError::Domain(msg) => {
+                assert_eq!(msg, expected);
+            }
+            other => panic!("expected Domain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn behavior_table_case_unreadable_status_lost_returns_internal_error() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("LOST"), TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&id.to_string()),
+                    "message should contain transfer id: {msg}"
+                );
+                assert!(
+                    msg.contains("\"LOST\""),
+                    "message should contain status text: {msg}"
+                );
+            }
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn edge_case_empty_string_status_returns_internal_error() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some(""), TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&id.to_string()),
+                    "message should contain transfer id: {msg}"
+                );
+                assert!(
+                    msg.contains("\"\""),
+                    "message should contain empty status text: {msg}"
+                );
+            }
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn edge_case_lowercase_draft_status_returns_internal_error() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("draft"), TransferStep::Dispatch);
+        match err {
+            pos_error::AppError::Internal(msg) => {
+                assert!(
+                    msg.contains(&id.to_string()),
+                    "message should contain transfer id: {msg}"
+                );
+                assert!(
+                    msg.contains("\"draft\""),
+                    "message should contain lowercase draft: {msg}"
+                );
+            }
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn edge_case_lost_race_target_state_returns_illegal_transition() {
+        let id = Uuid::new_v4();
+        let err = already_moved_error(id, Some("DISPATCHED"), TransferStep::Dispatch);
+        let expected = TransferError::IllegalTransition {
+            from: TransferStatus::Dispatched,
+            step: TransferStep::Dispatch,
+        }
+        .to_string();
+        match err {
+            pos_error::AppError::Domain(msg) => {
+                assert_eq!(msg, expected);
+            }
+            other => panic!("expected Domain, got {other:?}"),
+        }
+    }
 }

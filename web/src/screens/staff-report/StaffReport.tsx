@@ -185,7 +185,7 @@ export function StaffReport(): JSX.Element {
             onChange={(e) => {
               const v = e.currentTarget.value;
               setDay(v);
-              if (v) void read(v);
+              void read(v);
             }}
           />
         </label>
