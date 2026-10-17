@@ -257,4 +257,62 @@ describe('Reconciliation certify switch error guard (#2895)', () => {
     // Required: no .reconciliation-error on D2
     expect(el.querySelector('.reconciliation-error')).toBeNull();
   });
+
+  it('Row 3: Certify on branch A in flight, stay on A, it fails: .reconciliation-error shows the worded error on A', async () => {
+    const { el } = mount(B01, DAY_1);
+    expect(pendingReads.length).toBe(1);
+    pendingReads[0]!.resolve();
+    await settle();
+
+    const certifyBtn = findCertifyButton(el)!;
+    expect(certifyBtn).not.toBeNull();
+    certifyBtn.click();
+    await settle();
+    expect(pendingCertifies.length).toBe(1);
+
+    // Stay on branch A and day D1; certify fails
+    pendingCertifies[0]!.resolve(409, { error: 'staleVersion', message: 'Stale version' });
+    await settle();
+
+    // Required: .reconciliation-error shows the worded error on A
+    const errEl = el.querySelector('.reconciliation-error');
+    expect(errEl).not.toBeNull();
+    expect(errEl?.textContent).toBeTruthy();
+  });
+
+  it('Row 4: Certify on A in flight, switch to B, A\'s certify succeeds: B\'s sheet is shown (the #2309 behaviour)', async () => {
+    const { el, setBranch } = mount(B01, DAY_1);
+    expect(pendingReads.length).toBe(1);
+    pendingReads[0]!.resolve();
+    await settle();
+
+    const certifyBtn = findCertifyButton(el)!;
+    expect(certifyBtn).not.toBeNull();
+    certifyBtn.click();
+    await settle();
+    expect(pendingCertifies.length).toBe(1);
+
+    // Switch branch to B02 while B01 certify is in flight
+    setBranch(B02);
+    await settle();
+    expect(pendingReads.length).toBe(2);
+    expect(pendingReads[1]!.branch).toBe(B02);
+
+    // B02 read resolves
+    pendingReads[1]!.resolve();
+    await settle();
+
+    // B01 certify succeeds
+    pendingCertifies[0]!.resolve();
+    await settle();
+    while (pendingReads.length > 2) {
+      const nextRead = pendingReads.pop()!;
+      nextRead.resolve();
+      await settle();
+    }
+
+    // Required: B's sheet is shown, not A's
+    expect(el.textContent).toContain(`SUMMARY-${B02}-${DAY_1}`);
+    expect(el.textContent).not.toContain(`SUMMARY-${B01}-${DAY_1}`);
+  });
 });
