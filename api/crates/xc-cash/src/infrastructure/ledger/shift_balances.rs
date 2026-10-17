@@ -324,7 +324,7 @@ mod tests {
             .await
             .expect("insert branch");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase, safe) VALUES ($1, true, 'OPEN', '{}'::jsonb)",
+            "INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', '{}'::jsonb)",
         )
         .bind(&branch)
         .execute(&pool)
