@@ -97,7 +97,9 @@ pub fn settings(pairs: &[(&str, &str)]) -> Settings {
         let root = test_docs_root();
         REAP_ONCE.call_once(|| reap_dead_test_docs(&root));
         let n = TEST_DOCS_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let temp_dir = root.join(std::process::id().to_string()).join(n.to_string());
+        let temp_dir = root
+            .join(std::process::id().to_string())
+            .join(n.to_string());
         let _ = std::fs::create_dir_all(&temp_dir);
         env_pairs.push((
             "APP_VERIFICATION__STORE_DIR".to_string(),
