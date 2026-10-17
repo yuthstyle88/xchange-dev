@@ -129,7 +129,7 @@ const DESK_SCRIPTS: &[&str] = &[
     "/_xc/desk.js",
 ];
 
-const STAFF_DESK_SCRIPT: &str = "<script>let staffDraftId='';const staffGasOriginal=gasCall;gasCall=async function(name,payload){if(name==='reserveCustomer'&&!staffDraftId){const draft=await staffGasOriginal('opsBeginTransaction',{type:s.type,currency:s.currency,amount:Number(s.amount)});staffDraftId=draft.id;}if(name==='saveTransaction')payload={...payload,staffDraftId};return staffGasOriginal(name,payload);};</script>";
+const STAFF_DESK_SCRIPT: &str = "<script>let staffDraftId='';const staffGasOriginal=gasCall;gasCall=async function(name,payload){if(name==='reserveCustomer'&&!staffDraftId){const r=await fetch('/api/tx-drafts',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-xchange-request':'1','idempotency-key':crypto.randomUUID()},body:JSON.stringify({branch:window.XC_BRANCH||'',side:s.type,currency:s.currency,amount:String(s.amount)})});const answer=await r.json();if(!r.ok)throw new Error((answer.error&&answer.error.message)||answer.error||'draftBegin');staffDraftId=answer.id;}if(name==='saveTransaction')payload={...payload,staffDraftId};return staffGasOriginal(name,payload);};</script>";
 
 const PAGE_SPECS: &[PageSpec] = &[
     PageSpec {

@@ -415,3 +415,32 @@ test('the saveTransaction observation is cleared each time a save attempt starts
   assert.equal(doc.getElementById('xc-save-unknown'), null, 'unknown note cleared');
 });
 
+
+// ------------------------------------------------------------------ #3008: draftBegin replaces opsBeginTransaction
+
+const v3post = (body) => ({
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-xchange-request': '1', 'idempotency-key': 'k-1' },
+  body: JSON.stringify(body),
+});
+
+test('#3008 rpcAction names a POST to /api/tx-drafts draftBegin', () => {
+  const body = { branch: 'XC-B01', side: 'BUY', currency: 'USD', amount: '100' };
+  assert.equal(D().rpcAction('/api/tx-drafts', v3post(body)), 'draftBegin');
+  assert.equal(D().rpcAction('http://xc.test/api/tx-drafts', v3post(body)), 'draftBegin');
+  assert.equal(D().rpcAction('/api/tx-drafts', { method: 'GET' }), null, 'only the POST');
+});
+
+test('#3008 readAnswer reads the message of a v3 refusal, so the desk shows the real reason', () => {
+  const refusal = { error: { code: 'noOpenShift', message: 'ยังไม่ได้เปิดกะของคุณ' } };
+  assert.equal(D().readAnswer(409, JSON.stringify(refusal)).error, 'ยังไม่ได้เปิดกะของคุณ');
+  assert.equal(D().customerErrorText(true, D().readAnswer(409, JSON.stringify(refusal))), 'ยังไม่ได้เปิดกะของคุณ');
+  assert.equal(D().readAnswer(400, JSON.stringify({ error: 'v2 sentence' })).error, 'v2 sentence', 'v2 kept');
+});
+
+test('#3008 the desk script watches draftBegin, not opsBeginTransaction', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(SCRIPT, 'utf8');
+  assert.equal(source.includes('opsBeginTransaction'), false, 'no opsBeginTransaction left in xc-desk.js');
+  assert.ok(source.includes("'draftBegin'"), "updateCustomerError observes lastActionAnswer['draftBegin']");
+});

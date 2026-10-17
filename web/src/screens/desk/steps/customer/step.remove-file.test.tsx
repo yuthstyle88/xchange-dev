@@ -28,7 +28,9 @@ function rpcServer(
   const calls: RpcCall[] = [];
   const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? '{}')) as { action: string; payload: unknown };
-    const call = { path: String(input), action: body.action, payload: body.payload };
+    // #3008: the staff draft is v3 draftBegin (POST /api/tx-drafts), not the retired opsBeginTransaction RPC.
+    const isDraft = String(input) === '/api/tx-drafts';
+    const call = { path: String(input), action: isDraft ? 'draftBegin' : body.action, payload: isDraft ? body : body.payload };
     calls.push(call);
     const a = answer(call.action, call.payload);
     if (a.throws) throw new TypeError('Failed to fetch');
@@ -41,7 +43,7 @@ function rpcServer(
 }
 
 const OK = (action: string) =>
-  action === 'opsBeginTransaction'
+  action === 'draftBegin'
     ? { status: 200, body: { id: 'draft-9' } }
     : { status: 200, body: { customerId: 'CX-00000042', existing: false } };
 
@@ -63,6 +65,7 @@ function createTestStore(path: (typeof PATHS)[keyof typeof PATHS], api: ApiClien
   return {
     api,
     path,
+    branch: () => 'XC-B01',
     type: () => 'BUY',
     currency: () => 'USD',
     amount: () => '100.50',

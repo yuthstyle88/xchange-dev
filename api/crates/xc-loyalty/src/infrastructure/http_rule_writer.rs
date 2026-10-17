@@ -69,6 +69,7 @@ impl HttpLoyaltyRuleWriter {
         kind: RuleKind,
         url: String,
         body: Value,
+        map_err: fn(u16, &Value) -> LoyaltyRuleError,
     ) -> Result<RuleVersion, LoyaltyRuleError> {
         let resp = self
             .client
@@ -90,7 +91,7 @@ impl HttpLoyaltyRuleWriter {
             return RuleVersion::from_dto(kind, payload);
         }
 
-        Err(map_error_status(status.as_u16(), &payload))
+        Err(map_err(status.as_u16(), &payload))
     }
 }
 
@@ -122,6 +123,13 @@ fn map_error_status(status: u16, payload: &Value) -> LoyaltyRuleError {
     }
 }
 
+fn map_create_error(status: u16, payload: &Value) -> LoyaltyRuleError {
+    match status {
+        409 => LoyaltyRuleError::InvalidTransition(error_message(status, payload)),
+        _ => map_error_status(status, payload),
+    }
+}
+
 impl LoyaltyRuleWriter for HttpLoyaltyRuleWriter {
     fn create_draft<'a>(
         &'a self,
@@ -131,7 +139,8 @@ impl LoyaltyRuleWriter for HttpLoyaltyRuleWriter {
         Box::pin(async move {
             let cleaned = prepare_draft_fields(kind, fields);
             let url = self.collection_url(kind);
-            self.send_mutation(kind, url, Value::Object(cleaned)).await
+            self.send_mutation(kind, url, Value::Object(cleaned), map_create_error)
+                .await
         })
     }
 
@@ -142,7 +151,8 @@ impl LoyaltyRuleWriter for HttpLoyaltyRuleWriter {
     ) -> BoxFuture<'a, Result<RuleVersion, LoyaltyRuleError>> {
         Box::pin(async move {
             let url = self.action_url(kind, id, "submit");
-            self.send_mutation(kind, url, json!({})).await
+            self.send_mutation(kind, url, json!({}), map_error_status)
+                .await
         })
     }
 
@@ -154,8 +164,13 @@ impl LoyaltyRuleWriter for HttpLoyaltyRuleWriter {
     ) -> BoxFuture<'a, Result<RuleVersion, LoyaltyRuleError>> {
         Box::pin(async move {
             let url = self.action_url(kind, id, "approve");
-            self.send_mutation(kind, url, json!({ "approvedRef": approved_ref }))
-                .await
+            self.send_mutation(
+                kind,
+                url,
+                json!({ "approvedRef": approved_ref }),
+                map_error_status,
+            )
+            .await
         })
     }
 
@@ -167,7 +182,7 @@ impl LoyaltyRuleWriter for HttpLoyaltyRuleWriter {
     ) -> BoxFuture<'a, Result<RuleVersion, LoyaltyRuleError>> {
         Box::pin(async move {
             let url = self.action_url(kind, id, "reject");
-            self.send_mutation(kind, url, json!({ "reason": reason }))
+            self.send_mutation(kind, url, json!({ "reason": reason }), map_error_status)
                 .await
         })
     }
