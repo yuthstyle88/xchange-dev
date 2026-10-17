@@ -3,7 +3,7 @@
 > written-by: claude/c5ca141a · owner's order 2026-10-17 ~05:0xZ, in that session: *"วางแผน ปิดงาน และจ่ายงาน เพื่อให้เอเย่นเป็นแนวทางในการออก production"* (plan the close-out and the dispatch, so that the agents have a guideline for going to production).
 > Corrected 2026-10-17 ~05:5xZ after the merger's review (PR 2834 PASS+follow-up): #1413 is not in tq. Measured 2026-10-17T05:0xZ–05:1xZ: `origin/main` `abc46caf`, tq `GET /v1/snapshot` at 05:06:34Z, `gh issue list` / `gh pr list` on `108-Plaza/xchange`, `curl https://xc-v3.spacing.cloud/health/ready`, `ssh Dell-server uptime` at 05:13Z.
 
-**Who this is for.** Every agent working on `108-Plaza/xchange`: the BE controller, the FE controller, the merge lane, the reviewers, and the Gemini implementers. It does not add rules. It says, in one place, what has to be true before the owner can give the order to push `release/prod`, which open ticket belongs to which of those conditions, and in what order the lanes release them.
+**Who this is for.** Every agent working on `108-Plaza/xchange`: the BE controller, the FE controller, the merge lane, the reviewers, and the Gemini implementers. **Lanes are named by role here, never by session id**: the owner's account moves and sessions change, so the current holder of each lane is whoever last announced it on #564 (the lane's notice board), and a new holder announces itself there before acting. It does not add rules. It says, in one place, what has to be true before the owner can give the order to push `release/prod`, which open ticket belongs to which of those conditions, and in what order the lanes release them.
 
 **Who decides.** The owner decides business rules, secrets, deploys and every item in §5. The lane controllers (📨) decide what is pinned to whom inside the order of §4. This document records those decisions with their source; it makes none of its own.
 
@@ -166,13 +166,13 @@ The target is the fleet rule: ≥80 % of a lane's usable workers busy at the sam
 
 | Wave | Lane | Tickets | Scopes | Gate |
 |---|---|---|---|---|
-| 0 — now | merger (claude/5781a09c) | re-bind + merge PR 2050; batch the 6 PRs without a verdict as their PASSes arrive; 3 FAIL PRs go back through rework | — | G1/G4 |
-| 1 — now | BE (claude/56a74fcd) | #626 · #677 (in tq, approved) · #1413 (approved; tests pushed, not in tq until the BE controller settles its five points and adds `ready`) | `xc-shift`/custody · `transactions` writers · v2 booking module | G3 |
+| 0 — now | merger | re-bind + merge PR 2050; batch the 6 PRs without a verdict as their PASSes arrive; 3 FAIL PRs go back through rework | — | G1/G4 |
+| 1 — now | BE | #626 · #677 (in tq, approved) · #1413 (approved; tests pushed, not in tq until the BE controller settles its five points and adds `ready`) | `xc-shift`/custody · `transactions` writers · v2 booking module | G3 |
 | 2 — after #626 merges | BE | #1043 · #1044 · #1046 · #1023 in parallel | `xc-shift` shift repo · `ops_state` paths · `stock_movements` readers · custody role mapping — **check `scope_prefixes` of all four before pinning**; #1043 and #1044 both name `xc-shift` | G3 |
 | 3 — after wave 2 | BE | #1026 → #1027; #1047 after #1043/#1044/#1046 | extractor → drop migrations | G3 |
 | 2' — parallel with 2 | BE | #2126 · #2127 (after 2050) · the first #2108 BUG-row tickets and the #2063 xc-cash transfer-math ticket as the controller cuts them | loyalty · ledger_postings / transfer math — disjoint from wave 2 by file | G4 |
-| 3' — parallel | FE (claude/7c9b7042) | #2129 (after 2050) · "UAT script v1" doc ticket · #1605 | `web/src/screens/…/loyalty` · `docs/` · none | G4/G5 |
-| 4 — owner's hands + Claude | #422 | secrets → build-only run → mirror `deploy/staging` → smoke → record | `.github/`, host | G2 |
+| 3' — parallel | FE | #2129 (after 2050) · "UAT script v1" doc ticket · #1605 | `web/src/screens/…/loyalty` · `docs/` · none | G4/G5 |
+| 4 — owner's hands + Claude | #422's assignee or the BE controller | secrets → build-only run → mirror `deploy/staging` → smoke → record | `.github/`, host | G2 |
 | 5 — last code ticket | BE | #1474 (fmt gate), pinned to a Claude session, when no other BE ticket is leased or in review | ten directories | G1 |
 | 6 — on staging | owner / FE | #1683 · the UAT script · a day of use with the drop migrations applied | — | G5 |
 | 7 — release order | owner | `git push origin origin/main:release/prod`; smoke; `STATE.md` | — | — |
@@ -201,7 +201,7 @@ Each line: what, why it blocks, our recommendation. Idle count attached per the 
 
 - **Bugs only.** No new tickets unless an important bug; finish the old work first (owner 2026-10-16, recorded on #564 18:38Z). Batch A counts as allowed (owner 2026-10-17 04:4xZ).
 - **Tests run on the way into `main`.** PR CI proves it compiles; the push run decides; a red main is reverted with `git revert -m 1` via a PR and the batch is bisected (PR 2786, owner's batch rule 2026-10-16).
-- **Merges go through the merge lane** (claude/5781a09c), batch PRs merged with a merge commit; no single-PR merges between batches.
+- **Merges go through the merge lane** (its current holder is announced on #564), batch PRs merged with a merge commit; no single-PR merges between batches.
 - **Destructive migrations:** write + merge approved for batch A; **deploy is a separate order** every time.
 - **Deploy and lane branches only on the owner's order** (`deploy/README.md`, `release.yml` header).
 - **Poll tq, not GitHub** (owner "ทำ A" 2026-10-17); GitHub at most every 5 min for CI results.
