@@ -162,20 +162,22 @@ async fn each_branch_shows_its_own_custodian_requests_log_and_people() {
         ),
     );
 
+    // CA-10 (#626 §6 Q6, ruled on #626): the custody machine is gone, so no branch names a custodian and
+    // no custody request rows are read; attendance and events stay per branch.
     let expected_main = json!({
         "enabled": true,
         "phase": "OPEN",
-        "custodian": "fr1",
+        "custodian": null,
         "attendance": [["AT-MAIN", "fr1", "Main Front"]],
-        "requests": [["RQ-MAIN", "request-MAIN", "fr1", "Main Front", "note MAIN"]],
+        "requests": [],
         "events": [["EV-MAIN", "ra1", "RATES", {"branch": "MAIN"}]],
     });
     let expected_airport = json!({
         "enabled": true,
         "phase": "READY",
-        "custodian": "fr2",
+        "custodian": null,
         "attendance": [["AT-AIRPORT", "fr2", "Airport Front"]],
-        "requests": [["RQ-AIRPORT", "request-AIRPORT", "fr2", "Airport Front", "note AIRPORT"]],
+        "requests": [],
         "events": [["EV-AIRPORT", "ra2", "SYSTEM", {"branch": "AIRPORT"}]],
     });
     let initial: Value = serde_json::from_str(INITIAL_OPERATIONS).expect("JSON");
