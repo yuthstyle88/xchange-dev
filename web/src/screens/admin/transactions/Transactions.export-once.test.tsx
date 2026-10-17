@@ -273,4 +273,36 @@ describe('Admin Transactions export in-flight guard (#2894)', () => {
 
     expect(alertText()).toBeNull();
   });
+
+  it('4 (kept): an export fails: banner shows the worded error', async () => {
+    mount();
+    await until(() => root.querySelector('tbody tr') !== null, 'table rows loaded');
+    const btn = exportButton();
+
+    transactionsExportHandler = async () =>
+      json(500, { error: { code: 'serverError', message: 'Fail' } });
+
+    btn.click();
+    await until(() => alertText() !== null, 'error banner shown');
+
+    expect(alertText()).toBe('เซิร์ฟเวอร์ขัดข้อง');
+  });
+
+  it('5 (kept): an export finds no rows: noTransactionsToExport toast is shown and no file is downloaded', async () => {
+    mount();
+    await until(() => root.querySelector('tbody tr') !== null, 'table rows loaded');
+    const btn = exportButton();
+
+    transactionsExportHandler = async () => json(200, []);
+
+    btn.click();
+    await until(() => {
+      const t = root.querySelector('.toast');
+      return t !== null && !t.hasAttribute('hidden') && (t.textContent ?? '').length > 0;
+    }, 'toast shown');
+
+    const toastEl = root.querySelector('.toast');
+    expect(toastEl?.textContent).toBe('ไม่มีรายการให้ส่งออก');
+    expect(names.length).toBe(0);
+  });
 });
