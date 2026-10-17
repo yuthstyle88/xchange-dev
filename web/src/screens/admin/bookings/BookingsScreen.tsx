@@ -264,7 +264,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   }
 
   function openCancelDialog(row: AdminBookingRow) {
+    const [writing, setWriting] = createSignal(false);
+
     const cancelBooking = async () => {
+      if (writing()) return;
+      setWriting(true);
       try {
         await api.post('/api/v2/bookings', {
           action: 'cancel',
@@ -278,6 +282,8 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
       } catch (err) {
         closeDialog();
         toast(wordedError(err));
+      } finally {
+        setWriting(false);
       }
     };
 
@@ -292,7 +298,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
           <button type="button" class="secondary" onClick={() => closeDialog()}>
             {t('back')}
           </button>
-          <button type="button" class="danger" onClick={cancelBooking}>
+          <button type="button" class="danger" disabled={writing()} onClick={cancelBooking}>
             {t('confirmCancel')}
           </button>
         </div>
