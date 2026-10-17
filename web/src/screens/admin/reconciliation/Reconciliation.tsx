@@ -145,7 +145,9 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
         await read(props.branch(), day());
       }
     } catch (err: unknown) {
-      setError(err);
+      if (props.branch() === shown.branch && day() === shown.date) {
+        setError(err);
+      }
     } finally {
       setBusy(false);
     }
