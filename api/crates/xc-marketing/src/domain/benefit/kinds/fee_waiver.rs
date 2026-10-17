@@ -67,22 +67,27 @@ impl BenefitCalculator for FeeWaiver {
         line: &QuoteLineInput,
         params: &serde_json::Value,
     ) -> Result<BenefitEffect, ParamError> {
+        let fee_minor = line.fee_thb.try_minor().map_err(|e| ParamError {
+            field: "fee_thb",
+            reason: format!("fee_thb overflows i64 hundredths: {e}"),
+        })?;
+
         let waived_minor = match parse_params(params)? {
             FeeWaiverParams::Percent(pct) => {
                 if pct >= Decimal::ONE {
-                    line.fee_thb.minor()
+                    fee_minor
                 } else if pct <= Decimal::ZERO {
                     0
                 } else {
-                    let waived = Decimal::from(line.fee_thb.minor()) * pct;
+                    let waived = Decimal::from(fee_minor) * pct;
                     waived.round().mantissa() as i64
                 }
             }
             FeeWaiverParams::Fixed(fixed) => (fixed * Decimal::from(100)).round().mantissa() as i64,
         };
 
-        let waived_minor = waived_minor.clamp(0, line.fee_thb.minor());
-        let new_fee_minor = line.fee_thb.minor() - waived_minor;
+        let waived_minor = waived_minor.clamp(0, fee_minor);
+        let new_fee_minor = fee_minor - waived_minor;
         let new_fee_thb = Some(Money::from_minor(new_fee_minor).unwrap_or(Money::ZERO));
         let amount_thb = Money::from_minor(waived_minor).unwrap_or(Money::ZERO);
 
