@@ -55,8 +55,6 @@ use xc_cash::domain::error::CashError;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
