@@ -8,9 +8,9 @@
 //! - S2: `PUT /api/campaigns/{id}/draft` answers 400 `validationFailed`, field `rules.calculation.percent`,
 //!   nothing written (tested with `"percent": "1"`, `"percent": "0"`, `"percent": "1.5"`, `"percent": "-0.01"`).
 
+mod campaign_common;
 mod common;
 mod quote_common;
-mod campaign_common;
 
 use std::str::FromStr;
 
@@ -54,7 +54,6 @@ async fn verify_save_refused(db: &TestDb, calculation: Value, expected_field: &s
         "a refused save must not write the version's terms either"
     );
 }
-
 
 // ── Q1: quote 500 for stored negative delta ──────────────────────────────────
 

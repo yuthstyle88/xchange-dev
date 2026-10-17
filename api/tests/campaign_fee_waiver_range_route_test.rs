@@ -4,9 +4,9 @@
 //! S1: PUT /api/campaigns/{id}/draft answers 400 validationFailed, field rules.calculation.percent, nothing written.
 //! S2: the same for rules.calculation.amount.
 
+mod campaign_common;
 mod common;
 mod quote_common;
-mod campaign_common;
 
 use std::str::FromStr;
 

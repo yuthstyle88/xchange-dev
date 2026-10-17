@@ -158,11 +158,7 @@ pub async fn quote(db: &TestDb, fee_thb: &str) -> Answer {
     Answer { status, text, body }
 }
 
-pub async fn save_draft(
-    db: &TestDb,
-    campaign_id: Uuid,
-    body: &Value,
-) -> Answer {
+pub async fn save_draft(db: &TestDb, campaign_id: Uuid, body: &Value) -> Answer {
     common::install_test_pii_keys();
     let guard = Arc::new(AppSessionGuard::new(20));
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
