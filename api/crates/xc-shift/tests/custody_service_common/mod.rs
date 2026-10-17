@@ -2,6 +2,8 @@
 //! through its ports, the v2 fixture, and the written form in which a branch is
 //! compared with what v2 held.
 //! Provided with ticket T10 — do not edit.
+//! CA-10 (#626, #2955): the fake answers the core's `CustodyFactsPort` (the v2 `CustodyPorts` is no longer asked),
+//! and the written form no longer carries `CustodyState.requests` (deleted with the request model).
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -13,9 +15,8 @@ use pos_error::AppResult;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
-use xc_shift::application::custody::service::CustodyService;
+use xc_shift::application::custody::service::{CustodyFactsPort, CustodyService};
 use xc_shift::domain::custody::entities::stored_event::StoredEvent;
-use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
@@ -23,8 +24,7 @@ use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
-use crate::custody_common::actor;
-use crate::shift_service_common::{TestDb, shown_balances};
+use crate::shift_service_common::TestDb;
 
 pub type Custody = CustodyService<PgCustodyRepository, PgShiftRepository>;
 
@@ -45,7 +45,7 @@ struct Outside {
 }
 
 /// What the other contexts would answer (rates, transactions, customers, files,
-/// employees), set by the test. The service reaches them only through `CustodyPorts`.
+/// employees), set by the test. The service reaches them only through `CustodyFactsPort`.
 #[derive(Default)]
 pub struct FakeOutside {
     inner: Mutex<Outside>,
@@ -95,76 +95,46 @@ impl FakeOutside {
     }
 }
 
-impl CustodyPorts for FakeOutside {
-    fn outside_facts<'a>(
+impl CustodyFactsPort for FakeOutside {
+    fn service_window_in<'a>(
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
         _branch: &'a BranchId,
-        _open_shift_id: Option<&'a str>,
-    ) -> BoxFuture<'a, AppResult<OutsideFacts>> {
+        _now: CustodyTime,
+    ) -> BoxFuture<'a, AppResult<(ServiceWindow, i32)>> {
+        // v2's hours, in Bangkok (UTC+7)
+        Box::pin(async move { Ok((crate::custody_common::v2_hours(), 7 * 60)) })
+    }
+
+    fn has_live_rate_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<(bool, String)>> {
         Box::pin(async move {
             let o = self.inner.lock().unwrap();
-            Ok(OutsideFacts {
-                has_live_rate: o.has_live_rate,
-                rates_updated: o.rates_updated.clone(),
-                pending_transactions: o.pending_transactions.clone(),
-                last_transaction: o.last_transaction.clone(),
-            })
+            Ok((o.has_live_rate, o.rates_updated.clone()))
         })
     }
 
-    fn customer_known<'a>(
+    fn transactions_summary_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<(Vec<String>, Option<String>)>> {
+        Box::pin(async move {
+            let o = self.inner.lock().unwrap();
+            Ok((o.pending_transactions.clone(), o.last_transaction.clone()))
+        })
+    }
+
+    fn customer_exists_in<'a>(
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
         _branch: &'a BranchId,
         customer_id: &'a str,
     ) -> BoxFuture<'a, AppResult<bool>> {
         Box::pin(async move { Ok(self.inner.lock().unwrap().customers.contains(customer_id)) })
-    }
-
-    fn evidence_owned<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        branch: &'a BranchId,
-        owner_id: &'a str,
-        keys: &'a [String],
-    ) -> BoxFuture<'a, AppResult<bool>> {
-        Box::pin(async move {
-            let mut o = self.inner.lock().unwrap();
-            o.evidence_questions.push((
-                branch.as_str().to_owned(),
-                owner_id.to_owned(),
-                keys.to_vec(),
-            ));
-            Ok(keys.iter().all(|k| !o.foreign_evidence.contains(k)))
-        })
-    }
-
-    fn employee_role<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        employee_id: &'a str,
-    ) -> BoxFuture<'a, AppResult<Option<CustodyRole>>> {
-        Box::pin(async move {
-            let o = self.inner.lock().unwrap();
-            if let Some(answer) = o.employees.get(employee_id) {
-                return Ok(*answer);
-            }
-            // the usual cast: F1, FIN1, MON1, MGR1, BE1 … are employees of every test branch
-            let known = ["F", "FIN", "MON", "MGR", "BE", "RT"]
-                .contains(&employee_id.trim_end_matches(|c: char| c.is_ascii_digit()));
-            Ok(known.then(|| actor(employee_id).role))
-        })
-    }
-
-    fn service_window<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        _now: CustodyTime,
-    ) -> BoxFuture<'a, AppResult<ServiceWindow>> {
-        Box::pin(async move { Ok(crate::custody_common::v2_hours()) })
     }
 }
 
@@ -297,43 +267,12 @@ fn event_json(e: &StoredEvent) -> Value {
 }
 
 fn times_json(st: &CustodyState) -> Value {
-    let rows = |sheet: &Option<
-        xc_shift::domain::custody::value_objects::count_sheet::CountSheet,
-    >| {
-        sheet
-            .as_ref()
-            .map(|s| {
-                json!(
-                    s.denominations
-                        .iter()
-                        .map(|d| json!([d.currency.as_str(), d.denomination.to_string(), d.count]))
-                        .collect::<Vec<_>>()
-                )
-            })
-            .unwrap_or(Value::Null)
-    };
-    let shown = |b: &xc_shift::domain::shift::value_objects::balances::Balances| {
-        balances_json(&shown_balances(b))
-    };
     json!({
         "entity": st.entity.as_ref().map(|e| iso_ct(e.at)).unwrap_or(Value::Null),
         "target": st.target.as_ref().map(|t| iso_ct(t.at)).unwrap_or(Value::Null),
         "cutoff": st.cutoff.as_ref().map(|c| iso_ct(c.at)).unwrap_or(Value::Null),
         "serviceOpened": iso_opt(st.service_opened_at),
         "attendance": st.attendance.iter().map(|a| json!([iso_ct(a.clock_in), iso_opt(a.clock_out)])).collect::<Vec<_>>(),
-        "requests": st.requests.iter().map(|r| json!({
-            "at": iso_ct(r.at),
-            "signatures": r.signatures.iter().map(|s| iso_ct(s.at)).collect::<Vec<_>>(),
-            "dispatched": iso_opt(r.dispatched_at),
-            "rejected": r.rejected.as_ref().map(|d| iso_ct(d.at)).unwrap_or(Value::Null),
-            "completed": iso_opt(r.completed_at),
-            "reconciled": r.reconciled.as_ref().map(|d| iso_ct(d.at)).unwrap_or(Value::Null),
-            "target": r.target.as_ref().map(|t| json!({ "amounts": shown(&t.amounts), "by": t.by, "at": iso_ct(t.at) })).unwrap_or(Value::Null),
-            "cutoff": r.cutoff.as_ref().map(|c| json!({ "at": iso_ct(c.at), "by": c.by, "shiftId": c.shift_id, "lastRef": c.last_ref, "pending": c.pending })).unwrap_or(Value::Null),
-            // rows are kept for the four counted kinds only; a transfer has none
-            "rows": if r.kind.is_transfer() { Value::Null } else { rows(&r.counted) },
-            "safeRows": rows(&r.safe_count),
-        })).collect::<Vec<_>>(),
         "holds": st.holds.iter().map(|h| json!([iso_ct(h.at), iso_opt(h.reviewed_at)])).collect::<Vec<_>>(),
         "drafts": st.drafts.iter().map(|d| iso_ct(d.at)).collect::<Vec<_>>(),
         "exceptions": st.exceptions.iter().map(|x| json!([iso_ct(x.at), iso_opt(x.reviewed_at)])).collect::<Vec<_>>(),

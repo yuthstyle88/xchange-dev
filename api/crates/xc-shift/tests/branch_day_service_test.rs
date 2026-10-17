@@ -257,7 +257,7 @@ async fn set_branch_phase(pool: &PgPool, branch: &BranchId, phase: Phase) {
     let mut tx = pool.begin().await.unwrap();
     let before = repo.load_state_in(&mut tx, branch).await.unwrap();
     let mut after = before.clone();
-    after.enabled = true;
+    // CA-10 (#626, #2955): no `enabled` switch any more; the checks always apply (Q2).
     after.phase = phase;
     repo.store_state_in(&mut tx, branch, &before, &after)
         .await

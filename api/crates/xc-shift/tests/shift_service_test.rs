@@ -328,6 +328,16 @@ async fn sales_at_once_never_take_more_than_the_till_holds() {
             "20.00",
             "round {round}"
         );
+        // one OPEN shift per teller (M3's `shifts_one_open_per_teller`): close this round's before the next
+        db.seed_close(
+            &shift,
+            "racer",
+            &rid("close", round),
+            &[("USD", "20")],
+            "",
+            at(1, 0),
+        )
+        .await;
     }
     Arc::try_unwrap(db)
         .ok()
