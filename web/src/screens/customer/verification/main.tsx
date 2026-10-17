@@ -10,6 +10,7 @@ setAudience('customer');
 export function mount(
   container: HTMLElement = document.getElementById('root') ?? document.body,
 ) {
+  setAudience('customer');
   return render(
     () => (
       <CustomerShell route="/app">
