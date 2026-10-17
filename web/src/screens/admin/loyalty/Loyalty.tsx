@@ -1,13 +1,13 @@
 // LY-6-FE (#2129): EXECUTIVE loyalty rule-version screen
 // (design `docs/design/blueprint/membership-points.md` §4.6, §6.4, §9.1 rows LY-6-FE and LY-6-view).
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
-import { ApiClient } from '../../../shared/api/client';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import type {
   LoyaltyRuleVersionsData,
   PointRuleVersionItem,
   TierRuleVersionItem,
 } from '../../../shared/api/generated/loyalty_rule_versions';
-import { screenT } from '../../../shared/i18n';
+import { errorText, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
@@ -24,6 +24,13 @@ const STATUS_KEYS: Record<string, keyof typeof table.th> = {
 function statusLabel(status: string): string {
   const key = STATUS_KEYS[status];
   return key ? t(key) : status;
+}
+
+function loyaltyError(err: unknown): string {
+  if (err instanceof ApiError && err.code === 'loyaltyUnavailable') {
+    return errorText('loyaltyUnavailable', err.message);
+  }
+  return wordedError(err);
 }
 
 export function Loyalty(props: AdminMenuProps): JSX.Element {
@@ -48,7 +55,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
       if (mine !== reading) return;
       setPointVersions([]);
       setTierVersions([]);
-      setError(wordedError(err));
+      setError(loyaltyError(err));
     } finally {
       if (mine === reading) {
         setLoading(false);
