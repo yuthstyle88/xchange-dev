@@ -24,7 +24,7 @@ jobs:
   # `before` the runner cannot resolve, a manual run, or a FAILED `changes` job => full CI.
   changes:
     name: changes
-    runs-on: [self-hosted, light]  # light job: Jam + Studio runners carry `light` (owner 2026-10-17)
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.diff.outputs.docs_only }}
