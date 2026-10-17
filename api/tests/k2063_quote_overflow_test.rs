@@ -5,11 +5,14 @@
 //! Written for ticket #2861 by worker gemini/pool-1.
 //!
 //! `QuoteService::quote_with_coupon_in` converts `Money` amounts to satang using `.try_minor()`
-//! across all 11 sites (initial quote calculation and coupon benefit recomputation).
+//! and performs checked addition/subtraction across all sites (initial quote calculation and
+//! coupon benefit recomputation).
 //! When THB satang exceeds `i64::MAX` (e.g. `(1u128 << 64) + 321000` satang = 184,467,440,737,098,726.16 THB),
 //! unchecked `.minor()` truncates `i128` to `i64`, wrapping silently to `+321000` satang (3,210.00 THB).
-//! With `.try_minor()`, the operation returns `NumberError::Invalid`, which is mapped to
-//! `AppError::Domain("invalid settle amount".to_string())`.
+//! When THB amount and fee each fit in `i64` hundredths but their sum exceeds `i64::MAX`
+//! (e.g. 5e16 THB + 4.7e16 THB = 9.7e18 satang), unchecked addition panics in debug mode.
+//! With `.try_minor()` and checked arithmetic, these operations return `NumberError::Invalid` / `None`,
+//! which is mapped to `AppError::Domain("invalid settle amount".to_string())`.
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; nothing here skips.
 
@@ -21,10 +24,11 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use quote_common::*;
 use rust_decimal::Decimal;
+use uuid::Uuid;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xchange::application::workflows::exchange::quote::{
     QuoteRequest, QuoteRequestLine, QuoteService,
 };
@@ -36,6 +40,18 @@ use xchange::application::workflows::save_step::SaveActor;
 const OVERFLOWING_SATANG_QUANTITY: &str = "184467440737098726.16";
 
 const USD_ONE_TO_ONE: Line = Line::manual("USD", "1", "1.00", "1.00");
+const USD_HIGH_RATE: Line = Line::manual("USD", "1", "1000000.00", "1000000.00");
+
+/// 50,000,000,000 (5e10) USD at rate 1,000,000 = 50,000,000,000,000,000.00 (5e16) THB.
+/// Satang = 5,000,000,000,000,000,000 (5e18), which fits i64 (< 9.223e18).
+const SUM_OVERFLOW_QUANTITY: &str = "50000000000";
+
+/// 47,000,000,000,000,000.00 (4.7e16) THB fee.
+/// Satang = 4,700,000,000,000,000,000 (4.7e18), which fits i64 (< 9.223e18) and is <= thb_amount (5e16).
+/// Sum satang = 5e18 + 4.7e18 = 9.7e18 > i64::MAX.
+fn large_fee_thb() -> Money {
+    Money::from_minor(4_700_000_000_000_000_000).expect("a valid fee Money")
+}
 
 fn teller() -> SaveActor {
     SaveActor {
@@ -47,12 +63,21 @@ fn teller() -> SaveActor {
 }
 
 fn line(currency: &str, side: Side, quantity: &str) -> QuoteRequestLine {
+    line_with_fee(currency, side, quantity, None)
+}
+
+fn line_with_fee(
+    currency: &str,
+    side: Side,
+    quantity: &str,
+    fee_thb: Option<Money>,
+) -> QuoteRequestLine {
     QuoteRequestLine {
         currency: CurrencyCode::parse(currency).expect("a known currency"),
         shop_side: side,
         quantity: ForeignAmount::from_decimal(Decimal::from_str(quantity).expect("a decimal")),
         denomination_group: xc_rate::domain::currency::denomination_groups::GroupCode::all(),
-        fee_thb: None,
+        fee_thb,
     }
 }
 
@@ -75,7 +100,9 @@ async fn quote(
         let service = QuoteService::new(pool.clone());
         let mut tx = pool.begin().await.expect("begin");
         let answer = service.quote_in(&mut tx, req, &teller(), now).await;
-        tx.commit().await.expect("commit");
+        if answer.is_ok() {
+            tx.commit().await.expect("commit");
+        }
         answer
     });
     match task.await {
@@ -109,6 +136,63 @@ fn assert_invalid_settle_refusal(answer: Result<AppResult<Quote>, String>, what:
             panic!("{what}: want AppError::Domain(\"invalid settle amount\"), got {other:?}")
         }
     }
+}
+
+async fn seed_zero_budget_fee_waiver_campaign(db: &TestDb) {
+    let user_id = Uuid::new_v4();
+    let camp_id = Uuid::new_v4();
+    let version_id = Uuid::new_v4();
+    let rule_id = Uuid::new_v4();
+
+    db.exec(&format!(
+        "INSERT INTO users (id, organization_id, auth_subject, name, status, created_by) \
+         SELECT '{user_id}', organization_id, 'test-subj-{user_id}', 'Test User', 'ACTIVE', 'test' \
+         FROM branches WHERE id = 'MAIN'",
+    ))
+    .await;
+
+    db.exec(&format!(
+        "INSERT INTO campaigns (id, organization_id, name, created_by, created_at) \
+         SELECT '{camp_id}', organization_id, 'Zero Budget Fee Waiver', '{user_id}', now() \
+         FROM branches WHERE id = 'MAIN'",
+    ))
+    .await;
+
+    db.exec(&format!(
+        "INSERT INTO campaign_versions ( \
+             id, organization_id, campaign_id, version, status, \
+             starts_at, ends_at, budget_thb, stack_group, priority, \
+             version_hash, edited_at, created_by, created_at \
+         ) SELECT \
+             '{version_id}', organization_id, '{camp_id}', 1, 'APPROVED', \
+             '2020-01-01 00:00:00+00'::timestamptz, '2030-01-01 00:00:00+00'::timestamptz, 100.00, 'SG_WAIVER', 100, \
+             'hash-{version_id}', now(), '{user_id}', now() \
+         FROM branches WHERE id = 'MAIN'",
+    ))
+    .await;
+
+    db.exec(&format!(
+        "INSERT INTO campaign_branches (campaign_version_id, branch_id) \
+         VALUES ('{version_id}', 'MAIN')",
+    ))
+    .await;
+
+    db.exec(&format!(
+        "INSERT INTO campaign_budgets (campaign_version_id, consumed_thb, used_count) \
+         VALUES ('{version_id}', 0.00, 0)",
+    ))
+    .await;
+
+    db.exec(&format!(
+        "INSERT INTO benefit_rules ( \
+             id, campaign_version_id, benefit_type, benefit_class, \
+             eligibility, calculation, caps, requires_coupon, rule_no \
+         ) VALUES ( \
+             '{rule_id}', '{version_id}', 'FEE_WAIVER', 'PRICE', \
+             '{{}}'::jsonb, '{{\"percent\":\"1.00\"}}'::jsonb, '{{}}'::jsonb, false, 1 \
+         )",
+    ))
+    .await;
 }
 
 /// A BUY whose satang amount overflows `i64::MAX` is refused as `invalid settle amount`,
@@ -147,6 +231,60 @@ async fn an_overflowing_satang_sell_is_refused_and_stores_nothing() {
     .await;
 
     assert_invalid_settle_refusal(answer, "overflowing SELL satang");
+    assert_eq!(db.quote_rows().await, before, "nothing stored");
+    db.finish().await;
+}
+
+/// A first-pass SELL where THB amount (5e16 THB = 5e18 satang) and fee (4.7e16 THB = 4.7e18 satang)
+/// each fit i64 hundredths, but their sum (9.7e18 satang) overflows `i64::MAX`.
+/// Refused as `invalid settle amount` without storing anything; panics with main's `:464` form.
+#[tokio::test]
+async fn a_first_pass_sell_whose_sum_overflows_is_refused_and_stores_nothing() {
+    let db = TestDb::start().await;
+    db.publish("MAIN", &[USD_HIGH_RATE]).await;
+    let before = db.quote_rows().await;
+
+    let answer = quote(
+        &db,
+        request(line_with_fee(
+            "USD",
+            Side::Sell,
+            SUM_OVERFLOW_QUANTITY,
+            Some(large_fee_thb()),
+        )),
+        whole_second_now(),
+    )
+    .await;
+
+    assert_invalid_settle_refusal(answer, "first-pass SELL sum overflow");
+    assert_eq!(db.quote_rows().await, before, "nothing stored");
+    db.finish().await;
+}
+
+/// A SELL with FEE_WAIVER applied in the first pass (fee waived to 0, so first-pass settle fits),
+/// whose budget reservation is Skipped (budget exhausted). Re-evaluation restores the fee,
+/// causing re-evaluated thb + fee to overflow `i64::MAX`.
+/// Refused as `invalid settle amount` without storing anything; panics with main's `:592` form.
+#[tokio::test]
+async fn a_reevaluation_sell_whose_sum_overflows_is_refused_and_stores_nothing() {
+    let db = TestDb::start().await;
+    db.publish("MAIN", &[USD_HIGH_RATE]).await;
+    seed_zero_budget_fee_waiver_campaign(&db).await;
+    let before = db.quote_rows().await;
+
+    let answer = quote(
+        &db,
+        request(line_with_fee(
+            "USD",
+            Side::Sell,
+            SUM_OVERFLOW_QUANTITY,
+            Some(large_fee_thb()),
+        )),
+        whole_second_now(),
+    )
+    .await;
+
+    assert_invalid_settle_refusal(answer, "re-evaluation SELL sum overflow");
     assert_eq!(db.quote_rows().await, before, "nothing stored");
     db.finish().await;
 }
