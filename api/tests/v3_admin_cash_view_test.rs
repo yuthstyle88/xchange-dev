@@ -1832,3 +1832,61 @@ async fn ca10q_the_branchs_cash_adds_up_every_open_shift() {
     );
     room.finish().await;
 }
+
+/// CA-10q, ruling #626 issuecomment-6234829938 item 1: `lastCounted` sums, per currency, each teller's newest CLOSED
+/// shift at the branch. T1 closes X (1000), then T1 and T2 hold A and B and close them (2000 and 500): X is T1's older
+/// close and does not count, so THB is 2500. Today's newest-CLOSED-shift-only answer gives 500 or 2000, never 2500.
+#[actix_web::test]
+async fn ca10q_last_counted_sums_each_tellers_newest_closed_shift() {
+    let room = Room::open().await;
+    let pool = &room.desk.db.pool;
+    let teller = |shift: String| async move {
+        sqlx::query_scalar::<_, String>("SELECT teller_id::text FROM shifts WHERE id = $1")
+            .bind(shift)
+            .fetch_one(pool)
+            .await
+            .expect("the shift's teller")
+    };
+
+    let x = room.open_shift_with(MAIN, json!({ "THB": 1000 })).await;
+    room.close_shift_by_count(MAIN, json!({ "THB": 1000 }))
+        .await;
+
+    let a = room.open_shift_with(MAIN, json!({ "THB": 2000 })).await;
+    // Setup only, before CA-10's M3: restore A's marker (the #626 stopgap cleared it) so that a second count-opened
+    // OPEN shift at MAIN is not refused by `shifts_one_open_per_branch_v2`. CA-10 (#626) deletes this statement with M3.
+    sqlx::query(
+        "UPDATE shifts SET opened_by_count = (SELECT c.id FROM cash_counts c \
+         WHERE c.branch_id = $1 AND c.kind = 'OPEN' ORDER BY c.counted_at DESC LIMIT 1) WHERE id = $2",
+    )
+    .bind(MAIN)
+    .bind(&a)
+    .execute(pool)
+    .await
+    .expect("restore A's marker");
+    let b = room.open_shift_with(MAIN, json!({ "THB": 500 })).await;
+
+    // the setup this test relies on: X and A are one teller's, B another's
+    let (tx_, ta, tb) = (
+        teller(x).await,
+        teller(a.clone()).await,
+        teller(b.clone()).await,
+    );
+    assert_eq!(tx_, ta, "X and A are the same teller's shifts");
+    assert_ne!(ta, tb, "B is another teller's shift");
+
+    // Two closes counting 2000 and 500. The helper closes "the" OPEN shift of MAIN without an order, so either may
+    // land on A or on B; the setup's count-difference limit (1,000,000) accepts both, and the sum is 2500 either way.
+    room.close_shift_by_count(MAIN, json!({ "THB": 2000 }))
+        .await;
+    room.close_shift_by_count(MAIN, json!({ "THB": 500 })).await;
+
+    let data = room.cash("branch=MAIN").await;
+    assert_eq!(data["openShifts"], json!([]), "{data}");
+    assert_eq!(
+        data["lastCounted"],
+        json!([{ "code": "THB", "amount": "2500.00" }]),
+        "T1's newest close (2000) + T2's (500); T1's older close (1000) left out: {data}"
+    );
+    room.finish().await;
+}
