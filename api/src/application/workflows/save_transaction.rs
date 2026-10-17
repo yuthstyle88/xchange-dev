@@ -28,6 +28,7 @@ use xc_kernel::money::{CompatRate, CurrencyCode, ForeignAmount, Rate, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
 use crate::application::workflows::exchange::complete::{
@@ -519,7 +520,16 @@ impl SaveTransactionWorkflow {
                                     .await?;
                             }
                             None => {
-                                this.shifts.apply_delta_in(tx, &branch, &delta).await?;
+                                let Some(teller) = this
+                                    .shifts
+                                    .teller_of_actor_in(tx, &branch, &save_actor.id)
+                                    .await?
+                                else {
+                                    return Err(ShiftError::NoOpenShift.into());
+                                };
+                                this.shifts
+                                    .apply_delta_for_teller_in(tx, &branch, &teller, &delta)
+                                    .await?;
                             }
                         }
                     }
