@@ -116,6 +116,8 @@ impl HandoverService {
     }
 }
 
+pub const INVALID_RECEIVER: &str = "ผู้รับมอบกะไม่ถูกต้องหรือไม่มีสิทธิ์ปฏิบัติงานกะในสาขานี้";
+
 /// The CA-7c forms (design §4.9): all their work, reads included, on the caller's transaction. They open no
 /// transaction and take no lock; the caller (the CM-1 seam, or the wrapper above) holds both.
 impl HandoverService {
@@ -135,14 +137,30 @@ impl HandoverService {
         Authorizer::check(Some(actor), permission, &target, now)
             .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
 
-        let shift_teller: Option<String> =
-            sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
-                .bind(&cmd.from_shift_id)
-                .fetch_optional(&mut **tx)
-                .await?;
-        let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
-        PersonRules::teller_owns_shift(&teller_id, actor)
-            .map_err(|e| AppError::Domain(e.to_string()))?;
+        let receiver_uuid = uuid::Uuid::parse_str(&cmd.receiver_id)
+            .map_err(|_| AppError::Validation(INVALID_RECEIVER.to_owned()))?;
+        let valid_receiver: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+                 SELECT 1 FROM users u \
+                 JOIN user_roles r ON r.user_id = u.id \
+                 WHERE u.id = $1 \
+                   AND u.status = 'ACTIVE' \
+                   AND u.organization_id::text = $2 \
+                   AND r.organization_id = u.organization_id \
+                   AND r.role_code IN ('TELLER', 'BRANCH_MANAGER') \
+                   AND (r.branch_id = $3 OR r.branch_id IS NULL) \
+                   AND (r.valid_to IS NULL OR r.valid_to > $4) \
+             )",
+        )
+        .bind(receiver_uuid)
+        .bind(&actor.organization_id)
+        .bind(cmd.branch.as_str())
+        .bind(now)
+        .fetch_one(&mut **tx)
+        .await?;
+        if !valid_receiver {
+            return Err(AppError::Validation(INVALID_RECEIVER.to_owned()));
+        }
 
         if let Some(existing_count) = self
             .counts
@@ -160,6 +178,17 @@ impl HandoverService {
                 return self.load_in(tx, &h_id).await;
             }
         }
+
+        let shift_teller: Option<String> = sqlx::query_scalar(
+            "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
+        )
+        .bind(&cmd.from_shift_id)
+        .bind(cmd.branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await?;
+        let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
+        PersonRules::teller_owns_shift(&teller_id, actor)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
 
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
