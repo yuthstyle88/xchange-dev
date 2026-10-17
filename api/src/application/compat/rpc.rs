@@ -16,19 +16,19 @@
 //! ([`RpcFailure::Refused`]); anything else that goes wrong is handed back for
 //! the route to answer as a server error ([`RpcFailure::Failed`]).
 //!
-//! **Part one** (this file) dispatches nine actions itself:
+//! **Part one** (this file) dispatches six actions itself:
 //! `adminSnapshot`, `adminDeskConfig`, `getConnectionStatus`,
-//! `adminCreateBranch`, `adminOpenShift`, `adminMoveStock`, `adminCloseShift`,
-//! `adminAbandonRequest`, `reserveCustomer`. v2's `adminSaveRate` is retired
-//! (RE-7 #604, rates.md §9): it is answered as a name v2 does not know.
+//! `adminCreateBranch`, `adminAbandonRequest`, `reserveCustomer`. v2's
+//! `adminSaveRate` is retired (RE-7 #604, rates.md §9), and `adminOpenShift`,
+//! `adminMoveStock` and `adminCloseShift` are retired (CA-10 #626,
+//! `cash-shift-transfer.md` §6): they are answered as names v2 does not know.
 //!
-//! **Part two** — `saveTransaction`, `documents` and every name starting with
-//! `ops` — is one file per family under `actions/`, behind [`RpcAction`]. A
-//! name that is not one of the nine is offered to the registered families
-//! ([`CompatRpc::with_actions`]) in the order registered; the first that
-//! handles it answers, and steps 1, 2 and 4 above stay here. A name no family
-//! handles is answered as v2 answers a name it does not know; see
-//! [`not_dispatched_yet`].
+//! **Part two** — `saveTransaction` and `documents` — is one file per family
+//! under `actions/`, behind [`RpcAction`]. A name that is not one of the six
+//! is offered to the registered families ([`CompatRpc::with_actions`]) in the
+//! order registered; the first that handles it answers, and steps 1, 2 and 4
+//! above stay here. A name no family handles is answered as v2 answers a name
+//! it does not know; see [`not_dispatched_yet`].
 //!
 //! Known differences from v2, each decided before this file was written:
 //!
@@ -39,15 +39,13 @@
 //!   listed in `snapshot.rs`.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 use serde_json::{Map, Value};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::authorizer::Grant;
-use xc_auth::domain::policy::entities::policy::{Need, Policy};
+use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
@@ -55,35 +53,19 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
-use xc_cash::application::count::count_service::{post_difference_in, post_opening_in};
-use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
-use xc_cash::domain::posting::{CashPlace, CashPostings, moves};
-use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money};
 use xc_rate::application::branch::service::BranchService;
-use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
-use xc_shift::application::custody::service::CustodyService;
-use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::close_shift::CloseShift;
-use xc_shift::domain::shift::commands::move_stock::MoveStock;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
-use xc_shift::domain::shift::value_objects::stock_delta::Direction;
 
 use crate::application::compat::abandon_request::AbandonRequest;
 use crate::application::compat::actions::{RpcAction, RpcActions, RpcCall};
 use crate::application::compat::envelope::{RpcRefusal, RpcRoute};
 use crate::application::compat::snapshot::{SnapshotBuilder, write_answer};
-use crate::application::compat::snapshot_sources::SnapshotSources;
 use crate::application::compat::staff_view::{StaffMember, rewrite_urls, staff_view};
 use crate::application::compat::v2_json::V2Json;
 
-/// The branch of an owner who names none.
-const MAIN: &str = "MAIN";
 /// `payload.branchId` that is not a branch id at all.
 pub const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
 
@@ -156,14 +138,11 @@ impl From<AppError> for RpcFailure {
     }
 }
 
-/// The services the nine actions of part one are made of.
+/// The services the six actions of part one are made of.
 #[derive(Clone)]
 pub struct RpcServices {
     pub branches: BranchService,
-    pub rates: RateService,
     pub customers: CustomerService,
-    pub shifts: ShiftService,
-    pub custody: CustodyService,
     pub abandon: AbandonRequest,
     pub accounts: AccountService<PgAccountRepository>,
 }
@@ -177,17 +156,8 @@ pub struct CompatRpc {
 }
 
 impl CompatRpc {
-    /// `sources` is what the snapshot reads that has no service on this side
-    /// (the exchanges, the members, the people of a branch).
-    pub fn new(services: RpcServices, sources: Arc<dyn SnapshotSources>) -> Self {
-        let snapshots = SnapshotBuilder::new(
-            services.branches.clone(),
-            services.rates.clone(),
-            services.customers.clone(),
-            services.shifts.clone(),
-            services.custody.clone(),
-            sources,
-        );
+    /// Builds a dispatcher over `services` and `snapshots`.
+    pub fn new(services: RpcServices, snapshots: SnapshotBuilder) -> Self {
         Self {
             services,
             snapshots,
@@ -219,35 +189,21 @@ impl CompatRpc {
         action: &str,
         user: Option<&xc_auth::domain::access::Actor>,
         named: Option<&BranchId>,
-        legacy: Option<&Actor>,
+        _legacy: Option<&Actor>,
         now: DateTime<Utc>,
     ) -> Result<Grant, RpcRefusal> {
         let path = match route {
             RpcRoute::Rpc => EntryPath::Rpc,
             RpcRoute::StaffRpc => EntryPath::StaffRpc,
         };
-        let action_vo = Action::new(action);
-        let need = Policy::need(path, &action_vo);
-        if need == Some(Need::Custody) {
-            Policy::allow(legacy, path, &action_vo).map_err(policy_refusal)?;
-            let branch = legacy
-                .and_then(|a| a.branch_id())
-                .cloned()
-                .or_else(|| named.cloned())
-                .unwrap_or_else(|| BranchId::new(MAIN));
-            return Ok(Grant {
-                branch,
-                roles_used: vec![],
-            });
-        }
-        Policy::authorize(user, path, &action_vo, named, now).map_err(policy_refusal)
+        Policy::authorize(user, path, &Action::new(action), named, now).map_err(policy_refusal)
     }
 
     /// Runs `action` for `caller` and gives back what the screen is answered:
     /// print it with `V2Json::to_text`.
     ///
     /// `now` is the server clock at the request. Refusals, in this order: the
-    /// role may not ask for the name here; the name is neither one of the nine
+    /// role may not ask for the name here; the name is neither one of the six
     /// nor one a registered family handles ([`not_dispatched_yet`]); the
     /// owner's `branchId` is not a branch id (`สาขาไม่ถูกต้อง`); the branch does
     /// not exist (`ไม่พบสาขาที่เลือก กรุณารีเฟรช`); then whatever the use case
@@ -259,10 +215,7 @@ impl CompatRpc {
         action: &str,
         payload: Map<String, Value>,
         caller: &RpcCaller,
-        // The `users.id` of a Blueprint-session caller, `None` for a legacy password session
-        // (#1128): a shift opened or closed with one staffs or releases the shift teller's queue
-        // counter.
-        session_user: Option<uuid::Uuid>,
+        _session_user: Option<uuid::Uuid>,
         branch: &BranchId,
         now: DateTime<Utc>,
     ) -> Result<V2Json, RpcFailure> {
@@ -313,18 +266,6 @@ impl CompatRpc {
                 let created = self.services.branches.create(command, who, now).await?;
                 // v2 answers with the new branch, not the one the screen was on
                 self.written(&created.id, who, now).await?
-            }
-            "adminOpenShift" | "adminMoveStock" | "adminCloseShift" => {
-                self.shift_action(
-                    action,
-                    branch,
-                    Value::Object(payload),
-                    who,
-                    session_user,
-                    now,
-                )
-                .await?;
-                self.written(branch, who, now).await?
             }
             "adminAbandonRequest" => {
                 let resolution = self
@@ -388,111 +329,6 @@ impl CompatRpc {
         Ok(write_answer(&snapshot))
     }
 
-    /// `adminOpenShift`, `adminMoveStock`, `adminCloseShift`: refused while
-    /// custody is on (shifts then open and close through custody only), in the
-    /// same branch transaction as the write, so custody cannot be switched on
-    /// between the check and the shift.
-    ///
-    /// v2 makes the custody check before it reads the payload, so a payload
-    /// that cannot be read is refused only after it.
-    async fn shift_action(
-        &self,
-        action: &str,
-        branch: &BranchId,
-        payload: Value,
-        who: &str,
-        session_user: Option<uuid::Uuid>,
-        now: DateTime<Utc>,
-    ) -> AppResult<()> {
-        let custody = self.services.custody.clone();
-        let shifts = self.services.shifts.clone();
-        let action = action.to_owned();
-        let here = branch.clone();
-        let who = who.to_owned();
-        self.services
-            .shifts
-            .branch_tx()
-            .run(branch, move |tx| {
-                Box::pin(async move {
-                    custody.check_direct_shift_action_in(tx, &here).await?;
-                    // LG-4 (#929): each action also moves the cash in the ledger, as the count
-                    // flow does, through the same posting functions.
-                    let postings = LedgerCashPostings::new();
-                    match action.as_str() {
-                        "adminOpenShift" => {
-                            let command = OpenShift::from_payload(&payload)?;
-                            let request = command.request_id.clone();
-                            let opening = amounts(&command.opening);
-                            let shift = shifts
-                                .open_in_as(tx, &here, command, &who, session_user, now)
-                                .await?;
-                            post_opening_in(
-                                &postings,
-                                tx,
-                                CashPlace::Safe(here.clone()),
-                                &shift.id,
-                                &opening,
-                                &request,
-                            )
-                            .await?;
-                        }
-                        "adminMoveStock" => {
-                            let command = MoveStock::from_payload(&payload)?;
-                            let (safe, drawer) = (
-                                CashPlace::Safe(here.clone()),
-                                CashPlace::Drawer(command.shift_id.clone()),
-                            );
-                            let (from, to) = match command.direction {
-                                Direction::In => (safe, drawer),
-                                Direction::Out => (drawer, safe),
-                            };
-                            let source = SourceRef {
-                                source_type: SourceType::Transfer,
-                                source_id: command.request_id.clone(),
-                                source_key: "move".to_string(),
-                            };
-                            let moved = [(command.currency, decimal(command.amount))];
-                            shifts.move_stock_in(tx, &here, command, &who, now).await?;
-                            postings
-                                .post_in(tx, &moves(&from, &to, &moved, &source), None)
-                                .await?;
-                        }
-                        _ => {
-                            let command = CloseShift::from_payload(&payload)?;
-                            let (request, shift) =
-                                (command.request_id.clone(), command.shift_id.clone());
-                            // counted − the ledger drawer, never the payload's `expected`.
-                            let drawer = postings
-                                .expected_in(tx, &CashPlace::Drawer(shift.clone()))
-                                .await?;
-                            let mut diffs: Vec<(CurrencyCode, Decimal)> = Vec::new();
-                            for (code, _) in command
-                                .counted
-                                .non_zero()
-                                .into_iter()
-                                .chain(drawer.non_zero())
-                            {
-                                if !diffs.iter().any(|(c, _)| *c == code) {
-                                    diffs.push((
-                                        code,
-                                        decimal(command.counted.get(code))
-                                            - decimal(drawer.get(code)),
-                                    ));
-                                }
-                            }
-                            shifts
-                                .close_in_as(tx, &here, command, &who, session_user, now)
-                                .await?;
-                            post_difference_in(&postings, tx, &shift, &here, &diffs, &request)
-                                .await?;
-                        }
-                    }
-                    Ok(())
-                })
-            })
-            .await
-    }
-
     /// What `/api/staff/rpc` answers where `/api/rpc` answers `answer`: the
     /// staff view of a snapshot, the links rewritten in anything else — with
     /// the keys back in the order v2 prints them.
@@ -538,7 +374,7 @@ impl CompatRpc {
     }
 }
 
-/// The nine actions this file dispatches itself.
+/// The six actions this file dispatches itself.
 fn is_part_one(action: &str) -> bool {
     matches!(
         action,
@@ -546,9 +382,6 @@ fn is_part_one(action: &str) -> bool {
             | "adminDeskConfig"
             | "getConnectionStatus"
             | "adminCreateBranch"
-            | "adminOpenShift"
-            | "adminMoveStock"
-            | "adminCloseShift"
             | "adminAbandonRequest"
             | "reserveCustomer"
     )
@@ -556,14 +389,14 @@ fn is_part_one(action: &str) -> bool {
 
 /// ── NOT DISPATCHED YET — ticket T11a part two ────────────────────────────────
 ///
-/// `saveTransaction`, `documents` and every `ops*` name pass `Policy` for the
-/// callers who may use them, and are answered by a family under `actions/`
-/// once that family is wired. Until then — whenever no registered family
-/// handles the name — they are answered exactly as v2 answers a name it does
-/// not know (`rpc/transport.json` #33, #41, #81): on `/api/rpc`
-/// `คำขอไม่ถูกต้อง` to the owner and the role sentence to an employee, on
-/// `/api/staff/rpc` the staff route's role sentence. The last ticket of part
-/// two deletes this function together with `is_part_one`.
+/// `saveTransaction` and `documents` pass `Policy` for the callers who may use
+/// them, and are answered by a family under `actions/` once that family is
+/// wired. Until then — whenever no registered family handles the name — they
+/// are answered exactly as v2 answers a name it does not know
+/// (`rpc/transport.json` #33, #41, #81): on `/api/rpc` `คำขอไม่ถูกต้อง` to the
+/// owner and the role sentence to an employee, on `/api/staff/rpc` the staff
+/// route's role sentence. The last ticket of part two deletes this function
+/// together with `is_part_one`.
 fn not_dispatched_yet(route: RpcRoute, caller: &RpcCaller) -> RpcRefusal {
     match (route, caller.is_staff()) {
         (RpcRoute::Rpc, false) => RpcRefusal::invalid_request(),
@@ -574,20 +407,6 @@ fn not_dispatched_yet(route: RpcRoute, caller: &RpcCaller) -> RpcRefusal {
 /// A refusal of `Policy` as the routes print it: its status and sentence,
 /// `no-store` like every answer but the 401 of `/api/rpc` (which the route
 /// layer gives before it ever comes here).
-/// A v2 amount as the ledger's quantity.
-fn decimal(amount: Money) -> Decimal {
-    Decimal::from_i128_with_scale(amount.minor_i128(), 2)
-}
-
-/// A v2 opening's amounts, per currency, as the ledger's quantities.
-fn amounts(balances: &Balances) -> Vec<(CurrencyCode, Decimal)> {
-    balances
-        .non_zero()
-        .into_iter()
-        .map(|(code, amount)| (code, decimal(amount)))
-        .collect()
-}
-
 fn policy_refusal(refusal: PolicyError) -> RpcRefusal {
     RpcRefusal {
         status: refusal.status(),

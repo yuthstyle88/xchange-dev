@@ -45,13 +45,13 @@ use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::compat::abandon_request::AbandonRequest;
 use crate::application::compat::actions::RpcActions;
-use crate::application::compat::actions::custody::CustodyAction;
 use crate::application::compat::actions::documents::DocumentsAction;
 use crate::application::compat::actions::save::SaveAction;
 use crate::application::compat::envelope::{
     MAX_BODY_UTF16_UNITS, RpcRefusal, RpcRequest, RpcResponse, RpcRoute,
 };
 use crate::application::compat::rpc::{CompatRpc, RpcCaller, RpcFailure, RpcServices};
+use crate::application::compat::snapshot::SnapshotBuilder;
 use crate::application::compat::v2_json::V2Json;
 use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::documents::DocumentsLookup;
@@ -362,8 +362,8 @@ fn transaction_service(pool: &PgPool, branch_tx: &BranchTx) -> TransactionServic
 }
 
 /// The families of part two the server registers, in the order the dispatcher
-/// asks them: documents, custody, the save. Each is built here once, from the
-/// parts its own file needs; wiring a family does not change this function.
+/// asks them: documents, the save. Each is built here once, from the parts its
+/// own file needs; wiring a family does not change this function.
 pub fn registered_actions(state: &AppState) -> RpcActions {
     let pool = &state.db;
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
@@ -403,7 +403,6 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
     let lifecycle = pg_booking_lifecycle(pool.clone());
     vec![
         Arc::new(DocumentsAction::new(documents)),
-        Arc::new(CustodyAction::new(custody.clone())),
         Arc::new(
             SaveAction::new(save, devices, kiosk, custody)
                 .with_payment_check(payments)
@@ -420,20 +419,28 @@ pub(crate) fn compat_rpc(
     accounts: Accounts,
 ) -> CompatRpc {
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let branches = BranchService::new(branch_tx.clone());
+    let rates = RateService::new(branch_tx.clone(), source);
+    let customers = CustomerService::new(branch_tx.clone());
     let shifts = shift_service(pool, &branch_tx);
     let custody = pg_custody_service(pool, &shifts, &branch_tx);
     let transactions = transaction_service(pool, &branch_tx);
     let sources = Arc::new(ServiceSnapshotSources::new(transactions, accounts.clone()));
+    let snapshots = SnapshotBuilder::new(
+        branches.clone(),
+        rates,
+        customers.clone(),
+        shifts,
+        custody,
+        sources,
+    );
     CompatRpc::new(
         RpcServices {
-            branches: BranchService::new(branch_tx.clone()),
-            rates: RateService::new(branch_tx.clone(), source),
-            customers: CustomerService::new(branch_tx.clone()),
-            shifts,
-            custody,
+            branches,
+            customers,
             abandon: AbandonRequest::new(branch_tx),
             accounts,
         },
-        sources,
+        snapshots,
     )
 }
