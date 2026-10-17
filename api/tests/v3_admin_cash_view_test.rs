@@ -1890,3 +1890,69 @@ async fn ca10q_last_counted_sums_each_tellers_newest_closed_shift() {
     );
     room.finish().await;
 }
+
+/// CA-10q: `stats` and `reference` count the transactions of every OPEN shift (`t.shift_id = ANY(..)`). The same
+/// sale is saved once on A (while it is MAIN's only OPEN shift) and once on B, so the incoming THB and the reference
+/// line count of the two-shift answer are exactly twice the one-shift answer.
+#[actix_web::test]
+async fn ca10q_stats_and_reference_count_every_open_shifts_transactions() {
+    let room = Room::open().await;
+    let a = room
+        .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
+        .await;
+    room.save(MAIN, Ex::sell("10", "20")).await; // on A, MAIN's only OPEN shift
+    let one = room.cash("branch=MAIN").await;
+    let incoming_one = dec(one["stats"]["incoming"].as_str().expect("incoming"));
+    let lines_one = one["reference"]["withoutReference"]
+        .as_u64()
+        .expect("withoutReference")
+        + one["reference"]["withReference"]
+            .as_u64()
+            .expect("withReference");
+    assert!(
+        incoming_one > Decimal::ZERO,
+        "the sale brought THB in: {one}"
+    );
+    assert!(lines_one > 0, "the sale is a reference line: {one}");
+
+    // Setup only, before CA-10's M3: restore A's marker (see `ca10q_the_branchs_cash_adds_up_every_open_shift`).
+    // With A marked, the save path's per-branch read sees B, so the second sale lands on B. CA-10 (#626) deletes this
+    // statement with M3.
+    sqlx::query(
+        "UPDATE shifts SET opened_by_count = (SELECT c.id FROM cash_counts c \
+         WHERE c.branch_id = $1 AND c.kind = 'OPEN' ORDER BY c.counted_at DESC LIMIT 1) WHERE id = $2",
+    )
+    .bind(MAIN)
+    .bind(&a)
+    .execute(&room.desk.db.pool)
+    .await
+    .expect("restore A's marker");
+    let b = room
+        .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
+        .await;
+    room.save(MAIN, Ex::sell("10", "20")).await;
+    let on_b: i64 = sqlx::query_scalar("SELECT count(*) FROM transactions WHERE shift_id = $1")
+        .bind(&b)
+        .fetch_one(&room.desk.db.pool)
+        .await
+        .expect("count B's transactions");
+    assert_eq!(on_b, 1, "setup: the second sale is on B");
+
+    let two = room.cash("branch=MAIN").await;
+    assert_eq!(
+        dec(two["stats"]["incoming"].as_str().expect("incoming")),
+        incoming_one * Decimal::TWO,
+        "both shifts' sales come in: {two}"
+    );
+    assert_eq!(
+        two["reference"]["withoutReference"]
+            .as_u64()
+            .expect("withoutReference")
+            + two["reference"]["withReference"]
+                .as_u64()
+                .expect("withReference"),
+        lines_one * 2,
+        "both shifts' lines are counted: {two}"
+    );
+    room.finish().await;
+}
