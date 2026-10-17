@@ -37,16 +37,19 @@ fn make_line(
 #[test]
 fn test_overflow_ka_thb_new() {
     let calc = RateImprovement;
-    // Quantity where quantity * final_rate exceeds Decimal::MAX (~7.9e28)
-    // base_rate = 50,000,000 and delta = 1.0 => final_rate = 50,000,001 (valid Rate <= 1e8).
-    // With quantity 1e25 and unit size 0.0001 => 5e36, which overflows Decimal.
+    // In Side::Buy: new_rate = base_rate + delta.
+    // If base_rate = 0.0001 and delta = 99999999.9999, new_rate = 100000000 (1e8).
+    // With quantity = 1e21 and unit_size = 1:
+    // thb_new = 1e21 * 1e8 = 1e29 (overflows Decimal::MAX ~7.9e28).
+    // thb_base = 1e21 * 0.0001 = 1e17 (fits in Decimal).
+    // Only thb_new overflows.
     let extreme_qty =
-        ForeignAmount::from_decimal(Decimal::from_str("10000000000000000000000000").unwrap());
-    let rate = Rate::parse("50000000").unwrap();
-    let unit = UnitSize::parse("0.0001").unwrap();
-    let line = make_line(Side::Buy, extreme_qty, rate, unit);
+        ForeignAmount::from_decimal(Decimal::from_str("1000000000000000000000").unwrap());
+    let base_rate = Rate::parse("0.0001").unwrap();
+    let unit = UnitSize::ONE;
+    let line = make_line(Side::Buy, extreme_qty, base_rate, unit);
 
-    let params = json!({ "delta": "1.0" });
+    let params = json!({ "delta": "99999999.9999" });
     let err = calc
         .apply(&line, &params)
         .expect_err("Decimal overflow in thb_new must return ParamError");
@@ -56,11 +59,12 @@ fn test_overflow_ka_thb_new() {
 #[test]
 fn test_overflow_ka_thb_base() {
     let calc = RateImprovement;
-    // In Side::Sell, new_rate = base_rate - delta.
-    // If base_rate = 1e8 and delta = 99999999.9999, new_rate = 0.0001 (small).
+    // In Side::Sell: new_rate = base_rate - delta.
+    // If base_rate = 1e8 and delta = 99999999.9999, new_rate = 0.0001.
     // With quantity = 1e21 and unit_size = 1:
     // thb_new = 1e21 * 0.0001 = 1e17 (fits in Decimal).
     // thb_base = 1e21 * 1e8 = 1e29 (overflows Decimal::MAX ~7.9e28).
+    // Only thb_base overflows.
     let extreme_qty =
         ForeignAmount::from_decimal(Decimal::from_str("1000000000000000000000").unwrap());
     let base_rate = Rate::parse("100000000").unwrap();
@@ -75,37 +79,45 @@ fn test_overflow_ka_thb_base() {
 }
 
 // ── K-b: try_minor() overflow (past i64::MAX hundredths, fits Decimal) ──
+//
+// i64::MAX hundredths ≈ 9.223e16 THB (9.223e18 satang).
+// With quantity = 2,600,000,000,000,000 (2.6e15) and unit_size = 1:
+// - at rate 35.00: 2.6e15 * 35 = 9.1e16 THB = 9.1e18 satang (< i64::MAX, fits)
+// - at rate 36.00: 2.6e15 * 36 = 9.36e16 THB = 9.36e18 satang (> i64::MAX, overflows)
 
 #[test]
-fn test_overflow_kb_minor_buy_side() {
+fn test_overflow_kb_buy_new_minor() {
     let calc = RateImprovement;
-    // Quantity 10^17 at rate 35.00 => thb = 3.5 * 10^18 THB = 3.5 * 10^20 satang.
-    // 3.5 * 10^20 > i64::MAX (~9.22 * 10^18), but fits well within Decimal.
-    // Unchecked .minor() wraps past i64::MAX and produces wrong figure.
-    // Checked try_minor() returns ParamError.
-    let huge_qty = ForeignAmount::from_decimal(Decimal::from_str("100000000000000000").unwrap());
+    // Side::Buy with base 35.00 and delta 1.00:
+    // thb_base is at 35.00 = 9.1e16 THB (fits in i64 hundredths).
+    // thb_new is at 36.00 = 9.36e16 THB (overflows i64 hundredths).
+    // Only thb_new.try_minor() (:89) overflows; thb_base fits.
+    let qty = ForeignAmount::from_decimal(Decimal::from_str("2600000000000000").unwrap());
     let base_rate = Rate::parse("35.00").unwrap();
-    let line = make_line(Side::Buy, huge_qty, base_rate, UnitSize::ONE);
+    let line = make_line(Side::Buy, qty, base_rate, UnitSize::ONE);
 
-    let params = json!({ "delta": "0.10" });
+    let params = json!({ "delta": "1.00" });
     let err = calc
         .apply(&line, &params)
-        .expect_err("i64 minor overflow in Buy side must return ParamError");
+        .expect_err("i64 minor overflow in Buy thb_new must return ParamError");
     assert_eq!(err.field, "quantity");
 }
 
 #[test]
-fn test_overflow_kb_minor_sell_side() {
+fn test_overflow_kb_sell_base_minor() {
     let calc = RateImprovement;
-    // Same for Side::Sell
-    let huge_qty = ForeignAmount::from_decimal(Decimal::from_str("100000000000000000").unwrap());
-    let base_rate = Rate::parse("35.00").unwrap();
-    let line = make_line(Side::Sell, huge_qty, base_rate, UnitSize::ONE);
+    // Side::Sell with base 36.00 and delta 1.00:
+    // thb_base is at 36.00 = 9.36e16 THB (overflows i64 hundredths).
+    // thb_new is at 35.00 = 9.1e16 THB (fits in i64 hundredths).
+    // Only thb_base.try_minor() (:101) overflows; thb_new fits.
+    let qty = ForeignAmount::from_decimal(Decimal::from_str("2600000000000000").unwrap());
+    let base_rate = Rate::parse("36.00").unwrap();
+    let line = make_line(Side::Sell, qty, base_rate, UnitSize::ONE);
 
-    let params = json!({ "delta": "0.10" });
+    let params = json!({ "delta": "1.00" });
     let err = calc
         .apply(&line, &params)
-        .expect_err("i64 minor overflow in Sell side must return ParamError");
+        .expect_err("i64 minor overflow in Sell thb_base must return ParamError");
     assert_eq!(err.field, "quantity");
 }
 
