@@ -278,6 +278,8 @@ desk and the simulator can say why.
 | segment targeting requires granted MARKETING consent (D-13) | `SegmentSnapshotService` (at snapshot) and `ConsentGate` (at quote) |
 | MARKETING never sees an identity value | views return masked names (#554 K8) |
 | every command is idempotent (`Idempotency-Key`); same key, other payload ⇒ `idempotencyConflict` | `CommandEndpoint` (rates §6) |
+| every branch a campaign names belongs to the caller's organisation: a version's `branches` (create, draft save) and a simulation scenario's `branchId`; an unknown id is refused the same way (#2031, #1992) | `CampaignBranchScope::first_outside_org_in`, the **one** check called by `campaignCreate`, `campaignVersionSave` and `campaignSimulate` |
+| a version's terms are refused before any write when `endsAt ≤ startsAt` (field `endsAt`) or `budgetThb < 0` (field `budgetThb`), the same bounds as the table's `CHECK`s (`20261205101000_campaigns.sql:23-24`), so the database never answers for them (#2031) | `campaignCreate`, `campaignVersionSave` |
 
 ### 4.5 Routes
 
@@ -373,6 +375,7 @@ classDiagram
   class MarketingTierSource { <<api infrastructure/marketing/tier_source.rs  wraps #559 MembershipMirror>> }
   class MarketingConsentGate { <<api infrastructure/marketing/consent_gate.rs  wraps #554 ConsentService>> }
   class MarketingReferralSource { <<api infrastructure/marketing/referral_source.rs  reads referral_attributions>> }
+  class CampaignBranchScope { <<api infrastructure/marketing/branch_scope.rs  reads branches>> +first_outside_org_in(tx, organization_id, branch_ids) Option~String~ }
   class QuoteService { <<api workflows/exchange/quote.rs (#551 TX-1)>> }
   class CompleteExchange { <<api workflows/exchange/complete.rs (#551 TX-5)>> }
   class PostReversal { <<api workflows/exchange/reversal_post.rs (#552 RV-3)>> }
@@ -430,6 +433,28 @@ classDiagram
 The `api` adapters live in `api/src/infrastructure/marketing/`, one file each, because they read other areas' tables
 (#554, #559, #563, #551) that `xc-marketing` must not depend on.
 
+**`CampaignBranchScope` (#2031).** It lives in `api`, not in `xc-marketing`, because it reads `branches`. It is a
+unit struct in its own file, `api/src/infrastructure/marketing/branch_scope.rs`, registered by one line in that
+directory's `mod.rs`:
+
+```rust
+pub struct CampaignBranchScope;
+
+impl CampaignBranchScope {
+    /// The first id of `branch_ids`, in input order, that is not a branch of `organization_id`
+    /// (an unknown id and another organisation's branch alike). `None` when every id is the organisation's,
+    /// including an empty slice.
+    pub async fn first_outside_org_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        organization_id: Uuid,
+        branch_ids: &[String],
+    ) -> Result<Option<String>, sqlx::Error>;
+}
+```
+
+Each caller keeps its own answers: `Some(_)` ⇒ 400 `validationFailed` on its field (`branches` for create and draft
+save, `branchId` for simulate); `Err` ⇒ its existing 500 `database`. The check runs before the command's first write.
+
 ### 6.1 Who provides, who uses
 
 | Provider | Used by | Fallback if not merged |
@@ -445,6 +470,7 @@ The `api` adapters live in `api/src/infrastructure/marketing/`, one file each, b
 | AP-1 `ApprovalService`, `approvalDecide` (merged) | MK-4 | — |
 | this design `PromoExpenseFacts` | `executive-finance.md`'s `contribution_thb` (clears `AwaitsCampaigns`) | executive keeps `AwaitsCampaigns` until a one-line follow-up in its `ports.rs` |
 | this design `BenefitEngine`, `benefit_snapshot` | #558 customer app (C05 "สิทธิ/คูปอง"), #555 bookings (indicative quotes) | — |
+| #2031 `CampaignBranchScope::first_outside_org_in` (`api/src/infrastructure/marketing/branch_scope.rs`) | `campaign_create.rs`, `campaign_version_save.rs`, `campaign_simulate.rs` (replaces #1992's inline query there) | — (one ticket writes it and moves all three callers) |
 
 ### 6.2 What a coupon replay keeps (#1622)
 
@@ -513,6 +539,7 @@ The migration drops database objects, so it needs the owner's approval before #1
 | A reversal of an exchange that redeemed | `adjust_in` marks the redemption REVERSED in the reversal's transaction; the budget and use count return and a single-use coupon is re-issued if its version is still ACTIVE (M3; §13 *"reversal ไม่ค้างสิทธิ"*) |
 | A coupon code is guessed | one answer for every failure (`couponInvalid`); codes are long random server-generated strings; only the hash is stored |
 | DEMO exchanges | evaluated (so staff can practise) but never consume a LIVE budget: DEMO reservations and redemptions use no budget row (`amount` recorded, budget untouched) `[proposed]` |
+| A campaign names another organisation's branch, or an id that is no branch | create / draft save: 400 `validationFailed`, field `branches`; simulate: 400 `validationFailed`, field `branchId`. Nothing is written (#2031, #1992) |
 
 ## 8. Data migration
 

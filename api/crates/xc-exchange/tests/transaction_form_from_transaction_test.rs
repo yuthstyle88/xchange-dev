@@ -155,7 +155,7 @@ fn jpy_buy() -> ExchangeTransaction {
 #[test]
 fn every_field_a_save_step_reads_comes_from_the_stored_exchange() {
     let t = usd_sell();
-    let form = TransactionForm::from_transaction(&t);
+    let form = TransactionForm::from_transaction(&t).expect("stored form");
 
     assert_eq!(
         form.customer.mode,
@@ -176,7 +176,7 @@ fn every_field_a_save_step_reads_comes_from_the_stored_exchange() {
 #[test]
 fn the_payment_fee_and_customer_fields_come_from_the_payment_line_and_exchange() {
     let t = usd_sell();
-    let form = TransactionForm::from_transaction(&t);
+    let form = TransactionForm::from_transaction(&t).expect("stored form");
 
     assert_eq!(form.fee, money("20.00"), "the line's fee_thb");
     assert_eq!(form.bank_fee, money("1.50"), "the payment's bank fee");
@@ -208,7 +208,7 @@ fn the_payment_fee_and_customer_fields_come_from_the_payment_line_and_exchange()
 #[test]
 fn a_rate_per_unit_size_becomes_the_forms_per_1_rate() {
     let t = jpy_buy();
-    let form = TransactionForm::from_transaction(&t);
+    let form = TransactionForm::from_transaction(&t).expect("stored form");
 
     assert_eq!(form.customer.mode, Mode::Demo);
     assert_eq!(form.side, Side::Buy);
@@ -232,8 +232,8 @@ fn rebuilding_the_form_twice_gives_the_same_form() {
     let t = usd_sell();
     let before = t.clone();
     assert_eq!(
-        TransactionForm::from_transaction(&t),
-        TransactionForm::from_transaction(&t)
+        TransactionForm::from_transaction(&t).expect("stored form"),
+        TransactionForm::from_transaction(&t).expect("stored form")
     );
     assert_eq!(t, before);
 }
@@ -242,7 +242,7 @@ fn rebuilding_the_form_twice_gives_the_same_form() {
 /// principal = `thb_amount`; a SELL takes in `settle_thb`, a BUY pays out `settle_thb`.
 #[test]
 fn the_forms_quote_is_the_stored_figures_of_the_side() {
-    let sell = TransactionForm::from_transaction(&usd_sell());
+    let sell = TransactionForm::from_transaction(&usd_sell()).expect("stored form");
     assert_eq!(
         sell.quote,
         Quote {
@@ -255,7 +255,7 @@ fn the_forms_quote_is_the_stored_figures_of_the_side() {
     let mut t = jpy_buy();
     t.lines[0].fee_thb = money("5.00");
     t.lines[0].settle_thb = money("230.00");
-    let buy = TransactionForm::from_transaction(&t);
+    let buy = TransactionForm::from_transaction(&t).expect("stored form");
     assert_eq!(
         buy.quote,
         Quote {
@@ -272,7 +272,7 @@ fn the_forms_quote_is_the_stored_figures_of_the_side() {
 fn no_stored_reference_rate_gives_none() {
     let mut t = usd_sell();
     t.lines[0].reference_rate = None;
-    let form = TransactionForm::from_transaction(&t);
+    let form = TransactionForm::from_transaction(&t).expect("stored form");
     assert_eq!(
         (form.reference_rate, form.client_reference_rate),
         (None, None)

@@ -219,7 +219,7 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     expect(blockText).toContain('u-9');
     expect(blockText).toContain(screenTh.approved);
     expect(blockText).toContain('ok');
-    expect(blockText).toContain('2026-10-15T10:00:00Z');
+    expect(decisionBlock!.querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-15T10:00:00Z');
 
     expect(card.querySelectorAll('button').length).toBe(0);
     expect(card.querySelector('input[type="text"]')).toBeNull();
@@ -246,7 +246,7 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     expect(blockText).toContain(screenTh.rejected);
     expect(blockText).toContain('spread exceeds branch limit');
     expect(blockText).toContain('u-7');
-    expect(blockText).toContain('2026-10-15T11:30:00Z');
+    expect(decisionBlock!.querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-15T11:30:00Z');
     expect(card.querySelectorAll('button').length).toBe(0);
   });
 
@@ -345,7 +345,7 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     expect(blockText).toContain(screenEn.decidedAt.trim());
     expect(blockText).toContain('u-9');
     expect(blockText).toContain('ok');
-    expect(blockText).toContain('2026-10-15T10:00:00Z');
+    expect(decisionBlock!.querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-15T10:00:00Z');
     expect(normText(root)).not.toMatch(THAI);
   });
 });

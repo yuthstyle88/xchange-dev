@@ -76,18 +76,27 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
   async function handleDefine(e?: Event) {
     e?.preventDefault();
+    if (defining()) return;
     setDefining(true);
     setErrorMsg(null);
 
     try {
       const rule: Record<string, unknown> = {};
-      const parsedRecency = Number.parseInt(recencyDays().trim(), 10);
-      if (!Number.isNaN(parsedRecency)) {
-        rule.recency_days = parsedRecency;
+      const recencyTrimmed = recencyDays().trim();
+      if (recencyTrimmed !== '') {
+        if (!/^\d+$/.test(recencyTrimmed)) {
+          setErrorMsg(t('error.validationFailed'));
+          return;
+        }
+        rule.recency_days = Number.parseInt(recencyTrimmed, 10);
       }
-      const parsedFreq = Number.parseInt(frequency().trim(), 10);
-      if (frequency().trim() !== '' && !Number.isNaN(parsedFreq)) {
-        rule.frequency = parsedFreq;
+      const freqTrimmed = frequency().trim();
+      if (freqTrimmed !== '') {
+        if (!/^\d+$/.test(freqTrimmed)) {
+          setErrorMsg(t('error.validationFailed'));
+          return;
+        }
+        rule.frequency = Number.parseInt(freqTrimmed, 10);
       }
       if (valueThb().trim() !== '') {
         rule.value_thb = valueThb().trim();
@@ -103,6 +112,8 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
       const res = await defineWrite.send(body);
       setDefinition(res);
+      setSnapshotInfo(null);
+      setPreview(null);
     } catch (err) {
       setErrorMsg(memberError(err));
     } finally {
@@ -120,6 +131,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
   }
 
   async function handleSnapshot() {
+    if (snapshotting()) return;
     const def = definition();
     if (!def) return;
     setSnapshotting(true);
@@ -129,6 +141,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
       const body = { id: def.id };
       const res = await snapshotWrite.send(body);
       setSnapshotInfo(res);
+      setPreview(null);
       await loadPreview(res.id);
     } catch (err) {
       setErrorMsg(memberError(err));
@@ -222,13 +235,19 @@ export function Members(_props: AdminMenuProps): JSX.Element {
           </div>
 
           <div class="xc-detail-actions">
-            <button type="submit" data-action="define" class="xc-btn-primary">
+            <button
+              type="submit"
+              data-action="define"
+              class="xc-btn-primary"
+              disabled={defining()}
+            >
               {defining() ? t('defining') : t('defineBtn')}
             </button>
             <button
               type="button"
               data-action="snapshot"
               class="xc-btn-secondary"
+              disabled={snapshotting() || !definition()}
               onClick={() => void handleSnapshot()}
             >
               {snapshotting() ? t('snapshotting') : t('snapshotBtn')}

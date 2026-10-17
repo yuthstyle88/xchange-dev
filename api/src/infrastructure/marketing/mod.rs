@@ -1,5 +1,6 @@
 //! Marketing infrastructure adapters (MK-5, MK-6).
 
+pub mod branch_scope;
 pub mod consent_gate;
 pub mod pg_customer_metrics;
 pub mod referral_source;

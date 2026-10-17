@@ -15,7 +15,7 @@ use xc_kernel::ids::BranchId;
 
 use super::BookingServices;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::CommandAction;
+use crate::presentation::http::v3::command::{CommandAction, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct SlotOpen {
@@ -56,7 +56,7 @@ impl CommandAction for SlotOpen {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &BranchId,
+        branch: &BranchId,
         _who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
@@ -89,8 +89,12 @@ impl CommandAction for SlotOpen {
             }
         };
 
-        let branch = BranchId::new(branch_id);
-        BranchTx::lock_also(tx, &branch).await.map_err(|e| {
+        let slot_branch = BranchId::new(branch_id);
+        if slot_branch != *branch {
+            return Err(out_of_scope());
+        }
+
+        BranchTx::lock_also(tx, &slot_branch).await.map_err(|e| {
             V3Error::new(
                 "serverError",
                 None,
@@ -107,12 +111,7 @@ impl CommandAction for SlotOpen {
                 SlotError::NotFound => {
                     V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
                 }
-                other => V3Error::new(
-                    "badRequest",
-                    None,
-                    other.to_string(),
-                    StatusCode::BAD_REQUEST,
-                ),
+                other => V3Error::from(other),
             })?;
 
         Ok(SlotOpenOutput {

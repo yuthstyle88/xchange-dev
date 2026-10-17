@@ -129,6 +129,34 @@ impl CommandAction for CampaignVersionNewCommand {
             )
         })?;
 
+        let has_open_draft: bool = sqlx::query_scalar(
+            "SELECT EXISTS (\
+                 SELECT 1 FROM campaign_versions \
+                 WHERE organization_id = $1 AND campaign_id = $2 AND status IN ('DRAFT', 'SIMULATED')\
+             )",
+        )
+        .bind(org_id)
+        .bind(campaign_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| {
+            V3Error::new(
+                "database",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+        if has_open_draft {
+            return Err(V3Error::new(
+                "staleVersion",
+                None,
+                "campaign already has an open draft or simulated version",
+                StatusCode::CONFLICT,
+            ));
+        }
+
         let now = Utc::now();
 
         let (

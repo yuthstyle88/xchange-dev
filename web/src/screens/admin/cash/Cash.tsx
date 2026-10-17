@@ -28,7 +28,10 @@ import './cash.css';
 const t = screenT('admin.cash', table);
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+  return new Date(iso)
+    .toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function Cash(props: AdminMenuProps): JSX.Element {
@@ -46,8 +49,18 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   let lastBranch = '';
   let lastTick: number | undefined = undefined;
   let currentCashVersion: number | undefined = undefined;
+  let cashSeq = 0;
+  let readAllSeq = 0;
+  // Bumped whenever the shift list is reloaded (e.g. a branch switch) so an
+  // older-shifts page that answers late is not applied to the new list.
+  let olderSeq = 0;
+  // True while the shift list read for the current readAll is in flight. The
+  // rows on screen may still belong to the previous branch, so "load older"
+  // must not page from them.
+  let shiftsReadPending = false;
 
   async function readCash(resetVersion = false, all = showAll(), isReadAll = false) {
+    const seq = ++cashSeq;
     const curBranch = props.branch();
     if (resetVersion || curBranch !== lastBranch) {
       lastBranch = curBranch;
@@ -59,6 +72,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         since: currentCashVersion,
         filter: { all },
       });
+      if (seq !== cashSeq) return;
       currentCashVersion = res.version;
       if (res.changed && res.data) {
         setCash(res.data);
@@ -67,32 +81,50 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         }
       }
     } catch (err: unknown) {
+      if (seq !== cashSeq) return;
+      currentCashVersion = undefined;
       setCashError(wordedError(err));
       setCash(null);
     }
   }
 
-  async function readMovements() {
+  async function readMovements(seq: number) {
     try {
       const rows = await api.page<AdminCashMovementRow>('admin_cash_movements', {
         branch: props.branch(),
         limit: 100,
       });
+      if (seq !== readAllSeq) return;
       setMovements(rows);
     } catch (err: unknown) {
+      if (seq !== readAllSeq) return;
       setMovements([]);
       setCashError(wordedError(err));
     }
   }
 
-  async function readShifts() {
+  async function readShifts(seq: number) {
+    olderSeq++;
+    shiftsReadPending = true;
+    setOlderError(null);
+    setLoadingOlderShifts(false);
     try {
       const rows = await api.page<AdminShiftRow>('admin_shifts', {
         branch: props.branch(),
       });
+      if (seq !== readAllSeq) return;
+      // A load-older page started before this list landed paged from the
+      // previous rows; drop it.
+      olderSeq++;
+      shiftsReadPending = false;
+      setLoadingOlderShifts(false);
       setShifts(rows);
       setHasMoreShifts(rows.length > 0);
     } catch (err: unknown) {
+      if (seq !== readAllSeq) return;
+      olderSeq++;
+      shiftsReadPending = false;
+      setLoadingOlderShifts(false);
       setShifts([]);
       setHasMoreShifts(false);
       setCashError(wordedError(err));
@@ -100,8 +132,13 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   }
 
   async function readAll(resetVersion = true) {
+    const seq = ++readAllSeq;
     setCashError(null);
-    await Promise.all([readCash(resetVersion, showAll(), true), readMovements(), readShifts()]);
+    await Promise.all([
+      readCash(resetVersion, showAll(), true),
+      readMovements(seq),
+      readShifts(seq),
+    ]);
   }
 
   createEffect(() => {
@@ -116,7 +153,11 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         readAll(true);
       } else if (lastTick !== currentTick) {
         lastTick = currentTick;
-        readCash(false, showAll());
+        if (cashError() !== null) {
+          readAll(true);
+        } else {
+          readCash(false, showAll());
+        }
       }
     });
   });
@@ -129,28 +170,32 @@ export function Cash(props: AdminMenuProps): JSX.Element {
 
   async function handleLoadOlderShifts() {
     if (loadingOlderShifts()) return;
+    if (shiftsReadPending) return;
     const current = shifts();
     const last = current[current.length - 1];
     if (!last) return;
     setLoadingOlderShifts(true);
     setOlderError(null);
+    const seq = olderSeq;
     try {
       const older = await api.page<AdminShiftRow>('admin_shifts', {
         branch: props.branch(),
         before: last.id,
         limit: 50,
       });
+      if (seq !== olderSeq) return;
       if (older.length === 0) {
         setHasMoreShifts(false);
       } else {
         setShifts((prev) => [...prev, ...older]);
       }
     } catch (err: unknown) {
+      if (seq !== olderSeq) return;
       const msg = wordedError(err);
       setOlderError(msg);
       toast(msg);
     } finally {
-      setLoadingOlderShifts(false);
+      if (seq === olderSeq) setLoadingOlderShifts(false);
     }
   }
 

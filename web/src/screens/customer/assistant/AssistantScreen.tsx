@@ -32,7 +32,8 @@ export interface AssistantScreenProps {
   search?: string;
 }
 
-const AMOUNT_REGEX = /(?:([A-Z]{3})\s+(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s+([A-Z]{3}))/g;
+const AMOUNT_REGEX =
+  /(?:([A-Z]{3})\s+(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)|(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s+([A-Z]{3}))/g;
 
 export function renderTextWithMoney(text: string): JSX.Element[] {
   const elements: JSX.Element[] = [];
@@ -154,11 +155,14 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
     }
   });
 
+  let sendSeq = 0;
+
   const sendMessage = async (overrideText?: string) => {
     const isFromInput = overrideText === undefined;
     const textToSend = (overrideText ?? inputText()).trim();
     if (!textToSend || sending()) return;
 
+    const mine = ++sendSeq;
     if (isFromInput) {
       setInputText('');
     }
@@ -172,6 +176,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
         branch: effectiveBranch(),
         locale: currentLocale,
       });
+      if (mine !== sendSeq) return;
 
       // Update URL to preserve conversation across reloads
       if (typeof window !== 'undefined' && window.history && res.conversationId) {
@@ -187,16 +192,19 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
       setConversationId(res.conversationId);
       setMessages((prev) => [...prev, res.customerMessage, res.assistantReply]);
     } catch (err) {
+      if (mine !== sendSeq) return;
       if (isFromInput) {
         setInputText(textToSend);
       }
       setSendError(wordedError(err));
     } finally {
-      setSending(false);
+      if (mine === sendSeq) setSending(false);
     }
   };
 
   const resetConversation = () => {
+    sendSeq++;
+    setSending(false);
     setConversationId(null);
     setMessages([]);
     setLoadError(null);

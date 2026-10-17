@@ -1,7 +1,5 @@
 //! Postgres implementation of `TransferRepository`.
 
-use std::collections::HashMap;
-
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
@@ -52,8 +50,18 @@ struct LineRow {
 }
 
 fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTransfer> {
-    let kind = TransferKind::parse(&row.kind).unwrap_or(TransferKind::Branch);
-    let status = TransferStatus::parse(&row.status).unwrap_or(TransferStatus::Draft);
+    let kind = TransferKind::parse(&row.kind).ok_or_else(|| {
+        pos_error::AppError::Internal(format!(
+            "cash_transfer {} has unknown kind {:?}",
+            row.id, row.kind
+        ))
+    })?;
+    let status = TransferStatus::parse(&row.status).ok_or_else(|| {
+        pos_error::AppError::Internal(format!(
+            "cash_transfer {} has unknown status {:?}",
+            row.id, row.status
+        ))
+    })?;
 
     let mut lines = Vec::with_capacity(line_rows.len());
     for lr in line_rows {
@@ -63,8 +71,14 @@ fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTran
                 lr.face_value, lr.denomination_id
             ))
         })?;
+        let currency = CurrencyCode::parse(lr.currency.trim()).map_err(|e| {
+            pos_error::AppError::Internal(format!(
+                "cash_transfer {} line has invalid currency {:?}: {e}",
+                row.id, lr.currency
+            ))
+        })?;
         lines.push(TransferLine {
-            currency: CurrencyCode::parse(lr.currency.trim()).expect("valid currency"),
+            currency,
             denomination_id: lr.denomination_id,
             face_value,
             qty_sent: lr.qty_sent,
@@ -85,14 +99,23 @@ fn map_transfer(row: TransferRow, line_rows: Vec<LineRow>) -> AppResult<CashTran
     })
 }
 
+fn parse_id(id: &str) -> Option<Uuid> {
+    Uuid::parse_str(id).ok()
+}
+
 impl TransferRepository for PgTransferRepository {
     fn find_by_id<'a>(&'a self, id: &'a str) -> BoxFuture<'a, AppResult<Option<CashTransfer>>> {
         Box::pin(async move {
+            let uuid = match parse_id(id) {
+                Some(u) => u,
+                None => return Ok(None),
+            };
+
             let row: Option<TransferRow> = sqlx::query_as(
                 "SELECT id, kind, from_branch_id, to_branch_id, from_shift_id, to_shift_id, status, created_by \
-                 FROM cash_transfers WHERE id = $1::uuid",
+                 FROM cash_transfers WHERE id = $1",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_optional(&self.pool)
             .await?;
 
@@ -105,10 +128,10 @@ impl TransferRepository for PgTransferRepository {
                 "SELECT l.currency, l.denomination_id, d.face_value, l.qty_sent, l.qty_received \
                  FROM cash_transfer_lines l \
                  JOIN denominations d ON d.id = l.denomination_id \
-                 WHERE l.transfer_id = $1::uuid \
+                 WHERE l.transfer_id = $1 \
                  ORDER BY l.currency, d.face_value",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_all(&self.pool)
             .await?;
 
@@ -122,11 +145,16 @@ impl TransferRepository for PgTransferRepository {
         id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<CashTransfer>>> {
         Box::pin(async move {
+            let uuid = match parse_id(id) {
+                Some(u) => u,
+                None => return Ok(None),
+            };
+
             let row: Option<TransferRow> = sqlx::query_as(
                 "SELECT id, kind, from_branch_id, to_branch_id, from_shift_id, to_shift_id, status, created_by \
-                 FROM cash_transfers WHERE id = $1::uuid",
+                 FROM cash_transfers WHERE id = $1",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_optional(&mut **tx)
             .await?;
 
@@ -139,10 +167,10 @@ impl TransferRepository for PgTransferRepository {
                 "SELECT l.currency, l.denomination_id, d.face_value, l.qty_sent, l.qty_received \
                  FROM cash_transfer_lines l \
                  JOIN denominations d ON d.id = l.denomination_id \
-                 WHERE l.transfer_id = $1::uuid \
+                 WHERE l.transfer_id = $1 \
                  ORDER BY l.currency, d.face_value",
             )
-            .bind(id)
+            .bind(uuid)
             .fetch_all(&mut **tx)
             .await?;
 
@@ -407,21 +435,11 @@ impl TransferRepository for PgTransferRepository {
                 None => return Ok(None),
             };
 
-            let mut limits: HashMap<CurrencyCode, Money> = HashMap::new();
-            if let Value::Object(map) = limits_val {
-                for (cur_str, val) in map {
-                    if let Ok(code) = CurrencyCode::parse(cur_str.trim()) {
-                        let amount_str = match val {
-                            Value::String(s) => s,
-                            Value::Number(n) => n.to_string(),
-                            _ => continue,
-                        };
-                        if let Ok(m) = Money::parse(&amount_str) {
-                            limits.insert(code, m);
-                        }
-                    }
-                }
-            }
+            let limits = TransferPolicy::parse_limits(&limits_val).map_err(|invalid| {
+                pos_error::AppError::Internal(format!(
+                    "malformed cash transfer policy {version} for organization {org_id}: {invalid}"
+                ))
+            })?;
 
             Ok(Some(TransferPolicy::new(version, limits)))
         })

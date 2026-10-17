@@ -3,6 +3,7 @@ import {
   createSignal,
   For,
   Show,
+  untrack,
   type JSX,
 } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
@@ -41,11 +42,12 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const [accountsError, setAccountsError] = createSignal<string | null>(null);
   const [operationsError, setOperationsError] = createSignal<string | null>(null);
   const [branchesError, setBranchesError] = createSignal<string | null>(null);
-  const employeesError = () => accountsError() ?? operationsError() ?? branchesError();
+  const employeesError = () => accountsError() ?? branchesError();
   const setEmployeesError = (err: string | null) => setAccountsError(err);
   const [operations, setOperations] = createSignal<AdminOperationsData | null>(null);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedBranch, setSelectedBranch] = createSignal('');
+  const [disabling, setDisabling] = createSignal(false);
 
   const filteredEmployees = () => {
     const picked = selectedBranch();
@@ -55,52 +57,68 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   let initialized = false;
   let lastBranch = '';
   let currentOpsVersion: number | undefined = undefined;
+  let gen = 0;
+  let employeesSeq = 0;
+  let operationsSeq = 0;
+  let branchesSeq = 0;
 
   async function readEmployees() {
+    const branch = untrack(() => props.branch());
+    const myGen = gen;
+    const mySeq = ++employeesSeq;
     try {
       const res = await api.view<AdminEmployeesData>('admin_employees', {
-        branch: props.branch(),
+        branch,
       });
+      if (myGen !== gen || mySeq !== employeesSeq) return;
       if (res.data) {
         setEmployees(res.data.employees);
         setEmployeesError(null);
       }
     } catch (err: unknown) {
+      if (myGen !== gen || mySeq !== employeesSeq) return;
       setEmployeesError(wordedError(err));
       setEmployees([]);
     }
   }
 
   async function readOperations(resetCursor = false) {
-    const curBranch = props.branch();
+    const curBranch = untrack(() => props.branch());
     if (resetCursor || curBranch !== lastBranch) {
       lastBranch = curBranch;
       currentOpsVersion = undefined;
     }
+    const myGen = gen;
+    const mySeq = ++operationsSeq;
     try {
       const res = await api.view<AdminOperationsData>('admin_operations', {
         branch: curBranch,
         since: currentOpsVersion,
       });
+      if (myGen !== gen || mySeq !== operationsSeq) return;
       currentOpsVersion = res.version;
       setOperationsError(null);
       if (res.changed && res.data) {
         setOperations(res.data);
       }
     } catch (err: unknown) {
+      if (myGen !== gen || mySeq !== operationsSeq) return;
       setOperationsError(wordedError(err));
       setOperations(null);
     }
   }
 
   async function readBranches() {
+    const mySeq = ++branchesSeq;
     try {
       const res = await api.view<AdminBranchesData>('admin_branches');
+      if (mySeq !== branchesSeq) return;
       setBranchesError(null);
       if (res.data) {
         setBranches(res.data.branches);
       }
     } catch (err: unknown) {
+      if (mySeq !== branchesSeq) return;
       setBranchesError(wordedError(err));
     }
   }
@@ -112,22 +130,25 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   createEffect(() => {
     if (!props.shown()) return;
     const b = props.branch();
-    if (initialized && b !== lastBranch) {
-      readOperations(true);
-    }
-  });
-
-  createEffect(() => {
-    if (!props.shown()) return;
     refreshTick();
 
     if (!initialized) {
       initialized = true;
-      lastBranch = props.branch();
+      lastBranch = b;
+      gen++;
       readBranches();
       readEmployees();
       readOperations(true);
+    } else if (b !== lastBranch) {
+      lastBranch = b;
+      currentOpsVersion = undefined;
+      gen++;
+      readEmployees();
+      readOperations(true);
     } else {
+      if (untrack(branchesError)) {
+        readBranches();
+      }
       readEmployees();
       readOperations(false);
     }
@@ -277,9 +298,11 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleDisable(employee: AdminEmployeeRow) {
+    if (disabling()) return;
     const ok = window.confirm(t('disableConfirm'));
     if (!ok) return;
 
+    setDisabling(true);
     try {
       await api.post('/api/employees', {
         action: 'disable',
@@ -288,6 +311,8 @@ export function Employees(props: AdminMenuProps): JSX.Element {
       await reReadBoth();
     } catch (err: unknown) {
       toast(wordedError(err));
+    } finally {
+      setDisabling(false);
     }
   }
 
@@ -325,6 +350,10 @@ export function Employees(props: AdminMenuProps): JSX.Element {
 
         <Show when={employeesError()}>
           <div role="alert">{employeesError()}</div>
+        </Show>
+
+        <Show when={!employeesError() && operationsError()}>
+          <div role="alert">{operationsError()}</div>
         </Show>
 
         <Show when={!employeesError()}>
@@ -379,6 +408,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
                             <button
                               type="button"
                               class="danger"
+                              disabled={disabling()}
                               onClick={() => handleDisable(e)}
                             >
                               {t('disable')}

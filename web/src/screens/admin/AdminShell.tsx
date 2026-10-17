@@ -238,17 +238,24 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     return [];
   };
 
-  onMount(async () => {
+  let meAnswered = false;
+
+  const loadMeAndBranches = async () => {
     let branchFromMe = '';
     try {
       const meRes = await props.api.view<Me>('me');
       if (meRes.data) {
+        meAnswered = true;
         branchFromMe = meRes.data.branch || '';
         setPermissions(meRes.data.permissions);
+        setBranchError(null);
+        setIsOnline(true);
+        setLastSync(new Date());
         sharedSession().updateMe?.(meRes.data);
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setIsOnline(false);
+      setBranchError(err);
     }
 
     setSessionBranch(branchFromMe);
@@ -256,7 +263,10 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     if (branchFromMe) {
       await fetchBranches(branchFromMe);
     }
+  };
 
+  onMount(async () => {
+    await loadMeAndBranches();
     setReady(true);
   });
 
@@ -308,6 +318,10 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   const handleRefresh = async () => {
     requestRefresh();
+    if (!meAnswered) {
+      await loadMeAndBranches();
+      return;
+    }
     await fetchBranches(currentBranch());
   };
 

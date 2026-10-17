@@ -5,10 +5,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use pos_error::AppResult;
-use pos_infra::transactions::Transactor;
-use ts_rs::TS;
 use chrono::Utc;
+use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
+use sqlx::PgPool;
+use ts_rs::TS;
 use xc_auth::domain::access::{Actor, BranchRef, SessionBranch};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
@@ -21,12 +22,13 @@ use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 struct AdminBranchesBranchView {
+    pool: PgPool,
     branches: BranchService,
 }
 
 impl AdminBranchesBranchView {
-    fn new(branches: BranchService) -> Self {
-        Self { branches }
+    fn new(pool: PgPool, branches: BranchService) -> Self {
+        Self { pool, branches }
     }
 }
 
@@ -43,15 +45,31 @@ impl BranchView for AdminBranchesBranchView {
         who: &Actor,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
+        let pool = self.pool.clone();
         let branches = self.branches.clone();
         let who = who.clone();
         async move {
-            let all_branches = branches.list().await?;
+            let org_branch_ids: Vec<String> =
+                sqlx::query_scalar("SELECT id FROM branches WHERE organization_id::text = $1")
+                    .bind(&who.organization_id)
+                    .fetch_all(&pool)
+                    .await
+                    .map_err(AppError::Database)?;
+            let all_branches: Vec<_> = branches
+                .list()
+                .await?
+                .into_iter()
+                .filter(|b| org_branch_ids.iter().any(|id| id == b.id.as_str()))
+                .collect();
             // S, the branches the caller may switch to (SB-1 `SessionBranch::switchable`, as `Me.branches`).
             let refs: Vec<BranchRef> = all_branches
                 .iter()
                 .map(|b| {
-                    BranchRef::new(b.id.as_str(), b.code.as_deref().unwrap_or(b.id.as_str()), &b.name)
+                    BranchRef::new(
+                        b.id.as_str(),
+                        b.code.as_deref().unwrap_or(b.id.as_str()),
+                        &b.name,
+                    )
                 })
                 .collect();
             let s = SessionBranch::switchable(&who.roles, &refs, Utc::now());
@@ -71,7 +89,10 @@ impl BranchView for AdminBranchesBranchView {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let branches = BranchService::new(branch_tx);
-    ViewEndpoint::register(cfg, Arc::new(AdminBranchesBranchView::new(branches)));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(AdminBranchesBranchView::new(state.db.clone(), branches)),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

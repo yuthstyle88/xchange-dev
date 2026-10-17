@@ -1,11 +1,11 @@
-import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type {
   ApprovalRequestItemDto,
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import { screenT } from '../../../shared/i18n';
+import { locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardActions } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
@@ -22,6 +22,12 @@ function statusLabel(status: string): string {
   if (status === 'APPROVED') return t('approved');
   if (status === 'REJECTED') return t('rejected');
   return t('pending');
+}
+
+function formatDecidedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
 }
 
 interface OutOfBoundSide {
@@ -43,6 +49,11 @@ interface RequestCardProps {
 }
 
 function RequestCard(props: RequestCardProps): JSX.Element {
+  let alive = true;
+  onCleanup(() => {
+    alive = false;
+  });
+
   const [reason, setReason] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -67,13 +78,17 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         reason: reason(),
         branch: props.branch,
       });
+      if (!alive) return;
       await props.onDecided();
     } catch (err: unknown) {
+      if (!alive) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (alive) {
+        setBusy(false);
+      }
     }
   };
 
@@ -94,13 +109,17 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         reason: r,
         branch: props.branch,
       });
+      if (!alive) return;
       await props.onDecided();
     } catch (err: unknown) {
+      if (!alive) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (alive) {
+        setBusy(false);
+      }
     }
   };
 
@@ -156,7 +175,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                     </div>
                     <div class="approval-proposer">
                       <span>{t('decidedAt')}</span>
-                      <time dateTime={dec().at}>{dec().at}</time>
+                      <time dateTime={dec().at}>{formatDecidedAt(dec().at)}</time>
                     </div>
                   </>
                 )}
@@ -225,13 +244,16 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
   const [statusFilter, setStatusFilter] = createSignal<ApprovalStatusFilter>('PENDING');
   const [requests, setRequests] = createSignal<ApprovalRequestItemDto[]>([]);
   const [error, setError] = createSignal<string | null>(null);
+  let reading = 0;
 
   const loadQueue = async (branch: string, status: ApprovalStatusFilter = statusFilter()) => {
+    const mine = ++reading;
     try {
       const res = await client.view<ApprovalRequestsData>('approval_requests', {
         branch,
         filter: { status },
       });
+      if (mine !== reading) return;
       setError(null);
       if (res.data?.requests) {
         setRequests(res.data.requests);
@@ -239,15 +261,24 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
         setRequests([]);
       }
     } catch (err: unknown) {
+      if (mine !== reading) return;
       setError(wordedError(err));
       setRequests([]);
     }
   };
 
+  let lastContext = '';
+
   createEffect(() => {
     if (!props.shown()) return;
     const branch = props.branch();
     const status = statusFilter();
+    const context = `${branch}\0${status}`;
+    if (context !== lastContext) {
+      lastContext = context;
+      setRequests([]);
+      setError(null);
+    }
     void loadQueue(branch, status);
   });
 

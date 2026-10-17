@@ -6,17 +6,20 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, role_not_allowed_here,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
@@ -51,6 +54,10 @@ impl CommandAction for MarginGuardSetCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        if !is_executive_now(who, Utc::now()) {
+            return Err(role_not_allowed_here());
+        }
+
         let org_id = Uuid::parse_str(&who.organization_id).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -146,3 +153,12 @@ async fn resolve_user_id(
             .unwrap_or(None);
     fallback.unwrap_or_else(|| Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap())
 }
+
+fn is_executive_now(who: &Actor, now: DateTime<Utc>) -> bool {
+    who.roles.iter().any(|r| {
+        r.role == Role::Executive
+            && r.valid_from <= now
+            && r.valid_to.is_none_or(|to| now < to)
+    })
+}
+

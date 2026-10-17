@@ -104,13 +104,19 @@ export function Consent(props: AdminMenuProps): JSX.Element {
   const [publishError, setPublishError] = createSignal<unknown>(null);
   const [publishing, setPublishing] = createSignal(false);
 
+  let loadSeq = 0;
+  let loadedBranch: string | undefined;
+
   const loadTexts = async (branchName: string) => {
+    const seq = ++loadSeq;
     try {
       const res = await client.view<ConsentTextsData>('consent_texts', { branch: branchName });
+      if (seq !== loadSeq) return;
       if (res.data?.texts) {
         setTexts(res.data.texts);
       }
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       setTexts([]);
       toast(wordedError(err));
     }
@@ -119,6 +125,11 @@ export function Consent(props: AdminMenuProps): JSX.Element {
   createEffect(() => {
     const b = props.branch();
     const s = props.shown ? props.shown() : true;
+    if (b !== loadedBranch) {
+      loadedBranch = b;
+      setTexts([]);
+      setPublishError(null);
+    }
     if (s) {
       loadTexts(b);
     }
@@ -149,19 +160,24 @@ export function Consent(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const sent = props.branch();
     setPublishing(true);
     try {
       await publishWrite.send({
         purpose: purpose(),
         lang: lang(),
         body: textBody,
-        branch: props.branch(),
+        branch: sent,
       });
-      setBody('');
-      await loadTexts(props.branch());
+      if (props.branch() === sent) {
+        setBody('');
+        await loadTexts(props.branch());
+      }
     } catch (err: unknown) {
-      setPublishError(err);
-      toast(wordedError(err));
+      if (props.branch() === sent) {
+        setPublishError(err);
+        toast(wordedError(err));
+      }
     } finally {
       setPublishing(false);
     }

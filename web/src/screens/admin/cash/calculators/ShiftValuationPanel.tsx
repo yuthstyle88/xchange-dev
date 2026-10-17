@@ -167,7 +167,9 @@ export function ShiftValuationPanel(props: { api: ApiClient; branch: string; shi
                   <p>
                     {t('resultLine', { date: s().date ?? '', kind: t(s().kind ?? 'kindTransfer') })}
                     <br />
-                    {t('computedAt', { when: (s().at ?? new Date()).toLocaleString(locale()) })}
+                    {t('computedAt', {
+                      when: (s().at ?? new Date()).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' }),
+                    })}
                   </p>
                   <table>
                     <thead>

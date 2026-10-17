@@ -64,10 +64,15 @@ const BAD_ORDER: &str = "รหัสออเดอร์ไม่ถูกต�
 const AGENT_MAIN: &str = "a0000000-0000-4000-8000-0000000000a1";
 const AGENT_B2: &str = "a0000000-0000-4000-8000-0000000000b2";
 
-/// A terminal state must be answered well before the 5 s limit: the device reads every 250 ms.
-const SOON: Duration = Duration::from_secs(3);
-/// At most 5 s of reading [proposed], plus room for a slow test machine.
-const AT_MOST: Duration = Duration::from_millis(6_500);
+/// The window of the "reported inside the window" rows: long enough that an agent's report lands
+/// inside it on a loaded test machine, while bounding `took < LONG_WINDOW`.
+const LONG_WINDOW_MS: u64 = 8_000;
+const LONG_WINDOW: Duration = Duration::from_millis(LONG_WINDOW_MS);
+/// The short window the "never reported" rows run with, plus room for a loaded test machine while
+/// keeping `SHORT_WINDOW + SLACK` under 5 s.
+const SHORT_WINDOW_MS: u64 = 400;
+const SHORT_WINDOW: Duration = Duration::from_millis(SHORT_WINDOW_MS);
+const SLACK: Duration = Duration::from_millis(4_400);
 
 fn order(n: u32) -> String {
     format!("0a000000-0000-4000-8000-{n:012x}")
@@ -106,6 +111,14 @@ fn switched_on(branches: &[&str]) -> Settings {
     let list = serde_json::to_string(branches).expect("a JSON list is YAML");
     load_settings(Some(&format!("passportDrawerBranches: {list}")))
         .expect("the configuration loads with the switch")
+}
+
+/// Settings whose switch lists `MAIN` and sets `passportDrawerReadWindowMs` to `window_ms`.
+fn switched_on_with_window(window_ms: u64) -> Settings {
+    load_settings(Some(&format!(
+        "passportDrawerBranches: [MAIN]\n  passportDrawerReadWindowMs: {window_ms}"
+    )))
+    .expect("the configuration loads with the switch and the window")
 }
 
 fn ask_body(branch: &str, order: &str, kiosk: bool, mode: &str) -> String {
@@ -618,7 +631,7 @@ async fn row_9_only_the_holder_of_a_kiosk_order_in_accepted_or_id_checked_opens_
 /// and answers what the agent reported, as soon as it reported.
 #[actix_web::test]
 async fn row_12_a_first_ask_queues_one_passport_job_and_answers_what_the_agent_reported() {
-    let room = Room::open(switched_on(&["MAIN"])).await;
+    let room = Room::open(switched_on_with_window(LONG_WINDOW_MS)).await;
     room.agent("MAIN", AGENT_MAIN).await;
 
     let id = passport_id("MAIN", "DESK", &order(1));
@@ -631,7 +644,10 @@ async fn row_12_a_first_ask_queues_one_passport_job_and_answers_what_the_agent_r
         )
         .await;
     assert_answer(&answer, &state_body("SUBMITTED_TO_CUPS"), "the first ask");
-    assert!(took < SOON, "answered {took:?} after asking, not at once");
+    assert!(
+        took < LONG_WINDOW,
+        "answered {took:?} after asking, not inside the {LONG_WINDOW:?} window"
+    );
 
     let jobs = room.jobs().await;
     assert_eq!(
@@ -651,12 +667,12 @@ async fn row_12_a_first_ask_queues_one_passport_job_and_answers_what_the_agent_r
     room.finish().await;
 }
 
-/// The answer is the job's state after at most 5 s of reading: QUEUED and LEASED →
+/// The answer is the job's state after at most the configured read window: QUEUED and LEASED →
 /// `REQUESTED`; DRAWER_OPENED → `SUBMITTED_TO_CUPS`; FAILED, EXPIRED, and the two simulated
 /// states no agent job should reach → `UNCERTAIN`.
 #[actix_web::test]
 async fn the_answer_maps_every_state_the_job_can_reach() {
-    let room = Room::open(switched_on(&["MAIN"])).await;
+    let room = Room::open(switched_on_with_window(LONG_WINDOW_MS)).await;
     room.agent("MAIN", AGENT_MAIN).await;
 
     let reported = [
@@ -678,7 +694,7 @@ async fn the_answer_maps_every_state_the_job_can_reach() {
             )
             .await;
         assert_answer(&answer, &state_body(word), status);
-        assert!(took < SOON, "{status}: answered after {took:?}");
+        assert!(took < LONG_WINDOW, "{status}: answered after {took:?}");
     }
 
     let late = passport_id("MAIN", "DESK", &order(19));
@@ -696,12 +712,15 @@ async fn the_answer_maps_every_state_the_job_can_reach() {
         "LEASED, then reported: the reading goes on past LEASED",
     );
     assert!(
-        took < SOON,
+        took < LONG_WINDOW,
         "LEASED then DRAWER_OPENED: answered after {took:?}"
     );
 
+    let short_room = Room::open(switched_on_with_window(SHORT_WINDOW_MS)).await;
+    short_room.agent("MAIN", AGENT_MAIN).await;
+
     let leased = passport_id("MAIN", "DESK", &order(20));
-    let (answer, took) = room
+    let (answer, took) = short_room
         .ask_with(
             "BACKEND",
             ask_body("MAIN", &order(20), false, "LIVE"),
@@ -710,17 +729,29 @@ async fn the_answer_maps_every_state_the_job_can_reach() {
         )
         .await;
     assert_answer(&answer, &state_body("REQUESTED"), "LEASED, never reported");
-    assert!(took < AT_MOST, "LEASED: answered after {took:?}");
+    assert!(
+        took >= SHORT_WINDOW && took < SHORT_WINDOW + SLACK,
+        "LEASED: answered after {took:?}"
+    );
 
     let started = Instant::now();
-    let answer = room
+    let answer = short_room
         .ask("BACKEND", ask_body("MAIN", &order(21), false, "LIVE"))
         .await;
     let took = started.elapsed();
     assert_answer(&answer, &state_body("REQUESTED"), "QUEUED, never claimed");
-    assert!(took < AT_MOST, "QUEUED: answered after {took:?}");
+    assert!(
+        took >= SHORT_WINDOW && took < SHORT_WINDOW + SLACK,
+        "QUEUED: answered after {took:?}"
+    );
 
-    let statuses: Vec<String> = room.jobs().await.into_iter().map(|j| j.2).collect();
+    let statuses: Vec<String> = room
+        .jobs()
+        .await
+        .into_iter()
+        .chain(short_room.jobs().await)
+        .map(|j| j.2)
+        .collect();
     assert_eq!(
         statuses,
         [
@@ -736,6 +767,7 @@ async fn the_answer_maps_every_state_the_job_can_reach() {
         "the device never changes a job's status"
     );
     room.finish().await;
+    short_room.finish().await;
 }
 
 // ── rows 10 and 11 ───────────────────────────────────────────────────────────

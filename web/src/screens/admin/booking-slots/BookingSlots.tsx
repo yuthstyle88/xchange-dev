@@ -2,7 +2,8 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import { screenT } from '../../../shared/i18n';
+import { locale, screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
 import type {
@@ -18,6 +19,19 @@ import type {
 } from '../../../shared/api/generated/bookings';
 import * as table from './i18n';
 import './booking-slots.css';
+
+function formatSlotTime(iso: string): string {
+  if (!iso) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(locale(), {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  });
+}
 
 export function BookingSlots(props: AdminMenuProps): JSX.Element {
   const t = screenT('admin.booking-slots', table);
@@ -35,6 +49,8 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   const [loading, setLoading] = createSignal(false);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
+  // #2427: one write at a time, so a second click cannot resend the same idempotency key while the first is in flight.
+  const [writing, setWriting] = createSignal(false);
 
   // Slot Rule
   const [slotMinutes, setSlotMinutes] = createSignal('');
@@ -55,11 +71,24 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   const [grace, setGrace] = createSignal('');
   const [expiry, setExpiry] = createSignal('');
 
+  let latestReadId = 0;
+
+  function clearBranchState() {
+    setSlotMinutes('');
+    setCapacity('');
+    setHorizonDays('');
+    setClosures([]);
+    setSlots([]);
+    setSlotCapacities({});
+  }
+
   async function loadView(branchId: string) {
+    const readId = ++latestReadId;
     setLoading(true);
     setErrorMessage(null);
     try {
       const res = await api.view<AdminBookingSlotsData>('admin_booking_slots', { branch: branchId });
+      if (readId !== latestReadId) return;
       const data = res.data;
       if (data) {
         if (data.rule) {
@@ -78,24 +107,27 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
           setGrace(String(data.policy.noShowGraceMinutes));
           setExpiry(String(data.policy.confirmExpiryMinutes));
         }
-        if (data.slots) {
-          const caps: Record<string, string> = {};
-          for (const s of data.slots) {
-            caps[s.id] = String(s.capacity);
-          }
-          setSlotCapacities(caps);
+        const caps: Record<string, string> = {};
+        for (const s of data.slots ?? []) {
+          caps[s.id] = String(s.capacity);
         }
+        setSlotCapacities(caps);
       }
     } catch (err: unknown) {
+      if (readId !== latestReadId) return;
+      clearBranchState();
       handleApiError(err);
     } finally {
-      setLoading(false);
+      if (readId === latestReadId) {
+        setLoading(false);
+      }
     }
   }
 
   createEffect(() => {
     const branch = props.branch();
     if (branch) {
+      clearBranchState();
       void loadView(branch);
     }
   });
@@ -113,11 +145,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
         setErrorMessage(t(errKey as any));
         return;
       }
+      if (!isServerFailure(err)) {
+        setErrorMessage(t('error.validationFailed'));
+        return;
+      }
     }
-    setErrorMessage(t('error.validationFailed'));
+    setErrorMessage(wordedError(err));
   }
 
   async function handleSaveRule() {
+    if (writing()) return;
     setErrorMessage(null);
     const sMin = Number(slotMinutes());
     const cap = Number(capacity());
@@ -138,24 +175,31 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     const payload = {
       slotMinutes: sMin,
       capacity: cap,
       horizonDays: hDays,
-      branch: props.branch(),
+      branch,
     } satisfies Omit<SlotRuleSetInput, 'id'> & { branch: string };
-    const actionId = `slotRuleSet:${props.branch()}`;
-    const path = `/api/branches/${encodeURIComponent(props.branch())}/booking-slot-rule`;
+    const actionId = `slotRuleSet:${branch}`;
+    const path = `/api/branches/${encodeURIComponent(branch)}/booking-slot-rule`;
 
+    setWriting(true);
     try {
       await writeFor(actionId, 'PUT', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleAddClosure() {
+    if (writing()) return;
     setErrorMessage(null);
     const closedOn = newClosedOn().trim();
     const reason = newReason().trim();
@@ -165,39 +209,55 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     const payload = {
       closedOn,
       reason,
-      branch: props.branch(),
+      branch,
     } satisfies Omit<ClosureAddInput, 'id'> & { branch: string };
-    const actionId = `closureAdd:${props.branch()}:${closedOn}`;
-    const path = `/api/branches/${encodeURIComponent(props.branch())}/closures`;
+    const actionId = `closureAdd:${branch}:${closedOn}`;
+    const path = `/api/branches/${encodeURIComponent(branch)}/closures`;
 
+    setWriting(true);
     try {
       await writeFor(actionId, 'POST', path).send(payload);
-      setNewClosedOn('');
-      setNewReason('');
+      if (props.branch() === branch) {
+        setNewClosedOn('');
+        setNewReason('');
+      }
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleRemoveClosure(closedOn: string) {
+    if (writing()) return;
     setErrorMessage(null);
-    const payload = { branch: props.branch() };
-    const actionId = `closureRemove:${props.branch()}:${closedOn}`;
-    const path = `/api/branches/${encodeURIComponent(props.branch())}/closures/${encodeURIComponent(closedOn)}/remove`;
+    const branch = props.branch();
+    const payload = { branch };
+    const actionId = `closureRemove:${branch}:${closedOn}`;
+    const path = `/api/branches/${encodeURIComponent(branch)}/closures/${encodeURIComponent(closedOn)}/remove`;
 
+    setWriting(true);
     try {
       await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleUpdateSlotCapacity(slotId: string) {
+    if (writing()) return;
     setErrorMessage(null);
     const capVal = slotCapacities()[slotId];
     const capNum = Number(capVal);
@@ -207,54 +267,82 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       return;
     }
 
+    const branch = props.branch();
     const payload = {
       capacity: capNum,
-      branch: props.branch(),
+      branch,
     } satisfies Omit<SlotCapacitySetInput, 'id'> & { branch: string };
     const actionId = `slotCapacitySet:${slotId}`;
     const path = `/api/booking-slots/${encodeURIComponent(slotId)}/capacity`;
 
+    setWriting(true);
     try {
       await writeFor(actionId, 'PUT', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleCloseSlot(slotId: string) {
+    if (writing()) return;
     setErrorMessage(null);
-    const payload = { branch: props.branch() };
+    const branch = props.branch();
+    const payload = { branch };
     const actionId = `slotClose:${slotId}`;
     const path = `/api/booking-slots/${encodeURIComponent(slotId)}/close`;
 
+    setWriting(true);
     try {
       await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleOpenSlot(slotId: string) {
+    if (writing()) return;
     setErrorMessage(null);
-    const payload = { branch: props.branch() };
+    const branch = props.branch();
+    const payload = { branch };
     const actionId = `slotOpen:${slotId}`;
     const path = `/api/booking-slots/${encodeURIComponent(slotId)}/open`;
 
+    setWriting(true);
     try {
       await writeFor(actionId, 'POST', path).send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
-      handleApiError(err);
+      if (props.branch() === branch) {
+        handleApiError(err);
+      }
+    } finally {
+      setWriting(false);
     }
   }
 
   async function handleSavePolicy() {
+    if (writing()) return;
     setErrorMessage(null);
-    const cut = Number(cutoff());
-    const grc = Number(grace());
-    const exp = Number(expiry());
+    const cutRaw = cutoff().trim();
+    const grcRaw = grace().trim();
+    const expRaw = expiry().trim();
+    if (!/^\d+$/.test(cutRaw) || !/^\d+$/.test(grcRaw) || !/^\d+$/.test(expRaw)) {
+      setErrorMessage(t('policyValidationFailed'));
+      return;
+    }
+    const cut = Number(cutRaw);
+    const grc = Number(grcRaw);
+    const exp = Number(expRaw);
 
     // Boundary checks: cutoff >= 0, grace >= 0, expiry > 0
     if (
@@ -277,11 +365,14 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     } satisfies BookingPolicySetInput & { branch: string };
     const actionId = 'bookingPolicySet';
 
+    setWriting(true);
     try {
       await writeFor(actionId, 'PUT', '/api/booking-policy').send(payload);
       await loadView(props.branch());
     } catch (err: unknown) {
       handleApiError(err);
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -336,7 +427,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
             onInput={(e) => setHorizonDays(e.currentTarget.value)}
           />
         </div>
-        <button type="button" onClick={handleSaveRule}>
+        <button type="button" disabled={writing()} onClick={handleSaveRule}>
           {t('saveRule')}
         </button>
       </section>
@@ -367,7 +458,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               onInput={(e) => setNewReason(e.currentTarget.value)}
             />
           </div>
-          <button type="button" onClick={handleAddClosure}>
+          <button type="button" disabled={writing()} onClick={handleAddClosure}>
             {t('addClosure')}
           </button>
         </div>
@@ -378,7 +469,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               <div class="closure-item">
                 <span class="closure-date">{closure.closedOn}</span>
                 <span class="closure-reason">{closure.reason}</span>
-                <button type="button" onClick={() => void handleRemoveClosure(closure.closedOn)}>
+                <button type="button" disabled={writing()} onClick={() => void handleRemoveClosure(closure.closedOn)}>
                   {t('removeClosure')}
                 </button>
               </div>
@@ -396,7 +487,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               <div class="slot-item" data-slot-id={slot.id}>
                 <span class="slot-date">{slot.serviceDate}</span>
                 <span class="slot-time">
-                  {slot.startAt} - {slot.endAt}
+                  {formatSlotTime(slot.startAt)} - {formatSlotTime(slot.endAt)}
                 </span>
                 <span class="slot-status">{slot.status}</span>
                 <span class="slot-reserved">
@@ -415,14 +506,14 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
                       }));
                     }}
                   />
-                  <button type="button" onClick={() => void handleUpdateSlotCapacity(slot.id)}>
+                  <button type="button" disabled={writing()} onClick={() => void handleUpdateSlotCapacity(slot.id)}>
                     {t('updateCapacity')}
                   </button>
                 </div>
-                <button type="button" onClick={() => void handleCloseSlot(slot.id)}>
+                <button type="button" disabled={writing()} onClick={() => void handleCloseSlot(slot.id)}>
                   {t('close')}
                 </button>
-                <button type="button" onClick={() => void handleOpenSlot(slot.id)}>
+                <button type="button" disabled={writing()} onClick={() => void handleOpenSlot(slot.id)}>
                   {t('open')}
                 </button>
               </div>
@@ -468,7 +559,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               onInput={(e) => setExpiry(e.currentTarget.value)}
             />
           </div>
-          <button type="button" onClick={handleSavePolicy}>
+          <button type="button" disabled={writing()} onClick={handleSavePolicy}>
             {t('savePolicy')}
           </button>
         </section>

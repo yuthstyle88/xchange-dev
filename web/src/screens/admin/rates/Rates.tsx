@@ -128,6 +128,19 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [adjustBuyPct, setAdjustBuyPct] = createSignal<string>('0.0000');
   const [adjustSellPct, setAdjustSellPct] = createSignal<string>('0.0000');
 
+  // #2410: one write at a time. A second click while a write is in flight would
+  // resend the same idempotency key, get 409 idempotencyConflict, and lose the key.
+  const [busy, setBusy] = createSignal<boolean>(false);
+  const guarded = (fn: () => Promise<void>) => async (): Promise<void> => {
+    if (busy()) return;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const fetchReference = async (opts: { since?: number; fresh?: boolean }) => {
     if (!props.shown()) return;
     try {
@@ -139,6 +152,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (res.changed && res.data) {
         setRefData(res.data);
         setRefError(res.data.error ?? null);
+      } else if (!res.changed) {
+        setRefError(refData()?.error ?? null);
       }
     } catch (err: unknown) {
       setRefError(wordedError(err));
@@ -147,22 +162,27 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const readPublished = async (branch: string) => {
+  let readGen = 0;
+
+  const readPublished = async (branch: string, gen: number) => {
     try {
       const res = await client.view<PublishedRatesData>('published_rates', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setPubData(res.data);
       }
       setPubError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPubData(null);
       setPubError(wordedError(err));
     }
   };
 
-  const readDrafts = async (branch: string) => {
+  const readDrafts = async (branch: string, gen: number) => {
     try {
       const res = await client.view<RateDraftsData>('rate_drafts', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setDraftsData(res.data);
       }
@@ -175,6 +195,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           'rate_draft',
           { branch, filter: { id: openDraft.id } },
         );
+        if (gen !== readGen) return;
         if (detailRes.changed && detailRes.data) {
           setDraftDetail(detailRes.data);
         }
@@ -183,29 +204,33 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setDraftsError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setDraftsData(null);
       setDraftDetail(null);
       setDraftsError(wordedError(err));
     }
   };
 
-  const readMe = async () => {
+  const readMe = async (gen: number) => {
     try {
       const res = await client.view<{ permissions?: readonly string[] }>('me');
+      if (gen !== readGen) return;
       if (res.data && Array.isArray(res.data.permissions)) {
         setPermissions(res.data.permissions);
       } else {
         setPermissions([]);
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPermissions([]);
       setPolicyError(wordedError(err));
     }
   };
 
-  const readPolicy = async (branch: string) => {
+  const readPolicy = async (branch: string, gen: number) => {
     try {
       const res = await client.view<RatePolicyData>('rate_policy', { branch });
+      if (gen !== readGen) return;
       if (res.changed && res.data) {
         setPolicyData(res.data);
         if (res.data.policy) {
@@ -235,6 +260,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       }
       setPolicyError(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       setPolicyData(null);
       setPolicyError(wordedError(err));
     }
@@ -242,9 +268,10 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
   const readAll = async (branch: string) => {
     if (!props.shown()) return;
+    const gen = ++readGen;
     setSimulateResult(null);
     void fetchReference({ since: undefined });
-    await Promise.all([readMe(), readPublished(branch), readDrafts(branch), readPolicy(branch)]);
+    await Promise.all([readMe(gen), readPublished(branch, gen), readDrafts(branch, gen), readPolicy(branch, gen)]);
   };
 
   let lastShown = false;
@@ -306,9 +333,18 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     return '1';
   };
 
+  let lastDraftId: string | undefined;
+  createEffect(() => {
+    const curDraftId = draftDetail()?.draft?.id;
+    if (curDraftId !== lastDraftId) {
+      lastDraftId = curDraftId;
+      setSimulateResult(null);
+    }
+  });
+
   const isOutOfBound = (currency: string): boolean => {
     const sim = simulateResult();
-    if (!sim || !Array.isArray(sim.outOfBound)) return false;
+    if (!sim || !draftDetail()?.draft || !Array.isArray(sim.outOfBound)) return false;
     return sim.outOfBound.some((item) => item.currency === currency);
   };
 
@@ -330,20 +366,20 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const handleNewDraft = async () => {
+  const handleNewDraft = guarded(async () => {
     const branch = props.branch();
+    const gen = readGen;
+    const curPub = pubData();
+    const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
+      currency: l.currency,
+      buyMode: 'AUTO',
+      sellMode: 'AUTO',
+      manualBuy: null,
+      manualSell: null,
+      reason: null,
+    }));
     try {
       await writeFor('fetchReference', 'POST', '/api/rate-references/fetch').send({ branch });
-
-      const curPub = pubData();
-      const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
-        currency: l.currency,
-        buyMode: 'AUTO',
-        sellMode: 'AUTO',
-        manualBuy: null,
-        manualSell: null,
-        reason: null,
-      }));
 
       const createRes = await writeFor<unknown, { id: string; version: number; status: string }>(
         'createDraft',
@@ -355,21 +391,26 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         'rate_draft',
         { branch, filter: { id: createRes.id } },
       );
+      if (gen !== readGen) return;
       if (detailRes.data) {
         setDraftDetail(detailRes.data);
       }
 
-      await readDrafts(branch);
+      await readDrafts(branch, gen);
+      if (gen !== readGen) return;
       setSimulateResult(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleSimulate = async () => {
+  const handleSimulate = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
+    const draftId = draft.id;
     const branch = props.branch();
+    const gen = readGen;
     try {
       const res = await writeFor<
         unknown,
@@ -378,37 +419,43 @@ export function Rates(props: AdminMenuProps): JSX.Element {
           isInBound: boolean;
           outOfBound: OutOfBoundItem[];
         }
-      >('simulateDraft:' + draft.id, 'POST', `/api/rate-drafts/${draft.id}/simulate`).send({ branch });
+      >('simulateDraft:' + draftId, 'POST', `/api/rate-drafts/${draftId}/simulate`).send({ branch });
+      if (gen !== readGen || draftDetail()?.draft?.id !== draftId) return;
       setSimulateResult(res);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleSubmit = async () => {
+  const handleSubmit = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     try {
       const res = await writeFor<unknown, { requestId?: string; status: string }>(
         'submitDraft:' + draft.id,
         'POST',
         `/api/rate-drafts/${draft.id}/submit`,
       ).send({ branch });
+      if (gen !== readGen) return;
       if (res?.status) {
         setDraftDetail((prev) =>
           prev && prev.draft ? { ...prev, draft: { ...prev.draft, status: res.status } } : prev,
         );
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handlePublish = async () => {
+  const handlePublish = guarded(async () => {
     const draft = draftDetail()?.draft;
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     const curVersion = pubData()?.publication?.version ?? null;
     try {
       await writeFor<unknown, { id: string; version: number }>(
@@ -416,18 +463,23 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         'POST',
         `/api/rate-drafts/${draft.id}/publish`,
       ).send({ branch, expectedVersion: curVersion });
-      await readPublished(branch);
-      await readDrafts(branch);
+      if (gen === readGen) {
+        setSimulateResult(null);
+      }
+      await readPublished(branch, gen);
+      await readDrafts(branch, gen);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
-  const handleAdjustAll = async () => {
+  const handleAdjustAll = guarded(async () => {
     const draft = draftDetail()?.draft;
     const lines = draftDetail()?.lines ?? [];
     if (!draft) return;
     const branch = props.branch();
+    const gen = readGen;
     const policy = policyData()?.policy;
     if (!policy) return;
     try {
@@ -456,18 +508,23 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         expectedVersion: draft.version,
         lines: putLines,
       });
+      if (gen === readGen) {
+        setSimulateResult(null);
+      }
 
       const updated = await client.view<RateDraftDetailData, RateDraftFilter>(
         'rate_draft',
         { branch, filter: { id: draft.id } },
       );
+      if (gen !== readGen) return;
       if (updated.data) {
         setDraftDetail(updated.data);
       }
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
   const nonRisingTierNo = (): 1 | 2 | 3 | null => {
     if (!valueTiersOn()) return null;
@@ -511,13 +568,14 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     );
   };
 
-  const handleSavePolicy = async () => {
+  const handleSavePolicy = guarded(async () => {
     if (!canSavePolicy()) return;
     const policy = policyData()?.policy;
     if (!policy || Boolean(policyError())) return;
     if (!areValueTiersValid()) return;
 
     const branch = props.branch();
+    const gen = readGen;
     const rows = valueTiers();
     const hasAnyTierInput = rows.some(
       (r) => r.upperInclusiveThb !== '' || r.buyMarginPct !== '' || r.sellMarginPct !== '',
@@ -549,15 +607,20 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
     try {
       await savePolicyWrite.send(payload);
+      if (gen !== readGen) return;
+      setSimulateResult(null);
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
-  };
+  });
 
   const openHistory = async () => {
     const branch = props.branch();
+    const gen = readGen;
     try {
       const res = await client.view<RatePublicationsData>('rate_publications', { branch });
+      if (gen !== readGen) return;
       const pubs = res.data?.publications ?? [];
       openDialog(
         t('historyTitle'),
@@ -589,6 +652,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         ),
       );
     } catch (err: unknown) {
+      if (gen !== readGen) return;
       toast(wordedError(err));
     }
   };
@@ -617,6 +681,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 data-action="save-policy"
                 data-testid="save-policy"
                 disabled={
+                  busy() ||
                   !canSavePolicy() ||
                   Boolean(policyError()) ||
                   !policyData()?.policy ||
@@ -766,6 +831,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               <button
                 type="button"
                 class="btn-new-draft"
+                disabled={busy()}
                 onClick={handleNewDraft}
               >
                 {t('newDraft')}
@@ -774,6 +840,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-simulate"
+                  disabled={busy()}
                   onClick={handleSimulate}
                 >
                   {t('simulate')}
@@ -781,6 +848,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-submit"
+                  disabled={busy()}
                   onClick={handleSubmit}
                 >
                   {t('submit')}
@@ -788,6 +856,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
                 <button
                   type="button"
                   class="btn-publish"
+                  disabled={busy()}
                   onClick={handlePublish}
                 >
                   {t('publish')}
@@ -795,7 +864,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
               </Show>
             </div>
           </div>
-          <Show when={simulateResult() && simulateResult()!.isInBound}>
+          <Show when={draftDetail()?.draft && simulateResult() && simulateResult()!.isInBound}>
             <div class="in-bound-status">{t('inBound')}</div>
           </Show>
           <Show when={draftsError()}>
@@ -828,7 +897,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="btn-adjust-all"
-              disabled={Boolean(policyError()) || !policyData()?.policy}
+              disabled={busy() || Boolean(policyError()) || !policyData()?.policy}
               onClick={handleAdjustAll}
             >
               {t('adjustAll')}

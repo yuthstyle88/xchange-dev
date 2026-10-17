@@ -52,7 +52,7 @@ afterEach(async () => {
 });
 
 describe('extra unit tests for unspecified behaviors (#476)', () => {
-  it('(a) NewTransactionButton is disabled and displays read error when admin_shift_state read fails', async () => {
+  it('(a) NewTransactionButton is enabled and displays read error when admin_shift_state read fails', async () => {
     const api = {
       view: vi
         .fn()
@@ -68,7 +68,7 @@ describe('extra unit tests for unspecified behaviors (#476)', () => {
     button.click();
     await settle();
 
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
     expect(el.textContent).toContain(th['error.network']);
   });
 

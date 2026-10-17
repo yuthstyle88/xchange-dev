@@ -5,11 +5,12 @@
 //! - its own route (A01: `GET /api/executive/overview`), naming branches with `branches=B1,B2`. An empty item is
 //!   `400 validationFailed`; any id outside the caller's scope, existing or not, is `403 outOfScope` (ruling on
 //!   #1071 gap 7). A caller whose roles do not qualify is `403 outOfScope` too (§8, §9);
-//! - `/api/v3/views/<NAME>`, because every file in `views/` is in `VIEWS` and answers a branch probe there. It names
-//!   one `branch`, and refuses in this order: the policy's own refusal; `400 noSuchBranch` for any id that is not a
-//!   branch of the caller's organisation, whether it exists elsewhere or not; `403 outOfScope` for one of the
-//!   organisation's branches outside the caller's scope. Otherwise it answers for that branch (lane controller's
-//!   ruling on #1071, issuecomment-6108432223).
+//! - `/api/v3/views/<NAME>`, because every file in `views/` is in `VIEWS` and answers a branch probe there. It takes
+//!   either `branches=B1,B2` (parsed as on the view's own route; sending both `branch` and `branches` is `400
+//!   validationFailed` on `branches`) or one `branch`, which refuses in this order: the policy's own refusal; `400
+//!   noSuchBranch` for any id that is not a branch of the caller's organisation, whether it exists elsewhere or not;
+//!   `403 outOfScope` for one of the organisation's branches outside the caller's scope. Otherwise it answers for that
+//!   branch (lane controller's ruling on #1071, issuecomment-6108432223; #2813).
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -160,27 +161,15 @@ async fn answer<V: OrgView>(
     let branches = match mount {
         Mount::Org => match query.get("branches") {
             None => in_scope,
-            Some(list) => {
-                let mut named = Vec::new();
-                for item in list.split(',') {
-                    if item.is_empty() {
-                        return Err(validation_failed("branches"));
-                    }
-                    let b = BranchId::new(item);
-                    if !in_scope.contains(&b) {
-                        return Err(PolicyError::OutOfScope.into());
-                    }
-                    if !named.contains(&b) {
-                        named.push(b);
-                    }
-                }
-                named.sort();
-                named
-            }
+            Some(list) => parse_branches(list, &in_scope)?,
         },
-        Mount::Views => match query.get("branch").filter(|b| !b.is_empty()) {
-            None => in_scope,
-            Some(b) => {
+        Mount::Views => match (
+            query.get("branch").filter(|b| !b.is_empty()),
+            query.get("branches"),
+        ) {
+            (Some(_), Some(_)) => return Err(validation_failed("branches")),
+            (None, Some(list)) => parse_branches(list, &in_scope)?,
+            (Some(b), None) => {
                 if !organisation.iter().any(|o| o == b) {
                     return Err(V3Error::new(
                         "noSuchBranch",
@@ -195,6 +184,7 @@ async fn answer<V: OrgView>(
                 }
                 vec![b]
             }
+            (None, None) => in_scope,
         },
     };
 
@@ -244,6 +234,24 @@ async fn answer<V: OrgView>(
         .insert_header((header::CONTENT_TYPE, "application/json"))
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .json(answer))
+}
+
+fn parse_branches(list: &str, in_scope: &[BranchId]) -> Result<Vec<BranchId>, V3Error> {
+    let mut named = Vec::new();
+    for item in list.split(',') {
+        if item.is_empty() {
+            return Err(validation_failed("branches"));
+        }
+        let b = BranchId::new(item);
+        if !in_scope.contains(&b) {
+            return Err(PolicyError::OutOfScope.into());
+        }
+        if !named.contains(&b) {
+            named.push(b);
+        }
+    }
+    named.sort();
+    Ok(named)
 }
 
 /// The query's keys, each with its first value.

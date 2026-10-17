@@ -22,13 +22,17 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
   const [challenge, setChallenge] = createSignal<string | undefined>();
   const [error, setError] = createSignal('');
   const [pending, setPending] = createSignal(false);
+  const [sending, setSending] = createSignal(false);
+  const [hasCode, setHasCode] = createSignal(false);
   let phoneInput: HTMLInputElement | undefined;
   let codeInput: HTMLInputElement | undefined;
   let requesting: Promise<void> | undefined;
 
   const requestCode = (): Promise<void> => {
+    if (requesting) return requesting;
     setError('');
-    requesting = (async () => {
+    setSending(true);
+    const run = (async () => {
       try {
         const json = await api.post<
           { destination: string; channel: string },
@@ -44,9 +48,13 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
         }
       } catch (err: unknown) {
         setError(wordedError(err));
+      } finally {
+        requesting = undefined;
+        setSending(false);
       }
     })();
-    return requesting;
+    requesting = run;
+    return run;
   };
 
   const verify = async (code: string) => {
@@ -69,7 +77,7 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
   const submit = (e: Event) => {
     e.preventDefault();
     const code = (codeInput?.value ?? '').trim();
-    if (code) {
+    if (code && (challenge() || requesting)) {
       void verify(code);
     } else {
       void requestCode();
@@ -89,13 +97,20 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
         </Show>
         <label>
           {tr('code')}
-          <input ref={codeInput} type="text" name="code" autocomplete="one-time-code" inputmode="numeric" />
+          <input
+            ref={codeInput}
+            type="text"
+            name="code"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            onInput={(e) => setHasCode(e.currentTarget.value.trim().length > 0)}
+          />
         </label>
-        <button type="submit" disabled={pending()}>
+        <button type="submit" disabled={pending() || (sending() && !hasCode())}>
           {challenge() ? tr('verify') : tr('requestCode')}
         </button>
         <Show when={challenge()}>
-          <button type="button" class="xc-sign-in-link" onClick={() => void requestCode()}>
+          <button type="button" class="xc-sign-in-link" disabled={sending()} onClick={() => void requestCode()}>
             {tr('resendCode')}
           </button>
         </Show>

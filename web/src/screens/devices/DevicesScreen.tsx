@@ -76,6 +76,8 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   const [selectedTx, setSelectedTx] = createSignal<string>('');
   const [reason, setReason] = createSignal<string>('');
   const [busy, setBusy] = createSignal<boolean>(false);
+  const [loadingMoreEvents, setLoadingMoreEvents] = createSignal<boolean>(false);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = createSignal<boolean>(false);
   const [message, setMessage] = createSignal<string>('');
 
   let selectRef: HTMLSelectElement | undefined;
@@ -111,9 +113,45 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
     });
   }
 
+  const failedViews = new Map<string, string>();
+  let messageOwner: string | null = null;
+  let nonViewError = '';
+
+  function setNonViewMessage(text: string): void {
+    messageOwner = null;
+    nonViewError = text;
+    setMessage(text);
+  }
+
+  function markFirstReadDone(name: string): void {
+    if (firstReadsDeferred && firstReadsDeferred.remaining.has(name)) {
+      firstReadsDeferred.remaining.delete(name);
+      if (firstReadsDeferred.remaining.size === 0) {
+        firstReadsDeferred.resolve();
+        firstReadsDeferred = undefined;
+      }
+    }
+  }
+
+  let pollGen = 0;
+
   const wrappedClient: Pick<ApiClient, 'view'> = {
     view: async <T,>(name: string, params?: ViewParams): Promise<ViewAnswer<T>> => {
-      const res = await props.api.view<T>(name, params);
+      const myGen = pollGen;
+      let res: ViewAnswer<T>;
+      try {
+        res = await props.api.view<T>(name, params);
+      } catch (err: unknown) {
+        if (myGen !== pollGen) throw err;
+        const msg = wordedError(err);
+        failedViews.delete(name);
+        failedViews.set(name, msg);
+        messageOwner = name;
+        setMessage(msg);
+        markFirstReadDone(name);
+        throw err;
+      }
+      if (myGen !== pollGen) return res;
       if (res.changed && res.data !== undefined) {
         if (name === 'devices') {
           const ov = res.data as DevicesOverview;
@@ -121,16 +159,32 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         } else if (name === 'device_jobs') {
           setJobs(res.data as DeviceJobRow[]);
         } else if (name === 'device_events') {
-          setEvents(res.data as DeviceEventRow[]);
+          const next = res.data as DeviceEventRow[];
+          const prev = events();
+          if (
+            olderEvents().length > 0 &&
+            (prev.length !== next.length || prev.some((ev, i) => ev.seq !== next[i]?.seq))
+          ) {
+            setOlderEvents([]);
+          }
+          setEvents(next);
         }
       }
-      if (firstReadsDeferred && firstReadsDeferred.remaining.has(name)) {
-        firstReadsDeferred.remaining.delete(name);
-        if (firstReadsDeferred.remaining.size === 0) {
-          firstReadsDeferred.resolve();
-          firstReadsDeferred = undefined;
+      if (failedViews.has(name)) {
+        failedViews.delete(name);
+        if (messageOwner === name) {
+          const entries = [...failedViews.entries()];
+          const last = entries[entries.length - 1];
+          if (last) {
+            messageOwner = last[0];
+            setMessage(last[1]);
+          } else {
+            messageOwner = null;
+            setMessage(nonViewError);
+          }
         }
       }
+      markFirstReadDone(name);
       return res;
     },
   };
@@ -141,16 +195,18 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
         branch,
         limit: 100,
       });
+      nonViewError = '';
       setTransactions(txs);
       if (selectedTx() && !txs.some((item) => item.id === selectedTx())) {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     }
   }
 
   async function initBranch(branch: string, isBranchSwitch = false): Promise<void> {
+    pollGen += 1;
     devicesPoller?.stop();
     jobsPoller?.stop();
     eventsPoller?.stop();
@@ -233,12 +289,12 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   async function runAction(fn: () => Promise<void>): Promise<void> {
     if (busy()) return;
     setBusy(true);
-    setMessage('');
+    setNonViewMessage('');
     try {
       await fn();
       await initBranch(effectiveBranch());
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
     } finally {
       setBusy(false);
     }
@@ -391,31 +447,34 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   }
 
   async function handleLoadMoreTransactions(): Promise<void> {
-    if (busy()) return;
+    if (busy() || loadingMoreTransactions()) return;
     const current = transactions() ?? [];
     const last = current[current.length - 1];
     if (!last) return;
+    setLoadingMoreTransactions(true);
     try {
       const older = await props.api.page<DeviceTransactionRow>('device_transactions', {
         branch: effectiveBranch(),
         before: last.id,
         limit: 100,
       });
-      const updated = [...current, ...older];
-      setTransactions(updated);
-      if (selectedTx() && !updated.some((item) => item.id === selectedTx())) {
+      setTransactions((prev) => [...(prev ?? []), ...older]);
+      if (selectedTx() && !(transactions() ?? []).some((item) => item.id === selectedTx())) {
         setSelectedTx('');
       }
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
+    } finally {
+      setLoadingMoreTransactions(false);
     }
   }
 
   async function handleLoadMoreEvents(): Promise<void> {
-    if (busy()) return;
+    if (busy() || loadingMoreEvents()) return;
     const current = displayedEvents();
     const last = current[current.length - 1];
     if (!last) return;
+    setLoadingMoreEvents(true);
     try {
       const older = await props.api.page<DeviceEventRow>('device_events', {
         branch: effectiveBranch(),
@@ -424,7 +483,9 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
       });
       setOlderEvents((prev) => [...prev, ...older]);
     } catch (err: unknown) {
-      setMessage(wordedError(err));
+      setNonViewMessage(wordedError(err));
+    } finally {
+      setLoadingMoreEvents(false);
     }
   }
 
@@ -581,7 +642,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               <button
                 type="button"
                 onClick={handleLoadMoreTransactions}
-                disabled={busy()}
+                disabled={busy() || loadingMoreTransactions()}
               >
                 {t('loadMore')}
               </button>
@@ -687,7 +748,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               <button
                 type="button"
                 onClick={handleLoadMoreEvents}
-                disabled={busy()}
+                disabled={busy() || loadingMoreEvents()}
               >
                 {t('loadMore')}
               </button>

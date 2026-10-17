@@ -54,8 +54,12 @@ export function createNotifications(
     '/api/app/notifications/read-all',
   );
 
+  let loadSeq = 0;
+
   const load = async (filter?: MyNotificationsFilter, loadOpts?: { silent?: boolean }) => {
-    if (!loadOpts?.silent) {
+    const mine = ++loadSeq;
+    const silent = Boolean(loadOpts?.silent) && !loading();
+    if (!silent) {
       setLoading(true);
     }
     setLoadError(null);
@@ -63,15 +67,17 @@ export function createNotifications(
       const res = await api.view<MyNotificationsData, MyNotificationsFilter>('my_notifications', {
         filter,
       });
+      if (mine !== loadSeq) return;
       const raw = res.data?.items ?? [];
       const sorted = [...raw].sort((a, b) => b.seq - a.seq);
       setItems(sorted);
     } catch (e) {
-      if (!loadOpts?.silent) {
+      if (mine !== loadSeq) return;
+      if (!silent) {
         setLoadError(wordedError(e));
       }
     } finally {
-      if (!loadOpts?.silent) {
+      if (mine === loadSeq && !silent) {
         setLoading(false);
       }
     }
@@ -97,11 +103,16 @@ export function createNotifications(
     setActionError(null);
     setMarkingIds((prev) => new Set(prev).add(id));
 
-    let prevItems: MyNotificationItem[] | undefined;
+    let written: MyNotificationItem | undefined;
     if (opts.optimistic) {
-      prevItems = items();
       setItems((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, read: true } : item)),
+        prev.map((item) => {
+          if (item.id === id) {
+            written = { ...item, read: true };
+            return written;
+          }
+          return item;
+        }),
       );
     }
 
@@ -109,9 +120,9 @@ export function createNotifications(
       await markOneWrite.send({ id });
       await refetch({ silent: true });
     } catch (e) {
-      if (opts.optimistic && prevItems) {
-        setItems(prevItems);
-      }
+      setItems((prev) =>
+        prev.map((item) => (item === written ? { ...item, read: false } : item)),
+      );
       setActionError(wordedError(e));
     } finally {
       setMarkingIds((prev) => {
@@ -126,19 +137,25 @@ export function createNotifications(
     setActionError(null);
     setMarkingAll(true);
 
-    let prevItems: MyNotificationItem[] | undefined;
+    const written = new Set<MyNotificationItem>();
     if (opts.optimistic) {
-      prevItems = items();
-      setItems((prev) => prev.map((item) => ({ ...item, read: true })));
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.read) return item;
+          const next = { ...item, read: true };
+          written.add(next);
+          return next;
+        }),
+      );
     }
 
     try {
       await markAllWrite.send({});
       await refetch({ silent: true });
     } catch (e) {
-      if (opts.optimistic && prevItems) {
-        setItems(prevItems);
-      }
+      setItems((prev) =>
+        prev.map((item) => (written.has(item) ? { ...item, read: false } : item)),
+      );
       setActionError(wordedError(e));
     } finally {
       setMarkingAll(false);

@@ -19,6 +19,7 @@ interface GroupRowProps {
   currency: string;
   provider: () => string;
   branch: () => string;
+  selectedCurrency: () => string;
   client: ApiClient;
   onRefresh: () => Promise<void>;
 }
@@ -51,42 +52,58 @@ function GroupRow(props: GroupRowProps): JSX.Element {
       return;
     }
 
+    const curr = props.currency;
+    const branch = props.branch();
     setBusy(true);
     try {
       await mapWrite.send({
-        currency: props.currency,
+        currency: curr,
         group: props.group.group,
         provider,
         instrumentKey: key,
-        branch: props.branch(),
+        branch,
       });
-      setError(null);
+      if (props.branch() === branch) {
+        setError(null);
+      }
       await props.onRefresh();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
+      if (props.selectedCurrency() !== curr) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
   const handleRemove = async () => {
+    const curr = props.currency;
+    const branch = props.branch();
     setBusy(true);
     try {
       await removeWrite.send({
-        currency: props.currency,
+        currency: curr,
         group: props.group.group,
-        branch: props.branch(),
+        branch,
       });
-      setError(null);
+      if (props.branch() === branch) {
+        setError(null);
+      }
       await props.onRefresh();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
+      if (props.selectedCurrency() !== curr) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
@@ -131,8 +148,10 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
   const [newGroup, setNewGroup] = createSignal('');
   const [addError, setAddError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  let loadSeq = 0;
 
   const loadView = async () => {
+    const seq = ++loadSeq;
     try {
       const res = await client.view<AdminDenominationGroupsData>(
         'admin_denomination_groups',
@@ -140,10 +159,15 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
           branch: props.branch(),
         },
       );
-      if (res.data) {
-        setData(res.data);
+      if (seq !== loadSeq) return;
+      const next = res.data ?? null;
+      setData(next);
+      const curr = selectedCurrency();
+      if (curr && !next?.currencies.some((c) => c.currency === curr)) {
+        setSelectedCurrency('');
       }
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       setData(null);
       const message = wordedError(err);
       toast(message);
@@ -152,6 +176,9 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
 
   createEffect(() => {
     props.branch();
+    setData(null);
+    setAddError(null);
+    setBusy(false);
     loadView();
   });
 
@@ -169,22 +196,29 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
     const curr = selectedCurrency();
     if (!curr) return;
 
+    const branch = props.branch();
     setBusy(true);
     try {
       await addGroupWrite.send({
         currency: curr,
         group: code,
-        branch: props.branch(),
+        branch,
       });
-      setNewGroup('');
-      setAddError(null);
+      if (props.branch() === branch && selectedCurrency() === curr) {
+        setNewGroup('');
+        setAddError(null);
+      }
       await loadView();
     } catch (err: unknown) {
+      if (props.branch() !== branch) return;
+      if (selectedCurrency() !== curr) return;
       const message = wordedError(err);
       setAddError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (props.branch() === branch) {
+        setBusy(false);
+      }
     }
   };
 
@@ -194,14 +228,24 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
         {t('currency')}
         <select
           value={selectedCurrency()}
-          onInput={(e) => setSelectedCurrency(e.currentTarget.value)}
-          onChange={(e) => setSelectedCurrency(e.currentTarget.value)}
+          onInput={(e) => {
+            setSelectedCurrency(e.currentTarget.value);
+            setAddError(null);
+          }}
+          onChange={(e) => {
+            setSelectedCurrency(e.currentTarget.value);
+            setAddError(null);
+          }}
         >
           <option value="" disabled selected={selectedCurrency() === ''}>
             {t('currency')}
           </option>
           <For each={data()?.currencies ?? []}>
-            {(c) => <option value={c.currency}>{c.currency}</option>}
+            {(c) => (
+              <option value={c.currency} selected={c.currency === selectedCurrency()}>
+                {c.currency}
+              </option>
+            )}
           </For>
         </select>
       </label>
@@ -215,6 +259,7 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
                 currency={selectedCurrency()}
                 provider={() => data()?.provider ?? ''}
                 branch={props.branch}
+                selectedCurrency={selectedCurrency}
                 client={client}
                 onRefresh={loadView}
               />

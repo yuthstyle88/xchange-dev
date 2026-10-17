@@ -5,13 +5,15 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::AppResult;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_booking::domain::booking::booking_status::BookingStatus;
+use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_status};
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -30,19 +32,25 @@ impl DeskBookingsView {
     }
 }
 
-type DeskDbRow = (
-    String,                  // b.id
-    String,                  // b.booking_no
-    String,                  // b.status
-    String,                  // b.customer_id
-    Option<String>,          // c.display_name
-    Option<String>,          // ci.key_id
-    Option<Vec<u8>>,         // ci.encrypted_value
-    Option<String>,          // qt.display_number
-    uuid::Uuid,              // b.slot_id
-    DateTime<Utc>,           // s.start_at
-    DateTime<Utc>,           // s.end_at
-);
+#[derive(sqlx::FromRow)]
+struct DeskDbRow {
+    id: String,
+    booking_no: String,
+    status: String,
+    customer_id: String,
+    display_name: Option<String>,
+    key_id: Option<String>,
+    encrypted_value: Option<Vec<u8>>,
+    ticket_no: Option<String>,
+    slot_id: uuid::Uuid,
+    start_at: DateTime<Utc>,
+    end_at: DateTime<Utc>,
+    confirm_expires_at: Option<DateTime<Utc>>,
+    grace_until: DateTime<Utc>,
+    service_date: NaiveDate,
+    branch_today: NaiveDate,
+    has_active_ticket: bool,
+}
 
 impl BranchView for DeskBookingsView {
     const NAME: &'static str = "desk_bookings";
@@ -66,16 +74,28 @@ impl BranchView for DeskBookingsView {
 
             let pii_keys = xc_customer::get_pii_keys().ok();
             let cipher = pii_keys.map(xc_kernel::pii::PiiCipher::new);
+            let now = Utc::now();
 
             let rows: Vec<DeskDbRow> = sqlx::query_as(
                 "SELECT b.id, b.booking_no, b.status, b.customer_id, \
                         c.display_name, ci.key_id, ci.encrypted_value, \
                         (SELECT qt.display_number FROM queue_tickets qt \
                          WHERE qt.booking_id = b.id AND qt.status NOT IN ('CANCELLED', 'NO_SHOW') \
-                         ORDER BY qt.created_at DESC LIMIT 1), \
-                        b.slot_id, s.start_at, s.end_at \
+                         ORDER BY qt.created_at DESC LIMIT 1) AS ticket_no, \
+                        b.slot_id, s.start_at, s.end_at, \
+                        b.confirm_expires_at, \
+                        (s.start_at + (COALESCE(p.no_show_grace_minutes, 15) * interval '1 minute')) AS grace_until, \
+                        s.service_date, \
+                        ($3 AT TIME ZONE COALESCE(NULLIF(br.timezone, ''), 'Asia/Bangkok'))::date AS branch_today, \
+                        EXISTS ( \
+                            SELECT 1 FROM queue_tickets qt \
+                            WHERE qt.booking_id = b.id \
+                              AND qt.status IN ('WAITING', 'CALLED', 'SERVING') \
+                        ) AS has_active_ticket \
                  FROM bookings b \
                  JOIN booking_slots s ON s.id = b.slot_id \
+                 JOIN branches br ON br.id = b.branch_id \
+                 LEFT JOIN booking_policies p ON p.organization_id = br.organization_id \
                  LEFT JOIN customers c ON c.id = b.customer_id \
                  LEFT JOIN customer_identities ci ON ci.customer_id = b.customer_id AND ci.type = 'PHONE' AND ci.status = 'ACTIVE' \
                  WHERE b.branch_id = $1 \
@@ -84,14 +104,27 @@ impl BranchView for DeskBookingsView {
             )
             .bind(branch.as_str())
             .bind(qr_hash)
+            .bind(now)
             .fetch_all(&pool)
             .await
             .map_err(pos_error::AppError::Database)?;
 
             let items = rows
                 .into_iter()
-                .map(|(id, booking_no, status, customer_id, display_name, key_id, enc_phone, ticket_no, slot_id, start_at, end_at)| {
-                    let phone_last4 = match (key_id, enc_phone) {
+                .map(|row| {
+                    let facts = OverdueFacts {
+                        confirm_expires_at: row.confirm_expires_at,
+                        grace_until: row.grace_until,
+                        service_date: row.service_date,
+                        branch_today: row.branch_today,
+                        has_active_ticket: row.has_active_ticket,
+                    };
+                    let status = BookingStatus::parse(&row.status)
+                        .map(|st| effective_status(st, &facts, now).as_str().to_string())
+                        .unwrap_or(row.status);
+
+                    let customer_id = row.customer_id;
+                    let phone_last4 = match (row.key_id, row.encrypted_value) {
                         (Some(k), Some(bytes)) => (|| {
                             let c = cipher.as_ref()?;
                             let sealed = xc_kernel::pii::Sealed { key_id: k, bytes };
@@ -109,16 +142,16 @@ impl BranchView for DeskBookingsView {
                     };
 
                     DeskBookingItemDto {
-                        id,
-                        booking_no,
+                        id: row.id,
+                        booking_no: row.booking_no,
                         status,
-                        customer_display_name: display_name,
+                        customer_display_name: row.display_name,
                         phone_last4,
                         readiness: "unknown".to_string(),
-                        ticket_number: ticket_no,
-                        slot_id: slot_id.to_string(),
-                        start_at: start_at.to_rfc3339(),
-                        end_at: end_at.to_rfc3339(),
+                        ticket_number: row.ticket_no,
+                        slot_id: row.slot_id.to_string(),
+                        start_at: row.start_at.to_rfc3339(),
+                        end_at: row.end_at.to_rfc3339(),
                     }
                 })
                 .collect();

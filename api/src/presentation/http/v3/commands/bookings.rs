@@ -54,7 +54,6 @@ pub mod slot_open;
 pub mod slot_rule;
 
 pub use closure_remove::{ClosureRemove, ClosureRemoveInput};
-pub const PUBLIC_ROUTE: &str = kiosk_check_in::PUBLIC_ROUTE;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

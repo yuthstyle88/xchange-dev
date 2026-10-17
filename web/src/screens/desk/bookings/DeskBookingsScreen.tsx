@@ -82,7 +82,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const [refusalMessage, setRefusalMessage] = createSignal<string | null>(null);
   const [items, setItems] = createSignal<DeskBookingItemDto[]>([]);
   const [branchId, setBranchId] = createSignal<string>('');
-  const [version, setVersion] = createSignal<number>(1);
+  const [version, setVersion] = createSignal<number | undefined>(undefined);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
   const [retryAction, setRetryAction] = createSignal<(() => Promise<void>) | null>(null);
 
@@ -105,26 +105,55 @@ export function DeskBookingsScreen(): JSX.Element {
   const [formShopSide, setFormShopSide] = createSignal('SELL');
   const [formCurrency, setFormCurrency] = createSignal('USD');
   const [formQuantity, setFormQuantity] = createSignal('');
+  const [quantityInvalid, setQuantityInvalid] = createSignal(false);
   const [formDisplayName, setFormDisplayName] = createSignal('');
   const [formPhone, setFormPhone] = createSignal('');
   const [formReferralCode, setFormReferralCode] = createSignal('');
 
   const allSlots = () => groupBookingsBySlot(items());
+  let readErrorActive = false;
+  let readSeq = 0;
+  let settledSeq = 0;
+  let loadedQr: string | null = null;
 
   async function fetchBookings(opts?: { since?: number; qr?: string }) {
+    const seq = ++readSeq;
     const qrParam = opts?.qr !== undefined ? opts.qr : activeQr();
+    const sinceParam = loadedQr === qrParam ? opts?.since : undefined;
     try {
       const envelope = await api.view<DeskBookingsData>(VIEW_DESK_BOOKINGS, {
-        since: opts?.since,
+        since: sinceParam,
         filter: qrParam ? { qr: qrParam } : undefined,
       });
+      if (seq < settledSeq) return;
+      if (envelope.changed === false) {
+        if (loadedQr !== qrParam || seq !== readSeq) {
+          return;
+        }
+        settledSeq = seq;
+        if (envelope.version !== undefined) {
+          setVersion(envelope.version);
+        }
+        if (readErrorActive) {
+          readErrorActive = false;
+          setErrorMessage(null);
+          setRetryAction(null);
+        }
+        return;
+      }
+      if (seq !== readSeq && loadedQr === qrParam) return;
+      if (qrParam !== activeQr()) return;
+      settledSeq = Math.max(settledSeq, seq);
       if (envelope.version !== undefined) {
         setVersion(envelope.version);
       }
-      if (envelope.changed === false) {
-        return;
+      if (readErrorActive) {
+        readErrorActive = false;
+        setErrorMessage(null);
+        setRetryAction(null);
       }
       if (envelope.data && Array.isArray(envelope.data.items)) {
+        loadedQr = qrParam;
         setItems(envelope.data.items);
         const groups = groupBookingsBySlot(envelope.data.items);
         const firstSlot = groups[0]?.slotId;
@@ -135,12 +164,16 @@ export function DeskBookingsScreen(): JSX.Element {
         setRefusalMessage(null);
       }
     } catch (err) {
+      if (seq !== readSeq || seq < settledSeq) return;
+      settledSeq = seq;
       if (err instanceof ApiError && err.code === 'roleNotAllowed') {
         setAuthorized(false);
         setRefusalMessage(t('error.roleNotAllowed'));
         return;
       }
+      readErrorActive = true;
       setErrorMessage(deskBookingError(err));
+      setRetryAction(() => () => fetchBookings(opts));
     }
   }
 
@@ -165,11 +198,16 @@ export function DeskBookingsScreen(): JSX.Element {
   });
 
   async function handleRefresh() {
-    await fetchBookings({ since: version() });
+    const q = activeQr();
+    const since = loadedQr === q ? version() : undefined;
+    await fetchBookings({ since });
   }
 
   async function handleQrLookup() {
     const q = qrInput().trim();
+    if (q !== loadedQr) {
+      setVersion(undefined);
+    }
     setActiveQr(q);
     await fetchBookings({ qr: q });
   }
@@ -197,13 +235,16 @@ export function DeskBookingsScreen(): JSX.Element {
   const cancelWrite = keyedWrite<{ reason: string; branch: string }, BookingCancelOutput>(
     api,
     'POST',
-    () => routeCancel(cancellingBookingId() ?? ''),
+    // #2464: the path is resolved synchronously inside send(), right after
+    // submitCancel sets activeCancelId to the booking the write is for, so a
+    // dialog opened for another booking meanwhile cannot redirect it.
+    () => routeCancel(activeCancelId),
   );
   let activeRescheduleId = '';
   const rescheduleWrite = keyedWrite<{ slotId: string; branch: string }, BookingRescheduleOutput>(
     api,
     'POST',
-    () => routeReschedule(reschedulingBookingId() ?? ''),
+    () => routeReschedule(activeRescheduleId),
   );
   const createWrite = keyedWrite<Record<string, unknown>, BookingCreateOutput>(
     api,
@@ -211,20 +252,29 @@ export function DeskBookingsScreen(): JSX.Element {
     ROUTE_BOOKINGS,
   );
 
+  // #2411: only one booking write (check-in / cancel / reschedule) at a time.
+  // A second send while the first is in flight reuses the idempotency key, the
+  // server answers 409 idempotencyConflict, and keyedWrite then drops the key.
+  const [writing, setWriting] = createSignal(false);
+
   async function handleCheckIn(bookingId: string) {
+    if (writing()) return;
     if (activeCheckInId !== bookingId) {
       checkInWrite.reset();
       activeCheckInId = bookingId;
     }
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
+    setWriting(true);
     try {
       const resData = await checkInWrite.send({
         identityChecked: true,
         branch: branchId(),
       });
       if (!resData || typeof resData.status !== 'string') {
+        readErrorActive = false;
         setErrorMessage(t('error.validationFailed'));
         return;
       }
@@ -234,39 +284,63 @@ export function DeskBookingsScreen(): JSX.Element {
         ticketNumber: resData.ticketNumber,
       });
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCheckIn(bookingId));
+    } finally {
+      setWriting(false);
     }
   }
 
   function openCancel(bookingId: string) {
-    if (activeCancelId !== bookingId) {
+    // #2475: while a write is in flight or its Retry is offered, keep its key so
+    // that Retry replays it; submitCancel still resets when another booking is sent.
+    if (!writing() && !retryAction() && activeCancelId !== bookingId) {
       cancelWrite.reset();
       activeCancelId = bookingId;
     }
     setCancellingBookingId(bookingId);
     setCancelReason('');
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
   }
 
   async function handleConfirmCancel() {
+    if (writing()) return;
     const bookingId = cancellingBookingId();
     if (!bookingId) return;
     const reason = cancelReason().trim();
     if (!reason) {
+      readErrorActive = false;
+      setErrorMessage(t('reasonRequired'));
+      setRetryAction(null);
       return;
     }
+    await submitCancel(bookingId, reason);
+  }
 
+  // #2464: the write, its late answer and its Retry are all bound to the
+  // booking it was sent for, not to whichever dialog is open when it answers.
+  async function submitCancel(bookingId: string, reason: string) {
+    if (writing()) return;
+    if (activeCancelId !== bookingId) {
+      cancelWrite.reset();
+      activeCancelId = bookingId;
+    }
+
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
+    setWriting(true);
     try {
       const resData = await cancelWrite.send({
         reason,
         branch: branchId(),
       });
       if (!resData || typeof resData.status !== 'string') {
+        readErrorActive = false;
         setErrorMessage(t('error.validationFailed'));
         return;
       }
@@ -274,20 +348,27 @@ export function DeskBookingsScreen(): JSX.Element {
       updateBookingInState(bookingId, {
         status: resData.status,
       });
-      setCancellingBookingId(null);
-      setCancelReason('');
+      if (cancellingBookingId() === bookingId) {
+        setCancellingBookingId(null);
+        setCancelReason('');
+      }
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmCancel());
+      setRetryAction(() => () => submitCancel(bookingId, reason));
+    } finally {
+      setWriting(false);
     }
   }
 
   function openReschedule(bookingId: string) {
-    if (activeRescheduleId !== bookingId) {
+    // #2475: see openCancel.
+    if (!writing() && !retryAction() && activeRescheduleId !== bookingId) {
       rescheduleWrite.reset();
       activeRescheduleId = bookingId;
     }
     setReschedulingBookingId(bookingId);
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
     const booking = items().find((b) => b.id === bookingId);
@@ -297,20 +378,33 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleConfirmReschedule() {
+    if (writing()) return;
     const bookingId = reschedulingBookingId();
     if (!bookingId) return;
     const target = targetSlotId();
     if (!target) return;
+    await submitReschedule(bookingId, target);
+  }
 
+  async function submitReschedule(bookingId: string, target: string) {
+    if (writing()) return;
+    if (activeRescheduleId !== bookingId) {
+      rescheduleWrite.reset();
+      activeRescheduleId = bookingId;
+    }
+
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
 
+    setWriting(true);
     try {
       const resData = await rescheduleWrite.send({
         slotId: target,
         branch: branchId(),
       });
       if (!resData || typeof resData.status !== 'string' || typeof resData.slotId !== 'string') {
+        readErrorActive = false;
         setErrorMessage(t('error.validationFailed'));
         return;
       }
@@ -319,16 +413,24 @@ export function DeskBookingsScreen(): JSX.Element {
         slotId: resData.slotId,
         status: resData.status,
       });
-      setReschedulingBookingId(null);
+      if (reschedulingBookingId() === bookingId) {
+        setReschedulingBookingId(null);
+      }
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleConfirmReschedule());
+      setRetryAction(() => () => submitReschedule(bookingId, target));
+    } finally {
+      setWriting(false);
     }
   }
 
   function openNewBooking() {
+    readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
+    setQuantityInvalid(false);
+    resetNewBookingForm();
     setShowNewBookingModal(true);
     const slots = allSlots();
     if (!formSlotId() && slots.length > 0) {
@@ -338,6 +440,7 @@ export function DeskBookingsScreen(): JSX.Element {
 
   function resetNewBookingForm() {
     setFormQuantity('');
+    setQuantityInvalid(false);
     setFormDisplayName('');
     setFormPhone('');
     setFormReferralCode('');
@@ -358,10 +461,19 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleCreateBooking() {
-    setErrorMessage(null);
-    setRetryAction(null);
+    if (writing()) return;
 
-    const qty = Number(formQuantity());
+    const rawQty = formQuantity().trim();
+    const qty = Number(rawQty);
+    if (!/^\d+$/.test(rawQty) || !Number.isSafeInteger(qty) || qty <= 0) {
+      setQuantityInvalid(true);
+      readErrorActive = false;
+      setErrorMessage(null);
+      setRetryAction(null);
+      return;
+    }
+    setQuantityInvalid(false);
+
     const targetBranch = formBranchId() || branchId();
     const payload: Record<string, unknown> = {
       branch: targetBranch,
@@ -369,7 +481,7 @@ export function DeskBookingsScreen(): JSX.Element {
       slotId: formSlotId(),
       shopSide: formShopSide(),
       currency: formCurrency(),
-      quantity: isNaN(qty) ? 0 : qty,
+      quantity: qty,
       displayName: formDisplayName(),
       phone: formPhone(),
     };
@@ -378,14 +490,21 @@ export function DeskBookingsScreen(): JSX.Element {
       payload.referralCode = ref;
     }
 
+    setWriting(true);
     try {
       await createWrite.send(payload);
+      readErrorActive = false;
+      setErrorMessage(null);
+      setRetryAction(null);
       setShowNewBookingModal(false);
       resetNewBookingForm();
       await fetchBookings();
     } catch (err) {
+      readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCreateBooking());
+    } finally {
+      setWriting(false);
     }
   }
 
@@ -416,35 +535,35 @@ export function DeskBookingsScreen(): JSX.Element {
     <>
       <Show when={authorized() === false}>
         <div role="alert" class="xc-refusal">
-          {refusalMessage() ?? th['error.roleNotAllowed']}
+          {refusalMessage() ?? t('error.roleNotAllowed')}
+        </div>
+      </Show>
+
+      <Show when={authorized() !== false && errorMessage()}>
+        <div role="alert" class="xc-error-banner">
+          <span>{errorMessage()}</span>
+          <Show when={retryAction()}>
+            <button
+              type="button"
+              data-action="retry"
+              class="xc-retry-btn xc-btn-secondary"
+              onClick={handleRetry}
+            >
+              {t('retry')}
+            </button>
+          </Show>
         </div>
       </Show>
 
       <Show when={authorized() === true}>
         <div class="xc-desk-bookings" data-screen="desk-bookings">
-          <Show when={errorMessage()}>
-            <div role="alert" class="xc-error-banner">
-              <span>{errorMessage()}</span>
-              <Show when={retryAction()}>
-                <button
-                  type="button"
-                  data-action="retry"
-                  class="xc-retry-btn xc-btn-secondary"
-                  onClick={handleRetry}
-                >
-                  {th.retry}
-                </button>
-              </Show>
-            </div>
-          </Show>
-
           <div class="xc-bookings-toolbar">
             <div class="xc-qr-search">
               <input
                 name="qrToken"
                 data-action="scan-qr"
                 class="xc-qr-input"
-                placeholder={th.scanQr}
+                placeholder={t('scanQr')}
                 value={qrInput()}
                 onInput={(e) => setQrInput(e.currentTarget.value)}
                 onKeyDown={handleQrKeyDown}
@@ -455,7 +574,7 @@ export function DeskBookingsScreen(): JSX.Element {
                 class="xc-qr-submit xc-btn-secondary"
                 onClick={handleQrLookup}
               >
-                {th.scanQr}
+                {t('scanQr')}
               </button>
             </div>
 
@@ -474,7 +593,7 @@ export function DeskBookingsScreen(): JSX.Element {
                 class="xc-new-booking-btn xc-btn-primary"
                 onClick={openNewBooking}
               >
-                {th.newBooking}
+                {t('newBooking')}
               </button>
             </div>
           </div>
@@ -482,7 +601,7 @@ export function DeskBookingsScreen(): JSX.Element {
           <div class="xc-slots-container">
             <Show
               when={allSlots().length > 0}
-              fallback={<div class="xc-empty-state">{th.empty}</div>}
+              fallback={<div class="xc-empty-state">{t('empty')}</div>}
             >
               <For each={allSlots()}>
                 {(slot) => (
@@ -506,7 +625,9 @@ export function DeskBookingsScreen(): JSX.Element {
                                 <span class="xc-ticket-number">{b.ticketNumber}</span>
                               </Show>
                               <span class={`xc-status-tag xc-status-${b.status}`}>
-                                {th[`status.${b.status}` as keyof typeof th] ?? th.statusUnknown}
+                                {Object.prototype.hasOwnProperty.call(th, `status.${b.status}`)
+                                  ? t(`status.${b.status}` as keyof typeof th)
+                                  : t('statusUnknown')}
                               </span>
                             </div>
 
@@ -515,9 +636,10 @@ export function DeskBookingsScreen(): JSX.Element {
                                 type="button"
                                 data-action="check-in"
                                 class="xc-checkin-btn xc-btn-primary"
+                                disabled={writing()}
                                 onClick={() => handleCheckIn(b.id)}
                               >
-                                {th.checkIn}
+                                {t('checkIn')}
                               </button>
                               <button
                                 type="button"
@@ -525,7 +647,7 @@ export function DeskBookingsScreen(): JSX.Element {
                                 class="xc-cancel-btn xc-btn-secondary"
                                 onClick={() => openCancel(b.id)}
                               >
-                                {th.cancel}
+                                {t('cancel')}
                               </button>
                               <button
                                 type="button"
@@ -533,7 +655,7 @@ export function DeskBookingsScreen(): JSX.Element {
                                 class="xc-reschedule-btn xc-btn-secondary"
                                 onClick={() => openReschedule(b.id)}
                               >
-                                {th.reschedule}
+                                {t('reschedule')}
                               </button>
                             </div>
                           </div>
@@ -550,16 +672,31 @@ export function DeskBookingsScreen(): JSX.Element {
           <Show when={cancellingBookingId()}>
             <div class="xc-modal-overlay">
               <div class="xc-modal">
-                <h3 class="xc-modal-title">{th.cancel}</h3>
+                <h3 class="xc-modal-title">{t('cancel')}</h3>
+                <Show when={errorMessage()}>
+                  <div role="alert" class="xc-error-banner">
+                    <span>{errorMessage()}</span>
+                    <Show when={retryAction()}>
+                      <button
+                        type="button"
+                        data-action="retry"
+                        class="xc-retry-btn xc-btn-secondary"
+                        onClick={handleRetry}
+                      >
+                        {t('retry')}
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
                 <div class="xc-form-group">
-                  <label for="cancel-reason-input">{th.reasonRequired}</label>
+                  <label for="cancel-reason-input">{t('reasonRequired')}</label>
                   <input
                     id="cancel-reason-input"
                     name="reason"
                     class="xc-cancel-reason"
                     value={cancelReason()}
                     onInput={(e) => setCancelReason(e.currentTarget.value)}
-                    placeholder={th.reasonRequired}
+                    placeholder={t('reasonRequired')}
                   />
                 </div>
                 <div class="xc-modal-actions">
@@ -574,9 +711,10 @@ export function DeskBookingsScreen(): JSX.Element {
                     type="button"
                     data-action="confirm-cancel"
                     class="xc-confirm-cancel xc-btn-primary"
+                    disabled={writing()}
                     onClick={() => handleConfirmCancel()}
                   >
-                    {th.cancel}
+                    {t('cancel')}
                   </button>
                 </div>
               </div>
@@ -587,7 +725,22 @@ export function DeskBookingsScreen(): JSX.Element {
           <Show when={reschedulingBookingId()}>
             <div class="xc-modal-overlay">
               <div class="xc-modal">
-                <h3 class="xc-modal-title">{th.reschedule}</h3>
+                <h3 class="xc-modal-title">{t('reschedule')}</h3>
+                <Show when={errorMessage()}>
+                  <div role="alert" class="xc-error-banner">
+                    <span>{errorMessage()}</span>
+                    <Show when={retryAction()}>
+                      <button
+                        type="button"
+                        data-action="retry"
+                        class="xc-retry-btn xc-btn-secondary"
+                        onClick={handleRetry}
+                      >
+                        {t('retry')}
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
                 <div class="xc-form-group">
                   <label for="reschedule-slot-select">Slot</label>
                   <select
@@ -621,9 +774,10 @@ export function DeskBookingsScreen(): JSX.Element {
                     type="button"
                     data-action="confirm-reschedule"
                     class="xc-confirm-reschedule xc-btn-primary"
+                    disabled={writing()}
                     onClick={() => handleConfirmReschedule()}
                   >
-                    {th.reschedule}
+                    {t('reschedule')}
                   </button>
                 </div>
               </div>
@@ -634,7 +788,23 @@ export function DeskBookingsScreen(): JSX.Element {
           <Show when={showNewBookingModal()}>
             <div class="xc-modal-overlay">
               <div class="xc-modal">
-                <h3 class="xc-modal-title">{th.newBooking}</h3>
+                <h3 class="xc-modal-title">{t('newBooking')}</h3>
+                <Show when={errorMessage()}>
+                  <div role="alert" class="xc-error-banner">
+                    <span>{errorMessage()}</span>
+                    <Show when={retryAction()}>
+                      <button
+                        type="button"
+                        data-action="retry"
+                        class="xc-retry-btn xc-btn-secondary"
+                        disabled={writing()}
+                        onClick={handleRetry}
+                      >
+                        {t('retry')}
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
                 <form onSubmit={handleSubmitNewBooking}>
                   <div class="xc-form-group">
                     <label for="new-booking-branch">Branch</label>
@@ -694,16 +864,28 @@ export function DeskBookingsScreen(): JSX.Element {
                     />
                   </div>
 
-                  <div class="xc-form-group">
+                  <div class="xc-form-group" data-field="quantity">
                     <label for="new-booking-quantity">Quantity</label>
                     <input
                       id="new-booking-quantity"
                       type="number"
                       name="quantity"
                       value={formQuantity()}
-                      onInput={(e) => setFormQuantity(e.currentTarget.value)}
-                      onChange={(e) => setFormQuantity(e.currentTarget.value)}
+                      aria-invalid={quantityInvalid() ? 'true' : undefined}
+                      onInput={(e) => {
+                        setFormQuantity(e.currentTarget.value);
+                        setQuantityInvalid(false);
+                      }}
+                      onChange={(e) => {
+                        setFormQuantity(e.currentTarget.value);
+                        setQuantityInvalid(false);
+                      }}
                     />
+                    <Show when={quantityInvalid()}>
+                      <div role="alert" class="field-error">
+                        {t('error.validationFailed')}
+                      </div>
+                    </Show>
                   </div>
 
                   <div class="xc-form-group">
@@ -745,6 +927,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     <button
                       type="button"
                       class="xc-btn-secondary"
+                      disabled={writing()}
                       onClick={() => setShowNewBookingModal(false)}
                     >
                       Close
@@ -753,9 +936,10 @@ export function DeskBookingsScreen(): JSX.Element {
                       type="submit"
                       data-action="submit-booking"
                       class="xc-submit-booking xc-btn-primary"
+                      disabled={writing()}
                       onClick={handleSubmitNewBooking}
                     >
-                      {th.newBooking}
+                      {t('newBooking')}
                     </button>
                   </div>
                 </form>

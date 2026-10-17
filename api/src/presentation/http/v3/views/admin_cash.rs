@@ -45,10 +45,9 @@ pub fn compute_reference_exchange(
         .map_err(|e| AppError::Internal(format!("invalid reference rate: {e}")))?;
     let unit_val = UnitSize::from_decimal(unit_size.normalize())
         .map_err(|e| AppError::Internal(format!("invalid unit size: {e}")))?;
-    let ref_principal = Decimal::from_i128_with_scale(
-        ExchangeArithmetic::thb(foreign, ref_rate_parsed, unit_val).minor_i128(),
-        2,
-    );
+    let ref_thb = ExchangeArithmetic::try_thb(foreign, ref_rate_parsed, unit_val)
+        .map_err(|e| AppError::Internal(format!("amount overflow in reference rate calculation: {e}")))?;
+    let ref_principal = Decimal::from_i128_with_scale(ref_thb.minor_i128(), 2);
     let spread = if is_buy {
         ref_principal - principal
     } else {
@@ -58,12 +57,13 @@ pub fn compute_reference_exchange(
 }
 
 /// Computes the reference spread percentage with 2 decimal places using kernel rounding (`round_cents` -> `fixed2`).
-pub fn compute_reference_percent(spread: Decimal, total_ref_value: Decimal) -> String {
+pub fn compute_reference_percent(spread: Decimal, total_ref_value: Decimal) -> AppResult<String> {
     if total_ref_value.is_zero() {
-        return "0.00".to_string();
+        return Ok("0.00".to_string());
     }
-    let pct_cents = round_cents(spread * Decimal::from(100) / total_ref_value).unwrap_or(0);
-    fixed2(pct_cents)
+    let pct_cents = round_cents(spread * Decimal::from(100) / total_ref_value)
+        .ok_or_else(|| AppError::Internal("reference percent overflow in reference rate calculation".into()))?;
+    Ok(fixed2(pct_cents))
 }
 
 /// The 153 register currencies in register order: THB first, then A–Z.
@@ -404,7 +404,7 @@ impl BranchView for AdminCashBranchView {
                 }
             }
 
-            let percent = compute_reference_percent(total_spread, total_ref_value);
+            let percent = compute_reference_percent(total_spread, total_ref_value)?;
             let spread_cents = round_cents(total_spread)
                 .ok_or_else(|| AppError::Internal("spread overflow in reference rate calculation".into()))?;
             let reference = AdminCashReference {
@@ -458,7 +458,7 @@ mod tests {
         // 2.525 rounds to 2.53 under kernel round_cents -> fixed2 (differs from half-even 2.52)
         let spread = Decimal::from_str("2.525").unwrap();
         let total_ref_value = Decimal::from(100);
-        let result = compute_reference_percent(spread, total_ref_value);
+        let result = compute_reference_percent(spread, total_ref_value).unwrap();
         assert_eq!(result, "2.53");
     }
 
@@ -467,7 +467,7 @@ mod tests {
         // 1.5% must format as "1.50", not "1.5" (goes red if {:.2} becomes to_string())
         let spread = Decimal::from_str("1.5").unwrap();
         let total_ref_value = Decimal::from(100);
-        let result = compute_reference_percent(spread, total_ref_value);
+        let result = compute_reference_percent(spread, total_ref_value).unwrap();
         assert_eq!(result, "1.50");
     }
 

@@ -1101,8 +1101,8 @@ fn transfer_line_sent_and_received_minor_computations() {
         qty_sent: 5,
         qty_received: Some(4),
     };
-    assert_eq!(line_received.sent_minor(), 10000);
-    assert_eq!(line_received.received_minor(), 8000);
+    assert_eq!(line_received.sent_minor().unwrap(), 10000);
+    assert_eq!(line_received.received_minor().unwrap(), 8000);
 
     let line_in_transit = TransferLine {
         currency: CurrencyCode::parse("USD").expect("valid currency"),
@@ -1111,6 +1111,51 @@ fn transfer_line_sent_and_received_minor_computations() {
         qty_sent: 5,
         qty_received: None,
     };
-    assert_eq!(line_in_transit.sent_minor(), 10000);
-    assert_eq!(line_in_transit.received_minor(), 0);
+    assert_eq!(line_in_transit.sent_minor().unwrap(), 10000);
+    assert_eq!(line_in_transit.received_minor().unwrap(), 0);
+}
+
+#[actix_web::test]
+async fn sheet_built_from_stored_face_value_with_more_than_two_non_zero_decimals_answers_internal()
+{
+    let room = Room::start().await;
+    let parts = Arc::new(SheetParts::new(
+        room.pool.clone(),
+        Arc::new(Reconcile::standard()),
+    ));
+    let facts = Arc::new(WideTransactionFacts::new(room.pool.clone()));
+    let service = ReconciliationService::new(room.pool.clone(), facts, parts);
+
+    let denom_id: i64 = sqlx::query_scalar(
+        "INSERT INTO denominations (currency_code, face_value, group_code) \
+         VALUES ('USD', 1.0001, 'ALL') RETURNING id",
+    )
+    .fetch_one(&room.pool)
+    .await
+    .expect("insert 1.0001 denomination");
+
+    let xfer = Uuid::new_v4();
+    room.insert_transfer(
+        xfer,
+        "BRANCH",
+        B1,
+        Some(B2),
+        "DISPATCHED",
+        &user_id(COUNTER),
+        bangkok(DAY, 10, 0),
+        Some(bangkok(DAY, 10, 30)),
+        None,
+    )
+    .await;
+    room.insert_transfer_line(xfer, "USD", denom_id, 1, None)
+        .await;
+
+    let err = service
+        .sheet(&BranchId::new(B1), date(DAY))
+        .await
+        .expect_err("stored 1.0001 face value must answer Internal, not a rounded figure");
+    assert!(
+        matches!(err, pos_error::AppError::Internal(_)),
+        "expected AppError::Internal, got {err:?}"
+    );
 }

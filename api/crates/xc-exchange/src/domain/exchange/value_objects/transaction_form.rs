@@ -57,7 +57,7 @@ impl TransactionForm {
     /// The exchange keeps no plain passport (#554 K4), so `passport_no` and the dates stay empty.
     pub fn from_transaction(
         t: &crate::domain::transaction::transaction::ExchangeTransaction,
-    ) -> TransactionForm {
+    ) -> AppResult<TransactionForm> {
         let line = &t.lines[0];
         let unit = line.unit_size.value();
         let client_rate = line.rate_snapshot.value() / unit;
@@ -74,7 +74,7 @@ impl TransactionForm {
                 paid: line.settle_thb,
             },
         };
-        TransactionForm {
+        Ok(TransactionForm {
             customer: CustomerDetails {
                 name: t.customer_name.clone(),
                 passport_no: String::new(),
@@ -87,8 +87,8 @@ impl TransactionForm {
             customer_id: t.customer_id.clone(),
             side: line.shop_side,
             currency: line.currency.as_str().to_owned(),
-            amount: money_of(line.quantity.value()),
-            rate: per_one_rate(client_rate),
+            amount: money_of(t.id.0, line.quantity.value())?,
+            rate: per_one_rate(t.id.0, client_rate)?,
             client_rate,
             fee: line.fee_thb,
             bank_fee: t.payment.bank_fee_thb,
@@ -102,10 +102,12 @@ impl TransactionForm {
             paid_at: t.payment.paid_at,
             passport: t.passport_file_key.clone(),
             slip: t.payment.slip_file_key.clone(),
-            reference_rate: client_reference_rate.map(per_one_rate),
+            reference_rate: client_reference_rate
+                .map(|r| per_one_rate(t.id.0, r))
+                .transpose()?,
             client_reference_rate,
             quote,
-        }
+        })
     }
 
     pub fn parse(cmd: &SaveTransaction) -> AppResult<Self> {
@@ -132,10 +134,7 @@ impl TransactionForm {
 
         // Step 7: Rate
         let client_rate = CompatRate::parse_per_one(&cmd.rate).map_err(rate_refusal)?;
-        let rate = Rate::parse(&cmd.rate).unwrap_or_else(|_| {
-            Rate::parse(&format!("{:.8}", client_rate))
-                .unwrap_or_else(|_| Rate::parse("1").unwrap())
-        });
+        let rate = form_rate(&cmd.rate, client_rate).map_err(rate_refusal)?;
 
         // Step 8: Fee
         let fee = Money::parse(&cmd.fee).map_err(input::number_error)?;
@@ -266,10 +265,8 @@ impl TransactionForm {
             None | Some("") => (None, None),
             Some(s) => {
                 let client_ref = CompatRate::parse_per_one(s).map_err(rate_refusal)?;
-                let ref_rate = Rate::parse(s)
-                    .ok()
-                    .or_else(|| Rate::parse(&format!("{:.8}", client_ref)).ok());
-                (ref_rate, Some(client_ref))
+                let ref_rate = form_rate(s, client_ref).map_err(rate_refusal)?;
+                (Some(ref_rate), Some(client_ref))
             }
         };
 
@@ -301,17 +298,29 @@ impl TransactionForm {
     }
 }
 
+fn form_rate(text: &str, per_one: Decimal) -> Result<Rate, NumberError> {
+    Rate::parse(text).or_else(|_| Rate::parse(&format!("{:.8}", per_one)))
+}
+
 /// A stored exact per-1 rate as the form's `Rate`, as `parse` falls back to it: at most 8 places.
-fn per_one_rate(per_one: Decimal) -> Rate {
+fn per_one_rate(id: uuid::Uuid, per_one: Decimal) -> AppResult<Rate> {
     Rate::parse(&per_one.normalize().to_string())
         .or_else(|_| Rate::parse(&format!("{:.8}", per_one)))
-        .unwrap_or_else(|_| Rate::parse("1").expect("1 is a rate"))
+        .map_err(|_| {
+            AppError::Internal(format!(
+                "transaction {id} stored per-1 rate {per_one} is out of range for TransactionForm"
+            ))
+        })
 }
 
 /// A stored quantity as the form's amount (two places, half up, as `parse` reads it).
-fn money_of(value: Decimal) -> Money {
+fn money_of(id: uuid::Uuid, value: Decimal) -> AppResult<Money> {
     let rounded = value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    Money::parse(&rounded.normalize().to_string()).unwrap_or(Money::ZERO)
+    Money::parse(&rounded.normalize().to_string()).map_err(|_| {
+        AppError::Internal(format!(
+            "transaction {id} stored quantity {value} is out of range for TransactionForm"
+        ))
+    })
 }
 
 /// The form's sentence for a per-1 rate `CompatRate::parse_per_one` refuses (#770).

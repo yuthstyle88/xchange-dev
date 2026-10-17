@@ -1,6 +1,6 @@
 //! `TransferFlow`: orchestrates cash transfers across the 5 states (D:§4.5, §9.1 CA-5).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -17,9 +17,10 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 
@@ -28,6 +29,7 @@ use crate::domain::ledger::posting::{SourceRef, SourceType};
 use crate::domain::posting::{CashPlace, CashPostings, differences};
 use crate::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, NewTransferLine, TransferError, TransferStatus, TransferStep,
+    add_line_minor,
 };
 use crate::domain::transfer::kinds::TransferKinds;
 use crate::domain::transfer::transfer_repository::TransferRepository;
@@ -57,6 +59,13 @@ fn require(
     Authorizer::check(Some(who), permission, &target, now)
         .map(|_| ())
         .map_err(|e| AppError::Domain(e.code().to_string()))
+}
+
+fn from_transfer_error(e: TransferError) -> AppError {
+    match e {
+        TransferError::Internal(m) => AppError::Internal(m),
+        other => AppError::Domain(other.to_string()),
+    }
 }
 
 impl TransferFlow {
@@ -206,9 +215,12 @@ impl TransferFlow {
         let parts = self.parts();
         let who = who.clone();
         let id_owned = id.to_owned();
+        let at = t.from_branch.clone();
         self.branch_tx
             .run(&t.from_branch, move |tx| {
-                Box::pin(async move { Self::dispatch_on(&parts, tx, &who, &id_owned, now).await })
+                Box::pin(
+                    async move { Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now).await },
+                )
             })
             .await
     }
@@ -314,21 +326,46 @@ async fn locked(
     Ok(t)
 }
 
-/// Writes a cash exception row if the counted total differs from the sent one (CA-7d #1425).
-async fn write_exceptions(
-    tx: &mut Transaction<'_, Postgres>,
+/// Builds an in-memory copy of `t` with each line's `qty_received` set from `counted` (and 0 for
+/// unmentioned lines), matching `mark_received` (D:§4.5).
+fn with_counted_lines(t: &CashTransfer, counted: &[NewTransferLine]) -> CashTransfer {
+    let mut updated = t.clone();
+    updated.status = TransferStatus::Received;
+    for line in &mut updated.lines {
+        let qty = counted
+            .iter()
+            .rfind(|c| c.currency == line.currency && c.denomination_id == line.denomination_id)
+            .map(|c| c.qty)
+            .unwrap_or(0);
+        line.qty_received = Some(qty);
+    }
+    updated
+}
+
+/// Computes the cash exception row if the counted total differs from the sent one (CA-7d #1425,
+/// D:§4.5). Runs before `mark_received` so an overflowing line or currency sum refuses before any write.
+fn compute_exception(
     id: &str,
-    branch: &BranchId,
     t: &CashTransfer,
     now: DateTime<Utc>,
-) -> AppResult<()> {
+) -> AppResult<Option<CashException>> {
     let mut sent_totals: HashMap<CurrencyCode, i64> = HashMap::new();
     let mut recv_totals: HashMap<CurrencyCode, i64> = HashMap::new();
     for line in &t.lines {
-        let sent_minor = line.face_value.minor() * (line.qty_sent as i64);
-        *sent_totals.entry(line.currency).or_insert(0) += sent_minor;
-        let recv_minor = line.face_value.minor() * (line.qty_received.unwrap_or(0) as i64);
-        *recv_totals.entry(line.currency).or_insert(0) += recv_minor;
+        add_line_minor(
+            &mut sent_totals,
+            line.currency,
+            line.face_value,
+            line.qty_sent,
+        )
+        .map_err(from_transfer_error)?;
+        add_line_minor(
+            &mut recv_totals,
+            line.currency,
+            line.face_value,
+            line.qty_received.unwrap_or(0),
+        )
+        .map_err(from_transfer_error)?;
     }
 
     let mut delta_pairs = Vec::new();
@@ -337,31 +374,43 @@ async fn write_exceptions(
         if recv_minor != sent_minor {
             delta_pairs.push((
                 cur,
-                MoneyDelta::from_minor((recv_minor - sent_minor) as i128),
+                MoneyDelta::from_minor(i128::from(recv_minor) - i128::from(sent_minor)),
             ));
         }
     }
 
-    if !delta_pairs.is_empty() {
-        let delta = StockDelta::of(&delta_pairs);
-        let (cash_variance, safe_variance) = if t.to_shift.is_some() {
-            (Some(delta), None)
-        } else {
-            (None, Some(delta))
-        };
+    if delta_pairs.is_empty() {
+        return Ok(None);
+    }
 
-        let exc = CashException {
-            id: format!("EX-{}", Uuid::new_v4()),
-            request_id: id.to_string(),
-            status: ExceptionStatus::Open,
-            target_difference: None,
-            cash_variance,
-            safe_variance,
-            note: format!("TRANSFER {id}"),
-            at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
-            reviewed_by: None,
-            reviewed_at: None,
-        };
+    let delta = StockDelta::of(&delta_pairs);
+    let (cash_variance, safe_variance) = if t.to_shift.is_some() {
+        (Some(delta), None)
+    } else {
+        (None, Some(delta))
+    };
+
+    Ok(Some(CashException {
+        id: format!("EX-{}", Uuid::new_v4()),
+        request_id: id.to_string(),
+        status: ExceptionStatus::Open,
+        target_difference: None,
+        cash_variance,
+        safe_variance,
+        note: format!("TRANSFER {id}"),
+        at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
+        reviewed_by: None,
+        reviewed_at: None,
+    }))
+}
+
+/// Writes the pre-computed cash exception row if present (CA-7d #1425).
+async fn write_exceptions(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    exc: Option<CashException>,
+) -> AppResult<()> {
+    if let Some(exc) = exc {
         append_cash_exception_in(tx, branch, &exc).await?;
     }
     Ok(())
@@ -399,6 +448,50 @@ impl TransferFlow {
             && let Some(t) = self.repo.find_by_id_in(tx, &id.to_string()).await?
         {
             return Ok(t);
+        }
+
+        let mut seen_denominations: HashSet<i64> = HashSet::with_capacity(cmd.lines.len());
+        let mut totals: HashMap<CurrencyCode, i64> = HashMap::new();
+        for line in &cmd.lines {
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in transfer lines: {}",
+                    line.denomination_id
+                )));
+            }
+
+            let row: Option<(Decimal, String)> =
+                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
+                    .bind(line.denomination_id)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+
+            let (face_dec, denom_currency) = match row {
+                Some(r) => r,
+                None => {
+                    return Err(AppError::NotFound {
+                        entity: "denomination",
+                        id: line.denomination_id.to_string(),
+                    });
+                }
+            };
+
+            let denom_currency = denom_currency.trim();
+            let line_currency = line.currency.as_str().trim();
+            if !denom_currency.eq_ignore_ascii_case(line_currency) {
+                return Err(AppError::Validation(format!(
+                    "line currency '{line_currency}' does not match denomination currency '{denom_currency}'"
+                )));
+            }
+
+            let face_value = Money::parse(&face_dec.to_string()).map_err(|e| {
+                AppError::Internal(format!(
+                    "invalid face_value {face_dec} for denomination {}: {e}",
+                    line.denomination_id
+                ))
+            })?;
+            add_line_minor(&mut totals, line.currency, face_value, line.qty)
+                .map_err(from_transfer_error)?;
         }
 
         self.repo.insert(tx, &cmd, who, now).await
@@ -440,6 +533,8 @@ impl TransferFlow {
         let within_limit = policy
             .as_ref()
             .map(|p| p.is_within_limit(&t.lines))
+            .transpose()
+            .map_err(from_transfer_error)?
             .unwrap_or(false);
 
         let payload = serde_json::json!({
@@ -477,11 +572,12 @@ impl TransferFlow {
     pub async fn dispatch_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        Self::dispatch_on(&self.parts(), tx, who, id, now).await
+        Self::dispatch_on(&self.parts(), tx, branch, who, id, now).await
     }
 
     /// `branch` is the caller's (the session) branch. A transfer whose destination is another branch is refused
@@ -514,24 +610,38 @@ impl TransferFlow {
     async fn dispatch_on(
         parts: &FlowParts,
         tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        let t = locked(parts.repo.as_ref(), tx, id, TransferStep::Dispatch).await?;
+        let t = parts
+            .repo
+            .find_by_id_in(tx, id)
+            .await?
+            .ok_or_else(|| not_found(id))?;
+        if t.from_branch != *branch {
+            return Err(AppError::Forbidden);
+        }
+        t.status
+            .next(TransferStep::Dispatch)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
         require(who, Permission::CashManage, &t.from_branch, now)?;
         let ends = parts
             .kinds
             .get(t.kind)
             .ok_or_else(|| AppError::Validation(format!("unknown kind: {:?}", t.kind)))?;
-        let reqs = ends.on_dispatch(&t);
+        let reqs = ends.on_dispatch(&t).map_err(from_transfer_error)?;
 
         // A move out of a drawer or the safe cannot exceed its expected balance.
         for r in &reqs {
             match &r.from {
                 CashPlace::Drawer(_) | CashPlace::Safe(_) => {
                     let balances = parts.postings.expected_in(tx, &r.from).await?;
-                    if Decimal::new(balances.get(r.currency).minor(), 2) < r.quantity.value() {
+                    let balance_minor = balances.get(r.currency).try_minor().map_err(|e| {
+                        AppError::Internal(format!("expected balance overflows i64: {e}"))
+                    })?;
+                    if Decimal::new(balance_minor, 2) < r.quantity.value() {
                         return Err(AppError::Domain(
                             TransferError::StockInsufficient.to_string(),
                         ));
@@ -584,11 +694,13 @@ impl TransferFlow {
 
         // Person rule (ruling Q1): cash entering a drawer is received by that shift's own teller, by user id.
         if let Some(ref shift_id) = t.to_shift {
-            let shift_teller: String =
-                sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
-                    .bind(shift_id)
-                    .fetch_one(&mut **tx)
-                    .await?;
+            let shift_teller: String = sqlx::query_scalar(
+                "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN'",
+            )
+            .bind(shift_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| AppError::Domain(ShiftError::NoOpenShift.to_string()))?;
             if shift_teller != who.user_id {
                 return Err(AppError::Domain(
                     "only the shift's teller may receive into drawer".into(),
@@ -596,15 +708,13 @@ impl TransferFlow {
             }
         }
 
+        let counted_t = with_counted_lines(&t, &counted);
+        let reqs = ends.on_receive(&counted_t).map_err(from_transfer_error)?;
+        let exc = compute_exception(id, &counted_t, now)?;
+
         parts.repo.mark_received(tx, id, who, &counted, now).await?;
-        let updated_t = parts
-            .repo
-            .find_by_id_in(tx, id)
-            .await?
-            .ok_or_else(|| not_found(id))?;
-        let reqs = ends.on_receive(&updated_t);
         parts.postings.post_in(tx, &reqs, None).await?;
-        write_exceptions(tx, id, branch, &updated_t, now).await?;
+        write_exceptions(tx, branch, exc).await?;
         parts
             .repo
             .find_by_id_in(tx, id)
@@ -621,6 +731,16 @@ impl TransferFlow {
         note: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
+        let org_uuid: Uuid =
+            sqlx::query_scalar("SELECT organization_id FROM cash_transfers WHERE id = $1::uuid")
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await?
+                .ok_or_else(|| not_found(id))?;
+        let organization_id = org_uuid.to_string();
+        if organization_id != who.organization_id {
+            return Err(not_found(id));
+        }
         locked(parts.repo.as_ref(), tx, id, TransferStep::Reconcile).await?;
 
         let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) = sqlx::query_as(
@@ -638,7 +758,7 @@ impl TransferFlow {
             ));
         }
 
-        let target = Target::new(&who.organization_id, None, None);
+        let target = Target::new(&organization_id, None, None);
         Authorizer::check(Some(who), Permission::FinanceReconcile, &target, now)
             .map_err(|e| AppError::Domain(e.code().to_string()))?;
 
@@ -652,10 +772,20 @@ impl TransferFlow {
         // IN_TRANSIT, an overage back into it.
         let mut left: Vec<(CurrencyCode, Decimal)> = Vec::new();
         for line in &t.lines {
-            let qty = line.qty_sent - line.qty_received.unwrap_or(0);
-            let amount = Decimal::new(line.face_value.minor(), 2) * Decimal::from(qty);
+            let face_minor = line.face_value.try_minor().map_err(|e| {
+                AppError::Internal(format!("reconcile face_value overflows i64: {e}"))
+            })?;
+            let qty = i64::from(line.qty_sent) - i64::from(line.qty_received.unwrap_or(0));
+            let line_diff_minor = face_minor
+                .checked_mul(qty)
+                .ok_or_else(|| AppError::Internal("reconcile line total overflows i64".into()))?;
+            let amount = Decimal::new(line_diff_minor, 2);
             match left.iter_mut().find(|(c, _)| *c == line.currency) {
-                Some((_, a)) => *a += amount,
+                Some((_, a)) => {
+                    *a = a.checked_add(amount).ok_or_else(|| {
+                        AppError::Internal("reconcile currency total overflows".into())
+                    })?;
+                }
                 None => left.push((line.currency, amount)),
             }
         }
@@ -676,5 +806,226 @@ impl TransferFlow {
             .find_by_id_in(tx, id)
             .await?
             .ok_or_else(|| not_found(id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::str::FromStr;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use chrono::{TimeZone, Utc};
+    use sqlx::migrate::Migrator;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+    use sqlx::{AssertSqlSafe, PgPool};
+    use xc_auth::domain::access::{Role, ScopedRole};
+
+    use super::*;
+    use crate::domain::transfer::cash_transfer::TransferKind;
+
+    const ORG_A: &str = "00000000-0000-0000-0000-000000000001";
+    const ORG_B: &str = "00000000-0000-0000-0000-0000000000b2";
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    fn unique(prefix: &str) -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock is after 1970")
+            .as_nanos();
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    }
+
+    fn migrations_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations")
+    }
+
+    async fn test_pool() -> PgPool {
+        let url = std::env::var("TEST_DATABASE_URL")
+            .unwrap_or_else(|_| panic!("TEST_DATABASE_URL is not set"));
+        let options = PgConnectOptions::from_str(&url).expect("postgres options");
+        assert!(
+            options.get_database().unwrap_or("").ends_with("_test"),
+            "TEST_DATABASE_URL must name a database ending in `_test`"
+        );
+        let schema = unique("tf_reconcile_org");
+        let admin = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options.clone())
+            .await
+            .expect("admin connect");
+        sqlx::query(AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
+            .execute(&admin)
+            .await
+            .expect("create schema");
+        admin.close().await;
+
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect_with(options.options([("search_path", schema.as_str())]))
+            .await
+            .expect("connect schema pool");
+        Migrator::new(migrations_dir().as_path())
+            .await
+            .expect("migrator")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    #[tokio::test]
+    async fn another_organisations_finance_gets_not_found_on_non_received_transfer() {
+        let pool = test_pool().await;
+        let now = Utc.with_ymd_and_hms(2026, 10, 16, 12, 0, 0).unwrap();
+        let from_branch = BranchId::new("XC-B01");
+        let to_branch = BranchId::new("XC-B09");
+        for b in [&from_branch, &to_branch] {
+            sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $1)")
+                .bind(b.as_str())
+                .execute(&pool)
+                .await
+                .expect("branch of org A");
+        }
+        let creator_id: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        )
+        .bind(ORG_A)
+        .bind(unique("orga-bm"))
+        .fetch_one(&pool)
+        .await
+        .expect("org A creator");
+        let creator = Actor::new(
+            &creator_id,
+            ORG_A,
+            vec![ScopedRole::new(
+                Role::BranchManager,
+                Some(from_branch.clone()),
+                now,
+                None,
+            )],
+            None,
+        );
+        let usd50: i64 = sqlx::query_scalar(
+            "SELECT id FROM denominations WHERE currency_code = 'USD' AND face_value = 50",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("USD 50 denomination");
+
+        let flow = TransferFlow::pg(pool.clone());
+        let draft = flow
+            .create(
+                &creator,
+                NewTransfer {
+                    kind: TransferKind::Branch,
+                    from_branch: from_branch.clone(),
+                    to_branch: Some(to_branch.clone()),
+                    from_shift: None,
+                    to_shift: None,
+                    lines: vec![NewTransferLine {
+                        currency: CurrencyCode::parse("USD").unwrap(),
+                        denomination_id: usd50,
+                        qty: 2,
+                    }],
+                    note: Some("non-received transfer".into()),
+                    idempotency_key: unique("k"),
+                },
+                now,
+            )
+            .await
+            .expect("create DRAFT transfer in org A");
+
+        sqlx::query(
+            "INSERT INTO organizations (id, code, timezone, created_at) \
+             VALUES ($1::uuid, 'ORGB', 'Asia/Bangkok', now())",
+        )
+        .bind(ORG_B)
+        .execute(&pool)
+        .await
+        .expect("org B");
+        let org_b_branch = BranchId::new("ORGB-B01");
+        sqlx::query(
+            "INSERT INTO branches (id, name, organization_id) VALUES ($1, 'B01', $2::uuid)",
+        )
+        .bind(org_b_branch.as_str())
+        .bind(ORG_B)
+        .execute(&pool)
+        .await
+        .expect("org B branch");
+        let org_b_user_id: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        )
+        .bind(ORG_B)
+        .bind(unique("orgb-fin"))
+        .fetch_one(&pool)
+        .await
+        .expect("org B user");
+        let org_b_finance = Actor::new(
+            &org_b_user_id,
+            ORG_B,
+            vec![ScopedRole::new(
+                Role::Finance,
+                Some(org_b_branch),
+                now,
+                None,
+            )],
+            None,
+        );
+
+        // 1. Transfer of org A in DRAFT status -> NotFound (not IllegalTransition)
+        let mut tx = pool.begin().await.expect("begin");
+        let err_draft = flow
+            .reconcile_in(&mut tx, &org_b_finance, &draft.id, "probe", now)
+            .await
+            .expect_err("org B finance must be refused on org A's DRAFT transfer");
+        match err_draft {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, draft.id);
+            }
+            other => panic!("expected AppError::NotFound on DRAFT transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
+
+        // 2. Transfer of org A in RECONCILED status -> NotFound (not IllegalTransition)
+        sqlx::query("UPDATE cash_transfers SET status = 'RECONCILED' WHERE id = $1::uuid")
+            .bind(&draft.id)
+            .execute(&pool)
+            .await
+            .expect("set transfer to RECONCILED");
+        let mut tx = pool.begin().await.expect("begin");
+        let err_reconciled = flow
+            .reconcile_in(&mut tx, &org_b_finance, &draft.id, "probe", now)
+            .await
+            .expect_err("org B finance must be refused on org A's RECONCILED transfer");
+        match err_reconciled {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, draft.id);
+            }
+            other => panic!("expected AppError::NotFound on RECONCILED transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
+
+        // 3. Unknown transfer id -> same NotFound shape
+        let unknown = "00000000-0000-0000-0000-00000000dead";
+        let mut tx = pool.begin().await.expect("begin");
+        let err_unknown = flow
+            .reconcile_in(&mut tx, &org_b_finance, unknown, "probe", now)
+            .await
+            .expect_err("unknown transfer must be refused");
+        match err_unknown {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, unknown);
+            }
+            other => panic!("expected AppError::NotFound on unknown transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
     }
 }

@@ -71,6 +71,38 @@ fn invalid(field: &'static str, message: impl Into<String>) -> HttpResponse {
     .error_response()
 }
 
+fn retry_id(raw: Option<&str>) -> Result<Option<&str>, HttpResponse> {
+    match raw {
+        None => Ok(None),
+        Some(s) => match uuid::Uuid::parse_str(s) {
+            Ok(_) => Ok(Some(s)),
+            Err(_) => Err(invalid("userId", "ไม่พบผู้ใช้งาน")),
+        },
+    }
+}
+
+async fn unknown_branch(
+    pool: &sqlx::PgPool,
+    organization_id: &str,
+    roles: &[ScopedRole],
+) -> Result<bool, sqlx::Error> {
+    for r in roles {
+        if let Some(ref branch) = r.branch {
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM branches WHERE id = $1 AND organization_id = $2::uuid)",
+            )
+            .bind(branch.as_str())
+            .bind(organization_id)
+            .fetch_one(pool)
+            .await?;
+            if !exists {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 async fn user_create(
     req: HttpRequest,
     state: web::Data<AppState>,
@@ -110,6 +142,11 @@ async fn user_create(
         _ => return invalid("phone", "กรุณากรอกเบอร์โทรศัพท์"),
     };
 
+    let retry_user_id = match retry_id(input.user_id.as_deref()) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
     let now = chrono::Utc::now();
     let mut roles = Vec::with_capacity(input.roles.len());
     for r in &input.roles {
@@ -122,6 +159,21 @@ async fn user_create(
             Some(_) => return invalid("roles", "สาขาไม่ถูกต้อง"),
         };
         roles.push(ScopedRole::new(role, branch, now, None));
+    }
+
+    match unknown_branch(&state.db, &actor.organization_id, &roles).await {
+        Ok(false) => {}
+        Ok(true) => return invalid("roles", "สาขาไม่ถูกต้อง"),
+        Err(e) => {
+            tracing::error!(error = %e, "userCreate branch check failed");
+            return V3Error::new(
+                "serverError",
+                None,
+                "เซิร์ฟเวอร์ขัดข้อง",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .error_response();
+        }
     }
 
     let Some(identity_settings) = state.settings.identity.clone() else {
@@ -149,7 +201,7 @@ async fn user_create(
         password: &input.password,
         roles,
         must_change_password: false,
-        retry_user_id: input.user_id.as_deref(),
+        retry_user_id,
         created_by: &actor.user_id,
         creator_roles: Some(&actor.roles),
     };

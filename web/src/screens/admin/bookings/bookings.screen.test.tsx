@@ -556,7 +556,7 @@ describe('V2-bookings: the list as v2 shows it (#463 K1)', () => {
     expect(c[1]).toContain('250.50');
     expect(c[1]).toContain('EUR');
     expect(c[2]).toBe('40.1000');
-    expect(c[3]).toBe(new Date('2026-10-09T05:30:02.000Z').toLocaleString('th-TH'));
+    expect(c[3]).toBe(new Date('2026-10-09T05:30:02.000Z').toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
     expect(c[4]).toBe('ล็อกเรทแล้ว');
   });
 

@@ -3,8 +3,10 @@
 
 use std::sync::Arc;
 
+use actix_web::body::BodyLimitExceeded;
 use actix_web::http::{StatusCode, header};
-use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
+use actix_web::web::{self, Bytes};
+use actix_web::{HttpRequest, HttpResponse, ResponseError};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -33,6 +35,32 @@ pub const ROUTE: &str = "/api/app/verification/cases/{id}/documents";
 pub const ACTION_NAME: &str = "verificationDocumentUpload";
 
 const TOO_LARGE: &str = "ไฟล์ใหญ่เกิน 15 MB";
+
+fn body_answer<E>(
+    read: Result<Result<Bytes, E>, BodyLimitExceeded>,
+) -> Result<Vec<u8>, HttpResponse> {
+    match read {
+        Ok(Ok(b)) => Ok(b.to_vec()),
+        Err(_) => Err(HttpResponse::BadRequest()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(serde_json::json!({
+                "error": {
+                    "code": "validationFailed",
+                    "field": "file",
+                    "message": TOO_LARGE,
+                }
+            }))),
+        Ok(Err(_)) => Err(HttpResponse::BadRequest()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(serde_json::json!({
+                "error": {
+                    "code": "invalidRequest",
+                    "field": "file",
+                    "message": "อ่านข้อมูลไฟล์ไม่สำเร็จ",
+                }
+            }))),
+    }
+}
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
@@ -190,6 +218,10 @@ fn map_case_error(err: CaseError) -> HttpResponse {
         }))
 }
 
+fn key_shape_ok(key: &str) -> bool {
+    xc_kernel::document_store::document_ref("x", key).is_ok()
+}
+
 async fn handle_upload(
     req: &HttpRequest,
     payload: web::Payload,
@@ -211,8 +243,9 @@ async fn handle_upload(
         .headers()
         .get("idempotency-key")
         .and_then(|v| v.to_str().ok())
+        .map(|k| k.trim())
     {
-        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
+        Some(k) if !k.is_empty() && key_shape_ok(k) => k.to_string(),
         _ => {
             return HttpResponse::BadRequest()
                 .insert_header((header::CACHE_CONTROL, "no-store"))
@@ -288,19 +321,9 @@ async fn handle_upload(
     };
 
     const MAX_BODY_LIMIT: usize = 25 * 1024 * 1024;
-    let bytes = match payload.to_bytes_limited(MAX_BODY_LIMIT).await {
-        Ok(Ok(b)) => b.to_vec(),
-        _ => {
-            return HttpResponse::BadRequest()
-                .insert_header((header::CACHE_CONTROL, "no-store"))
-                .json(serde_json::json!({
-                    "error": {
-                        "code": "validationFailed",
-                        "field": "file",
-                        "message": TOO_LARGE,
-                    }
-                }));
-        }
+    let bytes = match body_answer(payload.to_bytes_limited(MAX_BODY_LIMIT).await) {
+        Ok(b) => b,
+        Err(resp) => return resp,
     };
 
     let content_type = req
@@ -504,4 +527,67 @@ async fn handle_upload(
     HttpResponse::Ok()
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .json(response_json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::body::{to_bytes, to_bytes_limited};
+    use actix_web::error::PayloadError;
+    use serde_json::Value;
+
+    async fn read_error_response(resp: HttpResponse) -> (StatusCode, Option<String>, Value) {
+        let status = resp.status();
+        let cache_control = resp
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let raw = to_bytes(resp.into_body()).await.expect("response body");
+        let json: Value = serde_json::from_slice(&raw).expect("valid error json");
+        (status, cache_control, json)
+    }
+
+    async fn sample_body_limit_exceeded() -> BodyLimitExceeded {
+        to_bytes_limited(Bytes::from_static(b"ab"), 1)
+            .await
+            .expect_err("2 bytes exceeds limit of 1")
+    }
+
+    #[actix_web::test]
+    async fn body_answer_when_limit_exceeded_returns_400_validation_failed_too_large() {
+        let limit_err = sample_body_limit_exceeded().await;
+        let err =
+            body_answer::<PayloadError>(Err(limit_err)).expect_err("must refuse over-limit body");
+        let (status, cache_control, json) = read_error_response(err).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(cache_control.as_deref(), Some("no-store"));
+        assert_eq!(json["error"]["code"], "validationFailed");
+        assert_eq!(json["error"]["field"], "file");
+        assert_eq!(json["error"]["message"], TOO_LARGE);
+    }
+
+    #[actix_web::test]
+    async fn body_answer_when_payload_incomplete_returns_400_invalid_request_not_too_large() {
+        let err = body_answer(Ok(Err(PayloadError::Incomplete(None))))
+            .expect_err("must refuse incomplete payload");
+        let (status, cache_control, json) = read_error_response(err).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(cache_control.as_deref(), Some("no-store"));
+        assert_eq!(json["error"]["code"], "invalidRequest");
+        assert_eq!(json["error"]["field"], "file");
+        let msg = json["error"]["message"].as_str().unwrap_or("");
+        assert!(!msg.is_empty(), "error message must be non-empty");
+        assert_ne!(
+            msg, TOO_LARGE,
+            "broken payload must never report file over 15 MB"
+        );
+    }
+
+    #[actix_web::test]
+    async fn body_answer_when_ok_returns_bytes_unchanged() {
+        let input = Bytes::from_static(b"hello-verification-doc");
+        let out = body_answer::<PayloadError>(Ok(Ok(input))).expect("must return bytes");
+        assert_eq!(out, b"hello-verification-doc");
+    }
 }
