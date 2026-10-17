@@ -130,20 +130,6 @@ pub enum LoyaltyRuleError {
     InvalidTransition(String),
 }
 
-impl LoyaltyRuleError {
-    /// Fixed client-safe message for each error variant, omitting upstream detail.
-    pub fn client_message(&self) -> &'static str {
-        match self {
-            Self::Unavailable(_) => "the loyalty service is not available, try again later",
-            Self::Invalid(_) => "the loyalty service refused the rule",
-            Self::NotFound => "loyalty rule version not found",
-            Self::InvalidTransition(_) => {
-                "the loyalty rule version cannot move from its current status"
-            }
-        }
-    }
-}
-
 impl std::fmt::Display for LoyaltyRuleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
