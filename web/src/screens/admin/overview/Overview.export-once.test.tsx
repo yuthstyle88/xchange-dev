@@ -136,7 +136,7 @@ describe('#2631 Overview export CSV in-flight suppression', () => {
                 pendingCount: 0,
               },
               latest: [row('XC-001')],
-              status: { shiftOpen: true, pendingCount: 0, openedBy: 'Somchai' },
+              status: { shiftOpen: true, pendingCount: 0, openShifts: [{ shiftId: 'SH-1', tellerId: 'U-1', tellerName: 'Somchai', openedAt: '2026-10-06T01:00:00Z' }] },
             }).body,
           ),
           { status: 200, headers: { 'content-type': 'application/json' } },
