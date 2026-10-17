@@ -347,6 +347,58 @@ async fn seed_campaign(pool: &PgPool, status: &str) -> (Uuid, Uuid) {
     (campaign_id, version_id)
 }
 
+async fn seed_main_usd_publication(pool: &PgPool) {
+    let request = Uuid::new_v4();
+    let publication = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id, \
+             object_version_hash, policy_version, proposed_payload, requested_by, requested_at, \
+             status, idempotency_key) \
+         SELECT $1, organization_id, 'RATE_PUBLICATION', id, $2, 'pub_hash', \
+             '1', '{}'::jsonb, 'test', now(), 'APPROVED', $3 \
+         FROM branches WHERE id = 'MAIN'",
+    )
+    .bind(request)
+    .bind(publication.to_string())
+    .bind(unique("pub"))
+    .execute(pool)
+    .await
+    .expect("seed approval_request for publication");
+
+    sqlx::query(
+        "INSERT INTO rate_publications (id, organization_id, branch_id, version, published_at, \
+             approved_request_id, draft_id, published_by) \
+         SELECT $1, b.organization_id, b.id, \
+             COALESCE((SELECT max(version) FROM rate_publications WHERE branch_id = b.id), 0) + 1, \
+             now(), $2, NULL, 'test' \
+         FROM branches b WHERE b.id = 'MAIN'",
+    )
+    .bind(publication)
+    .bind(request)
+    .execute(pool)
+    .await
+    .expect("seed rate_publications");
+
+    sqlx::query(
+        "INSERT INTO published_rate_lines (id, organization_id, publication_id, currency_code, \
+             denomination_group, unit_size, buy_rate, sell_rate, source_snapshot) \
+         SELECT $1, organization_id, $2, 'USD', 'ALL', 1, '33.50000000'::numeric, '34.00000000'::numeric, \
+             jsonb_build_object('currency', 'USD', 'buy_mode', 'MANUAL', 'sell_mode', 'MANUAL') \
+         FROM rate_publications WHERE id = $2",
+    )
+    .bind(Uuid::new_v4())
+    .bind(publication)
+    .execute(pool)
+    .await
+    .expect("seed published_rate_lines");
+
+    sqlx::query("UPDATE branches SET current_publication_id = $1 WHERE id = 'MAIN'")
+        .bind(publication)
+        .execute(pool)
+        .await
+        .expect("set current_publication_id");
+}
+
 // ------------------------------------------------------------
 // Criterion 3: RoleNotAllowed = 400 for unauthorized roles & command execution
 // ------------------------------------------------------------
@@ -556,6 +608,7 @@ async fn campaign_simulate_refuses_teller_with_400_role_not_allowed() {
     );
 
     // Authorized MARKETING: executes simulate and records simulation row (§7 [required])
+    seed_main_usd_publication(&room.pool).await;
     let auth_ans = call(
         &room,
         Some("MARKETING"),
@@ -986,6 +1039,7 @@ async fn commands_enforce_idempotency_conflict_on_different_payload() {
 
     // 4. campaignSimulate
     let (c4, _) = seed_campaign(&room.pool, "DRAFT").await;
+    seed_main_usd_publication(&room.pool).await;
     assert_idempotency_conflict(
         &room,
         "MARKETING",
