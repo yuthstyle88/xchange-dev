@@ -324,8 +324,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
     const [mins, setMins] = createSignal(String(s ? s.rules.minutes : 30));
     const [enb, setEnb] = createSignal(s ? s.rules.enabled : true);
     const [dialogError, setDialogError] = createSignal<string | null>(null);
+    const [writing, setWriting] = createSignal(false);
 
     const saveSettings = async () => {
+      if (writing()) return;
+      setWriting(true);
       try {
         await api.post('/api/v2/bookings', {
           action: 'settings',
@@ -339,6 +342,8 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         await fetchSettings(props.branch(), settingsVersion);
       } catch (err) {
         setDialogError(wordedError(err));
+      } finally {
+        setWriting(false);
       }
     };
 
@@ -365,7 +370,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         <Show when={dialogError()}>
           <p class="error">{dialogError()}</p>
         </Show>
-        <button type="button" class="primary" onClick={saveSettings}>
+        <button type="button" class="primary" disabled={writing()} onClick={saveSettings}>
           {t('save')}
         </button>
       </div>
