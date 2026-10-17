@@ -104,7 +104,11 @@ impl SettingsRepository for PgSettingsRepository {
         now: DateTime<Utc>,
     ) -> AppResult<()> {
         if let Some(l) = limit
-            && l.minor() <= 0
+            && l.try_minor().map_err(|_| {
+                AppError::Domain(
+                    "validationFailed: approvalLimitThb must be greater than zero".to_owned(),
+                )
+            })? <= 0
         {
             return Err(AppError::Domain(
                 "validationFailed: approvalLimitThb must be greater than zero".to_owned(),
