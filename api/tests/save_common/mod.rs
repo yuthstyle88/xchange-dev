@@ -319,6 +319,36 @@ impl Shop {
         rates_re4c_common::set_counter_rate(&self.pool, branch_id, currency, buy, sell).await;
     }
 
+    fn opener_of(branch_id: &str) -> String {
+        if branch_id == MAIN {
+            "test".to_owned()
+        } else {
+            format!("test-{branch_id}")
+        }
+    }
+
+    pub async fn teller_of(&self, branch_id: &str) -> Option<String> {
+        let opener = Self::opener_of(branch_id);
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(&opener)
+            .fetch_optional(&self.pool)
+            .await
+            .expect("read the opener's user id")
+    }
+
+    pub async fn open_shift_id(&self, branch_id: &str) -> String {
+        let teller = self
+            .teller_of(branch_id)
+            .await
+            .unwrap_or_else(|| panic!("no opener seeded for {branch_id}"));
+        self.shifts
+            .open_of_teller(&teller)
+            .await
+            .expect("read the open shift")
+            .expect("a shift is open")
+            .id
+    }
+
     pub async fn open_shift(&self, branch_id: &str, opening: &[(&str, &str)]) -> String {
         let pairs: Vec<(CurrencyCode, Money)> =
             opening.iter().map(|(c, a)| (code(c), money(a))).collect();
@@ -326,9 +356,13 @@ impl Shop {
             request_id: unique("open-shift").replace('_', "-"),
             opening: Balances::of(&pairs),
         };
+        let opener = Self::opener_of(branch_id);
+        if branch_id != MAIN {
+            seed_opener(&self.pool, &opener).await;
+        }
         let shift = self
             .shifts
-            .open(&branch(branch_id), cmd, "test", at(-60))
+            .open(&branch(branch_id), cmd, &opener, at(-60))
             .await
             .expect("open a shift")
             .id;
@@ -394,9 +428,10 @@ impl Shop {
     }
 
     pub async fn balances(&self, branch_id: &str) -> Seen {
+        let teller = self.teller_of(branch_id).await?;
         let shift = self
             .shifts
-            .active(&branch(branch_id))
+            .open_of_teller(&teller)
             .await
             .expect("read the open shift")?;
         Some(

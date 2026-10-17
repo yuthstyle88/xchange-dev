@@ -340,20 +340,7 @@ async fn a_draft_is_stored_with_its_line_and_payment_and_read_back_whole() {
         Some("DRAFT|NULL"),
         "D-3: no number before completion"
     );
-    // D-2: the wide row is written from the line and the payment (BUY: the shop pays settle_thb)
-    assert_eq!(
-        shop.db
-            .text(&format!(
-                "SELECT concat_ws('|', type, code, amount, rate::numeric(20,2), principal, fee, \
-                    bank_fee, received, paid, method, payment_ref, account) \
-                 FROM transactions WHERE id = '{}'",
-                t.id.0
-            ))
-            .await
-            .as_deref(),
-        Some("BUY|USD|100.00|32.10|3210.00|10.00|1.50|0.00|3200.00|Bank Transfer|TRX-9|KBank 1"),
-        "the wide columns"
-    );
+    // D-2's wide row retired with TX-9 (#677): the line and the payment are the only copy.
     assert_eq!(
         shop.db
             .count(&format!(

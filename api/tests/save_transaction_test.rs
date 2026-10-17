@@ -357,7 +357,7 @@ async fn a_saved_exchange_can_be_read_back_whole() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     let slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
 
     let mut cmd = form("whole-0001-aaaaaaaaaa", &customer, &passport);
     cmd.customer.name = "  Somchai J. Jaidee ".to_owned();

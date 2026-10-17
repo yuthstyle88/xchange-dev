@@ -192,13 +192,11 @@ async fn seed_sell_line(
     let line_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, \
-         submission_id, payload_hash, customer_id, customer_name, nationality, type, code, \
-         amount, rate, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
+         submission_id, payload_hash, customer_id, customer_name, nationality, \
          staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, status, \
          completed_at) \
-         VALUES ($1, $2::uuid, $3, $4, 'LIVE', $5, $6, 'hash', $7, 'Somchai', 'THA', 'SELL', 'USD', \
-         $8, 1.0, $9, 0, 0, 0, $9, 'Cash', '', 'Cash drawer', 'system', 'WALK-IN', '', \
-         current_date, now(), now(), 'system', 'COMPLETED', now())",
+         VALUES ($1, $2::uuid, $3, $4, 'LIVE', $5, $6, 'hash', $7, 'Somchai', 'THA', \
+         'system', 'WALK-IN', '', current_date, now(), now(), 'system', 'COMPLETED', now())",
     )
     .bind(tx_id)
     .bind(ORG)
@@ -207,8 +205,6 @@ async fn seed_sell_line(
     .bind(shift_id)
     .bind(unique("sub"))
     .bind(&cust_id)
-    .bind(d(quantity))
-    .bind(d(thb_amount))
     .execute(pool)
     .await
     .expect("insert transaction");

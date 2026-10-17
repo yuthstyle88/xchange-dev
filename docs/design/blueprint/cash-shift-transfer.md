@@ -668,6 +668,9 @@ classDiagram
   class CashCountService { <<xc-cash application/count/count_service.rs>> +submit() +verify() +submit_in(tx) +verify_in(tx)  CA-7c }
   class Handover { <<xc-cash domain/handover/handover.rs>> }
   class HandoverService { <<xc-cash application/handover/handover_service.rs>> +start_in(tx) +accept_in(tx) +reject_in(tx)  CA-7c }
+  class ReceiverRule { <<xc-cash application/handover/handover_service.rs  module fns, #2846>> +receiver_candidates(ex, org, branch, only, now) Vec~ReceiverCandidate~ +may_receive(candidate, org, branch, now) bool }
+  class ReceiverCandidate { <<xc-cash application/handover/handover_service.rs  #2846>> +user_id +name +roles Vec~ScopedRole~ }
+  class HandoverReceiversView { <<api presentation/http/v3/views/handover_receivers.rs>> }
   class CashTransfer { <<xc-cash domain/transfer/cash_transfer.rs  state machine>> }
   class TransferEnds { <<trait xc-cash domain/transfer/ends.rs  dyn-safe>> +kind() TransferKind +on_dispatch() Result~Vec~PostingRequest~~ +on_receive() Result~Vec~PostingRequest~~ }
   class CashAreaRows { <<xc-auth domain/policy/areas/cash.rs  (EntryPath::Rpc, command) → Need  CA-8>> }
@@ -706,6 +709,10 @@ classDiagram
   TransferFlow --> Authorizer
   HandoverService --> CashCountService
   HandoverService --> Handover
+  HandoverService --> ReceiverRule : start_in's receiver check
+  HandoverReceiversView --> ReceiverRule : the receiver list
+  ReceiverRule --> ReceiverCandidate
+  ReceiverRule --> Authorizer : ShiftOperate
   TransferFlow --> CashTransfer
   TransferFlow --> TransferEnds
   TransferEnds <|.. BranchTransfer
@@ -743,6 +750,7 @@ the receiver of a hand-over, a teller's own shift).
 | #550 / PR 589 OR-4 `policy.rs` (the route table) and OR-4b/PL-0b's area rows | nothing in `policy.rs`: CA-8 and CA-8b add their rows in `areas/cash.rs` and `areas/branch_day.rs` (§4.4) | not needed — neither touches a file OR-4 owns; both start after OR-4 |
 | CA-0p `CashTransferPolicySet` (§9) | `transferPolicySave`'s permission and its area row | none — `transferPolicySave` starts after it; the rest of CA-8 does not wait |
 | CA-7b `BranchDayService` (§4.8) | CA-8b's seven commands | none — CA-8b starts after CA-7b |
+| #2846 `receiver_candidates` + `may_receive` (`handover_service.rs`): the one hand-over receiver rule, the Authorizer's `ShiftOperate` at the branch at `now` over role rows valid at `now` | `HandoverService::start_in`'s receiver check and the `handover_receivers` view, so the list and `handoverStart` cannot disagree (#2879) | none needed — both callers moved in the same change |
 | CA-7c the `_in` forms of `CashCountService`, `HandoverService` and `TransferFlow` (§4.9) | CA-8's count, hand-over and transfer commands | none — CA-8 starts after CA-7c |
 | #550 / PR 589 `Role`, `Permission`, `RolePermissions`, `Authorizer` | every command | none — CA-2 onward start after PR 589's permission ticket. The four permissions this design needs beyond PR 589 §3.4's first list (`AttendanceClock`, `CustomerHoldPlace`, `CashTargetSet`, `BranchDayOperate`) are in PR 589 at `71f03ca`, owned by its OR-2 ticket |
 | #550 / PR 589 §6 `BranchHours::window(date)` | the branch day's time checks (today `custody_machine.rs:746`, `:804`, `:1195`) | ordering: PR 589's OR-6 edits those lines in `custody_machine.rs`; CA-7 moves them into `branch_day.rs`. **OR-6 merges first; CA-7 starts after it** and carries `BranchHours` along |
