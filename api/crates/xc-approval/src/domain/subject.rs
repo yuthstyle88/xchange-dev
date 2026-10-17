@@ -4,7 +4,7 @@ use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 
-use crate::domain::request::Outcome;
+use crate::domain::request::{ApprovalRequest, Outcome};
 
 /// Error returned by `ApprovalSubject::*_or_unavailable` methods (LY-6 #1411, R1).
 #[derive(Debug)]
@@ -50,11 +50,11 @@ pub trait ApprovalSubject: Send + Sync {
     fn on_decided_or_unavailable<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
-        object_id: &'a str,
+        request: &'a ApprovalRequest,
         outcome: Outcome,
     ) -> BoxFuture<'a, Result<(), SubjectError>> {
         Box::pin(async move {
-            self.on_decided(tx, object_id, outcome)
+            self.on_decided(tx, &request.object_id, outcome)
                 .await
                 .map_err(SubjectError::Failed)
         })

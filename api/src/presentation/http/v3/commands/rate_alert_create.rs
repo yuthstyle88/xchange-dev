@@ -1,13 +1,11 @@
 //! RA-2b (#1429): `POST /api/app/rate-alerts` creates a customer rate alert.
 
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::DateTime;
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_alert::application::rate_alert_service::{
@@ -19,13 +17,14 @@ use xc_alert::infrastructure::repository::PgRateAlertRepository;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{Bound, CurrencyCode, Sign};
 use xc_rate::infrastructure::currency::currency_register::PgCurrencyRegister;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::rate_alerts::{CreateRateAlertInput, RateAlertOutput};
+use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, role_not_allowed_here};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -85,14 +84,8 @@ impl CommandAction for RateAlertCreateCommand {
     ) -> Result<Self::Output, V3Error> {
         let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
 
-        let target = Decimal::from_str(&input.target).map_err(|_| {
-            V3Error::new(
-                "validationFailed",
-                Some("target"),
-                "invalid target",
-                StatusCode::BAD_REQUEST,
-            )
-        })?;
+        let target =
+            v3::input::decimal("target", &input.target, Bound::numeric(20, 8, Sign::Positive))?;
 
         let currency = CurrencyCode::parse(&input.currency).map_err(|_| {
             V3Error::new(

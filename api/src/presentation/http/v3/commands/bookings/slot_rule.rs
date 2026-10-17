@@ -14,11 +14,18 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::slot::slot_rule::SlotRule;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::IntBound;
 
 use super::{BookingOkOutput, BookingServices};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, Locks};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
+
+/// `booking_slot_rules` column `CHECK`s (`migrations/20261205131000_booking_slots.sql:36-38`).
+const SLOT_MINUTES: IntBound = IntBound::integer(5, 240);
+const CAPACITY: IntBound = IntBound::integer(1, i64::MAX);
+const HORIZON_DAYS: IntBound = IntBound::integer(1, 90);
 
 pub struct SlotRuleSet {
     services: Arc<BookingServices>,
@@ -61,6 +68,9 @@ impl CommandAction for SlotRuleSet {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
+        input::integer("slotMinutes", input.slot_minutes as i64, SLOT_MINUTES)?;
+        input::integer("capacity", input.capacity as i64, CAPACITY)?;
+        input::integer("horizonDays", input.horizon_days as i64, HORIZON_DAYS)?;
         let user_uuid = Uuid::parse_str(&who.user_id).unwrap_or_else(|_| Uuid::new_v4());
 
         let branch = BranchId::new(&input.id);
