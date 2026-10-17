@@ -172,7 +172,7 @@ impl StaffDailyReportView {
         let close_counts: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(
             "SELECT c.id, c.counted_by, c.verified_by \
              FROM cash_counts c JOIN shifts s ON s.id = c.shift_id \
-             WHERE s.branch_id = $1 AND s.opened_by_count IS NOT NULL \
+             WHERE s.branch_id = $1 \
                AND s.opened_at >= $2 AND s.opened_at < $3 \
                AND c.kind = 'CLOSE' AND c.verified_at IS NOT NULL \
              ORDER BY c.verified_at, c.id",
@@ -243,7 +243,7 @@ impl StaffDailyReportView {
                       SELECT 1 FROM cash_counts c WHERE c.shift_id = s.id AND c.kind = 'CLOSE' \
                         AND c.verified_at IS NOT NULL)) \
              FROM shifts s \
-             WHERE s.branch_id = $1 AND s.opened_by_count IS NOT NULL \
+             WHERE s.branch_id = $1 \
                AND s.opened_at >= $2 AND s.opened_at < $3",
         )
         .bind(b)
