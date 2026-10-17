@@ -276,6 +276,23 @@ impl Shop {
         r.id
     }
 
+    /// The poster (#2964): the teller of MAIN's open shift, by `users.id`, as a v3 session carries it. A reversal posts
+    /// on the poster's own OPEN shift at the branch (`ShiftService::open_of_teller_in`); there is no fallback to "the
+    /// branch's shift", so the harness posts as that shift's own teller (the `test` user, `tx5_common`).
+    async fn shift_teller(&self) -> xchange::application::workflows::save_step::SaveActor {
+        let id: String =
+            sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'test'")
+                .fetch_one(self.pool())
+                .await
+                .expect("the shift's teller (tx5_common seeds it)");
+        xchange::application::workflows::save_step::SaveActor {
+            id,
+            username: "test".to_owned(),
+            employee_id: None,
+            role: xc_auth::domain::policy::value_objects::role::Role::Front,
+        }
+    }
+
     fn poster(&self, effects: Vec<Arc<dyn ExchangeEffect>>) -> PostReversal {
         PostReversal::new(
             self.pool().clone(),
@@ -307,7 +324,9 @@ impl Shop {
     async fn post_at(&self, id: ReversalId, now: DateTime<Utc>) -> AppResult<PostedReversal> {
         let poster = self.poster(self.watched(false));
         let mut tx = self.pool().begin().await.unwrap();
-        let got = poster.run_in(&mut tx, id, &teller(), now).await;
+        let got = poster
+            .run_in(&mut tx, id, &self.shift_teller().await, now)
+            .await;
         tx.commit().await.unwrap();
         got
     }
@@ -320,7 +339,9 @@ impl Shop {
         now: DateTime<Utc>,
     ) -> AppResult<PostedReversal> {
         let mut tx = self.pool().begin().await.unwrap();
-        let got = poster.run_in(&mut tx, id, &teller(), now).await;
+        let got = poster
+            .run_in(&mut tx, id, &self.shift_teller().await, now)
+            .await;
         match &got {
             Ok(_) => tx.commit().await.unwrap(),
             Err(_) => tx.rollback().await.unwrap(),
@@ -986,7 +1007,7 @@ async fn the_reversal_document_is_revision_2_numbered_r2_and_the_reversal_is_mar
         "the posting is source REVERSAL / the reversal id / 'post'"
     );
     assert_eq!(s.reversal(id, "shift_id").await, s.c.shift);
-    assert_eq!(s.reversal(id, "posted_by").await, teller().id);
+    assert_eq!(s.reversal(id, "posted_by").await, s.shift_teller().await.id);
     assert_eq!(
         s.dec(&format!(
             "SELECT extract(epoch FROM posted_at)::numeric FROM reversals WHERE id = '{}'",
