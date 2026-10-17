@@ -238,13 +238,18 @@ impl PublishedRates for PgPublishedRates {
                 None => return Ok(None),
             };
 
-            // 3. base_value = ExchangeArithmetic::thb(quantity, base_rate, unit_size).
+            // 3. base_value = ExchangeArithmetic::try_thb(quantity, base_rate, unit_size).
             let unit_size_dec: Decimal = rows[0].get(3);
             let unit_size = UnitSize::parse(&unit_size_dec.to_string())
                 .map_err(|e| pos_error::AppError::Internal(format!("invalid unit size: {e}")))?;
             let base_rate = Rate::parse(&base_dec.to_string())
                 .map_err(|e| pos_error::AppError::Internal(format!("invalid base rate: {e}")))?;
-            let base_value = ExchangeArithmetic::thb(quantity, base_rate, unit_size);
+            let base_value =
+                ExchangeArithmetic::try_thb(quantity, base_rate, unit_size).map_err(|_| {
+                    pos_error::AppError::Domain(
+                        "validationFailed: quantity overflows thb amount".to_string(),
+                    )
+                })?;
 
             // 4. TierTable is built from the lines' bands. TierTable::pick(base_value) -> the line of that tier.
             let mut bands = Vec::with_capacity(rows.len());
