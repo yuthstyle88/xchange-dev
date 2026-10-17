@@ -648,10 +648,12 @@ async fn row7_two_scenarios_on_one_targeted_branch_simulate() {
     publish_usd(&room.pool, MAIN, "33.50000000", "34.00000000").await;
     let (campaign_id, version_id) = seed_campaign(&room.pool, &[MAIN, A_SECOND]).await;
 
+    // Both scenarios priceable: MAIN publishes USD only, and since #1993 an unpublished currency
+    // is refused with 409 (ruling claude/7c9b7042, 2026-10-16).
     let ans = simulate(
         &room,
         campaign_id,
-        json!([scenario(MAIN, "USD"), scenario(MAIN, "EUR")]),
+        json!([scenario(MAIN, "USD"), scenario(MAIN, "USD")]),
     )
     .await;
 
