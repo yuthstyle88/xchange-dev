@@ -213,8 +213,8 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
         Err(e) => return e.error_response(),
     };
 
-    point_versions.sort_by(|a, b| b.version.cmp(&a.version));
-    tier_versions.sort_by(|a, b| b.version.cmp(&a.version));
+    point_versions.sort_by_key(|a| std::cmp::Reverse(a.version));
+    tier_versions.sort_by_key(|a| std::cmp::Reverse(a.version));
 
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/json"))
