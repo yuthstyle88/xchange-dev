@@ -205,4 +205,23 @@ describe('StaffReport clearing date box (#2889)', () => {
     expect(host!.textContent).toContain('Default Day Co.');
     expect(host!.textContent).not.toContain('Late 10-14 Co.');
   });
+
+  it('4 (kept): pick 2026-10-01: reads with day=2026-10-01 and shows that day\'s report', async () => {
+    reportAnswer = (url) => {
+      const d = url.searchParams.get('day');
+      requestedDays.push(d);
+      return ok(report({ day: d ?? '2026-10-05', company: d === '2026-10-01' ? 'Oct 1 Co.' : 'Default Day Co.' }));
+    };
+
+    await mountScreen();
+
+    // Initial mount reads default day; clear recorded reads
+    requestedDays = [];
+
+    await changeDay('2026-10-01');
+
+    expect(requestedDays).toEqual(['2026-10-01']);
+    expect(dayInput().value).toBe('2026-10-01');
+    expect(host!.textContent).toContain('Oct 1 Co.');
+  });
 });
