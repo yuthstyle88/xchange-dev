@@ -63,9 +63,13 @@ interface VerificationDocumentView {
   uploadedAt: string;
 }
 
-interface MyVerificationView {
-  case: VerificationCaseView | null;
+// `my_verification` (main 839cb877, my_verification.rs:64-86): the documents sit inside the case.
+interface MyVerificationCaseDetail extends VerificationCaseView {
   documents: VerificationDocumentView[];
+}
+
+interface MyVerificationView {
+  case: MyVerificationCaseDetail | null;
   readiness: 'NONE' | 'PENDING' | 'NEEDS_UPDATE' | 'VERIFIED' | 'EXPIRED';
 }
 
@@ -83,13 +87,13 @@ interface MockBackendOptions {
   viewErrorMessage?: string;
   profileData?: { displayName: string; permissions: string[] };
   profileStatus?: number;
-  openCaseResponse?: { case: VerificationCaseView } | { error: { code: string; message: string } };
+  openCaseResponse?: VerificationCaseView | { error: { code: string; message: string } };
   openCaseStatus?: number;
-  uploadResponse?: { document: VerificationDocumentView } | { error: { code: string; message: string } };
+  uploadResponse?: VerificationDocumentView | { error: { code: string; message: string } };
   uploadStatus?: number;
   removeResponse?: { ok: boolean } | { error: { code: string; message: string } };
   removeStatus?: number;
-  submitResponse?: { case: VerificationCaseView } | { error: { code: string; message: string } };
+  submitResponse?: VerificationCaseView | { error: { code: string; message: string } };
   submitStatus?: number;
   linkResponse?: { url: string; expiresAt: string } | { error: { code: string; message: string } };
   linkStatus?: number;
@@ -102,7 +106,6 @@ function setupMockFetch(options: MockBackendOptions = {}) {
 
   const defaultView: MyVerificationView = {
     case: null,
-    documents: [],
     readiness: 'NONE',
   };
 
@@ -173,16 +176,14 @@ function setupMockFetch(options: MockBackendOptions = {}) {
     if (u.pathname === '/api/app/verification/cases' && method === 'POST') {
       const status = options.openCaseStatus ?? 200;
       const resp = options.openCaseResponse ?? {
-        case: {
-          id: 'case-new-1',
-          status: 'DRAFT',
-          policyVersion: 1,
-          submittedAt: null,
-          decidedAt: null,
-          expiresAt: null,
-          decisionReasonCode: null,
-          version: 1,
-        },
+        id: 'case-new-1',
+        status: 'DRAFT',
+        policyVersion: 1,
+        submittedAt: null,
+        decidedAt: null,
+        expiresAt: null,
+        decisionReasonCode: null,
+        version: 1,
       };
       return new Response(JSON.stringify(resp), {
         status,
@@ -195,14 +196,12 @@ function setupMockFetch(options: MockBackendOptions = {}) {
     if (u.pathname.match(/\/api\/app\/verification\/cases\/[^/]+\/documents/) && method === 'POST') {
       const status = options.uploadStatus ?? 200;
       const resp = options.uploadResponse ?? {
-        document: {
-          id: 'doc-uploaded-1',
-          caseId: 'case-new-1',
-          documentType: 'PASSPORT',
-          mime: 'image/jpeg',
-          sizeBytes: 2048,
-          uploadedAt: '2026-10-14T10:00:00Z',
-        },
+        id: 'doc-uploaded-1',
+        caseId: 'case-new-1',
+        documentType: 'PASSPORT',
+        mime: 'image/jpeg',
+        sizeBytes: 2048,
+        uploadedAt: '2026-10-14T10:00:00Z',
       };
       return new Response(JSON.stringify(resp), {
         status,
@@ -226,16 +225,14 @@ function setupMockFetch(options: MockBackendOptions = {}) {
     if (u.pathname.match(/\/api\/app\/verification\/cases\/[^/]+\/submit/) && method === 'POST') {
       const status = options.submitStatus ?? 200;
       const resp = options.submitResponse ?? {
-        case: {
-          id: 'case-new-1',
-          status: 'SUBMITTED',
-          policyVersion: 1,
-          submittedAt: '2026-10-14T10:05:00Z',
-          decidedAt: null,
-          expiresAt: null,
-          decisionReasonCode: null,
-          version: 2,
-        },
+        id: 'case-new-1',
+        status: 'SUBMITTED',
+        policyVersion: 1,
+        submittedAt: '2026-10-14T10:05:00Z',
+        decidedAt: null,
+        expiresAt: null,
+        decisionReasonCode: null,
+        version: 2,
       };
       return new Response(JSON.stringify(resp), {
         status,
@@ -477,7 +474,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       };
 
       const { calls } = setupMockFetch({
-        viewData: { case: draftCase, documents: [], readiness: 'NONE' },
+        viewData: { case: { ...draftCase, documents: [] }, readiness: 'NONE' },
       });
 
       dispose = mount(host);
@@ -522,7 +519,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       const recordedKeys: string[] = [];
 
       setupMockFetch({
-        viewData: { case: draftCase, documents: [], readiness: 'NONE' },
+        viewData: { case: { ...draftCase, documents: [] }, readiness: 'NONE' },
       });
 
       const originalFetch = globalThis.fetch;
@@ -597,7 +594,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       ];
 
       const { calls } = setupMockFetch({
-        viewData: { case: draftCase, documents: docs, readiness: 'PENDING' },
+        viewData: { case: { ...draftCase, documents: docs }, readiness: 'PENDING' },
       });
 
       dispose = mount(host);
@@ -644,7 +641,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       ];
 
       const { calls } = setupMockFetch({
-        viewData: { case: draftCase, documents: docs, readiness: 'PENDING' },
+        viewData: { case: { ...draftCase, documents: docs }, readiness: 'PENDING' },
       });
 
       dispose = mount(host);
@@ -696,7 +693,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       ];
 
       setupMockFetch({
-        viewData: { case: submittedCase, documents: docs, readiness: 'PENDING' },
+        viewData: { case: { ...submittedCase, documents: docs }, readiness: 'PENDING' },
       });
 
       dispose = mount(host);
@@ -725,7 +722,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       };
 
       const { calls } = setupMockFetch({
-        viewData: { case: reviewCase, documents: [], readiness: 'PENDING' },
+        viewData: { case: { ...reviewCase, documents: [] }, readiness: 'PENDING' },
       });
 
       dispose = mount(host);
@@ -783,7 +780,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       ];
 
       const { calls } = setupMockFetch({
-        viewData: { case: verifiedCase, documents: docs, readiness: 'VERIFIED' },
+        viewData: { case: { ...verifiedCase, documents: docs }, readiness: 'VERIFIED' },
       });
 
       dispose = mount(host);
@@ -833,7 +830,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       ];
 
       const { calls } = setupMockFetch({
-        viewData: { case: updateCase, documents: docs, readiness: 'NEEDS_UPDATE' },
+        viewData: { case: { ...updateCase, documents: docs }, readiness: 'NEEDS_UPDATE' },
       });
 
       dispose = mount(host);
@@ -872,7 +869,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       };
 
       const { calls } = setupMockFetch({
-        viewData: { case: rejectedCase, documents: [], readiness: 'NONE' },
+        viewData: { case: { ...rejectedCase, documents: [] }, readiness: 'NONE' },
       });
 
       dispose = mount(host);
@@ -910,7 +907,7 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
       };
 
       const { calls } = setupMockFetch({
-        viewData: { case: expiredCase, documents: [], readiness: 'EXPIRED' },
+        viewData: { case: { ...expiredCase, documents: [] }, readiness: 'EXPIRED' },
       });
 
       dispose = mount(host);
