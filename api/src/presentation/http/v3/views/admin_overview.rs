@@ -23,7 +23,7 @@ use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_overview::{
     AdminOverviewData, AdminOverviewFilter, AdminOverviewStatus, AdminOverviewTotals,
 };
-use crate::presentation::dto::v3::common::Period;
+use crate::presentation::dto::v3::common::{OpenShiftDto, Period};
 use crate::presentation::dto::v3::transaction_row::{
     TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
 };
@@ -65,11 +65,13 @@ impl BranchView for AdminOverviewBranchView {
         let filter = filter.clone();
 
         async move {
-            let active = shifts.active(&branch).await?;
-            let (shift_open, opened_by) = match active {
-                Some(shift) => (true, Some(shift.opened_by)),
-                None => (false, None),
-            };
+            let open_shifts: Vec<OpenShiftDto> = shifts
+                .open_of_branch(&branch)
+                .await?
+                .into_iter()
+                .map(OpenShiftDto::from)
+                .collect();
+            let shift_open = !open_shifts.is_empty();
 
             let has_currency_or_channel = filter
                 .currency
@@ -309,7 +311,7 @@ impl BranchView for AdminOverviewBranchView {
             let status = AdminOverviewStatus {
                 shift_open,
                 pending_count: status_pending_count,
-                opened_by,
+                open_shifts,
             };
 
             Ok(AdminOverviewData {

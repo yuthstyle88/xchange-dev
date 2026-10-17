@@ -203,11 +203,9 @@ impl TransactionRepository for PgTransactionRepository {
 
         let tx_id: uuid::Uuid = sqlx::query_scalar(
             "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, reference_rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, value_date, \
-             paid_at, recorded_at, recorded_by, organization_id, status, completed_at, unit_size) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, \
-             $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric, $17::numeric, $18::numeric, \
-             $19::numeric, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, 'COMPLETED', $28, $31) RETURNING id",
+             customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, \
+             paid_at, recorded_at, recorded_by, organization_id, status, completed_at) VALUES ($1, $2, $3, $4, $5, $6, \
+             $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'COMPLETED', $15) RETURNING id",
         )
         .bind(&t.document_ref)
         .bind(t.branch_id.as_str())
@@ -218,22 +216,6 @@ impl TransactionRepository for PgTransactionRepository {
         .bind(&t.customer_id)
         .bind(&t.customer_name)
         .bind(&t.nationality)
-        .bind(match t.side {
-            Side::Buy => "BUY",
-            Side::Sell => "SELL",
-        })
-        .bind(&t.currency)
-        .bind(t.amount.to_string())
-        .bind(t.rate.to_string())
-        .bind(t.reference_rate.map(|r| r.to_string()))
-        .bind(t.principal.to_string())
-        .bind(t.fee.to_string())
-        .bind(t.bank_fee.to_string())
-        .bind(t.received.to_string())
-        .bind(t.paid.to_string())
-        .bind(t.method.as_str())
-        .bind(&t.payment_ref)
-        .bind(&t.account)
         .bind(&t.staff)
         .bind(&t.booking)
         .bind(&t.notes)
@@ -242,7 +224,6 @@ impl TransactionRepository for PgTransactionRepository {
         .bind(t.recorded_at)
         .bind(&t.recorded_by)
         .bind(org)
-        .bind(unit_size)
         .fetch_one(&mut **tx)
         .await
         .map_err(AppError::Database)?;

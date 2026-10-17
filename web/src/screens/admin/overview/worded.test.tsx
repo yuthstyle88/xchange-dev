@@ -160,7 +160,7 @@ describe('WE-17: screens/admin/overview/ worded error tests (web-worded-error.md
           pendingCount: 0,
         },
         latest: [],
-        status: { shiftOpen: true, pendingCount: 0, openedBy: 'Staff' },
+        status: { shiftOpen: true, pendingCount: 0, openShifts: [{ shiftId: 'SH-1', tellerId: 'U-1', tellerName: 'Staff', openedAt: '2026-10-06T01:00:00Z' }] },
       },
     };
 
@@ -351,7 +351,7 @@ describe('WE-17: screens/admin/overview/ worded error tests (web-worded-error.md
                 pendingCount: 0,
               },
               latest: [],
-              status: { shiftOpen: true, pendingCount: 0, openedBy: 'Staff A' },
+              status: { shiftOpen: true, pendingCount: 0, openShifts: [{ shiftId: 'SH-1', tellerId: 'U-1', tellerName: 'Staff A', openedAt: '2026-10-06T01:00:00Z' }] },
             },
           }), { status: 200, headers: { 'content-type': 'application/json' } });
         }

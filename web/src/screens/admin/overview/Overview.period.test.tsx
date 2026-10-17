@@ -76,7 +76,7 @@ const LOADED_DATA = {
     pendingCount: 5,
   },
   latest: [row('XC-001')],
-  status: { shiftOpen: true, pendingCount: 6, openedBy: 'Somchai' },
+  status: { shiftOpen: true, pendingCount: 6, openShifts: [{ shiftId: 'SH-1', tellerId: 'U-1', tellerName: 'Somchai', openedAt: '2026-10-06T01:00:00Z' }] },
 };
 
 type HandlerReply = { status: number; body: unknown } | Promise<Response>;

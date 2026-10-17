@@ -56,7 +56,7 @@ fn loyalty_unavailable(message: impl Into<String>) -> V3Error {
 }
 
 fn map_loyalty_error(err: LoyaltyRuleError) -> V3Error {
-    tracing::warn!(error = ?err, %err, "loyalty rule draft error");
+    tracing::warn!(error = %err, "loyalty rule draft error");
     let message = err.client_message();
     match err {
         LoyaltyRuleError::Unavailable(_) => loyalty_unavailable(message),

@@ -151,8 +151,8 @@ impl Db {
         .expect("insert a user");
         for role in roles {
             sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 VALUES ($1::uuid, $2, $3::uuid, NULL)",
+                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+                 VALUES ($1::uuid, $2, $3::uuid, NULL, '2026-01-01T00:00:00Z')",
             )
             .bind(&id)
             .bind(role.as_str())

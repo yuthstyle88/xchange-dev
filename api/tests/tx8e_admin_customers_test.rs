@@ -742,12 +742,7 @@ async fn customer_volume_sums_transaction_lines_thb_amount_not_wide_principal() 
     let tx1 = room.make_tx(&customer.id, &who.name, "2500.00", t1);
     room.seed_completed(tx1).await;
 
-    // Zero out transactions.principal to simulate dropping wide column
-    sqlx::query("UPDATE transactions SET principal = 0 WHERE customer_id = $1")
-        .bind(&customer.id)
-        .execute(&room.desk.db.pool)
-        .await
-        .expect("update transactions principal to 0");
+    // TX-9 (#677) dropped `transactions.principal`; the volume can only come from the lines.
 
     let row = room.customer(&customer.id).await;
 

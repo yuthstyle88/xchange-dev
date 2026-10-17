@@ -99,6 +99,7 @@ fn balances_to_json(b: &Balances) -> Value {
 fn delta_to_json(d: &StockDelta) -> Value {
     let mut map = serde_json::Map::new();
     for (code, delta) in d.non_zero() {
+        // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2856).
         map.insert(code.as_str().to_string(), minor_to_json(delta.minor()));
     }
     Value::Object(map)

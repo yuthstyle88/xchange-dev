@@ -218,13 +218,11 @@ impl Room {
         .expect("seed shift");
 
         sqlx::query(
-            "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-                 customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-                 bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-                 value_date, paid_at, recorded_at, recorded_by, status, completed_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, 'hash', \
-                 $7, 'Customer', 'THA', 'SELL', 'USD', 100, 32.5, 3250, 0, 0, 3250, 0, 'Cash', '', '', 'staff', '', '', \
-                 $8, now(), now(), 'staff', 'COMPLETED', now())",
+            "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+                 customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+                 recorded_by, status, completed_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, 'hash', $7, 'Customer', 'THA', 'staff', '', '', $8, now(), now(), \
+                 'staff', 'COMPLETED', now())",
         )
         .bind(tx_id)
         .bind(&doc_ref)

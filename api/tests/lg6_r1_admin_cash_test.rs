@@ -232,13 +232,11 @@ async fn seed_completed_cash_sale(
 
     let mut tx = pool.begin().await.expect("begin tx");
     sqlx::query(
-        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, \
-         submission_id, payload_hash, customer_id, customer_name, nationality, type, code, \
-         amount, rate, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
-         staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, status, completed_at) \
-         VALUES ($1, $2, $3, 'MAIN', 'LIVE', $4, $5, $6, 'CU-1', 'Somchai', 'THA', 'SELL', $7, \
-         $8::numeric, $9::numeric, $10::numeric, 0, 0, $10::numeric, 0, 'Cash', '', 'Cash drawer 1', \
-         'owner', '', '', CURRENT_DATE, now(), now(), 'owner', 'COMPLETED', now())",
+        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
+         customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+         recorded_at, recorded_by, status, completed_at) \
+         VALUES ($1, $2, $3, 'MAIN', 'LIVE', $4, $5, $6, 'CU-1', 'Somchai', 'THA', 'owner', '', '', \
+         CURRENT_DATE, now(), now(), 'owner', 'COMPLETED', now())",
     )
     .bind(tx_id)
     .bind(org_id)
@@ -246,10 +244,6 @@ async fn seed_completed_cash_sale(
     .bind(shift_id)
     .bind(format!("sub-{req}"))
     .bind(format!("hash-{req}"))
-    .bind(currency)
-    .bind(quantity)
-    .bind(rate)
-    .bind(settle_thb)
     .execute(&mut *tx)
     .await
     .expect("insert transactions");
