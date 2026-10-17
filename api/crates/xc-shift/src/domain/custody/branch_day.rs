@@ -7,25 +7,18 @@
 use chrono::{DateTime, Utc};
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 
-use xc_kernel::money::{CurrencyCode, Money, Side};
-
 use crate::domain::custody::entities::custody_machine::is_clocked_in;
 use crate::domain::custody::entities::customer_hold::HoldStatus;
 use crate::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use crate::domain::custody::state::CustodyState;
-use crate::domain::custody::value_objects::cash_target::CashTarget;
 use crate::domain::custody::value_objects::custody_actor::CustodyActor;
 use crate::domain::custody::value_objects::custody_error::CustodyError;
-use crate::domain::custody::value_objects::custody_event::{CustodyEvent, EventKind};
 use crate::domain::custody::value_objects::custody_facts::CustodyFacts;
 use crate::domain::custody::value_objects::custody_role::CustodyRole;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
-use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::phase::Phase;
 use crate::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
 use crate::domain::custody::value_objects::service_window::ServiceWindow;
-use crate::domain::custody::value_objects::transition::Transition;
-use crate::domain::shift::value_objects::balances::Balances;
 
 /// Stateless: every rule of the branch day, with no I/O.
 pub struct BranchDay;
@@ -132,12 +125,6 @@ impl BranchDay {
     }
 }
 
-// ── the kept half of v2's custody machine (CA-7 #623, moved from `custody_machine.rs`) ──────────────────────────
-//
-// The v2 rules of the branch day that `CustodyMachine` still answers for a v2 actor until CA-10 #626: the draft a
-// Front begins, the cash target, start service, cut-off, and the save rule with the branch custodian. Moved here
-// unchanged; `CustodyMachine` calls them for the same commands.
-
 /// The draft a save names and can finish: the one it names, still open, for
 /// exactly the figures it saved. Who opened the draft and which shift it
 /// belongs to are not part of the match (ticket #154, decision B).
@@ -150,157 +137,6 @@ fn draft_matches_save(draft: &TxDraft, save: &SaveAttempt) -> bool {
 }
 
 impl BranchDay {
-    /// `CustodyCommand::BeginTransaction` for a v2 actor.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn v2_begin_transaction(
-        state: &CustodyState,
-        actor: &CustodyActor,
-        me: &str,
-        facts: &CustodyFacts,
-        now: CustodyTime,
-        side: Side,
-        currency: CurrencyCode,
-        amount: Money,
-    ) -> Result<Transition, CustodyError> {
-        if actor.role != CustodyRole::Front {
-            return Err(CustodyError::RoleNotAllowed);
-        }
-        if state.custodian.as_deref() != Some(me) || state.phase != Phase::Open {
-            return Err(CustodyError::NotCustodianInOpenService);
-        }
-        if !facts.service_window.allows_begin(now) {
-            return Err(CustodyError::OutsideServiceHours);
-        }
-        if currency.is_thb() {
-            return Err(CustodyError::DraftInvalid);
-        }
-        if amount.is_zero() {
-            return Err(CustodyError::AmountInvalid);
-        }
-        let open_shift = facts.open_shift.as_ref().ok_or(CustodyError::NoOpenShift)?;
-        let mut new_state = state.clone();
-        new_state.drafts.push(TxDraft {
-            id: facts.new_id.clone(),
-            shift_id: open_shift.id.clone(),
-            employee_id: me.to_string(),
-            side,
-            currency,
-            amount,
-            at: now,
-            status: DraftStatus::Open,
-            document_ref: None,
-        });
-        Ok(Transition {
-            state: new_state,
-            events: Vec::new(),
-            effects: Vec::new(),
-            id: Some(facts.new_id.clone()),
-        })
-    }
-
-    /// `CustodyCommand::SetTarget` for a v2 actor.
-    pub(crate) fn v2_set_target(
-        state: &CustodyState,
-        actor: &CustodyActor,
-        me: &str,
-        now: CustodyTime,
-        amounts: &Balances,
-    ) -> Result<Transition, CustodyError> {
-        if actor.role != CustodyRole::Finance {
-            return Err(CustodyError::RoleNotAllowed);
-        }
-        let mut new_state = state.clone();
-        new_state.target = Some(CashTarget {
-            amounts: amounts.clone(),
-            by: me.to_string(),
-            at: now,
-        });
-        Ok(Transition {
-            state: new_state,
-            events: vec![CustodyEvent {
-                kind: EventKind::CashTarget,
-                subject: None,
-            }],
-            effects: Vec::new(),
-            id: None,
-        })
-    }
-
-    /// `CustodyCommand::StartService` for a v2 actor.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn v2_start_service(
-        state: &CustodyState,
-        actor: &CustodyActor,
-        facts: &CustodyFacts,
-        now: CustodyTime,
-        equipment_ready: bool,
-        rates_verified: bool,
-        rate_updated: &str,
-    ) -> Result<Transition, CustodyError> {
-        if actor.role != CustodyRole::Backend {
-            return Err(CustodyError::RoleNotAllowed);
-        }
-        if facts.open_shift.is_none()
-            || state.phase != Phase::Ready
-            || !facts.service_window.allows_start(now)
-        {
-            return Err(CustodyError::ServiceNotReady {
-                window: facts.service_window,
-                utc_offset_minutes: facts.utc_offset_minutes,
-            });
-        }
-        if !equipment_ready || !rates_verified || rate_updated != facts.rates_updated {
-            return Err(CustodyError::ServiceChecksIncomplete);
-        }
-        let mut new_state = state.clone();
-        new_state.phase = Phase::Open;
-        new_state.service_opened_at = Some(now);
-        Ok(Transition {
-            state: new_state,
-            events: vec![CustodyEvent {
-                kind: EventKind::ServiceOpen,
-                subject: None,
-            }],
-            effects: Vec::new(),
-            id: None,
-        })
-    }
-
-    /// `CustodyCommand::Cutoff` for a v2 actor.
-    pub(crate) fn v2_cut_off(
-        state: &CustodyState,
-        actor: &CustodyActor,
-        me: &str,
-        facts: &CustodyFacts,
-        now: CustodyTime,
-    ) -> Result<Transition, CustodyError> {
-        if actor.role != CustodyRole::Backend {
-            return Err(CustodyError::RoleNotAllowed);
-        }
-        let open_shift = facts.open_shift.as_ref().ok_or(CustodyError::NoOpenShift)?;
-        if state.phase == Phase::Counting {
-            return Err(CustodyError::CountingUnderWay);
-        }
-        let mut new_state = state.clone();
-        new_state.phase = Phase::CutOff;
-        new_state.cutoff = Some(Cutoff {
-            at: now,
-            by: me.to_string(),
-            shift_id: open_shift.id.clone(),
-            last_ref: facts.last_transaction.clone(),
-            pending: facts.pending_transactions.clone(),
-        });
-        Ok(Transition {
-            state: new_state,
-            events: vec![CustodyEvent {
-                kind: EventKind::CutOff,
-                subject: None,
-            }],
-            effects: Vec::new(),
-            id: None,
-        })
-    }
-
     /// The v2 save rule (`CustodyMachine::check_save`).
     pub(crate) fn v2_check_save(
         state: &CustodyState,
@@ -309,12 +145,7 @@ impl BranchDay {
         facts: &CustodyFacts,
         now: CustodyTime,
     ) -> Result<(), CustodyError> {
-        // 1. state.enabled is false -> Ok(()).
-        if !state.enabled {
-            return Ok(());
-        }
-
-        // 2. save.prior:
+        // 1. save.prior:
         match save.prior {
             PriorSave::SavedByActor => {
                 if actor.role == CustodyRole::Front {
@@ -329,7 +160,7 @@ impl BranchDay {
             PriorSave::None | PriorSave::Unfinished => {}
         }
 
-        // 3. A hold with customer_id == save.customer_id and status Open exists -> CustomerOnHold.
+        // 2. A hold with customer_id == save.customer_id and status Open exists -> CustomerOnHold.
         if state
             .holds
             .iter()
@@ -338,7 +169,7 @@ impl BranchDay {
             return Err(CustodyError::CustomerOnHold);
         }
 
-        // 4. Only when save.prior == PriorSave::None:
+        // 3. Only when save.prior == PriorSave::None:
         let me = actor.employee_id.as_deref().unwrap_or_default();
         if save.prior == PriorSave::None {
             if !facts.service_window.allows_save(now) {
@@ -361,16 +192,16 @@ impl BranchDay {
             }
         }
 
-        // 5. My role is not Front, or I have no employee_id, or I am not state.custodian, or I am not clocked in -> SaveNotCustodian.
+        // 4. My role is not Front, or I have no employee_id, or I hold no OPEN shift, or I am not clocked in -> SaveNotCustodian.
         if actor.role != CustodyRole::Front
             || actor.employee_id.is_none()
-            || state.custodian.as_deref() != Some(me)
+            || facts.open_shift.is_none()
             || !is_clocked_in(state, me)
         {
             return Err(CustodyError::SaveNotCustodian);
         }
 
-        // 6. Ok(()).
+        // 5. Ok(()).
         Ok(())
     }
 

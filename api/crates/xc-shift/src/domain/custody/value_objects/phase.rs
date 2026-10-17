@@ -6,7 +6,6 @@ pub enum Phase {
     Ready,
     Open,
     CutOff,
-    Counting,
 }
 
 impl Phase {
@@ -16,7 +15,6 @@ impl Phase {
             Phase::Ready => "READY",
             Phase::Open => "OPEN",
             Phase::CutOff => "CUT_OFF",
-            Phase::Counting => "COUNTING",
         }
     }
 }

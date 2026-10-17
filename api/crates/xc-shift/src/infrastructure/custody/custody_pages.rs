@@ -1,7 +1,5 @@
 //! Postgres implementation of CustodyPages.
 
-use std::collections::HashMap;
-
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
@@ -11,19 +9,16 @@ use xc_kernel::ids::BranchId;
 
 use super::decode::{
     attendance_from_row, balances_from_json, cutoff_from_json, entity_from_json,
-    exception_from_row, hold_from_row, request_from_row, str_to_phase, str_to_role,
-    target_from_json,
+    exception_from_row, hold_from_row, str_to_phase, target_from_json,
 };
 use crate::domain::custody::entities::attendance::Attendance;
 use crate::domain::custody::entities::cash_exception::CashException;
-use crate::domain::custody::entities::custody_request::CustodyRequest;
 use crate::domain::custody::entities::customer_hold::CustomerHold;
 use crate::domain::custody::repositories::custody_pages::{CustodyPages, FloorFacts, OpsRow};
 use crate::domain::custody::value_objects::cash_target::CashTarget;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::entity::Entity;
-use crate::domain::custody::value_objects::signature::Signature;
 use crate::domain::shift::value_objects::balances::Balances;
 
 #[derive(Clone)]
@@ -38,72 +33,6 @@ impl PgCustodyPages {
 }
 
 impl CustodyPages for PgCustodyPages {
-    fn requests<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        before: Option<&'a str>,
-        limit: u16,
-    ) -> BoxFuture<'a, AppResult<Vec<CustodyRequest>>> {
-        Box::pin(async move {
-            let req_rows = sqlx::query(
-                "SELECT id, request_id, kind, status, data \
-                 FROM custody_requests \
-                 WHERE branch_id = $1 \
-                   AND ($2::text IS NULL OR position < (SELECT position FROM custody_requests WHERE branch_id = $1 AND id = $2)) \
-                 ORDER BY position DESC \
-                 LIMIT $3",
-            )
-            .bind(branch.as_str())
-            .bind(before)
-            .bind(limit as i64)
-            .fetch_all(&self.pool)
-            .await?;
-
-            if req_rows.is_empty() {
-                return Ok(Vec::new());
-            }
-
-            let req_ids: Vec<String> = req_rows.iter().map(|r| r.get(0)).collect();
-
-            let sig_rows = sqlx::query(
-                "SELECT s.request_id, s.employee_id, s.role, s.at \
-                 FROM custody_signatures s \
-                 WHERE s.request_id = ANY($1) \
-                 ORDER BY s.position ASC",
-            )
-            .bind(&req_ids)
-            .fetch_all(&self.pool)
-            .await?;
-
-            let mut signatures_by_req: HashMap<String, Vec<Signature>> = HashMap::new();
-            for r in &sig_rows {
-                let req_id: String = r.get(0);
-                let employee_id: String = r.get(1);
-                let role_str: String = r.get(2);
-                let at_dt: DateTime<Utc> = r.get(3);
-                let role = str_to_role("custody_signatures", "role", &role_str)?;
-                let at = CustodyTime::from_epoch_millis(at_dt.timestamp_millis());
-                signatures_by_req
-                    .entry(req_id)
-                    .or_default()
-                    .push(Signature {
-                        employee_id,
-                        role,
-                        at,
-                    });
-            }
-
-            let mut requests = Vec::with_capacity(req_rows.len());
-            for r in &req_rows {
-                let id: String = r.get(0);
-                let signatures = signatures_by_req.remove(&id).unwrap_or_default();
-                requests.push(request_from_row(r, signatures)?);
-            }
-
-            Ok(requests)
-        })
-    }
-
     fn holds<'a>(
         &'a self,
         branch: &'a BranchId,
@@ -172,7 +101,7 @@ impl CustodyPages for PgCustodyPages {
     ) -> BoxFuture<'a, AppResult<FloorFacts>> {
         Box::pin(async move {
             let ops_row = sqlx::query(
-                "SELECT enabled, phase, custodian_id, entity, target, safe, cutoff, service_opened_at \
+                "SELECT phase, entity, target, safe, cutoff, service_opened_at \
                  FROM ops_state WHERE branch_id = $1",
             )
             .bind(branch.as_str())
@@ -181,42 +110,38 @@ impl CustodyPages for PgCustodyPages {
 
             let ops = match ops_row {
                 Some(r) => {
-                    let enabled: bool = r.get(0);
-                    let phase_str: String = r.get(1);
+                    let phase_str: String = r.get(0);
                     let phase = str_to_phase("ops_state", "phase", &phase_str)?;
-                    let custodian: Option<String> = r.get(2);
-                    let entity: Option<Entity> = match r.get::<Option<Value>, _>(3) {
+                    let entity: Option<Entity> = match r.get::<Option<Value>, _>(1) {
                         Some(v) if !v.is_null() => {
                             Some(entity_from_json("ops_state", "entity", &v)?)
                         }
                         _ => None,
                     };
-                    let target: Option<CashTarget> = match r.get::<Option<Value>, _>(4) {
+                    let target: Option<CashTarget> = match r.get::<Option<Value>, _>(2) {
                         Some(v) if !v.is_null() => {
                             Some(target_from_json("ops_state", "target", &v)?)
                         }
                         _ => None,
                     };
-                    let safe: Option<Balances> = match r.get::<Option<Value>, _>(5) {
+                    let safe: Option<Balances> = match r.get::<Option<Value>, _>(3) {
                         Some(v) if !v.is_null() => {
                             Some(balances_from_json("ops_state", "safe", &v)?)
                         }
                         _ => None,
                     };
-                    let cutoff: Option<Cutoff> = match r.get::<Option<Value>, _>(6) {
+                    let cutoff: Option<Cutoff> = match r.get::<Option<Value>, _>(4) {
                         Some(v) if !v.is_null() => {
                             Some(cutoff_from_json("ops_state", "cutoff", &v)?)
                         }
                         _ => None,
                     };
                     let service_opened_at: Option<CustodyTime> = r
-                        .get::<Option<DateTime<Utc>>, _>(7)
+                        .get::<Option<DateTime<Utc>>, _>(5)
                         .map(|t| CustodyTime::from_epoch_millis(t.timestamp_millis()));
 
                     Some(OpsRow {
-                        enabled,
                         phase,
-                        custodian,
                         entity,
                         target,
                         safe,
@@ -255,72 +180,6 @@ impl CustodyPages for PgCustodyPages {
                 ops,
                 my_open_attendance,
             })
-        })
-    }
-
-    fn requests_between<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        from: i64,
-        to: i64,
-    ) -> BoxFuture<'a, AppResult<Vec<CustodyRequest>>> {
-        Box::pin(async move {
-            let req_rows = sqlx::query(
-                "SELECT id, request_id, kind, status, data \
-                 FROM custody_requests \
-                 WHERE branch_id = $1 \
-                   AND (data->>'at')::bigint >= $2 \
-                   AND (data->>'at')::bigint < $3 \
-                 ORDER BY position ASC",
-            )
-            .bind(branch.as_str())
-            .bind(from)
-            .bind(to)
-            .fetch_all(&self.pool)
-            .await?;
-
-            if req_rows.is_empty() {
-                return Ok(Vec::new());
-            }
-
-            let req_ids: Vec<String> = req_rows.iter().map(|r| r.get(0)).collect();
-
-            let sig_rows = sqlx::query(
-                "SELECT s.request_id, s.employee_id, s.role, s.at \
-                 FROM custody_signatures s \
-                 WHERE s.request_id = ANY($1) \
-                 ORDER BY s.position ASC",
-            )
-            .bind(&req_ids)
-            .fetch_all(&self.pool)
-            .await?;
-
-            let mut signatures_by_req: HashMap<String, Vec<Signature>> = HashMap::new();
-            for r in &sig_rows {
-                let req_id: String = r.get(0);
-                let employee_id: String = r.get(1);
-                let role_str: String = r.get(2);
-                let at_dt: DateTime<Utc> = r.get(3);
-                let role = str_to_role("custody_signatures", "role", &role_str)?;
-                let at = CustodyTime::from_epoch_millis(at_dt.timestamp_millis());
-                signatures_by_req
-                    .entry(req_id)
-                    .or_default()
-                    .push(Signature {
-                        employee_id,
-                        role,
-                        at,
-                    });
-            }
-
-            let mut requests = Vec::with_capacity(req_rows.len());
-            for r in &req_rows {
-                let id: String = r.get(0);
-                let signatures = signatures_by_req.remove(&id).unwrap_or_default();
-                requests.push(request_from_row(r, signatures)?);
-            }
-
-            Ok(requests)
         })
     }
 

@@ -390,20 +390,6 @@ impl ShiftRepository for PgShiftRepository {
         Ok(exists.is_some())
     }
 
-    async fn active(&self, branch: &BranchId) -> AppResult<Option<Shift>> {
-        let row: Option<ShiftRow> = sqlx::query_as(select_shifts!(
-            "WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL"
-        ))
-        .bind(branch.as_str())
-        .fetch_optional(&self.pool)
-        .await?;
-
-        match row {
-            Some(r) => Ok(Some(shift_from_row(&self.pool, r).await?)),
-            None => Ok(None),
-        }
-    }
-
     async fn open_of_teller(&self, teller: &str) -> AppResult<Option<Shift>> {
         let mut rows: Vec<ShiftRow> = sqlx::query_as(select_shifts!(
             "WHERE teller_id = $1::uuid AND status = 'OPEN'"
@@ -615,24 +601,6 @@ impl ShiftRepository for PgShiftRepository {
         ))
         .bind(branch.as_str())
         .bind(request_id)
-        .fetch_optional(&mut **tx)
-        .await?;
-
-        match row {
-            Some(r) => Ok(Some(shift_from_row(&mut **tx, r).await?)),
-            None => Ok(None),
-        }
-    }
-
-    async fn active_in(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
-    ) -> AppResult<Option<Shift>> {
-        let row: Option<ShiftRow> = sqlx::query_as(select_shifts!(
-            "WHERE branch_id = $1 AND status = 'OPEN' AND opened_by_count IS NULL"
-        ))
-        .bind(branch.as_str())
         .fetch_optional(&mut **tx)
         .await?;
 
