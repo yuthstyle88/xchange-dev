@@ -197,4 +197,24 @@ describe('LoginScreen session race conditions (#2887)', () => {
     await settle();
     expect(messageLine(host)).toBe(TH.err_invalidCredentials);
   });
+
+  it('4 (kept): no submit; session() resolves user', async () => {
+    const auth = fakeAuth({
+      session: async () => ({ user: TELLER }),
+    });
+    const { navigate } = mount(auth);
+    await settle();
+    expect(navigate.mock.calls).toEqual([['/desk']]);
+  });
+
+  it('5 (kept): no submit; session() rejects', async () => {
+    const auth = fakeAuth({
+      session: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    const { host } = mount(auth);
+    await settle();
+    expect(messageLine(host)).toBe(TH.errNetwork);
+  });
 });
