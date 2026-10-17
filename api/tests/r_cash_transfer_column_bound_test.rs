@@ -116,8 +116,9 @@ impl Room {
                 .await
                 .expect("insert a branch");
             sqlx::query(
-                "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-                 VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+                // No `enabled`: CA-10 (#2956) drops that column, and nothing here needs it.
+                "INSERT INTO ops_state (branch_id, phase, safe) \
+                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
             )
             .bind(branch)
             .execute(&pool)
