@@ -310,12 +310,16 @@ async fn row2_limit_of_18_integer_digits_is_accepted_and_stored() {
 }
 
 #[actix_web::test]
-async fn row3_negative_zero_is_accepted_and_stored_as_zero() {
+async fn row3_negative_zero_is_refused_and_nothing_is_written() {
     let db = TestDb::start().await;
     let a = save(&db, FINANCE, B01, json!("-0.00")).await;
-    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
-    assert_eq!(a.body["countDifferenceLimitThb"], "0.00", "{}", a.text);
-    let (_, limit, _, _) = db.row(B01).await.expect("stored row");
-    assert_eq!(limit.as_deref(), Some("0.00"));
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
+    assert_eq!(code(&a), "validationFailed", "{}", a.text);
+    assert_eq!(
+        a.body["error"]["field"], "countDifferenceLimitThb",
+        "{}",
+        a.text
+    );
+    assert_eq!(db.rows().await, 0, "nothing written");
     db.finish().await;
 }
