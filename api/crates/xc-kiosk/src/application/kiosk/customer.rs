@@ -237,10 +237,13 @@ impl KioskService {
                             let mut f =
                                 view.facts(&currencies, request.quote.currency, request.quote.side);
                             if f.line.is_some() {
-                                let foreign = ForeignAmount::from_decimal(Decimal::new(
-                                    request.quote.foreign.minor(),
-                                    2,
-                                ));
+                                let foreign_minor = request
+                                    .quote
+                                    .foreign
+                                    .try_minor()
+                                    .map_err(|_| refuse(KioskError::AmountOrCurrencyInvalid))?;
+                                let foreign =
+                                    ForeignAmount::from_decimal(Decimal::new(foreign_minor, 2));
                                 if let Some(tier_line) = ports
                                     .tier_line_in(
                                         tx,
