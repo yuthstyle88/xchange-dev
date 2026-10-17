@@ -271,7 +271,7 @@ impl CompleteExchange {
             .await?;
 
         // 7. Mark COMPLETED (Q8): number → receipt file → COMPLETED with receipt revision 1
-        let form = TransactionForm::from_transaction(&t);
+        let form = TransactionForm::from_transaction(&t)?;
         let document_ref = self.store.next_document_ref_in(tx, id, now).await?;
         let html = receipt_html(&form, &document_ref, &branch_name);
         let receipt_key = self

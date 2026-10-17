@@ -40,6 +40,13 @@ fn dom(e: impl ToString) -> AppError {
     AppError::Domain(e.to_string())
 }
 
+fn handover_id(id: &str) -> AppResult<uuid::Uuid> {
+    uuid::Uuid::parse_str(id).map_err(|_| AppError::NotFound {
+        entity: "handover",
+        id: id.to_string(),
+    })
+}
+
 type Row = (
     String,
     String,
@@ -157,6 +164,8 @@ impl HandoverService {
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
         let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
+        let mut seen_denominations: std::collections::HashSet<i64> =
+            std::collections::HashSet::with_capacity(cmd.lines.len());
 
         let denom_ids: Vec<i64> = cmd
             .lines
@@ -180,6 +189,13 @@ impl HandoverService {
             .collect();
 
         for line in &cmd.lines {
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in handover lines: {}",
+                    line.denomination_id
+                )));
+            }
+
             if line.qty < 0 {
                 return Err(AppError::Validation(format!(
                     "line qty cannot be negative: {}",
@@ -298,13 +314,19 @@ impl HandoverService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Handover> {
-        let r: Row = sqlx::query_as(
+        let handover_uuid = handover_id(id)?;
+        let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
-             FROM handovers WHERE id = $1::uuid FOR UPDATE",
+             FROM handovers WHERE id = $1 FOR UPDATE",
         )
-        .bind(id)
-        .fetch_one(&mut **tx)
+        .bind(handover_uuid)
+        .fetch_optional(&mut **tx)
         .await?;
+
+        let r = r.ok_or_else(|| AppError::NotFound {
+            entity: "handover",
+            id: id.to_string(),
+        })?;
 
         let h = Handover {
             id: r.0,
@@ -321,6 +343,13 @@ impl HandoverService {
         }
 
         PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
+        Authorizer::check(
+            Some(actor),
+            Permission::ShiftOperate,
+            &Target::new(&actor.organization_id, Some(h.branch_id.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
 
         let repo = self.counts.repo().clone();
         let mut totals = repo.get_count_totals(&mut *tx, &h.count_id).await?;
@@ -432,15 +461,21 @@ impl HandoverService {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         actor: &Actor,
         id: &str,
-        _now: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> AppResult<Handover> {
-        let r: Row = sqlx::query_as(
+        let handover_uuid = handover_id(id)?;
+        let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
-             FROM handovers WHERE id = $1::uuid FOR UPDATE",
+             FROM handovers WHERE id = $1 FOR UPDATE",
         )
-        .bind(id)
-        .fetch_one(&mut **tx)
+        .bind(handover_uuid)
+        .fetch_optional(&mut **tx)
         .await?;
+
+        let r = r.ok_or_else(|| AppError::NotFound {
+            entity: "handover",
+            id: id.to_string(),
+        })?;
 
         let h = Handover {
             id: r.0,
@@ -457,6 +492,13 @@ impl HandoverService {
         }
 
         PersonRules::receiver_verifies_handover(&h.receiver_id, actor).map_err(dom)?;
+        Authorizer::check(
+            Some(actor),
+            Permission::ShiftOperate,
+            &Target::new(&actor.organization_id, Some(h.branch_id.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
 
         let res = sqlx::query(
             "UPDATE handovers SET status = 'REJECTED', updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",

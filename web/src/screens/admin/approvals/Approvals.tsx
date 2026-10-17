@@ -1,10 +1,11 @@
-import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type {
   ApprovalRequestItemDto,
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
-import { screenT } from '../../../shared/i18n';
+import { keyedWrite } from '../../../shared/api/keyed-write';
+import { locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardActions } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
@@ -23,19 +24,36 @@ function statusLabel(status: string): string {
   return t('pending');
 }
 
+function formatDecidedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+}
+
 interface OutOfBoundSide {
   currency: string;
   side: 'BUY' | 'SELL';
 }
 
+interface DecidePayload {
+  outcome: 'APPROVED' | 'REJECTED';
+  reason: string;
+  branch: string;
+}
+
 interface RequestCardProps {
   request: ApprovalRequestItemDto;
   branch: string;
+  decideWrite: { send(body: DecidePayload): Promise<unknown>; reset(): void };
   onDecided: () => Promise<void>;
 }
 
 function RequestCard(props: RequestCardProps): JSX.Element {
-  const client = new ApiClient();
+  let alive = true;
+  onCleanup(() => {
+    alive = false;
+  });
+
   const [reason, setReason] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -55,24 +73,22 @@ function RequestCard(props: RequestCardProps): JSX.Element {
     setError(null);
     setBusy(true);
     try {
-      const key = crypto.randomUUID();
-      await client.command(
-        'POST',
-        `/api/approvals/${props.request.id}/decide`,
-        {
-          outcome: 'APPROVED',
-          reason: reason(),
-          branch: props.branch,
-        },
-        key,
-      );
+      await props.decideWrite.send({
+        outcome: 'APPROVED',
+        reason: reason(),
+        branch: props.branch,
+      });
+      if (!alive) return;
       await props.onDecided();
     } catch (err: unknown) {
+      if (!alive) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (alive) {
+        setBusy(false);
+      }
     }
   };
 
@@ -88,24 +104,22 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
     setBusy(true);
     try {
-      const key = crypto.randomUUID();
-      await client.command(
-        'POST',
-        `/api/approvals/${props.request.id}/decide`,
-        {
-          outcome: 'REJECTED',
-          reason: r,
-          branch: props.branch,
-        },
-        key,
-      );
+      await props.decideWrite.send({
+        outcome: 'REJECTED',
+        reason: r,
+        branch: props.branch,
+      });
+      if (!alive) return;
       await props.onDecided();
     } catch (err: unknown) {
+      if (!alive) return;
       const message = wordedError(err);
       setError(message);
       toast(message);
     } finally {
-      setBusy(false);
+      if (alive) {
+        setBusy(false);
+      }
     }
   };
 
@@ -161,7 +175,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                     </div>
                     <div class="approval-proposer">
                       <span>{t('decidedAt')}</span>
-                      <time dateTime={dec().at}>{dec().at}</time>
+                      <time dateTime={dec().at}>{formatDecidedAt(dec().at)}</time>
                     </div>
                   </>
                 )}
@@ -211,16 +225,35 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
 export function Approvals(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
+  const decideWrites = new Map<
+    string,
+    { send(body: DecidePayload): Promise<unknown>; reset(): void }
+  >();
+  const getDecideWrite = (id: string) => {
+    let w = decideWrites.get(id);
+    if (!w) {
+      w = keyedWrite<DecidePayload, unknown>(
+        client,
+        'POST',
+        `/api/approvals/${id}/decide`,
+      );
+      decideWrites.set(id, w);
+    }
+    return w;
+  };
   const [statusFilter, setStatusFilter] = createSignal<ApprovalStatusFilter>('PENDING');
   const [requests, setRequests] = createSignal<ApprovalRequestItemDto[]>([]);
   const [error, setError] = createSignal<string | null>(null);
+  let reading = 0;
 
   const loadQueue = async (branch: string, status: ApprovalStatusFilter = statusFilter()) => {
+    const mine = ++reading;
     try {
       const res = await client.view<ApprovalRequestsData>('approval_requests', {
         branch,
         filter: { status },
       });
+      if (mine !== reading) return;
       setError(null);
       if (res.data?.requests) {
         setRequests(res.data.requests);
@@ -228,15 +261,24 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
         setRequests([]);
       }
     } catch (err: unknown) {
+      if (mine !== reading) return;
       setError(wordedError(err));
       setRequests([]);
     }
   };
 
+  let lastContext = '';
+
   createEffect(() => {
     if (!props.shown()) return;
     const branch = props.branch();
     const status = statusFilter();
+    const context = `${branch}\0${status}`;
+    if (context !== lastContext) {
+      lastContext = context;
+      setRequests([]);
+      setError(null);
+    }
     void loadQueue(branch, status);
   });
 
@@ -280,6 +322,7 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
               <RequestCard
                 request={req}
                 branch={props.branch()}
+                decideWrite={getDecideWrite(req.id)}
                 onDecided={() => loadQueue(props.branch(), statusFilter())}
               />
             )}

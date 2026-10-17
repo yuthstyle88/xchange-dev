@@ -334,6 +334,16 @@ fn server_error() -> HttpResponse {
         .body("{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}")
 }
 
+fn stored_decimal(column: &str, text: &str, reference: &str) -> Result<Decimal, HttpResponse> {
+    match Decimal::from_str(text) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            tracing::error!("invalid {column} {text:?} in transaction {reference}: {e}");
+            Err(server_error())
+        }
+    }
+}
+
 async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
     if req.method() != Method::GET {
         return plain_404();
@@ -429,9 +439,18 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
             .body("ไม่พบรายการ");
     };
 
-    let amount = Decimal::from_str(&amount_str).unwrap_or_default();
-    let rate = Decimal::from_str(&rate_str).unwrap_or_default();
-    let fee = Decimal::from_str(&fee_str).unwrap_or_default();
+    let amount = match stored_decimal("quantity", &amount_str, ref_str) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let rate = match stored_decimal("rate_snapshot", &rate_str, ref_str) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let fee = match stored_decimal("fee_thb", &fee_str, ref_str) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
     let unit_val = match UnitSize::parse(unit_size_str.trim()) {
         Ok(u) => u,
         Err(e) => {
@@ -448,10 +467,14 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
     };
 
     let foreign = ForeignAmount::from_decimal(amount);
-    let base = Decimal::from_i128_with_scale(
-        ExchangeArithmetic::thb(foreign, rate_val, unit_val).minor_i128(),
-        2,
-    );
+    let base_money = match ExchangeArithmetic::try_thb(foreign, rate_val, unit_val) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::error!("thb overflow in transaction {ref_str}: {e}");
+            return server_error();
+        }
+    };
+    let base = Decimal::from_i128_with_scale(base_money.minor_i128(), 2);
     let (verb, thb) = if tx_type == "BUY" {
         ("จ่าย", base - fee)
     } else {
@@ -1026,5 +1049,66 @@ mod tests {
         );
         let body = actix_web::body::to_bytes(resp.into_body()).await.unwrap();
         assert_eq!(body, "{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}");
+    }
+
+    #[actix_web::test]
+    async fn r1_quantity_unreadable_text_answers_500_server_error() {
+        let resp = stored_decimal("quantity", "abc", "TX-001").expect_err("must refuse abc");
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json; charset=utf-8"
+        );
+        let body = actix_web::body::to_bytes(resp.into_body()).await.unwrap();
+        assert_eq!(body, "{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}");
+    }
+
+    #[actix_web::test]
+    async fn r2_rate_snapshot_empty_text_answers_500_server_error() {
+        let resp = stored_decimal("rate_snapshot", "", "TX-001").expect_err("must refuse empty");
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json; charset=utf-8"
+        );
+        let body = actix_web::body::to_bytes(resp.into_body()).await.unwrap();
+        assert_eq!(body, "{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}");
+    }
+
+    #[actix_web::test]
+    async fn r3_fee_thb_malformed_scientific_text_answers_500_server_error() {
+        let resp = stored_decimal("fee_thb", "1e5x", "TX-001").expect_err("must refuse 1e5x");
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json; charset=utf-8"
+        );
+        let body = actix_web::body::to_bytes(resp.into_body()).await.unwrap();
+        assert_eq!(body, "{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}");
+    }
+
+    #[test]
+    fn k1_valid_decimal_strings_including_zero_fee_return_exact_values() {
+        assert_eq!(
+            stored_decimal("quantity", "100.0000", "TX-001").expect("valid quantity"),
+            Decimal::from_str("100.0000").unwrap()
+        );
+        assert_eq!(
+            stored_decimal("rate_snapshot", "32.12345678", "TX-001").expect("valid rate_snapshot"),
+            Decimal::from_str("32.12345678").unwrap()
+        );
+        assert_eq!(
+            stored_decimal("fee_thb", "0.00", "TX-001").expect("valid zero fee"),
+            Decimal::from_str("0.00").unwrap()
+        );
     }
 }

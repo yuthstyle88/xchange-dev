@@ -16,7 +16,7 @@ use xc_kernel::ids::BranchId;
 
 use super::{BookingOkOutput, BookingServices};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::CommandAction;
+use crate::presentation::http::v3::command::{CommandAction, Locks};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct ClosureAdd {
@@ -46,6 +46,10 @@ impl CommandAction for ClosureAdd {
     type Output = BookingOkOutput;
     const ROUTE: &'static str = "/api/branches/{id}/closures";
     const METHOD: Method = Method::POST;
+
+    fn locks(&self, _branch: &BranchId, input: &Self::Input) -> Locks {
+        Locks::One(BranchId::new(&input.id))
+    }
 
     async fn run(
         &self,
@@ -77,14 +81,7 @@ impl CommandAction for ClosureAdd {
             .slot_service
             .add_closure_in(tx, &branch, &closure, user_uuid)
             .await
-            .map_err(|e| {
-                V3Error::new(
-                    "badRequest",
-                    None,
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
+            .map_err(V3Error::from)?;
 
         Ok(BookingOkOutput { ok: true })
     }

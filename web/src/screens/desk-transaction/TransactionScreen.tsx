@@ -49,6 +49,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   const [message, setMessage] = createSignal<string | null>(null);
   const [asking, setAsking] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+  const [pendingRequest, setPendingRequest] = createSignal(false);
 
   let prevBranch = branchFromSearch(props.search);
   createEffect(() => {
@@ -58,6 +59,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
       setTx(null);
       setEvents([]);
       setMessage(null);
+      setPendingRequest(false);
       void load(true);
     }
   });
@@ -68,13 +70,18 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
       ? null
       : command<{ reason: string }, unknown>(api, 'POST', `/api/transactions/${encodeURIComponent(id)}/reversal-requests`);
 
+  let loadSeq = 0;
+
   /** Reads the transaction and its audit; `staff_me` too when `withMe`. */
-  async function load(withMe: boolean): Promise<void> {
+  async function load(withMe: boolean, preserveOnError = false): Promise<void> {
+    const seq = ++loadSeq;
     if (id === null) {
       setState('not-found');
       return;
     }
-    setState('loading');
+    if (!preserveOnError) {
+      setState('loading');
+    }
     const meRead = withMe
       ? api
           .view<StaffMeView>('staff_me')
@@ -87,17 +94,28 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
         api.view<TransactionViewData>('transaction', { branch: branch(), filter: { id } }),
         api.view<TransactionAuditViewData>('transaction_audit', { branch: branch(), filter: { id } }),
       ]);
+      if (seq !== loadSeq) return;
       setMe(who);
       const found = detail.data?.transaction ?? null;
       setTx(found);
       setEvents(audit.data?.events ?? []);
+      setPendingRequest(false);
       setState(found === null ? 'not-found' : 'ready');
     } catch (err) {
-      setMe(await meRead);
-      setMessage(wordedError(err));
-      setTx(null);
-      setEvents([]);
-      setState('error');
+      const who = await meRead;
+      if (seq !== loadSeq) return;
+      setMe(who);
+      const errText = wordedError(err);
+      if (preserveOnError && tx() !== null) {
+        const prev = message();
+        setMessage(prev ? `${prev} — ${errText}` : errText);
+        setState('ready');
+      } else {
+        setMessage(errText);
+        setTx(null);
+        setEvents([]);
+        setState('error');
+      }
     }
   }
 
@@ -133,8 +151,9 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     setBusy(true);
     try {
       await request.send({ reason });
+      setPendingRequest(true);
       setMessage(t('requested'));
-      await load(false);
+      await load(false, true);
     } catch (err) {
       setMessage(wordedError(err));
     } finally {
@@ -145,6 +164,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   const canRequest = () => {
     const current = tx();
     if (current === null || current.status !== 'COMPLETED') return false;
+    if (pendingRequest()) return false;
     if (current.reversal !== null && current.reversal.status !== 'REJECTED') return false;
     return can(me(), 'ReversalRequest');
   };
@@ -153,7 +173,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     <div class="xc-dtx" data-state={state()}>
       <div class="xc-dtx-bar">
         <h1 class="xc-dtx-title">{t('title')}</h1>
-        <button type="button" data-action="refresh" disabled={state() === 'loading'} onClick={refresh}>
+        <button type="button" data-action="refresh" disabled={state() === 'loading' || busy()} onClick={refresh}>
           {t('refresh')}
         </button>
       </div>
@@ -171,7 +191,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
         </Match>
         <Match when={state() === 'error'}>
           <p class="xc-dtx-muted">{t('loadFailed')}</p>
-          <button type="button" data-action="retry" onClick={refresh}>
+          <button type="button" data-action="retry" disabled={state() === 'loading' || busy()} onClick={refresh}>
             {t('retry')}
           </button>
         </Match>

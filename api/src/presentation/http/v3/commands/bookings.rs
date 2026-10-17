@@ -11,9 +11,9 @@ use ts_rs::TS;
 
 use xc_booking::application::booking_service::BookingService;
 use xc_booking::application::check_in::CheckInService;
-use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_booking::application::slot_service::SlotService;
 use xc_booking::infrastructure::booking_repository::PgBookingRepository;
+use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_booking::infrastructure::slot_repository::PgSlotRepository;
 use xc_customer::application::customer::contact_reserve::ContactReserve;
 use xc_kernel::branch_tx::BranchTx;
@@ -54,7 +54,6 @@ pub mod slot_open;
 pub mod slot_rule;
 
 pub use closure_remove::{ClosureRemove, ClosureRemoveInput};
-pub const PUBLIC_ROUTE: &str = kiosk_check_in::PUBLIC_ROUTE;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -100,7 +99,7 @@ impl BookingServices {
         let queue_repo = Arc::new(PgQueueRepository::new(self.pool.clone()));
 
         let booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents> =
-            Arc::new(BookingLifecycle::new(booking_repo.clone()).with_slots(slot_repo.clone()));
+            pg_booking_lifecycle(self.pool.clone());
 
         let issuer = Arc::new(
             TicketIssuer::new(self.branch_tx.clone(), queue_repo)

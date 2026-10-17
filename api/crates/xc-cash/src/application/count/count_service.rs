@@ -833,8 +833,16 @@ impl CashCountService {
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
         let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
+        let mut seen_denominations: std::collections::HashSet<i64> =
+            std::collections::HashSet::with_capacity(cmd.lines.len());
 
         for line in &cmd.lines {
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in count lines: {}",
+                    line.denomination_id
+                )));
+            }
             if line.qty < 0 {
                 return Err(AppError::Validation(format!(
                     "line qty cannot be negative: {}",
@@ -957,6 +965,10 @@ impl CashCountService {
                 id: count_id.to_string(),
             })?;
 
+        if count.verified_at.is_some() {
+            return Err(AppError::Conflict("การนับนี้ได้รับการรับรองแล้ว".into()));
+        }
+
         if count.kind == CountKind::HandoverOut {
             return Err(AppError::Domain(
                 crate::domain::handover::HandoverError::OnlyThroughHandover.to_string(),
@@ -967,7 +979,7 @@ impl CashCountService {
             CountKind::HandoverOut => Permission::ShiftOperate,
             _ => Permission::ShiftCloseCertify,
         };
-        let target = Target::new(&actor.organization_id, Some(count.branch_id.clone()), None);
+        let target = Target::new(&count.organization_id, Some(count.branch_id.clone()), None);
         Authorizer::check(Some(actor), permission, &target, now)
             .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
 

@@ -33,7 +33,35 @@ use crate::presentation::http::v3::view::{
     BranchView, ViewAnswer, ViewFilter, authenticate_caller, parse_branch, require_branch,
 };
 
-impl ViewFilter for CampaignsFilter {}
+impl ViewFilter for CampaignsFilter {
+    fn check(&self) -> Result<(), V3Error> {
+        let Ok(from) = chrono::NaiveDate::parse_from_str(&self.from, "%Y-%m-%d") else {
+            return Err(V3Error::new(
+                "invalidRequest",
+                Some("from"),
+                "คำขอไม่ถูกต้อง",
+                StatusCode::BAD_REQUEST,
+            ));
+        };
+        let Ok(to) = chrono::NaiveDate::parse_from_str(&self.to, "%Y-%m-%d") else {
+            return Err(V3Error::new(
+                "invalidRequest",
+                Some("to"),
+                "คำขอไม่ถูกต้อง",
+                StatusCode::BAD_REQUEST,
+            ));
+        };
+        if from > to {
+            return Err(V3Error::new(
+                "periodOrder",
+                Some("to"),
+                "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        Ok(())
+    }
+}
 
 pub struct CampaignsView {
     pool: PgPool,

@@ -1,5 +1,6 @@
 //! HTTP route handlers.
 pub mod app_receipts;
+pub mod app_verification_upload;
 pub mod auth;
 pub mod bookings;
 pub mod branch_verification_intake;
@@ -42,6 +43,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     employees::configure(cfg, state);
     files::configure(cfg, state);
     verification_content::configure(cfg, state);
+    app_verification_upload::configure(cfg, state);
     kiosk::configure(cfg, state);
     payment_methods::configure(cfg, state);
     public::configure(cfg, state);

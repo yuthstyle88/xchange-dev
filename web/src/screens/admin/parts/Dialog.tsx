@@ -33,22 +33,29 @@ export function isDialogLocked(): boolean {
 export function Dialog(): JSX.Element {
   const t = screenT('admin.parts', { th, en });
   let dialogRef: HTMLDialogElement | undefined;
+  let ownCloses = 0;
+
+  function showDialog(): void {
+    if (!dialogRef) return;
+    if (typeof dialogRef.showModal === 'function') {
+      if (!dialogRef.open) {
+        dialogRef.showModal();
+      }
+    } else {
+      dialogRef.open = true;
+      dialogRef.setAttribute('open', '');
+    }
+  }
 
   createEffect(() => {
     const s = state();
     if (!dialogRef) return;
     if (s !== null) {
-      if (typeof dialogRef.showModal === 'function') {
-        if (!dialogRef.open) {
-          dialogRef.showModal();
-        }
-      } else {
-        dialogRef.open = true;
-        dialogRef.setAttribute('open', '');
-      }
+      showDialog();
     } else {
       if (typeof dialogRef.close === 'function') {
         if (dialogRef.open) {
+          ownCloses++;
           dialogRef.close();
         }
       } else {
@@ -64,6 +71,18 @@ export function Dialog(): JSX.Element {
       onCancel={(e) => {
         if (locked()) {
           e.preventDefault();
+        } else {
+          closeDialog();
+        }
+      }}
+      onClose={() => {
+        if (ownCloses > 0) {
+          ownCloses--;
+          return;
+        }
+        if (state() === null) return;
+        if (locked()) {
+          showDialog();
         } else {
           closeDialog();
         }

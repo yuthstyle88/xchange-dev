@@ -2165,9 +2165,9 @@ None. Web and test files only.
 
 **Decision (fleet rule ♻️: the rule lives once, in the core).** Add one helper, `web/src/shared/api/keyed-write.ts`:
 `keyedWrite<B, R>(api: ApiClient, method: string, path: string | ((body: B) => string)): { send(body: B): Promise<R>; reset(): void }`.
-- The same serialized body as the last unfinished send reuses that key; a different body gets a new key.
-- The key is dropped after a 2xx, or after a refusal that is not "unknown" (a 4xx other than a network failure).
-- `reset()` drops it explicitly, for example when a dialog closes.
+- Each serialized body whose outcome is still unknown keeps its own key. A send with that same body reuses the key; a different body gets a new key, and the earlier body keeps its own (amended 2026-10-16 by #2327: overlapping sends of different bodies must not erase each other's key).
+- A body's key is dropped only by that body's own 2xx, or by its own refusal that is not "unknown" (a 4xx other than a network failure). A network failure or a 5xx keeps it, so a retry of the same body sends the same key.
+- `reset()` drops every held key, for example when a dialog closes.
 
 Screens call `keyedWrite(...).send(body)` instead of building keys. `staff/parts/command.ts` becomes a thin re-export.
 
@@ -2177,13 +2177,17 @@ Screens call `keyedWrite(...).send(body)` instead of building keys. `staff/parts
 | KW-2 | admin group A: approvals, consent, denomination-groups, users, branches | those five folders' screen files and one new test file each | KW-1 |
 | KW-3 | admin group B: rates, booking-slots, campaigns, starting-prices, alert-settings, rate-alert-settings, reconciliation, cash-policy (`CashPolicy.tsx:113`), cash (`CashFlows.tsx:170`); the last two already follow the rule and move onto the core unchanged in behaviour | those folders' screen files and one new test file each | KW-1 |
 | KW-4 | customer and desk: customer bookings, rate-alerts, assistant; desk referral, `desk/save.ts`, desk bookings; devices; `shared/notifications/notifications.ts` | those files and one new test file per folder | KW-1; for `desk/bookings` and the customer screens, after RW-2/RW-5 have merged if they touch the same file |
+| KW-5 | admin members: `web/src/screens/admin/members/Members.tsx:73` makes its own key. It arrived on main with MK-8b (`f0d76485`, PR 1991, #1407) after the KW rows were cut, so KW-gate's `KNOWN` holds it (decision on PR 2052, issuecomment-6201658617) | `web/src/screens/admin/members/Members.tsx` and one new test file | KW-1 |
+| KW-6a | customer Book and Home: `customer/book/Book.tsx:51` (`makeIdempotencyKey`, a new key per signal reset) and `customer/home/HomeScreen.tsx:310-316` (`pendingSave`) still make their own keys after RW-2 and RW-5, which only moved them onto `ApiClient`. Measured on main `104e817` (2026-10-15) | those two files and one new test file each | KW-1 |
+| KW-6b | operations Verification: every JSON write moves onto `keyedWrite`. These are `openDocument` (`VerificationScreen.tsx:309`) and the decision writes start-review (`:368`), approve (`:411`), and reject / request-update / revoke (`:462`). Today the decision writes take their key from the hand-made map `getOrCreateIdemKey` (`:155-165`). After KW-6b, `getOrCreateIdemKey(` is called once, by the branch-intake upload (`:543`), which named exclusion 4 below excuses. Lines are from main `104e817` | `operations/verification/VerificationScreen.tsx` and one new test file | KW-1, RW-3 #2011 merged |
 | KW-gate | the gate lands early, as WE-1 and RW-1 did: `web/src/shared/api/keyed-write.gate.test.ts` fails on any new `crypto.randomUUID()` in a non-test file under `web/src` outside `keyed-write.ts` and the named exclusions below, with `KNOWN` frozen at today's files and `STALE_KNOWN_FAILS = false`. No new hand-made key can appear while KW-2…KW-4 migrate | `web/src/shared/api/keyed-write.gate.test.ts` | this row merging |
-| KW-final | remove the migrated files from KW-gate's `KNOWN` and set `STALE_KNOWN_FAILS = true`; `KNOWN` keeps only files still owned by an open RW ticket and the BK-11 v2 screen | the gate file | KW-gate, KW-2…KW-4 |
+| KW-final | remove the migrated files from KW-gate's `KNOWN` and set `STALE_KNOWN_FAILS = true`; `KNOWN` keeps only files still owned by an open RW ticket and the BK-11 v2 screen | the gate file | KW-gate, KW-2…KW-5, KW-6a, KW-6b |
 
 **KW-final's named exclusions, each with its reason:**
 - `admin/parts/pending-write.tsx:127`: `requestId` is a payload field of the admin pending-write protocol (read back through a view filter, `:214`), not an `Idempotency-Key` header.
 - `admin/customers/Customers.tsx:57`: `memberSecret` is a secret value, not a key.
 - `admin/bookings/BookingsScreen.tsx:340`: the v2 bookings screen, deleted by `booking-slots.md` BK-11. It stays in `KNOWN` until then.
+- `operations/verification/VerificationScreen.tsx` (after KW-6b): the branch-intake upload (`:543`) goes through `ApiClient.postForm` with a `FormData` body. `keyedWrite` serializes with `JSON.stringify` and sends through `api.command`, so it cannot hold this key. The upload alone keeps `getOrCreateIdemKey`, which follows the same rule by hand. A form-data variant of the core is not designed yet; until one is, the file is excluded with this reason. KW-6b pins that the upload is the map's only caller, because this exclusion keeps the whole file out of the gate's scan.
 
 Every screen ticket pins one test: after a network failure, a retry with the same input sends a byte-equal body under the **same** key; after an edit, the next send has a **new** key.
 

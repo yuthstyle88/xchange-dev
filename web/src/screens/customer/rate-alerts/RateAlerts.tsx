@@ -8,6 +8,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   CreateRateAlertInput,
   MyRateAlertItem,
@@ -38,16 +39,51 @@ export interface RateAlertsScreenProps {
   pollIntervalMs?: number;
 }
 
-function generateIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'key-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-}
-
 export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   const fetchFn = props.fetch ?? ((input, init) => fetch(input, init));
   const api = props.client ?? new ApiClient(fetchFn);
+
+  const createApi = {
+    command: async <B, R>(
+      method: string,
+      path: string,
+      body: B,
+      key: string,
+    ): Promise<R> => {
+      try {
+        return await api.command<B, R>(method as 'POST', path, body, key);
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.code === 'alertLimitReached') {
+          throw { code: err.code, message: err.message, status: err.status };
+        }
+        throw err;
+      }
+    },
+  } as unknown as ApiClient;
+  const createWrite = keyedWrite<CreateRateAlertInput, unknown>(
+    createApi,
+    'POST',
+    '/api/app/rate-alerts',
+  );
+  const versionedApi = {
+    command: (method: string, path: string, body: { id: string; expectedVersion: number }, key: string) =>
+      api.command(method, path, { expectedVersion: body.expectedVersion }, key),
+  } as unknown as ApiClient;
+  const pauseWrite = keyedWrite<{ id: string; expectedVersion: number }, unknown>(
+    versionedApi,
+    'POST',
+    (b) => `/api/app/rate-alerts/${encodeURIComponent(b.id)}/pause`,
+  );
+  const resumeWrite = keyedWrite<{ id: string; expectedVersion: number }, unknown>(
+    versionedApi,
+    'POST',
+    (b) => `/api/app/rate-alerts/${encodeURIComponent(b.id)}/resume`,
+  );
+  const deleteWrite = keyedWrite<{ id: string; expectedVersion: number }, unknown>(
+    versionedApi,
+    'POST',
+    (b) => `/api/app/rate-alerts/${encodeURIComponent(b.id)}/delete`,
+  );
 
   const [alerts, setAlerts] = createSignal<MyRateAlertItem[]>([]);
   const [loading, setLoading] = createSignal(true);
@@ -64,15 +100,32 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   const [condition, setCondition] = createSignal<'ABOVE' | 'BELOW'>('ABOVE');
   const [target, setTarget] = createSignal('');
   const [expiresAt, setExpiresAt] = createSignal('');
-  const [createKey, setCreateKey] = createSignal(generateIdempotencyKey());
   const [isCreating, setIsCreating] = createSignal(false);
   const [createError, setCreateError] = createSignal<string | null>(null);
 
   // Action status/error
   const [actionError, setActionError] = createSignal<string | null>(null);
+  const [inFlightAlertIds, setInFlightAlertIds] = createSignal<Set<string>>(new Set());
+
+  const isAlertInFlight = (id: string) => inFlightAlertIds().has(id);
+  const addInFlightAlert = (id: string) => {
+    setInFlightAlertIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+  const removeInFlightAlert = (id: string) => {
+    setInFlightAlertIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
 
   let sinceVersion: number | undefined = undefined;
   let timerId: ReturnType<typeof setInterval> | undefined = undefined;
+  let loadSeq = 0;
 
   const ALERT_ERROR_KEYS: Record<string, keyof typeof table.th> = {
     alertLimitReached: 'alertLimitReached',
@@ -171,6 +224,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   };
 
   const loadAlerts = async (forceFull = false) => {
+    const seq = ++loadSeq;
     if (forceFull) {
       sinceVersion = undefined;
     }
@@ -180,6 +234,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     setLoadError(null);
     try {
       const answer = await api.view<MyRateAlertsData>('my_rate_alerts', { since: sinceVersion });
+      if (seq !== loadSeq) return;
       if (answer.changed && answer.data) {
         setAlerts(answer.data.alerts ?? []);
         sinceVersion = answer.version;
@@ -189,11 +244,14 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       }
       // If changed === false, keep alerts as is per §8
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       if (alerts().length === 0) {
         setLoadError(rateAlertsError(err));
       }
     } finally {
-      setLoading(false);
+      if (seq === loadSeq) {
+        setLoading(false);
+      }
     }
   };
 
@@ -245,14 +303,13 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     }
 
     try {
-      await api.command('POST', '/api/app/rate-alerts', input, createKey());
-      // On success: clear form inputs, rotate key, and refresh
+      await createWrite.send(input);
+      // On success: clear form inputs and refresh
       setTarget('');
       setExpiresAt('');
-      setCreateKey(generateIdempotencyKey());
       await loadAlerts(true);
     } catch (err: unknown) {
-      // On error (including alertLimitReached): keep form inputs, keep key for retry
+      // On error (including alertLimitReached): keep form inputs
       setCreateError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
         void loadAlerts(true);
@@ -263,59 +320,53 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   };
 
   const handlePause = async (alert: MyRateAlertItem) => {
+    if (isAlertInFlight(alert.id)) return;
+    addInFlightAlert(alert.id);
     setActionError(null);
-    const key = generateIdempotencyKey();
     try {
-      await api.command(
-        'POST',
-        `/api/app/rate-alerts/${encodeURIComponent(alert.id)}/pause`,
-        { expectedVersion: alert.version },
-        key,
-      );
+      await pauseWrite.send({ id: alert.id, expectedVersion: alert.version });
       await loadAlerts(true);
     } catch (err: unknown) {
       setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
-        void loadAlerts(true);
+        await loadAlerts(true);
       }
+    } finally {
+      removeInFlightAlert(alert.id);
     }
   };
 
   const handleResume = async (alert: MyRateAlertItem) => {
+    if (isAlertInFlight(alert.id)) return;
+    addInFlightAlert(alert.id);
     setActionError(null);
-    const key = generateIdempotencyKey();
     try {
-      await api.command(
-        'POST',
-        `/api/app/rate-alerts/${encodeURIComponent(alert.id)}/resume`,
-        { expectedVersion: alert.version },
-        key,
-      );
+      await resumeWrite.send({ id: alert.id, expectedVersion: alert.version });
       await loadAlerts(true);
     } catch (err: unknown) {
       setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
-        void loadAlerts(true);
+        await loadAlerts(true);
       }
+    } finally {
+      removeInFlightAlert(alert.id);
     }
   };
 
   const handleDelete = async (alert: MyRateAlertItem) => {
+    if (isAlertInFlight(alert.id)) return;
+    addInFlightAlert(alert.id);
     setActionError(null);
-    const key = generateIdempotencyKey();
     try {
-      await api.command(
-        'POST',
-        `/api/app/rate-alerts/${encodeURIComponent(alert.id)}/delete`,
-        { expectedVersion: alert.version },
-        key,
-      );
+      await deleteWrite.send({ id: alert.id, expectedVersion: alert.version });
       await loadAlerts(true);
     } catch (err: unknown) {
       setActionError(rateAlertsError(err));
       if (err instanceof ApiError && err.code === 'staleVersion') {
-        void loadAlerts(true);
+        await loadAlerts(true);
       }
+    } finally {
+      removeInFlightAlert(alert.id);
     }
   };
 
@@ -535,6 +586,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                         <button
                           type="button"
                           class="xc-btn xc-btn-resume"
+                          disabled={isAlertInFlight(alert.id)}
                           onClick={() => handleResume(alert)}
                         >
                           {t('resume')}
@@ -544,6 +596,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                       <button
                         type="button"
                         class="xc-btn xc-btn-pause"
+                        disabled={isAlertInFlight(alert.id)}
                         onClick={() => handlePause(alert)}
                       >
                         {t('pause')}
@@ -553,6 +606,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                     <button
                       type="button"
                       class="xc-btn xc-btn-delete"
+                      disabled={isAlertInFlight(alert.id)}
                       onClick={() => handleDelete(alert)}
                     >
                       {t('delete')}

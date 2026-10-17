@@ -13,6 +13,7 @@ import {
 import { fill, lang, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/public/public_branches';
@@ -136,6 +137,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         const fromSearch = branchFromSearch(props.search);
         const searchMatch = fromSearch ? branches.find((b) => b.code === fromSearch) : undefined;
         setSelectedBranchCode(searchMatch ? searchMatch.code : branches[0]!.code);
+        clearPreview();
       }
     }
   });
@@ -234,7 +236,31 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
   };
 
-  let pendingSave: { key: string; bodyJson: string } | null = null;
+  const savePlan = keyedWrite<Record<string, unknown>, PlannerDraftDto>(
+    api,
+    'POST',
+    '/api/app/planner-drafts',
+  );
+
+  let calcSeq = 0;
+
+  const clearPreview = () => {
+    calcSeq += 1;
+    setPreviewLoading(false);
+    setPreviewResult(null);
+    setPreviewError(null);
+    setSavedPlanId(null);
+    setSavePlanError(null);
+  };
+
+  createEffect(() => {
+    const list = availableCurrencies();
+    const curr = calcCurrency();
+    if (list.length > 0 && !list.includes(curr)) {
+      setCalcCurrency(list[0]!);
+      clearPreview();
+    }
+  });
 
   const handleCalculate = async () => {
     const amtStr = amount().trim();
@@ -252,6 +278,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
       return;
     }
 
+    const seq = ++calcSeq;
     setPreviewLoading(true);
     setPreviewError(null);
     setPreviewResult(null);
@@ -269,8 +296,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         'planner_preview',
         body,
       );
+      if (seq !== calcSeq) return;
       setPreviewResult(json);
     } catch (err) {
+      if (seq !== calcSeq) return;
       if (err instanceof ApiError && !isServerFailure(err) && err.code === 'rateUnavailable') {
         setPreviewError(t('rateUnavailable'));
       } else if (
@@ -283,7 +312,9 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
         setPreviewError(wordedError(err));
       }
     } finally {
-      setPreviewLoading(false);
+      if (seq === calcSeq) {
+        setPreviewLoading(false);
+      }
     }
   };
 
@@ -296,6 +327,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     }
 
     const branch = selectedBranchCode();
+    const seq = calcSeq;
     setSavingPlan(true);
     setSavedPlanId(null);
     setSavePlanError(null);
@@ -306,26 +338,13 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
       customerSide: customerSide(),
       amount: amountType() === 'quantity' ? { quantity: amtStr } : { budgetThb: amtStr },
     };
-    const bodyJson = JSON.stringify(body);
-    if (!pendingSave || pendingSave.bodyJson !== bodyJson) {
-      const nextKey =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      pendingSave = { key: nextKey, bodyJson };
-    }
-    const idempotencyKey = pendingSave.key;
 
     try {
-      const draft = await api.command<Record<string, unknown>, PlannerDraftDto>(
-        'POST',
-        '/api/app/planner-drafts',
-        body,
-        idempotencyKey,
-      );
-      pendingSave = null;
+      const draft = await savePlan.send(body);
+      if (seq !== calcSeq) return;
       setSavedPlanId(draft.id);
     } catch (err) {
+      if (seq !== calcSeq) return;
       setSavePlanError(wordedError(err));
     } finally {
       setSavingPlan(false);
@@ -380,7 +399,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="branch-select"
                 class="xc-home-select"
                 value={selectedBranchCode()}
-                onChange={(e) => setSelectedBranchCode(e.currentTarget.value)}
+                onChange={(e) => {
+                  setSelectedBranchCode(e.currentTarget.value);
+                  clearPreview();
+                }}
               >
                 <For each={branches()}>
                   {(b) => <option value={b.code}>{b.name} ({b.code})</option>}
@@ -430,7 +452,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               <button
                 type="button"
                 class={`xc-home-toggle-btn ${customerSide() === 'CUSTOMER_BUY' ? 'active' : ''}`}
-                onClick={() => setCustomerSide('CUSTOMER_BUY')}
+                onClick={() => {
+                  setCustomerSide('CUSTOMER_BUY');
+                  clearPreview();
+                }}
                 aria-pressed={customerSide() === 'CUSTOMER_BUY'}
               >
                 {t('customerBuy')}
@@ -438,7 +463,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               <button
                 type="button"
                 class={`xc-home-toggle-btn ${customerSide() === 'CUSTOMER_SELL' ? 'active' : ''}`}
-                onClick={() => setCustomerSide('CUSTOMER_SELL')}
+                onClick={() => {
+                  setCustomerSide('CUSTOMER_SELL');
+                  clearPreview();
+                }}
                 aria-pressed={customerSide() === 'CUSTOMER_SELL'}
               >
                 {t('customerSell')}
@@ -453,7 +481,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="currency-select"
                 class="xc-home-select"
                 value={calcCurrency()}
-                onChange={(e) => setCalcCurrency(e.currentTarget.value)}
+                onChange={(e) => {
+                  setCalcCurrency(e.currentTarget.value);
+                  clearPreview();
+                }}
               >
                 <For each={availableCurrencies()}>
                   {(c) => <option value={c}>{c}</option>}
@@ -467,7 +498,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 id="amount-type-select"
                 class="xc-home-select"
                 value={amountType()}
-                onChange={(e) => setAmountType(e.currentTarget.value as 'quantity' | 'budgetThb')}
+                onChange={(e) => {
+                  setAmountType(e.currentTarget.value as 'quantity' | 'budgetThb');
+                  clearPreview();
+                }}
               >
                 <option value="quantity">{t('quantity')}</option>
                 <option value="budgetThb">{t('budgetThb')}</option>
@@ -484,7 +518,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 inputmode="decimal"
                 class="xc-home-input"
                 value={amount()}
-                onInput={(e) => setAmount(e.currentTarget.value)}
+                onInput={(e) => {
+                  setAmount(e.currentTarget.value);
+                  clearPreview();
+                }}
               />
               <span class="xc-home-input-suffix">
                 {amountType() === 'quantity' ? calcCurrency() : 'THB'}

@@ -38,25 +38,34 @@ impl std::fmt::Display for V3Error {
 
 impl std::error::Error for V3Error {}
 
+const SERVER_ERROR: &str = "เซิร์ฟเวอร์ขัดข้อง";
+
 impl ResponseError for V3Error {
     fn status_code(&self) -> StatusCode {
         self.status
     }
 
     fn error_response(&self) -> HttpResponse {
+        let message: &str = if self.status.is_server_error() {
+            tracing::error!(code = self.code, "{}", self.message);
+            SERVER_ERROR
+        } else {
+            &self.message
+        };
+
         let body = if let Some(field) = self.field {
             serde_json::json!({
                 "error": {
                     "code": self.code,
                     "field": field,
-                    "message": self.message,
+                    "message": message,
                 }
             })
         } else {
             serde_json::json!({
                 "error": {
                     "code": self.code,
-                    "message": self.message,
+                    "message": message,
                 }
             })
         };

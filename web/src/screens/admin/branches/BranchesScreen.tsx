@@ -8,6 +8,7 @@ import {
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminBranchProfileData } from '../../../shared/api/generated/admin_branches_profile';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
@@ -37,6 +38,11 @@ interface DayHoursState {
 
 export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const saveProfileWrite = keyedWrite<unknown, AdminBranchProfileData>(
+    api,
+    'PUT',
+    '/api/branches/profile',
+  );
 
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedBranch, setSelectedBranch] = createSignal<string>('');
@@ -44,6 +50,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   const [loading, setLoading] = createSignal<boolean>(false);
   const [saving, setSaving] = createSignal<boolean>(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [listError, setListError] = createSignal<string | null>(null);
   const [success, setSuccess] = createSignal<string | null>(null);
 
   // Form fields
@@ -64,6 +71,8 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   });
 
   let lastLoadedBranch = '';
+  // #2247: only the latest profile read for the selected branch may fill the form.
+  let profileSeq = 0;
 
   const loadBranches = async () => {
     try {
@@ -77,13 +86,16 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
           setSelectedBranch(match ? match.id : res.data.branches[0]!.id);
         }
       }
+      setListError(null);
     } catch (err: unknown) {
-      setError(wordedError(err));
+      setListError(wordedError(err));
     }
   };
 
   const loadProfile = async (branchId: string) => {
     if (!branchId) return;
+    const seq = ++profileSeq;
+    const isStale = () => seq !== profileSeq || branchId !== selectedBranch();
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -94,6 +106,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       const res = await api.view<AdminBranchProfileData>('admin_branches_profile', {
         branch: branchId,
       });
+      if (isStale()) return;
       if (res.data) {
         lastLoadedBranch = branchId;
         setProfile(res.data);
@@ -122,12 +135,13 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
         setHours(newHours);
       }
     } catch (err: unknown) {
+      if (isStale()) return;
       if (branchId !== lastLoadedBranch) {
         setProfile(null);
       }
       setError(wordedError(err));
     } finally {
-      setLoading(false);
+      if (seq === profileSeq) setLoading(false);
     }
   };
 
@@ -195,16 +209,20 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       bookingEnabled: bookingEnabled(),
     };
 
+    // #2463: the picker may move to another branch while the save is in flight;
+    // then this answer belongs to a branch no longer shown and must not touch the
+    // profile, the form or the banners (the newer branch's own read owns them).
+    // The branch may also move away and back (A -> B -> A): a newer profile read
+    // has then started and owns the form, so the answer is dropped as well.
+    const saveSeq = profileSeq;
+    const isStale = () => branchId !== selectedBranch() || saveSeq !== profileSeq;
     try {
-      const res = await api.command<typeof payload, AdminBranchProfileData>(
-        'PUT',
-        '/api/branches/profile',
-        payload,
-        crypto.randomUUID(),
-      );
+      const res = await saveProfileWrite.send(payload);
+      if (isStale()) return;
       setProfile(res);
       setSuccess(t('saved'));
     } catch (err: unknown) {
+      if (isStale()) return;
       if (err instanceof ApiError && err.code === 'conflict') {
         setError(t('codeConflict'));
       } else {
@@ -227,7 +245,11 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
             onChange={(e) => setSelectedBranch(e.currentTarget.value)}
           >
             <For each={branches()}>
-              {(b) => <option value={b.id}>{b.name} ({b.id})</option>}
+              {(b) => (
+                <option value={b.id} selected={b.id === selectedBranch()}>
+                  {b.name} ({b.id})
+                </option>
+              )}
             </For>
           </select>
         </div>
@@ -244,8 +266,8 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       </div>
 
       <div class="branches-content">
-        <Show when={error()}>
-          <div role="alert" class="branches-form-error">{error()}</div>
+        <Show when={error() ?? listError()}>
+          <div role="alert" class="branches-form-error">{error() ?? listError()}</div>
         </Show>
         <Show when={success()}>
           <div role="status" class="branches-form-success">{success()}</div>

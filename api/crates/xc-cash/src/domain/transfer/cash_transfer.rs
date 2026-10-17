@@ -1,5 +1,7 @@
 //! Cash transfer state machine, entities, value objects, and errors.
 
+use std::collections::HashMap;
+
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 
@@ -121,6 +123,33 @@ pub enum TransferError {
     StockInsufficient,
     #[error("{0}")]
     Validation(String),
+    #[error("{0}")]
+    Internal(String),
+}
+
+/// Computes `face_value × qty` in checked `i64` hundredths (D:§4.5).
+pub fn checked_line_minor(face_value: Money, qty: i32) -> Result<i64, TransferError> {
+    let face_minor = face_value
+        .try_minor()
+        .map_err(|_| TransferError::Validation("transfer face value overflows i64".into()))?;
+    face_minor
+        .checked_mul(qty as i64)
+        .ok_or_else(|| TransferError::Validation("transfer line total overflows i64".into()))
+}
+
+/// Adds `face_value × qty` in checked `i64` hundredths to `totals[currency]` (D:§4.5).
+pub fn add_line_minor(
+    totals: &mut HashMap<CurrencyCode, i64>,
+    currency: CurrencyCode,
+    face_value: Money,
+    qty: i32,
+) -> Result<(), TransferError> {
+    let line_minor = checked_line_minor(face_value, qty)?;
+    let total = totals.entry(currency).or_insert(0);
+    *total = total
+        .checked_add(line_minor)
+        .ok_or_else(|| TransferError::Validation("transfer currency total overflows i64".into()))?;
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -133,12 +162,12 @@ pub struct TransferLine {
 }
 
 impl TransferLine {
-    pub fn sent_minor(&self) -> i64 {
-        self.face_value.minor() * (self.qty_sent as i64)
+    pub fn sent_minor(&self) -> Result<i64, TransferError> {
+        checked_line_minor(self.face_value, self.qty_sent)
     }
 
-    pub fn received_minor(&self) -> i64 {
-        self.face_value.minor() * (self.qty_received.unwrap_or(0) as i64)
+    pub fn received_minor(&self) -> Result<i64, TransferError> {
+        checked_line_minor(self.face_value, self.qty_received.unwrap_or(0))
     }
 }
 

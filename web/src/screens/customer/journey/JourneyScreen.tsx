@@ -6,12 +6,14 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
+import { ApiClient, ApiError, type Fetch } from '../../../shared/api/client';
 import type {
   MyPlannerDraftsData,
   PlannerDraftDto,
 } from '../../../shared/api/generated/my_planner_drafts';
 import type { MyQueueTicketData } from '../../../shared/api/generated/my_queue_ticket';
 import { locale, screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { en, th, zh } from './i18n';
 import './journey.css';
@@ -29,15 +31,32 @@ type State = 'loading' | 'ready' | 'empty' | 'error' | 'unauthorized';
 
 export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
   const t = screenT('customer.journey', { th, en, zh });
-  const fetchFn = (url: string, init?: RequestInit) => {
-    if (props.fetch) return props.fetch(url, init);
-    return fetch(url, init);
+  const fetchFn: Fetch = async (url, init) => {
+    const res = await (props.fetch ? props.fetch(url, init) : fetch(url, init));
+    if (res.ok) {
+      const cloned = res.clone();
+      try {
+        const json = await cloned.json();
+        if (json && typeof json === 'object' && !('data' in json)) {
+          return new Response(
+            JSON.stringify({ version: 1, changed: true, data: json }),
+            { status: res.status, headers: res.headers },
+          );
+        }
+      } catch {
+        // leave response as-is if body is not JSON
+      }
+    }
+    return res;
   };
+  const api = new ApiClient(fetchFn);
 
   const [queueState, setQueueState] = createSignal<State>('loading');
+  const [queueError, setQueueError] = createSignal<unknown>(null);
   const [ticket, setTicket] = createSignal<MyQueueTicketData | null>(null);
 
   const [draftsState, setDraftsState] = createSignal<State>('loading');
+  const [draftsError, setDraftsError] = createSignal<unknown>(null);
   const [drafts, setDrafts] = createSignal<PlannerDraftDto[]>([]);
 
   const searchParams = () => {
@@ -59,41 +78,30 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
     return null;
   };
 
+  let ticketSeq = 0;
+  let draftsSeq = 0;
+
   const loadQueueTicket = async () => {
+    const seq = ++ticketSeq;
     const tId = activeTicketId();
     const br = activeBranch();
 
     if (!tId || !br) {
       setTicket(null);
+      setQueueError(null);
       setQueueState('empty');
       return;
     }
 
     setQueueState('loading');
+    setQueueError(null);
     try {
-      const url = `/api/v3/views/my_queue_ticket?branch=${encodeURIComponent(br)}&ticketId=${encodeURIComponent(tId)}`;
-      const res = await fetchFn(url, {
-        method: 'GET',
-        credentials: 'same-origin',
+      const answer = await api.view<MyQueueTicketData, { ticketId: string }>('my_queue_ticket', {
+        branch: br,
+        filter: { ticketId: tId },
       });
-
-      if (!res.ok) {
-        if (res.status === 401) {
-          setTicket(null);
-          setQueueState('unauthorized');
-          return;
-        }
-        if (res.status === 403 || res.status === 404) {
-          setTicket(null);
-          setQueueState('empty');
-          return;
-        }
-        setQueueState('error');
-        return;
-      }
-
-      const json = await res.json();
-      const data: MyQueueTicketData = (json && typeof json === 'object' && 'data' in json && json.data) ? json.data : json;
+      if (seq !== ticketSeq) return;
+      const data = answer.data;
       if (data && data.ticketId) {
         setTicket(data);
         setQueueState('ready');
@@ -101,30 +109,44 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
         setTicket(null);
         setQueueState('empty');
       }
-    } catch {
+    } catch (err: unknown) {
+      if (seq !== ticketSeq) return;
+      setTicket(null);
+      if ((err as { status?: number })?.status === 401) {
+        setQueueState('unauthorized');
+        return;
+      }
+      if (
+        err instanceof ApiError &&
+        err.code === 'httpError' &&
+        (err.status === 403 || err.status === 404)
+      ) {
+        setQueueState('empty');
+        return;
+      }
+      setQueueError(() => err);
       setQueueState('error');
     }
   };
 
   const loadDrafts = async () => {
+    const seq = ++draftsSeq;
     setDraftsState('loading');
+    setDraftsError(null);
     try {
-      const res = await fetchFn('/api/v3/views/my_planner_drafts', {
-        method: 'GET',
-        credentials: 'same-origin',
-      });
-
-      if (!res.ok) {
-        setDraftsState('error');
-        return;
-      }
-
-      const json = await res.json();
-      const data: MyPlannerDraftsData = (json && typeof json === 'object' && 'data' in json && json.data) ? json.data : json;
-      const list = data?.drafts ?? [];
+      const answer = await api.view<MyPlannerDraftsData>('my_planner_drafts');
+      if (seq !== draftsSeq) return;
+      const list = answer.data?.drafts ?? [];
       setDrafts(list);
       setDraftsState(list.length === 0 ? 'empty' : 'ready');
-    } catch {
+    } catch (err: unknown) {
+      if (seq !== draftsSeq) return;
+      setDrafts([]);
+      if ((err as { status?: number })?.status === 401) {
+        setDraftsState('unauthorized');
+        return;
+      }
+      setDraftsError(() => err);
       setDraftsState('error');
     }
   };
@@ -230,6 +252,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
             type="button"
             class="xc-journey-refresh-btn"
             onClick={loadQueueTicket}
+            disabled={queueState() === 'loading'}
             aria-label={t('refresh')}
           >
             {t('refresh')}
@@ -245,6 +268,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
         <Show when={queueState() === 'error'}>
           <div class="xc-journey-error" role="alert">
             <span>{t('errorQueue')}</span>
+            <span data-testid="queue-error-detail">{wordedError(queueError())}</span>
             <button
               type="button"
               class="xc-journey-retry-btn"
@@ -257,7 +281,9 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
 
         <Show when={queueState() === 'unauthorized'}>
           <div class="xc-journey-empty" data-testid="queue-unauthorized">
-            {t('signInToViewTicket')}
+            <a class="xc-customer-signin" href="/app/sign-in">
+              {t('signInToViewTicket')}
+            </a>
           </div>
         </Show>
 
@@ -327,6 +353,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
             type="button"
             class="xc-journey-refresh-btn"
             onClick={loadDrafts}
+            disabled={draftsState() === 'loading'}
             aria-label={t('refresh')}
           >
             {t('refresh')}
@@ -342,6 +369,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
         <Show when={draftsState() === 'error'}>
           <div class="xc-journey-error" role="alert">
             <span>{t('errorPlans')}</span>
+            <span data-testid="plans-error-detail">{wordedError(draftsError())}</span>
             <button
               type="button"
               class="xc-journey-retry-btn"
@@ -349,6 +377,14 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
             >
               {t('retry')}
             </button>
+          </div>
+        </Show>
+
+        <Show when={draftsState() === 'unauthorized'}>
+          <div class="xc-journey-empty" data-testid="plans-unauthorized">
+            <a class="xc-customer-signin" href="/app/sign-in">
+              {t('signInToViewTicket')}
+            </a>
           </div>
         </Show>
 

@@ -95,7 +95,14 @@ impl CommandAction for TransferCreate {
                 now,
             )
             .await
-            .map_err(from_cash_error)?;
+            .map_err(|e| match e {
+                pos_error::AppError::Domain(ref m) | pos_error::AppError::Validation(ref m)
+                    if m.contains("overflows i64") =>
+                {
+                    validation_failed("lines", m.clone())
+                }
+                other => from_cash_error(other),
+            })?;
         Ok(answer(t))
     }
 }
@@ -162,7 +169,7 @@ impl CommandAction for TransferDispatch {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &BranchId,
+        branch: &BranchId,
         who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
@@ -171,7 +178,7 @@ impl CommandAction for TransferDispatch {
         let user = caller_in(tx, who, now).await?;
         let t = self
             .flow
-            .dispatch_in(tx, &user, &input.id, now)
+            .dispatch_in(tx, branch, &user, &input.id, now)
             .await
             .map_err(from_cash_error)?;
         Ok(answer(t))

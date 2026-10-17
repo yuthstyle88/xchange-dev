@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/endpoint/endpoint_store.dart';
+import '../../../../core/endpoint/kiosk_endpoint.dart';
 import '../../../../l10n/kiosk_l10n.dart';
 import '../../app/kiosk_providers.dart';
 import '../../domain/entities/kiosk_models.dart';
@@ -42,6 +44,35 @@ String plainDecimal(String typed) {
   return t;
 }
 
+final _decimalPattern = RegExp(r'^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$');
+
+BigInt _tenPow(int n) => BigInt.from(10).pow(n);
+
+({BigInt digits, int scale})? _scaled(String raw) {
+  final m = _decimalPattern.firstMatch(plainDecimal(raw));
+  if (m == null) return null;
+  final whole = m.group(1)!;
+  final frac = m.group(2) ?? '';
+  final exp = int.tryParse(m.group(3) ?? '0');
+  if (exp == null) return null;
+  final digits = BigInt.tryParse('$whole$frac');
+  if (digits == null) return null;
+  final scale = frac.length - exp;
+  if (scale < 0) {
+    return (digits: digits * _tenPow(-scale), scale: 0);
+  }
+  return (digits: digits, scale: scale);
+}
+
+double _roundHalfUp2(BigInt num, BigInt den) {
+  final scaled = num * BigInt.from(100);
+  var cents = scaled ~/ den;
+  if (scaled.remainder(den) * BigInt.two >= den) {
+    cents += BigInt.one;
+  }
+  return cents.toDouble() / 100;
+}
+
 const _keep = Object();
 
 class KioskState {
@@ -60,6 +91,7 @@ class KioskState {
     this.busy = false,
     this.quoteExpired = false,
     this.secondsLeft = 0,
+    this.resetGeneration = 0,
   });
 
   final String languageCode;
@@ -78,6 +110,10 @@ class KioskState {
   final bool busy;
   final bool quoteExpired;
   final int secondsLeft;
+
+  /// Bumped by every [KioskController.reset], so screen-local inputs (the
+  /// currency search) can clear even when the screen is not rebuilt.
+  final int resetGeneration;
 
   KioskState copyWith({
     String? languageCode,
@@ -113,6 +149,7 @@ class KioskState {
     busy: busy ?? this.busy,
     quoteExpired: quoteExpired ?? this.quoteExpired,
     secondsLeft: secondsLeft ?? this.secondsLeft,
+    resetGeneration: resetGeneration,
   );
 
   CurrencyRate? get selectedRate {
@@ -148,19 +185,25 @@ class KioskState {
 
   Estimate? get estimate {
     final rate = selectedRate?.rateFor(type) ?? 0;
-    final amount = double.tryParse(amountText.trim());
-    if (amount == null || !amount.isFinite || amount <= 0 || amount > 1e7) {
+    if (!rate.isFinite || rate <= 0) return null;
+    final a = _scaled(amountText);
+    final r = _scaled(rate.toString());
+    if (a == null ||
+        r == null ||
+        a.digits <= BigInt.zero ||
+        r.digits <= BigInt.zero ||
+        a.digits > BigInt.from(10000000) * _tenPow(a.scale)) {
       return null;
     }
-    if (rate <= 0) return null;
     if (type == ExchangeType.buy) {
-      final foreign = (amount * 100).round() / 100;
       return Estimate(
-        foreign: foreign,
-        receive: (foreign * rate * 100).round() / 100,
+        foreign: _roundHalfUp2(a.digits, _tenPow(a.scale)),
+        receive: _roundHalfUp2(a.digits * r.digits, _tenPow(a.scale + r.scale)),
       );
     }
-    final foreign = (amount / rate * 100).floor() / 100;
+    final cents =
+        (a.digits * _tenPow(r.scale + 2)) ~/ (r.digits * _tenPow(a.scale));
+    final foreign = cents.toDouble() / 100;
     return Estimate(foreign: foreign, receive: foreign);
   }
 
@@ -209,6 +252,12 @@ class KioskController extends Notifier<KioskState> {
   Timer? _countdown;
   Timer? _restart;
   bool _disposed = false;
+  bool _ratesError = false;
+  int _ratesSeq = 0;
+  int _ratesMinSeq = 0;
+  KioskEndpoint? _modelEndpoint;
+  String? _errorKey;
+  String? _errorServerMessage;
 
   KioskTexts get _t => _l10n.of(state.languageCode);
 
@@ -230,11 +279,40 @@ class KioskController extends Notifier<KioskState> {
     if (!_disposed) state = next;
   }
 
-  String _failure(Object e) =>
-      e is KioskFailure ? _t.errorText(e.serverMessage) : _t.text('errGeneric');
+  String _noError() {
+    _errorKey = null;
+    _errorServerMessage = null;
+    return '';
+  }
+
+  String _keyError(String key, [KioskTexts? t]) {
+    _errorKey = key;
+    _errorServerMessage = null;
+    return (t ?? _t).text(key);
+  }
+
+  String _failure(Object e) {
+    if (e is KioskFailure) {
+      _errorKey = null;
+      _errorServerMessage = e.serverMessage;
+      return _t.errorText(e.serverMessage);
+    }
+    return _keyError('errGeneric');
+  }
+
+  String _currentError(KioskTexts t) {
+    if (_errorServerMessage != null) {
+      return t.errorText(_errorServerMessage!);
+    }
+    if (_errorKey != null) {
+      return t.text(_errorKey!);
+    }
+    return '';
+  }
 
   void reportError(String textKey) {
-    _set(state.copyWith(error: _t.text(textKey)));
+    _ratesError = false;
+    _set(state.copyWith(error: _keyError(textKey)));
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -250,31 +328,66 @@ class KioskController extends Notifier<KioskState> {
     _statusPoller.stop();
     _receiptPoller.stop();
     _idle.touch();
+    _ratesError = false;
+    _noError();
+    final seq = ++_ratesSeq;
+    _ratesMinSeq = seq;
+    final endpoint = ref.read(kioskEndpointProvider);
+    final keepModel = state.model != null && endpoint == _modelEndpoint;
+    if (!keepModel) {
+      _modelEndpoint = null;
+    }
     _set(
       KioskState(
         languageCode: defaultLanguage,
-        model: state.model,
-        currency: state.currency,
+        model: keepModel ? state.model : null,
+        currency: keepModel ? state.currency : null,
+        resetGeneration: state.resetGeneration + 1,
       ),
     );
     try {
       final m = await _repo.rates();
-      if (_disposed) return;
-      final keep = m.rates.any((r) => r.code == state.currency);
-      _set(
-        _keepOfferedMethod(
-          state.copyWith(
-            model: m,
-            currency: keep
-                ? state.currency
-                : (m.rates.isEmpty ? null : m.rates.first.code),
-            error: m.open ? '' : _t.text('closed'),
-          ),
-        ),
-      );
+      if (_disposed ||
+          seq < _ratesMinSeq ||
+          state.screen != KioskScreen.select ||
+          state.busy ||
+          state.quote != null) {
+        return;
+      }
+      _ratesMinSeq = seq;
+      _ratesError = false;
+      _modelEndpoint = endpoint;
+      _applyRates(m, error: m.open ? _noError() : _keyError('closed'));
     } catch (e) {
+      if (_disposed ||
+          seq < _ratesMinSeq ||
+          state.screen != KioskScreen.select ||
+          state.busy ||
+          state.quote != null) {
+        return;
+      }
+      _ratesMinSeq = seq;
+      _ratesError = true;
       _set(state.copyWith(error: _failure(e)));
     }
+  }
+
+  void _applyRates(RatesModel m, {required String error}) {
+    final keep = m.rates.any((r) => r.code == state.currency);
+    final currency = keep
+        ? state.currency
+        : (m.rates.isEmpty ? null : m.rates.first.code);
+    final amountText = keep ? state.amountText : '';
+    _set(
+      _keepOfferedMethod(
+        state.copyWith(
+          model: m,
+          currency: currency,
+          amountText: amountText,
+          error: error,
+        ),
+      ),
+    );
   }
 
   /// Any tap or key press on the kiosk.
@@ -295,46 +408,33 @@ class KioskController extends Notifier<KioskState> {
         state.quote != null) {
       return;
     }
+    final endpoint = ref.read(kioskEndpointProvider);
+    final seq = ++_ratesSeq;
     try {
       final m = await _repo.rates();
       if (_disposed ||
+          seq < _ratesMinSeq ||
+          ref.read(kioskEndpointProvider) != endpoint ||
           state.screen != KioskScreen.select ||
           state.busy ||
           state.quote != null) {
         return;
       }
-      final keep = m.rates.any((r) => r.code == state.currency);
-      final currency = keep
-          ? state.currency
-          : (m.rates.isEmpty ? null : m.rates.first.code);
-      final openChanged = state.model == null || m.open != state.model!.open;
+      _ratesMinSeq = seq;
+      final openChanged =
+          state.model == null || m.open != state.model!.open || _ratesError;
+      _ratesError = false;
+      _modelEndpoint = endpoint;
       final error = openChanged
-          ? (m.open ? '' : _t.text('closed'))
+          ? (m.open ? _noError() : _keyError('closed'))
           : state.error;
-      _set(
-        _keepOfferedMethod(
-          state.copyWith(model: m, currency: currency, error: error),
-        ),
-      );
+      _applyRates(m, error: error);
     } catch (_) {}
   }
 
   void setLanguage(String code) {
     final t = _l10n.of(code);
-    final closed =
-        state.model != null &&
-        !state.model!.open &&
-        state.screen == KioskScreen.select;
-    _set(
-      state.copyWith(
-        languageCode: t.code,
-        error: closed
-            ? t.text('closed')
-            : state.quoteExpired
-            ? t.text('quoteExpired')
-            : '',
-      ),
-    );
+    _set(state.copyWith(languageCode: t.code, error: _currentError(t)));
   }
 
   void setType(ExchangeType value) {
@@ -358,14 +458,18 @@ class KioskController extends Notifier<KioskState> {
 
   void setCurrency(String code) => _set(state.copyWith(currency: code));
 
-  void setAmount(String text) => _set(state.copyWith(amountText: text));
+  void setAmount(String text) {
+    _idle.touch();
+    _set(state.copyWith(amountText: text));
+  }
 
   void setPaymentMethod(String? method) =>
       _set(state.copyWith(paymentMethod: method));
 
   Future<void> submitQuote() async {
     if (!state.canReview) return;
-    _set(state.copyWith(busy: true, error: ''));
+    _ratesError = false;
+    _set(state.copyWith(busy: true, error: _noError()));
     try {
       final quote = await _repo.quote(
         type: state.type,
@@ -392,6 +496,7 @@ class KioskController extends Notifier<KioskState> {
       });
       _statusPoller.start();
     } catch (e) {
+      _ratesError = false;
       _set(state.copyWith(busy: false, error: _failure(e)));
     }
   }
@@ -401,13 +506,14 @@ class KioskController extends Notifier<KioskState> {
   void backToSelect() {
     _countdown?.cancel();
     _statusPoller.stop();
+    _ratesError = false;
     _set(
       state.copyWith(
         quote: null,
         status: null,
         quoteExpired: false,
         secondsLeft: 0,
-        error: '',
+        error: _noError(),
         screen: KioskScreen.select,
       ),
     );
@@ -416,25 +522,54 @@ class KioskController extends Notifier<KioskState> {
   Future<void> confirm() async {
     final q = state.quote;
     if (!state.canConfirm || q == null) return;
-    _set(state.copyWith(busy: true, error: ''));
+    _ratesError = false;
+    _set(state.copyWith(busy: true, error: _noError()));
     try {
       final status = await _repo.confirm(q.id);
       if (_disposed) return;
+      if (state.screen == KioskScreen.select || state.quote?.id != q.id) {
+        _set(state.copyWith(busy: false));
+        return;
+      }
+      _countdown?.cancel();
       _set(
         state.copyWith(
-          status: status,
-          screen: KioskScreen.waiting,
+          status: _nextStatus(status),
+          screen: state.screen == KioskScreen.receipt
+              ? KioskScreen.receipt
+              : KioskScreen.waiting,
           busy: false,
         ),
       );
       _receiptPoller.start();
       _afterStatus();
     } catch (e) {
+      if (state.screen != KioskScreen.quote || state.quote?.id != q.id) {
+        _set(state.copyWith(busy: false));
+        return;
+      }
+      _ratesError = false;
       _set(state.copyWith(busy: false, error: _failure(e)));
     }
   }
 
   // ---- screens 3 and 4: waiting, receipt ---------------------------------
+
+  static int _statusRank(KioskStatus s) => switch (s) {
+    KioskStatus.waiting => 0,
+    KioskStatus.accepted => 1,
+    KioskStatus.idChecked => 2,
+    KioskStatus.completed => 3,
+    _ => -1,
+  };
+
+  RequestIdentity _nextStatus(RequestIdentity incoming) {
+    final current = state.status;
+    if (current == null) return incoming;
+    return _statusRank(incoming.status) < _statusRank(current.status)
+        ? current
+        : incoming;
+  }
 
   Future<void> _pollStatus() async {
     final q = state.quote;
@@ -442,20 +577,44 @@ class KioskController extends Notifier<KioskState> {
     try {
       final s = await _repo.status(q.id);
       if (_disposed || state.quote?.id != q.id) return;
+      final confirmed =
+          state.screen == KioskScreen.quote &&
+          (s.status == KioskStatus.waiting ||
+              s.status == KioskStatus.accepted ||
+              s.status == KioskStatus.idChecked ||
+              s.status == KioskStatus.completed);
+      if (confirmed) {
+        _countdown?.cancel();
+        _set(
+          state.copyWith(
+            status: _nextStatus(s),
+            screen: KioskScreen.waiting,
+            busy: false,
+            error: _noError(),
+          ),
+        );
+        _receiptPoller.start();
+        _afterStatus();
+        return;
+      }
       final expired =
           s.status == KioskStatus.expired && state.screen == KioskScreen.quote;
       if (expired) _countdown?.cancel();
       _set(
         state.copyWith(
-          status: s,
+          status: _nextStatus(s),
           quoteExpired: state.quoteExpired || expired,
-          error: expired ? _t.text('quoteExpired') : '',
+          error: expired
+              ? _keyError('quoteExpired')
+              : _errorKey == 'statusError'
+              ? _noError()
+              : state.error,
         ),
       );
       _afterStatus();
     } catch (_) {
       if (state.quote?.id == q.id) {
-        _set(state.copyWith(error: _t.text('statusError')));
+        _set(state.copyWith(error: _keyError('statusError')));
       }
     }
   }
@@ -469,7 +628,7 @@ class KioskController extends Notifier<KioskState> {
       _set(
         state.copyWith(
           receiptImage: r.image,
-          status: r.identity,
+          status: _nextStatus(r.identity),
           screen: r.image == null ? KioskScreen.waiting : KioskScreen.receipt,
         ),
       );

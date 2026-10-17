@@ -179,6 +179,11 @@ impl ReferralCaptureService {
         }
 
         let new_id = CaptureId::new(Uuid::new_v4());
+        let pushed_at = if old.customer_sub.is_some() {
+            Some(at)
+        } else {
+            None
+        };
         let new_capture = Capture {
             id: new_id,
             organization_id: old.organization_id,
@@ -194,11 +199,24 @@ impl ReferralCaptureService {
             status: CaptureStatus::Active,
             supersedes_id: Some(*capture),
             reason: Some(reason.to_owned()),
-            pushed_at: None,
+            pushed_at,
             broker_outcome: None,
         };
 
         self.repository.insert(tx, &new_capture).await?;
+
+        if old.customer_sub.is_some() {
+            OutboxWriter::enqueue_in(
+                tx,
+                &old.organization_id.to_string(),
+                &BROKER_ATTRIBUTION,
+                &new_id.to_string(),
+                &format!("attr:{new_id}"),
+                &serde_json::json!({ "captureId": new_id.to_string() }),
+            )
+            .await
+            .map_err(CaptureError::from)?;
+        }
 
         let event = AuditEvent {
             actor_id: by.to_owned(),

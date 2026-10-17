@@ -590,6 +590,7 @@ impl SessionService {
 
         let login_resp = match identity.refresh(&decrypted_refresh, client_ip).await {
             Ok(resp) => resp,
+            Err(e @ IdentityError::Unavailable { .. }) => return Err(e.into()),
             Err(e) => {
                 let _ = sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
                     .bind(&token_hash)

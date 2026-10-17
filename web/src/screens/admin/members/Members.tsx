@@ -5,6 +5,7 @@ import type {
   SegmentPreviewDto,
   SegmentPreviewFilter,
 } from '../../../shared/api/generated/segment_preview';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
@@ -14,6 +15,11 @@ import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 
 const t = screenT('admin.members', table);
+
+interface DefineBody {
+  name: string;
+  rule: Record<string, unknown>;
+}
 
 interface SegmentDefineOutput {
   id: string;
@@ -61,39 +67,36 @@ export function Members(_props: AdminMenuProps): JSX.Element {
   const [snapshotInfo, setSnapshotInfo] = createSignal<SegmentSnapshotOutput | null>(null);
   const [preview, setPreview] = createSignal<SegmentPreviewDto | null>(null);
 
-  let pendingActionKey: { action: string; payload: string; key: string } | null = null;
-
-  function getIdempotencyKey(action: string, body: unknown): string {
-    const payload = JSON.stringify(body);
-    if (pendingActionKey && pendingActionKey.action === action && pendingActionKey.payload === payload) {
-      return pendingActionKey.key;
-    }
-    const key =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    pendingActionKey = { action, payload, key };
-    return key;
-  }
-
-  function clearPendingKey() {
-    pendingActionKey = null;
-  }
+  const defineWrite = keyedWrite<DefineBody, SegmentDefineOutput>(api, 'POST', '/api/segments');
+  const snapshotWrite = keyedWrite<{ id: string }, SegmentSnapshotOutput>(
+    api,
+    'POST',
+    (b) => `/api/segments/${b.id}/snapshots`,
+  );
 
   async function handleDefine(e?: Event) {
     e?.preventDefault();
+    if (defining()) return;
     setDefining(true);
     setErrorMsg(null);
 
     try {
       const rule: Record<string, unknown> = {};
-      const parsedRecency = Number.parseInt(recencyDays().trim(), 10);
-      if (!Number.isNaN(parsedRecency)) {
-        rule.recency_days = parsedRecency;
+      const recencyTrimmed = recencyDays().trim();
+      if (recencyTrimmed !== '') {
+        if (!/^\d+$/.test(recencyTrimmed)) {
+          setErrorMsg(t('error.validationFailed'));
+          return;
+        }
+        rule.recency_days = Number.parseInt(recencyTrimmed, 10);
       }
-      const parsedFreq = Number.parseInt(frequency().trim(), 10);
-      if (frequency().trim() !== '' && !Number.isNaN(parsedFreq)) {
-        rule.frequency = parsedFreq;
+      const freqTrimmed = frequency().trim();
+      if (freqTrimmed !== '') {
+        if (!/^\d+$/.test(freqTrimmed)) {
+          setErrorMsg(t('error.validationFailed'));
+          return;
+        }
+        rule.frequency = Number.parseInt(freqTrimmed, 10);
       }
       if (valueThb().trim() !== '') {
         rule.value_thb = valueThb().trim();
@@ -107,15 +110,10 @@ export function Members(_props: AdminMenuProps): JSX.Element {
         rule,
       };
 
-      const key = getIdempotencyKey('segment_define', body);
-      const res = await api.command<typeof body, SegmentDefineOutput>(
-        'POST',
-        '/api/segments',
-        body,
-        key,
-      );
-      clearPendingKey();
+      const res = await defineWrite.send(body);
       setDefinition(res);
+      setSnapshotInfo(null);
+      setPreview(null);
     } catch (err) {
       setErrorMsg(memberError(err));
     } finally {
@@ -133,6 +131,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
   }
 
   async function handleSnapshot() {
+    if (snapshotting()) return;
     const def = definition();
     if (!def) return;
     setSnapshotting(true);
@@ -140,15 +139,9 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
     try {
       const body = { id: def.id };
-      const key = getIdempotencyKey('segment_snapshot', body);
-      const res = await api.command<typeof body, SegmentSnapshotOutput>(
-        'POST',
-        `/api/segments/${def.id}/snapshots`,
-        body,
-        key,
-      );
-      clearPendingKey();
+      const res = await snapshotWrite.send(body);
       setSnapshotInfo(res);
+      setPreview(null);
       await loadPreview(res.id);
     } catch (err) {
       setErrorMsg(memberError(err));
@@ -242,13 +235,19 @@ export function Members(_props: AdminMenuProps): JSX.Element {
           </div>
 
           <div class="xc-detail-actions">
-            <button type="submit" data-action="define" class="xc-btn-primary">
+            <button
+              type="submit"
+              data-action="define"
+              class="xc-btn-primary"
+              disabled={defining()}
+            >
               {defining() ? t('defining') : t('defineBtn')}
             </button>
             <button
               type="button"
               data-action="snapshot"
               class="xc-btn-secondary"
+              disabled={snapshotting() || !definition()}
               onClick={() => void handleSnapshot()}
             >
               {snapshotting() ? t('snapshotting') : t('snapshotBtn')}

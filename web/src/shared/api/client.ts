@@ -2,6 +2,7 @@ export interface ViewAnswer<T> {
   version: number;
   changed: boolean;
   data?: T;
+  versions?: Record<string, number>;
 }
 
 export interface ViewParams<F = unknown> {
@@ -99,13 +100,21 @@ export class ApiClient {
       await this.parseError(res);
     }
 
-    const json = (await res.json()) as { version: number; changed: boolean; data?: T };
+    const json = (await res.json()) as {
+      version: number;
+      changed: boolean;
+      data?: T;
+      versions?: unknown;
+    };
     const answer: ViewAnswer<T> = {
       version: json.version,
       changed: json.changed,
     };
     if ('data' in json && json.data !== undefined) {
       answer.data = json.data;
+    }
+    if (typeof json.versions === 'object' && json.versions !== null && !Array.isArray(json.versions)) {
+      answer.versions = json.versions as Record<string, number>;
     }
     return answer;
   }
@@ -249,4 +258,29 @@ export class ApiClient {
       return (await res.json()) as R;
     })();
   }
+
+  /** A multipart/form-data upload (#2038): `form` is the body and fetch sets the boundary; sent and refused like `command`. */
+  postForm<R>(path: string, form: FormData, idempotencyKey: string): Promise<R> {
+    if (!idempotencyKey || idempotencyKey.trim() === '') {
+      throw new Error('Idempotency key must not be empty');
+    }
+    return (async () => {
+      const res = await this.fetchFn(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'x-xchange-request': '1',
+          'idempotency-key': idempotencyKey,
+        },
+        body: form,
+      });
+
+      if (!res.ok) {
+        await this.parseError(res);
+      }
+
+      return (await res.json()) as R;
+    })();
+  }
 }
+

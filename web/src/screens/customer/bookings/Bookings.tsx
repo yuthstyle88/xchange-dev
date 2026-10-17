@@ -7,7 +7,8 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient } from '../../../shared/api/client';
+import { ApiClient, ApiError } from '../../../shared/api/client';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import type {
   BookingCancelInput,
   BookingCancelOutput,
@@ -23,18 +24,12 @@ import type {
   MyBookingsData,
 } from '../../../shared/api/generated/my_bookings';
 import { locale, screenT } from '../../../shared/i18n';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
 import * as table from './i18n';
 import './bookings.css';
 
 const t = screenT('customer.bookings', table);
-
-function generateIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'key-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-}
 
 function getStatusLabel(status: string): string {
   const key = `status_${status}` as keyof typeof table.th;
@@ -44,15 +39,14 @@ function getStatusLabel(status: string): string {
   return status;
 }
 
-function getWordedError(err: any): string {
-  const code = err?.code ?? err?.error?.code;
-  if (code) {
-    const key = `error.${code}` as keyof typeof table.th;
-    if (key in table.th) {
+function getWordedError(err: unknown): string {
+  if (err instanceof ApiError && !isServerFailure(err)) {
+    const key = `error.${err.code}` as keyof typeof table.th;
+    if (Object.prototype.hasOwnProperty.call(table.th, key)) {
       return t(key);
     }
   }
-  return err?.message ?? err?.error?.message ?? t('error.loadFailed');
+  return wordedError(err);
 }
 
 function isFinished(status: string): boolean {
@@ -119,11 +113,19 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
 
   // Cancel dialog
   const [cancellingBooking, setCancellingBooking] = createSignal<MyBookingItemDto | null>(null);
-  const [cancelIdempotencyKey, setCancelIdempotencyKey] = createSignal<string>('');
+  const cancelWrite = keyedWrite<BookingCancelInput & { branch: string }, BookingCancelOutput>(
+    api,
+    'POST',
+    (b) => `/api/bookings/${b.id}/cancel`,
+  );
 
   // Reschedule dialog
   const [reschedulingBooking, setReschedulingBooking] = createSignal<MyBookingItemDto | null>(null);
-  const [rescheduleIdempotencyKey, setRescheduleIdempotencyKey] = createSignal<string>('');
+  const rescheduleWrite = keyedWrite<BookingRescheduleInput & { branch: string }, BookingRescheduleOutput>(
+    api,
+    'POST',
+    (b) => `/api/bookings/${b.id}/reschedule`,
+  );
   const [availableSlots, setAvailableSlots] = createSignal<BookingSlotItemDto[]>([]);
   const [slotsLoading, setSlotsLoading] = createSignal(false);
   const [selectedSlotId, setSelectedSlotId] = createSignal<string>('');
@@ -145,45 +147,63 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     fetchBookings();
   });
 
+  let commandSeq = 0;
+
   const handleOpenCancel = (booking: MyBookingItemDto) => {
+    commandSeq++;
     setCancellingBooking(booking);
+    setCommandLoading(false);
     setCommandError(null);
-    setCancelIdempotencyKey(generateIdempotencyKey());
+    setLastAction(null);
   };
 
   const handleCloseCancel = () => {
+    commandSeq++;
+    cancelWrite.reset();
     setCancellingBooking(null);
+    setCommandLoading(false);
     setCommandError(null);
+    setLastAction(null);
   };
 
   const executeCancel = async () => {
     const booking = cancellingBooking();
     if (!booking) return;
-    const key = cancelIdempotencyKey();
+    const bookingId = booking.id;
+    const seq = ++commandSeq;
     setCommandLoading(true);
     setCommandError(null);
-    setLastAction(() => executeCancel);
 
     try {
-      const out = await api.command<BookingCancelInput & { branch: string }, BookingCancelOutput>(
-        'POST',
-        `/api/bookings/${booking.id}/cancel`,
-        { id: booking.id, reason: null, branch: booking.branchId },
-        key,
-      );
+      const out = await cancelWrite.send({
+        id: bookingId,
+        reason: null,
+        branch: booking.branchId,
+      });
       // Update status to CANCELLED in local list
       setBookings((prev) =>
-        prev.map((b) => (b.id === booking.id ? { ...b, status: out.status } : b)),
+        prev.map((b) => (b.id === bookingId ? { ...b, status: out.status } : b)),
       );
+      if (seq !== commandSeq || cancellingBooking()?.id !== bookingId) return;
       setCancellingBooking(null);
     } catch (err: any) {
+      if (seq !== commandSeq || cancellingBooking()?.id !== bookingId) return;
+      setLastAction(() => executeCancel);
       setCommandError(getWordedError(err));
     } finally {
-      setCommandLoading(false);
+      if (seq === commandSeq) {
+        setCommandLoading(false);
+      }
     }
   };
 
+  // Bumped on every slots read and on dialog close, so an answer or error
+  // for a dialog that is no longer the open one is dropped (#2418).
+  let slotsSeq = 0;
+
   const loadSlots = async (booking: MyBookingItemDto) => {
+    const seq = ++slotsSeq;
+    setAvailableSlots([]);
     setSlotsLoading(true);
     setCommandError(null);
     setLastAction(() => () => loadSlots(booking));
@@ -192,53 +212,70 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
       const res = await api.view<BookingSlotsData>('booking_slots', {
         branch: booking.branchId,
       });
+      if (seq !== slotsSeq) return;
       setAvailableSlots(res.data?.slots ?? []);
     } catch (err: any) {
+      if (seq !== slotsSeq) return;
+      setAvailableSlots([]);
       setCommandError(getWordedError(err));
     } finally {
-      setSlotsLoading(false);
+      if (seq === slotsSeq) setSlotsLoading(false);
     }
   };
 
   const handleOpenReschedule = (booking: MyBookingItemDto) => {
+    commandSeq++;
     setReschedulingBooking(booking);
+    setCommandLoading(false);
     setCommandError(null);
-    setRescheduleIdempotencyKey(generateIdempotencyKey());
+    setLastAction(null);
     setSelectedSlotId('');
+    setAvailableSlots([]);
     loadSlots(booking);
   };
 
   const handleCloseReschedule = () => {
+    slotsSeq++;
+    commandSeq++;
+    rescheduleWrite.reset();
     setReschedulingBooking(null);
+    setCommandLoading(false);
     setCommandError(null);
+    setLastAction(null);
     setSelectedSlotId('');
+    setAvailableSlots([]);
+    setSlotsLoading(false);
   };
 
   const executeReschedule = async () => {
     const booking = reschedulingBooking();
     const slotId = selectedSlotId();
     if (!booking || !slotId) return;
-    const key = rescheduleIdempotencyKey();
+    const bookingId = booking.id;
+    const seq = ++commandSeq;
     setCommandLoading(true);
     setCommandError(null);
-    setLastAction(() => executeReschedule);
 
     try {
-      await api.command<BookingRescheduleInput & { branch: string }, BookingRescheduleOutput>(
-        'POST',
-        `/api/bookings/${booking.id}/reschedule`,
-        { id: booking.id, slotId, branch: booking.branchId },
-        key,
-      );
+      await rescheduleWrite.send({
+        id: bookingId,
+        slotId,
+        branch: booking.branchId,
+      });
       // Success: re-read bookings
       await fetchBookings();
+      if (seq !== commandSeq || reschedulingBooking()?.id !== bookingId) return;
       setReschedulingBooking(null);
     } catch (err: any) {
       // On error (409 staleVersion / 400 capacityFull), re-read booking (§4.3)
       await fetchBookings();
+      if (seq !== commandSeq || reschedulingBooking()?.id !== bookingId) return;
+      setLastAction(() => executeReschedule);
       setCommandError(getWordedError(err));
     } finally {
-      setCommandLoading(false);
+      if (seq === commandSeq) {
+        setCommandLoading(false);
+      }
     }
   };
 
@@ -463,19 +500,25 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                         <div
                           class={`xc-slot-option ${selectedSlotId() === slot.id ? 'selected' : ''}`}
                           data-slot-id={slot.id}
-                          onClick={() => setSelectedSlotId(slot.id)}
+                          onClick={() => {
+                            if (slot.available === 0) return;
+                            setSelectedSlotId(slot.id);
+                          }}
                         >
                           <label class="xc-slot-label">
                             <input
                               type="radio"
                               name="rescheduleSlot"
                               value={slot.id}
+                              disabled={slot.available === 0}
                               checked={selectedSlotId() === slot.id}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (slot.available === 0) return;
                                 setSelectedSlotId(slot.id);
                               }}
                               onChange={() => {
+                                if (slot.available === 0) return;
                                 setSelectedSlotId(slot.id);
                               }}
                             />

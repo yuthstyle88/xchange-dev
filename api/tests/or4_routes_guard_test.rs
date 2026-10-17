@@ -20,6 +20,8 @@
 //!
 //! No database.
 
+mod or4_route_rules;
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,23 +91,12 @@ fn every_v3_route_file_declares_inherits_or_the_public_marker() {
     let mut inherits_off_the_trait = Vec::new();
     for file in &files {
         let code = code_of(file);
-        let inherits = code.contains("const INHERITS:");
-        let public = code.contains("const PUBLIC_ROUTE:");
-        if !inherits && !public {
-            neither.push(relative(file));
-        }
-        // INHERITS is read by the shared handler only on an impl of one of the four traits
-        let on_a_trait = [
-            "BranchView",
-            "PagedView",
-            "ComputeAction",
-            "CommandAction",
-            "OrgView",
-        ]
-        .iter()
-        .any(|t| code.contains(&format!("{t} for ")));
-        if inherits && !on_a_trait {
-            inherits_off_the_trait.push(relative(file));
+        if let Err(why) = or4_route_rules::route_file_verdict(&code) {
+            if why.contains("INHERITS") && why.contains("outside") {
+                inherits_off_the_trait.push(relative(file));
+            } else {
+                neither.push(relative(file));
+            }
         }
     }
     assert_eq!(

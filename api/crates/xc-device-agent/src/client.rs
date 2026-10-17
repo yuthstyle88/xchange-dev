@@ -2,8 +2,13 @@
 //! trait the runner talks to it through.
 
 use std::future::Future;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const CLAIM_MARGIN: Duration = Duration::from_secs(10);
+const REPORT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The drawer this agent drives, as it reports it at every claim.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +157,7 @@ impl HttpAgentApi {
         let client = reqwest::Client::builder()
             .use_rustls_tls()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .map_err(|e| ApiError::Connection(e.to_string()))?;
         Ok(Self {
@@ -256,7 +262,8 @@ impl AgentApi for HttpAgentApi {
         let base = self.server_url.trim_end_matches('/');
         let url = format!("{base}/api/device-agent/claim");
 
-        let mut req = self.client.post(&url);
+        let timeout = Duration::from_millis(request.wait_ms) + CLAIM_MARGIN;
+        let mut req = self.client.post(&url).timeout(timeout);
         if !self.token.is_empty() {
             req = req.header("Authorization", format!("Bearer {}", self.token));
         }
@@ -295,7 +302,7 @@ impl AgentApi for HttpAgentApi {
         let base = self.server_url.trim_end_matches('/');
         let url = format!("{base}/api/device-agent/report");
 
-        let mut req = self.client.post(&url);
+        let mut req = self.client.post(&url).timeout(REPORT_TIMEOUT);
         if !self.token.is_empty() {
             req = req.header("Authorization", format!("Bearer {}", self.token));
         }
@@ -314,6 +321,14 @@ impl AgentApi for HttpAgentApi {
         } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             let retry_after_secs = parse_retry_after(response.headers());
             Err(ApiError::RateLimited { retry_after_secs })
+        } else if status.is_server_error() {
+            let body = response.text().await.unwrap_or_default();
+            let detail = if body.is_empty() {
+                format!("server error {}", status.as_u16())
+            } else {
+                format!("server error {}: {}", status.as_u16(), body)
+            };
+            Err(ApiError::Connection(self.redact_error(detail)))
         } else {
             let error = response.text().await.unwrap_or_default();
             Err(ApiError::Rejected {

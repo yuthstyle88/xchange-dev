@@ -14,7 +14,7 @@ use xc_kernel::ids::BranchId;
 
 use super::{BookingOkOutput, BookingServices};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::CommandAction;
+use crate::presentation::http::v3::command::{CommandAction, Locks};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct ClosureRemove {
@@ -44,6 +44,10 @@ impl CommandAction for ClosureRemove {
     const ROUTE: &'static str = "/api/branches/{id}/closures/{date}/remove";
     const METHOD: Method = Method::POST;
 
+    fn locks(&self, _branch: &BranchId, input: &Self::Input) -> Locks {
+        Locks::One(BranchId::new(&input.id))
+    }
+
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -68,14 +72,7 @@ impl CommandAction for ClosureRemove {
             .slot_service
             .remove_closure_in(tx, &branch, input.date)
             .await
-            .map_err(|e| {
-                V3Error::new(
-                    "badRequest",
-                    None,
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
+            .map_err(V3Error::from)?;
 
         Ok(BookingOkOutput { ok: true })
     }

@@ -160,12 +160,22 @@ impl BenefitCalculator for DummyRewardCalculator {
     fn class(&self) -> BenefitClass {
         BenefitClass::Reward
     }
-    fn apply(&self, _line: &QuoteLineInput, _params: &serde_json::Value) -> BenefitEffect {
-        BenefitEffect {
+    fn validate_params(
+        &self,
+        _params: &serde_json::Value,
+    ) -> Result<(), xc_marketing::domain::benefit::calculator::ParamError> {
+        Ok(())
+    }
+    fn apply(
+        &self,
+        _line: &QuoteLineInput,
+        _params: &serde_json::Value,
+    ) -> Result<BenefitEffect, xc_marketing::domain::benefit::calculator::ParamError> {
+        Ok(BenefitEffect {
             new_final_rate: None,
             new_fee_thb: None,
             amount_thb: Money::from_minor(10000).unwrap(), // 100.00 THB
-        }
+        })
     }
 }
 
@@ -969,7 +979,9 @@ fn test_calculators_move_rate_toward_customer_buy_and_sell() {
 
     // BUY: shop buys foreign currency from customer; higher rate benefits customer
     let buy_line = make_line(Side::Buy, "35.00", "35.00", "36.00", "100", "50.00");
-    let buy_effect = rate_calc.apply(&buy_line, &json!({ "delta": "0.10" }));
+    let buy_effect = rate_calc
+        .apply(&buy_line, &json!({ "delta": "0.10" }))
+        .expect("valid params");
     assert_eq!(
         buy_effect.new_final_rate,
         Some(Rate::parse("35.10").unwrap())
@@ -977,14 +989,18 @@ fn test_calculators_move_rate_toward_customer_buy_and_sell() {
 
     // SELL: shop sells foreign currency to customer; lower rate benefits customer
     let sell_line = make_line(Side::Sell, "36.00", "35.00", "36.00", "100", "50.00");
-    let sell_effect = rate_calc.apply(&sell_line, &json!({ "delta": "0.10" }));
+    let sell_effect = rate_calc
+        .apply(&sell_line, &json!({ "delta": "0.10" }))
+        .expect("valid params");
     assert_eq!(
         sell_effect.new_final_rate,
         Some(Rate::parse("35.90").unwrap())
     );
 
     // Fee waiver reduces or clears the fee
-    let fee_effect = fee_calc.apply(&buy_line, &json!({ "percent": "1.00" }));
+    let fee_effect = fee_calc
+        .apply(&buy_line, &json!({ "percent": "1.00" }))
+        .expect("valid params");
     assert_eq!(fee_effect.new_fee_thb, Some(Money::ZERO));
 }
 
