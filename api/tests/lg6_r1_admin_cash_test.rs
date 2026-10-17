@@ -330,7 +330,11 @@ async fn case_1_no_open_shift_answers_the_same_empty_answer_as_today_with_last_c
     let data = room.cash("").await;
 
     // The same empty answer as today for shift, stock, stats, reference
-    assert_eq!(data["shift"], json!(null), "no open shift has shift: null");
+    assert_eq!(
+        data["openShifts"],
+        json!([]),
+        "no open shift has openShifts: [] (CA-10q)"
+    );
     assert_eq!(data["stock"], json!([]), "no open shift has empty stock");
     assert_eq!(data["stats"], json!(null), "no open shift has stats: null");
     assert_eq!(
@@ -411,7 +415,7 @@ async fn case_2_the_last_closed_shift_has_a_verified_count_reflected_in_last_cou
 
     let data = room.cash("").await;
 
-    assert_eq!(data["shift"]["id"], "S-OPEN-2");
+    assert_eq!(data["openShifts"][0]["shiftId"], "S-OPEN-2");
     assert_eq!(
         data["lastCounted"],
         json!([
@@ -446,7 +450,7 @@ async fn case_3_a_drawer_to_safe_move_of_500_thb_on_the_open_shift_includes_in_o
 
     let data = room.cash("").await;
 
-    assert_eq!(data["shift"]["id"], "S-OPEN-3");
+    assert_eq!(data["openShifts"][0]["shiftId"], "S-OPEN-3");
 
     // Outgoing stat includes the 500 THB drawer->safe move (thb_out = moved_out)
     let stats = &data["stats"];
@@ -504,7 +508,7 @@ async fn case_4_an_exchange_only_leaves_thb_in_and_thb_out_unchanged() {
 
     let data = room.cash("").await;
 
-    assert_eq!(data["shift"]["id"], "S-OPEN-4");
+    assert_eq!(data["openShifts"][0]["shiftId"], "S-OPEN-4");
 
     // thbIn/thbOut are unchanged by the exchange (both 0.00), so incoming is 4000.00 from cash_received alone
     let stats = &data["stats"];
