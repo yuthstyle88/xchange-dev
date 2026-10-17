@@ -42,9 +42,9 @@ use chrono::{Duration, Utc};
 use compat_common::{Fixture, Index, Person};
 use rpc_common::{
     Answer, App, BAD_BRANCH, Call, Cookies, Desk, EMPLOYEE_AUTH_REQUIRED, FRONT_ONLY, Family,
-    INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, NO_SUCH_NAME, PART_ONE, RETIRED, ROLE_NOT_ALLOWED_RPC,
+    INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, PART_ONE, RETIRED, ROLE_NOT_ALLOWED_RPC,
     ROLE_NOT_ALLOWED_STAFF, RPC, Replay, Rule, SERVER_ERROR, SIGN_IN, STAFF_RPC, USE_CUSTODY,
-    V2_HEADERS_FAULT, one_of_each_role, route_rule, sign_in,
+    V2_HEADERS_FAULT, one_of_each_role, retired_by_ca10, route_rule, sign_in, unknown_name_for,
 };
 use serde_json::{Value, json};
 use snapshot_common::time;
@@ -59,19 +59,16 @@ const ORIGIN: &str = "http://desk.test";
 
 /// True while no family of part two is wired: every tally is then the number
 /// it was when part one was written.
-const NO_FAMILY_WIRED: bool = !rpc_common::gap_documents::WIRED
-    && !rpc_common::gap_custody::WIRED
-    && !rpc_common::gap_save::WIRED;
+const NO_FAMILY_WIRED: bool = !rpc_common::gap_documents::WIRED && !rpc_common::gap_save::WIRED;
 
 /// The names the gap is held with, family by family in the order asked, and
 /// how many (caller, route) pairs `Policy` lets through for them:
 /// `saveTransaction` — the owner and FRONT on `/api/rpc`, FRONT on the staff
-/// route (3); `documents` — seven roles on the staff route (7); three `ops*`
-/// names — nine roles on the staff route each (27).
-const GAP_NAMES: [(Family, &[&str], usize); 3] = [
+/// route (3); `documents` — seven roles on the staff route (7). (CA-10 #626 retires the `ops*`
+/// custody family, design §6.)
+const GAP_NAMES: [(Family, &[&str], usize); 2] = [
     (Family::Save, &["saveTransaction"], 3),
     (Family::Documents, &["documents"], 7),
-    (Family::Custody, &["opsClock", "opsPropose", "opsNope"], 27),
 ];
 
 /// The steps of `rpc/transport.json` v2 answers in the JavaScript engine's own
@@ -134,21 +131,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
             94,
             Rule::Excluded("the customer host: v3 does not tell hosts apart yet"),
         );
-    // `opsNope` on the staff route (#84) reaches custody in v2, which answers
-    // it by the state of the branch. Decided: once custody is wired v3 answers
-    // an `ops` name it does not know `คำขอไม่ถูกต้อง`; until then it is the gap.
-    let (ops_gap, ops_differs) = if Family::Custody.wired() {
-        replay = replay.rule(
-            84,
-            Rule::Differs {
-                status: 400,
-                sentence: INVALID_REQUEST,
-            },
-        );
-        (vec![], vec![84])
-    } else {
-        (vec![84], vec![])
-    };
+    // `opsNope` on the staff route (#84) reached custody in v2. CA-10 #626 (design §6) retires
+    // every `ops*` name: v3 answers it as a name v2 does not know (`Rule::Retired`).
     replay.run().await;
 
     // the answers of the one action here are v2's bytes, key order included
@@ -170,13 +154,17 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     assert_eq!(fixture.steps().len(), 99);
     assert_eq!(
         replay.tally.differences,
-        [ENGINE_SENTENCES.to_vec(), ops_differs].concat()
+        // CA-10 #626: `opsNope` on `/api/rpc` (#36) is retired too
+        {
+            let mut all = [ENGINE_SENTENCES.to_vec(), vec![36, 84]].concat();
+            all.sort_unstable();
+            all
+        }
     );
-    // `opsNope` on the staff route reaches custody in v2: part two
-    assert_eq!(replay.tally.part_two, ops_gap);
+    assert!(replay.tally.part_two.is_empty());
     assert_eq!(numbers(&replay.tally.excluded), vec![93, 94]);
-    // 88 since ticket #146 added #95-#99
-    assert_eq!(replay.tally.replayed.len(), 88);
+    // 88 since ticket #146 added #95-#99; 87 since CA-10 #626 retired #36
+    assert_eq!(replay.tally.replayed.len(), 87);
     assert!(replay.tally.applied_behind.is_empty());
     replay.finish().await;
 }
@@ -483,15 +471,22 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         .rule(159, Rule::AnswersAs(160))
         // re-expected for RE-7 #604 (known difference: design §9 removes the action): #150
         // asks after the id of #23, a direct save, which v3 no longer applies
-        .rule(150, Rule::ResolvedAs("CANCELLED"));
+        .rule(150, Rule::ResolvedAs("CANCELLED"))
+        // re-expected for CA-10 #626 (design §6 retires the direct shift actions): #151 asks after
+        // the id of #40, a direct shift open, which v3 no longer applies under that id
+        .rule(151, Rule::ResolvedAs("CANCELLED"));
     replay.run().await;
 
     assert_eq!(fixture.steps().len(), 184);
     // re-expected for RE-7 #604: the 29 `adminSaveRate` steps (#4–#31, #148) and #150
     let retired: Vec<usize> = (4..=31).chain([148]).collect();
     assert_eq!(retired.len(), 29);
-    let mut differences: Vec<usize> = [150, 159].to_vec();
+    let mut differences: Vec<usize> = [150, 151, 159].to_vec();
     differences.extend(&retired);
+    // re-expected for CA-10 #626: the 49 direct shift steps (#32–#67, #132–#143, #149)
+    let ca10: Vec<usize> = (32..=67).chain(132..=143).chain([149]).collect();
+    assert_eq!(ca10.len(), 49);
+    differences.extend(&ca10);
     differences.sort_unstable();
     let mut tallied = replay.tally.differences.clone();
     tallied.sort_unstable();
@@ -515,10 +510,8 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     }
     // OR-4b (#767): the owner's saveTransaction and reserveCustomer (C2: TELLER's) and
     // adminMoveStock (C3: BRANCH_MANAGER's and FINANCE's) on /api/rpc are refused by role
-    let owners_c2_c3: Vec<usize> = [38]
-        .into_iter()
-        .chain(47..=65)
-        .chain(68..=79)
+    // (CA-10 #626: the owner's adminMoveStock, #38 and #47–#65, is retired, not refused by role)
+    let owners_c2_c3: Vec<usize> = (68..=79)
         .chain(84..=108)
         .chain(110..=125)
         .chain([144])
@@ -527,9 +520,11 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // 184 − 3 uploads − 43 of part two − 1 difference − 30 of RE-7 #604 (29 direct saves and
     // #150); a step of a wired family is held to v2 instead; less the 74 the Blueprint refuses
     // (C2, C3)
+    // re-expected for CA-10 #626: less the 49 direct shift steps and #151, now differences (of the
+    // 49, the 20 the Blueprint refused by role already left the replayed with `owners_c2_c3`)
     assert_eq!(
         replay.tally.replayed.len(),
-        107 + (43 - part_two.len()) - owners_c2_c3.len()
+        107 - 50 + (43 - part_two.len()) - owners_c2_c3.len()
     );
     // the three uploads, and — while the save is not wired — the three accepted
     // saves (one of them sent twice)
@@ -538,8 +533,11 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // Re-expected for TX-6 #674 by the test-writer (decision A2, owner 2026-10-11, design
     // quote-transaction.md §4.6.1): #125, the DEMO save at rate 1, is now the refusal
     // RATE_MISMATCH (fixture step 125), so nothing of it is applied behind the routes.
+    // re-expected for CA-10 #626: the direct shift steps v2 accepted, applied behind the routes
+    // (`Replay::retired_behind`): the open #40, the moves #63 and #66, the close #141; their repeats
+    // (#41, #64, #142) apply nothing more
     let mut applied_behind = vec![
-        23, 24, 25, 28, 29, 63, 64, 77, 78, 79, 82, 83, 109, 120, 121, 123, 124,
+        23, 24, 25, 28, 29, 40, 63, 66, 77, 78, 79, 82, 83, 109, 120, 121, 123, 124, 141,
     ];
     if !Family::Save.wired() {
         applied_behind.extend([120, 121, 123]);
@@ -555,8 +553,10 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         if PART_ONE.contains(&action.as_str()) {
             assert!(
                 replay.tally.replayed.contains(&step.n)
-                    || [150, 159].contains(&step.n)
+                    || [150, 151, 159].contains(&step.n)
                     || retired.contains(&step.n)
+                    // CA-10 #626: held to the unknown-name answer instead
+                    || ca10.contains(&step.n)
                     // OR-4b: held to the Blueprint's refusal instead (C2, C3)
                     || replay.tally.blueprint.contains(&step.n),
                 "engine_actions#{} ({action}) was not compared",
@@ -622,18 +622,10 @@ async fn rates_json_is_answered_as_v2_answered_it() {
     assert!(views.iter().all(|n| tally.replayed.contains(n)));
 }
 
-#[actix_web::test]
-async fn shift_json_is_answered_as_v2_answered_it() {
-    let (fixture, views, tally) = replay_whole("snapshot/shift.json").await;
-    assert_eq!(fixture.steps().len(), 59);
-    // OR-4b (#767, C3): the owner's two adminMoveStock are refused by role, applied behind
-    assert_eq!(tally.blueprint, vec![10, 45]);
-    // re-expected for RE-7 #604: the direct save is a known difference
-    assert_eq!(tally.differences, vec![1]);
-    assert_eq!(tally.replayed.len(), 56);
-    assert_eq!(views.len(), 52);
-    assert!(views.iter().all(|n| tally.replayed.contains(n)));
-}
+// Re-expected for CA-10 #626 by the ticket author: `snapshot/shift.json` recorded v2's direct shift
+// actions (`adminOpenShift`, `adminMoveStock`, `adminCloseShift`), the subject its replay held. Design
+// §6 retires them, replaced by counts and moves, which their own tests hold; the replay of this file
+// retires with them. (`the_staff_route_keeps_the_order_of_the_keys` still reads it.)
 
 /// `snapshot/branches.json`: three branches, employees of two of them. The one
 /// decided difference: step 3, `adminCreateBranch` sent again from `MAIN`,
@@ -652,11 +644,13 @@ async fn branches_json_is_answered_as_v2_answered_it() {
 
     assert_eq!(fixture.steps().len(), 39);
     // CI-4 (#651): #10 is SameCustomerAs (K1, a customer per company); re-expected for RE-7
-    // #604: the three direct saves (#1, #6, #7) are known differences
-    assert_eq!(replay.tally.differences, vec![1, 3, 6, 7, 10]);
+    // #604: the three direct saves (#1, #6, #7) are known differences; re-expected for CA-10
+    // #626: the direct shift opens #8 and #37 too (design §6)
+    assert_eq!(replay.tally.differences, vec![1, 3, 6, 7, 8, 10, 37]);
     // OR-4b (#767, C2): the owner's reserveCustomer is refused by role, applied behind
     assert_eq!(replay.tally.blueprint, vec![9]);
-    assert_eq!(replay.tally.replayed.len(), 33);
+    // CA-10 #626: #8 and #37 left the replayed for the differences
+    assert_eq!(replay.tally.replayed.len(), 31);
     let views: Vec<usize> = fixture
         .steps()
         .iter()
@@ -866,7 +860,8 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
             routes.contains_key(RPC),
             "{action} was recorded on /api/rpc"
         );
-        if action == RETIRED {
+        // re-expected for CA-10 #626 by the ticket author: the direct shift actions too (design §6)
+        if action == RETIRED || retired_by_ca10(action) {
             // re-expected for RE-7 #604, a known difference (design §9 removes the action):
             // every role the index recorded, accepted or refused, is answered as a name v2
             // does not know
@@ -877,7 +872,7 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
                     .chain(record.refusals.iter().flat_map(|r| r.from.iter()));
                 for role in roles {
                     let answer = ask(&app, &cookies, path, action, role).await;
-                    let unknown = ask(&app, &cookies, path, NO_SUCH_NAME, role).await;
+                    let unknown = ask(&app, &cookies, path, &unknown_name_for(action), role).await;
                     assert_eq!(
                         (answer.status, answer.text.as_str()),
                         (unknown.status, unknown.text.as_str()),
@@ -965,8 +960,10 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
         ),
         // OR-4b (#767): of v2's 47 acceptances, the owner's on the three C2/C3 actions are refused;
         // re-expected for RE-7 #604: adminSaveRate's 3 acceptances, 2 gate refusals and 10
-        // use-case refusals are the 15 asked as retired
-        (42, 2, 15, 39, 15),
+        // use-case refusals are the 15 asked as retired. Re-expected for CA-10 #626 by the ticket
+        // author (design §6): every role the index recorded for the three direct shift actions is
+        // asked as retired too; counted on the CA-10 branch, 2026-10-16
+        (37, 1, 11, 16, 49),
         "what the index holds for the ten actions"
     );
 
@@ -1099,25 +1096,8 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
     let main = snapshot(RPC, "OWNER", json!({})).await;
     // CI-4 (#651): the snapshot lists every LIVE customer of the organisation (owner, 2026-10-09).
     assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(1));
-    let opened = app
-        .send(
-            Call::action(
-                ORIGIN,
-                RPC,
-                "adminOpenShift",
-                json!({ "branchId": "B-two", "requestId": "00000000-0000-4000-8000-0000000c0002",
-                        "opening": { "THB": 1 } }),
-            )
-            .cookie(&cookies["OWNER"]),
-        )
-        .await;
-    assert_eq!(opened.status, 200, "{}", opened.text);
-    assert_eq!(opened.json()["branchId"], "B-two");
-    let branches: Vec<String> = sqlx::query_scalar("SELECT branch_id FROM shifts")
-        .fetch_all(&desk.db.pool)
-        .await
-        .expect("the shifts");
-    assert_eq!(branches, vec!["B-two".to_string()]);
+    // CA-10 #626 (design §6): the owner's direct `adminOpenShift` on the branch they name is
+    // retired with the direct shift actions; a shift opens by a count (counts' own tests).
     desk.finish().await;
 }
 

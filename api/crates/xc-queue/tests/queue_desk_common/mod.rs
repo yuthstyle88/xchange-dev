@@ -138,9 +138,9 @@ pub async fn open_shift(
         .expect("an OPEN count");
     db.exec(&format!(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
-             teller_id, opened_by_count) \
+             teller_id) \
          VALUES ('{shift_id}', '{branch}', 'OPEN', now(), '{teller_id}', '', '{count_id}', \
-             '{teller_id}'::uuid, '{count_id}'::uuid)"
+             '{teller_id}'::uuid)"
     ))
     .await;
     let counters = q.counters.clone();

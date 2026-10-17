@@ -24,7 +24,6 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::AppState;
@@ -58,8 +57,9 @@ fn unique(prefix: &str) -> String {
 // ── the custody port, faked ──────────────────────────────────────────────
 
 /// What v2's route asks the engine about custody, held in memory: per branch the
-/// `operations` object of the snapshot (`custodian`, `requests`), and a record of
-/// every `entity` / `enable` call.
+/// `operations` object of the snapshot (`custodian`, `requests`). `calls` stays empty since CA-10
+/// #626 retired `entity` and `enable` (cash-shift-transfer.md §6 Q7): nothing hands custody a write
+/// any more, and the tests that read it check exactly that.
 #[derive(Default)]
 pub struct FakeCustody {
     pub operations: Mutex<HashMap<String, Value>>,
@@ -74,15 +74,6 @@ impl FakeCustody {
             Some(sentence) => Err(AppError::Domain(sentence)),
             None => Ok(()),
         }
-    }
-
-    fn record(&self, action: &str, payload: &Value, actor: &Actor) -> AppResult<Value> {
-        self.refusal()?;
-        self.calls
-            .lock()
-            .unwrap()
-            .push(json!({ "action": action, "payload": payload, "actorId": actor.id() }));
-        Ok(json!({ "saved": true, "by": "custody", "action": action }))
     }
 }
 
@@ -107,22 +98,6 @@ impl EmployeeCustody for FakeCustody {
             });
             Ok(ops["custodian"] == employee_id || pending)
         })
-    }
-
-    fn set_entity<'a>(
-        &'a self,
-        payload: &'a Value,
-        actor: &'a Actor,
-    ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + 'a>> {
-        Box::pin(async move { self.record("opsSetEntity", payload, actor) })
-    }
-
-    fn enable<'a>(
-        &'a self,
-        payload: &'a Value,
-        actor: &'a Actor,
-    ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + 'a>> {
-        Box::pin(async move { self.record("opsEnable", payload, actor) })
     }
 }
 
@@ -691,6 +666,16 @@ pub async fn replay(app: &TestApp, desk: &Desk, story: &Value) {
             story["name"].as_str().unwrap(),
             step["note"].as_str().unwrap()
         );
+        // CA-10 #626 retires `/api/employees`' `entity` and `enable` (cash-shift-transfer.md §6 Q7): v2's
+        // steps of them have no answer to compare any more, and are left out.
+        if step["request"]["path"] == "/api/employees"
+            && matches!(
+                step["request"]["json"]["action"].as_str(),
+                Some("entity" | "enable")
+            )
+        {
+            continue;
+        }
         if let Some(custody) = step.get("custody") {
             desk.custody.operations.lock().unwrap().insert(
                 custody["branch"].as_str().unwrap().to_owned(),

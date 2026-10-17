@@ -128,7 +128,7 @@ impl Db {
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase, safe) VALUES ($1, true, 'OPEN', jsonb_build_object('USD', $2::bigint))",
+            "INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', jsonb_build_object('USD', $2::bigint))",
         )
         .bind(&id)
         .bind(safe_usd_minor)

@@ -4,12 +4,8 @@
 //! Written before the implementation. Do not edit, delete or weaken; add tests in a file of
 //! your own.
 //!
-//! What is pinned here (the machine, no database):
-//! - a branch whose hours are not set (`ServiceWindow::NotSet`) is refused with
-//!   `สาขานี้ยังไม่ได้ตั้งเวลาทำการ ให้ผู้ดูแลตั้งเวลาก่อนเปิดบริการ`;
-//! - a branch closed today (`ServiceWindow::Closed`) is refused with `วันนี้สาขาปิด`;
-//! - both are still `ServiceNotReady` (matched with `{ .. }`, so the variant may carry the
-//!   window);
+//! What is pinned here (no database; CA-10 #626 retired the machine's start, so the two refused
+//! starts moved to `api/tests/service_not_ready_message_test.rs`):
 //! - `CustodyTime`'s Bangkok minute-of-day method is named nowhere under `api/`, and the fixed sentence's
 //!   `11:00–22:50` appears in no production `.rs` under `api/crates` or `api/src`.
 //!
@@ -17,61 +13,12 @@
 //! branch's timezone; it is pinned through the real ports in
 //! `api/tests/service_not_ready_message_test.rs`.
 
-mod custody_common;
-
 use std::path::{Path, PathBuf};
 
-use custody_common::*;
+// Re-expected for CA-10 #626 by the ticket author (ruling Q7 A): the machine's `StartService`
+// command is retired with the custody command engine; #755's refused-start sentences are pinned
+// through `BranchDayService::start_service` (`api/tests/service_not_ready_message_test.rs`).
 
-use CustodyError as E;
-
-const NOT_SET: &str = "สาขานี้ยังไม่ได้ตั้งเวลาทำการ ให้ผู้ดูแลตั้งเวลาก่อนเปิดบริการ";
-const CLOSED_TODAY: &str = "วันนี้สาขาปิด";
-
-fn start(d: &Desk) -> CustodyCommand {
-    CustodyCommand::StartService {
-        equipment_ready: true,
-        rates_verified: true,
-        rate_updated: d.rates_updated.clone(),
-    }
-}
-
-/// BE1 starts the service of a ready desk at noon in Bangkok, told `window`.
-fn refused_start(window: ServiceWindow) -> CustodyError {
-    let d = Desk::ready();
-    let facts = CustodyFacts {
-        service_window: window,
-        ..d.facts()
-    };
-    match CustodyMachine::apply(
-        &d.state,
-        &start(&d),
-        &actor("BE1"),
-        &facts,
-        CustodyTime::from_epoch_millis(NOON),
-    ) {
-        Err(e) => e,
-        Ok(t) => panic!("the start is refused, got phase {:?}", t.state.phase),
-    }
-}
-
-#[test]
-fn a_branch_without_hours_is_told_to_have_them_set() {
-    let e = refused_start(ServiceWindow::NotSet);
-    assert!(matches!(e, E::ServiceNotReady { .. }), "{e}");
-    assert_eq!(e.to_string(), NOT_SET);
-}
-
-#[test]
-fn a_branch_closed_today_is_told_so() {
-    let e = refused_start(ServiceWindow::Closed);
-    assert!(matches!(e, E::ServiceNotReady { .. }), "{e}");
-    assert_eq!(e.to_string(), CLOSED_TODAY);
-}
-
-// ── source guard ─────────────────────────────────────────────────────────────
-
-/// `api/`, from this crate's manifest (`api/crates/xc-shift`).
 fn api_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
