@@ -40,7 +40,7 @@ const DAY: &str = "2026-10-05";
 const CERTIFIER: &str = "FINANCE@XC-B01#1";
 const VERIFIER: &str = "FINANCE@XC-B01#2";
 const COUNTER: &str = "TELLER@XC-B01#4";
-const CALLERS: [&str; 3] = [CERTIFIER, VERIFIER, COUNTER];
+const CALLERS: [&str; 4] = [CERTIFIER, VERIFIER, COUNTER, "TELLER@XC-B02#5"];
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -152,7 +152,7 @@ impl Room {
             )
             .bind(branch)
             .bind(ORG)
-            .bind(user_id(COUNTER))
+            .bind(user_id(if branch == B1 { COUNTER } else { "TELLER@XC-B02#5" }))
             .execute(&room.pool)
             .await
             .expect("an open shift");
