@@ -170,3 +170,33 @@ fn test_overflow_try_minor_line_fee() {
     let result = RateFloor::apply(&quote_line, &effect, BenefitClass::Price, None);
     assert_eq!(result, Err(ArithmeticOverflow));
 }
+
+/// K-b site (rate_floor.rs:137): fee.try_minor() with margin guard set.
+/// Under M6 (fee.try_minor() -> fee.minor()), fee_val is rebuilt from line fee,
+/// so a wrapped fee.minor() slips through uncapped_discount_minor and returns Ok.
+#[test]
+fn test_overflow_try_minor_effect_fee_with_margin_guard() {
+    let quote_line = line(
+        "100",
+        "35.0000",
+        "34.0000",
+        "36.0000",
+        "1000.00",
+        "1",
+        Side::Buy,
+    );
+    let huge_fee = Money::try_from_minor_i128(10_000_000_000_000_000_000i128).unwrap();
+    let effect = BenefitEffect {
+        new_final_rate: None,
+        new_fee_thb: Some(huge_fee),
+        amount_thb: Money::ZERO,
+    };
+
+    let result = RateFloor::apply(
+        &quote_line,
+        &effect,
+        BenefitClass::Price,
+        Some(Decimal::from_str("0.5").unwrap()),
+    );
+    assert_eq!(result, Err(ArithmeticOverflow));
+}
