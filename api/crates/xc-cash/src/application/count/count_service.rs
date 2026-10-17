@@ -811,6 +811,16 @@ impl CashCountService {
         Authorizer::check(Some(actor), permission, &target, now)
             .map_err(|r| AppError::Domain(CashError::Refused(r).to_string()))?;
 
+        if let Some(existing) = self
+            .repo
+            .find_count_by_idempotency_key(&mut *tx, &cmd.branch, &cmd.idempotency_key)
+            .await?
+        {
+            return Ok(existing);
+        }
+
+        // After the replay lookup, as in handover start: a retry of a CLOSE count whose verification has
+        // since closed the shift answers the original count, not NoOpenShift.
         if let Some(ref s_id) = cmd.shift_id {
             let shift_teller: Option<String> = sqlx::query_scalar(
                 "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
@@ -822,14 +832,6 @@ impl CashCountService {
             let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
             PersonRules::teller_owns_shift(&teller_id, actor)
                 .map_err(|e| AppError::Domain(e.to_string()))?;
-        }
-
-        if let Some(existing) = self
-            .repo
-            .find_count_by_idempotency_key(&mut *tx, &cmd.branch, &cmd.idempotency_key)
-            .await?
-        {
-            return Ok(existing);
         }
 
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
