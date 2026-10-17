@@ -3,6 +3,6 @@
 /**
  * Answer data for the `admin_operations` view.
  */
-export type AdminOperationsData = { enabled: boolean, entity: AdminOperationsEntity | null, };
+export type AdminOperationsData = { entity: AdminOperationsEntity | null, };
 
 export type AdminOperationsEntity = { company: string, site: string, };
