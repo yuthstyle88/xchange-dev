@@ -179,3 +179,35 @@ async fn a_bare_plus_is_refused_and_nothing_is_written() {
 async fn a_bare_zero_is_refused_and_nothing_is_written() {
     assert_refused("0", INVALID_PHONE).await;
 }
+
+#[actix_web::test]
+async fn login_succeeds_with_a_pool_of_one_connection() {
+    use std::str::FromStr;
+    use std::time::Duration;
+
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+    let desk = Desk::start().await;
+    let identity = FakeIdentity::start();
+    let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
+    let options = PgConnectOptions::from_str(&url)
+        .expect("PostgreSQL URL")
+        .options([("search_path", desk.schema.as_str())]);
+    let single_conn_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(2))
+        .connect_with(options)
+        .await
+        .expect("connect 1-connection pool to test schema");
+
+    let app = app(state_with(
+        &single_conn_pool,
+        &identity_env(&identity.url()),
+    ))
+    .await;
+    let token = owner_session(&desk, &identity, &app).await;
+    assert!(!token.is_empty());
+
+    single_conn_pool.close().await;
+    desk.drop_schema().await;
+}
