@@ -63,9 +63,6 @@ impl Policy {
             ActorKind::Owner => match act {
                 "adminSnapshot"
                 | "adminDeskConfig"
-                | "adminOpenShift"
-                | "adminCloseShift"
-                | "adminMoveStock"
                 | "ratePolicySave"
                 | "rateDraft"
                 | "approvalDecide"
@@ -84,10 +81,6 @@ impl Policy {
                     "adminSnapshot" | "adminDeskConfig" | "getConnectionStatus" => true,
                     "reserveCustomer" | "saveTransaction" => role == Role::Front,
                     "rateDraft" | "ratePolicySave" => role == Role::Rates,
-                    "adminOpenShift" | "adminCloseShift" => {
-                        role == Role::Backend || role == Role::Manager
-                    }
-                    "adminMoveStock" => role == Role::Finance,
                     "approvalDecide" | "approvalRead" => {
                         role == Role::Backend || role == Role::Manager || role == Role::Finance
                     }
@@ -118,8 +111,7 @@ impl Policy {
         let act = action.as_str();
         let role = actor.role();
 
-        // 1. the name is not in known common actions, not in role's write list,
-        // and does not start with ops -> R5
+        // 1. the name is not in known common actions and not in role's write list -> R5
         let in_write_list = match role {
             Role::Front => act == "reserveCustomer" || act == "saveTransaction",
             Role::Rates => act == "rateDraft",
@@ -129,16 +121,10 @@ impl Policy {
             || act == "adminDeskConfig"
             || act == "getConnectionStatus"
             || act == "documents"
-            || in_write_list
-            || act.starts_with("ops");
+            || in_write_list;
 
         if !recognized {
             return Err(PolicyError::RoleNotAllowed);
-        }
-
-        // 2. the name is opsEnable or opsSetEntity -> R7
-        if act == "opsEnable" || act == "opsSetEntity" {
-            return Err(PolicyError::OwnerEnables);
         }
 
         // 3. the name is adminDeskConfig and role is not FR -> R8
@@ -404,83 +390,14 @@ impl Policy {
 
     // ── Custody ──────────────────────────────────────────────────────────────
 
-    fn allow_custody(actor: Option<&Actor>, action: &Action) -> Result<(), PolicyError> {
+    fn allow_custody(actor: Option<&Actor>, _action: &Action) -> Result<(), PolicyError> {
         let Some(actor) = actor else {
             return Err(PolicyError::SignIn);
         };
-        let act = action.as_str();
 
         match actor.kind() {
-            ActorKind::Owner => match act {
-                "opsSetEntity" | "opsEnable" => Ok(()),
-                "opsClock" => Err(PolicyError::EmployeeAccount),
-                _ => Err(PolicyError::ClockInFirst),
-            },
-            ActorKind::Staff => {
-                let role = actor.role();
-                match act {
-                    "opsSetEntity" | "opsEnable" => Err(PolicyError::RoleNotAllowed),
-                    "opsClock" => Ok(()),
-                    "opsBeginTransaction" => {
-                        if role == Role::Front {
-                            Ok(())
-                        } else {
-                            Err(PolicyError::RoleNotAllowed)
-                        }
-                    }
-                    "opsTarget" | "opsReconcile" => {
-                        if role == Role::Finance {
-                            Ok(())
-                        } else {
-                            Err(PolicyError::RoleNotAllowed)
-                        }
-                    }
-                    "opsStartService" | "opsCutoff" | "opsDispatch" | "opsCommit" => {
-                        if role == Role::Backend {
-                            Ok(())
-                        } else {
-                            Err(PolicyError::RoleNotAllowed)
-                        }
-                    }
-                    "opsPropose" => {
-                        if role == Role::Front || role == Role::Finance {
-                            Ok(())
-                        } else {
-                            Err(PolicyError::RoleNotAllowed)
-                        }
-                    }
-                    "opsHold" => {
-                        if role == Role::Front || role == Role::Monitor {
-                            Ok(())
-                        } else {
-                            Err(PolicyError::RoleNotAllowed)
-                        }
-                    }
-                    "opsRelease" => {
-                        if role == Role::Monitor {
-                            Ok(())
-                        } else {
-                            Err(PolicyError::RoleNotAllowed)
-                        }
-                    }
-                    "opsReject" => {
-                        if role == Role::Monitor || role == Role::Backend {
-                            Ok(())
-                        } else {
-                            Err(PolicyError::RoleNotAllowed)
-                        }
-                    }
-                    "opsSign" => match role {
-                        Role::Front | Role::Finance | Role::Monitor | Role::Manager => Ok(()),
-                        Role::Backend => Err(PolicyError::BackendUsesCommit),
-                        Role::Rates | Role::System | Role::Documents | Role::DocumentReview => {
-                            Err(PolicyError::SignNotAllowed)
-                        }
-                        Role::Owner => Err(PolicyError::ClockInFirst),
-                    },
-                    _ => Err(PolicyError::InvalidRequest),
-                }
-            }
+            ActorKind::Owner => Err(PolicyError::ClockInFirst),
+            ActorKind::Staff => Err(PolicyError::InvalidRequest),
         }
     }
 }
@@ -559,8 +476,6 @@ impl Policy {
                     Some(Need::Permission(Permission::ExchangeTransact))
                 }
                 "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
-                "adminOpenShift" | "adminCloseShift" => Some(Need::Custody),
-                "adminMoveStock" => Some(Need::Permission(Permission::CashManage)),
                 "adminCreateBranch" => Some(Need::Permission(Permission::BranchesManage)),
                 "adminAbandonRequest" => Some(Need::Permission(Permission::RequestAbandon)),
                 "ratePolicySave" => Some(Need::Permission(Permission::RatePolicySave)),
@@ -580,8 +495,6 @@ impl Policy {
                 }
                 "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
                 "documents" => Some(Need::Permission(Permission::IdentityDocumentRead)),
-                "adminOpenShift" | "adminCloseShift" => Some(Need::Custody),
-                name if name.starts_with("ops") => Some(Need::Custody),
                 _ => None,
             },
             EntryPath::Upload => Some(Need::Permission(Permission::ProofUpload)),
