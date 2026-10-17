@@ -17,7 +17,7 @@ import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/pag
 import { Executive } from './Executive';
 import * as i18n from './i18n';
 
-const ENDPOINT = '/api/executive/overview';
+const ENDPOINT = '/api/v3/views/executive_overview';
 const FROM = '2026-10-06';
 const TO = '2026-10-06';
 const VERSIONS = { B1: 1, B2: 1 };

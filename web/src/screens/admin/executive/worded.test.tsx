@@ -17,7 +17,7 @@ import type {
 } from '../../../shared/api/generated/executive_overview';
 import { Executive } from './Executive';
 
-const ENDPOINT = '/api/executive/overview';
+const ENDPOINT = '/api/v3/views/executive_overview';
 const FROM = '2026-10-05';
 const TO = '2026-10-06';
 const VERSIONS = { B1: 4, B2: 9 };
