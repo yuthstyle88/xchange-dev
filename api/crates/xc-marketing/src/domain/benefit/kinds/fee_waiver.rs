@@ -17,12 +17,30 @@ enum FeeWaiverParams {
 
 fn parse_params(params: &serde_json::Value) -> Result<FeeWaiverParams, ParamError> {
     if let Some(pct) = decimal_param(params, "percent", "percent")? {
+        if pct <= Decimal::ZERO || pct > Decimal::ONE {
+            return Err(ParamError {
+                field: "percent",
+                reason: "FEE_WAIVER percent must be greater than 0 and at most 1".into(),
+            });
+        }
         return Ok(FeeWaiverParams::Percent(pct));
     }
     if let Some(amount) = decimal_param(params, "amount", "amount")? {
+        if amount <= Decimal::ZERO {
+            return Err(ParamError {
+                field: "amount",
+                reason: "FEE_WAIVER amount must be greater than 0".into(),
+            });
+        }
         return Ok(FeeWaiverParams::Fixed(amount));
     }
     if let Some(fixed) = decimal_param(params, "fixed", "fixed")? {
+        if fixed <= Decimal::ZERO {
+            return Err(ParamError {
+                field: "fixed",
+                reason: "FEE_WAIVER amount must be greater than 0".into(),
+            });
+        }
         return Ok(FeeWaiverParams::Fixed(fixed));
     }
     Err(ParamError {
