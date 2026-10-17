@@ -326,13 +326,11 @@ impl Db {
         .expect("a shift");
         let id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, submission_id, \
-             payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, value_date, \
-             paid_at, recorded_at, recorded_by, status, completed_at) \
-             VALUES ($1, $2::uuid, $3, $4, 'LIVE', $6, $5, 'hash', $7, 'Somchai', 'THA', 'SELL', 'USD', 100, \
-             32.0, 3200, 0, 0, 3200, 0, 'Cash', '', 'Cash drawer', 'system', 'WALK-IN', '', current_date, now(), \
-             now(), 'system', 'COMPLETED', now())",
+            "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
+             customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+             recorded_at, recorded_by, status, completed_at) \
+             VALUES ($1, $2::uuid, $3, $4, 'LIVE', $6, $5, 'hash', $7, 'Somchai', 'THA', 'system', 'WALK-IN', \
+             '', current_date, now(), now(), 'system', 'COMPLETED', now())",
         )
         .bind(id)
         .bind(ORG_1)

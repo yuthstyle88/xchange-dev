@@ -86,6 +86,16 @@ impl RuleVersion {
             .ok_or_else(|| {
                 LoyaltyRuleError::Invalid("missing or invalid rule version id".to_owned())
             })?;
+        if obj
+            .get("version")
+            .and_then(Value::as_i64)
+            .and_then(|n| i32::try_from(n).ok())
+            .is_none()
+        {
+            return Err(LoyaltyRuleError::Invalid(
+                "missing or invalid rule version number".to_owned(),
+            ));
+        }
         let status = obj
             .get("status")
             .and_then(Value::as_str)
@@ -193,4 +203,9 @@ pub trait LoyaltyRuleWriter: Send + Sync {
         kind: RuleKind,
         id: Uuid,
     ) -> BoxFuture<'a, Result<Option<RuleVersion>, LoyaltyRuleError>>;
+
+    fn list<'a>(
+        &'a self,
+        kind: RuleKind,
+    ) -> BoxFuture<'a, Result<Vec<RuleVersion>, LoyaltyRuleError>>;
 }

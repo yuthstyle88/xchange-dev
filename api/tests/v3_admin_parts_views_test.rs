@@ -987,7 +987,7 @@ async fn admin_shift_state_follows_open_and_close_and_each_moves_the_version() {
     let data = room.data("OWNER", SHIFT_STATE, "branch=MAIN").await;
     assert_eq!(
         data,
-        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" })
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN", "openShifts": [] })
     );
 
     let v = room.version(MAIN).await;
@@ -1002,12 +1002,24 @@ async fn admin_shift_state_follows_open_and_close_and_each_moves_the_version() {
     let body = room
         .view("OWNER", SHIFT_STATE, &format!("branch=MAIN&since={v}"))
         .await;
+    // CA-10p: the open shift is listed with its teller (design §4.7)
     assert_eq!(
-        body,
-        json!({ "version": opened, "changed": true,
-                "data": { "shiftOpen": true, "deskUrl": "/desk?branch=MAIN" } }),
-        "after adminOpenShift"
+        body["version"],
+        json!(opened),
+        "after adminOpenShift: {body}"
     );
+    assert_eq!(body["changed"], json!(true), "after adminOpenShift: {body}");
+    assert_eq!(
+        body["data"]["shiftOpen"],
+        json!(true),
+        "after adminOpenShift: {body}"
+    );
+    assert_eq!(
+        body["data"]["deskUrl"],
+        json!("/desk?branch=MAIN"),
+        "{body}"
+    );
+    assert_open_shifts(&room, MAIN, &body["data"]["openShifts"], 1).await;
 
     room.close_shift(MAIN).await;
     let closed = room.version(MAIN).await;
@@ -1018,7 +1030,7 @@ async fn admin_shift_state_follows_open_and_close_and_each_moves_the_version() {
     assert_eq!(
         body,
         json!({ "version": closed, "changed": true,
-                "data": { "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" } }),
+                "data": { "shiftOpen": false, "deskUrl": "/desk?branch=MAIN", "openShifts": [] } }),
         "after adminCloseShift"
     );
     room.finish().await;
@@ -1028,17 +1040,17 @@ async fn admin_shift_state_follows_open_and_close_and_each_moves_the_version() {
 async fn admin_shift_state_is_per_branch_and_staff_read_their_own() {
     let room = Room::open().await;
     room.open_shift_by_count(B9).await;
-    assert_eq!(
-        room.data("OWNER", SHIFT_STATE, "branch=B9").await,
-        json!({ "shiftOpen": true, "deskUrl": "/desk?branch=B9" })
-    );
+    let b9 = room.data("OWNER", SHIFT_STATE, "branch=B9").await;
+    assert_eq!(b9["shiftOpen"], json!(true), "{b9}");
+    assert_eq!(b9["deskUrl"], json!("/desk?branch=B9"), "{b9}");
+    assert_open_shifts(&room, B9, &b9["openShifts"], 1).await;
     assert_eq!(
         room.data("OWNER", SHIFT_STATE, "branch=MAIN").await,
-        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" })
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN", "openShifts": [] })
     );
     assert_eq!(
         room.data("OWNER", SHIFT_STATE, "").await,
-        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" }),
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN", "openShifts": [] }),
         "no branch named: MAIN"
     );
     // OR-4b (D-4): FRONT works in MAIN; naming B9 is refused, naming MAIN reads MAIN
@@ -1050,7 +1062,7 @@ async fn admin_shift_state_is_per_branch_and_staff_read_their_own() {
     );
     assert_eq!(
         room.data("FRONT", SHIFT_STATE, "branch=MAIN").await,
-        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN" }),
+        json!({ "shiftOpen": false, "deskUrl": "/desk?branch=MAIN", "openShifts": [] }),
         "FRONT works in MAIN"
     );
     room.finish().await;
@@ -1145,7 +1157,21 @@ fn the_views_types_carry_the_tickets_fields() {
         .unwrap_or_else(|| panic!("admin_shift_state.ts in {:?}", shift.keys()));
     has_field(ts, "shiftOpen", &["boolean"]);
     has_field(ts, "deskUrl", &["string"]);
+    // CA-10p (design §4.7): one shared row type, exported once into `common.ts` (a view writes only its own
+    // file and `common.ts`, v3_types_test `each_view_writes_only_its_own_file_and_common`)
+    has_field(ts, "openShifts", &["Array<OpenShiftDto>", "OpenShiftDto[]"]);
     assert!(!ts.contains("bigint"), "{ts}");
+    let rows = exported(SHIFT_STATE);
+    let common = rows
+        .get("common.ts")
+        .unwrap_or_else(|| panic!("common.ts in {:?}", rows.keys()));
+    assert!(
+        common.contains("export type OpenShiftDto"),
+        "OpenShiftDto is in common.ts:\n{common}"
+    );
+    for field in ["shiftId", "tellerId", "tellerName", "openedAt"] {
+        has_field(common, field, &["string"]);
+    }
 }
 
 /// `TransactionRow` as committed in `generated/transaction_row.ts` (kept equal to the Rust type by
@@ -1203,4 +1229,120 @@ fn transaction_row_has_the_tickets_fields_as_strings() {
             "{money} is a decimal string"
         );
     }
+}
+
+// ── CA-10p: the branch's OPEN shifts, each with its teller (design cash-shift-transfer.md §4.7 @ 4ed83b68) ──
+//
+// Tests written before the implementation (ticket CA-10p) — do not edit or delete.
+
+/// The branch's OPEN shifts as the database holds them, in the view's order (`opened_at`, then id).
+async fn open_shifts_in_db(
+    room: &Room,
+    branch: &str,
+) -> Vec<(String, String, String, DateTime<Utc>)> {
+    sqlx::query_as(
+        "SELECT s.id, s.teller_id::text, u.name, s.opened_at FROM shifts s JOIN users u ON u.id = s.teller_id \
+         WHERE s.branch_id = $1 AND s.status = 'OPEN' ORDER BY s.opened_at, s.id",
+    )
+    .bind(branch)
+    .fetch_all(&room.desk.db.pool)
+    .await
+    .expect("read the branch's OPEN shifts")
+}
+
+/// `openShifts` is exactly the branch's OPEN shifts (`want` of them), each `{ shiftId, tellerId, tellerName,
+/// openedAt }`, `openedAt` RFC 3339 for the stored instant.
+async fn assert_open_shifts(room: &Room, branch: &str, list: &Value, want: usize) {
+    let db = open_shifts_in_db(room, branch).await;
+    assert_eq!(
+        db.len(),
+        want,
+        "the seed opened {want} shift(s) at {branch}"
+    );
+    let got = list
+        .as_array()
+        .unwrap_or_else(|| panic!("openShifts is a list: {list}"));
+    assert_eq!(got.len(), db.len(), "{list}");
+    for (row, (id, teller, name, at)) in got.iter().zip(&db) {
+        let fields: BTreeSet<&str> = row
+            .as_object()
+            .unwrap_or_else(|| panic!("a row is an object: {row}"))
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            fields,
+            BTreeSet::from(["openedAt", "shiftId", "tellerId", "tellerName"]),
+            "{row}"
+        );
+        assert_eq!(row["shiftId"], json!(id), "{row}");
+        assert_eq!(row["tellerId"], json!(teller), "{row}");
+        assert_eq!(row["tellerName"], json!(name), "{row}");
+        let opened =
+            DateTime::parse_from_rfc3339(row["openedAt"].as_str().expect("openedAt is a string"))
+                .unwrap_or_else(|e| panic!("openedAt is RFC 3339: {row}: {e}"))
+                .with_timezone(&Utc);
+        assert_eq!(opened, *at, "{row}");
+    }
+}
+
+/// Two tellers at one branch: both listed, in `opened_at` order, and `shiftOpen` is true. Seeded by SQL so
+/// the second shift needs no second sign-in; `opened_by_count` set because the v2 per-branch index binds
+/// marker-less shifts until CA-10's M3 (CA-10 drops it from this seed).
+#[actix_web::test]
+async fn admin_shift_state_lists_every_open_shift_of_the_branch_with_its_teller() {
+    let room = Room::open().await;
+    let pool = &room.desk.db.pool;
+    let org: uuid::Uuid = sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+        .bind(B9)
+        .fetch_one(pool)
+        .await
+        .expect("B9's organisation");
+    // opened 20 minutes ago, then 10 minutes ago: the earlier one is listed first
+    for (name, minutes) in [("CA10p Earlier", 20), ("CA10p Later", 10)] {
+        let teller = uuid::Uuid::new_v4();
+        let count = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO users (id, organization_id, name, status, created_by) VALUES ($1, $2, $3, 'ACTIVE', 'test')",
+        )
+        .bind(teller)
+        .bind(org)
+        .bind(name)
+        .execute(pool)
+        .await
+        .expect("insert a teller");
+        sqlx::query(
+            "INSERT INTO cash_counts (id, organization_id, branch_id, kind, counted_by, counted_at, idempotency_key) \
+             VALUES ($1, $2, $3, 'OPEN', $4, now(), $5)",
+        )
+        .bind(count)
+        .bind(org)
+        .bind(B9)
+        .bind(teller)
+        .bind(format!("idem-{count}"))
+        .execute(pool)
+        .await
+        .expect("insert the OPEN count");
+        sqlx::query(
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count) \
+             VALUES ($1, $2, 'OPEN', now() - make_interval(mins => $3), 'test', $1, $4, $5)",
+        )
+        .bind(format!("SH-ca10p-{count}"))
+        .bind(B9)
+        .bind(minutes)
+        .bind(teller)
+        .bind(count)
+        .execute(pool)
+        .await
+        .expect("insert the OPEN shift");
+    }
+    let data = room.data("OWNER", SHIFT_STATE, "branch=B9").await;
+    assert_eq!(data["shiftOpen"], json!(true), "{data}");
+    assert_open_shifts(&room, B9, &data["openShifts"], 2).await;
+    assert_eq!(
+        data["openShifts"][0]["tellerName"],
+        json!("CA10p Earlier"),
+        "{data}"
+    );
+    room.finish().await;
 }

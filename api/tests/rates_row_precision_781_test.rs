@@ -148,8 +148,6 @@ struct Ex {
     reference: Option<&'static str>,
     unit_size: &'static str,
     principal: &'static str,
-    /// The line it was priced on; `None` for a row recorded before publications.
-    line: Option<String>,
 }
 
 async fn put(pool: &PgPool, ex: &Ex) {
@@ -168,40 +166,21 @@ async fn put(pool: &PgPool, ex: &Ex) {
     .execute(pool)
     .await
     .expect("insert a customer");
-    let (received, paid) = if ex.side == "SELL" {
-        (ex.principal, "0")
-    } else {
-        ("0", ex.principal)
-    };
     sqlx::query(
-        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
-            payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
-            reference_rate, unit_size, published_rate_line_id, principal, fee, bank_fee, \
-            received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-            value_date, paid_at, recorded_at, recorded_by, completed_at) \
-         VALUES ($1, 'MAIN', 'LIVE', $2, $1, 'hash', $3, 'Somchai', 'THA', $4, $5, $6::numeric, \
-            $7::numeric, $8::numeric, $9::numeric, $10::uuid, $11::numeric, 0, 0, \
-            $12::numeric, $13::numeric, 'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', \
-            $14::date, now(), now(), 'owner', now())",
+        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+            customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+            recorded_by, completed_at) \
+         VALUES ($1, 'MAIN', 'LIVE', $2, $1, 'hash', $3, 'Somchai', 'THA', 'owner', 'WALK-IN', '', \
+            $4::date, now(), now(), 'owner', now())",
     )
     .bind(ex.id)
     .bind(shift)
     .bind(format!("CU-{}", ex.id))
-    .bind(ex.side)
-    .bind(ex.code)
-    .bind(ex.amount)
-    .bind(ex.rate)
-    .bind(ex.reference)
-    .bind(ex.unit_size)
-    .bind(ex.line.as_deref())
-    .bind(ex.principal)
-    .bind(received)
-    .bind(paid)
     .bind(DAY)
     .execute(pool)
     .await
     .unwrap_or_else(|e| panic!("put exchange {}: {e}", ex.id));
-    seed_lines(pool, &[ex.id.to_owned()]).await;
+    seed_lines(pool, ex).await;
 }
 
 /// A payment slip for `id`, so that `admin_slips` lists it.
@@ -250,7 +229,6 @@ fn mid() -> Ex {
         reference: None,
         unit_size: "1000",
         principal: "25.13",
-        line: None,
     }
 }
 
@@ -283,7 +261,6 @@ async fn the_day(pool: &PgPool) {
             reference: Some("23.01"),
             unit_size: "100",
             principal: "235.00",
-            line: Some(jpy.id),
         },
         Ex {
             id: "RE4-KRW",
@@ -294,7 +271,6 @@ async fn the_day(pool: &PgPool) {
             reference: Some("25"),
             unit_size: "1000",
             principal: "2512.35",
-            line: Some(krw.id),
         },
         Ex {
             id: "RE4-USD",
@@ -305,7 +281,6 @@ async fn the_day(pool: &PgPool) {
             reference: Some("32.5"),
             unit_size: "1",
             principal: "3210.00",
-            line: Some(usd.id),
         },
         mid(),
     ] {
@@ -559,7 +534,6 @@ async fn a_row_with_no_line_shows_its_own_stored_rate_and_unit() {
             reference: Some("0.025"),
             unit_size: "1",
             principal: "2512.35",
-            line: None,
         },
     )
     .await;
@@ -581,23 +555,28 @@ async fn a_row_with_no_line_shows_its_own_stored_rate_and_unit() {
     counter.finish().await;
 }
 
-/// The `transaction_lines` + `transaction_payments` rows of the wide-only exchanges `refs`, as
-/// TX-2's backfill writes them (migration 20261111170000 steps 7 and 8): an exchange seeded
-/// straight into `transactions` would otherwise have no line, a shape that cannot exist after
-/// TX-2 (#670), and readers moved onto the lines by TX-8 (#676) would not see it.
-async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
+/// The `transaction_lines` + `transaction_payments` rows of `ex` (TX-9 #677: the figures live on
+/// the line and the payment only; `transactions` keeps the header). Cash, no fee: the settled THB
+/// is the principal.
+async fn seed_lines(pool: &sqlx::PgPool, ex: &Ex) {
     sqlx::query(
         "INSERT INTO transaction_lines (id, organization_id, transaction_id, quote_line_id, \
             shop_side, currency, denomination_id, quantity, unit_size, rate_snapshot, \
             reference_rate, thb_amount, fee_thb, settle_thb, cost_basis_thb, \
             realized_margin_thb, line_no, created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, t.type, t.code, NULL, \
-            t.amount, t.unit_size, t.rate, t.reference_rate, t.principal, t.fee, \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, NULL, NULL, 1, \
+         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, $2, $3, NULL, $4::numeric, \
+            $5::numeric, $6::numeric, $7::numeric, $8::numeric, 0, $8::numeric, NULL, NULL, 1, \
             t.recorded_at, t.recorded_at \
-         FROM transactions t WHERE t.document_ref = ANY($1)",
+         FROM transactions t WHERE t.document_ref = $1",
     )
-    .bind(refs)
+    .bind(ex.id)
+    .bind(ex.side)
+    .bind(ex.code)
+    .bind(ex.amount)
+    .bind(ex.unit_size)
+    .bind(ex.rate)
+    .bind(ex.reference)
+    .bind(ex.principal)
     .execute(pool)
     .await
     .expect("seed transaction_lines");
@@ -605,15 +584,12 @@ async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
         "INSERT INTO transaction_payments (id, organization_id, transaction_id, payment_no, \
             method, reference, account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
             created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, 1, t.method, t.payment_ref, \
-            t.account, \
-            (SELECT file_key FROM transaction_files f \
-             WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1), \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, t.bank_fee, t.paid_at, \
-            t.recorded_at, t.recorded_at \
-         FROM transactions t WHERE t.document_ref = ANY($1)",
+         SELECT gen_random_uuid(), t.organization_id, t.id, 1, 'Cash', '', 'Cash drawer', NULL, \
+            $2::numeric, 0, t.paid_at, t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = $1",
     )
-    .bind(refs)
+    .bind(ex.id)
+    .bind(ex.principal)
     .execute(pool)
     .await
     .expect("seed transaction_payments");

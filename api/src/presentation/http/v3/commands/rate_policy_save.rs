@@ -1,7 +1,6 @@
 //! Rate policy save command (§4.7, §6).
 
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
@@ -23,7 +22,8 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::rate_policy::ValueTierDto;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
-use xc_kernel::money::{Money, RatePercent, Side};
+use crate::presentation::http::v3::input;
+use xc_kernel::money::{Bound, Money, RatePercent, Side, Sign};
 use xc_rate::domain::policy::policy_tiers::{PolicyTier, PolicyTiers};
 use xc_rate::domain::policy::rate_policy::RatePolicy;
 
@@ -105,117 +105,42 @@ impl CommandAction for RatePolicySaveCommand {
             ));
         }
 
-        if let Some(on_stale) = input.on_stale.as_deref()
-            && !matches!(on_stale, "STOP" | "LIMIT")
-        {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("onStale"),
-                "onStale must be STOP or LIMIT",
-                StatusCode::BAD_REQUEST,
-            ));
+        if let Some(on_stale) = input.on_stale.as_deref() {
+            input::one_of("onStale", on_stale, &["STOP", "LIMIT"])?;
         }
 
-        let max_pct_abs = Decimal::from(100_000);
-        let max_stale_limit_thb = Decimal::from(1_000_000_000_000_000_000_i64);
-
-        let buy_pct = Decimal::from_str(&input.buy_adjust_pct).map_err(|e| {
-            V3Error::new(
-                "validationFailed",
-                Some("buyAdjustPct"),
-                e.to_string(),
-                StatusCode::BAD_REQUEST,
-            )
-        })?;
-        if buy_pct.abs() >= max_pct_abs {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("buyAdjustPct"),
-                "buyAdjustPct must have absolute value < 100000",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
-
-        let sell_pct = Decimal::from_str(&input.sell_adjust_pct).map_err(|e| {
-            V3Error::new(
-                "validationFailed",
-                Some("sellAdjustPct"),
-                e.to_string(),
-                StatusCode::BAD_REQUEST,
-            )
-        })?;
-        if sell_pct.abs() >= max_pct_abs {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("sellAdjustPct"),
-                "sellAdjustPct must have absolute value < 100000",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
+        let buy_pct = input::decimal(
+            "buyAdjustPct",
+            &input.buy_adjust_pct,
+            Bound::numeric(9, 4, Sign::Signed),
+        )?;
+        let sell_pct = input::decimal(
+            "sellAdjustPct",
+            &input.sell_adjust_pct,
+            Bound::numeric(9, 4, Sign::Signed),
+        )?;
 
         let stale_limit = match input.stale_limit_thb.as_deref() {
-            Some(s) => {
-                let d = Decimal::from_str(s).map_err(|e| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("staleLimitThb"),
-                        e.to_string(),
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
-                if d.abs() >= max_stale_limit_thb {
-                    return Err(V3Error::new(
-                        "validationFailed",
-                        Some("staleLimitThb"),
-                        "staleLimitThb must be < 10^18",
-                        StatusCode::BAD_REQUEST,
-                    ));
-                }
-                Some(d)
-            }
+            Some(s) => Some(input::decimal(
+                "staleLimitThb",
+                s,
+                Bound::numeric(20, 2, Sign::Signed),
+            )?),
             None => None,
         };
 
         let input_sharp_move: Option<Option<Decimal>> = match &input.sharp_move_alert_pct {
             Some(Value::Null) => Some(None),
-            Some(Value::String(s)) => {
-                let d = Decimal::from_str(s).map_err(|e| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("sharpMoveAlertPct"),
-                        e.to_string(),
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
-                if d <= Decimal::ZERO || d.abs() >= max_pct_abs {
-                    return Err(V3Error::new(
-                        "validationFailed",
-                        Some("sharpMoveAlertPct"),
-                        "sharpMoveAlertPct must be in (0, 100000)",
-                        StatusCode::BAD_REQUEST,
-                    ));
-                }
-                Some(Some(d))
-            }
-            Some(Value::Number(n)) => {
-                let d = Decimal::from_str(&n.to_string()).map_err(|e| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("sharpMoveAlertPct"),
-                        e.to_string(),
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
-                if d <= Decimal::ZERO || d.abs() >= max_pct_abs {
-                    return Err(V3Error::new(
-                        "validationFailed",
-                        Some("sharpMoveAlertPct"),
-                        "sharpMoveAlertPct must be in (0, 100000)",
-                        StatusCode::BAD_REQUEST,
-                    ));
-                }
-                Some(Some(d))
-            }
+            Some(Value::String(s)) => Some(Some(input::decimal(
+                "sharpMoveAlertPct",
+                s,
+                Bound::numeric(9, 4, Sign::Positive),
+            )?)),
+            Some(Value::Number(n)) => Some(Some(input::decimal(
+                "sharpMoveAlertPct",
+                &n.to_string(),
+                Bound::numeric(9, 4, Sign::Positive),
+            )?)),
             Some(_) => {
                 return Err(V3Error::new(
                     "validationFailed",
@@ -477,8 +402,24 @@ impl CommandAction for RatePolicySaveCommand {
         .map_err(|_| server_error())?;
 
         for tier in &resolved_tiers {
-            let upper_dec: Option<Decimal> =
-                tier.upper_inclusive_thb.map(|m| Decimal::new(m.minor(), 2));
+            let upper_dec: Option<Decimal> = match tier.upper_inclusive_thb {
+                Some(m) => Some(
+                    m.try_minor()
+                        .map(|cents| Decimal::new(cents, 2))
+                        .map_err(|_| {
+                            V3Error::new(
+                                "validationFailed",
+                                Some("valueTiers"),
+                                format!(
+                                    "tier {} upper bound exceeds maximum allowed value",
+                                    tier.tier_no
+                                ),
+                                StatusCode::BAD_REQUEST,
+                            )
+                        })?,
+                ),
+                None => None,
+            };
             sqlx::query(
                 "INSERT INTO rate_policy_value_tiers \
                  (policy_version_id, tier_no, upper_inclusive_thb, buy_margin_pct, sell_margin_pct) \

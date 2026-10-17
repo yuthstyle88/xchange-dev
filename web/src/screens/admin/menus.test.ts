@@ -284,6 +284,7 @@ const KNOWN_PERMISSIONS = new Set([
   'CashTransferPolicySet',
   'RateAlertSettingsSave',
   'OrgStartingPricesManage',
+  'LoyaltyRulesManage',
 ]);
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {
@@ -332,6 +333,14 @@ describe('OR-7.7: the Blueprint menus need their commands\' permission (#1030 §
       expect(m.needs, `${m.id}.needs must not be 'all'`).not.toBe('all');
       expect(KNOWN_PERMISSIONS.has(m.needs), `${m.id}.needs (${m.needs}) is a known Permission`).toBe(true);
     }
+  });
+
+  it('LY-6-FE (#2129): the loyalty menu is collected, is a Blueprint menu and needs LoyaltyRulesManage', () => {
+    const { menus } = mod();
+    const loyalty = menus.find((x) => x.id === 'loyalty');
+    expect(loyalty, 'a menu with id \'loyalty\' (web/src/screens/admin/loyalty/menu.ts)').toBeDefined();
+    expect(loyalty?.blueprint).toBe(true);
+    expect(loyalty?.needs).toBe('LoyaltyRulesManage');
   });
 
   it('no menu record keeps a roles field', () => {

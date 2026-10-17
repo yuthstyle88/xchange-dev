@@ -16,9 +16,9 @@
 | Item | Value | How measured |
 |---|---|---|
 | `main` head | `abc46caf` (05:04Z) | `gh api repos/108-Plaza/xchange/actions/runs?branch=main` |
-| Build on the host `xc-v3.spacing.cloud` | `a84962f5`, built 2026-10-11T06:01:32Z, `version 1.0.0`, `channel staging` | `curl -s https://xc-v3.spacing.cloud/health/ready` |
-| How far the host is behind `main` | **1,104 commits, 798 merged PRs, 13 migrations (42 → 55)** | `gh api repos/108-Plaza/xchange/compare/a84962f5...main`; `contents/api/migrations` at both shas |
-| Deploy lanes | `release.yml` on `main`, **0 runs**; no `release/*` or `deploy/*` branch on org or mirror; no `XC_DEPLOY_*` variable or secret on either repository (names listed, values never read) | `actions/workflows/release.yml/runs`, `git/matching-refs`, `actions/variables`, `actions/secrets` |
+| Build on the host `xc-v3.spacing.cloud` | **`2d5ecfde`**, built 2026-10-17T11:24:53Z, `version 1.0.0`, `channel staging` — deployed by hand on the owner's order at 11:31Z, migrations 42 → 55, encrypted backup first, smoke green (#564, claude/56a74fcd). Was `a84962f5` (10-11) | `curl -s https://xc-v3.spacing.cloud/health/ready` |
+| How far the host is behind `main` | caught up at 11:31Z on 10-17 (was 1,266 commits / 13 migrations behind). Batch A's drop migrations are **not** on it: each needs its own deploy order | `gh api repos/108-Plaza/xchange/compare/2d5ecfde...main` |
+| Deploy lanes | **not used:** releases are by hand on the host (owner, 10-17 ~14:1xZ; #422 closed). `release.yml` stays on `main` unused | #422 |
 | Every deploy so far | by hand, from Dell, with cherry-picks; the last seven are recorded on #422 (2026-10-09 → 10-10) | #422 comments |
 | Open issues | **43** (54 open items minus 11 PRs); label counts: `class:guarded` 16 · `class:logic` 9 · `class:mechanical` 5 · `bug` 11 · `question` 4 · `umbrella` 2 · `documentation` 3 | `gh issue list --state open` |
 | Open PRs | **11**: 9 Gemini bug-fix PRs opened 10-16/17, PR 2050 (LY-6 BE, released by the owner 02:0xZ, branch updated 04:44Z), PR 1507 (draft, 2026-10-12) | `gh pr list --state open` |
@@ -49,17 +49,17 @@ Each gate names the tickets that close it. A ticket number is the *source* of a 
 | `user_create_phone_test` does not fail under runner load | PR 2743 in rework (FAIL) | #2563 |
 | `cargo fmt --check` covers the `include!`-generated modules | `ready`, `assign:none`; its scope reserves ten whole directories, so it collides with every BE ticket in flight | #1474 (last code ticket before the freeze, see §4 wave 5) |
 
-### G2 — the release path works end to end (#422)
+### G2 — the release path is a hand deploy on the host (owner, 10-17)
 
-Today a release is a person on Dell. `deploy/README.md` and `release.yml` describe the lane; nothing has run it. The order of proof, each step recorded as a comment on #422:
+The owner decided on 2026-10-17 ~14:1xZ (*"เรารันที่ host เลย"* → "Deploy on the host"; #422 closed as not planned with the record): **releases are done by hand on the host**, with no git-push deploy lane and no staging secrets. The proven procedure is the BE controller's deploy of 10-17 11:31Z (#564):
 
-1. **Owner:** set the per-lane secret and variables named in `release.yml` (`XC_DEPLOY_SSH_KEY`, `XC_DEPLOY_HOST`, `XC_DEPLOY_USER`, `XC_DEPLOY_KNOWN_HOSTS`, `XC_PUBLIC_URL`) on the repository that owns each lane: `yuthstyle88/xchange-dev` for staging, `108-Plaza/xchange` for prod. Nobody but the owner can (O3 of #422).
-2. **Claude (#422's assignee or the BE controller):** `workflow_dispatch` on `main` — build only, deploys nowhere. Proves the self-hosted build, the glibc check and the stage directory.
-3. **Owner's order, then Claude:** push `deploy/staging` on the mirror. `release.yml` ships to Dell; `smoke.sh <url> <sha>` must pass, and `/health/ready` must name the pushed commit.
-4. **Owner's order, then Claude:** push `origin/main:release/prod` on the org. Same smoke, on the host.
-5. **Backup and restore rehearsed once** on the host with `deploy/server/backup.sh` + `restore.sh`, result recorded on #422. The timer exists; a restore has never been shown to work.
+1. Build on Dell from a clean checkout of the `main` commit, with `BUILD_SHA` / `BUILT_AT` (`deploy/server/build.md`).
+2. Copy the stage and verify `SHA256SUMS` on both ends.
+3. On the host, `deploy/server/update.sh`: rehearse migrations on a scratch copy → **encrypted backup** → keep `xchange.prev` → migrate → local smoke.
+4. Public smoke `deploy/server/smoke.sh https://xc-v3.spacing.cloud <sha>`; `/health/ready` must name the commit.
+5. Record each deploy on #564: the sha, the migration count, the backup path, the smoke result.
 
-Until step 4 has happened once, "deploy" still means a hand copy, and the host keeps falling further behind `main`.
+Still open under G2: **one rehearsed restore** from such a backup with `deploy/server/restore.sh` (a scratch database, never the live one), recorded on #564. Rollback after a schema change needs that restore, because `xchange.prev` does not start on a newer schema. Every deploy happens only on the owner's order.
 
 ### G3 — one model in the schema, no duplicates (batch A, approved)
 
@@ -88,7 +88,7 @@ Why this is a production gate and not a clean-up: `STATE.md` says this is the ch
 
 ### G5 — a person has used it on staging
 
-Nothing in CI proves a shift can be opened, a customer served and the day closed. After G2 step 3:
+Nothing in CI proves a shift can be opened, a customer served and the day closed. Since the 10-17 11:31Z deploy these checks can run on `xc-v3.spacing.cloud` (test data only, channel `staging`), before the git-push lane exists:
 
 | Check | Ticket |
 |---|---|
@@ -122,10 +122,10 @@ Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **
 
 | # | Ticket | Verb | Why |
 |---|---|---|---|
-| 422 | deploy lanes | **before** | G2; off-PR steps O3–O6 remain; assignee claude/7a595a04 |
+| 422 | deploy lanes | **closed** | not planned: releases by hand on the host (owner, 10-17 ~14:1xZ); G2 rewritten to the hand-deploy runbook |
 | 542 | DK-F+J desk OCR | **owner** | G7; waits on Recognize #150 children |
 | 564 | umbrella | **finish** | all 17 design children closed; stays open as the lane's notice board until the release order, then closes |
-| 626 | CA-10 | **before** | G3, approved, pinned studio-8 |
+| 626 | CA-10 | **before** | G3, approved. Stopped 10-17 08:11Z: its scope missed test files that pin the v2 custody types; held (`blocked`, `assign:none`) while it is re-cut (design PR 2908 and the CA-10p split, #2916). Its dependents #1043/#1044/#1046/#1023, #1413, #2856/#2857/#2862 wait on it |
 | 677 | TX-9 | **before** | G3, approved, pinned studio-3 |
 | 930 | LG-6 parent | **finish** | closes when #1047 merges |
 | 947 | OR-7 parent | **finish** | closes when #1027 merges |
@@ -133,22 +133,22 @@ Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **
 | 1023 | OR-7.4 | **before** | G3 |
 | 1026 | OR-7.e | **before** | G3 |
 | 1027 | OR-7.m | **before** | G3 (drop migration) |
-| 1036 | RF-7 | **owner** | §5 item 3 |
+| 1036 | RF-7 | **closed** | not needed for the first release (owner, 10-17 ~11:1xZ) |
 | 1043 / 1044 / 1046 | LG-6 r4/r5/r6 | **before** | G3 |
 | 1047 | LG-6.m | **before** | G3 (drop migration), last |
-| 1191 | EX-10 commission | **after** | needs Broker-Platform's endpoint; A01 shows `awaitsBroker` meanwhile |
-| 1411 | LY-6 BE | **finish** | PR 2050 released; merger |
+| 1191 | EX-10 commission | **closed** | deferred until after the first release, not planned; reopen then (owner, 10-17 ~11:1xZ) |
+| 1411 | LY-6 BE | **done** | PR 2050 merged 10-17 (`afcc9533`, batch 2844) |
 | 1413 | BK-11 | **before** | G3, approved |
-| 1414 | BK-12 partner booking | **after** | parked by the owner 04:4xZ |
+| 1414 | BK-12 partner booking | **closed** | deferred until after the first release, not planned; reopen then (owner, 10-17 ~11:1xZ) |
 | 1474 | fmt gate | **before** | G1; last code ticket (§4 wave 5) |
-| 1605 | zh texts | **before** | G5, human check |
-| 1683 | booking e2e | **before** | G5, human check after G2 |
-| 1996 | campaignSimulate | **after** | refusal in place is correct |
+| 1605 | zh texts | **before** | G5, human check. **Possible now** on the live host (10-17 deploy); the owner names who |
+| 1683 | booking e2e | **before** | G5, human check. **Possible now** on `xc-v3.spacing.cloud` (10-17 deploy carries BK-6 and the booking screens); the owner names who |
+| 1996 | campaignSimulate | **closed** | keep the refusal (owner, 10-17 ~11:1xZ) |
 | 2054 | bounded inputs (tracking) | **after** | ratchet; 500s, not wrong money |
 | 2063 | unchecked money arithmetic (tracking) | **now, in parallel** | stored-amount paths fixed (#2088, #2093, #2096); per_unit cut as #2839. Owner 2026-10-17 ~07:1xZ: the tail (6 K-a + 49 K-b `.minor()` sites) is cut now, one ticket per file, for Flash workers; floor/removal ticket last |
-| 2108 | money falls back to zero (tracking) | **before** | 18 BUG rows are wrong money |
-| 2126 / 2127 | LY-6 follow-ups | **finish** | `ready` after 2050 merges |
-| 2129 | LY-6-FE | **finish** | after 2050 merges |
+| 2108 | money falls back to zero (tracking) | **closed** | every BUG row closed completed (10-17 ~11:0xZ) |
+| 2126 / 2127 | LY-6 follow-ups | **closed** | merged as PR 2870 (batch 2919) and PR 2874 |
+| 2129 | LY-6-FE | **finish** | needs PR 2050 (merged) and the BE read view of rule versions #2868 (owner's G1 ruling on #2129). Ships POINT drafting, the list of POINT and TIER versions, and submit (PR 2918). **TIER drafting is held until after the first production release** (owner, 10-17 ~10:5xZ, #2129 issuecomment-6233107116) |
 | 2563 | identity test flake | **finish** | PR 2743 rework |
 | 2569 | 90-min cancel | **close** | fixed by PR 2786 + pool A |
 | 2703 / 2705 / 2774 / 2782 / 2794 / 2795 / 2796 / 2814 | bug PRs in review | **finish** | merger's batch |
@@ -171,11 +171,11 @@ The target is the fleet rule: ≥80 % of a lane's usable workers busy at the sam
 | 2 — after #626 merges | BE | #1043 · #1044 · #1046 · #1023 in parallel | `xc-shift` shift repo · `ops_state` paths · `stock_movements` readers · custody role mapping — **check `scope_prefixes` of all four before pinning**; #1043 and #1044 both name `xc-shift` | G3 |
 | 3 — after wave 2 | BE | #1026 → #1027; #1047 after #1043/#1044/#1046 | extractor → drop migrations | G3 |
 | 2' — parallel with 2 | BE | #2126 · #2127 (after 2050) · **the #2063 tail: one `class:mechanical` ticket per file (6 K-a + 49 K-b sites), pinned to Flash sessions holding no ticket**; the floor/removal ticket last | one file each — disjoint by construction; check `scope_prefixes` across the set | G4 |
-| 3' — parallel | FE | #2129 (after 2050) · "UAT script v1" doc ticket · #1605 | `web/src/screens/…/loyalty` · `docs/` · none | G4/G5 |
-| 4 — owner's hands + Claude | #422's assignee or the BE controller | secrets → build-only run → mirror `deploy/staging` → smoke → record | `.github/`, host | G2 |
+| 3' — parallel | FE | #2129 (POINT drafting only; TIER after release) with #2868 · UAT script #2835 · the bug tickets cut from the five parked sweep reports (owner, 10-17 ~08:0xZ) · #1605 | `web/src/screens/…/loyalty` · `docs/` · none | G4/G5 |
+| 4 — owner's order | BE controller | hand deploy on the host per G2; one rehearsed restore | host | G2 |
 | 5 — last code ticket | BE | #1474 (fmt gate), pinned to a Claude session, when no other BE ticket is leased or in review | ten directories | G1 |
-| 6 — on staging | owner / FE | #1683 · the UAT script · a day of use with the drop migrations applied | — | G5 |
-| 7 — release order | owner | `git push origin origin/main:release/prod`; smoke; `STATE.md` | — | — |
+| 6 — on the host (channel `staging`) | owner / FE | #1683 · the UAT script · a day of use with the drop migrations applied | — | G5 |
+| 7 — release order | owner | the owner's order → a hand deploy of the chosen `main` commit per G2 → public smoke → `STATE.md` | — | — |
 
 **What limits concurrency:** an open PR keeps its ticket's file scope locked through `pr_open` and `in_review` until it merges, so a next ticket in the same files answers `ready_blocked_by=conflict`, and the open-PR guard (claim reason #120) will not hand out a ticket that already has an open PR. The per-worker cap was raised from 1 to 2 on 2026-10-17 at 07:03Z on the owner's order (#564 issuecomment-6231003464), so a worker can hold one ticket in progress next to one in review. Merges free the locks; the merge lane is the main lever. **Supply.** Measured 05:0xZ: Dell `gemini-1,2,4,5,6` idle at the pane (5 of 6), Studio `agy-2…9` idle at the pane (8 of 10; seven of them hold an `in_review` ticket waiting on a reviewer). Unpinned `ready` xchange tickets: 3, every one blocked or colliding. So the bottleneck is **ticket supply and review slots, not workers**: wave 2 is the next supply, and it opens only when #626 merges. The BE controller cuts the #2108/#2063 money tickets now (G4), so wave 2' can start before #626 lands.
 
@@ -187,7 +187,7 @@ The target is the fleet rule: ≥80 % of a lane's usable workers busy at the sam
 
 Each line: what, why it blocks, our recommendation. Idle count attached per the fleet rule: **13 Gemini sessions idle at the pane** (5 Dell + 8 Studio) and **3 unpinned ready tickets, all blocked**, at 05:0xZ.
 
-1. **Deploy-lane secrets (G2 step 1).** `XC_DEPLOY_SSH_KEY` + `XC_DEPLOY_HOST`/`USER`/`KNOWN_HOSTS`/`PUBLIC_URL` on `yuthstyle88/xchange-dev` (staging → Dell) and `108-Plaza/xchange` (prod → do-sgp1). Nothing can be rehearsed without them. **Recommend:** set staging's first, this week; prod's after one green staging push.
+1. Deploy-lane secrets — answered 10-17 ~14:1xZ: releases are by hand on the host; no secrets needed.
 2. **Two xcpg reapers (#2832).** A = keep the wired `pg-sweep-stale.sh`, add dead-pid reaping, delete the other; B = switch. **Recommend A**: smallest change, keeps the docker sweep.
 3. **RF-7 per-side freshness (#1036).** No answer in 7 days. **Recommend:** not in v1, close `not planned`; the kiosk shows per-line freshness, which is what `rates.md` designed.
 4. **OTP sender (I-3).** Customer sign-in needs a real SMS or e-mail sender; today it is `noop`. **Recommend:** pick one provider; the Notification work lands in `108-platform-services`, not xchange.

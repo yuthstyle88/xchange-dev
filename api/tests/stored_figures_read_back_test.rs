@@ -210,11 +210,6 @@ async fn a_stored_figure_the_save_cannot_write_is_still_a_fault() {
         .await
         .expect("the save");
     // a negative baht figure: nothing the save writes
-    sqlx::query("UPDATE transactions SET principal = -1 WHERE document_ref = $1")
-        .bind(&saved.document_ref)
-        .execute(&shop.pool)
-        .await
-        .expect("break the stored row");
     sqlx::query(
         "UPDATE transaction_lines l SET thb_amount = -1 FROM transactions t \
          WHERE l.transaction_id = t.id AND t.document_ref = $1",

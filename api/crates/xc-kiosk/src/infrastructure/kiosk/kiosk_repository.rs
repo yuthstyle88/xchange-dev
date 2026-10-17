@@ -179,8 +179,11 @@ fn money_from(value: Decimal) -> AppResult<Money> {
         .ok_or_else(|| unreadable("amount", &value))
 }
 
-fn money_to(money: Money) -> Decimal {
-    Decimal::new(money.minor(), 2)
+fn money_to(money: Money) -> AppResult<Decimal> {
+    let minor = money
+        .try_minor()
+        .map_err(|_| AppError::Internal(format!("money minor overflow: {}", money.minor_i128())))?;
+    Ok(Decimal::new(minor, 2))
 }
 
 fn rate_from(value: Decimal) -> AppResult<Rate> {
@@ -362,9 +365,9 @@ impl KioskRepository for PgKioskRepository {
         .bind(request.quote.rate.value())
         .bind(request.quote.unit_size.value())
         .bind(line_uuid_str)
-        .bind(money_to(request.quote.foreign))
-        .bind(money_to(request.quote.thb))
-        .bind(money_to(request.quote.input_amount))
+        .bind(money_to(request.quote.foreign)?)
+        .bind(money_to(request.quote.thb)?)
+        .bind(money_to(request.quote.input_amount)?)
         .bind(request.quote.payment_method.as_str())
         .bind(client_ip)
         .bind(link.map(|l| l.submission_id.as_str()))
