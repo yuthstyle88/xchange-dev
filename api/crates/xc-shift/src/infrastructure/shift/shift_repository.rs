@@ -263,7 +263,7 @@ fn map_movement_row(row: MovementRow) -> Result<StockMovement, AppError> {
     })
 }
 
-async fn resolve_teller(
+pub(crate) async fn resolve_teller(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     branch_id: &BranchId,
     opened_by: &str,

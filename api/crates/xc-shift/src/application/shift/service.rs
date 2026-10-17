@@ -77,6 +77,22 @@ impl<R: ShiftRepository> ShiftService<R> {
         self.repo.open_of_branch(branch).await
     }
 
+    pub async fn teller_of_actor_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        actor_id: &str,
+    ) -> AppResult<Option<String>> {
+        let unknown = ShiftError::TellerUnknown.to_string();
+        match crate::infrastructure::shift::shift_repository::resolve_teller(tx, branch, actor_id)
+            .await
+        {
+            Ok(teller_id) => Ok(Some(teller_id)),
+            Err(AppError::Domain(ref msg)) if msg == &unknown => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
     pub async fn shift(&self, branch: &BranchId, id: &str) -> AppResult<Option<Shift>> {
         self.repo.shift(branch, id).await
     }
