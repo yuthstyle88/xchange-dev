@@ -56,27 +56,19 @@ use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::custody::entities::attendance::Attendance;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
-use xc_shift::domain::custody::entities::custody_request::{CustodyRequest, Decision};
 use xc_shift::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use xc_shift::domain::custody::entities::stored_event::StoredEvent;
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::cash_target::CashTarget;
-use xc_shift::domain::custody::value_objects::count_sheet::CountSheet;
 use xc_shift::domain::custody::value_objects::custody_event::EventKind;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::cutoff::Cutoff;
-use xc_shift::domain::custody::value_objects::denomination_row::DenominationRow;
 use xc_shift::domain::custody::value_objects::entity::Entity;
 use xc_shift::domain::custody::value_objects::phase::Phase;
-use xc_shift::domain::custody::value_objects::request_kind::RequestKind;
-use xc_shift::domain::custody::value_objects::request_status::{
-    Reconciliation, RequestStatus, TransferStage,
-};
 use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
-use xc_shift::domain::custody::value_objects::signature::Signature;
 use xc_shift::domain::shift::commands::close_shift::CloseShift;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::domain::shift::commands::open_shift::OpenShift;
@@ -1345,32 +1337,10 @@ fn role_of(text: &str) -> CustodyRole {
 }
 
 fn phase_of(text: &str) -> Phase {
-    [
-        Phase::Closed,
-        Phase::Ready,
-        Phase::Open,
-        Phase::CutOff,
-        Phase::Counting,
-    ]
-    .into_iter()
-    .find(|p| p.as_str() == text)
-    .unwrap_or_else(|| panic!("no phase {text}"))
-}
-
-fn kind_of(text: &str) -> RequestKind {
-    [
-        RequestKind::Open,
-        RequestKind::Handover,
-        RequestKind::Close,
-        RequestKind::SafeOpen,
-        RequestKind::SafeIn,
-        RequestKind::SafeOut,
-        RequestKind::ExternalIn,
-        RequestKind::ExternalOut,
-    ]
-    .into_iter()
-    .find(|k| k.as_str() == text)
-    .unwrap_or_else(|| panic!("no request kind {text}"))
+    [Phase::Closed, Phase::Ready, Phase::Open, Phase::CutOff]
+        .into_iter()
+        .find(|p| p.as_str() == text)
+        .unwrap_or_else(|| panic!("no phase {text}"))
 }
 
 fn event_kind_of(text: &str) -> EventKind {
@@ -1417,91 +1387,8 @@ fn cutoff_of(value: &Value) -> Cutoff {
     }
 }
 
-fn sheet_of(request: &Value, totals: &str, rows: &str) -> Option<CountSheet> {
-    let totals = optional_balances(request, totals)?;
-    let denominations = array(request, rows)
-        .iter()
-        .map(|row| DenominationRow {
-            currency: code(&text_of(row, "currency")),
-            denomination: money_of(&row["denomination"]),
-            count: u32::try_from(row["count"].as_u64().expect("a count")).expect("a small count"),
-        })
-        .collect();
-    Some(CountSheet {
-        totals,
-        denominations,
-    })
-}
-
-fn decision_of(value: &Value, text_key: &str) -> Decision {
-    Decision {
-        by: text_of(value, "by"),
-        at: custody_at(&text_of(value, "at")),
-        text: text_of(value, text_key),
-    }
-}
-
-fn request_of(r: &Value) -> CustodyRequest {
-    CustodyRequest {
-        id: text_of(r, "id"),
-        request_id: text_of(r, "requestId"),
-        payload_hash: text_of(r, "hash"),
-        kind: kind_of(&text_of(r, "kind")),
-        status: match text_of(r, "status").as_str() {
-            "PENDING" => RequestStatus::Pending,
-            "REJECTED" => RequestStatus::Rejected,
-            "COMPLETED" => RequestStatus::Completed,
-            other => panic!("no request status {other}"),
-        },
-        at: custody_at(&text_of(r, "at")),
-        sender: text_of(r, "sender"),
-        receiver: optional_text(r, "receiver"),
-        note: text_of(r, "note"),
-        evidence_keys: array(r, "evidenceKeys")
-            .iter()
-            .map(|k| k.as_str().expect("a key is text").to_string())
-            .collect(),
-        signatures: array(r, "signatures")
-            .iter()
-            .map(|s| Signature {
-                employee_id: text_of(s, "employeeId"),
-                role: role_of(&text_of(s, "role")),
-                at: custody_at(&text_of(s, "at")),
-            })
-            .collect(),
-        shift_id: optional_text(r, "shiftId"),
-        counted: sheet_of(r, "counted", "denominations"),
-        target: r.get("target").map(target_of),
-        target_difference: optional_delta(r, "targetDifference"),
-        expected: optional_balances(r, "expected"),
-        variance: optional_delta(r, "variance"),
-        cutoff: r.get("cutoff").map(cutoff_of),
-        safe_count: sheet_of(r, "safeCount", "safeDenominations"),
-        safe_expected: optional_balances(r, "safeExpected"),
-        safe_variance: optional_delta(r, "safeVariance"),
-        currency: optional_text(r, "currency").map(|c| code(&c)),
-        amount: r.get("amount").map(money_of),
-        stage: optional_text(r, "stage").map(|s| match s.as_str() {
-            "IN_TRANSIT" => TransferStage::InTransit,
-            "RECEIVED" => TransferStage::Received,
-            other => panic!("no stage {other}"),
-        }),
-        dispatched_at: optional_custody_time(r, "dispatchedAt"),
-        dispatched_by: optional_text(r, "dispatchedBy"),
-        rejected: r.get("rejected").map(|d| decision_of(d, "reason")),
-        completed_at: optional_custody_time(r, "completedAt"),
-        reconciliation: optional_text(r, "reconciliation").map(|s| match s.as_str() {
-            "PENDING" => Reconciliation::Pending,
-            "CHECKED" => Reconciliation::Checked,
-            other => panic!("no reconciliation {other}"),
-        }),
-        reconciled: r.get("reconciled").map(|d| decision_of(d, "note")),
-    }
-}
-
 pub fn state_of(ops: &Value) -> CustodyState {
     CustodyState {
-        enabled: ops["enabled"].as_bool().expect("enabled"),
         phase: phase_of(&text_of(ops, "phase")),
         safe: optional_balances(ops, "safe"),
         target: ops.get("target").filter(|v| !v.is_null()).map(target_of),
@@ -1511,7 +1398,6 @@ pub fn state_of(ops: &Value) -> CustodyState {
             confirmed_by: text_of(e, "confirmedBy"),
             at: custody_at(&text_of(e, "at")),
         }),
-        custodian: optional_text(ops, "custodian"),
         attendance: array(ops, "attendance")
             .iter()
             .map(|a| Attendance {
@@ -1522,7 +1408,8 @@ pub fn state_of(ops: &Value) -> CustodyState {
                 clock_out: optional_custody_time(a, "out"),
             })
             .collect(),
-        requests: array(ops, "requests").iter().map(request_of).collect(),
+        // CA-10 (#626): `enabled`, `custodian` and `requests` of a recorded v2 snapshot are not part of the state any
+        // more (M3, Q6: the compat snapshot prints them as constants).
         cutoff: ops.get("cutoff").filter(|v| !v.is_null()).map(cutoff_of),
         exceptions: array(ops, "exceptions")
             .iter()

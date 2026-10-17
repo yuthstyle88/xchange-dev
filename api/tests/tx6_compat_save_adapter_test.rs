@@ -233,7 +233,7 @@ async fn a_compat_save_refused_for_stock_leaves_nothing() {
     replay.finish().await;
 }
 
-/// A custody refusal (custody on, the counter not open) leaves nothing (§4.6).
+/// A custody refusal (the counter not open) leaves nothing (§4.6).
 #[actix_web::test]
 async fn a_compat_save_refused_by_custody_leaves_nothing() {
     let fixture = Fixture::load(FILE);
@@ -242,14 +242,8 @@ async fn a_compat_save_refused_by_custody_leaves_nothing() {
     let answer = save(&replay, &payload_of(&replay, LIVE_BUY_CASH)).await;
     refused(&answer, "#120 with custody on and the counter closed");
     assert_eq!(rows(&replay).await, NONE);
-
-    // the same request is saved once custody is off again: the refusal was custody's
-    sqlx::query("UPDATE ops_state SET enabled = false WHERE branch_id = 'MAIN'")
-        .execute(&replay.desk.db.pool)
-        .await
-        .expect("switch custody off");
-    let saved = save(&replay, &payload_of(&replay, LIVE_BUY_CASH)).await;
-    assert_eq!(saved.status, 200, "{:.300}", saved.text);
+    // CA-10 (#626 Q2): there is no custody-off switch any more, so the half that saved the same request with
+    // custody off retired; the refusal and its empty write are the rule that stays.
     replay.finish().await;
 }
 

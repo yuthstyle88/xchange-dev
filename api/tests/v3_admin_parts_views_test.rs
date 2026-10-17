@@ -912,11 +912,13 @@ async fn admin_request_status_is_unversioned_and_writes_nothing() {
     assert_eq!(abandoned, 0, "asking gives nothing up");
 
     // the id asked about is still free to be used (RE-7 #604: by a shift opened with it, where
-    // it was a direct rate save before RE-7 removed that action)
+    // it was a direct rate save before RE-7 removed that action; re-expected for CA-10 #626 by the
+    // ticket author: by a branch created with it, the direct shift open being retired too, design
+    // `cash-shift-transfer.md` §6)
     room.ok(
         "OWNER",
-        "adminOpenShift",
-        json!({ "branchId": MAIN, "requestId": id, "opening": { "THB": 100000, "USD": 1000 } }),
+        "adminCreateBranch",
+        json!({ "requestId": id, "name": "Request Status Branch" }),
     )
     .await;
     let data = room

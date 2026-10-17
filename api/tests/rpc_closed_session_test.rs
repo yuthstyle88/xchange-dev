@@ -29,19 +29,18 @@ use xchange::application::compat::envelope::RpcRoute;
 
 const ORIGIN: &str = "http://desk.test";
 
-/// A family that finds its caller's session gone, for `opsClock`.
+/// A family that finds its caller's session gone, for `saveTransaction` on the staff route.
 ///
-/// Only the staff route is asked. A custody command (`CustodyService::command`) is reached only
-/// through the `ops*` family, and `/api/rpc` accepts no `ops*` name for anybody: `Policy`
-/// refuses it for the owner with `INVALID_REQUEST` before any family runs
-/// (`xc-auth` `policy.rs`, `allow_rpc`; pinned by `rpc_action_seam_test.rs`). The owner's
-/// `saveTransaction` goes through `check_save_in`, not through a custody command. So no request
-/// on `/api/rpc` can find a closed account under the lock, and there is nothing to pin there.
+/// Re-expected for CA-10 #626 by its ticket author (claude/c4d72c; cash-shift-transfer.md §6): this file used
+/// `opsClock`, but CA-10 retires the `ops*` names and their policy rows, so policy would refuse that name as unknown
+/// before any family ran. `saveTransaction`, asked as FRONT on `/api/staff/rpc`, is admitted by policy and reaches a
+/// family (measured for #1893's ruling, issuecomment-6188749075). What is pinned is unchanged: an action that finds
+/// the session gone is answered as the door answers no session.
 struct SessionGone;
 
 impl RpcAction for SessionGone {
     fn handles(&self, _route: RpcRoute, action: &str) -> bool {
-        action == "opsClock"
+        action == "saveTransaction"
     }
 
     fn run<'a>(&'a self, _call: RpcCall<'a>) -> ActionFuture<'a> {
@@ -90,7 +89,7 @@ async fn an_action_that_finds_the_session_gone_is_answered_as_the_door_answers_n
     let cookies: Cookies = sign_in(&app, ORIGIN, &people).await;
 
     for (path, who) in [(STAFF_RPC, "FRONT")] {
-        let call = || Call::action(ORIGIN, path, "opsClock", json!({ "direction": "IN" }));
+        let call = || Call::action(ORIGIN, path, "saveTransaction", json!({}));
         let door = app.send(call()).await;
         assert!(
             door.status == 401 || door.status == 400,

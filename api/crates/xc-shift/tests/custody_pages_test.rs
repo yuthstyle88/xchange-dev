@@ -27,9 +27,10 @@
 //! `request_data`); `t_p10_floor_reads_one_ops_row_and_at_most_one_attendance_row`
 //! loads it with `load_state` first, which proves it decodes.
 //!
-//! `OpsRow`'s fields are [proposed] in the ticket; these tests read only `enabled`,
-//! `phase`, `custodian` and `cutoff` (the names `CustodyState` gives the same
-//! `ops_state` columns), and of `cutoff` only whether it is present.
+//! `OpsRow`'s fields are [proposed] in the ticket; these tests read only `phase` and
+//! `cutoff` (the names `CustodyState` gives the same `ops_state` columns), and of
+//! `cutoff` only whether it is present. CA-10 (#626) dropped `enabled` and `custodian`
+//! (M3) and `Phase::Counting` (Q5).
 //!
 //! These tests need a real PostgreSQL (`TEST_DATABASE_URL`, a database whose name
 //! ends in `_test`, PostgreSQL 15 or later). Without it they FAIL; none skips.
@@ -120,9 +121,7 @@ fn cutoff(by: &str) -> Cutoff {
 
 fn state() -> CustodyState {
     CustodyState {
-        enabled: true,
         phase: Phase::Open,
-        custodian: Some("custodian".to_string()),
         ..CustodyState::initial()
     }
 }
@@ -437,13 +436,11 @@ async fn t_p4_floor_answers_only_its_own_branch() {
 
         let mut s = state();
         s.phase = Phase::Ready;
-        s.custodian = Some("mine".to_string());
         s.attendance = vec![attendance(&format!("{tag}-mine"), "me", 0, Some(MINUTE))];
         store(&db.pool, &mine, &s).await;
 
         let mut o = state();
-        o.phase = Phase::Counting;
-        o.custodian = Some("theirs".to_string());
+        o.phase = Phase::CutOff;
         o.attendance = vec![attendance(&format!("{tag}-other"), "me", 2 * MINUTE, None)];
         store(&db.pool, &other, &o).await;
 
@@ -453,7 +450,6 @@ async fn t_p4_floor_answers_only_its_own_branch() {
         } = pages(&db).floor(&mine, "me").await.expect("floor");
         let ops = ops.expect("this branch has its ops_state row");
         assert_eq!(ops.phase, Phase::Ready);
-        assert_eq!(ops.custodian.as_deref(), Some("mine"));
         assert!(
             my_open_attendance.is_none(),
             "me is clocked in at the other branch only"
@@ -651,8 +647,6 @@ async fn floor_answers_the_ops_row_and_my_open_attendance() {
         let tag = unique("floor");
         let mut s = state();
         s.phase = Phase::CutOff;
-        s.enabled = true;
-        s.custodian = Some("the-custodian".to_string());
         s.cutoff = Some(cutoff("the-custodian"));
         let mine = attendance(&format!("{tag}-me-open"), "me", 3 * MINUTE, None);
         s.attendance = vec![
@@ -664,9 +658,7 @@ async fn floor_answers_the_ops_row_and_my_open_attendance() {
 
         let facts = pages(&db).floor(&branch, "me").await.expect("floor");
         let ops = facts.ops.expect("the branch has its ops_state row");
-        assert!(ops.enabled);
         assert_eq!(ops.phase, Phase::CutOff);
-        assert_eq!(ops.custodian.as_deref(), Some("the-custodian"));
         assert!(ops.cutoff.is_some(), "the cutoff is present");
         assert!(
             facts.my_open_attendance == Some(mine),
@@ -690,17 +682,13 @@ async fn floor_answers_no_cutoff_when_the_branch_has_none() {
         let db = TestDb::start().await;
         let branch = db.branch("floornocut").await;
         let mut s = state();
-        s.enabled = false;
         s.phase = Phase::Ready;
-        s.custodian = None;
         s.cutoff = None;
         store(&db.pool, &branch, &s).await;
 
         let facts = pages(&db).floor(&branch, "me").await.expect("floor");
         let ops = facts.ops.expect("the branch has its ops_state row");
-        assert!(!ops.enabled);
         assert_eq!(ops.phase, Phase::Ready);
-        assert_eq!(ops.custodian, None);
         assert!(ops.cutoff.is_none(), "no cutoff");
         assert!(facts.my_open_attendance.is_none());
     })
@@ -906,8 +894,6 @@ async fn t_p10_floor_reads_one_ops_row_and_at_most_one_attendance_row() {
 
         let ops = facts.ops.expect("the ops_state row");
         assert_eq!(ops.phase, Phase::Open);
-        assert!(ops.enabled);
-        assert_eq!(ops.custodian.as_deref(), Some("custodian"));
         assert!(ops.cutoff.is_some());
         assert!(facts.my_open_attendance == Some(open), "me's open record");
 

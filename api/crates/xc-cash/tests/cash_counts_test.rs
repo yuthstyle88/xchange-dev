@@ -28,7 +28,9 @@
 //! - Migration `20261031080000_shift_per_teller.sql` (M2, after every migration on main; option A of the lane controller's 2026-10-10 ruling; design
 //!   §4.1, §8 M2): `shifts.opened_by_count uuid NULL REFERENCES cash_counts(id)`, set to the verified count that
 //!   opened the shift; `shifts_one_open_per_teller` over count-opened OPEN shifts; `shifts_one_open_per_branch_v2`
-//!   over v2-opened OPEN shifts (`opened_by_count IS NULL`); the per-branch index dropped.
+//!   over v2-opened OPEN shifts (`opened_by_count IS NULL`); the per-branch index dropped. **M2's four tests here
+//!   retired with CA-10 (#626):** its M3 drops the marker and the v2 index; the end state is pinned by
+//!   `xc-shift/tests/ca10_m3_migration_test.rs`.
 //! - A non-zero difference on a verified count writes one `cash_exceptions` row of the count's branch whose `data`
 //!   has `countId` (the count's id), `currency` and `difference` (a decimal string, counted − expected).
 //!
@@ -53,8 +55,6 @@ use xc_cash::domain::error::CashError;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
@@ -485,129 +485,6 @@ async fn a_resubmitted_count_with_the_same_idempotency_key_is_the_same_count() {
         .await,
         1
     );
-}
-
-// ── M2 (option A, lane controller 2026-10-10; design §4.1, §8 M2) ───────────
-
-#[tokio::test]
-async fn m2_replaces_the_per_branch_index_with_a_teller_index_and_a_v2_index() {
-    let db = Db::fresh().await;
-    let names: Vec<String> = sqlx::query_scalar(
-        "SELECT indexname::text FROM pg_indexes \
-         WHERE schemaname = current_schema() AND tablename = 'shifts' ORDER BY 1",
-    )
-    .fetch_all(&db.pool)
-    .await
-    .expect("read the indexes of shifts");
-    for kept in [
-        "shifts_one_open_per_teller",
-        "shifts_one_open_per_branch_v2",
-    ] {
-        assert!(names.contains(&kept.to_owned()), "{kept}: {names:?}");
-    }
-    assert!(
-        !names.contains(&"shifts_one_open_per_branch".to_owned()),
-        "{names:?}"
-    );
-    assert_eq!(
-        db.count(
-            "SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() \
-             AND table_name = 'shifts' AND column_name = 'opened_by_count' AND is_nullable = 'YES'"
-        )
-        .await,
-        1,
-        "shifts.opened_by_count uuid NULL (§4.1)"
-    );
-}
-
-#[tokio::test]
-async fn a_count_opened_shift_names_the_count_that_opened_it() {
-    let db = Db::fresh().await;
-    let main = db.branch("main").await;
-    let teller = db.person("Ploy", &[Role::Teller]).await;
-    let manager = db.person("Krit", &[Role::BranchManager]).await;
-    let lines = thb_2300(&db).await;
-    let counts = db.counts();
-    let count = counts
-        .submit(&teller, cmd(&main, None, CountKind::Open, lines), at(0))
-        .await
-        .expect("the OPEN count");
-    let shift = counts
-        .verify(&manager, &count.id, at(60))
-        .await
-        .expect("verified")
-        .shift_id
-        .expect("the shift it opened");
-    let marker: Option<String> =
-        sqlx::query_scalar("SELECT opened_by_count::text FROM shifts WHERE id = $1")
-            .bind(&shift)
-            .fetch_one(&db.pool)
-            .await
-            .expect("read the marker");
-    assert_eq!(marker, Some(count.id));
-}
-
-#[tokio::test]
-async fn a_v2_opened_shift_does_not_count_against_one_open_shift_per_teller() {
-    let db = Db::fresh().await;
-    let main = db.branch("main").await;
-    let airport = db.branch("airport").await;
-    let teller = db.person("Ploy", &[Role::Teller]).await;
-    let manager = db.person("Krit", &[Role::BranchManager]).await;
-    // v2's path (`adminOpenShift` → `ShiftService::open`) opens a shift for the same person at the airport
-    let opening = Balances::of(&[(
-        CurrencyCode::parse("THB").unwrap(),
-        Money::parse("100").unwrap(),
-    )]);
-    db.shifts()
-        .open(
-            &airport,
-            OpenShift {
-                request_id: unique("v2-open"),
-                opening,
-            },
-            &teller.user_id,
-            at(0),
-        )
-        .await
-        .expect("v2's open path still opens a shift");
-
-    let at_main = opened(&db, &main, &teller, &manager).await;
-    let open = db.open_shifts_of(&teller).await;
-    assert_eq!(
-        open.len(),
-        2,
-        "until CA-10, A8 binds the shifts a count opened: {open:?}"
-    );
-    assert!(open.contains(&(at_main, main.as_str().to_owned())));
-}
-
-#[tokio::test]
-async fn two_v2_opened_open_shifts_at_one_branch_are_still_refused() {
-    let db = Db::fresh().await;
-    let main = db.branch("main").await;
-    let ploy = db.person("Ploy", &[Role::Teller]).await;
-    let nok = db.person("Nok", &[Role::Teller]).await;
-    let insert = |n: &str, teller: &str| {
-        sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
-             VALUES ($1, $2, 'OPEN', now(), $3, $1, $3::uuid)",
-        )
-        .bind(format!("SH-v2-{n}"))
-        .bind(main.as_str())
-        .bind(teller.to_owned())
-    };
-    insert("a", &ploy.user_id)
-        .execute(&db.pool)
-        .await
-        .expect("the first v2 shift of the branch");
-    let second = insert("b", &nok.user_id).execute(&db.pool).await;
-    match second {
-        Err(sqlx::Error::Database(e)) => {
-            assert_eq!(e.constraint(), Some("shifts_one_open_per_branch_v2"), "{e}")
-        }
-        other => panic!("v2's one-per-branch rule still holds for v2-opened shifts: {other:?}"),
-    }
 }
 
 // ── closing a shift ─────────────────────────────────────────────────────────
