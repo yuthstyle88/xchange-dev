@@ -2720,6 +2720,47 @@ async fn allow_negative_needs_an_approved_negative_stock_for_this_source() {
         assert_refused_writing_nothing(&mut tx, &postings, &legs, Some(request), what).await;
     }
 
+    let pub_req = Uuid::new_v4();
+    let pub_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
+         proposed_payload, requested_by, requested_at, status, idempotency_key) \
+         VALUES ($1, 'RATE_PUBLICATION', $2, $3, 'h', 'p', '{}'::jsonb, 'test', now(), 'APPROVED', $4)",
+    )
+    .bind(pub_req)
+    .bind(branch.as_str())
+    .bind(unique("pub-obj"))
+    .bind(unique("pub-key"))
+    .execute(&pool)
+    .await
+    .expect("approved rate publication request");
+    sqlx::query(
+        "INSERT INTO rate_publications (id, branch_id, version, published_at, approved_request_id, published_by) \
+         VALUES ($1, $2, 1, now(), $3, 'test')",
+    )
+    .bind(pub_id)
+    .bind(branch.as_str())
+    .bind(pub_req)
+    .execute(&pool)
+    .await
+    .expect("rate publication");
+    sqlx::query(
+        "INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, \
+         value_tier, unit_size, buy_rate, sell_rate, source_snapshot) \
+         VALUES ($1, $2, 'USD', 'ALL', 'ALL', 1, 32.50, 33.00, '{}'::jsonb)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(pub_id)
+    .execute(&pool)
+    .await
+    .expect("published rate line");
+    sqlx::query("UPDATE branches SET current_publication_id = $1 WHERE id = $2")
+        .bind(pub_id)
+        .bind(branch.as_str())
+        .execute(&pool)
+        .await
+        .expect("current publication");
+
     postings
         .post_in(&mut tx, &legs, Some(approved))
         .await
@@ -2799,6 +2840,46 @@ async fn approval_for_changed_source_lines_refused() {
         "APPROVED",
     )
     .await;
+    let pub_req = Uuid::new_v4();
+    let pub_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
+         proposed_payload, requested_by, requested_at, status, idempotency_key) \
+         VALUES ($1, 'RATE_PUBLICATION', $2, $3, 'h', 'p', '{}'::jsonb, 'test', now(), 'APPROVED', $4)",
+    )
+    .bind(pub_req)
+    .bind(branch.as_str())
+    .bind(unique("pub-obj"))
+    .bind(unique("pub-key"))
+    .execute(&pool)
+    .await
+    .expect("approved rate publication request");
+    sqlx::query(
+        "INSERT INTO rate_publications (id, branch_id, version, published_at, approved_request_id, published_by) \
+         VALUES ($1, $2, 1, now(), $3, 'test')",
+    )
+    .bind(pub_id)
+    .bind(branch.as_str())
+    .bind(pub_req)
+    .execute(&pool)
+    .await
+    .expect("rate publication");
+    sqlx::query(
+        "INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, \
+         value_tier, unit_size, buy_rate, sell_rate, source_snapshot) \
+         VALUES ($1, $2, 'USD', 'ALL', 'ALL', 1, 32.50, 33.00, '{}'::jsonb)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(pub_id)
+    .execute(&pool)
+    .await
+    .expect("published rate line");
+    sqlx::query("UPDATE branches SET current_publication_id = $1 WHERE id = $2")
+        .bind(pub_id)
+        .bind(branch.as_str())
+        .execute(&pool)
+        .await
+        .expect("current publication");
     let mut tx = pool.begin().await.expect("begin");
     postings
         .post_in(&mut tx, &legs, Some(fresh))
