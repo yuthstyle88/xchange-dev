@@ -162,6 +162,8 @@ impl TestDb {
             .await
             .expect("insert the branches this file names into branches");
         seed_opener(&pool, "owner-1").await;
+        // CA-10 (#626): after M3 a teller holds one OPEN shift, so XC-B02's shifts are opened by a second opener
+        seed_opener(&pool, "owner-2").await;
         Self { pool, schema }
     }
 
@@ -173,6 +175,15 @@ impl TestDb {
     }
 
     /// The `users.id` of the seeded opener `owner-1`.
+    /// The `users.id` of the opener of `branch`'s shifts (`owner-2` at XC-B02, `owner-1` elsewhere).
+    async fn teller_at(&self, branch: &str) -> String {
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(opener_at(branch))
+            .fetch_one(&self.pool)
+            .await
+            .expect("the opener's user")
+    }
+
     async fn teller(&self) -> String {
         sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'owner-1'")
             .fetch_one(&self.pool)
@@ -187,13 +198,14 @@ impl TestDb {
         let id = format!("SH-{}", uuid::Uuid::new_v4());
         sqlx::query(
             "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
-             VALUES ($1, $2, 'OPEN', $3, 'owner-1', '', $4, $5::uuid)",
+             VALUES ($1, $2, 'OPEN', $3, $6, '', $4, $5::uuid)",
         )
         .bind(&id)
         .bind(branch)
         .bind(at(0))
         .bind(rid())
-        .bind(self.teller().await)
+        .bind(self.teller_at(branch).await)
+        .bind(opener_at(branch))
         .execute(&self.pool)
         .await
         .expect("open a shift");
@@ -234,9 +246,19 @@ impl TestDb {
         .execute(&self.pool)
         .await
         .expect("move stock");
+        // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
+        // ON CONFLICT is reached), then the move
         sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, $3::numeric) \
-             ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
+            "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, 0) \
+             ON CONFLICT (shift_id, code) DO NOTHING",
+        )
+        .bind(shift)
+        .bind(code)
+        .execute(&self.pool)
+        .await
+        .expect("a balance row for the movement");
+        sqlx::query(
+            "UPDATE shift_balances SET expected = expected + $3::numeric WHERE shift_id = $1 AND code = $2",
         )
         .bind(shift)
         .bind(code)
@@ -1453,4 +1475,13 @@ async fn seed_opener(pool: &PgPool, id: &str) {
     .execute(pool)
     .await
     .expect("seed an opener's user");
+}
+
+/// CA-10 (#626): one OPEN shift per teller after M3, so each branch's shifts have an opener of their own.
+fn opener_at(branch: &str) -> &'static str {
+    if branch == "XC-B02" {
+        "owner-2"
+    } else {
+        "owner-1"
+    }
 }
