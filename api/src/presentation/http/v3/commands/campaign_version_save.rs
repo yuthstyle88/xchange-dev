@@ -269,6 +269,39 @@ impl CommandAction for CampaignVersionSaveCommand {
                 })?;
                 checked.push((rule, calc.class().as_str()));
             }
+
+            let rules_in_use: bool = sqlx::query_scalar(
+                "SELECT EXISTS ( \
+                     SELECT 1 FROM benefit_rules r \
+                     WHERE r.campaign_version_id = $1 \
+                       AND ( \
+                           EXISTS (SELECT 1 FROM coupons c WHERE c.rule_id = r.id) \
+                           OR EXISTS (SELECT 1 FROM benefit_reservations br WHERE br.rule_id = r.id) \
+                           OR EXISTS (SELECT 1 FROM benefit_redemptions rd WHERE rd.rule_id = r.id) \
+                       ) \
+                 )",
+            )
+            .bind(version_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+
+            if rules_in_use {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("rules"),
+                    "กฎของแคมเปญนี้ถูกใช้กับคูปองที่ออกแล้ว จึงแก้กฎไม่ได้",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+
             Some(checked)
         } else {
             None
