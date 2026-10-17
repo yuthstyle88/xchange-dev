@@ -163,9 +163,10 @@ async fn each_branch_shows_its_own_custodian_requests_log_and_people() {
     );
 
     // CA-10 (#626 §6 Q6, ruled on #626): the custody machine is gone, so no branch names a custodian and
-    // no custody request rows are read; attendance and events stay per branch.
+    // no custody request rows are read, and `enabled` answers false (the column is gone; ruled on #626);
+    // attendance and events stay per branch.
     let expected_main = json!({
-        "enabled": true,
+        "enabled": false,
         "phase": "OPEN",
         "custodian": null,
         "attendance": [["AT-MAIN", "fr1", "Main Front"]],
@@ -173,7 +174,7 @@ async fn each_branch_shows_its_own_custodian_requests_log_and_people() {
         "events": [["EV-MAIN", "ra1", "RATES", {"branch": "MAIN"}]],
     });
     let expected_airport = json!({
-        "enabled": true,
+        "enabled": false,
         "phase": "READY",
         "custodian": null,
         "attendance": [["AT-AIRPORT", "fr2", "Airport Front"]],

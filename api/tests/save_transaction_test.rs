@@ -42,6 +42,10 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
     let mut reserved: BTreeMap<usize, String> = BTreeMap::new();
     let mut aliases: BTreeMap<String, String> = BTreeMap::new();
     let mut written: Vec<WrittenSave> = Vec::new();
+    // CA-10 (#626, the BE controller's ruling): a save moves stock on the saver's own OPEN shift and one teller
+    // holds one OPEN shift, so where v2's one actor saved outside MAIN, that branch's save is made (and its files
+    // uploaded) by the branch's own opener (`Shop::teller_of`); at MAIN the owner is the opener. Every expected
+    // figure stays the same.
 
     for (i, step) in scenario.steps.iter().enumerate() {
         let op = step["op"].as_str().expect("a step has an op");
@@ -120,6 +124,13 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                 let here = format!("{here} '{}'", save.note);
                 let branch_id = branches[&label].clone();
                 let exists = label != "GONE";
+                let saver = if exists && branch_id != MAIN {
+                    shop.teller_of(&branch_id)
+                        .await
+                        .unwrap_or_else(|| panic!("{here}: the opener of {branch_id}"))
+                } else {
+                    fx.actor.clone()
+                };
                 // the files the form names, uploaded by the owner into this branch
                 let key_of = |alias: &Option<String>| -> Option<(String, String)> {
                     alias.as_ref().map(|a| (label.clone(), a.clone()))
@@ -133,7 +144,7 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                     if !keys.contains_key(&k) {
                         let file = &fx.files[&k.1];
                         let key = if exists {
-                            shop.upload(&branch_id, &fx.actor, &file.mime, &file.bytes())
+                            shop.upload(&branch_id, &saver, &file.mime, &file.bytes())
                                 .await
                         } else {
                             // nothing can be uploaded into a branch that is not there: the
@@ -159,7 +170,7 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                 let cmd = command(&form, uploaded[0].clone(), uploaded[1].clone());
                 let got = shop
                     .workflow
-                    .save(&branch(&branch_id), cmd, &fx.actor, instant(&save.at))
+                    .save(&branch(&branch_id), cmd, &saver, instant(&save.at))
                     .await;
 
                 match (&save.v2_error, &save.saved, &got) {
