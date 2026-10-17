@@ -73,15 +73,40 @@ impl BenefitCalculator for RateImprovement {
         let new_final_rate = Rate::parse(&rounded.to_string()).ok();
 
         let amount_thb = if let Some(final_rate) = new_final_rate {
-            let thb_new = ExchangeArithmetic::thb(line.quantity, final_rate, line.unit_size);
-            let thb_base = ExchangeArithmetic::thb(line.quantity, line.base_rate, line.unit_size);
+            let thb_new = ExchangeArithmetic::try_thb(line.quantity, final_rate, line.unit_size)
+                .map_err(|e| ParamError {
+                    field: "quantity",
+                    reason: format!("rate improvement thb overflow: {e}"),
+                })?;
+            let thb_base =
+                ExchangeArithmetic::try_thb(line.quantity, line.base_rate, line.unit_size)
+                    .map_err(|e| ParamError {
+                        field: "quantity",
+                        reason: format!("rate improvement thb overflow: {e}"),
+                    })?;
             match line.shop_side {
                 Side::Buy => {
-                    let diff = thb_new.minor() - thb_base.minor();
+                    let new_minor = thb_new.try_minor().map_err(|e| ParamError {
+                        field: "quantity",
+                        reason: format!("rate improvement minor overflow: {e}"),
+                    })?;
+                    let base_minor = thb_base.try_minor().map_err(|e| ParamError {
+                        field: "quantity",
+                        reason: format!("rate improvement minor overflow: {e}"),
+                    })?;
+                    let diff = new_minor - base_minor;
                     Money::from_minor(diff.max(0)).unwrap_or(Money::ZERO)
                 }
                 Side::Sell => {
-                    let diff = thb_base.minor() - thb_new.minor();
+                    let base_minor = thb_base.try_minor().map_err(|e| ParamError {
+                        field: "quantity",
+                        reason: format!("rate improvement minor overflow: {e}"),
+                    })?;
+                    let new_minor = thb_new.try_minor().map_err(|e| ParamError {
+                        field: "quantity",
+                        reason: format!("rate improvement minor overflow: {e}"),
+                    })?;
+                    let diff = base_minor - new_minor;
                     Money::from_minor(diff.max(0)).unwrap_or(Money::ZERO)
                 }
             }
