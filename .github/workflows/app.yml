@@ -23,7 +23,7 @@ jobs:
   # test=cancelled). A FAILED `changes` job leaves skip_build empty => the full app job runs.
   changes:
     name: changes
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, light]  # light job: Jam + Studio runners carry `light` (owner 2026-10-17)
     timeout-minutes: 5
     outputs:
       skip_build: ${{ steps.filter.outputs.skip_build }}
