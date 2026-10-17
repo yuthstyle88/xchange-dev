@@ -114,9 +114,4 @@ jobs:
       - name: "Web screens: typecheck, test, build"
         run: |
           npm --prefix web ci --no-audit --no-fund
-          # owner 2026-10-17: tests run only on the merge into main; a PR still typechecks and builds
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            npm --prefix web run typecheck && npm --prefix web run build
-          else
-            npm --prefix web run check
-          fi
+          npm --prefix web run check

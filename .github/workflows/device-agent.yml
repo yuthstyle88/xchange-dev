@@ -89,6 +89,15 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xc-device-agent-${{ steps.build.outputs.version }}-${{ steps.build.outputs.short_sha }}-universal-apple-darwin
+          path: |
+            api/artifact/*.tar.gz
+            api/artifact/*.sha256
+          if-no-files-found: error
+
   linux:
     name: linux
     runs-on: [self-hosted, Linux, X64]
@@ -162,12 +171,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xc-device-agent-${{ steps.build.outputs.version }}-${{ steps.build.outputs.short_sha }}-x86_64-unknown-linux-musl
+          path: |
+            api/artifact/*.tar.gz
+            api/artifact/*.sha256
+          if-no-files-found: error
+
   e2e:
     name: e2e
     needs: linux
-    # Off-PR only (owner 2026-10-17: tests run only on the merge into main), so no postgres
-    # container starts on a PR. Builds its own binary: no artifact hand-off (owner: Actions storage stays off).
-    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
     services:
@@ -201,19 +216,26 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
-          rustup target add x86_64-unknown-linux-musl
 
-      - name: Build the agent binary (same build as the linux job)
-        working-directory: api
-        env:
-          CC_x86_64_unknown_linux_musl: gcc
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-x86_64-unknown-linux-musl'
+          path: artifact-download
+
+      - name: Extract agent binary
         run: |
-          XC_AGENT_BUILD_SHA="${{ github.sha }}" XC_AGENT_BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            cargo build --release -p xc-device-agent --target x86_64-unknown-linux-musl --locked
-          mkdir -p "$GITHUB_WORKSPACE/bin"
-          cp target/x86_64-unknown-linux-musl/release/xc-device-agent "$GITHUB_WORKSPACE/bin/"
-          chmod +x "$GITHUB_WORKSPACE/bin/xc-device-agent"
-          "$GITHUB_WORKSPACE/bin/xc-device-agent" --version
+          mkdir -p bin
+          TARBALL=$(find artifact-download -name "*.tar.gz" | head -n 1)
+          if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+            echo "ERROR: Could not find downloaded Linux tarball in artifact-download"
+            ls -laR artifact-download || true
+            exit 1
+          fi
+          echo "Extracting $TARBALL..."
+          tar -xzf "$TARBALL" -C bin
+          chmod +x bin/xc-device-agent
+          bin/xc-device-agent --version
 
       - name: Ensure PostgreSQL client
         run: |

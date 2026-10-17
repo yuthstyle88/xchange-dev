@@ -66,21 +66,10 @@ jobs:
           echo "Lane: $lane ($GITHUB_REPOSITORY $GITHUB_REF)" >> "$GITHUB_STEP_SUMMARY"
 
   build:
-    name: build + deploy (${{ needs.lane.outputs.lane }})
+    name: build
     needs: lane
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 90
-    # Build and deploy share one job, so the stage never leaves this runner's disk:
-    # no artifact hand-off (owner 2026-10-17: GitHub Actions storage stays off).
-    # The deploy steps run only on the lane's own (repository, branch) pair, the same
-    # check the separate deploy job used to make, so a change to lane.sh alone can never
-    # send a build to the wrong host. The ssh key is given only to the two steps that read it.
-    env:
-      XC_DEPLOY: ${{ github.event_name == 'push' && ( (needs.lane.outputs.lane == 'prod' && github.repository == '108-Plaza/xchange' && github.ref == 'refs/heads/release/prod') || (needs.lane.outputs.lane == 'staging' && github.repository == 'yuthstyle88/xchange-dev' && github.ref == 'refs/heads/deploy/staging') ) }}
-      XC_DEPLOY_HOST: ${{ vars.XC_DEPLOY_HOST }}
-      XC_DEPLOY_USER: ${{ vars.XC_DEPLOY_USER }}
-      XC_DEPLOY_KNOWN_HOSTS: ${{ vars.XC_DEPLOY_KNOWN_HOSTS }}
-      XC_PUBLIC_URL: ${{ vars.XC_PUBLIC_URL }}
+    timeout-minutes: 60
     steps:
       - name: Refuse to report green when the run was cancelled
         if: cancelled()
@@ -125,10 +114,38 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Upload the stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: xc-v3-stage-${{ github.sha }}
+          path: ${{ runner.temp }}/xc-v3-stage
+          retention-days: 14
+          if-no-files-found: error
+
+  deploy:
+    name: deploy (${{ needs.lane.outputs.lane }})
+    needs: [lane, build]
+    # Each lane deploys only from its own pair, checked again here so that a
+    # change to lane.sh alone can never send a build to the wrong host.
+    if: >-
+      success() && github.event_name == 'push' && (
+        (needs.lane.outputs.lane == 'prod' && github.repository == '108-Plaza/xchange' && github.ref == 'refs/heads/release/prod') ||
+        (needs.lane.outputs.lane == 'staging' && github.repository == 'yuthstyle88/xchange-dev' && github.ref == 'refs/heads/deploy/staging')
+      )
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    env:
+      XC_DEPLOY_HOST: ${{ vars.XC_DEPLOY_HOST }}
+      XC_DEPLOY_USER: ${{ vars.XC_DEPLOY_USER }}
+      XC_DEPLOY_KNOWN_HOSTS: ${{ vars.XC_DEPLOY_KNOWN_HOSTS }}
+      XC_PUBLIC_URL: ${{ vars.XC_PUBLIC_URL }}
+      XC_DEPLOY_SSH_KEY: ${{ secrets.XC_DEPLOY_SSH_KEY }}
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
       - name: Check the lane's settings
-        if: env.XC_DEPLOY == 'true'
-        env:
-          XC_DEPLOY_SSH_KEY: ${{ secrets.XC_DEPLOY_SSH_KEY }}
         run: |
           missing=0
           for v in XC_DEPLOY_HOST XC_DEPLOY_USER XC_DEPLOY_KNOWN_HOSTS XC_PUBLIC_URL XC_DEPLOY_SSH_KEY; do
@@ -136,10 +153,13 @@ jobs:
           done
           exit "$missing"
 
+      - name: Download the stage
+        uses: actions/download-artifact@v4
+        with:
+          name: xc-v3-stage-${{ github.sha }}
+          path: ${{ runner.temp }}/xc-v3-stage
+
       - name: ssh setup
-        if: env.XC_DEPLOY == 'true'
-        env:
-          XC_DEPLOY_SSH_KEY: ${{ secrets.XC_DEPLOY_SSH_KEY }}
         run: |
           d="$RUNNER_TEMP/ssh"
           install -d -m 700 "$d"
@@ -157,7 +177,6 @@ jobs:
           } > "$d/config"
 
       - name: The binary will run on the target (deploy/server/build.md §2)
-        if: env.XC_DEPLOY == 'true'
         run: |
           S="$RUNNER_TEMP/xc-v3-stage"
           need="$(objdump -T "$S/xchange" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1 | sed 's/GLIBC_//')"
@@ -170,7 +189,6 @@ jobs:
             || { echo "::error::the binary needs glibc $need, the target has $have"; exit 1; }
 
       - name: Copy and verify the stage (deploy/server/build.md §4)
-        if: env.XC_DEPLOY == 'true'
         run: |
           dest="xc-v3-stage-$GITHUB_SHA"
           ssh -F "$RUNNER_TEMP/ssh/config" target "rm -rf ~/$dest && install -d -m 700 ~/$dest"
@@ -182,12 +200,10 @@ jobs:
             && ! ldd ./xchange | grep 'not found'"
 
       - name: Update the server (update.sh runs the backup, then smoke.sh with this build)
-        if: env.XC_DEPLOY == 'true'
         run: |
           ssh -F "$RUNNER_TEMP/ssh/config" target "bash ~/xc-v3-stage-$GITHUB_SHA/update.sh"
 
       - name: Confirm the public URL serves this build
-        if: env.XC_DEPLOY == 'true'
         run: |
           body="$(curl -fsS --max-time 20 "$XC_PUBLIC_URL/health/ready")"
           echo "$body"
@@ -199,5 +215,5 @@ jobs:
           [ "$build" = "$GITHUB_SHA" ] || { echo "::error::$XC_PUBLIC_URL serves build $build, not $GITHUB_SHA"; exit 1; }
 
       - name: Remove the ssh key
-        if: always() && env.XC_DEPLOY == 'true'
+        if: always()
         run: rm -rf "$RUNNER_TEMP/ssh"
