@@ -213,6 +213,7 @@ fn exception_detail(e: &CashException) -> String {
         for (currency, d) in delta.non_zero() {
             parts.push(format!(
                 "{currency} {}",
+                // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2863).
                 Decimal::from_i128_with_scale(d.minor(), 2)
             ));
         }
