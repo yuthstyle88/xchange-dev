@@ -399,12 +399,12 @@ impl Desk {
         }
     }
 
-    /// Switch custody on for `branch` behind the routes (the owner's door to it
-    /// is `/api/employees`, ticket T4c).
+    /// The branch's day exists, CLOSED, behind the routes. Since CA-10 (#626 Q2) custody always applies: there is
+    /// no `enabled` switch left to turn on.
     pub async fn custody_on(&self, branch: &str) {
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase) VALUES ($1, true, 'CLOSED') \
-             ON CONFLICT (branch_id) DO UPDATE SET enabled = true",
+            "INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'CLOSED') \
+             ON CONFLICT (branch_id) DO NOTHING",
         )
         .bind(branch)
         .execute(&self.db.pool)

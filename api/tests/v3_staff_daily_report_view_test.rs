@@ -1529,47 +1529,6 @@ async fn the_status_moves_from_preliminary_to_closed_to_reconciled() {
     d.finish().await;
 }
 
-/// B.1 row 8 and B.6: a v2-opened shift of the day (`opened_by_count IS NULL`; the fixture opens MAIN's at the
-/// start of the test, today) is left out of the status rule: today's one counted shift, closed and verified, makes
-/// the day `closedAwaitingReconciliation` although the v2 shift has no CLOSE count.
-#[actix_web::test]
-async fn a_v2_opened_shift_of_the_day_does_not_hold_the_status_back() {
-    let d = Day::start().await;
-    let reader = d.reader().await;
-    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
-    let now = Utc::now();
-    let today = now.with_timezone(&bangkok()).date_naive();
-    let v2_today = d
-        .db()
-        .count(&format!(
-            "SELECT count(*) FROM shifts WHERE branch_id = '{MAIN}' AND opened_by_count IS NULL \
-             AND status = 'OPEN' AND opened_at >= now() - interval '1 hour'"
-        ))
-        .await;
-    assert_eq!(
-        v2_today, 1,
-        "the fixture: MAIN's v2-opened shift, opened today"
-    );
-    let (a, a_shift) = d
-        .counted_shift(&manager, &[("THB", "1000", 1)], now - Duration::seconds(30))
-        .await;
-    d.close(
-        &a,
-        &manager,
-        &a_shift,
-        &[("THB", "1000", 1)],
-        None,
-        now - Duration::seconds(10),
-        true,
-    )
-    .await;
-    assert_eq!(
-        d.report(&reader, Some(today)).await["status"],
-        "closedAwaitingReconciliation"
-    );
-    d.finish().await;
-}
-
 /// B.1 row 18 (Q-SR1): the signers are every verified CLOSE count's `counted_by` and `verified_by`, named from
 /// `users`, with the capacity, not a role; an unverified CLOSE count signs nothing; none → an empty list.
 #[actix_web::test]
@@ -2328,73 +2287,6 @@ async fn shift_opened_and_closed_on_d_is_included_in_d_and_excluded_in_d_plus_1(
         report_d1["signers"],
         json!([]),
         "Day D+1 signers exclude Day D shift: {report_d1}"
-    );
-
-    d.finish().await;
-}
-
-/// Issue #1521, row 3: a verified CLOSE whose shift is v2-opened (`opened_by_count IS NULL`).
-/// Day D: excluded.
-/// Day D+1: excluded.
-#[actix_web::test]
-async fn verified_close_whose_shift_is_v2_opened_is_excluded_from_both_days() {
-    let d = Day::start().await;
-    let reader = d.reader().await;
-    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
-    let teller = d.person(Role::Teller, Some(MAIN)).await;
-
-    // Create a v2-opened shift directly in DB with opened_by_count NULL on Day D
-    let shift_id = unique("v2-shift");
-    let open_req = unique("open-req");
-    d.db()
-        .exec(&format!(
-            "UPDATE shifts SET status = 'CLOSED' WHERE id = '{}'",
-            d.c.shift
-        ))
-        .await;
-    d.db()
-        .exec(&format!(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count) \
-             VALUES ('{shift_id}', '{MAIN}', 'OPEN', '{}', 'owner', '{open_req}', '{}'::uuid, NULL)",
-            local(bangkok(), day(), 10, 0, 0),
-            teller.id
-        ))
-        .await;
-
-    // Verified CLOSE count for that v2-opened shift on Day D
-    d.close(
-        &teller,
-        &manager,
-        &shift_id,
-        &[("THB", "1000", 5)],
-        None,
-        noon(3_600),
-        true,
-    )
-    .await;
-
-    // Day D: excluded
-    let report_d = d.report(&reader, Some(day())).await;
-    assert!(
-        row(&report_d, "THB")["drawerCounted"].is_null(),
-        "Day D drawer must exclude v2-opened shift's CLOSE count: {report_d}"
-    );
-    assert_eq!(
-        report_d["signers"],
-        json!([]),
-        "Day D signers must exclude v2-opened shift's CLOSE count: {report_d}"
-    );
-
-    // Day D+1: excluded
-    let report_d1 = d.report(&reader, Some(day().succ_opt().unwrap())).await;
-    assert!(
-        row(&report_d1, "THB")["drawerCounted"].is_null(),
-        "Day D+1 drawer must exclude v2-opened shift's CLOSE count: {report_d1}"
-    );
-    assert_eq!(
-        report_d1["signers"],
-        json!([]),
-        "Day D+1 signers must exclude v2-opened shift's CLOSE count: {report_d1}"
     );
 
     d.finish().await;

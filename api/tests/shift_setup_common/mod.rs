@@ -262,13 +262,6 @@ pub async fn open_shift_by_count(
         .shift_id
         .expect("a verified OPEN count names its shift");
 
-    // stopgap (#626): production active()/active_in() read only opened_by_count IS NULL (shift_repository.rs:332,:564); CA-10 removes this line when it changes those reads.
-    sqlx::query("UPDATE shifts SET opened_by_count = NULL WHERE id = $1")
-        .bind(&shift_id)
-        .execute(pool)
-        .await
-        .expect("clear opened_by_count stopgap");
-
     shift_id
 }
 
