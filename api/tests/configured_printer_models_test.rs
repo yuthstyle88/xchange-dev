@@ -12,6 +12,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use std::sync::Arc;
@@ -112,11 +113,13 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
     rates_re4e_publish::set_counter_rate(&desk.db.pool, MAIN, "USD", "32.1", "33.0").await;
 
+    let front_user_id = shift_holder_common::user_of(&desk.db.pool, "FRONT").await;
     sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
-         VALUES ('shift-1', $1, 'OPEN', now(), 'owner', 'open-req-1', (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
+         VALUES ('shift-1', $1, 'OPEN', now(), 'FRONT', 'open-req-1', $2::uuid)",
     )
     .bind(MAIN)
+    .bind(&front_user_id)
     .execute(&desk.db.pool)
     .await
     .expect("insert shift");
