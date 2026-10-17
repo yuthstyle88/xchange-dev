@@ -69,13 +69,10 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::Side;
-use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::create::{
     CreatePayment, CreateRequest, CreateTransaction,
 };
+use xchange::application::workflows::save_step::SaveActor;
 use xchange::infrastructure::files::file_service::FileService;
 
 const JPEG: &[u8] = &[
@@ -96,7 +93,6 @@ struct Counter {
     desk: Desk,
     files: FileService,
     customers: CustomerService,
-    shifts: ShiftService,
     scratch: std::path::PathBuf,
 }
 
@@ -114,7 +110,6 @@ impl Counter {
         Self {
             files: FileService::new(pool.clone(), scratch.join("uploads")),
             customers: CustomerService::new(branch_tx.clone()),
-            shifts: ShiftService::new(Arc::new(PgShiftRepository::new(pool.clone())), branch_tx),
             desk,
             scratch,
         }
@@ -159,6 +154,63 @@ impl Counter {
             .unwrap_or_else(|e| panic!("upload: {e}"))
     }
 
+    /// #2964: a file uploaded at `branch` by `who` (a `users.id`), so a save as `who` may attach it.
+    async fn upload_as(&self, branch: &str, who: &str, mime: &str, bytes: &[u8]) -> String {
+        self.files
+            .upload(&BranchId::new(branch), who, mime, bytes, whole_second_now())
+            .await
+            .unwrap_or_else(|e| panic!("upload: {e}"))
+    }
+
+    /// #2964: the teller of the shifts `open_shift` opens (the `test` user), as a v3 session carries them: `users.id`.
+    async fn shift_teller(&self) -> SaveActor {
+        let id: String =
+            sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'test'")
+                .fetch_one(&self.desk.db.pool)
+                .await
+                .expect("the shift's teller (open_shift seeds it)");
+        SaveActor {
+            id,
+            username: "test".to_owned(),
+            employee_id: None,
+            role: xc_auth::domain::policy::value_objects::role::Role::Front,
+        }
+    }
+
+    /// #2964: `run_in` as `who` (the other helpers run it as the non-UUID `teller()`).
+    async fn create_as(
+        &self,
+        req: CreateRequest,
+        who: &SaveActor,
+        now: DateTime<Utc>,
+    ) -> AppResult<ExchangeTransaction> {
+        let service = CreateTransaction::new(self.desk.db.pool.clone(), self.files.clone());
+        let mut tx = self.desk.db.pool.begin().await.unwrap();
+        let got = service.run_in(&mut tx, req, who, now).await;
+        tx.commit().await.unwrap();
+        got
+    }
+
+    /// #2964: an open shift of the `test` teller at `branch`.
+    async fn open_shift_at(&self, branch: &str) -> String {
+        sqlx::query(
+            "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+             SELECT id, 'test', 'PENDING', 'test', 'test' FROM organizations WHERE code = 'XC' \
+             ON CONFLICT (legacy_employee_id) DO NOTHING",
+        )
+        .execute(&self.desk.db.pool)
+        .await
+        .expect("seed the opener");
+        ca10_seed_open(
+            &self.desk.db.pool,
+            branch,
+            unique("open-shift").replace('_', "-"),
+            &[],
+            whole_second_now(),
+        )
+        .await
+    }
+
     /// Open MAIN's shift as main does today; answers its id.
     async fn open_shift(&self) -> String {
         sqlx::query(
@@ -169,19 +221,14 @@ impl Counter {
         .execute(&self.desk.db.pool)
         .await
         .expect("seed the opener");
-        self.shifts
-            .open(
-                &BranchId::new("MAIN"),
-                OpenShift {
-                    request_id: unique("open-shift").replace('_', "-"),
-                    opening: Balances::of(&[]),
-                },
-                "test",
-                whole_second_now(),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("open a shift: {e}"))
-            .id
+        ca10_seed_open(
+            &self.desk.db.pool,
+            "MAIN",
+            unique("open-shift").replace('_', "-"),
+            &[],
+            whole_second_now(),
+        )
+        .await
     }
 
     fn request(&self, branch: &str, q: &Quote, customer: &str, passport: &str) -> CreateRequest {
@@ -472,8 +519,11 @@ async fn a_quote_for_another_customer_is_refused_and_nothing_is_written() {
     c.finish().await;
 }
 
+/// #2964 (restated): a LIVE customer needs the saver's **own** OPEN shift at the branch. With no shift ⇒ refused; with
+/// another teller's open shift ⇒ still refused (no fallback to "the branch's shift", #626 Q4), nothing written; as that
+/// shift's own teller (`users.id`) ⇒ a LIVE draft on it.
 #[tokio::test]
-async fn a_live_customer_needs_the_branchs_open_shift() {
+async fn a_live_customer_needs_the_tellers_own_open_shift() {
     let c = Counter::start().await;
     let now = whole_second_now();
     let customer = c.customer("MAIN", "AA1234567", "LIVE").await;
@@ -491,16 +541,59 @@ async fn a_live_customer_needs_the_branchs_open_shift() {
     assert_eq!(c.transactions().await, 0);
 
     let shift = c.open_shift().await;
+    assert_eq!(
+        sentence(
+            c.create(c.request("MAIN", &q, &customer, &passport), later(now, 5))
+                .await
+        ),
+        NO_OPEN_SHIFT,
+        "#2964: a saver who owns no shift is refused beside another teller's open shift"
+    );
+    assert_eq!(c.transactions().await, 0, "nothing written");
+
+    let owner = c.shift_teller().await;
+    let own_passport = c.upload_as("MAIN", &owner.id, "image/jpeg", JPEG).await;
     let made = c
-        .create(c.request("MAIN", &q, &customer, &passport), later(now, 5))
+        .create_as(
+            c.request("MAIN", &q, &customer, &own_passport),
+            &owner,
+            later(now, 5),
+        )
         .await
-        .expect("a LIVE draft");
+        .expect("a LIVE draft on the teller's own shift");
     assert_eq!(made.mode, Mode::Live, "G6: the customer row's mode");
     assert_eq!(
         made.shift_id.as_deref(),
         Some(shift.as_str()),
-        "shift_id = the open shift"
+        "shift_id = the saver's own open shift"
     );
+    c.finish().await;
+}
+
+/// #2964: the saver's own OPEN shift at another branch is not used: a LIVE save at MAIN is refused, nothing written.
+#[tokio::test]
+async fn a_tellers_open_shift_at_another_branch_is_not_used() {
+    let c = Counter::start().await;
+    let now = whole_second_now();
+    let customer = c.customer("MAIN", "AA1234567", "LIVE").await;
+    let q = c.desk.quote("MAIN", Side::Buy, "100", None, now).await;
+
+    c.open_shift_at(BR2).await;
+    let owner = c.shift_teller().await;
+    let own_passport = c.upload_as("MAIN", &owner.id, "image/jpeg", JPEG).await;
+    assert_eq!(
+        sentence(
+            c.create_as(
+                c.request("MAIN", &q, &customer, &own_passport),
+                &owner,
+                later(now, 5),
+            )
+            .await
+        ),
+        NO_OPEN_SHIFT,
+        "#2964: the own shift must be at the request's branch"
+    );
+    assert_eq!(c.transactions().await, 0);
     c.finish().await;
 }
 
@@ -640,4 +733,52 @@ async fn a_kiosk_request_without_a_quote_id_is_not_checked_at_create() {
         .expect("no quote_id: nothing to match");
     assert_eq!(made.kiosk_request_id.as_deref(), Some(request.as_str()));
     c.finish().await;
+}
+
+/// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The OPEN shift it wrote (opener `test`,
+/// the given opening), written straight into the tables in one branch transaction (setup only). Answers its id.
+async fn ca10_seed_open(
+    pool: &sqlx::PgPool,
+    branch: &str,
+    request_id: String,
+    opening: &[(&str, &str)],
+    opened_at: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let shift = format!("SH-{}", uuid::Uuid::new_v4());
+    let (id, b) = (shift.clone(), branch.to_owned());
+    let opening: Vec<(String, String)> = opening
+        .iter()
+        .map(|(c, a)| ((*c).to_owned(), (*a).to_owned()))
+        .collect();
+    xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(pool.clone()))
+        .run(&xc_kernel::ids::BranchId::new(branch), move |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
+                     teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id FROM users u \
+                     WHERE u.legacy_employee_id = 'test'",
+                )
+                .bind(&id)
+                .bind(&b)
+                .bind(opened_at)
+                .bind(&request_id)
+                .execute(&mut **tx)
+                .await?;
+                for (code, amount) in &opening {
+                    sqlx::query(
+                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                         VALUES ($1, $2, $3::numeric, $3::numeric)",
+                    )
+                    .bind(&id)
+                    .bind(code)
+                    .bind(amount)
+                    .execute(&mut **tx)
+                    .await?;
+                }
+                Ok::<(), pos_error::AppError>(())
+            })
+        })
+        .await
+        .unwrap_or_else(|e| panic!("open a shift at {branch}: {e}"));
+    shift
 }

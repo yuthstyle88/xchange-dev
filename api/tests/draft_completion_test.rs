@@ -37,12 +37,10 @@ use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::money::Side;
-use xc_shift::application::custody::service::CustodyService;
+use xc_shift::application::custody::service::{CustodyFactsPort, CustodyService};
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
-use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
 use xc_shift::domain::custody::state::CustodyState;
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::phase::Phase;
 use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
@@ -180,58 +178,47 @@ struct NothingOutside;
 
 type Asked<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<T>> + Send + 'a>>;
 
-impl CustodyPorts for NothingOutside {
-    fn outside_facts<'a>(
-        &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &'a xc_kernel::ids::BranchId,
-        _open_shift_id: Option<&'a str>,
-    ) -> Asked<'a, OutsideFacts> {
-        Box::pin(async { Ok(OutsideFacts::default()) })
-    }
-
-    fn customer_known<'a>(
-        &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &'a xc_kernel::ids::BranchId,
-        _customer_id: &'a str,
-    ) -> Asked<'a, bool> {
-        Box::pin(async { Ok(false) })
-    }
-
-    fn evidence_owned<'a>(
-        &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &'a xc_kernel::ids::BranchId,
-        _owner_id: &'a str,
-        _keys: &'a [String],
-    ) -> Asked<'a, bool> {
-        Box::pin(async { Ok(false) })
-    }
-
-    fn employee_role<'a>(
-        &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &'a xc_kernel::ids::BranchId,
-        _employee_id: &'a str,
-    ) -> Asked<'a, Option<CustodyRole>> {
-        Box::pin(async { Ok(None) })
-    }
-
-    fn service_window<'a>(
+// CA-10 (#626, #2955): the core asks `CustodyFactsPort` (v2's `CustodyPorts` is no longer asked); the same answers.
+impl CustodyFactsPort for NothingOutside {
+    fn service_window_in<'a>(
         &'a self,
         _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &'a xc_kernel::ids::BranchId,
         now: CustodyTime,
-    ) -> Asked<'a, ServiceWindow> {
+    ) -> Asked<'a, (ServiceWindow, i32)> {
         Box::pin(async move {
             let bkk_millis = now.epoch_millis() + 7 * 3600 * 1000;
             let bkk_day_start = bkk_millis.div_euclid(86_400 * 1000) * (86_400 * 1000);
             let utc_day_start = bkk_day_start - 7 * 3600 * 1000;
             let open = CustodyTime::from_epoch_millis(utc_day_start + 11 * 3600 * 1000);
             let close = CustodyTime::from_epoch_millis(utc_day_start + 23 * 3600 * 1000);
-            Ok(ServiceWindow::Open { open, close })
+            Ok((ServiceWindow::Open { open, close }, 7 * 60))
         })
+    }
+
+    fn has_live_rate_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+    ) -> Asked<'a, (bool, String)> {
+        Box::pin(async { Ok((false, String::new())) })
+    }
+
+    fn transactions_summary_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+    ) -> Asked<'a, (Vec<String>, Option<String>)> {
+        Box::pin(async { Ok((Vec::new(), None)) })
+    }
+
+    fn customer_exists_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a xc_kernel::ids::BranchId,
+        _customer_id: &'a str,
+    ) -> Asked<'a, bool> {
+        Box::pin(async { Ok(false) })
     }
 }
 

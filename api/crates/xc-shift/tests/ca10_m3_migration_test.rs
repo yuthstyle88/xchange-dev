@@ -88,9 +88,14 @@ impl Staged {
             .connect_with(options.clone().options([("search_path", schema.as_str())]))
             .await
             .expect("connect to the test schema");
-        let migrator = Migrator::new(migrations_dir().as_path())
+        let mut migrator = Migrator::new(migrations_dir().as_path())
             .await
             .expect("read api/migrations");
+        // Round 3 (BE controller ruling on #2955, 20:32Z): no advisory lock for this test's migrator. A refused M3
+        // (its precheck RAISEs) leaves sqlx's migrator lock held by the connection that ran it; the refusal test
+        // then runs M3 again on the same pool. M3 no longer releases that lock itself (`pg_advisory_unlock_all`
+        // is gone from it), and each test runs in a schema of its own, so the lock guards nothing here.
+        migrator.set_locking(false);
         assert!(
             migrator.version_exists(M3),
             "api/migrations/{M3_FILE} exists (the M3 of design §8, named as ruled on #626)"
