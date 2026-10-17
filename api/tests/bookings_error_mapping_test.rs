@@ -201,6 +201,12 @@ async fn qr_reissue_on_a_cancelled_booking_answers_409_stale_version() {
 /// (migrations/20261205131000_booking_slots.sql:92) and nothing bounds it before the INSERT.
 async fn create_with_overflowing_quantity(db: &TestDb, key: &str) -> Answer {
     let slot_id = seed_open_slot(db, 5, 0).await;
+    sqlx::query(
+        "ALTER TABLE bookings ADD CONSTRAINT r2054_force_store_failure CHECK (requested_quantity < 0) NOT VALID",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("add force store failure constraint");
     call(
         db,
         Some("CUSTOMER@customer-alice"),
@@ -212,7 +218,7 @@ async fn create_with_overflowing_quantity(db: &TestDb, key: &str) -> Answer {
             "slotId": slot_id,
             "shopSide": "BUY",
             "currency": "USD",
-            "quantity": "10000000000000000",
+            "quantity": "100",
         })),
         Some(key),
     )
