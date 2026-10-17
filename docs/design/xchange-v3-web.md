@@ -861,6 +861,10 @@ views when it becomes shown (`shown()` turns true), when `branch()` or `period()
 menu whose branch did not change gets `changed: false` at O(1). Menus keep v2's own refresh controls
 (`employees-refresh` `admin-html:19`, `โหลดการจองล่าสุด` `admin-html:19`, wired `bookings.js:17`, `โหลดล่าสุด` `registrations.js:3`).
 
+**Exception: StartingPrices** (SP-3 #1617, FE controller ruling 2026-10-17, xchange#564 issuecomment-6231595482): it reads
+`org_starting_prices` once on open and again after each save, and does not follow `refreshTick()` or `shown()`, because
+its only re-read (`loadView(true)`) wipes the prices being typed. A failed first read has its own Retry.
+
 [required] A later change that makes any admin screen poll must follow the fleet rule *polled endpoints send only what
 changed*: a `ViewPoller` on the view's `since` cursor, with the interval written in that ticket.
 
