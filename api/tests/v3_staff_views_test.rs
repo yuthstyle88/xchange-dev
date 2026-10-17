@@ -300,8 +300,8 @@ impl Floor {
         cutoff: Option<Value>,
     ) {
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase, target, safe, cutoff) \
-             VALUES ('MAIN', true, $1, $2, $3, $4)",
+            "INSERT INTO ops_state (branch_id, phase, target, safe, cutoff) \
+             VALUES ('MAIN', $1, $2, $3, $4)",
         )
         .bind(phase)
         .bind(target)

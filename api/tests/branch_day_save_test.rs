@@ -27,6 +27,15 @@
 //!
 //! These tests need a real PostgreSQL (`TEST_DATABASE_URL`, a database whose name ends in `_test`). Without it they
 //! FAIL; none skips.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c; cash-shift-transfer.md §6, rulings Q2–Q4, Q7):
+//! - the custody state has no `enabled` and no `custodian` any more (M3 drops both), so `custody_in` writes neither;
+//! - **changes on purpose (Q2: the Enable switch goes, the Blueprint's model always applies):** the save checks no
+//!   longer stand aside while a branch has never been "enabled". A teller whose day CA-7e moved to READY is refused
+//!   `SaveClosed` until service starts (`a_tellers_save_before_service_starts_is_closed_without_any_custody_set_up`);
+//!   so the tests that save put the day OPEN first;
+//! - the v2-actor save path goes (Q4), so the rules `save_steps_test.rs` pinned on it are restated here on the
+//!   teller's path: a customer on hold, the hours of service, and a draft that fails to complete undoing the save.
 
 #[allow(unused_imports)]
 mod save_common;
@@ -45,6 +54,7 @@ use xc_cash::domain::count::{CountKind, CountLine};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::money::Side;
 use xc_shift::application::custody::service::CustodyService;
+use xc_shift::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
@@ -58,9 +68,6 @@ use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xchange::application::workflows::custody_save_step::CustodySaveStep;
 use xchange::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
-
-/// The v2 employee the custody state names as the branch custodian: nobody here saves as them.
-const V2_CUSTODIAN: &str = "employee-7";
 
 // ── the people ─────────────────────────────────────────────────────────────
 
@@ -255,7 +262,7 @@ fn guarded(shop: &Shop) -> SaveTransactionWorkflow {
         .with_steps(vec![step])
 }
 
-/// Custody on for `MAIN`, in `phase`, with the v2 drawer custodian set to someone who never saves here.
+/// `MAIN`'s branch day in `phase`, with `drafts`.
 async fn custody_in(shop: &Shop, phase: Phase, drafts: Vec<TxDraft>) {
     let repo = PgCustodyRepository::new(shop.pool.clone());
     let mut tx = shop.pool.begin().await.expect("begin");
@@ -264,11 +271,9 @@ async fn custody_in(shop: &Shop, phase: Phase, drafts: Vec<TxDraft>) {
         .await
         .expect("load the custody state");
     let state = CustodyState {
-        enabled: true,
         phase,
-        custodian: Some(V2_CUSTODIAN.to_owned()),
         drafts,
-        ..CustodyState::initial()
+        ..before.clone()
     };
     repo.store_state_in(&mut tx, &branch(MAIN), &before, &state)
         .await
@@ -324,6 +329,7 @@ async fn a_tellers_exchange_posts_to_their_own_open_shift_only() {
     let ploys = opened(&shop, &ploy, &manager).await;
     let noks = opened(&shop, &nok, &manager).await;
     let (customer, passport) = counter(&shop, &nok).await;
+    custody_in(&shop, Phase::Open, Vec::new()).await; // CA-10: the day's phase always applies
 
     let saved = shop
         .workflow
@@ -366,6 +372,7 @@ async fn a_teller_with_no_open_shift_of_their_own_is_refused_and_nothing_is_writ
     let mai = person(&shop, "Mai", BpRole::Teller).await;
     let ploys = opened(&shop, &ploy, &manager).await;
     let (customer, passport) = counter(&shop, &mai).await;
+    custody_in(&shop, Phase::Open, Vec::new()).await; // CA-10: the day's phase always applies
 
     let answer = shop
         .workflow
@@ -398,6 +405,7 @@ async fn the_branchs_v2_shift_is_not_the_tellers_shift() {
     shop.open_shift(MAIN, &[("THB", "100000"), ("USD", "1000")])
         .await;
     let v2_before = shop.balances(MAIN).await;
+    custody_in(&shop, Phase::Open, Vec::new()).await; // CA-10: the day's phase always applies
 
     let answer = shop
         .workflow
@@ -568,6 +576,190 @@ async fn before_service_starts_a_tellers_save_is_closed() {
     assert_eq!(refused(answer), CustodyError::SaveClosed.to_string());
     assert_eq!(shop.count("transactions").await, 0);
     shop.finish().await;
+}
+
+/// CA-10 #626, **changes on purpose** (Q2): with no custody state written by anybody, a teller whose OPEN count
+/// was verified (CA-7e: the day is READY) is refused `SaveClosed` until service starts. Before CA-10 the checks
+/// stood aside for a branch that was never "enabled", and this save went through.
+#[tokio::test]
+async fn a_tellers_save_before_service_starts_is_closed_without_any_custody_set_up() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    opened(&shop, &nok, &manager).await;
+    let flow = guarded(&shop);
+    let (customer, passport) = counter(&shop, &nok).await;
+
+    let answer = flow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca10-0001-aaaaaaaaaaa", &customer, &passport),
+            &SaveExtras::default(),
+            &save_actor(&nok),
+            &nok,
+            at(0),
+        )
+        .await;
+    assert_eq!(refused(answer), CustodyError::SaveClosed.to_string());
+    assert_eq!(shop.count("transactions").await, 0);
+    shop.finish().await;
+}
+
+/// Ported from `save_steps_test.rs` (v2 path, retired by Q4): a customer with an OPEN hold is refused on a teller's
+/// first save; once the hold is released the same save goes through.
+#[tokio::test]
+async fn a_customer_on_hold_refuses_a_tellers_save_until_released() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    opened(&shop, &nok, &manager).await;
+    custody_in(&shop, Phase::Open, Vec::new()).await;
+    let flow = guarded(&shop);
+    let (customer, passport) = counter(&shop, &nok).await;
+    let hold = |status: HoldStatus| CustomerHold {
+        id: "hold-1".to_owned(),
+        customer_id: customer.clone(),
+        reason: "check".to_owned(),
+        by: manager.user_id.clone(),
+        at: CustodyTime::from_epoch_millis(at(-60).timestamp_millis()),
+        status,
+        reviewed_by: None,
+        reviewed_at: None,
+        note: None,
+    };
+    with_holds(&shop, vec![hold(HoldStatus::Open)]).await;
+    let extras = SaveExtras::default();
+    let first = flow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca10-0002-aaaaaaaaaaa", &customer, &passport),
+            &extras,
+            &save_actor(&nok),
+            &nok,
+            at(0),
+        )
+        .await;
+    assert_eq!(refused(first), CustodyError::CustomerOnHold.to_string());
+    assert_eq!(shop.count("transactions").await, 0);
+
+    with_holds(&shop, vec![hold(HoldStatus::Released)]).await;
+    flow.save_as_teller(
+        &branch(MAIN),
+        form("ca10-0002-aaaaaaaaaaa", &customer, &passport),
+        &extras,
+        &save_actor(&nok),
+        &nok,
+        at(0),
+    )
+    .await
+    .expect("the hold is released");
+    assert_eq!(shop.count("transactions").await, 1);
+    shop.finish().await;
+}
+
+/// Ported from `save_steps_test.rs`: outside the hours of service (11:00–23:00 Bangkok here) a teller's first save
+/// is refused `SaveClosed` even with the day OPEN and the teller on their own shift.
+#[tokio::test]
+async fn outside_the_hours_of_service_a_tellers_save_is_closed() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    opened(&shop, &nok, &manager).await;
+    custody_in(&shop, Phase::Open, Vec::new()).await;
+    let flow = guarded(&shop);
+    let (customer, passport) = counter(&shop, &nok).await;
+    // at(0) is noon in Bangkok: 10:59 and 23:00
+    for when in [at(-3_660), at(11 * 3_600)] {
+        let answer = flow
+            .save_as_teller(
+                &branch(MAIN),
+                form("ca10-0003-aaaaaaaaaaa", &customer, &passport),
+                &SaveExtras::default(),
+                &save_actor(&nok),
+                &nok,
+                when,
+            )
+            .await;
+        assert_eq!(
+            refused(answer),
+            CustodyError::SaveClosed.to_string(),
+            "{when}"
+        );
+    }
+    assert_eq!(shop.count("transactions").await, 0);
+    shop.finish().await;
+}
+
+/// Ported from `save_steps_test.rs`: custody's writes are in the save's transaction. When completing the teller's
+/// draft fails, there is no exchange either; once mended, the same save goes through.
+#[tokio::test]
+async fn a_draft_that_fails_to_complete_undoes_a_tellers_save() {
+    let shop = Shop::start().await;
+    let manager = person(&shop, "Krit", BpRole::BranchManager).await;
+    let nok = person(&shop, "Nok", BpRole::Teller).await;
+    let noks = opened(&shop, &nok, &manager).await;
+    custody_in(
+        &shop,
+        Phase::Open,
+        vec![draft("noks-own", &noks, &nok.user_id)],
+    )
+    .await;
+    let flow = guarded(&shop);
+    let (customer, passport) = counter(&shop, &nok).await;
+    let before = shop.everything().await;
+
+    shop.break_writes("tx_drafts").await;
+    let got = flow
+        .save_as_teller(
+            &branch(MAIN),
+            form("ca10-0004-aaaaaaaaaaa", &customer, &passport),
+            &naming("noks-own"),
+            &save_actor(&nok),
+            &nok,
+            at(0),
+        )
+        .await;
+    assert!(
+        matches!(&got, Err(e) if !matches!(e, AppError::Domain(_))),
+        "{got:?}"
+    );
+    shop.mend("tx_drafts").await;
+    assert_eq!(
+        shop.everything().await,
+        before,
+        "nothing of the save is kept"
+    );
+
+    flow.save_as_teller(
+        &branch(MAIN),
+        form("ca10-0004-aaaaaaaaaaa", &customer, &passport),
+        &naming("noks-own"),
+        &save_actor(&nok),
+        &nok,
+        at(1),
+    )
+    .await
+    .expect("after mending");
+    assert_eq!(shop.count("transactions").await, 1);
+    shop.finish().await;
+}
+
+/// `MAIN`'s custody state with `holds`, everything else as stored.
+async fn with_holds(shop: &Shop, holds: Vec<CustomerHold>) {
+    let repo = PgCustodyRepository::new(shop.pool.clone());
+    let mut tx = shop.pool.begin().await.expect("begin");
+    let before = repo
+        .load_state_in(&mut tx, &branch(MAIN))
+        .await
+        .expect("load the custody state");
+    let state = CustodyState {
+        holds,
+        ..before.clone()
+    };
+    repo.store_state_in(&mut tx, &branch(MAIN), &before, &state)
+        .await
+        .expect("store the custody state");
+    tx.commit().await.expect("commit");
 }
 
 static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

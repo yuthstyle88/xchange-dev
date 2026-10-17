@@ -240,13 +240,12 @@ async fn seed_open_shift_for_teller(pool: &PgPool, branch: &BranchId, teller_id:
     .expect("insert cash count");
 
     sqlx::query(
-        "INSERT INTO shifts (id, branch_id, opened_by, opened_at, status, teller_id, open_request_id, opened_by_count) \
-         VALUES ($1, $2, 'test', now(), 'OPEN', $3, $1, $4)",
+        "INSERT INTO shifts (id, branch_id, opened_by, opened_at, status, teller_id, open_request_id) \
+         VALUES ($1, $2, 'test', now(), 'OPEN', $3, $1)",
     )
     .bind(&shift_id)
     .bind(branch.as_str())
     .bind(teller_uuid)
-    .bind(count_id)
     .execute(pool)
     .await
     .expect("insert open shift");

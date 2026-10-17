@@ -734,96 +734,12 @@ async fn otp_request_is_forwarded_and_a_verified_otp_signs_in() {
     desk.drop_schema().await;
 }
 
-// ── the session reaches the old route code (until OR-4) ───────────────────
-
-async fn open_shift_as(app: &App, token: &str) -> Reply {
-    app.send(
-        Req::post(
-            "/api/rpc",
-            json!({ "action": "adminOpenShift",
-                    "payload": { "branchId": "MAIN", "requestId": "00000000-0000-4000-8000-0000000a0301",
-                                 "opening": { "THB": 100000, "USD": 1000 } } }),
-        )
-        .with_session(token),
-    )
-    .await
-}
-
-async fn opened_shift(pool: &PgPool) -> (String, Option<String>) {
-    sqlx::query_as(
-        "SELECT opened_by, teller_id::text FROM shifts WHERE branch_id = 'MAIN' AND status = 'OPEN'",
-    )
-    .fetch_one(pool)
-    .await
-    .expect("one open shift at MAIN with its teller (shifts.teller_id is CA-1 #617's column)")
-}
-
-/// §10 OR-3 / §9 migration 3: after sign-in through the BFF, opening a shift writes `shifts.teller_id` = that
-/// user's `users.id`. The owner (EXECUTIVE + ADMIN, organisation-wide, B3).
-#[actix_web::test]
-async fn a_shift_opened_by_the_owner_signed_in_through_identity_names_the_users_id() {
-    let (desk, identity, app) = setup().await;
-    let owner = bound_user(
-        &desk.pool,
-        SUB_A,
-        "ACTIVE",
-        "Owner",
-        &[("EXECUTIVE", None), ("ADMIN", None)],
-    )
-    .await;
-    identity.login_answers("/auth/login", VALID_A, REFRESH_1);
-    let token = app.send(login("owner")).await.session();
-
-    let reply = open_shift_as(&app, &token).await;
-    assert_eq!(reply.status, 200, "{}", reply.text);
-    let (opened_by, teller) = opened_shift(&desk.pool).await;
-    assert_eq!(
-        opened_by, owner,
-        "the actor id reaching the shift is the users.id"
-    );
-    assert_eq!(teller.as_deref(), Some(owner.as_str()), "shifts.teller_id");
-    desk.drop_schema().await;
-}
-
-/// The same for a BRANCH_MANAGER at MAIN (a v2 MANAGER/BACKEND by B1).
-#[actix_web::test]
-async fn a_shift_opened_by_a_branch_manager_signed_in_through_identity_names_the_users_id() {
-    let (desk, identity, app) = setup().await;
-    let manager = bound_user(
-        &desk.pool,
-        SUB_A,
-        "ACTIVE",
-        "Manager",
-        &[("BRANCH_MANAGER", Some("MAIN"))],
-    )
-    .await;
-    identity.login_answers("/auth/login", VALID_A, REFRESH_1);
-    let token = app.send(login("manager")).await.session();
-
-    let reply = open_shift_as(&app, &token).await;
-    assert_eq!(reply.status, 200, "{}", reply.text);
-    let (opened_by, teller) = opened_shift(&desk.pool).await;
-    assert_eq!(opened_by, manager);
-    assert_eq!(teller.as_deref(), Some(manager.as_str()));
-    desk.drop_schema().await;
-}
-
-/// A user whose roles give no v2 actor (MARKETING only) is signed in but cannot use the old routes.
-#[actix_web::test]
-async fn a_marketing_only_user_signed_in_through_identity_cannot_open_a_shift() {
-    let (desk, identity, app) = setup().await;
-    bound_user(&desk.pool, SUB_A, "ACTIVE", "Mkt", &[("MARKETING", None)]).await;
-    identity.login_answers("/auth/login", VALID_A, REFRESH_1);
-    let token = app.send(login("mkt")).await.session();
-    let reply = open_shift_as(&app, &token).await;
-    assert_ne!(reply.status, 200, "{}", reply.text);
-    let open: i64 = sqlx::query_scalar("SELECT count(*) FROM shifts WHERE status = 'OPEN'")
-        .fetch_one(&desk.pool)
-        .await
-        .expect("count shifts");
-    assert_eq!(open, 0);
-    desk.drop_schema().await;
-}
+// ── the session reaches the old route code: retired with CA-10 ────────────
+// CA-10 #626 retires the direct `adminOpenShift` (cash-shift-transfer.md §6), so the three tests that opened a
+// shift through it as an Identity-signed-in owner, branch manager and marketing user are removed by CA-10's
+// ticket author (claude/c4d72c). On the count path that replaces it, the session's `users.id` is what a count
+// records as its `counted_by` (`v3_cash_commands_test.rs`), and a shift opened by a verified count names it
+// as `teller_id` (CA-3).
 
 // ── settings ──────────────────────────────────────────────────────────────
 

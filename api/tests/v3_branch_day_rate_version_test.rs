@@ -134,8 +134,8 @@ impl TestDb {
 
     async fn phase_is(&self, branch: &str, phase: &str) {
         self.exec(&format!(
-            "INSERT INTO ops_state (branch_id, enabled, phase) VALUES ('{branch}', true, '{phase}') \
-             ON CONFLICT (branch_id) DO UPDATE SET enabled = true, phase = EXCLUDED.phase"
+            "INSERT INTO ops_state (branch_id, phase) VALUES ('{branch}', '{phase}') \
+             ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase"
         ))
         .await;
     }
