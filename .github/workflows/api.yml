@@ -235,6 +235,11 @@ jobs:
       - name: Self-test api-test-plan
         run: bash .github/scripts/api-test-plan.test.sh
 
+      - name: Self-test pg-sweep-stale
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: bash .github/scripts/pg-sweep-stale.test.sh
+
       - name: Start postgres (per run)
         env:
           LC_ALL: C
@@ -250,11 +255,14 @@ jobs:
             if [ "$major" -ge 16 ]; then PGBIN=$(dirname "$(command -v pg_ctl)"); fi
           fi
 
+          PGBIN="$PGBIN" bash .github/scripts/pg-sweep-stale.sh || true
+
           PGPORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 
           if [ -n "$PGBIN" ]; then
             # Short path under /tmp: the unix socket path must stay under macOS's 104-byte limit.
             PGROOT=$(mktemp -d /tmp/xcpg.XXXXXX)
+            printf '%s\n' "$RUNNER_NAME" > "$PGROOT/runner"
             {
               echo "XC_PGBIN=$PGBIN"
               echo "XC_PGROOT=$PGROOT"
@@ -278,6 +286,7 @@ jobs:
             echo "no postgres >= 16 on runner $RUNNER_NAME; starting docker postgres:17 (container: $CONTAINER_NAME) on port $PGPORT"
             docker run --rm -d \
               --name "$CONTAINER_NAME" \
+              --label "xc.runner=${RUNNER_NAME}" \
               -p "127.0.0.1:$PGPORT:5432" \
               -e POSTGRES_PASSWORD=pg \
               -e POSTGRES_HOST_AUTH_METHOD=trust \
