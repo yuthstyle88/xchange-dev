@@ -168,6 +168,8 @@ impl HandoverService {
             .find_count_by_idempotency_key(&mut *tx, &cmd.branch, &cmd.idempotency_key)
             .await?
         {
+            PersonRules::replay_is_own(&existing_count.counted_by, actor)
+                .map_err(|e| AppError::Conflict(e.to_string()))?;
             let handover_id: Option<String> =
                 sqlx::query_scalar("SELECT id::text FROM handovers WHERE count_id = $1::uuid")
                     .bind(&existing_count.id)
