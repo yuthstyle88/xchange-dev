@@ -543,12 +543,9 @@ async fn the_receiver_accepts_a_shift_closes_and_b_shift_opens_with_the_same_lin
         (d("2300"), d("2300")),
         "B opens with the same lines"
     );
-    // CA-10 (#626): M3 drops `shifts.opened_by_count`; the link is read from the count's side.
-    assert_eq!(
-        f.db.count_row(&h.count_id).await.3,
-        Some(b_shift.clone()),
-        "B's shift is the one the verified hand-over count opened (§4.3)"
-    );
+    // CA-10 (#626): M3 drops `shifts.opened_by_count`, so nothing records which count opened B's shift any more
+    // (the hand-over count's own `shift_id` is A's, the shift it closes). What stays is pinned just above: B holds
+    // exactly one OPEN shift, as its own teller, opened with A's lines.
     assert!(
         f.db.open_shifts_of(&f.a).await.is_empty(),
         "A holds no open shift"
