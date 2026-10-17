@@ -59,9 +59,28 @@ impl QuoteRepository for PgQuoteRepository {
                 Side::Buy => "BUY",
                 Side::Sell => "SELL",
             };
-            let thb_amount = Decimal::new(line.thb_amount.minor(), 2);
-            let fee_thb = Decimal::new(line.fee_thb.minor(), 2);
-            let settle_thb = Decimal::new(line.settle_thb.minor(), 2);
+            let thb_amount = Decimal::new(
+                line.thb_amount.try_minor().map_err(|e| {
+                    pos_error::AppError::Internal(format!(
+                        "quote line thb_amount minor overflow: {e}"
+                    ))
+                })?,
+                2,
+            );
+            let fee_thb = Decimal::new(
+                line.fee_thb.try_minor().map_err(|e| {
+                    pos_error::AppError::Internal(format!("quote line fee_thb minor overflow: {e}"))
+                })?,
+                2,
+            );
+            let settle_thb = Decimal::new(
+                line.settle_thb.try_minor().map_err(|e| {
+                    pos_error::AppError::Internal(format!(
+                        "quote line settle_thb minor overflow: {e}"
+                    ))
+                })?,
+                2,
+            );
 
             sqlx::query(
                 "INSERT INTO quote_lines (id, organization_id, quote_id, published_rate_line_id, \
