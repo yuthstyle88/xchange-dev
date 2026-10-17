@@ -32,10 +32,7 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Side};
-use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
 use xc_shift::domain::shift::value_objects::balances::Balances;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::complete::{
     BoxFuture, CompleteExchange, CompletedExchange, EffectPhase, ExchangeCompletedFacts,
     ExchangeEffect, ExchangeEffects, PostedReversal,
@@ -271,26 +268,43 @@ impl Counter {
         .execute(&pool)
         .await
         .expect("seed the opener");
-        let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(pool.clone())),
-            BranchTx::new(Transactor::new(pool.clone())),
+        // CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The same OPEN shift, written
+        // straight into the tables in one branch transaction (setup only): opener `test`, THB 10000 / USD 1000.
+        let shift = format!("SH-{}", uuid::Uuid::new_v4());
+        let (id, request, opened_at) = (
+            shift.clone(),
+            unique("open-shift").replace('_', "-"),
+            whole_second_now(),
         );
-        let shift = shifts
-            .open(
-                &BranchId::new("MAIN"),
-                OpenShift {
-                    request_id: unique("open-shift").replace('_', "-"),
-                    opening: Balances::of(&[
-                        (CurrencyCode::THB, money("10000.00")),
-                        (CurrencyCode::parse("USD").unwrap(), money("1000.00")),
-                    ]),
-                },
-                "test",
-                whole_second_now(),
-            )
+        BranchTx::new(Transactor::new(pool.clone()))
+            .run(&BranchId::new("MAIN"), move |tx| {
+                Box::pin(async move {
+                    sqlx::query(
+                        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, \
+                         open_request_id, teller_id) SELECT $1, 'MAIN', 'OPEN', $2, 'test', '', $3, u.id \
+                         FROM users u WHERE u.legacy_employee_id = 'test'",
+                    )
+                    .bind(&id)
+                    .bind(opened_at)
+                    .bind(&request)
+                    .execute(&mut **tx)
+                    .await?;
+                    for (code, amount) in [("THB", "10000.00"), ("USD", "1000.00")] {
+                        sqlx::query(
+                            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                             VALUES ($1, $2, $3::numeric, $3::numeric)",
+                        )
+                        .bind(&id)
+                        .bind(code)
+                        .bind(amount)
+                        .execute(&mut **tx)
+                        .await?;
+                    }
+                    Ok::<(), pos_error::AppError>(())
+                })
+            })
             .await
-            .unwrap_or_else(|e| panic!("open a shift: {e}"))
-            .id;
+            .unwrap_or_else(|e| panic!("open a shift: {e}"));
         // LG-4 (#929, 1:1): the same opening in the ledger's drawer, which the route's postings now read.
         for (code, amount) in [("THB", "10000.00"), ("USD", "1000.00")] {
             lg4_fund(

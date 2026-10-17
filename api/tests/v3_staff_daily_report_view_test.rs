@@ -72,8 +72,6 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Side};
 use xc_shift::application::branch_day::service::BranchDayService;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::confirm::ConfirmOutcome;
@@ -306,22 +304,46 @@ impl Day {
                  ON CONFLICT (branch_id) DO NOTHING"
             ))
             .await;
-        let shift = shifts
-            .open(
-                &BranchId::new(MAIN),
-                OpenShift {
-                    request_id: unique("open-shift").replace('_', "-"),
-                    opening: Balances::of(&[
-                        (CurrencyCode::THB, money("100000.00")),
-                        (CurrencyCode::parse("USD").unwrap(), money("1000.00")),
-                    ]),
-                },
-                "test",
-                whole_second_now(),
-            )
+        // CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The same OPEN shift (opener
+        // `test`, THB 100000 / USD 1000), written straight into the tables in one branch transaction (setup only).
+        let shift = format!("SH-{}", uuid::Uuid::new_v4());
+        let (id, request, opened_at) = (
+            shift.clone(),
+            unique("open-shift").replace('_', "-"),
+            whole_second_now(),
+        );
+        shifts
+            .branch_tx()
+            .clone()
+            .run(&BranchId::new(MAIN), move |tx| {
+                Box::pin(async move {
+                    sqlx::query(
+                        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, \
+                         open_request_id, teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id \
+                         FROM users u WHERE u.legacy_employee_id = 'test'",
+                    )
+                    .bind(&id)
+                    .bind(MAIN)
+                    .bind(opened_at)
+                    .bind(&request)
+                    .execute(&mut **tx)
+                    .await?;
+                    for (code, amount) in [("THB", "100000.00"), ("USD", "1000.00")] {
+                        sqlx::query(
+                            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                             VALUES ($1, $2, $3::numeric, $3::numeric)",
+                        )
+                        .bind(&id)
+                        .bind(code)
+                        .bind(amount)
+                        .execute(&mut **tx)
+                        .await?;
+                    }
+                    Ok::<(), pos_error::AppError>(())
+                })
+            })
             .await
-            .unwrap_or_else(|e| panic!("open MAIN's v2 shift: {e}"))
-            .id;
+            .unwrap_or_else(|e| panic!("open MAIN's v2 shift: {e}"));
         let scratch = std::env::temp_dir().join(unique("xc-1350"));
         std::fs::create_dir_all(&scratch).unwrap();
         let c = Counter {

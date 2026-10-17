@@ -62,8 +62,6 @@ use xc_referral::application::feed_writer::{
 };
 use xc_referral::domain::customer_keys::CustomerKeys;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::complete::{
     BoxFuture, CompleteExchange, EffectPhase, ExchangeCompletedFacts, ExchangeEffect,
@@ -77,10 +75,6 @@ use xchange::application::workflows::exchange::reversal_request::{
 
 fn d(s: &str) -> Decimal {
     s.parse().unwrap()
-}
-
-fn usd_code() -> CurrencyCode {
-    CurrencyCode::parse("USD").unwrap()
 }
 
 fn finance() -> access::Actor {
@@ -799,19 +793,15 @@ async fn cash_moves_on_the_posters_open_shift_not_the_originals() {
         Arc::new(PgShiftRepository::new(s.pool().clone())),
         BranchTx::new(Transactor::new(s.pool().clone())),
     );
-    let second = shifts
-        .open(
-            &BranchId::new("MAIN"),
-            OpenShift {
-                request_id: unique("rv3-open").replace('_', "-"),
-                opening: Balances::of(&[(usd_code(), money("500.00"))]),
-            },
-            "test",
-            later(now, 12),
-        )
-        .await
-        .unwrap_or_else(|e| panic!("open the poster's shift: {e}"))
-        .id;
+    let _ = &shifts;
+    let second = ca10_seed_open(
+        s.pool(),
+        "MAIN",
+        unique("rv3-open").replace('_', "-"),
+        &[("USD", "500.00")],
+        later(now, 12),
+    )
+    .await;
     lg4_fund(
         s.pool(),
         CashPlace::Bank,
@@ -1151,4 +1141,52 @@ async fn a_refusing_effect_rolls_the_whole_reversal_back() {
         "both effects were reached, on the reversal's own transaction"
     );
     s.finish().await;
+}
+
+/// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The OPEN shift it wrote (opener `test`,
+/// the given opening), written straight into the tables in one branch transaction (setup only). Answers its id.
+async fn ca10_seed_open(
+    pool: &sqlx::PgPool,
+    branch: &str,
+    request_id: String,
+    opening: &[(&str, &str)],
+    opened_at: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let shift = format!("SH-{}", uuid::Uuid::new_v4());
+    let (id, b) = (shift.clone(), branch.to_owned());
+    let opening: Vec<(String, String)> = opening
+        .iter()
+        .map(|(c, a)| ((*c).to_owned(), (*a).to_owned()))
+        .collect();
+    xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(pool.clone()))
+        .run(&xc_kernel::ids::BranchId::new(branch), move |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
+                     teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id FROM users u \
+                     WHERE u.legacy_employee_id = 'test'",
+                )
+                .bind(&id)
+                .bind(&b)
+                .bind(opened_at)
+                .bind(&request_id)
+                .execute(&mut **tx)
+                .await?;
+                for (code, amount) in &opening {
+                    sqlx::query(
+                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                         VALUES ($1, $2, $3::numeric, $3::numeric)",
+                    )
+                    .bind(&id)
+                    .bind(code)
+                    .bind(amount)
+                    .execute(&mut **tx)
+                    .await?;
+                }
+                Ok::<(), pos_error::AppError>(())
+            })
+        })
+        .await
+        .unwrap_or_else(|e| panic!("open a shift at {branch}: {e}"));
+    shift
 }

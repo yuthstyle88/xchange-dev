@@ -52,14 +52,13 @@ use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
-use xc_shift::application::custody::service::CustodyService;
+use xc_shift::application::custody::service::{CustodyFactsPort, CustodyService};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::custody::entities::attendance::Attendance;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use xc_shift::domain::custody::entities::stored_event::StoredEvent;
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
-use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::cash_target::CashTarget;
 use xc_shift::domain::custody::value_objects::custody_event::EventKind;
@@ -69,9 +68,6 @@ use xc_shift::domain::custody::value_objects::cutoff::Cutoff;
 use xc_shift::domain::custody::value_objects::entity::Entity;
 use xc_shift::domain::custody::value_objects::phase::Phase;
 use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
-use xc_shift::domain::shift::commands::close_shift::CloseShift;
-use xc_shift::domain::shift::commands::move_stock::MoveStock;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
 use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
@@ -502,50 +498,40 @@ fn never_asked<T>() -> AppResult<T> {
     ))
 }
 
-impl CustodyPorts for NoPorts {
-    fn outside_facts<'a>(
+// CA-10 (#626, #2955): the core asks `CustodyFactsPort` (v2's `CustodyPorts` is no longer asked); the snapshot
+// still must not ask it.
+impl CustodyFactsPort for NoPorts {
+    fn service_window_in<'a>(
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
         _branch: &'a BranchId,
-        _open_shift_id: Option<&'a str>,
-    ) -> BoxFuture<'a, AppResult<OutsideFacts>> {
+        _now: CustodyTime,
+    ) -> BoxFuture<'a, AppResult<(ServiceWindow, i32)>> {
         Box::pin(async { never_asked() })
     }
 
-    fn customer_known<'a>(
+    fn has_live_rate_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<(bool, String)>> {
+        Box::pin(async { never_asked() })
+    }
+
+    fn transactions_summary_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<(Vec<String>, Option<String>)>> {
+        Box::pin(async { never_asked() })
+    }
+
+    fn customer_exists_in<'a>(
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
         _branch: &'a BranchId,
         _customer_id: &'a str,
     ) -> BoxFuture<'a, AppResult<bool>> {
-        Box::pin(async { never_asked() })
-    }
-
-    fn evidence_owned<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        _owner_id: &'a str,
-        _keys: &'a [String],
-    ) -> BoxFuture<'a, AppResult<bool>> {
-        Box::pin(async { never_asked() })
-    }
-
-    fn employee_role<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        _employee_id: &'a str,
-    ) -> BoxFuture<'a, AppResult<Option<CustodyRole>>> {
-        Box::pin(async { never_asked() })
-    }
-
-    fn service_window<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        _now: CustodyTime,
-    ) -> BoxFuture<'a, AppResult<ServiceWindow>> {
         Box::pin(async { never_asked() })
     }
 }
@@ -963,48 +949,20 @@ impl<'f> Replay<'f> {
                 let created = self.create_branch(step).await;
                 self.compare_write(step, Some(created), None).await;
             }
+            // CA-10 (#626, #2955): v2's admin open / move / close are deleted with the core. The recorded steps are
+            // replayed straight into the tables, leaving exactly the rows v2's `ShiftService` wrote, in one branch
+            // transaction as v2 did (setup only: what is compared is unchanged).
             "adminOpenShift" => {
-                let cmd = OpenShift::from_payload(&self.payload(step)).expect("a recorded opening");
                 seed_opener(&self.shop.db.pool, &actor_of(self.fixture, step)).await;
-                self.shop
-                    .shifts
-                    .open(
-                        &branch_of(self.fixture, step),
-                        cmd,
-                        &actor_of(self.fixture, step),
-                        time(&step.at),
-                    )
-                    .await
-                    .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
+                self.v2_admin_write(step, V2Write::Open).await;
                 self.compare_write(step, None, None).await;
             }
             "adminMoveStock" => {
-                let cmd =
-                    MoveStock::from_payload(&self.payload(step)).expect("a recorded movement");
-                self.shop
-                    .shifts
-                    .move_stock(
-                        &branch_of(self.fixture, step),
-                        cmd,
-                        &actor_of(self.fixture, step),
-                        time(&step.at),
-                    )
-                    .await
-                    .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
+                self.v2_admin_write(step, V2Write::Move).await;
                 self.compare_write(step, None, None).await;
             }
             "adminCloseShift" => {
-                let cmd = CloseShift::from_payload(&self.payload(step)).expect("a recorded close");
-                self.shop
-                    .shifts
-                    .close(
-                        &branch_of(self.fixture, step),
-                        cmd,
-                        &actor_of(self.fixture, step),
-                        time(&step.at),
-                    )
-                    .await
-                    .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
+                self.v2_admin_write(step, V2Write::Close).await;
                 self.compare_write(step, None, None).await;
             }
             "adminAbandonRequest" => {
@@ -1033,6 +991,21 @@ impl<'f> Replay<'f> {
     }
 
     /// The step's payload with the ids v2 made replaced by the ones v3 made.
+    /// CA-10 (#626, #2955): one recorded v2 admin write (open, move or close a shift), replayed straight into the
+    /// tables inside a branch transaction (which steps the branch version, as v2's command did).
+    async fn v2_admin_write(&self, step: &Step, what: V2Write) {
+        replay_v2_admin(
+            &self.shop,
+            &branch_of(self.fixture, step),
+            what,
+            &self.payload(step),
+            &actor_of(self.fixture, step),
+            time(&step.at),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}: {e:?}", self.label(step)));
+    }
+
     fn payload(&self, step: &Step) -> Value {
         self.ids
             .to_actual(step.payload.as_ref().unwrap_or(&Value::Null))
@@ -1629,3 +1602,196 @@ pub use lg4_fund::lg4_fund_safe;
 // R1 (TX-6 #674): only the binaries that replay a recorded save, or open a shift by hand, call it.
 #[allow(unused_imports)]
 pub use lg4_fund::r1_fund_open_drawers;
+
+/// A recorded v2 admin write on a shift (CA-10: replayed by SQL, its v2 command is deleted).
+#[derive(Clone, Copy)]
+pub enum V2Write {
+    Open,
+    Move,
+    Close,
+}
+
+fn truncate_to_millis(t: DateTime<Utc>) -> DateTime<Utc> {
+    DateTime::<Utc>::from_timestamp_millis(t.timestamp_millis()).unwrap_or(t)
+}
+
+/// A recorded amount, a JSON text or number, as text for a `numeric` bind.
+fn amount_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.trim().to_owned(),
+        Value::Number(n) => n.to_string(),
+        other => panic!("a recorded amount, got {other}"),
+    }
+}
+
+fn v2_text<'v>(payload: &'v Value, key: &str) -> &'v str {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("the recorded payload has `{key}`: {payload}"))
+}
+
+/// What v2's `ShiftService::{open_in, move_stock_in, close_in}` wrote for a step that answered 200: the shift row
+/// (`SH-<uuid>`, its teller the opener's user), the movement (`MV-<uuid>`) and the expected figure it moved, or
+/// the close (counted per currency, `difference = counted - expected`, the rest 0).
+/// CA-10 (#626, #2955): one v2 admin write (open, move or close a shift with v2's payload), replayed straight
+/// into the tables inside a branch transaction, which steps the branch version as v2's command did. Answers the
+/// id of the row it wrote: the shift for an open or a close, the movement for a move.
+pub async fn replay_v2_admin(
+    shop: &Shop,
+    branch: &BranchId,
+    what: V2Write,
+    payload: &Value,
+    actor: &str,
+    at: DateTime<Utc>,
+) -> AppResult<String> {
+    let (b, payload, actor, at) = (
+        branch.clone(),
+        payload.clone(),
+        actor.to_owned(),
+        truncate_to_millis(at),
+    );
+    shop.db
+        .branch_tx()
+        .run(branch, move |tx| {
+            Box::pin(async move { v2_admin_write_in(tx, &b, what, &payload, &actor, at).await })
+        })
+        .await
+}
+
+async fn v2_admin_write_in(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    what: V2Write,
+    payload: &Value,
+    actor: &str,
+    at: DateTime<Utc>,
+) -> AppResult<String> {
+    match what {
+        V2Write::Open => {
+            let teller: String = if actor == "owner" {
+                sqlx::query_scalar(
+                    "SELECT u.id::text FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
+                     (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' \
+                     AND r.branch_id IS NULL) ORDER BY u.created_at LIMIT 1",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+            } else {
+                sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+                    .bind(actor)
+                    .fetch_one(&mut **tx)
+                    .await?
+            };
+            let id = format!("SH-{}", uuid::Uuid::new_v4());
+            sqlx::query(
+                "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
+                 teller_id) VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $6::uuid)",
+            )
+            .bind(&id)
+            .bind(branch.as_str())
+            .bind(at)
+            .bind(actor)
+            .bind(v2_text(payload, "requestId"))
+            .bind(&teller)
+            .execute(&mut **tx)
+            .await?;
+            if let Some(opening) = payload.get("opening").and_then(Value::as_object) {
+                for (code, amount) in opening {
+                    sqlx::query(
+                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                         SELECT $1, $2, $3::numeric, $3::numeric WHERE $3::numeric <> 0",
+                    )
+                    .bind(&id)
+                    .bind(code)
+                    .bind(amount_text(amount))
+                    .execute(&mut **tx)
+                    .await?;
+                }
+            }
+            Ok(id)
+        }
+        V2Write::Move => {
+            let shift = v2_text(payload, "shiftId");
+            let (code, direction) = (v2_text(payload, "currency"), v2_text(payload, "direction"));
+            let amount = amount_text(payload.get("amount").unwrap_or(&Value::Null));
+            let id = format!("MV-{}", uuid::Uuid::new_v4());
+            sqlx::query(
+                "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, \
+                 at, by) VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10)",
+            )
+            .bind(&id)
+            .bind(branch.as_str())
+            .bind(shift)
+            .bind(code)
+            .bind(direction)
+            .bind(&amount)
+            .bind(v2_text(payload, "reason"))
+            .bind(v2_text(payload, "requestId"))
+            .bind(at)
+            .bind(actor)
+            .execute(&mut **tx)
+            .await?;
+            let signed = if direction == "IN" {
+                amount
+            } else {
+                format!("-{amount}")
+            };
+            // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
+            // ON CONFLICT is reached), then the move, as v2's `update_expected` left it
+            sqlx::query(
+                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, 0) \
+                 ON CONFLICT (shift_id, code) DO NOTHING",
+            )
+            .bind(shift)
+            .bind(code)
+            .execute(&mut **tx)
+            .await?;
+            sqlx::query(
+                "UPDATE shift_balances SET expected = expected + $3::numeric WHERE shift_id = $1 AND code = $2",
+            )
+            .bind(shift)
+            .bind(code)
+            .bind(&signed)
+            .execute(&mut **tx)
+            .await?;
+            Ok(id)
+        }
+        V2Write::Close => {
+            let shift = v2_text(payload, "shiftId");
+            sqlx::query(
+                "UPDATE shifts SET status = 'CLOSED', closed_at = $1, closed_by = $2, close_note = $3, \
+                 close_request_id = $4 WHERE id = $5",
+            )
+            .bind(at)
+            .bind(actor)
+            .bind(payload.get("note").and_then(Value::as_str).unwrap_or_default())
+            .bind(v2_text(payload, "requestId"))
+            .bind(shift)
+            .execute(&mut **tx)
+            .await?;
+            if let Some(counted) = payload.get("counted").and_then(Value::as_object) {
+                for (code, amount) in counted {
+                    sqlx::query(
+                        "INSERT INTO shift_balances (shift_id, code, opening, expected, counted) \
+                         VALUES ($1, $2, 0, 0, $3::numeric) \
+                         ON CONFLICT (shift_id, code) DO UPDATE SET counted = $3::numeric",
+                    )
+                    .bind(shift)
+                    .bind(code)
+                    .bind(amount_text(amount))
+                    .execute(&mut **tx)
+                    .await?;
+                }
+            }
+            sqlx::query(
+                "UPDATE shift_balances SET counted = COALESCE(counted, 0), \
+                 difference = COALESCE(counted, 0) - expected WHERE shift_id = $1",
+            )
+            .bind(shift)
+            .execute(&mut **tx)
+            .await?;
+            Ok(shift.to_owned())
+        }
+    }
+}
