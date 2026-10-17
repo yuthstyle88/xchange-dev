@@ -8,9 +8,8 @@
 // The menu is loaded through `import.meta.glob`, so a missing `menu.ts` fails these tests on their result
 // ("no loyalty menu"), not on an unresolved import.
 //
-// Rows 1–3 and the screen half of row 4 are `it.todo`: PR 2050's head (`1ec3128`) defines no read of rule
-// versions and no field list for `fields` (see the comment on #2129). They become real tests once the controller
-// settles those two points.
+// Rows 1–3 and the screen half of row 4 were `it.todo` here until the rule-version view (#2868, PR 2909) existed;
+// they now live in Loyalty.screen.test.tsx.
 import { describe, expect, it } from 'vitest';
 import { errorText, setLang } from '../../../shared/i18n';
 import type { AdminMenu } from '../menus';
@@ -41,17 +40,8 @@ describe('LY-6-FE row 4: 503 loyaltyUnavailable has its own words, not error.ser
       expect(worded, 'it is not the generic server error').not.toBe(errorText('serverError', sentinel));
     });
   }
-  it.todo(
-    'row 4 (screen): a 503 loyaltyUnavailable from loyaltyRuleDraft / loyaltyRuleSubmit shows error.loyaltyUnavailable, not error.serverError — blocked on the screen shape (#2129 comment)',
-  );
+  // The screen half of row 4 is in Loyalty.screen.test.tsx (#2129, claude/177aa7ef).
 });
 
-describe('LY-6-FE rows 1–3 (#2129 §9): blocked on PR 2050 defining a read and a field list', () => {
-  it.todo('row 1: an EXECUTIVE opens the menu and sees the current and draft versions — PR 2050 has no view of rule versions');
-  it.todo(
-    'row 2: save a draft sends loyaltyRuleDraft (POST /api/v3/commands/loyalty_rule_draft) with an Idempotency-Key; a retry after a 5xx reuses the key — blocked on the form fields',
-  );
-  it.todo(
-    'row 3: submit sends loyaltyRuleSubmit (POST /api/v3/commands/loyalty_rule_submit) and the version shows PENDING_APPROVAL — blocked on where versions are listed',
-  );
-});
+// Rows 1–3, the screen half of row 4, and rows 6–7 are real tests in Loyalty.screen.test.tsx, written against the
+// rule-version view #2868 (PR 2909) once it gave the screen a read (#2129, claude/177aa7ef).
