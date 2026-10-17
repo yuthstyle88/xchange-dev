@@ -816,6 +816,8 @@ impl CashCountService {
             .find_count_by_idempotency_key(&mut *tx, &cmd.branch, &cmd.idempotency_key)
             .await?
         {
+            PersonRules::replay_is_own(&existing.counted_by, actor)
+                .map_err(|e| AppError::Conflict(e.to_string()))?;
             return Ok(existing);
         }
 

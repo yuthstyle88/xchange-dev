@@ -20,6 +20,8 @@ pub enum CashError {
     ShiftAlreadyOpen,
     #[error("{0:?}")]
     Refused(Refusal),
+    #[error("รหัสคำขอนี้ถูกใช้โดยผู้ใช้อื่นแล้ว")]
+    ReplayOfAnotherUser,
     #[error("รอฝ่ายการเงินอนุมัติ: {0}")]
     AwaitingFinance(String),
     #[error("ฝ่ายการเงินปฏิเสธ: {0}")]
@@ -37,6 +39,7 @@ impl CashError {
             Self::BalancesChanged => "balancesChanged",
             Self::TooManyDecimals => "tooManyDecimals",
             Self::ShiftAlreadyOpen => "shiftAlreadyOpen",
+            Self::ReplayOfAnotherUser => "replayOfAnotherUser",
             Self::Refused(_) => "refused",
             Self::AwaitingFinance(_) => "awaitingFinance",
             Self::RejectedByFinance(_) => "rejectedByFinance",

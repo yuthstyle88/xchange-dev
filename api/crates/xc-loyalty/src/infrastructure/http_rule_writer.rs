@@ -220,4 +220,45 @@ impl LoyaltyRuleWriter for HttpLoyaltyRuleWriter {
             Ok(None)
         })
     }
+
+    fn list<'a>(
+        &'a self,
+        kind: RuleKind,
+    ) -> BoxFuture<'a, Result<Vec<RuleVersion>, LoyaltyRuleError>> {
+        Box::pin(async move {
+            let url = self.collection_url(kind);
+            let resp = self
+                .client
+                .get(&url)
+                .header("Authorization", self.bearer())
+                .send()
+                .await
+                .map_err(|e| LoyaltyRuleError::Unavailable(e.to_string()))?;
+
+            let status = resp.status();
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| LoyaltyRuleError::Unavailable(e.to_string()))?;
+            let payload: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+
+            if !status.is_success() {
+                return Err(LoyaltyRuleError::Unavailable(error_message(
+                    status.as_u16(),
+                    &payload,
+                )));
+            }
+
+            let Some(items) = payload.as_array() else {
+                return Err(LoyaltyRuleError::Invalid(
+                    "loyalty rule list response is not a JSON array".to_owned(),
+                ));
+            };
+
+            items
+                .iter()
+                .map(|item| RuleVersion::from_dto(kind, item.clone()))
+                .collect()
+        })
+    }
 }

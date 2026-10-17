@@ -43,10 +43,13 @@ impl ApprovalSubjectDeps {
 /// `ApprovalSubjectDeps` (R2).
 pub fn registry_with(deps: &ApprovalSubjectDeps) -> ApprovalRegistry {
     let mut reg = ApprovalRegistry::new();
-    for register in APPROVAL_SUBJECTS {
-        register(&mut reg, deps.pool.clone());
+    for (register, type_name) in APPROVAL_SUBJECTS.iter().zip(APPROVAL_SUBJECT_TYPES) {
+        if *type_name == loyalty_rule_version::TYPE {
+            loyalty_rule_version::register_with_deps(&mut reg, deps);
+        } else {
+            register(&mut reg, deps.pool.clone());
+        }
     }
-    loyalty_rule_version::register_with_deps(&mut reg, deps);
     reg
 }
 

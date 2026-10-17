@@ -941,36 +941,9 @@ async fn cash_view_reads_figures_from_lines_and_payments_not_wide_columns() {
     .await;
     room.complete_tx(id_sell_transfer, "RECEIPT-3", t).await;
 
-    // Desync the wide columns for the cash exchanges
-    sqlx::query(
-        "UPDATE transactions \
-         SET method = 'SCB Transfer', \
-             received = 0, \
-             paid = 0, \
-             principal = 0, \
-             amount = 1, \
-             type = CASE WHEN type = 'SELL' THEN 'BUY' ELSE 'SELL' END, \
-             reference_rate = NULL, \
-             unit_size = 1000 \
-         WHERE id IN ($1, $2)",
-    )
-    .bind(id_sell_cash.0)
-    .bind(id_buy_cash.0)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("desync wide columns for cash exchanges");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
-    // Mirror case: desync the non-cash exchange with wide method = 'Cash' and wide received = 9999.00
-    sqlx::query(
-        "UPDATE transactions \
-         SET method = 'Cash', \
-             received = 9999.00 \
-         WHERE id = $1",
-    )
-    .bind(id_sell_transfer.0)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("desync wide columns for mirror non-cash exchange");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
     let data = room.cash("branch=MAIN").await;
 

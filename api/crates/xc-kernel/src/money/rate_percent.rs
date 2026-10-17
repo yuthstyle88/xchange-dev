@@ -4,6 +4,7 @@ use std::fmt;
 
 use rust_decimal::Decimal;
 
+use super::bounded::{Bound, Sign};
 use super::money::NumberError;
 
 /// Signed percentage adjustment with at most 4 decimal places.
@@ -14,39 +15,10 @@ impl RatePercent {
     pub const ZERO: RatePercent = RatePercent(Decimal::ZERO);
 
     pub fn parse(text: &str) -> Result<RatePercent, NumberError> {
-        if text.is_empty() {
-            return Err(NumberError::Invalid);
-        }
-        let rest = if let Some(stripped) = text.strip_prefix('-') {
-            stripped
-        } else if let Some(stripped) = text.strip_prefix('+') {
-            stripped
-        } else {
-            text
+        let mut val = match text.strip_prefix('+') {
+            Some(rest) => Bound::numeric(9, 4, Sign::NonNegative).parse(rest)?,
+            None => Bound::numeric(9, 4, Sign::Signed).parse(text)?,
         };
-
-        if rest.is_empty() || rest.starts_with('.') || rest.ends_with('.') {
-            return Err(NumberError::Invalid);
-        }
-        let mut dot_count = 0;
-        for b in rest.bytes() {
-            if b == b'.' {
-                dot_count += 1;
-                if dot_count > 1 {
-                    return Err(NumberError::Invalid);
-                }
-            } else if !b.is_ascii_digit() {
-                return Err(NumberError::Invalid);
-            }
-        }
-        let frac_part = match rest.split_once('.') {
-            Some((_, frac)) => frac,
-            None => "",
-        };
-        if frac_part.len() > 4 && frac_part[4..].bytes().any(|b| b != b'0') {
-            return Err(NumberError::TooManyDecimals);
-        }
-        let mut val = Decimal::from_str_exact(text).map_err(|_| NumberError::Invalid)?;
         val.rescale(4);
         Ok(RatePercent(val))
     }

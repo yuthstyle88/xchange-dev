@@ -563,7 +563,9 @@ async fn migration_5_adds_a_nullable_line_id_referencing_published_rate_lines() 
         .expect("apply api/migrations");
 
     // Every migration ran, so v2's `bookings` is `v2_bookings` (BK-1's `*_booking_slots.sql`, #1377).
-    for table in ["transactions", "kiosk_requests", "v2_bookings"] {
+    // TX-9 (#677) drops `transactions.published_rate_line_id`: a saved line reaches its published
+    // line through `transaction_lines.quote_line_id` → `quote_lines.published_rate_line_id`.
+    for table in ["kiosk_requests", "v2_bookings"] {
         let column: Option<(String, String)> = sqlx::query_as(
             "SELECT data_type, is_nullable FROM information_schema.columns \
              WHERE table_schema = current_schema() AND table_name = $1 \

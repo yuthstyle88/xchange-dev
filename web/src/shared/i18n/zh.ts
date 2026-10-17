@@ -39,6 +39,7 @@ export const zh: Record<Key, string> = {
   'error.paymentOwnerOnly': '仅限所有者配置付款方式',
   'error.drawerRoleNotAllowed': '当前账户无权打开钱箱',
   'error.serverError': '服务器错误',
+  'error.loyaltyUnavailable': '积分系统暂时不可用，请稍后重试。',
   'error.network': '无法连接服务器，请重试。',
   'error.employeeAuthRequired': '需要员工认证',
   'error.notFound': '未找到数据',
