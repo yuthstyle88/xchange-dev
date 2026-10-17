@@ -203,8 +203,11 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
   function openConfirmDialog(row: AdminBookingRow) {
     const [expiry, setExpiry] = createSignal('');
     const [dialogError, setDialogError] = createSignal<string | null>(null);
+    const [writing, setWriting] = createSignal(false);
 
     const confirmRate = async () => {
+      if (writing()) return;
+      setWriting(true);
       try {
         await api.post('/api/v2/bookings', {
           action: 'confirm',
@@ -219,6 +222,8 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
         await fetchBookings(props.branch(), bookingsVersion, currentQ || undefined);
       } catch (err) {
         setDialogError(wordedError(err));
+      } finally {
+        setWriting(false);
       }
     };
 
@@ -250,7 +255,7 @@ export function BookingsScreen(props: AdminMenuProps): JSX.Element {
           <button type="button" class="secondary" onClick={() => closeDialog()}>
             {t('back')}
           </button>
-          <button type="button" class="primary" onClick={confirmRate}>
+          <button type="button" class="primary" disabled={writing()} onClick={confirmRate}>
             {t('confirmLockRate')}
           </button>
         </div>
