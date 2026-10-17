@@ -29,6 +29,10 @@ use xchange::presentation::pages::{SessionReader, Sessions};
 use crate::common::settings;
 use crate::save_common::{self, Shop};
 
+#[allow(clippy::duplicate_mod)]
+#[path = "../shift_holder_common/mod.rs"]
+mod shift_holder_common;
+
 pub const HOST: &str = "desk.example";
 /// The header the fake reader looks at: names of the fixture's `people`, comma-separated.
 pub const AS: &str = "x-test-signed-in-as";
@@ -102,18 +106,14 @@ impl World {
                     .await;
                 ready.push(branch_id.clone());
             }
+            let saver = shift_holder_common::teller_of_open_shift(&shop.pool, &branch_id).await;
             let mut who = save_common::person();
             who.passport_no = format!("AA{:07}", n + 1);
             who.mode = mode.clone();
             let customer = shop.reserve(&branch_id, who.clone()).await;
             let passport_mime = text("passport");
             let passport = shop
-                .upload(
-                    &branch_id,
-                    save_common::OWNER,
-                    &passport_mime,
-                    bytes_of(&passport_mime),
-                )
+                .upload(&branch_id, &saver, &passport_mime, bytes_of(&passport_mime))
                 .await;
             let mut form = save_common::form(
                 &format!("submission-for-{name}-000000"),
@@ -123,19 +123,20 @@ impl World {
             form.customer = who;
             if let Some(slip_mime) = exchange["slip"].as_str() {
                 let slip = shop
-                    .upload(
-                        &branch_id,
-                        save_common::OWNER,
-                        slip_mime,
-                        bytes_of(slip_mime),
-                    )
+                    .upload(&branch_id, &saver, slip_mime, bytes_of(slip_mime))
                     .await;
                 form.method = "Bank Transfer".to_owned();
                 form.payment_ref = "TRX-1".to_owned();
                 form.slip = Some(slip);
             }
             let done: SavedTransaction = shop
-                .save(&branch_id, form, save_common::at(n as i64))
+                .workflow
+                .save(
+                    &save_common::branch(&branch_id),
+                    form,
+                    &saver,
+                    save_common::at(n as i64),
+                )
                 .await
                 .unwrap_or_else(|e| panic!("save the exchange '{name}': {e:?}"));
             saved.push(Saved {
