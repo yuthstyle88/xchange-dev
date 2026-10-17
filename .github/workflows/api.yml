@@ -236,6 +236,7 @@ jobs:
         run: bash .github/scripts/api-test-plan.test.sh
 
       - name: Start postgres (per run)
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         env:
           LC_ALL: C
         run: |
@@ -368,6 +369,7 @@ jobs:
           npm --prefix web run build
 
       - name: Install cargo-nextest
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         run: |
           VERSION="0.9.137"
@@ -381,6 +383,7 @@ jobs:
           echo "$ROOT/bin" >> "$GITHUB_PATH"
 
       - name: Test
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         env:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ env.XC_PGPORT }}/xchange_test
@@ -418,6 +421,7 @@ jobs:
           npm --prefix api/web/forms run check
 
       - name: Form validation JS tests
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         run: node --test api/tests/js/*.test.mjs
 
       - name: "Release check refuses no screens"
@@ -438,7 +442,7 @@ jobs:
           "$BIN" check
 
       - name: Stop postgres and remove its data
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: |
           if [ -n "${XC_PGROOT:-}" ] && [ -d "$XC_PGROOT" ]; then
             if [ -n "${XC_PGBIN:-}" ] && [ -x "$XC_PGBIN/pg_ctl" ]; then
@@ -503,6 +507,7 @@ jobs:
         run: cargo clippy -p xc-device-agent --all-targets -- -D warnings
 
       - name: Install cargo-nextest
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         run: |
           VERSION="0.9.137"
@@ -516,6 +521,7 @@ jobs:
           echo "$ROOT/bin" >> "$GITHUB_PATH"
 
       - name: Test
+        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         working-directory: api
         run: cargo nextest run -p xc-device-agent
 
