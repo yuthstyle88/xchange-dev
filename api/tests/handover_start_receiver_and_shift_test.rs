@@ -641,7 +641,7 @@ async fn h7_handover_from_own_closed_shift_is_no_open_shift() {
 #[actix_web::test]
 async fn h8_handover_from_own_open_shift_at_another_branch_is_no_open_shift() {
     let room = Room::start().await;
-    let (teller, _, _open) = opened_shift(&room).await;
+    let teller = room.person(Role::Teller, Some(B01)).await;
     let at_b02 = room.seed_shift(&teller, B02, "OPEN").await;
     let receiver = room.person(Role::Teller, Some(B01)).await;
     let before = room.written().await;
