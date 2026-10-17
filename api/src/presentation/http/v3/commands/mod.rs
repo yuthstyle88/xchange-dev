@@ -11,17 +11,22 @@ use xc_kernel::money::{CurrencyCode, Rate};
 use xc_rate::domain::draft::rate_draft::{DraftLine, LineSide};
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
 
+use crate::bootstrap::approval_subjects::{ApprovalSubjectDeps, registry_with};
 use crate::presentation::http::v3::error::V3Error;
 
 pub fn make_approval_registry(pool: PgPool) -> ApprovalRegistry {
     crate::bootstrap::approval_subjects::registry(pool)
 }
 
-pub fn make_approval_service(pool: PgPool) -> Arc<ApprovalService> {
-    let registry = make_approval_registry(pool.clone());
-    let repo = Arc::new(PgApprovalRepository::new(pool.clone()));
-    let audit_log = Arc::new(PgAuditLog::new(pool));
+pub fn make_approval_service_with(deps: &ApprovalSubjectDeps) -> Arc<ApprovalService> {
+    let registry = registry_with(deps);
+    let repo = Arc::new(PgApprovalRepository::new(deps.pool.clone()));
+    let audit_log = Arc::new(PgAuditLog::new(deps.pool.clone()));
     Arc::new(ApprovalService::new(registry, repo, audit_log))
+}
+
+pub fn make_approval_service(pool: PgPool) -> Arc<ApprovalService> {
+    make_approval_service_with(&ApprovalSubjectDeps::pool_only(pool))
 }
 
 pub fn map_rate_engine_error(err: RateEngineError) -> V3Error {
