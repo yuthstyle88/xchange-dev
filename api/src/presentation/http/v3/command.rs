@@ -395,20 +395,82 @@ async fn handle_command<C: CommandAction>(
         None => return server_error().error_response(),
     };
 
-    // Resolve organisation from caller's branch
-    let org_id: String =
-        match sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
+    // Resolve target organisation: for Locks::Org or a customer caller (who has no acting
+    // branch; any `branch` field in the body is command data), use the caller's organisation;
+    // otherwise resolve from the acting branch and verify the caller belongs to it.
+    let org_id: String = match (&locks, caller.user.as_ref()) {
+        (Locks::Org, Some(user)) => {
+            match sqlx::query_scalar(
+                "SELECT o.id::text FROM organizations o WHERE o.id::text = $1 OR o.code = $1",
+            )
+            .bind(&user.organization_id)
+            .fetch_optional(&pool)
+            .await
+            {
+                Ok(Some(org)) => org,
+                Ok(None) => return out_of_scope().error_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to query caller organization");
+                    return server_error().error_response();
+                }
+            }
+        }
+        (_, Some(user)) if user.customer_id.is_some() => {
+            match sqlx::query_scalar(
+                "SELECT o.id::text FROM organizations o WHERE o.id::text = $1 OR o.code = $1",
+            )
+            .bind(&user.organization_id)
+            .fetch_optional(&pool)
+            .await
+            {
+                Ok(Some(org)) => org,
+                Ok(None) => return out_of_scope().error_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to query caller organization");
+                    return server_error().error_response();
+                }
+            }
+        }
+        _ => {
+            let branch_org_id: String = match sqlx::query_scalar(
+                "SELECT organization_id::text FROM branches WHERE id = $1",
+            )
             .bind(branch.as_str())
             .fetch_optional(&pool)
             .await
-        {
-            Ok(Some(org)) => org,
-            Ok(None) => return out_of_scope().error_response(),
-            Err(e) => {
-                tracing::error!(error = %e, "failed to query branch organization");
-                return server_error().error_response();
+            {
+                Ok(Some(org)) => org,
+                Ok(None) => return out_of_scope().error_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to query branch organization");
+                    return server_error().error_response();
+                }
+            };
+
+            if let Some(user) = caller.user.as_ref() {
+                let same_org: bool = match sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT 1 FROM organizations o WHERE o.id::text = $1 AND (o.id::text = $2 OR o.code = $2))",
+                )
+                .bind(&branch_org_id)
+                .bind(&user.organization_id)
+                .fetch_one(&pool)
+                .await
+                {
+                    Ok(same) => same,
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to check caller organization");
+                        return server_error().error_response();
+                    }
+                };
+
+                if !same_org {
+                    return out_of_scope().error_response();
+                }
             }
-        };
+
+            branch_org_id
+        }
+    };
 
     // If Pair, check that the other branch belongs to the same organization
     if let Locks::Pair(a, b) = &locks {
