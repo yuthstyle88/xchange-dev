@@ -245,6 +245,7 @@ impl Settings {
             env_map.get("XC_LOYALTY_TENANT_ID").map(|s| s.as_str()),
             env_map.get("XC_LOYALTY_WEBHOOK_SECRET").map(|s| s.as_str()),
             env_map.get("XC_LOYALTY_TIMEOUT_MS").map(|s| s.as_str()),
+            env_map.get("XC_LOYALTY_SERVICE_TOKEN").map(|s| s.as_str()),
         );
 
         let bot_token = env_map

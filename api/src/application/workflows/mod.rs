@@ -7,6 +7,7 @@ pub mod disable_employee;
 pub mod documents;
 pub mod exchange;
 pub mod kiosk_save_step;
+pub mod loyalty;
 pub mod passport_drawer;
 pub mod passport_drawer_device;
 pub mod payment_save_step;
