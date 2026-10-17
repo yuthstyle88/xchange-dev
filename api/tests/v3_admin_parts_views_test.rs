@@ -1155,15 +1155,20 @@ fn the_views_types_carry_the_tickets_fields() {
         .unwrap_or_else(|| panic!("admin_shift_state.ts in {:?}", shift.keys()));
     has_field(ts, "shiftOpen", &["boolean"]);
     has_field(ts, "deskUrl", &["string"]);
-    // CA-10p (design §4.7): one shared row type, exported once
+    // CA-10p (design §4.7): one shared row type, exported once into `common.ts` (a view writes only its own
+    // file and `common.ts`, v3_types_test `each_view_writes_only_its_own_file_and_common`)
     has_field(ts, "openShifts", &["Array<OpenShiftDto>", "OpenShiftDto[]"]);
     assert!(!ts.contains("bigint"), "{ts}");
     let rows = exported(SHIFT_STATE);
-    let row = rows
-        .get("open_shifts.ts")
-        .unwrap_or_else(|| panic!("open_shifts.ts in {:?}", rows.keys()));
+    let common = rows
+        .get("common.ts")
+        .unwrap_or_else(|| panic!("common.ts in {:?}", rows.keys()));
+    assert!(
+        common.contains("export type OpenShiftDto"),
+        "OpenShiftDto is in common.ts:\n{common}"
+    );
     for field in ["shiftId", "tellerId", "tellerName", "openedAt"] {
-        has_field(row, field, &["string"]);
+        has_field(common, field, &["string"]);
     }
 }
 
