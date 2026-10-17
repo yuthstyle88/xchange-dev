@@ -59,15 +59,12 @@ void main() {
       },
     );
 
-    test(
-      'Row 5: Server with https and port parses correctly',
-      () {
-        final endpoint = KioskEndpoint.parse(
-          'https://shop.example.com:8443',
-          'MAIN',
-        );
-        expect(endpoint.origin, 'https://shop.example.com:8443');
-      },
-    );
+    test('Row 5: Server with https and port parses correctly', () {
+      final endpoint = KioskEndpoint.parse(
+        'https://shop.example.com:8443',
+        'MAIN',
+      );
+      expect(endpoint.origin, 'https://shop.example.com:8443');
+    });
   });
 }
