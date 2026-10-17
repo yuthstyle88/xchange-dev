@@ -214,6 +214,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
   async function handleExportCsv() {
     if (exporting()) return;
     setExporting(true);
+    setError(null);
     const branch = props.branch();
     const period = props.period();
     const q = search().trim();
