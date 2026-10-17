@@ -256,7 +256,7 @@ async fn shift_with_unfinished_before_completed_reports_completed_as_last_and_un
  {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     let org = org_id(&shop).await;
     let receipt = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
     let store = PgTransactionStore::new(shop.pool.clone());
@@ -294,7 +294,7 @@ async fn shift_with_the_four_seeded_rows_reports_completed_number_and_unfinished
 {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     let org = org_id(&shop).await;
     let receipt = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
     let store = PgTransactionStore::new(shop.pool.clone());
@@ -337,7 +337,7 @@ async fn shift_with_the_four_seeded_rows_reports_completed_number_and_unfinished
 async fn shift_with_pending_approval_reports_it_in_pending_transactions_oldest_first() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     let org = org_id(&shop).await;
     let store = PgTransactionStore::new(shop.pool.clone());
 
@@ -379,7 +379,7 @@ async fn shift_with_pending_approval_reports_it_in_pending_transactions_oldest_f
 async fn compat_saved_exchange_is_completed_and_reported_as_last_transaction_with_no_pending() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
 
     let saved = shop
         .save(
@@ -410,7 +410,7 @@ async fn compat_saved_exchange_is_completed_and_reported_as_last_transaction_wit
 async fn shift_with_none_reports_none_and_empty() {
     let shop = Shop::start().await;
     let (_customer, _passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
 
     let facts = outside(&shop, MAIN, Some(&shift)).await;
 
@@ -433,7 +433,7 @@ async fn unfinished_or_cancelled_exchange_after_completed_does_not_mask_last_com
 {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     let org = org_id(&shop).await;
     let receipt = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
     let store = PgTransactionStore::new(shop.pool.clone());
@@ -471,7 +471,7 @@ async fn unfinished_or_cancelled_exchange_after_completed_does_not_mask_last_com
 async fn unfinished_exchanges_in_another_branch_or_shift_are_not_reported() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift_1 = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift_1 = shop.open_shift_id(MAIN).await;
     let org = org_id(&shop).await;
     let store = PgTransactionStore::new(shop.pool.clone());
 

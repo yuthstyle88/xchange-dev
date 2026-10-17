@@ -39,6 +39,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
   const [hasMore, setHasMore] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [exporting, setExporting] = createSignal(false);
 
   let heldVersion: number | undefined = undefined;
   let activeBranch = '';
@@ -211,6 +212,9 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
   }
 
   async function handleExportCsv() {
+    if (exporting()) return;
+    setExporting(true);
+    setError(null);
     const branch = props.branch();
     const period = props.period();
     const q = search().trim();
@@ -256,6 +260,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       downloadCsv(filename, LIVE_CSV_HEADERS, csvRows);
     } catch (err: unknown) {
       setError(wordedError(err));
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -299,6 +305,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="secondary"
+              disabled={exporting()}
               onClick={() => void handleExportCsv()}
             >
               {t('exportCsv')}
