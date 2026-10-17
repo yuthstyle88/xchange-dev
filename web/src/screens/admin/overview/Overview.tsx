@@ -239,8 +239,10 @@ export function Overview(props: AdminMenuProps): JSX.Element {
             {error()
               ? t('refreshHint')
               : data()?.status.shiftOpen
-                ? data()?.status.openedBy
-                  ? t('openedByLabel', { staff: data()!.status.openedBy! })
+                ? (data()?.status.openShifts ?? []).length > 0
+                  ? t('openedByLabel', {
+                      staff: (data()?.status.openShifts ?? []).map((s) => s.tellerName).join(', '),
+                    })
                   : ''
                 : t('openShiftHint')}
           </span>

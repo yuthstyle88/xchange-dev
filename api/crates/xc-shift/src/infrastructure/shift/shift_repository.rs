@@ -57,6 +57,7 @@ type OpenShiftSqlRow = (
 );
 
 fn format_delta(d: MoneyDelta) -> String {
+    // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2857).
     let minor = d.minor();
     let sign = if minor < 0 { "-" } else { "" };
     let abs = minor.unsigned_abs();
