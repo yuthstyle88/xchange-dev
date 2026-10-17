@@ -87,10 +87,12 @@ impl LoyaltyRuleVersionSubject {
 }
 
 fn map_rule_error(err: LoyaltyRuleError) -> SubjectError {
+    tracing::warn!(error = ?err, %err, "loyalty rule approval error");
+    let message = err.client_message();
     match err {
-        LoyaltyRuleError::Unavailable(message) => SubjectError::DependencyUnavailable {
+        LoyaltyRuleError::Unavailable(_) => SubjectError::DependencyUnavailable {
             code: UNAVAILABLE_CODE,
-            message,
+            message: message.to_owned(),
         },
         LoyaltyRuleError::NotFound => SubjectError::Failed(AppError::NotFound {
             entity: "LoyaltyRuleVersion",
