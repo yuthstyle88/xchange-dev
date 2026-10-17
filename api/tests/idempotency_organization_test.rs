@@ -358,36 +358,6 @@ impl SessionReader for HeaderSessions {
             }
         })
     }
-
-    fn callers<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = xchange::presentation::pages::Callers> + 'a>> {
-        let branch = req
-            .headers()
-            .get(AS)
-            .map(|v| v.to_str().expect("an ASCII header").to_owned())
-            .unwrap_or_default();
-        let pool = req
-            .app_data::<web::Data<AppState>>()
-            .map(|state| state.db.clone());
-        Box::pin(async move {
-            let s = self.sessions(req).await;
-            let org = match pool {
-                Some(pool) => sqlx::query_scalar::<_, String>(
-                    "SELECT organization_id::text FROM branches WHERE id = $1",
-                )
-                .bind(&branch)
-                .fetch_optional(&pool)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| XC.to_owned()),
-                None => XC.to_owned(),
-            };
-            xchange::presentation::pages::old_cookie_callers(s, &org)
-        })
-    }
 }
 
 #[derive(Deserialize, TS)]
