@@ -196,13 +196,7 @@ impl CompatRpc {
             RpcRoute::Rpc => EntryPath::Rpc,
             RpcRoute::StaffRpc => EntryPath::StaffRpc,
         };
-        // Moves to #2962 (CA-10 policy): retired names have no policy row.
-        let action_vo = if is_retired_ca10(action) {
-            Action::new("")
-        } else {
-            Action::new(action)
-        };
-        Policy::authorize(user, path, &action_vo, named, now).map_err(policy_refusal)
+        Policy::authorize(user, path, &Action::new(action), named, now).map_err(policy_refusal)
     }
 
     /// Runs `action` for `caller` and gives back what the screen is answered:
@@ -378,15 +372,6 @@ impl CompatRpc {
             })
             .collect())
     }
-}
-
-/// Retired by CA-10 (#626, design `cash-shift-transfer.md` §6); `xc-auth` drops their policy rows
-/// in #2962.
-fn is_retired_ca10(action: &str) -> bool {
-    matches!(
-        action,
-        "adminOpenShift" | "adminCloseShift" | "adminMoveStock"
-    ) || action.starts_with("ops")
 }
 
 /// The six actions this file dispatches itself.
