@@ -119,10 +119,8 @@ export async function removeVerificationDocument(
 
 export async function submitVerificationCase(
   input: VerificationCaseSubmitInput,
-): Promise<VerificationDocumentRemoveOutput & VerificationCaseSubmitOutput> {
-  return submitCaseWriter.send(input) as Promise<
-    VerificationDocumentRemoveOutput & VerificationCaseSubmitOutput
-  >;
+): Promise<VerificationCaseSubmitOutput> {
+  return submitCaseWriter.send(input);
 }
 
 export async function requestMyDocumentLink(

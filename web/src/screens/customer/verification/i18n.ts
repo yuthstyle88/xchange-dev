@@ -43,6 +43,8 @@ export const th = {
   roleNotAllowed: 'บัญชีนี้ไม่มีสิทธิ์ทำรายการ',
   outOfScope: 'ไม่มีสิทธิ์เข้าถึงข้อมูลการยืนยันตัวตนนี้',
   documentTypeNotAccepted: 'ไม่รองรับประเภทเอกสารนี้',
+  documentsMissing: 'กรุณาอัปโหลดเอกสารอย่างน้อย 1 รายการก่อนส่งข้อมูล',
+  caseLocked: 'ไม่สามารถแก้ไขเคสนี้ได้ในสถานะปัจจุบัน',
   uploadFailed: 'อัปโหลดเอกสารไม่สำเร็จ กรุณาลองใหม่',
 };
 
@@ -91,6 +93,8 @@ export const en = {
   roleNotAllowed: 'Access denied: your account is not permitted to perform this action',
   outOfScope: 'Access denied: this verification case is out of scope',
   documentTypeNotAccepted: 'Document type is not accepted',
+  documentsMissing: 'Please upload at least one document before submitting',
+  caseLocked: 'This verification case is locked and cannot be modified',
   uploadFailed: 'Document upload failed. Please try again.',
 };
 
@@ -139,5 +143,7 @@ export const zh = {
   roleNotAllowed: '无权访问：此账户无权执行此操作',
   outOfScope: '无权访问：无法查看此身份验证信息',
   documentTypeNotAccepted: '不支持此证件类型',
+  documentsMissing: '提交前请至少上传一份证件',
+  caseLocked: '当前申请已锁定，无法修改',
   uploadFailed: '证件上传失败，请重试',
 };

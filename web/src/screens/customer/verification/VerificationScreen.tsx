@@ -14,7 +14,6 @@ import {
   submitVerificationCase,
   uploadVerificationDocument,
   type MyVerificationCaseDetail,
-  type MyVerificationDocumentMeta,
   type VerificationDocumentType,
   type VerificationMyDocumentLinkOutput,
 } from './verificationApi';
@@ -32,6 +31,12 @@ function formatRefusalError(err: unknown): string {
     }
     if (err.code === 'documentTypeNotAccepted') {
       return t('documentTypeNotAccepted');
+    }
+    if (err.code === 'documentsMissing') {
+      return t('documentsMissing');
+    }
+    if (err.code === 'caseLocked') {
+      return t('caseLocked');
     }
     const msg = wordedError(err);
     if (msg.toLowerCase().includes(err.code.toLowerCase())) {
@@ -71,6 +76,7 @@ export function VerificationScreen(): JSX.Element {
   const [permitted, setPermitted] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
+  const [actionError, setActionError] = createSignal<string | null>(null);
   const [readiness, setReadiness] = createSignal<string>('NONE');
   const [currentCase, setCurrentCase] = createSignal<MyVerificationCaseDetail | null>(null);
 
@@ -84,13 +90,17 @@ export function VerificationScreen(): JSX.Element {
 
   let fileInputEl: HTMLInputElement | undefined;
 
+  const refreshVerification = async () => {
+    const ans = await fetchMyVerification();
+    setReadiness(ans.readiness ?? 'NONE');
+    setCurrentCase(ans.case ?? null);
+  };
+
   const loadVerification = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const ans = await fetchMyVerification();
-      setReadiness(ans.readiness ?? 'NONE');
-      setCurrentCase(ans.case ?? null);
+      await refreshVerification();
     } catch (err) {
       setErrorMsg(formatRefusalError(err));
     } finally {
@@ -137,33 +147,18 @@ export function VerificationScreen(): JSX.Element {
     }
   };
 
-  const handleOpenCase = async (reason: string | null = null) => {
+  const handleOpenCase = async () => {
     if (busyAction()) return;
     setBusyAction(true);
-    setErrorMsg(null);
+    setActionError(null);
     try {
-      const created = await openVerificationCase({ reason });
-      setCurrentCase({
-        id: created.id,
-        organizationId: created.organizationId ?? '',
-        customerId: created.customerId ?? '',
-        provider: created.provider ?? 'INTERNAL',
-        status: created.status || 'DRAFT',
-        policyVersion: created.policyVersion ?? 1,
-        branchId: created.branchId ?? null,
-        submittedAt: created.submittedAt ?? null,
-        decidedAt: created.decidedAt ?? null,
-        expiresAt: created.expiresAt ?? null,
-        decisionReasonCode: created.decisionReasonCode ?? null,
-        version: created.version ?? 1,
-        documents: [],
-      });
-      setReadiness('NONE');
+      await openVerificationCase({ reason: null });
+      await refreshVerification();
       setUploadError(null);
       setPendingUploadKey(null);
       setSelectedFile(null);
     } catch (err) {
-      setErrorMsg(formatRefusalError(err));
+      setActionError(formatRefusalError(err));
     } finally {
       setBusyAction(false);
     }
@@ -189,26 +184,11 @@ export function VerificationScreen(): JSX.Element {
       setUploadError(null);
     }
     try {
-      const uploaded = await uploadVerificationDocument(c.id, docType(), file, key);
+      await uploadVerificationDocument(c.id, docType(), file, key);
       succeededKey = key;
       setPendingUploadKey(null);
       setUploadError(null);
-      setCurrentCase((prev) => {
-        if (!prev) return prev;
-        const exists = prev.documents.some((d) => d.id === uploaded.id);
-        const nextDoc: MyVerificationDocumentMeta = {
-          id: uploaded.id,
-          documentType: uploaded.documentType,
-          mime: uploaded.mime,
-          sizeBytes: uploaded.sizeBytes,
-          uploadedAt: uploaded.uploadedAt,
-          accessClass: uploaded.accessClass ?? 'restricted',
-        };
-        return {
-          ...prev,
-          documents: exists ? prev.documents : [...prev.documents, nextDoc],
-        };
-      });
+      await refreshVerification();
     } catch (err) {
       if (succeededKey !== key) {
         setUploadError(formatUploadError(err));
@@ -221,18 +201,12 @@ export function VerificationScreen(): JSX.Element {
   const handleRemoveDocument = async (docId: string) => {
     if (busyAction()) return;
     setBusyAction(true);
-    setErrorMsg(null);
+    setActionError(null);
     try {
       await removeVerificationDocument({ id: docId });
-      setCurrentCase((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          documents: prev.documents.filter((d) => d.id !== docId),
-        };
-      });
+      await refreshVerification();
     } catch (err) {
-      setErrorMsg(formatRefusalError(err));
+      setActionError(formatRefusalError(err));
     } finally {
       setBusyAction(false);
     }
@@ -241,38 +215,24 @@ export function VerificationScreen(): JSX.Element {
   const handleSubmitCase = async (caseId: string) => {
     if (busyAction()) return;
     setBusyAction(true);
-    setErrorMsg(null);
+    setActionError(null);
     try {
-      const updated = await submitVerificationCase({ id: caseId });
-      setCurrentCase((prev) => ({
-        id: updated.id || caseId,
-        organizationId: updated.organizationId ?? prev?.organizationId ?? '',
-        customerId: updated.customerId ?? prev?.customerId ?? '',
-        provider: updated.provider ?? prev?.provider ?? 'INTERNAL',
-        status: updated.status || 'SUBMITTED',
-        policyVersion: updated.policyVersion ?? prev?.policyVersion ?? 1,
-        branchId: updated.branchId ?? prev?.branchId ?? null,
-        submittedAt: updated.submittedAt ?? prev?.submittedAt ?? null,
-        decidedAt: updated.decidedAt ?? prev?.decidedAt ?? null,
-        expiresAt: updated.expiresAt ?? prev?.expiresAt ?? null,
-        decisionReasonCode: updated.decisionReasonCode ?? prev?.decisionReasonCode ?? null,
-        version: updated.version ?? prev?.version ?? 1,
-        documents: prev?.documents ?? [],
-      }));
-      setReadiness('PENDING');
+      await submitVerificationCase({ id: caseId });
+      await refreshVerification();
     } catch (err) {
-      setErrorMsg(formatRefusalError(err));
+      setActionError(formatRefusalError(err));
     } finally {
       setBusyAction(false);
     }
   };
 
   const handleViewDocument = async (docId: string) => {
+    setActionError(null);
     try {
       const link = await requestMyDocumentLink({ id: docId });
       setDocLinks((prev) => ({ ...prev, [docId]: link }));
     } catch (err) {
-      setErrorMsg(formatRefusalError(err));
+      setActionError(formatRefusalError(err));
     }
   };
 
@@ -344,6 +304,18 @@ export function VerificationScreen(): JSX.Element {
           </Show>
 
           <Show when={!loading() && !errorMsg()}>
+            <Show when={actionError()}>
+              {(msg) => (
+                <div
+                  class="xc-verification-error"
+                  data-action-error="true"
+                  role="alert"
+                >
+                  <p class="xc-verification-error-message">{msg()}</p>
+                </div>
+              )}
+            </Show>
+
             {/* Step 1: No case yet (readiness: NONE, case: null) */}
             <Show when={currentCase() === null}>
               <section class="xc-verification-card" data-case-state="NONE">
@@ -372,7 +344,7 @@ export function VerificationScreen(): JSX.Element {
                     class="xc-verification-btn"
                     data-action="start"
                     disabled={busyAction()}
-                    onClick={() => void handleOpenCase(null)}
+                    onClick={() => void handleOpenCase()}
                   >
                     {t('startButton')}
                   </button>
@@ -502,6 +474,17 @@ export function VerificationScreen(): JSX.Element {
                                     >
                                       {t('viewDocButton')}
                                     </button>
+                                    <Show when={docLinks()[doc.id]}>
+                                      {(link) => (
+                                        <a
+                                          href={link().url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          {t('openDocLink')}
+                                        </a>
+                                      )}
+                                    </Show>
                                     <button
                                       type="button"
                                       class="xc-verification-btn"
@@ -563,15 +546,28 @@ export function VerificationScreen(): JSX.Element {
                                   <span>{doc.documentType}</span>
                                   <span>{doc.mime}</span>
                                 </div>
-                                <button
-                                  type="button"
-                                  class="xc-verification-btn"
-                                  data-action="view-document"
-                                  data-view-doc={doc.id}
-                                  onClick={() => void handleViewDocument(doc.id)}
-                                >
-                                  {t('viewDocButton')}
-                                </button>
+                                <div class="xc-verification-actions">
+                                  <button
+                                    type="button"
+                                    class="xc-verification-btn"
+                                    data-action="view-document"
+                                    data-view-doc={doc.id}
+                                    onClick={() => void handleViewDocument(doc.id)}
+                                  >
+                                    {t('viewDocButton')}
+                                  </button>
+                                  <Show when={docLinks()[doc.id]}>
+                                    {(link) => (
+                                      <a
+                                        href={link().url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
+                                        {t('openDocLink')}
+                                      </a>
+                                    )}
+                                  </Show>
+                                </div>
                               </li>
                             )}
                           </For>
@@ -666,7 +662,7 @@ export function VerificationScreen(): JSX.Element {
                           class="xc-verification-btn"
                           data-action="update-and-resubmit"
                           disabled={busyAction()}
-                          onClick={() => void handleOpenCase('resubmit')}
+                          onClick={() => void handleOpenCase()}
                         >
                           {t('updateAndResubmitButton')}
                         </button>

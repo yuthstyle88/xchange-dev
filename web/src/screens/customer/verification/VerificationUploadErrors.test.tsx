@@ -188,4 +188,123 @@ describe('VF-10 (#1401) R13: Upload validation errors', () => {
       expect(errText.toLowerCase()).not.toContain('documenttypenotaccepted');
     }, WAIT_OPTS);
   });
+
+  it('keeps DRAFT card usable ([data-action="upload"] and [data-action="submit"] still present) and shows worded message when submit answers 400 documentsMissing', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url.includes('/api/v3/views/my_profile')) {
+        return jsonResponse({
+          displayName: 'Customer R13',
+          permissions: ['CustomerSelf'],
+        });
+      }
+      if (url.includes('/api/v3/views/my_verification')) {
+        return jsonResponse({ readiness: 'NONE', case: DRAFT_CASE });
+      }
+      if (
+        url.includes('/api/app/verification/cases/case-draft-r13/submit') &&
+        method === 'POST'
+      ) {
+        return jsonResponse(
+          {
+            error: {
+              code: 'documentsMissing',
+              message: 'documentsMissing',
+            },
+          },
+          400,
+        );
+      }
+      return jsonResponse({});
+    });
+
+    const host = mountScreen();
+
+    await vi.waitFor(() => {
+      expect(host.querySelector('[data-action="submit"]')).not.toBeNull();
+    }, WAIT_OPTS);
+
+    const submitBtn = host.querySelector('[data-action="submit"]') as HTMLElement;
+    submitBtn.click();
+
+    await vi.waitFor(() => {
+      const text = host.textContent ?? '';
+      expect(
+        text.includes('กรุณาอัปโหลดเอกสาร') ||
+          text.toLowerCase().includes('please upload'),
+      ).toBe(true);
+      expect(text.toLowerCase()).not.toContain('documentsmissing');
+      expect(host.querySelector('[data-action="upload"]')).not.toBeNull();
+      expect(host.querySelector('[data-action="submit"]')).not.toBeNull();
+    }, WAIT_OPTS);
+  });
+
+  it('renders <a href> with the short-lived document URL when view-document is clicked in DRAFT state', async () => {
+    const draftWithOneDoc: MyVerificationCaseDetail = {
+      ...DRAFT_CASE,
+      documents: [
+        {
+          id: 'doc-draft-1',
+          documentType: 'PASSPORT',
+          mime: 'image/jpeg',
+          sizeBytes: 4096,
+          uploadedAt: '2026-10-10T10:00:00Z',
+          accessClass: 'restricted',
+        },
+      ],
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url.includes('/api/v3/views/my_profile')) {
+        return jsonResponse({
+          displayName: 'Customer R13',
+          permissions: ['CustomerSelf'],
+        });
+      }
+      if (url.includes('/api/v3/views/my_verification')) {
+        return jsonResponse({ readiness: 'NONE', case: draftWithOneDoc });
+      }
+      if (
+        url.includes('/api/app/verification/documents/doc-draft-1/link') &&
+        method === 'POST'
+      ) {
+        return jsonResponse({
+          url: 'https://files.example.test/signed/doc-draft-1',
+          expiresAt: '2026-10-10T10:05:00Z',
+        });
+      }
+      return jsonResponse({});
+    });
+
+    const host = mountScreen();
+
+    await vi.waitFor(() => {
+      expect(host.querySelector('[data-action="view-document"]')).not.toBeNull();
+    }, WAIT_OPTS);
+
+    const viewBtn = host.querySelector('[data-action="view-document"]') as HTMLElement;
+    viewBtn.click();
+
+    await vi.waitFor(() => {
+      const link = host.querySelector<HTMLAnchorElement>(
+        'a[href="https://files.example.test/signed/doc-draft-1"]',
+      );
+      expect(link).not.toBeNull();
+    }, WAIT_OPTS);
+  });
 });
