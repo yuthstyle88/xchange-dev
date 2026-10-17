@@ -1,5 +1,5 @@
 use rust_decimal::{Decimal, RoundingStrategy};
-use xc_kernel::money::{ExchangeArithmetic, Money, Rate, Side};
+use xc_kernel::money::{ArithmeticOverflow, ExchangeArithmetic, Money, Rate, Side};
 
 use super::engine::QuoteLineInput;
 use crate::domain::benefit::calculator::BenefitEffect;
@@ -22,15 +22,15 @@ impl RateFloor {
         effect: &BenefitEffect,
         benefit_class: BenefitClass,
         max_spread_share: Option<Decimal>,
-    ) -> RateFloorResult {
+    ) -> Result<RateFloorResult, ArithmeticOverflow> {
         match benefit_class {
-            BenefitClass::Reward => RateFloorResult {
+            BenefitClass::Reward => Ok(RateFloorResult {
                 final_rate: line.base_rate,
                 fee_thb: line.fee_thb,
                 amount_thb: effect.amount_thb,
                 floor_capped: false,
                 guard_capped: false,
-            },
+            }),
             BenefitClass::Price => {
                 if let Some(rate) = effect.new_final_rate {
                     let uncapped = rate.value();
@@ -94,28 +94,35 @@ impl RateFloor {
                             panic!("effective rate {effective_clamped} must be valid Rate: {e}")
                         });
                     let thb_final =
-                        ExchangeArithmetic::thb(line.quantity, final_rate, line.unit_size);
+                        ExchangeArithmetic::try_thb(line.quantity, final_rate, line.unit_size)?;
                     let thb_base =
-                        ExchangeArithmetic::thb(line.quantity, line.base_rate, line.unit_size);
+                        ExchangeArithmetic::try_thb(line.quantity, line.base_rate, line.unit_size)?;
+
+                    let thb_final_minor = thb_final.try_minor().map_err(|_| ArithmeticOverflow)?;
+                    let thb_base_minor = thb_base.try_minor().map_err(|_| ArithmeticOverflow)?;
 
                     let amount_thb = match line.shop_side {
                         Side::Buy => {
-                            let diff = thb_final.minor() - thb_base.minor();
-                            Money::from_minor(diff.max(0)).unwrap_or(Money::ZERO)
+                            let diff = thb_final_minor
+                                .checked_sub(thb_base_minor)
+                                .ok_or(ArithmeticOverflow)?;
+                            Money::from_minor(diff.max(0)).map_err(|_| ArithmeticOverflow)?
                         }
                         Side::Sell => {
-                            let diff = thb_base.minor() - thb_final.minor();
-                            Money::from_minor(diff.max(0)).unwrap_or(Money::ZERO)
+                            let diff = thb_base_minor
+                                .checked_sub(thb_final_minor)
+                                .ok_or(ArithmeticOverflow)?;
+                            Money::from_minor(diff.max(0)).map_err(|_| ArithmeticOverflow)?
                         }
                     };
 
-                    RateFloorResult {
+                    Ok(RateFloorResult {
                         final_rate,
                         fee_thb: line.fee_thb,
                         amount_thb,
                         floor_capped,
                         guard_capped,
-                    }
+                    })
                 } else if let Some(fee) = effect.new_fee_thb {
                     let mut fee_val = fee;
                     let mut floor_capped = false;
@@ -125,7 +132,14 @@ impl RateFloor {
                     let sell_floor = line.published_sell_rate.value();
                     let spread = (sell_floor - buy_floor).max(Decimal::ZERO);
 
-                    let uncapped_discount_minor = (line.fee_thb.minor() - fee.minor()).max(0);
+                    let line_fee_minor =
+                        line.fee_thb.try_minor().map_err(|_| ArithmeticOverflow)?;
+                    let fee_minor = fee.try_minor().map_err(|_| ArithmeticOverflow)?;
+
+                    let uncapped_discount_minor = line_fee_minor
+                        .checked_sub(fee_minor)
+                        .ok_or(ArithmeticOverflow)?
+                        .max(0);
 
                     if let Some(share) = max_spread_share {
                         let raw =
@@ -138,36 +152,43 @@ impl RateFloor {
                             guard_capped = true;
                             let allowed_discount_minor =
                                 max_giveaway_minor.min(uncapped_discount_minor);
+                            let new_fee_minor = line_fee_minor
+                                .checked_sub(allowed_discount_minor)
+                                .ok_or(ArithmeticOverflow)?;
                             fee_val =
-                                Money::from_minor(line.fee_thb.minor() - allowed_discount_minor)
-                                    .unwrap_or(line.fee_thb);
+                                Money::from_minor(new_fee_minor).map_err(|_| ArithmeticOverflow)?;
                         }
                     }
 
-                    if fee.minor() < 0 || fee_val.minor() < 0 {
+                    let mut fee_val_minor = fee_val.try_minor().map_err(|_| ArithmeticOverflow)?;
+
+                    if fee_minor < 0 || fee_val_minor < 0 {
                         fee_val = Money::ZERO;
+                        fee_val_minor = 0;
                         floor_capped = true;
                     }
 
+                    let diff = line_fee_minor
+                        .checked_sub(fee_val_minor)
+                        .ok_or(ArithmeticOverflow)?;
                     let amount_thb =
-                        Money::from_minor((line.fee_thb.minor() - fee_val.minor()).max(0))
-                            .unwrap_or(Money::ZERO);
+                        Money::from_minor(diff.max(0)).map_err(|_| ArithmeticOverflow)?;
 
-                    RateFloorResult {
+                    Ok(RateFloorResult {
                         final_rate: line.base_rate,
                         fee_thb: fee_val,
                         amount_thb,
                         floor_capped,
                         guard_capped,
-                    }
+                    })
                 } else {
-                    RateFloorResult {
+                    Ok(RateFloorResult {
                         final_rate: line.base_rate,
                         fee_thb: line.fee_thb,
                         amount_thb: Money::ZERO,
                         floor_capped: false,
                         guard_capped: false,
-                    }
+                    })
                 }
             }
         }

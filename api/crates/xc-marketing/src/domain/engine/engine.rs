@@ -196,7 +196,8 @@ impl BenefitEngine {
                     &effect,
                     winning_rule.rule.benefit_class,
                     ctx.max_spread_share,
-                );
+                )
+                .map_err(|e| AppError::Internal(e.to_string()))?;
 
                 if winning_rule.rule.benefit_class
                     == crate::domain::benefit::rule::BenefitClass::Price

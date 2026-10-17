@@ -56,7 +56,8 @@ fn test_margin_guard_limits_fee_waiver() {
     assert_eq!(effect.new_fee_thb, Some(Money::ZERO));
 
     // Case A: share = 0 -> allowance = 0 THB. fee_after must stay 200.00 THB, amount_thb = 0.00 THB.
-    let res_zero = RateFloor::apply(&line, &effect, BenefitClass::Price, Some(Decimal::ZERO));
+    let res_zero = RateFloor::apply(&line, &effect, BenefitClass::Price, Some(Decimal::ZERO))
+        .expect("in range");
     assert_eq!(
         res_zero.fee_thb,
         money("200.00"),
@@ -78,7 +79,8 @@ fn test_margin_guard_limits_fee_waiver() {
         &effect,
         BenefitClass::Price,
         Some(Decimal::from_str("0.5").unwrap()),
-    );
+    )
+    .expect("in range");
     assert_eq!(
         res_half.fee_thb,
         money("150.00"),
@@ -123,7 +125,8 @@ fn test_rate_improvement_8_decimals_not_dropped() {
         &effect,
         BenefitClass::Price,
         Some(Decimal::from_str("0.5").unwrap()),
-    );
+    )
+    .expect("in range");
     assert_ne!(
         res.final_rate, line.base_rate,
         "guard-capped rate must not fall back to base rate"
