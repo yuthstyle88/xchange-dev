@@ -16,8 +16,8 @@
 | Item | Value | How measured |
 |---|---|---|
 | `main` head | `abc46caf` (05:04Z) | `gh api repos/108-Plaza/xchange/actions/runs?branch=main` |
-| Build on the host `xc-v3.spacing.cloud` | `a84962f5`, built 2026-10-11T06:01:32Z, `version 1.0.0`, `channel staging` | `curl -s https://xc-v3.spacing.cloud/health/ready` |
-| How far the host is behind `main` | **1,104 commits, 798 merged PRs, 13 migrations (42 → 55)** | `gh api repos/108-Plaza/xchange/compare/a84962f5...main`; `contents/api/migrations` at both shas |
+| Build on the host `xc-v3.spacing.cloud` | **`2d5ecfde`**, built 2026-10-17T11:24:53Z, `version 1.0.0`, `channel staging` — deployed by hand on the owner's order at 11:31Z, migrations 42 → 55, encrypted backup first, smoke green (#564, claude/56a74fcd). Was `a84962f5` (10-11) | `curl -s https://xc-v3.spacing.cloud/health/ready` |
+| How far the host is behind `main` | caught up at 11:31Z on 10-17 (was 1,266 commits / 13 migrations behind). Batch A's drop migrations are **not** on it: each needs its own deploy order | `gh api repos/108-Plaza/xchange/compare/2d5ecfde...main` |
 | Deploy lanes | `release.yml` on `main`, **0 runs**; no `release/*` or `deploy/*` branch on org or mirror; no `XC_DEPLOY_*` variable or secret on either repository (names listed, values never read) | `actions/workflows/release.yml/runs`, `git/matching-refs`, `actions/variables`, `actions/secrets` |
 | Every deploy so far | by hand, from Dell, with cherry-picks; the last seven are recorded on #422 (2026-10-09 → 10-10) | #422 comments |
 | Open issues | **43** (54 open items minus 11 PRs); label counts: `class:guarded` 16 · `class:logic` 9 · `class:mechanical` 5 · `bug` 11 · `question` 4 · `umbrella` 2 · `documentation` 3 | `gh issue list --state open` |
@@ -88,7 +88,7 @@ Why this is a production gate and not a clean-up: `STATE.md` says this is the ch
 
 ### G5 — a person has used it on staging
 
-Nothing in CI proves a shift can be opened, a customer served and the day closed. After G2 step 3:
+Nothing in CI proves a shift can be opened, a customer served and the day closed. Since the 10-17 11:31Z deploy these checks can run on `xc-v3.spacing.cloud` (test data only, channel `staging`), before the git-push lane exists:
 
 | Check | Ticket |
 |---|---|
@@ -122,7 +122,7 @@ Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **
 
 | # | Ticket | Verb | Why |
 |---|---|---|---|
-| 422 | deploy lanes | **before** | G2; off-PR steps O3–O6 remain; assignee claude/7a595a04 |
+| 422 | deploy lanes | **before** | G2. The 10-17 deploy was by hand; the git-push lane (`release.yml`) has still never run. Tracked by claude/c5ca141a since 10-17; waits on the owner's `XC_DEPLOY_*` secrets (being set for staging, 10-17 ~11:1xZ) |
 | 542 | DK-F+J desk OCR | **owner** | G7; waits on Recognize #150 children |
 | 564 | umbrella | **finish** | all 17 design children closed; stays open as the lane's notice board until the release order, then closes |
 | 626 | CA-10 | **before** | G3, approved. Stopped 10-17 08:11Z: its scope missed test files that pin the v2 custody types; held (`blocked`, `assign:none`) while it is re-cut (design PR 2908 and the CA-10p split, #2916). Its dependents #1043/#1044/#1046/#1023, #1413, #2856/#2857/#2862 wait on it |
@@ -133,21 +133,21 @@ Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **
 | 1023 | OR-7.4 | **before** | G3 |
 | 1026 | OR-7.e | **before** | G3 |
 | 1027 | OR-7.m | **before** | G3 (drop migration) |
-| 1036 | RF-7 | **owner** | §5 item 3 |
+| 1036 | RF-7 | **closed** | not needed for the first release (owner, 10-17 ~11:1xZ) |
 | 1043 / 1044 / 1046 | LG-6 r4/r5/r6 | **before** | G3 |
 | 1047 | LG-6.m | **before** | G3 (drop migration), last |
-| 1191 | EX-10 commission | **after** | needs Broker-Platform's endpoint; A01 shows `awaitsBroker` meanwhile |
+| 1191 | EX-10 commission | **closed** | deferred until after the first release, not planned; reopen then (owner, 10-17 ~11:1xZ) |
 | 1411 | LY-6 BE | **done** | PR 2050 merged 10-17 (`afcc9533`, batch 2844) |
 | 1413 | BK-11 | **before** | G3, approved |
-| 1414 | BK-12 partner booking | **after** | parked by the owner 04:4xZ |
+| 1414 | BK-12 partner booking | **closed** | deferred until after the first release, not planned; reopen then (owner, 10-17 ~11:1xZ) |
 | 1474 | fmt gate | **before** | G1; last code ticket (§4 wave 5) |
-| 1605 | zh texts | **before** | G5, human check |
-| 1683 | booking e2e | **before** | G5, human check after G2 |
-| 1996 | campaignSimulate | **after** | refusal in place is correct |
+| 1605 | zh texts | **before** | G5, human check. **Possible now** on the live host (10-17 deploy); the owner names who |
+| 1683 | booking e2e | **before** | G5, human check. **Possible now** on `xc-v3.spacing.cloud` (10-17 deploy carries BK-6 and the booking screens); the owner names who |
+| 1996 | campaignSimulate | **closed** | keep the refusal (owner, 10-17 ~11:1xZ) |
 | 2054 | bounded inputs (tracking) | **after** | ratchet; 500s, not wrong money |
 | 2063 | unchecked money arithmetic (tracking) | **now, in parallel** | stored-amount paths fixed (#2088, #2093, #2096); per_unit cut as #2839. Owner 2026-10-17 ~07:1xZ: the tail (6 K-a + 49 K-b `.minor()` sites) is cut now, one ticket per file, for Flash workers; floor/removal ticket last |
-| 2108 | money falls back to zero (tracking) | **before** | 18 BUG rows are wrong money |
-| 2126 / 2127 | LY-6 follow-ups | **finish** | unblocked by PR 2050; in review / dispatched by the BE controller |
+| 2108 | money falls back to zero (tracking) | **closed** | every BUG row closed completed (10-17 ~11:0xZ) |
+| 2126 / 2127 | LY-6 follow-ups | **closed** | merged as PR 2870 (batch 2919) and PR 2874 |
 | 2129 | LY-6-FE | **finish** | needs PR 2050 (merged) and the BE read view of rule versions #2868 (owner's G1 ruling on #2129). Ships POINT drafting, the list of POINT and TIER versions, and submit (PR 2918). **TIER drafting is held until after the first production release** (owner, 10-17 ~10:5xZ, #2129 issuecomment-6233107116) |
 | 2563 | identity test flake | **finish** | PR 2743 rework |
 | 2569 | 90-min cancel | **close** | fixed by PR 2786 + pool A |
