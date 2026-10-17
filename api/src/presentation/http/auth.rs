@@ -461,8 +461,10 @@ async fn v3_logout(req: HttpRequest, session: web::Data<SessionService>) -> Http
     }
     let token = cookie(&req, SESSION_COOKIE);
     let ip = client_address(&req);
-    if !token.is_empty() {
-        let _ = session.logout(&token, Some(ip)).await;
+    if !token.is_empty()
+        && let Err(e) = session.logout(&token, Some(ip)).await
+    {
+        return handle_session_error(e);
     }
     let mut resp = HttpResponse::Ok();
     attach_logout_cookies(&mut resp);

@@ -24,6 +24,7 @@ use xc_customer::application::customer::contact_reserve::ContactReserve;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
+use xc_kernel::pii::IdentityType;
 use xc_referral::application::capture_service::ReferralCaptureService;
 use xc_referral::domain::referral_code::ReferralCode;
 
@@ -282,6 +283,9 @@ impl BookingService {
             }
             cid.clone()
         } else if let Some(ref contact) = input.contact {
+            if xc_kernel::pii::normalize(IdentityType::Phone, &contact.phone, None).is_err() {
+                return Err(BookingError::ValidationFailed { field: "phone" });
+            }
             let res = self
                 .contact_reserve
                 .reserve_in(

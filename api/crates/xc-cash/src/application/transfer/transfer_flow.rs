@@ -1,6 +1,6 @@
 //! `TransferFlow`: orchestrates cash transfers across the 5 states (D:§4.5, §9.1 CA-5).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -446,23 +446,48 @@ impl TransferFlow {
             return Ok(t);
         }
 
+        let mut seen_denominations: HashSet<i64> = HashSet::with_capacity(cmd.lines.len());
         let mut totals: HashMap<CurrencyCode, i64> = HashMap::new();
         for line in &cmd.lines {
-            let face_dec: Option<Decimal> =
-                sqlx::query_scalar("SELECT face_value FROM denominations WHERE id = $1")
+            if !seen_denominations.insert(line.denomination_id) {
+                return Err(AppError::Validation(format!(
+                    "duplicate denomination_id in transfer lines: {}",
+                    line.denomination_id
+                )));
+            }
+
+            let row: Option<(Decimal, String)> =
+                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
                     .bind(line.denomination_id)
                     .fetch_optional(&mut **tx)
                     .await?;
-            if let Some(face_dec) = face_dec {
-                let face_value = Money::parse(&face_dec.to_string()).map_err(|e| {
-                    AppError::Internal(format!(
-                        "invalid face_value {face_dec} for denomination {}: {e}",
-                        line.denomination_id
-                    ))
-                })?;
-                add_line_minor(&mut totals, line.currency, face_value, line.qty)
-                    .map_err(from_transfer_error)?;
+
+            let (face_dec, denom_currency) = match row {
+                Some(r) => r,
+                None => {
+                    return Err(AppError::NotFound {
+                        entity: "denomination",
+                        id: line.denomination_id.to_string(),
+                    });
+                }
+            };
+
+            let denom_currency = denom_currency.trim();
+            let line_currency = line.currency.as_str().trim();
+            if !denom_currency.eq_ignore_ascii_case(line_currency) {
+                return Err(AppError::Validation(format!(
+                    "line currency '{line_currency}' does not match denomination currency '{denom_currency}'"
+                )));
             }
+
+            let face_value = Money::parse(&face_dec.to_string()).map_err(|e| {
+                AppError::Internal(format!(
+                    "invalid face_value {face_dec} for denomination {}: {e}",
+                    line.denomination_id
+                ))
+            })?;
+            add_line_minor(&mut totals, line.currency, face_value, line.qty)
+                .map_err(from_transfer_error)?;
         }
 
         self.repo.insert(tx, &cmd, who, now).await
@@ -688,6 +713,16 @@ impl TransferFlow {
         note: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
+        let org_uuid: Uuid =
+            sqlx::query_scalar("SELECT organization_id FROM cash_transfers WHERE id = $1::uuid")
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await?
+                .ok_or_else(|| not_found(id))?;
+        let organization_id = org_uuid.to_string();
+        if organization_id != who.organization_id {
+            return Err(not_found(id));
+        }
         locked(parts.repo.as_ref(), tx, id, TransferStep::Reconcile).await?;
 
         let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) = sqlx::query_as(
@@ -705,7 +740,7 @@ impl TransferFlow {
             ));
         }
 
-        let target = Target::new(&who.organization_id, None, None);
+        let target = Target::new(&organization_id, None, None);
         Authorizer::check(Some(who), Permission::FinanceReconcile, &target, now)
             .map_err(|e| AppError::Domain(e.code().to_string()))?;
 
@@ -753,5 +788,226 @@ impl TransferFlow {
             .find_by_id_in(tx, id)
             .await?
             .ok_or_else(|| not_found(id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::str::FromStr;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use chrono::{TimeZone, Utc};
+    use sqlx::migrate::Migrator;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+    use sqlx::{AssertSqlSafe, PgPool};
+    use xc_auth::domain::access::{Role, ScopedRole};
+
+    use super::*;
+    use crate::domain::transfer::cash_transfer::TransferKind;
+
+    const ORG_A: &str = "00000000-0000-0000-0000-000000000001";
+    const ORG_B: &str = "00000000-0000-0000-0000-0000000000b2";
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    fn unique(prefix: &str) -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock is after 1970")
+            .as_nanos();
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    }
+
+    fn migrations_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations")
+    }
+
+    async fn test_pool() -> PgPool {
+        let url = std::env::var("TEST_DATABASE_URL")
+            .unwrap_or_else(|_| panic!("TEST_DATABASE_URL is not set"));
+        let options = PgConnectOptions::from_str(&url).expect("postgres options");
+        assert!(
+            options.get_database().unwrap_or("").ends_with("_test"),
+            "TEST_DATABASE_URL must name a database ending in `_test`"
+        );
+        let schema = unique("tf_reconcile_org");
+        let admin = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options.clone())
+            .await
+            .expect("admin connect");
+        sqlx::query(AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
+            .execute(&admin)
+            .await
+            .expect("create schema");
+        admin.close().await;
+
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect_with(options.options([("search_path", schema.as_str())]))
+            .await
+            .expect("connect schema pool");
+        Migrator::new(migrations_dir().as_path())
+            .await
+            .expect("migrator")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    #[tokio::test]
+    async fn another_organisations_finance_gets_not_found_on_non_received_transfer() {
+        let pool = test_pool().await;
+        let now = Utc.with_ymd_and_hms(2026, 10, 16, 12, 0, 0).unwrap();
+        let from_branch = BranchId::new("XC-B01");
+        let to_branch = BranchId::new("XC-B09");
+        for b in [&from_branch, &to_branch] {
+            sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $1)")
+                .bind(b.as_str())
+                .execute(&pool)
+                .await
+                .expect("branch of org A");
+        }
+        let creator_id: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        )
+        .bind(ORG_A)
+        .bind(unique("orga-bm"))
+        .fetch_one(&pool)
+        .await
+        .expect("org A creator");
+        let creator = Actor::new(
+            &creator_id,
+            ORG_A,
+            vec![ScopedRole::new(
+                Role::BranchManager,
+                Some(from_branch.clone()),
+                now,
+                None,
+            )],
+            None,
+        );
+        let usd50: i64 = sqlx::query_scalar(
+            "SELECT id FROM denominations WHERE currency_code = 'USD' AND face_value = 50",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("USD 50 denomination");
+
+        let flow = TransferFlow::pg(pool.clone());
+        let draft = flow
+            .create(
+                &creator,
+                NewTransfer {
+                    kind: TransferKind::Branch,
+                    from_branch: from_branch.clone(),
+                    to_branch: Some(to_branch.clone()),
+                    from_shift: None,
+                    to_shift: None,
+                    lines: vec![NewTransferLine {
+                        currency: CurrencyCode::parse("USD").unwrap(),
+                        denomination_id: usd50,
+                        qty: 2,
+                    }],
+                    note: Some("non-received transfer".into()),
+                    idempotency_key: unique("k"),
+                },
+                now,
+            )
+            .await
+            .expect("create DRAFT transfer in org A");
+
+        sqlx::query(
+            "INSERT INTO organizations (id, code, timezone, created_at) \
+             VALUES ($1::uuid, 'ORGB', 'Asia/Bangkok', now())",
+        )
+        .bind(ORG_B)
+        .execute(&pool)
+        .await
+        .expect("org B");
+        let org_b_branch = BranchId::new("ORGB-B01");
+        sqlx::query(
+            "INSERT INTO branches (id, name, organization_id) VALUES ($1, 'B01', $2::uuid)",
+        )
+        .bind(org_b_branch.as_str())
+        .bind(ORG_B)
+        .execute(&pool)
+        .await
+        .expect("org B branch");
+        let org_b_user_id: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        )
+        .bind(ORG_B)
+        .bind(unique("orgb-fin"))
+        .fetch_one(&pool)
+        .await
+        .expect("org B user");
+        let org_b_finance = Actor::new(
+            &org_b_user_id,
+            ORG_B,
+            vec![ScopedRole::new(
+                Role::Finance,
+                Some(org_b_branch),
+                now,
+                None,
+            )],
+            None,
+        );
+
+        // 1. Transfer of org A in DRAFT status -> NotFound (not IllegalTransition)
+        let mut tx = pool.begin().await.expect("begin");
+        let err_draft = flow
+            .reconcile_in(&mut tx, &org_b_finance, &draft.id, "probe", now)
+            .await
+            .expect_err("org B finance must be refused on org A's DRAFT transfer");
+        match err_draft {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, draft.id);
+            }
+            other => panic!("expected AppError::NotFound on DRAFT transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
+
+        // 2. Transfer of org A in RECONCILED status -> NotFound (not IllegalTransition)
+        sqlx::query("UPDATE cash_transfers SET status = 'RECONCILED' WHERE id = $1::uuid")
+            .bind(&draft.id)
+            .execute(&pool)
+            .await
+            .expect("set transfer to RECONCILED");
+        let mut tx = pool.begin().await.expect("begin");
+        let err_reconciled = flow
+            .reconcile_in(&mut tx, &org_b_finance, &draft.id, "probe", now)
+            .await
+            .expect_err("org B finance must be refused on org A's RECONCILED transfer");
+        match err_reconciled {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, draft.id);
+            }
+            other => panic!("expected AppError::NotFound on RECONCILED transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
+
+        // 3. Unknown transfer id -> same NotFound shape
+        let unknown = "00000000-0000-0000-0000-00000000dead";
+        let mut tx = pool.begin().await.expect("begin");
+        let err_unknown = flow
+            .reconcile_in(&mut tx, &org_b_finance, unknown, "probe", now)
+            .await
+            .expect_err("unknown transfer must be refused");
+        match err_unknown {
+            AppError::NotFound { entity, id } => {
+                assert_eq!(entity, "CashTransfer");
+                assert_eq!(id, unknown);
+            }
+            other => panic!("expected AppError::NotFound on unknown transfer, got {other:?}"),
+        }
+        tx.rollback().await.expect("rollback");
     }
 }

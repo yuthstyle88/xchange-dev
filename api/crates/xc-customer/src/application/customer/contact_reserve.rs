@@ -61,7 +61,7 @@ impl ContactReserve {
 
             let cipher = xc_kernel::pii::PiiCipher::new(keys);
             let aad = format!("{customer_id}PHONE");
-            let sealed = cipher.encrypt(aad.as_bytes(), phone.as_bytes());
+            let sealed = cipher.encrypt(aad.as_bytes(), normalized.as_bytes());
 
             let new_identity =
                 crate::domain::customer::entities::customer_identity::CustomerIdentity {

@@ -965,6 +965,10 @@ impl CashCountService {
                 id: count_id.to_string(),
             })?;
 
+        if count.verified_at.is_some() {
+            return Err(AppError::Conflict("การนับนี้ได้รับการรับรองแล้ว".into()));
+        }
+
         if count.kind == CountKind::HandoverOut {
             return Err(AppError::Domain(
                 crate::domain::handover::HandoverError::OnlyThroughHandover.to_string(),
