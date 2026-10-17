@@ -20,6 +20,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 
@@ -678,11 +679,13 @@ impl TransferFlow {
 
         // Person rule (ruling Q1): cash entering a drawer is received by that shift's own teller, by user id.
         if let Some(ref shift_id) = t.to_shift {
-            let shift_teller: String =
-                sqlx::query_scalar("SELECT teller_id::text FROM shifts WHERE id = $1")
-                    .bind(shift_id)
-                    .fetch_one(&mut **tx)
-                    .await?;
+            let shift_teller: String = sqlx::query_scalar(
+                "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN'",
+            )
+            .bind(shift_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| AppError::Domain(ShiftError::NoOpenShift.to_string()))?;
             if shift_teller != who.user_id {
                 return Err(AppError::Domain(
                     "only the shift's teller may receive into drawer".into(),
