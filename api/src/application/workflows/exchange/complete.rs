@@ -75,7 +75,7 @@ fn stale<T>(m: String) -> AppResult<T> {
 /// Ledger §4.3: one exchange line as its two legs. The foreign leg names the line; the THB leg carries the line's
 /// `settle_thb` (ruling Q6) at the drawer for cash and the bank otherwise. BUY: the foreign goes customer → drawer
 /// and the baht the other way; SELL: the reverse.
-fn legs(t: &ExchangeTransaction, shift: &str) -> Vec<PostingRequest> {
+fn legs(t: &ExchangeTransaction, shift: &str) -> AppResult<Vec<PostingRequest>> {
     let source = SourceRef {
         source_type: SourceType::Exchange,
         source_id: t.id.0.to_string(),
@@ -112,7 +112,11 @@ fn legs(t: &ExchangeTransaction, shift: &str) -> Vec<PostingRequest> {
             line: Some(line.id),
             reverses: None,
         });
-        if line.settle_thb.minor() > 0 {
+        let settle_minor = line
+            .settle_thb
+            .try_minor()
+            .map_err(|e| AppError::Internal(format!("settle_thb overflows i64: {e}")))?;
+        if settle_minor > 0 {
             reqs.push(PostingRequest {
                 from: thb_from,
                 to: thb_to,
@@ -127,7 +131,7 @@ fn legs(t: &ExchangeTransaction, shift: &str) -> Vec<PostingRequest> {
             });
         }
     }
-    reqs
+    Ok(reqs)
 }
 
 /// The branch's name (printed on the receipt) and the end of `business_date` in its timezone (reversal R-1).
@@ -240,7 +244,7 @@ impl CompleteExchange {
 
         // 5. Both legs in one posting, never allowing negative stock (Q7); the costs it answers go on the lines
         if let Some(shift) = &shift {
-            let posted = self.postings.post_in(tx, &legs(&t, shift), None).await?;
+            let posted = self.postings.post_in(tx, &legs(&t, shift)?, None).await?;
             let costs: Vec<LineCosts> = posted
                 .costs
                 .iter()
