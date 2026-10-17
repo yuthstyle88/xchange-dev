@@ -30,8 +30,6 @@ use snapshot_common::{
 };
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
-use xc_shift::domain::shift::commands::move_stock::MoveStock;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
 use xchange::application::compat::snapshot::write_answer;
 use xchange::application::compat::snapshot_sources::{
     MemberMark, NothingYet, SnapshotSources, SnapshotTransaction,
@@ -487,29 +485,38 @@ async fn two_branches_do_not_see_each_others_rates_shifts_and_customers() {
     let opening =
         json!({"requestId": "00000000-0000-4000-8000-0000000b0004", "opening": {"THB": 20000}});
     snapshot_common::seed_opener(&shop.db.pool, "be2").await;
-    let shift = shop
-        .shifts
-        .open(
-            &airport,
-            OpenShift::from_payload(&opening).expect("opening"),
-            "be2",
-            time("2026-10-06T05:03:00.000Z"),
-        )
-        .await
-        .expect("a shift at the airport");
+    // CA-10 (#626, #2955): v2's `ShiftService::{open, move_stock}` are deleted with the core; the same open and
+    // movement are replayed straight into the tables (setup only).
+    struct Opened {
+        id: String,
+    }
+    let shift_id = snapshot_common::replay_v2_admin(
+        &shop,
+        &airport,
+        snapshot_common::V2Write::Open,
+        &opening,
+        "be2",
+        time("2026-10-06T05:03:00.000Z"),
+    )
+    .await
+    .expect("a shift at the airport");
+    let shift = Opened {
+        id: shift_id.clone(),
+    };
     let moved = json!({
-        "requestId": "00000000-0000-4000-8000-0000000b0005", "shiftId": shift.id,
+        "requestId": "00000000-0000-4000-8000-0000000b0005", "shiftId": shift_id,
         "currency": "THB", "direction": "IN", "amount": 500, "reason": "from the safe",
     });
-    shop.shifts
-        .move_stock(
-            &airport,
-            MoveStock::from_payload(&moved).expect("movement"),
-            "fi2",
-            time("2026-10-06T05:03:30.000Z"),
-        )
-        .await
-        .expect("a movement at the airport");
+    snapshot_common::replay_v2_admin(
+        &shop,
+        &airport,
+        snapshot_common::V2Write::Move,
+        &moved,
+        "fi2",
+        time("2026-10-06T05:03:30.000Z"),
+    )
+    .await
+    .expect("a movement at the airport");
     shop.customers
         .reserve(
             &main,
@@ -534,7 +541,7 @@ async fn two_branches_do_not_see_each_others_rates_shifts_and_customers() {
                 "date": "2026-10-06", "type": "BUY", "currency": "EUR", "amount": 10, "rate": 37,
                 "referenceRate": null, "fee": 0, "bankFee": 0, "slipUrl": null, "paymentRef": "",
                 "customerId": "CX-00000002", "customer": "At Airport", "staff": "fr2", "notes": "",
-                "shiftId": shift.id,
+                "shiftId": shift_id,
             }),
             "Cash",
         ),

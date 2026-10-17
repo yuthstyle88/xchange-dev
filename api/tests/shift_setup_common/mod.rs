@@ -258,11 +258,9 @@ pub async fn open_shift_by_count(
     .await
     .expect("bump branch version");
 
-    let shift_id = verified
+    verified
         .shift_id
-        .expect("a verified OPEN count names its shift");
-
-    shift_id
+        .expect("a verified OPEN count names its shift")
 }
 
 /// Closes the open shift in `branch` by count via CashCountService:

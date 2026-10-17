@@ -69,10 +69,6 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::Side;
-use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::create::{
     CreatePayment, CreateRequest, CreateTransaction,
 };
@@ -97,7 +93,6 @@ struct Counter {
     desk: Desk,
     files: FileService,
     customers: CustomerService,
-    shifts: ShiftService,
     scratch: std::path::PathBuf,
 }
 
@@ -115,7 +110,6 @@ impl Counter {
         Self {
             files: FileService::new(pool.clone(), scratch.join("uploads")),
             customers: CustomerService::new(branch_tx.clone()),
-            shifts: ShiftService::new(Arc::new(PgShiftRepository::new(pool.clone())), branch_tx),
             desk,
             scratch,
         }
@@ -207,19 +201,14 @@ impl Counter {
         .execute(&self.desk.db.pool)
         .await
         .expect("seed the opener");
-        self.shifts
-            .open(
-                &BranchId::new(branch),
-                OpenShift {
-                    request_id: unique("open-shift").replace('_', "-"),
-                    opening: Balances::of(&[]),
-                },
-                "test",
-                whole_second_now(),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("open a shift at {branch}: {e}"))
-            .id
+        ca10_seed_open(
+            &self.desk.db.pool,
+            branch,
+            unique("open-shift").replace('_', "-"),
+            &[],
+            whole_second_now(),
+        )
+        .await
     }
 
     /// Open MAIN's shift as main does today; answers its id.
@@ -232,19 +221,14 @@ impl Counter {
         .execute(&self.desk.db.pool)
         .await
         .expect("seed the opener");
-        self.shifts
-            .open(
-                &BranchId::new("MAIN"),
-                OpenShift {
-                    request_id: unique("open-shift").replace('_', "-"),
-                    opening: Balances::of(&[]),
-                },
-                "test",
-                whole_second_now(),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("open a shift: {e}"))
-            .id
+        ca10_seed_open(
+            &self.desk.db.pool,
+            "MAIN",
+            unique("open-shift").replace('_', "-"),
+            &[],
+            whole_second_now(),
+        )
+        .await
     }
 
     fn request(&self, branch: &str, q: &Quote, customer: &str, passport: &str) -> CreateRequest {
@@ -749,4 +733,52 @@ async fn a_kiosk_request_without_a_quote_id_is_not_checked_at_create() {
         .expect("no quote_id: nothing to match");
     assert_eq!(made.kiosk_request_id.as_deref(), Some(request.as_str()));
     c.finish().await;
+}
+
+/// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The OPEN shift it wrote (opener `test`,
+/// the given opening), written straight into the tables in one branch transaction (setup only). Answers its id.
+async fn ca10_seed_open(
+    pool: &sqlx::PgPool,
+    branch: &str,
+    request_id: String,
+    opening: &[(&str, &str)],
+    opened_at: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let shift = format!("SH-{}", uuid::Uuid::new_v4());
+    let (id, b) = (shift.clone(), branch.to_owned());
+    let opening: Vec<(String, String)> = opening
+        .iter()
+        .map(|(c, a)| ((*c).to_owned(), (*a).to_owned()))
+        .collect();
+    xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(pool.clone()))
+        .run(&xc_kernel::ids::BranchId::new(branch), move |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
+                     teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id FROM users u \
+                     WHERE u.legacy_employee_id = 'test'",
+                )
+                .bind(&id)
+                .bind(&b)
+                .bind(opened_at)
+                .bind(&request_id)
+                .execute(&mut **tx)
+                .await?;
+                for (code, amount) in &opening {
+                    sqlx::query(
+                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                         VALUES ($1, $2, $3::numeric, $3::numeric)",
+                    )
+                    .bind(&id)
+                    .bind(code)
+                    .bind(amount)
+                    .execute(&mut **tx)
+                    .await?;
+                }
+                Ok::<(), pos_error::AppError>(())
+            })
+        })
+        .await
+        .unwrap_or_else(|e| panic!("open a shift at {branch}: {e}"));
+    shift
 }
