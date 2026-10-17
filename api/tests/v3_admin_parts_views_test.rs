@@ -1291,7 +1291,8 @@ async fn admin_shift_state_lists_every_open_shift_of_the_branch_with_its_teller(
         .fetch_one(pool)
         .await
         .expect("B9's organisation");
-    for (name, minutes) in [("CA10p Later", 20), ("CA10p Earlier", 10)] {
+    // opened 20 minutes ago, then 10 minutes ago: the earlier one is listed first
+    for (name, minutes) in [("CA10p Earlier", 20), ("CA10p Later", 10)] {
         let teller = uuid::Uuid::new_v4();
         let count = uuid::Uuid::new_v4();
         sqlx::query(
