@@ -132,7 +132,6 @@ async fn seed_transaction(
     document_ref: Option<&str>,
     submission_id: &str,
     status: &str,
-    wide_principal: Decimal,
     lines: &[Decimal],
 ) {
     ensure_branch(db, branch_id, org_id).await;
@@ -161,21 +160,10 @@ async fn seed_transaction(
     };
 
     sqlx::query(
-        "INSERT INTO transactions ( \
-            id, organization_id, branch_id, mode, status, document_ref, \
-            submission_id, payload_hash, customer_id, customer_name, nationality, \
-            type, code, amount, rate, unit_size, principal, fee, bank_fee, \
-            received, paid, method, payment_ref, account, staff_id, booking_no, \
-            notes, value_date, paid_at, recorded_at, recorded_by, completed_at, \
-            cancelled_at, cancel_reason \
-        ) VALUES ( \
-            $1, $2::uuid, $3, 'DEMO', $4, $5, \
-            $6, 'hash', $7, 'Somchai', 'THA', \
-            'BUY', 'USD', 100, 32, 1, $8, 0, 0, \
-            0, $8, 'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', \
-            '', '2026-10-06', now(), now(), 'owner', $9, \
-            $10, $11 \
-        )",
+        "INSERT INTO transactions (id, organization_id, branch_id, mode, status, document_ref, submission_id, payload_hash, \
+            customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+            recorded_at, recorded_by, completed_at, cancelled_at, cancel_reason) VALUES ($1, $2::uuid, $3, 'DEMO', $4, $5, $6, 'hash', $7, 'Somchai', 'THA', 'owner', 'WALK-IN', \
+            '', '2026-10-06', now(), now(), 'owner', $8, $9, $10)",
     )
     .bind(tx_id)
     .bind(org_id)
@@ -184,7 +172,6 @@ async fn seed_transaction(
     .bind(document_ref)
     .bind(submission_id)
     .bind(&cust_id)
-    .bind(wide_principal)
     .bind(completed_at)
     .bind(cancelled_at)
     .bind(cancel_reason)
@@ -298,7 +285,6 @@ async fn two_organisations_same_number_each_device_reads_its_own_branch_thb() {
         Some(doc_ref),
         "sub-org1-001",
         "COMPLETED",
-        d("1000.00"),
         &[d("1000.00")],
     )
     .await;
@@ -310,7 +296,6 @@ async fn two_organisations_same_number_each_device_reads_its_own_branch_thb() {
         Some(doc_ref),
         "sub-org2-001",
         "COMPLETED",
-        d("2000.00"),
         &[d("2000.00")],
     )
     .await;
@@ -388,7 +373,6 @@ async fn same_number_at_another_branch_of_same_organisation_is_refused() {
         Some(doc_ref),
         "sub-main-002",
         "COMPLETED",
-        d("1234.00"),
         &[d("1234.00")],
     )
     .await;
@@ -430,7 +414,7 @@ async fn completed_cash_exchange_reads_sum_of_lines_thb_not_wide_principal() {
     let service = build_service(&db);
 
     let doc_ref = "XC-20261010-000003";
-    // wide principal is 1000.00, but child lines sum to 2000.00 + 1500.00 = 3500.00
+    // child lines sum to 2000.00 + 1500.00 = 3500.00 (TX-9 #677: there is no wide principal left)
     seed_transaction(
         &db,
         ORG_1,
@@ -438,7 +422,6 @@ async fn completed_cash_exchange_reads_sum_of_lines_thb_not_wide_principal() {
         Some(doc_ref),
         "sub-multiline-003",
         "COMPLETED",
-        d("1000.00"),
         &[d("2000.00"), d("1500.00")],
     )
     .await;
@@ -497,7 +480,6 @@ async fn non_completed_exchange_is_refused() {
         Some(doc_ref),
         "sub-cancelled-004",
         "CANCELLED",
-        d("1000.00"),
         &[d("1000.00")],
     )
     .await;
@@ -541,7 +523,6 @@ async fn compat_saved_completed_cash_exchange_records_same_thb() {
         Some(doc_ref),
         "sub-compat-005",
         "COMPLETED",
-        d("3210.00"),
         &[d("3210.00")],
     )
     .await;
@@ -620,7 +601,6 @@ async fn unfinished_exchanges_have_no_number_and_are_never_found() {
         None,
         "sub-draft-007",
         "DRAFT",
-        d("1000.00"),
         &[d("1000.00")],
     )
     .await;
@@ -632,7 +612,6 @@ async fn unfinished_exchanges_have_no_number_and_are_never_found() {
         None,
         "sub-confirmed-008",
         "CONFIRMED",
-        d("1000.00"),
         &[d("1000.00")],
     )
     .await;

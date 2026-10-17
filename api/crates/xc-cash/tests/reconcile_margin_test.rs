@@ -198,17 +198,10 @@ async fn sell_line(
     let customer_id = format!("cust-{branch}");
 
     sqlx::query(
-        "INSERT INTO transactions ( \
-             id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by, completed_at, status, organization_id \
-         ) VALUES ( \
-             $1, $2, $3, 'LIVE', $4, $5, 'hash', \
-             $6, 'Customer', 'THA', 'SELL', $7, 100.0, 1.0, 100.0, 0, \
-             0, 100.0, 0, 'Cash', '', '', 'staff', '', '', \
-             $8, $9, $9, 'staff', $9, 'COMPLETED', $10::uuid \
-         )",
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+             customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+             recorded_by, completed_at, status, organization_id) VALUES ($1, $2, $3, 'LIVE', $4, $5, 'hash', $6, 'Customer', 'THA', 'staff', '', '', $7, $8, $8, \
+             'staff', $8, 'COMPLETED', $9::uuid)",
     )
     .bind(tx_id)
     .bind(doc_ref)
@@ -216,7 +209,6 @@ async fn sell_line(
     .bind(shift)
     .bind(sub_id)
     .bind(customer_id)
-    .bind(currency)
     .bind(date)
     .bind(recorded_at)
     .bind(org)
@@ -270,17 +262,10 @@ async fn buy_line(
     let customer_id = format!("cust-{branch}");
 
     sqlx::query(
-        "INSERT INTO transactions ( \
-             id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by, completed_at, status, organization_id \
-         ) VALUES ( \
-             $1, $2, $3, 'LIVE', $4, $5, 'hash', \
-             $6, 'Customer', 'THA', 'BUY', $7, 100.0, 1.0, 100.0, 0, \
-             0, 0, 100.0, 'Cash', '', '', 'staff', '', '', \
-             $8, $9, $9, 'staff', $9, 'COMPLETED', $10::uuid \
-         )",
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+             customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+             recorded_by, completed_at, status, organization_id) VALUES ($1, $2, $3, 'LIVE', $4, $5, 'hash', $6, 'Customer', 'THA', 'staff', '', '', $7, $8, $8, \
+             'staff', $8, 'COMPLETED', $9::uuid)",
     )
     .bind(tx_id)
     .bind(doc_ref)
@@ -288,7 +273,6 @@ async fn buy_line(
     .bind(shift)
     .bind(sub_id)
     .bind(customer_id)
-    .bind(currency)
     .bind(date)
     .bind(recorded_at)
     .bind(org)
@@ -328,14 +312,12 @@ async fn insert_101_uncosted_lines(pool: &PgPool, org: &str, branch: &str, date:
     sqlx::query(
         "INSERT INTO transactions ( \
              id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
+             customer_id, customer_name, nationality, staff_id, booking_no, notes, \
              value_date, paid_at, recorded_at, recorded_by, completed_at, status, organization_id \
          ) \
          SELECT \
              gen_random_uuid(), 'TX-CAP-' || n, $1, 'LIVE', $2, 'sub-cap-' || n, 'hash', \
-             'cust-' || $1, 'Customer', 'THA', 'SELL', 'USD', 100.0, 1.0, 100.0, 0, \
-             0, 100.0, 0, 'Cash', '', '', 'staff', '', '', \
+             'cust-' || $1, 'Customer', 'THA', 'staff', '', '', \
              $3, $4, $4, 'staff', $4, 'COMPLETED', $5::uuid \
          FROM generate_series(1, 101) AS n",
     )
@@ -796,17 +778,10 @@ async fn non_completed_sell_lines_are_ignored() {
     let customer_id = "cust-B1";
 
     sqlx::query(
-        "INSERT INTO transactions ( \
-             id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by, completed_at, status, organization_id \
-         ) VALUES ( \
-             $1, NULL, 'B1', 'LIVE', $2, $3, 'hash', \
-             $4, 'Customer', 'THA', 'SELL', 'USD', 100.0, 1.0, 100.0, 0, \
-             0, 100.0, 0, 'Cash', '', '', 'staff', '', '', \
-             $5, $6, $6, 'staff', NULL, 'CONFIRMED', $7::uuid \
-         )",
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+             customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+             recorded_by, completed_at, status, organization_id) VALUES ($1, NULL, 'B1', 'LIVE', $2, $3, 'hash', $4, 'Customer', 'THA', 'staff', '', '', $5, $6, \
+             $6, 'staff', NULL, 'CONFIRMED', $7::uuid)",
     )
     .bind(tx_id1)
     .bind(shift)
@@ -846,19 +821,10 @@ async fn non_completed_sell_lines_are_ignored() {
     let sub_id2 = unique("sub");
 
     sqlx::query(
-        "INSERT INTO transactions ( \
-             id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by, completed_at, status, organization_id, \
-             cancelled_at, cancel_reason \
-         ) VALUES ( \
-             $1, NULL, 'B1', 'LIVE', $2, $3, 'hash', \
-             $4, 'Customer', 'THA', 'SELL', 'USD', 100.0, 1.0, 100.0, 0, \
-             0, 100.0, 0, 'Cash', '', '', 'staff', '', '', \
-             $5, $6, $6, 'staff', NULL, 'CANCELLED', $7::uuid, \
-             $6, 'Cancelled by customer' \
-         )",
+        "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+             customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+             recorded_by, completed_at, status, organization_id, cancelled_at, cancel_reason) VALUES ($1, NULL, 'B1', 'LIVE', $2, $3, 'hash', $4, 'Customer', 'THA', 'staff', '', '', $5, $6, \
+             $6, 'staff', NULL, 'CANCELLED', $7::uuid, $6, 'Cancelled by customer')",
     )
     .bind(tx_id2)
     .bind(shift)
