@@ -69,8 +69,6 @@ impl DatabaseProbe for PgPool {
 
 use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
 use xc_loyalty::domain::summary_source::{LoyaltySummarySource, UnavailableLoyaltySummary};
-
-use crate::application::passport_read::{PassportReader, UnconfiguredReader};
 use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
@@ -86,9 +84,6 @@ pub struct AppState {
     pub shift_balances: Arc<dyn ShiftBalances>,
     pub document_store: Arc<dyn DocumentStore>,
     pub loyalty_summary: Arc<dyn LoyaltySummarySource>,
-    /// The desk's passport read (design `recognize-passport-read.md` §3): `RecognizeHttpReader` when
-    /// `settings.recognize` is `Ok`, else `UnconfiguredReader`.
-    pub passport_reader: Arc<dyn PassportReader>,
 }
 
 struct LazyDocumentStore {
@@ -157,19 +152,6 @@ impl AppState {
         let document_store = Arc::new(LazyDocumentStore::new(
             settings.verification.store_dir.clone(),
         ));
-        let passport_reader: Arc<dyn PassportReader> = match &settings.recognize {
-            Ok(recog) => Arc::new(
-                crate::infrastructure::recognize::http_reader::RecognizeHttpReader::new(recog),
-            ),
-            Err(err @ crate::config::RecognizeConfigError::Unset) => {
-                tracing::info!("{err}");
-                Arc::new(UnconfiguredReader)
-            }
-            Err(err) => {
-                tracing::warn!("{err}");
-                Arc::new(UnconfiguredReader)
-            }
-        };
         Self {
             settings,
             db,
@@ -180,7 +162,6 @@ impl AppState {
             shift_balances,
             document_store,
             loyalty_summary: Arc::new(UnavailableLoyaltySummary),
-            passport_reader,
         }
     }
 
@@ -216,11 +197,6 @@ impl AppState {
 
     pub fn with_loyalty_summary(mut self, source: Arc<dyn LoyaltySummarySource>) -> Self {
         self.loyalty_summary = source;
-        self
-    }
-
-    pub fn with_passport_reader(mut self, reader: Arc<dyn PassportReader>) -> Self {
-        self.passport_reader = reader;
         self
     }
 }
