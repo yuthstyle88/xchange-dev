@@ -213,6 +213,7 @@ impl TransactionRow {
         let is_buy = record.side == "BUY";
 
         // principal = amount * rate / unit_size, half up to satang (2 decimals) through ExchangeArithmetic::thb
+        // K-b site: Rate::parse caps rate at Money::MAX_INPUT_UNITS (rate.rs:20, at line 117); quantity numeric(20,4) and UnitSize::parse >= 0.0001 bound the rest; raw value <= ~1e28 < Decimal::MAX (#2063 / #2866).
         let foreign = ForeignAmount::from_decimal(record.amount);
         let principal = Decimal::from_i128_with_scale(
             ExchangeArithmetic::thb(foreign, record.rate, record.unit_size).minor_i128(),
@@ -229,6 +230,7 @@ impl TransactionRow {
         // reference fields
         let (ref_rate_str, ref_val_str, ref_spread_str, ref_pct_str) =
             if let Some(ref_rate) = record.reference_rate {
+                // K-b site: Rate::parse caps reference_rate at Money::MAX_INPUT_UNITS (rate.rs:20, at line 124); quantity numeric(20,4) and UnitSize::parse >= 0.0001 bound the rest; raw value <= ~1e28 < Decimal::MAX (#2063 / #2866).
                 let ref_val = Decimal::from_i128_with_scale(
                     ExchangeArithmetic::thb(foreign, ref_rate, record.unit_size).minor_i128(),
                     2,
