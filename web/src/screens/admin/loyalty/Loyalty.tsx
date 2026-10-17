@@ -8,11 +8,15 @@ import type {
   LoyaltyRuleDraftOutput,
 } from '../../../shared/api/generated/loyalty_rule_draft';
 import type {
+  LoyaltyRuleSubmitInput,
+  LoyaltyRuleSubmitOutput,
+} from '../../../shared/api/generated/loyalty_rule_submit';
+import type {
   LoyaltyRuleVersionsData,
   PointRuleVersionItem,
   TierRuleVersionItem,
 } from '../../../shared/api/generated/loyalty_rule_versions';
-import { errorText, screenT } from '../../../shared/i18n';
+import { screenT, t as sharedT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
@@ -33,7 +37,7 @@ function statusLabel(status: string): string {
 
 function loyaltyError(err: unknown): string {
   if (err instanceof ApiError && err.code === 'loyaltyUnavailable') {
-    return errorText('loyaltyUnavailable', err.message);
+    return sharedT('error.loyaltyUnavailable');
   }
   return wordedError(err);
 }
@@ -63,6 +67,11 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
     api,
     'POST',
     '/api/v3/commands/loyalty_rule_draft',
+  );
+  const submitWrite = keyedWrite<LoyaltyRuleSubmitInput, LoyaltyRuleSubmitOutput>(
+    api,
+    'POST',
+    '/api/v3/commands/loyalty_rule_submit',
   );
 
   const [pointVersions, setPointVersions] = createSignal<PointRuleVersionItem[]>([]);
@@ -128,23 +137,33 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
     }
   }
 
+  async function handleSubmit(versionId: string) {
+    setError(null);
+    try {
+      await submitWrite.send({ versionId });
+      await loadVersions();
+    } catch (err: unknown) {
+      setError(loyaltyError(err));
+    }
+  }
+
   return (
-    <div class="xc-loyalty-screen">
+    <div>
       <Show when={error()}>
         {(msg) => (
-          <div role="alert" class="xc-loyalty-error">
+          <div role="alert">
             {msg()}
           </div>
         )}
       </Show>
 
       <Show when={loading() && pointVersions().length === 0 && tierVersions().length === 0}>
-        <div class="xc-loyalty-loading">{t('loading')}</div>
+        <div>{t('loading')}</div>
       </Show>
 
-      <section class="xc-loyalty-section">
+      <section>
         <h4>{t('pointVersionsTitle')}</h4>
-        <table class="xc-loyalty-table">
+        <table>
           <thead>
             <tr>
               <th>{t('headerVersion')}</th>
@@ -179,7 +198,11 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
                   <td>{row.validTo ?? t('dash')}</td>
                   <td>
                     <Show when={row.status === 'DRAFT'}>
-                      <button type="button" data-action="submit">
+                      <button
+                        type="button"
+                        data-action="submit"
+                        onClick={() => void handleSubmit(row.versionId)}
+                      >
                         {t('submit')}
                       </button>
                     </Show>
@@ -191,7 +214,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
         </table>
       </section>
 
-      <section class="xc-loyalty-section" data-form="point-draft">
+      <section data-form="point-draft">
         <h4>{t('draftPointTitle')}</h4>
         <div class="xc-form-grid">
           <div class="xc-form-group">
@@ -285,9 +308,9 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
         </button>
       </section>
 
-      <section class="xc-loyalty-section">
+      <section>
         <h4>{t('tierVersionsTitle')}</h4>
-        <table class="xc-loyalty-table">
+        <table>
           <thead>
             <tr>
               <th>{t('headerVersion')}</th>
@@ -314,7 +337,11 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
                   <td>{row.validTo ?? t('dash')}</td>
                   <td>
                     <Show when={row.status === 'DRAFT'}>
-                      <button type="button" data-action="submit">
+                      <button
+                        type="button"
+                        data-action="submit"
+                        onClick={() => void handleSubmit(row.versionId)}
+                      >
                         {t('submit')}
                       </button>
                     </Show>
