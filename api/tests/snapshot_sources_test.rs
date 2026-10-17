@@ -101,7 +101,7 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     let slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
 
     // the first: a cash purchase
     let mut first = form("first-0001-aaaaaaaaaa", &customer, &passport);
@@ -308,7 +308,7 @@ async fn a_snapshot_over_the_real_sources_lists_the_saved_exchanges() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     let slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     let mut sale = form("sale-0001-aaaaaaaaaaa", &customer, &passport);
     sale.side = "SELL".to_owned();
     sale.rate = "33".to_owned();

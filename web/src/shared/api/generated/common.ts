@@ -27,6 +27,11 @@ export type Money = string;
 export type NoFilter = Record<symbol, never>;
 
 /**
+ * One OPEN shift of a branch with its teller (CA-10p, design `cash-shift-transfer.md` §4.7).
+ */
+export type OpenShiftDto = { shiftId: string, tellerId: string, tellerName: string, openedAt: string, };
+
+/**
  * Period filter with inclusive YYYY-MM-DD bounds.
  */
 export type Period = { from: string, to: string, };

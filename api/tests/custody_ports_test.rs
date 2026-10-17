@@ -198,7 +198,7 @@ async fn the_last_exchange_is_the_last_live_one_of_the_shift_asked_about() {
     // v2: the last of the transactions whose shift is the open one; `null` when there is none
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let first_shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let first_shift = shop.open_shift_id(MAIN).await;
     let demo_person = ReserveCustomer {
         mode: "DEMO".to_owned(),
         ..person()
@@ -314,7 +314,7 @@ async fn no_exchange_is_ever_pending() {
             .is_empty()
     );
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     shop.save(
         MAIN,
         form("pend-0001-aaaaaaaaaaa", &customer, &passport),
@@ -503,7 +503,7 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
     // here inside a transaction, asked for through it, and then rolled back.
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     shop.save(
         MAIN,
         form("intx-0001-aaaaaaaaaaa", &customer, &passport),

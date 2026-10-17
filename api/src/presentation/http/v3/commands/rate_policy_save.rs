@@ -477,8 +477,24 @@ impl CommandAction for RatePolicySaveCommand {
         .map_err(|_| server_error())?;
 
         for tier in &resolved_tiers {
-            let upper_dec: Option<Decimal> =
-                tier.upper_inclusive_thb.map(|m| Decimal::new(m.minor(), 2));
+            let upper_dec: Option<Decimal> = match tier.upper_inclusive_thb {
+                Some(m) => Some(
+                    m.try_minor()
+                        .map(|cents| Decimal::new(cents, 2))
+                        .map_err(|_| {
+                            V3Error::new(
+                                "validationFailed",
+                                Some("valueTiers"),
+                                format!(
+                                    "tier {} upper bound exceeds maximum allowed value",
+                                    tier.tier_no
+                                ),
+                                StatusCode::BAD_REQUEST,
+                            )
+                        })?,
+                ),
+                None => None,
+            };
             sqlx::query(
                 "INSERT INTO rate_policy_value_tiers \
                  (policy_version_id, tier_no, upper_inclusive_thb, buy_margin_pct, sell_margin_pct) \

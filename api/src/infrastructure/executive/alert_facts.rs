@@ -211,11 +211,7 @@ fn exception_detail(e: &CashException) -> String {
         .flatten()
     {
         for (currency, d) in delta.non_zero() {
-            parts.push(format!(
-                "{currency} {}",
-                // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2863).
-                Decimal::from_i128_with_scale(d.minor(), 2)
-            ));
+            parts.push(format!("{currency} {d}"));
         }
     }
     parts.join(": ")
@@ -231,5 +227,110 @@ impl AlertFacts for PgAlertFacts {
             alerts.extend(self.low_stock(scope).await?);
             Ok(alerts)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xc_kernel::money::MoneyDelta;
+    use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+    use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
+
+    fn sample_exception(delta: StockDelta) -> CashException {
+        CashException {
+            id: "ex-1".to_string(),
+            request_id: "req-1".to_string(),
+            status: ExceptionStatus::Open,
+            target_difference: Some(delta),
+            cash_variance: None,
+            safe_variance: None,
+            note: "test".to_string(),
+            at: CustodyTime::from_epoch_millis(0),
+            reviewed_by: None,
+            reviewed_at: None,
+        }
+    }
+
+    #[test]
+    fn row_1_minor_1250() {
+        let ex = sample_exception(StockDelta::of(&[(
+            CurrencyCode::THB,
+            MoneyDelta::from_minor(1250),
+        )]));
+        assert_eq!(exception_detail(&ex), "ex-1: THB 12.50");
+    }
+
+    #[test]
+    fn row_2_minor_neg_300() {
+        let ex = sample_exception(StockDelta::of(&[(
+            CurrencyCode::THB,
+            MoneyDelta::from_minor(-300),
+        )]));
+        assert_eq!(exception_detail(&ex), "ex-1: THB -3.00");
+    }
+
+    #[test]
+    fn row_3_minor_5() {
+        let ex = sample_exception(StockDelta::of(&[(
+            CurrencyCode::THB,
+            MoneyDelta::from_minor(5),
+        )]));
+        assert_eq!(exception_detail(&ex), "ex-1: THB 0.05");
+    }
+
+    #[test]
+    fn row_4_minor_neg_5() {
+        let ex = sample_exception(StockDelta::of(&[(
+            CurrencyCode::THB,
+            MoneyDelta::from_minor(-5),
+        )]));
+        assert_eq!(exception_detail(&ex), "ex-1: THB -0.05");
+    }
+
+    #[test]
+    fn row_5_minor_1_shl_100() {
+        let ex = sample_exception(StockDelta::of(&[(
+            CurrencyCode::THB,
+            MoneyDelta::from_minor(1i128 << 100),
+        )]));
+        assert_eq!(
+            exception_detail(&ex),
+            "ex-1: THB 12676506002282294014967032053.76"
+        );
+    }
+
+    #[test]
+    fn row_6_minor_neg_1_shl_100() {
+        let ex = sample_exception(StockDelta::of(&[(
+            CurrencyCode::THB,
+            MoneyDelta::from_minor(-(1i128 << 100)),
+        )]));
+        assert_eq!(
+            exception_detail(&ex),
+            "ex-1: THB -12676506002282294014967032053.76"
+        );
+    }
+
+    #[test]
+    fn row_7_minor_0() {
+        let ex = sample_exception(StockDelta::of(&[(
+            CurrencyCode::THB,
+            MoneyDelta::from_minor(0),
+        )]));
+        assert_eq!(exception_detail(&ex), "ex-1");
+    }
+
+    #[test]
+    fn section_4_multi_currency_overflow() {
+        let usd = CurrencyCode::parse("USD").expect("USD");
+        let ex = sample_exception(StockDelta::of(&[
+            (CurrencyCode::THB, MoneyDelta::from_minor(1i128 << 100)),
+            (usd, MoneyDelta::from_minor(-(1i128 << 100))),
+        ]));
+        assert_eq!(
+            exception_detail(&ex),
+            "ex-1: THB 12676506002282294014967032053.76: USD -12676506002282294014967032053.76"
+        );
     }
 }
