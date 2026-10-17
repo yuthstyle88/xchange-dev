@@ -55,10 +55,7 @@ impl BranchView for AdminOperationsBranchView {
                 company: e.company,
                 site: e.site,
             });
-            Ok(AdminOperationsData {
-                enabled: state.enabled,
-                entity,
-            })
+            Ok(AdminOperationsData { entity })
         }
     }
 }
