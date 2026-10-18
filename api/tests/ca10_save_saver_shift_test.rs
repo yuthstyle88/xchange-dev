@@ -88,31 +88,22 @@ async fn seed_shift(pool: &PgPool, branch_id: &str, teller: &str, marked: bool) 
         q = q.bind(c);
     }
     q.execute(pool).await.expect("seed an OPEN shift");
-    for (code, amount) in OPENING {
-        sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, $3::numeric, $3::numeric)",
-        )
-        .bind(&id)
-        .bind(code)
-        .bind(amount)
-        .execute(pool)
-        .await
-        .expect("seed an opening balance");
-    }
     fund_ledger_drawer(pool, &id, OPENING).await;
     id
 }
 
 /// What shift `id` should hold now, `code -> amount`, zeroes left out.
 async fn expected(pool: &PgPool, id: &str) -> BTreeMap<String, String> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT trim(code), expected::text FROM shift_balances WHERE shift_id = $1 AND expected <> 0 ORDER BY code",
-    )
-    .bind(id)
-    .fetch_all(pool)
-    .await
-    .expect("read the shift's balances");
-    rows.into_iter().collect()
+    use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+    use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+    PgLedgerShiftBalances::new(pool.clone())
+        .shift_balances(&id.to_owned())
+        .await
+        .expect("read the shift's balances")
+        .into_iter()
+        .filter(|b| !b.expected.is_zero())
+        .map(|b| (b.currency.as_str().to_owned(), b.expected.to_string()))
+        .collect()
 }
 
 fn opening() -> BTreeMap<String, String> {

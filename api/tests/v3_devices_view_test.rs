@@ -172,7 +172,20 @@ impl Room {
     /// `MAIN` (from the migration) and `B9`, the owner and one employee of every staff role
     /// in `MAIN`, all signed in; the USD counter rate 32.1 / 33 in both branches.
     async fn open() -> Room {
-        let desk = Desk::open().await;
+        let mut desk = Desk::open().await;
+        desk.workflow =
+            xchange::application::workflows::save_transaction::SaveTransactionWorkflow::new(
+                desk.db.branch_tx(),
+                xc_shift::application::shift::service::ShiftService::new(
+                    std::sync::Arc::new(
+                        xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                            desk.db.pool.clone(),
+                        ),
+                    ),
+                    desk.db.branch_tx(),
+                ),
+                desk.files.clone(),
+            );
         desk.db.seed_branch(B9, B9_NAME).await;
         let app = rpc_app!(desk);
         let people = one_of_each_role();
@@ -318,17 +331,21 @@ impl Room {
 
     /// The open shift's stored `expected`, `code -> "0.00"`, as a JSON object of strings.
     async fn expected_of_open_shift(&self, branch: &str) -> Value {
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT b.code::text, b.expected::text FROM shift_balances b \
-             JOIN shifts s ON s.id = b.shift_id WHERE s.branch_id = $1 AND s.status = 'OPEN'",
-        )
-        .bind(branch)
-        .fetch_all(&self.desk.db.pool)
-        .await
-        .expect("read the open shift's balances");
+        use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+        use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+        let shift_id = self.open_shift_id(branch).await;
+        let rows = PgLedgerShiftBalances::new(self.desk.db.pool.clone())
+            .shift_balances(&shift_id)
+            .await
+            .expect("read the open shift's balances");
         Value::Object(
             rows.into_iter()
-                .map(|(c, e)| (c.trim().to_owned(), Value::String(e)))
+                .map(|b| {
+                    (
+                        b.currency.as_str().to_owned(),
+                        Value::String(b.expected.to_string()),
+                    )
+                })
                 .collect(),
         )
     }
