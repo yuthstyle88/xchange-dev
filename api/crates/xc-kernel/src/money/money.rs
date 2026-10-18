@@ -43,13 +43,6 @@ impl Money {
         Ok(Money(val))
     }
 
-    /// The amount as hundredths (satang, cents).
-    pub fn minor(self) -> i64 {
-        let mut d = self.0;
-        d.rescale(2);
-        d.mantissa() as i64
-    }
-
     fn hundredths(self) -> Option<i128> {
         let mut d = self.0;
         d.rescale(2);
@@ -74,7 +67,7 @@ impl Money {
             .ok_or(NumberError::Invalid)
     }
 
-    /// The inverse of [`Money::minor`]; no upper cap. `Err(Invalid)` when negative.
+    /// The inverse of [`Money::try_minor`]; no upper cap. `Err(Invalid)` when negative.
     pub fn from_minor(minor: i64) -> Result<Money, NumberError> {
         if minor < 0 {
             return Err(NumberError::Invalid);

@@ -13,7 +13,7 @@
 
 use std::str::FromStr;
 
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::money::{
     ArithmeticOverflow, CurrencyCode, CurrencyUnits, ExchangeArithmetic, ForeignAmount, MinorUnit,
     Money, Rate, UnitSize,
@@ -52,18 +52,25 @@ fn money_at_decimal_max() -> Money {
     Money::try_from_minor_i128((1_i128 << 96) - 1).expect("fits Decimal at scale 2")
 }
 
-/// `try_thb` agrees with `thb` in value and in printed form (two places).
+/// `try_thb` agrees with the HALF_UP formula in value and in printed form (two places).
 fn assert_thb_same(amount: ForeignAmount, r: Rate, u: UnitSize) {
-    let old = ExchangeArithmetic::thb(amount, r, u);
+    let old = format!(
+        "{:.2}",
+        (amount.value() * r.value() / u.value())
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+    );
     let new: Money = ExchangeArithmetic::try_thb(amount, r, u)
         .unwrap_or_else(|e| panic!("{amount:?} × {r} ÷ {u}: unexpected {e:?}"));
-    assert_eq!(new, old, "{amount:?} × {r} ÷ {u}");
-    assert_eq!(new.to_string(), old.to_string(), "{amount:?} × {r} ÷ {u}");
+    assert_eq!(new.to_string(), old, "{amount:?} × {r} ÷ {u}");
 }
 
-/// `try_foreign_for_thb` agrees with `foreign_for_thb` in value and in printed form.
+/// `try_foreign_for_thb` agrees with the truncated formula in value and in printed form.
 fn assert_foreign_same(thb: Money, r: Rate, u: &CurrencyUnits) {
-    let old = ExchangeArithmetic::foreign_for_thb(thb, r, u);
+    let minor = u.minor_unit().get() as u32;
+    let old = ForeignAmount::from_decimal(
+        (d(&thb.to_string()) * u.unit_size().value() / r.value())
+            .round_dp_with_strategy(minor, RoundingStrategy::ToZero),
+    );
     let new: ForeignAmount = ExchangeArithmetic::try_foreign_for_thb(thb, r, u)
         .unwrap_or_else(|e| panic!("{thb} ÷ {r} × {u:?}: unexpected {e:?}"));
     assert_eq!(new, old, "{thb} ÷ {r} × {u:?}");

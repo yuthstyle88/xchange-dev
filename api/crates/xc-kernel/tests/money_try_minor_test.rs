@@ -26,7 +26,7 @@ fn from_hundredths(minor: i128) -> Money {
 fn try_minor_of_a_typed_amount_is_its_hundredths() {
     let m = money("100.50");
     assert_eq!(m.try_minor(), Ok(10050));
-    assert_eq!(m.try_minor(), Ok(m.minor()));
+    assert_eq!(m.minor_i128(), 10050);
     assert_eq!(money("0.07").try_minor(), Ok(7));
     assert_eq!(money("100000000").try_minor(), Ok(10_000_000_000));
 }
@@ -46,23 +46,14 @@ fn try_minor_refuses_an_amount_past_i64() {
 #[test]
 fn try_minor_refuses_a_computed_principal_past_i64() {
     // 10^17 × 100,000,000 ÷ 1 = 10^25 THB: thb() computes it, i64 cannot hold its hundredths.
-    let thb = ExchangeArithmetic::thb(
+    let thb = ExchangeArithmetic::try_thb(
         ForeignAmount::from_decimal(Decimal::from(100_000_000_000_000_000_i64)),
         Rate::parse("100000000").expect("a rate"),
         UnitSize::ONE,
-    );
+    )
+    .expect("fits at 2 places");
     assert_eq!(thb.minor_i128(), 10_i128.pow(27));
     assert_eq!(thb.try_minor(), Err(NumberError::Invalid));
-}
-
-#[test]
-fn today_minor_wraps_past_i64() {
-    // The bug try_minor exists for: minor() cuts the mantissa to 64 bits with no error.
-    let just_past = from_hundredths(i64::MAX as i128 + 1);
-    assert_eq!(just_past.minor(), i64::MIN);
-    assert_ne!(just_past.minor() as i128, just_past.minor_i128());
-    let far_past = from_hundredths(1_i128 << 70);
-    assert_eq!(far_past.minor(), 0);
 }
 
 #[test]
@@ -86,7 +77,7 @@ fn try_minor_matches_minor_wherever_minor_is_right() {
         i64::MAX as i128 - 1,
     ] {
         let m = from_hundredths(minor);
-        assert_eq!(m.try_minor(), Ok(m.minor()), "{minor}");
+        assert_eq!(m.minor_i128(), minor, "{minor}");
         assert_eq!(m.try_minor(), Ok(minor as i64), "{minor}");
     }
 }

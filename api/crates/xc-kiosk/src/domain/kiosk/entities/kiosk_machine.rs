@@ -425,11 +425,12 @@ mod tests {
         let req =
             KioskMachine::quote(&input, &facts, "req-1", KioskTime::from_epoch_millis(0)).unwrap();
         assert_eq!(req.quote.foreign, Money::parse("9.98").unwrap());
-        let expected_thb = ExchangeArithmetic::thb(
+        let expected_thb = ExchangeArithmetic::try_thb(
             ForeignAmount::from_decimal(Decimal::new(998, 2)),
             line.rate,
             line.unit_size,
-        );
+        )
+        .expect("fits at 2 places");
         assert_eq!(req.quote.thb, expected_thb);
     }
 }

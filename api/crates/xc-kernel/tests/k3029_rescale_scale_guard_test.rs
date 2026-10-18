@@ -78,17 +78,7 @@ fn try_thb_refuses_the_transaction_row_worst_case() {
     let _: ArithmeticOverflow = r.expect_err("≈10^28 THB cannot be held at 2 places");
 }
 
-// ── thb and minor_i128 panic instead of returning a mis-scaled figure ───────
-
-#[test]
-#[should_panic(expected = "not representable at 2 decimal places")]
-fn thb_panics_rather_than_returning_a_mis_scaled_figure() {
-    let _ = ExchangeArithmetic::thb(
-        foreign("10000000000000000000"),
-        rate("100000000"),
-        UnitSize::ONE,
-    );
-}
+// ── minor_i128 panics instead of returning a mis-scaled figure ──────────────
 
 #[test]
 #[should_panic(expected = "not representable at 2 decimal places")]
@@ -118,8 +108,4 @@ fn the_widest_figure_at_two_places_is_still_computed_exactly() {
             .expect("fits at 2 places");
     assert_eq!(checked.minor_i128(), widest);
     assert_eq!(checked.to_string(), WIDEST_AT_TWO_PLACES);
-    let unchecked =
-        ExchangeArithmetic::thb(foreign(WIDEST_AT_TWO_PLACES), rate("1"), UnitSize::ONE);
-    assert_eq!(unchecked, checked);
-    assert_eq!(unchecked.minor_i128(), widest);
 }

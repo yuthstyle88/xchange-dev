@@ -15,22 +15,10 @@ pub struct ArithmeticOverflow;
 pub struct ExchangeArithmetic;
 
 impl ExchangeArithmetic {
-    /// THB for `amount` foreign at `rate` per `unit`: amount × rate ÷ unit_size,
-    /// rounded HALF_UP (away from zero) to 2 places once, at the end (§05).
-    pub fn thb(amount: ForeignAmount, rate: Rate, unit: UnitSize) -> Money {
-        let raw = (amount.value() * rate.value()) / unit.value();
-        let mut rounded = raw.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-        rounded.rescale(2);
-        assert_eq!(
-            rounded.scale(),
-            2,
-            "Money figure is not representable at 2 decimal places"
-        );
-        Money::from_decimal(rounded)
-    }
-
-    /// Checked form of [`Self::thb`]: returns `Err(ArithmeticOverflow)` instead of panicking
-    /// when `amount × rate` or `÷ unit_size` overflows `Decimal`.
+    /// THB for `amount` foreign at `rate` per `unit`: `amount × rate ÷ unit_size`, rounded
+    /// HALF_UP (away from zero) to 2 places once, at the end (§05). Returns
+    /// `Err(ArithmeticOverflow)` when `amount × rate` or `÷ unit_size` overflows `Decimal` or
+    /// the rounded figure cannot be held at 2 decimal places.
     pub fn try_thb(
         amount: ForeignAmount,
         rate: Rate,
@@ -49,17 +37,9 @@ impl ExchangeArithmetic {
         Ok(Money::from_decimal(rounded))
     }
 
-    /// The most foreign `thb` buys at `rate`: thb × unit_size ÷ rate, truncated
-    /// to the currency's minor unit (the kiosk's SELL by baht).
-    pub fn foreign_for_thb(thb: Money, rate: Rate, units: &CurrencyUnits) -> ForeignAmount {
-        let raw = (thb.value() * units.unit_size().value()) / rate.value();
-        let minor = units.minor_unit().get() as u32;
-        let truncated = raw.round_dp_with_strategy(minor, RoundingStrategy::ToZero);
-        ForeignAmount::from_decimal(truncated)
-    }
-
-    /// Checked form of [`Self::foreign_for_thb`]: returns `Err(ArithmeticOverflow)` instead of
-    /// panicking when `thb × unit_size` or `÷ rate` overflows `Decimal`.
+    /// The most foreign `thb` buys at `rate`: `thb × unit_size ÷ rate`, truncated to the
+    /// currency's minor unit (the kiosk's SELL by baht). Returns `Err(ArithmeticOverflow)`
+    /// when `thb × unit_size` or `÷ rate` overflows `Decimal`.
     pub fn try_foreign_for_thb(
         thb: Money,
         rate: Rate,

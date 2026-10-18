@@ -71,7 +71,7 @@ fn delta(s: &str) -> MoneyDelta {
         Some(rest) => (-1, rest),
         None => (1, s),
     };
-    MoneyDelta::from_minor(sign * i128::from(money(digits).minor()))
+    MoneyDelta::from_minor(sign * money(digits).minor_i128())
 }
 
 /// today − 3 ..= today + 1 (UTC dates): a redemption one day old is inside in any timezone.

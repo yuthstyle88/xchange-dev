@@ -167,7 +167,10 @@ async fn expected(c: &Counter, code: &str) -> String {
         .expect("the drawer through the port");
     tx.rollback().await.expect("rollback");
     let m = b.get(xc_kernel::money::CurrencyCode::parse(code).expect("a currency"));
-    format!("{:.2}", rust_decimal::Decimal::new(m.minor(), 2))
+    format!(
+        "{:.2}",
+        rust_decimal::Decimal::new(m.try_minor().unwrap(), 2)
+    )
 }
 
 #[actix_web::test]
