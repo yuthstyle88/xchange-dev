@@ -9,7 +9,10 @@ use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{IdentityType, PiiError, normalize};
 
-use crate::domain::access::{Actor, GrantRefusal, Role, ScopeRule, ScopedRole};
+use crate::application::user::account_auditor::AccountAuditor;
+use crate::domain::access::{
+    AccountAction, Actor, GrantGuard, GrantRefusal, Role, ScopeRule, ScopedRole, TargetUser,
+};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityRegisterRequest,
 };
@@ -108,33 +111,48 @@ impl<R: UserRepository> UserService<R> {
         valid_from: DateTime<Utc>,
         valid_to: Option<DateTime<Utc>>,
     ) -> Result<ScopedRole, UserChangeError> {
-        // Skeleton: today's body; the RBAC function ticket adds GrantGuard + AccountAuditor (§3.1, §3.4).
-        let _ = (actor, ip);
         let user = self
             .repo
             .find_by_id(tx, user_id)
             .await?
-            .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
-
-        if user.status == UserStatus::Disabled {
-            return Err(AppError::Domain("บัญชีถูกระงับ".to_string()).into());
-        }
-
-        let existing_roles = self.repo.find_roles_by_user_id(tx, user_id).await?;
-        let active_existing: Vec<ScopedRole> = existing_roles
-            .into_iter()
-            .filter(|r| r.valid_to.is_none_or(|to| valid_from < to))
-            .collect();
-
-        ScopeRule::check(role, branch.as_ref(), &active_existing)
-            .map_err(|e| AppError::Domain(format!("Scope rule rejected: {e}")))?;
-
+            .ok_or(UserChangeError::NotFound)?;
         let scoped_role = ScopedRole::new(role, branch, valid_from, valid_to);
-        self.repo
-            .add_role(tx, user_id, &user.organization_id, &scoped_role)
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
             .await?;
-        self.repo.bump_version(tx, user_id).await?;
-
+        GrantGuard::check(
+            actor,
+            &target,
+            &AccountAction::Grant(scoped_role.clone()),
+            owners_left,
+        )
+        .map_err(UserChangeError::Refused)?;
+        if matches!(user.status, UserStatus::Suspended | UserStatus::Disabled) {
+            return Err(UserChangeError::NotActive);
+        }
+        self.repo
+            .add_role(tx, &user.id, &user.organization_id, &scoped_role)
+            .await?;
+        self.repo.bump_version(tx, &user.id).await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userGrant",
+            &user.organization_id,
+            None,
+            None,
+            ip,
+        )
+        .await?;
         Ok(scoped_role)
     }
 
@@ -151,19 +169,40 @@ impl<R: UserRepository> UserService<R> {
         branch: Option<&BranchId>,
         now: DateTime<Utc>,
     ) -> Result<(), UserChangeError> {
-        // Skeleton: today's body; the RBAC function ticket adds GrantGuard + AccountAuditor.
-        let _ = (actor, ip);
         let user = self
             .repo
             .find_by_id(tx, user_id)
             .await?
-            .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
-
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        let action = AccountAction::Revoke(ScopedRole::new(role, branch.cloned(), now, None));
+        GrantGuard::check(actor, &target, &action, owners_left)
+            .map_err(UserChangeError::Refused)?;
         self.repo
             .revoke_role(tx, &user.id, role, branch, now)
             .await?;
         self.repo.bump_version(tx, &user.id).await?;
-
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userRevoke",
+            &user.organization_id,
+            None,
+            None,
+            ip,
+        )
+        .await?;
         Ok(())
     }
 
@@ -176,18 +215,47 @@ impl<R: UserRepository> UserService<R> {
         user_id: &str,
         holds: &dyn CustodyHolds,
     ) -> Result<(), UserChangeError> {
-        // Skeleton: today's body; the RBAC function ticket adds GrantGuard, may_move, the cash guard and the audit.
-        let _ = (actor, ip, holds);
         let user = self
             .repo
             .find_by_id(tx, user_id)
             .await?
-            .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
-
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Disable, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if !user.status.may_move(UserStatus::Disabled) {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Disabled,
+            });
+        }
+        if holds.holds_cash_or_pending_handover(tx, &user.id).await? {
+            return Err(UserChangeError::HoldsCash);
+        }
         self.repo
             .set_status(tx, &user.id, UserStatus::Disabled)
             .await?;
-
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userDisable",
+            &user.organization_id,
+            None,
+            None,
+            ip,
+        )
+        .await?;
         Ok(())
     }
 
@@ -200,8 +268,48 @@ impl<R: UserRepository> UserService<R> {
         user_id: &str,
         holds: &dyn CustodyHolds,
     ) -> Result<(), UserChangeError> {
-        let _ = (tx, actor, ip, user_id, holds);
-        todo!("RBAC function ticket: UserService::suspend (§3.2)")
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Suspend, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if !user.status.may_move(UserStatus::Suspended) {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Suspended,
+            });
+        }
+        if holds.holds_cash_or_pending_handover(tx, &user.id).await? {
+            return Err(UserChangeError::HoldsCash);
+        }
+        self.repo
+            .set_status(tx, &user.id, UserStatus::Suspended)
+            .await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userSuspend",
+            &user.organization_id,
+            None,
+            None,
+            ip,
+        )
+        .await?;
+        Ok(())
     }
 
     /// SUSPENDED → ACTIVE (§3.2). RBAC function ticket.
@@ -212,8 +320,45 @@ impl<R: UserRepository> UserService<R> {
         ip: Option<&str>,
         user_id: &str,
     ) -> Result<(), UserChangeError> {
-        let _ = (tx, actor, ip, user_id);
-        todo!("RBAC function ticket: UserService::resume (§3.2)")
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Resume, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if !user.status.may_move(UserStatus::Active) {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Active,
+            });
+        }
+        self.repo
+            .set_status(tx, &user.id, UserStatus::Active)
+            .await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userResume",
+            &user.organization_id,
+            None,
+            None,
+            ip,
+        )
+        .await?;
+        Ok(())
     }
 
     /// DISABLED → ACTIVE, EXECUTIVE only (§3.2, Q3 A). RBAC function ticket.
@@ -224,8 +369,48 @@ impl<R: UserRepository> UserService<R> {
         ip: Option<&str>,
         user_id: &str,
     ) -> Result<(), UserChangeError> {
-        let _ = (tx, actor, ip, user_id);
-        todo!("RBAC function ticket: UserService::enable (§3.2)")
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Enable, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if !user.status.may_move(UserStatus::Active) {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Active,
+            });
+        }
+        if !target.has_auth_subject {
+            return Err(UserChangeError::NotBound);
+        }
+        self.repo
+            .set_status(tx, &user.id, UserStatus::Active)
+            .await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userEnable",
+            &user.organization_id,
+            None,
+            None,
+            ip,
+        )
+        .await?;
+        Ok(())
     }
 
     /// Looks up a user by ID.
