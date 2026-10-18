@@ -398,6 +398,10 @@ impl UserRepository for PgUserRepository {
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<UserAuditEntry>> {
+        if before.is_some_and(|b| !is_uuid(b)) {
+            // A malformed cursor reads as "nothing older" (#3213); it never reaches the `::uuid` cast.
+            return Ok(Vec::new());
+        }
         let rows = sqlx::query(
             r#"
             SELECT a.id::text AS id,
@@ -414,7 +418,7 @@ impl UserRepository for PgUserRepository {
             LEFT JOIN users actor ON actor.id::text = a.actor_id
             LEFT JOIN users subj ON subj.id::text = a.subject_id
             WHERE a.organization_id = $1::uuid
-              AND ($2 IS NULL OR ($2 ~ '^[0-9a-fA-F-]{36}$' AND (a.at, a.id) < (SELECT at, id FROM user_audit WHERE id = $2::uuid)))
+              AND ($2::uuid IS NULL OR (a.at, a.id) < (SELECT at, id FROM user_audit WHERE id = $2::uuid))
             ORDER BY a.at DESC, a.id DESC
             LIMIT $3
             "#,
@@ -450,6 +454,10 @@ impl UserRepository for PgUserRepository {
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<LoginEntry>> {
+        if before.is_some_and(|b| !is_uuid(b)) {
+            // A malformed cursor reads as "nothing older" (#3213); it never reaches the `::uuid` cast.
+            return Ok(Vec::new());
+        }
         let rows = sqlx::query(
             r#"
             SELECT l.id::text AS id,
@@ -461,7 +469,7 @@ impl UserRepository for PgUserRepository {
             FROM login_history l
             LEFT JOIN users u ON u.id = l.user_id
             WHERE l.organization_id = $1::uuid
-              AND ($2 IS NULL OR ($2 ~ '^[0-9a-fA-F-]{36}$' AND (l.at, l.id) < (SELECT at, id FROM login_history WHERE id = $2::uuid)))
+              AND ($2::uuid IS NULL OR (l.at, l.id) < (SELECT at, id FROM login_history WHERE id = $2::uuid))
             ORDER BY l.at DESC, l.id DESC
             LIMIT $3
             "#,
@@ -485,4 +493,13 @@ impl UserRepository for PgUserRepository {
             })
             .collect())
     }
+}
+
+/// `8-4-4-4-12` hex digits, the text form of a uuid: checked before a client-supplied cursor is cast (#3213).
+fn is_uuid(s: &str) -> bool {
+    s.len() == 36
+        && s.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        })
 }

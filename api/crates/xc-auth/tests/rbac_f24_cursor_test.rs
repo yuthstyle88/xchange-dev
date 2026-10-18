@@ -66,6 +66,12 @@ async fn list_audit_with_malformed_before_returns_empty() {
         .await
         .expect("list_audit with malformed cursor");
     assert!(rows.is_empty(), "expected empty rows, got: {:?}", rows);
+    // 36 characters of the right alphabet, but not a uuid (reviewer row).
+    let rows = PgUserRepository
+        .list_audit(&mut tx, &org, Some(&"-".repeat(36)), 10)
+        .await
+        .expect("list_audit with a 36-hyphen cursor");
+    assert!(rows.is_empty(), "expected empty rows, got: {:?}", rows);
 
     tx.rollback().await.expect("rollback");
     db.drop_schema().await;
