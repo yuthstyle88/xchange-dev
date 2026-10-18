@@ -216,7 +216,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setDialogSubmitting(true);
 
     try {
-      const res = await api.post<{ temporaryPassword?: string }>('/api/users', {
+      const res = (await api.post('/api/users', {
         name: createName().trim(),
         username: createUsername().trim() || null,
         phone: createPhone().trim(),
@@ -227,7 +227,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
             branch: createBranch() ? createBranch() : null,
           },
         ],
-      });
+      })) as { temporaryPassword?: string };
       if (openDialogKey() === sentFrom) setShowCreate(false);
       setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successCreated'));
@@ -262,12 +262,12 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     }));
 
     try {
-      const res = await api.post<{ temporaryPassword?: string }>('/api/users', {
+      const res = (await api.post('/api/users', {
         name: user.name,
         phone: activatePhone().trim(),
         roles: roles,
         userId: user.userId,
-      });
+      })) as { temporaryPassword?: string };
       if (openDialogKey() === sentFrom) setActivatingUser(null);
       setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successActivated'));
