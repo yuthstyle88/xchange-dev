@@ -177,8 +177,8 @@ impl BranchView for AdminCashBranchView {
                     for r in closed_balances {
                         if let Some(c) = r.counted {
                             let code = r.currency.as_str().to_string();
-                            let prev = counted_map.get(&code).copied().unwrap_or(Money::ZERO);
-                            counted_map.insert(code, checked_add_money(prev, c)?);
+                            let slot = counted_map.entry(code).or_insert(Money::ZERO);
+                            *slot = checked_add_money(*slot, c)?;
                         }
                     }
                 }
