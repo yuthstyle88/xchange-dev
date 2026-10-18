@@ -53,7 +53,7 @@ impl DeskConfigCore {
 
         let shift_repo = Arc::new(PgShiftRepository::new(state.db.clone()));
         let shift_service = ShiftService::new(shift_repo, branch_tx.clone());
-        let shift_open = shift_service.active(branch).await?.is_some();
+        let shift_open = !shift_service.open_of_branch(branch).await?.is_empty();
 
         let admin_url = format!("/?branch={}", uri_component(&branch_id));
 
