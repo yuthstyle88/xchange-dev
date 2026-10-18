@@ -128,7 +128,7 @@ class Server {
           return view({ branches: [{ id: 'MAIN', name: 'สำนักงานใหญ่' }] });
         case '/api/v3/views/admin_cash':
           return view({
-            shift: null,
+            openShifts: [],
             stock: [],
             stats: null,
             reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
