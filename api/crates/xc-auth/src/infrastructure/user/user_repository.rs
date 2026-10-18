@@ -398,6 +398,10 @@ impl UserRepository for PgUserRepository {
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<UserAuditEntry>> {
+        if before.is_some_and(|b| !is_uuid(b)) {
+            // A malformed cursor reads as "nothing older" (#3213); it never reaches the `::uuid` cast.
+            return Ok(Vec::new());
+        }
         let rows = sqlx::query(
             r#"
             SELECT a.id::text AS id,
@@ -450,6 +454,10 @@ impl UserRepository for PgUserRepository {
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<LoginEntry>> {
+        if before.is_some_and(|b| !is_uuid(b)) {
+            // A malformed cursor reads as "nothing older" (#3213); it never reaches the `::uuid` cast.
+            return Ok(Vec::new());
+        }
         let rows = sqlx::query(
             r#"
             SELECT l.id::text AS id,
@@ -485,4 +493,13 @@ impl UserRepository for PgUserRepository {
             })
             .collect())
     }
+}
+
+/// `8-4-4-4-12` hex digits, the text form of a uuid: checked before a client-supplied cursor is cast (#3213).
+fn is_uuid(s: &str) -> bool {
+    s.len() == 36
+        && s.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        })
 }
