@@ -106,8 +106,6 @@ async fn owner_bookings(
         reader.callers(&req).await
     } else {
         pages::Callers {
-            owner: None,
-            staff: None,
             user: None,
             staff_user: None,
         }
@@ -252,8 +250,6 @@ async fn staff_bookings(
         reader.callers(&req).await
     } else {
         pages::Callers {
-            owner: None,
-            staff: None,
             user: None,
             staff_user: None,
         }
@@ -578,8 +574,6 @@ mod tests {
         let roles = vec![org(Role::Executive), org(Role::Admin)];
         let user = Some(Actor::new("u-own", "org", roles, None));
         let callers = super::pages::Callers {
-            owner: None,
-            staff: None,
             user,
             staff_user: None,
         };

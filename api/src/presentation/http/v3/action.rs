@@ -293,8 +293,6 @@ mod tests {
                     None,
                 );
                 Callers {
-                    owner: None,
-                    staff: None,
                     user: Some(user),
                     staff_user: None,
                 }

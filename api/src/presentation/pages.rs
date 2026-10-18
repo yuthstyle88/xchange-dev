@@ -27,8 +27,6 @@ pub struct Sessions {
 /// The callers one request carries, including their mapped Blueprint actors.
 #[derive(Clone, Debug)]
 pub struct Callers {
-    pub owner: Option<Actor>,
-    pub staff: Option<Actor>,
     pub user: Option<xc_auth::domain::access::Actor>,
     pub staff_user: Option<xc_auth::domain::access::Actor>,
 }
@@ -71,12 +69,7 @@ pub fn old_cookie_callers(sessions: Sessions, org_id: &str) -> Callers {
         .as_ref()
         .map(|a| xc_auth::domain::access::v3_roles::actor_from_v3(a, org_id, epoch))
         .or_else(|| staff_user.clone());
-    Callers {
-        owner: sessions.owner,
-        staff: sessions.staff,
-        user,
-        staff_user,
-    }
+    Callers { user, staff_user }
 }
 
 /// Reads the sessions of a request. Declared here until ticket T4c, which
@@ -116,8 +109,6 @@ pub async fn get_callers(req: &HttpRequest) -> Callers {
         reader.callers(req).await
     } else {
         Callers {
-            owner: None,
-            staff: None,
             user: None,
             staff_user: None,
         }

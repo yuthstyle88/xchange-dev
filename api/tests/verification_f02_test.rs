@@ -313,8 +313,6 @@ impl SessionReader for HeaderUsers {
             };
 
             Callers {
-                owner: None,
-                staff: None,
                 user: user.clone(),
                 staff_user: user,
             }

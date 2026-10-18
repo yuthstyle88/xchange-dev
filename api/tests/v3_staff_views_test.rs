@@ -142,8 +142,6 @@ impl SessionReader for HeaderSessions {
         Box::pin(async move {
             let Some((role, id, branch)) = parse(&spec) else {
                 return Callers {
-                    owner: None,
-                    staff: None,
                     user: None,
                     staff_user: None,
                 };
@@ -165,8 +163,6 @@ impl SessionReader for HeaderSessions {
                 s.staff.as_ref().map(|a| actor_from_v3(a, ORG_1, since()))
             };
             Callers {
-                owner: None,
-                staff: s.staff,
                 user: staff_user.clone(),
                 staff_user,
             }

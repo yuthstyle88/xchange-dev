@@ -190,14 +190,7 @@ impl SessionReader for HeaderCallers {
                 None
             }
         });
-        Box::pin(async move {
-            Callers {
-                owner: None,
-                staff: None,
-                user,
-                staff_user,
-            }
-        })
+        Box::pin(async move { Callers { user, staff_user } })
     }
 }
 

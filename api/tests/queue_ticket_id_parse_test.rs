@@ -220,18 +220,14 @@ impl SessionReader for HeaderUsers {
         Box::pin(async move {
             match spec {
                 Some(s) => {
-                    let leg = legacy_of(&s);
+                    let _leg = legacy_of(&s);
                     let user = user_of(&s);
                     Callers {
-                        owner: leg.owner,
-                        staff: leg.staff,
                         user: user.clone(),
                         staff_user: user,
                     }
                 }
                 None => Callers {
-                    owner: None,
-                    staff: None,
                     user: None,
                     staff_user: None,
                 },

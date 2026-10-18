@@ -76,8 +76,6 @@ impl SessionReader for HeaderSessions {
         Box::pin(async move {
             let Some((role, id, branch)) = parse(&spec) else {
                 return Callers {
-                    owner: None,
-                    staff: None,
                     user: None,
                     staff_user: None,
                 };
@@ -117,8 +115,6 @@ impl SessionReader for HeaderSessions {
                 })
             };
             Callers {
-                owner: None,
-                staff: s.staff,
                 user: staff_user.clone(),
                 staff_user,
             }

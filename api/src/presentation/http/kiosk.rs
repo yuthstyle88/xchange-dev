@@ -759,8 +759,6 @@ mod tests {
         );
         let user = Some(Actor::new("u1", "org", vec![teller], None));
         let callers = Callers {
-            owner: None,
-            staff: None,
             user: user.clone(),
             staff_user: user,
         };
