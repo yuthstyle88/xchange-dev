@@ -4221,6 +4221,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "xc-testdb"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "xc-verification"
 version = "0.1.0"
 dependencies = [
