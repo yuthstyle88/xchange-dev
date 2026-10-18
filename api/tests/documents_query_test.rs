@@ -19,6 +19,8 @@
 mod common;
 mod documents_common;
 mod save_common;
+#[allow(clippy::duplicate_mod)]
+mod shift_holder_common;
 
 use documents_common::*;
 
@@ -49,6 +51,13 @@ async fn the_files_of_an_exchange_an_employee_saved_are_found_by_branch() {
     form.method = "Bank Transfer".to_owned();
     form.payment_ref = "TRX-9".to_owned();
     form.slip = Some(slip.clone());
+    shift_holder_common::open_shift_for(
+        &shop.pool,
+        save_common::MAIN,
+        employee,
+        &[("THB", "1000000"), ("USD", "1000")],
+    )
+    .await;
     let saved = shop
         .workflow
         .save(
