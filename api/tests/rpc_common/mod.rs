@@ -38,7 +38,7 @@
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -913,6 +913,11 @@ pub struct Replay<'f> {
 /// [`Replay::uploads_as`]. Keys are made at random, so one map serves every test.
 static UPLOADS_BY: Mutex<BTreeMap<(String, String), String>> = Mutex::new(BTreeMap::new());
 
+/// (test schema, branch) → this replay opened that branch's day for a save (CA-10 #626, ruling A: try 2):
+/// [`Replay::open_day_for_save`]. Read by the `operations.phase` restatement in the snapshot comparison, so only a
+/// day the replay opened is compared as OPEN; a day the code under test opens by itself is compared as recorded.
+static DAYS_OPENED_FOR_A_SAVE: Mutex<BTreeSet<(String, String)>> = Mutex::new(BTreeSet::new());
+
 impl<'f> Replay<'f> {
     /// A desk with the people of `fixture` employed and signed in.
     pub async fn start(desk: Desk, app: App, fixture: &'f Fixture) -> Replay<'f> {
@@ -1125,6 +1130,20 @@ impl<'f> Replay<'f> {
         // the ledger's drawer.
         if step.status == Some(200) && action_of(step).as_deref() == Some("saveTransaction") {
             crate::snapshot_common::r1_fund_open_drawers(&self.desk.db.pool).await;
+        }
+        // CA-10 #626 (ruling A, try 2): a compat save meets the teller gate (`check_teller_save_in`), which needs an
+        // OPEN branch day; v2 had no day phase. Before a recorded save on a branch whose shift a verified OPEN count
+        // opened (READY), the replay opens that day, as `dayStartService` would.
+        if action_of(step).as_deref() == Some("saveTransaction") {
+            let branch = payload
+                .as_ref()
+                .and_then(|p| p.get("branchId"))
+                .and_then(Value::as_str)
+                .unwrap_or("MAIN")
+                .to_owned();
+            if self.opened_by_count(&branch).await {
+                self.open_day_for_save(&branch).await;
+            }
         }
         let answer = self.app.send(call).await;
         let label = self.label(step);
@@ -1519,6 +1538,16 @@ impl<'f> Replay<'f> {
         {
             expected["operations"]["phase"] = json!("READY");
         }
+        // CA-10 #626 (ruling A, option A, beside the CA-7e READY case above): v3 needs an OPEN day to save and v2 had
+        // no day phase, so a day this replay opened for a save (`open_day_for_save`) reads OPEN where v2 said CLOSED.
+        // Only `operations.phase`, and only for such a day.
+        if expected["operations"]["phase"] == json!("CLOSED")
+            && actual["operations"]["phase"] == json!("OPEN")
+            && let Some(branch) = actual["branchId"].as_str()
+            && self.day_opened_for_a_save(branch).await
+        {
+            expected["operations"]["phase"] = json!("OPEN");
+        }
         // CA-10 #626: such a shift is the counting teller's, not the owner's who sent the direct
         // action, and a count closes it: who opened and closed it, its request ids, the figures the
         // close compares (`expected`, `difference`) and the close's note are the Blueprint's. Its
@@ -1583,6 +1612,34 @@ impl<'f> Replay<'f> {
         .fetch_one(&self.desk.db.pool)
         .await
         .expect("read the branch's counts")
+    }
+
+    /// CA-10 #626 (ruling A): the branch day OPEN for a replayed save (`shift_holder_common::open_day`), remembered
+    /// per test schema in [`DAYS_OPENED_FOR_A_SAVE`].
+    async fn open_day_for_save(&self, branch: &str) {
+        shift_holder_common::open_day(&self.desk.db.pool, branch).await;
+        let schema = self.schema().await;
+        DAYS_OPENED_FOR_A_SAVE
+            .lock()
+            .expect("the opened days")
+            .insert((schema, branch.to_owned()));
+    }
+
+    /// CA-10 #626 (ruling A): whether this replay opened `branch`'s day for a save.
+    async fn day_opened_for_a_save(&self, branch: &str) -> bool {
+        let schema = self.schema().await;
+        DAYS_OPENED_FOR_A_SAVE
+            .lock()
+            .expect("the opened days")
+            .contains(&(schema, branch.to_owned()))
+    }
+
+    /// The test's own schema (each test migrates a fresh one).
+    async fn schema(&self) -> String {
+        sqlx::query_scalar("SELECT current_schema()")
+            .fetch_one(&self.desk.db.pool)
+            .await
+            .expect("the test schema")
     }
 
     /// CA-10 #626: whether `request` names a CLOSE count (its id or its idempotency key).
