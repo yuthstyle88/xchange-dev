@@ -123,7 +123,7 @@ async fn setup_actors(
              LEFT JOIN employees e ON e.id = u.legacy_employee_id \
              WHERE (e.role IN ('FRONT', 'TELLER') OR u.legacy_employee_id IS NOT NULL) \
                AND NOT EXISTS (SELECT 1 FROM shifts s WHERE s.teller_id = u.id AND s.status = 'OPEN') \
-             ORDER BY (e.branch_id = $1) DESC, (e.role IN ('FRONT', 'TELLER')) DESC \
+             ORDER BY (e.branch_id = $1) DESC NULLS LAST, (e.role IN ('FRONT', 'TELLER')) DESC NULLS LAST \
              LIMIT 1",
         )
         .bind(branch)
