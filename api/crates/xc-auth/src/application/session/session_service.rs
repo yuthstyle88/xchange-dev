@@ -19,6 +19,7 @@ use crate::domain::token::{TokenVerifier, VerifiedToken};
 use crate::domain::user::{User, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
 
+use super::login_recorder::{LoginAttempt, LoginRecorder, LoginResult};
 use super::refresh_token::{decrypt_refresh_token, encrypt_refresh_token};
 
 pub const SESSION_SECONDS: i64 = 43_200;
@@ -387,12 +388,28 @@ impl SessionService {
         login: IdentityLoginResponse,
         now: DateTime<Utc>,
     ) -> Result<SignInTail, SessionError> {
+        self.sign_in_with_login_inner(login, now)
+            .await
+            .map_err(|(e, _)| e)
+    }
+
+    async fn sign_in_with_login_inner(
+        &self,
+        login: IdentityLoginResponse,
+        now: DateTime<Utc>,
+    ) -> Result<SignInTail, (SessionError, Option<(String, String)>)> {
         let verifier = self.verifier.as_ref().ok_or_else(|| {
-            IdentityError::unavailable("/auth/login", 503, "verifier_not_configured")
+            (
+                IdentityError::unavailable("/auth/login", 503, "verifier_not_configured").into(),
+                None,
+            )
         })?;
 
         let verified = verifier.verify(&login.access_token).await.map_err(|_| {
-            IdentityError::unavailable("/auth/login", 503, "token_verification_failed")
+            (
+                IdentityError::unavailable("/auth/login", 503, "token_verification_failed").into(),
+                None,
+            )
         })?;
 
         let row: Option<(String, String, String, String, i32)> = sqlx::query_as(
@@ -401,22 +418,26 @@ impl SessionService {
         .bind(&verified.subject)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
+        .map_err(|e| (SessionError::Database(e.to_string()), None))?;
 
         let Some((user_id, organization_id, name, status, version)) = row else {
-            return Err(SessionError::UserNotBound);
+            return Err((SessionError::UserNotBound, None));
         };
 
         if status == "DISABLED" {
-            return Err(SessionError::UserDisabled);
+            return Err((SessionError::UserDisabled, Some((user_id, organization_id))));
         }
 
         if status != "ACTIVE" {
-            return Err(IdentityError::SignIn.into());
+            return Err((
+                IdentityError::SignIn.into(),
+                Some((user_id, organization_id)),
+            ));
         }
 
         self.create_session_for_user(&user_id, &organization_id, &name, version, &login, now)
             .await
+            .map_err(|e| (e, None))
     }
 
     fn identity_identifier(raw: &str) -> String {
@@ -477,8 +498,55 @@ impl SessionService {
             .ok_or_else(|| IdentityError::unavailable("/api/auth/login", 503, "not_configured"))?;
 
         let id = Self::identity_identifier(identifier);
-        let login_resp = identity.login(&id, password, client_ip).await?;
-        self.sign_in_with_login(login_resp, now).await
+        let outcome = match identity.login(&id, password, client_ip).await {
+            Ok(login_resp) => self.sign_in_with_login_inner(login_resp, now).await,
+            Err(err) => Err((err.into(), None)),
+        };
+
+        let attempt = match &outcome {
+            Ok(tail) => LoginAttempt {
+                identifier_sent: &id,
+                ip: client_ip,
+                result: LoginResult::Ok,
+                user_id: Some(&tail.user.id),
+                organization_id: Some(&tail.user.organization_id),
+            },
+            Err((err, user_org)) => {
+                let (user_id, organization_id) = match user_org {
+                    Some((u, o)) => (Some(u.as_str()), Some(o.as_str())),
+                    None => (None, None),
+                };
+                LoginAttempt {
+                    identifier_sent: &id,
+                    ip: client_ip,
+                    result: match err {
+                        SessionError::Identity(IdentityError::InvalidCredentials) => {
+                            LoginResult::BadPassword
+                        }
+                        SessionError::Identity(
+                            IdentityError::TooManyAttempts | IdentityError::AccountLocked,
+                        ) => LoginResult::RateLimited,
+                        SessionError::Identity(IdentityError::IdentityDisabled) => {
+                            LoginResult::NotActive
+                        }
+                        SessionError::UserNotBound => LoginResult::UnknownUser,
+                        SessionError::UserDisabled => LoginResult::NotActive,
+                        SessionError::Identity(IdentityError::SignIn) if user_org.is_some() => {
+                            LoginResult::NotActive
+                        }
+                        _ => LoginResult::Unavailable,
+                    },
+                    user_id,
+                    organization_id,
+                }
+            }
+        };
+
+        if let Err(e) = LoginRecorder::new(&self.pool).record(attempt).await {
+            eprintln!("login_history write failed: {e}");
+        }
+
+        outcome.map_err(|(e, _)| e)
     }
 
     pub async fn session_check(
