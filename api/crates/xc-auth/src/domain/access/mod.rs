@@ -8,6 +8,7 @@ pub mod role_permissions;
 pub mod scope_rule;
 pub mod scoped_role;
 pub mod session_branch;
+pub mod standing;
 pub mod v3_roles;
 
 pub use actor::Actor;
@@ -19,3 +20,4 @@ pub use role_permissions::RolePermissions;
 pub use scope_rule::ScopeRule;
 pub use scoped_role::ScopedRole;
 pub use session_branch::{BranchRef, SessionBranch};
+pub use standing::{Standing, StandingKind};

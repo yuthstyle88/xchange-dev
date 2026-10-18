@@ -33,6 +33,24 @@ pub struct Callers {
     pub staff_user: Option<xc_auth::domain::access::Actor>,
 }
 
+impl Callers {
+    /// The owner's standing when the request carries an owner (OR-7, #1026): replaces `owner`.
+    pub fn owner_standing(&self) -> Option<xc_auth::domain::access::Standing> {
+        self.user
+            .as_ref()
+            .and_then(|user| xc_auth::domain::access::Standing::of(user, chrono::Utc::now()))
+            .filter(|standing| standing.is_owner())
+    }
+
+    /// The staff standing when the request carries a staff member (OR-7, #1026): replaces `staff`.
+    pub fn staff_standing(&self) -> Option<xc_auth::domain::access::Standing> {
+        self.staff_user
+            .as_ref()
+            .and_then(|user| xc_auth::domain::access::Standing::of(user, chrono::Utc::now()))
+            .filter(|standing| !standing.is_owner())
+    }
+}
+
 /// Organization ID seeded in migration 20261011100000_organizations.sql:9-10.
 pub const SEEDED_XC_ORG_ID: &str = "00000000-0000-0000-0000-000000000001";
 

@@ -12,6 +12,7 @@ use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
+use xc_auth::domain::access::StandingKind;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
@@ -88,6 +89,47 @@ impl SaveActor {
         }
 
         None
+    }
+}
+
+impl SaveActor {
+    /// The saver's standing (OR-7, #1026): what every reader uses instead of `role`.
+    ///
+    /// Transitional: derived from the old `role` until the field itself becomes a standing
+    /// (the last OR-7 save-path ticket). The mapping is design §3.3 (`v3_roles::blueprint_roles`).
+    pub fn standing(&self) -> StandingKind {
+        match self.role {
+            Role::Owner => StandingKind::Owner,
+            other => {
+                StandingKind::Staff(xc_auth::domain::access::v3_roles::blueprint_roles(other)[0])
+            }
+        }
+    }
+
+    /// The audit `actor_role` text of this saver, spelled as v3 stored it (unchanged by OR-7).
+    pub fn audit_role(&self) -> &'static str {
+        self.role.as_str()
+    }
+
+    /// The saver as an `access::Actor` at `branch` (the owner organisation-wide), valid from
+    /// `since`: the requester an approval is told about (AP-1).
+    pub fn access_actor_at(
+        &self,
+        organization_id: &str,
+        branch: &BranchId,
+        since: DateTime<Utc>,
+    ) -> xc_auth::domain::access::Actor {
+        use xc_auth::domain::access::{Actor, Role as AccessRole, ScopedRole};
+        let roles = match self.standing() {
+            StandingKind::Owner => vec![
+                ScopedRole::new(AccessRole::Executive, None, since, None),
+                ScopedRole::new(AccessRole::Admin, None, since, None),
+            ],
+            StandingKind::Staff(role) => {
+                vec![ScopedRole::new(role, Some(branch.clone()), since, None)]
+            }
+        };
+        Actor::new(&self.id, organization_id, roles, None)
     }
 }
 
