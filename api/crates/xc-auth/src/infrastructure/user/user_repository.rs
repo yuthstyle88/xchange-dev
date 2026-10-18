@@ -7,6 +7,8 @@ use xc_kernel::ids::BranchId;
 
 use crate::domain::access::{Role, ScopedRole};
 use crate::domain::user::user::User;
+use crate::domain::user::user_history::{LoginEntry, UserAuditEntry};
+use crate::domain::user::user_profile::UserProfile;
 use crate::domain::user::user_repository::UserRepository;
 use crate::domain::user::user_status::UserStatus;
 
@@ -322,5 +324,46 @@ impl UserRepository for PgUserRepository {
         .map_err(AppError::Database)?;
 
         Ok(count as usize)
+    }
+
+    async fn find_profile(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: &str,
+    ) -> AppResult<Option<UserProfile>> {
+        let _ = (tx, id);
+        todo!("C1c: SELECT employee_code, department, position, tell_code FROM users")
+    }
+
+    async fn set_profile(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: &str,
+        profile: &UserProfile,
+    ) -> AppResult<()> {
+        let _ = (tx, id, profile);
+        todo!("C1c: UPDATE users SET the four profile columns")
+    }
+
+    async fn list_audit(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        organization_id: &str,
+        before: Option<&str>,
+        limit: u16,
+    ) -> AppResult<Vec<UserAuditEntry>> {
+        let _ = (tx, organization_id, before, limit);
+        todo!("C1c: user_audit page, newest first")
+    }
+
+    async fn list_logins(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        organization_id: &str,
+        before: Option<&str>,
+        limit: u16,
+    ) -> AppResult<Vec<LoginEntry>> {
+        let _ = (tx, organization_id, before, limit);
+        todo!("C1c: login_history page, newest first")
     }
 }

@@ -16,7 +16,7 @@ use crate::domain::access::{
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityRegisterRequest,
 };
-use crate::domain::user::{CustodyHolds, User, UserRepository, UserStatus};
+use crate::domain::user::{CustodyHolds, User, UserProfile, UserRepository, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
 
 fn generate_uuid() -> String {
@@ -411,6 +411,22 @@ impl<R: UserRepository> UserService<R> {
         )
         .await?;
         Ok(())
+    }
+
+    /// `userProfileSave` (design §3.6, C1c): `GrantGuard::check(.., AccountAction::EditProfile, ..)`,
+    /// then `set_profile`, `bump_version`, and one `userProfileSave` audit row whose `before` /
+    /// `after` are the old and new `UserProfile` as JSON, in this transaction. Returns the saved
+    /// profile (empty strings normalised to `None`). A DISABLED user is `NotActive`.
+    pub async fn save_profile(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+        profile: &UserProfile,
+    ) -> Result<UserProfile, UserChangeError> {
+        let _ = (tx, actor, ip, user_id, profile);
+        todo!("C1c: save_profile")
     }
 
     /// Looks up a user by ID.

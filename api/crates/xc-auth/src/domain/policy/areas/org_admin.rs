@@ -33,4 +33,5 @@ pub const ROWS: &[AreaRow] = &[
     row("adminPermissionMatrix", Permission::UsersManage),
     row("adminUserAudit", Permission::AuditLogsRead),
     row("adminLoginHistory", Permission::AuditLogsRead),
+    row("adminEmployeeRegister", Permission::UsersManage),
 ];
