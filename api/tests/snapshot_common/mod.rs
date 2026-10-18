@@ -441,6 +441,27 @@ impl TestDb {
         lg4_fund_safe(&self.pool, id).await;
     }
 
+    /// [`TestDb::seed_branch`] without the funded ledger SAFE (LG-6.r5 #1044): for a test that opens no shift
+    /// and compares `operations.safe` with v2's `null`, as `rpc_common::Desk::open_without_cash` does for MAIN.
+    pub async fn seed_branch_without_cash(&self, id: &str, name: &str) {
+        let v2_hours = serde_json::json!({
+            "mon": [{ "open": "11:00", "close": "23:00" }],
+            "tue": [{ "open": "11:00", "close": "23:00" }],
+            "wed": [{ "open": "11:00", "close": "23:00" }],
+            "thu": [{ "open": "11:00", "close": "23:00" }],
+            "fri": [{ "open": "11:00", "close": "23:00" }],
+            "sat": [{ "open": "11:00", "close": "23:00" }],
+            "sun": [{ "open": "11:00", "close": "23:00" }],
+        });
+        sqlx::query("INSERT INTO branches (id, name, timezone, opening_hours) VALUES ($1, $2, 'Asia/Bangkok', $3)")
+            .bind(id)
+            .bind(name)
+            .bind(&v2_hours)
+            .execute(&self.pool)
+            .await
+            .expect("insert into branches");
+    }
+
     /// Drop the schema. Reached only by a test that passed; a failed test
     /// leaves its schema behind for inspection.
     pub async fn finish(self) {

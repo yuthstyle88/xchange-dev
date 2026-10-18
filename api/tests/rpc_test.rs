@@ -82,7 +82,10 @@ fn numbers(of: &[(usize, &'static str)]) -> Vec<usize> {
 
 async fn replay_whole(name: &str) -> (Fixture, Vec<usize>, rpc_common::Tally) {
     let fixture = Fixture::load(name);
-    let desk = Desk::open().await;
+    // LG-6.r5 (#1044, BE controller's ruling (a)): only `snapshot/rates.json` comes here, and it opens no
+    // shift, so MAIN's ledger SAFE is never funded and `operations.safe` stays v2's null (a funded-then-swept
+    // SAFE prints zeros).
+    let desk = Desk::open_without_cash().await;
     let app = rpc_app!(desk);
     let mut replay = Replay::start(desk, app, &fixture).await;
     replay.run().await;
@@ -578,7 +581,9 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
 #[actix_web::test]
 async fn empty_json_is_v2s_text_for_every_caller_on_both_routes() {
     let fixture = Fixture::load("snapshot/empty.json");
-    let desk = Desk::open().await;
+    // LG-6.r5 (#1044, BE controller's ruling (a)): this recording opens no shift, so MAIN's ledger SAFE is
+    // never funded and `operations.safe` stays v2's null (a funded-then-swept SAFE prints zeros).
+    let desk = Desk::open_without_cash().await;
     let app = rpc_app!(desk);
     let mut replay = Replay::start(desk, app, &fixture).await;
     replay.run().await;
