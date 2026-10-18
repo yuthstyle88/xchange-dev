@@ -27,7 +27,7 @@ jobs:
   selftest:
     name: sweep self-test
     if: github.event_name == 'pull_request'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -39,7 +39,7 @@ jobs:
   sweep:
     name: sweep merged branches
     if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 10
     permissions:
       contents: write
