@@ -89,3 +89,18 @@ pub async fn open_shift_for(
     }
     shift
 }
+
+/// The branch day of `branch` OPEN, as `dayStartService` leaves it (`ops_state.phase`), written straight into the
+/// table. Since ruling A on #626 a compat save meets the teller gate (`check_teller_save_in`), which refuses a day
+/// that is not OPEN or CUT_OFF (`SAVE_CLOSED`); a verified OPEN count only moves the day to READY. Setup only, the
+/// same seed the passing suites write (`ca10p_desk_draft_begin_save_test.rs`, `v3_staff_views_test.rs`).
+pub async fn open_day(pool: &PgPool, branch: &str) {
+    sqlx::query(
+        "INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN') \
+         ON CONFLICT (branch_id) DO UPDATE SET phase = 'OPEN'",
+    )
+    .bind(branch)
+    .execute(pool)
+    .await
+    .expect("open the branch day");
+}
