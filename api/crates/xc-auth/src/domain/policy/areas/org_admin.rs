@@ -30,8 +30,6 @@ pub const ROWS: &[AreaRow] = &[
     row("userEnable", Permission::UsersManage),
     row("userResetPassword", Permission::UsersManage),
     row("userProfileSave", Permission::UsersManage),
-    row("userImportPreview", Permission::UsersManage),
-    row("userImportApply", Permission::UsersManage),
     row("adminPermissionMatrix", Permission::UsersManage),
     row("adminUserAudit", Permission::AuditLogsRead),
     row("adminLoginHistory", Permission::AuditLogsRead),
