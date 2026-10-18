@@ -28,7 +28,7 @@ export interface UsersTabProps {
 type UsersTabComponent = (props: UsersTabProps) => JSX.Element;
 
 const TAB_MODULES = import.meta.glob<Record<string, unknown>>(
-  './{PermissionMatrix,UserAudit,LoginHistory,RegisterImport}.tsx',
+  './{PermissionMatrix,UserAudit,LoginHistory}.tsx',
   { eager: true },
 );
 
@@ -46,12 +46,9 @@ const TABS = [
   { id: 'matrix', labelKey: 'tabMatrix', file: 'PermissionMatrix' },
   { id: 'audit', labelKey: 'tabAudit', file: 'UserAudit' },
   { id: 'logins', labelKey: 'tabLogins', file: 'LoginHistory' },
-  { id: 'import', labelKey: 'tabImport', file: 'RegisterImport' },
 ] as const;
 type UsersTabId = (typeof TABS)[number]['id'];
 
-// moves to generated/user_reset_password.ts when C1/F2 merges
-type UserResetPasswordOutput = { userId: string; temporaryPassword: string };
 // moves to generated/user_profile_save.ts when C1/F3 merges
 type UserProfileSaveInput = {
   userId: string;
@@ -87,7 +84,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const suspendWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/suspend');
   const resumeWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/resume');
   const enableWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/enable');
-  const resetPasswordWrite = keyedWrite<{ userId: string }, UserResetPasswordOutput>(api, 'POST', '/api/users/reset-password');
   const profileWrite = keyedWrite<UserProfileSaveInput, UserChangeOutput>(api, 'POST', '/api/users/profile');
 
   const [activeTab, setActiveTab] = createSignal<UsersTabId>('users');
@@ -444,27 +440,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const handleEnable = (user: AdminUserRow) =>
     handleStatusWrite(enableWrite, user, 'successEnabled');
 
-  const handleResetPassword = async (user: AdminUserRow) => {
-    if (rowWriting()) return;
-    setRowWriting(true);
-    setPageError(null);
-    setPageSuccess(null);
-    setTempPassword(null);
-    const branch = props.branch();
-    try {
-      const res = await resetPasswordWrite.send({
-        userId: user.userId,
-      });
-      if (props.branch() !== branch) return;
-      setTempPassword(res.temporaryPassword);
-    } catch (err: unknown) {
-      if (props.branch() !== branch) return;
-      setPageSuccess(null);
-      setPageError(wordedError(err));
-    } finally {
-      setRowWriting(false);
-    }
-  };
 
   const statusClass = (status: string) => {
     switch (status.toUpperCase()) {
@@ -656,15 +631,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                   disabled={rowWriting()}
                                 >
                                   {t('profileButton')}
-                                </button>
-                                <button
-                                  type="button"
-                                  class="users-btn"
-                                  data-users-action="reset"
-                                  onClick={() => handleResetPassword(user)}
-                                  disabled={rowWriting()}
-                                >
-                                  {t('resetPassword')}
                                 </button>
                               </Show>
 
