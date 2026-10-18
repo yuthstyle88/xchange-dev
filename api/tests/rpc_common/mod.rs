@@ -63,6 +63,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -70,7 +71,6 @@ use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::commands::move_stock::MoveStock;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::save_transaction::SaveTransactionWorkflow;
 use xchange::bootstrap::AppState;
 use xchange::infrastructure::files::file_service::FileService;
@@ -343,7 +343,7 @@ impl Desk {
         std::fs::create_dir_all(&scratch).expect("create a scratch directory");
         let files = FileService::new(db.pool.clone(), scratch.join("uploads"));
         let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(db.pool.clone())),
+            Arc::new(ledger_shift_repository(db.pool.clone())),
             db.branch_tx(),
         );
         let workflow = SaveTransactionWorkflow::new(db.branch_tx(), shifts, files.clone());
@@ -1961,10 +1961,10 @@ impl<'f> Replay<'f> {
             Value::String(text) => text.trim().to_owned(),
             other => other.to_string(),
         };
-        let (kind, from_shift, to_shift, signed) = if direction == "IN" {
-            ("SAFE_TO_DRAWER", false, true, amount.clone())
+        let (kind, from_shift, to_shift) = if direction == "IN" {
+            ("SAFE_TO_DRAWER", false, true)
         } else {
-            ("DRAWER_TO_SAFE", true, false, format!("-{amount}"))
+            ("DRAWER_TO_SAFE", true, false)
         };
         let actor = &self
             .fixture
@@ -2052,17 +2052,44 @@ impl<'f> Replay<'f> {
         .execute(&mut *tx)
         .await
         .unwrap_or_else(|e| panic!("{label}: the moved line: {e}"));
-        sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-             VALUES ($1, $2, 0, GREATEST($3::numeric, 0)) \
-             ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
-        )
-        .bind(&shift)
-        .bind(&code)
-        .bind(&signed)
-        .execute(&mut *tx)
-        .await
-        .unwrap_or_else(|e| panic!("{label}: the shift's balance: {e}"));
+        {
+            use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+            use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+            let (from, to) = if direction == "IN" {
+                (
+                    CashPlace::InTransit(transfer.clone()),
+                    CashPlace::Drawer(shift.clone()),
+                )
+            } else {
+                (
+                    CashPlace::Drawer(shift.clone()),
+                    CashPlace::InTransit(transfer.clone()),
+                )
+            };
+            xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+                .post_in(
+                    &mut tx,
+                    &[PostingRequest {
+                        from,
+                        to,
+                        currency: xc_kernel::money::CurrencyCode::parse(&code)
+                            .expect("move currency"),
+                        quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                            amount.parse().expect("move amount"),
+                        ),
+                        source: SourceRef {
+                            source_type: SourceType::Transfer,
+                            source_id: transfer.clone(),
+                            source_key: code.clone(),
+                        },
+                        line: None,
+                        reverses: None,
+                    }],
+                    None,
+                )
+                .await
+                .unwrap_or_else(|e| panic!("{label}: the shift's balance: {e:?}"));
+        }
         sqlx::query(
             "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 1) \
              ON CONFLICT (branch_id) DO UPDATE SET version = branch_versions.version + 1",
