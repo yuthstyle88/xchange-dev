@@ -649,7 +649,7 @@ Tables:
 | F12 | `adminRolePermissionsSave` (EXECUTIVE only), audit `PERMISSION_CHANGE`, `409 guardrail` refusals naming the rule | logic | C6, C1a (`AccountAuditor`) |
 | W2 | the matrix tab, editable for EXECUTIVE, read-only for others | FE | F12 |
 
-The matrix import (`Role Permission Matrix.xlsx`, V.9 :66) goes through the same `MatrixGuardrails` and save. It is part of F7, after F12.
+There is **no import** of the matrix or of users. Owner, 2026-10-18: *"การ import ไม่ต้อง มี"* · *"เพราะ อาจคีย์ ผิดได้"*. Changes are made on screen only.
 
 ### 11.6 Tests
 - **Logic:**
