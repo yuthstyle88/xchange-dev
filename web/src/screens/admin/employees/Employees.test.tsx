@@ -1,3 +1,5 @@
+// Amended by W8 (claude/177aa7ef): userCreate no longer takes a typed password (F9 #3155, owner Q5 A); the server
+// answers temporaryPassword once. xchange#564, the BE controller's F9 contract.
 // V2-employees (#462): the admin page's employees menu — the account list, its create / reset /
 // disable writes, the branch's custody workflow (state, entity, enable) and the link to the staff
 // page (ticket §7, §9, §10 rows E1–E3; design §12.3, §12.6, §12.7 in PR 474). Written before the
@@ -237,7 +239,7 @@ class Server {
       if (sentence !== undefined) return json({ error: { code: 'validationFailed', message: sentence } }, 400);
       const roles = body.roles as { role: string; branch: string }[];
       this.employees.push({ id: `e-${this.employees.length + 1}`, username: String(body.username), name: String(body.name), role: roles[0]!.role, branchId: roles[0]!.branch, active: true, mustChange: false });
-      return json({ userId: `u-${this.employees.length}`, status: 'ACTIVE', version: 2 });
+      return json({ userId: `u-${this.employees.length}`, status: 'ACTIVE', version: 2, temporaryPassword: 'Kq7mPz3RtW9xVb2N' });
     }
     this.others.push(`${method} ${raw}`);
     return json({ error: { code: 'notFound', message: 'not found' } }, 404);
@@ -596,15 +598,13 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
       ['B2', 'Bravo Desk'],
     ]);
     expect(branch.value, 'the branch picked in the header').toBe('A1');
-    const password = field(d, T.password);
-    expect(password.type, 'the temporary password is concealed').toBe('password');
+    expect(d.querySelector('input[type="password"]'), 'W8: no password field in the create dialog').toBeNull();
 
     type(field(d, T.name), 'New Person');
     type(field(d, T.phone), '0812345678');
     type(field(d, T.username), 'new01');
     choose(role, 'TELLER');
     choose(branch, 'MAIN');
-    type(password, 'temporary-pass-01');
     const mark = server.reads.length;
     button(d, T.createSubmit).click();
     await settle();
@@ -619,7 +619,6 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
           username: 'new01',
           phone: '0812345678',
           email: null,
-          password: 'temporary-pass-01',
           roles: [{ role: 'TELLER', branch: 'MAIN' }],
         },
       },
@@ -710,7 +709,6 @@ describe("V2-employees E1: create, reset and disable through v2's door", () => {
         type(field(theDialog(), T.name), 'Somebody');
         type(field(theDialog(), T.phone), '0812345678');
         type(field(theDialog(), T.username), 'some01');
-        type(field(theDialog(), T.password), 'temporary-pass-01');
         button(theDialog(), T.createSubmit).click();
       } else {
         button(rowOf('front01'), T.reset).click();
@@ -888,6 +886,79 @@ describe('V2-employees: the folder makes no request and no money arithmetic of i
       const text = sources[f]!;
       expect(/fetch\(/.test(text), `${f}: every call goes through ApiClient`).toBe(false);
       expect(/Number\(|parseFloat|parseInt|Math\.round|toFixed|\* *100/.test(text), `${f}: no money arithmetic`).toBe(false);
+    }
+  });
+});
+
+// ── W8 (F9 #3155, owner Q5 A): the temporary password from userCreate ────────
+// Added by W8's writer (claude/177aa7ef). The notice contract is the one in ../users/UsersScreen.w8.test.tsx:
+// `[data-temp-password]`, `[data-temp-password-value]`, `[data-temp-password-copy]`, `[data-temp-password-done]`.
+
+describe('W8: Employees create shows the temporary password once', () => {
+  const TEMP = 'Kq7mPz3RtW9xVb2N';
+  const notice = () => container!.querySelector<HTMLElement>('[data-temp-password]');
+
+  async function createOne(): Promise<void> {
+    button(page(), T.add).click();
+    await settle();
+    type(field(theDialog(), T.name), 'New Person');
+    type(field(theDialog(), T.phone), '0812345678');
+    type(field(theDialog(), T.username), 'new01');
+    button(theDialog(), T.createSubmit).click();
+    await settle();
+  }
+
+  it('W8 row 1: after create the dialog closes and the notice shows the password with copy and Done; Done clears it', async () => {
+    await mount();
+    await createOne();
+    expect(openDialogEl(), 'the dialog closes once saved').toBeNull();
+    expect(notice(), 'the notice').not.toBeNull();
+    expect(notice()!.querySelector('[data-temp-password-value]')?.textContent).toContain(TEMP);
+    notice()!.querySelector<HTMLButtonElement>('[data-temp-password-done]')!.click();
+    await settle();
+    expect(notice()).toBeNull();
+    expect(container!.textContent).not.toContain(TEMP);
+  });
+
+  it('W8 row 2: copy writes exactly the password to the clipboard, and nothing stores it', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    await mount();
+    await createOne();
+    notice()!.querySelector<HTMLButtonElement>('[data-temp-password-copy]')!.click();
+    await settle();
+    expect(writeText.mock.calls).toEqual([[TEMP]]);
+    expect(setItem.mock.calls.filter((call) => JSON.stringify(call).includes(TEMP))).toEqual([]);
+    setItem.mockRestore();
+  });
+
+  it('W8 row 3: a branch change clears the notice', async () => {
+    const { setBranch } = await mount();
+    await createOne();
+    expect(notice()).not.toBeNull();
+    setBranch('A1');
+    await settle();
+    expect(notice()).toBeNull();
+  });
+
+  it('W8 row 4: a refused create shows no notice', async () => {
+    server.refuse.create = 'เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว';
+    await mount();
+    await createOne();
+    expect(notice()).toBeNull();
+  });
+
+  it('W8 row 5: in English the notice has no Thai, and both tables hold its four texts', async () => {
+    await mount();
+    await createOne();
+    setLang('en');
+    await settle();
+    expect(THAI.test(notice()?.textContent ?? 'missing'), norm(notice()?.textContent)).toBe(false);
+    const { th, en } = table() as unknown as { th: Record<string, string>; en: Record<string, string> };
+    for (const k of ['tempPasswordTitle', 'tempPasswordOnce', 'tempPasswordCopy', 'tempPasswordDone']) {
+      expect(th[k]?.trim(), `th.${k}`).toBeTruthy();
+      expect(en[k]?.trim(), `en.${k}`).toBeTruthy();
     }
   });
 });

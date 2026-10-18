@@ -75,6 +75,7 @@ export const th = {
 
   tempPasswordTitle: 'รหัสผ่านชั่วคราว',
   tempPasswordOnce: 'รหัสผ่านนี้จะแสดงเพียงครั้งเดียว กรุณาคัดลอกและส่งมอบให้ผู้ใช้',
+  tempPasswordCopy: 'คัดลอก',
   tempPasswordDone: 'รับทราบแล้ว',
 
   profileButton: 'ข้อมูลพนักงาน',
@@ -213,6 +214,7 @@ export const en = {
 
   tempPasswordTitle: 'Temporary Password',
   tempPasswordOnce: 'This password is shown only once. Copy and share it with the user now.',
+  tempPasswordCopy: 'Copy',
   tempPasswordDone: 'Done',
 
   profileButton: 'Profile',
