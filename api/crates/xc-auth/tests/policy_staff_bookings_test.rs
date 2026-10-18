@@ -23,7 +23,7 @@
 //!   which holds BookingsDesk, so it hears what a role outside the counter hears;
 //! - D-4: an employee naming a branch outside their scope is refused, no longer moved to their own.
 //!
-//! v2's owner bookings route and its BookingsAdmin rows went with v2's booking (BK-11 #1413).
+//! v2's owner bookings route and its bookings-admin rows went with v2's booking (BK-11 #1413).
 
 mod policy_common;
 

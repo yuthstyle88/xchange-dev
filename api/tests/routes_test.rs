@@ -51,7 +51,7 @@ async fn every_handler_module_has_the_same_configure() {
         ("reference_rates", http::reference_rates::configure),
         ("rpc", http::rpc::configure),
     ];
-    assert_eq!(modules.len(), 9);
+    assert_eq!(modules.len(), 8);
     // the table itself, and the two that keep the shape T1a gave them
     let _table: Configure = http::configure;
     let _health: fn(&mut web::ServiceConfig) = http::health::configure;

@@ -11,8 +11,7 @@
 //!   with `Debug + Clone + Copy + PartialEq + Eq`. `None` = a name the path has no row for.
 //!   `Custody` = a row #582 decides; until #582 the custody engine asks the v2 rule.
 //! - `Permission` gains `ReferenceRatesRead`: a v3-only row of an OWNER-only route that §4.2 does not
-//!   list, given to EXECUTIVE, the B1 translation of OWNER (no role changes). (`BookingsAdmin` went
-//!   with v2's booking in BK-11 #1413.)
+//!   list, given to EXECUTIVE, the B1 translation of OWNER (no role changes). (v2's bookings-admin permission went with v2's booking in BK-11 #1413.)
 //! - `xc_auth::domain::access::v3_roles::blueprint_roles(v3: policy Role) -> &'static [Role]` and
 //!   `actor_from_v3(v3: &policy Actor, organization_id: &str, since: DateTime<Utc>) -> access::Actor`
 //!   (B1; the extractor maps a password session through it until OR-7).
