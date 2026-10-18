@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: "0 20 * * *"
+
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('api-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'api-main') || format('api-{0}-{1}', github.ref, github.sha) }}
@@ -62,6 +65,9 @@ jobs:
 
       - name: Self-test api-ci-plan
         run: bash .github/scripts/api-ci-plan.test.sh
+
+      - name: Self-test api-rerun-filter
+        run: bash .github/scripts/api-rerun-filter.test.sh
 
       - name: Self-test main-push-base
         run: bash .github/scripts/main-push-base.test.sh
@@ -371,6 +377,14 @@ jobs:
           fi
           echo "$ROOT/bin" >> "$GITHUB_PATH"
 
+      - name: Download failed tests artifact (re-run)
+        if: needs.changes.outputs.run_tests == 'true' && github.run_attempt > 1
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: api-failed-tests-${{ github.run_id }}
+          path: api/target/nextest/prev
+
       - name: Test
         if: needs.changes.outputs.run_tests == 'true'   # github.event_name != 'pull_request' (except batch/merge-*; owner 2026-10-17)
         working-directory: api
@@ -378,12 +392,51 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ env.XC_PGPORT }}/xchange_test
           XC_REQUIRE_WEB_DIST: 1
           PACKAGES: ${{ needs.changes.outputs.packages }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           if [ -z "$PACKAGES" ]; then
             echo "Skipping test step: packages is empty (no Rust packages affected)"
-          else
-            cargo nextest run $PACKAGES --no-fail-fast
+            exit 0
           fi
+          CACHE_DIR="${RUNNER_TOOL_CACHE:-$HOME/.cache}/xchange-rerun/${RUN_ID:-local}"
+          PREV_ATTEMPT=$(( ${RUN_ATTEMPT:-1} - 1 ))
+          PREV_REPORT=""
+          for candidate in \
+            "target/nextest/prev/failed-tests.txt" \
+            "target/nextest/prev/junit.xml" \
+            "$CACHE_DIR/attempt-${PREV_ATTEMPT}-junit.xml"; do
+            if [ -r "$candidate" ]; then
+              PREV_REPORT="$candidate"
+              break
+            fi
+          done
+          NEXTEST_ARGS=$(bash ../.github/scripts/api-rerun-filter.sh "$PACKAGES" "${RUN_ATTEMPT:-1}" "$PREV_REPORT")
+          echo "nextest args: $NEXTEST_ARGS"
+          rc=0
+          if [[ "$NEXTEST_ARGS" == *" -E '"*"'" ]]; then
+            pkg_part="${NEXTEST_ARGS%% -E \'*}"
+            filter_part="${NEXTEST_ARGS#* -E \'}"
+            filter_part="${filter_part%\'}"
+            cargo nextest run --profile ci $pkg_part -E "$filter_part" --no-fail-fast || rc=$?
+          else
+            cargo nextest run --profile ci $NEXTEST_ARGS --no-fail-fast || rc=$?
+          fi
+          if [ -r "target/nextest/ci/junit.xml" ]; then
+            mkdir -p "$CACHE_DIR"
+            cp "target/nextest/ci/junit.xml" "$CACHE_DIR/attempt-${RUN_ATTEMPT:-1}-junit.xml"
+          fi
+          exit "$rc"
+
+      - name: Upload failed tests artifact
+        if: failure() && needs.changes.outputs.run_tests == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-failed-tests-${{ github.run_id }}
+          path: api/target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+          overwrite: true
 
       - name: Guard tests
         if: needs.changes.outputs.guards == 'true'
