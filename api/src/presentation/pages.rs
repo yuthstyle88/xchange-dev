@@ -8,8 +8,8 @@ use std::str::FromStr;
 use actix_web::http::Method;
 use actix_web::{HttpRequest, HttpResponse, web};
 use rust_decimal::{Decimal, RoundingStrategy};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use value_objects::actor::Actor;
+use xc_auth::domain::policy::value_objects;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
@@ -367,8 +367,10 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
         return plain_404();
     }
 
-    let sessions = sessions_of(&req).await;
-    if sessions.owner.is_none() && sessions.staff.is_none() {
+    let callers = get_callers(&req).await;
+    let owner = callers.owner_standing();
+    let staff = callers.staff_standing();
+    if owner.is_none() && staff.is_none() {
         return to_login(&req);
     }
 
@@ -397,10 +399,10 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
         }
     };
 
-    let target_branch = if sessions.owner.is_some() {
+    let target_branch = if owner.is_some() {
         url_branch
-    } else if let Some(staff) = &sessions.staff {
-        staff.branch_id().map(|b| b.as_str()).unwrap_or("MAIN")
+    } else if let Some(staff) = &staff {
+        staff.branch.as_ref().map(|b| b.as_str()).unwrap_or("MAIN")
     } else {
         url_branch
     };
@@ -545,9 +547,9 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
     };
 
     if spec.kind == PageKind::DeskVariant {
-        let sessions = sessions_of(&req).await;
-        let staff = match &sessions.staff {
-            Some(s) if s.role() == Role::Front => s,
+        let callers = get_callers(&req).await;
+        let staff = match callers.staff_standing() {
+            Some(s) if s.staff_role() == Some(xc_auth::domain::access::Role::Teller) => s,
             _ => {
                 return to_staff(&req);
             }
@@ -561,7 +563,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
             return plain_404();
         };
 
-        let branch_name = staff.branch_id().map(|b| b.as_str()).unwrap_or("");
+        let branch_name = staff.branch.as_ref().map(|b| b.as_str()).unwrap_or("");
         let json_branch = serde_json::to_string(branch_name).unwrap_or_else(|_| "\"\"".to_string());
         if let Some(pos) = content.find("<head>") {
             content.replace_range(
@@ -587,22 +589,22 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
             .body(content);
     }
 
-    let sessions = if spec.who_signed_in || spec.kind == PageKind::Branch {
-        Some(sessions_of(&req).await)
+    let callers = if spec.who_signed_in || spec.kind == PageKind::Branch {
+        Some(get_callers(&req).await)
     } else {
         None
     };
 
     if spec.who_signed_in {
-        let s = sessions.as_ref().unwrap();
-        if s.owner.is_none() && s.staff.is_none() {
+        let c = callers.as_ref().unwrap();
+        if c.owner_standing().is_none() && c.staff_standing().is_none() {
             return to_login(&req);
         }
     }
 
     let branch = if spec.kind == PageKind::Branch {
-        let s = sessions.as_ref().unwrap();
-        match page_branch(&req, s) {
+        let c = callers.as_ref().unwrap();
+        match page_branch(&req, c) {
             Ok(name) => Some(name),
             Err(resp) => return resp,
         }
@@ -670,17 +672,6 @@ fn extract_branch_query(query_str: &str) -> Option<String> {
     }
 }
 
-async fn get_sessions(req: &HttpRequest) -> Sessions {
-    if let Some(reader) = req.app_data::<web::Data<dyn SessionReader>>() {
-        reader.sessions(req).await
-    } else {
-        Sessions {
-            owner: None,
-            staff: None,
-        }
-    }
-}
-
 fn redirect_origin(req: &HttpRequest) -> String {
     let scheme = match req
         .headers()
@@ -698,11 +689,12 @@ fn redirect_origin(req: &HttpRequest) -> String {
     format!("{scheme}://{host}")
 }
 
-pub(crate) fn page_branch(req: &HttpRequest, s: &Sessions) -> Result<String, HttpResponse> {
-    let name = if s.owner.is_none() {
-        if let Some(staff) = &s.staff {
+pub(crate) fn page_branch(req: &HttpRequest, c: &Callers) -> Result<String, HttpResponse> {
+    let name = if c.owner_standing().is_none() {
+        if let Some(staff) = c.staff_standing() {
             staff
-                .branch_id()
+                .branch
+                .as_ref()
                 .map(|b| b.as_str())
                 .unwrap_or("MAIN")
                 .to_string()
@@ -732,10 +724,6 @@ pub(crate) fn page_branch(req: &HttpRequest, s: &Sessions) -> Result<String, Htt
             .body("Invalid branch"));
     }
     Ok(name)
-}
-
-pub(crate) async fn sessions_of(req: &HttpRequest) -> Sessions {
-    get_sessions(req).await
 }
 
 fn encode_component(s: &str) -> String {
