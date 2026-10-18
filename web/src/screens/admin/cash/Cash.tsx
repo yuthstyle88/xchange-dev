@@ -263,7 +263,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
 
       {/* Banner */}
       <Show
-        when={cash()?.shift}
+        when={hasOpenShift()}
         fallback={
           <div class="stock-banner">
             <strong>{t('noOpenShift')}</strong>
@@ -272,15 +272,21 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         }
       >
         <div class="stock-banner">
-          <strong>
-            {t('openShiftBanner', { id: cash()!.shift!.id })}
-          </strong>
-          <p>
-            {t('openShiftBannerSub', {
-              when: when(cash()!.shift!.openedAt),
-              staff: cash()!.shift!.staff,
-            })}
-          </p>
+          <For each={cash()?.openShifts ?? []}>
+            {(s) => (
+              <>
+                <strong>
+                  {t('openShiftBanner', { id: s.shiftId })}
+                </strong>
+                <p>
+                  {t('openShiftBannerSub', {
+                    when: when(s.openedAt),
+                    staff: s.tellerName,
+                  })}
+                </p>
+              </>
+            )}
+          </For>
         </div>
       </Show>
 
