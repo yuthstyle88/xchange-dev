@@ -294,4 +294,13 @@ impl UserRepository for PgUserRepository {
 
         Ok(roles)
     }
+
+    async fn count_active_owners(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        organization_id: &str,
+    ) -> AppResult<usize> {
+        let _ = (tx, organization_id);
+        todo!("RBAC function ticket: PgUserRepository::count_active_owners (§3.1)")
+    }
 }

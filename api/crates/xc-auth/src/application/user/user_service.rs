@@ -9,11 +9,11 @@ use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{IdentityType, PiiError, normalize};
 
-use crate::domain::access::{Role, ScopeRule, ScopedRole};
+use crate::domain::access::{Actor, GrantRefusal, Role, ScopeRule, ScopedRole};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityRegisterRequest,
 };
-use crate::domain::user::{User, UserRepository, UserStatus};
+use crate::domain::user::{CustodyHolds, User, UserRepository, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
 
 fn generate_uuid() -> String {
@@ -42,6 +42,41 @@ fn generate_uuid() -> String {
     )
 }
 
+/// Why an account change is refused (design §3.2; RBAC C1).
+#[derive(Debug)]
+pub enum UserChangeError {
+    NotFound,
+    Refused(GrantRefusal),
+    NotActive,
+    HoldsCash,
+    NotBound,
+    BadMove { from: UserStatus, to: UserStatus },
+    App(AppError),
+}
+
+impl std::fmt::Display for UserChangeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("user not found"),
+            Self::Refused(GrantRefusal::Scope(e)) => write!(f, "Scope rule rejected: {e}"),
+            Self::Refused(r) => write!(f, "refused: {r:?}"),
+            Self::NotActive => f.write_str("user not active"),
+            Self::HoldsCash => f.write_str("user holds cash or a pending handover"),
+            Self::NotBound => f.write_str("user not bound to an identity"),
+            Self::BadMove { from, to } => write!(f, "status move {from} -> {to} not allowed"),
+            Self::App(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for UserChangeError {}
+
+impl From<AppError> for UserChangeError {
+    fn from(e: AppError) -> Self {
+        Self::App(e)
+    }
+}
+
 #[derive(Clone)]
 pub struct UserService<R = PgUserRepository> {
     repo: Arc<R>,
@@ -61,15 +96,20 @@ impl<R: UserRepository> UserService<R> {
     /// Grants a new scoped role to a user:
     /// checks ScopeRule against current active roles before writing,
     /// writes user_roles row, and bumps users.version.
+    #[allow(clippy::too_many_arguments)]
     pub async fn grant(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
         user_id: &str,
         role: Role,
         branch: Option<BranchId>,
         valid_from: DateTime<Utc>,
         valid_to: Option<DateTime<Utc>>,
-    ) -> AppResult<ScopedRole> {
+    ) -> Result<ScopedRole, UserChangeError> {
+        // Skeleton: today's body; the RBAC function ticket adds GrantGuard + AccountAuditor (§3.1, §3.4).
+        let _ = (actor, ip);
         let user = self
             .repo
             .find_by_id(tx, user_id)
@@ -77,7 +117,7 @@ impl<R: UserRepository> UserService<R> {
             .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
 
         if user.status == UserStatus::Disabled {
-            return Err(AppError::Domain("บัญชีถูกระงับ".to_string()));
+            return Err(AppError::Domain("บัญชีถูกระงับ".to_string()).into());
         }
 
         let existing_roles = self.repo.find_roles_by_user_id(tx, user_id).await?;
@@ -100,14 +140,19 @@ impl<R: UserRepository> UserService<R> {
 
     /// Revokes a role by setting valid_to on matching user_roles rows,
     /// and bumps users.version.
+    #[allow(clippy::too_many_arguments)]
     pub async fn revoke(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
         user_id: &str,
         role: Role,
         branch: Option<&BranchId>,
         now: DateTime<Utc>,
-    ) -> AppResult<()> {
+    ) -> Result<(), UserChangeError> {
+        // Skeleton: today's body; the RBAC function ticket adds GrantGuard + AccountAuditor.
+        let _ = (actor, ip);
         let user = self
             .repo
             .find_by_id(tx, user_id)
@@ -126,8 +171,13 @@ impl<R: UserRepository> UserService<R> {
     pub async fn disable(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
         user_id: &str,
-    ) -> AppResult<()> {
+        holds: &dyn CustodyHolds,
+    ) -> Result<(), UserChangeError> {
+        // Skeleton: today's body; the RBAC function ticket adds GrantGuard, may_move, the cash guard and the audit.
+        let _ = (actor, ip, holds);
         let user = self
             .repo
             .find_by_id(tx, user_id)
@@ -139,6 +189,43 @@ impl<R: UserRepository> UserService<R> {
             .await?;
 
         Ok(())
+    }
+
+    /// ACTIVE → SUSPENDED (§3.2). RBAC function ticket.
+    pub async fn suspend(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+        holds: &dyn CustodyHolds,
+    ) -> Result<(), UserChangeError> {
+        let _ = (tx, actor, ip, user_id, holds);
+        todo!("RBAC function ticket: UserService::suspend (§3.2)")
+    }
+
+    /// SUSPENDED → ACTIVE (§3.2). RBAC function ticket.
+    pub async fn resume(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+    ) -> Result<(), UserChangeError> {
+        let _ = (tx, actor, ip, user_id);
+        todo!("RBAC function ticket: UserService::resume (§3.2)")
+    }
+
+    /// DISABLED → ACTIVE, EXECUTIVE only (§3.2, Q3 A). RBAC function ticket.
+    pub async fn enable(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+    ) -> Result<(), UserChangeError> {
+        let _ = (tx, actor, ip, user_id);
+        todo!("RBAC function ticket: UserService::enable (§3.2)")
     }
 
     /// Looks up a user by ID.

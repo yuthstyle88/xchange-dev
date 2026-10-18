@@ -83,4 +83,10 @@ pub trait UserRepository: Send + Sync + 'static {
         action: &str,
         organization_id: &str,
     ) -> impl Future<Output = AppResult<()>> + Send;
+    /// ACTIVE users of the organisation holding live organisation-wide EXECUTIVE or ADMIN (design §3.1 rule 6).
+    fn count_active_owners(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        organization_id: &str,
+    ) -> impl Future<Output = AppResult<usize>> + Send;
 }

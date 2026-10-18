@@ -97,9 +97,9 @@ impl CommandAction for UserGrantCommand {
         }
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
-            .grant(tx, &user_id, role, role_branch, valid_from, valid_to)
+            .grant(tx, who, None, &user_id, role, role_branch, valid_from, valid_to)
             .await
-            .map_err(from_app_error)?;
+            .map_err(from_change_error)?;
         changed(tx, &user_id).await
     }
 }
@@ -180,6 +180,21 @@ pub(crate) async fn user_in_organisation(
         return Err(out_of_scope());
     }
     Ok(id)
+}
+
+/// The cash guard used by account commands (design §3.2; C3 writes the query).
+pub(crate) fn custody_holds() -> std::sync::Arc<dyn xc_auth::domain::user::CustodyHolds> {
+    std::sync::Arc::new(xc_cash::infrastructure::custody_holds::PgCustodyHolds)
+}
+
+/// Maps an account-change refusal to the wire (design §3.6; codes in the C1a ticket §7, plus `409 statusNotAllowed`,
+/// ruling #564 issuecomment-6246076019 Q6). Skeleton: only `App` is mapped; the rest is the RBAC function ticket.
+pub(crate) fn from_change_error(e: xc_auth::application::user::user_service::UserChangeError) -> V3Error {
+    use xc_auth::application::user::user_service::UserChangeError;
+    match e {
+        UserChangeError::App(e) => from_app_error(e),
+        other => todo!("RBAC function ticket: from_change_error for {other:?}"),
+    }
 }
 
 /// A refusal of `UserService` (OR-2's scope rule, a disabled user) is `validationFailed`; a
