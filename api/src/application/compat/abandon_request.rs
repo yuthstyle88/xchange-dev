@@ -93,7 +93,11 @@ impl AbandonRequest {
         let pool = branch_tx.pool().clone();
         Self {
             branches: PgBranchRepository::new(pool.clone()),
-            shifts: Arc::new(PgShiftRepository::new(pool)),
+            shifts: Arc::new(
+                xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                    pool,
+                ),
+            ),
             abandoned: PgAbandonedRequests,
             branch_tx,
         }

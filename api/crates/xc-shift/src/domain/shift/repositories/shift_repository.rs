@@ -100,14 +100,6 @@ pub trait ShiftRepository: Send + Sync + 'static {
         movement: &'a StockMovement,
     ) -> impl std::future::Future<Output = AppResult<()>> + Send + 'a;
 
-    fn update_expected<'a>(
-        &'a self,
-        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        shift_id: &'a str,
-        delta: &'a StockDelta,
-        new_expected: &'a Balances,
-    ) -> impl std::future::Future<Output = AppResult<()>> + Send + 'a;
-
     #[allow(clippy::too_many_arguments)]
     fn close_shift<'a>(
         &'a self,

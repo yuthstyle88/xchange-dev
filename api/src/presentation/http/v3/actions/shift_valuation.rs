@@ -222,7 +222,7 @@ impl ComputeAction for ShiftValuationAction {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    let repo = PgShiftRepository::new(state.db.clone());
+    let repo = xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(state.db.clone());
     let action = Arc::new(ShiftValuationAction::new(repo));
     ComputeEndpoint::register(cfg, action);
 }

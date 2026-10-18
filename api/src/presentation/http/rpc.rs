@@ -41,7 +41,6 @@ use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::compat::abandon_request::AbandonRequest;
 use crate::application::compat::actions::RpcActions;
@@ -348,7 +347,11 @@ fn shift_service(pool: &PgPool, branch_tx: &BranchTx) -> ShiftService {
     let status = StatusService::new(branch_tx.clone(), queue.clone());
     let counters = CounterService::new(branch_tx.clone(), queue, status);
     ShiftService::new(
-        Arc::new(PgShiftRepository::new(pool.clone())),
+        Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                pool.clone(),
+            ),
+        ),
         branch_tx.clone(),
     )
     .with_lifecycle_hook(Arc::new(counters))
