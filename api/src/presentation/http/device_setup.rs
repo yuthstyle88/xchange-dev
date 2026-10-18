@@ -63,7 +63,7 @@ fn redirect_origin(req: &HttpRequest) -> String {
 
 async fn device_agents_page_handler(req: HttpRequest) -> HttpResponse {
     let callers = callers(&req).await;
-    let is_owner = callers.owner.is_some();
+    let is_owner = callers.owner_standing().is_some();
 
     if !is_owner {
         let origin = redirect_origin(&req);
