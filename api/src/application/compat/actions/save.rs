@@ -122,15 +122,20 @@ impl RpcAction for SaveAction {
 
 fn save_actor(caller: &RpcCaller) -> SaveActor {
     let id = caller.actor.id().to_string();
-    let employee_id = match caller.actor.kind() {
-        ActorKind::Staff => Some(id.clone()),
-        ActorKind::Owner => None,
+    let (employee_id, standing) = match caller.actor.kind() {
+        ActorKind::Staff => (
+            Some(id.clone()),
+            xc_auth::domain::access::StandingKind::Staff(
+                xc_auth::domain::access::v3_roles::blueprint_roles(caller.actor.role())[0],
+            ),
+        ),
+        ActorKind::Owner => (None, xc_auth::domain::access::StandingKind::Owner),
     };
     SaveActor {
         id,
         username: caller.username.clone(),
         employee_id,
-        role: caller.actor.role(),
+        standing,
     }
 }
 

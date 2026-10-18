@@ -15,7 +15,6 @@ mod devices_common;
 mod routes_common;
 
 use devices_common::*;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 
 /// The first model of the committed configuration (#274).
 const NEOCAL: &str = "NEOCAL_NTP_8220BT";
@@ -35,13 +34,7 @@ fn drawer_request(n: u32, reason: &str) -> QueueJob {
 /// The owner says MAIN has no drawer.
 async fn no_drawer_at_main(db: &Devices, seconds: i64) {
     db.service
-        .set_drawer(
-            &branch(MAIN),
-            NEOCAL,
-            false,
-            &Actor::owner("owner"),
-            at(seconds),
-        )
+        .set_drawer(&branch(MAIN), NEOCAL, false, at(seconds))
         .await
         .expect("the owner says MAIN has no drawer");
 }

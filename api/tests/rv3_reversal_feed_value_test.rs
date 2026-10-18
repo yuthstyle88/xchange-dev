@@ -246,7 +246,9 @@ impl Shop {
             id,
             username: "test".to_owned(),
             employee_id: None,
-            role: xc_auth::domain::policy::value_objects::role::Role::Front,
+            standing: xc_auth::domain::access::StandingKind::Staff(
+                xc_auth::domain::access::Role::Teller,
+            ),
         }
     }
 
