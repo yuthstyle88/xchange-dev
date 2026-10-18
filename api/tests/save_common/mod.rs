@@ -46,8 +46,6 @@ pub use xc_exchange::domain::exchange::entities::transaction::Transaction;
 pub use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 pub use xc_kernel::mode::Mode;
 pub use xc_shift::application::shift::service::ShiftService;
-pub use xc_shift::domain::shift::commands::open_shift::OpenShift;
-pub use xc_shift::domain::shift::value_objects::balances::Balances;
 pub use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 pub use xchange::application::workflows::save_transaction::{
     SaveTransactionWorkflow, SavedTransaction,
