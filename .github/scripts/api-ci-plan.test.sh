@@ -147,6 +147,15 @@ else
 fi
 
 # ── add your own cases below this line ────────────────────────────────────────────────────────
+check "push: only .github/workflows/api.yml => packages empty, run_tests=false, guards still run (#3086)" push "" \
+  "packages=|run_tests=false|guards=true|device_agent=false|release_check=true" \
+  .github/workflows/api.yml
+check "push: .github/scripts/x.sh + api/src/.../admin_cash.rs => -p xchange, not --workspace (#3086)" push "" \
+  "packages=-p xchange|run_tests=true|guards=true|device_agent=false|release_check=true" \
+  .github/scripts/x.sh api/src/presentation/http/v3/views/admin_cash.rs
+check "push: api/Cargo.lock still plans --workspace (#3086)" push "" \
+  "$ALL|guards=true|device_agent=true|release_check=true" \
+  api/Cargo.lock
 
 echo "passed: $pass, failed: $fail"
 [ "$fail" = 0 ]

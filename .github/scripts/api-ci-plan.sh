@@ -43,7 +43,13 @@ fi
 if [ ! -r "$CHANGED_FILE" ] || [ ! -r "$METADATA_FILE" ]; then
   packages="--workspace"
 else
-  if ! packages=$("$SCRIPT_DIR/api-test-plan.sh" "$CHANGED_FILE" "$METADATA_FILE"); then
+  PLAN_CHANGED="$CHANGED_FILE"
+  if [ "$EVENT" = "push" ]; then
+    PLAN_CHANGED=$(mktemp)
+    trap 'rm -f "$PLAN_CHANGED"' EXIT
+    grep -vE '^(\./)?\.github(/|$)' "$CHANGED_FILE" > "$PLAN_CHANGED" || true
+  fi
+  if ! packages=$("$SCRIPT_DIR/api-test-plan.sh" "$PLAN_CHANGED" "$METADATA_FILE"); then
     packages="--workspace"
   fi
 fi
