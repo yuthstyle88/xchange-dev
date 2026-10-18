@@ -45,13 +45,11 @@ use pos_error::{AppError, AppResult};
 use serde_json::{Map, Value};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::authorizer::Grant;
+use xc_auth::domain::access::{Role, Standing};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
@@ -68,6 +66,19 @@ use crate::application::compat::v2_json::V2Json;
 
 /// `payload.branchId` that is not a branch id at all.
 pub const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
+
+/// Maps the stored `employees.role` text to a Blueprint staff [`Role`] (OR-7, design §3.3).
+pub(crate) fn v3_stored_role(text: &str) -> Option<Role> {
+    match text {
+        "FRONT" => Some(Role::Teller),
+        "BACKEND" | "MANAGER" => Some(Role::BranchManager),
+        "RATES" => Some(Role::RateManager),
+        "FINANCE" => Some(Role::Finance),
+        "SYSTEM" => Some(Role::Admin),
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => Some(Role::VerificationReviewer),
+        _ => None,
+    }
+}
 
 /// The order of the keys the staff view adds to a snapshot (`employees`, then
 /// `employee`) and of the keys inside them, as v2 prints them.
@@ -86,8 +97,8 @@ const STAFF_KEYS: [&str; 9] = [
 /// Who is calling, as the session says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcCaller {
-    /// The owner (`Actor::owner`) or an employee with role and branch.
-    pub actor: Actor,
+    /// The caller's standing: owner, or staff with role and branch.
+    pub standing: Standing,
     /// The account's username: v2's `actor` in a snapshot, and the name every
     /// write is recorded under.
     pub username: String,
@@ -97,17 +108,19 @@ pub struct RpcCaller {
 
 impl RpcCaller {
     fn is_staff(&self) -> bool {
-        self.actor.kind() == ActorKind::Staff
+        !self.standing.is_owner()
     }
 
     /// The caller as the staff view names them; `None` for the owner.
     fn staff_member(&self) -> Option<StaffMember> {
-        let branch = self.actor.branch_id()?;
+        let branch = self.standing.branch.as_ref()?;
+        let role = self.standing.staff_role()?;
         Some(StaffMember {
-            id: self.actor.id().to_string(),
+            id: self.standing.user_id.clone(),
             username: self.username.clone(),
             name: self.name.clone(),
-            role: self.actor.role(),
+            role,
+            role_text: self.standing.kind.audit_text().to_string(),
             branch: branch.clone(),
         })
     }
@@ -189,7 +202,6 @@ impl CompatRpc {
         action: &str,
         user: Option<&xc_auth::domain::access::Actor>,
         named: Option<&BranchId>,
-        _legacy: Option<&Actor>,
         now: DateTime<Utc>,
     ) -> Result<Grant, RpcRefusal> {
         let path = match route {
@@ -339,8 +351,11 @@ impl CompatRpc {
         caller: &RpcCaller,
     ) -> AppResult<V2Json> {
         let view = match (action, caller.staff_member()) {
-            ("adminSnapshot", Some(me)) => {
+            ("adminSnapshot", Some(mut me)) => {
                 let colleagues = self.colleagues(&me.branch).await?;
+                if let Some(stored) = colleagues.iter().find(|c| c.id == me.id) {
+                    me.role_text = stored.role_text.clone();
+                }
                 staff_view(answer.to_value(), &me, &colleagues)
             }
             _ => rewrite_urls(answer.to_value()),
@@ -363,7 +378,8 @@ impl CompatRpc {
             .into_iter()
             .filter_map(|employee| {
                 Some(StaffMember {
-                    role: Role::parse(&employee.role)?,
+                    role: v3_stored_role(&employee.role)?,
+                    role_text: employee.role,
                     id: employee.id,
                     username: employee.username,
                     name: employee.name,
