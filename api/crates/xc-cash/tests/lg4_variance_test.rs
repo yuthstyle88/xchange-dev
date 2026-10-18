@@ -194,7 +194,7 @@ impl Db {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        Decimal::new(b.get(usd()).minor(), 2)
+        Decimal::new(b.get(usd()).try_minor().unwrap(), 2)
     }
 
     /// (movement type, Σ quantity, Σ cost) of the inventory movements of the postings named by `source`.

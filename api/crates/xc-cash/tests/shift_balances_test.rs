@@ -1441,7 +1441,7 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
                         .await
                         .non_zero()
                         .into_iter()
-                        .map(|(c, m)| (c.as_str().to_string(), m.minor())),
+                        .map(|(c, m)| (c.as_str().to_string(), m.try_minor().unwrap())),
                 );
                 let (want_expected, dropped) = from_fixture(&after[k]["expected"]);
                 capped_expected += usize::from(dropped);
@@ -1454,10 +1454,12 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
                     "{at}: expected = v2's expected"
                 );
 
-                let (got_opening, _) = comparable(
-                    rows.iter()
-                        .map(|r| (r.currency.as_str().to_string(), r.opening.minor())),
-                );
+                let (got_opening, _) = comparable(rows.iter().map(|r| {
+                    (
+                        r.currency.as_str().to_string(),
+                        r.opening.try_minor().unwrap(),
+                    )
+                }));
                 assert_eq!(
                     got_opening,
                     from_fixture(&after[k]["opening"]).0,
@@ -1467,7 +1469,7 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
                 for (direction, pick) in [("IN", true), ("OUT", false)] {
                     let (got, _) = comparable(rows.iter().map(|r| {
                         let m = if pick { r.moved_in } else { r.moved_out };
-                        (r.currency.as_str().to_string(), m.minor())
+                        (r.currency.as_str().to_string(), m.try_minor().unwrap())
                     }));
                     assert_eq!(
                         got,
