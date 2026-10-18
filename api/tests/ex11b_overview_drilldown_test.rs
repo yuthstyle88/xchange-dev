@@ -563,7 +563,7 @@ struct ChannelRows {
     referred_booking: (String, Option<String>),
 }
 
-/// A USED booking `id` at B1 whose `transaction_ref` is the number `doc` (the row redeemed it).
+/// A COMPLETED Blueprint booking `id` at B1 whose `transaction_id` is the exchange numbered `doc` (BK-11).
 async fn booking_for(room: &Room, id: &str, doc: &str) {
     room.customer(ORG, id).await;
     let slot_id: Uuid = sqlx::query_scalar(
