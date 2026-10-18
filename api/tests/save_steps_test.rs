@@ -20,6 +20,7 @@
 // the shop of the save tests: its helpers prepare a branch and read it back
 #[allow(unused_imports)]
 mod save_common;
+mod shift_holder_common;
 
 use std::sync::{Arc, Mutex};
 
@@ -255,6 +256,14 @@ async fn the_steps_run_in_order_around_the_save_and_are_told_about_it() {
     let shop = Shop::start().await;
     let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     let me = staff("employee-7", Role::Front);
+    let shift = shift_holder_common::open_shift_for(
+        &shop.pool,
+        MAIN,
+        &me.id,
+        &[("THB", "100000"), ("USD", "1000")],
+    )
+    .await;
+    fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
     let passport = shop.upload(MAIN, &me.id, "image/jpeg", JPEG).await;
     let seen: Seen = Seen::default();
     let flow = workflow(
