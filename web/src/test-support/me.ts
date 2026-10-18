@@ -17,7 +17,7 @@ export type MeRole = { role: string; branchId: string | null };
 
 const PERMISSIONS: Record<string, readonly string[]> = {
   EXECUTIVE: [
-    'OverviewRead', 'RatesDraft', 'RatesHistoryRead', 'RatePolicySave', 'ApprovalsDecide', 'BookingsAdmin',
+    'OverviewRead', 'RatesDraft', 'RatesHistoryRead', 'RatePolicySave', 'ApprovalsDecide',
     'ReferenceRatesRead', 'SystemSettings', 'MarketingPerformance', 'AttendanceClock', 'CompatRead',
     'RequestAbandon', 'DocumentsList', 'FileRead', 'ProofUpload', 'DeviceQueue', 'DeviceProcess',
     'DevicePrinterOnline', 'DrawerPassport', 'SignedIn', 'ConsentPolicyManage',
