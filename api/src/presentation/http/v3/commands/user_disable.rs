@@ -20,7 +20,9 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
-use super::user_grant::{changed, from_app_error, user_in_organisation, users};
+use super::user_grant::{
+    changed, custody_holds, from_app_error, from_change_error, user_in_organisation, users,
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -71,9 +73,9 @@ impl CommandAction for UserDisableCommand {
             return Err(out_of_scope());
         }
         users()
-            .disable(tx, &user_id)
+            .disable(tx, who, None, &user_id, custody_holds().as_ref())
             .await
-            .map_err(from_app_error)?;
+            .map_err(from_change_error)?;
         let out = changed(tx, &user_id).await?;
         Ok(UserChangeOutput {
             user_id: out.user_id,

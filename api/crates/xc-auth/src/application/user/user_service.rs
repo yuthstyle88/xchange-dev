@@ -5,15 +5,19 @@ use std::sync::Arc;
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{IdentityType, PiiError, normalize};
 
-use crate::domain::access::{Role, ScopeRule, ScopedRole};
+use crate::application::user::account_auditor::AccountAuditor;
+use crate::domain::access::{
+    AccountAction, Actor, GrantGuard, GrantRefusal, Role, ScopeRule, ScopedRole, TargetUser,
+};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityRegisterRequest,
 };
-use crate::domain::user::{User, UserRepository, UserStatus};
+use crate::domain::user::{CustodyHolds, User, UserProfile, UserRepository, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
 
 fn generate_uuid() -> String {
@@ -42,6 +46,41 @@ fn generate_uuid() -> String {
     )
 }
 
+/// Why an account change is refused (design §3.2; RBAC C1).
+#[derive(Debug)]
+pub enum UserChangeError {
+    NotFound,
+    Refused(GrantRefusal),
+    NotActive,
+    HoldsCash,
+    NotBound,
+    BadMove { from: UserStatus, to: UserStatus },
+    App(AppError),
+}
+
+impl std::fmt::Display for UserChangeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("user not found"),
+            Self::Refused(GrantRefusal::Scope(e)) => write!(f, "Scope rule rejected: {e}"),
+            Self::Refused(r) => write!(f, "refused: {r:?}"),
+            Self::NotActive => f.write_str("user not active"),
+            Self::HoldsCash => f.write_str("user holds cash or a pending handover"),
+            Self::NotBound => f.write_str("user not bound to an identity"),
+            Self::BadMove { from, to } => write!(f, "status move {from} -> {to} not allowed"),
+            Self::App(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for UserChangeError {}
+
+impl From<AppError> for UserChangeError {
+    fn from(e: AppError) -> Self {
+        Self::App(e)
+    }
+}
+
 #[derive(Clone)]
 pub struct UserService<R = PgUserRepository> {
     repo: Arc<R>,
@@ -61,64 +100,118 @@ impl<R: UserRepository> UserService<R> {
     /// Grants a new scoped role to a user:
     /// checks ScopeRule against current active roles before writing,
     /// writes user_roles row, and bumps users.version.
+    #[allow(clippy::too_many_arguments)]
     pub async fn grant(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
         user_id: &str,
         role: Role,
         branch: Option<BranchId>,
         valid_from: DateTime<Utc>,
         valid_to: Option<DateTime<Utc>>,
-    ) -> AppResult<ScopedRole> {
+    ) -> Result<ScopedRole, UserChangeError> {
         let user = self
             .repo
             .find_by_id(tx, user_id)
             .await?
-            .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
-
-        if user.status == UserStatus::Disabled {
-            return Err(AppError::Domain("บัญชีถูกระงับ".to_string()));
-        }
-
-        let existing_roles = self.repo.find_roles_by_user_id(tx, user_id).await?;
-        let active_existing: Vec<ScopedRole> = existing_roles
-            .into_iter()
-            .filter(|r| r.valid_to.is_none_or(|to| valid_from < to))
-            .collect();
-
-        ScopeRule::check(role, branch.as_ref(), &active_existing)
-            .map_err(|e| AppError::Domain(format!("Scope rule rejected: {e}")))?;
-
+            .ok_or(UserChangeError::NotFound)?;
         let scoped_role = ScopedRole::new(role, branch, valid_from, valid_to);
-        self.repo
-            .add_role(tx, user_id, &user.organization_id, &scoped_role)
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
             .await?;
-        self.repo.bump_version(tx, user_id).await?;
-
+        GrantGuard::check(
+            actor,
+            &target,
+            &AccountAction::Grant(scoped_role.clone()),
+            owners_left,
+        )
+        .map_err(UserChangeError::Refused)?;
+        if matches!(user.status, UserStatus::Suspended | UserStatus::Disabled) {
+            return Err(UserChangeError::NotActive);
+        }
+        self.repo
+            .add_role(tx, &user.id, &user.organization_id, &scoped_role)
+            .await?;
+        self.repo.bump_version(tx, &user.id).await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userGrant",
+            &user.organization_id,
+            None,
+            Some(json!({
+                "role": scoped_role.role.as_str(),
+                "branch": scoped_role.branch.as_ref().map(|b| b.as_str()),
+                "validFrom": scoped_role.valid_from,
+                "validTo": scoped_role.valid_to,
+            })),
+            ip,
+        )
+        .await?;
         Ok(scoped_role)
     }
 
     /// Revokes a role by setting valid_to on matching user_roles rows,
     /// and bumps users.version.
+    #[allow(clippy::too_many_arguments)]
     pub async fn revoke(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
         user_id: &str,
         role: Role,
         branch: Option<&BranchId>,
         now: DateTime<Utc>,
-    ) -> AppResult<()> {
+    ) -> Result<(), UserChangeError> {
         let user = self
             .repo
             .find_by_id(tx, user_id)
             .await?
-            .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
-
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        let action = AccountAction::Revoke(ScopedRole::new(role, branch.cloned(), now, None));
+        GrantGuard::check(actor, &target, &action, owners_left)
+            .map_err(UserChangeError::Refused)?;
         self.repo
             .revoke_role(tx, &user.id, role, branch, now)
             .await?;
         self.repo.bump_version(tx, &user.id).await?;
-
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userRevoke",
+            &user.organization_id,
+            Some(json!({
+                "role": role.as_str(),
+                "branch": branch.map(|b| b.as_str()),
+            })),
+            None,
+            ip,
+        )
+        .await?;
         Ok(())
     }
 
@@ -126,19 +219,281 @@ impl<R: UserRepository> UserService<R> {
     pub async fn disable(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
         user_id: &str,
-    ) -> AppResult<()> {
+        holds: &dyn CustodyHolds,
+    ) -> Result<(), UserChangeError> {
         let user = self
             .repo
             .find_by_id(tx, user_id)
             .await?
-            .ok_or_else(|| AppError::Domain("ไม่พบผู้ใช้งาน".to_string()))?;
-
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Disable, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if !user.status.may_move(UserStatus::Disabled) {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Disabled,
+            });
+        }
+        if holds.holds_cash_or_pending_handover(tx, &user.id).await? {
+            return Err(UserChangeError::HoldsCash);
+        }
         self.repo
             .set_status(tx, &user.id, UserStatus::Disabled)
             .await?;
-
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userDisable",
+            &user.organization_id,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Disabled.as_str() })),
+            ip,
+        )
+        .await?;
         Ok(())
+    }
+
+    /// ACTIVE → SUSPENDED (§3.2). RBAC function ticket.
+    pub async fn suspend(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+        holds: &dyn CustodyHolds,
+    ) -> Result<(), UserChangeError> {
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Suspend, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if !user.status.may_move(UserStatus::Suspended) {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Suspended,
+            });
+        }
+        if holds.holds_cash_or_pending_handover(tx, &user.id).await? {
+            return Err(UserChangeError::HoldsCash);
+        }
+        self.repo
+            .set_status(tx, &user.id, UserStatus::Suspended)
+            .await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userSuspend",
+            &user.organization_id,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Suspended.as_str() })),
+            ip,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// SUSPENDED → ACTIVE (§3.2). RBAC function ticket.
+    pub async fn resume(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+    ) -> Result<(), UserChangeError> {
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Resume, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if user.status != UserStatus::Suspended {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Active,
+            });
+        }
+        self.repo
+            .set_status(tx, &user.id, UserStatus::Active)
+            .await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userResume",
+            &user.organization_id,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Active.as_str() })),
+            ip,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// DISABLED → ACTIVE, EXECUTIVE only (§3.2, Q3 A). RBAC function ticket.
+    pub async fn enable(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+    ) -> Result<(), UserChangeError> {
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::Enable, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if user.status != UserStatus::Disabled {
+            return Err(UserChangeError::BadMove {
+                from: user.status,
+                to: UserStatus::Active,
+            });
+        }
+        if !target.has_auth_subject {
+            return Err(UserChangeError::NotBound);
+        }
+        self.repo
+            .set_status(tx, &user.id, UserStatus::Active)
+            .await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userEnable",
+            &user.organization_id,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Active.as_str() })),
+            ip,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// `userProfileSave` (design §3.6, C1c): `GrantGuard::check(.., AccountAction::EditProfile, ..)`,
+    /// then `set_profile`, `bump_version`, and one `userProfileSave` audit row whose `before` /
+    /// `after` are the old and new `UserProfile` as JSON, in this transaction. Returns the saved
+    /// profile (empty strings normalised to `None`). A DISABLED user is `NotActive`.
+    pub async fn save_profile(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+        profile: &UserProfile,
+    ) -> Result<UserProfile, UserChangeError> {
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::EditProfile, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if user.status == UserStatus::Disabled {
+            return Err(UserChangeError::NotActive);
+        }
+        let old = self
+            .repo
+            .find_profile(tx, &user.id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let norm = |s: &Option<String>| {
+            s.as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        let saved = UserProfile {
+            employee_code: norm(&profile.employee_code),
+            department: norm(&profile.department),
+            position: norm(&profile.position),
+            tell_code: norm(&profile.tell_code),
+        };
+        self.repo.set_profile(tx, &user.id, &saved).await?;
+        self.repo.bump_version(tx, &user.id).await?;
+        let profile_json = |p: &UserProfile| {
+            json!({
+                "employeeCode": p.employee_code,
+                "department": p.department,
+                "position": p.position,
+                "tellCode": p.tell_code,
+            })
+        };
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userProfileSave",
+            &user.organization_id,
+            Some(profile_json(&old)),
+            Some(profile_json(&saved)),
+            ip,
+        )
+        .await?;
+        Ok(saved)
     }
 
     /// Looks up a user by ID.

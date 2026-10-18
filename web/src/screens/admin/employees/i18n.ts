@@ -43,6 +43,11 @@ export const th = {
   resetSubmit: 'ยืนยันรีเซ็ต',
 
   disableConfirm: 'ปิดบัญชีนี้และยกเลิกเซสชันทั้งหมด?',
+
+  tempPasswordTitle: 'รหัสผ่านชั่วคราว',
+  tempPasswordOnce: 'รหัสผ่านนี้จะแสดงเพียงครั้งเดียว กรุณาคัดลอกและส่งมอบให้พนักงาน',
+  tempPasswordCopy: 'คัดลอก',
+  tempPasswordDone: 'รับทราบแล้ว',
 };
 
 export const en = {
@@ -91,4 +96,9 @@ export const en = {
   resetSubmit: 'Confirm Reset',
 
   disableConfirm: 'Disable this account and terminate all sessions?',
+
+  tempPasswordTitle: 'Temporary Password',
+  tempPasswordOnce: 'This password is shown only once. Copy and share it with the staff member now.',
+  tempPasswordCopy: 'Copy',
+  tempPasswordDone: 'Done',
 };

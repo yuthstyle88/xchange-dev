@@ -97,9 +97,9 @@ impl CommandAction for UserGrantCommand {
         }
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
-            .grant(tx, &user_id, role, role_branch, valid_from, valid_to)
+            .grant(tx, who, None, &user_id, role, role_branch, valid_from, valid_to)
             .await
-            .map_err(from_app_error)?;
+            .map_err(from_change_error)?;
         changed(tx, &user_id).await
     }
 }
@@ -180,6 +180,65 @@ pub(crate) async fn user_in_organisation(
         return Err(out_of_scope());
     }
     Ok(id)
+}
+
+/// The cash guard used by account commands (design §3.2; C3 writes the query).
+pub(crate) fn custody_holds() -> std::sync::Arc<dyn xc_auth::domain::user::CustodyHolds> {
+    std::sync::Arc::new(xc_cash::infrastructure::custody_holds::PgCustodyHolds)
+}
+
+/// Maps an account-change refusal to the wire (design §3.6; codes in the C1a ticket §7, plus `409 statusNotAllowed`,
+/// ruling #564 issuecomment-6246076019 Q6). Skeleton: only `App` is mapped; the rest is the RBAC function ticket.
+pub(crate) fn from_change_error(e: xc_auth::application::user::user_service::UserChangeError) -> V3Error {
+    use xc_auth::application::user::user_service::UserChangeError;
+    use xc_auth::domain::access::GrantRefusal;
+
+    match e {
+        UserChangeError::NotFound => {
+            V3Error::new("notFound", None, "user not found", StatusCode::NOT_FOUND)
+        }
+        UserChangeError::Refused(GrantRefusal::NoScope) => out_of_scope(),
+        UserChangeError::Refused(GrantRefusal::SelfChange) => {
+            V3Error::new("selfChange", None, "self change", StatusCode::FORBIDDEN)
+        }
+        UserChangeError::Refused(
+            GrantRefusal::ProtectedTarget
+            | GrantRefusal::ProtectedRole
+            | GrantRefusal::EnableNeedsExecutive,
+        ) => V3Error::new("roleNotAllowed", None, "role not allowed", StatusCode::FORBIDDEN),
+        UserChangeError::Refused(GrantRefusal::LastOwner) => {
+            V3Error::new("lastOwner", None, "last owner", StatusCode::CONFLICT)
+        }
+        UserChangeError::Refused(GrantRefusal::Scope(e)) => {
+            validation_failed(None, format!("Scope rule rejected: {e}"))
+        }
+        UserChangeError::NotActive => {
+            V3Error::new("userNotActive", None, "user not active", StatusCode::CONFLICT)
+        }
+        UserChangeError::HoldsCash => {
+            V3Error::new(
+                "holdsCash",
+                None,
+                "user holds cash or a pending handover",
+                StatusCode::CONFLICT,
+            )
+        }
+        UserChangeError::NotBound => {
+            V3Error::new(
+                "notBound",
+                None,
+                "user not bound to an identity",
+                StatusCode::CONFLICT,
+            )
+        }
+        UserChangeError::BadMove { from, to } => V3Error::new(
+            "statusNotAllowed",
+            None,
+            format!("status move {from} -> {to} not allowed"),
+            StatusCode::CONFLICT,
+        ),
+        UserChangeError::App(e) => from_app_error(e),
+    }
 }
 
 /// A refusal of `UserService` (OR-2's scope rule, a disabled user) is `validationFailed`; a
