@@ -547,116 +547,147 @@ Every ticket that changes a literal held by a golden or fixture test that compar
 | Addendum: the four migration items for the session flag | §4 item 1, the `user_sessions` line |
 | Ruling: `Dispatched` counts as holding | §3.2; C3 in §7 |
 
-## 11. Q2 changed to B: each group's permissions are editable (owner, 2026-10-18)
+## 11. Groups: seeded from the owner's matrix, then added and edited on screen (owner, 2026-10-18)
 
-The owner said this in the BE controller claude/c81c8986's session, recorded on #564:
+The owner said, in the BE controller claude/c81c8986's session (recorded on #564):
 - *"ให้ สามารถ ปรับแก้ไข สิทธ์ กลุ่ม ได้"*: a group's permissions can be edited;
-- *"แต่มีการสร้าง กลุ่ม ตัวอย่างไว้ เพื่อให้ แก้ไขได้"*: the groups come pre-made as samples, and those are what gets edited.
+- *"แต่มีการสร้าง กลุ่ม ตัวอย่างไว้ เพื่อให้ แก้ไขได้"*: sample groups come pre-made, to be edited;
+- *"คล้าย pos108"*: like pos108, where a role's permissions are data, edited in a matrix screen;
+- *"การ import ไม่ต้อง มี"* · *"ให้สร้างผ่าน ระบบได้เท่านั้น"*: no import; everything is created on screen;
+- given the V.9 matrix (`XCHANGE-RBAC-V9.md:44-57`): *"ให้ เค้าแก้ เอา เราแค่ทำตาม นี้ แต่ให้เค้า แก้ไข ใหม่ได้"*: seed it from that table, and the customer edits it later;
+- *"เพราะระบบ ดีไชน์ให้เพิ่มและแก้ไข ได้"*: groups can be **added** as well as edited.
 
-So the eight staff roles become **sample groups**:
-- They are seeded with exactly today's permissions (`role_permissions.rs:7-138`, with C2's `AuditLogsRead`).
-- From then on, each group's permission set is **data** that EXECUTIVE edits within guardrails.
-- Q2 A's derived matrix (§3.3, §5) stays as the **view** of that data, grouped by module.
+This replaces Q2 A.
 
-### 11.1 What changes and what does not
-- **Unchanged:**
-  - the 51 + 1 `Permission`s and every guard that checks one;
-  - `INHERITS` / `Policy`;
-  - roles as a fixed set (`Role`), so no group can be added or deleted in this revision;
-  - `GrantGuard`.
-- **Changed:** which permissions a role holds comes from the database, no longer from the static table.
-  - The static table remains as the **seed**.
-  - It is also the fallback when no row exists for a role, so a database with no rows behaves exactly as today.
-- **Granularity:** the editor works per `Permission`, shown under its module and level (C2's `PermissionModule::module`).
-  - A module-level shortcut ("CUSTOMERS: VIEW") ticks every permission of that module at or below that level.
-  - Saving stores the resulting permission set. Storing per permission is what keeps the seed's behaviour exact: a module-level store would widen roles. For example, ADMIN's FINANCE FULL is only `CashLimitsManage`; a module level would hand it every FINANCE permission.
+### 11.1 The model
+- **A group is data.** It is a row in the existing `roles` table (`20261011110000_users_roles.sql:29-31`; `user_roles.role_code` already references it). It carries a name, a **base role** and its permission set.
+- **Base role.** Every group has one of the eight built-in roles as its base: EXECUTIVE, ADMIN, RATE_MANAGER, BRANCH_MANAGER, TELLER, FINANCE, MARKETING, VERIFICATION_REVIEWER.
+  - The base decides every rule the code keeps by role: `GrantGuard`, branch scope (`scope_rule.rs`), the last-owner rule, and the `policy.rs` desk checks.
+  - The permission set decides what the group may do.
+  - So a new group behaves like its base everywhere except in what it is allowed.
+- **The eight built-in groups are the sample groups.** They are seeded once and edited like any other. A built-in group cannot be deleted, and its base is itself.
+- **New groups:** EXECUTIVE adds one on screen with a name, a base (any built-in except EXECUTIVE) and a permission set. A group that any user holds cannot be deleted.
+- **Unchanged:** the 52 `Permission`s and every guard that checks one; `INHERITS` / `Policy`.
 
-### 11.2 Guardrails (V.9 `XCHANGE-RBAC-V9.md:59-66`, mapped to v3 roles)
-Checked on every save and every import, whatever is asked:
-1. `AUDIT_LOGS` is at most VIEW for every role.
-2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` permissions go only to EXECUTIVE and ADMIN.
-3. ADMIN holds, outside `USER_MANAGEMENT` and `SYSTEM_SETTINGS`, at most VIEW-level permissions.
-4. **EXECUTIVE's set is fixed** (V.9 "OWNER's row is fixed"), so nobody can lock the owner out.
-5. Cross-cutting permissions (`PermissionModule::module` is `None`: `SignedIn`, `AttendanceClock`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not editable and stay as seeded.
+### 11.2 The seed: the owner's V.9 matrix, through the Blueprint's role mapping
+- **The Blueprint's mapping** (`XC-Desk-Blueprint-Data-Model-v2.html`, §02, decision B1), from V.9 role to v3 group:
+  - FRONT → TELLER;
+  - BACKEND and MANAGER → BRANCH_MANAGER;
+  - RATES → RATE_MANAGER;
+  - FINANCE → FINANCE;
+  - SYSTEM → ADMIN;
+  - MONITOR, DOCUMENTS and DOCUMENT_REVIEW → VERIFICATION_REVIEWER;
+  - OWNER → EXECUTIVE.
+- **Where several V.9 roles map to one group, the group gets the highest level per module among them.**
+- **A level** grants every permission of that module at or below it (`PermissionModule::module`, C2).
+- **MARKETING** is not in V.9, so it keeps today's set.
 
-**Only EXECUTIVE edits** (V.9 :66 "Only OWNER can change the matrix"). Every save writes one `AccountAuditor` row, action `PERMISSION_CHANGE`, with the role's set before and after.
+| Group | DASHBOARD | CUSTOMERS | DOCUMENTS | RATES_STOCK | FINANCE | RISK | REPORTS | USER_MANAGEMENT | SYSTEM_SETTINGS | AUDIT_LOGS |
+|---|---|---|---|---|---|---|---|---|---|---|
+| EXECUTIVE | FULL | FULL | FULL | FULL | FULL | FULL | FULL | FULL | FULL | VIEW |
+| ADMIN | VIEW | — | — | — | — | — | VIEW | FULL | FULL | VIEW |
+| RATE_MANAGER | FULL | FULL | VIEW | FULL | VIEW | VIEW | FULL | — | — | — |
+| BRANCH_MANAGER | FULL | FULL | FULL | — | — | — | VIEW | — | — | — |
+| TELLER | VIEW | CREATE | VIEW | — | — | — | — | — | — | — |
+| FINANCE | FULL | VIEW | VIEW | VIEW | FULL | VIEW | FULL | — | — | — |
+| VERIFICATION_REVIEWER | FULL | VIEW | FULL | VIEW | VIEW | FULL | FULL | — | — | VIEW |
+| MARKETING | today's set (§5) | | | | | | | | | |
 
-### 11.3 Classes
+**The desk basics stay with every desk group.** Opening and closing a shift, the branch day and the closing count (`ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`) move from FINANCE CREATE to "no module" (`None`), beside `SignedIn` and `AttendanceClock`. They stay seeded as today, and they are not edited in the matrix.
+- **Why:** V.9 gives FRONT, BACKEND and MANAGER no FINANCE at all, yet they run the shift and the cash handover (V.9 :38, :125). Read literally, the table would leave no teller able to open a shift.
+- **Done in C6:** it changes `permission_module.rs`, its test and §5.
+
+**What the seed changes on ship day (for the owner's review; editable afterwards):**
+- BRANCH_MANAGER and TELLER lose the FINANCE FULL permissions, e.g. `CashManage` and `ApprovalsDecide`.
+- ADMIN loses FINANCE and DASHBOARD FULL.
+- RATE_MANAGER, FINANCE and VERIFICATION_REVIEWER gain the reads and reports V.9 gives them.
+- EXECUTIVE gains USER_MANAGEMENT.
+- RISK has no permission in v3 yet, so a RISK level grants nothing until RISK screens exist.
+
+### 11.3 Guardrails (V.9 :59-66, mapped)
+Checked on every save:
+1. `AUDIT_LOGS` is at most VIEW for every group.
+2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` permissions go only to groups whose base is EXECUTIVE or ADMIN.
+3. A group whose base is ADMIN holds, outside those two modules, at most VIEW-level permissions.
+4. **The built-in EXECUTIVE group is fixed**, so the owner can't be locked out.
+5. The no-module permissions (§11.2, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix.
+
+**Only EXECUTIVE adds groups and edits permissions** (V.9 :66). Every add, edit or delete writes one `AccountAuditor` row, `PERMISSION_CHANGE` / `GROUP_ADD` / `GROUP_DELETE`, with before and after.
+
+### 11.4 Classes
 ```mermaid
 classDiagram
-  class RoleGrants {
-    +of(role) &[Permission]
-    +snapshot() Arc~RoleGrantsSnapshot~
+  class Group {
+    +code String
+    +name String
+    +base Role
+    +built_in bool
   }
-  class RoleGrantsSnapshot {
-    +version i64
-    +sets HashMap~Role, Vec~Permission~~
+  class RoleGrants {
+    +of(group_code) &[Permission]
+    +base_of(group_code) Role
   }
   class RoleGrantStore {
     <<trait>>
     +load(tx) RoleGrantsSnapshot
-    +save(tx, role, set, actor) i64
+    +save_set(tx, code, set, actor)
+    +add_group(tx, Group, set, actor)
+    +delete_group(tx, code, actor)
   }
   class PgRoleGrantStore
   class MatrixGuardrails {
-    +check(role, set) Result~(), GuardrailRefusal~
-  }
-  class RolePermissions {
-    +seed(role) &[Permission]
-    +of(role) &[Permission]
+    +check(group, set) Result
   }
   RoleGrantStore <|.. PgRoleGrantStore
-  RoleGrants --> RoleGrantsSnapshot
-  RolePermissions --> RoleGrants : of() reads the current snapshot
+  RoleGrants --> Group
   MatrixGuardrails --> PermissionModule
 ```
 
 | Class | File | Ticket |
 |---|---|---|
-| `RoleGrants`, `RoleGrantsSnapshot` | `api/crates/xc-auth/src/domain/access/role_grants.rs` | C6 |
+| `Group`, `RoleGrants`, `RoleGrantsSnapshot` | `api/crates/xc-auth/src/domain/access/role_grants.rs` | C6 |
 | `RoleGrantStore` (trait) | `api/crates/xc-auth/src/domain/access/role_grant_store.rs` | C6 |
 | `PgRoleGrantStore` | `api/crates/xc-auth/src/infrastructure/access/role_grant_store.rs` | C6 |
 | `MatrixGuardrails` | `api/crates/xc-auth/src/domain/access/matrix_guardrails.rs` | C6 |
-| `RolePermissions::of` reads `RoleGrants`; `seed` is today's table | `api/crates/xc-auth/src/domain/access/role_permissions.rs` | C6 |
-| the save command `adminRolePermissionsSave` | `api/src/presentation/http/v3/commands/admin_role_permissions_save.rs` | F12 |
-| the matrix tab becomes editable | `web/src/screens/admin/users/PermissionMatrix.tsx` | W2 (FE) |
+| `ScopedRole` carries the group code; `role` becomes the group's base | `api/crates/xc-auth/src/domain/access/scoped_role.rs` | C6 |
+| commands `adminGroupSave`, `adminGroupAdd`, `adminGroupDelete` | `api/src/presentation/http/v3/commands/admin_groups.rs` | F12 |
+| matrix tab: add and edit, for EXECUTIVE | `web/src/screens/admin/users/PermissionMatrix.tsx` | W2 (FE) |
 
-**`RolePermissions::of` keeps its signature** (`&'static [Permission]`-like, synchronous). All its callers stay untouched:
-- `authorizer.rs:65`, `policy.rs:707` / `:734`, `transfer.rs:24`, `me.rs:61`, and the booking commands.
+**Reading permissions:**
+- `RolePermissions::of(role)` becomes `RoleGrants::of(group_code)`. `ScopedRole` keeps a `role: Role` (the base) for every rule that matches on a role, and gains `group: GroupCode` for permissions.
+- The callers that ask "does this role hold P" switch to the group: `authorizer.rs:65`, `policy.rs:707` / `:734`, `transfer.rs:24`, `me.rs:61` and the booking commands. That edit is one mechanical sweep, in C6.
+- The snapshot is an `ArcSwap` reloaded when `role_grant_version` moves. `read_session_in` reads that single row per request, and every save bumps it in the same transaction.
 
-It reads an `ArcSwap` snapshot held by `RoleGrants`, which is the one place the data enters.
+### 11.5 Data migration (M2, `class:guarded`; owner approval before merge)
+**Changes:**
+- `roles` gains `name text NOT NULL`, `base_role text NOT NULL REFERENCES roles(code)` and `built_in boolean NOT NULL DEFAULT false`.
+- New `role_permission_grants (role_code text REFERENCES roles(code) ON DELETE CASCADE, permission text, PRIMARY KEY (role_code, permission))`.
+- New `role_grant_version` (one row).
 
-**Freshness:**
-- The snapshot carries the `role_grant_version` it was loaded at.
-- `read_session_in` reads that one value per request (a single-row table) and reloads the snapshot when it moved.
-- A save bumps it in the same transaction, so every API instance is current by its next request.
+1. **Existing rows:**
+   - The nine `roles` rows become built-in. Their name is the code, and their base is themselves (`CUSTOMER` included; it is not a staff group and is not shown).
+   - `user_roles` is unchanged: every assignment already names a built-in code.
+2. **Backfill: yes.** The migration inserts §11.2's seed into `role_permission_grants`, one row per (group, permission). It is computed from the table above by C6's seed function and written out as literal `INSERT`s, so the SQL is reviewable.
+   - Measure before deploy: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;` (who is affected by the seed's changes, §11.2).
+3. **Deploy order:** the migration runs before the new binary. The old binary ignores the new columns and table, but it keeps authorising from its static table. So the seed takes effect only with the new binary, and the two must ship together.
+4. **What `down` loses:** every custom group (its `user_roles` rows must be moved to a built-in group first; the reversal refuses while any exist), every edited set, and the version.
 
-### 11.4 Data migration (M2, `class:guarded`, owner approval needed before merge)
-Tables:
-- `role_permission_grants (role text NOT NULL, permission text NOT NULL, PRIMARY KEY (role, permission))`;
-- `role_grant_version (id boolean PRIMARY KEY DEFAULT true CHECK (id), version bigint NOT NULL)`, one row, seeded `0`.
-
-1. **Existing rows:** none. Both tables are new. No existing table changes.
-2. **Backfill:** none in SQL. The table starts empty, and an empty role means "use the seed" (§11.1), so behaviour is identical on the day it ships. The first save of a role writes its full set.
-3. **Deploy order:** the migration runs before the new binary, at boot. The old binary never reads these tables, so it keeps working on the new schema.
-4. **What `down` loses:** every edited set and the version. Roles fall back to the seed. Measure before reversing: `SELECT role, count(*) FROM role_permission_grants GROUP BY role;`.
-
-### 11.5 Tickets
+### 11.6 Tickets
 | Ticket | What | Class | Depends on |
 |---|---|---|---|
-| M2 | the migration of §11.4 | guarded | owner approval |
-| C6 | `RoleGrants`, store, guardrails, `RolePermissions::of` reading the snapshot, freshness in `read_session_in` | logic | M2, C2 (merged) |
-| F12 | `adminRolePermissionsSave` (EXECUTIVE only), audit `PERMISSION_CHANGE`, `409 guardrail` refusals naming the rule | logic | C6, C1a (`AccountAuditor`) |
-| W2 | the matrix tab, editable for EXECUTIVE, read-only for others | FE | F12 |
+| M2 | §11.5 | guarded | owner approval |
+| C6 | §11.4 classes, the seed function, the desk-basics reclassification, the caller sweep, freshness | logic | M2 |
+| F12 | add / edit / delete group commands (EXECUTIVE only), guardrail refusals `409 guardrail:<n>`, audit | logic | C6, C1a (`AccountAuditor`) |
+| F5 | the matrix view returns every group: name, base, built-in, its permissions with module/level, and which are editable | logic | C6 |
+| W2 | matrix tab: add a group, edit levels and permissions, for EXECUTIVE; read-only for others | FE | F12, F5 |
 
-There is **no import** of the matrix or of users. Owner, 2026-10-18: *"การ import ไม่ต้อง มี"* · *"เพราะ อาจคีย์ ผิดได้"*. Changes are made on screen only.
-
-### 11.6 Tests
-- **Logic:**
-  - with an empty table, `RolePermissions::of(r) == seed(r)` for every role (no behaviour change on ship day);
-  - a saved set is what `of` returns, and on the next request after another instance saves;
-  - each of the five guardrails refuses;
-  - EXECUTIVE's row cannot change;
-  - a save writes one `PERMISSION_CHANGE` audit row.
-- **Wiring mutant:** point `of` back at `seed`. The "a saved set is what `Authorizer::check` sees" test must go red.
-
+### 11.7 Tests
+- the seed equals §11.2's table, per group;
+- every built-in group has itself as base;
+- a TELLER can still open a shift and save at the desk after the seed (the desk basics);
+- an added group behaves as its base for scope and `GrantGuard`, and as its own set for permissions;
+- each guardrail refuses;
+- the EXECUTIVE group can't change;
+- a group in use can't be deleted;
+- every change writes one audit row;
+- **wiring mutant:** `RoleGrants::of` returning the base's seed must turn the "an edited set is what `Authorizer::check` sees" test red.
