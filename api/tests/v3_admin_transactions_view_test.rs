@@ -43,6 +43,7 @@ mod common;
 mod compat_common;
 mod kiosk_http_common;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -577,11 +578,13 @@ impl Room {
         let t = self.advance(7);
         let here = BranchId::new(MAIN);
         let customer_id = self.reserve(MAIN, s.customer, t).await;
+        let saver =
+            shift_holder_common::teller_of_open_shift(&self.counter.desk.db.pool, MAIN).await;
         let passport = self
             .counter
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let slip = if s.transfer {
@@ -589,7 +592,7 @@ impl Room {
                 self.counter
                     .desk
                     .files
-                    .upload(&here, "owner", "application/pdf", PDF, t)
+                    .upload(&here, &saver, "application/pdf", PDF, t)
                     .await
                     .expect("upload a slip"),
             )
@@ -624,7 +627,7 @@ impl Room {
             .counter
             .desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange: {e:?}"));
         Saved {
