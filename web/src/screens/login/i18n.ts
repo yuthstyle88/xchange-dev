@@ -13,6 +13,16 @@ export const th = {
   err_invalidRequest: 'คำขอไม่ถูกต้อง',
   errUnknown: 'เกิดข้อผิดพลาด กรุณาลองใหม่',
   errNetwork: 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่',
+  changeTitle: 'เปลี่ยนรหัสผ่าน',
+  changeIntro: 'กรุณาตั้งรหัสผ่านใหม่ก่อนเข้าใช้งานระบบ',
+  currentPassword: 'รหัสผ่านปัจจุบัน',
+  newPassword: 'รหัสผ่านใหม่',
+  confirmPassword: 'ยืนยันรหัสผ่านใหม่',
+  changeSubmit: 'บันทึกรหัสผ่านใหม่',
+  changeDone: 'เปลี่ยนรหัสผ่านเรียบร้อยแล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่',
+  changeErrMismatch: 'รหัสผ่านใหม่และยืนยันรหัสผ่านไม่ตรงกัน',
+  changeErr_invalidCredentials: 'รหัสผ่านปัจจุบันไม่ถูกต้อง',
+  changeErr_validationFailed: 'รหัสผ่านใหม่ไม่ผ่านเงื่อนไขที่กำหนด',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -30,4 +40,14 @@ export const en: Record<keyof typeof th, string> = {
   err_invalidRequest: 'Invalid request.',
   errUnknown: 'An error occurred. Please try again.',
   errNetwork: 'Cannot connect to server. Please try again.',
+  changeTitle: 'Change Password',
+  changeIntro: 'Please set a new password before continuing.',
+  currentPassword: 'Current password',
+  newPassword: 'New password',
+  confirmPassword: 'Confirm new password',
+  changeSubmit: 'Save new password',
+  changeDone: 'Password changed. Please sign in with your new password.',
+  changeErrMismatch: 'New password and confirmation do not match.',
+  changeErr_invalidCredentials: 'Current password is incorrect.',
+  changeErr_validationFailed: 'New password does not meet the requirements.',
 };

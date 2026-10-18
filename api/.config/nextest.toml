@@ -21,3 +21,7 @@ test-group = 'db'
 [[profile.default.overrides]]
 filter = 'package(xc-device-agent)'
 test-group = 'serial'
+
+[profile.ci.junit]
+path = "junit.xml"
+

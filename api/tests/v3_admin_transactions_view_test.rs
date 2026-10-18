@@ -1467,6 +1467,7 @@ async fn an_exchange_save_moves_the_version() {
 #[actix_web::test]
 async fn a_desk_save_moves_the_version() {
     let room = Room::open().await;
+    open_front_shift(&room).await;
     let customer = staff_rpc(
         &room,
         "reserveCustomer",
@@ -1506,6 +1507,7 @@ async fn a_desk_save_moves_the_version() {
 async fn a_kiosk_save_moves_the_version() {
     const WALKED: &str = "0000beef-0000-4000-8000-0000000a4641";
     let room = Room::open().await;
+    open_front_shift(&room).await;
     let c = &room.counter;
     c.waiting_request(WALKED).await;
     room.advance(5);
@@ -1579,6 +1581,24 @@ async fn an_abandoned_request_moves_the_version() {
     assert_eq!(answer["requestResolution"], json!("CANCELLED"), "{answer}");
     moves_the_version(&room, v0, None, "adminAbandonRequest").await;
     room.finish().await;
+}
+
+/// Amended for CA-10 (#626, ruling A), setup only: a compat save meets the v3 teller gate
+/// (`check_teller_save_in`), so the saver FRONT holds an OPEN shift of its own at `MAIN`, funded in the
+/// ledger like the room's other shifts, and `MAIN`'s day is OPEN (else `SAVE_CLOSED`).
+async fn open_front_shift(room: &Room) {
+    let pool = &room.counter.desk.db.pool;
+    let front = room
+        .staff
+        .iter()
+        .find(|p| p.key == "FRONT")
+        .expect("FRONT is one of the staff")
+        .id
+        .clone();
+    shift_holder_common::open_shift_for(pool, MAIN, &front, &[("THB", "100000"), ("USD", "2000")])
+        .await;
+    snapshot_common::r1_fund_open_drawers(pool).await;
+    shift_holder_common::open_day(pool, MAIN).await;
 }
 
 async fn staff_rpc(room: &Room, action: &str, payload: Value) -> Value {

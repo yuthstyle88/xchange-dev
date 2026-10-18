@@ -224,28 +224,80 @@ impl TestDb {
         id
     }
 
-    /// One manual movement of the open shift `shift` (a `stock_movements` row).
-    /// CA-10: v2's `move_stock` is deleted; the same row and expected figure are written straight in (setup only).
+    /// One manual movement of the open shift `shift`: a moved `cash_transfers` row (LG-6.r6 #1046, ruling A — the
+    /// movement readers list `cash_transfers`; CA-10 retired v2's `move_stock`). IN = a `SAFE_TO_DRAWER` into the
+    /// shift, OUT = a `DRAWER_TO_SAFE` out of it, both `RECEIVED`, one line of the largest face value that divides
+    /// `amount` (a face of 0.01 is added for a currency the register has none for). Setup only.
     async fn movement(&self, branch: &str, shift: &str, code: &str, dir: Direction, amount: &str) {
-        let (direction, signed) = match dir {
-            Direction::In => ("IN", amount.to_owned()),
-            Direction::Out => ("OUT", format!("-{amount}")),
+        let (kind, from_shift, to_shift, signed) = match dir {
+            Direction::In => ("SAFE_TO_DRAWER", None, Some(shift), amount.to_owned()),
+            Direction::Out => ("DRAWER_TO_SAFE", Some(shift), None, format!("-{amount}")),
         };
-        sqlx::query(
-            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
-             VALUES ($1, $2, $3, $4, $5, $6::numeric, 'ทดสอบ', $7, $8, 'owner-1')",
+        let mut tx = self.pool.begin().await.expect("begin a movement");
+        let face: Option<(i64, String)> = sqlx::query_as(
+            "SELECT id, face_value::text FROM denominations \
+             WHERE currency_code = $1 AND face_value IS NOT NULL AND $2::numeric % face_value = 0 \
+             ORDER BY face_value DESC LIMIT 1",
         )
-        .bind(format!("MV-{}", uuid::Uuid::new_v4()))
-        .bind(branch)
-        .bind(shift)
         .bind(code)
-        .bind(direction)
         .bind(amount)
-        .bind(rid())
+        .fetch_optional(&mut *tx)
+        .await
+        .expect("a face value");
+        let (denomination, face) = match face {
+            Some(f) => f,
+            None => sqlx::query_as(
+                "INSERT INTO denominations (currency_code, face_value, group_code) VALUES ($1, 0.01, 'ALL') \
+                 RETURNING id, face_value::text",
+            )
+            .bind(code)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("a face value of 0.01"),
+        };
+        let mover: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT organization_id, 'valuation-mover', 'PENDING', 'test' FROM branches WHERE id = $1 \
+             RETURNING id::text",
+        )
+        .bind(branch)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("a user who moves the cash");
+        let transfer: String = sqlx::query_scalar(
+            "INSERT INTO cash_transfers (organization_id, kind, from_branch_id, from_shift_id, to_shift_id, status, \
+                 created_by, dispatched_at, dispatched_by, received_at, received_by, note, idempotency_key, \
+                 created_at, updated_at) \
+             SELECT organization_id, $2, id, $3, $4, 'RECEIVED', $5::uuid, $6, $5::uuid, $6, $5::uuid, 'ทดสอบ', $7, \
+                 $6, $6 \
+             FROM branches WHERE id = $1 RETURNING id::text",
+        )
+        .bind(branch)
+        .bind(kind)
+        .bind(from_shift)
+        .bind(to_shift)
+        .bind(&mover)
         .bind(at(1))
-        .execute(&self.pool)
+        .bind(rid())
+        .fetch_one(&mut *tx)
         .await
         .expect("move stock");
+        sqlx::query(
+            "INSERT INTO cash_transfer_lines (transfer_id, organization_id, currency, denomination_id, qty_sent, \
+                 qty_received) \
+             SELECT t.id, t.organization_id, $2, $3, ($4::numeric / $5::numeric)::int, \
+                 ($4::numeric / $5::numeric)::int \
+             FROM cash_transfers t WHERE t.id = $1::uuid",
+        )
+        .bind(&transfer)
+        .bind(code)
+        .bind(denomination)
+        .bind(amount)
+        .bind(&face)
+        .execute(&mut *tx)
+        .await
+        .expect("the moved line");
+        tx.commit().await.expect("commit the movement");
         // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
         // ON CONFLICT is reached), then the move
         sqlx::query(

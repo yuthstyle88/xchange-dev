@@ -550,6 +550,15 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
         );
 
     // the account is disabled: the queue still prints who holds the request
+    // CA-10 (#626, batch PR 3108), setup only: disabling is refused while the employee holds an OPEN shift (CA-4),
+    // and fr1 holds MAIN's, which `Counter::open` opened by a count; it is closed by a count first, the same way.
+    kiosk_http_common::shift_setup_common::close_shift_by_count(
+        &counter.desk.db.pool,
+        rpc_common::MAIN,
+        json!({ "THB": 100000, "USD": 2000 }),
+        chrono::Utc::now(),
+    )
+    .await;
     let call = Call::action(
         &counter.origin,
         "/api/employees",
@@ -563,6 +572,14 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
     assert_eq!(disabled.status, 200, "disable: {}", disabled.text);
     let list = counter.ask(Some("FR2"), "list", json!({})).await;
     assert_eq!(list.json()["requests"][0]["staff"], "fr1", "{}", list.text);
+    // and MAIN's counter opens again by a count, as `Counter::open` opened it, for the rest of the test
+    kiosk_http_common::shift_setup_common::open_shift_by_count(
+        &counter.desk.db.pool,
+        rpc_common::MAIN,
+        json!({ "THB": 100000, "USD": 2000 }),
+        chrono::Utc::now(),
+    )
+    .await;
 
     // the owner holds a request under the owner's username
     let second = counter

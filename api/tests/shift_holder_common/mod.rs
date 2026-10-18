@@ -28,11 +28,12 @@ pub async fn teller_of_open_shift(pool: &PgPool, branch: &str) -> String {
 /// `users.legacy_employee_id` (an employee id), seeded in the XC organisation if missing. Not for `"owner"`: the
 /// suites' owner user already exists and is found by the core.
 pub async fn user_of(pool: &PgPool, saver: &str) -> String {
-    if let Some(id) = sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
-        .bind(saver)
-        .fetch_optional(pool)
-        .await
-        .expect("look up the saver as a users.id")
+    if let Some(id) =
+        sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
+            .bind(saver)
+            .fetch_optional(pool)
+            .await
+            .expect("look up the saver as a users.id")
     {
         return id;
     }
@@ -55,7 +56,12 @@ pub async fn user_of(pool: &PgPool, saver: &str) -> String {
 /// An OPEN shift of `saver` at `branch`, written straight into the tables (no `opened_by_count`), with `opening` as
 /// its opening and expected balances. Returns the shift id. Fund its ledger drawer yourself where the suite's
 /// postings need it (e.g. `save_common::fund_ledger_drawer`).
-pub async fn open_shift_for(pool: &PgPool, branch: &str, saver: &str, opening: &[(&str, &str)]) -> String {
+pub async fn open_shift_for(
+    pool: &PgPool,
+    branch: &str,
+    saver: &str,
+    opening: &[(&str, &str)],
+) -> String {
     let teller = user_of(pool, saver).await;
     let shift = format!("SH-{}", uuid::Uuid::new_v4());
     sqlx::query(
@@ -82,4 +88,19 @@ pub async fn open_shift_for(pool: &PgPool, branch: &str, saver: &str, opening: &
         .expect("seed an opening balance");
     }
     shift
+}
+
+/// The branch day of `branch` OPEN, as `dayStartService` leaves it (`ops_state.phase`), written straight into the
+/// table. Since ruling A on #626 a compat save meets the teller gate (`check_teller_save_in`), which refuses a day
+/// that is not OPEN or CUT_OFF (`SAVE_CLOSED`); a verified OPEN count only moves the day to READY. Setup only, the
+/// same seed the passing suites write (`ca10p_desk_draft_begin_save_test.rs`, `v3_staff_views_test.rs`).
+pub async fn open_day(pool: &PgPool, branch: &str) {
+    sqlx::query(
+        "INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN') \
+         ON CONFLICT (branch_id) DO UPDATE SET phase = 'OPEN'",
+    )
+    .bind(branch)
+    .execute(pool)
+    .await
+    .expect("open the branch day");
 }
