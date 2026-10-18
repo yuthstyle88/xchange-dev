@@ -742,3 +742,51 @@ async fn handle_kiosk(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xc_auth::domain::access::{Actor, ScopedRole};
+
+    fn staff_callers(role: Role) -> Callers {
+        let since = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+        let user = Actor::new(
+            "u1",
+            "org",
+            vec![ScopedRole::new(
+                role,
+                Some(BranchId::new("B1")),
+                since,
+                None,
+            )],
+            None,
+        );
+        Callers {
+            owner: None,
+            staff: None,
+            user: Some(user.clone()),
+            staff_user: Some(user),
+        }
+    }
+
+    /// The kiosk role of a staff caller, by its standing (OR-7 R10 #3170).
+    #[test]
+    fn kiosk_role_of_a_staff_caller() {
+        for (role, kiosk) in [
+            (Role::Teller, KioskRole::Front),
+            (Role::BranchManager, KioskRole::Manager),
+            (Role::RateManager, KioskRole::Rates),
+            (Role::Finance, KioskRole::Other),
+        ] {
+            let actor = kiosk_actor_from_callers(&staff_callers(role));
+            assert_eq!(
+                actor,
+                KioskActor::Staff {
+                    username: "u1".into(),
+                    role: kiosk
+                },
+                "{role:?}"
+            );
+        }
+    }
+}
