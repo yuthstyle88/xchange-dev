@@ -159,8 +159,12 @@ pub struct MappedFixture {
 }
 
 pub fn mapped_fixture() -> MappedFixture {
-    serde_json::from_str(include_str!("../fixtures/blueprint_policy_cases.json"))
-        .expect("blueprint_policy_cases.json parses")
+    let mut fix: MappedFixture =
+        serde_json::from_str(include_str!("../fixtures/blueprint_policy_cases.json"))
+            .expect("blueprint_policy_cases.json parses");
+    // the v2 owner bookings route is retired by BK-11 #1413
+    fix.cases.retain(|c| c.route != "POST /api/bookings");
+    fix
 }
 
 // ── names ────────────────────────────────────────────────────────────────────
