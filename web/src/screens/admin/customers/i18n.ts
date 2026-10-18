@@ -7,11 +7,6 @@ export const th = {
   title: 'ลูกค้าและสมาชิก',
   subtitle: 'ประวัติลูกค้าและคำขอลงทะเบียน แยกเป็นหมวดเพื่อค้นหาได้เร็ว',
 
-  // Tabs
-  tabs: 'ข้อมูลลูกค้า',
-  listTab: 'รายชื่อลูกค้าและประวัติ',
-  registrationsTab: 'คำขอลงทะเบียน',
-
   // Search & Status
   search: 'ค้นหาลูกค้า',
   placeholder: 'ชื่อ / รหัสลูกค้า / สัญชาติ',
@@ -69,29 +64,6 @@ export const th = {
   close: 'ปิด',
   detailTitle: 'รายละเอียดรายการ',
   loadOlder: 'โหลดรายการเก่ากว่า',
-
-  // Registrations panel
-  regHeading: 'ลงทะเบียนสมาชิกออนไลน์',
-  regIntro: 'ตรวจเอกสารหน้าร้านและเลือกรหัสลูกค้าให้ตรงกันก่อนยืนยัน Member',
-  regPlaceholder: 'ค้นหาเลขลงทะเบียน / ชื่อ / เบอร์โทร',
-  regSearch: 'ค้นหา',
-  regRefresh: 'โหลดล่าสุด',
-  regEmpty: 'ไม่พบการลงทะเบียนในสาขานี้',
-
-  // Member form & card
-  memberButton: 'ยืนยันตัวตนหน้าร้าน / ออกรหัส Member',
-  memberTitle: 'ยืนยัน Member หน้าร้าน',
-  memberPhone: 'เบอร์ติดต่อ',
-  memberVerified: 'พนักงานตรวจเอกสารและยืนยันตัวตนลูกค้าที่หน้าร้านแล้ว',
-  memberReissue: 'กรณีออกบัตรซ้ำ รหัส Member เดิมจะใช้จองไม่ได้',
-  memberBack: 'กลับ',
-  memberSubmit: 'ยืนยันและออกรหัส Member',
-  memberHandOver: 'ส่งมอบรหัสนี้ให้ลูกค้าที่หน้าร้าน เก็บไว้เป็นส่วนตัว ใช้กรอกในหน้าจองออนไลน์',
-  memberCode: 'รหัส Member',
-  memberCardNote: 'การจอง Member รอพนักงานกำหนดวันเวลาหมดอายุและยืนยันเรท',
-  memberCardTitle: 'บัตร Member',
-  memberIssueError: 'เกิดข้อผิดพลาดในการออกรหัส Member',
-  regLoadError: 'เกิดข้อผิดพลาดในการโหลดคำขอลงทะเบียน',
   historyLoadError: 'เกิดข้อผิดพลาดในการโหลดประวัติ',
 } as const;
 
@@ -100,10 +72,6 @@ export const en: Record<keyof typeof th, string> = {
   eyebrow: 'CUSTOMERS',
   title: 'Customers & Members',
   subtitle: 'Customer history and registration requests categorized for fast lookup',
-
-  tabs: 'Customer Data',
-  listTab: 'Customers & History',
-  registrationsTab: 'Registration Requests',
 
   search: 'Search Customers',
   placeholder: 'Name / Customer ID / Nationality',
@@ -159,26 +127,5 @@ export const en: Record<keyof typeof th, string> = {
   close: 'Close',
   detailTitle: 'Transaction Details',
   loadOlder: 'Load older transactions',
-
-  regHeading: 'Online Member Registration',
-  regIntro: 'Verify documents at the counter and match customer ID before confirming Member',
-  regPlaceholder: 'Search registration no. / name / phone',
-  regSearch: 'Search',
-  regRefresh: 'Reload',
-  regEmpty: 'No registrations found in this branch',
-
-  memberButton: 'Verify Identity / Issue Member Code',
-  memberTitle: 'Verify Member at Counter',
-  memberPhone: 'Phone Number',
-  memberVerified: 'Staff verified customer identity and documents at the counter',
-  memberReissue: 'If reissued, the previous Member code will no longer be valid for booking',
-  memberBack: 'Back',
-  memberSubmit: 'Confirm and Issue Member Code',
-  memberHandOver: 'Hand over this code to customer in private, used for online booking',
-  memberCode: 'Member Code',
-  memberCardNote: 'Member booking awaits staff expiration date and rate confirmation',
-  memberCardTitle: 'Member Card',
-  memberIssueError: 'Failed to issue Member code',
-  regLoadError: 'Failed to load registration requests',
   historyLoadError: 'Failed to load customer history',
 };

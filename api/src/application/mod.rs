@@ -1,6 +1,5 @@
 //! Application layer for xchange.
 pub mod app_session_claim;
-pub mod bookings;
 pub mod compat;
 
 pub mod custody;

@@ -49,7 +49,6 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::ReceiptReprint, Some((Customers, View))),
         (P::ReferralRead, Some((Customers, View))),
         (P::IdentityDocumentRead, Some((Customers, View))),
-        (P::BookingsAdmin, Some((Customers, Full))),
         (P::ReferralSupersede, Some((Customers, Full))),
         (P::ConsentPolicyManage, Some((Customers, Full))),
         (P::MarketingCampaigns, Some((Customers, Full))),
@@ -126,7 +125,7 @@ fn expected(role: Role) -> BTreeMap<Module, Level> {
 #[test]
 fn c2_every_permission_maps_to_its_ruled_module_and_level() {
     let rows = table();
-    assert_eq!(rows.len(), 52, "the table covers all 52 permissions");
+    assert_eq!(rows.len(), 51, "the table covers all 51 permissions");
     let wrong: Vec<String> = rows
         .iter()
         .filter(|(p, want)| PermissionModule::module(*p) != *want)
@@ -227,7 +226,7 @@ fn c2_only_executive_and_admin_gain_a_permission() {
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 31),
+            ("EXECUTIVE", 30),
             ("ADMIN", 10),
             ("RATE_MANAGER", 7),
             ("BRANCH_MANAGER", 20),

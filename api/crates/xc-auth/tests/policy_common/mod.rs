@@ -212,12 +212,11 @@ pub fn path(name: &str) -> EntryPath {
 }
 
 /// The name the code asks with. v2's fixture records the body's action for `OwnerRoute`; the
-/// three owner routes ask with their route instead (`employees.rs`, `bookings.rs`,
-/// `reference_rates.rs`), and that is the row of the route table they hit.
+/// owner routes ask with their route instead (`employees.rs`, `reference_rates.rs`), and that is
+/// the row of the route table they hit. (v2's bookings owner route went in BK-11 #1413.)
 pub fn asked(route: &str, path: &str, action: &str) -> String {
     match (path, route) {
         ("OwnerRoute", "POST /api/employees") => "employees".to_owned(),
-        ("OwnerRoute", "POST /api/bookings") => "/api/v2/bookings".to_owned(),
         ("OwnerRoute", "POST /api/reference-rates") => "/api/reference-rates".to_owned(),
         _ => action.to_owned(),
     }
