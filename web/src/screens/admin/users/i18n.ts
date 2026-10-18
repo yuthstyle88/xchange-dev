@@ -62,7 +62,6 @@ export const th = {
   tabMatrix: 'ตารางสิทธิ์',
   tabAudit: 'ประวัติการเปลี่ยนแปลง',
   tabLogins: 'ประวัติการเข้าสู่ระบบ',
-  tabImport: 'นำเข้าข้อมูลพนักงาน',
   tabPending: 'อยู่ระหว่างพัฒนา',
 
   statusSuspended: 'ระงับชั่วคราว',
@@ -135,20 +134,6 @@ export const th = {
   loginsResultNotActive: 'บัญชีไม่ได้เปิดใช้งาน',
   loginsResultTempExpired: 'รหัสผ่านชั่วคราวหมดอายุ',
   loginsResultRateLimited: 'ถูกจำกัดจำนวนครั้ง',
-
-  // W4 employee register import
-  importTitle: 'นำเข้าทะเบียนพนักงาน',
-  importChooseFile: 'เลือกไฟล์ Excel',
-  importPreview: 'ตรวจสอบข้อมูล',
-  importApply: 'ยืนยันการนำเข้า',
-  importRowsCreate: 'สร้างใหม่',
-  importRowsUpdate: 'อัปเดต',
-  importRowsUnchanged: 'ไม่เปลี่ยนแปลง',
-  importRowError: 'ข้อผิดพลาด',
-  importDroppedColumn: 'คอลัมน์ที่ถูกข้าม',
-  importStoppedAt: 'หยุดที่แถว',
-  importTempPasswordsFile: 'ดาวน์โหลดรหัสผ่านชั่วคราว',
-  importNothingToApply: 'ไม่มีรายการที่ต้องนำเข้า',
 };
 
 export const en = {
@@ -215,7 +200,6 @@ export const en = {
   tabMatrix: 'Permission Matrix',
   tabAudit: 'User Audit',
   tabLogins: 'Login History',
-  tabImport: 'Register Import',
   tabPending: 'Coming soon',
 
   statusSuspended: 'Suspended',
@@ -288,18 +272,4 @@ export const en = {
   loginsResultNotActive: 'Account not active',
   loginsResultTempExpired: 'Temporary password expired',
   loginsResultRateLimited: 'Rate limited',
-
-  // W4 employee register import
-  importTitle: 'Import Employee Register',
-  importChooseFile: 'Choose Excel File',
-  importPreview: 'Preview Import',
-  importApply: 'Apply Import',
-  importRowsCreate: 'To Create',
-  importRowsUpdate: 'To Update',
-  importRowsUnchanged: 'Unchanged',
-  importRowError: 'Row Error',
-  importDroppedColumn: 'Dropped Column',
-  importStoppedAt: 'Stopped at row',
-  importTempPasswordsFile: 'Download Temporary Passwords',
-  importNothingToApply: 'Nothing to apply',
 };

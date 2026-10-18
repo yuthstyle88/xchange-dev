@@ -463,11 +463,16 @@ fn collect_ids(value: &Value, found: &mut Vec<String>) {
 }
 
 /// `SH`, `MV` or `uuid`: ids are paired within their own kind.
+/// LG-6.r6 (#1046 ruling): a v3 `<transfer_uuid>:<currency>` movement id pairs with v2's `MV-<uuid>`.
 fn id_kind(id: &str) -> &'static str {
-    match id.get(..3) {
-        Some("SH-") => "SH",
-        Some("MV-") => "MV",
-        _ => "uuid",
+    if id.starts_with("SH-") {
+        "SH"
+    } else if id.starts_with("MV-")
+        || (id.len() == UUID_LEN + 4 && id.as_bytes().get(UUID_LEN) == Some(&b':'))
+    {
+        "MV"
+    } else {
+        "uuid"
     }
 }
 
@@ -501,8 +506,16 @@ fn id_spans(text: &str) -> Vec<(usize, usize)> {
             spans.push((at, at + 3 + UUID_LEN));
             at += 3 + UUID_LEN;
         } else if is_uuid_at(bytes, at) {
-            spans.push((at, at + UUID_LEN));
-            at += UUID_LEN;
+            // LG-6.r6 (#1046 ruling): v3 `<transfer_uuid>:<currency>` is one `MV` id, not a bare uuid.
+            let mv_suffix = bytes
+                .get(at + UUID_LEN..at + UUID_LEN + 4)
+                .is_some_and(|s| s[0] == b':' && s[1..].iter().all(u8::is_ascii_uppercase))
+                && bytes
+                    .get(at + UUID_LEN + 4)
+                    .is_none_or(|b| !b.is_ascii_alphanumeric());
+            let end = at + UUID_LEN + if mv_suffix { 4 } else { 0 };
+            spans.push((at, end));
+            at = end;
         } else {
             at += 1;
         }

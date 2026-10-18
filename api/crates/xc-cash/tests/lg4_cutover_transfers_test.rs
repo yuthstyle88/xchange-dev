@@ -140,7 +140,7 @@ impl Db {
             .unwrap();
         let minor = (d(amount) * Decimal::from(100)).trunc().to_string();
         sqlx::query(AssertSqlSafe(format!(
-            "INSERT INTO ops_state (branch_id, enabled, phase, safe) VALUES ('{id}', true, 'OPEN', \
+            "INSERT INTO ops_state (branch_id, phase, safe) VALUES ('{id}', 'OPEN', \
              jsonb_build_object('USD', {minor}::bigint))"
         )))
         .execute(&self.pool)

@@ -102,7 +102,7 @@ impl SnapshotBuilder {
         let members = self.sources.members(branch).await?;
         let transactions = self.sources.transactions(branch).await?;
         let shifts = self.shifts.shifts(branch).await?;
-        let movements = self.shifts.movements(branch).await?;
+        let movements = xc_cash::infrastructure::transfer_moves::of_branch(pool, branch).await?;
         let operations = self.operations(branch).await?;
 
         // RE-7 #604 (ruling Q3): the branch's current publication's `published_at`,
@@ -151,7 +151,8 @@ impl SnapshotBuilder {
         let pool = self.customers.branch_tx().pool();
         let rates = self.rates.current(branch).await?;
         let rates_val = published_rates_json(pool, branch, &rates).await?;
-        let active = self.shifts.active(branch).await?;
+        // CA-10 (#626): the branch's oldest open shift by opened_at; open_of_branch orders by it.
+        let active = self.shifts.open_of_branch(branch).await?.into_iter().next();
         let operations = self.operations(branch).await?;
         let rules = self.sources.payment_rules(branch).await?;
         let branch_id = here.id.as_str();
@@ -162,7 +163,7 @@ impl SnapshotBuilder {
             ("rates", rates_val),
             (
                 "activeShift",
-                active.map_or(V2Json::Null, |shift| V2Json::text(shift.id)),
+                active.map_or(V2Json::Null, |shift| V2Json::text(shift.shift_id)),
             ),
             (
                 "adminUrl",

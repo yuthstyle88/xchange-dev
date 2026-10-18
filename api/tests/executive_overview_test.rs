@@ -256,12 +256,15 @@ impl Room {
         .await
         .expect("a branch");
         sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, organization_id, teller_id) \
-             VALUES ('SH-' || $1, $1, 'OPEN', now(), 'test', 'open-' || $1, $2::uuid, $3::uuid)",
+            "WITH u AS ( \
+                 INSERT INTO users (organization_id, name, status, created_by) \
+                 VALUES ($2::uuid, 'teller-' || $1, 'ACTIVE', 'test') RETURNING id \
+             ) \
+             INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, organization_id, teller_id) \
+             SELECT 'SH-' || $1, $1, 'OPEN', now(), 'test', 'open-' || $1, $2::uuid, u.id FROM u",
         )
         .bind(branch)
         .bind(org)
-        .bind(&self.teller[org])
         .execute(&self.pool)
         .await
         .expect("an open shift");

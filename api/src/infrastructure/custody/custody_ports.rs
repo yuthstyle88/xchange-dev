@@ -20,6 +20,7 @@ use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
 use xc_rate::domain::validation::format_iso;
+use xc_shift::application::custody::service::CustodyFactsPort;
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
@@ -260,5 +261,51 @@ impl CustodyPorts for PgCustodyPorts {
             let offset_secs = at_local.offset().fix().local_minus_utc();
             Ok(offset_secs / 60)
         })
+    }
+}
+
+impl CustodyFactsPort for PgCustodyPorts {
+    fn service_window_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        now: CustodyTime,
+    ) -> Answer<'a, (ServiceWindow, i32)> {
+        Box::pin(async move {
+            let window = self.service_window(tx, branch, now).await?;
+            let offset = self.utc_offset_minutes(tx, branch, now).await?;
+            Ok((window, offset))
+        })
+    }
+
+    fn has_live_rate_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+    ) -> Answer<'a, (bool, String)> {
+        Box::pin(async move {
+            let facts = self.outside_facts(tx, branch, None).await?;
+            Ok((facts.has_live_rate, facts.rates_updated))
+        })
+    }
+
+    fn transactions_summary_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+    ) -> Answer<'a, (Vec<String>, Option<String>)> {
+        Box::pin(async move {
+            let facts = self.outside_facts(tx, branch, None).await?;
+            Ok((facts.pending_transactions, facts.last_transaction))
+        })
+    }
+
+    fn customer_exists_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        customer_id: &'a str,
+    ) -> Answer<'a, bool> {
+        self.customer_known(tx, branch, customer_id)
     }
 }
