@@ -28,11 +28,12 @@ pub async fn teller_of_open_shift(pool: &PgPool, branch: &str) -> String {
 /// `users.legacy_employee_id` (an employee id), seeded in the XC organisation if missing. Not for `"owner"`: the
 /// suites' owner user already exists and is found by the core.
 pub async fn user_of(pool: &PgPool, saver: &str) -> String {
-    if let Some(id) = sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
-        .bind(saver)
-        .fetch_optional(pool)
-        .await
-        .expect("look up the saver as a users.id")
+    if let Some(id) =
+        sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
+            .bind(saver)
+            .fetch_optional(pool)
+            .await
+            .expect("look up the saver as a users.id")
     {
         return id;
     }
@@ -55,7 +56,12 @@ pub async fn user_of(pool: &PgPool, saver: &str) -> String {
 /// An OPEN shift of `saver` at `branch`, written straight into the tables (no `opened_by_count`), with `opening` as
 /// its opening and expected balances. Returns the shift id. Fund its ledger drawer yourself where the suite's
 /// postings need it (e.g. `save_common::fund_ledger_drawer`).
-pub async fn open_shift_for(pool: &PgPool, branch: &str, saver: &str, opening: &[(&str, &str)]) -> String {
+pub async fn open_shift_for(
+    pool: &PgPool,
+    branch: &str,
+    saver: &str,
+    opening: &[(&str, &str)],
+) -> String {
     let teller = user_of(pool, saver).await;
     let shift = format!("SH-{}", uuid::Uuid::new_v4());
     sqlx::query(
