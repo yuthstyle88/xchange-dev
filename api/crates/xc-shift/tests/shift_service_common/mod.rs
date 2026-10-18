@@ -31,6 +31,10 @@ use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
+#[path = "../shift_balances_double/mod.rs"]
+pub mod shift_balances_double;
+pub use shift_balances_double::ShiftBalancesDouble;
+
 /// RE-7 #604 retires `Quote::compute`; a quote per 1 unit is `Quote::per_unit` at `UnitSize::ONE`
 /// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
 fn per_one(
@@ -90,6 +94,7 @@ pub const OPENERS: [&str; 21] = [
 pub struct TestDb {
     pub pool: PgPool,
     pub schema: String,
+    pub balances: Arc<ShiftBalancesDouble>,
 }
 
 impl TestDb {
@@ -147,7 +152,11 @@ impl TestDb {
             seed_opener(&pool, opener).await;
         }
 
-        Self { pool, schema }
+        Self {
+            pool,
+            schema,
+            balances: Arc::new(ShiftBalancesDouble::new()),
+        }
     }
 
     pub fn branch_tx(&self) -> BranchTx {
@@ -156,7 +165,10 @@ impl TestDb {
 
     pub fn service(&self) -> Service {
         ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.pool.clone())),
+            Arc::new(PgShiftRepository::with_balances(
+                self.pool.clone(),
+                self.balances.clone(),
+            )),
             self.branch_tx(),
         )
     }
@@ -202,10 +214,17 @@ impl TestDb {
         delta: StockDelta,
     ) -> AppResult<String> {
         let service = self.service();
+        let balances = self.balances.clone();
         let (b, t) = (branch.clone(), teller.to_owned());
         self.branch_tx()
             .run(branch, move |tx| {
-                Box::pin(async move { service.apply_delta_for_teller_in(tx, &b, &t, &delta).await })
+                Box::pin(async move {
+                    let shift_id = service
+                        .apply_delta_for_teller_in(tx, &b, &t, &delta)
+                        .await?;
+                    balances.apply_delta(&shift_id, &delta);
+                    Ok(shift_id)
+                })
             })
             .await
     }
@@ -219,9 +238,9 @@ impl TestDb {
             .unwrap_or_else(|e| panic!("the user seeded for opener {opener}: {e}"))
     }
 
-    /// CA-10 (#626, #2955): an OPEN shift written straight into `shifts` and `shift_balances`, the way a verified
-    /// OPEN count leaves one, with no `opened_by_count` (M3 drops it). `opening` is `(code, amount)`; `expected`
-    /// starts equal to it. Returns the shift's id. Replaces v2's `ShiftService::open` as the suites' setup.
+    /// CA-10 (#626, #2955): an OPEN shift written straight into `shifts` and the `ShiftBalances` double, the way a
+    /// verified OPEN count leaves one, with no `opened_by_count` (M3 drops it). `opening` is `(code, amount)`;
+    /// `expected` starts equal to it. Returns the shift's id. Replaces v2's `ShiftService::open` as the suites' setup.
     pub async fn seed_open_shift(
         &self,
         branch: &BranchId,
@@ -245,22 +264,13 @@ impl TestDb {
         .execute(&self.pool)
         .await
         .expect("seed an OPEN shift");
-        for (code, amount) in opening {
-            sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, $3::numeric, $3::numeric)",
-            )
-            .bind(&id)
-            .bind(code)
-            .bind(amount)
-            .execute(&self.pool)
-            .await
-            .expect("seed an opening balance");
-        }
+        self.balances.seed_opening(&id, opening);
         id
     }
 
-    /// CA-10 (#626, #2955): closes a seeded shift straight in the tables, the way a verified CLOSE count leaves it:
-    /// `counted` per currency, `difference = counted - expected`. Replaces v2's `ShiftService::close` as setup.
+    /// CA-10 (#626, #2955): closes a seeded shift straight in the tables and the `ShiftBalances` double, the way a
+    /// verified CLOSE count leaves it: `counted` per currency, `difference = counted - expected`. Replaces v2's
+    /// `ShiftService::close` as setup.
     pub async fn seed_close(
         &self,
         shift_id: &str,
@@ -282,24 +292,11 @@ impl TestDb {
         .execute(&self.pool)
         .await
         .expect("seed a close");
-        for (code, amount) in counted {
-            sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected, counted, difference) \
-                 VALUES ($1, $2, 0, 0, $3::numeric, $3::numeric) \
-                 ON CONFLICT (shift_id, code) DO UPDATE SET counted = $3::numeric, \
-                 difference = $3::numeric - shift_balances.expected",
-            )
-            .bind(shift_id)
-            .bind(code)
-            .bind(amount)
-            .execute(&self.pool)
-            .await
-            .expect("seed a counted balance");
-        }
+        self.balances.seed_close(shift_id, counted);
     }
 
     /// CA-10 (#626, #2955): a stock movement written straight into `stock_movements`, with `expected` moved by
-    /// it. Replaces v2's `ShiftService::move_stock` as setup. Returns the movement's id.
+    /// it in the `ShiftBalances` double. Replaces v2's `ShiftService::move_stock` as setup. Returns the movement's id.
     #[allow(clippy::too_many_arguments)]
     pub async fn seed_movement(
         &self,
@@ -327,19 +324,8 @@ impl TestDb {
         .execute(&self.pool)
         .await
         .expect("seed a movement");
-        let sign = if direction == "IN" { "" } else { "-" };
-        sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-             VALUES ($1, $2, 0, ($4 || $3)::numeric) \
-             ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + ($4 || $3)::numeric",
-        )
-        .bind(shift_id)
-        .bind(code)
-        .bind(amount)
-        .bind(sign)
-        .execute(&self.pool)
-        .await
-        .expect("move the expectation");
+        self.balances
+            .seed_movement(shift_id, code, direction, amount);
         id
     }
 
