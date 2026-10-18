@@ -113,6 +113,12 @@ pub const RETIRED: &str = "adminSaveRate";
 /// §6): the admin direct shift actions, replaced by counts and moves.
 pub const CA10_RETIRED: [&str; 3] = ["adminOpenShift", "adminCloseShift", "adminMoveStock"];
 
+/// LG-6.r5 (#1044, BE controller's ruling A, issuecomment-6245895868): the recorded steps whose
+/// `$.operations.safe` is a known difference. v3 funds the opening from SAFE; v2 never posted SAFE for it,
+/// LG-6.r5.
+pub const LG6_R5_SAFE_FUNDED_AN_OPENING: [(&str, usize); 2] =
+    [("snapshot/branches.json", 11), ("snapshot/shift.json", 3)];
+
 /// Re-expected for CA-10 #626 by the ticket author (design §6): an action CA-10 retires, i.e. a
 /// direct shift action or one of the `ops*` compat names (`opsNope` included: no `ops*` name is
 /// custody's to answer any more). v3 answers it as a name v2 does not know.
@@ -1599,6 +1605,15 @@ impl<'f> Replay<'f> {
             }
             merged.extend(wanted);
             expected["operations"]["exceptions"] = Value::Array(merged);
+        }
+        // LG-6.r5 (#1044, BE controller's ruling A, issuecomment-6245895868): v3 funds the opening from SAFE; v2
+        // never posted SAFE for it, LG-6.r5. A branch whose SAFE funded an opening prints a map where v2 printed
+        // null. Only the listed steps, only `$.operations.safe`; every other key stays held to v2.
+        if LG6_R5_SAFE_FUNDED_AN_OPENING.contains(&(self.fixture.name.as_str(), step.n))
+            && expected["operations"]["safe"].is_null()
+            && actual["operations"]["safe"].is_object()
+        {
+            expected["operations"]["safe"] = actual["operations"]["safe"].clone();
         }
         self.ids.learn(&expected, &actual);
         assert_same(&self.ids.to_actual(&expected), &actual, &label);
