@@ -37,22 +37,15 @@ pub fn actor(name: &str) -> CustodyActor {
         return CustodyActor {
             id: "owner-1".into(),
             employee_id: None,
-            role: CustodyRole::Owner,
         };
     }
-    let role = match name.trim_end_matches(|c: char| c.is_ascii_digit()) {
-        "F" => CustodyRole::Front,
-        "FIN" => CustodyRole::Finance,
-        "MON" => CustodyRole::Monitor,
-        "MGR" => CustodyRole::Manager,
-        "BE" => CustodyRole::Backend,
-        "RT" => CustodyRole::Other,
+    match name.trim_end_matches(|c: char| c.is_ascii_digit()) {
+        "F" | "FIN" | "MON" | "MGR" | "BE" | "RT" => {}
         other => panic!("unknown actor {other}"),
-    };
+    }
     CustodyActor {
         id: name.into(),
         employee_id: Some(name.into()),
-        role,
     }
 }
 

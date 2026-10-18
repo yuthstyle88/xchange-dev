@@ -172,7 +172,7 @@ fn thb_divides_by_the_unit_once() {
     ];
     for (amount, r, unit, thb) in cases {
         assert_eq!(
-            ExchangeArithmetic::thb(amount, r, unit),
+            ExchangeArithmetic::try_thb(amount, r, unit).expect("no overflow"),
             money(thb),
             "{amount:?} × {r} ÷ {unit:?}"
         );
@@ -184,22 +184,26 @@ fn thb_rounds_half_up_once_at_the_end() {
     let usd = units("USD", "1", 2);
     // 3 × 0.335 = 1.005 → 1.01 (HALF_UP), not 1.00 (banker's)
     assert_eq!(
-        ExchangeArithmetic::thb(foreign("3", &usd), rate("0.335"), usd.unit_size()),
+        ExchangeArithmetic::try_thb(foreign("3", &usd), rate("0.335"), usd.unit_size())
+            .expect("no overflow"),
         money("1.01")
     );
     // 1 × 0.004 = 0.004 → 0.00; 1 × 0.005 = 0.005 → 0.01
     assert_eq!(
-        ExchangeArithmetic::thb(foreign("1", &usd), rate("0.004"), usd.unit_size()),
+        ExchangeArithmetic::try_thb(foreign("1", &usd), rate("0.004"), usd.unit_size())
+            .expect("no overflow"),
         money("0")
     );
     assert_eq!(
-        ExchangeArithmetic::thb(foreign("1", &usd), rate("0.005"), usd.unit_size()),
+        ExchangeArithmetic::try_thb(foreign("1", &usd), rate("0.005"), usd.unit_size())
+            .expect("no overflow"),
         money("0.01")
     );
     // rounding once: 7 JPY at 0.715 per 100 = 0.05005 → 0.05, never a rounded intermediate
     let jpy = units("JPY", "100", 0);
     assert_eq!(
-        ExchangeArithmetic::thb(foreign("7", &jpy), rate("0.715"), jpy.unit_size()),
+        ExchangeArithmetic::try_thb(foreign("7", &jpy), rate("0.715"), jpy.unit_size())
+            .expect("no overflow"),
         money("0.05")
     );
 }
@@ -211,17 +215,20 @@ fn foreign_for_thb_truncates_to_the_minor_unit() {
     let bhd = units("BHD", "1", 3);
     // 100.00 THB at 23.5 per 100 JPY = 425.53… JPY → 425 (minor unit 0)
     assert_eq!(
-        ExchangeArithmetic::foreign_for_thb(money("100"), rate("23.5"), &jpy),
+        ExchangeArithmetic::try_foreign_for_thb(money("100"), rate("23.5"), &jpy)
+            .expect("no overflow"),
         foreign("425", &jpy)
     );
     // 100.00 THB at 32.1 per USD = 3.1152… → 3.11
     assert_eq!(
-        ExchangeArithmetic::foreign_for_thb(money("100"), rate("32.1"), &usd),
+        ExchangeArithmetic::try_foreign_for_thb(money("100"), rate("32.1"), &usd)
+            .expect("no overflow"),
         foreign("3.11", &usd)
     );
     // 100.00 THB at 85.12345 per BHD = 1.17476… → 1.174
     assert_eq!(
-        ExchangeArithmetic::foreign_for_thb(money("100"), rate("85.12345"), &bhd),
+        ExchangeArithmetic::try_foreign_for_thb(money("100"), rate("85.12345"), &bhd)
+            .expect("no overflow"),
         foreign("1.174", &bhd)
     );
 }

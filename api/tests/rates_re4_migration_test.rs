@@ -384,7 +384,9 @@ fn thb(amount: Decimal, rate: Decimal, unit: Decimal) -> Decimal {
     let amount = ForeignAmount::from_decimal(amount);
     let rate = Rate::parse(&rate.normalize().to_string()).expect("a stored rate parses");
     let unit = UnitSize::parse(&unit.normalize().to_string()).expect("a stored unit parses");
-    d(&ExchangeArithmetic::thb(amount, rate, unit).to_string())
+    d(&ExchangeArithmetic::try_thb(amount, rate, unit)
+        .expect("no overflow")
+        .to_string())
 }
 
 // ------------------------------------------------------------ tests

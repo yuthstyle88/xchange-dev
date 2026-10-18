@@ -29,7 +29,6 @@ async fn set_approval_limit_refuses_overflowing_amount() {
     // Unchecked minor() truncates/casts i128 to i64, yielding 100 > 0.
     // try_minor() returns NumberError::Invalid.
     let huge = Money::try_from_minor_i128((u64::MAX as i128) + 101).expect("create huge money");
-    assert_eq!(huge.minor(), 100, "unchecked minor wraps to positive 100");
     assert!(huge.try_minor().is_err(), "try_minor refuses overflow");
 
     let err = repo
