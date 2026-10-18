@@ -44,8 +44,45 @@ pub(crate) async fn authenticate_caller(
         _ => callers.user,
     };
 
+    let session_hash = crate::presentation::extractors::actor::caller_session_hash(req, now).await;
+
     let user = match user {
         Some(u) => {
+            if let Some(ref hash) = session_hash {
+                let pool = req
+                    .app_data::<actix_web::web::Data<crate::bootstrap::AppState>>()
+                    .map(|s| &s.db)
+                    .or_else(|| {
+                        req.app_data::<actix_web::web::Data<xc_auth::application::session::SessionService>>()
+                            .map(|s| s.pool())
+                    });
+                if let Some(pool) = pool {
+                    match sqlx::query_scalar::<_, bool>(
+                        "SELECT must_change_password FROM user_sessions WHERE hash = $1 AND expires > $2",
+                    )
+                    .bind(hash)
+                    .bind(now)
+                    .fetch_optional(pool)
+                    .await
+                    {
+                        Ok(Some(true)) => {
+                            return Err(V3Error::new(
+                                "passwordChangeRequired",
+                                None,
+                                "password change required",
+                                actix_web::http::StatusCode::FORBIDDEN,
+                            )
+                            .error_response());
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            // Fail closed, but never echo the database's error text to the client.
+                            tracing::error!(error = %e, "forced-change gate: reading the session flag failed");
+                            return Err(super::command::server_error().error_response());
+                        }
+                    }
+                }
+            }
             if let Err(e) = Policy::authorize(Some(&u), inherits.0, &action, None, now) {
                 return Err(V3Error::from(e).error_response());
             }
@@ -72,8 +109,6 @@ pub(crate) async fn authenticate_caller(
             let hash = id.hash();
             AppSession { id, hash }
         });
-
-    let session_hash = crate::presentation::extractors::actor::caller_session_hash(req, now).await;
 
     Ok(Caller {
         user,
