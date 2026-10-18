@@ -667,8 +667,11 @@ classDiagram
 1. **Existing rows:**
    - The nine `roles` rows become built-in. Their name is the code, and their base is themselves (`CUSTOMER` included; it is not a staff group and is not shown).
    - `user_roles` is unchanged: every assignment already names a built-in code.
-2. **Backfill: yes.** The migration inserts §11.2's seed into `role_permission_grants`, one row per (group, permission). It is computed from the table above by C6's seed function and written out as literal `INSERT`s, so the SQL is reviewable.
-   - Measure before deploy: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;` (who is affected by the seed's changes, §11.2).
+2. **Backfill: none in SQL. The seed runs at startup.** Owner: *"แต่เราทำ seedให้่ตอน เริ่ม ระบบ เพื่อให้ง่าย"*.
+   - On boot, before serving, `RoleGrants::seed_missing(tx)` inserts §11.2's set for every built-in group that has **no** rows in `role_permission_grants`, and bumps `role_grant_version` once.
+   - It never touches a group that already has rows, so an edited group is never overwritten, and a restart changes nothing.
+   - The seed lives in code (C6's seed function, pinned by its test), so it is reviewed like code.
+   - Measure before deploy: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;` (who the seed's changes reach, §11.2).
 3. **Deploy order:** the migration runs before the new binary. The old binary ignores the new columns and table, but it keeps authorising from its static table. So the seed takes effect only with the new binary, and the two must ship together.
 4. **What `down` loses:** every custom group (its `user_roles` rows must be moved to a built-in group first; the reversal refuses while any exist), every edited set, and the version.
 
@@ -676,13 +679,14 @@ classDiagram
 | Ticket | What | Class | Depends on |
 |---|---|---|---|
 | M2 | §11.5 | guarded | owner approval |
-| C6 | §11.4 classes, the seed function, the desk-basics reclassification, the caller sweep, freshness | logic | M2 |
+| C6 | §11.4 classes, the seed function and `seed_missing` at startup, the desk-basics reclassification, the caller sweep, freshness | logic | M2 |
 | F12 | add / edit / delete group commands (EXECUTIVE only), guardrail refusals `409 guardrail:<n>`, audit | logic | C6, C1a (`AccountAuditor`) |
 | F5 | the matrix view returns every group: name, base, built-in, its permissions with module/level, and which are editable | logic | C6 |
 | W2 | matrix tab: add a group, edit levels and permissions, for EXECUTIVE; read-only for others | FE | F12, F5 |
 
 ### 11.7 Tests
 - the seed equals §11.2's table, per group;
+- `seed_missing` fills only empty groups: run twice, or after an edit, and nothing changes;
 - every built-in group has itself as base;
 - a TELLER can still open a shift and save at the desk after the seed (the desk basics);
 - an added group behaves as its base for scope and `GrantGuard`, and as its own set for permissions;
