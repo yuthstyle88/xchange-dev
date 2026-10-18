@@ -90,7 +90,7 @@ The owner accepted every recommendation (issuecomment-6245259930). The options s
 - B. Sign-in by employee code. Identity would need a username per account, which is unique across every 108 app (OR §5.3 `PhoneTaken` note), so a code like `tk-010326-mn002` would have to be registered in Identity. That is a change to Identity and to B2's flow.
 - **I recommend A.** It keeps one account across 108 apps and needs no Identity change. B is reversible later by adding the code as an Identity username.
 
-**Q2 (decided: A). The permission matrix: read-only from code, or editable by the owner.**
+**Q2 (decided: A, then changed to B by the owner on 2026-10-18; see §11). The permission matrix: read-only from code, or editable by the owner.**
 - A. **Read-only.** `RolePermissions` stays the one table in code (OR §3.4). A `PermissionModule` mapping groups the 51 permissions into V.9's ten modules, and each role's level is **derived** (§3.3). The screen shows it and exports it to xlsx. A change is a reviewed PR.
 - B. **Editable** (pos108 pattern): per-role overrides stored as data, edited by EXECUTIVE+ADMIN, within guardrails (V.9's four, plus "never grant a permission the Blueprint gives no role in that module").
 - **I recommend A.** The Blueprint fixes who may do what (#564), every permission already has a guard and a test, and a runtime matrix makes a business rule changeable without review. B costs one new table, an editor screen, cache invalidation in `read_session_in`, and a second source of truth that every `Authorizer::check` must read.
@@ -546,4 +546,117 @@ Every ticket that changes a literal held by a golden or fixture test that compar
 | Addendum 14. the purge citation | §9: the six per-token delete lines, plus the search showing that no delete by `expires` exists |
 | Addendum: the four migration items for the session flag | §4 item 1, the `user_sessions` line |
 | Ruling: `Dispatched` counts as holding | §3.2; C3 in §7 |
+
+## 11. Q2 changed to B: each group's permissions are editable (owner, 2026-10-18)
+
+The owner said this in the BE controller claude/c81c8986's session, recorded on #564:
+- *"ให้ สามารถ ปรับแก้ไข สิทธ์ กลุ่ม ได้"*: a group's permissions can be edited;
+- *"แต่มีการสร้าง กลุ่ม ตัวอย่างไว้ เพื่อให้ แก้ไขได้"*: the groups come pre-made as samples, and those are what gets edited.
+
+So the eight staff roles become **sample groups**:
+- They are seeded with exactly today's permissions (`role_permissions.rs:7-138`, with C2's `AuditLogsRead`).
+- From then on, each group's permission set is **data** that EXECUTIVE edits within guardrails.
+- Q2 A's derived matrix (§3.3, §5) stays as the **view** of that data, grouped by module.
+
+### 11.1 What changes and what does not
+- **Unchanged:**
+  - the 51 + 1 `Permission`s and every guard that checks one;
+  - `INHERITS` / `Policy`;
+  - roles as a fixed set (`Role`), so no group can be added or deleted in this revision;
+  - `GrantGuard`.
+- **Changed:** which permissions a role holds comes from the database, no longer from the static table.
+  - The static table remains as the **seed**.
+  - It is also the fallback when no row exists for a role, so a database with no rows behaves exactly as today.
+- **Granularity:** the editor works per `Permission`, shown under its module and level (C2's `PermissionModule::module`).
+  - A module-level shortcut ("CUSTOMERS: VIEW") ticks every permission of that module at or below that level.
+  - Saving stores the resulting permission set. Storing per permission is what keeps the seed's behaviour exact: a module-level store would widen roles. For example, ADMIN's FINANCE FULL is only `CashLimitsManage`; a module level would hand it every FINANCE permission.
+
+### 11.2 Guardrails (V.9 `XCHANGE-RBAC-V9.md:59-66`, mapped to v3 roles)
+Checked on every save and every import, whatever is asked:
+1. `AUDIT_LOGS` is at most VIEW for every role.
+2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` permissions go only to EXECUTIVE and ADMIN.
+3. ADMIN holds, outside `USER_MANAGEMENT` and `SYSTEM_SETTINGS`, at most VIEW-level permissions.
+4. **EXECUTIVE's set is fixed** (V.9 "OWNER's row is fixed"), so nobody can lock the owner out.
+5. Cross-cutting permissions (`PermissionModule::module` is `None`: `SignedIn`, `AttendanceClock`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not editable and stay as seeded.
+
+**Only EXECUTIVE edits** (V.9 :66 "Only OWNER can change the matrix"). Every save writes one `AccountAuditor` row, action `PERMISSION_CHANGE`, with the role's set before and after.
+
+### 11.3 Classes
+```mermaid
+classDiagram
+  class RoleGrants {
+    +of(role) &[Permission]
+    +snapshot() Arc~RoleGrantsSnapshot~
+  }
+  class RoleGrantsSnapshot {
+    +version i64
+    +sets HashMap~Role, Vec~Permission~~
+  }
+  class RoleGrantStore {
+    <<trait>>
+    +load(tx) RoleGrantsSnapshot
+    +save(tx, role, set, actor) i64
+  }
+  class PgRoleGrantStore
+  class MatrixGuardrails {
+    +check(role, set) Result~(), GuardrailRefusal~
+  }
+  class RolePermissions {
+    +seed(role) &[Permission]
+    +of(role) &[Permission]
+  }
+  RoleGrantStore <|.. PgRoleGrantStore
+  RoleGrants --> RoleGrantsSnapshot
+  RolePermissions --> RoleGrants : of() reads the current snapshot
+  MatrixGuardrails --> PermissionModule
+```
+
+| Class | File | Ticket |
+|---|---|---|
+| `RoleGrants`, `RoleGrantsSnapshot` | `api/crates/xc-auth/src/domain/access/role_grants.rs` | C6 |
+| `RoleGrantStore` (trait) | `api/crates/xc-auth/src/domain/access/role_grant_store.rs` | C6 |
+| `PgRoleGrantStore` | `api/crates/xc-auth/src/infrastructure/access/role_grant_store.rs` | C6 |
+| `MatrixGuardrails` | `api/crates/xc-auth/src/domain/access/matrix_guardrails.rs` | C6 |
+| `RolePermissions::of` reads `RoleGrants`; `seed` is today's table | `api/crates/xc-auth/src/domain/access/role_permissions.rs` | C6 |
+| the save command `adminRolePermissionsSave` | `api/src/presentation/http/v3/commands/admin_role_permissions_save.rs` | F12 |
+| the matrix tab becomes editable | `web/src/screens/admin/users/PermissionMatrix.tsx` | W2 (FE) |
+
+**`RolePermissions::of` keeps its signature** (`&'static [Permission]`-like, synchronous). All its callers stay untouched:
+- `authorizer.rs:65`, `policy.rs:707` / `:734`, `transfer.rs:24`, `me.rs:61`, and the booking commands.
+
+It reads an `ArcSwap` snapshot held by `RoleGrants`, which is the one place the data enters.
+
+**Freshness:**
+- The snapshot carries the `role_grant_version` it was loaded at.
+- `read_session_in` reads that one value per request (a single-row table) and reloads the snapshot when it moved.
+- A save bumps it in the same transaction, so every API instance is current by its next request.
+
+### 11.4 Data migration (M2, `class:guarded`, owner approval needed before merge)
+Tables:
+- `role_permission_grants (role text NOT NULL, permission text NOT NULL, PRIMARY KEY (role, permission))`;
+- `role_grant_version (id boolean PRIMARY KEY DEFAULT true CHECK (id), version bigint NOT NULL)`, one row, seeded `0`.
+
+1. **Existing rows:** none. Both tables are new. No existing table changes.
+2. **Backfill:** none in SQL. The table starts empty, and an empty role means "use the seed" (§11.1), so behaviour is identical on the day it ships. The first save of a role writes its full set.
+3. **Deploy order:** the migration runs before the new binary, at boot. The old binary never reads these tables, so it keeps working on the new schema.
+4. **What `down` loses:** every edited set and the version. Roles fall back to the seed. Measure before reversing: `SELECT role, count(*) FROM role_permission_grants GROUP BY role;`.
+
+### 11.5 Tickets
+| Ticket | What | Class | Depends on |
+|---|---|---|---|
+| M2 | the migration of §11.4 | guarded | owner approval |
+| C6 | `RoleGrants`, store, guardrails, `RolePermissions::of` reading the snapshot, freshness in `read_session_in` | logic | M2, C2 (merged) |
+| F12 | `adminRolePermissionsSave` (EXECUTIVE only), audit `PERMISSION_CHANGE`, `409 guardrail` refusals naming the rule | logic | C6, C1a (`AccountAuditor`) |
+| W2 | the matrix tab, editable for EXECUTIVE, read-only for others | FE | F12 |
+
+The matrix import (`Role Permission Matrix.xlsx`, V.9 :66) goes through the same `MatrixGuardrails` and save. It is part of F7, after F12.
+
+### 11.6 Tests
+- **Logic:**
+  - with an empty table, `RolePermissions::of(r) == seed(r)` for every role (no behaviour change on ship day);
+  - a saved set is what `of` returns, and on the next request after another instance saves;
+  - each of the five guardrails refuses;
+  - EXECUTIVE's row cannot change;
+  - a save writes one `PERMISSION_CHANGE` audit row.
+- **Wiring mutant:** point `of` back at `seed`. The "a saved set is what `Authorizer::check` sees" test must go red.
 
