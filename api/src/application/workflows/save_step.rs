@@ -200,3 +200,47 @@ pub trait SaveStep: Send + Sync + 'static {
         saved: &'a Transaction,
     ) -> StepFuture<'a>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xc_auth::domain::access::{Role as AccessRole, ScopedRole};
+
+    fn saver(role: Role) -> SaveActor {
+        SaveActor {
+            id: "u1".into(),
+            username: "u1".into(),
+            employee_id: None,
+            role,
+        }
+    }
+
+    /// AP-1's requester (OR-7 #1026): staff at the given branch, the owner organisation-wide.
+    #[test]
+    fn access_actor_at_scopes_staff_to_the_branch_and_the_owner_to_the_org() {
+        let since = DateTime::<Utc>::UNIX_EPOCH;
+        let b1 = BranchId::new("B1");
+        let staff = saver(Role::Front).access_actor_at("org", &b1, since);
+        assert_eq!(
+            staff.roles,
+            vec![ScopedRole::new(
+                AccessRole::Teller,
+                Some(b1.clone()),
+                since,
+                None
+            )]
+        );
+        assert_eq!(
+            (staff.user_id.as_str(), staff.organization_id.as_str()),
+            ("u1", "org")
+        );
+        let owner = saver(Role::Owner).access_actor_at("org", &b1, since);
+        assert_eq!(
+            owner.roles,
+            vec![
+                ScopedRole::new(AccessRole::Executive, None, since, None),
+                ScopedRole::new(AccessRole::Admin, None, since, None),
+            ]
+        );
+    }
+}
