@@ -5,7 +5,8 @@ import { PasswordField } from '../../shared/ui/PasswordField';
 import { TextField } from '../../shared/ui/TextField';
 import { useForm } from '../../shared/ui/form';
 import { screenT } from '../../shared/i18n';
-import type { AuthApi } from './auth-api';
+import type { AuthApi, PasswordApi } from './auth-api';
+import { ChangePassword } from './ChangePassword';
 import { homeOf, safeNext } from './home';
 import * as loginI18n from './i18n';
 
@@ -23,7 +24,7 @@ function toErrorKey(err: unknown): keyof typeof loginI18n.th {
 }
 
 export function LoginScreen(props: {
-  auth: AuthApi;
+  auth: AuthApi & Partial<PasswordApi>;
   navigate: (url: string) => void;
   next?: string | null;
 }): JSX.Element {
@@ -31,6 +32,7 @@ export function LoginScreen(props: {
   let formEl: HTMLFormElement | undefined;
   let submitted = false;
   const [pending, setPending] = createSignal(false);
+  const [mustChange, setMustChange] = createSignal(false);
   const [errorKey, setErrorKey] = createSignal<keyof typeof loginI18n.th | undefined>(undefined);
 
   onMount(async () => {
@@ -38,6 +40,10 @@ export function LoginScreen(props: {
       const res = await props.auth.session();
       if (submitted) return;
       if (res.user) {
+        if (res.user.mustChangePassword) {
+          setMustChange(true);
+          return;
+        }
         const target = safeNext(props.next) ?? homeOf(res.user);
         props.navigate(target);
       }
@@ -62,6 +68,10 @@ export function LoginScreen(props: {
 
     try {
       const res = await props.auth.login({ identifier, password });
+      if (res.user.mustChangePassword) {
+        setMustChange(true);
+        return;
+      }
       const target = safeNext(props.next) ?? homeOf(res.user);
       props.navigate(target);
     } catch (err) {
@@ -88,30 +98,40 @@ export function LoginScreen(props: {
 
   return (
     <AuthLayout title={t('title')}>
-      <form ref={formEl} onSubmit={handleSubmit}>
-        <TextField
-          field={form.field('identifier')}
-          label={t('identifier')}
-          autocomplete="username"
-          required
-          maxLength={254}
+      {mustChange() ? (
+        <ChangePassword
+          auth={props.auth}
+          onDone={() => {
+            setMustChange(false);
+            setErrorKey('changeDone');
+          }}
         />
-        <PasswordField
-          field={form.field('password')}
-          label={t('password')}
-          autocomplete="current-password"
-          required
-          maxLength={128}
-        />
-        <div>
-          <button type="submit" disabled={pending()}>
-            {t('submit')}
-          </button>
-        </div>
-        <p id="message" role="alert">
-          {message()}
-        </p>
-      </form>
+      ) : (
+        <form ref={formEl} onSubmit={handleSubmit}>
+          <TextField
+            field={form.field('identifier')}
+            label={t('identifier')}
+            autocomplete="username"
+            required
+            maxLength={254}
+          />
+          <PasswordField
+            field={form.field('password')}
+            label={t('password')}
+            autocomplete="current-password"
+            required
+            maxLength={128}
+          />
+          <div>
+            <button type="submit" disabled={pending()}>
+              {t('submit')}
+            </button>
+          </div>
+          <p id="message" role="alert">
+            {message()}
+          </p>
+        </form>
+      )}
     </AuthLayout>
   );
 }
