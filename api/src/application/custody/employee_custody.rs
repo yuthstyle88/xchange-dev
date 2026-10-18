@@ -4,13 +4,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 use pos_error::AppResult;
-use serde_json::Value;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::ids::BranchId;
 
 /// What the employee screen needs from custody. Looked up as `web::Data<dyn EmployeeCustody>`;
-/// `configure` registers `PgEmployeeCustody`. In an app without one nobody holds cash and the
-/// two custody actions are bad requests.
+/// `configure` registers `PgEmployeeCustody`. In an app without one nobody holds cash.
 pub trait EmployeeCustody: Send + Sync {
     fn holds_cash_or_pending<'a>(
         &'a self,
@@ -30,14 +27,4 @@ pub trait EmployeeCustody: Send + Sync {
         let _ = (tx, branch, employee_id);
         Box::pin(async { Ok(false) })
     }
-    fn set_entity<'a>(
-        &'a self,
-        payload: &'a Value,
-        actor: &'a Actor,
-    ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + 'a>>;
-    fn enable<'a>(
-        &'a self,
-        payload: &'a Value,
-        actor: &'a Actor,
-    ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + 'a>>;
 }
