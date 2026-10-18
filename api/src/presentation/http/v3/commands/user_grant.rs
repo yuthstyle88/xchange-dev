@@ -191,9 +191,53 @@ pub(crate) fn custody_holds() -> std::sync::Arc<dyn xc_auth::domain::user::Custo
 /// ruling #564 issuecomment-6246076019 Q6). Skeleton: only `App` is mapped; the rest is the RBAC function ticket.
 pub(crate) fn from_change_error(e: xc_auth::application::user::user_service::UserChangeError) -> V3Error {
     use xc_auth::application::user::user_service::UserChangeError;
+    use xc_auth::domain::access::GrantRefusal;
+
     match e {
+        UserChangeError::NotFound => {
+            V3Error::new("notFound", None, "user not found", StatusCode::NOT_FOUND)
+        }
+        UserChangeError::Refused(GrantRefusal::NoScope) => out_of_scope(),
+        UserChangeError::Refused(GrantRefusal::SelfChange) => {
+            V3Error::new("selfChange", None, "self change", StatusCode::FORBIDDEN)
+        }
+        UserChangeError::Refused(
+            GrantRefusal::ProtectedTarget
+            | GrantRefusal::ProtectedRole
+            | GrantRefusal::EnableNeedsExecutive,
+        ) => V3Error::new("roleNotAllowed", None, "role not allowed", StatusCode::FORBIDDEN),
+        UserChangeError::Refused(GrantRefusal::LastOwner) => {
+            V3Error::new("lastOwner", None, "last owner", StatusCode::CONFLICT)
+        }
+        UserChangeError::Refused(GrantRefusal::Scope(e)) => {
+            validation_failed(None, format!("Scope rule rejected: {e}"))
+        }
+        UserChangeError::NotActive => {
+            V3Error::new("userNotActive", None, "user not active", StatusCode::CONFLICT)
+        }
+        UserChangeError::HoldsCash => {
+            V3Error::new(
+                "holdsCash",
+                None,
+                "user holds cash or a pending handover",
+                StatusCode::CONFLICT,
+            )
+        }
+        UserChangeError::NotBound => {
+            V3Error::new(
+                "notBound",
+                None,
+                "user not bound to an identity",
+                StatusCode::CONFLICT,
+            )
+        }
+        UserChangeError::BadMove { from, to } => V3Error::new(
+            "statusNotAllowed",
+            None,
+            format!("status move {from} -> {to} not allowed"),
+            StatusCode::CONFLICT,
+        ),
         UserChangeError::App(e) => from_app_error(e),
-        other => todo!("RBAC function ticket: from_change_error for {other:?}"),
     }
 }
 
