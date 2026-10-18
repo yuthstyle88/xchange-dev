@@ -13,10 +13,10 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 use xc_auth::domain::account::entities::session::SignedIn;
+use xc_auth::domain::access::Role;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Side};
@@ -88,21 +88,20 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
 }
 
 fn kiosk_actor_from_callers(callers: &Callers) -> KioskActor {
-    if callers.owner.is_some() {
+    if callers.owner_standing().is_some() {
         KioskActor::Staff {
             username: "owner".to_string(),
             role: KioskRole::Owner,
         }
-    } else if let Some(staff) = &callers.staff {
-        let role = match staff.role() {
-            Role::Front => KioskRole::Front,
-            Role::Backend => KioskRole::Backend,
-            Role::Manager => KioskRole::Manager,
-            Role::Rates => KioskRole::Rates,
+    } else if let Some(staff) = callers.staff_standing() {
+        let role = match staff.staff_role() {
+            Some(Role::Teller) => KioskRole::Front,
+            Some(Role::BranchManager) => KioskRole::Manager,
+            Some(Role::RateManager) => KioskRole::Rates,
             _ => KioskRole::Other,
         };
         KioskActor::Staff {
-            username: staff.id().to_string(),
+            username: staff.user_id,
             role,
         }
     } else {
@@ -329,7 +328,7 @@ async fn handle_kiosk(
     // password-session employee keeps v2's own-branch answer, as on `/api/rpc` (`rpc.rs`), which
     // the provided tests pin; `callers.staff` is set for both, so it cannot decide this alone.
     let blueprint_session = identity_session(&req, now).await.is_some();
-    let named = if !blueprint_session && callers_peek.staff.is_some() {
+    let named = if !blueprint_session && callers_peek.staff_standing().is_some() {
         None
     } else {
         named_branch
@@ -510,31 +509,19 @@ async fn handle_kiosk(
                         role: emp.role.clone(),
                     },
                     None => {
-                        if callers.owner.is_some() {
+                        if callers.owner_standing().is_some() {
                             dto_kiosk::EmployeeInfo {
                                 id: "owner".to_string(),
                                 username: "owner".to_string(),
                                 name: "Owner".to_string(),
                                 role: "OWNER".to_string(),
                             }
-                        } else if let Some(staff) = &callers.staff {
-                            let role_name = match staff.role() {
-                                Role::Front => "FRONT",
-                                Role::Backend => "BACKEND",
-                                Role::Manager => "MANAGER",
-                                Role::Rates => "RATES",
-                                Role::Finance => "FINANCE",
-                                Role::Monitor => "MONITOR",
-                                Role::System => "SYSTEM",
-                                Role::Documents => "DOCUMENTS",
-                                Role::DocumentReview => "DOCUMENT_REVIEW",
-                                Role::Owner => "OWNER",
-                            };
+                        } else if let Some(staff) = callers.staff_standing() {
                             dto_kiosk::EmployeeInfo {
-                                id: staff.id().to_string(),
-                                username: staff.id().to_string(),
-                                name: staff.id().to_string(),
-                                role: role_name.to_string(),
+                                id: staff.user_id.clone(),
+                                username: staff.user_id.clone(),
+                                name: staff.user_id,
+                                role: staff.kind.audit_text().to_string(),
                             }
                         } else {
                             return kiosk_server_error();
