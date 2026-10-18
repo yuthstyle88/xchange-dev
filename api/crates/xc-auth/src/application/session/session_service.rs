@@ -41,6 +41,10 @@ pub struct SessionUser {
     #[serde(rename = "organizationId")]
     pub organization_id: String,
     pub roles: Vec<SessionUserRole>,
+    /// `user_sessions.must_change_password` (design §3.6 F11, BE ruling #564 issuecomment-6245742828 (a)): true
+    /// until the person changes the temporary password. RBAC F11a sets it on the login and session answers.
+    #[serde(rename = "mustChangePassword", default)]
+    pub must_change_password: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -381,6 +385,7 @@ impl SessionService {
                 name: name.to_string(),
                 organization_id: organization_id.to_string(),
                 roles,
+                must_change_password: false, // RBAC F11a sets the real value
             },
             session_token: token,
         })
@@ -585,6 +590,7 @@ impl SessionService {
             name,
             organization_id: org_id,
             roles,
+            must_change_password: false, // RBAC F11a sets the real value
         }))
     }
 
@@ -722,7 +728,31 @@ impl SessionService {
             name,
             organization_id: org_id,
             roles,
+            must_change_password: false, // RBAC F11a sets the real value
         })
+    }
+
+    /// `POST /api/auth/password` (design §3.6 F11; RBAC F11a fills the body, F11b calls it from `http/auth.rs`):
+    /// reads the session by `session_token`, decrypts its refresh token, gets an access token with
+    /// `IdentityClient::refresh`, then `IdentityClient::change_password(access_token, current, new, client_ip)`.
+    /// On success the session row is deleted, so the session ends (Identity revokes all its tokens), and the caller
+    /// clears the cookie as logout does. Identity's refusals come back as `SessionError::Identity`.
+    pub async fn change_password(
+        &self,
+        session_token: &str,
+        current_password: &str,
+        new_password: &str,
+        client_ip: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<(), SessionError> {
+        let _ = (
+            session_token,
+            current_password,
+            new_password,
+            client_ip,
+            now,
+        );
+        todo!("RBAC F11a: SessionService::change_password")
     }
 
     pub async fn logout(
