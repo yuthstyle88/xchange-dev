@@ -7,15 +7,9 @@
 use chrono::{DateTime, Utc};
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 
-use crate::domain::custody::entities::custody_machine::is_clocked_in;
-use crate::domain::custody::entities::customer_hold::HoldStatus;
 use crate::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use crate::domain::custody::state::CustodyState;
-use crate::domain::custody::value_objects::custody_actor::CustodyActor;
 use crate::domain::custody::value_objects::custody_error::CustodyError;
-use crate::domain::custody::value_objects::custody_facts::CustodyFacts;
-use crate::domain::custody::value_objects::custody_role::CustodyRole;
-use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::phase::Phase;
 use crate::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
 use crate::domain::custody::value_objects::service_window::ServiceWindow;
@@ -137,74 +131,6 @@ fn draft_matches_save(draft: &TxDraft, save: &SaveAttempt) -> bool {
 }
 
 impl BranchDay {
-    /// The v2 save rule (`CustodyMachine::check_save`).
-    pub(crate) fn v2_check_save(
-        state: &CustodyState,
-        save: &SaveAttempt,
-        actor: &CustodyActor,
-        facts: &CustodyFacts,
-        now: CustodyTime,
-    ) -> Result<(), CustodyError> {
-        // 1. save.prior:
-        match save.prior {
-            PriorSave::SavedByActor => {
-                if actor.role == CustodyRole::Front {
-                    return Ok(());
-                } else {
-                    return Err(CustodyError::SaveNotOwnRetry);
-                }
-            }
-            PriorSave::SavedByOther => {
-                return Err(CustodyError::SaveNotOwnRetry);
-            }
-            PriorSave::None | PriorSave::Unfinished => {}
-        }
-
-        // 2. A hold with customer_id == save.customer_id and status Open exists -> CustomerOnHold.
-        if state
-            .holds
-            .iter()
-            .any(|h| h.customer_id == save.customer_id && h.status == HoldStatus::Open)
-        {
-            return Err(CustodyError::CustomerOnHold);
-        }
-
-        // 3. Only when save.prior == PriorSave::None:
-        let me = actor.employee_id.as_deref().unwrap_or_default();
-        if save.prior == PriorSave::None {
-            if !facts.service_window.allows_save(now) {
-                return Err(CustodyError::SaveClosed);
-            }
-            if state.phase != Phase::Open && state.phase != Phase::CutOff {
-                return Err(CustodyError::SaveClosed);
-            }
-            let needs_draft = state.phase != Phase::Open || facts.service_window.needs_draft(now);
-            if needs_draft {
-                let open_shift_id = facts.open_shift.as_ref().map(|s| s.id.as_str());
-                let has_matching_draft = state.drafts.iter().any(|d| {
-                    draft_matches_save(d, save)
-                        && d.employee_id == me
-                        && open_shift_id == Some(d.shift_id.as_str())
-                });
-                if !has_matching_draft {
-                    return Err(CustodyError::SaveClosed);
-                }
-            }
-        }
-
-        // 4. My role is not Front, or I have no employee_id, or I hold no OPEN shift, or I am not clocked in -> SaveNotCustodian.
-        if actor.role != CustodyRole::Front
-            || actor.employee_id.is_none()
-            || facts.open_shift.is_none()
-            || !is_clocked_in(state, me)
-        {
-            return Err(CustodyError::SaveNotCustodian);
-        }
-
-        // 5. Ok(()).
-        Ok(())
-    }
-
     /// The draft a save completes (`CustodyMachine::complete_draft`), for both paths.
     pub fn complete_draft(
         state: &CustodyState,
