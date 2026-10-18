@@ -136,6 +136,11 @@ pub fn unknown_name_for(action: &str) -> String {
 #[path = "../shift_setup_common/mod.rs"]
 mod shift_setup_common;
 
+#[allow(clippy::duplicate_mod)]
+#[rustfmt::skip]
+#[path = "../shift_holder_common/mod.rs"]
+mod shift_holder_common;
+
 /// The ten actions part one of T11a dispatches.
 pub const PART_ONE: [&str; 10] = [
     "adminSnapshot",
@@ -1881,6 +1886,9 @@ impl<'f> Replay<'f> {
     /// part two's arm will: `staff` is the caller's username.
     async fn save_behind(&mut self, step: &Step) {
         let sender = self.fixture.sender(step).expect("somebody saved it");
+        let branch = self.branch_of(step);
+        let saver =
+            shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch.as_str()).await;
         let payload = self
             .ids
             .to_actual(step.payload.as_ref().expect("a payload"));
@@ -1891,6 +1899,16 @@ impl<'f> Replay<'f> {
                 .and_then(Value::as_str)
                 .map(str::to_string)
         };
+        let passport = key_of("passport");
+        let slip = key_of("slip");
+        for key in [&passport, &slip].into_iter().flatten() {
+            sqlx::query("UPDATE files SET owner_id = $1 WHERE key = $2")
+                .bind(&saver)
+                .bind(key)
+                .execute(&self.desk.db.pool)
+                .await
+                .expect("assign the save's file to its saver");
+        }
         let command = SaveTransaction {
             customer: ReserveCustomer {
                 name: text_of(&payload, "name"),
@@ -1918,8 +1936,8 @@ impl<'f> Replay<'f> {
             paid_at: text_of(&payload, "paidAt"),
             payment_confirmed: payload["paymentConfirmed"] == json!(true),
             identity_confirmed: payload["identityConfirmed"] == json!(true),
-            passport: key_of("passport"),
-            slip: key_of("slip"),
+            passport,
+            slip,
             reference_rate: payload
                 .get("referenceRate")
                 .filter(|v| !v.is_null())
@@ -1928,7 +1946,7 @@ impl<'f> Replay<'f> {
         let saved = self
             .desk
             .workflow
-            .save(&self.branch_of(step), command, &sender.id, time(&step.at))
+            .save(&branch, command, &saver, time(&step.at))
             .await
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
         assert_eq!(
