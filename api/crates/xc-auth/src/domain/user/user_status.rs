@@ -22,8 +22,16 @@ impl UserStatus {
 
     /// The §3.2 status table (7 allowed moves). RBAC function ticket.
     pub fn may_move(self, to: UserStatus) -> bool {
-        let _ = to;
-        todo!("RBAC function ticket: UserStatus::may_move (§3.2)")
+        matches!(
+            (self, to),
+            (Self::Pending, Self::Active)
+                | (Self::Pending, Self::Disabled)
+                | (Self::Active, Self::Suspended)
+                | (Self::Suspended, Self::Active)
+                | (Self::Active, Self::Disabled)
+                | (Self::Suspended, Self::Disabled)
+                | (Self::Disabled, Self::Active)
+        )
     }
 
     pub fn parse(s: &str) -> Option<Self> {
