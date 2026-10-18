@@ -789,8 +789,11 @@ async fn g5_branch_admin_cannot_grant_finance_on_other_branch() {
     db.finish().await;
 }
 
+/// Changed by RBAC C1a (owner decision Q4 A, PR 3083 §2 and §3.1 rule 4): an organisation-wide
+/// ADMIN no longer grants EXECUTIVE; only EXECUTIVE + ADMIN (the owner, B3) does. The owner's
+/// grant is in `rbac_c1a_user_commands_test.rs`.
 #[actix_web::test]
-async fn g6_org_wide_admin_grants_org_wide_executive() {
+async fn g6_org_wide_admin_alone_cannot_grant_org_wide_executive() {
     let db = TestDb::start().await;
     let user = a_teller(&db).await;
     let a = post(
@@ -802,18 +805,16 @@ async fn g6_org_wide_admin_grants_org_wide_executive() {
         Key::Fresh,
     )
     .await;
-    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
-    assert_eq!(
-        a.body,
-        json!({ "userId": user, "status": "ACTIVE", "version": 2 })
-    );
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "roleNotAllowed", "{}", a.text);
     assert_eq!(
         db.count(&format!(
-            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'EXECUTIVE' AND branch_id IS NULL AND valid_to IS NULL"
+            "SELECT count(*) FROM user_roles WHERE user_id = '{user}'::uuid AND role_code = 'EXECUTIVE' AND valid_to IS NULL"
         ))
         .await,
-        1
+        0
     );
+    assert_eq!(db.version(&user).await, 1);
     db.finish().await;
 }
 
