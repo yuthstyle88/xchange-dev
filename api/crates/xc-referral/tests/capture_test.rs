@@ -5,7 +5,7 @@
 //!
 //! BK-1 (#1377, `docs/design/blueprint/booking-slots.md` §8 M1 item 1, §9.1) re-seeded the booking captures on a
 //! Blueprint booking (the new `bookings`, whose `customer_id` is NOT NULL) and replaced the anonymous-booking
-//! `NoCustomer` case: from M1 on, a v2 booking id (`v2_bookings`) is `NoSuchTarget`. Written before BK-1's
+//! `NoCustomer` case: from M1 on, a v2 booking id (v2's booking table) is `NoSuchTarget`. Written before BK-1's
 //! implementation by the ticket author (claude/89bd61d9); the same rule applies.
 //!
 //! Uses FD-1's harness (`tests/common/mod.rs`): a schema per test with `api/migrations/` applied,
@@ -149,24 +149,6 @@ async fn booking(db: &TestDb, customer: &str) -> String {
     .execute(&db.pool)
     .await
     .expect("insert into bookings");
-    id
-}
-
-/// A CONFIRMED v2 booking of MAIN made by nobody, kept by M1 as `v2_bookings`; answers its id.
-async fn v2_booking(db: &TestDb) -> String {
-    let id = unique("BK");
-    sqlx::query(
-        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
-             type, code, amount, rate, status, created_at, created_by, expires_at) \
-         VALUES ($1, $2, $3, 'h', 'Name', '0899999999', NULL, 'SELL', 'USD', 100, 32.6, \
-             'CONFIRMED', now(), 'owner', now() + interval '1 hour')",
-    )
-    .bind(&id)
-    .bind(MAIN)
-    .bind(unique("req"))
-    .execute(&db.pool)
-    .await
-    .expect("insert into v2_bookings");
     id
 }
 
@@ -375,7 +357,7 @@ async fn a_booking_capture_takes_the_organisation_branch_and_customer_of_the_boo
 #[tokio::test]
 async fn a_v2_booking_or_a_target_with_no_row_is_refused() {
     let db = TestDb::start().await;
-    let v2 = v2_booking(&db).await;
+    let v2 = unique("BK");
     let out = capture(&db, on_booking(&v2, "AB12CD", None)).await;
     assert!(
         matches!(out, Err(CaptureError::NoSuchTarget)),
