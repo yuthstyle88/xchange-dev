@@ -12,8 +12,7 @@ use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
-use xc_auth::domain::access::StandingKind;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Standing, StandingKind};
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 use xc_kernel::ids::BranchId;
@@ -29,7 +28,7 @@ pub struct SaveActor {
     pub username: String,
     /// The employee's id for a staff member; `None` for the owner.
     pub employee_id: Option<String>,
-    pub role: Role,
+    pub standing: StandingKind,
 }
 
 impl SaveActor {
@@ -43,72 +42,29 @@ impl SaveActor {
         actor: &xc_auth::domain::access::Actor,
         now: DateTime<Utc>,
     ) -> Option<Self> {
-        let valid_roles: Vec<&xc_auth::domain::access::ScopedRole> = actor
-            .roles
-            .iter()
-            .filter(|r| r.valid_from <= now && r.valid_to.is_none_or(|to| to > now))
-            .collect();
-
-        let has_org_exec = valid_roles
-            .iter()
-            .any(|r| r.role == xc_auth::domain::access::Role::Executive && r.branch.is_none());
-        let has_org_admin = valid_roles
-            .iter()
-            .any(|r| r.role == xc_auth::domain::access::Role::Admin && r.branch.is_none());
-
-        if has_org_exec && has_org_admin {
-            return Some(Self {
-                id: actor.user_id.clone(),
-                username: actor.user_id.clone(),
-                employee_id: None,
-                role: Role::Owner,
-            });
-        }
-
-        let priority = [
-            (xc_auth::domain::access::Role::Teller, Role::Front),
-            (xc_auth::domain::access::Role::BranchManager, Role::Manager),
-            (xc_auth::domain::access::Role::RateManager, Role::Rates),
-            (xc_auth::domain::access::Role::Finance, Role::Finance),
-            (xc_auth::domain::access::Role::Admin, Role::System),
-            (
-                xc_auth::domain::access::Role::VerificationReviewer,
-                Role::DocumentReview,
-            ),
-        ];
-
-        for (access_role, v2_role) in priority {
-            if valid_roles.iter().any(|r| r.role == access_role) {
-                return Some(Self {
-                    id: actor.user_id.clone(),
-                    username: actor.user_id.clone(),
-                    employee_id: Some(actor.user_id.clone()),
-                    role: v2_role,
-                });
-            }
-        }
-
-        None
+        let standing = Standing::of(actor, now)?;
+        let employee_id = match standing.kind {
+            StandingKind::Owner => None,
+            StandingKind::Staff(_) => Some(actor.user_id.clone()),
+        };
+        Some(Self {
+            id: actor.user_id.clone(),
+            username: actor.user_id.clone(),
+            employee_id,
+            standing: standing.kind,
+        })
     }
 }
 
 impl SaveActor {
     /// The saver's standing (OR-7, #1026): what every reader uses instead of `role`.
-    ///
-    /// Transitional: derived from the old `role` until the field itself becomes a standing
-    /// (the last OR-7 save-path ticket). The mapping is design §3.3 (`v3_roles::blueprint_roles`).
     pub fn standing(&self) -> StandingKind {
-        match self.role {
-            Role::Owner => StandingKind::Owner,
-            other => {
-                StandingKind::Staff(xc_auth::domain::access::v3_roles::blueprint_roles(other)[0])
-            }
-        }
+        self.standing
     }
 
     /// The audit `actor_role` text of this saver, spelled as v3 stored it (unchanged by OR-7).
     pub fn audit_role(&self) -> &'static str {
-        self.role.as_str()
+        self.standing.audit_text()
     }
 
     /// The saver as an `access::Actor` at `branch` (the owner organisation-wide), valid from
@@ -120,7 +76,7 @@ impl SaveActor {
         since: DateTime<Utc>,
     ) -> xc_auth::domain::access::Actor {
         use xc_auth::domain::access::{Actor, Role as AccessRole, ScopedRole};
-        let roles = match self.standing() {
+        let roles = match self.standing {
             StandingKind::Owner => vec![
                 ScopedRole::new(AccessRole::Executive, None, since, None),
                 ScopedRole::new(AccessRole::Admin, None, since, None),
@@ -199,4 +155,49 @@ pub trait SaveStep: Send + Sync + 'static {
         ctx: &'a SaveContext<'a>,
         saved: &'a Transaction,
     ) -> StepFuture<'a>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xc_auth::domain::access::{Role as AccessRole, ScopedRole};
+
+    fn saver(standing: StandingKind) -> SaveActor {
+        SaveActor {
+            id: "u1".into(),
+            username: "u1".into(),
+            employee_id: None,
+            standing,
+        }
+    }
+
+    /// AP-1's requester (OR-7 #1026): staff at the given branch, the owner organisation-wide.
+    #[test]
+    fn access_actor_at_scopes_staff_to_the_branch_and_the_owner_to_the_org() {
+        let since = DateTime::<Utc>::UNIX_EPOCH;
+        let b1 = BranchId::new("B1");
+        let staff =
+            saver(StandingKind::Staff(AccessRole::Teller)).access_actor_at("org", &b1, since);
+        assert_eq!(
+            staff.roles,
+            vec![ScopedRole::new(
+                AccessRole::Teller,
+                Some(b1.clone()),
+                since,
+                None
+            )]
+        );
+        assert_eq!(
+            (staff.user_id.as_str(), staff.organization_id.as_str()),
+            ("u1", "org")
+        );
+        let owner = saver(StandingKind::Owner).access_actor_at("org", &b1, since);
+        assert_eq!(
+            owner.roles,
+            vec![
+                ScopedRole::new(AccessRole::Executive, None, since, None),
+                ScopedRole::new(AccessRole::Admin, None, since, None),
+            ]
+        );
+    }
 }

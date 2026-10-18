@@ -218,7 +218,7 @@ impl Db {
             .await
             .expect("read the safe");
         tx.rollback().await.expect("rollback");
-        b.get(usd()).minor()
+        b.get(usd()).try_minor().unwrap()
     }
 
     async fn status(&self, id: &str) -> String {

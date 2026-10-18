@@ -19,8 +19,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Sites on origin/main when this test was written.
-const CEILING: usize = 66;
+/// Remaining `.minor()` sites are all safe `MoneyDelta::minor()` (`i128`); `Money::minor` is gone.
+const CEILING: usize = 5;
 
 fn api_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

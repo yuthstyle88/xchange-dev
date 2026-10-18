@@ -66,6 +66,7 @@ use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Permission;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -198,7 +199,7 @@ fn teller() -> SaveActor {
         id: "employee-FRONT".to_owned(),
         username: "front".to_owned(),
         employee_id: Some("employee-FRONT".to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

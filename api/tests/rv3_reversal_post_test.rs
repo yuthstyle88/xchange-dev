@@ -283,7 +283,9 @@ impl Shop {
             id,
             username: "test".to_owned(),
             employee_id: None,
-            role: xc_auth::domain::policy::value_objects::role::Role::Front,
+            standing: xc_auth::domain::access::StandingKind::Staff(
+                xc_auth::domain::access::Role::Teller,
+            ),
         }
     }
 
@@ -403,7 +405,12 @@ impl Shop {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        Decimal::new(b.get(CurrencyCode::parse(currency).unwrap()).minor(), 2)
+        Decimal::new(
+            b.get(CurrencyCode::parse(currency).unwrap())
+                .try_minor()
+                .unwrap(),
+            2,
+        )
     }
 
     async fn reversal(&self, id: ReversalId, column: &str) -> String {

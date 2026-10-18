@@ -47,7 +47,13 @@ fn money_accepts_zero_extra_zero_decimals_and_prints_two_places() {
     assert_eq!(Money::parse("0").expect("0").to_string(), "0.00");
     assert_eq!(Money::parse("1.5").expect("1.5").to_string(), "1.50");
     assert_eq!(Money::parse("1.230").expect("1.230").to_string(), "1.23");
-    assert_eq!(Money::parse("100.5").expect("100.5").minor(), 10050);
+    assert_eq!(
+        Money::parse("100.5")
+            .expect("100.5")
+            .try_minor()
+            .expect("i64"),
+        10050
+    );
 }
 
 #[test]

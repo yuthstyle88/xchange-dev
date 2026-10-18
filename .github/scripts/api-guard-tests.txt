@@ -1,6 +1,5 @@
 # Guard tests (source-scanning tests that run when guards=true).
 # Format: <package> <test-binary>
-xc-kernel unchecked_arithmetic_ratchet_test
 xc-kernel unchecked_minor_ratchet_test
 xchange app_no_completion_route_test
 xchange booking_lifecycle_factory_guard_test

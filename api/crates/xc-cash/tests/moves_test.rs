@@ -202,7 +202,7 @@ impl Db {
             .await
             .expect("read the safe");
         tx.rollback().await.expect("rollback");
-        b.get(usd()).minor()
+        b.get(usd()).try_minor().unwrap()
     }
 
     async fn scalar(&self, sql: &str) -> i64 {
@@ -264,7 +264,7 @@ impl Db {
             .await
             .expect("the drawer's USD");
         tx.rollback().await.expect("rollback");
-        Decimal::new(b.get(usd()).minor(), 2)
+        Decimal::new(b.get(usd()).try_minor().unwrap(), 2)
     }
 
     /// `(direction, amount)` of what a transfer moved on a shift's drawer. LG-4 (#929, 1:1): read from the drawer's

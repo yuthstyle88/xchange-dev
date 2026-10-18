@@ -10,7 +10,6 @@ use xc_auth::application::account::service::EmployeesAnswer;
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -97,17 +96,14 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
     let payload = payload_of(&body);
     let action = body["action"].as_str().unwrap_or("");
     let custody = req.app_data::<web::Data<dyn EmployeeCustody>>();
-    let actor_id = callers
-        .user
+    let standing = callers
+        .owner_standing()
+        .or_else(|| callers.staff_standing());
+    let by = standing
         .as_ref()
-        .map(|u| u.user_id.as_str())
+        .map(|s| s.user_id.as_str())
+        .or_else(|| callers.user.as_ref().map(|u| u.user_id.as_str()))
         .unwrap_or(OWNER_ID);
-    let dummy_owner = Actor::owner(actor_id);
-    let actor = callers
-        .owner
-        .as_ref()
-        .or(callers.staff.as_ref())
-        .unwrap_or(&dummy_owner);
 
     match action {
         "disable" => {
@@ -141,7 +137,7 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                         custody.cloned().map(web::Data::into_inner),
                         &BranchId::new(employee.branch_id.clone()),
                         &employee.id,
-                        actor.id(),
+                        by,
                         now(),
                     )
                     .await
@@ -165,10 +161,7 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
         _ => {}
     }
 
-    match accounts
-        .employees(action, &payload, actor.id(), now())
-        .await
-    {
+    match accounts.employees(action, &payload, by, now()).await {
         Ok(EmployeesAnswer::List(people)) => answer(
             200,
             json!({ "employees": people.iter().map(employee_json).collect::<Vec<_>>() }),
