@@ -109,7 +109,7 @@ impl TestDb {
 
     /// Apply every migration except M1 — the state of a database deployed before QU-A1. BK-1's
     /// `*_booking_slots.sql` re-points `queue_tickets.booking_id`, so it deploys after M1 and is held back
-    /// with it (`docs/design/blueprint/booking-slots.md` §8 M1 item 3). M2 drops `v2_bookings`, which only M1 creates, so it is held back too.
+    /// with it (`docs/design/blueprint/booking-slots.md` §8 M1 item 3). M2 drops v2's booking table, which only M1 creates, so it is held back too.
     pub async fn migrate_all_but_m1(&self) {
         let _slot = STARTING.acquire().await.expect("never closed");
         let mut migrator = self.migrator().await;
