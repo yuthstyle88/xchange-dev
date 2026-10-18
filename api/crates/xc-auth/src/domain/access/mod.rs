@@ -2,6 +2,7 @@ pub mod actor;
 pub mod authorizer;
 pub mod branch_scope;
 pub mod permission;
+pub mod permission_module;
 pub mod role;
 pub mod role_permissions;
 pub mod scope_rule;

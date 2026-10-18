@@ -434,7 +434,28 @@ The expected shape, given the current table:
 - **ADMIN:** FULL on USER_MANAGEMENT and SYSTEM_SETTINGS; VIEW on AUDIT_LOGS (C2).
 - **Every role:** at most VIEW on AUDIT_LOGS (V.9 guardrail 1). Nothing but the core writes an audit row.
 
-C2 lists the differences from V.9's matrix in this section, one line each, for the owner's review.
+| Role | DASHBOARD | CUSTOMERS | DOCUMENTS | RATES_STOCK | FINANCE | RISK | REPORTS | USER_MANAGEMENT | SYSTEM_SETTINGS | AUDIT_LOGS |
+|---|---|---|---|---|---|---|---|---|---|---|
+| EXECUTIVE | FULL | FULL | CREATE | FULL | FULL | — | FULL | — | FULL | VIEW |
+| ADMIN | FULL | — | — | — | FULL | — | — | FULL | FULL | VIEW |
+| RATE_MANAGER | — | — | — | FULL | — | — | — | — | — | — |
+| BRANCH_MANAGER | — | CREATE | CREATE | — | FULL | — | — | — | VIEW | — |
+| TELLER | — | CREATE | CREATE | — | CREATE | — | — | — | VIEW | — |
+| FINANCE | — | VIEW | CREATE | — | FULL | — | FULL | — | — | — |
+| MARKETING | — | FULL | — | — | — | — | VIEW | — | — | — |
+| VERIFICATION_REVIEWER | — | VIEW | FULL | — | — | — | — | — | — | — |
+
+C2 lists the differences from V.9's matrix in this section, one line each, for the owner's review:
+
+- **EXECUTIVE (part of V.9 `OWNER` under B3) cells not mentioned in the prose above:** `EXECUTIVE` has `CUSTOMERS = FULL` (`BookingsAdmin`, `ReferralSupersede`, `ConsentPolicyManage`, `LoyaltyRulesManage`), `DOCUMENTS = CREATE` (`ProofUpload`, `DrawerPassport`; V.9 `OWNER` had `Full`, whereas `VerificationReview` in v3 belongs only to `VERIFICATION_REVIEWER`), `SYSTEM_SETTINGS = FULL` (`SystemSettings`), and `USER_MANAGEMENT = —` (`UsersManage` and `BranchesManage` belong to `ADMIN`; an owner holds `EXECUTIVE + ADMIN` under B3).
+- **ADMIN (V.9 `SYSTEM`) cells:** `ADMIN` has `DASHBOARD = FULL` (`AlertSettingsSave`, owner decision E-6; V.9 `SYSTEM` had `View`), `FINANCE = FULL` (`CashLimitsManage`, LG-3b #926; V.9 `SYSTEM` had `—` and V.9 guardrail 3 disallowed `SYSTEM` above `View` outside User Management and System Settings), and `REPORTS = —` (V.9 `SYSTEM` had `View`).
+- **RISK is empty (`—`) for every role:** no v3 `Permission` maps to `RISK` (#564 issuecomment-6245633900), whereas V.9 had `RISK = Full` for `OWNER` and `MONITOR` and `RISK = View` for `RATES` and `FINANCE`.
+- **No `DOCUMENTS` / `DOCUMENT_REVIEW` / `MONITOR` split (B1, Q8 A):** V.9's `MONITOR`, `DOCUMENTS`, and `DOCUMENT_REVIEW` rows are folded into `VERIFICATION_REVIEWER` (`CUSTOMERS = VIEW`, `DOCUMENTS = FULL`, `—` elsewhere; V.9 `MONITOR` also had `DASHBOARD = Full`, `RATES_STOCK = View`, `FINANCE = View`, `RISK = Full`, `REPORTS = Full`, `AUDIT_LOGS = View`, and `DOCUMENTS`/`DOCUMENT_REVIEW` had `DASHBOARD = View`).
+- **RATE_MANAGER (V.9 `RATES`):** has `RATES_STOCK = FULL` only (`—` elsewhere), whereas V.9 `RATES` also had `DASHBOARD = Full`, `CUSTOMERS = Full`, `DOCUMENTS = View`, `FINANCE = View`, `RISK = View`, and `REPORTS = Full`.
+- **BRANCH_MANAGER (V.9 `MANAGER` + `BACKEND` merged under B1):** has `CUSTOMERS = CREATE`, `DOCUMENTS = CREATE`, `FINANCE = FULL`, `SYSTEM_SETTINGS = VIEW`, and `—` on `DASHBOARD` and `REPORTS`, whereas V.9 `MANAGER` had `DASHBOARD = Full`, `CUSTOMERS = Full`, `DOCUMENTS = Full`, `FINANCE = —`, `REPORTS = View`, `SYSTEM_SETTINGS = —` and V.9 `BACKEND` had `View` on `DASHBOARD`, `CUSTOMERS`, and `DOCUMENTS`.
+- **TELLER (V.9 `FRONT`):** has `CUSTOMERS = CREATE`, `DOCUMENTS = CREATE` (`ProofUpload`, `DrawerPassport`), `FINANCE = CREATE` (`ShiftOperate`), and `SYSTEM_SETTINGS = VIEW` (`DeviceQueue`, `DeviceProcess`), whereas V.9 `FRONT` had `DASHBOARD = View`, `CUSTOMERS = Create`, `DOCUMENTS = View`, and `—` on `FINANCE` and `SYSTEM_SETTINGS`.
+- **FINANCE:** has `CUSTOMERS = VIEW`, `DOCUMENTS = CREATE` (`ProofUpload`), `FINANCE = FULL`, `REPORTS = FULL`, and `—` on `DASHBOARD`, `RATES_STOCK`, and `RISK`, whereas V.9 `FINANCE` had `DASHBOARD = Full`, `DOCUMENTS = View`, `RATES_STOCK = View`, and `RISK = View`.
+- **MARKETING (Blueprint role not in V.9):** has `CUSTOMERS = FULL` (`MarketingCampaigns`, `MarketingMembers`) and `REPORTS = VIEW` (`MarketingPerformance`).
 
 ---
 
