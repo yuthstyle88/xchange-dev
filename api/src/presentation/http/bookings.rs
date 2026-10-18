@@ -195,13 +195,12 @@ async fn owner_bookings(
         Err(_) => return server_error(),
     }
 
-    let staff_id = callers.staff_standing().map(|s| s.user_id);
-    let actor_id = staff_id.as_deref().unwrap_or("owner");
+    let actor_id = owner_route_actor(&callers);
     execute_action(
         action,
         &branch,
         &payload,
-        actor_id,
+        &actor_id,
         now,
         &booking_service,
         &rules_service,
@@ -300,6 +299,13 @@ async fn staff_bookings(
         &rules_service,
     )
     .await
+}
+
+fn owner_route_actor(callers: &pages::Callers) -> String {
+    let caller = callers
+        .owner_standing()
+        .or_else(|| callers.staff_standing());
+    caller.map_or_else(|| "owner".to_string(), |s| s.user_id)
 }
 
 async fn execute_action(
@@ -560,5 +566,23 @@ async fn execute_action(
             Ok(_) => refuse(400, NO_REGISTRATION),
             Err(_) => refuse(400, FILL_IN),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use xc_auth::domain::access::{Actor, Role, ScopedRole};
+    #[test]
+    fn a_blueprint_owner_is_recorded_under_their_id() {
+        let org = |role| ScopedRole::new(role, None, Default::default(), None);
+        let roles = vec![org(Role::Executive), org(Role::Admin)];
+        let user = Some(Actor::new("u-own", "org", roles, None));
+        let callers = super::pages::Callers {
+            owner: None,
+            staff: None,
+            user,
+            staff_user: None,
+        };
+        assert_eq!(super::owner_route_actor(&callers), "u-own");
     }
 }
