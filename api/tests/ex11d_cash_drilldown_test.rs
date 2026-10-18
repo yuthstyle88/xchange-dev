@@ -213,12 +213,13 @@ async fn currency_eur_with_no_eur_row_returns_no_stock_row_and_banner_unchanged(
         "currency=EUR with no EUR row must return empty stock rows: {stock:?}"
     );
 
-    // Shift banner and THB cash summary (stats) stay unchanged (§8)
-    assert!(
-        data["shift"].is_object(),
-        "shift banner must be present: {data}"
+    // The open shift (CA-10q: `openShifts`, one row here) and the THB cash summary (stats) stay (§8)
+    assert_eq!(
+        data["openShifts"].as_array().map(Vec::len),
+        Some(1),
+        "the open shift is listed: {data}"
     );
-    assert_eq!(data["shift"]["id"], shift_id);
+    assert_eq!(data["openShifts"][0]["shiftId"], shift_id);
     let teller_id: String = sqlx::query_scalar(
         "SELECT counted_by::text FROM cash_counts WHERE shift_id = $1 AND kind = 'OPEN'",
     )
@@ -227,7 +228,7 @@ async fn currency_eur_with_no_eur_row_returns_no_stock_row_and_banner_unchanged(
     .await
     .expect("open count teller");
     assert_ne!(teller_id, "owner");
-    assert_eq!(data["shift"]["staff"], teller_id);
+    assert_eq!(data["openShifts"][0]["tellerId"], teller_id);
 
     assert!(data["stats"].is_object(), "stats must be present: {data}");
     assert_eq!(data["stats"]["opening"], "100000.00");
