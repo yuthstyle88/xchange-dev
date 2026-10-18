@@ -159,7 +159,7 @@ fn assert_internal(answer: AppResult<StalePolicy>, what: &str) {
         Ok(policy) => panic!(
             "{what}: AppError::Internal expected, got the policy on_stale={:?} limit={:?}",
             policy.on_stale.map(|s| s.as_str()),
-            policy.stale_limit_thb.map(|m| m.minor())
+            policy.stale_limit_thb.map(|m| m.minor_i128())
         ),
     }
 }

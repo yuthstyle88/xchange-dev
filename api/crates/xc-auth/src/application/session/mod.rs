@@ -1,3 +1,4 @@
+pub mod login_recorder;
 pub mod refresh_token;
 pub mod session_service;
 

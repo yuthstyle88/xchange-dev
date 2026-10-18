@@ -812,11 +812,12 @@ async fn line_for_picks_t2_for_worked_example_and_quotes_correct_thb() {
         "customer must receive T2 line"
     );
     assert_eq!(line_on.rate, Rate::parse("32.32020000").unwrap());
-    let quote_on = ExchangeArithmetic::thb(
+    let quote_on = ExchangeArithmetic::try_thb(
         ForeignAmount::from_decimal(Decimal::from(1000)),
         line_on.rate,
         line_on.unit_size,
-    );
+    )
+    .expect("no overflow");
     assert_eq!(
         quote_on,
         Money::parse("32320.20").unwrap(),
@@ -886,11 +887,12 @@ async fn line_for_picks_t2_for_worked_example_and_quotes_correct_thb() {
 
     assert_eq!(line_off.value_tier.as_str(), "ALL");
     assert_eq!(line_off.rate, Rate::parse("32.28775000").unwrap());
-    let quote_off = ExchangeArithmetic::thb(
+    let quote_off = ExchangeArithmetic::try_thb(
         ForeignAmount::from_decimal(Decimal::from(1000)),
         line_off.rate,
         line_off.unit_size,
-    );
+    )
+    .expect("no overflow");
     assert_eq!(
         quote_off,
         Money::parse("32287.75").unwrap(),
