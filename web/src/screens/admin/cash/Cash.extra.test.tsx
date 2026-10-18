@@ -62,9 +62,11 @@ class TestServer {
   shiftsError: { status: number; body: unknown } | null = null;
   posts: Post[] = [];
   cashData: AdminCashData = {
-    openShifts: [
-      { shiftId: 'S-0002', tellerId: 'u-1', tellerName: 'EMP-001', openedAt: '2026-10-06T08:00:00.000Z' },
-    ],
+    shift: {
+      id: 'S-0002',
+      openedAt: '2026-10-06T08:00:00.000Z',
+      staff: 'EMP-001',
+    },
     stock: [
       { code: 'THB', opening: '10000.00', net: '0.00', expected: '10000.00' },
       { code: 'USD', opening: '500.00', net: '0.00', expected: '500.00' },

@@ -28,7 +28,7 @@ describe('Cash worded error handling (#1759)', () => {
 
   const defaultCashData = {
     counts: [],
-    openShifts: [],
+    shift: null,
     balances: [],
     reference: {
       withReference: 0,

@@ -49,9 +49,11 @@ function setDeviceTimeZone(tz: string): void {
 
 function makeCash(branch = 'MAIN', openedAt = ISO_SHIFT_OPENED) {
   return {
-    openShifts: [
-      { shiftId: branch === 'SILOM' ? 'S-SILOM' : 'S-0001', tellerId: 'u-1', tellerName: 'EMP-007', openedAt },
-    ],
+    shift: {
+      id: branch === 'SILOM' ? 'S-SILOM' : 'S-0001',
+      openedAt,
+      staff: 'EMP-007',
+    },
     stock: [
       { code: 'THB', opening: '100000.00', net: '-2230.00', expected: '97770.00' },
       { code: 'USD', opening: '1000.00', net: '7.25', expected: '1100.50' },

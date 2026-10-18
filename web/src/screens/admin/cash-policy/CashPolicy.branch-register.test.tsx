@@ -17,7 +17,7 @@ const SAMPLE_POLICY: CashTransferPolicyData = {
 };
 
 const SAMPLE_CASH: AdminCashData = {
-  openShifts: [],
+  shift: null,
   stock: [],
   stats: null,
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },

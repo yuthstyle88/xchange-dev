@@ -4,7 +4,6 @@ use actix_web::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::presentation::dto::v3::common::OpenShiftDto;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::ViewFilter;
 
@@ -37,6 +36,16 @@ impl ViewFilter for AdminCashFilter {
         }
         Ok(())
     }
+}
+
+/// Banner shift summary for the open shift.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "admin_cash.ts")]
+pub struct AdminCashShift {
+    pub id: String,
+    pub opened_at: String,
+    pub staff: String,
 }
 
 /// Stock row per currency shown.
@@ -86,7 +95,7 @@ pub struct AdminCashCountedItem {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "admin_cash.ts")]
 pub struct AdminCashData {
-    pub open_shifts: Vec<OpenShiftDto>,
+    pub shift: Option<AdminCashShift>,
     pub stock: Vec<AdminCashStockRow>,
     pub stats: Option<AdminCashStats>,
     pub reference: AdminCashReference,

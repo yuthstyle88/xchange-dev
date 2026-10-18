@@ -39,9 +39,11 @@ function makeCash(opts: {
     stock.push({ code: 'JPY', opening: '0.00', net: '0.00', expected: '0.00' });
   }
   return {
-    openShifts: [
-      { shiftId: opts.shiftId ?? 'S-0001', tellerId: 'u-1', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' },
-    ],
+    shift: {
+      id: opts.shiftId ?? 'S-0001',
+      openedAt: '2026-10-06T02:30:00.000Z',
+      staff: 'EMP-007',
+    },
     stock,
     stats: {
       opening: '100000.00',

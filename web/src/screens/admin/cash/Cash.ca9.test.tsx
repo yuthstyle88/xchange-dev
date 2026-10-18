@@ -120,7 +120,7 @@ const BRANCHES: TransferBranchRow[] = [
 ];
 
 const ADMIN_CASH = {
-  openShifts: [{ shiftId: 'S-0001', tellerId: 'u-1', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' }],
+  shift: { id: 'S-0001', openedAt: '2026-10-06T02:30:00.000Z', staff: 'EMP-007' },
   stock: [{ code: 'THB', opening: '100.00', net: '0.00', expected: '100.00' }],
   stats: { opening: '100.00', incoming: '0.00', outgoing: '0.00', remaining: '100.00' },
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },

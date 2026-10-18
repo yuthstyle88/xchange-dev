@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
+use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -18,25 +19,13 @@ use xc_kernel::money::{
     round_cents,
 };
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
-use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_cash::{
-    AdminCashCountedItem, AdminCashData, AdminCashFilter, AdminCashReference, AdminCashStats,
-    AdminCashStockRow,
+    AdminCashCountedItem, AdminCashData, AdminCashFilter, AdminCashReference, AdminCashShift,
+    AdminCashStats, AdminCashStockRow,
 };
-use crate::presentation::dto::v3::common::OpenShiftDto;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
-
-fn checked_add_money(a: Money, b: Money) -> AppResult<Money> {
-    let sum = a
-        .minor_i128()
-        .checked_add(b.minor_i128())
-        .ok_or_else(|| AppError::Internal("money sum overflow in admin_cash".into()))?;
-    Money::try_from_minor_i128(sum)
-        .map_err(|_| AppError::Internal("money sum overflow in admin_cash".into()))
-}
 
 /// Computes the reference principal and spread for a transaction with a reference rate.
 /// Rounds the reference value to cents using `xc_kernel::money::ExchangeArithmetic::thb`.
@@ -128,6 +117,13 @@ impl AdminCashBranchView {
 }
 
 #[derive(sqlx::FromRow)]
+struct OpenShiftRow {
+    id: String,
+    opened_at: DateTime<Utc>,
+    opened_by: String,
+}
+
+#[derive(sqlx::FromRow)]
 struct TxRefRow {
     shop_side: String,
     thb_amount: Decimal,
@@ -151,35 +147,28 @@ impl BranchView for AdminCashBranchView {
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
         let shift_balances = self.shift_balances.clone();
-        let branch = branch.clone();
         let branch_id = branch.as_str().to_string();
         let show_all = filter.all;
 
         async move {
             let currencies = register_currencies();
 
-            // 1. Last counted from each teller's newest closed shift at the branch
-            let closed_ids: Vec<String> = sqlx::query_scalar(
-                "SELECT DISTINCT ON (teller_id) id \
-                 FROM shifts \
-                 WHERE branch_id = $1 AND status = 'CLOSED' \
-                 ORDER BY teller_id, seq DESC",
+            // 1. Last counted from last closed shift
+            let last_closed: Option<String> = sqlx::query_scalar(
+                "SELECT id FROM shifts WHERE branch_id = $1 AND status = 'CLOSED' ORDER BY seq DESC LIMIT 1",
             )
             .bind(&branch_id)
-            .fetch_all(&pool)
+            .fetch_optional(&pool)
             .await
             .map_err(AppError::Database)?;
 
-            let last_counted = if !closed_ids.is_empty() {
-                let mut counted_map: BTreeMap<String, Money> = BTreeMap::new();
-                for closed_id in &closed_ids {
-                    let closed_balances = shift_balances.shift_balances(closed_id).await?;
-                    for r in closed_balances {
-                        if let Some(c) = r.counted {
-                            let code = r.currency.as_str().to_string();
-                            let prev = counted_map.get(&code).copied().unwrap_or(Money::ZERO);
-                            counted_map.insert(code, checked_add_money(prev, c)?);
-                        }
+            let last_counted = if let Some(ref closed_id) = last_closed {
+                let closed_balances = shift_balances.shift_balances(closed_id).await?;
+
+                let mut counted_map = BTreeMap::new();
+                for r in closed_balances {
+                    if let Some(c) = r.counted {
+                        counted_map.insert(r.currency.as_str().to_string(), c);
                     }
                 }
 
@@ -212,14 +201,18 @@ impl BranchView for AdminCashBranchView {
                 None
             };
 
-            // 2. Open shifts check
-            let open_rows = PgShiftRepository::new(pool.clone())
-                .open_of_branch(&branch)
-                .await?;
+            // 2. Open shift check
+            let open_shift: Option<OpenShiftRow> = sqlx::query_as(
+                "SELECT id, opened_at, opened_by FROM shifts WHERE branch_id = $1 AND status = 'OPEN' LIMIT 1",
+            )
+            .bind(&branch_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(AppError::Database)?;
 
-            if open_rows.is_empty() {
+            let Some(open_shift) = open_shift else {
                 return Ok(AdminCashData {
-                    open_shifts: Vec::new(),
+                    shift: None,
                     stock: Vec::new(),
                     stats: None,
                     reference: AdminCashReference {
@@ -231,30 +224,21 @@ impl BranchView for AdminCashBranchView {
                     currencies,
                     last_counted,
                 });
-            }
+            };
 
-            let shift_ids: Vec<String> = open_rows.iter().map(|r| r.shift_id.clone()).collect();
-            let open_shifts: Vec<OpenShiftDto> =
-                open_rows.into_iter().map(OpenShiftDto::from).collect();
+            let shift_id = open_shift.id.clone();
+            let shift_dto = AdminCashShift {
+                id: open_shift.id,
+                opened_at: open_shift.opened_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+                staff: open_shift.opened_by,
+            };
 
-            // 3. Stock rows summed across all OPEN shifts
+            // 3. Stock rows
+            let open_balances = shift_balances.shift_balances(&shift_id).await?;
+
             let mut balance_map: BTreeMap<String, ShiftBalance> = BTreeMap::new();
-            for shift_id in &shift_ids {
-                let open_balances = shift_balances.shift_balances(shift_id).await?;
-                for b in open_balances {
-                    let code = b.currency.as_str().to_string();
-                    if let Some(acc) = balance_map.get_mut(&code) {
-                        acc.opening = checked_add_money(acc.opening, b.opening)?;
-                        acc.expected = acc
-                            .expected
-                            .checked_add(b.expected)
-                            .map_err(|_| AppError::Internal("expected balance sum overflow".into()))?;
-                        acc.moved_in = checked_add_money(acc.moved_in, b.moved_in)?;
-                        acc.moved_out = checked_add_money(acc.moved_out, b.moved_out)?;
-                    } else {
-                        balance_map.insert(code, b);
-                    }
-                }
+            for b in open_balances {
+                balance_map.insert(b.currency.as_str().to_string(), b);
             }
 
             // RE-7 #604 (ruling Q1 → B): the "rated" codes are the branch's current
@@ -289,11 +273,10 @@ impl BranchView for AdminCashBranchView {
                     candidates.insert(c);
                 }
                 for (code, b) in &balance_map {
-                    let net = b
-                        .expected
-                        .checked_minus(b.opening)
-                        .map_err(|_| AppError::Internal("net balance overflow".into()))?;
-                    if !b.opening.is_zero() || !b.expected.is_zero() || net != MoneyDelta::ZERO {
+                    if !b.opening.is_zero()
+                        || !b.expected.is_zero()
+                        || b.expected.minus(b.opening) != MoneyDelta::ZERO
+                    {
                         candidates.insert(code.clone());
                     }
                 }
@@ -306,20 +289,22 @@ impl BranchView for AdminCashBranchView {
 
             let mut stock = Vec::with_capacity(codes_to_show.len());
             for code in codes_to_show {
-                let (opening, net, expected) = match balance_map.get(&code) {
-                    Some(b) => {
-                        let net = b
-                            .expected
-                            .checked_minus(b.opening)
-                            .map_err(|_| AppError::Internal("net balance overflow".into()))?;
-                        (b.opening.to_string(), net.to_string(), b.expected.to_string())
-                    }
-                    None => (
-                        "0.00".to_string(),
-                        "0.00".to_string(),
-                        "0.00".to_string(),
-                    ),
-                };
+                let (opening, net, expected) = balance_map
+                    .get(&code)
+                    .map(|b| {
+                        (
+                            b.opening.to_string(),
+                            b.expected.minus(b.opening).to_string(),
+                            b.expected.to_string(),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            "0.00".to_string(),
+                            "0.00".to_string(),
+                            "0.00".to_string(),
+                        )
+                    });
                 stock.push(AdminCashStockRow {
                     code,
                     opening,
@@ -339,12 +324,12 @@ impl BranchView for AdminCashBranchView {
                  FROM transaction_lines tl \
                  JOIN transactions t ON t.id = tl.transaction_id \
                  JOIN transaction_payments tp ON tp.transaction_id = t.id \
-                 WHERE t.shift_id = ANY($1) \
+                 WHERE t.shift_id = $1 \
                    AND t.status = 'COMPLETED' \
                    AND tl.shop_side = 'SELL' \
                    AND tp.method = 'Cash'",
             )
-            .bind(&shift_ids)
+            .bind(&shift_id)
             .fetch_one(&pool)
             .await
             .map_err(AppError::Database)?;
@@ -360,12 +345,12 @@ impl BranchView for AdminCashBranchView {
                  FROM transaction_lines tl \
                  JOIN transactions t ON t.id = tl.transaction_id \
                  JOIN transaction_payments tp ON tp.transaction_id = t.id \
-                 WHERE t.shift_id = ANY($1) \
+                 WHERE t.shift_id = $1 \
                    AND t.status = 'COMPLETED' \
                    AND tl.shop_side = 'BUY' \
                    AND tp.method = 'Cash'",
             )
-            .bind(&shift_ids)
+            .bind(&shift_id)
             .fetch_one(&pool)
             .await
             .map_err(AppError::Database)?;
@@ -384,15 +369,15 @@ impl BranchView for AdminCashBranchView {
                 remaining: format!("{:.2}", remaining),
             });
 
-            // 5. Reference summary over open shifts' exchanges
+            // 5. Reference summary over open shift's exchanges
             let tx_rows: Vec<TxRefRow> = sqlx::query_as(
                 "SELECT tl.shop_side, tl.thb_amount, tl.quantity, tl.reference_rate, tl.unit_size \
                  FROM transaction_lines tl \
                  JOIN transactions t ON t.id = tl.transaction_id \
-                 WHERE t.shift_id = ANY($1) \
+                 WHERE t.shift_id = $1 \
                    AND t.status = 'COMPLETED'",
             )
-            .bind(&shift_ids)
+            .bind(&shift_id)
             .fetch_all(&pool)
             .await
             .map_err(AppError::Database)?;
@@ -430,7 +415,7 @@ impl BranchView for AdminCashBranchView {
             };
 
             Ok(AdminCashData {
-                open_shifts,
+                shift: Some(shift_dto),
                 stock,
                 stats,
                 reference,
@@ -454,6 +439,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     AdminCashFilter::export_all(&cfg)?;
+    AdminCashShift::export_all(&cfg)?;
     AdminCashStockRow::export_all(&cfg)?;
     AdminCashStats::export_all(&cfg)?;
     AdminCashReference::export_all(&cfg)?;
