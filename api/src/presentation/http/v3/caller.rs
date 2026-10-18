@@ -76,13 +76,9 @@ pub(crate) async fn authenticate_caller(
                         }
                         Ok(_) => {}
                         Err(e) => {
-                            return Err(V3Error::new(
-                                "serverError",
-                                None,
-                                e.to_string(),
-                                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                            )
-                            .error_response());
+                            // Fail closed, but never echo the database's error text to the client.
+                            tracing::error!(error = %e, "forced-change gate: reading the session flag failed");
+                            return Err(super::command::server_error().error_response());
                         }
                     }
                 }
