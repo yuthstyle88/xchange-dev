@@ -44,7 +44,8 @@ impl UserRepository for PgUserRepository {
         let user_id: String = row.get("id");
         let roles = self.find_roles_by_user_id(tx, &user_id).await?;
         let status_str: String = row.get("status");
-        let status = UserStatus::parse(&status_str).unwrap_or(UserStatus::Pending);
+        let status = UserStatus::parse(&status_str)
+            .ok_or_else(|| AppError::Internal(format!("unknown user status {status_str}")))?;
 
         Ok(Some(User {
             id: user_id,
@@ -84,7 +85,8 @@ impl UserRepository for PgUserRepository {
         let user_id: String = row.get("id");
         let roles = self.find_roles_by_user_id(tx, &user_id).await?;
         let status_str: String = row.get("status");
-        let status = UserStatus::parse(&status_str).unwrap_or(UserStatus::Pending);
+        let status = UserStatus::parse(&status_str)
+            .ok_or_else(|| AppError::Internal(format!("unknown user status {status_str}")))?;
 
         Ok(Some(User {
             id: user_id,
@@ -300,7 +302,25 @@ impl UserRepository for PgUserRepository {
         tx: &mut Transaction<'_, Postgres>,
         organization_id: &str,
     ) -> AppResult<usize> {
-        let _ = (tx, organization_id);
-        todo!("RBAC function ticket: PgUserRepository::count_active_owners (§3.1)")
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT count(DISTINCT u.id)
+            FROM users u
+            JOIN user_roles r ON r.user_id = u.id
+            LEFT JOIN organizations o ON o.id = u.organization_id
+            WHERE (u.organization_id::text = $1 OR o.code = $1)
+              AND u.status = 'ACTIVE'
+              AND r.role_code IN ('EXECUTIVE', 'ADMIN')
+              AND r.branch_id IS NULL
+              AND r.valid_from <= now()
+              AND (r.valid_to IS NULL OR r.valid_to > now())
+            "#,
+        )
+        .bind(organization_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(count as usize)
     }
 }
