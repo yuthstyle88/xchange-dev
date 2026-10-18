@@ -1179,7 +1179,8 @@ impl<'f> Replay<'f> {
             None,
         )
         .await;
-        let recorded = self.decided_customers(step, recorded);
+        let mut recorded = self.decided_customers(step, recorded);
+        self.restate_stock_movements(&mut recorded, &actual).await;
         self.ids.learn(&recorded, &actual);
         assert_same(&self.ids.to_actual(&recorded), &actual, &self.label(step));
         self.compared.snapshots += 1;
@@ -1248,10 +1249,67 @@ impl<'f> Replay<'f> {
             recorded = without_keys(&recorded, &["sheetUrl", "deskUrl"]);
             actual = without_keys(&actual, &["sheetUrl", "deskUrl"]);
         }
+        self.restate_stock_movements(&mut recorded, &actual).await;
         self.ids.learn(&recorded, &actual);
         assert_same(&self.ids.to_actual(&recorded), &actual, &self.label(step));
         self.compared.writes += 1;
     }
+
+    async fn restate_stock_movements(&self, expected: &mut Value, actual: &Value) {
+        if let (Some(want), Some(got)) = (
+            expected["stock"]["movements"].as_array().cloned(),
+            actual["stock"]["movements"].as_array(),
+        ) && want.len() == got.len()
+        {
+            for (i, mov) in got.iter().enumerate() {
+                // LG-6.r6 #1046 (controller ruling): `staff` in v3 is the user id for v2's username in the replay's user map.
+                if let (Some(want_staff), Some(got_staff)) =
+                    (want[i]["staff"].as_str(), mov["staff"].as_str())
+                    && movement_staff_matches(
+                        &self.shop.db.pool,
+                        self.fixture,
+                        got_staff,
+                        want_staff,
+                    )
+                    .await
+                {
+                    expected["stock"]["movements"][i]["staff"] = mov["staff"].clone();
+                }
+                // LG-6.r6 #1046 (controller ruling): `requestId` on `$.stock.movements` is `""` in v3 (CA-10 §7).
+                if !want[i]["requestId"].as_str().unwrap_or_default().is_empty()
+                    && mov["requestId"] == json!("")
+                {
+                    expected["stock"]["movements"][i]["requestId"] = json!("");
+                }
+            }
+        }
+    }
+}
+
+/// LG-6.r6 #1046 (controller ruling): whether `user_id` is the known user id for `username` in this replay.
+pub async fn movement_staff_matches(
+    pool: &PgPool,
+    fixture: &Fixture,
+    user_id: &str,
+    username: &str,
+) -> bool {
+    let row: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT name, legacy_employee_id FROM users WHERE id::text = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+    let Some((name, legacy)) = row else {
+        return false;
+    };
+    name == username
+        || legacy.is_some_and(|leg| {
+            leg == username
+                || fixture
+                    .people
+                    .iter()
+                    .any(|p| p.id == leg && p.username == username)
+        })
 }
 
 // ── a recorded `operations` as the state the custody service hands over ──────
@@ -1715,28 +1773,73 @@ async fn v2_admin_write_in(
             let shift = v2_text(payload, "shiftId");
             let (code, direction) = (v2_text(payload, "currency"), v2_text(payload, "direction"));
             let amount = amount_text(payload.get("amount").unwrap_or(&Value::Null));
-            let id = format!("MV-{}", uuid::Uuid::new_v4());
-            sqlx::query(
-                "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, \
-                 at, by) VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10)",
+            let (kind, from_shift, to_shift, signed) = if direction == "IN" {
+                ("SAFE_TO_DRAWER", None, Some(shift), amount.clone())
+            } else {
+                ("DRAWER_TO_SAFE", Some(shift), None, format!("-{amount}"))
+            };
+            let face: Option<(i64, String)> = sqlx::query_as(
+                "SELECT id, face_value::text FROM denominations \
+                 WHERE currency_code = $1 AND face_value IS NOT NULL AND $2::numeric % face_value = 0 \
+                 ORDER BY face_value DESC LIMIT 1",
             )
-            .bind(&id)
-            .bind(branch.as_str())
-            .bind(shift)
             .bind(code)
-            .bind(direction)
             .bind(&amount)
+            .fetch_optional(&mut **tx)
+            .await?;
+            let (denomination, face) = match face {
+                Some(f) => f,
+                None => {
+                    sqlx::query_as(
+                        "INSERT INTO denominations (currency_code, face_value, group_code) \
+                         VALUES ($1, 0.01, 'ALL') RETURNING id, face_value::text",
+                    )
+                    .bind(code)
+                    .fetch_one(&mut **tx)
+                    .await?
+                }
+            };
+            let mover: String = sqlx::query_scalar(
+                "INSERT INTO users (organization_id, name, status, created_by) \
+                 SELECT organization_id, $2, 'PENDING', 'test' FROM branches WHERE id = $1 \
+                 RETURNING id::text",
+            )
+            .bind(branch.as_str())
+            .bind(actor)
+            .fetch_one(&mut **tx)
+            .await?;
+            let transfer: String = sqlx::query_scalar(
+                "INSERT INTO cash_transfers (organization_id, kind, from_branch_id, from_shift_id, \
+                     to_shift_id, status, created_by, dispatched_at, dispatched_by, received_at, \
+                     received_by, note, idempotency_key, created_at, updated_at) \
+                 SELECT organization_id, $2, id, $3, $4, 'RECEIVED', $5::uuid, $6, $5::uuid, $6, \
+                     $5::uuid, $7, $8, $6, $6 \
+                 FROM branches WHERE id = $1 RETURNING id::text",
+            )
+            .bind(branch.as_str())
+            .bind(kind)
+            .bind(from_shift)
+            .bind(to_shift)
+            .bind(&mover)
+            .bind(at)
             .bind(v2_text(payload, "reason"))
             .bind(v2_text(payload, "requestId"))
-            .bind(at)
-            .bind(actor)
+            .fetch_one(&mut **tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO cash_transfer_lines (transfer_id, organization_id, currency, \
+                     denomination_id, qty_sent, qty_received) \
+                 SELECT t.id, t.organization_id, $2, $3, ($4::numeric / $5::numeric)::int, \
+                     ($4::numeric / $5::numeric)::int \
+                 FROM cash_transfers t WHERE t.id = $1::uuid",
+            )
+            .bind(&transfer)
+            .bind(code)
+            .bind(denomination)
+            .bind(&amount)
+            .bind(&face)
             .execute(&mut **tx)
             .await?;
-            let signed = if direction == "IN" {
-                amount
-            } else {
-                format!("-{amount}")
-            };
             // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
             // ON CONFLICT is reached), then the move, as v2's `update_expected` left it
             sqlx::query(
@@ -1755,7 +1858,7 @@ async fn v2_admin_write_in(
             .bind(&signed)
             .execute(&mut **tx)
             .await?;
-            Ok(id)
+            Ok(format!("{transfer}:{code}"))
         }
         V2Write::Close => {
             let shift = v2_text(payload, "shiftId");

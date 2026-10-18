@@ -81,10 +81,13 @@ impl ComputeAction for ShiftValuationAction {
                     )
                 })?;
 
-            let movements = repo
-                .shift_movements(&branch, &request.shift_id)
-                .await
-                .map_err(|_| server_error())?;
+            let movements = xc_cash::infrastructure::transfer_moves::of_shift(
+                repo.pool(),
+                &branch,
+                &request.shift_id,
+            )
+            .await
+            .map_err(|_| server_error())?;
 
             // 1. Currencies: every register currency with o_c != 0, or e_c != 0, or at least 1 movement in c.
             let mut codes_set = HashSet::new();

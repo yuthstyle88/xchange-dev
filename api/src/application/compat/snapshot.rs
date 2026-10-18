@@ -102,7 +102,7 @@ impl SnapshotBuilder {
         let members = self.sources.members(branch).await?;
         let transactions = self.sources.transactions(branch).await?;
         let shifts = self.shifts.shifts(branch).await?;
-        let movements = self.shifts.movements(branch).await?;
+        let movements = xc_cash::infrastructure::transfer_moves::of_branch(pool, branch).await?;
         let operations = self.operations(branch).await?;
 
         // RE-7 #604 (ruling Q3): the branch's current publication's `published_at`,

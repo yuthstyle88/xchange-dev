@@ -1577,6 +1577,35 @@ impl<'f> Replay<'f> {
                 }
             }
         }
+        // LG-6.r6 #1046 (controller ruling): on `$.stock.movements`, `staff` is the user id for v2's username and
+        // `requestId` is `""` (CA-10 retired requests, §7); `id` pairs via `IdMap` and the rest stays held to v2.
+        if let (Some(want), Some(got)) = (
+            expected["stock"]["movements"].as_array().cloned(),
+            actual["stock"]["movements"].as_array(),
+        ) && want.len() == got.len()
+        {
+            for (i, mov) in got.iter().enumerate() {
+                // LG-6.r6 #1046 (controller ruling): `staff` in v3 is the user id for v2's username in the replay's user map.
+                if let (Some(want_staff), Some(got_staff)) =
+                    (want[i]["staff"].as_str(), mov["staff"].as_str())
+                    && crate::snapshot_common::movement_staff_matches(
+                        &self.desk.db.pool,
+                        self.fixture,
+                        got_staff,
+                        want_staff,
+                    )
+                    .await
+                {
+                    expected["stock"]["movements"][i]["staff"] = mov["staff"].clone();
+                }
+                // LG-6.r6 #1046 (controller ruling): `requestId` on `$.stock.movements` is `""` in v3 (CA-10 §7).
+                if !want[i]["requestId"].as_str().unwrap_or_default().is_empty()
+                    && mov["requestId"] == json!("")
+                {
+                    expected["stock"]["movements"][i]["requestId"] = json!("");
+                }
+            }
+        }
         // CA-10 #626: a CLOSE count whose figures differ from the shift's records the difference as
         // an exception (CA-3), where v2's direct close kept none.
         if let (Some(want), Some(got)) = (
@@ -1866,23 +1895,32 @@ impl<'f> Replay<'f> {
         self.tally.applied_behind.push(step.n);
     }
 
-    /// An accepted `adminMoveStock`: the move written on the branch's open shift, as the shift
-    /// engine wrote it (`stock_movements`, the shift's expected balance, the branch version).
+    /// An accepted `adminMoveStock`: the move written on the branch's open shift as a moved
+    /// `cash_transfers` row (LG-6.r6 #1046 ruling Q1), plus the shift's expected balance and the
+    /// branch version.
     async fn move_behind(&mut self, step: &Step) {
         let payload = self
             .ids
             .to_actual(step.payload.as_ref().expect("a payload"));
         let branch = self.branch_of(step);
         let label = self.label(step);
+        let code = text_of(&payload, "currency");
+        let direction = text_of(&payload, "direction");
         let amount = match &payload["amount"] {
-            Value::String(text) => text.clone(),
+            Value::String(text) => text.trim().to_owned(),
             other => other.to_string(),
         };
-        let signed = if payload["direction"] == json!("IN") {
-            amount.clone()
+        let (kind, from_shift, to_shift, signed) = if direction == "IN" {
+            ("SAFE_TO_DRAWER", false, true, amount.clone())
         } else {
-            format!("-{amount}")
+            ("DRAWER_TO_SAFE", true, false, format!("-{amount}"))
         };
+        let actor = &self
+            .fixture
+            .sender(step)
+            .expect("somebody moved it")
+            .username;
+        let at = time(&step.at);
         let mut tx = self.desk.db.pool.begin().await.expect("begin");
         let shift: String = sqlx::query_scalar(
             "SELECT id FROM shifts WHERE branch_id = $1 AND status = 'OPEN' \
@@ -1892,37 +1930,84 @@ impl<'f> Replay<'f> {
         .fetch_one(&mut *tx)
         .await
         .unwrap_or_else(|e| panic!("{label}: the branch's open shift: {e}"));
-        let moved = sqlx::query(
-            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, \
-                request_id, at, by) \
-             VALUES ('MV-' || gen_random_uuid(), $1, $2, $3, $4, $5::numeric, $6, $7, $8, $9) \
-             ON CONFLICT (branch_id, request_id) DO NOTHING",
+        let mover: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT organization_id, $2, 'PENDING', 'test' FROM branches WHERE id = $1 \
+             RETURNING id::text",
         )
         .bind(branch.as_str())
-        .bind(&shift)
-        .bind(text_of(&payload, "currency"))
-        .bind(text_of(&payload, "direction"))
-        .bind(&amount)
-        // v2 stored the reason trimmed
+        .bind(actor)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: mover user: {e}"));
+        let transfer: Option<String> = sqlx::query_scalar(
+            "INSERT INTO cash_transfers (organization_id, kind, from_branch_id, from_shift_id, \
+                 to_shift_id, status, created_by, dispatched_at, dispatched_by, received_at, \
+                 received_by, note, idempotency_key, created_at, updated_at) \
+             SELECT organization_id, $2, id, $3, $4, 'RECEIVED', $5::uuid, $6, $5::uuid, $6, \
+                 $5::uuid, $7, $8, $6, $6 \
+             FROM branches WHERE id = $1 \
+             ON CONFLICT (from_branch_id, idempotency_key) DO NOTHING \
+             RETURNING id::text",
+        )
+        .bind(branch.as_str())
+        .bind(kind)
+        .bind(from_shift.then_some(shift.as_str()))
+        .bind(to_shift.then_some(shift.as_str()))
+        .bind(&mover)
+        .bind(at)
         .bind(text_of(&payload, "reason").trim())
         .bind(text_of(&payload, "requestId"))
-        .bind(time(&step.at))
-        .bind(&self.fixture.sender(step).expect("somebody moved it").username)
+        .fetch_optional(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: the move: {e}"));
+        // v2 answered a repeated request as it answered the first: nothing more to move
+        let Some(transfer) = transfer else {
+            return;
+        };
+        let face: Option<(i64, String)> = sqlx::query_as(
+            "SELECT id, face_value::text FROM denominations \
+             WHERE currency_code = $1 AND face_value IS NOT NULL AND $2::numeric % face_value = 0 \
+             ORDER BY face_value DESC LIMIT 1",
+        )
+        .bind(&code)
+        .bind(&amount)
+        .fetch_optional(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: face value: {e}"));
+        let (denomination, face) = match face {
+            Some(f) => f,
+            None => sqlx::query_as(
+                "INSERT INTO denominations (currency_code, face_value, group_code) \
+                 VALUES ($1, 0.01, 'ALL') RETURNING id, face_value::text",
+            )
+            .bind(&code)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap_or_else(|e| panic!("{label}: 0.01 face value: {e}")),
+        };
+        sqlx::query(
+            "INSERT INTO cash_transfer_lines (transfer_id, organization_id, currency, \
+                 denomination_id, qty_sent, qty_received) \
+             SELECT t.id, t.organization_id, $2, $3, ($4::numeric / $5::numeric)::int, \
+                 ($4::numeric / $5::numeric)::int \
+             FROM cash_transfers t WHERE t.id = $1::uuid",
+        )
+        .bind(&transfer)
+        .bind(&code)
+        .bind(denomination)
+        .bind(&amount)
+        .bind(&face)
         .execute(&mut *tx)
         .await
-        .unwrap_or_else(|e| panic!("{label}: the move: {e}"))
-        .rows_affected();
-        // v2 answered a repeated request as it answered the first: nothing more to move
-        if moved == 0 {
-            return;
-        }
+        .unwrap_or_else(|e| panic!("{label}: the moved line: {e}"));
         sqlx::query(
             "INSERT INTO shift_balances (shift_id, code, opening, expected) \
              VALUES ($1, $2, 0, GREATEST($3::numeric, 0)) \
              ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
         )
         .bind(&shift)
-        .bind(text_of(&payload, "currency"))
+        .bind(&code)
         .bind(&signed)
         .execute(&mut *tx)
         .await
