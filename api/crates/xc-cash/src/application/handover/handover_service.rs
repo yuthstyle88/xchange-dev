@@ -9,9 +9,11 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, MoneyDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
+use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::count::CashCountService;
 use crate::application::count::count_service::{held_of, post_opening_in};
@@ -113,6 +115,59 @@ impl HandoverService {
         let handover = self.accept_in(&mut tx, actor, id, now).await?;
         tx.commit().await?;
         Ok(handover)
+    }
+
+    /// Q3: true when the employee holds an OPEN shift of their own, or is the
+    /// sender or the receiver of a PENDING hand-over in this organization.
+    pub async fn holds_cash_in(
+        tx: &mut sqlx::PgConnection,
+        organization_id: &str,
+        employee_id: &str,
+    ) -> AppResult<bool> {
+        let user_id: Option<String> = sqlx::query_scalar(
+            "SELECT id::text FROM users WHERE legacy_employee_id = $1 OR id::text = $1 LIMIT 1",
+        )
+        .bind(employee_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        let Some(user_id) = user_id else {
+            return Ok(false);
+        };
+
+        let repo = PgShiftRepository::new(
+            sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy("postgres://localhost/unused")
+                .map_err(AppError::Database)?,
+        );
+        let mut sub_tx = sqlx::Acquire::begin(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        let open_shift = repo.open_of_teller_in(&mut sub_tx, &user_id).await?;
+        sub_tx.commit().await.map_err(AppError::Database)?;
+        if open_shift.is_some() {
+            return Ok(true);
+        }
+
+        let pending_handover: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+                 SELECT 1 \
+                 FROM handovers h \
+                 LEFT JOIN shifts s ON s.id = h.from_shift_id \
+                 LEFT JOIN cash_counts c ON c.id = h.count_id \
+                 WHERE h.organization_id = $1::uuid \
+                   AND h.status = 'PENDING' \
+                   AND (s.teller_id = $2::uuid OR c.counted_by = $2::uuid OR h.receiver_id = $2::uuid) \
+             )",
+        )
+        .bind(organization_id)
+        .bind(&user_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(pending_handover)
     }
 }
 
@@ -476,7 +531,7 @@ impl HandoverService {
             }
         }
         let open: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN' AND opened_by_count IS NOT NULL \
+            "SELECT count(*) FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN' \
              AND id <> $2",
         )
         .bind(&h.receiver_id)
