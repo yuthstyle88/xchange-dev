@@ -414,7 +414,7 @@ impl UserRepository for PgUserRepository {
             LEFT JOIN users actor ON actor.id::text = a.actor_id
             LEFT JOIN users subj ON subj.id::text = a.subject_id
             WHERE a.organization_id = $1::uuid
-              AND ($2::uuid IS NULL OR (a.at, a.id) < (SELECT at, id FROM user_audit WHERE id = $2::uuid))
+              AND ($2 IS NULL OR ($2 ~ '^[0-9a-fA-F-]{36}$' AND (a.at, a.id) < (SELECT at, id FROM user_audit WHERE id = $2::uuid)))
             ORDER BY a.at DESC, a.id DESC
             LIMIT $3
             "#,
@@ -461,7 +461,7 @@ impl UserRepository for PgUserRepository {
             FROM login_history l
             LEFT JOIN users u ON u.id = l.user_id
             WHERE l.organization_id = $1::uuid
-              AND ($2::uuid IS NULL OR (l.at, l.id) < (SELECT at, id FROM login_history WHERE id = $2::uuid))
+              AND ($2 IS NULL OR ($2 ~ '^[0-9a-fA-F-]{36}$' AND (l.at, l.id) < (SELECT at, id FROM login_history WHERE id = $2::uuid)))
             ORDER BY l.at DESC, l.id DESC
             LIMIT $3
             "#,
