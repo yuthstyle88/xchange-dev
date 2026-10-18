@@ -60,7 +60,7 @@ type UserProfileSaveInput = {
   position: string | null;
   tellCode: string | null;
 };
-// moves to generated/admin_users.ts when a BE ticket adds these fields to the admin_users view (no ticket yet; gap on xchange#564)
+// moves to generated/admin_users.ts when F10 merges (design §3.7)
 type AdminUserProfile = {
   employeeCode?: string | null;
   department?: string | null;
