@@ -8,11 +8,15 @@
 // - Tabs: buttons `[data-users-tab="users|matrix|audit|logins|import"]` in that order; panels `[data-users-panel="<id>"]`.
 //   A tab whose component file does not exist yet shows `[data-users-tab-pending]` (W2–W4 add the files later).
 // - Rows: each user row is `tr[data-user-id="<userId>"]`; its actions are `[data-users-action="suspend|resume|enable|
-//   reset|profile"]`, offered by status (ACTIVE: suspend, reset, profile; SUSPENDED: resume, reset, profile; DISABLED:
+//   profile"]`, offered by status (ACTIVE: suspend, profile; SUSPENDED: resume, profile; DISABLED:
 //   enable only).
 // - Writes go through keyedWrite to POST /api/users/suspend | resume | enable | reset-password | profile, body
 //   `{ userId }` (profile: plus the four fields, an empty field sent as null).
-// - The temporary password from reset shows once in `[data-temp-password]` and is gone after
+// - Amended by W1b (claude/177aa7ef): no row offers "reset" and nothing posts /api/users/reset-password. Owner's decision
+//   2026-10-18 "C ก่อน และ A" (xchange#564 issuecomment-6246125141): staff reset a forgotten password themselves through
+//   Identity, and the admin reset returns only after Identity's operator set-password endpoint (A) merges. The
+//   temporary-password block below stays in the code for that return, but nothing can open it.
+// - (Before W1b) the temporary password from reset showed once in `[data-temp-password]` and was gone after
 //   `[data-users-action="temp-password-done"]`.
 // - The profile form is `[data-users-form="profile"]` with inputs named employeeCode, department, position, tellCode
 //   and the button `[data-users-action="profile-save"]`.
@@ -168,8 +172,8 @@ describe('W1 tabs (§3.6: W1 mounts every tab)', () => {
 describe('W1 status actions (§3.2: SUSPENDED added; who may move)', () => {
   it('row 2: actions are offered by status', async () => {
     const c = await mount();
-    expect(actions(row(c, ACTIVE.userId))).toEqual(['profile', 'reset', 'suspend']);
-    expect(actions(row(c, SUSPENDED.userId))).toEqual(['profile', 'reset', 'resume']);
+    expect(actions(row(c, ACTIVE.userId))).toEqual(['profile', 'suspend']);
+    expect(actions(row(c, SUSPENDED.userId))).toEqual(['profile', 'resume']);
     expect(actions(row(c, DISABLED.userId))).toEqual(['enable']);
   });
 
@@ -208,22 +212,21 @@ describe('W1 status actions (§3.2: SUSPENDED added; who may move)', () => {
   });
 });
 
-describe('W1 reset password (§2 Q5 A: a temporary password, shown once)', () => {
-  it('row 6: reset sends /api/users/reset-password { userId }, shows the temporary password once, and keeps nothing after Done', async () => {
+describe('W1b: no admin reset until Identity endpoint A (owner "C ก่อน และ A", xchange#564 issuecomment-6246125141)', () => {
+  it('row 6: no row offers reset, nothing posts /api/users/reset-password, and no temporary password can show', async () => {
     replies['/api/users/reset-password'] = { status: 200, body: { userId: ACTIVE.userId, temporaryPassword: 'Kq7mPz3RtW9xVb2N' } };
     const c = await mount();
-    click(row(c, ACTIVE.userId), '[data-users-action="reset"]');
-    await settle();
-    const w = writes.filter((x) => x.path === '/api/users/reset-password');
-    expect(w).toHaveLength(1);
-    expect(w[0]!.body).toEqual({ userId: ACTIVE.userId });
-    expect(w[0]!.key).toBeTruthy();
-    expect(c.querySelector('[data-temp-password]')?.textContent).toContain('Kq7mPz3RtW9xVb2N');
-
-    click(c, '[data-users-action="temp-password-done"]');
-    await settle();
-    expect(c.querySelector('[data-temp-password]')).toBeNull();
-    expect(c.textContent, 'the password is not kept on screen').not.toContain('Kq7mPz3RtW9xVb2N');
+    expect(c.querySelector('[data-users-action="reset"]'), 'no reset button on any row').toBeNull();
+    for (const user of [ACTIVE, SUSPENDED, DISABLED]) {
+      for (const b of [...row(c, user.userId).querySelectorAll<HTMLElement>('[data-users-action]')]) {
+        if (b.dataset.usersAction === 'profile') continue;
+        b.click();
+        await settle();
+      }
+    }
+    expect(writes.filter((x) => x.path === '/api/users/reset-password'), 'no reset-password write').toHaveLength(0);
+    expect(c.querySelector('[data-temp-password]'), 'no temporary-password block').toBeNull();
+    expect(c.textContent).not.toContain('Kq7mPz3RtW9xVb2N');
   });
 });
 
