@@ -412,7 +412,7 @@ pub(super) fn parse_branch(raw: Option<&str>) -> Result<Option<BranchId>, ()> {
     }
 }
 
-/// What a view's `load`/`page` fails with when an OR-7 bridge call (`legacy_actor`) finds no v2 actor for the caller
+/// What a view's `load`/`page` fails with when the caller has no `Standing` (OR-7; formerly the `legacy_actor` bridge)
 /// (#1030 §3.8). The seam answers it as a refused route does: `403 roleNotAllowedHere`.
 pub(crate) const BRIDGE_REFUSED: &str = "OR-7 bridge: the caller maps to no v2 actor";
 
