@@ -56,12 +56,39 @@ fn valid_at(role: &ScopedRole, now: DateTime<Utc>) -> bool {
 impl Standing {
     /// The caller's standing at `now`, or `None` when no v2 surface would know them.
     pub fn of(actor: &Actor, now: DateTime<Utc>) -> Option<Standing> {
-        let _ = (
-            actor,
-            now,
-            valid_at as fn(&ScopedRole, DateTime<Utc>) -> bool,
-        );
-        todo!("OR-7 S0: the rule in this file's header")
+        let valid_roles: Vec<&ScopedRole> =
+            actor.roles.iter().filter(|r| valid_at(r, now)).collect();
+
+        let has_org_exec = valid_roles
+            .iter()
+            .any(|r| r.role == Role::Executive && r.branch.is_none());
+        let has_org_admin = valid_roles
+            .iter()
+            .any(|r| r.role == Role::Admin && r.branch.is_none());
+
+        if has_org_exec && has_org_admin {
+            return Some(Standing {
+                user_id: actor.user_id.clone(),
+                kind: StandingKind::Owner,
+                branch: None,
+            });
+        }
+
+        for role in STAFF_PRIORITY {
+            if let Some(r) = valid_roles.iter().find(|r| r.role == role) {
+                let branch = r
+                    .branch
+                    .clone()
+                    .unwrap_or_else(|| BranchId::new(FALLBACK_BRANCH));
+                return Some(Standing {
+                    user_id: actor.user_id.clone(),
+                    kind: StandingKind::Staff(role),
+                    branch: Some(branch),
+                });
+            }
+        }
+
+        None
     }
 
     pub fn is_owner(&self) -> bool {
@@ -83,8 +110,16 @@ impl StandingKind {
     /// (BRANCH_MANAGER), RATES (RATE_MANAGER), FINANCE, SYSTEM (ADMIN), DOCUMENT_REVIEW
     /// (VERIFICATION_REVIEWER). A role outside [`STAFF_PRIORITY`] never reaches a standing.
     pub fn audit_text(self) -> &'static str {
-        let _ = self;
-        todo!("OR-7 S0: the table in this doc comment")
+        match self {
+            StandingKind::Owner => "OWNER",
+            StandingKind::Staff(Role::Teller) => "FRONT",
+            StandingKind::Staff(Role::BranchManager) => "MANAGER",
+            StandingKind::Staff(Role::RateManager) => "RATES",
+            StandingKind::Staff(Role::Finance) => "FINANCE",
+            StandingKind::Staff(Role::Admin) => "SYSTEM",
+            StandingKind::Staff(Role::VerificationReviewer) => "DOCUMENT_REVIEW",
+            StandingKind::Staff(other) => other.as_str(),
+        }
     }
 }
 
