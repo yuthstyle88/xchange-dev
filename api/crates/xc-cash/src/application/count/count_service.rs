@@ -81,7 +81,11 @@ impl CashCountService {
     pub fn pg(pool: PgPool) -> Self {
         let repo = Arc::new(PgCashRepository::new(pool.clone()));
         let postings: Arc<dyn CashPostings> = Arc::new(LedgerCashPostings::new());
-        let shift_repo = Arc::new(PgShiftRepository::new(pool.clone()));
+        let shift_repo = Arc::new(
+            crate::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                pool.clone(),
+            ),
+        );
         let transactor = Transactor::new(pool.clone());
         let branch_tx = BranchTx::new(transactor);
         let shifts = ShiftService::new(shift_repo, branch_tx);

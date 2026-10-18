@@ -19,7 +19,6 @@ use xc_kernel::money::{
 };
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
 use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_cash::{
@@ -213,7 +212,7 @@ impl BranchView for AdminCashBranchView {
             };
 
             // 2. Open shifts check
-            let open_rows = PgShiftRepository::new(pool.clone())
+            let open_rows = xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(pool.clone())
                 .open_of_branch(&branch)
                 .await?;
 

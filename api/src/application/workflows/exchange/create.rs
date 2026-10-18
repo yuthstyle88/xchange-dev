@@ -27,7 +27,6 @@ use xc_kernel::mode::Mode;
 use xc_kernel::money::{Money, Rate};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::workflows::save_step::SaveActor;
 use crate::application::workflows::save_transaction::ATTACHMENT_NOT_FOUND;
@@ -111,7 +110,7 @@ impl CreateTransaction {
         Self {
             store: PgTransactionStore::new(pool.clone()),
             quotes: PgQuoteRepository::new(pool.clone()),
-            shifts: ShiftService::new(Arc::new(PgShiftRepository::new(pool.clone())), branch_tx),
+            shifts: ShiftService::new(Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(pool.clone())), branch_tx),
             files,
             audit: PgAuditLog::new(pool),
         }
