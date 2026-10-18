@@ -26,6 +26,14 @@
 //! (tests 1–3 fail with "was answered while a custody command … was still under way"). The
 //! fourth test holds before the fix and after it: it keeps the lock the employee's own branch's,
 //! not everybody's.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c), on the lane controller's ruling
+//! Q3 (2026-10-15; `docs/design/blueprint/cash-shift-transfer.md` §6, "What CA-10 keeps"): the
+//! custodian and the custody requests are gone, and `disable` is refused while the employee holds
+//! an OPEN shift of their own (`shifts.teller_id`) or is the receiver of a PENDING hand-over
+//! (`handovers.receiver_id`). The command under way now leaves one of those rows instead of a
+//! custody state; the locking it pins, the sentence, the audit line and the version moves are
+//! unchanged.
 
 mod auth_http_common;
 mod common;
@@ -39,14 +47,6 @@ use serde_json::json;
 use tokio::sync::oneshot;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_shift::domain::custody::entities::custody_request::CustodyRequest;
-use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
-use xc_shift::domain::custody::state::CustodyState;
-use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
-use xc_shift::domain::custody::value_objects::phase::Phase;
-use xc_shift::domain::custody::value_objects::request_kind::RequestKind;
-use xc_shift::domain::custody::value_objects::request_status::RequestStatus;
-use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 
 /// Upper bound for anything that must finish.
 const MUST_FINISH: Duration = Duration::from_secs(30);
@@ -148,73 +148,108 @@ fn saved(answer: &Answer, why: &str) {
     assert_eq!(answer.json(), json!({ "saved": true }), "{why}");
 }
 
-// ── custody states the commands under way leave behind ───────────────────
+// ── what the commands under way leave behind ──────────────────────────────
 
-fn on() -> CustodyState {
-    CustodyState {
-        enabled: true,
-        phase: Phase::Open,
-        ..CustodyState::initial()
-    }
+/// What a command under way writes before it commits (CA-10, Q3).
+#[derive(Clone)]
+enum Leaves {
+    /// Nothing that concerns anybody.
+    Nothing,
+    /// An OPEN shift whose teller is this `users.id`.
+    OpenShiftOf(String),
+    /// A PENDING hand-over to this `users.id`, out of an OPEN shift of `from` (a `users.id`).
+    PendingHandoverTo { receiver: String, from: String },
 }
 
-fn pending_for(receiver: &str) -> CustodyRequest {
-    CustodyRequest {
-        id: "r1".to_owned(),
-        request_id: "page-r1".to_owned(),
-        payload_hash: "hash-r1".to_owned(),
-        kind: RequestKind::Handover,
-        status: RequestStatus::Pending,
-        at: CustodyTime::from_epoch_millis(1_780_000_000_000),
-        sender: "somebody-else".to_owned(),
-        receiver: Some(receiver.to_owned()),
-        note: String::new(),
-        evidence_keys: Vec::new(),
-        signatures: Vec::new(),
-        shift_id: None,
-        counted: None,
-        target: None,
-        target_difference: None,
-        expected: None,
-        variance: None,
-        cutoff: None,
-        safe_count: None,
-        safe_expected: None,
-        safe_variance: None,
-        currency: None,
-        amount: None,
-        stage: None,
-        dispatched_at: None,
-        dispatched_by: None,
-        rejected: None,
-        completed_at: None,
-        reconciliation: None,
-        reconciled: None,
+/// The `users.id` the employee `employee_id` is mirrored to.
+async fn user_of(desk: &Desk, employee_id: &str) -> String {
+    sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+        .bind(employee_id)
+        .fetch_one(&desk.pool)
+        .await
+        .unwrap_or_else(|e| panic!("the user of employee {employee_id}: {e}"))
+}
+
+async fn open_shift_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &str,
+    teller: &str,
+) -> Result<String, AppError> {
+    let id = format!("SH-{}", uuid::Uuid::new_v4());
+    sqlx::query(
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+         VALUES ($1, $2, 'OPEN', now(), $3, '', $1, $3::uuid)",
+    )
+    .bind(&id)
+    .bind(branch)
+    .bind(teller)
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(id)
+}
+
+async fn leave_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &str,
+    leaves: Leaves,
+) -> Result<(), AppError> {
+    match leaves {
+        Leaves::Nothing => Ok(()),
+        Leaves::OpenShiftOf(teller) => open_shift_in(tx, branch, &teller).await.map(|_| ()),
+        Leaves::PendingHandoverTo { receiver, from } => {
+            let shift = open_shift_in(tx, branch, &from).await?;
+            let org: uuid::Uuid =
+                sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+                    .bind(branch)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+            let count: uuid::Uuid = sqlx::query_scalar(
+                "INSERT INTO cash_counts (organization_id, branch_id, shift_id, kind, counted_by, counted_at, idempotency_key) \
+                 VALUES ($1, $2, $3, 'HANDOVER_OUT', $4::uuid, now(), gen_random_uuid()::text) RETURNING id",
+            )
+            .bind(org)
+            .bind(branch)
+            .bind(&shift)
+            .bind(&from)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+            sqlx::query(
+                "INSERT INTO handovers (organization_id, branch_id, from_shift_id, count_id, receiver_id, status) \
+                 VALUES ($1, $2, $3, $4, $5::uuid, 'PENDING')",
+            )
+            .bind(org)
+            .bind(branch)
+            .bind(&shift)
+            .bind(count)
+            .bind(&receiver)
+            .execute(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+            Ok(())
+        }
     }
 }
 
 // ── a custody command under way, and who waits for it ────────────────────
 
-/// A custody command of `branch` that is under way: it has taken the branch's lock, stored
-/// `leaves` as the custody state (when it has one), told the test which database backend it is,
-/// and goes on to commit only when `release` fires.
+/// A command of `branch` that is under way: it has taken the branch's lock, written `leaves`,
+/// told the test which database backend it is, and goes on to commit only when `release` fires.
 async fn command_under_way(
     desk: &Desk,
     branch: &str,
-    leaves: Option<CustodyState>,
+    leaves: Leaves,
     ready: oneshot::Sender<i32>,
     release: oneshot::Receiver<()>,
 ) -> AppResult<()> {
-    let repo = PgCustodyRepository::new(desk.pool.clone());
     let id = BranchId::new(branch);
-    let inner = id.clone();
+    let inner = branch.to_owned();
     branch_tx(desk)
         .run(&id, move |tx| {
             Box::pin(async move {
-                if let Some(state) = leaves {
-                    let before = repo.load_state_in(tx, &inner).await?;
-                    repo.store_state_in(tx, &inner, &before, &state).await?;
-                }
+                leave_in(tx, &inner, leaves).await?;
                 let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
                     .fetch_one(&mut **tx)
                     .await
@@ -248,7 +283,7 @@ async fn disable_while_a_command_is_under_way(
     owner: &str,
     employee: &str,
     branch: &str,
-    leaves: Option<CustodyState>,
+    leaves: Leaves,
 ) -> Answer {
     let (ready_tx, ready_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
@@ -290,25 +325,26 @@ async fn disable_while_a_command_is_under_way(
 
 // ── the tests ────────────────────────────────────────────────────────────
 
-/// 1. The command under way makes the employee the branch's custodian. The `disable` waits, is
+/// 1. The command under way opens a shift the employee holds. The `disable` waits, is
 ///    then refused with v2's sentence, and leaves the employee active and no line in the audit
 ///    trail.
 #[actix_web::test]
-async fn a_disable_waits_for_the_command_that_makes_the_employee_the_custodian() {
+async fn a_disable_waits_for_the_command_that_opens_a_shift_the_employee_holds() {
     let desk = Desk::start().await;
     let app = desk_app_without_custody!(desk);
     let owner = owner_signs_in(&app).await;
     two_branches(&desk).await;
     let ann = create(&app, &desk, &owner, "ann", "FRONT", MAIN).await;
 
-    let leaves = CustodyState {
-        custodian: Some(ann.clone()),
-        ..on()
-    };
+    let leaves = Leaves::OpenShiftOf(user_of(&desk, &ann).await);
     let answer =
-        disable_while_a_command_is_under_way(&desk, &app, &owner, &ann, MAIN, Some(leaves)).await;
+        disable_while_a_command_is_under_way(&desk, &app, &owner, &ann, MAIN, leaves).await;
 
-    refused(&answer, HOLDS, "the employee became the custodian first");
+    refused(
+        &answer,
+        HOLDS,
+        "the employee came to hold an OPEN shift first",
+    );
     assert!(
         is_active(&desk, &ann).await,
         "a refused disable closes nothing"
@@ -321,23 +357,28 @@ async fn a_disable_waits_for_the_command_that_makes_the_employee_the_custodian()
     desk.drop_schema().await;
 }
 
-/// 2. The command under way sends the employee a request that is still pending. Same answer.
+/// 2. The command under way hands cash over to the employee, still PENDING. Same answer.
 #[actix_web::test]
-async fn a_disable_waits_for_the_command_that_makes_the_employee_a_party_of_a_request() {
+async fn a_disable_waits_for_the_command_that_hands_cash_over_to_the_employee() {
     let desk = Desk::start().await;
     let app = desk_app_without_custody!(desk);
     let owner = owner_signs_in(&app).await;
     two_branches(&desk).await;
     let bea = create(&app, &desk, &owner, "bea", "BACKEND", MAIN).await;
 
-    let leaves = CustodyState {
-        requests: vec![pending_for(&bea)],
-        ..on()
+    let sam = create(&app, &desk, &owner, "sam", "FRONT", MAIN).await;
+    let leaves = Leaves::PendingHandoverTo {
+        receiver: user_of(&desk, &bea).await,
+        from: user_of(&desk, &sam).await,
     };
     let answer =
-        disable_while_a_command_is_under_way(&desk, &app, &owner, &bea, MAIN, Some(leaves)).await;
+        disable_while_a_command_is_under_way(&desk, &app, &owner, &bea, MAIN, leaves).await;
 
-    refused(&answer, HOLDS, "the employee became a receiver first");
+    refused(
+        &answer,
+        HOLDS,
+        "the employee became the receiver of a hand-over first",
+    );
     assert!(
         is_active(&desk, &bea).await,
         "a refused disable closes nothing"
@@ -360,7 +401,8 @@ async fn a_disable_waits_for_any_command_of_its_branch_and_then_closes_the_accou
         .version(&BranchId::new(MAIN))
         .await
         .expect("read the version");
-    let answer = disable_while_a_command_is_under_way(&desk, &app, &owner, &cy, MAIN, None).await;
+    let answer =
+        disable_while_a_command_is_under_way(&desk, &app, &owner, &cy, MAIN, Leaves::Nothing).await;
 
     saved(&answer, "nobody holds anything");
     assert!(!is_active(&desk, &cy).await, "the account is closed");
@@ -393,7 +435,7 @@ async fn a_disable_in_another_branch_does_not_wait() {
 
     let (ready_tx, ready_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
-    let command = command_under_way(&desk, MAIN, Some(on()), ready_tx, release_rx);
+    let command = command_under_way(&desk, MAIN, Leaves::Nothing, ready_tx, release_rx);
     let driver = async {
         ready_rx
             .await

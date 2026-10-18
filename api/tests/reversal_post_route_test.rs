@@ -51,6 +51,9 @@ const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
 const SAME_ORIGIN: &str = "http://xc.test";
 const ME: &str = "teller";
+/// #2964: a teller whose session carries a `users.id` (UUID), as a real v3 session does; `own-teller` signs them in.
+const OWN_TELLER: &str = "00000000-0000-0000-0000-00000000f264";
+const OWN: &str = "own-teller";
 
 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -87,6 +90,7 @@ fn sessions_of(spec: &str) -> Sessions {
     let staff = match spec {
         "" => None,
         "teller" => Actor::staff(TELLER, Role::Front, BranchId::new("MAIN")),
+        "own-teller" => Actor::staff(OWN_TELLER, Role::Front, BranchId::new("MAIN")),
         other => {
             let mut parts = other.splitn(3, ':');
             assert_eq!(parts.next(), Some("staff"), "staff spec {other:?}");
@@ -158,6 +162,30 @@ impl Shop {
 
     async fn finish(self) {
         self.c.finish().await;
+    }
+
+    /// #2964: the user `id` exists (a session's `users.id`).
+    async fn seed_user(&self, id: &str) {
+        sqlx::query(
+            "INSERT INTO users (id, organization_id, name, status, created_by) \
+             SELECT $1::uuid, id, 'own teller', 'ACTIVE', 'test' FROM organizations WHERE code = 'XC' \
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(id)
+        .execute(self.pool())
+        .await
+        .expect("seed the teller");
+    }
+
+    /// #2964: MAIN's open shift becomes the shift of the teller `id` (their own OPEN shift at MAIN).
+    async fn own_the_open_shift(&self, id: &str) {
+        self.seed_user(id).await;
+        sqlx::query("UPDATE shifts SET teller_id = $1::uuid WHERE id = $2")
+            .bind(id)
+            .bind(&self.c.shift)
+            .execute(self.pool())
+            .await
+            .expect("re-point MAIN's open shift");
     }
 
     fn pool(&self) -> &sqlx::PgPool {
@@ -411,16 +439,20 @@ async fn r3_malformed_reversal_id_answers_validation_failed_on_id() {
 }
 
 /// Row 4: a teller of MAIN, APPROVED, open shift -> 200 (control).
-#[actix_web::test]
-async fn r4_teller_of_main_posts_approved_reversal_with_open_shift() {
+/// R4 (#2964): a teller of MAIN posts an APPROVED reversal on their **own** OPEN shift at MAIN. The poster's shift is
+/// read with `ShiftService::open_of_teller_in` by the session's `users.id`; there is no fallback to "the branch's
+/// shift", so the harness re-points MAIN's open shift at the signed-in teller first.
+#[tokio::test]
+async fn r4_teller_of_main_posts_approved_reversal_on_their_own_open_shift() {
     let s = Shop::start().await;
     let now = whole_second_now();
     let orig = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
     let rev = s.approved(&orig, now).await;
+    s.own_the_open_shift(OWN_TELLER).await;
 
-    let a = post_reversal(&s, &rev.0.to_string(), ME, None, Some(&unique("key"))).await;
+    let a = post_reversal(&s, &rev.0.to_string(), OWN, None, Some(&unique("key"))).await;
     assert_eq!(a.status, StatusCode::OK, "body {}", a.text);
     assert_eq!(a.body["reversal"]["id"], json!(rev.0.to_string()));
     assert_eq!(a.body["reversal"]["status"], "POSTED", "body {}", a.text);
@@ -429,7 +461,27 @@ async fn r4_teller_of_main_posts_approved_reversal_with_open_shift() {
         .unwrap_or_else(|| panic!("a documentNumber: {}", a.text));
     assert!(doc.ends_with("-R2"), "expected -R2 suffix, got {doc}");
     assert_eq!(s.reversal(rev, "status").await, "POSTED");
+    assert_eq!(s.reversal(rev, "shift_id").await, s.c.shift);
     assert_eq!(s.reversal_receipts(orig.id).await, 1);
     assert_eq!(s.reversal_postings(rev).await, 1);
+    s.finish().await;
+}
+
+/// R4b (#2964): a teller of MAIN with no OPEN shift of their own is `noOpenShift`, though another teller holds MAIN's
+/// open shift; nothing is posted.
+#[tokio::test]
+async fn r4b_a_teller_without_an_own_open_shift_is_no_open_shift() {
+    let s = Shop::start().await;
+    let now = whole_second_now();
+    let orig = s
+        .completed(Side::Buy, "100", PaymentMethod::Cash, now)
+        .await;
+    let rev = s.approved(&orig, now).await;
+    s.seed_user(OWN_TELLER).await;
+
+    let a = post_reversal(&s, &rev.0.to_string(), OWN, None, Some(&unique("key"))).await;
+    assert_eq!(a.code(), "noOpenShift", "body {}", a.text);
+    assert_eq!(s.reversal(rev, "status").await, "APPROVED");
+    assert_eq!(s.reversal_postings(rev).await, 0);
     s.finish().await;
 }

@@ -11,9 +11,14 @@
 //! field that is **absent by design** (no target yet, a request with no currency, no clock-out
 //! yet) is not a decode failure and still loads.
 //!
-//! Each test builds a real day through the service (`Desk::serving`, plus a `SAFE_IN` proposal
-//! where a currency and an amount are needed), then spoils one stored value with plain SQL, as a
-//! hand-edited row, a value removed from a register or a future writer's bug would.
+//! Each test writes a day's rows, then spoils one stored value with plain SQL, as a hand-edited
+//! row, a value removed from a register or a future writer's bug would.
+//!
+//! Re-expected for CA-10 #626 by the ticket author (ruling Q7 A, design `cash-shift-transfer.md`
+//! §6): the custody command engine that built the day (`Desk::serving`, the `SAFE_IN` proposal)
+//! is retired, so the day is written by SQL in the shapes `PgCustodyRepository` writes
+//! (`attendance_data`, the `ops_events` insert). The request half of the absent-fields case retires
+//! with the request model.
 //!
 //! Needs `TEST_DATABASE_URL` (a database whose name ends in `_test`); nothing here skips.
 
@@ -23,7 +28,6 @@ mod shift_service_common;
 
 use custody_service_common::Desk;
 use pos_error::{AppError, AppResult};
-use serde_json::json;
 use shift_service_common::TestDb;
 
 fn a_fault<T: std::fmt::Debug>(read: AppResult<T>, what: &str) {
@@ -36,15 +40,26 @@ fn a_fault<T: std::fmt::Debug>(read: AppResult<T>, what: &str) {
     }
 }
 
-/// A serving day with one pending `SAFE_IN` of USD 50 from F1 to FIN1.
-async fn a_day_with_a_transfer(db: &TestDb) -> Desk {
-    let mut d = Desk::serving(db).await;
-    d.propose(
-        "F1",
-        "SAFE_IN",
-        json!({ "receiverId": "FIN1", "currency": "USD", "amount": 50 }),
-    )
-    .await;
+/// A day with F1 clocked in (no clock-out yet) and its `CLOCK_IN` event.
+async fn a_day(db: &TestDb) -> Desk {
+    let d = Desk::new(db).await;
+    for sql in [
+        // the load reads a branch's rows only once it has custody at all
+        "INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN') \
+         ON CONFLICT (branch_id) DO NOTHING",
+        "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
+         VALUES ('attendance-1', $1, 0, 'F1', jsonb_build_object('role', 'FRONT', \
+           'clockIn', $2::bigint, 'clockOut', NULL))",
+        "INSERT INTO ops_events (id, branch_id, kind, at, actor, role, details) \
+         VALUES ('event-1', $1, 'CLOCK_IN', to_timestamp($2::bigint / 1000.0), 'F1', 'FRONT', '{}')",
+    ] {
+        sqlx::query(sql)
+            .bind(d.branch.as_str())
+            .bind(custody_common::NOON)
+            .execute(&db.pool)
+            .await
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
     d
 }
 
@@ -60,7 +75,7 @@ async fn spoil(db: &TestDb, sql: &'static str, d: &Desk) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_attendance_role_custody_does_not_know_is_a_fault() {
     let db = TestDb::start().await;
-    let d = a_day_with_a_transfer(&db).await;
+    let d = a_day(&db).await;
     spoil(
         &db,
         "UPDATE attendance SET data = jsonb_set(data, '{role}', '\"NOBODY\"') \
@@ -78,7 +93,7 @@ async fn an_attendance_role_custody_does_not_know_is_a_fault() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_attendance_time_that_is_not_a_time_is_a_fault() {
     let db = TestDb::start().await;
-    let d = a_day_with_a_transfer(&db).await;
+    let d = a_day(&db).await;
     spoil(
         &db,
         "UPDATE attendance SET data = jsonb_set(data, '{clockIn}', '\"yesterday\"') \
@@ -96,7 +111,7 @@ async fn an_attendance_time_that_is_not_a_time_is_a_fault() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_event_of_a_kind_custody_does_not_know_is_a_fault() {
     let db = TestDb::start().await;
-    let d = a_day_with_a_transfer(&db).await;
+    let d = a_day(&db).await;
     spoil(
         &db,
         "UPDATE ops_events SET kind = 'NOPE' WHERE branch_id = $1",
@@ -107,36 +122,31 @@ async fn an_event_of_a_kind_custody_does_not_know_is_a_fault() {
     db.drop_schema().await;
 }
 
-/// Holds before the fix and after it: what is absent by design still loads — a request with no
-/// currency (the day's OPEN), attendance with no clock-out, no target, no cutoff — and the values
-/// that decode are read as written.
+/// Holds before the fix and after it: what is absent by design still loads — attendance with no
+/// clock-out, no target, no cutoff — and the values that decode are read as written.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn absent_fields_are_not_faults_and_decodable_rows_read_as_written() {
     let db = TestDb::start().await;
-    let d = a_day_with_a_transfer(&db).await;
+    let d = a_day(&db).await;
     let state = d
         .custody
         .state(&d.branch)
         .await
         .expect("a day that decodes loads");
-    let transfer = state
-        .requests
-        .iter()
-        .find(|r| r.currency.is_some())
-        .expect("the SAFE_IN has its currency");
-    assert_eq!(transfer.currency.unwrap().as_str(), "USD");
-    assert_eq!(transfer.amount.unwrap().to_string(), "50.00");
+    assert_eq!(state.attendance.len(), 1, "F1's attendance: {state:?}");
     assert!(
-        state.requests.iter().any(|r| r.currency.is_none()),
-        "the day's OPEN request has no currency, and that is not a fault"
+        state.target.is_none() && state.cutoff.is_none(),
+        "no target, no cutoff"
     );
     assert!(
         state.attendance.iter().all(|a| a.clock_out.is_none()),
         "nobody has clocked out"
     );
-    d.custody
+    let events = d
+        .custody
         .events(&d.branch)
         .await
         .expect("the events of a day that decodes load");
+    assert_eq!(events.len(), 1, "the CLOCK_IN: {events:?}");
     db.drop_schema().await;
 }

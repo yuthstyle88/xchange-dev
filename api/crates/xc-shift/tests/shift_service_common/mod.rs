@@ -1,6 +1,8 @@
 //! Shared by the shift service tests: a PostgreSQL schema per test, the v2
 //! fixture, and the few conversions the tests need.
 //! Provided with ticket T7 — do not edit.
+//! CA-10 (#626, #2955): the setup moved off v2's deleted shift path onto SQL seeds (`seed_open_shift`,
+//! `seed_close`, `seed_movement`) and the per-teller delta (`apply_delta`).
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -191,15 +193,154 @@ impl TestDb {
             .expect("read the branch version")
     }
 
-    /// Run `apply_delta_in` the way ticket T8 will: inside a `BranchTx::run` of its own.
-    pub async fn apply_delta(&self, branch: &BranchId, delta: StockDelta) -> AppResult<String> {
+    /// Run `apply_delta_for_teller_in` the way a teller's save does: inside a `BranchTx::run` of its own.
+    /// CA-10 (#626, #2955): restates the deleted per-branch `apply_delta_in`; `teller` is a `users.id`.
+    pub async fn apply_delta(
+        &self,
+        branch: &BranchId,
+        teller: &str,
+        delta: StockDelta,
+    ) -> AppResult<String> {
         let service = self.service();
-        let b = branch.clone();
+        let (b, t) = (branch.clone(), teller.to_owned());
         self.branch_tx()
             .run(branch, move |tx| {
-                Box::pin(async move { service.apply_delta_in(tx, &b, &delta).await })
+                Box::pin(async move { service.apply_delta_for_teller_in(tx, &b, &t, &delta).await })
             })
             .await
+    }
+
+    /// The `users.id` an opener id of [`OPENERS`] was seeded as.
+    pub async fn teller(&self, opener: &str) -> String {
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(opener)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or_else(|e| panic!("the user seeded for opener {opener}: {e}"))
+    }
+
+    /// CA-10 (#626, #2955): an OPEN shift written straight into `shifts` and `shift_balances`, the way a verified
+    /// OPEN count leaves one, with no `opened_by_count` (M3 drops it). `opening` is `(code, amount)`; `expected`
+    /// starts equal to it. Returns the shift's id. Replaces v2's `ShiftService::open` as the suites' setup.
+    pub async fn seed_open_shift(
+        &self,
+        branch: &BranchId,
+        opener: &str,
+        open_request_id: &str,
+        opening: &[(&str, &str)],
+        opened_at: DateTime<Utc>,
+    ) -> String {
+        let id = format!("SH-{}", uuid::Uuid::new_v4());
+        let teller = self.teller(opener).await;
+        sqlx::query(
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $6::uuid)",
+        )
+        .bind(&id)
+        .bind(branch.as_str())
+        .bind(opened_at)
+        .bind(opener)
+        .bind(open_request_id)
+        .bind(&teller)
+        .execute(&self.pool)
+        .await
+        .expect("seed an OPEN shift");
+        for (code, amount) in opening {
+            sqlx::query(
+                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, $3::numeric, $3::numeric)",
+            )
+            .bind(&id)
+            .bind(code)
+            .bind(amount)
+            .execute(&self.pool)
+            .await
+            .expect("seed an opening balance");
+        }
+        id
+    }
+
+    /// CA-10 (#626, #2955): closes a seeded shift straight in the tables, the way a verified CLOSE count leaves it:
+    /// `counted` per currency, `difference = counted - expected`. Replaces v2's `ShiftService::close` as setup.
+    pub async fn seed_close(
+        &self,
+        shift_id: &str,
+        closed_by: &str,
+        close_request_id: &str,
+        counted: &[(&str, &str)],
+        note: &str,
+        closed_at: DateTime<Utc>,
+    ) {
+        sqlx::query(
+            "UPDATE shifts SET status = 'CLOSED', closed_at = $1, closed_by = $2, close_note = $3, \
+             close_request_id = $4 WHERE id = $5",
+        )
+        .bind(closed_at)
+        .bind(closed_by)
+        .bind(note)
+        .bind(close_request_id)
+        .bind(shift_id)
+        .execute(&self.pool)
+        .await
+        .expect("seed a close");
+        for (code, amount) in counted {
+            sqlx::query(
+                "INSERT INTO shift_balances (shift_id, code, opening, expected, counted, difference) \
+                 VALUES ($1, $2, 0, 0, $3::numeric, $3::numeric) \
+                 ON CONFLICT (shift_id, code) DO UPDATE SET counted = $3::numeric, \
+                 difference = $3::numeric - shift_balances.expected",
+            )
+            .bind(shift_id)
+            .bind(code)
+            .bind(amount)
+            .execute(&self.pool)
+            .await
+            .expect("seed a counted balance");
+        }
+    }
+
+    /// CA-10 (#626, #2955): a stock movement written straight into `stock_movements`, with `expected` moved by
+    /// it. Replaces v2's `ShiftService::move_stock` as setup. Returns the movement's id.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn seed_movement(
+        &self,
+        branch: &BranchId,
+        shift_id: &str,
+        code: &str,
+        direction: &str,
+        amount: &str,
+        request_id: &str,
+        at: DateTime<Utc>,
+    ) -> String {
+        let id = format!("MV-{}", uuid::Uuid::new_v4());
+        sqlx::query(
+            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
+             VALUES ($1, $2, $3, $4, $5, $6::numeric, 'test', $7, $8, 'test')",
+        )
+        .bind(&id)
+        .bind(branch.as_str())
+        .bind(shift_id)
+        .bind(code)
+        .bind(direction)
+        .bind(amount)
+        .bind(request_id)
+        .bind(at)
+        .execute(&self.pool)
+        .await
+        .expect("seed a movement");
+        let sign = if direction == "IN" { "" } else { "-" };
+        sqlx::query(
+            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+             VALUES ($1, $2, 0, ($4 || $3)::numeric) \
+             ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + ($4 || $3)::numeric",
+        )
+        .bind(shift_id)
+        .bind(code)
+        .bind(amount)
+        .bind(sign)
+        .execute(&self.pool)
+        .await
+        .expect("move the expectation");
+        id
     }
 
     pub async fn drop_schema(self) {
