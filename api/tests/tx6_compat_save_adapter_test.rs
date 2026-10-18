@@ -24,6 +24,7 @@
 mod common;
 mod compat_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use compat_common::Fixture;
@@ -111,6 +112,7 @@ fn refused(answer: &Answer, what: &str) -> String {
 async fn a_compat_save_is_completed_through_a_quote_it_accepted() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     assert_eq!(
         rows(&replay).await,
         NONE,
@@ -158,6 +160,7 @@ async fn a_compat_save_is_completed_through_a_quote_it_accepted() {
 async fn a_repeated_submission_quotes_nothing_again() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let payload = payload_of(&replay, LIVE_BUY_CASH);
 
     let first = save(&replay, &payload).await;
@@ -193,6 +196,7 @@ async fn a_repeated_submission_quotes_nothing_again() {
 async fn a_compat_save_over_the_limit_is_approval_required_and_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     // #120 settles 3,220.00 THB; the limit is below it
     sqlx::query(
         "INSERT INTO branch_exchange_limits (organization_id, branch_id, approval_limit_thb, \
@@ -227,6 +231,7 @@ async fn a_compat_save_over_the_limit_is_approval_required_and_leaves_nothing() 
 async fn a_compat_save_refused_for_stock_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let answer = save(&replay, &payload_of(&replay, NOT_ENOUGH_USD_AT)).await;
     assert_eq!(refused(&answer, "#114 SELL 750 USD"), NOT_ENOUGH_USD);
     assert_eq!(rows(&replay).await, NONE);
@@ -252,6 +257,7 @@ async fn a_compat_save_refused_by_custody_leaves_nothing() {
 async fn a_compat_save_refused_for_payment_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let methods = json!([
         { "id": "Cash", "enabled": true, "buy": false, "sell": true, "account": "", "instruction": "" },
         { "id": "Credit Card", "enabled": true, "buy": false, "sell": true, "account": "", "instruction": "" },
@@ -294,6 +300,7 @@ async fn a_compat_save_refused_for_payment_leaves_nothing() {
 async fn the_passport_spelling_does_not_change_the_submission() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let payload = payload_of(&replay, LIVE_BUY_CASH);
     assert_eq!(payload["passportNo"], json!(PASSPORT));
 

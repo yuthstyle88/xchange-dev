@@ -27,6 +27,7 @@ mod common;
 mod compat_common;
 mod kiosk_http_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use std::collections::BTreeSet;
@@ -1360,6 +1361,26 @@ async fn walk_to(last: Writer) {
         }
         if writer == Writer::Save {
             // what a save needs, before the version under test is read
+            // Amended for CA-10 (#626, ruling A), setup only: a compat save meets the v3 teller gate
+            // (`check_teller_save_in`), so the saver FRONT holds an OPEN shift of its own at `MAIN`,
+            // funded in the ledger like the room's other shifts, and `MAIN`'s day is OPEN (else `SAVE_CLOSED`).
+            let front = room
+                .staff
+                .iter()
+                .find(|p| p.key == "FRONT")
+                .expect("FRONT is one of the staff")
+                .id
+                .clone();
+            let pool = &c.desk.db.pool;
+            shift_holder_common::open_shift_for(
+                pool,
+                MAIN,
+                &front,
+                &[("THB", "100000"), ("USD", "2000")],
+            )
+            .await;
+            snapshot_common::r1_fund_open_drawers(pool).await;
+            shift_holder_common::open_day(pool, MAIN).await;
             let reserved = room
                 .compat_rpc(
                     "reserveCustomer",
