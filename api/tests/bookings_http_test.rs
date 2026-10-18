@@ -220,18 +220,23 @@ impl Room {
     }
 
     async fn seed_shift(&self, id: &str, branch: &str) {
-        sqlx::query(
+        let query = if branch == MAIN {
             "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
                  open_request_id, teller_id) \
-             VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
-        )
-        .bind(id)
-        .bind(branch)
-        .bind(at("2026-10-06T04:00:00.000Z"))
-        .bind(format!("open-{id}"))
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert into shifts");
+             VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))"
+        } else {
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
+                 open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4, (SELECT id FROM users WHERE legacy_employee_id = '00000000-0000-4000-8000-0000000000a1'))"
+        };
+        sqlx::query(query)
+            .bind(id)
+            .bind(branch)
+            .bind(at("2026-10-06T04:00:00.000Z"))
+            .bind(format!("open-{id}"))
+            .execute(&self.desk.db.pool)
+            .await
+            .expect("insert into shifts");
     }
 
     fn now(&self) -> DateTime<Utc> {
