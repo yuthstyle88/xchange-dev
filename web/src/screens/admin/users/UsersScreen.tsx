@@ -28,7 +28,7 @@ export interface UsersTabProps {
 type UsersTabComponent = (props: UsersTabProps) => JSX.Element;
 
 const TAB_MODULES = import.meta.glob<Record<string, unknown>>(
-  './{PermissionMatrix,UserAudit,LoginHistory,RegisterImport}.tsx',
+  './{PermissionMatrix,UserAudit,LoginHistory}.tsx',
   { eager: true },
 );
 
@@ -46,7 +46,6 @@ const TABS = [
   { id: 'matrix', labelKey: 'tabMatrix', file: 'PermissionMatrix' },
   { id: 'audit', labelKey: 'tabAudit', file: 'UserAudit' },
   { id: 'logins', labelKey: 'tabLogins', file: 'LoginHistory' },
-  { id: 'import', labelKey: 'tabImport', file: 'RegisterImport' },
 ] as const;
 type UsersTabId = (typeof TABS)[number]['id'];
 

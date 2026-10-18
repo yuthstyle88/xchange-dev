@@ -5,8 +5,11 @@
 // or weaken them.
 //
 // Contract these tests read (the ticket §7 marks each [required]):
-// - Tabs: buttons `[data-users-tab="users|matrix|audit|logins|import"]` in that order; panels `[data-users-panel="<id>"]`.
-//   A tab whose component file does not exist yet shows `[data-users-tab-pending]` (W2–W4 add the files later).
+// - Tabs: buttons `[data-users-tab="users|matrix|audit|logins"]` in that order; panels `[data-users-panel="<id>"]`.
+//   A tab whose component file does not exist yet shows `[data-users-tab-pending]` (W2–W3 add the files later).
+// - Amended by W1c (claude/177aa7ef): no import tab and no import* keys. Owner 2026-10-18 "การ import ไม่ต้อง มี",
+//   "เพราะ อาจคีย์ ผิดได้", "ให้สร้างผ่าน ระบบได้เท่านั้น" (xchange#564 issuecomment-6246272338): accounts are created
+//   only through the system, so W4 and its RegisterImport tab are out.
 // - Rows: each user row is `tr[data-user-id="<userId>"]`; its actions are `[data-users-action="suspend|resume|enable|
 //   profile"]`, offered by status (ACTIVE: suspend, profile; SUSPENDED: resume, profile; DISABLED:
 //   enable only).
@@ -142,10 +145,10 @@ function click(el: ParentNode, selector: string): void {
 }
 
 describe('W1 tabs (§3.6: W1 mounts every tab)', () => {
-  it('row 1: five tabs in order; users is shown first; each other tab shows its panel, pending until its file exists', async () => {
+  it('row 1: four tabs in order, no import tab; users is shown first; each other tab shows its panel, pending until its file exists', async () => {
     const c = await mount();
     const tabs = [...c.querySelectorAll<HTMLElement>('[data-users-tab]')].map((b) => b.dataset.usersTab);
-    expect(tabs).toEqual(['users', 'matrix', 'audit', 'logins', 'import']);
+    expect(tabs).toEqual(['users', 'matrix', 'audit', 'logins']);
     expect(c.querySelector('[data-users-panel="users"]'), 'the users panel is shown first').not.toBeNull();
     expect(row(c, ACTIVE.userId).textContent).toContain(ACTIVE.name);
 
@@ -153,9 +156,8 @@ describe('W1 tabs (§3.6: W1 mounts every tab)', () => {
       matrix: 'PermissionMatrix',
       audit: 'UserAudit',
       logins: 'LoginHistory',
-      import: 'RegisterImport',
     };
-    const present = import.meta.glob('./{PermissionMatrix,UserAudit,LoginHistory,RegisterImport}.tsx');
+    const present = import.meta.glob('./{PermissionMatrix,UserAudit,LoginHistory}.tsx');
     for (const [id, file] of Object.entries(files)) {
       click(c, `[data-users-tab="${id}"]`);
       await settle();
@@ -285,7 +287,7 @@ describe('W1 i18n (§3.6: W1 adds every key W2–W4 read; #564 contract)', () =>
   it('row 9: every key of the #564 contract exists in th and en, worded (not empty)', async () => {
     const tables = await import('./i18n');
     const keys = [
-      'tabUsers', 'tabMatrix', 'tabAudit', 'tabLogins', 'tabImport', 'tabPending',
+      'tabUsers', 'tabMatrix', 'tabAudit', 'tabLogins', 'tabPending',
       'statusSuspended', 'suspend', 'resume', 'enable', 'resetPassword',
       'successSuspended', 'successResumed', 'successEnabled',
       'tempPasswordTitle', 'tempPasswordOnce', 'tempPasswordDone',
@@ -302,14 +304,14 @@ describe('W1 i18n (§3.6: W1 adds every key W2–W4 read; #564 contract)', () =>
       'loginsTitle', 'loginsWhen', 'loginsUser', 'loginsResult', 'loginsIp', 'loginsEmpty', 'loginsExport',
       'loginsResultOk', 'loginsResultBadPassword', 'loginsResultUnknownUser', 'loginsResultNotActive',
       'loginsResultTempExpired', 'loginsResultRateLimited',
-      'importTitle', 'importChooseFile', 'importPreview', 'importApply', 'importRowsCreate', 'importRowsUpdate',
-      'importRowsUnchanged', 'importRowError', 'importDroppedColumn', 'importStoppedAt', 'importTempPasswordsFile',
-      'importNothingToApply',
     ];
     for (const lang of ['th', 'en'] as const) {
       const table = (tables as unknown as Record<string, Record<string, unknown>>)[lang];
       const missing = keys.filter((k) => typeof table[k] !== 'string' || (table[k] as string).trim() === '');
       expect(missing, `${lang} keys missing or empty`).toEqual([]);
+      // W1c: the import keys are gone with the import tab (owner, xchange#564 issuecomment-6246272338).
+      const importKeys = Object.keys(table).filter((k) => k === 'tabImport' || /^import[A-Z]/.test(k));
+      expect(importKeys, `${lang} has no import keys`).toEqual([]);
     }
   });
 });
