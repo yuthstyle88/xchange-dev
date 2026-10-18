@@ -884,7 +884,6 @@ async fn the_snapshot_member_marks_come_from_the_verified_phone_identity_not_mem
         "REVOKED",
     )
     .await;
-    let _v2_member = db.customer(xc_org()).await;
     let other = db.other_org().await;
     let elsewhere = db.customer(other).await;
     db.seed_phone(other, &elsewhere, "+66833333333", Some(at(-30)), "ACTIVE")
@@ -953,9 +952,8 @@ async fn no_blueprint_booking_or_no_verified_active_phone_gives_no_keys_and_no_e
     let (revoked_ex, _) = db.seed_transaction(&revoked).await;
     db.seed_completed_booking(&revoked, revoked_ex).await;
 
-    // a v2 member's v2 booking, the source BK-10 retires
+    // what a v2 member's v2 booking looks like after M2 (BK-11): an exchange with no Blueprint booking
     let v2_member = db.customer(xc_org()).await;
-    let _ = unique("BK");
     let (v2_ex, _) = db.seed_transaction(&v2_member).await;
 
     for (exchange, what) in [
