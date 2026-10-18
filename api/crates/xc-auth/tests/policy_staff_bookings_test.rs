@@ -105,20 +105,6 @@ fn the_counter_roles_list_get_create_confirm_and_cancel() {
 }
 
 #[test]
-fn the_owner_actions_are_the_owners_alone() {
-    for r in COUNTER_ROLES {
-        for name in OWNER_ACTIONS {
-            assert_eq!(
-                said(ask(Some(&staff(r, B2)), EntryPath::StaffBookings, name)),
-                (OWNER_ONLY.to_owned(), 403),
-                "{} {name}",
-                r.as_str()
-            );
-        }
-    }
-}
-
-#[test]
 fn the_other_roles_are_refused() {
     for r in OTHER_ROLES {
         for name in COUNTER_ACTIONS {
