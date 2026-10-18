@@ -434,8 +434,66 @@ impl<R: UserRepository> UserService<R> {
         user_id: &str,
         profile: &UserProfile,
     ) -> Result<UserProfile, UserChangeError> {
-        let _ = (tx, actor, ip, user_id, profile);
-        todo!("C1c: save_profile")
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::EditProfile, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        if user.status == UserStatus::Disabled {
+            return Err(UserChangeError::NotActive);
+        }
+        let old = self
+            .repo
+            .find_profile(tx, &user.id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let norm = |s: &Option<String>| {
+            s.as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        let saved = UserProfile {
+            employee_code: norm(&profile.employee_code),
+            department: norm(&profile.department),
+            position: norm(&profile.position),
+            tell_code: norm(&profile.tell_code),
+        };
+        self.repo.set_profile(tx, &user.id, &saved).await?;
+        self.repo.bump_version(tx, &user.id).await?;
+        let profile_json = |p: &UserProfile| {
+            json!({
+                "employeeCode": p.employee_code,
+                "department": p.department,
+                "position": p.position,
+                "tellCode": p.tell_code,
+            })
+        };
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userProfileSave",
+            &user.organization_id,
+            Some(profile_json(&old)),
+            Some(profile_json(&saved)),
+            ip,
+        )
+        .await?;
+        Ok(saved)
     }
 
     /// Looks up a user by ID.
