@@ -59,7 +59,6 @@ export const en: Record<Key, string> = {
   'error.holdsCash': 'This person still holds cash or a hand-over in progress',
   'error.notBound': 'This account cannot sign in yet; activate it first',
   'error.userNotActive': 'This account is not active',
-  'error.outOfScope': 'This is outside your branches',
   'queue.state.waiting': 'Waiting',
   'queue.state.working': 'In progress',
   'queue.state.completed': 'Completed',

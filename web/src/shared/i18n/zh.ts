@@ -59,7 +59,6 @@ export const zh: Record<Key, string> = {
   'error.holdsCash': '此人仍持有现金或有未完成的交接',
   'error.notBound': '此账户尚不能登录，请先启用',
   'error.userNotActive': '此账户未在使用中',
-  'error.outOfScope': '这不在您负责的分店范围内',
   'queue.state.waiting': '等待处理',
   'queue.state.working': '正在处理',
   'queue.state.completed': '已完成',

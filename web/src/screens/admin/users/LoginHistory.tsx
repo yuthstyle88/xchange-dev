@@ -85,7 +85,7 @@ export function LoginHistory(props: UsersTabProps): JSX.Element {
   });
 
   return (
-    <div class="users-tab-panel">
+    <div>
       <Show when={error()}>
         <div class="users-card users-empty" data-users-error="">
           {error()}
