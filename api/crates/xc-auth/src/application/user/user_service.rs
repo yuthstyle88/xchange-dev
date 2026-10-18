@@ -5,6 +5,7 @@ use std::sync::Arc;
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{IdentityType, PiiError, normalize};
@@ -149,7 +150,12 @@ impl<R: UserRepository> UserService<R> {
             "userGrant",
             &user.organization_id,
             None,
-            None,
+            Some(json!({
+                "role": scoped_role.role.as_str(),
+                "branch": scoped_role.branch.as_ref().map(|b| b.as_str()),
+                "validFrom": scoped_role.valid_from,
+                "validTo": scoped_role.valid_to,
+            })),
             ip,
         )
         .await?;
@@ -198,7 +204,10 @@ impl<R: UserRepository> UserService<R> {
             &user.id,
             "userRevoke",
             &user.organization_id,
-            None,
+            Some(json!({
+                "role": role.as_str(),
+                "branch": branch.map(|b| b.as_str()),
+            })),
             None,
             ip,
         )
@@ -251,8 +260,8 @@ impl<R: UserRepository> UserService<R> {
             &user.id,
             "userDisable",
             &user.organization_id,
-            None,
-            None,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Disabled.as_str() })),
             ip,
         )
         .await?;
@@ -304,8 +313,8 @@ impl<R: UserRepository> UserService<R> {
             &user.id,
             "userSuspend",
             &user.organization_id,
-            None,
-            None,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Suspended.as_str() })),
             ip,
         )
         .await?;
@@ -353,8 +362,8 @@ impl<R: UserRepository> UserService<R> {
             &user.id,
             "userResume",
             &user.organization_id,
-            None,
-            None,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Active.as_str() })),
             ip,
         )
         .await?;
@@ -405,8 +414,8 @@ impl<R: UserRepository> UserService<R> {
             &user.id,
             "userEnable",
             &user.organization_id,
-            None,
-            None,
+            Some(json!({ "status": user.status.as_str() })),
+            Some(json!({ "status": UserStatus::Active.as_str() })),
             ip,
         )
         .await?;
