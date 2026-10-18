@@ -398,8 +398,49 @@ impl UserRepository for PgUserRepository {
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<UserAuditEntry>> {
-        let _ = (tx, organization_id, before, limit);
-        todo!("C1c: user_audit page, newest first")
+        let rows = sqlx::query(
+            r#"
+            SELECT a.id::text AS id,
+                   a.at,
+                   a.actor_id,
+                   COALESCE(actor.name, a.actor_id) AS actor_name,
+                   a.subject_id,
+                   COALESCE(subj.name, a.subject_id) AS subject_name,
+                   a.action,
+                   a.before,
+                   a.after,
+                   host(a.ip) AS ip
+            FROM user_audit a
+            LEFT JOIN users actor ON actor.id::text = a.actor_id
+            LEFT JOIN users subj ON subj.id::text = a.subject_id
+            WHERE a.organization_id = $1::uuid
+              AND ($2::uuid IS NULL OR (a.at, a.id) < (SELECT at, id FROM user_audit WHERE id = $2::uuid))
+            ORDER BY a.at DESC, a.id DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(organization_id)
+        .bind(before)
+        .bind(i64::from(limit))
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| UserAuditEntry {
+                id: r.get("id"),
+                at: r.get("at"),
+                actor_id: r.get("actor_id"),
+                actor_name: r.get("actor_name"),
+                subject_id: r.get("subject_id"),
+                subject_name: r.get("subject_name"),
+                action: r.get("action"),
+                before: r.get("before"),
+                after: r.get("after"),
+                ip: r.get("ip"),
+            })
+            .collect())
     }
 
     async fn list_logins(
@@ -409,7 +450,39 @@ impl UserRepository for PgUserRepository {
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<LoginEntry>> {
-        let _ = (tx, organization_id, before, limit);
-        todo!("C1c: login_history page, newest first")
+        let rows = sqlx::query(
+            r#"
+            SELECT l.id::text AS id,
+                   l.at,
+                   l.user_id::text AS user_id,
+                   u.name AS user_name,
+                   host(l.ip) AS ip,
+                   l.result
+            FROM login_history l
+            LEFT JOIN users u ON u.id = l.user_id
+            WHERE l.organization_id = $1::uuid
+              AND ($2::uuid IS NULL OR (l.at, l.id) < (SELECT at, id FROM login_history WHERE id = $2::uuid))
+            ORDER BY l.at DESC, l.id DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(organization_id)
+        .bind(before)
+        .bind(i64::from(limit))
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| LoginEntry {
+                id: r.get("id"),
+                at: r.get("at"),
+                user_id: r.get("user_id"),
+                user_name: r.get("user_name"),
+                ip: r.get("ip"),
+                result: r.get("result"),
+            })
+            .collect())
     }
 }

@@ -120,7 +120,12 @@ async fn set_profile_blank_strings_stored_as_null() {
             tell_code: Some("T02".to_owned()),
         })
     );
-    let raw: (Option<String>, Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+    let raw: (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as(
         "SELECT employee_code, department, position, tell_code FROM users WHERE id = $1::uuid",
     )
     .bind(&uid)
