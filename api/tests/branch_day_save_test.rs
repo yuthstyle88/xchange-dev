@@ -156,16 +156,16 @@ async fn opened(shop: &Shop, teller: &Actor, manager: &Actor) -> String {
 }
 
 async fn expected(shop: &Shop, shift: &str, currency: &str) -> Decimal {
-    sqlx::query_scalar::<_, Option<Decimal>>(
-        "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = $2",
-    )
-    .bind(shift)
-    .bind(currency)
-    .fetch_optional(&shop.pool)
-    .await
-    .expect("read a balance")
-    .flatten()
-    .unwrap_or(Decimal::ZERO)
+    use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+    use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+    PgLedgerShiftBalances::new(shop.pool.clone())
+        .shift_balances(&shift.to_owned())
+        .await
+        .expect("read a balance")
+        .into_iter()
+        .find(|b| b.currency.as_str() == currency)
+        .map(|b| Decimal::from_i128_with_scale(b.expected.minor(), 2))
+        .unwrap_or(Decimal::ZERO)
 }
 
 fn d(text: &str) -> Decimal {
