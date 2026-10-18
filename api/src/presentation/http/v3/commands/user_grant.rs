@@ -23,7 +23,7 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, out_of_scope, server_error,
+    CommandAction, CommandEndpoint, out_of_scope, request_ip, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 
@@ -97,7 +97,7 @@ impl CommandAction for UserGrantCommand {
         }
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
-            .grant(tx, who, None, &user_id, role, role_branch, valid_from, valid_to)
+            .grant(tx, who, request_ip().as_deref(), &user_id, role, role_branch, valid_from, valid_to)
             .await
             .map_err(from_change_error)?;
         changed(tx, &user_id).await
