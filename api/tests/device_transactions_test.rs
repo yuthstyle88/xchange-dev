@@ -16,6 +16,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -348,10 +349,11 @@ impl Room {
         let customer_id = self.reserve(branch, who).await;
         let t = self.tick();
         let here = BranchId::new(branch);
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let cmd = SaveTransaction {
@@ -381,7 +383,7 @@ impl Room {
         let saved = self
             .desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange of {} in {branch}: {e:?}", who.name));
         saved.document_ref
