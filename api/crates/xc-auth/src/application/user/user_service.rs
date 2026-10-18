@@ -346,7 +346,7 @@ impl<R: UserRepository> UserService<R> {
             .await?;
         GrantGuard::check(actor, &target, &AccountAction::Resume, owners_left)
             .map_err(UserChangeError::Refused)?;
-        if !user.status.may_move(UserStatus::Active) {
+        if user.status != UserStatus::Suspended {
             return Err(UserChangeError::BadMove {
                 from: user.status,
                 to: UserStatus::Active,
@@ -395,7 +395,7 @@ impl<R: UserRepository> UserService<R> {
             .await?;
         GrantGuard::check(actor, &target, &AccountAction::Enable, owners_left)
             .map_err(UserChangeError::Refused)?;
-        if !user.status.may_move(UserStatus::Active) {
+        if user.status != UserStatus::Disabled {
             return Err(UserChangeError::BadMove {
                 from: user.status,
                 to: UserStatus::Active,
