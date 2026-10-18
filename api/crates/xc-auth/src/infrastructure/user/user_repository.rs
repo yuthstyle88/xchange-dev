@@ -331,8 +331,24 @@ impl UserRepository for PgUserRepository {
         tx: &mut Transaction<'_, Postgres>,
         id: &str,
     ) -> AppResult<Option<UserProfile>> {
-        let _ = (tx, id);
-        todo!("C1c: SELECT employee_code, department, position, tell_code FROM users")
+        let row = sqlx::query(
+            r#"
+            SELECT employee_code, department, position, tell_code
+            FROM users
+            WHERE id = $1::uuid
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(row.map(|r| UserProfile {
+            employee_code: r.get("employee_code"),
+            department: r.get("department"),
+            position: r.get("position"),
+            tell_code: r.get("tell_code"),
+        }))
     }
 
     async fn set_profile(
@@ -341,8 +357,38 @@ impl UserRepository for PgUserRepository {
         id: &str,
         profile: &UserProfile,
     ) -> AppResult<()> {
-        let _ = (tx, id, profile);
-        todo!("C1c: UPDATE users SET the four profile columns")
+        fn norm(s: &Option<String>) -> Option<&str> {
+            s.as_deref().map(str::trim).filter(|v| !v.is_empty())
+        }
+        let res = sqlx::query(
+            r#"
+            UPDATE users
+            SET employee_code = $1,
+                department = $2,
+                position = $3,
+                tell_code = $4
+            WHERE id = $5::uuid
+            "#,
+        )
+        .bind(norm(&profile.employee_code))
+        .bind(norm(&profile.department))
+        .bind(norm(&profile.position))
+        .bind(norm(&profile.tell_code))
+        .bind(id)
+        .execute(&mut **tx)
+        .await;
+
+        if let Err(e) = res {
+            if let sqlx::Error::Database(ref db_err) = e
+                && db_err.code().as_deref() == Some("23505")
+                && db_err.constraint() == Some("users_org_employee_code_key")
+            {
+                return Err(AppError::Conflict("employeeCodeTaken".into()));
+            }
+            return Err(AppError::Database(e));
+        }
+
+        Ok(())
     }
 
     async fn list_audit(
