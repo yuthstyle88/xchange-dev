@@ -41,7 +41,7 @@ use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xchange::application::compat::v2_json::{
     People, PersonLabel, V2Json, balances_json, branches_json, custody_time_json, customers_json,
-    delta_json, money_json, movements_json, operations_json, rate_history_json, rate_json,
+    delta_json, money_json, movements_json, operations_json, operations_with_safe_json, rate_history_json, rate_json,
     rates_json, shifts_json, stock_delta_json, time_json, time_or_empty_json,
 };
 
@@ -1446,13 +1446,10 @@ fn events_are_printed_in_the_order_given_with_their_stored_details() {
 
 #[test]
 fn the_safe_the_target_and_the_entity_are_printed_once_they_exist() {
+    // LG-6.r5 (#1044): the safe is the ledger SAFE's balances, handed in beside the custody state.
+    let safe = balances(&[("THB", "500000"), ("USD", "9800.25"), ("EUR", "2001")]);
     let state = CustodyState {
         phase: Phase::Ready,
-        safe: Some(balances(&[
-            ("THB", "500000"),
-            ("USD", "9800.25"),
-            ("EUR", "2001"),
-        ])),
         target: Some(CashTarget {
             amounts: balances(&[("THB", "100000"), ("USD", "2000")]),
             by: "E-FINANCE".to_string(),
@@ -1467,7 +1464,7 @@ fn the_safe_the_target_and_the_entity_are_printed_once_they_exist() {
         service_opened_at: Some(custody_at("2026-10-06T05:23:00.000Z")),
         ..CustodyState::initial()
     };
-    let printed = operations_json(&state, &[], &hand_people());
+    let printed = operations_with_safe_json(&state, Some(&safe), &[], &hand_people());
     // CA-10 (#626 Q6, Q8 A): the compat snapshot keeps the retired keys as constants, whatever the state
     assert_eq!(member(&printed, "enabled"), &V2Json::Bool(false));
     assert_eq!(member(&printed, "requests").to_text(), "[]");

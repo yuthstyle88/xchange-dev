@@ -1356,10 +1356,6 @@ fn balances_of(object: &Value) -> Balances {
     Balances::of(&pairs)
 }
 
-fn optional_balances(value: &Value, key: &str) -> Option<Balances> {
-    value.get(key).filter(|v| !v.is_null()).map(balances_of)
-}
-
 fn delta_of(object: &Value) -> StockDelta {
     let map = object
         .as_object()
@@ -1442,7 +1438,6 @@ fn cutoff_of(value: &Value) -> Cutoff {
 pub fn state_of(ops: &Value) -> CustodyState {
     CustodyState {
         phase: phase_of(&text_of(ops, "phase")),
-        safe: optional_balances(ops, "safe"),
         target: ops.get("target").filter(|v| !v.is_null()).map(target_of),
         entity: ops.get("entity").filter(|v| !v.is_null()).map(|e| Entity {
             company: text_of(e, "company"),
