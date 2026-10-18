@@ -127,4 +127,18 @@ pub trait CashPostings: Send + Sync {
         tx: &'a mut Transaction<'_, Postgres>,
         place: &'a CashPlace,
     ) -> BoxFuture<'a, AppResult<Balances>>;
+
+    /// `None` when `place` has never had an entry; otherwise one signed net per currency that ever
+    /// had one, zeros included, sorted by currency code (§4.2.1, LG-6.r5 #1044).
+    fn activity_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _place: &'a CashPlace,
+    ) -> BoxFuture<'a, AppResult<Option<Vec<(CurrencyCode, MoneyDelta)>>>> {
+        Box::pin(async move {
+            Err(pos_error::AppError::Internal(
+                "activity_in is not implemented by this CashPostings".into(),
+            ))
+        })
+    }
 }

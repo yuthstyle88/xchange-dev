@@ -27,20 +27,23 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
+use xc_cash::domain::posting::{CashPlace, CashPostings};
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CompatRate, Side};
+use xc_kernel::money::{CompatRate, Money, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::shift::value_objects::balances::Balances;
 
 use crate::application::compat::snapshot_sources::{
     MemberMark, SnapshotSources, SnapshotTransaction,
 };
 use crate::application::compat::v2_json::{
-    V2Json, branches_json, customers_json, money_json, movements_json, operations_json,
+    V2Json, branches_json, customers_json, money_json, movements_json, operations_with_safe_json,
     rate_history_json, shifts_json, shortest, time_json, time_or_empty_json,
 };
 use crate::application::settings::rules_v2_json;
@@ -178,10 +181,35 @@ impl SnapshotBuilder {
     /// names of its people joined in.
     async fn operations(&self, branch: &BranchId) -> AppResult<V2Json> {
         let state = self.custody.state(branch).await?;
+        let pool = self.customers.branch_tx().pool();
+        let safe = ledger_safe(pool, branch).await?;
         let events = self.custody.events(branch).await?;
         let people = self.sources.people(branch).await?;
-        Ok(operations_json(&state, &events, &people))
+        Ok(operations_with_safe_json(
+            &state,
+            safe.as_ref(),
+            &events,
+            &people,
+        ))
     }
+}
+
+/// Reads the branch safe from the ledger `SAFE` account (`None` when the
+/// branch has no `SAFE` account row; `Some(Balances)` once any currency has
+/// been posted, clamping negative balances to zero for unsigned `Balances`).
+pub async fn ledger_safe(pool: &sqlx::PgPool, branch: &BranchId) -> AppResult<Option<Balances>> {
+    let mut tx = pool.begin().await.map_err(AppError::Database)?;
+    let activity = LedgerCashPostings::new()
+        .activity_in(&mut tx, &CashPlace::Safe(branch.clone()))
+        .await?;
+    tx.commit().await.map_err(AppError::Database)?;
+    Ok(activity.map(|rows| {
+        let pairs: Vec<_> = rows
+            .into_iter()
+            .map(|(code, delta)| (code, delta.to_money().unwrap_or(Money::ZERO)))
+            .collect();
+        Balances::of(&pairs)
+    }))
 }
 
 /// A snapshot as the six write actions answer it (`adminSaveRate`,
