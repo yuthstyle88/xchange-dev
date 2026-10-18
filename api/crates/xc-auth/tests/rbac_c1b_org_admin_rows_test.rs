@@ -10,7 +10,7 @@ use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 
-const USERS_MANAGE_ROWS: [&str; 8] = [
+const USERS_MANAGE_ROWS: [&str; 6] = [
     "userSuspend",
     "userResume",
     "userEnable",
