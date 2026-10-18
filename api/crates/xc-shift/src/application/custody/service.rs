@@ -20,7 +20,6 @@ use crate::domain::custody::state::CustodyState;
 use crate::domain::custody::value_objects::custody_actor::CustodyActor;
 use crate::domain::custody::value_objects::custody_error::CustodyError;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
-use crate::domain::custody::value_objects::phase::Phase;
 use crate::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
 use crate::domain::custody::value_objects::service_window::ServiceWindow;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
@@ -128,24 +127,6 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
         actor: &CustodyActor,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        let state = self.repo.load_state_in(tx, branch).await?;
-        if state
-            .holds
-            .iter()
-            .any(|h| h.customer_id == save.customer_id && h.status == HoldStatus::Open)
-        {
-            return Err(map_custody_error(CustodyError::CustomerOnHold));
-        }
-
-        let custody_now = CustodyTime::from_epoch_millis(now.timestamp_millis());
-        let (service_window, _) = self
-            .facts
-            .service_window_in(tx, branch, custody_now)
-            .await?;
-        if save.prior == PriorSave::None && !service_window.allows_save(custody_now) {
-            return Err(map_custody_error(CustodyError::SaveClosed));
-        }
-
         let saver_actor_id = actor
             .employee_id
             .as_deref()
@@ -155,47 +136,14 @@ impl<R: CustodyRepository, S: ShiftRepository> CustodyService<R, S> {
             .shifts
             .teller_of_actor_in(tx, branch, saver_actor_id)
             .await?;
-        let own_shift: Option<String> = match teller_id
-            .as_deref()
-            .and_then(|id| uuid::Uuid::parse_str(id).ok())
-        {
-            Some(teller_uuid) => {
-                sqlx::query_scalar(
-                    "SELECT id FROM shifts \
-                     WHERE branch_id = $1 AND teller_id = $2 AND status = 'OPEN'",
-                )
-                .bind(branch.as_str())
-                .bind(teller_uuid)
-                .fetch_optional(&mut **tx)
-                .await?
-            }
-            None => None,
-        };
-
         let saver = Actor::new(
             teller_id.as_deref().unwrap_or(saver_actor_id),
             "",
             Vec::new(),
             None,
         );
-        let phase = if state.phase == Phase::CutOff {
-            Phase::CutOff
-        } else {
-            Phase::Open
-        };
-        let window_needs_draft = service_window.needs_draft(custody_now);
-        BranchDay::check_save(
-            phase,
-            &saver,
-            own_shift.as_deref(),
-            &state.drafts,
-            save,
-            window_needs_draft,
-        )
-        .map_err(|err| match err {
-            CustodyError::NoOpenShift => ShiftError::NoOpenShift.into(),
-            other => map_custody_error(other),
-        })
+        self.check_teller_save_in(tx, branch, save, &saver, now)
+            .await
     }
 
     /// CA-7 (#623, `cash-shift-transfer.md` §4.3): the save gate for a Blueprint-session teller (`C1`).
