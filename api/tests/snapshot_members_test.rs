@@ -6,7 +6,7 @@
 //! `ServiceSnapshotSources --> PgMemberRepository`, §5.6.8, §10 row T15-g).
 //!
 //! v2 (`108-Plaza/xchange-v2-source` `4d0bdbb`, `src/online/lib/ledger.ts:37`):
-//! `SELECT customer_id,verified_at FROM members WHERE branch_id=?`, then every
+//! `SELECT customer_id,verified_at` from v2's `members` table of the branch, then every
 //! customer gets `member` (has a row of that branch) and `memberVerifiedAt`
 //! (that row's `verified_at`, else `null`). Re-issuing a member replaces the row
 //! of (branch, customer) in place (`src/online/lib/bookings.ts:80`).
