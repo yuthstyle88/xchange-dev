@@ -2,6 +2,8 @@
 //! through its ports, the v2 fixture, and the written form in which a branch is
 //! compared with what v2 held.
 //! Provided with ticket T10 — do not edit.
+//! CA-10 (#626, #2955): the fake answers the core's `CustodyFactsPort` (the v2 `CustodyPorts` is no longer asked),
+//! and the written form no longer carries `CustodyState.requests` (deleted with the request model).
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -10,23 +12,19 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, SecondsFormat, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
-use xc_shift::application::custody::service::CustodyService;
+use xc_shift::application::custody::service::{CustodyFactsPort, CustodyService};
 use xc_shift::domain::custody::entities::stored_event::StoredEvent;
-use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
-use xc_shift::domain::shift::entities::shift::ShiftStatus;
-use xc_shift::domain::shift::value_objects::stock_delta::Direction;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
-use crate::custody_common::{actor, shown_state};
-use crate::shift_service_common::{TestDb, shown_balances, shown_delta};
+use crate::shift_service_common::TestDb;
 
 pub type Custody = CustodyService<PgCustodyRepository, PgShiftRepository>;
 
@@ -47,7 +45,7 @@ struct Outside {
 }
 
 /// What the other contexts would answer (rates, transactions, customers, files,
-/// employees), set by the test. The service reaches them only through `CustodyPorts`.
+/// employees), set by the test. The service reaches them only through `CustodyFactsPort`.
 #[derive(Default)]
 pub struct FakeOutside {
     inner: Mutex<Outside>,
@@ -97,76 +95,46 @@ impl FakeOutside {
     }
 }
 
-impl CustodyPorts for FakeOutside {
-    fn outside_facts<'a>(
+impl CustodyFactsPort for FakeOutside {
+    fn service_window_in<'a>(
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
         _branch: &'a BranchId,
-        _open_shift_id: Option<&'a str>,
-    ) -> BoxFuture<'a, AppResult<OutsideFacts>> {
+        _now: CustodyTime,
+    ) -> BoxFuture<'a, AppResult<(ServiceWindow, i32)>> {
+        // v2's hours, in Bangkok (UTC+7)
+        Box::pin(async move { Ok((crate::custody_common::v2_hours(), 7 * 60)) })
+    }
+
+    fn has_live_rate_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<(bool, String)>> {
         Box::pin(async move {
             let o = self.inner.lock().unwrap();
-            Ok(OutsideFacts {
-                has_live_rate: o.has_live_rate,
-                rates_updated: o.rates_updated.clone(),
-                pending_transactions: o.pending_transactions.clone(),
-                last_transaction: o.last_transaction.clone(),
-            })
+            Ok((o.has_live_rate, o.rates_updated.clone()))
         })
     }
 
-    fn customer_known<'a>(
+    fn transactions_summary_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<(Vec<String>, Option<String>)>> {
+        Box::pin(async move {
+            let o = self.inner.lock().unwrap();
+            Ok((o.pending_transactions.clone(), o.last_transaction.clone()))
+        })
+    }
+
+    fn customer_exists_in<'a>(
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
         _branch: &'a BranchId,
         customer_id: &'a str,
     ) -> BoxFuture<'a, AppResult<bool>> {
         Box::pin(async move { Ok(self.inner.lock().unwrap().customers.contains(customer_id)) })
-    }
-
-    fn evidence_owned<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        branch: &'a BranchId,
-        owner_id: &'a str,
-        keys: &'a [String],
-    ) -> BoxFuture<'a, AppResult<bool>> {
-        Box::pin(async move {
-            let mut o = self.inner.lock().unwrap();
-            o.evidence_questions.push((
-                branch.as_str().to_owned(),
-                owner_id.to_owned(),
-                keys.to_vec(),
-            ));
-            Ok(keys.iter().all(|k| !o.foreign_evidence.contains(k)))
-        })
-    }
-
-    fn employee_role<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        employee_id: &'a str,
-    ) -> BoxFuture<'a, AppResult<Option<CustodyRole>>> {
-        Box::pin(async move {
-            let o = self.inner.lock().unwrap();
-            if let Some(answer) = o.employees.get(employee_id) {
-                return Ok(*answer);
-            }
-            // the usual cast: F1, FIN1, MON1, MGR1, BE1 … are employees of every test branch
-            let known = ["F", "FIN", "MON", "MGR", "BE", "RT"]
-                .contains(&employee_id.trim_end_matches(|c: char| c.is_ascii_digit()));
-            Ok(known.then(|| actor(employee_id).role))
-        })
-    }
-
-    fn service_window<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        _now: CustodyTime,
-    ) -> BoxFuture<'a, AppResult<ServiceWindow>> {
-        Box::pin(async move { Ok(crate::custody_common::v2_hours()) })
     }
 }
 
@@ -299,43 +267,12 @@ fn event_json(e: &StoredEvent) -> Value {
 }
 
 fn times_json(st: &CustodyState) -> Value {
-    let rows = |sheet: &Option<
-        xc_shift::domain::custody::value_objects::count_sheet::CountSheet,
-    >| {
-        sheet
-            .as_ref()
-            .map(|s| {
-                json!(
-                    s.denominations
-                        .iter()
-                        .map(|d| json!([d.currency.as_str(), d.denomination.to_string(), d.count]))
-                        .collect::<Vec<_>>()
-                )
-            })
-            .unwrap_or(Value::Null)
-    };
-    let shown = |b: &xc_shift::domain::shift::value_objects::balances::Balances| {
-        balances_json(&shown_balances(b))
-    };
     json!({
         "entity": st.entity.as_ref().map(|e| iso_ct(e.at)).unwrap_or(Value::Null),
         "target": st.target.as_ref().map(|t| iso_ct(t.at)).unwrap_or(Value::Null),
         "cutoff": st.cutoff.as_ref().map(|c| iso_ct(c.at)).unwrap_or(Value::Null),
         "serviceOpened": iso_opt(st.service_opened_at),
         "attendance": st.attendance.iter().map(|a| json!([iso_ct(a.clock_in), iso_opt(a.clock_out)])).collect::<Vec<_>>(),
-        "requests": st.requests.iter().map(|r| json!({
-            "at": iso_ct(r.at),
-            "signatures": r.signatures.iter().map(|s| iso_ct(s.at)).collect::<Vec<_>>(),
-            "dispatched": iso_opt(r.dispatched_at),
-            "rejected": r.rejected.as_ref().map(|d| iso_ct(d.at)).unwrap_or(Value::Null),
-            "completed": iso_opt(r.completed_at),
-            "reconciled": r.reconciled.as_ref().map(|d| iso_ct(d.at)).unwrap_or(Value::Null),
-            "target": r.target.as_ref().map(|t| json!({ "amounts": shown(&t.amounts), "by": t.by, "at": iso_ct(t.at) })).unwrap_or(Value::Null),
-            "cutoff": r.cutoff.as_ref().map(|c| json!({ "at": iso_ct(c.at), "by": c.by, "shiftId": c.shift_id, "lastRef": c.last_ref, "pending": c.pending })).unwrap_or(Value::Null),
-            // rows are kept for the four counted kinds only; a transfer has none
-            "rows": if r.kind.is_transfer() { Value::Null } else { rows(&r.counted) },
-            "safeRows": rows(&r.safe_count),
-        })).collect::<Vec<_>>(),
         "holds": st.holds.iter().map(|h| json!([iso_ct(h.at), iso_opt(h.reviewed_at)])).collect::<Vec<_>>(),
         "drafts": st.drafts.iter().map(|d| iso_ct(d.at)).collect::<Vec<_>>(),
         "exceptions": st.exceptions.iter().map(|x| json!([iso_ct(x.at), iso_opt(x.reviewed_at)])).collect::<Vec<_>>(),
@@ -367,56 +304,6 @@ fn flatten(doc: &Value) -> BTreeMap<String, Value> {
         }
     }
     out
-}
-
-/// Everything a branch holds — custody state, its events, the shifts and the
-/// stock movements — in the fixture's written form: ids replaced, one entry per
-/// scalar part and per list element.
-pub async fn written(
-    db: &TestDb,
-    custody: &Custody,
-    branch: &BranchId,
-    result: &Value,
-    ids: &mut Ids,
-) -> BTreeMap<String, Value> {
-    let state = custody.state(branch).await.expect("read the custody state");
-    let events = custody.events(branch).await.expect("read the events");
-    let shifts = db.service().shifts(branch).await.expect("list shifts");
-    let movements = db
-        .service()
-        .movements(branch)
-        .await
-        .expect("list movements");
-    let shift_ids: Vec<&str> = shifts.iter().map(|s| s.id.as_str()).collect();
-
-    let mut ops: Map<String, Value> = shown_state(&state);
-    if let Some(Value::Array(requests)) = ops.get_mut("requests") {
-        for r in requests {
-            // the hash is this server's own; v2's is not compared
-            r.as_object_mut().unwrap().remove("payloadHash");
-        }
-    }
-    let doc = json!({
-        "events": events.iter().map(event_json).collect::<Vec<_>>(),
-        "movements": movements.iter().map(|m| json!({
-            "shift": shift_ids.iter().position(|id| *id == m.shift_id).map(|i| i as i64).unwrap_or(-1),
-            "currency": m.currency.as_str(),
-            "direction": if m.direction == Direction::In { "IN" } else { "OUT" },
-            "amount": m.amount.to_string(), "reason": m.reason, "requestId": m.request_id,
-        })).collect::<Vec<_>>(),
-        "ops": Value::Object(ops),
-        "result": result,
-        "shifts": shifts.iter().map(|s| json!({
-            "id": s.id,
-            "status": if s.status == ShiftStatus::Open { "OPEN" } else { "CLOSED" },
-            "opening": shown_balances(&s.opening), "expected": shown_balances(&s.expected),
-            "counted": s.counted.as_ref().map(shown_balances),
-            "difference": s.difference.as_ref().map(shown_delta),
-            "note": s.note, "openRequest": s.open_request_id, "closeRequest": s.close_request_id,
-        })).collect::<Vec<_>>(),
-        "times": times_json(&state),
-    });
-    flatten(&ids.normalise(&doc))
 }
 
 // ── a desk for the hand-written tests ───────────────────────────────────────
@@ -482,99 +369,5 @@ impl Desk {
     /// The time of the latest command sent through this desk.
     pub fn now(&self) -> DateTime<Utc> {
         bangkok("12:00") + chrono::Duration::minutes(self.minute)
-    }
-
-    pub async fn act(&mut self, who: &str, action: &str, payload: Value) -> AppResult<Value> {
-        let now = self.tick();
-        self.custody
-            .command(&self.branch, action, &payload, &actor(who), now)
-            .await
-    }
-
-    pub async fn ok(&mut self, who: &str, action: &str, payload: Value) -> Value {
-        match self.act(who, action, payload.clone()).await {
-            Ok(v) => v,
-            Err(e) => panic!("{who} {action} {payload} must be accepted: {e:?}"),
-        }
-    }
-
-    /// A proposal payload with a fresh request id and one evidence file.
-    pub fn proposal(&mut self, kind: &str, more: Value) -> Value {
-        self.request += 1;
-        let mut p = json!({
-            "requestId": request_id(self.request), "kind": kind,
-            "evidenceKeys": [evidence(self.request)], "note": "",
-        });
-        for (k, v) in more.as_object().expect("an object") {
-            p[k] = v.clone();
-        }
-        p
-    }
-
-    pub async fn propose(&mut self, who: &str, kind: &str, more: Value) -> String {
-        let p = self.proposal(kind, more);
-        let r = self.ok(who, "opsPropose", p).await;
-        r["id"].as_str().expect("an id").to_owned()
-    }
-
-    /// Custody enabled, everyone clocked in, a target set, the safe counted in
-    /// (THB 500,000 · USD 10,000).
-    pub async fn with_safe(db: &TestDb) -> Desk {
-        let mut d = Desk::new(db).await;
-        d.ok(
-            "owner",
-            "opsSetEntity",
-            json!({ "company": "XC", "site": "B", "confirmSeparated": true }),
-        )
-        .await;
-        d.ok("owner", "opsEnable", json!({})).await;
-        for who in ["F1", "F2", "FIN1", "FIN2", "MON1", "MGR1", "BE1", "BE2"] {
-            d.ok(who, "opsClock", json!({ "direction": "IN" })).await;
-        }
-        d.ok(
-            "FIN1",
-            "opsTarget",
-            json!({ "amounts": { "THB": 100000, "USD": 2000 } }),
-        )
-        .await;
-        let safe = [("THB", 500_000), ("USD", 10_000)];
-        let id = d
-            .propose(
-                "FIN1",
-                "SAFE_OPEN",
-                json!({ "counted": totals(&safe), "denominations": rows(&safe) }),
-            )
-            .await;
-        d.ok("MON1", "opsSign", json!({ "id": id })).await;
-        d.ok("BE1", "opsCommit", json!({ "id": id })).await;
-        d
-    }
-
-    /// `with_safe`, then F1 has proposed opening the drawer with THB 100,000 · USD 2,000.
-    /// Returns the request's id; Backend has not committed it yet.
-    pub async fn opening_proposed(db: &TestDb) -> (Desk, String) {
-        let mut d = Desk::with_safe(db).await;
-        let drawer = [("THB", 100_000), ("USD", 2_000)];
-        let id = d
-            .propose(
-                "F1",
-                "OPEN",
-                json!({ "counted": totals(&drawer), "denominations": rows(&drawer) }),
-            )
-            .await;
-        (d, id)
-    }
-
-    /// The drawer is open and serving: F1 holds THB 100,000 · USD 2,000.
-    pub async fn serving(db: &TestDb) -> Desk {
-        let (mut d, id) = Desk::opening_proposed(db).await;
-        d.ok("BE1", "opsCommit", json!({ "id": id })).await;
-        d.ok(
-            "BE1",
-            "opsStartService",
-            json!({ "equipmentReady": true, "ratesVerified": true, "rateUpdated": "2026-10-06T03:00:00.000Z" }),
-        )
-        .await;
-        d
     }
 }

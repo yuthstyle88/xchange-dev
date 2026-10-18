@@ -240,13 +240,12 @@ async fn seed_open_shift_for_teller(pool: &PgPool, branch: &BranchId, teller_id:
     .expect("insert cash count");
 
     sqlx::query(
-        "INSERT INTO shifts (id, branch_id, opened_by, opened_at, status, teller_id, open_request_id, opened_by_count) \
-         VALUES ($1, $2, 'test', now(), 'OPEN', $3, $1, $4)",
+        "INSERT INTO shifts (id, branch_id, opened_by, opened_at, status, teller_id, open_request_id) \
+         VALUES ($1, $2, 'test', now(), 'OPEN', $3, $1)",
     )
     .bind(&shift_id)
     .bind(branch.as_str())
     .bind(teller_uuid)
-    .bind(count_id)
     .execute(pool)
     .await
     .expect("insert open shift");
@@ -258,7 +257,7 @@ async fn set_branch_phase(pool: &PgPool, branch: &BranchId, phase: Phase) {
     let mut tx = pool.begin().await.unwrap();
     let before = repo.load_state_in(&mut tx, branch).await.unwrap();
     let mut after = before.clone();
-    after.enabled = true;
+    // CA-10 (#626, #2955): no `enabled` switch any more; the checks always apply (Q2).
     after.phase = phase;
     repo.store_state_in(&mut tx, branch, &before, &after)
         .await

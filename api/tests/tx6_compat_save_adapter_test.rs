@@ -24,6 +24,7 @@
 mod common;
 mod compat_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use compat_common::Fixture;
@@ -111,6 +112,7 @@ fn refused(answer: &Answer, what: &str) -> String {
 async fn a_compat_save_is_completed_through_a_quote_it_accepted() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     assert_eq!(
         rows(&replay).await,
         NONE,
@@ -158,6 +160,7 @@ async fn a_compat_save_is_completed_through_a_quote_it_accepted() {
 async fn a_repeated_submission_quotes_nothing_again() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let payload = payload_of(&replay, LIVE_BUY_CASH);
 
     let first = save(&replay, &payload).await;
@@ -193,6 +196,7 @@ async fn a_repeated_submission_quotes_nothing_again() {
 async fn a_compat_save_over_the_limit_is_approval_required_and_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     // #120 settles 3,220.00 THB; the limit is below it
     sqlx::query(
         "INSERT INTO branch_exchange_limits (organization_id, branch_id, approval_limit_thb, \
@@ -227,29 +231,30 @@ async fn a_compat_save_over_the_limit_is_approval_required_and_leaves_nothing() 
 async fn a_compat_save_refused_for_stock_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let answer = save(&replay, &payload_of(&replay, NOT_ENOUGH_USD_AT)).await;
     assert_eq!(refused(&answer, "#114 SELL 750 USD"), NOT_ENOUGH_USD);
     assert_eq!(rows(&replay).await, NONE);
     replay.finish().await;
 }
 
-/// A custody refusal (custody on, the counter not open) leaves nothing (§4.6).
+/// A custody refusal (the counter not open) leaves nothing (§4.6).
 #[actix_web::test]
 async fn a_compat_save_refused_by_custody_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
     replay.desk.custody_on("MAIN").await;
+    // CA-10 (#626, batch PR 3108), setup only: the replay opens MAIN's day before its own recorded saves
+    // (`rpc_common`, ruling A try 2), and `custody_on` keeps an existing day; this test's counter is closed.
+    sqlx::query("UPDATE ops_state SET phase = 'CLOSED' WHERE branch_id = 'MAIN'")
+        .execute(&replay.desk.db.pool)
+        .await
+        .expect("close MAIN's day");
     let answer = save(&replay, &payload_of(&replay, LIVE_BUY_CASH)).await;
     refused(&answer, "#120 with custody on and the counter closed");
     assert_eq!(rows(&replay).await, NONE);
-
-    // the same request is saved once custody is off again: the refusal was custody's
-    sqlx::query("UPDATE ops_state SET enabled = false WHERE branch_id = 'MAIN'")
-        .execute(&replay.desk.db.pool)
-        .await
-        .expect("switch custody off");
-    let saved = save(&replay, &payload_of(&replay, LIVE_BUY_CASH)).await;
-    assert_eq!(saved.status, 200, "{:.300}", saved.text);
+    // CA-10 (#626 Q2): there is no custody-off switch any more, so the half that saved the same request with
+    // custody off retired; the refusal and its empty write are the rule that stays.
     replay.finish().await;
 }
 
@@ -258,6 +263,7 @@ async fn a_compat_save_refused_by_custody_leaves_nothing() {
 async fn a_compat_save_refused_for_payment_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let methods = json!([
         { "id": "Cash", "enabled": true, "buy": false, "sell": true, "account": "", "instruction": "" },
         { "id": "Credit Card", "enabled": true, "buy": false, "sell": true, "account": "", "instruction": "" },
@@ -300,6 +306,7 @@ async fn a_compat_save_refused_for_payment_leaves_nothing() {
 async fn the_passport_spelling_does_not_change_the_submission() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
+    shift_holder_common::open_day(&replay.desk.db.pool, "MAIN").await;
     let payload = payload_of(&replay, LIVE_BUY_CASH);
     assert_eq!(payload["passportNo"], json!(PASSPORT));
 

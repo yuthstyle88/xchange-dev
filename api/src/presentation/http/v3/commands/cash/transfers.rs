@@ -9,11 +9,12 @@ use sqlx::PgPool;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_cash::application::transfer::TransferFlow;
+use xc_cash::application::transfer::transfer_flow::TRANSFER_TOTAL_EXCEEDS_COLUMN;
 use xc_cash::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, NewTransferLine, TransferKind,
 };
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, IntBound};
 
 use super::{caller_in, from_cash_error, validation_failed, whole_number};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -23,6 +24,7 @@ use crate::presentation::dto::v3::cash::{
 };
 use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
 
 fn answer(t: CashTransfer) -> CashRecordOutput {
     CashRecordOutput {
@@ -31,12 +33,21 @@ fn answer(t: CashTransfer) -> CashRecordOutput {
     }
 }
 
-fn line(currency: &str, denomination_id: i64, field: &'static str, qty: &str) -> Result<NewTransferLine, V3Error> {
+fn line(
+    currency: &str,
+    denomination_id: i64,
+    field: &'static str,
+    qty: &str,
+) -> Result<NewTransferLine, V3Error> {
+    let q = whole_number(field, qty)?;
+    if field == "qty" {
+        input::integer("qty", q.into(), IntBound::integer(1, i32::MAX.into()))?;
+    }
     Ok(NewTransferLine {
         currency: CurrencyCode::parse(currency)
             .map_err(|_| validation_failed("currency", "unknown currency"))?,
         denomination_id,
-        qty: whole_number(field, qty)?,
+        qty: q,
     })
 }
 
@@ -97,7 +108,7 @@ impl CommandAction for TransferCreate {
             .await
             .map_err(|e| match e {
                 pos_error::AppError::Domain(ref m) | pos_error::AppError::Validation(ref m)
-                    if m.contains("overflows i64") =>
+                    if m == TRANSFER_TOTAL_EXCEEDS_COLUMN || m.contains("overflows i64") =>
                 {
                     validation_failed("lines", m.clone())
                 }

@@ -261,8 +261,8 @@ impl Room {
                 .expect("insert a branch");
             // USD 500.00 in each safe, for the transfer flow
             sqlx::query(
-                "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-                 VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+                "INSERT INTO ops_state (branch_id, phase, safe) \
+                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
             )
             .bind(branch)
             .execute(&pool)

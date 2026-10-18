@@ -42,6 +42,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -380,17 +381,18 @@ impl Room {
             .await
             .expect("reserve the customer")
             .customer_id;
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let slip_key = if slip {
             Some(
                 self.desk
                     .files
-                    .upload(&here, "owner", "application/pdf", PDF, t)
+                    .upload(&here, &saver, "application/pdf", PDF, t)
                     .await
                     .expect("upload a slip"),
             )
@@ -424,7 +426,7 @@ impl Room {
         let saved = self
             .desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange in {branch}: {e:?}"));
         let receipt = saved
@@ -912,11 +914,13 @@ async fn admin_request_status_is_unversioned_and_writes_nothing() {
     assert_eq!(abandoned, 0, "asking gives nothing up");
 
     // the id asked about is still free to be used (RE-7 #604: by a shift opened with it, where
-    // it was a direct rate save before RE-7 removed that action)
+    // it was a direct rate save before RE-7 removed that action; re-expected for CA-10 #626 by the
+    // ticket author: by a branch created with it, the direct shift open being retired too, design
+    // `cash-shift-transfer.md` §6)
     room.ok(
         "OWNER",
-        "adminOpenShift",
-        json!({ "branchId": MAIN, "requestId": id, "opening": { "THB": 100000, "USD": 1000 } }),
+        "adminCreateBranch",
+        json!({ "requestId": id, "name": "Request Status Branch" }),
     )
     .await;
     let data = room
@@ -1322,14 +1326,13 @@ async fn admin_shift_state_lists_every_open_shift_of_the_branch_with_its_teller(
         .await
         .expect("insert the OPEN count");
         sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count) \
-             VALUES ($1, $2, 'OPEN', now() - make_interval(mins => $3), 'test', $1, $4, $5)",
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', now() - make_interval(mins => $3), 'test', $1, $4)",
         )
         .bind(format!("SH-ca10p-{count}"))
         .bind(B9)
         .bind(minutes)
         .bind(teller)
-        .bind(count)
         .execute(pool)
         .await
         .expect("insert the OPEN shift");

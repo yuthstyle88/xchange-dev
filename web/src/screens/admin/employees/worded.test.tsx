@@ -31,7 +31,6 @@ const SAMPLE_BRANCHES: AdminBranchItem[] = [
 ];
 
 const SAMPLE_OPERATIONS: AdminOperationsData = {
-  enabled: false,
   entity: {
     company: '108 Exchange Co., Ltd.',
     site: 'Headquarters',
@@ -622,7 +621,7 @@ describe('Employees worded error handling (#1764)', () => {
         jsonResponse({
           version: 2,
           changed: true,
-          data: { enabled: true, entity: { company: 'Second Branch Co.', site: 'Kiosk' } },
+          data: { entity: { company: 'Second Branch Co.', site: 'Kiosk' } },
         });
       employeesHandler = () =>
         jsonResponse(

@@ -19,8 +19,8 @@
 //!   v3 does the same on exact decimals through `xc_kernel::money::{typed_decimal,
 //!   round_cents, fixed2, fixed6}` (CA7): a half cent goes up.
 //!
-//! Every shift is seeded through `ShiftService` (open, move, close, and a
-//! transaction's delta through `apply_delta_in`) against a real PostgreSQL:
+//! Every shift is seeded against a real PostgreSQL (CA-10 #626/#2955: open, move and close straight into the
+//! tables, a transaction's delta through `apply_delta_for_teller_in`; v2's shift path is deleted):
 //! `TEST_DATABASE_URL` must name an existing database whose name ends in
 //! `_test`. These tests fail without it; they do not skip. Each test works in a
 //! schema of its own.
@@ -49,12 +49,8 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, fixed2, fixed6, round_cents};
+use xc_kernel::money::{CurrencyCode, MoneyDelta, fixed2, fixed6, round_cents};
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::close_shift::CloseShift;
-use xc_shift::domain::shift::commands::move_stock::MoveStock;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::bootstrap::{self, AppState};
@@ -100,15 +96,6 @@ fn at(seconds: i64) -> DateTime<Utc> {
 
 fn cur(code: &str) -> CurrencyCode {
     CurrencyCode::parse(code).unwrap_or_else(|_| panic!("{code} is a register currency"))
-}
-
-fn money(text: &str) -> Money {
-    Money::parse(text).unwrap_or_else(|e| panic!("{text}: {e}"))
-}
-
-fn balances(pairs: &[(&str, &str)]) -> Balances {
-    let pairs: Vec<(CurrencyCode, Money)> = pairs.iter().map(|(c, a)| (cur(c), money(a))).collect();
-    Balances::of(&pairs)
 }
 
 fn d(text: &str) -> Decimal {
@@ -175,6 +162,8 @@ impl TestDb {
             .await
             .expect("insert the branches this file names into branches");
         seed_opener(&pool, "owner-1").await;
+        // CA-10 (#626): after M3 a teller holds one OPEN shift, so XC-B02's shifts are opened by a second opener
+        seed_opener(&pool, "owner-2").await;
         Self { pool, schema }
     }
 
@@ -185,46 +174,103 @@ impl TestDb {
         )
     }
 
-    /// Opens a shift on `branch` with `opening`; answers its id.
-    async fn open(&self, branch: &str, opening: &[(&str, &str)]) -> String {
-        self.service()
-            .open(
-                &BranchId::new(branch),
-                OpenShift {
-                    request_id: rid(),
-                    opening: balances(opening),
-                },
-                "owner-1",
-                at(0),
-            )
+    /// The `users.id` of the seeded opener `owner-1`.
+    /// The `users.id` of the opener of `branch`'s shifts (`owner-2` at XC-B02, `owner-1` elsewhere).
+    async fn teller_at(&self, branch: &str) -> String {
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(opener_at(branch))
+            .fetch_one(&self.pool)
             .await
-            .expect("open a shift")
-            .id
+            .expect("the opener's user")
+    }
+
+    async fn teller(&self) -> String {
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'owner-1'")
+            .fetch_one(&self.pool)
+            .await
+            .expect("the opener's user")
+    }
+
+    /// Opens a shift on `branch` with `opening`; answers its id.
+    /// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core; the same OPEN shift is written
+    /// straight into the tables (setup only).
+    async fn open(&self, branch: &str, opening: &[(&str, &str)]) -> String {
+        let id = format!("SH-{}", uuid::Uuid::new_v4());
+        sqlx::query(
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', $3, $6, '', $4, $5::uuid)",
+        )
+        .bind(&id)
+        .bind(branch)
+        .bind(at(0))
+        .bind(rid())
+        .bind(self.teller_at(branch).await)
+        .bind(opener_at(branch))
+        .execute(&self.pool)
+        .await
+        .expect("open a shift");
+        for (code, amount) in opening {
+            sqlx::query(
+                "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                 SELECT $1, $2, $3::numeric, $3::numeric WHERE $3::numeric <> 0",
+            )
+            .bind(&id)
+            .bind(code)
+            .bind(amount)
+            .execute(&self.pool)
+            .await
+            .expect("an opening balance");
+        }
+        id
     }
 
     /// One manual movement of the open shift `shift` (a `stock_movements` row).
+    /// CA-10: v2's `move_stock` is deleted; the same row and expected figure are written straight in (setup only).
     async fn movement(&self, branch: &str, shift: &str, code: &str, dir: Direction, amount: &str) {
-        self.service()
-            .move_stock(
-                &BranchId::new(branch),
-                MoveStock {
-                    request_id: rid(),
-                    shift_id: shift.to_owned(),
-                    currency: cur(code),
-                    direction: dir,
-                    amount: money(amount),
-                    reason: "ทดสอบ".to_owned(),
-                },
-                "owner-1",
-                at(1),
-            )
-            .await
-            .expect("move stock");
+        let (direction, signed) = match dir {
+            Direction::In => ("IN", amount.to_owned()),
+            Direction::Out => ("OUT", format!("-{amount}")),
+        };
+        sqlx::query(
+            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
+             VALUES ($1, $2, $3, $4, $5, $6::numeric, 'ทดสอบ', $7, $8, 'owner-1')",
+        )
+        .bind(format!("MV-{}", uuid::Uuid::new_v4()))
+        .bind(branch)
+        .bind(shift)
+        .bind(code)
+        .bind(direction)
+        .bind(amount)
+        .bind(rid())
+        .bind(at(1))
+        .execute(&self.pool)
+        .await
+        .expect("move stock");
+        // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
+        // ON CONFLICT is reached), then the move
+        sqlx::query(
+            "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, 0) \
+             ON CONFLICT (shift_id, code) DO NOTHING",
+        )
+        .bind(shift)
+        .bind(code)
+        .execute(&self.pool)
+        .await
+        .expect("a balance row for the movement");
+        sqlx::query(
+            "UPDATE shift_balances SET expected = expected + $3::numeric WHERE shift_id = $1 AND code = $2",
+        )
+        .bind(shift)
+        .bind(code)
+        .bind(&signed)
+        .execute(&self.pool)
+        .await
+        .expect("move the expected figure");
     }
 
-    /// A transaction's effect on the open shift's expected balance, through
-    /// `ShiftService::apply_delta_in` (no `stock_movements` row). `minor` is
-    /// signed hundredths.
+    /// A transaction's effect on the open shift's expected balance (no `stock_movements` row). `minor` is
+    /// signed hundredths. CA-10: through the kept per-teller seam `apply_delta_for_teller_in` (the teller is the
+    /// shift's opener), where v2's `apply_delta_in` is deleted.
     async fn trade(&self, branch: &str, pairs: &[(&str, i128)]) {
         let pairs: Vec<(CurrencyCode, MoneyDelta)> = pairs
             .iter()
@@ -232,41 +278,64 @@ impl TestDb {
             .collect();
         let delta = StockDelta::of(&pairs);
         let service = self.service();
+        let teller = self.teller().await;
         let b = BranchId::new(branch);
         let on = b.clone();
         let branch_tx = service.branch_tx().clone();
         branch_tx
             .run(&on, move |tx| {
-                Box::pin(async move { service.apply_delta_in(tx, &b, &delta).await })
+                Box::pin(async move {
+                    service
+                        .apply_delta_for_teller_in(tx, &b, &teller, &delta)
+                        .await
+                })
             })
             .await
             .expect("apply a transaction's delta");
     }
 
-    /// Closes the open shift `shift`, claiming `expected` and counting `counted`.
+    /// Closes the open shift `shift`, counting `counted` (the claimed `expected` was v2's check, which a
+    /// recorded close passed). CA-10: v2's `close` is deleted; the same close is written straight in (setup only):
+    /// counted per currency, `difference = counted - expected`.
     async fn close(
         &self,
-        branch: &str,
+        _branch: &str,
         shift: &str,
-        expected: Value,
+        _expected: Value,
         counted: &[(&str, &str)],
         note: &str,
     ) {
-        self.service()
-            .close(
-                &BranchId::new(branch),
-                CloseShift {
-                    request_id: rid(),
-                    shift_id: shift.to_owned(),
-                    counted: balances(counted),
-                    claimed_expected: expected,
-                    note: note.to_owned(),
-                },
-                "owner-1",
-                at(2),
+        sqlx::query(
+            "UPDATE shifts SET status = 'CLOSED', closed_at = $1, closed_by = 'owner-1', close_note = $2, \
+             close_request_id = $3 WHERE id = $4",
+        )
+        .bind(at(2))
+        .bind(note)
+        .bind(rid())
+        .bind(shift)
+        .execute(&self.pool)
+        .await
+        .expect("close the shift");
+        for (code, amount) in counted {
+            sqlx::query(
+                "INSERT INTO shift_balances (shift_id, code, opening, expected, counted) VALUES ($1, $2, 0, 0, $3::numeric) \
+                 ON CONFLICT (shift_id, code) DO UPDATE SET counted = $3::numeric",
             )
+            .bind(shift)
+            .bind(code)
+            .bind(amount)
+            .execute(&self.pool)
             .await
-            .expect("close the shift");
+            .expect("a counted balance");
+        }
+        sqlx::query(
+            "UPDATE shift_balances SET counted = COALESCE(counted, 0), difference = COALESCE(counted, 0) - expected \
+             WHERE shift_id = $1",
+        )
+        .bind(shift)
+        .execute(&self.pool)
+        .await
+        .expect("close the balances");
     }
 
     /// Every `branch_versions` row, in branch order.
@@ -1406,4 +1475,13 @@ async fn seed_opener(pool: &PgPool, id: &str) {
     .execute(pool)
     .await
     .expect("seed an opener's user");
+}
+
+/// CA-10 (#626): one OPEN shift per teller after M3, so each branch's shifts have an opener of their own.
+fn opener_at(branch: &str) -> &'static str {
+    if branch == "XC-B02" {
+        "owner-2"
+    } else {
+        "owner-1"
+    }
 }

@@ -24,7 +24,6 @@ use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_rate::domain::rate::entities::rate_change::RateChange;
 use xc_shift::domain::custody::entities::attendance::Attendance;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
-use xc_shift::domain::custody::entities::custody_request::{CustodyRequest, Decision};
 use xc_shift::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use xc_shift::domain::custody::entities::stored_event::StoredEvent;
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
@@ -36,11 +35,6 @@ use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::cutoff::Cutoff;
 use xc_shift::domain::custody::value_objects::entity::Entity;
 use xc_shift::domain::custody::value_objects::phase::Phase;
-use xc_shift::domain::custody::value_objects::request_kind::RequestKind;
-use xc_shift::domain::custody::value_objects::request_status::{
-    Reconciliation, RequestStatus, TransferStage,
-};
-use xc_shift::domain::custody::value_objects::signature::Signature;
 use xc_shift::domain::shift::entities::shift::{Shift, ShiftStatus};
 use xc_shift::domain::shift::entities::stock_movement::StockMovement;
 use xc_shift::domain::shift::value_objects::balances::Balances;
@@ -1143,45 +1137,6 @@ fn operations_of_a_branch_that_never_used_custody_is_the_initial_object_of_empty
     );
 }
 
-fn pending_transfer() -> CustodyRequest {
-    CustodyRequest {
-        id: "R-1".to_string(),
-        request_id: "00000000-0000-4000-8000-0000000a0005".to_string(),
-        payload_hash: "abc123".to_string(),
-        kind: RequestKind::SafeOut,
-        status: RequestStatus::Pending,
-        at: custody_at("2026-10-06T05:34:00.000Z"),
-        sender: "E-FRONT".to_string(),
-        receiver: Some("E-FINANCE".to_string()),
-        note: "top up the drawer".to_string(),
-        evidence_keys: vec!["K-1".to_string(), "K-2".to_string()],
-        signatures: vec![Signature {
-            employee_id: "E-FRONT".to_string(),
-            role: CustodyRole::Front,
-            at: custody_at("2026-10-06T05:34:00.000Z"),
-        }],
-        shift_id: Some("SH-1".to_string()),
-        counted: None,
-        target: None,
-        target_difference: None,
-        expected: Some(balances(&[("THB", "91975"), ("USD", "2140")])),
-        variance: None,
-        cutoff: None,
-        safe_count: None,
-        safe_expected: None,
-        safe_variance: None,
-        currency: Some(code("USD")),
-        amount: Some(money("300.25")),
-        stage: None,
-        dispatched_at: None,
-        dispatched_by: None,
-        rejected: None,
-        completed_at: None,
-        reconciliation: None,
-        reconciled: None,
-    }
-}
-
 fn hand_people() -> People {
     let label = |name: &str, role: &str| PersonLabel {
         name: name.to_string(),
@@ -1194,137 +1149,6 @@ fn hand_people() -> People {
     ])
 }
 
-fn state_with(request: CustodyRequest) -> CustodyState {
-    CustodyState {
-        enabled: true,
-        requests: vec![request],
-        ..CustodyState::initial()
-    }
-}
-
-#[test]
-fn a_pending_transfer_is_printed_key_for_key() {
-    let printed = operations_json(&state_with(pending_transfer()), &[], &hand_people());
-    let request = &items(member(&printed, "requests"))[0];
-    let expected = member(request, "expected").to_text();
-    assert_eq!(
-        request.to_text(),
-        format!(
-            concat!(
-                r#"{{"id":"R-1","requestId":"00000000-0000-4000-8000-0000000a0005","hash":"abc123","#,
-                r#""kind":"SAFE_OUT","status":"PENDING","at":"2026-10-06T05:34:00.000Z","#,
-                r#""sender":"E-FRONT","senderName":"Fah Front","receiver":"E-FINANCE","#,
-                r#""note":"top up the drawer","evidenceKeys":["K-1","K-2"],"#,
-                r#""signatures":[{{"employeeId":"E-FRONT","role":"FRONT","at":"2026-10-06T05:34:00.000Z"}}],"#,
-                r#""shiftId":"SH-1","currency":"USD","amount":300.25,"expected":{}}}"#
-            ),
-            expected
-        )
-    );
-    assert!(expected.starts_with(r#"{"THB":91975,"USD":2140,"EUR":0,"#));
-}
-
-#[test]
-fn what_happens_to_a_transfer_is_appended_in_the_order_it_happens() {
-    let people = hand_people();
-    let tail_of = |request: CustodyRequest| -> String {
-        let printed = operations_json(&state_with(request), &[], &people);
-        let request = &items(member(&printed, "requests"))[0];
-        let text = request.to_text();
-        let from = text.find(",\"expected\":").expect("expected is printed");
-        let after = text[from + 1..].find("},").map(|i| from + 1 + i + 2);
-        after.map(|i| text[i..].to_string()).unwrap_or_default()
-    };
-
-    assert_eq!(tail_of(pending_transfer()), "");
-
-    let dispatched = CustodyRequest {
-        stage: Some(TransferStage::InTransit),
-        dispatched_at: Some(custody_at("2026-10-06T05:35:00.000Z")),
-        dispatched_by: Some("E-BACK".to_string()),
-        ..pending_transfer()
-    };
-    assert_eq!(
-        tail_of(dispatched.clone()),
-        r#""stage":"IN_TRANSIT","dispatchedAt":"2026-10-06T05:35:00.000Z","dispatchedBy":"E-BACK"}"#
-    );
-
-    let rejected = CustodyRequest {
-        status: RequestStatus::Rejected,
-        rejected: Some(Decision {
-            by: "E-MON".to_string(),
-            at: custody_at("2026-10-06T05:41:00.000Z"),
-            text: "the drawer never held that much".to_string(),
-        }),
-        ..pending_transfer()
-    };
-    assert_eq!(
-        tail_of(rejected),
-        r#""rejected":{"by":"E-MON","at":"2026-10-06T05:41:00.000Z","reason":"the drawer never held that much"}}"#
-    );
-
-    let reconciled = CustodyRequest {
-        status: RequestStatus::Completed,
-        stage: Some(TransferStage::Received),
-        completed_at: Some(custody_at("2026-10-06T05:37:00.000Z")),
-        reconciliation: Some(Reconciliation::Checked),
-        reconciled: Some(Decision {
-            by: "E-FINANCE".to_string(),
-            at: custody_at("2026-10-06T06:20:00.000Z"),
-            text: "checked".to_string(),
-        }),
-        ..dispatched
-    };
-    assert_eq!(
-        tail_of(reconciled.clone()),
-        concat!(
-            r#""stage":"RECEIVED","dispatchedAt":"2026-10-06T05:35:00.000Z","dispatchedBy":"E-BACK","#,
-            r#""completedAt":"2026-10-06T05:37:00.000Z","reconciliation":"CHECKED","#,
-            r#""reconciled":{"by":"E-FINANCE","at":"2026-10-06T06:20:00.000Z","note":"checked"}}"#
-        )
-    );
-    let pending_check = CustodyRequest {
-        reconciliation: Some(Reconciliation::Pending),
-        reconciled: None,
-        ..reconciled
-    };
-    assert!(tail_of(pending_check).ends_with(r#""reconciliation":"PENDING"}"#));
-}
-
-#[test]
-fn the_proposer_signs_without_a_name_and_everyone_after_with_one() {
-    let request = CustodyRequest {
-        signatures: vec![
-            Signature {
-                employee_id: "E-FRONT".to_string(),
-                role: CustodyRole::Front,
-                at: custody_at("2026-10-06T05:34:00.000Z"),
-            },
-            Signature {
-                employee_id: "E-FINANCE".to_string(),
-                role: CustodyRole::Finance,
-                at: custody_at("2026-10-06T05:36:00.000Z"),
-            },
-            Signature {
-                employee_id: "E-GONE".to_string(),
-                role: CustodyRole::Backend,
-                at: custody_at("2026-10-06T05:37:00.000Z"),
-            },
-        ],
-        ..pending_transfer()
-    };
-    let printed = operations_json(&state_with(request), &[], &hand_people());
-    let request = &items(member(&printed, "requests"))[0];
-    assert_eq!(
-        member(request, "signatures").to_text(),
-        concat!(
-            r#"[{"employeeId":"E-FRONT","role":"FRONT","at":"2026-10-06T05:34:00.000Z"},"#,
-            r#"{"employeeId":"E-FINANCE","name":"Fin Finance","role":"FINANCE","at":"2026-10-06T05:36:00.000Z"},"#,
-            r#"{"employeeId":"E-GONE","name":"","role":"BACKEND","at":"2026-10-06T05:37:00.000Z"}]"#
-        )
-    );
-}
-
 #[test]
 fn a_person_nobody_knows_is_printed_with_an_empty_name() {
     let state = CustodyState {
@@ -1335,22 +1159,14 @@ fn a_person_nobody_knows_is_printed_with_an_empty_name() {
             clock_in: custody_at("2026-10-06T05:03:00.000Z"),
             clock_out: None,
         }],
-        ..state_with(CustodyRequest {
-            sender: "E-GONE".to_string(),
-            receiver: None,
-            shift_id: None,
-            ..pending_transfer()
-        })
+        ..CustodyState::initial()
     };
     let printed = operations_json(&state, &[], &hand_people());
     assert_eq!(
         member(&printed, "attendance").to_text(),
         r#"[{"id":"A-1","employeeId":"E-GONE","name":"","role":"MONITOR","in":"2026-10-06T05:03:00.000Z","out":null}]"#
     );
-    let request = &items(member(&printed, "requests"))[0];
-    assert_eq!(member(request, "senderName").to_text(), r#""""#);
-    assert_eq!(member(request, "receiver"), &V2Json::Null);
-    assert_eq!(member(request, "shiftId"), &V2Json::Null);
+    // CA-10 (#626): the request half of this rule (a sender nobody knows) retired with the request model.
 }
 
 #[test]
@@ -1418,7 +1234,6 @@ fn every_custody_role_and_status_is_printed_in_v2s_word() {
         (Phase::Ready, "READY"),
         (Phase::Open, "OPEN"),
         (Phase::CutOff, "CUT_OFF"),
-        (Phase::Counting, "COUNTING"),
     ] {
         let state = CustodyState {
             phase,
@@ -1632,7 +1447,6 @@ fn events_are_printed_in_the_order_given_with_their_stored_details() {
 #[test]
 fn the_safe_the_target_and_the_entity_are_printed_once_they_exist() {
     let state = CustodyState {
-        enabled: true,
         phase: Phase::Ready,
         safe: Some(balances(&[
             ("THB", "500000"),
@@ -1650,12 +1464,13 @@ fn the_safe_the_target_and_the_entity_are_printed_once_they_exist() {
             confirmed_by: "owner".to_string(),
             at: custody_at("2026-10-06T05:01:00.000Z"),
         }),
-        custodian: Some("E-FRONT".to_string()),
         service_opened_at: Some(custody_at("2026-10-06T05:23:00.000Z")),
         ..CustodyState::initial()
     };
     let printed = operations_json(&state, &[], &hand_people());
-    assert_eq!(member(&printed, "enabled"), &V2Json::Bool(true));
+    // CA-10 (#626 Q6, Q8 A): the compat snapshot keeps the retired keys as constants, whatever the state
+    assert_eq!(member(&printed, "enabled"), &V2Json::Bool(false));
+    assert_eq!(member(&printed, "requests").to_text(), "[]");
     assert!(
         member(&printed, "safe")
             .to_text()
@@ -1672,7 +1487,7 @@ fn the_safe_the_target_and_the_entity_are_printed_once_they_exist() {
         member(&printed, "entity").to_text(),
         r#"{"company":"XC Exchange Co., Ltd.","site":"Riverside B","confirmedBy":"owner","at":"2026-10-06T05:01:00.000Z"}"#
     );
-    assert_eq!(member(&printed, "custodian").to_text(), r#""E-FRONT""#);
+    assert_eq!(member(&printed, "custodian"), &V2Json::Null);
     assert_eq!(keys(&printed).last(), Some(&"serviceOpenedAt"));
     assert!(
         printed

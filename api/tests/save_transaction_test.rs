@@ -19,6 +19,7 @@
 //! name ends in `_test`). Without it they FAIL; none skips.
 
 mod save_common;
+mod shift_holder_common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -42,6 +43,10 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
     let mut reserved: BTreeMap<usize, String> = BTreeMap::new();
     let mut aliases: BTreeMap<String, String> = BTreeMap::new();
     let mut written: Vec<WrittenSave> = Vec::new();
+    // CA-10 (#626, the BE controller's ruling): a save moves stock on the saver's own OPEN shift and one teller
+    // holds one OPEN shift, so where v2's one actor saved outside MAIN, that branch's save is made (and its files
+    // uploaded) by the branch's own opener (`Shop::teller_of`); at MAIN the owner is the opener. Every expected
+    // figure stays the same.
 
     for (i, step) in scenario.steps.iter().enumerate() {
         let op = step["op"].as_str().expect("a step has an op");
@@ -120,6 +125,13 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                 let here = format!("{here} '{}'", save.note);
                 let branch_id = branches[&label].clone();
                 let exists = label != "GONE";
+                let saver = if exists && branch_id != MAIN {
+                    shop.teller_of(&branch_id)
+                        .await
+                        .unwrap_or_else(|| panic!("{here}: the opener of {branch_id}"))
+                } else {
+                    fx.actor.clone()
+                };
                 // the files the form names, uploaded by the owner into this branch
                 let key_of = |alias: &Option<String>| -> Option<(String, String)> {
                     alias.as_ref().map(|a| (label.clone(), a.clone()))
@@ -133,7 +145,7 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                     if !keys.contains_key(&k) {
                         let file = &fx.files[&k.1];
                         let key = if exists {
-                            shop.upload(&branch_id, &fx.actor, &file.mime, &file.bytes())
+                            shop.upload(&branch_id, &saver, &file.mime, &file.bytes())
                                 .await
                         } else {
                             // nothing can be uploaded into a branch that is not there: the
@@ -159,7 +171,7 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                 let cmd = command(&form, uploaded[0].clone(), uploaded[1].clone());
                 let got = shop
                     .workflow
-                    .save(&branch(&branch_id), cmd, &fx.actor, instant(&save.at))
+                    .save(&branch(&branch_id), cmd, &saver, instant(&save.at))
                     .await;
 
                 match (&save.v2_error, &save.saved, &got) {
@@ -494,6 +506,14 @@ async fn whoever_saves_is_recorded_and_must_own_the_files() {
     let shop = Shop::start().await;
     let (customer, owners_passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     let staff = "employee-7";
+    let shift = shift_holder_common::open_shift_for(
+        &shop.pool,
+        MAIN,
+        staff,
+        &[("THB", "100000"), ("USD", "1000")],
+    )
+    .await;
+    fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
     let staff_passport = shop.upload(MAIN, staff, "image/jpeg", JPEG).await;
 
     // a file somebody else uploaded is not this saver's attachment
@@ -927,20 +947,22 @@ async fn two_branches_saving_at_once_share_one_run_of_numbers() {
     shop.set_rate("XC-B01", "USD", "32.1", "33").await;
     shop.open_shift("XC-B01", &[("THB", "100000"), ("USD", "1000")])
         .await;
+    let saver_b = shift_holder_common::teller_of_open_shift(&shop.pool, "XC-B01").await;
     let customer_b = shop.reserve("XC-B01", person()).await;
-    let passport_b = shop.upload("XC-B01", OWNER, "image/jpeg", JPEG).await;
+    let passport_b = shop.upload("XC-B01", &saver_b, "image/jpeg", JPEG).await;
 
     let mut tasks = Vec::new();
     for i in 0..16 {
-        for (branch_id, customer, passport) in [
-            (MAIN, &customer, &passport),
-            ("XC-B01", &customer_b, &passport_b),
+        for (branch_id, customer, passport, saver) in [
+            (MAIN, &customer, &passport, OWNER),
+            ("XC-B01", &customer_b, &passport_b, saver_b.as_str()),
         ] {
             let workflow = shop.workflow.clone();
+            let saver = saver.to_owned();
             let mut cmd = form(&format!("both-{i:04}-aaaaaaaaaaa"), customer, passport);
             cmd.amount = "1".to_owned();
             tasks.push(tokio::spawn(async move {
-                workflow.save(&branch(branch_id), cmd, OWNER, at(i)).await
+                workflow.save(&branch(branch_id), cmd, &saver, at(i)).await
             }));
         }
     }

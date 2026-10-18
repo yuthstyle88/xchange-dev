@@ -37,21 +37,15 @@ use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_rate::domain::rate::entities::rate_change::RateChange;
 use xc_shift::domain::custody::entities::attendance::Attendance;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
-use xc_shift::domain::custody::entities::custody_request::{CustodyRequest, Decision};
 use xc_shift::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use xc_shift::domain::custody::entities::stored_event::StoredEvent;
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::cash_target::CashTarget;
-use xc_shift::domain::custody::value_objects::count_sheet::CountSheet;
 use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::cutoff::Cutoff;
 use xc_shift::domain::custody::value_objects::entity::Entity;
-use xc_shift::domain::custody::value_objects::request_status::{
-    Reconciliation, RequestStatus, TransferStage,
-};
-use xc_shift::domain::custody::value_objects::signature::Signature;
 use xc_shift::domain::shift::entities::shift::{Shift, ShiftStatus};
 use xc_shift::domain::shift::entities::stock_movement::StockMovement;
 use xc_shift::domain::shift::value_objects::balances::Balances;
@@ -488,20 +482,17 @@ pub type People = BTreeMap<String, PersonLabel>;
 /// `""` and the role `OTHER`.
 pub fn operations_json(state: &CustodyState, events: &[StoredEvent], people: &People) -> V2Json {
     let mut pairs = vec![
-        ("enabled", V2Json::Bool(state.enabled)),
+        ("enabled", V2Json::Bool(false)),
         ("phase", V2Json::text(state.phase.as_str())),
         ("safe", optional(state.safe.as_ref(), balances_json)),
         ("target", optional(state.target.as_ref(), target_json)),
         ("entity", optional(state.entity.as_ref(), entity_json)),
-        ("custodian", text_or_null(state.custodian.as_ref())),
+        ("custodian", V2Json::Null),
         (
             "attendance",
             list(&state.attendance, |a| attendance_json(a, people)),
         ),
-        (
-            "requests",
-            list(&state.requests, |r| request_json(r, people)),
-        ),
+        ("requests", V2Json::Array(Vec::new())),
         ("events", list(events, |e| event_json(e, people))),
         ("cutoff", optional(state.cutoff.as_ref(), cutoff_json)),
         ("exceptions", list(&state.exceptions, exception_json)),
@@ -580,152 +571,6 @@ fn cutoff_json(cutoff: &Cutoff) -> V2Json {
             list(&cutoff.pending, |r| V2Json::text(r.as_str())),
         ),
     ])
-}
-
-/// The proposer's own signature (the first) carries no `name`; every later one
-/// does.
-fn signature_json(index: usize, signature: &Signature, people: &People) -> V2Json {
-    let mut pairs = vec![("employeeId", V2Json::text(signature.employee_id.as_str()))];
-    if index > 0 {
-        pairs.push(("name", name_of(&signature.employee_id, people)));
-    }
-    pairs.extend([
-        (
-            "role",
-            role_json(signature.role, &signature.employee_id, people),
-        ),
-        ("at", custody_time_json(signature.at)),
-    ]);
-    V2Json::object(pairs)
-}
-
-fn denominations_json(sheet: &CountSheet) -> V2Json {
-    list(&sheet.denominations, |row| {
-        V2Json::object(vec![
-            ("currency", V2Json::text(row.currency.as_str())),
-            ("denomination", money_json(row.denomination)),
-            ("count", V2Json::int(i64::from(row.count))),
-        ])
-    })
-}
-
-fn decision_json(decision: &Decision, text_key: &'static str) -> V2Json {
-    V2Json::object(vec![
-        ("by", V2Json::text(decision.by.as_str())),
-        ("at", custody_time_json(decision.at)),
-        (text_key, V2Json::text(decision.text.as_str())),
-    ])
-}
-
-/// Thirteen keys always; then what the kind of request carries; then what has
-/// happened to it so far, in the order v2 appended it.
-fn request_json(request: &CustodyRequest, people: &People) -> V2Json {
-    let status = match request.status {
-        RequestStatus::Pending => "PENDING",
-        RequestStatus::Rejected => "REJECTED",
-        RequestStatus::Completed => "COMPLETED",
-    };
-    let mut pairs = vec![
-        ("id", V2Json::text(request.id.as_str())),
-        ("requestId", V2Json::text(request.request_id.as_str())),
-        ("hash", V2Json::text(request.payload_hash.as_str())),
-        ("kind", V2Json::text(request.kind.as_str())),
-        ("status", V2Json::text(status)),
-        ("at", custody_time_json(request.at)),
-        ("sender", V2Json::text(request.sender.as_str())),
-        ("senderName", name_of(&request.sender, people)),
-        ("receiver", text_or_null(request.receiver.as_ref())),
-        ("note", V2Json::text(request.note.as_str())),
-        (
-            "evidenceKeys",
-            list(&request.evidence_keys, |k| V2Json::text(k.as_str())),
-        ),
-        (
-            "signatures",
-            V2Json::Array(
-                request
-                    .signatures
-                    .iter()
-                    .enumerate()
-                    .map(|(i, s)| signature_json(i, s, people))
-                    .collect(),
-            ),
-        ),
-        ("shiftId", text_or_null(request.shift_id.as_ref())),
-    ];
-
-    if request.kind.is_transfer() {
-        if let Some(currency) = request.currency {
-            pairs.push(("currency", V2Json::text(currency.as_str())));
-        }
-        if let Some(amount) = request.amount {
-            pairs.push(("amount", money_json(amount)));
-        }
-        if let Some(expected) = &request.expected {
-            pairs.push(("expected", balances_json(expected)));
-        }
-    } else {
-        if let Some(counted) = &request.counted {
-            pairs.push(("counted", balances_json(&counted.totals)));
-            pairs.push(("denominations", denominations_json(counted)));
-        }
-        if let Some(target) = &request.target {
-            pairs.push(("target", target_json(target)));
-        }
-        if let Some(difference) = &request.target_difference {
-            pairs.push(("targetDifference", stock_delta_json(difference)));
-        }
-        if let Some(expected) = &request.expected {
-            pairs.push(("expected", balances_json(expected)));
-        }
-        if let Some(variance) = &request.variance {
-            pairs.push(("variance", stock_delta_json(variance)));
-        }
-        if let Some(cutoff) = &request.cutoff {
-            pairs.push(("cutoff", cutoff_json(cutoff)));
-        }
-        if let Some(safe) = &request.safe_count {
-            pairs.push(("safeCount", balances_json(&safe.totals)));
-            pairs.push(("safeDenominations", denominations_json(safe)));
-        }
-        if let Some(expected) = &request.safe_expected {
-            pairs.push(("safeExpected", balances_json(expected)));
-        }
-        if let Some(variance) = &request.safe_variance {
-            pairs.push(("safeVariance", stock_delta_json(variance)));
-        }
-    }
-
-    if let Some(stage) = request.stage {
-        let word = match stage {
-            TransferStage::InTransit => "IN_TRANSIT",
-            TransferStage::Received => "RECEIVED",
-        };
-        pairs.push(("stage", V2Json::text(word)));
-    }
-    if let Some(at) = request.dispatched_at {
-        pairs.push(("dispatchedAt", custody_time_json(at)));
-    }
-    if let Some(by) = &request.dispatched_by {
-        pairs.push(("dispatchedBy", V2Json::text(by.as_str())));
-    }
-    if let Some(rejected) = &request.rejected {
-        pairs.push(("rejected", decision_json(rejected, "reason")));
-    }
-    if let Some(at) = request.completed_at {
-        pairs.push(("completedAt", custody_time_json(at)));
-    }
-    if let Some(reconciliation) = request.reconciliation {
-        let word = match reconciliation {
-            Reconciliation::Pending => "PENDING",
-            Reconciliation::Checked => "CHECKED",
-        };
-        pairs.push(("reconciliation", V2Json::text(word)));
-    }
-    if let Some(reconciled) = &request.reconciled {
-        pairs.push(("reconciled", decision_json(reconciled, "note")));
-    }
-    V2Json::object(pairs)
 }
 
 fn event_json(event: &StoredEvent, people: &People) -> V2Json {
