@@ -607,7 +607,7 @@ This replaces Q2 A.
 ### 11.3 Guardrails (V.9 :59-66, mapped)
 Checked on every save:
 1. `AUDIT_LOGS` is at most VIEW for every group.
-2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` permissions go only to groups whose base is EXECUTIVE or ADMIN.
+2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` go **above VIEW** only for groups whose base is EXECUTIVE or ADMIN (V.9 :62). Any group may hold their VIEW-level permissions.
 3. A group whose base is ADMIN holds, outside those two modules, at most VIEW-level permissions.
 4. **The built-in EXECUTIVE group is fixed**, so the owner can't be locked out.
 5. The no-module permissions (§11.2, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix.
@@ -650,12 +650,26 @@ classDiagram
 | `PgRoleGrantStore` | `api/crates/xc-auth/src/infrastructure/access/role_grant_store.rs` | C6 |
 | `MatrixGuardrails` | `api/crates/xc-auth/src/domain/access/matrix_guardrails.rs` | C6 |
 | `ScopedRole` carries the group code; `role` becomes the group's base | `api/crates/xc-auth/src/domain/access/scoped_role.rs` | C6 |
+| `read_session_in` checks `role_grant_version` | `api/crates/xc-auth/src/application/session/session_service.rs` | C6 |
+| `pub mod` lines for the three new files | `api/crates/xc-auth/src/domain/access/mod.rs` | C6 |
+| new `access` module | `api/crates/xc-auth/src/infrastructure/mod.rs`, `api/crates/xc-auth/src/infrastructure/access/mod.rs` (new) | C6 |
+| `RolePermissions` removed | `api/crates/xc-auth/src/domain/access/role_permissions.rs` | C6 |
 | commands `adminGroupSave`, `adminGroupAdd`, `adminGroupDelete` | `api/src/presentation/http/v3/commands/admin_groups.rs` | F12 |
 | matrix tab: add and edit, for EXECUTIVE | `web/src/screens/admin/users/PermissionMatrix.tsx` | W2 (FE) |
 
 **Reading permissions:**
-- `RolePermissions::of(role)` becomes `RoleGrants::of(group_code)`. `ScopedRole` keeps a `role: Role` (the base) for every rule that matches on a role, and gains `group: GroupCode` for permissions.
-- The callers that ask "does this role hold P" switch to the group: `authorizer.rs:65`, `policy.rs:707` / `:734`, `transfer.rs:24`, `me.rs:61` and the booking commands. That edit is one mechanical sweep, in C6.
+- **`RolePermissions` is removed.** Its static table is replaced by `RoleGrants::seed(role) -> Vec<Permission>`, which computes §11.2's seed and is the only source of the seed.
+- **Every production caller** of "does this role hold P" switches to `RoleGrants::of(group_code)`, all in C6:
+  - `authorizer.rs:65`;
+  - `policy.rs:707` and `:734`;
+  - `xc-cash/src/application/approval/transfer.rs:24`;
+  - `v3/views/me.rs:61`;
+  - `permission_module.rs:155` (`PermissionMatrix::of` now reads a group's set, which F5 shows);
+  - `v3/commands/bookings/cancel.rs:103`, `create.rs:105` and `:109`, `qr.rs:105`, and `reschedule.rs:107`.
+- **`ScopedRole`** keeps a `role: Role` (the base) for every rule that matches on a role, and gains `group: GroupCode` for permissions.
+- **The 18 test files** that build their expectations from `RolePermissions::of` switch to `RoleGrants::seed` in C6. It is a mechanical rename, and where the seed differs from today (§11.2's "what the seed changes") their expected sets follow it:
+  - `xc-auth/tests/{approvals_decide_manager,authorizer,branch_scope,cash_transfer_policy_permission,permission_module,policy_need_any_of,policy_route_table}_test.rs`;
+  - `api/tests/{consent_retention,payment_settings_access_actor,staff_me_branch_permissions,tx4_settings_routes,v3_cash_commands,v3_cash_transfer_policy,v3_export_gate,v3_me_roles_permissions,v3_staff_customers_view,v3_staff_daily_report_view,v3_staff_views}_test.rs`.
 - The snapshot is an `ArcSwap` reloaded when `role_grant_version` moves. `read_session_in` reads that single row per request, and every save bumps it in the same transaction.
 
 ### 11.5 Data migration (M2, `class:guarded`; owner approval before merge)
@@ -665,13 +679,19 @@ classDiagram
 - New `role_grant_version` (one row).
 
 1. **Existing rows:**
-   - The nine `roles` rows become built-in. Their name is the code, and their base is themselves (`CUSTOMER` included; it is not a staff group and is not shown).
    - `user_roles` is unchanged: every assignment already names a built-in code.
-2. **Backfill: none in SQL. The seed runs at startup.** Owner: *"แต่เราทำ seedให้่ตอน เริ่ม ระบบ เพื่อให้ง่าย"*.
+   - The nine `roles` rows become built-in groups. That is a **backfill of 9 rows**, in SQL, in M2 itself:
+     ```sql
+     ALTER TABLE roles ADD COLUMN name text, ADD COLUMN base_role text REFERENCES roles(code), ADD COLUMN built_in boolean NOT NULL DEFAULT false;
+     UPDATE roles SET name = code, base_role = code, built_in = true;   -- 9 rows
+     ALTER TABLE roles ALTER COLUMN name SET NOT NULL, ALTER COLUMN base_role SET NOT NULL;
+     ```
+   - Count before deploy: `SELECT count(*) FROM roles;` should be 9. `CUSTOMER` is among them, a built-in group that is not shown.
+2. **The permission seed is not SQL. It runs at startup.** Owner: *"แต่เราทำ seedให้่ตอน เริ่ม ระบบ เพื่อให้ง่าย"*.
    - On boot, before serving, `RoleGrants::seed_missing(tx)` inserts §11.2's set for every built-in group that has **no** rows in `role_permission_grants`, and bumps `role_grant_version` once.
    - It never touches a group that already has rows, so an edited group is never overwritten, and a restart changes nothing.
-   - The seed lives in code (C6's seed function, pinned by its test), so it is reviewed like code.
-   - Measure before deploy: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;` (who the seed's changes reach, §11.2).
+   - The seed lives in code (`RoleGrants::seed`, pinned by its test), so it is reviewed like code.
+   - Measure before deploy: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;`, i.e. who the seed's changes reach (§11.2).
 3. **Deploy order:** the migration runs before the new binary. The old binary ignores the new columns and table, but it keeps authorising from its static table. So the seed takes effect only with the new binary, and the two must ship together.
 4. **What `down` loses:** every custom group (its `user_roles` rows must be moved to a built-in group first; the reversal refuses while any exist), every edited set, and the version.
 
@@ -679,7 +699,7 @@ classDiagram
 | Ticket | What | Class | Depends on |
 |---|---|---|---|
 | M2 | §11.5 | guarded | owner approval |
-| C6 | §11.4 classes, the seed function and `seed_missing` at startup, the desk-basics reclassification, the caller sweep, freshness | logic | M2 |
+| C6 (after C4 #3100 and C1a #3101, which lock `session_service.rs` and `domain/access/mod.rs`) | §11.4 classes, the seed function and `seed_missing` at startup, the desk-basics reclassification, the caller sweep, freshness | logic | M2 |
 | F12 | add / edit / delete group commands (EXECUTIVE only), guardrail refusals `409 guardrail:<n>`, audit | logic | C6, C1a (`AccountAuditor`) |
 | F5 | the matrix view returns every group: name, base, built-in, its permissions with module/level, and which are editable | logic | C6 |
 | W2 | matrix tab: add a group, edit levels and permissions, for EXECUTIVE; read-only for others | FE | F12, F5 |
