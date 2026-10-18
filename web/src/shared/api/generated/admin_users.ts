@@ -6,7 +6,7 @@ export type AdminUserRole = { role: string,
  */
 branch: string | null, validFrom: string, validTo: string | null, };
 
-export type AdminUserRow = { userId: string, name: string, 
+export type AdminUserRow = { userId: string, name: string, employeeCode?: string | null, department?: string | null, position?: string | null, tellCode?: string | null, 
 /**
  * `INVITED`, `ACTIVE` or `DISABLED`.
  */

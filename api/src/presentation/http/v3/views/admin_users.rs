@@ -57,8 +57,18 @@ impl PagedView for AdminUsersPagedView {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
         async move {
-            let users: Vec<(String, String, String, i32)> = sqlx::query_as(
-                "SELECT u.id::text, u.name, u.status, u.version \
+            type UserSqlRow = (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                String,
+                i32,
+            );
+            let users: Vec<UserSqlRow> = sqlx::query_as(
+                "SELECT u.id::text, u.name, u.employee_code, u.department, u.position, u.tell_code, u.status, u.version \
                  FROM users u JOIN branches b ON b.id = $1 AND u.organization_id = b.organization_id \
                  WHERE $2::text IS NULL \
                     OR (u.name, u.id::text) > (SELECT p.name, p.id::text FROM users p JOIN branches pb ON pb.id = $1 AND p.organization_id = pb.organization_id WHERE p.id::text = $2) \
@@ -87,22 +97,39 @@ impl PagedView for AdminUsersPagedView {
             let at = |t: DateTime<Utc>| t.to_rfc3339_opts(SecondsFormat::Millis, true);
             Ok(users
                 .into_iter()
-                .map(|(user_id, name, status, version)| AdminUserRow {
-                    roles: roles
-                        .iter()
-                        .filter(|r| r.0 == user_id)
-                        .map(|(_, role, branch, from, to)| AdminUserRole {
-                            role: role.clone(),
-                            branch: branch.clone(),
-                            valid_from: at(*from),
-                            valid_to: to.map(at),
-                        })
-                        .collect(),
-                    user_id,
-                    name,
-                    status,
-                    version,
-                })
+                .map(
+                    |(
+                        user_id,
+                        name,
+                        employee_code,
+                        department,
+                        position,
+                        tell_code,
+                        status,
+                        version,
+                    )| {
+                        AdminUserRow {
+                            roles: roles
+                                .iter()
+                                .filter(|r| r.0 == user_id)
+                                .map(|(_, role, branch, from, to)| AdminUserRole {
+                                    role: role.clone(),
+                                    branch: branch.clone(),
+                                    valid_from: at(*from),
+                                    valid_to: to.map(at),
+                                })
+                                .collect(),
+                            user_id,
+                            name,
+                            employee_code,
+                            department,
+                            position,
+                            tell_code,
+                            status,
+                            version,
+                        }
+                    },
+                )
                 .collect())
         }
     }
