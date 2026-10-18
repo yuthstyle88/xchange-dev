@@ -1,3 +1,5 @@
+// Amended by W8 (claude/177aa7ef): userCreate no longer takes a typed password (F9 #3155, owner Q5 A); the server
+// answers temporaryPassword once. xchange#564, the BE controller's F9 contract.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -96,6 +98,7 @@ async function serve(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
       userId: body.userId ?? 'u-new',
       status: 'ACTIVE',
       version: 1,
+      temporaryPassword: 'Kq7mPz3RtW9xVb2N',
     });
   }
   if (u.pathname === '/api/users/grant' && method === 'POST') {
@@ -192,7 +195,7 @@ describe('A05 UsersScreen', () => {
     expect(row2ActivateBtn, 'INVITED row must offer activate').not.toBeNull();
   });
 
-  it('the create dialog sends userCreate with phone, password and roles, and clears the password field after the call', async () => {
+  it('the create dialog has no password field, sends userCreate with phone and roles and no password, and shows the temporary password once (W8)', async () => {
     const { container } = mount();
     await flush();
 
@@ -210,9 +213,7 @@ describe('A05 UsersScreen', () => {
     phoneInput.value = '+66812345678';
     phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-    const passwordInput = container.querySelector<HTMLInputElement>('input[name="password"]')!;
-    passwordInput.value = 'Secret123!';
-    passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(container.querySelector('[role="dialog"] input[type="password"]'), 'no password field in the create dialog').toBeNull();
 
     const roleSelect = container.querySelector<HTMLSelectElement>('select[name="role"]')!;
     roleSelect.value = 'FINANCE';
@@ -221,9 +222,6 @@ describe('A05 UsersScreen', () => {
     // Submit form
     const form = container.querySelector<HTMLFormElement>('.users-dialog-form')!;
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-
-    // Password field should be cleared immediately
-    expect(passwordInput.value, 'password field must be cleared after call').toBe('');
 
     await flush();
 
@@ -237,9 +235,9 @@ describe('A05 UsersScreen', () => {
       username: null,
       phone: '+66812345678',
       email: null,
-      password: 'Secret123!',
       roles: [{ role: 'FINANCE', branch: B01 }],
     });
+    expect(container.querySelector('[data-temp-password]')?.textContent).toContain('Kq7mPz3RtW9xVb2N');
   });
 
   it('a refused command error is shown in the form', async () => {
@@ -260,23 +258,18 @@ describe('A05 UsersScreen', () => {
     phoneInput.value = '+66899999999';
     phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-    const passwordInput = container.querySelector<HTMLInputElement>('input[name="password"]')!;
-    passwordInput.value = 'Secret123!';
-    passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
-
     // Submit form
     const form = container.querySelector<HTMLFormElement>('.users-dialog-form')!;
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-
-    expect(passwordInput.value, 'password field cleared on submit').toBe('');
 
     await flush();
 
     const errorEl = container.querySelector('[role="alert"]');
     expect(errorEl?.textContent).toContain('เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว');
+    expect(container.querySelector('[data-temp-password]'), 'a refused create shows no temporary password').toBeNull();
   });
 
-  it('activate dialog retries userCreate with userId and clears password', async () => {
+  it('activate dialog retries userCreate with userId and no password, and shows the temporary password once (W8)', async () => {
     const { container } = mount();
     await flush();
 
@@ -289,14 +282,10 @@ describe('A05 UsersScreen', () => {
     phoneInput.value = '+66811112222';
     phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-    const passwordInput = container.querySelector<HTMLInputElement>('input[name="activatePassword"]')!;
-    passwordInput.value = 'ActivatePass123';
-    passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(container.querySelector('[role="dialog"] input[type="password"]'), 'no password field in the activate dialog').toBeNull();
 
     const form = container.querySelector<HTMLFormElement>('.users-dialog-form')!;
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-
-    expect(passwordInput.value, 'password cleared on submit').toBe('');
 
     await flush();
 
@@ -305,7 +294,8 @@ describe('A05 UsersScreen', () => {
     );
     expect(activateCalls.length).toBe(1);
     expect(activateCalls[0]?.body.phone).toBe('+66811112222');
-    expect(activateCalls[0]?.body.password).toBe('ActivatePass123');
+    expect('password' in (activateCalls[0]?.body ?? {}), 'no password in the body').toBe(false);
+    expect(container.querySelector('[data-temp-password]')?.textContent).toContain('Kq7mPz3RtW9xVb2N');
     expect(activateCalls[0]?.body.userId).toBe('u-2');
   });
 
@@ -329,10 +319,6 @@ describe('A05 UsersScreen', () => {
     const phoneInput = container.querySelector<HTMLInputElement>('input[name="activatePhone"]')!;
     phoneInput.value = '+66833334444';
     phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-    const passwordInput = container.querySelector<HTMLInputElement>('input[name="activatePassword"]')!;
-    passwordInput.value = 'PassNoRoles123';
-    passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
 
     const form = container.querySelector<HTMLFormElement>('.users-dialog-form')!;
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
