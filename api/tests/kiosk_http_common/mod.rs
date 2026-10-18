@@ -449,14 +449,11 @@ impl<'f> KioskReplay<'f> {
     /// A desk with the people of `MAIN` employed and signed in; the people of
     /// another branch join when the step that creates their branch was replayed.
     pub async fn start(fixture: &'f Fixture) -> KioskReplay<'f> {
-        let desk = Desk::open().await;
-        // LG-6.r5 (#1044, lane controller's ruling): the recorded shop has custody off, so v2 never held a
-        // safe and printed `operations.safe` null; `Desk::open` funded MAIN's ledger SAFE, so empty it.
-        crate::rpc_common::sweep_safe(
-            &desk.db.pool,
-            &xc_kernel::ids::BranchId::new(MAIN.to_string()),
-        )
-        .await;
+        // LG-6.r5 (#1044, BE controller's ruling (a), issuecomment-6245795151): the recorded shop has custody
+        // off, so v2 never held a safe and printed `operations.safe` null. The replay opens no shift, so MAIN's
+        // ledger SAFE is never funded: an account that never had an entry prints null (funding and then sweeping
+        // it would print zeros).
+        let desk = Desk::open_without_cash().await;
         make_the_audit_table(&desk).await;
         // Amended for #1266 (QU-7) by the test-writer claude/5d45b017, on the lane controller's ruling A:
         // a closed queue refuses the kiosk's confirm (queue-tickets.md §4.5, Q8), so the replay opens

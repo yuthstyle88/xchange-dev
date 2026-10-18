@@ -69,6 +69,7 @@ use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::save_transaction::SaveTransactionWorkflow;
 use xchange::bootstrap::AppState;
