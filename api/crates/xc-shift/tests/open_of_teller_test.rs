@@ -81,19 +81,19 @@ async fn shift(
             Some(count)
         }
     };
+    let _ = count;
     let closed = status == "CLOSED";
     sqlx::query(
-        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count, \
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, \
              closed_at, closed_by) \
-         VALUES ($1, $2, $3, $4, 'test', $1, $5, $6, CASE WHEN $7 THEN $4 + interval '1 hour' END, \
-             CASE WHEN $7 THEN 'test' END)",
+         VALUES ($1, $2, $3, $4, 'test', $1, $5, CASE WHEN $6 THEN $4 + interval '1 hour' END, \
+             CASE WHEN $6 THEN 'test' END)",
     )
     .bind(&id)
     .bind(branch.as_str())
     .bind(status)
     .bind(opened_at)
     .bind(teller)
-    .bind(count)
     .bind(closed)
     .execute(&db.pool)
     .await
