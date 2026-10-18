@@ -107,7 +107,9 @@ fn the_markers_are_found_where_they_were_measured() {
     for path in [
         "api/src/application/compat/envelope.rs",
         "api/src/presentation/http/client_address.rs",
-        "api/crates/xc-shift/tests/custody_service_test.rs",
+        // re-expected for CA-10 #626 by the ticket author: `custody_service_test.rs` is retired with
+        // the custody command engine (design `cash-shift-transfer.md` §6)
+        "api/tests/rpc_common/mod.rs",
     ] {
         assert!(found.contains(path), "{path} is not found by the scan");
     }

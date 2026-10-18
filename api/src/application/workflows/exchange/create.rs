@@ -255,23 +255,18 @@ impl CreateTransaction {
         let customer_name = custom_customer_name.unwrap_or(customer.display_name);
         let nationality = custom_nationality.unwrap_or(customer.nationality);
 
-        // 2. LIVE needs the branch's open shift; DEMO has none
+        // 2. LIVE needs the saver's open shift at this branch; DEMO has none
         let shift_id = match mode {
             Mode::Live => {
-                let shift = if let Some(teller_id) = teller_user_id {
-                    sqlx::query_scalar(
-                        "SELECT id FROM shifts WHERE branch_id = $1 AND teller_id = $2 AND status = 'OPEN'",
-                    )
-                    .bind(req.branch_id.as_str())
-                    .bind(teller_id)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?
-                } else {
-                    self.shifts
-                        .active_in(tx, &req.branch_id)
+                let teller = teller_user_id.or_else(|| Uuid::parse_str(&who.id).ok());
+                let shift = match teller {
+                    Some(teller_id) => self
+                        .shifts
+                        .open_of_teller_in(tx, &teller_id.to_string())
                         .await?
-                        .map(|s| s.id)
+                        .filter(|s| s.branch_id == req.branch_id)
+                        .map(|s| s.id),
+                    None => None,
                 };
                 match shift {
                     Some(id) => Some(id),

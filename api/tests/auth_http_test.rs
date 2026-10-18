@@ -5,6 +5,11 @@
 //! Every test drives the server's own route table (`bootstrap::configure`). They need a real
 //! PostgreSQL (`TEST_DATABASE_URL`, a database whose name ends in `_test`); without it they
 //! fail, none skips.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c; cash-shift-transfer.md §6 Q7): the
+//! `entity` and `enable` actions of `/api/employees` are retired with their custody port methods, so
+//! they are answered exactly as an action the route does not know (`nope`) and custody is asked
+//! nothing; the payload-handoff test of `entity` goes; `disable` still asks custody, unchanged.
 
 mod auth_http_common;
 mod common;
@@ -642,39 +647,25 @@ async fn the_route_table_registers_a_real_custody_port() {
             .owner(&owner),
         )
     };
-    // no company and no site, custody off: v2's answer is `rpc/ops_actions.json` #11
-    let answer = custody_action("entity").await;
-    assert_eq!(
-        (answer.status, answer.error().as_str()),
-        (400, "ยืนยันกิจการและการแยกบัญชีให้ครบ"),
-        "entity"
-    );
-    assert_eq!(answer.cache_control.as_deref(), Some("no-store"));
-    // `enable` checks the six roles itself before custody is asked (`rpc/ops_actions.json` #14)
-    let answer = custody_action("enable").await;
-    assert_eq!(
-        answer.error(),
-        "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน"
-    );
-    for role in ["BACKEND", "MANAGER", "RATES", "MONITOR", "FINANCE"] {
-        working_employee(
-            &app,
-            &desk,
-            &owner,
-            &format!("p-{}", role.to_lowercase()),
-            role,
-            "MAIN",
-        )
-        .await;
+    // CA-10 #626 retires `entity` and `enable` (cash-shift-transfer.md §6 Q7): both are answered as an
+    // action the route does not know, and custody is asked nothing
+    let unknown = custody_action("nope").await;
+    for action in ["entity", "enable"] {
+        let answer = custody_action(action).await;
+        assert_eq!(
+            (
+                answer.status,
+                answer.text.as_str(),
+                answer.cache_control.as_deref()
+            ),
+            (
+                unknown.status,
+                unknown.text.as_str(),
+                unknown.cache_control.as_deref()
+            ),
+            "{action}: answered as the unknown action `nope` is"
+        );
     }
-    // six roles, no entity yet: v2's answer is `rpc/ops_actions.json` #9
-    let answer = custody_action("enable").await;
-    assert_eq!(
-        (answer.status, answer.error().as_str()),
-        (400, "ยืนยันสาขาและกิจการก่อนเปิดใช้"),
-        "enable"
-    );
-    assert_eq!(answer.cache_control.as_deref(), Some("no-store"));
     // custody of MAIN is empty: nobody holds cash, nothing is pending
     let answer = send(
         &app,
@@ -723,11 +714,8 @@ async fn what_the_custody_port_refuses_is_answered_as_it_says() {
     };
 
     *desk.custody.refuse_with.lock().unwrap() = Some("ขั้นตอนนี้ปิดอยู่".to_owned());
-    for (action, payload) in [
-        ("entity", json!({ "branchId": "MAIN" })),
-        ("enable", json!({ "branchId": "MAIN" })),
-        ("disable", json!({ "id": ids[0] })),
-    ] {
+    // CA-10 #626: `disable` is the one action left that asks custody
+    for (action, payload) in [("disable", json!({ "id": ids[0] }))] {
         let answer = send(&app, call(action, payload)).await;
         assert_eq!(
             (answer.status, answer.error().as_str()),
@@ -744,12 +732,13 @@ async fn what_the_custody_port_refuses_is_answered_as_it_says() {
         "a disable that custody could not judge disables nobody"
     );
 
-    // The six-role check of `enable` comes before custody is asked, and custody is asked nothing
-    // for `list`, `create` and `reset`.
+    // `enable` is retired (CA-10 #626) and asks custody nothing; neither do `list`, `create` and `reset`.
     let answer = send(&app, call("enable", json!({ "branchId": "BR-9" }))).await;
+    let unknown = send(&app, call("nope", json!({ "branchId": "BR-9" }))).await;
     assert_eq!(
-        answer.error(),
-        "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน"
+        (answer.status, answer.text.as_str()),
+        (unknown.status, unknown.text.as_str()),
+        "enable is answered as the unknown action `nope` is"
     );
     let answer = send(&app, call("list", json!({}))).await;
     assert_eq!(answer.status, 200, "{}", answer.text);
@@ -768,49 +757,6 @@ async fn what_the_custody_port_refuses_is_answered_as_it_says() {
 }
 
 #[actix_web::test]
-async fn the_custody_port_is_handed_the_owner_actor_and_the_payload_untouched() {
-    let desk = Desk::start().await;
-    let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
-    let payload = json!({ "branchId": "MAIN", "name": "บริษัท ตัวอย่าง จำกัด", "nested": { "list": [1, "two", null] }, "id": 7 });
-    let answer = send(
-        &app,
-        Call::post(
-            "/api/employees",
-            json!({ "action": "entity", "payload": payload }),
-        )
-        .owner(&owner),
-    )
-    .await;
-    assert_eq!(answer.status, 200, "{}", answer.text);
-    assert_eq!(
-        answer.json(),
-        json!({ "saved": true, "by": "custody", "action": "opsSetEntity" }),
-        "the port's answer is the body"
-    );
-    assert_eq!(
-        answer.cache_control, None,
-        "v2 sends no Cache-Control on custody's answers (`server.mjs:7384`)"
-    );
-    // without a payload the port gets an empty object
-    let answer = send(
-        &app,
-        Call::post("/api/employees", json!({ "action": "entity" })).owner(&owner),
-    )
-    .await;
-    assert_eq!(answer.status, 200, "{}", answer.text);
-    assert_eq!(
-        *desk.custody.calls.lock().unwrap(),
-        vec![
-            json!({ "action": "opsSetEntity", "payload": payload, "actorId": "owner" }),
-            json!({ "action": "opsSetEntity", "payload": {}, "actorId": "owner" }),
-        ]
-    );
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
 async fn a_port_failure_that_is_not_a_refusal_is_a_500() {
     struct Broken;
     impl http::employees::EmployeeCustody for Broken {
@@ -819,20 +765,6 @@ async fn a_port_failure_that_is_not_a_refusal_is_a_500() {
             _branch: &'a xc_kernel::ids::BranchId,
             _employee_id: &'a str,
         ) -> std::pin::Pin<Box<dyn Future<Output = pos_error::AppResult<bool>> + 'a>> {
-            Box::pin(async { Err(AppError::Internal("the custody tables are gone".into())) })
-        }
-        fn set_entity<'a>(
-            &'a self,
-            _payload: &'a Value,
-            _actor: &'a Actor,
-        ) -> std::pin::Pin<Box<dyn Future<Output = pos_error::AppResult<Value>> + 'a>> {
-            Box::pin(async { Err(AppError::Internal("the custody tables are gone".into())) })
-        }
-        fn enable<'a>(
-            &'a self,
-            _payload: &'a Value,
-            _actor: &'a Actor,
-        ) -> std::pin::Pin<Box<dyn Future<Output = pos_error::AppResult<Value>> + 'a>> {
             Box::pin(async { Err(AppError::Internal("the custody tables are gone".into())) })
         }
     }
@@ -853,7 +785,7 @@ async fn a_port_failure_that_is_not_a_refusal_is_a_500() {
     );
     let owner = owner_signs_in(&app).await;
     let (id, _) = working_employee(&app, &desk, &owner, "somchai", "FRONT", "MAIN").await;
-    for (action, payload) in [("entity", json!({})), ("disable", json!({ "id": id }))] {
+    for (action, payload) in [("disable", json!({ "id": id }))] {
         let answer = send(
             &app,
             Call::post(
@@ -945,96 +877,65 @@ async fn create<'a>(
 }
 
 #[actix_web::test]
-async fn enable_needs_an_active_employee_of_each_of_the_six_roles_in_that_branch() {
-    const SIX_ROLES: &str =
-        "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน";
+async fn enable_and_entity_are_actions_the_route_no_longer_knows() {
+    // CA-10 #626 (cash-shift-transfer.md §6 Q7): the Enable switch and the entity's writer are retired.
+    // With all six roles in the branch, `enable` is still answered as any unknown action, and so is
+    // `entity`; custody is asked nothing.
     let desk = Desk::start().await;
-    desk.branch("BR-2").await;
     let app = desk_app!(desk);
     let owner = owner_signs_in(&app).await;
-    let enable = |branch: &'static str| {
+    for role in ["FRONT", "BACKEND", "MANAGER", "RATES", "MONITOR", "FINANCE"] {
+        create(
+            &app,
+            &owner,
+            &format!("six-{}", role.to_lowercase()),
+            role,
+            "MAIN",
+        )
+        .await;
+    }
+    let post = |action: &'static str, payload: Value| {
         send(
             &app,
             Call::post(
                 "/api/employees",
-                json!({ "action": "enable", "payload": { "branchId": branch } }),
+                json!({ "action": action, "payload": payload }),
             )
             .owner(&owner),
         )
     };
-    let roles = ["FRONT", "BACKEND", "MANAGER", "RATES", "MONITOR", "FINANCE"];
-
-    // each role missing in turn: five of six are not enough, whichever one is missing
-    for (n, missing) in roles.iter().enumerate() {
-        let branch: &'static str = ["B-0", "B-1", "B-2", "B-3", "B-4", "B-5"][n];
-        desk.branch(branch).await;
-        for role in roles.iter().filter(|r| r != &missing) {
-            create(
-                &app,
-                &owner,
-                &format!("u{n}-{}", role.to_lowercase()),
-                role,
-                branch,
-            )
-            .await;
-        }
-        let answer = enable(branch).await;
+    let unknown = post("nope", json!({ "branchId": "MAIN" })).await;
+    assert_eq!(
+        unknown.status, 400,
+        "an unknown action is refused: {}",
+        unknown.text
+    );
+    for (action, payload) in [
+        ("enable", json!({ "branchId": "MAIN" })),
+        (
+            "entity",
+            json!({ "branchId": "MAIN", "company": "XC", "site": "B", "confirmSeparated": true }),
+        ),
+    ] {
+        let answer = post(action, payload).await;
         assert_eq!(
-            (answer.status, answer.error().as_str()),
-            (400, SIX_ROLES),
-            "without a {missing}"
+            (
+                answer.status,
+                answer.text.as_str(),
+                answer.cache_control.as_deref()
+            ),
+            (
+                unknown.status,
+                unknown.text.as_str(),
+                unknown.cache_control.as_deref()
+            ),
+            "{action}: answered as the unknown action `nope` is"
         );
-        // the missing role in another branch does not count
-        create(&app, &owner, &format!("u{n}-elsewhere"), missing, "BR-2").await;
-        let answer = enable(branch).await;
-        assert_eq!(
-            (answer.status, answer.error().as_str()),
-            (400, SIX_ROLES),
-            "a {missing} of BR-2"
-        );
-        // an employee still on the first password counts
-        create(
-            &app,
-            &owner,
-            &format!("u{n}-{}", missing.to_lowercase()),
-            missing,
-            branch,
-        )
-        .await;
-        let answer = enable(branch).await;
-        assert_eq!(answer.status, 200, "all six in {branch}: {}", answer.text);
     }
-    assert_eq!(
-        desk.custody.calls.lock().unwrap().len(),
-        6,
-        "custody was asked once per complete branch"
+    assert!(
+        desk.custody.calls.lock().unwrap().is_empty(),
+        "custody was asked nothing"
     );
-
-    // a disabled account does not count
-    let id = desk.employee_id("u0-manager").await;
-    let disabled = send(
-        &app,
-        Call::post(
-            "/api/employees",
-            json!({ "action": "disable", "payload": { "id": id } }),
-        )
-        .owner(&owner),
-    )
-    .await;
-    assert_eq!(disabled.status, 200, "{}", disabled.text);
-    let answer = enable("B-0").await;
-    assert_eq!(
-        (answer.status, answer.error().as_str()),
-        (400, SIX_ROLES),
-        "the Manager is disabled"
-    );
-    // no branch named: no employee is of "no branch"
-    let answer = send(
-        &app,
-        Call::post("/api/employees", json!({ "action": "enable" })).owner(&owner),
-    )
-    .await;
-    assert_eq!((answer.status, answer.error().as_str()), (400, SIX_ROLES));
     drop(app);
     desk.drop_schema().await;
 }

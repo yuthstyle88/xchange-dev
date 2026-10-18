@@ -8,6 +8,7 @@
 
 mod compat_common;
 mod save_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use std::sync::Arc;
@@ -141,10 +142,12 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
     shop.set_rate(OTHER, "USD", "32.1", "33").await;
     shop.open_shift(OTHER, &[("THB", "100000"), ("USD", "1000")])
         .await;
+    let other_saver = shift_holder_common::teller_of_open_shift(&shop.pool, OTHER).await;
     let customer_b = shop.reserve(OTHER, person()).await;
-    let passport_b = shop.upload(OTHER, OWNER, "image/jpeg", JPEG).await;
+    let passport_b = shop.upload(OTHER, &other_saver, "image/jpeg", JPEG).await;
     let elsewhere = form("other-0004-aaaaaaaaaa", &customer_b, &passport_b);
-    shop.save(OTHER, elsewhere, at(40))
+    shop.workflow
+        .save(&branch(OTHER), elsewhere, &other_saver, at(40))
         .await
         .expect("the save elsewhere");
 

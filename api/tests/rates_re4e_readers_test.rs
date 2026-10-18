@@ -101,6 +101,7 @@ mod compat_common;
 mod kiosk_http_common;
 use kiosk_http_common::rates_re4_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use std::future::Future;
@@ -868,6 +869,8 @@ async fn a_live_rpc_cash_save_of_jpy_counts_the_rows_baht() {
     .expect("insert the customer");
     // CI-4 (#651): the passport is the customer's encrypted identity (#554 §4.1)
     snapshot_common::seed_passport_identity(&pool, "cust-re4e", "AA1234567", "THA").await;
+    // CA-10 (#626 ruling A): a compat save meets the teller gate, which saves only on an OPEN day
+    shift_holder_common::open_day(&pool, MAIN).await;
     let passport = counter
         .desk
         .files

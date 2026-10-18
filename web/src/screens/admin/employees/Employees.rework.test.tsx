@@ -29,7 +29,6 @@ const SAMPLE_BRANCHES: AdminBranchItem[] = [
 ];
 
 const SAMPLE_OPERATIONS: AdminOperationsData = {
-  enabled: true,
   entity: {
     company: '108 Exchange Co., Ltd.',
     site: 'Headquarters',

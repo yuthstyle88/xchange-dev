@@ -412,20 +412,14 @@ async fn posting_shift(
     who: &SaveActor,
     shifts: &ShiftService,
 ) -> AppResult<Option<String>> {
-    if let Ok(teller_id) = Uuid::parse_str(&who.id) {
-        let own: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM shifts WHERE branch_id = $1 AND teller_id = $2 AND status = 'OPEN'",
-        )
-        .bind(branch.as_str())
-        .bind(teller_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-        if own.is_some() {
-            return Ok(own);
-        }
-    }
-    Ok(shifts.active_in(tx, branch).await?.map(|s| s.id))
+    let Ok(teller_id) = Uuid::parse_str(&who.id) else {
+        return Ok(None);
+    };
+    Ok(shifts
+        .open_of_teller_in(tx, &teller_id.to_string())
+        .await?
+        .filter(|s| &s.branch_id == branch)
+        .map(|s| s.id))
 }
 
 /// The branch's name (printed on the document) and its timezone (R-1).

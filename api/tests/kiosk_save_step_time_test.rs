@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 mod save_common;
+mod shift_holder_common;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -192,6 +193,14 @@ impl Scene {
     async fn start() -> Self {
         let shop = Shop::start().await;
         let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+        let shift = shift_holder_common::open_shift_for(
+            &shop.pool,
+            MAIN,
+            FRONT,
+            &[("THB", "100000"), ("USD", "1000")],
+        )
+        .await;
+        fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
         let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
         let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
         let counter = Arc::new(Counter::default());

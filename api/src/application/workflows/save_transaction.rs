@@ -28,6 +28,7 @@ use xc_kernel::money::{CompatRate, CurrencyCode, ForeignAmount, Rate, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
 use crate::application::workflows::exchange::complete::{
@@ -500,7 +501,7 @@ impl SaveTransactionWorkflow {
                     CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
                         .await?;
 
-                    if mode == Mode::Live {
+                    let resolved_teller = if mode == Mode::Live {
                         let Ok(code) = CurrencyCode::parse(&form.currency) else {
                             return refuse(RATE_MISMATCH);
                         };
@@ -517,12 +518,25 @@ impl SaveTransactionWorkflow {
                                 this.shifts
                                     .apply_delta_for_teller_in(tx, &branch, &t.user_id, &delta)
                                     .await?;
+                                None
                             }
                             None => {
-                                this.shifts.apply_delta_in(tx, &branch, &delta).await?;
+                                let Some(teller) = this
+                                    .shifts
+                                    .teller_of_actor_in(tx, &branch, &save_actor.id)
+                                    .await?
+                                else {
+                                    return Err(ShiftError::NoOpenShift.into());
+                                };
+                                this.shifts
+                                    .apply_delta_for_teller_in(tx, &branch, &teller, &delta)
+                                    .await?;
+                                Some(teller)
                             }
                         }
-                    }
+                    } else {
+                        None
+                    };
 
                     // Step 2: Create Transaction
                     let create_req = CreateRequest {
@@ -556,7 +570,11 @@ impl SaveTransactionWorkflow {
                         form.reference_rate
                     };
 
-                    let teller_user_id = teller.as_ref().and_then(|t| Uuid::parse_str(&t.user_id).ok());
+                    let teller_user_id = teller
+                        .as_ref()
+                        .map(|t| t.user_id.as_str())
+                        .or(resolved_teller.as_deref())
+                        .and_then(|id| Uuid::parse_str(id).ok());
                     let create_tx = CreateTransaction::new(this.branch_tx.pool().clone(), this.files.clone());
                     let draft = create_tx
                         .run_for_save_in(

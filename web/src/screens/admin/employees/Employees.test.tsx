@@ -132,7 +132,6 @@ interface Employee {
 
 interface Ops {
   version: number;
-  enabled: boolean;
   entity: { company: string; site: string; confirmedBy: string; at: string } | null;
 }
 
@@ -170,9 +169,9 @@ class Server {
     { id: 'B2', name: 'Bravo Desk' },
   ];
   ops: Record<string, Ops> = {
-    MAIN: { version: 7, enabled: false, entity: null },
-    A1: { version: 7, enabled: true, entity: { company: 'Alpha Co.', site: 'Alpha Site', confirmedBy: 'owner', at: '2026-10-01T00:00:00.000Z' } },
-    B2: { version: 4, enabled: false, entity: null },
+    MAIN: { version: 7, entity: null },
+    A1: { version: 7, entity: { company: 'Alpha Co.', site: 'Alpha Site', confirmedBy: 'owner', at: '2026-10-01T00:00:00.000Z' } },
+    B2: { version: 4, entity: null },
   };
   /** When set, `admin_employees` answers this refusal (a staff caller, ticket §9 row 1). */
   employeesRefusal: { status: number; code: string; message: string } | null = null;
@@ -214,7 +213,7 @@ class Server {
       const ops = this.ops[branch ?? 'MAIN'];
       if (!ops) return json({ error: { code: 'noSuchBranch', field: 'branch', message: 'ไม่พบสาขาที่เลือก กรุณารีเฟรช' } }, 400);
       if (since !== null && Number(since) === ops.version) return json({ version: ops.version, changed: false });
-      return json({ version: ops.version, changed: true, data: { enabled: ops.enabled, entity: ops.entity && { ...ops.entity } } });
+      return json({ version: ops.version, changed: true, data: { entity: ops.entity && { ...ops.entity } } });
     }
     if (method === 'GET' && view === 'admin_branches') {
       this.reads.push({ view, branch: url.searchParams.get('branch'), since: url.searchParams.get('since') });
@@ -262,7 +261,6 @@ class Server {
     }
     const ops = this.ops[p.branchId ?? 'MAIN']!;
     ops.version += 1;
-    if (action === 'enable') ops.enabled = true;
     if (action === 'entity') ops.entity = { company: p.company!, site: p.site!, confirmedBy: 'owner', at: '2026-10-08T00:00:00.000Z' };
     return { ok: true };
   }

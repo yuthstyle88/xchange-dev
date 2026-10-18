@@ -6,11 +6,14 @@
 //! Every shift is seeded by SQL, so these tests pin the reads and nothing about how a shift opens. Two OPEN
 //! shifts at one branch need `opened_by_count` set until CA-10's M3 (the v2 per-branch index binds only
 //! marker-less shifts); CA-10 drops that column from these seeds as a setup-only edit.
+//!
+//! Row 4 (`two_open_shifts_for_one_teller_is_a_fault`) is retired by the BE controller's ruling on #626: M3's
+//! `shifts_one_open_per_teller` makes two OPEN shifts for one teller unstorable, and `ca10_m3_migration_test` pins
+//! that index.
 
 mod shift_service_common;
 
 use chrono::{DateTime, Utc};
-use pos_error::{AppError, AppResult};
 use shift_service_common::{TestDb, at, unique};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
@@ -78,19 +81,19 @@ async fn shift(
             Some(count)
         }
     };
+    let _ = count;
     let closed = status == "CLOSED";
     sqlx::query(
-        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count, \
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, \
              closed_at, closed_by) \
-         VALUES ($1, $2, $3, $4, 'test', $1, $5, $6, CASE WHEN $7 THEN $4 + interval '1 hour' END, \
-             CASE WHEN $7 THEN 'test' END)",
+         VALUES ($1, $2, $3, $4, 'test', $1, $5, CASE WHEN $6 THEN $4 + interval '1 hour' END, \
+             CASE WHEN $6 THEN 'test' END)",
     )
     .bind(&id)
     .bind(branch.as_str())
     .bind(status)
     .bind(opened_at)
     .bind(teller)
-    .bind(count)
     .bind(closed)
     .execute(&db.pool)
     .await
@@ -100,15 +103,6 @@ async fn shift(
 
 fn repo(db: &TestDb) -> PgShiftRepository {
     PgShiftRepository::new(db.pool.clone())
-}
-
-fn internal_naming<T: std::fmt::Debug>(res: AppResult<T>, what: &str) {
-    match res {
-        Err(AppError::Internal(msg)) => {
-            assert!(msg.contains(what), "the fault names {what}: {msg}")
-        }
-        other => panic!("expected AppError::Internal naming {what}, got {other:?}"),
-    }
 }
 
 // ── open_of_teller ──────────────────────────────────────────────────────────
@@ -189,23 +183,6 @@ async fn open_of_teller_in_reads_in_the_callers_transaction() {
         .expect("the uncommitted shift, read in its own transaction");
     assert_eq!(found.id, id);
     tx.rollback().await.unwrap();
-    db.drop_schema().await;
-}
-
-/// Row 4: two OPEN shifts for one teller is a fault naming the teller, never "the first one".
-/// (Possible until M3: a v2-opened and a count-opened shift of the same person.)
-#[tokio::test]
-async fn two_open_shifts_for_one_teller_is_a_fault() {
-    let db = TestDb::start().await;
-    let main = db.branch("MAIN").await;
-    let airport = db.branch("AIR").await;
-    let ploy = user(&db, "Ploy").await;
-    shift(&db, &main, Some(ploy), "OPEN", at(0, 0), Opened::V2).await;
-    shift(&db, &airport, Some(ploy), "OPEN", at(5, 0), Opened::ByCount).await;
-    internal_naming(
-        repo(&db).open_of_teller(&ploy.to_string()).await,
-        &ploy.to_string(),
-    );
     db.drop_schema().await;
 }
 

@@ -27,6 +27,9 @@
 //!
 //! No role literal is asked for: the role table is PR 589's (`role_permissions.rs`), where only BRANCH_MANAGER holds
 //! `BranchDayOperate`.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c; ruling Q5, cash-shift-transfer.md §4.2): `COUNTING`
+//! goes with the request half that was its only writer, so it is no longer among the phases tried here.
 
 use chrono::{DateTime, TimeZone, Utc};
 use xc_auth::domain::access::{Actor, Role, ScopedRole, Target};
@@ -47,13 +50,7 @@ const MANAGER: &str = "00000000-0000-4000-8000-0000000000c3";
 const B01: &str = "XC-B01";
 const B02: &str = "XC-B02";
 
-const EVERY_PHASE: [Phase; 5] = [
-    Phase::Closed,
-    Phase::Ready,
-    Phase::Open,
-    Phase::CutOff,
-    Phase::Counting,
-];
+const EVERY_PHASE: [Phase; 4] = [Phase::Closed, Phase::Ready, Phase::Open, Phase::CutOff];
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, 10, 6, 0, 0).unwrap()
@@ -262,7 +259,7 @@ fn cut_off_with_an_open_shift_stays_cut_off() {
 
 #[test]
 fn every_other_phase_reads_as_stored() {
-    for phase in [Phase::Closed, Phase::Ready, Phase::Open, Phase::Counting] {
+    for phase in [Phase::Closed, Phase::Ready, Phase::Open] {
         for open in [0, 1, 2] {
             assert_eq!(
                 BranchDay::read_phase(phase, open),
@@ -326,7 +323,7 @@ fn two_tellers_each_on_their_own_shift_both_save_while_open() {
 fn a_save_outside_open_or_cut_off_is_closed() {
     let alice = on(B01, ALICE, Role::Teller);
     let drafts = [draft("D1", ALICE, "SH-A")];
-    for phase in [Phase::Closed, Phase::Ready, Phase::Counting] {
+    for phase in [Phase::Closed, Phase::Ready] {
         assert_eq!(
             BranchDay::check_save(
                 phase,

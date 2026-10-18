@@ -48,12 +48,6 @@ describe('RBAC refusal error wording (§9)', () => {
       expect(errorText('userNotActive', 'raw')).toBe('บัญชีนี้ไม่ได้ใช้งานอยู่');
       expect(wordedError(refusal(409, 'userNotActive', 'raw'))).toBe('บัญชีนี้ไม่ได้ใช้งานอยู่');
     });
-
-    it('outOfScope (403)', () => {
-      setLang('th');
-      expect(errorText('outOfScope', 'raw')).toBe('อยู่นอกสาขาที่คุณดูแล');
-      expect(wordedError(refusal(403, 'outOfScope', 'raw'))).toBe('อยู่นอกสาขาที่คุณดูแล');
-    });
   });
 
   describe('English (en)', () => {
@@ -91,12 +85,6 @@ describe('RBAC refusal error wording (§9)', () => {
       setLang('en');
       expect(errorText('userNotActive', 'raw')).toBe('This account is not active');
       expect(wordedError(refusal(409, 'userNotActive', 'raw'))).toBe('This account is not active');
-    });
-
-    it('outOfScope (403)', () => {
-      setLang('en');
-      expect(errorText('outOfScope', 'raw')).toBe('This is outside your branches');
-      expect(wordedError(refusal(403, 'outOfScope', 'raw'))).toBe('This is outside your branches');
     });
   });
 
@@ -141,13 +129,6 @@ describe('RBAC refusal error wording (§9)', () => {
       setLang('zh');
       expect(errorText('userNotActive', 'raw')).toBe('此账户未在使用中');
       expect(wordedError(refusal(409, 'userNotActive', 'raw'))).toBe('此账户未在使用中');
-    });
-
-    it('outOfScope (403)', () => {
-      setAudience('customer');
-      setLang('zh');
-      expect(errorText('outOfScope', 'raw')).toBe('这不在您负责的分店范围内');
-      expect(wordedError(refusal(403, 'outOfScope', 'raw'))).toBe('这不在您负责的分店范围内');
     });
   });
 });

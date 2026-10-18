@@ -19,25 +19,23 @@
 //! day with no window at all. (The port answers that day's window for display; the machine
 //! still refuses outside it.)
 //!
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c; cash-shift-transfer.md §6, ruling Q7): v2's
+//! `opsStartService` goes with the custody command engine, so the start is CA-8b's: `BranchDayService::start_service`
+//! on `PgCustodyPorts` (which reads the same `timezone` and `opening_hours`), by a BRANCH_MANAGER of `MAIN` while the
+//! day is CLOSED, so it is refused `ServiceNotReady` whatever the time. The pinned sentences are unchanged.
 //! Needs `TEST_DATABASE_URL` (a database whose name ends in `_test`); nothing here skips.
 
 #[allow(unused_imports)]
 mod save_common;
 
-use pos_infra::transactions::Transactor;
+use chrono::{TimeZone, Utc};
 use save_common::*;
 use serde_json::{Value, json};
-use xc_kernel::branch_tx::BranchTx;
-use xc_shift::domain::custody::entities::attendance::Attendance;
-use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
-use xc_shift::domain::custody::state::CustodyState;
-use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
-use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_auth::domain::access::{Actor, Role as BpRole, ScopedRole};
+use xc_shift::application::branch_day::service::{BranchDayService, StartService};
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
-use xchange::infrastructure::custody::custody_service::pg_custody_service;
-
-const BACK: &str = "employee-9";
+use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;
 
 const NOT_SET: &str = "สาขานี้ยังไม่ได้ตั้งเวลาทำการ ให้ผู้ดูแลตั้งเวลาก่อนเปิดบริการ";
 const CLOSED_TODAY: &str = "วันนี้สาขาปิด";
@@ -64,78 +62,51 @@ fn week(open: &str, close: &str) -> Value {
     })
 }
 
-/// `MAIN` with custody enabled and `BACK`, a back-office employee, clocked in; no shift open.
-async fn desk(shop: &Shop) {
-    sqlx::query(
-        "INSERT INTO employees (id, username, name, role, branch_id, password_hash, active, must_change, created_at) \
-         VALUES ($1, $2, $3, 'BACKEND', $4, 'x', true, false, now())",
+/// A BRANCH_MANAGER of `MAIN` (no row is needed: `BranchDay::start_service` asks the actor's own roles).
+fn manager() -> Actor {
+    let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    Actor::new(
+        "00000000-0000-4000-8000-0000000b0001",
+        "00000000-0000-0000-0000-000000000001",
+        vec![ScopedRole::new(
+            BpRole::BranchManager,
+            Some(branch(MAIN)),
+            from,
+            None,
+        )],
+        None,
     )
-    .bind(BACK)
-    .bind(format!("user-{BACK}"))
-    .bind(format!("Name {BACK}"))
-    .bind(MAIN)
-    .execute(&shop.pool)
-    .await
-    .expect("insert into employees");
-
-    let state = CustodyState {
-        enabled: true,
-        attendance: vec![Attendance {
-            id: "att-1".to_owned(),
-            employee_id: BACK.to_owned(),
-            role: CustodyRole::Backend,
-            clock_in: CustodyTime::from_epoch_millis(
-                instant("2026-10-01T00:00:00.000Z").timestamp_millis(),
-            ),
-            clock_out: None,
-        }],
-        ..CustodyState::initial()
-    };
-    let repo = PgCustodyRepository::new(shop.pool.clone());
-    let mut tx = shop.pool.begin().await.expect("begin");
-    let before = repo
-        .load_state_in(&mut tx, &branch(MAIN))
-        .await
-        .expect("load the custody state");
-    repo.store_state_in(&mut tx, &branch(MAIN), &before, &state)
-        .await
-        .expect("store the custody state");
-    tx.commit().await.expect("commit");
 }
 
-/// The sentence `BACK` is refused with when starting the service at `now` (an ISO instant).
+/// The sentence a BRANCH_MANAGER is refused with when starting the service of `MAIN`, whose day is CLOSED, at `now`
+/// (an ISO instant).
 async fn refused_start(shop: &Shop, now: &str) -> String {
-    let custody = pg_custody_service(
-        &shop.pool,
-        &shop.shifts,
-        &BranchTx::new(Transactor::new(shop.pool.clone())),
+    let days = BranchDayService::new(
+        std::sync::Arc::new(PgCustodyRepository::new(shop.pool.clone())),
+        shop.shifts.clone(),
+        std::sync::Arc::new(PgCustodyPorts),
     );
-    let actor = CustodyActor {
-        id: BACK.to_owned(),
-        employee_id: Some(BACK.to_owned()),
-        role: CustodyRole::Backend,
-    };
-    let payload = json!({
-        "equipmentReady": true, "ratesVerified": true,
-        "rateUpdated": "2026-10-06T03:00:00.000Z",
-    });
-    refusal(
-        custody
-            .command(
-                &branch(MAIN),
-                "opsStartService",
-                &payload,
-                &actor,
-                instant(now),
-            )
-            .await,
-    )
+    let mut tx = shop.pool.begin().await.expect("begin");
+    let got = days
+        .start_service(
+            &mut tx,
+            &manager(),
+            &branch(MAIN),
+            StartService {
+                equipment_ready: true,
+                rates_verified: true,
+                rate_updated: "2026-10-06T03:00:00.000Z".to_owned(),
+            },
+            instant(now),
+        )
+        .await;
+    tx.rollback().await.expect("rollback");
+    refusal(got)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_sentence_names_the_branchs_own_window_in_its_own_timezone() {
     let shop = Shop::start().await;
-    desk(&shop).await;
     set_hours(&shop, "Asia/Tokyo", Some(week("10:00", "20:00"))).await;
     // Wednesday 2026-10-07, 14:00 and 19:55 in Tokyo (05:00 and 10:55 UTC)
     for now in ["2026-10-07T05:00:00.000Z", "2026-10-07T10:55:00.000Z"] {
@@ -151,7 +122,6 @@ async fn the_sentence_names_the_branchs_own_window_in_its_own_timezone() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_last_start_is_ten_minutes_before_closing_across_the_hour() {
     let shop = Shop::start().await;
-    desk(&shop).await;
     set_hours(&shop, "Asia/Tokyo", Some(week("10:00", "20:05"))).await;
     // Wednesday 2026-10-07, 20:00 in Tokyo
     assert_eq!(
@@ -164,7 +134,6 @@ async fn the_last_start_is_ten_minutes_before_closing_across_the_hour() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_window_past_midnight_is_shown_as_the_local_times_it_has() {
     let shop = Shop::start().await;
-    desk(&shop).await;
     set_hours(&shop, "Asia/Tokyo", Some(week("18:00", "02:00"))).await;
     // Wednesday 19:00 and Thursday 01:55 in Tokyo, both inside Wednesday's 18:00–02:00
     for now in ["2026-10-07T10:00:00.000Z", "2026-10-07T16:55:00.000Z"] {
@@ -180,7 +149,6 @@ async fn a_window_past_midnight_is_shown_as_the_local_times_it_has() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_v2_week_in_bangkok_still_reads_eleven_to_ten_to_eleven() {
     let shop = Shop::start().await;
-    desk(&shop).await;
     set_hours(&shop, "Asia/Bangkok", Some(week("11:00", "23:00"))).await;
     // Wednesday 2026-10-07, 13:25 in Bangkok
     assert_eq!(
@@ -193,7 +161,6 @@ async fn the_v2_week_in_bangkok_still_reads_eleven_to_ten_to_eleven() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_branch_without_hours_is_told_to_have_them_set() {
     let shop = Shop::start().await;
-    desk(&shop).await;
     set_hours(&shop, "Asia/Tokyo", None).await;
     assert_eq!(
         refused_start(&shop, "2026-10-07T05:00:00.000Z").await,
@@ -205,7 +172,6 @@ async fn a_branch_without_hours_is_told_to_have_them_set() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn before_opening_and_after_closing_the_sentence_names_todays_window() {
     let shop = Shop::start().await;
-    desk(&shop).await;
     set_hours(&shop, "Asia/Tokyo", Some(week("10:00", "20:00"))).await;
     // Wednesday 2026-10-07, 09:00 and 21:00 in Tokyo: the day has a window, it is not "closed"
     for now in ["2026-10-07T00:00:00.000Z", "2026-10-07T12:00:00.000Z"] {
@@ -221,7 +187,6 @@ async fn before_opening_and_after_closing_the_sentence_names_todays_window() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_branch_closed_today_is_told_so() {
     let shop = Shop::start().await;
-    desk(&shop).await;
     set_hours(&shop, "Asia/Tokyo", Some(week("10:00", "20:00"))).await;
     // Sunday 2026-10-11 in Tokyo, `"sun": []` while the other days are open: 09:00, 12:00
     // and 21:00 all read as a closed day
