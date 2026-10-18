@@ -380,7 +380,6 @@ async fn admin_suspends_an_active_user_who_holds_no_cash() {
 /// Row 2: the user holds cash (custody_holds() answers true) -> 409 holdsCash
 /// Marked ignore until RBAC f11 #3147 (C3) merges into feat/rbac.
 #[actix_web::test]
-#[ignore = "needs C3 (RBAC f11 #3147)"]
 async fn a_user_holding_cash_cannot_be_suspended() {
     let db = TestDb::start().await;
     let user = a_user(&db, "ACTIVE", &[("TELLER", Some(B01))]).await;
