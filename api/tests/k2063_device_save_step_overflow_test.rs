@@ -11,7 +11,7 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 use pos_infra::transactions::Transactor;
 use save_common::*;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
@@ -29,7 +29,7 @@ fn front() -> SaveActor {
         id: FRONT.to_owned(),
         username: format!("user-{FRONT}"),
         employee_id: Some(FRONT.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

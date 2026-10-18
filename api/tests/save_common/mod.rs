@@ -978,7 +978,9 @@ pub async fn kiosk_quote_in(
         id: xc_kiosk::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK.to_owned(),
         username: xc_kiosk::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK.to_owned(),
         employee_id: None,
-        role: xc_auth::domain::policy::value_objects::role::Role::System,
+        standing: xc_auth::domain::access::StandingKind::Staff(
+            xc_auth::domain::access::Role::Admin,
+        ),
     };
     let quote = QuoteService::new(pool.clone())
         .quote_in(tx, request, &kiosk, now)

@@ -53,6 +53,7 @@ use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
 use xc_approval::domain::request::Outcome;
+use xc_auth::domain::access::StandingKind;
 use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
@@ -759,7 +760,7 @@ impl Day {
             id: "employee-manager".to_owned(),
             username: "manager".to_owned(),
             employee_id: Some("employee-manager".to_owned()),
-            role: OldRole::Manager,
+            standing: StandingKind::Staff(xc_auth::domain::access::Role::BranchManager),
         };
         let mut tx = pool.begin().await.unwrap();
         let reversal = RequestReversal::new(pool.clone(), self.c.desk.approvals.clone())
