@@ -27,6 +27,25 @@ use crate::presentation::extractors::app_session::{
     AppSessionCookie, AppSessionGuard, DRAFT_WRITES_PER_MINUTE,
 };
 use crate::presentation::extractors::origin::same_origin;
+use crate::presentation::http::client_address::client_address;
+
+tokio::task_local! {
+    static CLIENT_IP: String;
+}
+
+pub(crate) fn request_ip() -> Option<String> {
+    CLIENT_IP
+        .try_with(|ip| {
+            let trimmed = ip.trim();
+            if trimmed.is_empty() || trimmed.parse::<std::net::IpAddr>().is_err() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .ok()
+        .flatten()
+}
 
 /// The locks required by a command action (§6).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -547,68 +566,74 @@ async fn handle_command<C: CommandAction>(
     let claim_token_clone = claim_token.clone();
     let store_clone = store.clone();
 
-    let run_res = match &locks {
-        Locks::One(b) => {
-            branch_tx
-                .run(b, move |tx| {
-                    Box::pin(async move {
-                        execute_in_tx(
-                            &command_clone,
-                            tx,
-                            &branch_clone,
-                            &caller_clone,
-                            input,
-                            &idem_key_clone,
-                            &claim_token_clone,
-                            &store_clone,
-                            &captured_error_clone,
-                        )
+    let client_ip = client_address(&req).to_owned();
+
+    let run_res = CLIENT_IP
+        .scope(client_ip, async {
+            match &locks {
+                Locks::One(b) => {
+                    branch_tx
+                        .run(b, move |tx| {
+                            Box::pin(async move {
+                                execute_in_tx(
+                                    &command_clone,
+                                    tx,
+                                    &branch_clone,
+                                    &caller_clone,
+                                    input,
+                                    &idem_key_clone,
+                                    &claim_token_clone,
+                                    &store_clone,
+                                    &captured_error_clone,
+                                )
+                                .await
+                            })
+                        })
                         .await
-                    })
-                })
-                .await
-        }
-        Locks::Pair(a, b) => {
-            branch_tx
-                .run_pair(a, b, move |tx| {
-                    Box::pin(async move {
-                        execute_in_tx(
-                            &command_clone,
-                            tx,
-                            &branch_clone,
-                            &caller_clone,
-                            input,
-                            &idem_key_clone,
-                            &claim_token_clone,
-                            &store_clone,
-                            &captured_error_clone,
-                        )
+                }
+                Locks::Pair(a, b) => {
+                    branch_tx
+                        .run_pair(a, b, move |tx| {
+                            Box::pin(async move {
+                                execute_in_tx(
+                                    &command_clone,
+                                    tx,
+                                    &branch_clone,
+                                    &caller_clone,
+                                    input,
+                                    &idem_key_clone,
+                                    &claim_token_clone,
+                                    &store_clone,
+                                    &captured_error_clone,
+                                )
+                                .await
+                            })
+                        })
                         .await
-                    })
-                })
-                .await
-        }
-        Locks::Org => {
-            branch_tx
-                .run_org(&org_id, move |tx| {
-                    Box::pin(async move {
-                        execute_in_tx(
-                            &command_clone,
-                            tx,
-                            &branch_clone,
-                            &caller_clone,
-                            input,
-                            &idem_key_clone,
-                            &claim_token_clone,
-                            &store_clone,
-                            &captured_error_clone,
-                        )
+                }
+                Locks::Org => {
+                    branch_tx
+                        .run_org(&org_id, move |tx| {
+                            Box::pin(async move {
+                                execute_in_tx(
+                                    &command_clone,
+                                    tx,
+                                    &branch_clone,
+                                    &caller_clone,
+                                    input,
+                                    &idem_key_clone,
+                                    &claim_token_clone,
+                                    &store_clone,
+                                    &captured_error_clone,
+                                )
+                                .await
+                            })
+                        })
                         .await
-                    })
-                })
-                .await
-        }
-    };
+                }
+            }
+        })
+        .await;
 
     match run_res {
         Ok(response_val) => ok_answer(response_val, session_cookie),

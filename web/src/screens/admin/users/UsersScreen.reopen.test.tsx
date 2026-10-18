@@ -1,3 +1,5 @@
+// Amended by W8 (claude/177aa7ef): userCreate no longer takes a typed password (F9 #3155, owner Q5 A); the server
+// answers temporaryPassword once. xchange#564, the BE controller's F9 contract.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -138,7 +140,6 @@ async function closedCreate_thenReopenAndType(c: HTMLElement): Promise<void> {
   await settle();
   type(c, 'input[name="name"]', 'First Person');
   type(c, 'input[name="phone"]', '0811111111');
-  type(c, 'input[name="password"]', 'Secret123!');
   submitDialog(c);
   await settle();
   expect(writes.filter((w) => w.path === '/api/users').length).toBe(1);

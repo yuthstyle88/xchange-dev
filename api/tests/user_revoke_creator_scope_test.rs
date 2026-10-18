@@ -263,7 +263,7 @@ fn code(a: &Answer) -> String {
         .to_owned()
 }
 
-/// Seeds an ACTIVE user in XC-B01's organisation and grants `(role, branch)` via `ADMIN@*`.
+/// Seeds an ACTIVE user in XC-B01's organisation holding `(role, branch)`.
 async fn seed_user_with_role(db: &TestDb, role: &str, branch: Option<&str>) -> String {
     let user = db
         .text(&format!(
@@ -273,14 +273,16 @@ async fn seed_user_with_role(db: &TestDb, role: &str, branch: Option<&str>) -> S
         ))
         .await
         .expect("a user of XC-B01's organisation");
-    let g = post(
-        db,
-        ORG_ADMIN,
-        "/api/users/grant",
-        json!({ "userId": user, "role": role, "branch": branch }),
-    )
-    .await;
-    assert_eq!(g.status, StatusCode::OK, "seed grant failed: {}", g.text);
+    // RBAC C1a (owner decision Q4 A): an ADMIN no longer grants ADMIN or EXECUTIVE over HTTP, so
+    // the role row is seeded directly, as the other user tests seed theirs.
+    let branch_sql = branch.map_or("NULL".to_owned(), |b| format!("'{b}'"));
+    db.text(&format!(
+        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+         SELECT '{user}'::uuid, '{role}', organization_id, {branch_sql} FROM branches WHERE id = '{B01}' \
+         RETURNING user_id::text"
+    ))
+    .await
+    .expect("seed the role row");
     assert_eq!(db.live_role_count(&user, role, branch).await, 1);
     user
 }
@@ -374,9 +376,11 @@ async fn r3_branch_admin_can_revoke_role_at_own_branch() {
     db.finish().await;
 }
 
-/// R4: `ADMIN@*` revoking `EXECUTIVE` (`branch: null`) succeeds (`200`) and ends the row.
+/// R4, changed by RBAC C1a (owner decision Q4 A, PR 3083 §2 and §3.1 rule 3): `ADMIN@*` revoking
+/// `EXECUTIVE` from an EXECUTIVE is refused (`403` `roleNotAllowed`); only EXECUTIVE + ADMIN (the
+/// owner, B3) changes an EXECUTIVE. The owner's case is in `rbac_c1a_user_commands_test.rs`.
 #[actix_web::test]
-async fn r4_org_admin_can_revoke_org_wide_executive() {
+async fn r4_org_admin_alone_cannot_revoke_org_wide_executive() {
     let db = TestDb::start().await;
     let user = seed_user_with_role(&db, "EXECUTIVE", None).await;
     let version_before = db.version(&user).await;
@@ -389,13 +393,14 @@ async fn r4_org_admin_can_revoke_org_wide_executive() {
     )
     .await;
 
-    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "roleNotAllowed", "{}", a.text);
     assert_eq!(
         db.live_role_count(&user, "EXECUTIVE", None).await,
-        0,
-        "EXECUTIVE row must be ended"
+        1,
+        "EXECUTIVE row must still be live"
     );
-    assert_eq!(db.version(&user).await, version_before + 1);
+    assert_eq!(db.version(&user).await, version_before);
     db.finish().await;
 }
 

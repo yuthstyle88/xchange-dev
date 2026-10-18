@@ -114,10 +114,28 @@ async fn test_01_owner_creates_staff_with_new_phone_registers_in_identity_and_si
     assert_eq!(sent.len(), 1, "Identity received one /auth/register");
     let sent_body = sent[0].json();
     assert_eq!(sent_body["phone"], "+66812345678");
-    assert_eq!(sent_body["password"], "temp-password-123");
+    // Restated by the RBAC controller (claude/e17fff2a, #3155) for the owner's Q5 A (RBAC design §2, decided
+    // 2026-10-18, issuecomment-6245259930): the typed password is ignored, xchange generates a 16-character
+    // temporary password, answers it once, and Identity is told to force a change.
+    let sent_password = sent_body["password"]
+        .as_str()
+        .expect("a password sent to Identity");
+    assert_ne!(
+        sent_password, "temp-password-123",
+        "Q5 A: the typed password is ignored"
+    );
     assert_eq!(
-        sent_body["mustChangePassword"], false,
-        "§7 must_change_password false for userCreate"
+        sent_password.chars().count(),
+        16,
+        "Q5 A: a TempPassword is 16 characters"
+    );
+    assert_eq!(
+        body["temporaryPassword"], sent_password,
+        "Q5 A: the answer carries the generated password once"
+    );
+    assert_eq!(
+        sent_body["mustChangePassword"], true,
+        "Q5 A: must_change_password true for userCreate"
     );
     assert!(
         sent_body.get("otpCode").is_none() || sent_body["otpCode"].is_null(),
