@@ -323,14 +323,15 @@ impl SessionService {
         organization_id: &str,
         name: &str,
         version: i32,
-        refresh_token: Option<&str>,
+        login: &IdentityLoginResponse,
         now: DateTime<Utc>,
     ) -> Result<SignInTail, SessionError> {
         let token = generate_session_token();
         let token_hash = sha256_hex(&token);
         let expires = now + Duration::seconds(SESSION_SECONDS);
+        let must_change_password = login.must_change_password.unwrap_or(false);
 
-        let refresh_enc = match (self.client_secret.as_deref(), refresh_token) {
+        let refresh_enc = match (self.client_secret.as_deref(), login.refresh_token.as_deref()) {
             (Some(secret), Some(rt)) => {
                 let enc = encrypt_refresh_token(secret, rt).map_err(|_| {
                     SessionError::Identity(IdentityError::unavailable(
@@ -351,8 +352,8 @@ impl SessionService {
             .map_err(|e| SessionError::Database(e.to_string()))?;
         let branch = Self::initial_branch_in(&mut conn, user_id, now).await?;
         sqlx::query(
-            "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id, branch_id) \
-             VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid, $7)",
+            "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id, branch_id, must_change_password) \
+             VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid, $7, $8)",
         )
         .bind(&token_hash)
         .bind(user_id)
@@ -361,6 +362,7 @@ impl SessionService {
         .bind(refresh_enc)
         .bind(organization_id)
         .bind(branch.as_ref().map(BranchId::as_str))
+        .bind(must_change_password)
         .execute(&mut *conn)
         .await
         .map_err(|e| SessionError::Database(e.to_string()))?;
@@ -413,15 +415,8 @@ impl SessionService {
             return Err(IdentityError::SignIn.into());
         }
 
-        self.create_session_for_user(
-            &user_id,
-            &organization_id,
-            &name,
-            version,
-            login.refresh_token.as_deref(),
-            now,
-        )
-        .await
+        self.create_session_for_user(&user_id, &organization_id, &name, version, &login, now)
+            .await
     }
 
     fn identity_identifier(raw: &str) -> String {
