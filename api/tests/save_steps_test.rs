@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use save_common::*;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::money::Side;
 use xchange::application::workflows::save_step::{
@@ -39,17 +39,17 @@ fn owner() -> SaveActor {
         id: OWNER.to_owned(),
         username: "boss".to_owned(),
         employee_id: None,
-        role: Role::Owner,
+        standing: StandingKind::Owner,
     }
 }
 
 /// A staff member: the id is the employee's id, the username something else.
-fn staff(id: &str, role: Role) -> SaveActor {
+fn staff(id: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
         username: format!("user-{id}"),
         employee_id: Some(id.to_owned()),
-        role,
+        standing,
     }
 }
 
@@ -255,7 +255,7 @@ async fn the_forms_staff_is_the_savers_username_whatever_was_sent() {
 async fn the_steps_run_in_order_around_the_save_and_are_told_about_it() {
     let shop = Shop::start().await;
     let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let me = staff("employee-7", Role::Front);
+    let me = staff("employee-7", StandingKind::Staff(AccessRole::Teller));
     let shift = shift_holder_common::open_shift_for(
         &shop.pool,
         MAIN,

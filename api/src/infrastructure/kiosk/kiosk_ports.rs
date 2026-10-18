@@ -11,7 +11,7 @@ use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -462,7 +462,7 @@ impl KioskPorts for PgKioskPorts {
                 id: CUSTOMER_KIOSK.to_string(),
                 username: CUSTOMER_KIOSK.to_string(),
                 employee_id: None,
-                role: Role::System,
+                standing: StandingKind::Staff(AccessRole::Admin),
             };
             let quote = quote_service.quote_in(tx, req, &who, now).await?;
             Ok(Some(quote.id.to_string()))

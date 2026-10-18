@@ -82,7 +82,7 @@ use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use save_common::rates_re4c_common::{d, line, publish};
 use save_common::*;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::StandingKind;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, Side};
@@ -1187,7 +1187,7 @@ async fn a_kiosk_save_after_a_republish_is_quote_expired() {
         id: FRONT.to_owned(),
         username: "front7".to_owned(),
         employee_id: Some(FRONT.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(xc_auth::domain::access::Role::Teller),
     };
     let extras = SaveExtras {
         kiosk_request_id: Some("q-re4c-1".to_owned()),
@@ -1262,7 +1262,7 @@ async fn a_kiosk_vouched_save_at_another_rate_is_refused() {
         id: FRONT.to_owned(),
         username: "front7".to_owned(),
         employee_id: Some(FRONT.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(xc_auth::domain::access::Role::Teller),
     };
     let extras = SaveExtras {
         kiosk_request_id: Some("q-re4c-2".to_owned()),
@@ -1374,7 +1374,7 @@ async fn a_booked_save_at_the_booked_rate_off_the_current_line_is_refused() {
         id: OWNER.to_owned(),
         username: OWNER.to_owned(),
         employee_id: None,
-        role: Role::Owner,
+        standing: StandingKind::Owner,
     };
     let claim = BookingClaim {
         booking_id: "BK-re4c-0001".to_owned(),
