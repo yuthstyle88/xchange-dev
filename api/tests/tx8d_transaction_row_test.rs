@@ -20,6 +20,7 @@ mod common;
 mod compat_common;
 mod kiosk_http_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use actix_web::http::Method;
@@ -483,16 +484,17 @@ impl Harness {
 
         // 5. COMPAT-SAVED COMPLETED exchange at t4: SELL 100 USD at 32.60, fee 0.00, settle 3260.00
         let here = BranchId::new("MAIN".to_string());
+        let saver = shift_holder_common::teller_of_open_shift(&pool, "MAIN").await;
         let passport_key = counter
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t4)
+            .upload(&here, &saver, "image/jpeg", JPEG, t4)
             .await
             .expect("upload passport");
         let slip_key = counter
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t4)
+            .upload(&here, &saver, "image/jpeg", JPEG, t4)
             .await
             .expect("upload slip");
 
@@ -523,7 +525,7 @@ impl Harness {
         let compat_saved = counter
             .desk
             .workflow
-            .save(&here, cmd, "owner", t4)
+            .save(&here, cmd, &saver, t4)
             .await
             .expect("save compat");
 
