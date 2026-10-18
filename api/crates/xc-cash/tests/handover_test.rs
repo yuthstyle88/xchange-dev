@@ -211,14 +211,23 @@ impl Db {
 
     /// `(opening, expected, counted)` of one currency of a shift.
     async fn balance(&self, shift: &str, currency: &str) -> (Decimal, Decimal, Option<Decimal>) {
-        sqlx::query_as(
-            "SELECT opening, expected, counted FROM shift_balances WHERE shift_id = $1 AND code = $2",
+        use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+        let rows = xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(
+            self.pool.clone(),
         )
-        .bind(shift)
-        .bind(currency)
-        .fetch_one(&self.pool)
+        .shift_balances(&shift.to_owned())
         .await
-        .unwrap_or_else(|e| panic!("the {currency} balance of {shift}: {e}"))
+        .unwrap_or_else(|e| panic!("the {currency} balance of {shift}: {e}"));
+        let row = rows
+            .into_iter()
+            .find(|b| b.currency.as_str() == currency)
+            .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
+        let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
+        (
+            to_dec(row.opening.minor_i128()),
+            to_dec(row.expected.minor()),
+            row.counted.map(|m| to_dec(m.minor_i128())),
+        )
     }
 
     /// `(counted, expected, difference)` of one currency of a count.
@@ -840,10 +849,18 @@ async fn a_currency_a_holds_but_the_handover_count_omits_reads_as_zero() {
 
     assert_eq!(db.balance(&b_shift, "THB").await.0, d("2300"));
     assert_eq!(
-        db.count(&format!(
-            "SELECT count(*) FROM shift_balances WHERE shift_id = '{b_shift}' AND code = 'USD' AND opening <> 0"
-        ))
-        .await,
+        {
+            use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+            xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(
+                db.pool.clone(),
+            )
+            .shift_balances(&b_shift)
+            .await
+            .expect("B's shift balances")
+            .iter()
+            .filter(|b| b.currency.as_str() == "USD" && !b.opening.is_zero())
+            .count() as i64
+        },
         0,
         "B is handed no USD"
     );
