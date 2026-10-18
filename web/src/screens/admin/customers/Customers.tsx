@@ -19,8 +19,7 @@ import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { refreshTick } from '../parts/refresh';
 import { TransactionDetail } from '../parts/TransactionDetail';
-import { Card, CardBody, CardActions } from '../../../shared/ui/Card';
-import { Field, CheckField } from '../../../shared/ui/Field';
+import { Card } from '../../../shared/ui/Card';
 import { en, th } from './i18n';
 import './customers.css';
 
@@ -38,107 +37,6 @@ function formatBangkokDateTime(iso: string): string {
   } catch {
     return iso;
   }
-}
-
-interface MemberFormProps {
-  api: ApiClient;
-  branch: string;
-  customer: AdminCustomerRow;
-}
-
-function MemberForm(props: MemberFormProps): JSX.Element {
-  const t = screenT('admin.customers', { th, en });
-  const [phone, setPhone] = createSignal('');
-  const [verified, setVerified] = createSignal(false);
-  const [submitting, setSubmitting] = createSignal(false);
-  const [errorSentence, setErrorSentence] = createSignal<string | null>(null);
-
-  // The secret UUID is created ONCE when the form opens and reused on retries
-  const memberSecret = crypto.randomUUID();
-
-  async function handleSubmit(e: Event) {
-    e.preventDefault();
-    if (submitting()) return;
-    setErrorSentence(null);
-    setSubmitting(true);
-
-    try {
-      const res = await props.api.post<
-        Record<string, unknown>,
-        { saved: boolean; name: string; memberCode: string }
-      >('/api/v2/bookings', {
-        action: 'member',
-        payload: {
-          branchId: props.branch,
-          customerId: props.customer.id,
-          phone: phone().trim(),
-          identityConfirmed: verified(),
-          memberSecret,
-        },
-      });
-
-      // On success, show member card
-      openDialog(`${t('memberCardTitle')} · ${res.name}`, () => (
-        <Card>
-          <CardBody>
-            <p>{t('memberHandOver')}</p>
-            <Field label={t('memberCode')}>
-              <input type="text" readOnly value={res.memberCode} />
-            </Field>
-            <p class="dialog-note">{t('memberCardNote')}</p>
-            <CardActions>
-              <button type="button" class="secondary" onClick={closeDialog}>
-                {t('close')}
-              </button>
-            </CardActions>
-          </CardBody>
-        </Card>
-      ));
-    } catch (err: unknown) {
-      setErrorSentence(wordedError(err));
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} class="member-form">
-      <p class="customer-info">
-        {props.customer.name} · {props.customer.id}
-      </p>
-
-      <Show when={errorSentence()}>
-        {(sentence) => <div class="error-banner">{sentence()}</div>}
-      </Show>
-
-      <Field label={t('memberPhone')}>
-        <input
-          type="tel"
-          required
-          maxLength={30}
-          value={phone()}
-          onInput={(e) => setPhone(e.currentTarget.value)}
-        />
-      </Field>
-
-      <CheckField
-        label={t('memberVerified')}
-        required
-        checked={verified()}
-        onChange={(checked) => setVerified(checked)}
-      />
-
-      <p class="reissue-note">{t('memberReissue')}</p>
-
-      <div class="dialog-actions">
-        <button type="button" class="secondary" onClick={closeDialog}>
-          {t('memberBack')}
-        </button>
-        <button type="submit" class="primary" disabled={submitting()}>
-          {t('memberSubmit')}
-        </button>
-      </div>
-    </form>
-  );
 }
 
 interface CustomerHistoryProps {
@@ -224,12 +122,6 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
         row={row}
         onClose={closeDialog}
       />
-    ));
-  }
-
-  function openMember() {
-    openDialog(t('memberTitle'), () => (
-      <MemberForm api={props.api} branch={props.branch} customer={props.customer} />
     ));
   }
 
@@ -362,10 +254,6 @@ function CustomerHistory(props: CustomerHistoryProps): JSX.Element {
           {t('close')}
         </button>
       </div>
-
-      <button type="button" class="primary" onClick={openMember}>
-        {t('memberButton')}
-      </button>
     </>
   );
 }
@@ -374,7 +262,6 @@ export function Customers(props: AdminMenuProps): JSX.Element {
   const t = screenT('admin.customers', { th, en });
   const api = new ApiClient();
 
-  const [activeTab, setActiveTab] = createSignal<'customers' | 'registrations'>('customers');
   const [branchName, setBranchName] = createSignal(props.branch());
 
   // Customers tab state
@@ -388,14 +275,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
   const [refusalError, setRefusalError] = createSignal<string | null>(null);
   const [totalCount, setTotalCount] = createSignal<number | null>(null);
 
-  // Registrations tab state
-  const [regSearch, setRegSearch] = createSignal('');
-  const [regPage, setRegPage] = createSignal(0);
-  const [regHasMore, setRegHasMore] = createSignal(false);
-  const [regRefusal, setRegRefusal] = createSignal<string | null>(null);
-
   let lastListSeq = 0;
-  let lastRegSeq = 0;
   let branchNameSeq = 0;
 
   async function fetchBranchName(branchId: string) {
@@ -453,30 +333,6 @@ export function Customers(props: AdminMenuProps): JSX.Element {
     }
   }
 
-  async function readRegistrations(branchId: string, pageNum: number, queryStr: string) {
-    const seq = ++lastRegSeq;
-    setRegRefusal(null);
-
-    try {
-      const res = await api.post<
-        Record<string, unknown>,
-        { items: unknown[]; hasMore: boolean; page: number }
-      >('/api/v2/bookings', {
-        action: 'registrations',
-        payload: {
-          branchId,
-          page: pageNum,
-          query: queryStr.trim(),
-        },
-      });
-      if (seq !== lastRegSeq) return;
-      setRegHasMore(Boolean(res.hasMore));
-    } catch (err: unknown) {
-      if (seq !== lastRegSeq) return;
-      setRegRefusal(wordedError(err));
-    }
-  }
-
   // Branch effect & initial load
   createEffect(() => {
     if (!props.shown()) return;
@@ -493,11 +349,6 @@ export function Customers(props: AdminMenuProps): JSX.Element {
     setTotalCount(null);
     setRefusalError(null);
     readCustomers(currentBranch, '');
-
-    // Reset registrations tab
-    setRegSearch('');
-    setRegPage(0);
-    readRegistrations(currentBranch, 0, '');
   });
 
   // RefreshTick effect
@@ -510,7 +361,6 @@ export function Customers(props: AdminMenuProps): JSX.Element {
         const curBranch = props.branch();
         const curCursor = page() > 1 ? cursors()[page() - 2] : undefined;
         readCustomers(curBranch, search(), curCursor);
-        readRegistrations(curBranch, regPage(), regSearch());
       }
     }
   });
@@ -559,46 +409,6 @@ export function Customers(props: AdminMenuProps): JSX.Element {
     ));
   }
 
-  // Registration handlers
-  function doRegSearch() {
-    setRegPage(0);
-    readRegistrations(props.branch(), 0, regSearch());
-  }
-
-  function doRegReload() {
-    readRegistrations(props.branch(), regPage(), regSearch());
-  }
-
-  function regNext() {
-    const nextP = regPage() + 1;
-    setRegPage(nextP);
-    readRegistrations(props.branch(), nextP, regSearch());
-  }
-
-  function regPrev() {
-    if (regPage() <= 0) return;
-    const prevP = regPage() - 1;
-    setRegPage(prevP);
-    readRegistrations(props.branch(), prevP, regSearch());
-  }
-
-  function handleTabKeyDown(e: KeyboardEvent, tab: 'customers' | 'registrations') {
-    let target: 'customers' | 'registrations' | null = null;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      target = tab === 'customers' ? 'registrations' : 'customers';
-    } else if (e.key === 'Home') {
-      target = 'customers';
-    } else if (e.key === 'End') {
-      target = 'registrations';
-    }
-    if (target) {
-      e.preventDefault();
-      setActiveTab(target);
-      const id = target === 'customers' ? 'tab-customers' : 'tab-registrations';
-      document.getElementById(id)?.focus();
-    }
-  }
-
   const shouldShowSummary = () => {
     if (loading() || !hasLoadedOnce() || refusalError()) return false;
     if (page() !== 1 || rows().length === 0 || rows().length >= 50) return false;
@@ -607,40 +417,7 @@ export function Customers(props: AdminMenuProps): JSX.Element {
 
   return (
     <div class="customers-screen">
-      <div role="tablist" aria-label={t('tabs')} class="tab-list">
-        <button
-          type="button"
-          id="tab-customers"
-          role="tab"
-          aria-selected={activeTab() === 'customers' ? 'true' : 'false'}
-          aria-controls="panel-customers"
-          tabIndex={activeTab() === 'customers' ? 0 : -1}
-          onClick={() => setActiveTab('customers')}
-          onKeyDown={(e) => handleTabKeyDown(e, 'customers')}
-        >
-          {t('listTab')}
-        </button>
-        <button
-          type="button"
-          id="tab-registrations"
-          role="tab"
-          aria-selected={activeTab() === 'registrations' ? 'true' : 'false'}
-          aria-controls="panel-registrations"
-          tabIndex={activeTab() === 'registrations' ? 0 : -1}
-          onClick={() => setActiveTab('registrations')}
-          onKeyDown={(e) => handleTabKeyDown(e, 'registrations')}
-        >
-          {t('registrationsTab')}
-        </button>
-      </div>
-
-      <div
-        id="panel-customers"
-        role="tabpanel"
-        aria-labelledby="tab-customers"
-        hidden={activeTab() !== 'customers'}
-      >
-        <Card>
+      <Card>
           <div class="search-section">
             <label>
               {t('search')}
@@ -779,69 +556,6 @@ export function Customers(props: AdminMenuProps): JSX.Element {
             </div>
           </Show>
         </Card>
-      </div>
-
-      <div
-        id="panel-registrations"
-        role="tabpanel"
-        aria-labelledby="tab-registrations"
-        hidden={activeTab() !== 'registrations'}
-      >
-        <Card class="registrations-card">
-          <div class="reg-top-section">
-            <h2>{t('regHeading')}</h2>
-            <p>{t('regIntro')}</p>
-
-            <div class="reg-search-bar">
-              <input
-                type="search"
-                maxLength={100}
-                placeholder={t('regPlaceholder')}
-                value={regSearch()}
-                onInput={(e) => setRegSearch(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') doRegSearch();
-                }}
-              />
-              <button type="button" class="secondary" onClick={doRegSearch}>
-                {t('regSearch')}
-              </button>
-              <button type="button" class="secondary" onClick={doRegReload}>
-                {t('regRefresh')}
-              </button>
-            </div>
-          </div>
-
-          <Show
-            when={!regRefusal()}
-            fallback={<div class="error-banner">{regRefusal()}</div>}
-          >
-            <p class="reg-empty">{t('regEmpty')}</p>
-          </Show>
-
-          <div class="pagination reg-pagination">
-            <button
-              type="button"
-              class="secondary"
-              disabled={regPage() === 0}
-              onClick={regPrev}
-            >
-              {t('prev')}
-            </button>
-            <span>
-              {t('page')} {regPage() + 1}
-            </span>
-            <button
-              type="button"
-              class="secondary"
-              disabled={!regHasMore()}
-              onClick={regNext}
-            >
-              {t('next')}
-            </button>
-          </div>
-        </Card>
-      </div>
     </div>
   );
 }
