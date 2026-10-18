@@ -51,8 +51,6 @@ use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{self, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate};
 use xc_rate::application::approval::{rate_feed_publication, rate_publication};
@@ -93,18 +91,18 @@ pub async fn within<T>(limit: Duration, what: &str, fut: impl Future<Output = T>
     }
 }
 
-pub fn owner() -> Actor {
-    Actor::owner(OWNER_ID)
+pub fn owner() -> access::Actor {
+    owner_user()
 }
 
 /// A RATES employee of `MAIN`.
-pub fn rates() -> Actor {
-    Actor::staff(RATES_ID, Role::Rates, BranchId::new(MAIN)).expect("RATES is a staff role")
+pub fn rates() -> access::Actor {
+    rates_user()
 }
 
 /// Another RATES employee of `MAIN`.
-pub fn rates_2() -> Actor {
-    Actor::staff("rates-2", Role::Rates, BranchId::new(MAIN)).expect("RATES is a staff role")
+pub fn rates_2() -> access::Actor {
+    rates_2_user()
 }
 
 /// OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: the B1-mapped users of
