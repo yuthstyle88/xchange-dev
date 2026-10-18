@@ -25,7 +25,7 @@ jobs:
   # A FAILED `changes` job leaves skip_build empty => the full api job runs.
   changes:
     name: changes
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, light]  # light job: Jam + Studio runners carry `light` (owner 2026-10-17)
     timeout-minutes: 5
     outputs:
       skip_build: ${{ steps.filter.outputs.skip_build }}
@@ -38,9 +38,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The heavy `test` job runs on Linux runners (#2574, #3072). GitHub hands each build to whichever is idle.
-      # cargo-jobs.sh then sizes compile jobs to that machine's free cores.
-      # If this step does not run, `test` falls back to the Linux pool with 12 jobs.
+      # The heavy `test` job runs on ONE pool, the runners labelled heavy-build (#2574). The number a machine carries
+      # caps its concurrent heavy builds (owner 2026-10-16: Dell 2, Studio 2, Warut 1, MacBook 1; Mac mini none); GitHub
+      # hands each build to whichever is idle. cargo-jobs.sh then sizes compile jobs to that machine's free cores.
+      # If this step does not run, `test` falls back to the Dell pool with 12 jobs.
       - name: Select runner pool
         id: pool
         env:
@@ -168,7 +169,7 @@ jobs:
     name: test
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
-    runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64"]') }}
+    runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64","dell-org-ci"]') }}
     timeout-minutes: 90
     env:
       # Ceiling from select-pool.sh; the "Set cargo jobs" step lowers it to this machine's free cores (#2574).
@@ -497,7 +498,7 @@ jobs:
     name: api
     needs: [changes, test, device-agent-linux]
     if: ${{ always() }}
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, light]  # light job: Jam + Studio runners carry `light` (owner 2026-10-17)
     timeout-minutes: 5
     steps:
       - name: Refuse to report green when the run was cancelled
