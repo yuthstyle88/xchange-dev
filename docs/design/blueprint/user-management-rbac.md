@@ -268,6 +268,7 @@ Tests:
 | `xc-auth/src/domain/policy/areas/org_admin.rs` (`:24-26`) | **C1** | All new rows: `userSuspend`, `userResume`, `userEnable`, `userResetPassword`, `userProfileSave`, `userImportPreview`, `userImportApply` → `UsersManage`; `adminUserAudit`, `adminLoginHistory` → `AuditLogsRead` (C2's permission; C1 is stacked on C2's branch, or C2 lands first, which is a one-file change); `adminPermissionMatrix` → `UsersManage` |
 | `xc-auth/src/application/session/session_service.rs` | **C4** | Login recording + `must_change_password` stored on the session |
 | `api/src/presentation/http/users.rs` (create, `:195-210`) | **F9** alone | Q5 A on create: a temporary password from C1's `TempPassword::generate` replaces the typed one, `must_change_password: true` at `:203` (addendum item 11), and the password is returned once |
+| `api/src/presentation/http/v3/views/admin_users.rs` + its DTO + `web/src/shared/api/generated/admin_users.ts` | **F10** alone | the view answers `employeeCode`, `department`, `position`, `tellCode` (found by claude/177aa7ef writing W1; BE controller ruling on PR 3083). Without it F3 saves fields the Users screen can never show |
 | `api/src/presentation/http/v3/view.rs` (the `purpose=export` path, `ExportGate::check` at `:692`, `ExportGate::record` at `:760`) + new `api/src/presentation/http/v3/xlsx.rs` | **C5** | An `xlsx` output for every paged view read with `purpose=export`, through the existing `ExportGate` (addendum item 13). `build.rs` scans only `views`, `actions` and `commands`, so there is no `exports/` directory. Exports are views, which follows ♻️ (one shared core) |
 | `api/src/presentation/http/v3/caller.rs` (`:34`) | **F8** alone | The forced-change gate. There is no `middleware/` directory (`api/src/presentation/` has `dto`, `extractors`, `http`, and none else), so the seam is `authenticate_caller` |
 | `web/src/screens/admin/users/UsersScreen.tsx`, `users/i18n.ts`, `users/menu.ts` | **W1** | Mounts **every** tab (matrix, audit, login history, import) over stub components, and adds every i18n key (review item 8). W2–W4 then fill in only their own component files |
@@ -286,6 +287,7 @@ One file per command, because `build.rs` registers each top-level `commands/` fi
 | F5 | view `admin_permission_matrix` | `v3/views/admin_permission_matrix.rs` |
 | F6 | view `admin_employee_register` (the Employee Register sheet; the user list is the existing `admin_users`, the matrix is F5). All three export as xlsx through C5 | `v3/views/admin_employee_register.rs` |
 | F9 | create through a temporary password (Q5 A) | `api/src/presentation/http/users.rs` only |
+| F10 | `admin_users` answers the four profile fields | `v3/views/admin_users.rs`, its DTO, `generated/admin_users.ts` |
 | F7a, F7b | Employee Register import: preview, apply | `v3/commands/user_import_preview.rs`, `user_import_apply.rs`; the parsing in `api/src/application/user/register_import.rs` (F7a owns it, F7b calls it) |
 | F8 | forced password change gate (Q5 A) | `api/src/presentation/http/v3/caller.rs` only |
 | W1 | Users screen: status actions, reset, profile fields, and the mount points for every tab | `web/src/screens/admin/users/UsersScreen.tsx`, `users/i18n.ts`, `users/menu.ts` (+ their tests) |
@@ -482,6 +484,7 @@ Every ticket that changes a literal held by a golden or fixture test that compar
 | M migration (§4) | BE | guarded | the owner (Data Risk; the deploy is the owner's) | `api/migrations/<new>.sql` |
 | F1a–c, F3, F4a–b, F5, F6 | BE | mechanical | C1's stubs and rows (stubs allowed); F5 and F6 export once C5 merges | one file each (§3.7) |
 | F2, F7a, F7b, F8, F9 | BE | logic | C1; F2 also ID-1 | one file each (§3.7) |
+| F10 `admin_users` answers the profile fields | BE | mechanical | M (the columns) | `v3/views/admin_users.rs`, its DTO, `generated/admin_users.ts` |
 | C5 xlsx output on `purpose=export` paged views, through `ExportGate` | BE | logic | — | `v3/view.rs` export path, `v3/xlsx.rs` |
 | W1 | FE | logic | the C1 and F view signatures | `UsersScreen.tsx`, `users/i18n.ts`, `users/menu.ts` |
 | W2, W3a–b, W4, W5 | FE | mechanical (W4, W5 logic) | W1's mount points | one component each |
@@ -490,7 +493,7 @@ Every ticket that changes a literal held by a golden or fixture test that compar
 **How many run at once:**
 - C2 → C1 is the one chain, and it is short: C2 is one small permission change.
 - C5 has no dependency and starts at once, alongside C2.
-- Then C3, C4 and all 13 F tickets run in parallel against C1's merged stubs.
+- Then C3, C4 and all 14 F tickets run in parallel against C1's merged stubs (F10 after M).
 - W1 runs alongside them, and W2–W5 follow W1.
 - At peak that is about 16 BE tickets and 1 FE ticket, then 5 FE tickets.
 
