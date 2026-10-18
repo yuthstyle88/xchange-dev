@@ -16,8 +16,6 @@ const USERS_MANAGE_ROWS: [&str; 8] = [
     "userEnable",
     "userResetPassword",
     "userProfileSave",
-    "userImportPreview",
-    "userImportApply",
     "adminPermissionMatrix",
 ];
 
