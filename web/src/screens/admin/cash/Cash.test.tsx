@@ -98,7 +98,7 @@ interface StockRow {
   expected: string;
 }
 interface CashData {
-  shift: { id: string; openedAt: string; staff: string } | null;
+  openShifts: { shiftId: string; tellerId: string; tellerName: string; openedAt: string }[];
   stock: StockRow[];
   stats: { opening: string; incoming: string; outgoing: string; remaining: string } | null;
   reference: { withReference: number; withoutReference: number; spread: string; percent: string };
@@ -137,7 +137,7 @@ const REGISTER = ['THB', 'EUR', 'USD'];
 /** An open shift whose figures do not add up: what is shown must be what is answered. */
 function openCash(): CashData {
   return {
-    shift: { id: 'S-0001', openedAt: '2026-10-06T02:30:00.000Z', staff: 'EMP-007' },
+    openShifts: [{ shiftId: 'S-0001', tellerId: 'u-1', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' }],
     stock: [
       { code: 'THB', opening: '100000.00', net: '-2230.00', expected: '97770.00' },
       { code: 'USD', opening: '1000.00', net: '7.25', expected: '1100.50' },
@@ -155,7 +155,7 @@ function openCash(): CashData {
 
 function noShift(): CashData {
   return {
-    shift: null,
+    openShifts: [],
     stock: [],
     stats: null,
     reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },

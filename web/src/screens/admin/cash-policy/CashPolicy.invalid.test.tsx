@@ -28,7 +28,7 @@ const INVALID_POLICY: CashTransferPolicyData = {
 };
 
 const SAMPLE_CASH: AdminCashData = {
-  shift: null,
+  openShifts: [],
   stock: [],
   stats: null,
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },

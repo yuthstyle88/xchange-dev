@@ -111,7 +111,7 @@ const PROFIT_ANSWER = { realized: '1234567.89', unrealized: '-200.01', withdrawa
 
 function cashData(): unknown {
   return {
-    shift: { id: 'S-0001', openedAt: '2026-10-06T02:30:00.000Z', staff: 'EMP-007' },
+    openShifts: [{ shiftId: 'S-0001', tellerId: 'u-1', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' }],
     stock: [{ code: 'THB', opening: '100000.00', net: '-2230.00', expected: '97770.00' }],
     stats: { opening: '100000.00', incoming: '920.00', outgoing: '3150.00', remaining: '12345.67' },
     reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },

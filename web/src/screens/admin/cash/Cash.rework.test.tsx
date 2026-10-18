@@ -15,12 +15,9 @@ const SHIFTS = '/api/v3/views/admin_shifts';
 
 const MOCK_CASH = {
   version: 1,
-  shift: {
-    id: 'SH-01',
-    openedAt: '2026-10-14T08:00:00.000Z',
-    staff: 'teller1',
-    status: 'OPEN',
-  },
+  openShifts: [
+    { shiftId: 'SH-01', tellerId: 'u-1', tellerName: 'teller1', openedAt: '2026-10-14T08:00:00.000Z' },
+  ],
   stats: {
     opening: '100000.00',
     incoming: '5000.00',
