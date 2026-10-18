@@ -487,14 +487,7 @@ impl SessionReader for HeaderCallers {
             )
         });
         let staff_user = user.clone();
-        Box::pin(async move {
-            Callers {
-                owner: None,
-                staff: None,
-                user,
-                staff_user,
-            }
-        })
+        Box::pin(async move { Callers { user, staff_user } })
     }
 }
 

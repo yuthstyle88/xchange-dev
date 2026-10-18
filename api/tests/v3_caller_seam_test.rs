@@ -210,8 +210,6 @@ impl SessionReader for HeaderCallers {
         let user = user_of(req);
         Box::pin(async move {
             Callers {
-                owner: None,
-                staff: None,
                 user,
                 staff_user: None,
             }

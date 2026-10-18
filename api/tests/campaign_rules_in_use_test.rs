@@ -190,8 +190,6 @@ impl SessionReader for HeaderCallers {
         let user = is_marketing.then(marketing);
         Box::pin(async move {
             Callers {
-                owner: None,
-                staff: None,
                 staff_user: user.clone(),
                 user,
             }
