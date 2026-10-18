@@ -107,3 +107,30 @@ impl SaveStep for KioskSaveStep {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The kiosk role of every standing: unchanged from the v3 role it maps from (OR-7 R7 #3167).
+    #[test]
+    fn kiosk_role_of_each_standing() {
+        for (kind, role) in [
+            (StandingKind::Owner, KioskRole::Owner),
+            (StandingKind::Staff(AuthRole::Teller), KioskRole::Front),
+            (
+                StandingKind::Staff(AuthRole::BranchManager),
+                KioskRole::Manager,
+            ),
+            (StandingKind::Staff(AuthRole::RateManager), KioskRole::Rates),
+            (StandingKind::Staff(AuthRole::Finance), KioskRole::Other),
+            (StandingKind::Staff(AuthRole::Admin), KioskRole::Other),
+            (
+                StandingKind::Staff(AuthRole::VerificationReviewer),
+                KioskRole::Other,
+            ),
+        ] {
+            assert_eq!(kiosk_role(kind), role, "{kind:?}");
+        }
+    }
+}
