@@ -332,7 +332,10 @@ impl SessionService {
         let expires = now + Duration::seconds(SESSION_SECONDS);
         let must_change_password = login.must_change_password.unwrap_or(false);
 
-        let refresh_enc = match (self.client_secret.as_deref(), login.refresh_token.as_deref()) {
+        let refresh_enc = match (
+            self.client_secret.as_deref(),
+            login.refresh_token.as_deref(),
+        ) {
             (Some(secret), Some(rt)) => {
                 let enc = encrypt_refresh_token(secret, rt).map_err(|_| {
                     SessionError::Identity(IdentityError::unavailable(
