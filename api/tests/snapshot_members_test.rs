@@ -39,9 +39,6 @@ use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_customer::application::customer::contact_verify::{ContactSummary, ContactVerify};
-use xc_exchange::domain::booking::entities::member::Member;
-use xc_exchange::domain::booking::repositories::member_repository::MemberRepository;
-use xc_exchange::infrastructure::booking::member_repository::PgMemberRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -99,37 +96,6 @@ async fn customer(shop: &Shop, branch_id: &str, passport_no: &str) -> String {
     let mut who = person();
     who.passport_no = passport_no.to_owned();
     shop.reserve(branch_id, who).await
-}
-
-/// Issue (or re-issue) a member through the repository T15-b wrote, in a
-/// transaction of its own, committed.
-async fn issue(
-    shop: &Shop,
-    id: &str,
-    branch_id: &str,
-    customer_id: &str,
-    token_hash: &str,
-    verified_at: DateTime<Utc>,
-) -> Member {
-    let repo = PgMemberRepository::new(shop.pool.clone());
-    let member = Member {
-        id: id.to_owned(),
-        branch_id: branch(branch_id),
-        customer_id: customer_id.to_owned(),
-        name: "Somchai Jaidee".to_owned(),
-        phone: "0812345678".to_owned(),
-        token_hash: token_hash.to_owned(),
-        verified_at,
-        verified_by: "owner".to_owned(),
-    };
-    let mut tx = shop.pool.begin().await.expect("begin a transaction");
-    let stored = repo
-        .upsert_in(&mut tx, &member)
-        .await
-        .unwrap_or_else(|e| panic!("upsert_in {id}: {e:?}"))
-        .unwrap_or_else(|taken| panic!("upsert_in {id}: {taken:?}"));
-    tx.commit().await.expect("commit the member");
-    stored
 }
 
 /// Verify `phone` as `customer_id`'s phone at `branch_id` through BK-10's writer, as a Teller of
@@ -262,8 +228,7 @@ async fn a_verified_phone_marks_its_customer_at_every_branch_and_a_members_row_m
     shop.seed_branch(B2, "Second").await;
     let at_main = customer(&shop, MAIN, "AA2000001").await;
     let at_b2 = customer(&shop, B2, "AA2000002").await;
-    // a v2 member row of B2 for B2's customer: no longer a member anywhere
-    issue(&shop, "MB-b2-own", B2, &at_b2, "hash-b2-own", at(200)).await;
+    // BK-11 #1413: v2's `members` table is dropped by M2, so B2's customer has no row to seed
     // MAIN's customer's phone, verified at B2
     verify(&shop, B2, &at_main, "081-234-5678", at(100)).await;
 

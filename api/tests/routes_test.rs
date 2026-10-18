@@ -41,9 +41,8 @@ type Configure = fn(&mut web::ServiceConfig, &AppState);
 /// function or another signature does not compile.
 #[actix_web::test]
 async fn every_handler_module_has_the_same_configure() {
-    let modules: [(&str, Configure); 9] = [
+    let modules: [(&str, Configure); 8] = [
         ("auth", http::auth::configure),
-        ("bookings", http::bookings::configure),
         ("customers", http::customers::configure),
         ("devices", http::devices::configure),
         ("employees", http::employees::configure),
