@@ -327,7 +327,20 @@ impl Shop {
         }
     }
 
+    /// The teller of `branch_id`'s test shift: the owner's user at `MAIN` (whom `Shop::save` saves as), the
+    /// branch's own opener elsewhere (one OPEN shift per teller). CA-10-save (#626): a save moves stock on the
+    /// saver's own OPEN shift.
     pub async fn teller_of(&self, branch_id: &str) -> Option<String> {
+        if branch_id == MAIN {
+            return sqlx::query_scalar(
+                "SELECT u.id::text FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
+                 (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+                 ORDER BY u.created_at LIMIT 1",
+            )
+            .fetch_optional(&self.pool)
+            .await
+            .expect("read the owner's user id");
+        }
         let opener = Self::opener_of(branch_id);
         sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
             .bind(&opener)
@@ -350,25 +363,37 @@ impl Shop {
     }
 
     pub async fn open_shift(&self, branch_id: &str, opening: &[(&str, &str)]) -> String {
-        let pairs: Vec<(CurrencyCode, Money)> =
-            opening.iter().map(|(c, a)| (code(c), money(a))).collect();
-        let cmd = OpenShift {
-            request_id: unique("open-shift").replace('_', "-"),
-            opening: Balances::of(&pairs),
-        };
         let opener = Self::opener_of(branch_id);
         if branch_id != MAIN {
             seed_opener(&self.pool, &opener).await;
         }
-        let shift = self
-            .shifts
-            .open(&branch(branch_id), cmd, &opener, at(-60))
+        seed_opener(&self.pool, OWNER).await;
+        let teller: String = self.teller_of(branch_id).await.expect("the opener's user");
+        let shift = format!("SH-{}", uuid::Uuid::new_v4());
+        sqlx::query(
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $6::uuid)",
+        )
+        .bind(&shift)
+        .bind(branch_id)
+        .bind(at(-60))
+        .bind(&opener)
+        .bind(unique("open-shift").replace('_', "-"))
+        .bind(&teller)
+        .execute(&self.pool)
+        .await
+        .expect("seed an OPEN shift");
+        for (c, a) in opening {
+            sqlx::query(
+                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, $3::numeric, $3::numeric)",
+            )
+            .bind(&shift)
+            .bind(c)
+            .bind(money(a).to_string())
+            .execute(&self.pool)
             .await
-            .expect("open a shift")
-            .id;
-        // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same
-        // opening in the ledger's drawer of this shift, so a compat save's posting meets the cash the
-        // v2 shift holds. Equal to the v2 opening, so the v2 check still answers first.
+            .expect("seed an opening balance");
+        }
         fund_ledger_drawer(&self.pool, &shift, opening).await;
         shift
     }
