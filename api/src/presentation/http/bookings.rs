@@ -9,7 +9,6 @@ use pos_infra::transactions::Transactor;
 use serde_json::{Value, json};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_exchange::application::booking::service::BookingService;
@@ -196,12 +195,13 @@ async fn owner_bookings(
         Err(_) => return server_error(),
     }
 
-    let actor = callers.owner.as_ref().or(callers.staff.as_ref());
+    let staff_id = callers.staff_standing().map(|s| s.user_id);
+    let actor_id = staff_id.as_deref().unwrap_or("owner");
     execute_action(
         action,
         &branch,
         &payload,
-        actor,
+        actor_id,
         now,
         &booking_service,
         &rules_service,
@@ -288,11 +288,13 @@ async fn staff_bookings(
     };
 
     // 8. Execute action
+    let staff_id = callers.staff_standing().map(|s| s.user_id);
+    let actor_id = staff_id.as_deref().unwrap_or("owner");
     execute_action(
         booking_action,
         &branch,
         &payload,
-        callers.staff.as_ref(),
+        actor_id,
         now,
         &booking_service,
         &rules_service,
@@ -304,12 +306,11 @@ async fn execute_action(
     action: BookingAction,
     branch: &BranchId,
     payload: &Value,
-    actor: Option<&Actor>,
+    actor_id: &str,
     now: DateTime<Utc>,
     booking_service: &BookingService,
     rules_service: &BookingRulesService,
 ) -> HttpResponse {
-    let actor_id = actor.map_or("owner", |a| a.id());
     match action {
         BookingAction::List => match booking_service.list(branch, now).await {
             Ok(list) => match list_json(branch, &list, now) {
