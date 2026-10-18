@@ -244,6 +244,12 @@ async fn a_compat_save_refused_by_custody_leaves_nothing() {
     let fixture = Fixture::load(FILE);
     let replay = day_up_to_the_save(&fixture).await;
     replay.desk.custody_on("MAIN").await;
+    // CA-10 (#626, batch PR 3108), setup only: the replay opens MAIN's day before its own recorded saves
+    // (`rpc_common`, ruling A try 2), and `custody_on` keeps an existing day; this test's counter is closed.
+    sqlx::query("UPDATE ops_state SET phase = 'CLOSED' WHERE branch_id = 'MAIN'")
+        .execute(&replay.desk.db.pool)
+        .await
+        .expect("close MAIN's day");
     let answer = save(&replay, &payload_of(&replay, LIVE_BUY_CASH)).await;
     refused(&answer, "#120 with custody on and the counter closed");
     assert_eq!(rows(&replay).await, NONE);
