@@ -41,7 +41,6 @@ const SAMPLE_BRANCHES: AdminBranchItem[] = [
 ];
 
 const MAIN_OPERATIONS: AdminOperationsData = {
-  enabled: true,
   entity: {
     company: 'Main Co., Ltd.',
     site: 'Main HQ',
@@ -49,7 +48,6 @@ const MAIN_OPERATIONS: AdminOperationsData = {
 };
 
 const B2_OPERATIONS: AdminOperationsData = {
-  enabled: true,
   entity: {
     company: 'Second Branch Co., Ltd.',
     site: 'Airport Desk',
