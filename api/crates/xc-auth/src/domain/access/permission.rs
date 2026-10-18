@@ -68,4 +68,6 @@ pub enum Permission {
     OrgStartingPricesManage,
     /// LY-6 (#1411, membership-points design §3, §4.6): draft and submit loyalty rule versions. EXECUTIVE only.
     LoyaltyRulesManage,
+    /// C2 (user-management-rbac design §3.3): read the account audit and the login history. EXECUTIVE and ADMIN.
+    AuditLogsRead,
 }

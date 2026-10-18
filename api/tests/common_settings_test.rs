@@ -2,7 +2,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::{reap_dead_test_docs, settings, test_docs_root};
+use common::{TestDocsGuard, reap_dead_test_docs, settings, test_docs_root};
 
 #[test]
 fn settings_verification_store_dir_is_absolute_and_outside_repo() {
@@ -30,10 +30,7 @@ fn settings_respects_explicit_verification_store_dir_override() {
     assert_eq!(s.verification.store_dir, custom);
 }
 
-// ---- #2797: one per-process docs root, and dead processes' dirs are reaped ----
-//
-// Each test below works in its own directory under `temp_dir()`, never in the
-// shared `xc-test-docs` root, so a run never deletes another test's files.
+// ---- #2797: dead processes' dirs can be reaped ----
 
 /// A pid above Linux's `pid_max` limit (4194304) and above any real macOS pid.
 const DEAD_PID: &str = "4194303";
@@ -145,5 +142,89 @@ fn settings_store_dir_is_under_per_process_root() {
     assert!(
         name.parse::<u64>().is_ok(),
         "the per-call directory is numbered, got {name:?}"
+    );
+}
+
+// ---- #3066: each test removes its own temporary directory on drop ----
+
+#[test]
+fn test_docs_guard_removes_directory_on_drop() {
+    let path = {
+        let guard = TestDocsGuard::new();
+        assert!(
+            guard.path().exists(),
+            "directory must exist while guard is alive"
+        );
+        guard.path().to_path_buf()
+    };
+    assert!(
+        !path.exists(),
+        "directory must be removed when guard is dropped"
+    );
+}
+
+#[test]
+fn concurrent_guards_do_not_remove_each_others_directories() {
+    let guard1 = TestDocsGuard::new();
+    let path1 = guard1.path().to_path_buf();
+    assert!(path1.exists(), "guard1 directory must exist");
+
+    {
+        let guard2 = TestDocsGuard::new();
+        let path2 = guard2.path().to_path_buf();
+        assert!(path2.exists(), "guard2 directory must exist");
+        assert_ne!(path1, path2, "guard directories must be distinct");
+        // guard2 drops here
+    }
+
+    assert!(
+        path1.exists(),
+        "guard1 directory must still exist after guard2 drops"
+    );
+    drop(guard1);
+    assert!(
+        !path1.exists(),
+        "guard1 directory must be removed when guard1 drops"
+    );
+}
+
+#[test]
+fn test_docs_guard_removes_directory_on_panic_unwind() {
+    let recorded = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let recorded_clone = recorded.clone();
+
+    let result = std::panic::catch_unwind(move || {
+        let guard = TestDocsGuard::new();
+        *recorded_clone.lock().unwrap() = Some(guard.path().to_path_buf());
+        assert!(guard.path().exists(), "directory must exist before panic");
+        panic!("simulated test panic");
+    });
+
+    assert!(result.is_err(), "test closure must have panicked");
+    let path = recorded.lock().unwrap().take().expect("path was recorded");
+    assert!(
+        !path.exists(),
+        "directory must be removed even when a test panics and unwinds"
+    );
+}
+
+#[test]
+fn settings_directory_is_cleaned_up_when_test_thread_exits() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let s = settings(&[]);
+        let dir = s.verification.store_dir.clone();
+        assert!(
+            dir.exists(),
+            "store_dir must exist while test thread is running"
+        );
+        tx.send(dir).unwrap();
+    });
+
+    let dir = rx.recv().unwrap();
+    handle.join().unwrap();
+    assert!(
+        !dir.exists(),
+        "store_dir must be removed when test thread exits"
     );
 }
