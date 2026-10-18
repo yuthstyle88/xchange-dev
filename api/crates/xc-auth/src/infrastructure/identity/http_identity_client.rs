@@ -1,5 +1,5 @@
 use futures::future::BoxFuture;
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -75,8 +75,24 @@ impl HttpIdentityClient {
         body: Value,
         client_ip: Option<&str>,
     ) -> Result<T, IdentityError> {
+        self.send_request_with_bearer(path, body, client_ip, None)
+            .await
+    }
+
+    async fn send_request_with_bearer<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: Value,
+        client_ip: Option<&str>,
+        bearer: Option<&str>,
+    ) -> Result<T, IdentityError> {
         let url = format!("{}{path}", self.settings.base_url.trim_end_matches('/'));
-        let headers = self.headers(client_ip);
+        let mut headers = self.headers(client_ip);
+        if let Some(token) = bearer {
+            if let Ok(v) = HeaderValue::from_str(&format!("Bearer {token}")) {
+                headers.insert(AUTHORIZATION, v);
+            }
+        }
 
         let response = match self
             .client
@@ -303,6 +319,30 @@ impl IdentityClient for HttpIdentityClient {
                 body["email"] = serde_json::json!(email);
             }
             self.send_request(REGISTER_PATH, body, None).await
+        })
+    }
+
+    fn change_password<'a>(
+        &'a self,
+        access_token: &'a str,
+        current_password: &'a str,
+        new_password: &'a str,
+        client_ip: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<(), IdentityError>> {
+        Box::pin(async move {
+            let body = serde_json::json!({
+                "currentPassword": current_password,
+                "newPassword": new_password,
+            });
+            let _: Value = self
+                .send_request_with_bearer(
+                    "/auth/password/change",
+                    body,
+                    client_ip,
+                    Some(access_token),
+                )
+                .await?;
+            Ok(())
         })
     }
 }
