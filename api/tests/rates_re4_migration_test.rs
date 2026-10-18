@@ -60,9 +60,27 @@ use sqlx::{AssertSqlSafe, PgPool};
 use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
 const MIGRATION_5: i64 = 20261010125000;
+const M2_SUFFIX: &str = "_retire_v2_bookings.sql";
 /// CI-4 (#651) M1, `20261019100000_customers_org.sql`.
 const CUSTOMERS_ORG: i64 = 20261019100000;
 const MUST_FINISH: Duration = Duration::from_secs(30);
+
+fn m2_version() -> i64 {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let mut found = std::fs::read_dir(&dir)
+        .expect("read api/migrations")
+        .map(|e| {
+            e.expect("an entry")
+                .file_name()
+                .into_string()
+                .expect("UTF-8")
+        })
+        .filter(|n| n.ends_with(M2_SUFFIX));
+    let name = found.next().expect("the M2 migration");
+    name[..name.find('_').expect("<version>_")]
+        .parse()
+        .expect("a numeric version")
+}
 
 /// §8 migration 5, "Count before deploy", verbatim.
 const COUNT_BEFORE_DEPLOY: &str = "\
@@ -556,7 +574,7 @@ async fn migration_5_converts_stored_jpy_and_krw_rates_to_their_unit_size() {
 #[tokio::test]
 async fn migration_5_adds_a_nullable_line_id_referencing_published_rate_lines() {
     let db = TestDb::empty().await;
-    migrator()
+    before(m2_version())
         .await
         .run(&db.pool)
         .await
