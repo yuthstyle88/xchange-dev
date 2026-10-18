@@ -43,6 +43,7 @@
 
 mod compat_common;
 mod rates_re4_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use chrono::{DateTime, Duration, Utc};
@@ -172,21 +173,42 @@ impl Shop {
     async fn seed_shift(&self, id: &str, branch_id: &str, status: &str) {
         snapshot_common::seed_opener(&self.db.pool, "owner").await;
         let closed = status == "CLOSED";
-        sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
-                 open_request_id, teller_id) \
-             VALUES ($1, $2, $3, $4, 'owner', $5, $6, $7, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
-        )
-        .bind(id)
-        .bind(branch_id)
-        .bind(status)
-        .bind(at(0))
-        .bind(closed.then(|| at(10)))
-        .bind(closed.then_some("owner"))
-        .bind(format!("open-{id}"))
-        .execute(&self.db.pool)
-        .await
-        .expect("insert into shifts");
+        if branch_id == MAIN {
+            sqlx::query(
+                "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
+                     open_request_id, teller_id) \
+                 VALUES ($1, $2, $3, $4, 'owner', $5, $6, $7, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
+            )
+            .bind(id)
+            .bind(branch_id)
+            .bind(status)
+            .bind(at(0))
+            .bind(closed.then(|| at(10)))
+            .bind(closed.then_some("owner"))
+            .bind(format!("open-{id}"))
+            .execute(&self.db.pool)
+            .await
+            .expect("insert into shifts");
+        } else {
+            let teller =
+                shift_holder_common::user_of(&self.db.pool, &format!("teller-{branch_id}")).await;
+            sqlx::query(
+                "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
+                     open_request_id, teller_id) \
+                 VALUES ($1, $2, $3, $4, 'owner', $5, $6, $7, $8::uuid)",
+            )
+            .bind(id)
+            .bind(branch_id)
+            .bind(status)
+            .bind(at(0))
+            .bind(closed.then(|| at(10)))
+            .bind(closed.then_some("owner"))
+            .bind(format!("open-{id}"))
+            .bind(teller)
+            .execute(&self.db.pool)
+            .await
+            .expect("insert into shifts");
+        }
     }
 
     async fn open_shift(&self, branch_id: &str) -> bool {

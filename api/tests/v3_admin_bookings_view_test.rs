@@ -73,6 +73,7 @@ mod common;
 mod compat_common;
 mod rates_re4_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -294,18 +295,36 @@ impl Room {
     }
 
     async fn seed_shift(&self, id: &str, branch: &str) {
-        sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
-                 open_request_id, teller_id) \
-             VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
-        )
-        .bind(id)
-        .bind(branch)
-        .bind(self.now() - Duration::hours(1))
-        .bind(format!("open-{id}"))
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("insert into shifts");
+        if branch == MAIN {
+            sqlx::query(
+                "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
+                     open_request_id, teller_id) \
+                 VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4, (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
+            )
+            .bind(id)
+            .bind(branch)
+            .bind(self.now() - Duration::hours(1))
+            .bind(format!("open-{id}"))
+            .execute(&self.desk.db.pool)
+            .await
+            .expect("insert into shifts");
+        } else {
+            let teller =
+                shift_holder_common::user_of(&self.desk.db.pool, &format!("teller-{branch}")).await;
+            sqlx::query(
+                "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, closed_at, closed_by, \
+                     open_request_id, teller_id) \
+                 VALUES ($1, $2, 'OPEN', $3, 'owner', NULL, NULL, $4, $5::uuid)",
+            )
+            .bind(id)
+            .bind(branch)
+            .bind(self.now() - Duration::hours(1))
+            .bind(format!("open-{id}"))
+            .bind(teller)
+            .execute(&self.desk.db.pool)
+            .await
+            .expect("insert into shifts");
+        }
     }
 
     async fn seed_customer(&self, id: &str, branch: &str, name: &str) {
