@@ -169,12 +169,10 @@ impl TestDb {
     }
 
     async fn phase_is(&self, branch: &str, phase: &str) {
+        // CA-10 (#626) drops ops_state.enabled and custodian_id; the phase is all this seed sets.
         self.exec(&format!(
-            "INSERT INTO ops_state (branch_id, enabled, phase, custodian_id) \
-             VALUES ('{branch}', true, '{phase}', '{}') \
-             ON CONFLICT (branch_id) DO UPDATE SET enabled = true, phase = EXCLUDED.phase, \
-             custodian_id = EXCLUDED.custodian_id",
-            user_id(TELLER)
+            "INSERT INTO ops_state (branch_id, phase) VALUES ('{branch}', '{phase}') \
+             ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase"
         ))
         .await;
     }
