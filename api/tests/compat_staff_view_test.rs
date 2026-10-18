@@ -27,13 +27,27 @@ fn step_files() -> Vec<&'static str> {
         .collect()
 }
 
+fn v3_role(role: &str) -> Option<xc_auth::domain::access::Role> {
+    use xc_auth::domain::access::Role as R;
+    match role {
+        "FRONT" => Some(R::Teller),
+        "BACKEND" | "MANAGER" => Some(R::BranchManager),
+        "RATES" => Some(R::RateManager),
+        "FINANCE" => Some(R::Finance),
+        "SYSTEM" => Some(R::Admin),
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => Some(R::VerificationReviewer),
+        _ => None,
+    }
+}
+
 fn member(person: &Person) -> StaffMember {
     StaffMember {
         id: person.id.clone(),
         username: person.username.clone(),
         name: person.name.clone(),
-        role: Role::parse(&person.role)
+        role: v3_role(&person.role)
             .unwrap_or_else(|| panic!("{}: unknown role {}", person.key, person.role)),
+        role_text: person.role.clone(),
         branch: BranchId::new(
             person
                 .branch_id
@@ -135,7 +149,8 @@ fn a_member(id: &str, role: Role, branch: &str) -> StaffMember {
         id: id.to_string(),
         username: id.to_lowercase(),
         name: format!("{id} name"),
-        role,
+        role: v3_role(role.as_str()).expect("staff role"),
+        role_text: role.as_str().to_string(),
         branch: BranchId::new(branch),
     }
 }
@@ -193,7 +208,7 @@ fn every_recorded_staff_snapshot_is_the_rpc_snapshot_viewed() {
             );
             count += 1;
             *per_file.entry(fixture.name.clone()).or_insert(0) += 1;
-            roles.insert(pair.me.role.as_str());
+            roles.insert(pair.me.role_text.clone());
         }
     }
     let expected_per_file: BTreeMap<String, i32> = [
@@ -209,7 +224,7 @@ fn every_recorded_staff_snapshot_is_the_rpc_snapshot_viewed() {
     .collect();
     assert_eq!(per_file, expected_per_file);
     assert_eq!(count, 34, "the generator checked its claim on 34 pairs");
-    let nine: BTreeSet<&str> = Role::STAFF.iter().map(|r| r.as_str()).collect();
+    let nine: BTreeSet<String> = Role::STAFF.iter().map(|r| r.as_str().to_string()).collect();
     assert_eq!(
         roles, nine,
         "every role an employee can hold is among the pairs"
@@ -221,7 +236,7 @@ fn every_recorded_staff_desk_config_is_the_rpc_one_with_its_urls_rewritten() {
     let mut count = 0;
     for fixture in fixtures() {
         for pair in pairs(&fixture, "adminDeskConfig") {
-            assert_eq!(pair.me.role, Role::Front, "{}", pair.name());
+            assert_eq!(pair.me.role_text, "FRONT", "{}", pair.name());
             assert_eq!(pair.staff.json()["adminUrl"], json!("/staff"));
             assert_ne!(pair.rpc.json()["adminUrl"], json!("/staff"));
             assert!(
@@ -499,7 +514,7 @@ fn the_caller_is_added_with_seven_keys() {
             "id": pair.me.id,
             "username": pair.me.username,
             "name": pair.me.name,
-            "role": pair.me.role.as_str(),
+            "role": pair.me.role_text.as_str(),
             "branchId": "MAIN",
             "active": true,
             "mustChange": false
@@ -523,7 +538,7 @@ fn the_colleagues_are_the_employees_of_the_callers_branch_in_the_order_given() {
         let expected: Vec<Value> = everybody
             .iter()
             .filter(|m| m.branch == pair.me.branch)
-            .map(|m| json!({"id": m.id, "name": m.name, "role": m.role.as_str()}))
+            .map(|m| json!({"id": m.id, "name": m.name, "role": m.role_text.as_str()}))
             .collect();
         assert!(expected.len() < everybody.len());
         assert_eq!(view["employees"], Value::Array(expected), "{}", pair.name());
