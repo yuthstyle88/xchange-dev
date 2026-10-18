@@ -240,11 +240,9 @@ async fn v2_bookings(db: &TestDb) -> Vec<String> {
 async fn exchange(db: &TestDb, customer: &str, booking_id: Option<&str>) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO transactions (branch_id, mode, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
+             customer_id, customer_name, nationality, staff_id, booking_no, notes, \
              value_date, paid_at, recorded_at, recorded_by, status, booking_id) \
-         VALUES ($1, 'DEMO', $2, 'payload-hash', $3, 'Customer', 'THA', 'SELL', 'USD', \
-             100, 32.6, 3260, 0, 0, 3260, 0, 'Cash', '', '', 'owner', '', '', \
+         VALUES ($1, 'DEMO', $2, 'payload-hash', $3, 'Customer', 'THA', 'owner', '', '', \
              DATE '2026-10-12', now(), now(), 'owner', 'DRAFT', $4) RETURNING id",
     )
     .bind(MAIN)
@@ -414,8 +412,8 @@ async fn a_transaction_naming_a_v2_booking_keeps_its_row_with_booking_id_null() 
     let plain = exchange(&db, &c, None).await;
     let row = |id: Uuid| {
         format!(
-            "SELECT concat_ws('|', branch_id, mode, submission_id, customer_id, type, code, amount::text, \
-                 rate::text, status) FROM transactions WHERE id = '{id}'"
+            "SELECT concat_ws('|', branch_id, mode, submission_id, customer_id, status) \
+                 FROM transactions WHERE id = '{id}'"
         )
     };
     let booked_before = db.text(&row(booked)).await;
