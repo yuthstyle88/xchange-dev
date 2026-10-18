@@ -810,6 +810,23 @@ impl SessionService {
         let (_, login_resp) = self
             .decrypt_and_refresh(identity, secret, &token_hash, refresh_enc, client_ip)
             .await?;
+        // Identity may rotate the refresh token: store it before the change call, so a refused
+        // change leaves a session that still refreshes (as `refresh` does).
+        if let Some(rotated) = login_resp.refresh_token.as_deref() {
+            let enc = encrypt_refresh_token(secret, rotated).map_err(|_| {
+                SessionError::Identity(IdentityError::unavailable(
+                    "/api/auth/password",
+                    503,
+                    "encrypt_failed",
+                ))
+            })?;
+            sqlx::query("UPDATE user_sessions SET refresh_token_enc = $1 WHERE hash = $2")
+                .bind(enc)
+                .bind(&token_hash)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| SessionError::Database(e.to_string()))?;
+        }
 
         identity
             .change_password(

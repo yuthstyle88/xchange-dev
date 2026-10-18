@@ -413,7 +413,7 @@ async fn change_password_when_identity_refuses_wrong_current_password_returns_er
     let identity = FakeIdentity::new();
     identity.set_login_must_change(Some(true));
     identity.set_change_password_result(Err(IdentityError::InvalidCredentials));
-    let svc = make_service(&db, identity, &subject);
+    let svc = make_service(&db, identity.clone(), &subject);
     let now = Utc::now();
 
     let tail = svc
@@ -439,6 +439,15 @@ async fn change_password_when_identity_refuses_wrong_current_password_returns_er
         stored_must_change_password(&db, &tail.session_token).await,
         Some(true),
         "session row must remain when Identity refuses with InvalidCredentials"
+    );
+
+    // Reviewer row: the refused change kept the rotated refresh token, so the session still refreshes with it.
+    svc.refresh(&tail.session_token, None, now)
+        .await
+        .expect("the session still refreshes after a refused change");
+    assert_eq!(
+        identity.refresh_calls().last().map(|c| c.0.clone()),
+        Some(REFRESHED_REFRESH_TOKEN.to_string())
     );
 
     db.drop_schema().await;
