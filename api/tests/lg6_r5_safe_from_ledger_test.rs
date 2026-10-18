@@ -107,8 +107,8 @@ async fn backfill_safe(shop: &Shop, branch: &BranchId, currency: &str, amount: &
 /// `ops_state` of `branch` with `safe` (the custody codec: `{CUR: minor units}`), as v2 left it before the cutover.
 async fn ops_state_with_safe(shop: &Shop, branch: &BranchId, safe: Value) {
     sqlx::query(
-        "INSERT INTO ops_state (branch_id, enabled, phase, safe) VALUES ($1, true, 'OPEN', $2) \
-         ON CONFLICT (branch_id) DO UPDATE SET enabled = true, phase = 'OPEN', safe = EXCLUDED.safe",
+        "INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', $2) \
+         ON CONFLICT (branch_id) DO UPDATE SET phase = 'OPEN', safe = EXCLUDED.safe",
     )
     .bind(branch.as_str())
     .bind(safe)
