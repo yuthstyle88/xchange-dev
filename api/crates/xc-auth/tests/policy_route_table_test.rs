@@ -181,10 +181,7 @@ fn the_role_table_holds_what_b1_translates() {
         [Role::Executive, Role::BranchManager, Role::Finance]
     );
     // OWNER-only rows: EXECUTIVE; and nobody else holds them
-    for p in [
-        Permission::ReferenceRatesRead,
-        Permission::RequestAbandon,
-    ] {
+    for p in [Permission::ReferenceRatesRead, Permission::RequestAbandon] {
         assert_eq!(
             BLUEPRINT
                 .into_iter()
