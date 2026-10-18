@@ -187,7 +187,20 @@ impl Room {
     /// `MAIN` (from the migration) and `B9`; the owner and one employee of every staff role in
     /// `MAIN`, all signed in; the USD counter rate 32.1 / 33 in both branches.
     async fn open() -> Room {
-        let desk = Desk::open().await;
+        let mut desk = Desk::open().await;
+        desk.workflow =
+            xchange::application::workflows::save_transaction::SaveTransactionWorkflow::new(
+                desk.db.branch_tx(),
+                xc_shift::application::shift::service::ShiftService::new(
+                    std::sync::Arc::new(
+                        xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                            desk.db.pool.clone(),
+                        ),
+                    ),
+                    desk.db.branch_tx(),
+                ),
+                desk.files.clone(),
+            );
         desk.db.seed_branch(B9, B9_NAME).await;
         let app = rpc_app!(desk);
         let people = one_of_each_role();
@@ -321,17 +334,21 @@ impl Room {
     }
 
     async fn expected_of_open_shift(&self, branch: &str) -> Value {
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT b.code::text, b.expected::text FROM shift_balances b \
-             JOIN shifts s ON s.id = b.shift_id WHERE s.branch_id = $1 AND s.status = 'OPEN'",
-        )
-        .bind(branch)
-        .fetch_all(&self.desk.db.pool)
-        .await
-        .expect("read the open shift's balances");
+        use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+        use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+        let shift_id = self.open_shift_id(branch).await;
+        let rows = PgLedgerShiftBalances::new(self.desk.db.pool.clone())
+            .shift_balances(&shift_id)
+            .await
+            .expect("read the open shift's balances");
         Value::Object(
             rows.into_iter()
-                .map(|(c, e)| (c.trim().to_owned(), Value::String(e)))
+                .map(|b| {
+                    (
+                        b.currency.as_str().to_owned(),
+                        Value::String(b.expected.to_string()),
+                    )
+                })
                 .collect(),
         )
     }
@@ -773,13 +790,12 @@ async fn seed_movement(
     amount: &str,
     reason: &str,
 ) -> (String, String) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, moves};
+    use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
+    use xc_kernel::money::CurrencyCode;
     let id = format!("MV-{:012}", next());
     let req_id = request_id();
-    let signed = if direction == "IN" {
-        amount.to_string()
-    } else {
-        format!("-{amount}")
-    };
     let mut tx = pool.begin().await.expect("begin tx");
     sqlx::query(
         "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
@@ -796,17 +812,28 @@ async fn seed_movement(
     .execute(&mut *tx)
     .await
     .expect("insert stock_movement");
-    sqlx::query(
-        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-         VALUES ($1, $2, 0, GREATEST($3::numeric, 0)) \
-         ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
-    )
-    .bind(shift_id)
-    .bind(code)
-    .bind(&signed)
-    .execute(&mut *tx)
-    .await
-    .expect("update shift_balances");
+    let (safe, drawer) = (
+        CashPlace::Safe(BranchId::new(branch)),
+        CashPlace::Drawer(shift_id.to_string()),
+    );
+    let (from, to) = if direction == "IN" {
+        (safe, drawer)
+    } else {
+        (drawer, safe)
+    };
+    let source = SourceRef {
+        source_type: SourceType::Transfer,
+        source_id: req_id.clone(),
+        source_key: "move".to_string(),
+    };
+    let moved = [(
+        CurrencyCode::parse(code).expect("valid currency"),
+        amount.parse().expect("valid decimal"),
+    )];
+    LedgerCashPostings::new()
+        .post_in(&mut tx, &moves(&from, &to, &moved, &source), None)
+        .await
+        .expect("post ledger movement");
     sqlx::query(
         "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 1) \
          ON CONFLICT (branch_id) DO UPDATE SET version = branch_versions.version + 1",
