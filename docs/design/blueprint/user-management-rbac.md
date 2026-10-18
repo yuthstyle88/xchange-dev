@@ -269,6 +269,7 @@ Tests:
 | `xc-auth/src/application/session/session_service.rs` | **C4** | Login recording + `must_change_password` stored on the session |
 | `api/src/presentation/http/users.rs` (create, `:195-210`) | **F9** alone | Q5 A on create: a temporary password from C1's `TempPassword::generate` replaces the typed one, `must_change_password: true` at `:203` (addendum item 11), and the password is returned once |
 | `api/src/presentation/http/v3/views/admin_users.rs` + its DTO + `web/src/shared/api/generated/admin_users.ts` | **F10** alone | the view answers `employeeCode`, `department`, `position`, `tellCode` (found by claude/177aa7ef writing W1; BE controller ruling on PR 3083). Without it F3 saves fields the Users screen can never show |
+| `api/src/presentation/http/auth.rs` (login and session answers) + a new `api/src/presentation/http/v3/commands/auth_password_change.rs` | **F11** | (a) `SessionUser.mustChangePassword: boolean` on `POST /api/auth/login` and `GET /api/auth/session`; (c) `POST /api/auth/password {currentPassword,newPassword}` → `204`, the session ends (Identity revokes all), errors `400 validationFailed` (field `newPassword`) and `401 invalidCredentials`. BE controller ruling, #564 issuecomment-6245742828. **C4** adds `IdentityClient::change_password` and `admin_set_password` in `domain/identity/identity_client.rs`, so F2 and F11 do not both edit it |
 | `api/src/presentation/http/v3/view.rs` (the `purpose=export` path, `ExportGate::check` at `:692`, `ExportGate::record` at `:760`) + new `api/src/presentation/http/v3/xlsx.rs` | **C5** | An `xlsx` output for every paged view read with `purpose=export`, through the existing `ExportGate` (addendum item 13). `build.rs` scans only `views`, `actions` and `commands`, so there is no `exports/` directory. Exports are views, which follows ♻️ (one shared core) |
 | `api/src/presentation/http/v3/caller.rs` (`:34`) | **F8** alone | The forced-change gate. There is no `middleware/` directory (`api/src/presentation/` has `dto`, `extractors`, `http`, and none else), so the seam is `authenticate_caller` |
 | `web/src/screens/admin/users/UsersScreen.tsx`, `users/i18n.ts`, `users/menu.ts` | **W1** | Mounts **every** tab (matrix, audit, login history, import) over stub components, and adds every i18n key (review item 8). W2–W4 then fill in only their own component files |
@@ -288,8 +289,9 @@ One file per command, because `build.rs` registers each top-level `commands/` fi
 | F6 | view `admin_employee_register` (the Employee Register sheet; the user list is the existing `admin_users`, the matrix is F5). All three export as xlsx through C5 | `v3/views/admin_employee_register.rs` |
 | F9 | create through a temporary password (Q5 A) | `api/src/presentation/http/users.rs` only |
 | F10 | `admin_users` answers the four profile fields | `v3/views/admin_users.rs`, its DTO, `generated/admin_users.ts` |
+| F11 | the forced-change contract for the web: the flag on login and session answers, and the self-change route | `api/src/presentation/http/auth.rs`, `v3/commands/auth_password_change.rs` |
 | F7a, F7b | Employee Register import: preview, apply | `v3/commands/user_import_preview.rs`, `user_import_apply.rs`; the parsing in `api/src/application/user/register_import.rs` (F7a owns it, F7b calls it) |
-| F8 | forced password change gate (Q5 A) | `api/src/presentation/http/v3/caller.rs` only |
+| F8 | forced password change gate (Q5 A): `403 passwordChangeRequired`, no field, on every authenticated route except session, logout and `POST /api/auth/password` (BE ruling, #564 issuecomment-6245742828) | `api/src/presentation/http/v3/caller.rs` only |
 | W1 | Users screen: status actions, reset, profile fields, and the mount points for every tab | `web/src/screens/admin/users/UsersScreen.tsx`, `users/i18n.ts`, `users/menu.ts` (+ their tests) |
 | W2 | matrix tab (read-only) | `web/src/screens/admin/users/PermissionMatrix.tsx` |
 | W3a, W3b | audit and login-history tabs | `web/src/screens/admin/users/UserAudit.tsx`, `LoginHistory.tsx` |
@@ -464,6 +466,7 @@ Every ticket that changes a literal held by a golden or fixture test that compar
 | F1a–c, F3, F4a–b, F5, F6 | BE | mechanical | C1's stubs and rows (stubs allowed); F5 and F6 export once C5 merges | one file each (§3.7) |
 | F2, F7a, F7b, F8, F9 | BE | logic | C1; F2 also ID-1 | one file each (§3.7) |
 | F10 `admin_users` answers the profile fields | BE | mechanical | M (the columns) | `v3/views/admin_users.rs`, its DTO, `generated/admin_users.ts` |
+| F11 forced-change contract (flag + self-change route) | BE | logic | C4 (`IdentityClient::change_password`) | `http/auth.rs`, `v3/commands/auth_password_change.rs` |
 | C5 xlsx output on `purpose=export` paged views, through `ExportGate` | BE | logic | — | `v3/view.rs` export path, `v3/xlsx.rs` |
 | W1 | FE | logic | the C1 and F view signatures | `UsersScreen.tsx`, `users/i18n.ts`, `users/menu.ts` |
 | W2, W3a–b, W4, W5 | FE | mechanical (W4, W5 logic) | W1's mount points | one component each |
@@ -472,7 +475,7 @@ Every ticket that changes a literal held by a golden or fixture test that compar
 **How many run at once:**
 - C2 → C1 is the one chain, and it is short: C2 is one small permission change.
 - C5 has no dependency and starts at once, alongside C2.
-- Then C3, C4 and all 14 F tickets run in parallel against C1's merged stubs (F10 after M).
+- Then C3, C4 and all 15 F tickets run in parallel against C1's merged stubs (F10 after M; F11 after C4).
 - W1 runs alongside them, and W2–W5 follow W1.
 - At peak that is about 16 BE tickets and 1 FE ticket, then 5 FE tickets.
 
