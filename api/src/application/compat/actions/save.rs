@@ -12,7 +12,6 @@
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
 use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -121,21 +120,13 @@ impl RpcAction for SaveAction {
 }
 
 fn save_actor(caller: &RpcCaller) -> SaveActor {
-    let id = caller.actor.id().to_string();
-    let (employee_id, standing) = match caller.actor.kind() {
-        ActorKind::Staff => (
-            Some(id.clone()),
-            xc_auth::domain::access::StandingKind::Staff(
-                xc_auth::domain::access::v3_roles::blueprint_roles(caller.actor.role())[0],
-            ),
-        ),
-        ActorKind::Owner => (None, xc_auth::domain::access::StandingKind::Owner),
-    };
+    let id = caller.standing.user_id.clone();
+    let employee_id = (!caller.standing.is_owner()).then(|| id.clone());
     SaveActor {
         id,
         username: caller.username.clone(),
         employee_id,
-        standing,
+        standing: caller.standing.kind,
     }
 }
 

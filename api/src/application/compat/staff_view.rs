@@ -12,7 +12,7 @@
 //! is `Policy`'s; which employees are active is the caller's.
 
 use serde_json::{Map, Value, json};
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 
 /// Where the staff path serves an uploaded file.
@@ -42,6 +42,7 @@ pub struct StaffMember {
     pub username: String,
     pub name: String,
     pub role: Role,
+    pub role_text: String,
     pub branch: BranchId,
 }
 
@@ -74,7 +75,7 @@ pub fn staff_view(snapshot: Value, me: &StaffMember, colleagues: &[StaffMember])
             json!({
                 "id": colleague.id,
                 "name": colleague.name,
-                "role": colleague.role.as_str(),
+                "role": colleague.role_text.as_str(),
             })
         })
         .collect();
@@ -85,23 +86,23 @@ pub fn staff_view(snapshot: Value, me: &StaffMember, colleagues: &[StaffMember])
             "id": me.id,
             "username": me.username,
             "name": me.name,
-            "role": me.role.as_str(),
+            "role": me.role_text.as_str(),
             "branchId": me.branch.as_str(),
             "active": true,
             "mustChange": false,
         }),
     );
-    if matches!(me.role, Role::Rates | Role::System) {
+    if matches!(me.role, Role::RateManager | Role::Admin) {
         snapshot.insert("transactions".to_string(), json!([]));
         snapshot.insert("customers".to_string(), json!([]));
     }
     match me.role {
-        Role::Rates => {
+        Role::RateManager => {
             if let Some(operations) = snapshot.get_mut("operations") {
                 hide_the_floor(operations, &me.id);
             }
         }
-        Role::System => {
+        Role::Admin => {
             snapshot.insert("stock".to_string(), json!({"shifts": [], "movements": []}));
             snapshot.insert("rates".to_string(), json!([]));
             snapshot.insert("rateHistory".to_string(), json!([]));
