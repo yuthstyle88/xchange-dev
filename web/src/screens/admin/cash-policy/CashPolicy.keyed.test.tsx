@@ -50,7 +50,7 @@ describe('KW-3: CashPolicy idempotency key lifecycle (#2021 §9)', () => {
               version: 1,
               changed: true,
               data: {
-                shift: null,
+                openShifts: [],
                 stock: [],
                 stats: null,
                 reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
