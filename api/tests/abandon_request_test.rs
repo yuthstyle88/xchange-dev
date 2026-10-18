@@ -4,7 +4,9 @@
 //! into the tables (setup only). Retired with it: the two fixture replays (each holds v2's `adminOpenShift` refusing
 //! an id, #37 / #149), and the tests whose subject or an assertion is v2's open / move / close answering an id
 //! (`a_cancelled_request_is_refused_by_every_write_of_the_branch`, `an_applied_open_shift_request_is_applied`,
-//! `the_same_id_given_up_in_one_branch_is_free_in_another`, `abandoning_and_opening_a_shift_at_once_exactly_one_wins`).
+//! `the_same_id_given_up_in_one_branch_is_free_in_another`, `abandoning_and_opening_a_shift_at_once_exactly_one_wins`,
+//! and, ruled on #626, `sixteen_and_sixty_characters_are_accepted_and_the_id_is_trimmed`, whose second half asserts
+//! v2's open refusing an abandoned id).
 //!
 //! `adminAbandonRequest`: the screen gives up waiting for the answer to a write
 //! and asks what became of its request id. Recorded from v2 in
@@ -65,7 +67,6 @@ const MAIN: &str = "MAIN";
 const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 const BAD_REQUEST_ID: &str = "รหัสคำขอไม่ถูกต้อง";
 const NO_SUCH_BRANCH: &str = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
-const ABANDONED: &str = "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด";
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -373,44 +374,6 @@ async fn a_request_id_of_the_wrong_shape_is_refused() {
         assert_eq!(refusal(result), BAD_REQUEST_ID, "id {id:?}");
     }
     assert_eq!(db.rows().await, vec![]);
-    db.finish().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn sixteen_and_sixty_characters_are_accepted_and_the_id_is_trimmed() {
-    let db = TestDb::start().await;
-    let sixteen = "0123456789abcdeF";
-    let sixty = "A-".repeat(30);
-    assert_eq!(db.abandon(MAIN, sixteen, 0).await.unwrap(), Cancelled);
-    assert_eq!(db.abandon(MAIN, &sixty, 0).await.unwrap(), Cancelled);
-
-    // spaces around the id are not part of it
-    let padded = request_id();
-    assert_eq!(
-        db.abandon(MAIN, &format!("  {padded}\t"), 0).await.unwrap(),
-        Cancelled
-    );
-    // a number is read as its digits
-    let result = db
-        .abandoning()
-        .abandon(
-            &branch(MAIN),
-            &json!({ "requestId": 1234567890123456_u64 }),
-            ACTOR,
-            at(0),
-        )
-        .await;
-    assert_eq!(result.unwrap(), Cancelled);
-
-    let mut expected = vec![
-        pair(MAIN, sixteen),
-        pair(MAIN, &sixty),
-        pair(MAIN, &padded),
-        pair(MAIN, "1234567890123456"),
-    ];
-    expected.sort();
-    assert_eq!(db.keys().await, expected);
-    assert_eq!(refusal(db.open_shift(MAIN, &padded).await), ABANDONED);
     db.finish().await;
 }
 
