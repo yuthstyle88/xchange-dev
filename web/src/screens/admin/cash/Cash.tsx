@@ -200,7 +200,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   }
 
   const isWriteDisabled = () => pendingWrite.busy() || cashError() !== null;
-  const hasOpenShift = () => Boolean(cash()?.shift);
+  const hasOpenShift = () => (cash()?.openShifts ?? []).length > 0;
 
   function shiftDiffText(s: AdminShiftRow): string {
     if (s.status === 'OPEN') {
@@ -315,7 +315,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       {/* Reference Summary */}
       <div class="stock-banner">
         <strong>
-          {cash()?.shift && cash()?.reference && cash()!.reference.withReference > 0
+          {hasOpenShift() && cash()?.reference && cash()!.reference.withReference > 0
             ? t('refSummaryWithRates', {
                 spread: formatMoney(cash()!.reference.spread),
                 percent: cash()!.reference.percent,
