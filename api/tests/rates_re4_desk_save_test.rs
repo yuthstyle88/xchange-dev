@@ -71,6 +71,7 @@
 //!   base `d6ce058`.
 
 mod save_common;
+mod shift_holder_common;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -1155,6 +1156,7 @@ async fn checked_request(
 async fn a_kiosk_save_after_a_republish_is_quote_expired() {
     let shop = Shop::start().await;
     shop.open_shift(MAIN, &[("THB", "100000")]).await;
+    shift_holder_common::open_shift_for(&shop.pool, MAIN, FRONT, &[("THB", "100000")]).await;
     let customer = shop.reserve(MAIN, person()).await;
     let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
     publish(&shop.pool, MAIN, &[("JPY", "23.1", "23.5")]).await;

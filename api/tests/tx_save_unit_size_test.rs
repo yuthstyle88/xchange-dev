@@ -138,6 +138,13 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
     .await
     .expect("attach set_org trigger to tables");
 
+    // Prepare Org 1 (MAIN) with published JPY rate (per-1: 0.2195 / 0.2295, published unit_size = 100: 21.95 / 22.95)
+    shop.set_rate(MAIN, "JPY", "0.2195", "0.2295").await;
+    shop.open_shift(MAIN, &[("THB", "100000"), ("JPY", "100000")])
+        .await;
+    let customer_1 = shop.reserve(MAIN, person()).await;
+    let passport_1 = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
+
     // Seed owner user for Org 2
     sqlx::query(
         "WITH u AS (INSERT INTO users (organization_id, name, status, created_by) \
@@ -149,13 +156,6 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
     .execute(&shop.pool)
     .await
     .expect("seed org 2 owner user");
-
-    // Prepare Org 1 (MAIN) with published JPY rate (per-1: 0.2195 / 0.2295, published unit_size = 100: 21.95 / 22.95)
-    shop.set_rate(MAIN, "JPY", "0.2195", "0.2295").await;
-    shop.open_shift(MAIN, &[("THB", "100000"), ("JPY", "100000")])
-        .await;
-    let customer_1 = shop.reserve(MAIN, person()).await;
-    let passport_1 = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
 
     // Prepare Org 2 (B2) with published USD rate (unit_size = 1)
     let b2_line_id = publish_rate_direct(

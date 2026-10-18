@@ -19,6 +19,7 @@
 //! name ends in `_test`). Without it they FAIL; none skips.
 
 mod save_common;
+mod shift_holder_common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -505,6 +506,14 @@ async fn whoever_saves_is_recorded_and_must_own_the_files() {
     let shop = Shop::start().await;
     let (customer, owners_passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     let staff = "employee-7";
+    let shift = shift_holder_common::open_shift_for(
+        &shop.pool,
+        MAIN,
+        staff,
+        &[("THB", "100000"), ("USD", "1000")],
+    )
+    .await;
+    fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
     let staff_passport = shop.upload(MAIN, staff, "image/jpeg", JPEG).await;
 
     // a file somebody else uploaded is not this saver's attachment
@@ -938,20 +947,22 @@ async fn two_branches_saving_at_once_share_one_run_of_numbers() {
     shop.set_rate("XC-B01", "USD", "32.1", "33").await;
     shop.open_shift("XC-B01", &[("THB", "100000"), ("USD", "1000")])
         .await;
+    let saver_b = shift_holder_common::teller_of_open_shift(&shop.pool, "XC-B01").await;
     let customer_b = shop.reserve("XC-B01", person()).await;
-    let passport_b = shop.upload("XC-B01", OWNER, "image/jpeg", JPEG).await;
+    let passport_b = shop.upload("XC-B01", &saver_b, "image/jpeg", JPEG).await;
 
     let mut tasks = Vec::new();
     for i in 0..16 {
-        for (branch_id, customer, passport) in [
-            (MAIN, &customer, &passport),
-            ("XC-B01", &customer_b, &passport_b),
+        for (branch_id, customer, passport, saver) in [
+            (MAIN, &customer, &passport, OWNER),
+            ("XC-B01", &customer_b, &passport_b, saver_b.as_str()),
         ] {
             let workflow = shop.workflow.clone();
+            let saver = saver.to_owned();
             let mut cmd = form(&format!("both-{i:04}-aaaaaaaaaaa"), customer, passport);
             cmd.amount = "1".to_owned();
             tasks.push(tokio::spawn(async move {
-                workflow.save(&branch(branch_id), cmd, OWNER, at(i)).await
+                workflow.save(&branch(branch_id), cmd, &saver, at(i)).await
             }));
         }
     }
