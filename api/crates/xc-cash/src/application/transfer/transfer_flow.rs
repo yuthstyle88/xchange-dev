@@ -17,7 +17,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, IntBound, Money, MoneyDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
@@ -29,12 +29,16 @@ use crate::domain::ledger::posting::{SourceRef, SourceType};
 use crate::domain::posting::{CashPlace, CashPostings, differences};
 use crate::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, NewTransferLine, TransferError, TransferStatus, TransferStep,
-    add_line_minor,
+    add_line_minor, checked_line_minor,
 };
 use crate::domain::transfer::kinds::TransferKinds;
 use crate::domain::transfer::transfer_repository::TransferRepository;
 use crate::infrastructure::ledger_postings::LedgerCashPostings;
 use crate::infrastructure::transfer_repository::PgTransferRepository;
+
+/// Validation message when a transfer line or currency total exceeds `ledger_entries.quantity_signed numeric(20,4)`.
+pub const TRANSFER_TOTAL_EXCEEDS_COLUMN: &str =
+    "transfer total exceeds ledger_entries.quantity_signed numeric(20,4)";
 
 pub struct TransferFlow {
     pool: PgPool,
@@ -450,6 +454,9 @@ impl TransferFlow {
             return Ok(t);
         }
 
+        // `ledger_entries.quantity_signed numeric(20,4)` (`migrations/20261110120000_ledger.sql:34`):
+        // |v| < 10^16 units = < 10^18 hundredths.
+        const LEDGER_QUANTITY_MINOR_BOUND: IntBound = IntBound::integer(0, 999_999_999_999_999_999);
         let mut seen_denominations: HashSet<i64> = HashSet::with_capacity(cmd.lines.len());
         let mut totals: HashMap<CurrencyCode, i64> = HashMap::new();
         for line in &cmd.lines {
@@ -490,8 +497,19 @@ impl TransferFlow {
                     line.denomination_id
                 ))
             })?;
+            let line_minor =
+                checked_line_minor(face_value, line.qty).map_err(from_transfer_error)?;
+            LEDGER_QUANTITY_MINOR_BOUND
+                .check(line_minor)
+                .map_err(|_| AppError::Validation(TRANSFER_TOTAL_EXCEEDS_COLUMN.to_string()))?;
             add_line_minor(&mut totals, line.currency, face_value, line.qty)
                 .map_err(from_transfer_error)?;
+        }
+
+        for &total_minor in totals.values() {
+            LEDGER_QUANTITY_MINOR_BOUND
+                .check(total_minor)
+                .map_err(|_| AppError::Validation(TRANSFER_TOTAL_EXCEEDS_COLUMN.to_string()))?;
         }
 
         self.repo.insert(tx, &cmd, who, now).await
