@@ -132,8 +132,8 @@ impl Room {
             .await
             .expect("insert a branch");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-             VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase, safe) \
+             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
         )
         .bind(B01)
         .execute(&pool)
@@ -155,8 +155,8 @@ impl Room {
             .await
             .expect("insert branch B02");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-             VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase, safe) \
+             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
         )
         .bind(B02)
         .execute(&pool)

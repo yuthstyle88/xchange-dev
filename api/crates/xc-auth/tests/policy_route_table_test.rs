@@ -19,6 +19,12 @@
 //! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
 //! (`docs/design/blueprint/rates.md` §9), so its two rows (Rpc and StaffRpc, RatesDraft) move to
 //! "no row". Every other row, `rateDraft`'s included, is unchanged.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c): CA-10 retires the `ops*`
+//! actions and the direct shift actions with their policy rows (`cash-shift-transfer.md` §6), so on
+//! `Rpc` and `StaffRpc` `adminOpenShift`, `adminCloseShift`, `adminMoveStock`, `opsClock`, `ops` and
+//! `opsEnable` move to "no row". The `Custody` path's own rows stay (the type stays; no route
+//! reaches it). Every other row is unchanged.
 
 mod policy_common;
 
@@ -54,9 +60,6 @@ fn every_route_and_action_names_its_permission() {
         (E::Rpc, "saveTransaction", p(P::ExchangeTransact)),
         (E::Kiosk, "manage", p(P::RatesDraft)),
         (E::Kiosk, "configure", p(P::RatesDraft)),
-        (E::Rpc, "adminOpenShift", Some(Need::Custody)),
-        (E::Rpc, "adminCloseShift", Some(Need::Custody)),
-        (E::Rpc, "adminMoveStock", p(P::CashManage)),
         (E::Rpc, "adminCreateBranch", p(P::BranchesManage)),
         (E::OwnerRoute, "employees", p(P::UsersManage)),
         (E::OwnerRoute, "list", p(P::UsersManage)),
@@ -119,11 +122,15 @@ fn every_route_and_action_names_its_permission() {
         // #582's
         (E::Custody, "opsClock", Some(Need::Custody)),
         (E::Custody, "opsNope", Some(Need::Custody)),
-        (E::StaffRpc, "opsClock", Some(Need::Custody)),
-        (E::StaffRpc, "ops", Some(Need::Custody)),
-        (E::StaffRpc, "opsEnable", Some(Need::Custody)),
-        (E::StaffRpc, "adminOpenShift", Some(Need::Custody)),
         // no row
+        // CA-10 #626 retires these (cash-shift-transfer.md §6)
+        (E::Rpc, "adminOpenShift", None),
+        (E::Rpc, "adminCloseShift", None),
+        (E::Rpc, "adminMoveStock", None),
+        (E::StaffRpc, "opsClock", None),
+        (E::StaffRpc, "ops", None),
+        (E::StaffRpc, "opsEnable", None),
+        (E::StaffRpc, "adminOpenShift", None),
         // RE-7 #604 removes adminSaveRate (rates.md §9): it was RatesDraft on both paths
         (E::Rpc, "adminSaveRate", None),
         (E::StaffRpc, "adminSaveRate", None),

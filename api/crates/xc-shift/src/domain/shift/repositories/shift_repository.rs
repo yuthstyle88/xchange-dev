@@ -16,11 +16,6 @@ pub trait ShiftRepository: Send + Sync + 'static {
         branch: &BranchId,
     ) -> impl std::future::Future<Output = AppResult<bool>> + Send;
 
-    fn active(
-        &self,
-        branch: &BranchId,
-    ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send;
-
     fn shifts(
         &self,
         branch: &BranchId,
@@ -83,12 +78,6 @@ pub trait ShiftRepository: Send + Sync + 'static {
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
         request_id: &'a str,
-    ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send + 'a;
-
-    fn active_in<'a>(
-        &'a self,
-        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &'a BranchId,
     ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send + 'a;
 
     fn insert_shift<'a>(

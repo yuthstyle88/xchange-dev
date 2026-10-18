@@ -249,8 +249,8 @@ async fn seed_open_shift_for_teller(pool: &PgPool, branch: &BranchId, teller_id:
     .expect("insert cash count");
 
     sqlx::query(
-        "INSERT INTO shifts (id, branch_id, opened_by, opened_at, status, teller_id, open_request_id, opened_by_count) \
-         VALUES ($1, $2, 'test', now(), 'OPEN', $3, $1, $4)",
+        "INSERT INTO shifts (id, branch_id, opened_by, opened_at, status, teller_id, open_request_id) \
+         VALUES ($1, $2, 'test', now(), 'OPEN', $3, $4::text)",
     )
     .bind(&shift_id)
     .bind(branch.as_str())
@@ -264,8 +264,8 @@ async fn seed_open_shift_for_teller(pool: &PgPool, branch: &BranchId, teller_id:
 
 async fn set_branch_phase(pool: &PgPool, branch: &BranchId, phase: Phase) {
     sqlx::query(
-        "INSERT INTO ops_state (branch_id, enabled, phase) VALUES ($1, true, $2) \
-         ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase, enabled = true",
+        "INSERT INTO ops_state (branch_id, phase) VALUES ($1, $2) \
+         ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase",
     )
     .bind(branch.as_str())
     .bind(phase.as_str())
@@ -739,5 +739,120 @@ async fn test_cut_off_propagates_read_errors() {
         .unwrap();
     assert_eq!(phase, "OPEN", "phase must remain OPEN on failure");
 
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_teller_of_actor_in_resolves_users_id() {
+    let db = TestDb::start().await;
+    let branch = db.branch("teller_uid").await;
+    let shifts = ShiftService::new(
+        Arc::new(PgShiftRepository::new(db.pool.clone())),
+        BranchTx::new(Transactor::new(db.pool.clone())),
+    );
+    seed_test_user(&db.pool, TELLER_ID, "Teller").await;
+
+    let mut tx = locked_tx(&db.pool, &branch).await;
+    let resolved = shifts
+        .teller_of_actor_in(&mut tx, &branch, TELLER_ID)
+        .await
+        .expect("teller_of_actor_in succeeds");
+    assert_eq!(resolved.as_deref(), Some(TELLER_ID));
+
+    let unknown = shifts
+        .teller_of_actor_in(&mut tx, &branch, "no-such-actor")
+        .await
+        .expect("unknown actor returns Ok(None)");
+    assert_eq!(unknown, None);
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_teller_of_actor_in_resolves_legacy_employee_id() {
+    let db = TestDb::start().await;
+    let branch = db.branch("teller_legacy").await;
+    let shifts = ShiftService::new(
+        Arc::new(PgShiftRepository::new(db.pool.clone())),
+        BranchTx::new(Transactor::new(db.pool.clone())),
+    );
+    let uid: String = sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+         SELECT id, 'Legacy Emp', 'ACTIVE', 'test', 'EMP-LEGACY-1' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("seed user with legacy_employee_id");
+
+    let mut tx = locked_tx(&db.pool, &branch).await;
+    let resolved = shifts
+        .teller_of_actor_in(&mut tx, &branch, "EMP-LEGACY-1")
+        .await
+        .expect("teller_of_actor_in succeeds");
+    assert_eq!(resolved, Some(uid));
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_teller_of_actor_in_resolves_employee_username() {
+    let db = TestDb::start().await;
+    let branch = db.branch("teller_uname").await;
+    let shifts = ShiftService::new(
+        Arc::new(PgShiftRepository::new(db.pool.clone())),
+        BranchTx::new(Transactor::new(db.pool.clone())),
+    );
+    sqlx::query(
+        "INSERT INTO employees (id, username, name, role, branch_id, password_hash, created_at) \
+         VALUES ('EMP-UNAME-1', 'somchai_uname', 'Somchai', 'FRONT', $1, 'hash', now())",
+    )
+    .bind(branch.as_str())
+    .execute(&db.pool)
+    .await
+    .expect("seed employee");
+    let uid: String = sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+         SELECT id, 'Somchai', 'ACTIVE', 'test', 'EMP-UNAME-1' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("seed user for employee");
+
+    let mut tx = locked_tx(&db.pool, &branch).await;
+    let resolved = shifts
+        .teller_of_actor_in(&mut tx, &branch, "somchai_uname")
+        .await
+        .expect("teller_of_actor_in succeeds");
+    assert_eq!(resolved, Some(uid));
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_teller_of_actor_in_resolves_owner() {
+    let db = TestDb::start().await;
+    let branch = db.branch("teller_owner").await;
+    let shifts = ShiftService::new(
+        Arc::new(PgShiftRepository::new(db.pool.clone())),
+        BranchTx::new(Transactor::new(db.pool.clone())),
+    );
+    let owner_uid: String = sqlx::query_scalar(
+        "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
+         u AS (INSERT INTO users (organization_id, name, status, created_by) \
+               SELECT id, 'Owner', 'ACTIVE', 'test' FROM o RETURNING id, organization_id), \
+         r AS (INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+               SELECT u.id, role.code, u.organization_id, NULL \
+               FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS role(code)) \
+         SELECT id::text FROM u",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("seed owner user");
+
+    let mut tx = locked_tx(&db.pool, &branch).await;
+    let resolved = shifts
+        .teller_of_actor_in(&mut tx, &branch, "owner")
+        .await
+        .expect("teller_of_actor_in succeeds");
+    assert_eq!(resolved, Some(owner_uid));
     tx.rollback().await.unwrap();
 }
