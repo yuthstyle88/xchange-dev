@@ -24,8 +24,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use devices_common::*;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xchange::config::Settings;
 use xchange::infrastructure::devices::device_service::BAD_PRINTER;
 use xchange::infrastructure::devices::escpos_driver::{EscposDriver, PrinterTransport};
@@ -587,14 +585,6 @@ async fn read(db: &Devices, branch_id: &str, models: &PrinterModels) -> DrawerSe
     settings
 }
 
-fn owner() -> Actor {
-    Actor::owner("owner")
-}
-
-fn staff(role: Role) -> Actor {
-    Actor::staff("be1", role, branch(MAIN)).expect("a staff actor")
-}
-
 fn key(branch_id: &str, key: &str) -> (String, String) {
     (branch_id.to_owned(), key.to_owned())
 }
@@ -621,7 +611,7 @@ async fn what_the_owner_sets_is_what_the_branch_reads() {
     let db = Devices::start().await;
 
     db.service
-        .set_drawer(&branch(MAIN), NEOCAL, false, &owner(), at(1))
+        .set_drawer(&branch(MAIN), NEOCAL, false, at(1))
         .await
         .expect("the owner says MAIN has no drawer");
     assert_eq!(
@@ -641,7 +631,7 @@ async fn what_the_owner_sets_is_what_the_branch_reads() {
     );
 
     db.service
-        .set_drawer(&branch(MAIN), NEOCAL, true, &owner(), at(2))
+        .set_drawer(&branch(MAIN), NEOCAL, true, at(2))
         .await
         .expect("the owner says MAIN has a drawer");
     assert_eq!(
@@ -692,7 +682,7 @@ async fn an_unknown_model_is_refused_and_nothing_is_stored() {
     for unknown in ["EPSON_TM_T82", "", "neocal_ntp_8220bt"] {
         let answer = db
             .service
-            .set_drawer(&branch(MAIN), unknown, true, &owner(), at(1))
+            .set_drawer(&branch(MAIN), unknown, true, at(1))
             .await;
         assert_eq!(refusal(answer), BAD_PRINTER, "{unknown:?}");
     }
@@ -713,21 +703,11 @@ async fn only_the_owner_sets_the_drawer() {
     // each role's call reaches the setting
     let db = Devices::start().await;
 
-    for role in [
-        Role::Front,
-        Role::Backend,
-        Role::Manager,
-        Role::Rates,
-        Role::Monitor,
-        Role::Finance,
-        Role::System,
-    ] {
-        let answer = db
-            .service
-            .set_drawer(&branch(MAIN), NEOCAL, false, &staff(role), at(1))
-            .await;
-        assert!(answer.is_ok(), "{role:?}: {answer:?}");
-    }
+    let answer = db
+        .service
+        .set_drawer(&branch(MAIN), NEOCAL, false, at(1))
+        .await;
+    assert!(answer.is_ok(), "{answer:?}");
 
     db.finish().await;
 }
@@ -737,16 +717,11 @@ async fn set_printer_never_writes_the_drawer_switch() {
     let db = Devices::start().await;
 
     db.service
-        .set_printer(
-            &branch(MAIN),
-            network("192.168.1.50", 9101),
-            &owner(),
-            at(1),
-        )
+        .set_printer(&branch(MAIN), network("192.168.1.50", 9101), at(1))
         .await
         .expect("set MAIN to a network printer");
     db.service
-        .set_printer(&branch(MAIN), PrinterKind::Simulated, &owner(), at(2))
+        .set_printer(&branch(MAIN), PrinterKind::Simulated, at(2))
         .await
         .expect("set MAIN back to simulated");
 
@@ -776,7 +751,7 @@ fn drawer_request(n: u32) -> QueueJob {
 async fn a_drawer_request_is_refused_where_the_branch_has_said_it_has_no_drawer() {
     let db = Devices::start().await;
     db.service
-        .set_drawer(&branch(MAIN), NEOCAL, false, &owner(), at(1))
+        .set_drawer(&branch(MAIN), NEOCAL, false, at(1))
         .await
         .expect("the owner says MAIN has no drawer");
     let before = db.stored().await;
@@ -816,7 +791,7 @@ async fn a_has_drawer_of_0_stored_behind_the_service_is_refused_too() {
 async fn a_drawer_request_is_queued_as_today_where_the_branch_has_said_nothing_or_has_a_drawer() {
     let db = Devices::start().await;
     db.service
-        .set_drawer(&branch(B9), NEOCAL, true, &owner(), at(1))
+        .set_drawer(&branch(B9), NEOCAL, true, at(1))
         .await
         .expect("the owner says B9 has a drawer");
 
@@ -846,7 +821,7 @@ async fn a_drawer_request_is_queued_as_today_where_the_branch_has_said_nothing_o
 async fn a_receipt_is_queued_where_the_branch_has_no_drawer() {
     let db = Devices::start().await;
     db.service
-        .set_drawer(&branch(MAIN), NEOCAL, false, &owner(), at(1))
+        .set_drawer(&branch(MAIN), NEOCAL, false, at(1))
         .await
         .expect("the owner says MAIN has no drawer");
 
@@ -902,7 +877,7 @@ async fn process_hands_run_with_the_branch_drawer_settings() {
     let driver = Arc::new(DrawerSeeingDriver::default());
     let service = db.service.clone().with_driver(driver.clone());
     service
-        .set_drawer(&branch(MAIN), NEOCAL, true, &owner(), at(1))
+        .set_drawer(&branch(MAIN), NEOCAL, true, at(1))
         .await
         .expect("the owner says MAIN has a drawer");
     let main = db.queued(MAIN, "DRAWER_REQUEST", "", "change", 1).await;

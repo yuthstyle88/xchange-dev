@@ -7,7 +7,6 @@ use chrono::Utc;
 use pos_infra::transactions::Transactor;
 use serde_json::json;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
@@ -105,9 +104,6 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
         .as_ref()
         .map(|u| u.user_id.as_str())
         .unwrap_or("");
-    let legacy_actor = callers.owner.as_ref().or(callers.staff.as_ref());
-    let dummy_owner = Actor::owner("owner");
-    let actor_ref = legacy_actor.unwrap_or(&dummy_owner);
 
     match action {
         "snapshot" => {
@@ -236,7 +232,7 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                 }
                 _ => return refuse(400, BAD_PRINTER),
             };
-            match devices.set_printer(&branch, kind, actor_ref, now).await {
+            match devices.set_printer(&branch, kind, now).await {
                 Ok(()) => answer(200, json!({ "saved": true }), true),
                 Err(e) => failure(e),
             }
@@ -250,10 +246,7 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                 Some(b) => b,
                 None => return refuse(400, BAD_PRINTER),
             };
-            match devices
-                .set_drawer(&branch, model, has_drawer, actor_ref, now)
-                .await
-            {
+            match devices.set_drawer(&branch, model, has_drawer, now).await {
                 Ok(()) => answer(200, json!({ "saved": true }), true),
                 Err(e) => failure(e),
             }

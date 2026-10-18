@@ -23,8 +23,6 @@ use async_trait::async_trait;
 use devices_common::*;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xchange::infrastructure::devices::escpos_driver::{
     EscposDriver, PrinterTransport, TcpTransport,
 };
@@ -402,14 +400,6 @@ async fn a_network_printer_whose_settings_cannot_be_used_is_an_error_not_a_guess
 
 // ───────────────────────────── DeviceService ────────────────────────────────
 
-fn owner() -> Actor {
-    Actor::owner("owner")
-}
-
-fn staff(role: Role) -> Actor {
-    Actor::staff("be1", role, branch(MAIN)).expect("a staff actor")
-}
-
 #[tokio::test]
 async fn only_the_owner_sets_the_printer() {
     // OR-4b (#767, design §4.2 C5): who may set the printer is the route table's alone
@@ -418,26 +408,11 @@ async fn only_the_owner_sets_the_printer() {
     // each role's call reaches the setting
     let db = Devices::start().await;
 
-    for role in [
-        Role::Front,
-        Role::Backend,
-        Role::Manager,
-        Role::Rates,
-        Role::Monitor,
-        Role::Finance,
-        Role::System,
-    ] {
-        let answer = db
-            .service
-            .set_printer(
-                &branch(MAIN),
-                network("192.168.1.50", 9100),
-                &staff(role),
-                at(1),
-            )
-            .await;
-        assert!(answer.is_ok(), "{role:?}: {answer:?}");
-    }
+    let answer = db
+        .service
+        .set_printer(&branch(MAIN), network("192.168.1.50", 9100), at(1))
+        .await;
+    assert!(answer.is_ok(), "{answer:?}");
 
     db.finish().await;
 }
@@ -447,12 +422,7 @@ async fn what_the_owner_sets_is_what_the_branch_reads() {
     let db = Devices::start().await;
 
     db.service
-        .set_printer(
-            &branch(MAIN),
-            network("192.168.1.50", 9101),
-            &owner(),
-            at(1),
-        )
+        .set_printer(&branch(MAIN), network("192.168.1.50", 9101), at(1))
         .await
         .expect("set MAIN to a network printer");
     assert_eq!(
@@ -466,7 +436,7 @@ async fn what_the_owner_sets_is_what_the_branch_reads() {
     );
 
     db.service
-        .set_printer(&branch(MAIN), PrinterKind::Simulated, &owner(), at(2))
+        .set_printer(&branch(MAIN), PrinterKind::Simulated, at(2))
         .await
         .expect("set MAIN back to simulated");
     assert_eq!(
@@ -489,7 +459,7 @@ async fn the_owner_cannot_store_a_network_printer_that_cannot_be_reached() {
     ] {
         let answer = db
             .service
-            .set_printer(&branch(MAIN), kind.clone(), &owner(), at(1))
+            .set_printer(&branch(MAIN), kind.clone(), at(1))
             .await;
         assert_eq!(
             refusal(answer),
@@ -527,12 +497,7 @@ async fn process_hands_the_driver_the_branch_printer() {
     let driver = Arc::new(SeeingDriver::default());
     let service = db.service.clone().with_driver(driver.clone());
     service
-        .set_printer(
-            &branch(MAIN),
-            network("192.168.1.50", 9101),
-            &owner(),
-            at(1),
-        )
+        .set_printer(&branch(MAIN), network("192.168.1.50", 9101), at(1))
         .await
         .expect("set MAIN to a network printer");
     let id = db.queued(MAIN, "DRAWER_REQUEST", "", "change", 1).await;
