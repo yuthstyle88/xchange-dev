@@ -20,7 +20,6 @@ use std::time::Duration;
 use actix_web::http::Method;
 use actix_web::{App, HttpRequest, HttpResponse, test, web};
 use auth_http_common::*;
-use pos_error::AppError;
 use serde_json::{Value, json};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
@@ -28,13 +27,12 @@ use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http;
 use xchange::presentation::pages::{self, SessionReader};
 
-const PATHS: [&str; 6] = [
+const PATHS: [&str; 5] = [
     "/api/auth",
     "/api/staff/login",
     "/api/staff/logout",
     "/api/staff/password",
     "/api/staff/me",
-    "/api/employees",
 ];
 
 fn login(username: &str, password: &str) -> Value {
@@ -81,15 +79,6 @@ async fn v2_story_staff_door() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
     replay(&app, &desk, &story(&fixture(), "staff door")).await;
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
-async fn v2_story_employees() {
-    let desk = Desk::start().await;
-    let app = desk_app!(desk);
-    replay(&app, &desk, &story(&fixture(), "employees")).await;
     drop(app);
     desk.drop_schema().await;
 }
@@ -185,7 +174,6 @@ async fn a_body_that_is_not_json_is_a_bad_request() {
 async fn body_limits_count_characters_not_bytes() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
     let padded =
         |json: &str, length: usize| format!("{json}{}", " ".repeat(length - json.chars().count()));
 
@@ -205,27 +193,6 @@ async fn body_limits_count_characters_not_bytes() {
     );
     let answer = send(&app, Call::raw("/api/auth", &thai)).await;
     assert_eq!(answer.status, 200, "3000 Thai letters: {}", answer.text);
-
-    // /api/employees: 6000
-    let list = r#"{"action":"list","payload":{}}"#;
-    let at_limit = send(
-        &app,
-        Call::raw("/api/employees", &padded(list, 6000)).owner(&owner),
-    )
-    .await;
-    assert_eq!(at_limit.status, 200, "6000 characters: {}", at_limit.text);
-    let over = send(
-        &app,
-        Call::raw("/api/employees", &padded(list, 6001)).owner(&owner),
-    )
-    .await;
-    assert_eq!((over.status, over.error().as_str()), (400, "ข้อมูลมากเกินไป"));
-    let thai = format!(
-        r#"{{"action":"list","payload":{{"note":"{}"}}}}"#,
-        "ก".repeat(5000)
-    );
-    let answer = send(&app, Call::raw("/api/employees", &thai).owner(&owner)).await;
-    assert_eq!(answer.status, 200, "5000 Thai letters: {}", answer.text);
 
     // the staff door: 120000 — 300 kB of Thai text is still inside it
     for path in [
@@ -448,91 +415,6 @@ async fn sessions_of(app: &TestApp, owner: Option<&str>, staff: Option<&str>) ->
 }
 
 #[actix_web::test]
-async fn the_session_reader_hands_out_the_owner_and_the_employee() {
-    let desk = Desk::start().await;
-    desk.branch("BR-2").await;
-    let app = app_with_who(desk.state()).await;
-    let nobody = json!({ "owner": null, "staff": null });
-    assert_eq!(sessions_of(&app, None, None).await, nobody);
-    assert_eq!(
-        sessions_of(&app, Some("junk"), Some(&"f".repeat(64))).await,
-        nobody
-    );
-
-    let owner = owner_signs_in(&app).await;
-    // v2's owner is always the actor `owner` (`OWNER_ID`, `server.mjs:7806`), whatever the row's id
-    let the_owner = json!({ "id": "owner", "kind": "owner", "role": "OWNER", "branch": null });
-    assert_eq!(
-        sessions_of(&app, Some(&owner), None).await,
-        json!({ "owner": the_owner, "staff": null })
-    );
-
-    // an employee still on the first password has no session for the pages
-    let made = send(
-        &app,
-        Call::post("/api/employees", json!({ "action": "create", "payload": {
-            "username": "newcomer", "name": "New", "role": "RATES", "branchId": "BR-2", "password": "first-password-1" } }))
-        .owner(&owner),
-    )
-    .await;
-    assert_eq!(made.status, 200, "{}", made.text);
-    let first = send(
-        &app,
-        Call::post(
-            "/api/staff/login",
-            json!({ "payload": { "username": "newcomer", "password": "first-password-1" } }),
-        ),
-    )
-    .await;
-    assert_eq!(
-        sessions_of(&app, None, Some(&first.token("staff"))).await,
-        nobody
-    );
-
-    let (id, staff) =
-        working_employee(&app, &desk, &owner, "somchai", "DOCUMENT_REVIEW", "BR-2").await;
-    let the_employee =
-        json!({ "id": id, "kind": "staff", "role": "DOCUMENT_REVIEW", "branch": "BR-2" });
-    assert_eq!(
-        sessions_of(&app, None, Some(&staff)).await,
-        json!({ "owner": null, "staff": the_employee })
-    );
-    // both cookies: both are handed out, each in its place
-    assert_eq!(
-        sessions_of(&app, Some(&owner), Some(&staff)).await,
-        json!({ "owner": the_owner, "staff": the_employee })
-    );
-    // a token in the other cookie is nobody
-    assert_eq!(sessions_of(&app, Some(&staff), Some(&owner)).await, nobody);
-
-    // sign-out and disable end what the reader sees
-    let out = send(
-        &app,
-        Call::post("/api/auth", json!({ "action": "logout" })).owner(&owner),
-    )
-    .await;
-    assert_eq!(out.status, 200);
-    assert_eq!(
-        sessions_of(&app, Some(&owner), Some(&staff)).await,
-        json!({ "owner": null, "staff": the_employee })
-    );
-    let owner = owner_signs_in(&app).await;
-    let disabled = send(
-        &app,
-        Call::post(
-            "/api/employees",
-            json!({ "action": "disable", "payload": { "id": id } }),
-        )
-        .owner(&owner),
-    )
-    .await;
-    assert_eq!(disabled.status, 200, "{}", disabled.text);
-    assert_eq!(sessions_of(&app, None, Some(&staff)).await, nobody);
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
 async fn when_the_database_is_down_the_routes_answer_500_and_the_reader_nobody() {
     // No database at all: a pool that cannot connect (acquire timeout 1 s).
     let state = AppState::new(Arc::new(common::settings(&[])), common::unreachable_pool());
@@ -552,7 +434,6 @@ async fn when_the_database_is_down_the_routes_answer_500_and_the_reader_nobody()
             json!({ "payload": { "password": "second-password-2" } }),
         )
         .staff(&token),
-        Call::post("/api/employees", json!({ "action": "list" })).owner(&token),
     ];
     for call in calls {
         let what = format!("{} {}", call.path, call.body);
@@ -576,416 +457,4 @@ async fn when_the_database_is_down_the_routes_answer_500_and_the_reader_nobody()
         sessions_of(&app, Some(&token), Some(&token)).await,
         json!({ "owner": null, "staff": null })
     );
-}
-
-// ── the employee route ───────────────────────────────────────────────────
-
-#[actix_web::test]
-async fn account_actions_are_audited_under_the_actor_owner() {
-    let desk = Desk::start().await;
-    let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
-    let (id, _) = working_employee(&app, &desk, &owner, "somchai", "FRONT", "MAIN").await;
-    for (action, payload) in [
-        (
-            "reset",
-            json!({ "id": id, "password": "third-password-33" }),
-        ),
-        ("disable", json!({ "id": id })),
-    ] {
-        let answer = send(
-            &app,
-            Call::post(
-                "/api/employees",
-                json!({ "action": action, "payload": payload }),
-            )
-            .owner(&owner),
-        )
-        .await;
-        assert_eq!(answer.status, 200, "{action}: {}", answer.text);
-    }
-    let lines: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT actor, subject, action FROM employee_audit \
-         WHERE action IN ('CREATE', 'RESET_PASSWORD', 'DISABLE') ORDER BY action",
-    )
-    .fetch_all(&desk.pool)
-    .await
-    .unwrap();
-    let expected: Vec<(String, String, String)> = ["CREATE", "DISABLE", "RESET_PASSWORD"]
-        .iter()
-        .map(|action| ("owner".to_owned(), id.clone(), (*action).to_owned()))
-        .collect();
-    assert_eq!(
-        lines, expected,
-        "v2 writes the constant owner id, not the owner row's id or username"
-    );
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
-async fn the_route_table_registers_a_real_custody_port() {
-    let desk = Desk::start().await;
-    // the route table alone: no fake, so the port `bootstrap::configure` registers answers
-    let app = desk_app_without_custody!(desk);
-    let owner = owner_signs_in(&app).await;
-    let (id, _) = working_employee(&app, &desk, &owner, "somchai", "FRONT", "MAIN").await;
-    // the fake is not in this app: what it says holds nobody back
-    desk.custody
-        .operations
-        .lock()
-        .unwrap()
-        .insert("MAIN".into(), json!({ "custodian": id, "requests": [] }));
-
-    let custody_action = |action: &'static str| {
-        send(
-            &app,
-            Call::post(
-                "/api/employees",
-                json!({ "action": action, "payload": { "branchId": "MAIN" } }),
-            )
-            .owner(&owner),
-        )
-    };
-    // CA-10 #626 retires `entity` and `enable` (cash-shift-transfer.md §6 Q7): both are answered as an
-    // action the route does not know, and custody is asked nothing
-    let unknown = custody_action("nope").await;
-    for action in ["entity", "enable"] {
-        let answer = custody_action(action).await;
-        assert_eq!(
-            (
-                answer.status,
-                answer.text.as_str(),
-                answer.cache_control.as_deref()
-            ),
-            (
-                unknown.status,
-                unknown.text.as_str(),
-                unknown.cache_control.as_deref()
-            ),
-            "{action}: answered as the unknown action `nope` is"
-        );
-    }
-    // custody of MAIN is empty: nobody holds cash, nothing is pending
-    let answer = send(
-        &app,
-        Call::post(
-            "/api/employees",
-            json!({ "action": "disable", "payload": { "id": id } }),
-        )
-        .owner(&owner),
-    )
-    .await;
-    assert_eq!(
-        answer.status, 200,
-        "empty custody, no hold: {}",
-        answer.text
-    );
-    assert_eq!(answer.json(), json!({ "saved": true }));
-    assert!(desk.custody.calls.lock().unwrap().is_empty());
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
-async fn what_the_custody_port_refuses_is_answered_as_it_says() {
-    let desk = Desk::start().await;
-    let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
-    let mut ids = Vec::new();
-    for role in ["FRONT", "BACKEND", "MANAGER", "RATES", "MONITOR", "FINANCE"] {
-        let (id, _) = working_employee(
-            &app,
-            &desk,
-            &owner,
-            &format!("p-{}", role.to_lowercase()),
-            role,
-            "MAIN",
-        )
-        .await;
-        ids.push(id);
-    }
-    let call = |action: &str, payload: Value| {
-        Call::post(
-            "/api/employees",
-            json!({ "action": action, "payload": payload }),
-        )
-        .owner(&owner)
-    };
-
-    *desk.custody.refuse_with.lock().unwrap() = Some("ขั้นตอนนี้ปิดอยู่".to_owned());
-    // CA-10 #626: `disable` is the one action left that asks custody
-    for (action, payload) in [("disable", json!({ "id": ids[0] }))] {
-        let answer = send(&app, call(action, payload)).await;
-        assert_eq!(
-            (answer.status, answer.error().as_str()),
-            (400, "ขั้นตอนนี้ปิดอยู่"),
-            "{action}"
-        );
-    }
-    let active: i64 = sqlx::query_scalar("SELECT count(*) FROM employees WHERE active")
-        .fetch_one(&desk.pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        active, 6,
-        "a disable that custody could not judge disables nobody"
-    );
-
-    // `enable` is retired (CA-10 #626) and asks custody nothing; neither do `list`, `create` and `reset`.
-    let answer = send(&app, call("enable", json!({ "branchId": "BR-9" }))).await;
-    let unknown = send(&app, call("nope", json!({ "branchId": "BR-9" }))).await;
-    assert_eq!(
-        (answer.status, answer.text.as_str()),
-        (unknown.status, unknown.text.as_str()),
-        "enable is answered as the unknown action `nope` is"
-    );
-    let answer = send(&app, call("list", json!({}))).await;
-    assert_eq!(answer.status, 200, "{}", answer.text);
-    let answer = send(
-        &app,
-        call(
-            "reset",
-            json!({ "id": ids[1], "password": "third-password-33" }),
-        ),
-    )
-    .await;
-    assert_eq!(answer.status, 200, "{}", answer.text);
-    assert!(desk.custody.calls.lock().unwrap().is_empty());
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
-async fn a_port_failure_that_is_not_a_refusal_is_a_500() {
-    struct Broken;
-    impl http::employees::EmployeeCustody for Broken {
-        fn holds_cash_or_pending<'a>(
-            &'a self,
-            _branch: &'a xc_kernel::ids::BranchId,
-            _employee_id: &'a str,
-        ) -> std::pin::Pin<Box<dyn Future<Output = pos_error::AppResult<bool>> + 'a>> {
-            Box::pin(async { Err(AppError::Internal("the custody tables are gone".into())) })
-        }
-    }
-    use std::future::Future;
-
-    let desk = Desk::start().await;
-    let state = desk.state();
-    let port: Arc<dyn http::employees::EmployeeCustody> = Arc::new(Broken);
-    let app = TestApp::new(
-        test::init_service(
-            // after `.configure`: the route table registers the real port, and the later one wins
-            App::new()
-                .configure(move |cfg| bootstrap::configure(cfg, state))
-                .app_data(web::Data::from(port)),
-        )
-        .await,
-        |t| t.to_request(),
-    );
-    let owner = owner_signs_in(&app).await;
-    let (id, _) = working_employee(&app, &desk, &owner, "somchai", "FRONT", "MAIN").await;
-    for (action, payload) in [("disable", json!({ "id": id }))] {
-        let answer = send(
-            &app,
-            Call::post(
-                "/api/employees",
-                json!({ "action": action, "payload": payload }),
-            )
-            .owner(&owner),
-        )
-        .await;
-        assert_eq!(answer.status, 500, "{action}: {}", answer.text);
-        assert_eq!(
-            answer.json(),
-            json!({ "error": SERVER_ERROR }),
-            "{action}: the cause is not shown"
-        );
-    }
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
-async fn creates_of_one_username_at_once_make_one_employee() {
-    let desk = Desk::start().await;
-    let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
-    let create = |n: usize| {
-        send(
-            &app,
-            Call::post("/api/employees", json!({ "action": "create", "payload": {
-                "username": if n.is_multiple_of(2) { "somchai" } else { " SOMCHAI " }, "name": format!("คนที่ {n}"),
-                "role": "FRONT", "branchId": "MAIN", "password": "first-password-1" } }))
-            .owner(&owner),
-        )
-    };
-    let answers = tokio::join!(
-        create(0),
-        create(1),
-        create(2),
-        create(3),
-        create(4),
-        create(5),
-        create(6),
-        create(7)
-    );
-    let answers = [
-        answers.0, answers.1, answers.2, answers.3, answers.4, answers.5, answers.6, answers.7,
-    ];
-    let saved = answers.iter().filter(|a| a.status == 200).count();
-    assert_eq!(
-        saved,
-        1,
-        "exactly one is saved: {:?}",
-        answers.iter().map(|a| a.text.clone()).collect::<Vec<_>>()
-    );
-    for refused in answers.iter().filter(|a| a.status != 200) {
-        assert_eq!(
-            (refused.status, refused.error().as_str()),
-            (400, EMPLOYEE_DATA)
-        );
-    }
-    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM employees")
-        .fetch_one(&desk.pool)
-        .await
-        .unwrap();
-    assert_eq!(rows, 1);
-    drop(app);
-    desk.drop_schema().await;
-}
-
-async fn create<'a>(
-    app: &'a TestApp,
-    owner: &'a str,
-    username: &'a str,
-    role: &'a str,
-    branch: &'a str,
-) {
-    let made = send(
-        app,
-        Call::post(
-            "/api/employees",
-            json!({ "action": "create", "payload": {
-                "username": username, "name": username, "role": role, "branchId": branch,
-                "password": "first-password-1" } }),
-        )
-        .owner(owner),
-    )
-    .await;
-    assert_eq!(made.status, 200, "create {username}: {}", made.text);
-}
-
-#[actix_web::test]
-async fn enable_and_entity_are_actions_the_route_no_longer_knows() {
-    // CA-10 #626 (cash-shift-transfer.md §6 Q7): the Enable switch and the entity's writer are retired.
-    // With all six roles in the branch, `enable` is still answered as any unknown action, and so is
-    // `entity`; custody is asked nothing.
-    let desk = Desk::start().await;
-    let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
-    for role in ["FRONT", "BACKEND", "MANAGER", "RATES", "MONITOR", "FINANCE"] {
-        create(
-            &app,
-            &owner,
-            &format!("six-{}", role.to_lowercase()),
-            role,
-            "MAIN",
-        )
-        .await;
-    }
-    let post = |action: &'static str, payload: Value| {
-        send(
-            &app,
-            Call::post(
-                "/api/employees",
-                json!({ "action": action, "payload": payload }),
-            )
-            .owner(&owner),
-        )
-    };
-    let unknown = post("nope", json!({ "branchId": "MAIN" })).await;
-    assert_eq!(
-        unknown.status, 400,
-        "an unknown action is refused: {}",
-        unknown.text
-    );
-    for (action, payload) in [
-        ("enable", json!({ "branchId": "MAIN" })),
-        (
-            "entity",
-            json!({ "branchId": "MAIN", "company": "XC", "site": "B", "confirmSeparated": true }),
-        ),
-    ] {
-        let answer = post(action, payload).await;
-        assert_eq!(
-            (
-                answer.status,
-                answer.text.as_str(),
-                answer.cache_control.as_deref()
-            ),
-            (
-                unknown.status,
-                unknown.text.as_str(),
-                unknown.cache_control.as_deref()
-            ),
-            "{action}: answered as the unknown action `nope` is"
-        );
-    }
-    assert!(
-        desk.custody.calls.lock().unwrap().is_empty(),
-        "custody was asked nothing"
-    );
-    drop(app);
-    desk.drop_schema().await;
-}
-
-#[actix_web::test]
-async fn disable_asks_custody_about_the_employees_own_branch() {
-    const HOLDS: &str = "ส่งมอบเงินและงานค้างก่อนปิดบัญชี หากเข้าระบบไม่ได้ให้รีเซ็ตรหัสผ่าน";
-    let desk = Desk::start().await;
-    desk.branch("BR-2").await;
-    let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
-    create(&app, &owner, "anan", "FRONT", "BR-2").await;
-    create(&app, &owner, "busaba", "FRONT", "MAIN").await;
-    let (anan, busaba) = (
-        desk.employee_id("anan").await,
-        desk.employee_id("busaba").await,
-    );
-    // BR-2 says anan holds its cash; MAIN, oddly, names anan in a pending request and busaba nowhere
-    {
-        let mut ops = desk.custody.operations.lock().unwrap();
-        ops.insert("BR-2".into(), json!({ "custodian": anan, "requests": [] }));
-        ops.insert("MAIN".into(), json!({ "custodian": "", "requests": [] }));
-    }
-    let disable = |id: String| {
-        send(
-            &app,
-            Call::post(
-                "/api/employees",
-                json!({ "action": "disable", "payload": { "id": id } }),
-            )
-            .owner(&owner),
-        )
-    };
-    let answer = disable(anan.clone()).await;
-    assert_eq!(
-        (answer.status, answer.error().as_str()),
-        (400, HOLDS),
-        "BR-2 is the branch that is asked"
-    );
-    let answer = disable(busaba.clone()).await;
-    assert_eq!(answer.status, 200, "{}", answer.text);
-
-    // the other way round: what MAIN says about an employee of BR-2 does not matter
-    {
-        let mut ops = desk.custody.operations.lock().unwrap();
-        ops.insert("BR-2".into(), json!({ "custodian": "", "requests": [] }));
-        ops.insert("MAIN".into(), json!({ "custodian": anan, "requests": [] }));
-    }
-    let answer = disable(anan).await;
-    assert_eq!(answer.status, 200, "{}", answer.text);
-    drop(app);
-    desk.drop_schema().await;
 }

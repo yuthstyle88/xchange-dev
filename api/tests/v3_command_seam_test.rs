@@ -327,8 +327,7 @@ type SubmitDraft = Recording<0>;
 type SaveDraft = Recording<1>;
 /// `POST /api/test-desk/{id}`, `(StaffRpc, "adminDeskConfig")`: staff session only.
 type SaveDesk = Recording<2>;
-/// `POST /api/test-employees/{id}`, `(OwnerRoute, "list")`: the same row as the
-/// real view `admin_employees`.
+/// `POST /api/test-employees/{id}`, `(OwnerRoute, "list")`: `UsersManage` (EXECUTIVE or ADMIN).
 type SaveEmployee = Recording<3>;
 
 const SUBMIT_NAME: &str = "test-draft-submit";
@@ -870,7 +869,7 @@ async fn a_command_refuses_exactly_whom_the_view_core_refuses_for_the_same_inher
             EntryPath::OwnerRoute,
             "list",
             "test-employee-save",
-            Some("admin_employees"),
+            None,
         ),
     ];
     for (uri, method, path, action, name, view) in rows {
@@ -923,7 +922,7 @@ async fn a_command_refuses_exactly_whom_the_view_core_refuses_for_the_same_inher
     assert!(allowed >= 20, "allowed: {allowed}");
     assert!(refused >= 20, "refused: {refused}");
     assert!(
-        compared_with_a_view >= 2,
+        compared_with_a_view >= 1,
         "refusals compared with a real view: {compared_with_a_view}"
     );
     assert_eq!(
