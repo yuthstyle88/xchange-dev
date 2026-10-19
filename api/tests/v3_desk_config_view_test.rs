@@ -389,15 +389,7 @@ fn callers(path: EntryPath) -> Vec<(String, Option<Actor>)> {
     ];
     for (name, roles) in STAFF {
         let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
-        out.push((name.to_string(), staff.clone()));
-        out.push((
-            format!("OWNER+{name}"),
-            if path == EntryPath::StaffRpc {
-                staff
-            } else {
-                owner()
-            },
-        ));
+        out.push((name.to_string(), staff));
     }
     out
 }
@@ -459,7 +451,8 @@ async fn each_view_answers_exactly_whom_its_pair_allows() {
             }
         }
         if view == STAFF_VIEW {
-            assert_eq!(allowed, 2, "{view}: FRONT, alone and beside the owner");
+            // OR-7.m G2: rule 4 (#3700, #3717)
+            assert_eq!(allowed, 1, "{view}: FRONT");
         } else {
             assert!(allowed >= 2, "{view}: allowed {allowed}");
         }

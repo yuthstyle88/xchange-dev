@@ -256,6 +256,25 @@ async fn the_people_are_everybody_of_the_branch_closed_accounts_included() {
         .await
         .expect("close an account");
 
+    let front_user: String =
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(&front)
+            .fetch_one(&shop.pool)
+            .await
+            .expect("front user");
+    let review_user: String =
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(&review)
+            .fetch_one(&shop.pool)
+            .await
+            .expect("review user");
+    let other_user: String =
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(&other)
+            .fetch_one(&shop.pool)
+            .await
+            .expect("other user");
+
     let sources = sources(&shop);
     let people = sources
         .people(&branch(MAIN))
@@ -265,20 +284,25 @@ async fn the_people_are_everybody_of_the_branch_closed_accounts_included() {
         name: name.to_owned(),
         role: role.to_owned(),
     };
-    assert_eq!(people.len(), 3, "{people:?}");
-    assert_eq!(people.get(&front), Some(&label("FR1 Front", "FRONT")));
+    assert_eq!(people.len(), 2, "{people:?}");
+    // OR-7.m G2: rule 2 (#3700), rule 3 (#3730, #3734)
+    assert_eq!(people.get(&front_user), Some(&label("FR1 Front", "FRONT")));
+    // OR-7.m G2: rule 2 (#3700), rule 3 (#3730, #3734)
     assert_eq!(
-        people.get(&review),
+        people.get(&review_user),
         Some(&label("RV1 Review", "DOCUMENT_REVIEW"))
     );
-    assert_eq!(people.get(&gone), Some(&label("BE1 Backend", "BACKEND")));
 
     let elsewhere = sources
         .people(&branch(OTHER))
         .await
         .expect("the other branch");
     assert_eq!(elsewhere.len(), 1);
-    assert_eq!(elsewhere.get(&other), Some(&label("FR2 Front", "FRONT")));
+    // OR-7.m G2: rule 2 (#3700), rule 3 (#3730, #3734)
+    assert_eq!(
+        elsewhere.get(&other_user),
+        Some(&label("FR2 Front", "FRONT"))
+    );
     assert!(
         sources
             .people(&branch("B-nowhere"))
