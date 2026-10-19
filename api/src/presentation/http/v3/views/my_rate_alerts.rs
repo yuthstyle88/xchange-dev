@@ -13,10 +13,14 @@ use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::Side;
+use xc_rate::domain::publication::freshness::Freshness;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
-use crate::presentation::dto::v3::rate_alerts::{MyRateAlertItem, MyRateAlertsData};
+use crate::presentation::dto::v3::rate_alerts::{
+    MyRateAlertItem, MyRateAlertsData, RateAlertLastEvent,
+};
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 #[derive(sqlx::FromRow)]
@@ -30,8 +34,14 @@ struct AlertDbRow {
     enabled: bool,
     branch_id: String,
     unit_size: Decimal,
+    relation: String,
+    expires_at: Option<DateTime<Utc>>,
     current_rate: Option<Decimal>,
     published_at: Option<DateTime<Utc>>,
+    source_snapshot: Option<serde_json::Value>,
+    last_event_observed_rate: Option<Decimal>,
+    last_event_trigger_at: Option<DateTime<Utc>>,
+    last_event_episode_no: Option<i32>,
 }
 
 pub struct MyRateAlertsView {
@@ -74,12 +84,18 @@ impl BranchView for MyRateAlertsView {
                     ra.enabled, \
                     ra.branch_id, \
                     ra.unit_size, \
+                    ra.relation, \
+                    ra.expires_at, \
                     CASE \
                         WHEN ra.shop_side = 'BUY' THEN prl.buy_rate \
                         WHEN ra.shop_side = 'SELL' THEN prl.sell_rate \
                         ELSE NULL \
                     END AS current_rate, \
-                    rp.published_at \
+                    rp.published_at, \
+                    prl.source_snapshot, \
+                    le.observed_rate AS last_event_observed_rate, \
+                    le.trigger_at AS last_event_trigger_at, \
+                    le.episode_no AS last_event_episode_no \
                  FROM rate_alerts ra \
                  LEFT JOIN branches b ON b.id = ra.branch_id \
                  LEFT JOIN rate_publications rp ON rp.id = b.current_publication_id \
@@ -89,6 +105,13 @@ impl BranchView for MyRateAlertsView {
                    AND prl.denomination_group = 'ALL' \
                    AND prl.unit_size = ra.unit_size \
                    AND prl.tier_lower_exclusive_thb IS NULL \
+                 LEFT JOIN LATERAL ( \
+                    SELECT observed_rate, trigger_at, episode_no \
+                    FROM rate_alert_events \
+                    WHERE alert_id = ra.id \
+                    ORDER BY episode_no DESC \
+                    LIMIT 1 \
+                 ) le ON true \
                  WHERE ra.customer_id = $1 AND ra.deleted_at IS NULL \
                  ORDER BY ra.created_at DESC",
             )
@@ -97,9 +120,14 @@ impl BranchView for MyRateAlertsView {
             .await
             .map_err(AppError::Database)?;
 
+            let now = Utc::now();
             let alerts = rows
                 .into_iter()
                 .map(|row| {
+                    let side = match row.shop_side.as_str() {
+                        "BUY" => Side::Buy,
+                        _ => Side::Sell,
+                    };
                     let customer_side = match row.shop_side.as_str() {
                         "SELL" => "CUSTOMER_BUY",
                         "BUY" => "CUSTOMER_SELL",
@@ -113,6 +141,35 @@ impl BranchView for MyRateAlertsView {
                             ),
                             _ => (None, None),
                         };
+                    let rate_stale = if current_rate.is_some() {
+                        Some(
+                            row.source_snapshot
+                                .as_ref()
+                                .map(|snap| Freshness::of_side(snap, side, now).stale)
+                                .unwrap_or(false),
+                        )
+                    } else {
+                        None
+                    };
+                    let (expires_at, expired) = match row.expires_at {
+                        Some(exp) => (Some(exp.to_rfc3339()), exp <= now),
+                        None => (None, false),
+                    };
+                    let last_event = match (
+                        row.last_event_observed_rate,
+                        row.last_event_trigger_at,
+                        row.last_event_episode_no,
+                    ) {
+                        (Some(rate), Some(trigger_at), Some(episode_no)) => {
+                            Some(RateAlertLastEvent {
+                                observed_rate: format!("{:.8}", rate),
+                                trigger_at: trigger_at.to_rfc3339(),
+                                episode_no,
+                            })
+                        }
+                        _ => None,
+                    };
+
                     MyRateAlertItem {
                         id: row.id,
                         version: i64::from(row.version),
@@ -125,6 +182,11 @@ impl BranchView for MyRateAlertsView {
                         unit_size: row.unit_size.to_string(),
                         current_rate,
                         rate_published_at,
+                        relation: row.relation,
+                        expires_at,
+                        expired,
+                        rate_stale,
+                        last_event,
                     }
                 })
                 .collect();
@@ -140,6 +202,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
+    RateAlertLastEvent::export_all(&cfg)?;
     MyRateAlertItem::export_all(&cfg)?;
     MyRateAlertsData::export_all(&cfg)?;
     Ok(())

@@ -2,9 +2,11 @@
 
 export type CreateRateAlertInput = { branch: string, currency: string, customerSide: string, condition: string, target: string, expiresAt?: string, };
 
-export type MyRateAlertItem = { id: string, version: number, currency: string, customerSide: string, condition: string, target: string, enabled: boolean, branch: string, unitSize: string, currentRate: string | null, ratePublishedAt: string | null, };
+export type MyRateAlertItem = { id: string, version: number, currency: string, customerSide: string, condition: string, target: string, enabled: boolean, branch: string, unitSize: string, currentRate: string | null, ratePublishedAt: string | null, relation: string, expiresAt: string | null, expired: boolean, rateStale: boolean | null, lastEvent: RateAlertLastEvent | null, };
 
 export type MyRateAlertsData = { alerts: Array<MyRateAlertItem>, };
+
+export type RateAlertLastEvent = { observedRate: string, triggerAt: string, episodeNo: number, };
 
 export type RateAlertLifecycleInput = { id: string | null, expectedVersion: number, };
 
