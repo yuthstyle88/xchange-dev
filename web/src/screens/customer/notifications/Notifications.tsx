@@ -2,10 +2,18 @@ import { For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import { locale, screenT } from '../../../shared/i18n';
 import { createNotifications } from '../../../shared/notifications';
+import type { MyNotificationObject } from '../../../shared/api/generated/my_notifications';
 import * as table from './i18n';
 import './Notifications.css';
 
 const t = screenT('customer.notifications', table);
+
+export function objectHref(o: MyNotificationObject | undefined): string | undefined {
+  if (!o) return undefined;
+  if (o.objectType === 'rate_alert_event') return '/app/rate-alerts';
+  if (o.objectType === 'rate_publication') return '/rates';
+  return undefined;
+}
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
@@ -103,16 +111,23 @@ export function NotificationsScreen(props: NotificationsScreenProps): JSX.Elemen
                   <span class="xc-notifications-time">{formatTime(item.createdAt)}</span>
                 </div>
                 <div class="xc-notifications-body">{item.body}</div>
-                <Show when={!item.read}>
+                <Show when={objectHref(item.object) || !item.read}>
                   <div class="xc-notifications-actions">
-                    <button
-                      type="button"
-                      class="xc-notifications-mark-btn"
-                      disabled={markingIds().has(item.id)}
-                      onClick={() => markOneRead(item.id)}
-                    >
-                      {t('markRead')}
-                    </button>
+                    <Show when={objectHref(item.object)}>
+                      <a class="xc-notifications-open" href={objectHref(item.object)}>
+                        {t('open')}
+                      </a>
+                    </Show>
+                    <Show when={!item.read}>
+                      <button
+                        type="button"
+                        class="xc-notifications-mark-btn"
+                        disabled={markingIds().has(item.id)}
+                        onClick={() => markOneRead(item.id)}
+                      >
+                        {t('markRead')}
+                      </button>
+                    </Show>
                   </div>
                 </Show>
               </div>

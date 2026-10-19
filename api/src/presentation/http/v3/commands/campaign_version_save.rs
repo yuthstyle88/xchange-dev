@@ -37,15 +37,19 @@ fn map_param_field(field: &'static str) -> &'static str {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export_to = "campaign_version_save.ts", rename_all = "camelCase")]
 pub struct CampaignRuleInput {
     pub benefit_type: String,
     #[serde(default = "default_json_object")]
+    #[ts(type = "unknown")]
     pub eligibility: serde_json::Value,
     #[serde(default = "default_json_object")]
+    #[ts(type = "unknown")]
     pub calculation: serde_json::Value,
     #[serde(default = "default_json_object")]
+    #[ts(type = "unknown")]
     pub caps: serde_json::Value,
     #[serde(default)]
     pub requires_coupon: bool,
@@ -66,7 +70,7 @@ pub struct CampaignVersionSaveInput {
     pub priority: i32,
     pub branches: Vec<String>,
     #[serde(default)]
-    #[ts(skip)]
+    #[ts(optional)]
     pub rules: Option<Vec<CampaignRuleInput>>,
 }
 

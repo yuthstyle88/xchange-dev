@@ -54,6 +54,7 @@ use xc_cash::domain::transfer::ends::TransferEnds;
 use xc_cash::domain::transfer::kinds::TransferKinds;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
+use xc_testdb::people::{RoleRow, seed_person};
 
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
@@ -150,27 +151,20 @@ impl Db {
 
     /// A user holding `roles`, each on a branch (`None` = organisation-wide), and their `Actor`.
     async fn person(&self, name: &str, roles: &[(Role, Option<&BranchId>)]) -> Actor {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
-        )
-        .bind(ORG)
-        .bind(name)
-        .fetch_one(&self.pool)
-        .await
-        .expect("insert a user");
-        for (role, branch) in roles {
-            sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) VALUES ($1::uuid, $2, $3::uuid, $4)",
-            )
-            .bind(&id)
-            .bind(role.as_str())
-            .bind(ORG)
-            .bind(branch.map(|b| b.as_str().to_owned()))
-            .execute(&self.pool)
-            .await
-            .expect("give the user a role");
-        }
         let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let role_rows: Vec<RoleRow> = roles
+            .iter()
+            .map(|(role, branch)| RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch.map(|b| b.as_str()),
+                valid_from: from,
+                valid_to: None,
+            })
+            .collect();
+        let mut conn = self.pool.acquire().await.expect("acquire connection");
+        let id = seed_person(&mut conn, ORG, name, &role_rows)
+            .await
+            .expect("seed person");
         Actor::new(
             &id,
             ORG,

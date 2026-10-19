@@ -26,6 +26,10 @@ export const th = {
   searchPlaceholder: 'ค้นหาตามชื่อหรือรหัสสาขา…',
   noSearchResults: 'ไม่พบสาขาที่ตรงกับการค้นหา',
   updateFailed: 'อัปเดตข้อมูลไม่สำเร็จ ข้อมูลล่าสุดเมื่อ {at}',
+  liveWaiting: 'รอคิว {count}',
+  liveCounters: 'เปิดให้บริการ {count} ช่อง',
+  liveEstimate: 'รอประมาณ {low}–{high} นาที',
+  liveFreeSlots: 'รอบว่างวันนี้ {count} รอบ',
 };
 
 export const en = {
@@ -53,6 +57,10 @@ export const en = {
   searchPlaceholder: 'Search by name or code…',
   noSearchResults: 'No branches match your search',
   updateFailed: 'Update failed. Last updated at {at}',
+  liveWaiting: '{count} waiting',
+  liveCounters: '{count} counters open',
+  liveEstimate: 'About {low}–{high} min wait',
+  liveFreeSlots: '{count} free slots today',
 };
 
 export const zh = {
@@ -80,4 +88,8 @@ export const zh = {
   searchPlaceholder: '按名称或代码搜索…',
   noSearchResults: '未找到匹配的分行',
   updateFailed: '更新失败，最后更新于 {at}',
+  liveWaiting: '{count} 人等候',
+  liveCounters: '{count} 个窗口营业',
+  liveEstimate: '预计等候 {low}–{high} 分钟',
+  liveFreeSlots: '今日剩余 {count} 个时段',
 };

@@ -35,7 +35,6 @@ impl Policy {
             EntryPath::PaymentMethods => Self::allow_payment_methods(actor, action),
             EntryPath::DrawerPassport => Self::allow_drawer_passport(actor),
             EntryPath::DeviceSetup => Self::allow_owner_route(actor),
-            EntryPath::StaffBookings => Self::allow_staff_bookings(actor, action),
         }
     }
 
@@ -362,32 +361,6 @@ impl Policy {
         }
     }
 
-    // ── StaffBookings ────────────────────────────────────────────────────────
-
-    fn allow_staff_bookings(actor: Option<&Actor>, action: &Action) -> Result<(), PolicyError> {
-        let Some(actor) = actor else {
-            return Err(PolicyError::EmployeeAuthRequired);
-        };
-        if actor.kind() == ActorKind::Owner {
-            return Err(PolicyError::EmployeeAuthRequired);
-        }
-
-        let role = actor.role();
-        match role {
-            Role::Front | Role::Backend | Role::Manager => {
-                let act = action.as_str();
-                match act {
-                    "list" | "get" | "create" | "confirm" | "cancel" => Ok(()),
-                    "member" | "settings" | "registrations" | "approveRegistration" => {
-                        Err(PolicyError::OwnerOnly)
-                    }
-                    _ => Err(PolicyError::InvalidRequest),
-                }
-            }
-            _ => Err(PolicyError::RoleNotAllowed),
-        }
-    }
-
     // ── Custody ──────────────────────────────────────────────────────────────
 
     fn allow_custody(actor: Option<&Actor>, _action: &Action) -> Result<(), PolicyError> {
@@ -536,12 +509,6 @@ impl Policy {
             },
             EntryPath::DrawerPassport => Some(Need::Permission(Permission::DrawerPassport)),
             EntryPath::DeviceSetup => Some(Need::Permission(Permission::SystemSettings)),
-            EntryPath::StaffBookings => match act {
-                "list" | "get" | "create" | "confirm" | "cancel" => {
-                    Some(Need::Permission(Permission::BookingsDesk))
-                }
-                _ => None,
-            },
         }
     }
 
@@ -598,8 +565,7 @@ impl Policy {
                 EntryPath::StaffRpc
                 | EntryPath::StaffDesk
                 | EntryPath::StaffFile
-                | EntryPath::StaffUpload
-                | EntryPath::StaffBookings => Err(PolicyError::EmployeeAuthRequired),
+                | EntryPath::StaffUpload => Err(PolicyError::EmployeeAuthRequired),
                 EntryPath::Kiosk => match action.as_str() {
                     "manage" | "configure" => Err(PolicyError::KioskOwnerOrRates),
                     _ => Err(PolicyError::KioskStaff),
@@ -608,19 +574,7 @@ impl Policy {
             };
         };
 
-        // 3. StaffBookings without BookingsDesk -> RoleNotAllowed before the name is read (#410)
-        if path == EntryPath::StaffBookings {
-            let has_bookings_desk = actor.roles.iter().any(|r| {
-                r.valid_from <= now
-                    && r.valid_to.is_none_or(|to| now < to)
-                    && RolePermissions::of(r.role).contains(&Permission::BookingsDesk)
-            });
-            if !has_bookings_desk {
-                return Err(PolicyError::RoleNotAllowed);
-            }
-        }
-
-        // 4. No row (need is None) -> path's unknown-name sentence
+        // 3. No row (need is None) -> path's unknown-name sentence
         let Some(need) = need else {
             return match path {
                 EntryPath::Rpc => {
@@ -714,12 +668,6 @@ impl Policy {
                     _ => Err(PolicyError::RoleNotAllowed),
                 },
                 EntryPath::DrawerPassport => Err(PolicyError::DrawerRoleNotAllowed),
-                EntryPath::StaffBookings => match action.as_str() {
-                    "member" | "settings" | "registrations" | "approveRegistration" => {
-                        Err(PolicyError::OwnerOnly)
-                    }
-                    _ => Err(PolicyError::RoleNotAllowed),
-                },
                 _ => Err(PolicyError::RoleNotAllowed),
             },
         }

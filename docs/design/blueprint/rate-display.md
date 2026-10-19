@@ -1,5 +1,9 @@
 # Blueprint P01: the public customer rate display `/rates?branch=:code` (phase 1)
 
+> **Amended 2026-10-19 — P01 v2, §9.** The owner replaced this screen's look with the boarding-pass rate board, which shows all four
+> amount bands (#564 issuecomment-6267770624). §9 supersedes B3, B12's "one line per currency", D6 (rows and columns), D7 (the
+> language switch), D8's landscape layout and D10's logo image, and adds a BE contract (RB-BE). Everything else in §0–§8 still binds.
+
 > designed-by: claude/5edf7bb5 (subagent of the xchange frontend lane controller) · 2026-10-11 · measured on `main` at `95170510`
 > Source of the rules: *XC Desk — Blueprint & Data Model v2* §01, §02, §03 P01, §04 P01 wireframe, §05, §10, §13, §14, §19
 > (line numbers are in the tag-stripped text of `docs/blueprint/XC-Desk-Blueprint-Data-Model-v2.html`:
@@ -274,3 +278,199 @@ CREATE TABLE organization_hosts (
 | Q-4 | Who adds host rows? (SQL by the operator · admin screen in phase 1 · seed in the migration) | **SQL by the operator** | D13, §7 item 2 |
 
 Follow-up: #999 (APP-8) says the org code comes *"from the app's build config"*, and no such config exists. C01/C08 (APP-8, APP-12) should read the organisation from `GET /api/public/host`, as P01 does. Their tickets are re-cut when phase 4 opens.
+
+
+## 9. P01 v2 (2026-10-19): the boarding-pass board with amount bands
+
+> designed-by: claude/dell-claude-4 (sub-controller of `feat/fe-rateboard`, for the FE lane controller claude/5edf7bb5) · 2026-10-19 · measured on `main` at `02be34b7`
+
+### 9.0 What binds v2
+
+| # | Source | Quote / fact | Decides |
+|---|---|---|---|
+| V1 | owner, 2026-10-19 (#564 issuecomment-6267770624) | *"มันคือ ตัวอย่าง แต่เราต้องเอาเข้ามาใส่ใน xchange"* (the shared board at `rate.xc-th.work/rate-board?branch=MAIN`) | the example's look comes into xchange |
+| V2 | owner's answer 1: **"Replace /rates"** | the example's board **replaces** P01 (`/rates?branch=`): portrait boarding-pass layout, flags, clock, split-flap digits, welcome ticker, status / stale / offline, snapshot code | §9.2; **overrides B3** *"จอแนวนอนสำหรับหน้าเรท"* for this screen |
+| V3 | owner's answer 2: **"Show all 4 bands"** | four amount bands (≤ 10,000 / 10,001–50,000 / 50,001–200,000 / > 200,000 THB), each with buy and sell | §9.3 (RB-BE); **overrides B12**'s "one line per currency, first tier only" for the board |
+| V4 | the example, copied verbatim to `docs/design/reference/rate-board-example/` (see its `README.md`) | `rate-board.css` (1080×1920 canvas scaled to the screen), `rate-board.js` (10 s poll, hide after 30 s, `?attract=0`), `rate-board.body.html` | the look and the motion, **not** its code: §9.1 lists what is not copied |
+| V5 | B4, B7, B8, B10/B13, B11 of §0 | public data only; decimal strings, never a JS float as authority; source date and last fetch shown apart, never "live"; the public org/branch route; customer audience TH/EN/中文 | kept: §9.1 |
+
+### 9.1 What changes from v1, and what does not
+
+| v1 | v2 |
+|---|---|
+| B3: landscape first | **portrait**: a fixed 1080×1920 canvas scaled to fit the screen (`--scale` = `min(innerWidth/1080, innerHeight/1920)`), every currency on one screen, no paging, no scrolling |
+| B12 / D6: one row per (currency, group), first tier only; columns currency · unit · We Buy · We Sell | one row per (currency, group), **four band columns**, each with buy and sell (§9.3, §9.4) |
+| D7: a TH / EN / 中文 switch | **no switch** (a board faces passers-by and has no operator). The example's bilingual labels (`FROM · ต้นทาง`, `รับซื้อ · ขาย`, …) are **fixed design text**, kept where they are; the welcome ticker carries 中文 (`欢迎光临`) as in the example. Every label lives in one module, `board-texts.ts`, with `th`, `en` and `zh` members, so a label never sits in a component as a literal. *Open (§9.8 Q2): 中文 on every fixed label.* |
+| D8: landscape, full-screen button | portrait canvas; `FullscreenButton` is **kept** (merged, unchanged) and sits outside the canvas |
+| D10: `logo.png` | the text brand `XCHANGE` as in the example; `logo.png` and its sha256 test retire with v1 |
+| D11 states | §9.6 (the example's synced / delayed / offline plus v1's no-branch, not-linked, not-found and empty) |
+
+**Kept from v1 unchanged:** D1 (URL, page, folder), D2 (org from the host, `GET /api/public/host`), D3 (only the two public routes), D4's ETag/`304` (now polled every 10 s, §9.5), D5's meaning of `stale` (§9.6), D9/D9a (booking QR, phase 4), D12/D13, B4 (no PII, no cash, no customer data), B7, B8, B9.
+
+**Not copied from the example** (it is a reference, not code to paste):
+- **No JS float as authority (B7).** The example parses rates into numbers and prints them with `toLocaleString`, and compares numbers to pick an up/down arrow. v2 formats the route's decimal **strings** with string arithmetic only (§9.4 `formatBandRate`) and compares them as decimals (`compareDecimal`), never `parseFloat`, `Number(` or `Math.` on a rate.
+- **No `:root` custom properties** (LK-6, `web/src/shared/ui/screen-look.test.ts`): the example's tokens move onto the board's root element (`.xc-rb`).
+- **No hotlink to `rate.xc-th.work`** for anything: flags are vendored (§9.7), fonts are the existing stack.
+- **No `/api/rate-board` route**: the board reads the existing public rates route, extended by RB-BE (§9.3).
+- Units are kept (B7): a row whose `unitSize` is not `1` shows it (`100 JPY`), where the example prints "THB per 1 unit" for all.
+
+### 9.2 Class diagram (one class per file; files are the function tickets' File scopes)
+
+All paths under `web/src/screens/customer/rate-display/` unless noted. `board/` is new.
+
+```mermaid
+classDiagram
+  class Entry { <<main.tsx  kept>> setAudience('customer'); render(RateDisplay) }
+  class RateDisplay { <<RateDisplay.tsx  rewritten in the skeleton>> host lookup (D2); PublicPoller rates 10 s + branches 600 s; renders BoardShell }
+  class BoardShell { <<board/BoardShell.tsx>> canvas 1080x1920; --scale on resize; calm from ?attract=0; body classes stale/offline; composes the parts }
+  class BoardHeader { <<board/BoardHeader.tsx>> brand; BoardClock }
+  class BoardClock { <<board/BoardClock.tsx>> HH:MM Asia/Bangkok with blinking colon; Thai long date; ticks 1 s, rebuilds on minute change }
+  class RouteStrip { <<board/RouteStrip.tsx>> FROM THB; TO count; BRANCH code + name; STATUS text + substatus (from BoardStatus) }
+  class BandHeadings { <<board/BandHeadings.tsx>> heading row from BoardModel.headings }
+  class BoardTable { <<board/BoardTable.tsx>> rows; --n and --fs sizing; spotlight walk + 70 s wave (attract) }
+  class BoardRowView { <<board/BoardRowView.tsx>> Flag + code + unit + one BandCell per heading }
+  class FlapPrice { <<board/FlapPrice.tsx>> text: string; previous: string or null; per-char spans; .flip on changed chars; up/down arrow from compareDecimal }
+  class Flag { <<board/Flag.tsx>> img from flagUrl(code); onerror -> code box }
+  class Ticker { <<board/Ticker.tsx>> welcome parts + count; two copies for a seamless loop }
+  class BoardStub { <<board/BoardStub.tsx>> conditions text; SYNCED time; SOURCE date; SNAPSHOT id; barcode }
+  class BoardModel { <<board/board-model.ts  logic>> boardModel(data PublishedRatesData) BoardModel: headings, rows }
+  class BoardStatus { <<board/board-status.ts  logic>> boardStatus(input) synced, delayed, offline + empty reason }
+  class DecimalFormat { <<board/decimal-format.ts  logic>> formatBandRate(s) string; compareDecimal(a, b) -1,0,1 }
+  class FlagCode { <<board/flag-code.ts>> flagUrl(currency) string or null }
+  class BoardTexts { <<board/board-texts.ts>> fixed bilingual labels th, en, zh }
+  class PublicPoller~T~ { <<shared/live/public-poller.ts  merged>> data(); state(); lastOkAt() }
+  class PublishedRatesData { <<shared/api/generated/published_rates.ts  regenerated by RB-BE>> + bandHeadings; line.bands }
+
+  Entry --> RateDisplay
+  RateDisplay --> PublicPoller
+  RateDisplay --> BoardShell
+  BoardShell --> BoardHeader
+  BoardHeader --> BoardClock
+  BoardShell --> RouteStrip
+  BoardShell --> BandHeadings
+  BoardShell --> BoardTable
+  BoardShell --> Ticker
+  BoardShell --> BoardStub
+  BoardShell --> BoardStatus
+  BoardShell --> BoardModel
+  BoardTable --> BoardRowView
+  BoardRowView --> Flag
+  BoardRowView --> FlapPrice
+  Flag --> FlagCode
+  FlapPrice --> DecimalFormat
+  BoardModel --> DecimalFormat
+  BoardModel --> PublishedRatesData
+  RouteStrip --> BoardTexts
+  BoardStub --> BoardTexts
+  Ticker --> BoardTexts
+```
+
+**Stylesheets are split the same way** (each component imports its own; LK-6 needs every static class to have a rule; no `:root`): `board/board-shell.css`, `board/board-header.css`, `board/route-strip.css`, `board/board-table.css` (headings, rows, band cells, flap characters), `board/ticker.css`, `board/board-stub.css`. Two tickets never share a stylesheet.
+
+**v1 files that retire** in the skeleton (their behaviour is replaced by the owner's V2/V3): `RateBoard.tsx`, `board-rows.ts` + `board-rows.test.ts`, `logo.png`, and the v1 rows of `RateDisplay.test.tsx` that pin the landscape table, the language switch and the logo hash. The v1 tests for the host lookup (`RateDisplay.hostretry.test.tsx`), the no-branch / not-linked / not-found states and `BookingQr*` **stay** and must pass unedited against the v2 screen.
+
+| Provides | Used by | Lands in |
+|---|---|---|
+| `bandHeadings`, `line.bands` (RB-BE, §9.3) | `BoardModel` | BE ticket; FE codes against a local type and a mocked fetch until then |
+| `PublicPoller`, `FullscreenButton`, `DisplayLocation` | `RateDisplay`, `BoardStub` | merged |
+| `BoardModel`, `BoardStatus`, `formatBandRate`, `compareDecimal` | the view components | function tickets (logic, up-front tests) |
+
+### 9.3 RB-BE: the BE contract (BE lane, claude/a90ab16c cuts the ticket)
+
+The public rates route `GET /api/public/orgs/{org}/branches/{code}/rates` (B10/B13) gains two **additive** fields. Nothing existing changes, so C01 (`HomeScreen.tsx:155`) and every current reader keep working.
+
+```ts
+// web/src/shared/api/generated/published_rates.ts after RB-BE (ts-rs)
+export type PublishedBandHeadingDto = { tier: string, lowerExclusiveThb: string | null, upperInclusiveThb: string | null, };
+export type PublishedBandDto = { tier: string, buyRate: string | null, sellRate: string | null, };
+export type PublishedLineDto = { /* unchanged fields */ currency: string, group: string, unitSize: string, buyRate: string | null, sellRate: string | null, lineId: string,
+  bands: Array<PublishedBandDto>, };
+export type PublishedRatesData = { /* unchanged fields */ publication: PublishedPublicationDto | null, sourceDate: string | null, stale: boolean, lines: Array<PublishedLineDto>,
+  bandHeadings: Array<PublishedBandHeadingDto>, };
+```
+
+- **Source:** `published_rate_lines.value_tier` (`T1`–`T4`, or `ALL` when the branch's tiers are off; `xc-rate` `policy_tiers.rs:104-119`) and `tier_lower_exclusive_thb` / `tier_upper_inclusive_thb` (migration `20261110100000_rate_feed.sql:9-10,35-36`). No schema change, no new table.
+- **`lines`** stay one per (currency, group): today's first-tier/`ALL` row (`published_rates.rs` keeps `tier_lower_exclusive_thb IS NULL`). Each line's **`bands`** lists that (currency, group)'s `T1..T4` rows in tier order, as decimal strings (`numeric` → string, as `buyRate`). An `ALL` line has `bands: []`.
+- **`bandHeadings`**: the publication's tier bounds in tier order, one per `T1..T4` present; `[]` when no line is tiered. The bounds come from one policy version per branch (`rate_policy_versions.branch_id`), so every tiered line of one publication shares them. If two tiered lines disagree, the route answers `500` (data error), never a mixed board. *The BE ticket may instead read `rate_policy_value_tiers` of the publication's policy version; the answer is the same.*
+- **ETag** (D4, `branch_rates.rs:51`): unchanged, `p<publication id>-s<0|1>`. Bands are part of the publication, so the id still names the body.
+- **The shared loader** `published_rates_data` (`views/published_rates.rs`) is used by the v3 view too; adding the fields there changes the v3 view's generated type as well. That is intended (one shape, ♻️). The BE ticket names both readers' tests.
+- **Data migration:** none. No table, column, constraint or default changes; existing rows are read as they are.
+
+### 9.4 Band rendering and decimal format (logic)
+
+`boardModel(data)` → `{ headings: BandHeading[], rows: BoardRow[], singleColumn: boolean }`:
+- `headings` from `bandHeadings`, labels built from the bound **strings** (whole baht shown without `.00`, thousands separators):
+  - first band (no lower bound): `≤ 10,000 ฿`;
+  - middle bands: `10,001–50,000 ฿`, the lower bound plus one baht by **integer string arithmetic** when both bounds are whole baht, else `> 10,000.50 – 50,000 ฿`;
+  - last band (no upper bound): `> 200,000 ฿`;
+  - each heading's second line is `รับซื้อ · ขาย` (fixed design text).
+- `singleColumn` is true when `bandHeadings` is `[]` (tiers off): one column headed `ทุกยอด · All amounts` (§9.8 Q1).
+- each row: `code`, `group` (shown under the code when not `ALL`, v1 Q-2), `unitLabel` (`100 JPY` when `unitSize` ≠ `1`, else empty), and one cell per heading: the band's `buyRate`/`sellRate`. A line with `bands: []` on a tiered board shows its own `buyRate`/`sellRate` in the first column and the same values, dimmed (`.xc-rb-band-repeat`), in the others, as the example's `.row.single`. It means "the same rate at every amount".
+- `formatBandRate(s)`: `null`, empty or not `> 0` → `—`; else a fixed number of decimals by the **integer part's** magnitude (≥ 10 → 2, ≥ 1 → 3, else 4, as the example), **rounding half up on the decimal string**, with thousands separators. Done on the string; `"1234567890.12345678"` → `1,234,567,890.12`, and `"0.004567"` → `0.0046`.
+- `compareDecimal(a, b)`: compares two decimal strings exactly (sign, integer length, digits), for the flap arrow. Never through a float.
+
+### 9.5 Poller and state (logic)
+
+- Rates: `PublicPoller` on the rates route, **every 10 s** with `If-None-Match` (a `304` is a successful update and costs no body, 🔁). Branch list: 600 s, as v1.
+- `boardStatus({ hasBranch, hostState, pollerState, lastOkAt, now, everOk, data })`:
+  - `offline` when there was never a successful update, or the last one is **older than 30 s** → rates hidden (`.offline` hides the table), status `งดแสดงเรท · เชื่อมต่อไม่ได้` / `Offline / no rates displayed`;
+  - `delayed` when the last poll failed but the last success is within 30 s → rates shown, status `ข้อมูลล่าช้า · โปรดยืนยัน` / `Delayed / confirm at counter`;
+  - `synced` otherwise → `เชื่อมต่อข้อมูลสาขาแล้ว` / `Synced with counter`. **Never** "live", "real time", "เรียลไทม์" or "实时" (B8, #916).
+  - The route's `stale: true` (D5) is shown **as well**, as its own line in the strip (`เรทอ้างอิงเก่า · Reference rate is old`), and does not hide rates.
+- `?attract=0` turns off the spotlight walk, the 70 s wave, the ticker motion and the clock blink (`.xc-rb-calm`); motion also pauses while `document.hidden` or offline. Motion never changes a price or hides one.
+
+### 9.6 Behaviour table (the up-front tests pin these)
+
+| Case | Required result |
+|---|---|
+| `/rates` with no `branch` | the empty panel says `กรุณาระบุสาขาในลิงก์ เช่น ?branch=MAIN`; no request (v1 D11) |
+| `/api/public/host` answers `404` | the not-linked message; the rates route is never called (v1 D2) |
+| rates route `404` | not found; polling stops (v1) |
+| first load pending | the board frame shows, status `offline`, the empty panel says loading (`กำลังโหลดเรทจากสาขา…`) |
+| `200`, tiered: 2 currencies × 4 bands | 4 band headings from `bandHeadings`; 2 rows × 4 cells × buy/sell; values formatted by `formatBandRate` |
+| `bandHeadings: []` (tiers off) | one price column headed `ทุกยอด · All amounts` |
+| a line with `bands: []` on a tiered board | its rate in band 1, the same rate dimmed in bands 2–4 |
+| `unitSize: "100"` (JPY) | the row shows `100 JPY` under the code |
+| `buyRate: null` | `—` |
+| `"1234567890.12345678"` | `1,234,567,890.12` (string rounding; a float path would differ) |
+| a poll changes one band's sell from `"35.42"` to `"35.45"` | only that cell's changed characters get `.flip`; an up arrow; other cells' nodes are untouched |
+| a poll answers `304` | no cell re-renders |
+| a poll fails 10 s after a success | status `delayed`; rates shown |
+| no successful update for > 30 s | status `offline`; rates hidden; the empty panel says `กรุณาสอบถามเรทที่เคาน์เตอร์ · Please ask at the counter` |
+| the next success after offline | rates shown again; status `synced` |
+| `stale: true` | the stale line in the strip; rates shown |
+| `200` with `lines: []` | `สาขานี้ยังไม่มีสกุลเงินที่เปิดให้บริการ`; count 0 |
+| the stub | `SYNCED` = the last success time (Asia/Bangkok), `SOURCE` = `sourceDate`, `SNAPSHOT` = the publication id's first 12 characters; source date and sync time are separate (B8) |
+| a currency with no vendored flag (e.g. `XAU`) | a code box instead of the image, no broken image |
+| `?attract=0` | no spotlight, no wave, no ticker motion |
+| any rendered text | contains none of "live", "real time", "เรียลไทม์", "实时" |
+| window resized | `--scale` = `min(w/1080, h/1920)` |
+
+### 9.7 Flags
+
+Vendored, never hotlinked: the 4×3 SVGs of **`flag-icons`** (MIT, `lipis/flag-icons`), the release recorded in `board/flags/README.md` with the licence text in `board/flags/LICENSE`. Only the country codes of currencies in `currencies` are copied (one `<cc>.svg` each), loaded by `import.meta.glob('./flags/*.svg', { eager: true, query: '?url' })` in `flag-code.ts`, so they are hashed build assets and no server route is needed. `flagUrl(currency)`: the first two letters lower-cased (`USD` → `us`, `EUR` → `eu`), an override map for codes whose first letters are not a country (`XAU`, `XAG` → `null`), and `null` when no file exists → the code box.
+
+### 9.8 Tickets (`feat/fe-rateboard`) and open questions
+
+Skeleton first (the sub-controller): the folder `board/` with every component as a stub, `RateDisplay.tsx` composing `BoardShell`, the v1 retirements above, the local `PublishedRatesData` extension type until RB-BE lands, `board-texts.ts`, and the up-front failing tests for the three logic files. Then one function ticket per file set, released together:
+
+| Ticket | Class | Files |
+|---|---|---|
+| RB-1 board model | logic | `board/board-model.ts` |
+| RB-2 status | logic | `board/board-status.ts` |
+| RB-3 decimal format | logic | `board/decimal-format.ts` |
+| RB-4 shell + scaling + attract switch | mechanical | `board/BoardShell.tsx`, `board/board-shell.css` |
+| RB-5 header + clock | mechanical | `board/BoardHeader.tsx`, `board/BoardClock.tsx`, `board/board-header.css` |
+| RB-6 route/status strip | mechanical | `board/RouteStrip.tsx`, `board/route-strip.css` |
+| RB-7 table, headings, rows | mechanical | `board/BoardTable.tsx`, `board/BandHeadings.tsx`, `board/BoardRowView.tsx`, `board/board-table.css` |
+| RB-8 split-flap price cell | logic | `board/FlapPrice.tsx` |
+| RB-9 ticker + stub | mechanical | `board/Ticker.tsx`, `board/ticker.css`, `board/BoardStub.tsx`, `board/board-stub.css` |
+| RB-10 flags | mechanical | `board/Flag.tsx`, `board/flag-code.ts`, `board/flags/` (new folder, reserved whole on purpose) |
+| RB-BE | BE (claude/a90ab16c) | §9.3 |
+
+`feat/fe-rateboard` merges to `main` only after RB-BE is on `main`.
+
+**Open, for the FE lane controller (not guessed):**
+- Q1. Tiers off (`bandHeadings: []`): one "all amounts" column, or the four example headings with the one rate repeated? This design picks the single column, because band limits that do not exist should not be printed.
+- Q2. 中文 on every fixed label (three languages per label), or TH · EN as the example with 中文 only in the ticker? This design keeps the example (TH · EN).
+- Q3. The example's welcome ticker also greets in Japanese, Korean and Russian (`ようこそ`, `환영합니다`, `ДОБРО ПОЖАЛОВАТЬ`). They are kept as fixed design text; `languages.md` names only TH/EN/中文 as UI languages, and these are greetings, not UI.

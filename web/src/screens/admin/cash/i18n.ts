@@ -7,7 +7,7 @@ export const th = {
 
   // Status Banner
   noOpenShift: 'ยังไม่มีกะเปิด',
-  noOpenShiftSubtitle: 'ตรวจนับเงินสดและเงินต่างประเทศ แล้วกรอกยอดยกมาตอนเปิดกะ',
+  noOpenShiftSubtitle: 'ยังไม่มีกะเปิด — พนักงานนับเงินที่หน้าพนักงาน › กะของฉัน › นับเปิดกะ แล้วผู้มีสิทธิ์รับรองยืนยันยอด กะจึงเปิด',
   openShiftBanner: 'กะกำลังเปิด · {id}',
   openShiftBannerSub: 'เปิด {when} · {staff} · ยอดกะไม่ขึ้นกับตัวกรองวันที่ของรายงาน',
 
@@ -171,7 +171,7 @@ export const en: Record<keyof typeof th, string> = {
 
   // Status Banner
   noOpenShift: 'No open shift',
-  noOpenShiftSubtitle: 'Count cash and foreign currencies, then enter opening balances to open shift',
+  noOpenShiftSubtitle: 'No shift is open — a teller counts at staff page › My shift › Open Count; the shift opens once a certifier verifies the count',
   openShiftBanner: 'Shift open · {id}',
   openShiftBannerSub: 'Opened {when} · {staff} · Shift figures are not tied to report date filters',
 
