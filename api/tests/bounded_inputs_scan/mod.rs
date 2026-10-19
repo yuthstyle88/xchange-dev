@@ -81,7 +81,7 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
     ),
     (
         "src/presentation/http/v3/views/admin_cash.rs",
-        "admin cash view read back from database, not client input",
+        "admin cash view read back from database, plus Decimal::from_str literals in its #[cfg(test)] module; not client input",
     ),
     (
         "src/presentation/http/v3/views/admin_reports.rs",
@@ -89,11 +89,11 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
     ),
     (
         "src/presentation/http/v3/views/kiosk_currencies.rs",
-        "kiosk currencies view read back from database, not client input",
+        "parses buy/sell values of the bundled KBank reference file (include_str! kiosk_currencies.kbank.json); not client input",
     ),
     (
         "src/presentation/http/v3/views/rates_reference.rs",
-        "rates reference view read back from database, not client input",
+        "parses rates from the RateSource reference-rate feed response; not client input",
     ),
     (
         "src/presentation/http/v3/views/segment_preview.rs",
