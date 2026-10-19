@@ -63,7 +63,7 @@ impl TestDb {
             .connect_with(options.options([("search_path", schema.as_str())]))
             .await
             .expect("connect to the test schema");
-        let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
         Migrator::new(migrations.as_path())
             .await
             .expect("read api/migrations")
