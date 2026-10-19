@@ -13,6 +13,9 @@ use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
 use xc_auth::domain::access::{Actor, Role};
+use xc_cash::domain::reservation::port::StockReservations;
+use xc_cash::domain::reservation::stock_reservation::ReleaseReason;
+use xc_cash::infrastructure::stock_reservations::PgStockReservations;
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::transaction::repository::{StatusMove, TransactionStore};
 use xc_exchange::domain::transaction::transaction::{TransactionId, TransactionStatus};
@@ -28,6 +31,7 @@ pub const EXCHANGE_TRANSACTION: &str = "EXCHANGE_TRANSACTION";
 pub struct ExchangeTransactionSubject {
     store: PgTransactionStore,
     quotes: PgQuoteRepository,
+    reservations: Arc<dyn StockReservations>,
 }
 
 impl ExchangeTransactionSubject {
@@ -35,6 +39,7 @@ impl ExchangeTransactionSubject {
         Self {
             store: PgTransactionStore::new(pool.clone()),
             quotes: PgQuoteRepository::new(pool),
+            reservations: Arc::new(PgStockReservations::new()),
         }
     }
 }
@@ -147,6 +152,9 @@ impl ApprovalSubject for ExchangeTransactionSubject {
                     })?;
                 if let Some(q) = t.quote_id {
                     self.quotes.cancel_in(tx, q).await?;
+                    self.reservations
+                        .release_for_quote_in(tx, q, ReleaseReason::Cancelled)
+                        .await?;
                 }
             }
             Ok(())
