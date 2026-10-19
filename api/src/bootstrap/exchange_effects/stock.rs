@@ -1,8 +1,7 @@
 //! B05 stock effect (design `docs/design/blueprint/stock-reservation.md` D-5, §5): a completion consumes its quote's
 //! live reservations in phase `Consume`, before `post_in`.
 //!
-//! Skeleton by the B05 sub-controller (claude/6530d490) on `feat/b05-stock`. `effect` answers `None` (not
-//! registered) until SR-2 turns it on, so no completion reaches the `todo!()` before then.
+//! Skeleton by the B05 sub-controller (claude/6530d490) on `feat/b05-stock`; SR-2 (#3494) registered it.
 
 use std::sync::Arc;
 
@@ -55,7 +54,7 @@ impl ExchangeEffect for StockConsumeEffect {
     }
 }
 
-/// `None` in the skeleton (not registered); SR-2 answers `Some(Arc::new(stock))`.
+/// Registered: every completion consumes its quote's live reservations in phase `Consume` (SR-2).
 pub fn effect(_state: &AppState) -> Option<Arc<dyn ExchangeEffect>> {
     Some(Arc::new(StockConsumeEffect::new(Arc::new(
         PgStockReservations::new(),

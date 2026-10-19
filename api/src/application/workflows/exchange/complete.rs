@@ -242,6 +242,7 @@ impl CompleteExchange {
             DeviceService::require_count_confirmed(t.payment.method.is_cash(), t.count_confirmed)?;
         }
 
+        // 5a. Consume the quote's stock reservations, before the posting (B05 D-5; Blueprint §09 order)
         let (branch_name, reversible_until) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
         let facts = ExchangeCompletedFacts {
             organization_id: t.organization_id,
