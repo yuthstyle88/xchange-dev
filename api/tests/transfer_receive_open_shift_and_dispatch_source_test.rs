@@ -134,14 +134,11 @@ impl Room {
                 .execute(&pool)
                 .await
                 .expect("insert a branch");
-            sqlx::query(
-                "INSERT INTO ops_state (branch_id, phase, safe) \
-                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
-            )
-            .bind(branch)
-            .execute(&pool)
-            .await
-            .expect("the branch's safe");
+            sqlx::query("INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')")
+                .bind(branch)
+                .execute(&pool)
+                .await
+                .expect("the branch's ops_state");
             fund(&pool, CashPlace::Safe(BranchId::new(branch)), "500.00").await;
         }
         Self { pool, schema }
