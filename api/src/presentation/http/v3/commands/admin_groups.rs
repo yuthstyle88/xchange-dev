@@ -147,7 +147,7 @@ impl CommandAction for AdminGroupSaveCommand {
             return Err(not_found());
         }
         let store = PgRoleGrantStore::new();
-        let before_snapshot = store.load(&mut **tx).await.map_err(from_store_error)?;
+        let before_snapshot = store.load(tx).await.map_err(from_store_error)?;
         let Some(group) = before_snapshot.group(&input.code).cloned() else {
             return Err(not_found());
         };
@@ -186,13 +186,30 @@ impl CommandAction for AdminGroupDeleteCommand {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
+        _branch: &BranchId,
         who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input);
-        todo!("F12")
+        require_executive(who)?;
+        validate_code(&input.code)?;
+        if input.code == Role::Customer.as_str() {
+            return Err(not_found());
+        }
+        let store = PgRoleGrantStore::new();
+        let before_snapshot = store.load(tx).await.map_err(from_store_error)?;
+        let before = before_snapshot.group(&input.code).map(|group| {
+            let before_set = before_snapshot
+                .permissions(&input.code)
+                .cloned()
+                .unwrap_or_default();
+            group_audit_json(group, &before_set)
+        });
+        store
+            .delete_group(tx, &input.code)
+            .await
+            .map_err(from_store_error)?;
+        record_audit_and_reload(tx, who, input.code, "GROUP_DELETE", before, None).await
     }
 }
 
@@ -213,7 +230,6 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
 
 // ------------------------------------------------------------ shared helpers
 
-#[allow(dead_code)]
 fn require_executive(who: &Actor) -> Result<(), V3Error> {
     let now = Utc::now();
     let is_exec = who.roles.iter().any(|r| {
@@ -234,7 +250,6 @@ fn require_executive(who: &Actor) -> Result<(), V3Error> {
     }
 }
 
-#[allow(dead_code)]
 fn validate_code(code: &str) -> Result<(), V3Error> {
     let ok = (2..=40).contains(&code.len())
         && code
@@ -247,7 +262,6 @@ fn validate_code(code: &str) -> Result<(), V3Error> {
     }
 }
 
-#[allow(dead_code)]
 fn validate_name(name: &str) -> Result<String, V3Error> {
     let trimmed = name.trim();
     if (1..=80).contains(&trimmed.chars().count()) {
@@ -257,7 +271,6 @@ fn validate_name(name: &str) -> Result<String, V3Error> {
     }
 }
 
-#[allow(dead_code)]
 fn parse_base(base: &str) -> Result<Role, V3Error> {
     match Role::parse(base) {
         Some(role) if !matches!(role, Role::Executive | Role::Customer) => Ok(role),
@@ -265,7 +278,6 @@ fn parse_base(base: &str) -> Result<Role, V3Error> {
     }
 }
 
-#[allow(dead_code)]
 fn parse_permissions(names: &[String]) -> Result<Vec<Permission>, V3Error> {
     names
         .iter()
@@ -276,13 +288,17 @@ fn parse_permissions(names: &[String]) -> Result<Vec<Permission>, V3Error> {
         .collect()
 }
 
-#[allow(dead_code)]
 fn guardrail_error(breach: GuardrailBreach) -> V3Error {
-    let code = format!("guardrail:{}", breach.number());
-    V3Error::new(code.clone(), None, code, StatusCode::CONFLICT)
+    let code = match breach {
+        GuardrailBreach::AuditLogsAboveView => "guardrail:1",
+        GuardrailBreach::AdminModulesAboveView => "guardrail:2",
+        GuardrailBreach::AdminBaseAboveView => "guardrail:3",
+        GuardrailBreach::ExecutiveFixed => "guardrail:4",
+        GuardrailBreach::NoModuleEdited => "guardrail:5",
+    };
+    V3Error::new(code, None, code, StatusCode::CONFLICT)
 }
 
-#[allow(dead_code)]
 fn check_and_build_full_set(
     group: &Group,
     requested: &[Permission],
@@ -312,12 +328,10 @@ fn check_and_build_full_set(
     Ok(full)
 }
 
-#[allow(dead_code)]
 fn not_found() -> V3Error {
     V3Error::new("notFound", None, "group not found", StatusCode::NOT_FOUND)
 }
 
-#[allow(dead_code)]
 fn from_store_error(err: RoleGrantStoreError) -> V3Error {
     match err {
         RoleGrantStoreError::NotFound(_) => not_found(),
@@ -335,7 +349,6 @@ fn from_store_error(err: RoleGrantStoreError) -> V3Error {
     }
 }
 
-#[allow(dead_code)]
 fn group_audit_json(group: &Group, set: &BTreeSet<Permission>) -> Value {
     let permissions: Vec<Permission> = Permission::ALL
         .into_iter()
@@ -349,7 +362,6 @@ fn group_audit_json(group: &Group, set: &BTreeSet<Permission>) -> Value {
     })
 }
 
-#[allow(dead_code)]
 async fn record_audit_and_reload(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     who: &Actor,
@@ -375,7 +387,7 @@ async fn record_audit_and_reload(
         server_error()
     })?;
     let snapshot = PgRoleGrantStore::new()
-        .load(&mut **tx)
+        .load(tx)
         .await
         .map_err(from_store_error)?;
     let version = snapshot.version();
