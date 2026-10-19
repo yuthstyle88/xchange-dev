@@ -1,6 +1,6 @@
 // P01 v2 board status (rate-display.md §9.5, §9.6): synced / delayed / offline from the rates poller.
-// SKELETON STUB (feat/fe-rateboard): RB-2 replaces `boardStatus`; the types and signature stay.
 import type { PublicPollState } from '../../../../shared/live/public-poller';
+import { BOARD_TEXT } from './board-texts';
 
 /** Rates are hidden when the last successful update (a 200 or a 304) is older than this. */
 export const HIDE_AFTER_MS = 30_000;
@@ -22,6 +22,27 @@ export interface BoardStatusView {
   emptyMessage: string | null;
 }
 
-export function boardStatus(_input: BoardStatusInput): BoardStatusView {
-  return { status: 'synced', ratesVisible: true, emptyMessage: null };
+export function boardStatus(input: BoardStatusInput): BoardStatusView {
+  if (input.lastOkAt === undefined) {
+    return {
+      status: 'offline',
+      ratesVisible: false,
+      emptyMessage: input.pollerState === 'loading' ? BOARD_TEXT.loading : BOARD_TEXT.askCounter,
+    };
+  }
+
+  if (input.now - input.lastOkAt > HIDE_AFTER_MS) {
+    return {
+      status: 'offline',
+      ratesVisible: false,
+      emptyMessage: BOARD_TEXT.askCounter,
+    };
+  }
+
+  return {
+    status: input.pollerState === 'error' ? 'delayed' : 'synced',
+    ratesVisible: true,
+    emptyMessage: input.lineCount === 0 ? BOARD_TEXT.noCurrencies : null,
+  };
 }
+
