@@ -32,6 +32,18 @@ const TYPE_LABEL: Record<string, ApprovalTypeKey> = {
   CASH_TRANSFER: 'cashTransfer',
 };
 
+const APPROVAL_TYPES = [
+  'RATE_PUBLICATION',
+  'RATE_FEED_PUBLICATION',
+  'CAMPAIGN_VERSION',
+  'LOYALTY_RULE_VERSION',
+  'EXCHANGE_TRANSACTION',
+  'TRANSACTION_REVERSAL',
+  'COUNT_DIFFERENCE',
+  'NEGATIVE_STOCK',
+  'CASH_TRANSFER',
+] as const;
+
 function statusLabel(status: string): string {
   if (status === 'APPROVED') return t('approved');
   if (status === 'REJECTED') return t('rejected');
@@ -258,16 +270,25 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
     return w;
   };
   const [statusFilter, setStatusFilter] = createSignal<ApprovalStatusFilter>('PENDING');
+  const [typeFilter, setTypeFilter] = createSignal<string>('');
   const [requests, setRequests] = createSignal<ApprovalRequestItemDto[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   let reading = 0;
 
-  const loadQueue = async (branch: string, status: ApprovalStatusFilter = statusFilter()) => {
+  const loadQueue = async (
+    branch: string,
+    status: ApprovalStatusFilter = statusFilter(),
+    type: string = typeFilter(),
+  ) => {
     const mine = ++reading;
     try {
+      const filter: { status: string; type?: string } = { status };
+      if (type) {
+        filter.type = type;
+      }
       const res = await client.view<ApprovalRequestsData>('approval_requests', {
         branch,
-        filter: { status },
+        filter,
       });
       if (mine !== reading) return;
       setError(null);
@@ -289,13 +310,14 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
     if (!props.shown()) return;
     const branch = props.branch();
     const status = statusFilter();
-    const context = `${branch}\0${status}`;
+    const type = typeFilter();
+    const context = `${branch}\0${status}\0${type}`;
     if (context !== lastContext) {
       lastContext = context;
       setRequests([]);
       setError(null);
     }
-    void loadQueue(branch, status);
+    void loadQueue(branch, status, type);
   });
 
   return (
@@ -311,6 +333,30 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
               onClick={() => setStatusFilter(st)}
             >
               {statusLabel(st)}
+            </button>
+          )}
+        </For>
+      </div>
+      <div class="approval-out-of-bound-list" data-type-switch>
+        <button
+          type="button"
+          class={`pill${typeFilter() === '' ? ' active' : ' neutral'}`}
+          aria-pressed={typeFilter() === ''}
+          data-type-filter=""
+          onClick={() => setTypeFilter('')}
+        >
+          {t('all')}
+        </button>
+        <For each={APPROVAL_TYPES}>
+          {(tp) => (
+            <button
+              type="button"
+              class={`pill${typeFilter() === tp ? ' active' : ' neutral'}`}
+              aria-pressed={typeFilter() === tp}
+              data-type-filter={tp}
+              onClick={() => setTypeFilter(tp)}
+            >
+              {TYPE_LABEL[tp] ? t(TYPE_LABEL[tp]) : tp}
             </button>
           )}
         </For>
@@ -339,7 +385,7 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
                 request={req}
                 branch={props.branch()}
                 decideWrite={getDecideWrite(req.id)}
-                onDecided={() => loadQueue(props.branch(), statusFilter())}
+                onDecided={() => loadQueue(props.branch(), statusFilter(), typeFilter())}
               />
             )}
           </For>
