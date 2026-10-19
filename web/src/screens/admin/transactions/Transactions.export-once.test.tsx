@@ -4,12 +4,12 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
 import { Transactions } from './Transactions';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 
-function tx(n: number): TransactionRow {
-  return {
+function tx(n: number) {
+  return makeTransactionRow({
     id: `XC-20261008-${String(n).padStart(6, '0')}`,
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -36,7 +36,7 @@ function tx(n: number): TransactionRow {
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  };
+  });
 }
 
 describe('Admin Transactions export in-flight guard (#2894)', () => {
