@@ -242,6 +242,22 @@ impl CompleteExchange {
             DeviceService::require_count_confirmed(t.payment.method.is_cash(), t.count_confirmed)?;
         }
 
+        let (branch_name, reversible_until) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
+        let facts = ExchangeCompletedFacts {
+            organization_id: t.organization_id,
+            branch_id: t.branch_id.clone(),
+            transaction_id: id.0,
+            quote_id,
+            customer_id: (!t.customer_id.is_empty()).then(|| t.customer_id.clone()),
+            mode: t.mode,
+            completed_at: now,
+            business_date: t.value_date,
+            reversible_until,
+        };
+        self.effects
+            .run_completed_in(tx, EffectPhase::Consume, &facts)
+            .await?;
+
         // 5. Both legs in one posting, never allowing negative stock (Q7); the costs it answers go on the lines
         if let Some(shift) = &shift {
             let posted = self.postings.post_in(tx, &legs(&t, shift)?, None).await?;
@@ -258,18 +274,6 @@ impl CompleteExchange {
         }
 
         // 6. Redeem the benefit, before COMPLETED (membership-points §6.2)
-        let (branch_name, reversible_until) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
-        let facts = ExchangeCompletedFacts {
-            organization_id: t.organization_id,
-            branch_id: t.branch_id.clone(),
-            transaction_id: id.0,
-            quote_id,
-            customer_id: (!t.customer_id.is_empty()).then(|| t.customer_id.clone()),
-            mode: t.mode,
-            completed_at: now,
-            business_date: t.value_date,
-            reversible_until,
-        };
         self.effects
             .run_completed_in(tx, EffectPhase::Redeem, &facts)
             .await?;

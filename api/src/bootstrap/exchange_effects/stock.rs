@@ -41,8 +41,8 @@ impl ExchangeEffect for StockConsumeEffect {
         tx: &'a mut Transaction<'_, Postgres>,
         e: &'a ExchangeCompletedFacts,
     ) -> BoxFuture<'a, AppResult<()>> {
-        let _ = (&self.reservations, tx, e);
-        todo!("SR-2")
+        self.reservations
+            .consume_for_quote_in(tx, e.quote_id, e.transaction_id, e.completed_at)
     }
 
     /// A reversal returns stock through its own posting; a consumed reservation is history only (§6 item 4).
@@ -57,6 +57,7 @@ impl ExchangeEffect for StockConsumeEffect {
 
 /// `None` in the skeleton (not registered); SR-2 answers `Some(Arc::new(stock))`.
 pub fn effect(_state: &AppState) -> Option<Arc<dyn ExchangeEffect>> {
-    let _stock = StockConsumeEffect::new(Arc::new(PgStockReservations::new()));
-    None
+    Some(Arc::new(StockConsumeEffect::new(Arc::new(
+        PgStockReservations::new(),
+    ))))
 }
