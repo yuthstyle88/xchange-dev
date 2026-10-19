@@ -239,13 +239,13 @@ classDiagram
 
 | # | What | File scope | Waits on |
 |---|---|---|---|
-| SR-0 | migration (§3) | `api/migrations/<slot>_stock_reservations.sql` | the slot (#564) · **owner approval needed before merge** (a schema change) |
+| SR-0 | migration (§3) | `api/migrations/<slot>_stock_reservations.sql` | the slot (`scripts/migration-slot.sh next`, above `feat/lg6`, `feat/rbac-groups`, `feat/or7m`) · covered by the owner's standing v3 migration approval (every v3 migration until real data exists; deploys and backfills excluded; #564 issuecomment-6259858830) — no backfill, no deploy |
 | SR-1 | core: types, trait, `PgStockReservations` (D-1 … D-4, D-6 … D-8), S1–S7, S11, S15 | `api/crates/xc-cash/src/domain/reservation/stock_reservation.rs` · `…/availability.rs` · `…/port.rs` · `api/crates/xc-cash/src/infrastructure/stock_reservations.rs` · `api/crates/xc-cash/tests/stock_reservations_test.rs` | SR-0 |
 | SR-2 | consume at completion (D-5), S8–S10, S12 | `api/src/application/workflows/exchange/effects.rs` · `api/src/application/workflows/exchange/complete.rs` · `api/src/bootstrap/exchange_effects/stock.rs` · `api/tests/stock_consume_test.rs` | SR-1's skeleton |
-| SR-3 | release on cancel (D-6), S7 end to end | `api/src/application/workflows/exchange/cancel.rs` · `api/tests/stock_release_on_cancel_test.rs` | SR-1's skeleton |
+| SR-3 | release on cancel (D-6), S7 end to end | `api/src/application/workflows/exchange/cancel.rs` · `api/src/application/workflows/exchange/approval.rs` (a REJECTED approval cancels the quote too, `approval.rs:149`) · `api/tests/stock_release_on_cancel_test.rs` | SR-1's skeleton |
 | SR-4 | view `branch_stock` (D-10), S14 | `api/src/presentation/http/v3/views/branch_stock.rs` · `api/tests/v3_branch_stock_view_test.rs` | SR-1's skeleton |
 | SR-5 | low-stock alert on `available` (D-13), S17 | `api/src/infrastructure/executive/alert_facts.rs` · its test | SR-1's skeleton |
-| SR-6 | the completion checks `available` excluding its own reservation (D-14), S18–S19 | `api/crates/xc-cash/src/infrastructure/ledger_postings.rs` · `api/crates/xc-cash/tests/ledger_available_check_test.rs` | SR-1's skeleton |
+| SR-6 | the completion checks `available` excluding its own reservation (D-14), S18–S19 | `api/crates/xc-cash/src/infrastructure/ledger_postings.rs` · `api/crates/xc-cash/tests/ledger_available_check_test.rs` | SR-1's skeleton · `feat/lg6` on main (it changes `ledger_postings.rs`) |
 
 🔴 **Dependency:** none of SR-0 … SR-6 makes anything reserve. The reserve's only caller is the binding quote (`docs/design/blueprint/binding-quote.md`); until its tickets merge, B05's figures show `reserved = 0`.
 
