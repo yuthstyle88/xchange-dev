@@ -11,7 +11,7 @@
 //! (`server.mjs:5542`, `7667`, `8050`); `URL` normalises its own side only.
 //!
 //! The function is tested directly, then through one route of each copy the ticket replaces
-//! that can be reached with no session and no database: `/api/auth` (the copy of
+//! that can be reached with no session and no database: `/api/auth/session` (the copy of
 //! `extractors/actor.rs`) and `/api/staff/upload` (the copy of `http/files.rs`, which checks the
 //! origin before it asks who is calling). Nothing here needs `TEST_DATABASE_URL`.
 
@@ -169,27 +169,21 @@ async fn send(
 }
 
 /// What each route answers when its origin check refuses, with no session.
-const AUTH_REFUSED: &str = r#"{"error":"คำขอไม่ถูกต้อง"}"#;
+const AUTH_REFUSED: &str = r#"{"error":{"code":"invalidRequest","message":"คำขอไม่ถูกต้อง"}}"#;
 const STAFF_UPLOAD_REFUSED: &str = r#"{"error":"คำขอไม่ถูกต้อง"}"#;
 
 #[actix_web::test]
-async fn the_copy_of_extractors_actor_answers_as_v2_on_api_auth() {
+async fn the_copy_of_extractors_actor_answers_on_api_auth_session() {
     for (proto, host, origin, v2) in V2_ROWS {
-        let (status, body) = send(
-            proto,
-            host,
-            origin,
-            "/api/auth",
-            json!({ "action": "status" }),
-        )
-        .await;
-        let what = format!("/api/auth, X-Forwarded-Proto {proto:?}, Host {host}, Origin {origin}");
+        let (status, body) = send(proto, host, origin, "/api/auth/session", json!({})).await;
+        let what =
+            format!("/api/auth/session, X-Forwarded-Proto {proto:?}, Host {host}, Origin {origin}");
         if v2 {
             // nobody is signed in: the status answer, no database asked
             assert_eq!(status, StatusCode::OK, "{what}: {body}");
             assert_eq!(
                 serde_json::from_str::<Value>(&body).expect("JSON"),
-                json!({ "setupRequired": false, "user": null }),
+                json!({ "user": null }),
                 "{what}"
             );
         } else {
