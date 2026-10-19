@@ -17,7 +17,7 @@ mod snapshot_common;
 use std::sync::Once;
 
 use broker_feed_common::{Row, completed, exchange, feed_row, get, ids, send};
-use rpc_common::{Call, Desk};
+use rpc_common::Desk;
 use serde_json::{Value, json};
 
 const TOKEN: &str = "fd3-feed-token-0123456789abcdef";
@@ -281,25 +281,39 @@ async fn a_missing_or_wrong_token_is_401_and_never_echoed() {
 #[actix_web::test]
 async fn a_signed_in_owner_without_the_token_is_401() {
     let (desk, app) = open!();
-    let login = app
-        .send(
-            Call::post(
-                "http://desk.test",
-                "/api/auth",
-                json!({ "action": "login", "payload": {
-                    "username": "owner", "password": rpc_common::OWNER_PASSWORD } })
-                .to_string(),
-            )
-            .header("x-real-ip", "198.51.100.7"),
-        )
-        .await;
-    assert_eq!(login.status, 200, "the owner signs in: {:.300}", login.text);
-    let cookie = login
-        .cookies
-        .iter()
-        .filter_map(|line| line.split(';').next())
-        .collect::<Vec<_>>()
-        .join("; ");
+    let mut conn = desk.db.pool.acquire().await.expect("a connection");
+    let valid_from = chrono::Utc::now() - chrono::Duration::hours(1);
+    let owner = xc_testdb::people::seed_person(
+        &mut conn,
+        "00000000-0000-0000-0000-000000000001",
+        "Owner",
+        &[
+            xc_testdb::people::RoleRow {
+                role_code: "EXECUTIVE",
+                branch_id: None,
+                valid_from,
+                valid_to: None,
+            },
+            xc_testdb::people::RoleRow {
+                role_code: "ADMIN",
+                branch_id: None,
+                valid_from,
+                valid_to: None,
+            },
+        ],
+    )
+    .await
+    .expect("seed owner");
+    let token = xc_testdb::sessions::seed_session(
+        &mut conn,
+        &owner,
+        None,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+    )
+    .await
+    .expect("seed session");
+    drop(conn);
+    let cookie = xc_testdb::sessions::cookie(&token);
     let answer = send(&app, get("", None).cookie(&cookie)).await;
     assert_error_body(&answer, 401, "a session and no token");
     desk.finish().await;

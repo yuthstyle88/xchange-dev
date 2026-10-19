@@ -98,7 +98,7 @@ async fn a_graceful_stop_waits_as_long_as_the_settings_say() {
     // Use HTTP/1.1 keep-alive on the held connection for readiness without sleeping (PR 204):
     // 1. Sends GET /healthz and reads its complete 200 answer. Only a worker writes
     //    that answer, so the connection belongs to a worker.
-    // 2. On the same connection, sends the head of POST /api/staff/login with
+    // 2. On the same connection, sends the head of POST /api/auth/login with
     //    Content-Length: 64 and no body. The same worker now waits for the body.
     let held = tokio::task::spawn_blocking(move || {
         use std::io::Read;
@@ -151,10 +151,10 @@ async fn a_graceful_stop_waits_as_long_as_the_settings_say() {
 
         write!(
             stream,
-            "POST /api/staff/login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+            "POST /api/auth/login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
              Content-Type: application/json\r\nContent-Length: 64\r\n\r\n"
         )
-        .expect("send POST /api/staff/login head");
+        .expect("send POST /api/auth/login head");
         stream.flush().expect("flush POST head");
 
         stream
