@@ -43,18 +43,38 @@ pub(crate) async fn branch_colleagues(
     branch: &BranchId,
     now: DateTime<Utc>,
 ) -> AppResult<Vec<StaffMember>> {
+    branch_staff_members(pool, branch, now, false).await
+}
+
+/// All staff of `branch`, closed (`DISABLED`) accounts included, so names on historical rows stay
+/// readable after an account is closed.
+pub(crate) async fn branch_people(
+    pool: &PgPool,
+    branch: &BranchId,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<StaffMember>> {
+    branch_staff_members(pool, branch, now, true).await
+}
+
+async fn branch_staff_members(
+    pool: &PgPool,
+    branch: &BranchId,
+    now: DateTime<Utc>,
+    include_disabled: bool,
+) -> AppResult<Vec<StaffMember>> {
     let rows: Vec<(String, String, String)> = sqlx::query_as(
         "SELECT u.id::text, u.name, ur.role_code \
          FROM users u \
          JOIN user_roles ur ON ur.user_id = u.id AND ur.organization_id = u.organization_id \
          WHERE ur.branch_id = $1 \
-           AND u.status <> 'DISABLED' \
+           AND ($3 OR u.status <> 'DISABLED') \
            AND ur.valid_from <= $2 \
            AND (ur.valid_to IS NULL OR ur.valid_to > $2) \
          ORDER BY u.created_at ASC, u.name ASC, u.id ASC",
     )
     .bind(branch.as_str())
     .bind(now)
+    .bind(include_disabled)
     .fetch_all(pool)
     .await
     .map_err(AppError::Database)?;
@@ -214,8 +234,8 @@ impl SnapshotSources for ServiceSnapshotSources {
 
     fn people<'a>(&'a self, branch: &'a BranchId) -> SourceFuture<'a, People> {
         Box::pin(async move {
-            let colleagues = branch_colleagues(&self.pool, branch, Utc::now()).await?;
-            Ok(colleagues
+            let people = branch_people(&self.pool, branch, Utc::now()).await?;
+            Ok(people
                 .into_iter()
                 .map(|member| {
                     (
