@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::PgExecutor;
 
 /// `users.name` of each id in `ids` that is a `users.id`, keyed by that id (as text).
@@ -20,6 +20,14 @@ pub async fn user_names<'e, E: PgExecutor<'e>>(
     executor: E,
     ids: &[String],
 ) -> AppResult<HashMap<String, String>> {
-    let _ = (executor, ids);
-    todo!("OR-7.m T1: SELECT id::text, name FROM users WHERE id::text = ANY($1)")
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT id::text, name FROM users WHERE id::text = ANY($1)")
+            .bind(ids)
+            .fetch_all(executor)
+            .await
+            .map_err(AppError::Database)?;
+    Ok(rows.into_iter().collect())
 }
