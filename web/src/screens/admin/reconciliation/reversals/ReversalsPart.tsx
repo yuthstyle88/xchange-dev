@@ -3,9 +3,9 @@
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../../shared/api/client';
 import type { ReversalPendingRow } from '../../../../shared/api/generated/finance_reconciliation';
-import { keyedWrite } from '../../../../shared/api/keyed-write';
 import { screenT } from '../../../../shared/i18n';
 import { wordedError } from '../../../../shared/i18n/worded-error';
+import { decideRefusal, decideWrite, type DecideOutcome } from '../../parts/decide';
 import { Empty, stamp } from '../parts';
 import * as table from './i18n';
 
@@ -19,39 +19,29 @@ export interface ReversalsPartProps {
   onDecided: () => Promise<void>;
 }
 
-interface DecidePayload {
-  outcome: 'APPROVED' | 'REJECTED';
-  reason: string;
-  branch: string;
-}
-
 function ReversalRow(props: {
   row: ReversalPendingRow;
   branch: string;
   onDecided: () => Promise<void>;
 }): JSX.Element {
   const api = new ApiClient();
-  const decideWrite = keyedWrite<DecidePayload, unknown>(
-    api,
-    'POST',
-    `/api/approvals/${props.row.requestId}/decide`,
-  );
+  const writer = decideWrite(api, props.row.requestId);
 
   const [reason, setReason] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
 
-  async function decide(outcome: 'APPROVED' | 'REJECTED') {
+  async function decide(outcome: DecideOutcome) {
     if (busy()) return;
     const text = reason();
-    if (outcome === 'REJECTED' && !text.trim()) {
+    if (decideRefusal(outcome, text) === 'reasonRequired') {
       setError(t('reasonRequired'));
       return;
     }
     setError(null);
     setBusy(true);
     try {
-      await decideWrite.send({
+      await writer.send({
         outcome,
         reason: text,
         branch: props.branch,

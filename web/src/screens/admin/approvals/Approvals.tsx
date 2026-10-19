@@ -4,11 +4,16 @@ import type {
   ApprovalRequestItemDto,
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
-import { keyedWrite } from '../../../shared/api/keyed-write';
 import { locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardActions } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
+import {
+  decideRefusal,
+  decideWrite,
+  type DecidePayload,
+  type KeyedWrite,
+} from '../parts/decide';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
 import './approvals.css';
@@ -61,16 +66,10 @@ interface OutOfBoundSide {
   side: 'BUY' | 'SELL';
 }
 
-interface DecidePayload {
-  outcome: 'APPROVED' | 'REJECTED';
-  reason: string;
-  branch: string;
-}
-
 interface RequestCardProps {
   request: ApprovalRequestItemDto;
   branch: string;
-  decideWrite: { send(body: DecidePayload): Promise<unknown>; reset(): void };
+  decideWrite: KeyedWrite<DecidePayload, unknown>;
   onDecided: () => Promise<void>;
 }
 
@@ -121,7 +120,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
   const handleReject = async () => {
     setError(null);
     const r = reason();
-    if (!r.trim()) {
+    if (decideRefusal('REJECTED', r) === 'reasonRequired') {
       const reqMsg = t('reasonRequired');
       setError(reqMsg);
       toast(reqMsg);
@@ -255,16 +254,12 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
   const decideWrites = new Map<
     string,
-    { send(body: DecidePayload): Promise<unknown>; reset(): void }
+    KeyedWrite<DecidePayload, unknown>
   >();
   const getDecideWrite = (id: string) => {
     let w = decideWrites.get(id);
     if (!w) {
-      w = keyedWrite<DecidePayload, unknown>(
-        client,
-        'POST',
-        `/api/approvals/${id}/decide`,
-      );
+      w = decideWrite(client, id);
       decideWrites.set(id, w);
     }
     return w;
