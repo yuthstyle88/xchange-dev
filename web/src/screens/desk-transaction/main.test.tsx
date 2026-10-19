@@ -50,6 +50,8 @@ const TRANSACTION: TransactionViewData = {
     cancelledAt: null,
     cancelReason: null,
     reversal: null,
+    benefits: [],
+    booking: null,
   },
 };
 

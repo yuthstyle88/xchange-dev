@@ -49,6 +49,8 @@ function makeAnswer(
       redactedText: assistantText,
       createdAt: '2026-10-16T10:00:01Z',
     },
+    intent: { kind: 'UNKNOWN' },
+    preview: null,
   };
 }
 

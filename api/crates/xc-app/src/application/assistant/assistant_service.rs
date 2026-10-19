@@ -11,7 +11,7 @@ use crate::domain::app_error::CustomerAppError;
 use crate::domain::app_session::SessionHash;
 use crate::domain::assistant::conversation::MessageRole;
 use crate::domain::assistant::conversation::{AssistantConversation, AssistantMessage};
-use crate::domain::assistant::intent::{IntentKind, IntentParser};
+use crate::domain::assistant::intent::{Intent, IntentKind, IntentParser};
 use crate::domain::assistant::repository::AssistantRepository;
 use crate::domain::owner::DraftOwner;
 use crate::domain::planner::planner_draft::{DraftAmount, DraftPlan};
@@ -23,6 +23,7 @@ pub struct AssistantAnswer {
     pub conversation_id: Uuid,
     pub customer_message: AssistantMessage,
     pub assistant_reply: AssistantMessage,
+    pub intent: Intent,
     pub preview: Option<PlannerEstimate>,
 }
 
@@ -103,10 +104,15 @@ impl AssistantService {
                 });
 
                 if let Some(reply) = assistant_reply {
+                    let intent = existing_customer_msg
+                        .parsed_intent
+                        .clone()
+                        .unwrap_or(parsed_intent);
                     return Ok(AssistantAnswer {
                         conversation_id: conversation.id,
                         customer_message: existing_customer_msg,
                         assistant_reply: reply,
+                        intent,
                         preview: None,
                     });
                 }
@@ -170,6 +176,7 @@ impl AssistantService {
             conversation_id: conversation.id,
             customer_message,
             assistant_reply,
+            intent: parsed_intent,
             preview,
         })
     }

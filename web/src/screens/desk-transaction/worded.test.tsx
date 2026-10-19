@@ -67,6 +67,8 @@ function sampleTx(over: Partial<TransactionDetailDto> = {}): TransactionDetailDt
     cancelledAt: null,
     cancelReason: null,
     reversal: null,
+    benefits: [],
+    booking: null,
     ...over,
   };
 }
