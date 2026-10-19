@@ -35,12 +35,12 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
 use common::{FakeDatabase, settings, state_with};
 use serde_json::Value;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap;
-use xchange::presentation::pages::{self, SessionReader, Sessions};
+use xchange::presentation::pages::{self, Callers, SessionReader};
 use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::test_callers;
 
 use screens_gen::{Gate, ScreenTableError, check_dist, ensure_dist, screen_table};
 
@@ -74,21 +74,34 @@ fn built_file(rel: &str) -> Vec<u8> {
 
 /// Who is signed in, from the request header `x-test-as`:
 /// `owner`, `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
+
+fn staff_roles(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown staff role {other:?}"),
+    }
+}
 
 fn staff_of(spec: &str) -> Option<Actor> {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role = parts.next().expect("a role");
     let branch = parts.next().expect("a branch, possibly empty");
-    Actor::staff("employee-7", role, BranchId::new(branch))
+    Some(test_callers::staff(
+        "employee-7",
+        staff_roles(role),
+        BranchId::new(branch),
+    ))
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
@@ -96,27 +109,18 @@ impl SessionReader for HeaderSessions {
             .unwrap_or_default();
         Box::pin(async move {
             if spec.is_empty() {
-                return Sessions {
-                    owner: None,
-                    staff: None,
-                };
+                return test_callers::nobody();
             }
             if spec == "owner" {
-                return Sessions {
-                    owner: Some(Actor::owner("owner-1")),
-                    staff: None,
-                };
+                return test_callers::callers(Some(test_callers::owner("owner-1")), None);
             }
             if let Some(staff) = spec.strip_prefix("owner+") {
-                return Sessions {
-                    owner: Some(Actor::owner("owner-1")),
-                    staff: staff_of(staff),
-                };
+                return test_callers::callers(
+                    Some(test_callers::owner("owner-1")),
+                    staff_of(staff),
+                );
             }
-            Sessions {
-                owner: None,
-                staff: staff_of(&spec),
-            }
+            test_callers::callers(None, staff_of(&spec))
         })
     }
 }
@@ -144,7 +148,7 @@ fn header_of(resp: &actix_web::dev::ServiceResponse, name: header::HeaderName) -
         .map(|v| v.to_str().expect("a text header value").to_owned())
 }
 
-/// `GET uri` as `who` (see `HeaderSessions`), on a server whose screen table
+/// `GET uri` as `who` (see `HeaderCallers`), on a server whose screen table
 /// was read from `dist`, with v2's pages in `fixtures/pages/web`.
 async fn get(dist: &Path, who: &str, uri: &str) -> Answer {
     let screens = table(dist);
@@ -152,7 +156,7 @@ async fn get(dist: &Path, who: &str, uri: &str) -> Answer {
         settings(&[("APP_WEB__DIR", v2_web_dir().to_str().expect("a UTF-8 path"))]),
         FakeDatabase::Up,
     );
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure_with_screens(cfg, state, screens))
@@ -384,7 +388,7 @@ async fn page_handler_hands_a_held_path_to_the_screen_even_when_registered_first
         settings(&[("APP_WEB__DIR", v2_web_dir().to_str().expect("a UTF-8 path"))]),
         FakeDatabase::Up,
     );
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| {
