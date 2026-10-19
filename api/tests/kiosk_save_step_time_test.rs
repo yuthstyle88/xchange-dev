@@ -161,7 +161,7 @@ impl KioskPorts for Counter {
 fn staff(id: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
-        username: id.to_owned(),
+        username: format!("user-{id}"),
         employee_id: Some(id.to_owned()),
         standing,
     }
