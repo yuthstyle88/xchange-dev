@@ -109,6 +109,7 @@ impl Room {
         Self { pool, schema }
     }
 
+    #[allow(dead_code)]
     async fn exec(&self, sql: &str) {
         sqlx::query(AssertSqlSafe(sql.to_owned()))
             .execute(&self.pool)
@@ -128,6 +129,7 @@ impl Room {
         .expect("create branch");
     }
 
+    #[allow(dead_code)]
     async fn user(&self) -> String {
         sqlx::query_scalar(
             "INSERT INTO users (organization_id, name, status, created_by) \
@@ -521,6 +523,12 @@ async fn a03_another_branch_is_never_mixed_in() {
         &[("USD", "ALL", "ALL", "1", Some("35.50"), Some("36.00"))],
     )
     .await;
+    room.publish(
+        "A03-B7",
+        at(4),
+        &[("USD", "ALL", "ALL", "1", Some("40.50"), Some("41.00"))],
+    )
+    .await;
 
     let rows = page(&room, "A03-B6", "").await;
     assert_eq!(
@@ -533,6 +541,20 @@ async fn a03_another_branch_is_never_mixed_in() {
         usd["before"]["buy"],
         json!("35.00000000"),
         "before is A03-B6's v1, not A03-B7's: {usd}"
+    );
+    // Versions are numbered per branch, so both v1 rows tie: asserting each branch's own
+    // `before` makes a lookup that ignores the branch fail on one of them.
+    let b7 = page(&room, "A03-B7", "").await;
+    assert_eq!(
+        versions(&b7),
+        vec![2, 1],
+        "only A03-B7's two versions: {b7:?}"
+    );
+    let b7_usd = line(&b7[0], "USD", "ALL", "ALL");
+    assert_eq!(
+        b7_usd["before"]["buy"],
+        json!("40.00000000"),
+        "before is A03-B7's v1, not A03-B6's: {b7_usd}"
     );
     room.finish().await;
 }
