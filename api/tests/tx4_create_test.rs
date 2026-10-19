@@ -168,11 +168,7 @@ impl Counter {
 
     /// #2964: the teller of the shifts `open_shift` opens (the `test` user), as a v3 session carries them: `users.id`.
     async fn shift_teller(&self) -> SaveActor {
-        let id: String =
-            sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'test'")
-                .fetch_one(&self.desk.db.pool)
-                .await
-                .expect("the shift's teller (open_shift seeds it)");
+        let id: String = ensure_test_user(&self.desk.db.pool).await;
         SaveActor {
             id,
             username: "test".to_owned(),
@@ -199,14 +195,7 @@ impl Counter {
 
     /// #2964: an open shift of the `test` teller at `branch`.
     async fn open_shift_at(&self, branch: &str) -> String {
-        sqlx::query(
-            "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-             SELECT id, 'test', 'PENDING', 'test', 'test' FROM organizations WHERE code = 'XC' \
-             ON CONFLICT (legacy_employee_id) DO NOTHING",
-        )
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("seed the opener");
+        ensure_test_user(&self.desk.db.pool).await;
         ca10_seed_open(
             &self.desk.db.pool,
             branch,
@@ -219,14 +208,7 @@ impl Counter {
 
     /// Open MAIN's shift as main does today; answers its id.
     async fn open_shift(&self) -> String {
-        sqlx::query(
-            "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-             SELECT id, 'test', 'PENDING', 'test', 'test' FROM organizations WHERE code = 'XC' \
-             ON CONFLICT (legacy_employee_id) DO NOTHING",
-        )
-        .execute(&self.desk.db.pool)
-        .await
-        .expect("seed the opener");
+        ensure_test_user(&self.desk.db.pool).await;
         ca10_seed_open(
             &self.desk.db.pool,
             "MAIN",
@@ -741,6 +723,28 @@ async fn a_kiosk_request_without_a_quote_id_is_not_checked_at_create() {
     c.finish().await;
 }
 
+async fn ensure_test_user(pool: &sqlx::PgPool) -> String {
+    if let Some(id) = sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = 'test' AND u.created_by = 'test' \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .expect("look up test user")
+    {
+        return id;
+    }
+    sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         SELECT id, 'test', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("seed test user")
+}
+
 /// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The OPEN shift it wrote (opener `test`,
 /// the given opening), written straight into the tables in one branch transaction (setup only). Answers its id.
 async fn ca10_seed_open(
@@ -759,15 +763,33 @@ async fn ca10_seed_open(
     xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(pool.clone()))
         .run(&xc_kernel::ids::BranchId::new(branch), move |tx| {
             Box::pin(async move {
+                let teller_id: uuid::Uuid = if let Some(id) = sqlx::query_scalar::<_, uuid::Uuid>(
+                    "SELECT u.id FROM users u JOIN organizations o ON o.id = u.organization_id \
+                     WHERE o.code = 'XC' AND u.name = 'test' AND u.created_by = 'test' \
+                     ORDER BY u.created_at, u.id LIMIT 1",
+                )
+                .fetch_optional(&mut **tx)
+                .await?
+                {
+                    id
+                } else {
+                    sqlx::query_scalar(
+                        "INSERT INTO users (organization_id, name, status, created_by) \
+                         SELECT id, 'test', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                         RETURNING id",
+                    )
+                    .fetch_one(&mut **tx)
+                    .await?
+                };
                 sqlx::query(
                     "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
-                     teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id FROM users u \
-                     WHERE u.legacy_employee_id = 'test'",
+                     teller_id) VALUES ($1, $2, 'OPEN', $3, 'test', '', $4, $5)",
                 )
                 .bind(&id)
                 .bind(&b)
                 .bind(opened_at)
                 .bind(&request_id)
+                .bind(teller_id)
                 .execute(&mut **tx)
                 .await?;
                 for (code, amount) in &opening {
