@@ -277,8 +277,7 @@ impl Day {
             .await;
         desk.db
             .exec(&format!(
-                "UPDATE ops_state SET phase = 'OPEN', \
-                 safe = jsonb_build_object('USD', 500000::bigint, 'THB', 10000000::bigint) \
+                "UPDATE ops_state SET phase = 'OPEN' \
                  WHERE branch_id = '{MAIN}'"
             ))
             .await;
@@ -298,8 +297,8 @@ impl Day {
             .await;
         desk.db
             .exec(&format!(
-                "INSERT INTO ops_state (branch_id, phase, safe) \
-                 VALUES ('{BR2}', 'OPEN', jsonb_build_object('USD', 500000::bigint)) \
+                "INSERT INTO ops_state (branch_id, phase) \
+                 VALUES ('{BR2}', 'OPEN') \
                  ON CONFLICT (branch_id) DO NOTHING"
             ))
             .await;
@@ -327,17 +326,6 @@ impl Day {
                     .bind(&request)
                     .execute(&mut **tx)
                     .await?;
-                    for (code, amount) in [("THB", "100000.00"), ("USD", "1000.00")] {
-                        sqlx::query(
-                            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                             VALUES ($1, $2, $3::numeric, $3::numeric)",
-                        )
-                        .bind(&id)
-                        .bind(code)
-                        .bind(amount)
-                        .execute(&mut **tx)
-                        .await?;
-                    }
                     Ok::<(), pos_error::AppError>(())
                 })
             })

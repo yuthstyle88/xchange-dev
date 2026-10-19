@@ -8,12 +8,12 @@ use std::sync::Arc;
 use actix_web::web;
 use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::cash::{MyShift, MyShiftBalance};
@@ -22,6 +22,7 @@ use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 struct MyShiftView {
     pool: PgPool,
+    shift_balances: Arc<dyn ShiftBalances>,
 }
 
 impl BranchView for MyShiftView {
@@ -37,6 +38,7 @@ impl BranchView for MyShiftView {
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
+        let shift_balances = self.shift_balances.clone();
         let branch = branch.as_str().to_owned();
         let me = who.user_id.clone();
         async move {
@@ -53,23 +55,17 @@ impl BranchView for MyShiftView {
             let Some((id, status, opened_at)) = shift else {
                 return Ok(None);
             };
-            let balances: Vec<(String, Decimal, Decimal)> = sqlx::query_as(
-                "SELECT code::text, opening, expected FROM shift_balances WHERE shift_id = $1 ORDER BY code",
-            )
-            .bind(&id)
-            .fetch_all(&pool)
-            .await
-            .map_err(AppError::Database)?;
+            let balances = shift_balances.shift_balances(&id).await?;
             Ok(Some(MyShift {
                 id,
                 status,
                 opened_at: opened_at.to_rfc3339_opts(SecondsFormat::Millis, true),
                 balances: balances
                     .into_iter()
-                    .map(|(code, opening, expected)| MyShiftBalance {
-                        code: code.trim().to_owned(),
-                        opening: opening.to_string(),
-                        expected: expected.to_string(),
+                    .map(|b| MyShiftBalance {
+                        code: b.currency.as_str().to_owned(),
+                        opening: b.opening.to_string(),
+                        expected: b.expected.to_string(),
                     })
                     .collect(),
             }))
@@ -82,6 +78,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         cfg,
         Arc::new(MyShiftView {
             pool: state.db.clone(),
+            shift_balances: state.shift_balances.clone(),
         }),
     );
 }

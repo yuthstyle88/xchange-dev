@@ -328,16 +328,6 @@ async fn test_shift_with_no_posting_shows_same_empty_rows_as_today() {
     .await
     .expect("insert shift with no posting");
 
-    // Pre-cutover stale row in shift_balances table to verify it is NOT read post-cutover
-    sqlx::query(
-        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-         VALUES ($1, 'THB', 9999.00, 9999.00)",
-    )
-    .bind(shift_id)
-    .execute(&ctx.desk.db.pool)
-    .await
-    .expect("insert stale shift_balances row");
-
     // Fake returns empty vec (no postings in ledger for this shift)
     ctx.fake.set(shift_id, vec![]);
 

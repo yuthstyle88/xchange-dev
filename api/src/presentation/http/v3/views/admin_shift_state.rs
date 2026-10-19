@@ -13,7 +13,6 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::compat::snapshot::uri_component;
 use crate::bootstrap::AppState;
@@ -67,7 +66,7 @@ impl BranchView for AdminShiftStateBranchView {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(state.db.clone())),
+        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(state.db.clone())),
         branch_tx,
     );
     ViewEndpoint::register(cfg, Arc::new(AdminShiftStateBranchView::new(shifts)));

@@ -116,10 +116,8 @@ impl StaffFloorReader {
                             .to_rfc3339(),
                     }
                 });
-            let s = facts
-                .ops
-                .as_ref()
-                .and_then(|o| o.safe.as_ref())
+            let s = crate::application::compat::snapshot::ledger_safe(&self.pool, branch)
+                .await?
                 .map(|safe| {
                     let mut map = HashMap::new();
                     for (code, money) in safe.non_zero() {

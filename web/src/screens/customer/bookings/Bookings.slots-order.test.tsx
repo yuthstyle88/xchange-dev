@@ -31,6 +31,11 @@ function booking(id: string, bookingNo: string, branchId: string): MyBookingItem
     quoteSummary: 'เรทสุดท้ายยืนยันเมื่อทำรายการ',
     cancelCutoffAt: '2026-10-14T09:00:00Z',
     ticketNumber: null,
+    ticketsAhead: null,
+    estimateSeconds: null,
+    estimateLowSeconds: null,
+    estimateHighSeconds: null,
+    estimateAsOf: null,
     readiness: 'unknown',
   };
 }

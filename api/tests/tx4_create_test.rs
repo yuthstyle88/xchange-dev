@@ -58,8 +58,12 @@ use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use quote_common::*;
+use rust_decimal::Decimal;
 use tx4_common::*;
 use uuid::Uuid;
+use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -767,15 +771,31 @@ async fn ca10_seed_open(
                 .execute(&mut **tx)
                 .await?;
                 for (code, amount) in &opening {
-                    sqlx::query(
-                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                         VALUES ($1, $2, $3::numeric, $3::numeric)",
-                    )
-                    .bind(&id)
-                    .bind(code)
-                    .bind(amount)
-                    .execute(&mut **tx)
-                    .await?;
+                    let quantity: Decimal = amount.parse().expect("an opening amount");
+                    if quantity <= Decimal::ZERO {
+                        continue;
+                    }
+                    LedgerCashPostings::new()
+                        .post_in(
+                            &mut *tx,
+                            &[PostingRequest {
+                                from: CashPlace::Bank,
+                                to: CashPlace::Drawer(id.clone()),
+                                currency: xc_kernel::money::CurrencyCode::parse(code)
+                                    .expect("a register currency"),
+                                quantity: xc_kernel::money::ForeignAmount::from_decimal(quantity),
+                                source: SourceRef {
+                                    source_type: SourceType::Opening,
+                                    source_id: format!("r1-fund:{id}:{code}"),
+                                    source_key: "fund".to_string(),
+                                },
+                                line: None,
+                                reverses: None,
+                            }],
+                            None,
+                        )
+                        .await
+                        .expect("fund the open shift's drawer through the ledger");
                 }
                 Ok::<(), pos_error::AppError>(())
             })
