@@ -1,4 +1,7 @@
-export const th = {
+import * as policy from './i18n.policy';
+import * as draft from './i18n.draft';
+
+const baseTh = {
   // Menu & Heading
   label: 'เรทและสกุลเงิน',
   eyebrow: 'RATE MANAGEMENT',
@@ -57,47 +60,12 @@ export const th = {
   headerPublishedBy: 'ผู้เผยแพร่',
   headerPublishedAt: 'เวลาที่เผยแพร่',
 
-  // RE-5 Actions & Drafts
-  newDraft: 'สร้างฉบับร่างใหม่',
-  simulate: 'จำลองเรท',
-  submit: 'ส่งขออนุมัติ',
-  publish: 'เผยแพร่เรท',
-  adjustAll: 'ปรับทั้งหมด',
-  adjustBuyPct: 'ปรับ % รับซื้อ',
-  adjustSellPct: 'ปรับ % ขาย',
-  outOfBound: 'นอกกรอบ',
-  inBound: 'อยู่ในกรอบ',
-
-  // Draft statuses
-  statusDraft: 'ฉบับร่าง',
-  statusPendingApproval: 'รออนุมัติ',
-  statusApproved: 'อนุมัติแล้ว',
-  statusPublished: 'เผยแพร่แล้ว',
-  statusRejected: 'ปฏิเสธ',
-
   // Draft section headers
-  draftTitle: 'ฉบับร่างเรทปัจจุบัน',
-  noOpenDraft: 'ไม่มีฉบับร่างที่เปิดอยู่',
   currentPublicationTitle: 'เรทที่เผยแพร่อยู่ปัจจุบัน',
   noPublication: 'ยังไม่มีการเผยแพร่เรท',
-
-  // VT-5 Value Tiers & Sharp-Move Policy
-  policyEyebrow: 'RATE POLICY',
-  policyTitle: 'นโยบายเรทและระดับมูลค่า',
-  valueTiersSwitchLabel: 'เปิดใช้เรทตามระดับมูลค่า',
-  sharpMoveThresholdLabel: 'เกณฑ์แจ้งเตือนเรทผันผวน (%)',
-  headerTierNo: 'ระดับ',
-  headerTierUpperThb: 'เพดานมูลค่า (THB)',
-  headerTierBuyMargin: 'ส่วนต่างรับซื้อ (%)',
-  headerTierSellMargin: 'ส่วนต่างขาย (%)',
-  tierLabelPrefix: 'ระดับ ',
-  tierAndAbove: 'ขึ้นไป',
-  savePolicy: 'บันทึกนโยบาย',
-  tierNonRisingPrefix: 'เพดานมูลค่าระดับ ',
-  tierNonRisingSuffix: ' ต้องมากกว่าระดับก่อนหน้า',
 };
 
-export const en = {
+const baseEn = {
   // Menu & Heading
   label: 'Rates & Currencies',
   eyebrow: 'RATE MANAGEMENT',
@@ -156,42 +124,19 @@ export const en = {
   headerPublishedBy: 'Published by',
   headerPublishedAt: 'Published at',
 
-  // RE-5 Actions & Drafts
-  newDraft: 'New draft',
-  simulate: 'Simulate',
-  submit: 'Submit',
-  publish: 'Publish',
-  adjustAll: 'Adjust all',
-  adjustBuyPct: 'Adjust buy %',
-  adjustSellPct: 'Adjust sell %',
-  outOfBound: 'Out of bound',
-  inBound: 'In bound',
-
-  // Draft statuses
-  statusDraft: 'Draft',
-  statusPendingApproval: 'Pending approval',
-  statusApproved: 'Approved',
-  statusPublished: 'Published',
-  statusRejected: 'Rejected',
-
   // Draft section headers
-  draftTitle: 'Current Rate Draft',
-  noOpenDraft: 'No open draft',
   currentPublicationTitle: 'Current Published Rates',
   noPublication: 'No published rates yet',
+};
 
-  // VT-5 Value Tiers & Sharp-Move Policy
-  policyEyebrow: 'RATE POLICY',
-  policyTitle: 'Rate Policy & Value Tiers',
-  valueTiersSwitchLabel: 'Enable value tiers',
-  sharpMoveThresholdLabel: 'Sharp-move alert threshold (%)',
-  headerTierNo: 'Tier',
-  headerTierUpperThb: 'Upper Limit (THB)',
-  headerTierBuyMargin: 'Buy Margin (%)',
-  headerTierSellMargin: 'Sell Margin (%)',
-  tierLabelPrefix: 'Tier ',
-  tierAndAbove: 'And above',
-  savePolicy: 'Save Policy',
-  tierNonRisingPrefix: 'Tier ',
-  tierNonRisingSuffix: ' upper limit must be greater than the previous tier',
+export const th = {
+  ...baseTh,
+  ...policy.th,
+  ...draft.th,
+};
+
+export const en = {
+  ...baseEn,
+  ...policy.en,
+  ...draft.en,
 };
