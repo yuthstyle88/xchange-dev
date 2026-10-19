@@ -1,7 +1,8 @@
 // V0-A: ViewPoller (docs/design/xchange-v3-web.md §5.2 and §9).
 // Written before the implementation. Do not edit, delete or weaken.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ViewAnswer, ViewParams } from '../api/client';
+import type { ViewParams } from '../api/client';
+import { makeViewAnswer, type ViewAnswer } from '../testing/fixtures';
 import { ViewPoller } from './view-poller';
 
 interface Seen {
@@ -20,7 +21,7 @@ function fakeClient<T>(script: Array<ViewAnswer<T> | Error>) {
       const next = script[Math.min(i, script.length - 1)]!;
       i += 1;
       if (next instanceof Error) throw next;
-      return next as unknown as ViewAnswer<U>;
+      return makeViewAnswer(next.data as U, { version: next.version, changed: next.changed });
     },
   };
   return { client, seen };
@@ -50,8 +51,8 @@ afterEach(() => {
 describe('ViewPoller', () => {
   it('sends the version of the last answer as since on the next request', async () => {
     const { client, seen } = fakeClient<{ n: number }>([
-      { version: 7, changed: true, data: { n: 1 } },
-      { version: 7, changed: false },
+      makeViewAnswer({ n: 1 }, { version: 7, changed: true }),
+      makeViewAnswer({ n: 0 }, { version: 7, changed: false, data: undefined }),
     ]);
     const poller = new ViewPoller<{ n: number }>(client, 'rates', {
       params: { branch: 'XC-B01' },
@@ -76,9 +77,9 @@ describe('ViewPoller', () => {
   it('keeps the same data object when the answer is changed: false', async () => {
     const first = { n: 1 };
     const { client } = fakeClient<{ n: number }>([
-      { version: 3, changed: true, data: first },
-      { version: 3, changed: false },
-      { version: 3, changed: false },
+      makeViewAnswer(first, { version: 3, changed: true }),
+      makeViewAnswer({ n: 0 }, { version: 3, changed: false, data: undefined }),
+      makeViewAnswer({ n: 0 }, { version: 3, changed: false, data: undefined }),
     ]);
     const poller = new ViewPoller<{ n: number }>(client, 'rates', { intervalMs: 1000, maxIntervalMs: 8000 });
     poller.start();
@@ -92,8 +93,8 @@ describe('ViewPoller', () => {
   it('replaces the data when the answer is changed: true', async () => {
     const second = { n: 2 };
     const { client } = fakeClient<{ n: number }>([
-      { version: 3, changed: true, data: { n: 1 } },
-      { version: 4, changed: true, data: second },
+      makeViewAnswer({ n: 1 }, { version: 3, changed: true }),
+      makeViewAnswer(second, { version: 4, changed: true }),
     ]);
     const poller = new ViewPoller<{ n: number }>(client, 'rates', { intervalMs: 1000, maxIntervalMs: 8000 });
     poller.start();
@@ -104,7 +105,7 @@ describe('ViewPoller', () => {
   });
 
   it('makes no request while the document is hidden, and resumes when it is shown', async () => {
-    const { client, seen } = fakeClient<{ n: number }>([{ version: 1, changed: true, data: { n: 1 } }]);
+    const { client, seen } = fakeClient<{ n: number }>([makeViewAnswer({ n: 1 }, { version: 1, changed: true })]);
     setHidden(true);
     const poller = new ViewPoller<{ n: number }>(client, 'rates', { intervalMs: 1000, maxIntervalMs: 8000 });
     poller.start();
@@ -136,8 +137,8 @@ describe('ViewPoller', () => {
     const { client, seen } = fakeClient<{ n: number }>([
       new Error('down'),
       new Error('down'),
-      { version: 1, changed: true, data: { n: 1 } },
-      { version: 1, changed: false },
+      makeViewAnswer({ n: 1 }, { version: 1, changed: true }),
+      makeViewAnswer({ n: 0 }, { version: 1, changed: false, data: undefined }),
     ]);
     const poller = new ViewPoller<{ n: number }>(client, 'rates', { intervalMs: 1000, maxIntervalMs: 8000 });
     poller.start();
@@ -147,7 +148,7 @@ describe('ViewPoller', () => {
   });
 
   it('makes no request after stop', async () => {
-    const { client, seen } = fakeClient<{ n: number }>([{ version: 1, changed: true, data: { n: 1 } }]);
+    const { client, seen } = fakeClient<{ n: number }>([makeViewAnswer({ n: 1 }, { version: 1, changed: true })]);
     const poller = new ViewPoller<{ n: number }>(client, 'rates', { intervalMs: 1000, maxIntervalMs: 8000 });
     poller.start();
     await vi.advanceTimersByTimeAsync(0);
