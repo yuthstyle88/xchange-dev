@@ -48,6 +48,15 @@ import type {
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
+import { CampaignRulesEditor } from './CampaignRulesEditor';
+import {
+  isKnownBenefitType,
+  ruleErrors,
+  ruleFormOf,
+  ruleInputOf,
+  type RuleError,
+  type RuleForm,
+} from './campaign-rules';
 import * as table from './i18n';
 import './campaigns.css';
 
@@ -146,7 +155,10 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
 
   const createWrite = keyedWrite<CampaignCreateInput, CampaignCreateOutput>(api, 'POST', '/api/campaigns');
-  const saveWrite = keyedWrite<CampaignVersionSaveInput, CampaignVersionSaveOutput>(
+  const saveWrite = keyedWrite<
+    CampaignVersionSaveInput,
+    CampaignVersionSaveOutput
+  >(
     api,
     'PUT',
     (b) => `/api/campaigns/${b.campaignId}/draft`,
@@ -237,6 +249,9 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [formStackGroup, setFormStackGroup] = createSignal('DEFAULT');
   const [formPriority, setFormPriority] = createSignal('0');
   const [formBranches, setFormBranches] = createSignal<string[]>([]);
+  const [formRules, setFormRules] = createSignal<RuleForm[]>([]);
+  const [ruleRowErrors, setRuleRowErrors] = createSignal<RuleError[]>([]);
+  const [rulesSupported, setRulesSupported] = createSignal(true);
   const [isEditedAfterSimulation, setIsEditedAfterSimulation] = createSignal(false);
 
   // Coupon issue inputs
@@ -299,6 +314,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
           setFormStackGroup(v?.stackGroup ?? 'DEFAULT');
           setFormPriority(String(v?.priority ?? 0));
           setFormBranches(v?.branches ? [...v.branches] : []);
+          const storedRules = v?.rules ?? [];
+          const supported = storedRules.every((r) => isKnownBenefitType(r.benefitType));
+          setRulesSupported(supported);
+          setFormRules(supported ? storedRules.map(ruleFormOf) : []);
+          setRuleRowErrors([]);
           setIsEditedAfterSimulation(false);
         }
         if (v?.rules && v.rules.length > 0) {
@@ -334,6 +354,9 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setFormStackGroup('DEFAULT');
     setFormPriority('0');
     setFormBranches([]);
+    setFormRules([]);
+    setRuleRowErrors([]);
+    setRulesSupported(true);
     setIsEditedAfterSimulation(false);
     setCouponRuleId('');
     setCouponCount('1');
@@ -458,6 +481,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       : typeof rawBranches === 'string' && rawBranches.length > 0
         ? [rawBranches]
         : [];
+    if (rulesSupported()) {
+      const errs = formRules().map(ruleErrors);
+      setRuleRowErrors(errs);
+      if (errs.some((e) => e.calculation || e.caps)) {
+        return;
+      }
+    }
     const body: CampaignVersionSaveInput = {
       campaignId,
       startsAt: toBangkokStart(formStartsAt()),
@@ -466,6 +496,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       stackGroup: formStackGroup(),
       priority,
       branches,
+      ...(rulesSupported() ? { rules: formRules().map(ruleInputOf) } : {}),
     };
     if (writing()) return;
     setWriting(true);
@@ -1026,6 +1057,17 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               />
             </div>
           </div>
+
+          <CampaignRulesEditor
+            rules={formRules()}
+            readOnly={currentStatus() !== 'DRAFT' || !rulesSupported()}
+            errors={ruleRowErrors()}
+            onChange={(next) => {
+              setFormRules(next);
+              setRuleRowErrors([]);
+              setIsEditedAfterSimulation(true);
+            }}
+          />
 
           {/* Coupon Issue section */}
           <div class="xc-coupon-issue-section">
