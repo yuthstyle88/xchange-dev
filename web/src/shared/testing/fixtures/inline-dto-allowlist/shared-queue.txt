@@ -1,5 +1,0 @@
-# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
-# The migration ticket for shared/queue deletes this file.
-shared/queue/queue-store.branch.test.ts
-shared/queue/queue-store.gaps.test.ts
-shared/queue/queue-store.test.ts
