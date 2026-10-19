@@ -832,13 +832,23 @@ async fn a_save_with_settings_makes_create_possible() {
     room.finish().await;
 }
 
+/// §11.2: `RateAlertSettingsSave` (`RATES_STOCK` `FULL`) is held by `EXECUTIVE` and
+/// `RATE_MANAGER`; every role without it in `RoleGrants::seed(role)` (ADMIN included) is refused.
 #[actix_web::test]
-async fn only_executive_saves_or_reads_the_settings_admin_included() {
+async fn only_holders_of_rate_alert_settings_save_may_save_or_read_the_settings() {
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let room = Room::start().await;
+    assert!(
+        STAFF_ROLES
+            .iter()
+            .any(|r| !RoleGrants::seed(*r).contains(&Permission::RateAlertSettingsSave)),
+        "§11.2 must leave some role without RateAlertSettingsSave, or this test refuses nobody"
+    );
     for role in STAFF_ROLES
         .iter()
         .copied()
-        .filter(|r| *r != Role::Executive)
+        .filter(|r| !RoleGrants::seed(*r).contains(&Permission::RateAlertSettingsSave))
     {
         let who = room.staff(role).await;
         let a = call(
