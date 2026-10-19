@@ -105,15 +105,11 @@ impl Room {
                 .execute(&pool)
                 .await
                 .expect("insert a branch");
-            // USD 500.00 in each safe, for the transfer flow
-            sqlx::query(
-                "INSERT INTO ops_state (branch_id, phase, safe) \
-                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
-            )
-            .bind(branch)
-            .execute(&pool)
-            .await
-            .expect("the branch's safe");
+            sqlx::query("INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')")
+                .bind(branch)
+                .execute(&pool)
+                .await
+                .expect("the branch's ops_state");
             // LG-4 (#929, 1:1): the same USD 500.00 in the ledger's SAFE, which the cutover reads, and THB for
             // the OPEN counts, which now take their cash out of the safe (design §4.4).
             let safe = || xc_cash::domain::posting::CashPlace::Safe(BranchId::new(branch));
