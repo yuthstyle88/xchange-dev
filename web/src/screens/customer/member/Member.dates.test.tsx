@@ -1,27 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
-import type { MyMembershipData } from '../../../shared/api/generated/my_membership';
+import {
+  type MyMembershipData,
+  makeMyMembershipData,
+  makeNextExpiryDto,
+  makePointsDto,
+  makeTierProgressDto,
+} from '../../../shared/testing/fixtures';
 import { MemberScreen } from './Member';
 
-const BASE_MEMBER: MyMembershipData = {
+const BASE_MEMBER = makeMyMembershipData({
   tier: 'GOLD',
   effectiveUntil: '2026-11-15T00:00:00Z',
-  points: {
+  points: makePointsDto({
     available: 100,
     pending: 25,
-  },
+  }),
   pointsUnavailable: false,
-  nextExpiry: {
+  nextExpiry: makeNextExpiryDto({
     points: 50,
     at: '2026-12-31T23:59:59Z',
-  },
-  progress: {
+  }),
+  progress: makeTierProgressDto({
     basis: 'VOLUME_THB',
     current: '12500.00',
     next: '20000.00',
-  },
-};
+  }),
+});
 
 describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates', () => {
   let host: HTMLDivElement;
@@ -65,7 +71,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     setLang('th');
     viewResponse = {
       ...BASE_MEMBER,
-      nextExpiry: { points: 50, at: '2026-12-31T23:59:59Z' },
+      nextExpiry: makeNextExpiryDto({ points: 50, at: '2026-12-31T23:59:59Z' }),
     };
 
     dispose = render(() => <MemberScreen />, host);
@@ -101,7 +107,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     viewResponse = {
       ...BASE_MEMBER,
       effectiveUntil: '2026-12-31T18:30:00Z',
-      nextExpiry: { points: 50, at: '2026-12-31T18:30:00Z' },
+      nextExpiry: makeNextExpiryDto({ points: 50, at: '2026-12-31T18:30:00Z' }),
     };
 
     dispose = render(() => <MemberScreen />, host);
@@ -121,7 +127,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     viewResponse = {
       ...BASE_MEMBER,
       effectiveUntil: null,
-      nextExpiry: { points: 50, at: '2026-12-31T23:59:59Z' },
+      nextExpiry: makeNextExpiryDto({ points: 50, at: '2026-12-31T23:59:59Z' }),
     };
 
     dispose = render(() => <MemberScreen />, host);
@@ -150,7 +156,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     viewResponse = {
       ...BASE_MEMBER,
       effectiveUntil: '2026-12-31T16:59:59Z',
-      nextExpiry: { points: 50, at: '2026-12-31T16:59:59Z' },
+      nextExpiry: makeNextExpiryDto({ points: 50, at: '2026-12-31T16:59:59Z' }),
     };
 
     dispose = render(() => <MemberScreen />, host);
@@ -170,7 +176,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     viewResponse = {
       ...BASE_MEMBER,
       effectiveUntil: 'not-a-valid-date',
-      nextExpiry: { points: 50, at: '2026-12-31T18:30:00Z' },
+      nextExpiry: makeNextExpiryDto({ points: 50, at: '2026-12-31T18:30:00Z' }),
     };
 
     dispose = render(() => <MemberScreen />, host);
@@ -188,7 +194,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     viewResponse = {
       ...BASE_MEMBER,
       effectiveUntil: '2026-11-15T00:00:00Z',
-      nextExpiry: { points: 50, at: 'unparsable-expiry' },
+      nextExpiry: makeNextExpiryDto({ points: 50, at: 'unparsable-expiry' }),
     };
 
     dispose = render(() => <MemberScreen />, host);

@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { MyProfileData } from '../../../shared/api/generated/my_profile';
+import { makeMyConsent, makeMyProfileData } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { ProfileScreen } from './Profile';
 
@@ -21,18 +21,18 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-const PROFILE: MyProfileData = {
+const PROFILE = makeMyProfileData({
   customerId: 'cus-1',
   customerNo: 'C-000123',
   displayName: 'Somchai',
   preferredLanguage: 'th',
   status: 'ACTIVE',
   consents: [
-    { purpose: 'MARKETING', channel: 'EMAIL', granted: true, policyVersion: 2, lang: 'th', effectiveAt: '2026-10-01T00:00:00Z' },
-    { purpose: 'MARKETING', channel: 'SMS', granted: false, policyVersion: 2, lang: 'th', effectiveAt: '2026-10-01T00:00:00Z' },
-    { purpose: 'TERMS', channel: null, granted: true, policyVersion: 3, lang: 'th', effectiveAt: '2026-09-01T00:00:00Z' },
+    makeMyConsent({ purpose: 'MARKETING', channel: 'EMAIL', granted: true, policyVersion: 2, lang: 'th', effectiveAt: '2026-10-01T00:00:00Z' }),
+    makeMyConsent({ purpose: 'MARKETING', channel: 'SMS', granted: false, policyVersion: 2, lang: 'th', effectiveAt: '2026-10-01T00:00:00Z' }),
+    makeMyConsent({ purpose: 'TERMS', channel: null, granted: true, policyVersion: 3, lang: 'th', effectiveAt: '2026-09-01T00:00:00Z' }),
   ],
-};
+});
 
 function harness(opts: { profile?: Reply; profileWrite?: Reply; consentWrite?: Reply } = {}) {
   const writes: Write[] = [];
