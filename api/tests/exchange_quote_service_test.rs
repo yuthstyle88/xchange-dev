@@ -63,7 +63,7 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel, QuoteStatus};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
@@ -79,7 +79,7 @@ fn teller() -> SaveActor {
         id: TELLER.to_owned(),
         username: format!("user-{TELLER}"),
         employee_id: Some(TELLER.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

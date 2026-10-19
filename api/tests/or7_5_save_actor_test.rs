@@ -57,7 +57,6 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::extractors::actor::legacy_actor;
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
 /// The first organisation, which MAIN belongs to.
@@ -155,8 +154,6 @@ impl SessionReader for TellerSession {
                 None,
             );
             Callers {
-                owner: None,
-                staff: legacy_actor(&user, Utc::now()),
                 user: Some(user.clone()),
                 staff_user: Some(user),
             }

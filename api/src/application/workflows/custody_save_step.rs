@@ -7,7 +7,6 @@ use xc_shift::application::custody::service::CustodyService;
 use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
 use xc_shift::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
 
-use crate::application::custody_role::custody_role_of;
 use crate::application::workflows::save_step::{SaveContext, SaveStep, StepFuture};
 
 /// Asks custody whether a live exchange may be saved now by this person, and
@@ -50,7 +49,6 @@ impl SaveStep for CustodySaveStep {
             let actor = CustodyActor {
                 id: ctx.actor.id.clone(),
                 employee_id: ctx.actor.employee_id.clone(),
-                role: custody_role_of(ctx.actor.role),
             };
             self.custody
                 .check_save_in(tx, ctx.branch, &attempt, &actor, ctx.now)

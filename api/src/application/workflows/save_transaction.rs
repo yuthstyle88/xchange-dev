@@ -7,8 +7,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use xc_auth::domain::access::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role as AccessRole, StandingKind};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
@@ -331,7 +330,7 @@ impl SaveTransactionWorkflow {
                 id: actor_id.to_owned(),
                 username: cmd.staff.clone(),
                 employee_id: None,
-                role: Role::System,
+                standing: StandingKind::Staff(AccessRole::Admin),
             });
 
         let (this, branch) = (self.clone(), branch.clone());
@@ -543,8 +542,10 @@ impl SaveTransactionWorkflow {
                         branch_id: branch.clone(),
                         quote_id,
                         customer_id: form.customer_id.clone(),
-                        // Stopgap for #1413: transactions.booking_id FK targets v2_bookings. Keep NULL until BK-11 repoints FK to bookings(id).
-                        booking_id: None,
+                        booking_id: stepped
+                            .as_ref()
+                            .and_then(|(_, b, _)| b.as_ref())
+                            .map(|c| c.booking_id.clone()),
                         kiosk_request_id: extras.and_then(|e| e.kiosk_request_id.clone()),
                         staff_draft_id: extras.and_then(|e| e.staff_draft_id.clone()),
                         passport_key: passport.key.clone(),

@@ -17,6 +17,7 @@ use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::Standing;
 use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -31,7 +32,6 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::exchange_settings::{
     BranchExchangeLimitDto, ExchangeSettingsDto,
 };
-use crate::presentation::extractors::actor::legacy_actor;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, Locks, out_of_scope, role_not_allowed_here, server_error,
 };
@@ -122,8 +122,7 @@ impl CommandAction for ExchangeSettingsSaveCommand {
         if BranchScope::of(who, Permission::SystemSettings, Utc::now()) != BranchScope::All {
             return Err(out_of_scope());
         }
-        // OR-7 bridge, removed by #1026: the audit row still records the v2 role
-        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
+        let standing = Standing::of(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let org = organization_of(tx, branch).await?;
         let before = self
             .settings
@@ -144,7 +143,7 @@ impl CommandAction for ExchangeSettingsSaveCommand {
             tx,
             AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: legacy.role().as_str().to_owned(),
+                actor_role: standing.kind.audit_text().to_owned(),
                 scope: "organization".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: org.to_string(),
@@ -197,8 +196,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        // OR-7 bridge, removed by #1026: the audit row still records the v2 role
-        let legacy = legacy_actor(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
+        let standing = Standing::of(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let target = BranchId::new(input.id.clone());
         let limit = match input.approval_limit_thb.as_deref() {
             None => None,
@@ -232,7 +230,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
             tx,
             AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: legacy.role().as_str().to_owned(),
+                actor_role: standing.kind.audit_text().to_owned(),
                 scope: "branch".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: target.as_str().to_owned(),

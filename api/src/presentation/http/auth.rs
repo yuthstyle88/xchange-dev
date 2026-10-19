@@ -115,6 +115,11 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
             .app_data(body())
             .route(web::post().to(v3_logout)),
     );
+    cfg.service(
+        web::resource("/api/auth/password")
+            .app_data(body())
+            .route(web::post().to(v3_password)),
+    );
 
     // Old routes
     cfg.service(
@@ -470,6 +475,70 @@ async fn v3_logout(req: HttpRequest, session: web::Data<SessionService>) -> Http
     attach_logout_cookies(&mut resp);
     resp.insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
         .json(json!({ "saved": true }))
+}
+
+fn validation_response(field: &str, message: &str) -> HttpResponse {
+    HttpResponse::BadRequest()
+        .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+        .json(json!({
+            "error": {
+                "code": "validationFailed",
+                "field": field,
+                "message": message,
+            }
+        }))
+}
+
+async fn v3_password(
+    req: HttpRequest,
+    bytes: web::Bytes,
+    session: web::Data<SessionService>,
+) -> HttpResponse {
+    if !same_origin(&req) {
+        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
+    }
+    let body: Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง"),
+    };
+    let current_password = body
+        .get("currentPassword")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if current_password.is_empty() {
+        return validation_response("currentPassword", "กรุณากรอกรหัสผ่านปัจจุบัน");
+    }
+    let new_password = body
+        .get("newPassword")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if new_password.is_empty() {
+        return validation_response("newPassword", "กรุณากรอกรหัสผ่านใหม่");
+    }
+    let token = cookie(&req, SESSION_COOKIE);
+    if token.is_empty() {
+        return refusal_response(401, "signIn", "กรุณาเข้าสู่ระบบ");
+    }
+    let ip = client_address(&req);
+    let now = Utc::now();
+    match session
+        .change_password(&token, current_password, new_password, Some(ip), now)
+        .await
+    {
+        Ok(()) => {
+            let mut resp = HttpResponse::Ok();
+            attach_logout_cookies(&mut resp);
+            resp.insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+                .json(json!({ "saved": true }))
+        }
+        Err(SessionError::Identity(IdentityError::InvalidCredentials)) => {
+            refusal_response(401, "invalidCredentials", "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+        }
+        Err(SessionError::Identity(IdentityError::WeakPassword)) => {
+            validation_response("newPassword", "รหัสผ่านไม่ผ่านเงื่อนไขความปลอดภัย")
+        }
+        Err(err) => handle_session_error(err),
+    }
 }
 
 /// v2's `safe(employee)`.

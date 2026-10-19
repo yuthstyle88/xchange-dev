@@ -521,7 +521,6 @@ impl Policy {
                 _ => None,
             },
             EntryPath::OwnerRoute => match act {
-                "/api/v2/bookings" => Some(Need::Permission(Permission::BookingsAdmin)),
                 "/api/reference-rates" => Some(Need::Permission(Permission::ReferenceRatesRead)),
                 _ => Some(Need::Permission(Permission::UsersManage)),
             },
@@ -540,9 +539,6 @@ impl Policy {
             EntryPath::StaffBookings => match act {
                 "list" | "get" | "create" | "confirm" | "cancel" => {
                     Some(Need::Permission(Permission::BookingsDesk))
-                }
-                "member" | "settings" | "registrations" | "approveRegistration" => {
-                    Some(Need::Permission(Permission::BookingsAdmin))
                 }
                 _ => None,
             },

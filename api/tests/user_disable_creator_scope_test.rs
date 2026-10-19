@@ -224,11 +224,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }
@@ -424,13 +422,16 @@ async fn a_branch_admin_still_disables_its_own_branchs_teller() {
     db.finish().await;
 }
 
-/// Kept: an organisation-wide ADMIN disables an organisation-wide EXECUTIVE.
+/// Changed by RBAC C1a (owner decision Q4 A, PR 3083 §2 and §3.1 rule 3): an organisation-wide
+/// ADMIN no longer disables an EXECUTIVE; only EXECUTIVE + ADMIN (the owner, B3) does. The owner's
+/// case is in `rbac_c1a_user_commands_test.rs`.
 #[actix_web::test]
-async fn an_org_wide_admin_still_disables_an_executive() {
+async fn an_org_wide_admin_alone_cannot_disable_an_executive() {
     let db = TestDb::start().await;
     let exec = a_user_with(&db, "Exec", "EXECUTIVE", None).await;
     let a = disable(&db, ADMIN, &exec).await;
-    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
-    assert_eq!(status_of(&db, &exec).await, "DISABLED");
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "roleNotAllowed", "{}", a.text);
+    assert_eq!(status_of(&db, &exec).await, "ACTIVE");
     db.finish().await;
 }

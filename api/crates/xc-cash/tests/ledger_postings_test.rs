@@ -426,7 +426,7 @@ fn from_balances(b: &Balances) -> Vec<(String, i64)> {
     comparable(
         b.non_zero()
             .into_iter()
-            .map(|(c, m)| (c.as_str().to_string(), m.minor())),
+            .map(|(c, m)| (c.as_str().to_string(), m.try_minor().unwrap())),
     )
     .0
 }

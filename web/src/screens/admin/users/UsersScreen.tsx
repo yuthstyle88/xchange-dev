@@ -12,8 +12,7 @@ import type { UserChangeOutput } from '../../../shared/api/generated/user_disabl
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
-import { PasswordField } from '../../../shared/ui/PasswordField';
-import { useForm } from '../../../shared/ui/form';
+import { TempPasswordNotice } from '../../../shared/ui/TempPasswordNotice';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './users.css';
@@ -109,13 +108,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [createUsername, setCreateUsername] = createSignal('');
   const [createPhone, setCreatePhone] = createSignal('');
   const [createEmail, setCreateEmail] = createSignal('');
-  const [createPassword, setCreatePassword] = createSignal('');
   const [createRole, setCreateRole] = createSignal<string>('TELLER');
   const [createBranch, setCreateBranch] = createSignal<string>('');
 
   // Activate form state
   const [activatePhone, setActivatePhone] = createSignal('');
-  const [activatePassword, setActivatePassword] = createSignal('');
 
   // Grant form state
   const [grantRole, setGrantRole] = createSignal<string>('TELLER');
@@ -126,12 +123,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [profileDepartment, setProfileDepartment] = createSignal('');
   const [profilePosition, setProfilePosition] = createSignal('');
   const [profileTellCode, setProfileTellCode] = createSignal('');
-
-  const createForm = useForm();
-  const createPasswordField = createForm.field('password');
-
-  const activateForm = useForm();
-  const activatePasswordField = activateForm.field('activatePassword');
 
   let branchesSeq = 0;
   let usersSeq = 0;
@@ -211,7 +202,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setCreateUsername('');
     setCreatePhone('');
     setCreateEmail('');
-    setCreatePassword('');
     setCreateRole('TELLER');
     setCreateBranch(props.branch());
     setDialogError(null);
@@ -225,28 +215,21 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setPageSuccess(null);
     setDialogSubmitting(true);
 
-    const pwdInput = document.querySelector<HTMLInputElement>('input[name="password"]');
-    const pwd = pwdInput?.value || createPassword();
-    setCreatePassword('');
-    if (pwdInput) {
-      pwdInput.value = '';
-    }
-
     try {
-      await api.post('/api/users', {
+      const res = (await api.post('/api/users', {
         name: createName().trim(),
         username: createUsername().trim() || null,
         phone: createPhone().trim(),
         email: createEmail().trim() || null,
-        password: pwd,
         roles: [
           {
             role: createRole(),
             branch: createBranch() ? createBranch() : null,
           },
         ],
-      });
+      })) as { temporaryPassword?: string };
       if (openDialogKey() === sentFrom) setShowCreate(false);
+      setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successCreated'));
       await loadUsers();
     } catch (err: unknown) {
@@ -260,7 +243,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     dialogOpening++;
     setActivatingUser(user);
     setActivatePhone('');
-    setActivatePassword('');
     setDialogError(null);
   };
 
@@ -274,27 +256,20 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setPageSuccess(null);
     setDialogSubmitting(true);
 
-    const pwdInput = document.querySelector<HTMLInputElement>('input[name="activatePassword"]');
-    const pwd = pwdInput?.value || activatePassword();
-    setActivatePassword('');
-    if (pwdInput) {
-      pwdInput.value = '';
-    }
-
     const roles = user.roles.map((r) => ({
       role: r.role,
       branch: r.branch,
     }));
 
     try {
-      await api.post('/api/users', {
+      const res = (await api.post('/api/users', {
         name: user.name,
         phone: activatePhone().trim(),
-        password: pwd,
         roles: roles,
         userId: user.userId,
-      });
+      })) as { temporaryPassword?: string };
       if (openDialogKey() === sentFrom) setActivatingUser(null);
+      setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successActivated'));
       await loadUsers();
     } catch (err: unknown) {
@@ -530,19 +505,14 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         </Show>
         <Show when={tempPassword()}>
           {(pwd) => (
-            <div class="users-card" data-temp-password="">
-              <h3 class="users-dialog-title">{t('tempPasswordTitle')}</h3>
-              <p class="users-dialog-intro">{t('tempPasswordOnce')}</p>
-              <p><code>{pwd()}</code></p>
-              <button
-                type="button"
-                class="users-btn users-btn-primary"
-                data-users-action="temp-password-done"
-                onClick={() => setTempPassword(null)}
-              >
-                {t('tempPasswordDone')}
-              </button>
-            </div>
+            <TempPasswordNotice
+              password={pwd()}
+              title={t('tempPasswordTitle')}
+              note={t('tempPasswordOnce')}
+              copyLabel={t('tempPasswordCopy')}
+              doneLabel={t('tempPasswordDone')}
+              onDone={() => setTempPassword(null)}
+            />
           )}
         </Show>
 
@@ -754,14 +724,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
               </div>
 
               <div class="users-field">
-                <PasswordField
-                  field={createPasswordField}
-                  label={`${t('password')} *`}
-                  required
-                />
-              </div>
-
-              <div class="users-field">
                 <label class="users-label" for="create-role">{t('role')} *</label>
                 <select
                   id="create-role"
@@ -832,14 +794,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     class="users-input"
                     value={activatePhone()}
                     onInput={(e) => setActivatePhone(e.currentTarget.value)}
-                    required
-                  />
-                </div>
-
-                <div class="users-field">
-                  <PasswordField
-                    field={activatePasswordField}
-                    label={`${t('password')} *`}
                     required
                   />
                 </div>

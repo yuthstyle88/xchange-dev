@@ -219,7 +219,7 @@ fn figures_are_exact_where_v2_computed_in_binary_floating_point() {
     let q = quote_at(&wants(Side::Buy, "USD", "10000000"), &open("32.1"))
         .unwrap()
         .quote;
-    assert_eq!(q.thb.minor(), 32_100_000_000);
+    assert_eq!(q.thb.try_minor().unwrap(), 32_100_000_000);
     let q = quote_at(&wants(Side::Sell, "JPY", "10000000"), &open("0.0001"))
         .unwrap()
         .quote;

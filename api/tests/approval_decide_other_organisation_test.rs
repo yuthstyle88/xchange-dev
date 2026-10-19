@@ -22,7 +22,7 @@ use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::StandingKind;
 use xc_exchange::domain::reversal::reversal::Reversal;
 use xc_exchange::domain::transaction::transaction::TransactionId;
 use xc_kernel::ids::BranchId;
@@ -41,7 +41,7 @@ fn teller() -> SaveActor {
         id: "employee-front".to_owned(),
         username: "front".to_owned(),
         employee_id: Some("employee-front".to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(access::Role::Teller),
     }
 }
 

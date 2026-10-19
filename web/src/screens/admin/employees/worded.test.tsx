@@ -1,3 +1,5 @@
+// Amended by W8 (claude/177aa7ef): userCreate no longer takes a typed password (F9 #3155, owner Q5 A); the server
+// answers temporaryPassword once. xchange#564, the BE controller's F9 contract.
 // WE-15 (#1764): screens/admin/employees/ — show failed calls through wordedError
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
@@ -346,10 +348,8 @@ describe('Employees worded error handling (#1764)', () => {
         const d = theDialog();
         const nameInput = d.querySelector('input[name="name"]') as HTMLInputElement;
         const phoneInput = d.querySelector('input[name="phone"]') as HTMLInputElement;
-        const passInput = d.querySelector('input[name="password"]') as HTMLInputElement;
         nameInput.value = 'New User';
         phoneInput.value = '0812345678';
-        passInput.value = 'Secret1234!';
         (d.querySelector('button[type="submit"]') as HTMLButtonElement).click();
       });
     }

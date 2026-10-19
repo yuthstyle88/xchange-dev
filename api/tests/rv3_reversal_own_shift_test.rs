@@ -26,7 +26,7 @@ use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access;
-use xc_auth::domain::policy::value_objects::role::Role as V3Role;
+use xc_auth::domain::access::StandingKind;
 use xc_cash::domain::posting::{CashPlace, CashPostings};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -74,7 +74,7 @@ fn uuid_actor(id: Uuid) -> SaveActor {
         id: id.to_string(),
         username: format!("teller-{id}"),
         employee_id: None,
-        role: V3Role::Front,
+        standing: StandingKind::Staff(access::Role::Teller),
     }
 }
 
@@ -341,7 +341,12 @@ impl Shop {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        Decimal::new(b.get(CurrencyCode::parse(currency).unwrap()).minor(), 2)
+        Decimal::new(
+            b.get(CurrencyCode::parse(currency).unwrap())
+                .try_minor()
+                .unwrap(),
+            2,
+        )
     }
 
     async fn reversal(&self, id: ReversalId, column: &str) -> String {

@@ -278,9 +278,9 @@ async fn a_booking_without_a_member_or_no_booking_gives_no_keys() {
     let db = TestDb::start().await;
     let customer = unique("CU");
     db.seed_customer(&customer).await;
-    // The booking's own typed phone (`bookings.phone`) is never sent (D-6).
-    let (booked, document_ref) = db.seed_transaction(&customer).await;
-    db.seed_used_booking(None, &document_ref).await;
+    // A booking whose customer has no verified identity gives no keys (D-6).
+    let (booked, _) = db.seed_transaction(&customer).await;
+    member_phone_seeds::seed_completed_booking(&db.pool, MAIN, &customer, booked).await;
     let (walk_in, _) = db.seed_transaction(&customer).await;
 
     let mut tx = db.begin().await;

@@ -47,8 +47,8 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use save_common::*;
+use xc_auth::domain::access::StandingKind;
 use xc_auth::domain::access::{Actor, Role as BpRole, ScopedRole};
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_kernel::branch_tx::BranchTx;
@@ -115,7 +115,7 @@ fn save_actor(teller: &Actor) -> SaveActor {
         id: teller.user_id.clone(),
         username: teller.user_id.clone(),
         employee_id: Some(teller.user_id.clone()),
-        role: Role::Front,
+        standing: StandingKind::Staff(BpRole::Teller),
     }
 }
 

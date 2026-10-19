@@ -19,6 +19,7 @@ use crate::domain::token::{TokenVerifier, VerifiedToken};
 use crate::domain::user::{User, UserStatus};
 use crate::infrastructure::user::PgUserRepository;
 
+use super::login_recorder::{LoginAttempt, LoginRecorder, LoginResult};
 use super::refresh_token::{decrypt_refresh_token, encrypt_refresh_token};
 
 pub const SESSION_SECONDS: i64 = 43_200;
@@ -40,6 +41,10 @@ pub struct SessionUser {
     #[serde(rename = "organizationId")]
     pub organization_id: String,
     pub roles: Vec<SessionUserRole>,
+    /// `user_sessions.must_change_password` (design §3.6 F11, BE ruling #564 issuecomment-6245742828 (a)): true
+    /// until the person changes the temporary password. RBAC F11a sets it on the login and session answers.
+    #[serde(rename = "mustChangePassword", default)]
+    pub must_change_password: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,7 +126,16 @@ pub fn generate_uuid() -> String {
     )
 }
 
-type SessionCheckRow = (String, String, String, String, i32, i32, DateTime<Utc>);
+type SessionCheckRow = (
+    String,
+    String,
+    String,
+    String,
+    i32,
+    i32,
+    DateTime<Utc>,
+    bool,
+);
 type RefreshSessionRow = (
     String,
     String,
@@ -132,6 +146,7 @@ type RefreshSessionRow = (
     i32,
     DateTime<Utc>,
     Option<Vec<u8>>,
+    bool,
 );
 type ActiveUserRow = (
     String,
@@ -323,14 +338,18 @@ impl SessionService {
         organization_id: &str,
         name: &str,
         version: i32,
-        refresh_token: Option<&str>,
+        login: &IdentityLoginResponse,
         now: DateTime<Utc>,
     ) -> Result<SignInTail, SessionError> {
         let token = generate_session_token();
         let token_hash = sha256_hex(&token);
         let expires = now + Duration::seconds(SESSION_SECONDS);
+        let must_change_password = login.must_change_password.unwrap_or(false);
 
-        let refresh_enc = match (self.client_secret.as_deref(), refresh_token) {
+        let refresh_enc = match (
+            self.client_secret.as_deref(),
+            login.refresh_token.as_deref(),
+        ) {
             (Some(secret), Some(rt)) => {
                 let enc = encrypt_refresh_token(secret, rt).map_err(|_| {
                     SessionError::Identity(IdentityError::unavailable(
@@ -351,8 +370,8 @@ impl SessionService {
             .map_err(|e| SessionError::Database(e.to_string()))?;
         let branch = Self::initial_branch_in(&mut conn, user_id, now).await?;
         sqlx::query(
-            "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id, branch_id) \
-             VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid, $7)",
+            "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id, branch_id, must_change_password) \
+             VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid, $7, $8)",
         )
         .bind(&token_hash)
         .bind(user_id)
@@ -361,6 +380,7 @@ impl SessionService {
         .bind(refresh_enc)
         .bind(organization_id)
         .bind(branch.as_ref().map(BranchId::as_str))
+        .bind(must_change_password)
         .execute(&mut *conn)
         .await
         .map_err(|e| SessionError::Database(e.to_string()))?;
@@ -375,6 +395,7 @@ impl SessionService {
                 name: name.to_string(),
                 organization_id: organization_id.to_string(),
                 roles,
+                must_change_password,
             },
             session_token: token,
         })
@@ -385,12 +406,28 @@ impl SessionService {
         login: IdentityLoginResponse,
         now: DateTime<Utc>,
     ) -> Result<SignInTail, SessionError> {
+        self.sign_in_with_login_inner(login, now)
+            .await
+            .map_err(|(e, _)| e)
+    }
+
+    async fn sign_in_with_login_inner(
+        &self,
+        login: IdentityLoginResponse,
+        now: DateTime<Utc>,
+    ) -> Result<SignInTail, (SessionError, Option<(String, String)>)> {
         let verifier = self.verifier.as_ref().ok_or_else(|| {
-            IdentityError::unavailable("/auth/login", 503, "verifier_not_configured")
+            (
+                IdentityError::unavailable("/auth/login", 503, "verifier_not_configured").into(),
+                None,
+            )
         })?;
 
         let verified = verifier.verify(&login.access_token).await.map_err(|_| {
-            IdentityError::unavailable("/auth/login", 503, "token_verification_failed")
+            (
+                IdentityError::unavailable("/auth/login", 503, "token_verification_failed").into(),
+                None,
+            )
         })?;
 
         let row: Option<(String, String, String, String, i32)> = sqlx::query_as(
@@ -399,29 +436,26 @@ impl SessionService {
         .bind(&verified.subject)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
+        .map_err(|e| (SessionError::Database(e.to_string()), None))?;
 
         let Some((user_id, organization_id, name, status, version)) = row else {
-            return Err(SessionError::UserNotBound);
+            return Err((SessionError::UserNotBound, None));
         };
 
         if status == "DISABLED" {
-            return Err(SessionError::UserDisabled);
+            return Err((SessionError::UserDisabled, Some((user_id, organization_id))));
         }
 
         if status != "ACTIVE" {
-            return Err(IdentityError::SignIn.into());
+            return Err((
+                IdentityError::SignIn.into(),
+                Some((user_id, organization_id)),
+            ));
         }
 
-        self.create_session_for_user(
-            &user_id,
-            &organization_id,
-            &name,
-            version,
-            login.refresh_token.as_deref(),
-            now,
-        )
-        .await
+        self.create_session_for_user(&user_id, &organization_id, &name, version, &login, now)
+            .await
+            .map_err(|e| (e, None))
     }
 
     fn identity_identifier(raw: &str) -> String {
@@ -482,8 +516,55 @@ impl SessionService {
             .ok_or_else(|| IdentityError::unavailable("/api/auth/login", 503, "not_configured"))?;
 
         let id = Self::identity_identifier(identifier);
-        let login_resp = identity.login(&id, password, client_ip).await?;
-        self.sign_in_with_login(login_resp, now).await
+        let outcome = match identity.login(&id, password, client_ip).await {
+            Ok(login_resp) => self.sign_in_with_login_inner(login_resp, now).await,
+            Err(err) => Err((err.into(), None)),
+        };
+
+        let attempt = match &outcome {
+            Ok(tail) => LoginAttempt {
+                identifier_sent: &id,
+                ip: client_ip,
+                result: LoginResult::Ok,
+                user_id: Some(&tail.user.id),
+                organization_id: Some(&tail.user.organization_id),
+            },
+            Err((err, user_org)) => {
+                let (user_id, organization_id) = match user_org {
+                    Some((u, o)) => (Some(u.as_str()), Some(o.as_str())),
+                    None => (None, None),
+                };
+                LoginAttempt {
+                    identifier_sent: &id,
+                    ip: client_ip,
+                    result: match err {
+                        SessionError::Identity(IdentityError::InvalidCredentials) => {
+                            LoginResult::BadPassword
+                        }
+                        SessionError::Identity(
+                            IdentityError::TooManyAttempts | IdentityError::AccountLocked,
+                        ) => LoginResult::RateLimited,
+                        SessionError::Identity(IdentityError::IdentityDisabled) => {
+                            LoginResult::NotActive
+                        }
+                        SessionError::UserNotBound => LoginResult::UnknownUser,
+                        SessionError::UserDisabled => LoginResult::NotActive,
+                        SessionError::Identity(IdentityError::SignIn) if user_org.is_some() => {
+                            LoginResult::NotActive
+                        }
+                        _ => LoginResult::Unavailable,
+                    },
+                    user_id,
+                    organization_id,
+                }
+            }
+        };
+
+        if let Err(e) = LoginRecorder::new(&self.pool).record(attempt).await {
+            eprintln!("login_history write failed: {e}");
+        }
+
+        outcome.map_err(|(e, _)| e)
     }
 
     pub async fn session_check(
@@ -493,7 +574,7 @@ impl SessionService {
     ) -> Result<Option<SessionUser>, SessionError> {
         let token_hash = sha256_hex(session_token);
         let row: Option<SessionCheckRow> = sqlx::query_as(
-            "SELECT u.id::text, u.name, u.organization_id::text, u.status, u.version, s.version, s.expires \
+            "SELECT u.id::text, u.name, u.organization_id::text, u.status, u.version, s.version, s.expires, s.must_change_password \
              FROM user_sessions s JOIN users u ON u.id = s.user_id \
              WHERE s.hash = $1",
         )
@@ -502,7 +583,17 @@ impl SessionService {
         .await
         .map_err(|e| SessionError::Database(e.to_string()))?;
 
-        let Some((user_id, name, org_id, status, u_version, s_version, expires)) = row else {
+        let Some((
+            user_id,
+            name,
+            org_id,
+            status,
+            u_version,
+            s_version,
+            expires,
+            must_change_password,
+        )) = row
+        else {
             return Ok(None);
         };
 
@@ -519,7 +610,50 @@ impl SessionService {
             name,
             organization_id: org_id,
             roles,
+            must_change_password,
         }))
+    }
+
+    async fn decrypt_and_refresh(
+        &self,
+        identity: &Arc<dyn IdentityClient>,
+        secret: &str,
+        token_hash: &str,
+        refresh_enc: Option<Vec<u8>>,
+        client_ip: Option<&str>,
+    ) -> Result<(String, IdentityLoginResponse), SessionError> {
+        let Some(enc_bytes) = refresh_enc else {
+            let _ = sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
+                .bind(token_hash)
+                .execute(&self.pool)
+                .await;
+            return Err(IdentityError::SignIn.into());
+        };
+
+        let decrypted_refresh = match decrypt_refresh_token(secret, &enc_bytes) {
+            Ok(rt) => rt,
+            Err(_) => {
+                let _ = sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
+                    .bind(token_hash)
+                    .execute(&self.pool)
+                    .await;
+                return Err(IdentityError::SignIn.into());
+            }
+        };
+
+        let login_resp = match identity.refresh(&decrypted_refresh, client_ip).await {
+            Ok(resp) => resp,
+            Err(e @ IdentityError::Unavailable { .. }) => return Err(e.into()),
+            Err(e) => {
+                let _ = sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
+                    .bind(token_hash)
+                    .execute(&self.pool)
+                    .await;
+                return Err(e.into());
+            }
+        };
+
+        Ok((decrypted_refresh, login_resp))
     }
 
     pub async fn refresh(
@@ -540,7 +674,7 @@ impl SessionService {
 
         let token_hash = sha256_hex(session_token);
         let row: Option<RefreshSessionRow> = sqlx::query_as(
-            "SELECT u.id::text, u.name, u.organization_id::text, u.auth_subject, u.status, u.version, s.version, s.expires, s.refresh_token_enc \
+            "SELECT u.id::text, u.name, u.organization_id::text, u.auth_subject, u.status, u.version, s.version, s.expires, s.refresh_token_enc, s.must_change_password \
              FROM user_sessions s JOIN users u ON u.id = s.user_id \
              WHERE s.hash = $1",
         )
@@ -559,6 +693,7 @@ impl SessionService {
             s_version,
             expires,
             refresh_enc,
+            must_change_password,
         )) = row
         else {
             return Err(IdentityError::SignIn.into());
@@ -572,36 +707,9 @@ impl SessionService {
             return Err(IdentityError::SignIn.into());
         }
 
-        let Some(enc_bytes) = refresh_enc else {
-            let _ = sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
-                .bind(&token_hash)
-                .execute(&self.pool)
-                .await;
-            return Err(IdentityError::SignIn.into());
-        };
-
-        let decrypted_refresh = match decrypt_refresh_token(secret, &enc_bytes) {
-            Ok(rt) => rt,
-            Err(_) => {
-                let _ = sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
-                    .bind(&token_hash)
-                    .execute(&self.pool)
-                    .await;
-                return Err(IdentityError::SignIn.into());
-            }
-        };
-
-        let login_resp = match identity.refresh(&decrypted_refresh, client_ip).await {
-            Ok(resp) => resp,
-            Err(e @ IdentityError::Unavailable { .. }) => return Err(e.into()),
-            Err(e) => {
-                let _ = sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
-                    .bind(&token_hash)
-                    .execute(&self.pool)
-                    .await;
-                return Err(e.into());
-            }
-        };
+        let (decrypted_refresh, login_resp) = self
+            .decrypt_and_refresh(identity, secret, &token_hash, refresh_enc, client_ip)
+            .await?;
 
         let verified = match verifier.verify(&login_resp.access_token).await {
             Ok(v) => v,
@@ -656,7 +764,86 @@ impl SessionService {
             name,
             organization_id: org_id,
             roles,
+            must_change_password,
         })
+    }
+
+    /// `POST /api/auth/password` (design §3.6 F11; RBAC F11a fills the body, F11b calls it from `http/auth.rs`):
+    /// reads the session by `session_token`, decrypts its refresh token, gets an access token with
+    /// `IdentityClient::refresh`, then `IdentityClient::change_password(access_token, current, new, client_ip)`.
+    /// On success the session row is deleted, so the session ends (Identity revokes all its tokens), and the caller
+    /// clears the cookie as logout does. Identity's refusals come back as `SessionError::Identity`.
+    pub async fn change_password(
+        &self,
+        session_token: &str,
+        current_password: &str,
+        new_password: &str,
+        client_ip: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<(), SessionError> {
+        let identity = self.identity.as_ref().ok_or_else(|| {
+            IdentityError::unavailable("/api/auth/password", 503, "not_configured")
+        })?;
+        let secret = self.client_secret.as_deref().ok_or_else(|| {
+            IdentityError::unavailable("/api/auth/password", 503, "client_secret_missing")
+        })?;
+
+        let token_hash = sha256_hex(session_token);
+        let row: Option<(String, i32, i32, DateTime<Utc>, Option<Vec<u8>>)> = sqlx::query_as(
+            "SELECT u.status, u.version, s.version, s.expires, s.refresh_token_enc \
+             FROM user_sessions s JOIN users u ON u.id = s.user_id \
+             WHERE s.hash = $1",
+        )
+        .bind(&token_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SessionError::Database(e.to_string()))?;
+
+        let Some((status, u_version, s_version, expires, refresh_enc)) = row else {
+            return Err(IdentityError::SignIn.into());
+        };
+
+        if expires <= now || status != "ACTIVE" || u_version != s_version {
+            return Err(IdentityError::SignIn.into());
+        }
+
+        let (_, login_resp) = self
+            .decrypt_and_refresh(identity, secret, &token_hash, refresh_enc, client_ip)
+            .await?;
+        // Identity may rotate the refresh token: store it before the change call, so a refused
+        // change leaves a session that still refreshes (as `refresh` does).
+        if let Some(rotated) = login_resp.refresh_token.as_deref() {
+            let enc = encrypt_refresh_token(secret, rotated).map_err(|_| {
+                SessionError::Identity(IdentityError::unavailable(
+                    "/api/auth/password",
+                    503,
+                    "encrypt_failed",
+                ))
+            })?;
+            sqlx::query("UPDATE user_sessions SET refresh_token_enc = $1 WHERE hash = $2")
+                .bind(enc)
+                .bind(&token_hash)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| SessionError::Database(e.to_string()))?;
+        }
+
+        identity
+            .change_password(
+                &login_resp.access_token,
+                current_password,
+                new_password,
+                client_ip,
+            )
+            .await?;
+
+        sqlx::query("DELETE FROM user_sessions WHERE hash = $1")
+            .bind(&token_hash)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+
+        Ok(())
     }
 
     pub async fn logout(

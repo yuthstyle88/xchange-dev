@@ -23,7 +23,7 @@
 //!   which holds BookingsDesk, so it hears what a role outside the counter hears;
 //! - D-4: an employee naming a branch outside their scope is refused, no longer moved to their own.
 //!
-//! The owner actions keep their row through the owner route: BookingsAdmin, EXECUTIVE.
+//! v2's owner bookings route and its bookings-admin rows went with v2's booking (BK-11 #1413).
 
 mod policy_common;
 
@@ -105,20 +105,6 @@ fn the_counter_roles_list_get_create_confirm_and_cancel() {
 }
 
 #[test]
-fn the_owner_actions_are_the_owners_alone() {
-    for r in COUNTER_ROLES {
-        for name in OWNER_ACTIONS {
-            assert_eq!(
-                said(ask(Some(&staff(r, B2)), EntryPath::StaffBookings, name)),
-                (OWNER_ONLY.to_owned(), 403),
-                "{} {name}",
-                r.as_str()
-            );
-        }
-    }
-}
-
-#[test]
 fn the_other_roles_are_refused() {
     for r in OTHER_ROLES {
         for name in COUNTER_ACTIONS {
@@ -156,34 +142,6 @@ fn a_name_the_bookings_do_not_know_is_a_bad_request() {
                 r.as_str()
             );
         }
-    }
-}
-
-#[test]
-fn the_owner_route_is_unchanged() {
-    // `POST /api/v2/bookings` keeps its owner-only check (it asks as "/api/v2/bookings"; BookingsAdmin,
-    // the B1 translation of OWNER, is EXECUTIVE's); the action is judged after it
-    let name = "/api/v2/bookings";
-    assert_eq!(ask(Some(&owner()), EntryPath::OwnerRoute, name), Ok(()));
-    assert_eq!(
-        ask(
-            Some(&staff(Role::Executive, B2)),
-            EntryPath::OwnerRoute,
-            name
-        ),
-        Ok(())
-    );
-    assert_eq!(
-        said(ask(None, EntryPath::OwnerRoute, name)),
-        (SIGN_IN.to_owned(), 401)
-    );
-    for r in BLUEPRINT.into_iter().filter(|r| *r != Role::Executive) {
-        assert_eq!(
-            said(ask(Some(&staff(r, B2)), EntryPath::OwnerRoute, name)),
-            (OWNER_ONLY.to_owned(), 403),
-            "{}",
-            r.as_str()
-        );
     }
 }
 

@@ -14,6 +14,7 @@ import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card } from '../../../shared/ui/Card';
 import { PasswordField } from '../../../shared/ui/PasswordField';
+import { TempPasswordNotice } from '../../../shared/ui/TempPasswordNotice';
 import { useForm } from '../../../shared/ui/form';
 import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
@@ -48,6 +49,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [selectedBranch, setSelectedBranch] = createSignal('');
   const [disabling, setDisabling] = createSignal(false);
+  const [tempPassword, setTempPassword] = createSignal<string | null>(null);
 
   const filteredEmployees = () => {
     const picked = selectedBranch();
@@ -143,6 +145,7 @@ export function Employees(props: AdminMenuProps): JSX.Element {
       lastBranch = b;
       currentOpsVersion = undefined;
       gen++;
+      setTempPassword(null);
       readEmployees();
       readOperations(true);
     } else {
@@ -158,8 +161,6 @@ export function Employees(props: AdminMenuProps): JSX.Element {
     branches().find((b) => b.id === branchId)?.name ?? branchId;
 
   function openCreateDialog() {
-    const form = useForm();
-    const passwordField = form.field('password');
     let formEl: HTMLFormElement | undefined;
     const [error, setError] = createSignal<string | null>(null);
     const [submitting, setSubmitting] = createSignal(false);
@@ -173,19 +174,19 @@ export function Employees(props: AdminMenuProps): JSX.Element {
         const data = new FormData(formEl);
         const email = String(data.get('email') ?? '').trim();
         const username = String(data.get('username') ?? '').trim();
-        await api.post('/api/users', {
+        const res = (await api.post('/api/users', {
           name: String(data.get('name') ?? ''),
           username: username === '' ? null : username,
           phone: String(data.get('phone') ?? '').trim(),
           email: email === '' ? null : email,
-          password: String(data.get('password') ?? ''),
           roles: [
             {
               role: String(data.get('role') ?? 'TELLER'),
               branch: String(data.get('branchId') ?? props.branch()),
             },
           ],
-        });
+        })) as { temporaryPassword?: string };
+        setTempPassword(res.temporaryPassword ?? null);
         closeDialog();
         await reReadBoth();
       } catch (err: unknown) {
@@ -232,11 +233,6 @@ export function Employees(props: AdminMenuProps): JSX.Element {
               </For>
             </select>
           </label>
-          <PasswordField
-            field={passwordField}
-            label={t('password')}
-            required
-          />
         </div>
         <p>{t('handOver')}</p>
         <Show when={error()}>
@@ -354,6 +350,19 @@ export function Employees(props: AdminMenuProps): JSX.Element {
 
         <Show when={!employeesError() && operationsError()}>
           <div role="alert">{operationsError()}</div>
+        </Show>
+
+        <Show when={tempPassword()}>
+          {(pwd) => (
+            <TempPasswordNotice
+              password={pwd()}
+              title={t('tempPasswordTitle')}
+              note={t('tempPasswordOnce')}
+              copyLabel={t('tempPasswordCopy')}
+              doneLabel={t('tempPasswordDone')}
+              onDone={() => setTempPassword(null)}
+            />
+          )}
         </Show>
 
         <Show when={!employeesError()}>

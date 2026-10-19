@@ -41,7 +41,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Row};
 use uuid::Uuid;
 
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_booking::infrastructure::booking_repository::PgBookingRepository;
 use xc_booking::infrastructure::slot_repository::PgSlotRepository;
@@ -1077,7 +1077,7 @@ async fn no_rate_check_depends_on_the_booking() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let claim = BookingClaim {
         booking_id: "BK-test".to_string(),
@@ -1146,7 +1146,7 @@ async fn save_step_with_checked_in_booking_completes_with_transaction_id() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let claim = BookingClaim {
         booking_id: "BK-save-checked-in".to_string(),
@@ -1183,8 +1183,8 @@ async fn save_step_with_checked_in_booking_completes_with_transaction_id() {
             .await
             .expect("fetch tx");
     assert!(
-        tx_booking_id.is_none(),
-        "transactions.booking_id must stay NULL per R1"
+        tx_booking_id == Some("BK-save-checked-in".to_owned()),
+        "transactions.booking_id names the Blueprint booking (BK-11)"
     );
 
     harness.teardown().await;
@@ -1230,7 +1230,7 @@ async fn save_step_with_another_customer_booking_refuses_booking_not_this_custom
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let claim = BookingClaim {
         booking_id: "BK-save-other-cust".to_string(),

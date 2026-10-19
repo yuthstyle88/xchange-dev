@@ -38,7 +38,7 @@ fn checked_add_money(a: Money, b: Money) -> AppResult<Money> {
 }
 
 /// Computes the reference principal and spread for a transaction with a reference rate.
-/// Rounds the reference value to cents using `xc_kernel::money::ExchangeArithmetic::thb`.
+/// Rounds the reference value to cents using `xc_kernel::money::ExchangeArithmetic::try_thb`.
 pub fn compute_reference_exchange(
     amount: Decimal,
     ref_rate: Decimal,

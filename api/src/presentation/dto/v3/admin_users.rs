@@ -21,6 +21,14 @@ pub struct AdminUserRole {
 pub struct AdminUserRow {
     pub user_id: String,
     pub name: String,
+    #[ts(optional = nullable)]
+    pub employee_code: Option<String>,
+    #[ts(optional = nullable)]
+    pub department: Option<String>,
+    #[ts(optional = nullable)]
+    pub position: Option<String>,
+    #[ts(optional = nullable)]
+    pub tell_code: Option<String>,
     /// `INVITED`, `ACTIVE` or `DISABLED`.
     pub status: String,
     pub version: i32,

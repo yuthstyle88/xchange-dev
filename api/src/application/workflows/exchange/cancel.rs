@@ -81,7 +81,7 @@ impl CancelTransaction {
                 tx,
                 &AuditEvent {
                     actor_id: who.id.clone(),
-                    actor_role: who.role.as_str().to_string(),
+                    actor_role: who.audit_role().to_string(),
                     scope: "branch".to_string(),
                     action: "transaction.cancelled".to_string(),
                     object_ref: id.0.to_string(),

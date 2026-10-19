@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use pos_error::AppError;
 use save_common::{JPEG, MAIN, Shop, at, branch, form, fund_ledger_drawer, seed_opener, unique};
 use sqlx::PgPool;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xchange::application::workflows::save_step::{SaveActor, SaveExtras};
 
 /// `ShiftError::NoOpenShift`'s sentence.
@@ -121,12 +121,12 @@ fn after_one_purchase() -> BTreeMap<String, String> {
         .collect()
 }
 
-fn saver(id: &str, role: Role) -> SaveActor {
+fn saver(id: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
         username: id.to_owned(),
-        employee_id: (role != Role::Owner).then(|| id.to_owned()),
-        role,
+        employee_id: (standing != StandingKind::Owner).then(|| id.to_owned()),
+        standing,
     }
 }
 
@@ -181,7 +181,7 @@ async fn a_staff_savers_own_open_shift_takes_the_stock() {
     )
     .await;
 
-    desk.save(&saver("E-SAVER", Role::Front))
+    desk.save(&saver("E-SAVER", StandingKind::Staff(AccessRole::Teller)))
         .await
         .expect("the saver's own shift takes the save");
 
@@ -205,7 +205,9 @@ async fn a_saver_with_no_open_shift_is_refused_and_nothing_is_written() {
     let desk = Desk::open().await;
     let before = desk.transactions().await;
 
-    let refused = desk.save(&saver("E-NOSHIFT", Role::Front)).await;
+    let refused = desk
+        .save(&saver("E-NOSHIFT", StandingKind::Staff(AccessRole::Teller)))
+        .await;
 
     assert!(
         matches!(&refused, Err(AppError::Domain(s)) if s == NO_OPEN_SHIFT),
@@ -232,7 +234,7 @@ async fn the_owner_saves_on_the_owners_own_shift() {
     )
     .await;
 
-    desk.save(&saver("owner", Role::Owner))
+    desk.save(&saver("owner", StandingKind::Owner))
         .await
         .expect("the owner's own shift takes the save");
 
@@ -251,7 +253,7 @@ async fn a_saver_named_by_users_id_saves_on_that_users_shift() {
     let user = user_of(&desk.shop.pool, "E-SAVER").await;
     let mine = seed_shift(&desk.shop.pool, MAIN, &user, true).await;
 
-    desk.save(&saver(&user, Role::Front))
+    desk.save(&saver(&user, StandingKind::Staff(AccessRole::Teller)))
         .await
         .expect("the user's own shift takes the save");
 
@@ -266,7 +268,9 @@ async fn a_saver_no_user_answers_to_is_refused_with_no_open_shift() {
     let desk = Desk::open().await;
     let before = desk.transactions().await;
 
-    let refused = desk.save(&saver("E-GHOST", Role::Front)).await;
+    let refused = desk
+        .save(&saver("E-GHOST", StandingKind::Staff(AccessRole::Teller)))
+        .await;
 
     assert!(
         matches!(&refused, Err(AppError::Domain(s)) if s == NO_OPEN_SHIFT),

@@ -524,11 +524,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }
@@ -776,20 +774,42 @@ struct ChannelRows {
     referred_booking: (String, Option<String>),
 }
 
-/// A USED booking `id` at B1 whose `transaction_ref` is the number `doc` (the row redeemed it).
+/// A COMPLETED Blueprint booking `id` at B1 whose `transaction_id` is the exchange numbered `doc` (BK-11).
 async fn booking_for(room: &Room, id: &str, doc: &str) {
+    room.customer(ORG, id).await;
+    let slot_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status) \
+         VALUES (gen_random_uuid(), $1::uuid, $2, '2026-10-05', '2026-10-05T03:00:00Z', '2026-10-05T03:30:00Z', 10, 0, 'OPEN') \
+         ON CONFLICT (branch_id, start_at) DO UPDATE SET capacity = booking_slots.capacity \
+         RETURNING id",
+    )
+    .bind(ORG)
+    .bind(B1)
+    .fetch_one(&room.pool)
+    .await
+    .expect("seed slot");
     sqlx::query(
-        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, amount, rate, \
-           status, created_at, created_by, submission_id, transaction_ref, organization_id) \
-         VALUES ($1, $2, $1, 'h', 'n', '0800000000', 'BUY', 'USD', 1, 1, 'USED', now(), 'test', $1, $3, $4::uuid)",
+        "INSERT INTO bookings ( \
+             id, organization_id, branch_id, booking_no, customer_id, slot_id, \
+             shop_side, requested_currency, requested_quantity, source_channel, \
+             status, qr_token_hash, qr_version, confirm_expires_at, partner_attribution_id, \
+             transaction_id, created_by \
+         ) VALUES ( \
+             $1, $2::uuid, $3, $1, $1, $4, \
+             'BUY', 'USD', 100.0, 'DESK', \
+             'COMPLETED', $5, 1, NULL, NULL, \
+             (SELECT id FROM transactions WHERE document_ref = $6), 'test' \
+         )",
     )
     .bind(id)
-    .bind(B1)
-    .bind(doc)
     .bind(ORG)
+    .bind(B1)
+    .bind(slot_id)
+    .bind(id.as_bytes())
+    .bind(doc)
     .execute(&room.pool)
     .await
-    .expect("a used booking");
+    .expect("a completed booking");
 }
 
 async fn seed_channels(room: &Room) -> ChannelRows {

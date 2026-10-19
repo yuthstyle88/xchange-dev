@@ -14,7 +14,7 @@ use crate::domain::planner::planner_draft::{DraftAmount, DraftPlan};
 /// An estimate. Never a commitment: the rate is fixed at the desk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannerEstimate {
-    /// `ExchangeArithmetic::thb(quantity, rate, unit_size)`, as the desk quote computes it.
+    /// `ExchangeArithmetic::try_thb(quantity, rate, unit_size)`, as the desk quote computes it.
     pub thb: Money,
     /// The published rate of the shop's side (`CustomerSide::to_shop`).
     pub rate: Rate,
