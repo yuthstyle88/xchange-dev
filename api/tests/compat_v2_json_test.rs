@@ -19,7 +19,7 @@ use xc_customer::domain::customer::entities::customer::Customer;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side};
-use xc_rate::domain::branch::entities::branch::Branch;
+use xc_rate::domain::branch::entities::branch::{Branch, BranchStatus};
 use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_rate::domain::rate::entities::rate_change::RateChange;
 use xc_shift::domain::custody::entities::attendance::Attendance;
@@ -722,6 +722,8 @@ fn branches_json_prints_main_without_a_request_id() {
             timezone: "Asia/Bangkok".to_string(),
             opening_hours: None,
             booking_enabled: false,
+            contact_channels: Vec::new(),
+            status: BranchStatus::Active,
         },
         Branch {
             id: BranchId::new("B00000000-0000-4000-8000-0000000a0002"),
@@ -733,6 +735,8 @@ fn branches_json_prints_main_without_a_request_id() {
             timezone: "Asia/Bangkok".to_string(),
             opening_hours: None,
             booking_enabled: false,
+            contact_channels: Vec::new(),
+            status: BranchStatus::Active,
         },
         Branch {
             id: BranchId::new("B00000000-0000-4000-8000-0000000a0003"),
@@ -744,6 +748,8 @@ fn branches_json_prints_main_without_a_request_id() {
             timezone: "Asia/Bangkok".to_string(),
             opening_hours: None,
             booking_enabled: false,
+            contact_channels: Vec::new(),
+            status: BranchStatus::Active,
         },
     ];
     let printed = branches_json(&branches);
@@ -1086,6 +1092,8 @@ fn text_that_starts_with_a_formula_sign_is_printed_as_typed() {
             timezone: "Asia/Bangkok".to_string(),
             opening_hours: None,
             booking_enabled: false,
+            contact_channels: Vec::new(),
+            status: BranchStatus::Active,
         };
         let printed = branches_json(&[branch]);
         assert_eq!(member(&items(&printed)[0], "name").to_value(), json!(typed));
