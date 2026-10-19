@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(
             opening,
             Decimal::from(150_000_000),
-            "150M KRW carried into shift_balances at open"
+            "150M KRW carried into ledger drawer at open"
         );
 
         // Test Must-fix 1: apply +100 exchange on KRW 150,000,000 balance
