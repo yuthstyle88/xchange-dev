@@ -272,3 +272,23 @@
 .draft-expires {
   color: var(--xc-text-muted, #64748b);
 }
+
+.xc-journey-bookings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.xc-journey-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.xc-plan-delete {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
