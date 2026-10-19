@@ -39,11 +39,12 @@ use xchange::infrastructure::devices::device_service::DeviceService;
 const FRONT: &str = "employee-7";
 
 /// The saver: its id is not its username, so the lines show which one they were given.
-fn front() -> SaveActor {
+// OR-7.m G1a: rule 1 (#3796)
+fn front(id: &str) -> SaveActor {
     SaveActor {
-        id: FRONT.to_owned(),
+        id: id.to_owned(),
         username: format!("user-{FRONT}"),
-        employee_id: Some(FRONT.to_owned()),
+        employee_id: Some(id.to_owned()),
         standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
@@ -58,18 +59,20 @@ const COUNTED: SaveExtras = SaveExtras {
 async fn guarded(
     shop: &Shop,
     ids: &Arc<devices_common::FakeIds>,
-) -> (SaveTransactionWorkflow, String, String) {
+) -> (SaveTransactionWorkflow, String, String, SaveActor) {
     let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     shop.close_shift(MAIN).await;
+    // OR-7.m G1a: rule 1 (#3796)
+    let front_id = shift_holder_common::user_of(&shop.pool, FRONT).await;
     let shift = shift_holder_common::open_shift_for(
         &shop.pool,
         MAIN,
-        FRONT,
+        &front_id,
         &[("THB", "100000"), ("USD", "1000")],
     )
     .await;
     fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
-    let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
+    let passport = shop.upload(MAIN, &front_id, "image/jpeg", JPEG).await;
     let devices = DeviceService::new(
         BranchTx::new(Transactor::new(shop.pool.clone())),
         Arc::new(devices_common::FakeExchanges::default()),
@@ -82,7 +85,7 @@ async fn guarded(
         shop.files.clone(),
     )
     .with_steps(vec![step]);
-    (flow, customer, passport)
+    (flow, customer, passport, front(&front_id))
 }
 
 /// (kind, ref, actor, detail) of every device line, in the order written.
@@ -109,7 +112,7 @@ fn kinds(lines: &[(String, String, String, Value)]) -> Vec<&str> {
 async fn a_cash_exchange_whose_cash_was_not_counted_is_refused_and_nothing_is_written() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, customer, passport) = guarded(&shop, &ids).await;
+    let (flow, customer, passport, actor) = guarded(&shop, &ids).await;
     let before = shop.everything().await;
 
     let got = flow
@@ -117,7 +120,7 @@ async fn a_cash_exchange_whose_cash_was_not_counted_is_refused_and_nothing_is_wr
             &branch(MAIN),
             form("dss-0001-aaaaaaaaaaaa", &customer, &passport),
             &SaveExtras::default(),
-            &front(),
+            &actor,
             at(0),
         )
         .await;
@@ -137,7 +140,7 @@ async fn a_cash_exchange_whose_cash_was_not_counted_is_refused_and_nothing_is_wr
 async fn a_counted_cash_exchange_writes_the_count_the_link_and_one_print_job() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, customer, passport) = guarded(&shop, &ids).await;
+    let (flow, customer, passport, saver) = guarded(&shop, &ids).await;
     let job = devices_common::job_id(1);
     ids.give_one(&job);
 
@@ -146,7 +149,7 @@ async fn a_counted_cash_exchange_writes_the_count_the_link_and_one_print_job() {
             &branch(MAIN),
             form("dss-0002-aaaaaaaaaaaa", &customer, &passport),
             &COUNTED,
-            &front(),
+            &saver,
             at(0),
         )
         .await
@@ -159,7 +162,8 @@ async fn a_counted_cash_exchange_writes_the_count_the_link_and_one_print_job() {
         "{written:?}"
     );
     for (kind, _, actor, _) in &written {
-        assert_eq!(actor, FRONT, "{kind} is written with the actor's id");
+        // OR-7.m G1a: rule 2 (#3796)
+        assert_eq!(actor, &saver.id, "{kind} is written with the actor's id");
     }
     let (_, count_ref, _, count) = &written[0];
     assert_eq!(
@@ -189,7 +193,8 @@ async fn a_counted_cash_exchange_writes_the_count_the_link_and_one_print_job() {
             "PRINT_RECEIPT".to_owned(),
             saved.document_ref.clone(),
             "QUEUED".to_owned(),
-            FRONT.to_owned(),
+            // OR-7.m G1a: rule 2 (#3796)
+            saver.id.clone(),
         )]
     );
     assert_eq!(written[2].1, saved.document_ref);
@@ -201,16 +206,16 @@ async fn a_counted_cash_exchange_writes_the_count_the_link_and_one_print_job() {
 async fn another_method_needs_no_count_and_writes_no_count_line() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, customer, passport) = guarded(&shop, &ids).await;
+    let (flow, customer, passport, actor) = guarded(&shop, &ids).await;
     ids.give_one(&devices_common::job_id(2));
-    let slip = shop.upload(MAIN, FRONT, "application/pdf", PDF).await;
+    let slip = shop.upload(MAIN, &actor.id, "application/pdf", PDF).await;
     let mut cmd = form("dss-0003-aaaaaaaaaaaa", &customer, &passport);
     cmd.method = "Bank Transfer".to_owned();
     cmd.payment_ref = "TRX-1".to_owned();
     cmd.slip = Some(slip.clone());
 
     let saved = flow
-        .save_as(&branch(MAIN), cmd, &SaveExtras::default(), &front(), at(0))
+        .save_as(&branch(MAIN), cmd, &SaveExtras::default(), &actor, at(0))
         .await
         .expect("a transfer needs no count");
     let written = lines(&shop).await;
@@ -229,15 +234,16 @@ async fn another_method_needs_no_count_and_writes_no_count_line() {
 async fn a_repeat_is_not_counted_again_and_adds_nothing() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, customer, passport) = guarded(&shop, &ids).await;
+    let (flow, customer, passport, actor) = guarded(&shop, &ids).await;
     ids.give_one(&devices_common::job_id(3));
     let send = |extras: SaveExtras, when| {
-        let (flow, cmd) = (
+        let (flow, cmd, actor) = (
             flow.clone(),
             form("dss-0004-aaaaaaaaaaaa", &customer, &passport),
+            actor.clone(),
         );
         async move {
-            flow.save_as(&branch(MAIN), cmd, &extras, &front(), when)
+            flow.save_as(&branch(MAIN), cmd, &extras, &actor, when)
                 .await
         }
     };
@@ -271,18 +277,18 @@ async fn a_repeat_is_not_counted_again_and_adds_nothing() {
 async fn a_demo_exchange_is_neither_checked_nor_recorded() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, _, _) = guarded(&shop, &ids).await;
+    let (flow, _, _, actor) = guarded(&shop, &ids).await;
     let demo_person = ReserveCustomer {
         mode: "DEMO".to_owned(),
         ..person()
     };
     let demo_customer = shop.reserve(MAIN, demo_person.clone()).await;
-    let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
+    let passport = shop.upload(MAIN, &actor.id, "image/jpeg", JPEG).await;
     let mut demo = form("dss-0005-aaaaaaaaaaaa", &demo_customer, &passport);
     demo.customer = demo_person;
 
     let saved = flow
-        .save_as(&branch(MAIN), demo, &SaveExtras::default(), &front(), at(0))
+        .save_as(&branch(MAIN), demo, &SaveExtras::default(), &actor, at(0))
         .await
         .expect("a DEMO cash exchange is saved without a count");
     assert_eq!(saved.mode, Mode::Demo);
@@ -295,7 +301,7 @@ async fn a_demo_exchange_is_neither_checked_nor_recorded() {
 async fn a_device_write_that_fails_undoes_the_save() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, customer, passport) = guarded(&shop, &ids).await;
+    let (flow, customer, passport, actor) = guarded(&shop, &ids).await;
     ids.give_one(&devices_common::job_id(4));
     shop.break_writes("device_jobs").await;
     let before = shop.everything().await;
@@ -305,7 +311,7 @@ async fn a_device_write_that_fails_undoes_the_save() {
             &branch(MAIN),
             form("dss-0006-aaaaaaaaaaaa", &customer, &passport),
             &COUNTED,
-            &front(),
+            &actor,
             at(0),
         )
         .await;
@@ -327,7 +333,7 @@ async fn a_device_write_that_fails_undoes_the_save() {
 async fn a_save_refused_after_the_check_leaves_no_device_line() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, customer, passport) = guarded(&shop, &ids).await;
+    let (flow, customer, passport, actor) = guarded(&shop, &ids).await;
     shop.close_shift(MAIN).await;
 
     let got = flow
@@ -335,7 +341,7 @@ async fn a_save_refused_after_the_check_leaves_no_device_line() {
             &branch(MAIN),
             form("dss-0007-aaaaaaaaaaaa", &customer, &passport),
             &COUNTED,
-            &front(),
+            &actor,
             at(0),
         )
         .await;
