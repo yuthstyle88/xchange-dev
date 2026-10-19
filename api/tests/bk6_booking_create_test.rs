@@ -511,9 +511,10 @@ async fn booking_create_refuses_when_slot_capacity_full() {
 #[actix_web::test]
 async fn booking_create_desk_by_branch_manager_succeeds_under_seed() {
     // Under RBAC §11.2, BranchManager holds BookingsDesk (Customers: Full).
-    if !RoleGrants::seed(Role::BranchManager).contains(&Permission::BookingsDesk) {
-        return;
-    }
+    assert!(
+        RoleGrants::seed(Role::BranchManager).contains(&Permission::BookingsDesk),
+        "§11.2: BRANCH_MANAGER holds BookingsDesk (CUSTOMERS FULL)"
+    );
     let db = TestDb::start().await;
     let slot_id = Uuid::new_v4();
     let now = Utc::now();
