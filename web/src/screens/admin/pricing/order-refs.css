@@ -1,1 +1,61 @@
-/* order-refs.css — styles for OrderRefs.tsx (FE pricing-board, #564). */
+/* order-refs.css — styles for OrderRefs.tsx (FE pricing-board, #564, #3765). */
+
+.order-refs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.order-refs-heading {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.order-refs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.order-ref-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.order-ref-doc {
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.order-ref-time {
+  color: #64748b;
+}
+
+.order-ref-currency {
+  font-weight: 600;
+}
+
+.order-ref-market {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.order-ref-quote {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.order-ref-source {
+  font-weight: 600;
+}
+
+.order-ref-rates {
+  font-family: monospace;
+}
