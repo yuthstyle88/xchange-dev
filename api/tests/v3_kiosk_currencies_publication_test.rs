@@ -72,10 +72,10 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::VIEWS;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -188,22 +188,16 @@ impl TestDb {
 // ------------------------------------------------------------ callers and requests
 
 /// The owner when the header `x-test-as: owner` is present; nobody otherwise.
-struct HeaderSessions;
+struct HeaderCallers;
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let owner = req
             .headers()
             .get(AS)
             .is_some_and(|v| v.as_bytes() == b"owner");
         Box::pin(async move {
-            Sessions {
-                owner: owner.then(|| Actor::owner("owner-1")),
-                staff: None,
-            }
+            test_callers::callers(owner.then(|| test_callers::owner("owner-1")), None)
         })
     }
 }
@@ -216,7 +210,7 @@ struct Answer {
 
 async fn call(db: &TestDb, method: Method, uri: &str, body: Option<Value>) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))

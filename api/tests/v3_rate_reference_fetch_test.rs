@@ -36,10 +36,10 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const HOST: &str = "xc.test";
@@ -158,16 +158,8 @@ impl TestDb {
 struct OwnerSession;
 
 impl SessionReader for OwnerSession {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: Some(Actor::owner("owner-1")),
-                staff: None,
-            }
-        })
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        Box::pin(async move { test_callers::callers(Some(test_callers::owner("owner-1")), None) })
     }
 }
 
