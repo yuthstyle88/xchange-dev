@@ -9,7 +9,10 @@
 // `checkInWindow` / `queueClosed` (400) and `notFound` (404) as `{ "error": { "code", "message" } }`.
 //
 // The API this test pins ([required]):
-//   KioskRepository.checkInBooking(String qrToken) -> Future<BookingCheckInModel>
+//   kioskBookingRepositoryProvider (in `lib/features/kiosk/app/kiosk_providers.dart`) gives a
+//   KioskBookingRepository (`lib/features/kiosk/domain/repository/kiosk_booking_repository.dart`), separate
+//   from KioskRepository: 17 test fakes implement KioskRepository, so a method added there breaks them.
+//   KioskBookingRepository.checkInBooking(String qrToken) -> Future<BookingCheckInModel>
 //   BookingCheckInModel { String id; String status; String ticketNumber; String? bookingNo; }
 //       (in `lib/features/kiosk/domain/entities/kiosk_models.dart`)
 //   a refusal throws `KioskFailure` whose `serverMessage` is the server's `error.code`
@@ -77,7 +80,7 @@ void main() {
       'ticketNumber': 'B-012',
       'bookingNo': 'BK-2026-0042',
     };
-    final res = await container.read(kioskRepositoryProvider).checkInBooking('tok-123');
+    final res = await container.read(kioskBookingRepositoryProvider).checkInBooking('tok-123');
 
     expect(adapter.last?.method, 'POST');
     expect(adapter.last?.path, '/api/kiosk/bookings/check-in');
@@ -90,7 +93,7 @@ void main() {
 
   test('a missing bookingNo reads as null', () async {
     adapter.body = {'id': 'bk-2', 'status': 'CHECKED_IN', 'ticketNumber': 'B-013', 'bookingNo': null};
-    final res = await container.read(kioskRepositoryProvider).checkInBooking('tok-9');
+    final res = await container.read(kioskBookingRepositoryProvider).checkInBooking('tok-9');
     expect(res.bookingNo, isNull);
   });
 
@@ -107,7 +110,7 @@ void main() {
           'error': {'code': c.$2, 'message': c.$2.toUpperCase()},
         };
       await expectLater(
-        container.read(kioskRepositoryProvider).checkInBooking('tok-123'),
+        container.read(kioskBookingRepositoryProvider).checkInBooking('tok-123'),
         throwsA(isA<KioskFailure>().having((f) => f.serverMessage, 'serverMessage', c.$2)),
       );
     });
@@ -116,7 +119,7 @@ void main() {
   test('an answer that is not an object throws KioskFailure with no message', () async {
     adapter.body = 'not json';
     await expectLater(
-      container.read(kioskRepositoryProvider).checkInBooking('tok-123'),
+      container.read(kioskBookingRepositoryProvider).checkInBooking('tok-123'),
       throwsA(isA<KioskFailure>().having((f) => f.serverMessage, 'serverMessage', '')),
     );
   });
