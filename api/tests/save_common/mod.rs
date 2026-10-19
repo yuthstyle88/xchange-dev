@@ -404,8 +404,13 @@ impl Shop {
     }
 
     pub async fn upload(&self, branch_id: &str, owner: &str, mime: &str, bytes: &[u8]) -> String {
+        let actor = if owner == OWNER {
+            owner_user_of_branch(&self.pool, branch_id).await
+        } else {
+            opener_user(&self.pool, owner).await
+        };
         self.files
-            .upload(&branch(branch_id), owner, mime, bytes, at(-10))
+            .upload(&branch(branch_id), &actor, mime, bytes, at(-10))
             .await
             .expect("upload a file")
     }
@@ -427,9 +432,10 @@ impl Shop {
         cmd: SaveTransaction,
         now: DateTime<Utc>,
     ) -> AppResult<SavedTransaction> {
+        let owner = owner_user_of_branch(&self.pool, branch_id).await;
         tokio::time::timeout(
             MUST_FINISH,
-            self.workflow.save(&branch(branch_id), cmd, OWNER, now),
+            self.workflow.save(&branch(branch_id), cmd, &owner, now),
         )
         .await
         .expect("a save finishes")
@@ -768,6 +774,24 @@ async fn opener_user(pool: &PgPool, k: &str) -> String {
     .fetch_one(pool)
     .await
     .unwrap_or_else(|e| panic!("the user of opener {k}: {e}"))
+}
+
+async fn owner_user_of_branch(pool: &PgPool, branch_id: &str) -> String {
+    if let Some(id) = sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u \
+         JOIN branches b ON b.id = $1 AND b.organization_id = u.organization_id \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(branch_id)
+    .fetch_optional(pool)
+    .await
+    .expect("read branch owner user id")
+    {
+        return id;
+    }
+    opener_user(pool, OWNER).await
 }
 
 pub async fn seed_opener(pool: &PgPool, id: &str) {
