@@ -1,1 +1,29 @@
 /* recommendations.css — styles for Recommendations.tsx (FE pricing-board, #564). */
+
+.recommendations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recommendation-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.recommendation-severity {
+  font-weight: 600;
+}
+
+.recommendation-code {
+  font-family: monospace;
+}
+
+.recommendation-currency {
+  font-weight: 500;
+}
+
+.recommendation-side {
+  text-transform: uppercase;
+}
