@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import * as table from './i18n';
 import { UsersScreen } from './UsersScreen';
 
@@ -19,38 +19,38 @@ const BRANCHES_DATA = {
   ],
 };
 
-const USERS_A: AdminUserRow[] = [
-  {
+const USERS_A = [
+  makeAdminUserRow({
     userId: 'u-branch-a',
     name: 'Arun BranchA',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: BRANCH_A,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
+  }),
 ];
 
-const USERS_B: AdminUserRow[] = [
-  {
+const USERS_B = [
+  makeAdminUserRow({
     userId: 'u-branch-b',
     name: 'Boonmee BranchB',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'BRANCH_MANAGER',
         branch: BRANCH_B,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
+  }),
 ];
 
 function json(body: unknown, status = 200): Response {
