@@ -461,6 +461,32 @@ async fn only_an_admin_may_use_any_of_them() {
     db.finish().await;
 }
 
+/// §11.2: EXECUTIVE holds USER_MANAGEMENT FULL (`UsersManage`, `BranchesManage`), so it may save a
+/// branch profile and read both org-admin views (#3501).
+#[actix_web::test]
+async fn an_executive_holds_user_management_and_is_allowed() {
+    let db = TestDb::start().await;
+    let who = "EXECUTIVE@*";
+    let a = post(
+        &db,
+        who,
+        Method::PUT,
+        "/api/branches/profile",
+        profile("SILOM"),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::OK, "{who}: {}", a.text);
+    for uri in [
+        format!("/api/v3/views/admin_branches_profile?branch={B01}"),
+        format!("/api/v3/views/admin_users?branch={B01}"),
+    ] {
+        let r = get(&db, who, &uri).await;
+        assert_eq!(r.status, StatusCode::OK, "{who} {uri}: {}", r.text);
+    }
+    db.finish().await;
+}
+
 // ------------------------------------------------------------ A05: the users view, grant, revoke, disable
 
 #[actix_web::test]
