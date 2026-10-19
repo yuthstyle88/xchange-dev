@@ -47,7 +47,7 @@ use xc_auth::domain::access::actor::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_grants::RoleGrants;
+use xc_auth::domain::access::role_grants::{Group, RoleGrants, RoleGrantsSnapshot};
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
@@ -875,4 +875,79 @@ fn the_generated_me_type_has_roles_and_permissions_and_no_old_fields() {
         .unwrap_or_else(|| panic!("an `export type MeRole` line in {}", path.display()));
     assert!(role.contains(" role: string,"), "{role}");
     assert!(role.contains(" branchId: string | null,"), "{role}");
+}
+
+/// RBAC §11 C6h (#3323): an actor holding a custom group reads its installed permissions, not the base's seed.
+#[actix_web::test]
+async fn a_custom_group_reads_its_installed_permissions_not_the_base_seed() {
+    static MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = MUTEX.lock().unwrap();
+
+    struct ResetSeeded;
+    impl Drop for ResetSeeded {
+        fn drop(&mut self) {
+            RoleGrants::install(RoleGrantsSnapshot::seeded());
+        }
+    }
+    let _reset = ResetSeeded;
+
+    let custom_perms = vec![
+        Permission::CompatRead,
+        Permission::QueueOperate,
+        Permission::SignedIn,
+    ];
+    let mut groups: Vec<(Group, Vec<Permission>)> = RoleGrants::BUILT_IN
+        .into_iter()
+        .map(|r| (Group::built_in(r), RoleGrants::seed(r)))
+        .collect();
+    groups.push((
+        Group {
+            code: "NIGHT_TELLER".to_string(),
+            name: "Night Teller".to_string(),
+            base: Role::Teller,
+            built_in: false,
+        },
+        custom_perms.clone(),
+    ));
+    RoleGrants::install(RoleGrantsSnapshot::new(0, groups));
+
+    let (desk, identity, app, reader) = setup().await;
+    sqlx::query(
+        "INSERT INTO roles (code, name, base_role, built_in) VALUES ('NIGHT_TELLER', 'Night Teller', 'TELLER', false)",
+    )
+    .execute(&desk.pool)
+    .await
+    .expect("insert custom role");
+
+    sqlx::query(
+        "INSERT INTO role_permission_grants (role_code, permission) VALUES ('NIGHT_TELLER', 'CompatRead'), ('NIGHT_TELLER', 'QueueOperate'), ('NIGHT_TELLER', 'SignedIn')",
+    )
+    .execute(&desk.pool)
+    .await
+    .expect("insert custom grants");
+
+    let rows = [("NIGHT_TELLER", Some("B1"))];
+    bound_user(&desk.pool, SUB_A, "ACTIVE", "Night Nok", &rows).await;
+    let token = sign_in(&app, &identity, VALID_A).await;
+
+    let data = me(&reader, &token).await;
+    assert_eq!(keys(&data), me_keys(), "{data}");
+    assert_eq!(data["branch"], json!("B1"));
+
+    let permissions = strings(&data["permissions"]);
+    let mut expected: Vec<String> = custom_perms.into_iter().map(name_of).collect();
+    expected.sort();
+    assert_eq!(permissions, expected);
+
+    let teller_seed: Vec<String> = RoleGrants::seed(Role::Teller)
+        .into_iter()
+        .map(name_of)
+        .collect();
+    assert_ne!(
+        permissions, teller_seed,
+        "Me.permissions must reflect NIGHT_TELLER's set, not TELLER's seed"
+    );
+
+    drop(reader);
+    desk.drop_schema().await;
 }
