@@ -24,6 +24,7 @@ use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -97,13 +98,6 @@ impl TestDb {
             .await
             .expect("insert the branches");
         Self { pool, schema }
-    }
-
-    async fn text(&self, sql: &str) -> Option<String> {
-        sqlx::query_scalar(AssertSqlSafe(sql.to_owned()))
-            .fetch_optional(&self.pool)
-            .await
-            .unwrap_or_else(|e| panic!("{sql}: {e}"))
     }
 
     async fn count(&self, sql: &str) -> i64 {
@@ -265,24 +259,23 @@ fn code(a: &Answer) -> String {
 
 /// Seeds an ACTIVE user in XC-B01's organisation holding `(role, branch)`.
 async fn seed_user_with_role(db: &TestDb, role: &str, branch: Option<&str>) -> String {
-    let user = db
-        .text(&format!(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             SELECT organization_id, 'Somchai', 'ACTIVE', 'test' FROM branches WHERE id = '{B01}' \
-             RETURNING id::text"
-        ))
-        .await
-        .expect("a user of XC-B01's organisation");
     // RBAC C1a (owner decision Q4 A): an ADMIN no longer grants ADMIN or EXECUTIVE over HTTP, so
     // the role row is seeded directly, as the other user tests seed theirs.
-    let branch_sql = branch.map_or("NULL".to_owned(), |b| format!("'{b}'"));
-    db.text(&format!(
-        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-         SELECT '{user}'::uuid, '{role}', organization_id, {branch_sql} FROM branches WHERE id = '{B01}' \
-         RETURNING user_id::text"
-    ))
+    let mut conn = db.pool.acquire().await.expect("acquire connection");
+    let user = seed_person(
+        &mut conn,
+        xchange::presentation::pages::SEEDED_XC_ORG_ID,
+        "Somchai",
+        &[RoleRow {
+            role_code: role,
+            branch_id: branch,
+            valid_from: DateTime::<Utc>::UNIX_EPOCH,
+            valid_to: None,
+        }],
+    )
     .await
-    .expect("seed the role row");
+    .expect("a user of XC-B01's organisation");
+    drop(conn);
     assert_eq!(db.live_role_count(&user, role, branch).await, 1);
     user
 }

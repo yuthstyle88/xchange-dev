@@ -13,6 +13,7 @@ export const th = {
   markAllRead: 'อ่านทั้งหมดแล้ว',
   unreadBadge: 'ยังไม่ได้อ่าน',
   readBadge: 'อ่านแล้ว',
+  open: 'เปิดดู',
 };
 
 export const en = {
@@ -27,6 +28,7 @@ export const en = {
   markAllRead: 'Mark all read',
   unreadBadge: 'Unread',
   readBadge: 'Read',
+  open: 'Open',
 };
 
 export const zh = {
@@ -41,4 +43,5 @@ export const zh = {
   markAllRead: '全部标为已读',
   unreadBadge: '未读',
   readBadge: '已读',
+  open: '查看',
 };

@@ -12,6 +12,7 @@ import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/pu
 import { lang, screenT } from '../../../shared/i18n';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import { formatOpeningHours } from '../../../shared/ui/openingHours';
+import { BranchLive } from './BranchLive';
 import { th, en, zh } from './i18n';
 import './branches.css';
 
@@ -220,6 +221,8 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
                           {branch.bookingEnabled ? t('bookingEnabled') : t('bookingDisabled')}
                         </span>
                       </div>
+
+                      <BranchLive branch={branch.code} bookingEnabled={branch.bookingEnabled} fetch={fetchFn} />
 
                       <div class="xc-branch-details">
                         <div class="xc-branch-row xc-branch-address">
