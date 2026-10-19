@@ -280,15 +280,19 @@ pub async fn publish_rate_per_one(
 /// is still compared strictly both ways.
 /// - RF-5 (#877, `docs/design/blueprint/rates.md` §4.10): the kiosk `rates` answer
 ///   appends `freshness`.
-pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[(
-    "/api/kiosk",
-    "rates",
-    "freshness",
-    &["publishedAt", "sourceDate", "stale"],
-)];
+/// - #3473: the kiosk `get` answer appends `quoteId`.
+pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
+    (
+        "/api/kiosk",
+        "rates",
+        "freshness",
+        &["publishedAt", "sourceDate", "stale"],
+    ),
+    ("/api/kiosk", "get", "quoteId", &[]),
+];
 
 /// `actual` without the keys [`V3_ADDED_KEYS`] allows on this route and action,
-/// after checking each one present is an object with exactly its fields. The key
+/// after checking each one present has its expected shape. The key
 /// may be absent: the tests of the change that adds it require it.
 pub fn without_v3_added_keys(
     route: Option<&str>,
@@ -305,14 +309,21 @@ pub fn without_v3_added_keys(
             continue;
         };
         if let Some(added) = map.remove(*key) {
-            let mut got: Vec<&str> = added
-                .as_object()
-                .unwrap_or_else(|| panic!("{label}: $.{key} is an object; got {added}"))
-                .keys()
-                .map(String::as_str)
-                .collect();
-            got.sort_unstable();
-            assert_eq!(got, *fields, "{label}: the fields of $.{key}");
+            if fields.is_empty() {
+                assert!(
+                    added.is_string() || added.is_null(),
+                    "{label}: $.{key} is a string or null; got {added}"
+                );
+            } else {
+                let mut got: Vec<&str> = added
+                    .as_object()
+                    .unwrap_or_else(|| panic!("{label}: $.{key} is an object; got {added}"))
+                    .keys()
+                    .map(String::as_str)
+                    .collect();
+                got.sort_unstable();
+                assert_eq!(got, *fields, "{label}: the fields of $.{key}");
+            }
         }
     }
     actual

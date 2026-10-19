@@ -653,7 +653,20 @@ async fn handle_kiosk(
                             .ok()
                             .flatten()
                             .unwrap_or_default();
-                    match dto_kiosk::get_json(&kiosk_req, &branch_name) {
+                    let quote_id: Option<String> = match sqlx::query_scalar(
+                        "SELECT quote_id::text FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+                    )
+                    .bind(branch.as_str())
+                    .bind(&kiosk_req.id)
+                    .fetch_optional(pool)
+                    .await
+                    {
+                        Ok(row) => row.flatten(),
+                        Err(err) => {
+                            return handle_service_error(pos_error::AppError::Database(err));
+                        }
+                    };
+                    match dto_kiosk::get_json(&kiosk_req, &branch_name, quote_id.as_deref()) {
                         Ok(json) => json_response(json),
                         Err(err) => handle_service_error(err),
                     }
