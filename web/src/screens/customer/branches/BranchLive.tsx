@@ -1,6 +1,5 @@
 // C08: one branch card's live status — waiting, counters open, wait estimate (branch_service_status, public)
 // and today's free booking slots (booking_slots, public) (design customer-app.md §4.5).
-// SKELETON STUB (feat/fe-customer): the function ticket replaces this body; the props and export stay.
 import { createSignal, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
 import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';

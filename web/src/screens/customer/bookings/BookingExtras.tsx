@@ -1,6 +1,5 @@
 // C03: a booking card's confirm button, QR re-issue and cancel deadline (design customer-app.md §4.5;
 // commands bookingConfirm `POST /api/bookings/{id}/confirm`, bookingQrReissue `POST /api/bookings/{id}/qr`).
-// SKELETON STUB (feat/fe-customer): the function ticket replaces this body; the props and export stay.
 import { createSignal, Show, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';

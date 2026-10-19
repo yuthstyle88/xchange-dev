@@ -1,5 +1,5 @@
 // C09: the journey's upcoming bookings with their check-in QR, from my_bookings (design customer-app.md §4.5,
-// §9.1). SKELETON STUB (feat/fe-customer): the function ticket replaces this body; the props and export stay.
+// §9.1).
 import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../../shared/api/client';
 import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
