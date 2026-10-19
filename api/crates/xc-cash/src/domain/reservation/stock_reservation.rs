@@ -24,13 +24,19 @@ pub enum ReleaseReason {
 impl ReleaseReason {
     /// The stored text: `EXPIRED` / `CANCELLED`.
     pub fn as_str(self) -> &'static str {
-        todo!("SR-1")
+        match self {
+            Self::Expired => "EXPIRED",
+            Self::Cancelled => "CANCELLED",
+        }
     }
 
     /// The stored text back; anything else is `None`.
     pub fn parse(text: &str) -> Option<Self> {
-        let _ = text;
-        todo!("SR-1")
+        match text {
+            "EXPIRED" => Some(Self::Expired),
+            "CANCELLED" => Some(Self::Cancelled),
+            _ => None,
+        }
     }
 }
 
@@ -46,7 +52,11 @@ pub enum ReservationStatus {
 impl ReservationStatus {
     /// The stored `status` text: `RESERVED` / `CONSUMED` / `RELEASED`.
     pub fn as_str(self) -> &'static str {
-        todo!("SR-1")
+        match self {
+            Self::Reserved => "RESERVED",
+            Self::Consumed => "CONSUMED",
+            Self::Released(_) => "RELEASED",
+        }
     }
 }
 
@@ -71,7 +81,6 @@ pub struct StockReservation {
 impl StockReservation {
     /// D-3: `Reserved` and `expires_at > now`. A `Reserved` row at or past `expires_at` holds nothing.
     pub fn is_active(&self, now: DateTime<Utc>) -> bool {
-        let _ = now;
-        todo!("SR-1")
+        self.status == ReservationStatus::Reserved && self.expires_at > now
     }
 }
