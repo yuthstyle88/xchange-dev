@@ -110,19 +110,13 @@ impl Db {
         BranchId::new(id)
     }
 
-    async fn person_with_legacy(
-        &self,
-        name: &str,
-        legacy_employee_id: Option<&str>,
-        roles: &[Role],
-    ) -> Actor {
+    async fn person(&self, name: &str, roles: &[Role]) -> Actor {
         let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test', $3) RETURNING id::text",
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
         )
         .bind(ORG)
         .bind(name)
-        .bind(legacy_employee_id)
         .fetch_one(&self.pool)
         .await
         .expect("insert a user");
@@ -148,10 +142,6 @@ impl Db {
                 .collect(),
             None,
         )
-    }
-
-    async fn person(&self, name: &str, roles: &[Role]) -> Actor {
-        self.person_with_legacy(name, None, roles).await
     }
 
     async fn denomination(&self, currency: &str, face: &str) -> i64 {
@@ -244,10 +234,7 @@ async fn opened(db: &Db, branch: &BranchId, teller: &Actor, manager: &Actor) -> 
 async fn open_shift_returns_true() {
     let db = Db::fresh().await;
     let branch = db.branch("b1").await;
-    let legacy_id = unique("emp-open");
-    let teller = db
-        .person_with_legacy("Ploy", Some(&legacy_id), &[Role::Teller])
-        .await;
+    let teller = db.person("Ploy", &[Role::Teller]).await;
     let manager = db.person("Krit", &[Role::BranchManager]).await;
 
     let _shift_id = opened(&db, &branch, &teller, &manager).await;
@@ -258,12 +245,6 @@ async fn open_shift_returns_true() {
             .await
             .unwrap(),
         "teller with an OPEN shift holds cash (by users.id)"
-    );
-    assert!(
-        HandoverService::holds_cash_in(&mut tx, ORG, &legacy_id)
-            .await
-            .unwrap(),
-        "teller with an OPEN shift holds cash (by legacy_employee_id)"
     );
     tx.commit().await.unwrap();
     db.close().await;

@@ -115,20 +115,19 @@ impl HandoverService {
         Ok(handover)
     }
 
-    /// Q3: true when the employee holds an OPEN shift of their own, or is the
+    /// Q3: true when the user holds an OPEN shift of their own, or is the
     /// sender or the receiver of a PENDING hand-over in this organization.
     pub async fn holds_cash_in(
         tx: &mut sqlx::PgConnection,
         organization_id: &str,
-        employee_id: &str,
+        user_id: &str,
     ) -> AppResult<bool> {
-        let user_id: Option<String> = sqlx::query_scalar(
-            "SELECT id::text FROM users WHERE legacy_employee_id = $1 OR id::text = $1 LIMIT 1",
-        )
-        .bind(employee_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(AppError::Database)?;
+        let user_id: Option<String> =
+            sqlx::query_scalar("SELECT id::text FROM users WHERE id::text = $1")
+                .bind(user_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(AppError::Database)?;
 
         let Some(user_id) = user_id else {
             return Ok(false);
