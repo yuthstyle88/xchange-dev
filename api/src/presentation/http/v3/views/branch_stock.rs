@@ -77,7 +77,11 @@ pub async fn read(
     let mut conn = pool.acquire().await.map_err(AppError::Database)?;
     let mut rows = Vec::with_capacity(currencies.len());
     for currency in currencies {
-        let on_hand = on_hand_map.get(&currency).copied().unwrap_or(Decimal::ZERO);
+        // a floor-only currency has nothing on hand (B05 S14)
+        let on_hand = match on_hand_map.get(&currency) {
+            Some(&q) => q,
+            None => Decimal::ZERO,
+        };
         let reserved = if currency.is_thb() {
             Decimal::ZERO
         } else {
