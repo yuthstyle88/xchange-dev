@@ -224,7 +224,7 @@ impl UserRepository for PgUserRepository {
             "#,
         )
         .bind(user_id)
-        .bind(role.role.as_str())
+        .bind(role.group_code())
         .bind(organization_id)
         .bind(role.branch.as_ref().map(|b| b.as_str()))
         .bind(role.valid_from)
@@ -273,10 +273,11 @@ impl UserRepository for PgUserRepository {
     ) -> AppResult<Vec<ScopedRole>> {
         let rows = sqlx::query(
             r#"
-            SELECT role_code, branch_id, valid_from, valid_to
-            FROM user_roles
-            WHERE user_id = $1::uuid
-            ORDER BY valid_from ASC
+            SELECT ur.role_code, r.base_role, ur.branch_id, ur.valid_from, ur.valid_to
+            FROM user_roles ur
+            JOIN roles r ON r.code = ur.role_code
+            WHERE ur.user_id = $1::uuid
+            ORDER BY ur.valid_from ASC
             "#,
         )
         .bind(user_id)
@@ -287,13 +288,16 @@ impl UserRepository for PgUserRepository {
         let mut roles = Vec::with_capacity(rows.len());
         for row in rows {
             let role_code: String = row.get("role_code");
-            let role = Role::parse(&role_code)
-                .ok_or_else(|| AppError::Internal(format!("unknown role code {role_code}")))?;
+            let base_role: String = row.get("base_role");
+            let role = Role::parse(&base_role)
+                .ok_or_else(|| AppError::Internal(format!("unknown role code {base_role}")))?;
             let branch_id: Option<String> = row.get("branch_id");
             let branch = branch_id.map(BranchId::new);
             let valid_from: DateTime<Utc> = row.get("valid_from");
             let valid_to: Option<DateTime<Utc>> = row.get("valid_to");
-            roles.push(ScopedRole::new(role, branch, valid_from, valid_to));
+            roles.push(ScopedRole::in_group(
+                &role_code, role, branch, valid_from, valid_to,
+            ));
         }
 
         Ok(roles)
