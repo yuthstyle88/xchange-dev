@@ -39,6 +39,7 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, Utc};
 use quote_common::TestDb;
 use serde_json::{Value, json};
+use xc_auth::domain::access::Role as AccessRole;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -46,7 +47,8 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 /// Who reads in the content tests: MAIN's FRONT (TELLER, holds `ReversalRequest`).
@@ -72,53 +74,71 @@ const SECRETS: [&str; 5] = [
     "CU-SECRET",
 ];
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
+    }
+    let mut parts = spec.splitn(3, ':');
+    assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
+    let role_name = parts.next().expect("a role");
+    let roles: &[AccessRole] = match role_name {
+        "FRONT" => &[AccessRole::Teller],
+        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
+        "RATES" => &[AccessRole::RateManager],
+        "FINANCE" => &[AccessRole::Finance],
+        "SYSTEM" => &[AccessRole::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
+        other => panic!("unknown role {other:?}"),
+    };
+    let branch = parts.next().expect("a branch");
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role_name}"),
+            roles,
+            BranchId::new(branch),
+        )),
+    )
+}
+
+fn legacy_actor_of(spec: &str) -> Option<Actor> {
+    if spec.is_empty() {
+        return None;
+    }
+    if spec == "owner" {
+        return Some(Actor::owner("owner-1"));
     }
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
     let role = Role::parse(parts.next().expect("a role")).expect("a known role");
     let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
-            BranchId::new(branch),
-        ),
-    }
+    Actor::staff(
+        format!("employee-{}", role.as_str()),
+        role,
+        BranchId::new(branch),
+    )
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
 /// `GET desk_refunds?branch=<branch>` as `who`: (status, body, the raw text).
 async fn get(db: &TestDb, who: &str, branch: &str) -> (StatusCode, Value, String) {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -525,8 +545,7 @@ async fn callers_are_admitted_exactly_as_the_reversal_request_row_admits() {
     let action = Action::new("reversalRequest");
     let mut admitted = Vec::new();
     for who in callers() {
-        let s = sessions_of(&who);
-        let actor = s.owner.or(s.staff);
+        let actor = legacy_actor_of(&who);
         let (status, body, text) = get(&db, &who, "MAIN").await;
         let what = format!("as {who:?}");
         match Policy::allow(actor.as_ref(), EntryPath::Rpc, &action) {

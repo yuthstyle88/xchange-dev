@@ -52,6 +52,7 @@ use serde_json::{Map, Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
+use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
@@ -60,7 +61,8 @@ use xc_kernel::money::{fixed2, round_cents, typed_decimal};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::ACTIONS;
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -180,7 +182,40 @@ impl TestDb {
 
 /// Who is signed in, from the request header `x-test-as`: `owner`,
 /// `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
+
+fn staff_caller_of(spec: &str) -> AccessActor {
+    let mut parts = spec.splitn(3, ':');
+    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
+    let role_name = parts.next().expect("a role");
+    let roles: &[AccessRole] = match role_name {
+        "FRONT" => &[AccessRole::Teller],
+        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
+        "RATES" => &[AccessRole::RateManager],
+        "FINANCE" => &[AccessRole::Finance],
+        "SYSTEM" => &[AccessRole::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
+        other => panic!("unknown role {other:?}"),
+    };
+    let branch = parts.next().expect("a branch");
+    test_callers::staff("employee-7", roles, BranchId::new(branch))
+}
+
+fn callers_of(spec: &str) -> Callers {
+    if spec.is_empty() {
+        return test_callers::nobody();
+    }
+    if spec == "owner" {
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
+    }
+    if let Some(staff) = spec.strip_prefix("owner+") {
+        return test_callers::callers(
+            Some(test_callers::owner("owner-1")),
+            Some(staff_caller_of(staff)),
+        );
+    }
+    test_callers::callers(None, Some(staff_caller_of(spec)))
+}
 
 fn staff_of(spec: &str) -> Option<Actor> {
     let mut parts = spec.splitn(3, ':');
@@ -190,42 +225,24 @@ fn staff_of(spec: &str) -> Option<Actor> {
     Actor::staff("employee-7", role, BranchId::new(branch))
 }
 
-fn sessions_of(spec: &str) -> Sessions {
+fn legacy_actor_of(spec: &str) -> Option<Actor> {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return None;
     }
-    if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+    if spec == "owner" || spec.starts_with("owner+") {
+        return Some(Actor::owner("owner-1"));
     }
-    if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
-    }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
+    staff_of(spec)
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -287,7 +304,7 @@ struct Answer {
 /// Sends every call, in order, to one instance of the whole application.
 async fn send_all(db: &TestDb, calls: Vec<Call>) -> Vec<Answer> {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -544,8 +561,7 @@ async fn whoever_the_policy_allows_for_admin_snapshot_gets_the_same_summary() {
     let mut refused = 0;
     for ((who, named), a) in cases.iter().zip(&answers) {
         let what = format!("as {who:?}, naming a branch: {named}");
-        let s = sessions_of(who);
-        let actor = s.owner.or(s.staff);
+        let actor = legacy_actor_of(who);
         // OR-4b (#767): the route table's rule, naming XC-B02 where the body does (D-4: staff of
         // XC-B01 are refused it)
         match blueprint_rule(
