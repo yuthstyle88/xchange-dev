@@ -17,7 +17,6 @@ use compat_common::Person;
 use kiosk_http_common::{Counter, person};
 use rpc_common::{Answer, Call};
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xc_kiosk::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
@@ -139,11 +138,23 @@ struct Room {
     counter: Counter,
 }
 
+const STAFF_ROLES: [&str; 9] = [
+    "FRONT",
+    "BACKEND",
+    "MANAGER",
+    "RATES",
+    "MONITOR",
+    "FINANCE",
+    "SYSTEM",
+    "DOCUMENTS",
+    "DOCUMENT_REVIEW",
+];
+
 fn the_staff() -> Vec<Person> {
-    let mut staff: Vec<Person> = Role::STAFF
+    let mut staff: Vec<Person> = STAFF_ROLES
         .iter()
         .enumerate()
-        .map(|(i, role)| person(role.as_str(), role.as_str(), 0x31 + i as u8))
+        .map(|(i, &role)| person(role, role, 0x31 + i as u8))
         .collect();
     staff.push(person(FRONT2, "FRONT", 0x41));
     staff

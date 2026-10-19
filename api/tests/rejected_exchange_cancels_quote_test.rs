@@ -21,7 +21,6 @@ mod tx4_common;
 use quote_common::*;
 use tx4_common::*;
 use xc_approval::domain::request::{Outcome, RequestId};
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::quote::quote::Quote;
 use xc_exchange::domain::transaction::transaction::{ExchangeTransaction, TransactionStatus};
 use xchange::application::workflows::exchange::confirm::ConfirmOutcome;
@@ -59,7 +58,7 @@ async fn a_rejected_exchange_cancels_its_quote() {
 
     desk.decide(
         &request,
-        &staff(MANAGER, Role::Manager, "MAIN"),
+        &staff_as(MANAGER, "MANAGER", "MAIN"),
         Outcome::Rejected,
         "passport photo unclear",
     )
@@ -86,7 +85,7 @@ async fn an_approved_exchange_keeps_its_quote_accepted() {
 
     desk.decide(
         &request,
-        &staff(MANAGER, Role::Manager, "MAIN"),
+        &staff_as(MANAGER, "MANAGER", "MAIN"),
         Outcome::Approved,
         "known customer",
     )
