@@ -6,7 +6,11 @@ import { setLang } from '../../../shared/i18n';
 import { th, en } from './i18n';
 import { Approvals } from './Approvals';
 import { Toast, toast } from '../parts/toast';
-import type { ApprovalDecisionDto, ApprovalRequestItemDto } from '../../../shared/api/generated/approval_requests';
+import {
+  makeApprovalRequestItemDto,
+  type ApprovalDecisionDto,
+  type ApprovalRequestItemDto,
+} from '../../../shared/testing/fixtures';
 
 const REQUESTS_PATH = '/api/v3/views/approval_requests';
 
@@ -15,8 +19,8 @@ function makeRequest(
   type: string = 'RATE_PUBLICATION',
   status: string = 'PENDING',
   decision: ApprovalDecisionDto | null = null,
-): ApprovalRequestItemDto {
-  return {
+) {
+  return makeApprovalRequestItemDto({
     id,
     type,
     branchId: 'MAIN',
@@ -34,7 +38,7 @@ function makeRequest(
     requestedAt: '2026-10-15T09:00:00Z',
     status,
     decision,
-  };
+  });
 }
 
 interface RecordedRead {
