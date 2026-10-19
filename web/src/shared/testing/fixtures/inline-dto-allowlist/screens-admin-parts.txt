@@ -1,9 +1,0 @@
-# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
-# The migration ticket for screens/admin/parts deletes this file.
-screens/admin/parts/TransactionDetail.test.tsx
-screens/admin/parts/TransactionRate.formatter.test.tsx
-screens/admin/parts/TransactionRate.test.tsx
-screens/admin/parts/TransactionTable.test.tsx
-screens/admin/parts/live-csv.test.ts
-screens/admin/parts/pending-write.test.tsx
-screens/admin/parts/worded.test.tsx

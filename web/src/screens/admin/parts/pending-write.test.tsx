@@ -30,7 +30,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
-import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../../shared/api/client';
+import { ApiError, type ApiClient, type ViewParams } from '../../../shared/api/client';
+import { makeViewAnswer } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { Dialog, closeDialog, openDialog } from './Dialog';
 import { pendingWrite } from './pending-write';
@@ -364,7 +365,7 @@ describe('pendingWrite.inspect (#476 P4, admin-html:123)', () => {
     expect(views[0]!.path).toBe('admin_request_status');
     expect(views[0]!.q!.branch).toBe('B7');
     expect(views[0]!.q!.filter).toEqual({ requestId: ID_1 });
-    views[0]!.resolve({ version: 3, changed: true, data: { applied: true } } satisfies ViewAnswer<{ applied: boolean }>);
+    views[0]!.resolve(makeViewAnswer({ applied: true }, { version: 3, changed: true }));
     await settle();
     expect(toastText()).toBe(FOUND);
     expect(dialog().open).toBe(false);
