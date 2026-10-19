@@ -26,10 +26,18 @@
 //     step 02 needs a live quote. What is pinned is the same: the step and every typed field come back unchanged, and
 //     the step reads or writes nothing of the exchange.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DeskRefundRow, DeskRefunds } from '../../../../shared/api/generated/desk_refunds';
-import type { ReceiptDocumentViewData } from '../../../../shared/api/generated/receipt_document';
-import type { ReversalSummaryDto } from '../../../../shared/api/generated/reversal';
-import type { StaffMeView } from '../../../../shared/api/generated/staff_me';
+import {
+  makeDeskRefundLine,
+  makeDeskRefundPayment,
+  makeDeskRefundRow,
+  makeReceiptDocumentDto,
+  makeReceiptDocumentViewData,
+  makeReversalSummaryDto,
+  makeStaffMeView,
+  type DeskRefunds,
+  type ReversalSummaryDto,
+  type StaffMeView,
+} from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
 
 interface Texts {
@@ -71,12 +79,12 @@ const CONFIG = {
   paymentMethods: [],
 };
 
-function staffMe(permissions: string[]): StaffMeView {
-  return { userId: 'u-1', name: 'Ploy', roles: [], branchId: 'MAIN', branchName: 'XC-B', permissions };
+function staffMe(permissions: string[]) {
+  return makeStaffMeView({ userId: 'u-1', name: 'Ploy', roles: [], branchId: 'MAIN', branchName: 'XC-B', permissions });
 }
 
-function reversal(id: string, original: string, over: Partial<ReversalSummaryDto> = {}): ReversalSummaryDto {
-  return {
+function reversal(id: string, original: string, over: Partial<ReversalSummaryDto> = {}) {
+  return makeReversalSummaryDto({
     id,
     originalTransactionId: original,
     status: 'APPROVED',
@@ -88,29 +96,29 @@ function reversal(id: string, original: string, over: Partial<ReversalSummaryDto
     postedAt: null,
     documentNumber: null,
     ...over,
-  };
+  });
 }
 
 /** Figures that are not what arithmetic would give, so a screen that computed or reformatted them shows otherwise. */
-const ROWS: DeskRefundRow[] = [
-  {
+const ROWS = [
+  makeDeskRefundRow({
     reversal: reversal('rv-1', 'tx-111'),
     receiptNumber: 'XC-0001',
     lines: [
-      { shopSide: 'BUY', currency: 'USD', quantity: '1000.0000', settleThb: '35120.00' },
-      { shopSide: 'SELL', currency: 'JPY', quantity: '0.5000', settleThb: '0.13' },
+      makeDeskRefundLine({ shopSide: 'BUY', currency: 'USD', quantity: '1000.0000', settleThb: '35120.00' }),
+      makeDeskRefundLine({ shopSide: 'SELL', currency: 'JPY', quantity: '0.5000', settleThb: '0.13' }),
     ],
     payments: [
-      { method: 'CASH', amountThb: '35000.00' },
-      { method: 'TRANSFER', amountThb: '120.00' },
+      makeDeskRefundPayment({ method: 'CASH', amountThb: '35000.00' }),
+      makeDeskRefundPayment({ method: 'TRANSFER', amountThb: '120.00' }),
     ],
-  },
-  {
+  }),
+  makeDeskRefundRow({
     reversal: reversal('rv-2', 'tx-222', { amount: '1.00', reason: 'คืนครึ่ง' }),
     receiptNumber: 'XC-0002',
-    lines: [{ shopSide: 'BUY', currency: 'EUR', quantity: '10.0000', settleThb: '1.00' }],
-    payments: [{ method: 'CASH', amountThb: '1.00' }],
-  },
+    lines: [makeDeskRefundLine({ shopSide: 'BUY', currency: 'EUR', quantity: '10.0000', settleThb: '1.00' })],
+    payments: [makeDeskRefundPayment({ method: 'CASH', amountThb: '1.00' })],
+  }),
 ];
 
 const POSTED_DOC = 'XC-0001-R2';
@@ -167,9 +175,9 @@ function install(): void {
       }
       if (u.pathname === '/api/v3/views/desk_refunds') return view(world.refunds);
       if (u.pathname === '/api/v3/views/receipt_document') {
-        const data: ReceiptDocumentViewData = {
-          receipt: { number: POSTED_DOC, revision: 2, issuedAt: '2026-10-11T05:00:00Z', html: RECEIPT_HTML },
-        };
+        const data = makeReceiptDocumentViewData({
+          receipt: makeReceiptDocumentDto({ number: POSTED_DOC, revision: 2, issuedAt: '2026-10-11T05:00:00Z', html: RECEIPT_HTML }),
+        });
         return view(data);
       }
       if (method === 'POST' && /^\/api\/reversals\/[^/]+\/post$/.test(u.pathname)) {
@@ -187,7 +195,7 @@ function install(): void {
 const reads = (name: string) => calls.filter((c) => c.method === 'GET' && c.path === `/api/v3/views/${name}`);
 const postCalls = () => calls.filter((c) => c.method === 'POST' && c.path.startsWith('/api/reversals/'));
 
-function posted(id: string): ReversalSummaryDto {
+function posted(id: string) {
   return reversal(id, 'tx-111', { status: 'POSTED', postedAt: '2026-10-11T05:00:00Z', documentNumber: POSTED_DOC });
 }
 
