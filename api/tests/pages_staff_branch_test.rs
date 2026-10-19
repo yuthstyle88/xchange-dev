@@ -22,12 +22,12 @@ use std::sync::Arc;
 use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test, web};
 use common::{FakeDatabase, settings, state_with};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::test_callers;
 use xchange::presentation::ui::UiAssets;
 
 /// The three branch pages of §8.1.
@@ -38,30 +38,26 @@ fn web_dir() -> PathBuf {
 }
 
 /// Hands out the same sessions for every request.
-struct FixedSessions {
+struct FixedCallers {
     owner: bool,
     staff_branch: String,
 }
 
-impl SessionReader for FixedSessions {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let owner = self.owner.then(|| Actor::owner("owner-1"));
-        let staff = Actor::staff(
+impl SessionReader for FixedCallers {
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        let owner = self.owner.then(|| test_callers::owner("owner-1"));
+        let staff = test_callers::staff(
             "employee-7",
-            Role::Front,
+            &[Role::Teller],
             BranchId::new(self.staff_branch.clone()),
         );
-        assert!(staff.is_some(), "FRONT is a staff role");
-        Box::pin(async move { Sessions { owner, staff } })
+        Box::pin(async move { test_callers::callers(owner, Some(staff)) })
     }
 }
 
 /// Status, Content-Type and body of `GET uri` with these sessions.
 async fn get(owner: bool, staff_branch: &str, uri: &str) -> (StatusCode, String, String) {
-    let reader: Arc<dyn SessionReader> = Arc::new(FixedSessions {
+    let reader: Arc<dyn SessionReader> = Arc::new(FixedCallers {
         owner,
         staff_branch: staff_branch.to_owned(),
     });

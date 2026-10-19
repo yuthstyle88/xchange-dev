@@ -18,12 +18,12 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role};
 use xc_kernel::ids::BranchId;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -31,50 +31,50 @@ const SAME_ORIGIN: &str = "http://xc.test";
 const ROUTE: &str = "/api/quotes";
 const FRONT: &str = "staff:FRONT:B-MAIN";
 
-struct HeaderSessions;
+struct HeaderCallers;
+
+fn roles_of(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown v2 role: {other}"),
+    }
+}
 
 fn staff_of(spec: &str) -> Option<Actor> {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role = parts.next().expect("a role");
     let branch = parts.next().expect("a branch");
-    Actor::staff(
-        format!("employee-{}", role.as_str()),
-        role,
+    Some(test_callers::staff(
+        &format!("employee-{role}"),
+        roles_of(role),
         BranchId::new(branch),
-    )
+    ))
 }
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), staff_of(staff));
     }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
+    test_callers::callers(None, staff_of(spec))
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -97,7 +97,7 @@ impl Answer {
 async fn post(db: &TestDb, who: &str, body: &Value, key: Option<&str>) -> Answer {
     common::install_test_pii_keys();
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
