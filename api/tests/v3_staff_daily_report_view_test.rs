@@ -252,14 +252,26 @@ impl Day {
         desk.db
             .exec("CREATE TABLE tx5_effects (name text NOT NULL, transaction_id uuid NOT NULL)")
             .await;
-        sqlx::query(
-            "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-             SELECT id, 'test', 'PENDING', 'test', 'test' FROM organizations WHERE code = 'XC' \
-             ON CONFLICT (legacy_employee_id) DO NOTHING",
+        let teller_id: uuid::Uuid = if let Some(id) = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT u.id FROM users u JOIN organizations o ON o.id = u.organization_id \
+             WHERE o.code = 'XC' AND u.name = 'test' AND u.created_by = 'test' \
+             ORDER BY u.created_at, u.id LIMIT 1",
         )
-        .execute(&pool)
+        .fetch_optional(&pool)
         .await
-        .expect("seed the opener");
+        .expect("look up opener user")
+        {
+            id
+        } else {
+            sqlx::query_scalar(
+                "INSERT INTO users (organization_id, name, status, created_by) \
+                 SELECT id, 'test', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                 RETURNING id",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("seed the opener")
+        };
         let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
         let shifts = ShiftService::new(
             Arc::new(PgShiftRepository::new(pool.clone())),
@@ -305,10 +317,11 @@ impl Day {
         // CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The same OPEN shift (opener
         // `test`, THB 100000 / USD 1000), written straight into the tables in one branch transaction (setup only).
         let shift = format!("SH-{}", uuid::Uuid::new_v4());
-        let (id, request, opened_at) = (
+        let (id, request, opened_at, teller_id) = (
             shift.clone(),
             unique("open-shift").replace('_', "-"),
             whole_second_now(),
+            teller_id,
         );
         shifts
             .branch_tx()
@@ -317,13 +330,13 @@ impl Day {
                 Box::pin(async move {
                     sqlx::query(
                         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, \
-                         open_request_id, teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id \
-                         FROM users u WHERE u.legacy_employee_id = 'test'",
+                         open_request_id, teller_id) VALUES ($1, $2, 'OPEN', $3, 'test', '', $4, $5)",
                     )
                     .bind(&id)
                     .bind(MAIN)
                     .bind(opened_at)
                     .bind(&request)
+                    .bind(teller_id)
                     .execute(&mut **tx)
                     .await?;
                     Ok::<(), pos_error::AppError>(())
