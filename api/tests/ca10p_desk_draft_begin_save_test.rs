@@ -26,15 +26,13 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use std::sync::Once;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_shift::domain::custody::value_objects::custody_error::CustodyError;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -228,23 +226,6 @@ fn user_of(spec: &str) -> Option<User> {
     ))
 }
 
-fn legacy_of(spec: &str) -> Sessions {
-    let Some((role, branch)) = spec.split_once('@') else {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
-    };
-    let old = match role {
-        "TELLER" => OldRole::Front,
-        other => panic!("unknown role {other}"),
-    };
-    Sessions {
-        owner: None,
-        staff: Actor::staff(user_id(spec).to_owned(), old, BranchId::new(branch)),
-    }
-}
-
 fn spec_of(req: &HttpRequest) -> String {
     req.headers()
         .get(AS)
@@ -253,18 +234,9 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
                 user: user.clone(),
