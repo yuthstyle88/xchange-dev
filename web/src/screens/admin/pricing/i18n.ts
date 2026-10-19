@@ -32,6 +32,22 @@ export const th = {
   save: 'บันทึก',
   recommendations: 'คำแนะนำ',
   orderRefs: 'รายการล่าสุดและราคาตลาด',
+
+  'status.Current': 'ปัจจุบัน',
+  'status.Pending': 'รอดำเนินการ',
+  'status.Unpriced': 'ยังไม่ตั้งราคา',
+  'status.Tiers': 'รออนุมัติขั้น',
+  'status.Review': 'รอตรวจ',
+  'status.Manual': 'กำหนดเอง',
+  'status.Reference': 'อ้างอิง',
+
+  'flag.NoAnchor': 'ไม่มีเรทอ้างอิง',
+  'flag.NoTtQuote': 'ไม่มีเรท TT',
+  'flag.StaleSource': 'แหล่งข้อมูลเก่า',
+  'flag.MinSpread': 'ต่ำกว่าสเปรดขั้นต่ำ',
+  'flag.BelowCost': 'ต่ำกว่าต้นทุน',
+  'flag.LargeMove': 'ราคาขยับแรง',
+  'flag.Precision': 'ทศนิยมคลาดเคลื่อน',
 };
 
 export const en: typeof th = {
@@ -66,4 +82,20 @@ export const en: typeof th = {
   save: 'Save',
   recommendations: 'Recommendations',
   orderRefs: 'Recent orders and their market',
+
+  'status.Current': 'Current',
+  'status.Pending': 'Pending',
+  'status.Unpriced': 'Unpriced',
+  'status.Tiers': 'Tiers to approve',
+  'status.Review': 'In review',
+  'status.Manual': 'Manual',
+  'status.Reference': 'Reference',
+
+  'flag.NoAnchor': 'No anchor quote',
+  'flag.NoTtQuote': 'No TT quote',
+  'flag.StaleSource': 'Stale source',
+  'flag.MinSpread': 'Below min spread',
+  'flag.BelowCost': 'Below cost',
+  'flag.LargeMove': 'Large move',
+  'flag.Precision': 'Precision loss',
 };
