@@ -533,3 +533,54 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
         Ok(draft_id)
     }
 }
+
+#[cfg(test)]
+mod resolve_role_tests {
+    use xc_auth::domain::access::{Role, ScopedRole};
+
+    use super::*;
+
+    fn holding(roles: &[Role]) -> Actor {
+        let roles = roles
+            .iter()
+            .map(|&r| {
+                ScopedRole::new(
+                    r,
+                    Some(BranchId::new("MAIN")),
+                    DateTime::<Utc>::UNIX_EPOCH,
+                    None,
+                )
+            })
+            .collect();
+        Actor::new("u-1", "org-1", roles, None)
+    }
+
+    /// OR-7.m #3282: the custody role every event records, now that no `employees` row answers first.
+    #[test]
+    fn each_blueprint_role_maps_to_its_custody_role() {
+        assert_eq!(
+            resolve_role(&holding(&[Role::BranchManager])),
+            CustodyRole::Manager
+        );
+        assert_eq!(resolve_role(&holding(&[Role::Teller])), CustodyRole::Front);
+        assert_eq!(
+            resolve_role(&holding(&[Role::Finance])),
+            CustodyRole::Finance
+        );
+        assert_eq!(
+            resolve_role(&holding(&[Role::VerificationReviewer])),
+            CustodyRole::Monitor
+        );
+        assert_eq!(resolve_role(&holding(&[Role::Admin])), CustodyRole::Owner);
+        assert_eq!(
+            resolve_role(&holding(&[Role::RateManager])),
+            CustodyRole::Other
+        );
+        assert_eq!(resolve_role(&holding(&[])), CustodyRole::Other);
+        // The first role that maps wins, in the order the actor holds them.
+        assert_eq!(
+            resolve_role(&holding(&[Role::Teller, Role::Admin])),
+            CustodyRole::Front
+        );
+    }
+}
