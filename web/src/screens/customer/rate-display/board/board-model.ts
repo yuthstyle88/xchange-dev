@@ -56,21 +56,107 @@ export interface BoardModel {
   rows: BoardRow[];
 }
 
+function addCommas(intStr: string): string {
+  return intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function isWholeBaht(s: string): boolean {
+  const [, rawFrac = ''] = s.trim().split('.');
+  return rawFrac === '' || /^0+$/.test(rawFrac);
+}
+
+function formatBound(s: string): string {
+  const [rawInt = '0', rawFrac = ''] = s.trim().split('.');
+  if (rawFrac === '' || /^0+$/.test(rawFrac)) {
+    return addCommas(rawInt);
+  }
+  return `${addCommas(rawInt)}.${rawFrac}`;
+}
+
+function addOneInteger(intStr: string): string {
+  const digits = intStr.split('');
+  let i = digits.length - 1;
+  while (i >= 0) {
+    const code = digits[i]!.charCodeAt(0);
+    if (code < 57) {
+      digits[i] = String.fromCharCode(code + 1);
+      return digits.join('');
+    }
+    digits[i] = '0';
+    i--;
+  }
+  return '1' + digits.join('');
+}
+
+function formatUnitLabel(unitSize: string, currency: string): string {
+  const [intPart = '1', fracPart = ''] = unitSize.trim().split('.');
+  const strippedFrac = fracPart.replace(/0+$/, '');
+  const cleanUnit = strippedFrac ? `${intPart}.${strippedFrac}` : intPart;
+  if (!cleanUnit || cleanUnit === '1') return '';
+  return `${cleanUnit} ${currency}`;
+}
+
 /** One heading's label from its bound strings (§9.4). */
-export function bandLabel(_h: BandHeadingIn): string {
+export function bandLabel(h: BandHeadingIn): string {
+  const lower = h.lowerExclusiveThb;
+  const upper = h.upperInclusiveThb;
+  if (lower === null && upper !== null) {
+    return `≤ ${formatBound(upper)} ฿`;
+  }
+  if (lower !== null && upper === null) {
+    return `> ${formatBound(lower)} ฿`;
+  }
+  if (lower !== null && upper !== null) {
+    if (isWholeBaht(lower) && isWholeBaht(upper)) {
+      const [lowerInt = '0'] = lower.trim().split('.');
+      return `${addCommas(addOneInteger(lowerInt))}–${formatBound(upper)} ฿`;
+    }
+    return `> ${formatBound(lower)} – ${formatBound(upper)} ฿`;
+  }
   return '';
 }
 
 export function boardModel(data: BoardRatesData): BoardModel {
+  const rawHeadings = data.bandHeadings ?? [];
+  const singleColumn = rawHeadings.length === 0;
+  const headings: BandHeading[] = rawHeadings.map((h) => ({
+    tier: h.tier,
+    label: bandLabel(h),
+  }));
+
   return {
-    headings: [],
-    singleColumn: true,
-    rows: data.lines.map((l) => ({
-      key: `${l.currency}|${l.group}`,
-      code: l.currency,
-      group: null,
-      unitLabel: '',
-      cells: [],
-    })),
+    headings,
+    singleColumn,
+    rows: data.lines.map((l) => {
+      let cells: BandCell[];
+      if (singleColumn) {
+        cells = [{ tier: 'ALL', buy: l.buyRate, sell: l.sellRate, repeat: false }];
+      } else {
+        const lineBands = l.bands ?? [];
+        if (lineBands.length === 0) {
+          cells = headings.map((h, idx) => ({
+            tier: h.tier,
+            buy: l.buyRate,
+            sell: l.sellRate,
+            repeat: idx > 0,
+          }));
+        } else {
+          cells = headings.map((h) => {
+            const match = lineBands.find((b) => b.tier === h.tier);
+            return match
+              ? { tier: h.tier, buy: match.buyRate, sell: match.sellRate, repeat: false }
+              : { tier: h.tier, buy: null, sell: null, repeat: false };
+          });
+        }
+      }
+
+      return {
+        key: `${l.currency}|${l.group}`,
+        code: l.currency,
+        group: l.group === 'ALL' ? null : l.group,
+        unitLabel: formatUnitLabel(l.unitSize, l.currency),
+        cells,
+      };
+    }),
   };
 }
