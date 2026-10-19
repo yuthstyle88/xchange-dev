@@ -1673,9 +1673,6 @@ pub async fn seed_passport_identity(
 #[path = "../lg4_fund/mod.rs"]
 mod lg4_fund;
 pub use lg4_fund::lg4_fund_safe;
-// R1 (TX-6 #674): only the binaries that replay a recorded save, or open a shift by hand, call it.
-#[allow(unused_imports)]
-pub use lg4_fund::r1_fund_open_drawers;
 
 /// A recorded v2 admin write on a shift (CA-10: replayed by SQL, its v2 command is deleted).
 #[derive(Clone, Copy)]
