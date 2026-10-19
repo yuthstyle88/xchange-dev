@@ -12,6 +12,7 @@ pub mod input;
 pub mod org_view;
 pub mod system;
 pub mod view;
+pub mod xlsx;
 
 use actix_web::web;
 

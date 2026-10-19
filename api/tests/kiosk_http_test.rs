@@ -833,8 +833,19 @@ async fn the_answers_keep_v2s_key_order() {
     let held = counter
         .ask(Some("FR1"), "get", json!({ "id": lettered }))
         .await;
+    // #3473: v3 appends `quoteId` after v2's last key (snapshot_common::V3_ADDED_KEYS);
+    // v2's part is everything before it, unchanged.
+    let (v2_part, added) = held
+        .text
+        .split_once(",\"quoteId\":")
+        .unwrap_or_else(|| panic!("`quoteId` comes after v2's last key: {}", held.text));
+    assert!(
+        added.ends_with('}') && !added[..added.len() - 1].contains(','),
+        "`quoteId` is the last key: {}",
+        held.text
+    );
     assert_eq!(
-        held.text,
+        format!("{v2_part}}}"),
         "{\"paymentMethod\":\"Cash\",\"type\":\"BUY\",\"currency\":\"USD\",\"rate\":32.1,\
          \"foreign\":100,\"thb\":3210,\"inputAmount\":100,\"branchName\":\"XC-B\",\
          \"id\":\"c0ffee12-0000-4000-8000-0000000c0002\",\"queue\":\"K-C0FFEE12\"}"
