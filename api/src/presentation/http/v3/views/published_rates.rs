@@ -1,5 +1,6 @@
 //! Published rates view (§4.8).
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
@@ -21,7 +22,8 @@ use xc_rate::domain::publication::freshness::Freshness;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::published_rates::{
-    PublishedLineDto, PublishedPublicationDto, PublishedRatesData,
+    PublishedBandDto, PublishedBandHeadingDto, PublishedLineDto, PublishedPublicationDto,
+    PublishedRatesData,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -85,17 +87,17 @@ pub async fn published_rates_data(
                 source_date: None,
                 stale: false,
                 lines: vec![],
+                band_headings: vec![],
             });
         }
     };
 
-    let pub_row = sqlx::query(
-        "SELECT id, version, published_at FROM rate_publications WHERE id = $1",
-    )
-    .bind(pub_id)
-    .fetch_one(pool)
-    .await
-    .map_err(pos_error::AppError::Database)?;
+    let pub_row =
+        sqlx::query("SELECT id, version, published_at FROM rate_publications WHERE id = $1")
+            .bind(pub_id)
+            .fetch_one(pool)
+            .await
+            .map_err(pos_error::AppError::Database)?;
 
     let pid: Uuid = pub_row.get(0);
     let pver: i32 = pub_row.get(1);
@@ -110,6 +112,58 @@ pub async fn published_rates_data(
     .await
     .map_err(pos_error::AppError::Database)?;
 
+    let tier_defs_db = sqlx::query(
+        "SELECT t.tier_no, t.upper_inclusive_thb::text \
+         FROM rate_policy_value_tiers t \
+         JOIN rate_policy_versions pv ON pv.id = t.policy_version_id \
+         WHERE pv.value_tiers_on = true \
+           AND pv.id::text = ( \
+               SELECT source_snapshot->>'policy_version_id' \
+               FROM published_rate_lines \
+               WHERE publication_id = $1 \
+                 AND source_snapshot->>'policy_version_id' IS NOT NULL \
+               ORDER BY currency_code ASC, denomination_group ASC, value_tier ASC \
+               LIMIT 1 \
+           ) \
+         ORDER BY t.tier_no ASC",
+    )
+    .bind(pub_id)
+    .fetch_all(pool)
+    .await
+    .map_err(pos_error::AppError::Database)?;
+
+    let tier_defs: Vec<(i16, Option<String>)> = tier_defs_db
+        .into_iter()
+        .map(|r| (r.get::<i16, _>(0), r.get::<Option<String>, _>(1)))
+        .collect();
+    let headings = band_headings(&tier_defs);
+
+    let tiered_rows_db = sqlx::query(
+        "SELECT currency_code, denomination_group, value_tier, buy_rate, sell_rate \
+         FROM published_rate_lines \
+         WHERE publication_id = $1 AND value_tier <> 'ALL'",
+    )
+    .bind(pub_id)
+    .fetch_all(pool)
+    .await
+    .map_err(pos_error::AppError::Database)?;
+
+    let mut band_map = HashMap::new();
+    for r in tiered_rows_db {
+        let c: String = r.get(0);
+        let g: String = r.get(1);
+        let t: String = r.get(2);
+        let buy_dec: Option<Decimal> = r.get(3);
+        let sell_dec: Option<Decimal> = r.get(4);
+        band_map.insert(
+            (c.trim().to_string(), g, t),
+            (
+                buy_dec.map(|d| format!("{:.8}", d)),
+                sell_dec.map(|d| format!("{:.8}", d)),
+            ),
+        );
+    }
+
     let mut lines = Vec::new();
     let mut freshnesses = Vec::new();
     let now = Utc::now();
@@ -123,6 +177,7 @@ pub async fn published_rates_data(
         let sell_dec: Option<Decimal> = r.get(5);
         let snapshot: Value = r.get(6);
 
+        let currency = currency.trim().to_string();
         let unit_size_str = unit_size_dec.normalize().to_string();
 
         let buy_rate = buy_dec.map(|d| format!("{:.8}", d));
@@ -131,13 +186,26 @@ pub async fn published_rates_data(
         freshnesses.push(Freshness::of_side(&snapshot, Side::Buy, now));
         freshnesses.push(Freshness::of_side(&snapshot, Side::Sell, now));
 
+        let bands = headings
+            .iter()
+            .filter_map(|h| {
+                let (b, s) = band_map.get(&(currency.clone(), group.clone(), h.tier.clone()))?;
+                Some(PublishedBandDto {
+                    tier: h.tier.clone(),
+                    buy_rate: b.clone(),
+                    sell_rate: s.clone(),
+                })
+            })
+            .collect();
+
         lines.push(PublishedLineDto {
-            currency: currency.trim().to_string(),
+            currency,
             group,
             unit_size: unit_size_str,
             buy_rate,
             sell_rate,
             line_id: line_id.to_string(),
+            bands,
         });
     }
 
@@ -154,16 +222,42 @@ pub async fn published_rates_data(
             .map(|d| d.format("%Y-%m-%d").to_string()),
         stale: pub_freshness.stale,
         lines,
+        band_headings: headings,
     })
 }
 
+fn band_headings(tiers: &[(i16, Option<String>)]) -> Vec<PublishedBandHeadingDto> {
+    let mut prev_upper: Option<String> = None;
+    let mut out = Vec::with_capacity(tiers.len());
+    for (tier_no, upper) in tiers {
+        let upper_inclusive_thb = if *tier_no == 4 { None } else { upper.clone() };
+        let lower_exclusive_thb = if *tier_no == 1 {
+            None
+        } else {
+            prev_upper.clone()
+        };
+        out.push(PublishedBandHeadingDto {
+            tier: format!("T{tier_no}"),
+            lower_exclusive_thb,
+            upper_inclusive_thb: upper_inclusive_thb.clone(),
+        });
+        prev_upper = upper_inclusive_thb;
+    }
+    out
+}
+
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(cfg, Arc::new(PublishedRatesBranchView::new(state.db.clone())));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(PublishedRatesBranchView::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     PublishedPublicationDto::export_all(&cfg)?;
+    PublishedBandDto::export_all(&cfg)?;
+    PublishedBandHeadingDto::export_all(&cfg)?;
     PublishedLineDto::export_all(&cfg)?;
     PublishedRatesData::export_all(&cfg)?;
     Ok(())

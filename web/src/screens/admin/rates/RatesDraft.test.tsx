@@ -136,7 +136,7 @@ const THAI = /[฀-๿]/;
 // ── the answers ──────────────────────────────────────────────────────────────
 
 function line(currency: string, unitSize: string, buy: string | null, sell: string | null): PublishedLineDto {
-  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}` };
+  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] };
 }
 
 function publishedOf(version: number | null, lines: PublishedLineDto[]): PublishedRatesData {
@@ -146,6 +146,7 @@ function publishedOf(version: number | null, lines: PublishedLineDto[]): Publish
     sourceDate: '2026-10-08',
     stale: false,
     lines,
+    bandHeadings: [],
   };
 }
 

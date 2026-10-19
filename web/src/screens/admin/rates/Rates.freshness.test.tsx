@@ -30,7 +30,8 @@ function publishedOf(over: Partial<PublishedRatesData>): PublishedRatesData {
     publication: { id: 'pub-7', version: 7, publishedAt: PUBLISHED_AT },
     sourceDate: '2026-10-08',
     stale: false,
-    lines: [{ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.25000000', sellRate: '34.10000000', lineId: 'line-USD' }],
+    lines: [{ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.25000000', sellRate: '34.10000000', lineId: 'line-USD', bands: [] }],
+    bandHeadings: [],
     ...over,
   };
 }
