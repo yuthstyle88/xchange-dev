@@ -1,9 +1,13 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
-import type { PlannerPreviewAnswer } from '../../../shared/api/generated/planner_preview';
-import type { PlannerDraftDto } from '../../../shared/api/generated/my_planner_drafts';
+import {
+  makePlannerDraftDto,
+  makePlannerPreviewAnswer,
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { HomeScreen } from './HomeScreen';
@@ -32,12 +36,12 @@ const BRANCHES: PublicBranchesData = {
   ],
 };
 
-const RATES: PublishedRatesData = {
-  publication: { id: 'pub-1', version: 1, publishedAt: '2026-10-12T08:00:00Z' },
+const RATES = makePublishedRatesData({
+  publication: makePublishedPublicationDto({ id: 'pub-1', version: 1, publishedAt: '2026-10-12T08:00:00Z' }),
   sourceDate: '2026-10-12',
   stale: false,
   lines: [
-    {
+    makePublishedLineDto({
       currency: 'USD',
       group: 'ALL',
       unitSize: '1',
@@ -45,8 +49,8 @@ const RATES: PublishedRatesData = {
       sellRate: '35.42000000',
       lineId: 'l-usd',
       bands: [],
-    },
-    {
+    }),
+    makePublishedLineDto({
       currency: 'EUR',
       group: 'ALL',
       unitSize: '1',
@@ -54,20 +58,20 @@ const RATES: PublishedRatesData = {
       sellRate: '38.50000000',
       lineId: 'l-eur',
       bands: [],
-    },
+    }),
   ],
   bandHeadings: [],
-};
+});
 
-const PREVIEW_ANSWER: PlannerPreviewAnswer = {
+const PREVIEW_ANSWER = makePlannerPreviewAnswer({
   thb: '3542.00',
   rate: '35.42000000',
   unitSize: '1',
   stale: false,
   sourceDate: '2026-10-12',
-};
+});
 
-const DRAFT_ANSWER: PlannerDraftDto = {
+const DRAFT_ANSWER = makePlannerDraftDto({
   id: 'draft-2312-001',
   branch: 'XC-B01',
   currency: 'USD',
@@ -77,7 +81,7 @@ const DRAFT_ANSWER: PlannerDraftDto = {
   expiresAt: '2026-10-19T08:00:00Z',
   createdAt: '2026-10-12T08:00:00Z',
   updatedAt: '2026-10-12T08:00:00Z',
-};
+});
 
 interface RecordedRequest {
   method: string;
