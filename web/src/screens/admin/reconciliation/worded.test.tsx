@@ -5,33 +5,38 @@ import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { Reconciliation } from './Reconciliation';
-import type { FinanceSheet } from '../../../shared/api/generated/finance_reconciliation';
+import {
+  makeCertificationRow,
+  makeFinanceSheet,
+  makeMethodTotals,
+  makePart,
+  makeTransactionTotals,
+} from '../../../shared/testing/fixtures';
 
 const B01 = 'XC-B01';
 const B02 = 'XC-B02';
 
-function sampleSheet(branch: string, date: string): FinanceSheet {
-  return {
+function sampleSheet(branch: string, date: string) {
+  return makeFinanceSheet({
     branch,
     date,
-    transactions: {
-      available: true,
-      reason: null,
-      data: {
+    transactions: makePart(
+      makeTransactionTotals({
         byMethod: [
-          { method: 'Cash', buyThb: '1000.00', sellThb: '2000.00', fees: '10.00', bankFees: '0.00', count: 2 },
+          makeMethodTotals({ method: 'Cash', buyThb: '1000.00', sellThb: '2000.00', fees: '10.00', bankFees: '0.00', count: 2 }),
         ],
         reversedThb: '0.00',
-      },
-    },
-    counts: { available: false, reason: 'CA-3', data: null },
-    transfers: { available: false, reason: 'CA-5', data: null },
-    exceptions: { available: false, reason: null, data: [] },
-    integrity: { available: false, reason: null, data: [] },
-    reversalsPending: { available: false, reason: null, data: [] },
+      }),
+      { available: true, reason: null },
+    ),
+    counts: makePart<never>(null, { available: false, reason: 'CA-3' }),
+    transfers: makePart<never>(null, { available: false, reason: 'CA-5' }),
+    exceptions: makePart([], { available: false, reason: null }),
+    integrity: makePart([], { available: false, reason: null }),
+    reversalsPending: makePart([], { available: false, reason: null }),
     figuresHash: `hash-${branch}-123`,
     certifications: [],
-  };
+  });
 }
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -52,14 +57,17 @@ describe('Reconciliation wordedError (#1771)', () => {
     viewHandler = async (branch, date) =>
       jsonResponse(200, { version: 1, changed: true, data: sampleSheet(branch, date) });
     certifyHandler = async () =>
-      jsonResponse(200, {
-        id: 'C-1',
-        certifiedBy: 'u-fin',
-        certifiedAt: '2026-10-15T00:00:00Z',
-        note: '',
-        figuresHash: 'hash-XC-B01-123',
-        stale: false,
-      });
+      jsonResponse(
+        200,
+        makeCertificationRow({
+          id: 'C-1',
+          certifiedBy: 'u-fin',
+          certifiedAt: '2026-10-15T00:00:00Z',
+          note: '',
+          figuresHash: 'hash-XC-B01-123',
+          stale: false,
+        }),
+      );
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
