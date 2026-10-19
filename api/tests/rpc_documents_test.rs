@@ -137,8 +137,9 @@ async fn the_documents_steps_of_the_recorded_day_are_answered_as_v2_answered_the
         assert_eq!(step.action.as_deref(), Some("documents"), "#{n}");
         replay.step(step).await;
     }
-    // held to v2's recorded answer — not to the unknown-name refusal of the gap
-    for n in asked {
+    // held to v2's recorded answer — not to the unknown-name refusal of the gap;
+    // RBAC §11.2 (#3659) widens RATES (RT1, #53) with IdentityDocumentRead
+    for n in [51, 52, 54, 55] {
         assert!(
             replay.tally.replayed.contains(&n),
             "transactions#{n} was not held to what v2 answered: {:?}",
@@ -146,9 +147,11 @@ async fn the_documents_steps_of_the_recorded_day_are_answered_as_v2_answered_the
         );
         assert!(!replay.tally.part_two.contains(&n), "transactions#{n}");
     }
+    assert_eq!(replay.tally.widened, vec![53]);
     assert_eq!(replay.answers[&51].status, 200);
     assert_eq!(replay.answers[&52].status, 200);
-    replay.answers[&53].assert_refused(400, DOCUMENTS_NOT_READABLE, "#53");
+    assert_eq!(replay.answers[&53].status, 200);
+    assert_eq!(replay.answers[&53].text, v2_text(&replay, 51), "#53");
     replay.answers[&54].assert_refused(400, NO_DOCUMENTS, "#54");
     replay.answers[&55].assert_refused(400, INVALID_REQUEST, "#55");
     replay.finish().await;
@@ -197,21 +200,22 @@ async fn an_accepted_answer_is_v2s_text_byte_for_byte() {
 
 // ── who may ask ──────────────────────────────────────────────────────────────
 
-/// Every employee of the recorded day on the staff route: the four roles the
-/// bridge lets read are answered the same text, RATES and SYSTEM its sentence;
-/// and nobody — not the owner, not a Front — is answered on `/api/rpc`.
+/// Every employee of the recorded day on the staff route: the five roles the
+/// bridge lets read (RBAC §11.2 #3659 widens RATES with `IdentityDocumentRead`)
+/// are answered the same text, SYSTEM its sentence; and nobody — not the owner,
+/// not a Front — is answered on `/api/rpc`.
 #[actix_web::test]
 async fn every_role_but_rates_and_system_reads_the_documents_of_the_branch() {
     let fixture = Fixture::load(DAY);
     let replay = the_recorded_day(&fixture).await;
     let expected = v2_text(&replay, 51);
 
-    for who in ["FR1", "BE1", "MO1", "DO1"] {
+    for who in ["FR1", "BE1", "RT1", "MO1", "DO1"] {
         let answer = documents(&replay, who, json!({ "ref": CASH })).await;
         assert_eq!(answer.status, 200, "{who}: {:.300}", answer.text);
         assert_eq!(answer.text, expected, "{who}");
     }
-    for who in ["RT1", "SY1"] {
+    for who in ["SY1"] {
         documents(&replay, who, json!({ "ref": CASH }))
             .await
             .assert_refused(400, DOCUMENTS_NOT_READABLE, who);
@@ -236,7 +240,7 @@ async fn every_role_but_rates_and_system_reads_the_documents_of_the_branch() {
 /// The whole role table, with an exchange nobody was given: where `Policy`
 /// lets a caller through, the lookup answers (`ไม่พบเอกสารรายการ` — not the
 /// role sentence of a name nobody knows); everywhere else `Policy`'s refusal.
-/// Seven roles get through, all on the staff route.
+/// Eight roles get through (RBAC §11.2 #3659 widens RATES), all on the staff route.
 #[actix_web::test]
 async fn the_role_table_of_documents_is_policys_on_both_routes() {
     let desk = Desk::open().await;
@@ -271,20 +275,16 @@ async fn the_role_table_of_documents_is_policys_on_both_routes() {
             }
         }
     }
-    assert_eq!(let_through.len(), 7, "{let_through:?}");
+    assert_eq!(let_through.len(), 8, "{let_through:?}");
     assert!(let_through.iter().all(|(_, path)| *path == STAFF_RPC));
-    assert!(
-        !let_through
-            .iter()
-            .any(|(who, _)| who == "RATES" || who == "SYSTEM")
-    );
+    assert!(!let_through.iter().any(|(who, _)| who == "SYSTEM"));
     // signed in: refused for the role, not for the session
     app.send(
         Call::action(ORIGIN, STAFF_RPC, "documents", json!({ "ref": "XC-NOPE" }))
-            .cookie(&cookies["RATES"]),
+            .cookie(&cookies["SYSTEM"]),
     )
     .await
-    .assert_refused(400, DOCUMENTS_NOT_READABLE, "RATES");
+    .assert_refused(400, DOCUMENTS_NOT_READABLE, "SYSTEM");
     desk.finish().await;
 }
 
