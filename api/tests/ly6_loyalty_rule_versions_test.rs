@@ -1043,8 +1043,8 @@ async fn the_submitter_cannot_decide_their_own_version() {
     room.finish().await;
 }
 
-/// Only EXECUTIVE decides this subject (design §3): under RBAC §11.2, only Finance and Executive hold ApprovalsDecide
-/// (Finance: Full); Finance is refused 403 outOfScope, and roles lacking ApprovalsDecide (such as BranchManager) are refused 400.
+/// Only EXECUTIVE decides this subject (design §3): under RBAC §11.2 ("Branch cash basics", C6m),
+/// Finance and BranchManager hold ApprovalsDecide but are refused 403 outOfScope by the subject's rule.
 #[actix_web::test]
 async fn only_an_executive_decides_a_loyalty_rule_version() {
     let room = Room::start().await;
@@ -1053,19 +1053,16 @@ async fn only_an_executive_decides_a_loyalty_rule_version() {
     assert_eq!(a.status, StatusCode::FORBIDDEN, "FINANCE: {}", a.text);
     assert_eq!(a.code(), "outOfScope", "FINANCE: {}", a.text);
 
+    // BranchManager holds ApprovalsDecide under §11.2 "Branch cash basics" (C6m);
+    // it passes route-level auth and is refused 403 outOfScope by this subject's rule.
     let bm = decide(&room, "BRANCH_MANAGER", &request_id, "APPROVED", &key()).await;
     assert_eq!(
         bm.status,
-        StatusCode::BAD_REQUEST,
+        StatusCode::FORBIDDEN,
         "BRANCH_MANAGER: {}",
         bm.text
     );
-    assert_eq!(
-        bm.code(),
-        "roleNotAllowedHere",
-        "BRANCH_MANAGER: {}",
-        bm.text
-    );
+    assert_eq!(bm.code(), "outOfScope", "BRANCH_MANAGER: {}", bm.text);
 
     assert_eq!(room.loyalty.approve_calls(&version_id), 0);
     assert_eq!(room.loyalty.status_of(&version_id), "PENDING_APPROVAL");
