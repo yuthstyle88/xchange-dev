@@ -217,8 +217,9 @@ async fn desk_bookings_view_readiness_is_unknown() {
 
     assert_eq!(res.status, StatusCode::OK);
     // Ticket §7: Readiness reads "unknown" until #557's view exists (design §5.1)
+    // re-expected for #3477: readiness reads the real state; Alice has no case
     assert!(
-        res.text.contains("\"unknown\""),
+        res.text.contains("\"NONE\""),
         "desk_bookings items readiness must read 'unknown'; got {}",
         res.text
     );
@@ -421,7 +422,8 @@ async fn my_bookings_view_returns_recomputed_qr_token_and_quote_summary() {
     // Design §4.4: status, branch, slot, the QR token (recomputed, B7), readiness
     assert!(res.text.contains(booking_id));
     assert!(res.text.contains("qrToken"));
-    assert!(res.text.contains("\"unknown\""));
+    // re-expected for #3477: readiness reads the real state; Alice has no case
+    assert!(res.text.contains("\"NONE\""));
 
     db.finish().await;
 }
