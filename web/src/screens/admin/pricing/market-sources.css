@@ -1,1 +1,53 @@
-/* market-sources.css — styles for MarketSources.tsx (FE pricing-board, #564). */
+/* market-sources.css — styles for MarketSources.tsx (FE pricing-board, #564, #3760). */
+
+.xc-market-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.xc-market-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background-color: var(--surface-2, #f3f4f6);
+  border: 1px solid var(--border, #e5e7eb);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.xc-source-name {
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+
+.xc-source-time {
+  color: var(--text-muted, #6b7280);
+}
+
+.xc-source-stale {
+  color: var(--color-warning, #d97706);
+  font-weight: 500;
+}
+
+.xc-source-error {
+  color: var(--color-danger, #dc2626);
+  font-weight: 500;
+}
+
+.xc-source-refresh-btn {
+  background: none;
+  border: none;
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.xc-source-refresh-btn:hover {
+  opacity: 0.8;
+}
