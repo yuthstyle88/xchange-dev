@@ -39,7 +39,6 @@ mod tx4_common;
 use quote_common::*;
 use tx4_common::*;
 use xc_approval::domain::request::{Outcome, RequestId};
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::transaction::transaction::{ExchangeTransaction, TransactionStatus};
 use xchange::application::workflows::exchange::confirm::ConfirmOutcome;
 
@@ -73,7 +72,7 @@ async fn the_branchs_manager_approves_and_the_exchange_is_confirmed() {
 
     desk.decide(
         &request,
-        &staff(MANAGER, Role::Manager, "MAIN"),
+        &staff_as(MANAGER, "MANAGER", "MAIN"),
         Outcome::Approved,
         "known customer",
     )
@@ -103,7 +102,7 @@ async fn the_branchs_manager_rejects_and_the_exchange_is_cancelled_with_the_reas
 
     desk.decide(
         &request,
-        &staff(MANAGER, Role::Manager, "MAIN"),
+        &staff_as(MANAGER, "MANAGER", "MAIN"),
         Outcome::Rejected,
         "passport photo unclear",
     )
@@ -136,7 +135,7 @@ async fn a_teller_of_the_branch_cannot_decide() {
         approval_code(
             desk.decide(
                 &request,
-                &staff("employee-other-teller", Role::Front, "MAIN"),
+                &staff_as("employee-other-teller", "FRONT", "MAIN"),
                 Outcome::Approved,
                 "ok",
             )
@@ -163,7 +162,7 @@ async fn a_manager_of_another_branch_cannot_decide() {
             approval_code(
                 desk.decide(
                     &request,
-                    &staff("employee-br2-manager", Role::Manager, BR2),
+                    &staff_as("employee-br2-manager", "MANAGER", BR2),
                     outcome,
                     "not mine",
                 )
@@ -208,15 +207,20 @@ async fn no_other_role_of_the_branch_decides() {
     let (t, request) = pending(&desk).await;
 
     // OR-7.1 #1020 ruling 1: BACKEND is a BRANCH_MANAGER too (§3.3).
-    for role in Role::STAFF
-        .into_iter()
-        .filter(|r| !matches!(r, Role::Manager | Role::Backend))
-    {
+    for role in [
+        "FRONT",
+        "RATES",
+        "MONITOR",
+        "FINANCE",
+        "SYSTEM",
+        "DOCUMENTS",
+        "DOCUMENT_REVIEW",
+    ] {
         assert_eq!(
             approval_code(
                 desk.decide(
                     &request,
-                    &staff(&format!("employee-{}", role.as_str()), role, "MAIN"),
+                    &staff_as(&format!("employee-{role}"), role, "MAIN"),
                     Outcome::Approved,
                     "ok",
                 )
@@ -242,7 +246,7 @@ async fn a_backend_employee_decides_as_the_branchs_manager() {
 
     desk.decide(
         &request,
-        &staff("employee-BACKEND", Role::Backend, "MAIN"),
+        &staff_as("employee-BACKEND", "BACKEND", "MAIN"),
         Outcome::Approved,
         "known customer",
     )
@@ -270,7 +274,7 @@ async fn a_line_changed_after_the_request_makes_the_decision_stale() {
         approval_code(
             desk.decide(
                 &request,
-                &staff(MANAGER, Role::Manager, "MAIN"),
+                &staff_as(MANAGER, "MANAGER", "MAIN"),
                 Outcome::Approved,
                 "ok",
             )
@@ -301,7 +305,7 @@ async fn a_payment_changed_after_the_request_makes_the_decision_stale() {
         approval_code(
             desk.decide(
                 &request,
-                &staff(MANAGER, Role::Manager, "MAIN"),
+                &staff_as(MANAGER, "MANAGER", "MAIN"),
                 Outcome::Approved,
                 "ok",
             )

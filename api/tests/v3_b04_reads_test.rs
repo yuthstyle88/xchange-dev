@@ -69,9 +69,7 @@ use xc_auth::domain::access::Permission;
 use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -185,17 +183,11 @@ fn money(text: &str) -> Money {
 /// OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: the approval core takes
 /// `access::Actor`, so this is the B1-mapped user of the v3 employee `role` on `branch` (FINANCE stays FINANCE,
 /// so the stored `actor_role` `"FINANCE"` below is unchanged, ruling 5 on #1020).
-fn staff(role: Role, branch: &str) -> xc_auth::domain::access::Actor {
-    let v3 = Actor::staff(
-        format!("employee-{}", role.as_str()),
-        role,
+fn staff(role: &str, branch: &str) -> xc_auth::domain::access::Actor {
+    test_callers::staff(
+        &format!("employee-{role}"),
+        roles_of(role),
         BranchId::new(branch),
-    )
-    .expect("a staff actor");
-    xc_auth::domain::access::v3_roles::actor_from_v3(
-        &v3,
-        "00000000-0000-0000-0000-000000000001",
-        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
     )
 }
 
@@ -494,7 +486,7 @@ impl Room {
                 exchange_approval::EXCHANGE_TRANSACTION,
                 &t.id.0.to_string(),
                 &json!({ "reason": "over the limit" }),
-                &staff(Role::Front, branch),
+                &staff("FRONT", branch),
                 &format!("over-{}", t.id.0),
             )
             .await
@@ -508,7 +500,7 @@ impl Room {
             Some(request_id),
         )
         .await;
-        self.decide(request_id, &staff(Role::Manager, branch)).await;
+        self.decide(request_id, &staff("MANAGER", branch)).await;
         t.id
     }
 
@@ -548,7 +540,7 @@ impl Room {
             .await
             .unwrap_or_else(|e| panic!("request the reversal: {e:?}"));
         tx.commit().await.unwrap();
-        self.decide(reversal.approval_request_id, &staff(Role::Finance, branch))
+        self.decide(reversal.approval_request_id, &staff("FINANCE", branch))
             .await;
         reversal.id.0
     }

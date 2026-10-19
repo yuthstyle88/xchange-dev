@@ -39,7 +39,6 @@ use pos_infra::transactions::Transactor;
 use quote_common::*;
 use tx4_common::*;
 use xc_approval::domain::request::Outcome;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::domain::posting::CashPlace;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
@@ -403,7 +402,7 @@ async fn a_late_approval_past_the_quotes_expiry_is_quote_expired() {
     c.desk
         .decide(
             &request,
-            &staff(MANAGER, Role::Manager, "MAIN"),
+            &staff_as(MANAGER, "MANAGER", "MAIN"),
             Outcome::Approved,
             "late",
         )

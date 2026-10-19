@@ -53,7 +53,6 @@ use tx4_common::*;
 use tx5_common::*;
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_auth::domain::access::{Role as AccessRole, StandingKind};
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -742,7 +741,7 @@ async fn decided_rows(outcome: Outcome, reason: &str) {
     a.desk()
         .decide(
             &request,
-            &staff(MANAGER, Role::Manager, "MAIN"),
+            &staff_as(MANAGER, "MANAGER", "MAIN"),
             outcome,
             reason,
         )

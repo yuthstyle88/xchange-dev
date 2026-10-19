@@ -102,13 +102,40 @@ pub fn staff(id: &str, role: Role, branch: &str) -> xc_auth::domain::access::Act
     )
 }
 
+pub fn staff_as(id: &str, v2_role: &str, branch: &str) -> xc_auth::domain::access::Actor {
+    let roles: &[AccessRole] = match v2_role {
+        "FRONT" => &[AccessRole::Teller],
+        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
+        "RATES" => &[AccessRole::RateManager],
+        "FINANCE" => &[AccessRole::Finance],
+        "SYSTEM" => &[AccessRole::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
+        other => panic!("unknown v2 staff role: {other}"),
+    };
+    let branch = Some(BranchId::new(branch));
+    let scoped = roles
+        .iter()
+        .map(|&role| {
+            xc_auth::domain::access::ScopedRole::new(
+                role,
+                branch.clone(),
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )
+        })
+        .collect();
+    xc_auth::domain::access::Actor::new(id, "00000000-0000-0000-0000-000000000001", scoped, None)
+}
+
 /// The v3 owner's B1-mapped user (OR-7.1 #1020): EXECUTIVE and ADMIN, organisation-wide.
 pub fn owner(id: &str) -> xc_auth::domain::access::Actor {
-    xc_auth::domain::access::v3_roles::actor_from_v3(
-        &Actor::owner(id),
-        "00000000-0000-0000-0000-000000000001",
-        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-    )
+    let scoped = [AccessRole::Executive, AccessRole::Admin]
+        .into_iter()
+        .map(|role| {
+            xc_auth::domain::access::ScopedRole::new(role, None, DateTime::<Utc>::UNIX_EPOCH, None)
+        })
+        .collect();
+    xc_auth::domain::access::Actor::new(id, "00000000-0000-0000-0000-000000000001", scoped, None)
 }
 
 /// A recorded call of a step's `before_in` / `after_in`.
