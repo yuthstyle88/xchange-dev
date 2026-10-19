@@ -1,5 +1,4 @@
 // C07 customer profile and consent screen (design customer-identity-consent.md §4.3, §4.4, K5).
-// SKELETON STUB (feat/fe-customer): the function ticket replaces this body; the props and export stay.
 import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';

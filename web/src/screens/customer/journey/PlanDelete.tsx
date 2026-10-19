@@ -1,6 +1,5 @@
 // C09: a saved plan's delete button, plannerDraftDelete `POST /api/app/planner-drafts/{id}/delete`
-// (design customer-app.md §4.5, §9.1). SKELETON STUB (feat/fe-customer): the function ticket replaces this
-// body; the props and export stay.
+// (design customer-app.md §4.5, §9.1).
 import { createSignal, Show, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
