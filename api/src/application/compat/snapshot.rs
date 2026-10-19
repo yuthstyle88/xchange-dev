@@ -537,7 +537,7 @@ mod tests {
         let thb = code("THB");
         let usd = code("USD");
         let balances = safe_balances(vec![
-            (thb, MoneyDelta::from_minor(123_45)),
+            (thb, MoneyDelta::from_minor(12_345)),
             (usd, MoneyDelta::from_minor(50_00)),
         ])
         .expect("positive safe balances succeed");
@@ -550,7 +550,7 @@ mod tests {
         );
         assert!(
             safe_balances(vec![
-                (thb, MoneyDelta::from_minor(123_45)),
+                (thb, MoneyDelta::from_minor(12_345)),
                 (usd, MoneyDelta::from_minor(-1)),
             ])
             .is_err(),
