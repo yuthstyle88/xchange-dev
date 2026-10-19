@@ -299,7 +299,6 @@ pub fn is_staff_path(path: EntryPath) -> bool {
             | EntryPath::StaffDesk
             | EntryPath::StaffFile
             | EntryPath::StaffUpload
-            | EntryPath::StaffBookings
     )
 }
 

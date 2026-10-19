@@ -118,7 +118,7 @@ export const D4 = {
   to: (c) => (c.path === 'Kiosk' && c.action === 'rates' ? { allowed: true, branch: c.named } : refused(OUT_OF_SCOPE.error, OUT_OF_SCOPE.status)),
 };
 
-// C6 (MARKETING) and C9 (StaffBookings) select no v2 case: no v3 user is MARKETING, and StaffBookings is not
+// C6 (MARKETING) and C9 select no v2 case: no v3 user is MARKETING, and C9 is not
 // in v2's fixture. They are asserted by the Rust tests that name them.
 export const NO_CASE = ['C6', 'C9'];
 

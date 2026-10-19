@@ -259,7 +259,6 @@ fn entry_path(name: &str) -> EntryPath {
         "PaymentMethods" => EntryPath::PaymentMethods,
         "DrawerPassport" => EntryPath::DrawerPassport,
         "DeviceSetup" => EntryPath::DeviceSetup,
-        "StaffBookings" => EntryPath::StaffBookings,
         other => panic!("no entry path {other}"),
     }
 }
