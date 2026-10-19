@@ -34,7 +34,6 @@ use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
-use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -43,14 +42,7 @@ const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
 const SAME_ORIGIN: &str = "http://xc.test";
 const B01: &str = "XC-B01";
-const B09: &str = "XC-B09";
 const ADMIN: &str = "ADMIN@*";
-const REFUSED: [&str; 4] = [
-    "EXECUTIVE@*",
-    "BRANCH_MANAGER@XC-B01",
-    "TELLER@XC-B01",
-    "FINANCE@XC-B01",
-];
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -113,34 +105,6 @@ impl TestDb {
             .await
             .expect("insert the branches");
         Self { pool, schema }
-    }
-
-    async fn text(&self, sql: &str) -> Option<String> {
-        sqlx::query_scalar(AssertSqlSafe(sql.to_owned()))
-            .fetch_optional(&self.pool)
-            .await
-            .unwrap_or_else(|e| panic!("{sql}: {e}"))
-    }
-
-    async fn count(&self, sql: &str) -> i64 {
-        sqlx::query_scalar(AssertSqlSafe(sql.to_owned()))
-            .fetch_one(&self.pool)
-            .await
-            .unwrap_or_else(|e| panic!("{sql}: {e}"))
-    }
-
-    async fn version(&self, user: &str) -> i64 {
-        self.count(&format!(
-            "SELECT version::bigint FROM users WHERE id = '{user}'::uuid"
-        ))
-        .await
-    }
-
-    async fn branch_version(&self, branch: &str) -> i64 {
-        self.count(&format!(
-            "SELECT COALESCE((SELECT version FROM branch_versions WHERE branch_id = '{branch}'), 0)"
-        ))
-        .await
     }
 
     async fn finish(self) {
@@ -242,9 +206,8 @@ struct Answer {
     body: Value,
 }
 
-enum Key<'a> {
+enum Key {
     Fresh,
-    This(&'a str),
 }
 
 async fn call(
@@ -253,7 +216,7 @@ async fn call(
     method: Method,
     uri: &str,
     body: Option<Value>,
-    key: Key<'_>,
+    key: Key,
 ) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
     let reader: Arc<dyn SessionReader> = Arc::new(HeaderUsers);
@@ -276,7 +239,6 @@ async fn call(
             .set_payload(body.to_string());
         match key {
             Key::Fresh => req = req.insert_header(("idempotency-key", unique("key"))),
-            Key::This(k) => req = req.insert_header(("idempotency-key", k.to_owned())),
         }
     }
     let resp = atest::call_service(&app, req.to_request()).await;
@@ -287,14 +249,7 @@ async fn call(
     Answer { status, text, body }
 }
 
-async fn post(
-    db: &TestDb,
-    who: &str,
-    method: Method,
-    uri: &str,
-    body: Value,
-    key: Key<'_>,
-) -> Answer {
+async fn post(db: &TestDb, who: &str, method: Method, uri: &str, body: Value, key: Key) -> Answer {
     call(db, who, method, uri, Some(body), key).await
 }
 
@@ -308,7 +263,6 @@ fn code(a: &Answer) -> String {
         .unwrap_or_default()
         .to_owned()
 }
-
 
 const PROFILE: &str = "/api/branches/profile";
 
@@ -343,7 +297,12 @@ async fn saved_profile(db: &TestDb) -> Value {
 fn assert_refused(a: &Answer, field: &str, case: &str) {
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{case}: {}", a.text);
     assert_eq!(code(a), "validationFailed", "{case}: {}", a.text);
-    assert_eq!(a.body["error"]["field"], json!(field), "{case}: names the field: {}", a.text);
+    assert_eq!(
+        a.body["error"]["field"],
+        json!(field),
+        "{case}: names the field: {}",
+        a.text
+    );
 }
 
 /// B1: a branch that existed before the migration answers the defaults.
@@ -351,7 +310,11 @@ fn assert_refused(a: &Answer, field: &str, case: &str) {
 async fn s3_b1_an_existing_branch_has_no_channels_and_is_active() {
     let db = TestDb::start().await;
     let data = saved_profile(&db).await;
-    assert_eq!(data["contactChannels"], json!([]), "B1 contactChannels: {data}");
+    assert_eq!(
+        data["contactChannels"],
+        json!([]),
+        "B1 contactChannels: {data}"
+    );
     assert_eq!(data["status"], json!("ACTIVE"), "B1 status: {data}");
     db.finish().await;
 }
@@ -366,7 +329,10 @@ async fn s3_b2_saved_channels_and_status_read_back_in_order() {
         Method::PUT,
         PROFILE,
         save_body(
-            json!([channel("PHONE", "  +66 2 000 0000 "), channel("LINE", "@xchange")]),
+            json!([
+                channel("PHONE", "  +66 2 000 0000 "),
+                channel("LINE", "@xchange")
+            ]),
             "INACTIVE",
         ),
         Key::Fresh,
@@ -377,12 +343,32 @@ async fn s3_b2_saved_channels_and_status_read_back_in_order() {
         { "kind": "PHONE", "value": "+66 2 000 0000" },
         { "kind": "LINE", "value": "@xchange" }
     ]);
-    assert_eq!(a.body["contactChannels"], want_channels, "B2 the save answers the channels: {}", a.text);
-    assert_eq!(a.body["status"], json!("INACTIVE"), "B2 the save answers the status: {}", a.text);
+    assert_eq!(
+        a.body["contactChannels"], want_channels,
+        "B2 the save answers the channels: {}",
+        a.text
+    );
+    assert_eq!(
+        a.body["status"],
+        json!("INACTIVE"),
+        "B2 the save answers the status: {}",
+        a.text
+    );
     let data = saved_profile(&db).await;
-    assert_eq!(data["contactChannels"], want_channels, "B2 the view, in the order saved: {data}");
-    assert_eq!(data["status"], json!("INACTIVE"), "B2 the view's status: {data}");
-    assert_eq!(data["code"], json!("SILOM"), "B2 the rest of the profile is saved too: {data}");
+    assert_eq!(
+        data["contactChannels"], want_channels,
+        "B2 the view, in the order saved: {data}"
+    );
+    assert_eq!(
+        data["status"],
+        json!("INACTIVE"),
+        "B2 the view's status: {data}"
+    );
+    assert_eq!(
+        data["code"],
+        json!("SILOM"),
+        "B2 the rest of the profile is saved too: {data}"
+    );
     db.finish().await;
 }
 
@@ -390,12 +376,34 @@ async fn s3_b2_saved_channels_and_status_read_back_in_order() {
 #[actix_web::test]
 async fn s3_b3_bad_channels_or_status_are_refused_and_nothing_is_saved() {
     let db = TestDb::start().await;
-    let eleven: Vec<Value> = (0..11).map(|i| channel("PHONE", &format!("0{i}"))).collect();
+    let eleven: Vec<Value> = (0..11)
+        .map(|i| channel("PHONE", &format!("0{i}")))
+        .collect();
     let cases: Vec<(&str, Value, &str, &str)> = vec![
-        ("an unknown kind", json!([channel("FAX", "02 000 0000")]), "ACTIVE", "contactChannels"),
-        ("11 channels", Value::Array(eleven), "ACTIVE", "contactChannels"),
-        ("a 201-character value", json!([channel("WEBSITE", &"w".repeat(201))]), "ACTIVE", "contactChannels"),
-        ("an all-space value", json!([channel("EMAIL", "   ")]), "ACTIVE", "contactChannels"),
+        (
+            "an unknown kind",
+            json!([channel("FAX", "02 000 0000")]),
+            "ACTIVE",
+            "contactChannels",
+        ),
+        (
+            "11 channels",
+            Value::Array(eleven),
+            "ACTIVE",
+            "contactChannels",
+        ),
+        (
+            "a 201-character value",
+            json!([channel("WEBSITE", &"w".repeat(201))]),
+            "ACTIVE",
+            "contactChannels",
+        ),
+        (
+            "an all-space value",
+            json!([channel("EMAIL", "   ")]),
+            "ACTIVE",
+            "contactChannels",
+        ),
         ("a status outside the two", json!([]), "CLOSED", "status"),
     ];
     for (case, channels, status, field) in cases {
@@ -404,7 +412,11 @@ async fn s3_b3_bad_channels_or_status_are_refused_and_nothing_is_saved() {
         let a = post(&db, ADMIN, Method::PUT, PROFILE, body, Key::Fresh).await;
         assert_refused(&a, field, case);
         let data = saved_profile(&db).await;
-        assert_ne!(data["code"], json!("REFUSED"), "{case}: nothing is saved: {data}");
+        assert_ne!(
+            data["code"],
+            json!("REFUSED"),
+            "{case}: nothing is saved: {data}"
+        );
     }
     db.finish().await;
 }
@@ -427,7 +439,10 @@ async fn s3_b3_ten_channels_and_a_200_character_value_are_accepted() {
     .await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     let data = saved_profile(&db).await;
-    assert_eq!(data["contactChannels"], want, "10 channels, the last 200 characters: {data}");
+    assert_eq!(
+        data["contactChannels"], want,
+        "10 channels, the last 200 characters: {data}"
+    );
     db.finish().await;
 }
 
@@ -442,7 +457,15 @@ async fn s3_every_named_kind_is_accepted() {
         channel("FACEBOOK", "xchange.th"),
         channel("WEBSITE", "https://example.test")
     ]);
-    let a = post(&db, ADMIN, Method::PUT, PROFILE, save_body(all.clone(), "ACTIVE"), Key::Fresh).await;
+    let a = post(
+        &db,
+        ADMIN,
+        Method::PUT,
+        PROFILE,
+        save_body(all.clone(), "ACTIVE"),
+        Key::Fresh,
+    )
+    .await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     let data = saved_profile(&db).await;
     assert_eq!(data["contactChannels"], all, "the five kinds: {data}");
