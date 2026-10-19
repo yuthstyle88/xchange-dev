@@ -221,16 +221,6 @@ impl TicketIssuer {
         let service_date = now.with_timezone(&tz).date_naive();
 
         if let IssueSource::App { customer_id } = source {
-            sqlx::query(
-                "UPDATE queue_tickets \
-                 SET served_at = COALESCE(called_at, issued_at, completed_at) \
-                 WHERE branch_id = $1 AND customer_id = $2 \
-                   AND status = 'COMPLETED' AND served_at IS NULL AND completed_at IS NOT NULL",
-            )
-            .bind(branch.as_str())
-            .bind(customer_id)
-            .execute(&mut **tx)
-            .await?;
             let existing: Option<(String,)> = sqlx::query_as(
                 "SELECT id::text FROM queue_tickets \
                  WHERE branch_id = $1 AND service_date = $2 AND customer_id = $3 \

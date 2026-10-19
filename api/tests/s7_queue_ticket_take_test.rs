@@ -640,7 +640,7 @@ async fn s7_b6_after_the_ticket_completes_a_new_take_succeeds() {
     let db = TestDb::start().await;
     let first = take(&db, ALICE, &unique("k")).await;
     assert_eq!(first.status, StatusCode::OK, "B6 first: {}", first.text);
-    sqlx::query("UPDATE queue_tickets SET status = 'COMPLETED', completed_at = now() WHERE customer_id = $1")
+    sqlx::query("UPDATE queue_tickets SET status = 'COMPLETED', served_at = now(), completed_at = now() WHERE customer_id = $1")
         .bind(ALICE_CUSTOMER_ID)
         .execute(&db.pool)
         .await
