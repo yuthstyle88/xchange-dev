@@ -6,7 +6,7 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use pos_infra::transactions::Transactor;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_auth::infrastructure::attempts::PgAttemptCounter;
 use xc_kernel::branch_tx::BranchTx;
 
 use super::client_address::client_address;
@@ -33,15 +33,9 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let agent_repo = Arc::new(PgAgentRepository::new(state.db.clone()));
     let device_repo = Arc::new(PgDeviceRepository::new(state.db.clone()));
-    let account_repo = Arc::new(PgAccountRepository::new(state.db.clone()));
+    let attempts = PgAttemptCounter::new(state.db.clone());
 
-    let service = AgentService::new(
-        agent_repo,
-        device_repo,
-        account_repo,
-        branch_tx,
-        printer_models,
-    );
+    let service = AgentService::new(agent_repo, device_repo, attempts, branch_tx, printer_models);
 
     cfg.service(
         web::resource("/api/device-agent/pair")
