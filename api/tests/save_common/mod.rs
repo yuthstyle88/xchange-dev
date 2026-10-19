@@ -531,11 +531,6 @@ impl Shop {
 
     /// Make every INSERT and UPDATE on `table` fail until `mend` is called.
     pub async fn break_writes(&self, table: &str) {
-        let table = if table == "shift_balances" {
-            "ledger_entries"
-        } else {
-            table
-        };
         sqlx::query(
             "CREATE OR REPLACE FUNCTION t8b_refuse() RETURNS trigger LANGUAGE plpgsql AS \
              $$ BEGIN RAISE EXCEPTION 'test: this table refuses writes'; END $$",
@@ -553,11 +548,6 @@ impl Shop {
     }
 
     pub async fn mend(&self, table: &str) {
-        let table = if table == "shift_balances" {
-            "ledger_entries"
-        } else {
-            table
-        };
         sqlx::query(AssertSqlSafe(format!("DROP TRIGGER t8b_refuse ON {table}")))
             .execute(&self.pool)
             .await
