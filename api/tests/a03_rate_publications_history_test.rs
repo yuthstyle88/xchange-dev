@@ -296,10 +296,15 @@ async fn call(room: &Room, who: &Who, method: Method, uri: &str) -> Answer {
     }
 }
 
-
-
 /// (currency, denomination group, value tier (`ALL` = no tier, the column's default), unit size, buy, sell).
-type Line = (&'static str, &'static str, &'static str, &'static str, Option<&'static str>, Option<&'static str>);
+type Line = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    Option<&'static str>,
+);
 
 fn at(min: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, 1, 9, min, 0).unwrap()
@@ -321,7 +326,9 @@ async fn page(room: &Room, branch: &str, extra: &str) -> Vec<Value> {
 }
 
 fn versions(rows: &[Value]) -> Vec<i64> {
-    rows.iter().map(|r| r["version"].as_i64().unwrap_or(-1)).collect()
+    rows.iter()
+        .map(|r| r["version"].as_i64().unwrap_or(-1))
+        .collect()
 }
 
 /// The row's line for (currency, group, tier).
@@ -330,11 +337,7 @@ fn line<'a>(row: &'a Value, currency: &str, group: &str, tier: &str) -> &'a Valu
         .as_array()
         .unwrap_or_else(|| panic!("each row carries `lines`: {row}"))
         .iter()
-        .find(|l| {
-            l["currency"] == currency
-                && l["group"] == group
-                && l["valueTier"] == tier
-        })
+        .find(|l| l["currency"] == currency && l["group"] == group && l["valueTier"] == tier)
         .unwrap_or_else(|| panic!("no line {currency}/{group}/{tier} in {row}"))
 }
 
@@ -349,12 +352,24 @@ async fn a03_pages_newest_first_with_limit_and_before() {
     let _v3 = room.publish("A03-B1", at(3), l).await;
 
     let first = page(&room, "A03-B1", "&limit=2").await;
-    assert_eq!(versions(&first), vec![3, 2], "newest first, two rows: {first:?}");
+    assert_eq!(
+        versions(&first),
+        vec![3, 2],
+        "newest first, two rows: {first:?}"
+    );
     assert_eq!(first[1]["id"], json!(v2));
     let next = page(&room, "A03-B1", &format!("&limit=2&before={v2}")).await;
-    assert_eq!(versions(&next), vec![1], "the page after v2 holds v1 only: {next:?}");
+    assert_eq!(
+        versions(&next),
+        vec![1],
+        "the page after v2 holds v1 only: {next:?}"
+    );
     let all = page(&room, "A03-B1", "").await;
-    assert_eq!(versions(&all), vec![3, 2, 1], "no limit: the default page holds all three");
+    assert_eq!(
+        versions(&all),
+        vec![3, 2, 1],
+        "no limit: the default page holds all three"
+    );
     room.finish().await;
 }
 
@@ -363,8 +378,18 @@ async fn a03_pages_newest_first_with_limit_and_before() {
 async fn a03_a_changed_line_has_before_and_after() {
     let room = Room::start().await;
     room.create_branch("A03-B2").await;
-    room.publish("A03-B2", at(1), &[("USD", "ALL", "ALL", "1", Some("35.00"), Some("36.00"))]).await;
-    room.publish("A03-B2", at(2), &[("USD", "ALL", "ALL", "1", Some("35.10"), Some("36.00"))]).await;
+    room.publish(
+        "A03-B2",
+        at(1),
+        &[("USD", "ALL", "ALL", "1", Some("35.00"), Some("36.00"))],
+    )
+    .await;
+    room.publish(
+        "A03-B2",
+        at(2),
+        &[("USD", "ALL", "ALL", "1", Some("35.10"), Some("36.00"))],
+    )
+    .await;
 
     let rows = page(&room, "A03-B2", "").await;
     let usd = line(&rows[0], "USD", "ALL", "ALL");
@@ -381,7 +406,12 @@ async fn a03_a_changed_line_has_before_and_after() {
 async fn a03_the_first_publication_has_no_before() {
     let room = Room::start().await;
     room.create_branch("A03-B3").await;
-    room.publish("A03-B3", at(1), &[("USD", "ALL", "ALL", "1", Some("35.00"), Some("36.00"))]).await;
+    room.publish(
+        "A03-B3",
+        at(1),
+        &[("USD", "ALL", "ALL", "1", Some("35.00"), Some("36.00"))],
+    )
+    .await;
 
     let rows = page(&room, "A03-B3", "").await;
     let usd = line(&rows[0], "USD", "ALL", "ALL");
@@ -421,9 +451,16 @@ async fn a03_added_and_dropped_lines() {
     let jpy = line(&rows[0], "JPY", "ALL", "ALL");
     assert_eq!(jpy["after"], Value::Null, "dropped: {jpy}");
     assert_eq!(jpy["before"]["buy"], json!("22.00000000"), "dropped: {jpy}");
-    assert_eq!(jpy["unitSize"], json!("100"), "dropped keeps its unit: {jpy}");
+    assert_eq!(
+        jpy["unitSize"],
+        json!("100"),
+        "dropped keeps its unit: {jpy}"
+    );
     let usd = line(&rows[0], "USD", "ALL", "ALL");
-    assert_eq!(usd["before"], usd["after"], "unchanged lines are listed with equal sides: {usd}");
+    assert_eq!(
+        usd["before"], usd["after"],
+        "unchanged lines are listed with equal sides: {usd}"
+    );
     room.finish().await;
 }
 
@@ -466,14 +503,37 @@ async fn a03_another_branch_is_never_mixed_in() {
     let room = Room::start().await;
     room.create_branch("A03-B6").await;
     room.create_branch("A03-B7").await;
-    room.publish("A03-B6", at(1), &[("USD", "ALL", "ALL", "1", Some("35.00"), Some("36.00"))]).await;
-    room.publish("A03-B7", at(2), &[("USD", "ALL", "ALL", "1", Some("40.00"), Some("41.00"))]).await;
-    room.publish("A03-B6", at(3), &[("USD", "ALL", "ALL", "1", Some("35.50"), Some("36.00"))]).await;
+    room.publish(
+        "A03-B6",
+        at(1),
+        &[("USD", "ALL", "ALL", "1", Some("35.00"), Some("36.00"))],
+    )
+    .await;
+    room.publish(
+        "A03-B7",
+        at(2),
+        &[("USD", "ALL", "ALL", "1", Some("40.00"), Some("41.00"))],
+    )
+    .await;
+    room.publish(
+        "A03-B6",
+        at(3),
+        &[("USD", "ALL", "ALL", "1", Some("35.50"), Some("36.00"))],
+    )
+    .await;
 
     let rows = page(&room, "A03-B6", "").await;
-    assert_eq!(versions(&rows), vec![2, 1], "only A03-B6's two versions: {rows:?}");
+    assert_eq!(
+        versions(&rows),
+        vec![2, 1],
+        "only A03-B6's two versions: {rows:?}"
+    );
     let usd = line(&rows[0], "USD", "ALL", "ALL");
-    assert_eq!(usd["before"]["buy"], json!("35.00000000"), "before is A03-B6's v1, not A03-B7's: {usd}");
+    assert_eq!(
+        usd["before"]["buy"],
+        json!("35.00000000"),
+        "before is A03-B6's v1, not A03-B7's: {usd}"
+    );
     room.finish().await;
 }
 
