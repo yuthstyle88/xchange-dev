@@ -13,7 +13,7 @@
 //!
 //! Only `phase` is written, on the verify's transaction. A CLOSE count and a hand-over accept do not apply the rule.
 //!
-//! These tests touch only the `ops_state` columns that outlive CA-10 (`phase`, `entity`, `target`, `safe`,
+//! These tests touch only the `ops_state` columns that outlive CA-10 (`phase`, `entity`, `target`,
 //! `cutoff`, `service_opened_at`), never `enabled` or `custodian_id`, so CA-10's M3 does not break them.
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; nothing here skips. Each test works in a
@@ -37,9 +37,8 @@ use xc_kernel::ids::BranchId;
 
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
-/// `entity`, `target`, `safe`, `cutoff` and `service_opened_at` of a day row, as text.
+/// `entity`, `target`, `cutoff` and `service_opened_at` of a day row, as text.
 type KeptColumns = (
-    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -198,14 +197,14 @@ impl Db {
     /// Every kept column of the branch's day row, as text, the phase excepted.
     async fn kept_columns(&self, branch: &BranchId) -> Vec<Option<String>> {
         let row: KeptColumns = sqlx::query_as(
-            "SELECT entity::text, target::text, safe::text, cutoff::text, service_opened_at::text \
+            "SELECT entity::text, target::text, cutoff::text, service_opened_at::text \
              FROM ops_state WHERE branch_id = $1",
         )
         .bind(branch.as_str())
         .fetch_one(&self.pool)
         .await
         .expect("read the day row");
-        vec![row.0, row.1, row.2, row.3, row.4]
+        vec![row.0, row.1, row.2, row.3]
     }
 
     async fn open_shifts(&self, branch: &BranchId) -> i64 {
@@ -342,7 +341,6 @@ async fn only_the_phase_is_written() {
         "UPDATE ops_state SET \
            entity = '{\"company\":\"XC\",\"site\":\"B\",\"confirmedBy\":\"owner\",\"at\":1791262800000}'::jsonb, \
            target = '{\"amounts\":{\"THB\":10000000},\"by\":\"mgr\",\"at\":1791262800000}'::jsonb, \
-           safe = '{\"THB\":50000000,\"USD\":100000}'::jsonb, \
            cutoff = '{\"at\":1791262800000,\"by\":\"mgr\",\"shiftId\":\"SH-yesterday\",\"lastRef\":null,\"pending\":[]}'::jsonb, \
            service_opened_at = '2026-10-14T02:00:00Z' \
          WHERE branch_id = $1",
@@ -361,7 +359,7 @@ async fn only_the_phase_is_written() {
     assert_eq!(
         db.kept_columns(&branch).await,
         before,
-        "entity, target, safe, cutoff and service_opened_at are not written"
+        "entity, target, cutoff and service_opened_at are not written"
     );
 }
 
