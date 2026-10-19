@@ -33,12 +33,15 @@ import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/g
 import type { RateDraftDetailData, RateDraftLineDto } from '../../../shared/api/generated/rate_draft';
 import type { RateDraftItemDto } from '../../../shared/api/generated/rate_drafts';
 import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
-import type { RatePublicationItemDto } from '../../../shared/api/generated/rate_publications';
+import type { RatePublicationRow } from './rate-history';
 import type { RatesReferenceData, RatesReferenceRow } from '../../../shared/api/generated/rates_reference';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
+
+// A03 (#3399): the publications type is the local row of ./rate-history (generated file changes with #3399).
+type RatePublicationItemDto = Omit<RatePublicationRow, 'lines'>;
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
