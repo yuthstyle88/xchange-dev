@@ -50,7 +50,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Row};
 use uuid::Uuid;
-use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_auth::domain::access::{Actor, Permission, Role, RoleGrants, ScopedRole};
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
@@ -932,14 +932,20 @@ async fn executive_submit_opens_one_loyalty_rule_version_request_and_moves_loyal
 async fn roles_without_loyalty_rules_manage_are_refused_400_role_not_allowed() {
     let room = Room::start().await;
     let seeded = room.loyalty.seed_point_draft();
-    for who in [
+    let unauth_roles = [
         "ADMIN",
         "FINANCE",
         "MARKETING",
         "RATE_MANAGER",
         "BRANCH_MANAGER",
         "TELLER",
-    ] {
+    ]
+    .into_iter()
+    .filter(|who| {
+        let role = Role::parse(who).expect("role");
+        !RoleGrants::seed(role).contains(&Permission::LoyaltyRulesManage)
+    });
+    for who in unauth_roles {
         let d = draft(&room, who, "POINT", point_fields()).await;
         assert_eq!(
             d.status,
@@ -1037,18 +1043,30 @@ async fn the_submitter_cannot_decide_their_own_version() {
     room.finish().await;
 }
 
-/// Only EXECUTIVE decides this subject (design §3): FINANCE and BRANCH_MANAGER hold `ApprovalsDecide` but are
-/// refused `403 outOfScope`, as the CAMPAIGN_VERSION and RATE_PUBLICATION policies refuse them.
-/// Red while: the policy accepts any holder of `ApprovalsDecide`.
+/// Only EXECUTIVE decides this subject (design §3): under RBAC §11.2, only Finance and Executive hold ApprovalsDecide
+/// (Finance: Full); Finance is refused 403 outOfScope, and roles lacking ApprovalsDecide (such as BranchManager) are refused 400.
 #[actix_web::test]
 async fn only_an_executive_decides_a_loyalty_rule_version() {
     let room = Room::start().await;
     let (version_id, request_id) = drafted_and_submitted(&room).await;
-    for who in ["FINANCE", "BRANCH_MANAGER"] {
-        let a = decide(&room, who, &request_id, "APPROVED", &key()).await;
-        assert_eq!(a.status, StatusCode::FORBIDDEN, "{who}: {}", a.text);
-        assert_eq!(a.code(), "outOfScope", "{who}: {}", a.text);
-    }
+    let a = decide(&room, "FINANCE", &request_id, "APPROVED", &key()).await;
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "FINANCE: {}", a.text);
+    assert_eq!(a.code(), "outOfScope", "FINANCE: {}", a.text);
+
+    let bm = decide(&room, "BRANCH_MANAGER", &request_id, "APPROVED", &key()).await;
+    assert_eq!(
+        bm.status,
+        StatusCode::BAD_REQUEST,
+        "BRANCH_MANAGER: {}",
+        bm.text
+    );
+    assert_eq!(
+        bm.code(),
+        "roleNotAllowedHere",
+        "BRANCH_MANAGER: {}",
+        bm.text
+    );
+
     assert_eq!(room.loyalty.approve_calls(&version_id), 0);
     assert_eq!(room.loyalty.status_of(&version_id), "PENDING_APPROVAL");
     room.finish().await;
