@@ -29,7 +29,7 @@ use uuid::Uuid;
 use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSessionId};
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const HOST: &str = "xc.test";
@@ -137,18 +137,6 @@ fn user_of(req: &HttpRequest) -> Option<Actor> {
 }
 
 impl SessionReader for HeaderCallers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let user = user_of(req);
         Box::pin(async move {

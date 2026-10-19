@@ -27,34 +27,26 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::TestDb;
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::VIEWS;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const VIEW: &str = "approval_requests";
 
 /// Every request is read as the owner, who decides rate publications.
-struct OwnerSessions;
+struct OwnerCallers;
 
-impl SessionReader for OwnerSessions {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: Some(Actor::owner("owner-1")),
-                staff: None,
-            }
-        })
+impl SessionReader for OwnerCallers {
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        Box::pin(async move { test_callers::callers(Some(test_callers::owner("owner-1")), None) })
     }
 }
 
 /// The listed requests, in the view's order; panics unless the view answers 200.
 async fn listed(db: &TestDb) -> Vec<Value> {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(OwnerSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(OwnerCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
