@@ -10,6 +10,7 @@ use actix_web::http::{Method, StatusCode};
 use chrono::{Duration, Utc};
 use serde_json::json;
 use uuid::Uuid;
+use xc_auth::domain::access::{Permission, Role, RoleGrants};
 
 use bk6_common::*;
 
@@ -69,17 +70,35 @@ async fn booking_create_route_refuses_without_customer_self_or_bookings_desk_per
     .await;
     policy_refused(&res_finance, "bookingCreate by FINANCE");
 
-    // 3. DESK create by BRANCH_MANAGER (design §3, PR 589 C9: BRANCH_MANAGER is refused) -> 400 roleNotAllowed
-    let res_manager = call(
+    // 3. Desk role without BookingsDesk in RoleGrants::seed (assert one exists) -> 400 roleNotAllowed
+    let desk_candidates = [
+        ("ADMIN@XC-B01", Role::Admin),
+        ("FINANCE@XC-B01", Role::Finance),
+    ];
+    assert!(
+        desk_candidates
+            .iter()
+            .any(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::BookingsDesk)),
+        "§11.2 must leave some desk role without BookingsDesk"
+    );
+    let (refused_caller, refused_role) = desk_candidates
+        .into_iter()
+        .find(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::BookingsDesk))
+        .expect("a desk role without BookingsDesk must exist");
+
+    let res_desk = call(
         &db,
-        Some("BRANCH_MANAGER@XC-B01"),
+        Some(refused_caller),
         Method::POST,
         "/api/bookings",
         Some(payload),
-        Some("k-mgr"),
+        Some("k-desk-refused"),
     )
     .await;
-    policy_refused(&res_manager, "DESK create by BRANCH_MANAGER (PR 589 C9)");
+    policy_refused(
+        &res_desk,
+        &format!("DESK create by {refused_caller} ({refused_role:?})"),
+    );
 
     db.finish().await;
 }
@@ -485,6 +504,72 @@ async fn booking_create_refuses_when_slot_capacity_full() {
     )
     .await;
     refused_with(&res, "capacityFull", "create on full slot");
+
+    db.finish().await;
+}
+
+#[actix_web::test]
+async fn booking_create_desk_by_branch_manager_succeeds_under_seed() {
+    // Under RBAC §11.2, BranchManager holds BookingsDesk (Customers: Full).
+    if !RoleGrants::seed(Role::BranchManager).contains(&Permission::BookingsDesk) {
+        return;
+    }
+    let db = TestDb::start().await;
+    let slot_id = Uuid::new_v4();
+    let now = Utc::now();
+    seed_slot(
+        &db.pool,
+        slot_id,
+        B01,
+        bangkok_today(),
+        now + Duration::hours(1),
+        now + Duration::hours(2),
+        5,
+        0,
+        "OPEN",
+    )
+    .await;
+
+    let payload = json!({
+        "branchId": B01,
+        "slotId": slot_id,
+        "shopSide": "BUY",
+        "currency": "USD",
+        "quantity": 100.0,
+        "customerId": CUSTOMER_BOB_CUST_ID,
+    });
+
+    let res = call(
+        &db,
+        Some("BRANCH_MANAGER@XC-B01"),
+        Method::POST,
+        "/api/bookings",
+        Some(payload),
+        Some("k-desk-bm"),
+    )
+    .await;
+
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "expected 200 OK for valid DESK bookingCreate by BRANCH_MANAGER; got {} {}",
+        res.status,
+        res.text
+    );
+
+    let status = res.body["status"]
+        .as_str()
+        .or_else(|| res.body["data"]["status"].as_str());
+    assert_eq!(
+        status,
+        Some("CONFIRMED"),
+        "DESK booking by BRANCH_MANAGER should start CONFIRMED"
+    );
+
+    let channel = res.body["sourceChannel"]
+        .as_str()
+        .or_else(|| res.body["data"]["sourceChannel"].as_str());
+    assert_eq!(channel, Some("DESK"), "sourceChannel should be DESK");
 
     db.finish().await;
 }
