@@ -12,6 +12,8 @@
 | P-0 | What to do with V.9's `/pricing` | "Bring the pricing page in" | this document |
 | P-1 | Tier model | "Per currency, default from branch" | §3. **Amends O-7** (`rates.md:1849`, §12.3 "the same for every currency") to: *the branch's margins are the default; a currency may override them* |
 | P-2 | TT Pattaya and Super Rich feeds | "Send the 3 V.9 files" | §4 and §5.2 wait for V.9's `runtime/market-rates.mjs`, `runtime/pricing.mjs`, `runtime/pricing-store.mjs` |
+| P-4 | AUTO anchor: BoT or the market (Q-P1) | *"ให้ คอนฟิกได้เอง"* (2026-10-20, same session): configurable | §3.1. Each branch chooses, and a currency may override. The default stays `BOT` (R-12 unchanged until someone changes the setting) |
+| P-5 | The §12 migration (Q-P2) | *"อนุมัติ migration"* (2026-10-20, same session) | §12 may merge (still no deploy without an owner order) |
 | P-3 | Approval | "Use xchange's flow" | §6. Approve = a policy version + a rate draft, submitted; in-bound publishes by policy, out-of-bound waits for EXECUTIVE (`rates.md` §4.5). V.9's approve-is-publish is **not** brought in |
 
 Still decided by earlier rulings and unchanged: R-12 (counter prices come from BoT through the draft path every 3 h,
@@ -57,7 +59,7 @@ CREATE TABLE rate_policy_currency_tiers (
 CREATE TABLE rate_policy_currency_settings (
     policy_version_id uuid         NOT NULL REFERENCES rate_policy_versions(id),
     currency_code     char(3)      NOT NULL REFERENCES currencies(code),
-    min_spread_pct    numeric(9,4) NOT NULL CHECK (min_spread_pct BETWEEN 0 AND 5),
+    min_spread_pct    numeric(9,4) NULL CHECK (min_spread_pct IS NULL OR min_spread_pct BETWEEN 0 AND 5),
     PRIMARY KEY (policy_version_id, currency_code)
 );
 ```
@@ -84,6 +86,35 @@ CREATE TABLE rate_policy_currency_settings (
 **Domain:** `CurrencyTierOverride` (new file) holds one currency's four `TierMargin`s; `PolicyTiers::for_currency`
 returns a `PolicyTiers` with the same bands and that currency's margins. `TierProposal::of` is **unchanged**: its three
 callers (`rate_draft_service.rs:484`, `publish_service.rs:443`, `draft_evaluation.rs:137`) pass the resolved tiers.
+
+### 3.1 The AUTO anchor is configurable (P-4)
+
+The owner's answer to Q-P1 (2026-10-20): *"เลือกว่าราคา AUTO จะยึด BoT หรือ TT เป็นฐาน ให้ คอนฟิกได้เอง"*.
+
+```sql
+ALTER TABLE rate_policy_versions
+    ADD COLUMN anchor_source text NOT NULL DEFAULT 'BOT'
+        CHECK (anchor_source IN ('BOT', 'MARKET_TT', 'MARKET_SR'));
+ALTER TABLE rate_policy_currency_settings
+    ADD COLUMN anchor_source text NULL
+        CHECK (anchor_source IS NULL OR anchor_source IN ('BOT', 'MARKET_TT', 'MARKET_SR'));
+```
+
+- `[required]` **Effective anchor** for (branch, currency) is the currency's `anchor_source` if it is set, otherwise
+  the version's. The column on `rate_policy_currency_settings` lets one currency follow TT while the branch stays on
+  BoT. `min_spread_pct` on that table becomes nullable, so a row can carry only the anchor.
+- `[required]` **The draft path reads the effective anchor's reference type.** Today `reference_base.rs:27` reads
+  `reference_type = 'BOT'` only. It now reads the effective anchor, so `'BOT'`, `'MARKET_TT'` or `'MARKET_SR'`. `'START'`
+  stays the fallback before a first fetch, exactly as today (`:44`).
+- `[required]` **A missing or stale anchor line never silently swaps sources.** Say the chosen market has no line for
+  the currency, or its line is older than `max_reference_age_hours`: the existing stale policy decides (`stale_policy.rs:47`,
+  STOP or LIMIT), the same as a stale BoT line today. Falling back to BoT on its own would publish a price nobody chose.
+- `[required]` **The snapshot records what priced the line.** `published_rate_lines.source_snapshot` gains
+  `"anchor_source"`, next to `reference_line_id` (`publish_service.rs:421-440`).
+- **Guards and `adjust_pct` are unchanged.** They measure distance from the line actually used as the anchor.
+- **Who may change it:** the anchor is part of the policy frame, so the same rule applies as for override margins
+  (§3: EXECUTIVE-gated frame change through `ratePolicySave` / `pricingConfigure`).
+- The pricing screen (§9) shows the effective anchor per row and, in `PricingPolicy`, a selector per branch and currency.
 
 ## 4. Market sources: TT Pattaya and Super Rich (P-2)
 
@@ -310,20 +341,25 @@ the migration, and the admin menu entry, so the function tickets touch only thei
 | `ratePolicySave` changes only `adjust_pct` | the new version carries every currency's overrides |
 | a guard tightened so a carried override breaks it | `validationFailed`, nothing written |
 | order saved after a publish with market lines | its published line's snapshot holds those lines |
+| branch anchor `BOT`, no currency setting | AUTO prices exactly as today (reads `'BOT'`) |
+| currency anchor `MARKET_TT` with a fresh TT line | that currency's AUTO price uses the TT line; snapshot `anchor_source = 'MARKET_TT'` |
+| currency anchor `MARKET_TT`, TT line missing or stale | the stale policy decides (STOP/LIMIT); never a silent switch to BoT |
 
 ## 12. Data migration
 
 One migration, `api/migrations/<slot>_rate_policy_currency_tiers.sql` (slot from `scripts/migration-slot.sh next`
-right before `pr_open`), creating §3's two tables.
+right before `pr_open`), creating §3's two tables and adding §3.1's two `anchor_source` columns.
 
-1. **Existing rows after the migration:** no existing table changes. Every policy version has zero override rows, so
-   every currency resolves to the branch default, which is exactly today's price.
+1. **Existing rows after the migration:** every existing `rate_policy_versions` row gets `anchor_source = 'BOT'` (the
+   default), which is what the draft path reads today. Every policy version has zero override rows, so every currency
+   resolves to the branch default. Today's prices are unchanged.
 2. **Backfill:** none. Zero rows is the correct state for every existing version.
 3. **Deploy order:** migration before the new binary (migrations run at boot, embedded). The old binary never reads the
    new tables, so it works with the new schema.
-4. **What `down` loses:** every per-currency override and min spread ever saved. Policy versions themselves survive.
+4. **What `down` loses:** every per-currency override, min spread and anchor choice ever saved. Policy versions themselves
+   survive and price from BoT again.
 
-The migration still needs the owner's approval before it merges (process rule); deploy is a separate owner order.
+**Approved by the owner 2026-10-20 (P-5): it may merge.** Deploy is still a separate owner order.
 
 ## 13. Tickets (to cut after this document merges)
 
@@ -331,7 +367,7 @@ BE (sub-controller under the BE lane controller claude/a90ab16c), base `feat/pri
 
 | # | Ticket | Class | Waits for |
 |---|---|---|---|
-| PT-0 | skeleton: stubs, `mod` lines, routes, migration, up-front tests | (Claude) | owner approval of §12 |
+| PT-0 | skeleton: stubs, `mod` lines, routes, migration (§3 + §3.1), up-front tests | (Claude) | — (P-5 approved) |
 | PT-1 | `PolicyVersionWriter` extracted from `ratePolicySave` (pure move) | mechanical | PT-0 |
 | PT-2 | `CurrencyTierOverride` + `PolicyTiers::for_currency` | logic | PT-0 |
 | PT-3 | `CurrencyTierOverrideStore` | logic | PT-0 |
@@ -340,6 +376,7 @@ BE (sub-controller under the BE lane controller claude/a90ab16c), base `feat/pri
 | PT-6 | `pricingApprove` | guarded | PT-0 |
 | PT-7 | `pricing_board` view | logic | PT-0 |
 | PT-8 | `MarketQuote`, `PricingFlag`, `RowStatus` | logic | PT-0 |
+| PT-15 | effective anchor in the draft path: `reference_base.rs` reads the effective anchor's reference type; `anchor_source` in the snapshot (§3.1) | guarded | PT-0; its file joins PT-4's set only if they share a file, otherwise disjoint |
 | PT-9 | `PricingSuggestion` | logic | P-2's files |
 | PT-10 | `Recommendation` | logic | P-2's files |
 | PT-11 / PT-12 | TT / Super Rich source + provider | logic | P-2's files |
@@ -354,5 +391,4 @@ fetch; `feat/fe-pricing-board` merges to main only after the BE view and command
 
 | # | Question | Default until answered |
 |---|---|---|
-| Q-P1 | Should the AUTO anchor become the market (TT/SR) instead of BoT? Today R-12 fixes BoT; with BoT anchoring, a currency keeps its approved margin while TT and BoT drift apart, and the page shows the drift as a new suggestion | BoT (R-12) |
-| Q-P2 | Approve the §12 migration | not merged |
+| Q-P3 | V.9's `runtime/pricing.mjs`, `market-rates.mjs`, `pricing-store.mjs` (P-2): not in any repo we can read (searched the 108-Plaza and yuthstyle88 repo lists and the `xchange-*` source repos on 2026-10-20) | §4 and §5.2 wait; PT-9…PT-12 are not released |
