@@ -25,6 +25,7 @@ function line(over: Partial<PublishedLineDto> & Pick<PublishedLineDto, 'currency
     buyRate: '1.00000000',
     sellRate: '1.10000000',
     lineId: `line-${over.currency}-${over.group ?? 'ALL'}`,
+    bands: [],
     ...over,
   };
 }
@@ -35,6 +36,7 @@ function data(lines: PublishedLineDto[]): PublishedRatesData {
     sourceDate: '2026-10-10',
     stale: false,
     lines,
+    bandHeadings: [],
   };
 }
 
@@ -113,6 +115,6 @@ describe('boardRows: a banknote group is its own row (owner Q-2 A)', () => {
   });
 
   it('an empty publication gives no rows', () => {
-    expect(boardRows({ publication: null, sourceDate: null, stale: false, lines: [] })).toEqual([]);
+    expect(boardRows({ publication: null, sourceDate: null, stale: false, lines: [], bandHeadings: [] })).toEqual([]);
   });
 });

@@ -12,6 +12,24 @@ pub struct PublishedPublicationDto {
     pub published_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "published_rates.ts")]
+pub struct PublishedBandDto {
+    pub tier: String,
+    pub buy_rate: Option<String>,
+    pub sell_rate: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "published_rates.ts")]
+pub struct PublishedBandHeadingDto {
+    pub tier: String,
+    pub lower_exclusive_thb: Option<String>,
+    pub upper_inclusive_thb: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "published_rates.ts")]
@@ -22,6 +40,7 @@ pub struct PublishedLineDto {
     pub buy_rate: Option<String>,
     pub sell_rate: Option<String>,
     pub line_id: String,
+    pub bands: Vec<PublishedBandDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -32,4 +51,5 @@ pub struct PublishedRatesData {
     pub source_date: Option<String>,
     pub stale: bool,
     pub lines: Vec<PublishedLineDto>,
+    pub band_headings: Vec<PublishedBandHeadingDto>,
 }

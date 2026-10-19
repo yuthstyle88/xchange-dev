@@ -32,7 +32,7 @@ const PUBLICATIONS = `${V}rate_publications`;
 const REFERENCE = `${V}rates_reference`;
 
 function line(currency: string, unitSize: string, buy: string | null, sell: string | null): PublishedLineDto {
-  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}` };
+  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] };
 }
 
 function mainPublished(): PublishedRatesData {
@@ -45,6 +45,7 @@ function mainPublished(): PublishedRatesData {
       line('JPY', '100', '23.50000000', '24.12345678'),
       line('USD', '1', '33.25000000', '34.10000000'),
     ],
+    bandHeadings: [],
   };
 }
 

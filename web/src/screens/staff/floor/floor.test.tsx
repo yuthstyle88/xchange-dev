@@ -163,6 +163,7 @@ const RATES: PublishedRatesData = {
   },
   sourceDate: "2026-10-10",
   stale: false,
+  bandHeadings: [],
   lines: [
     {
       currency: "USD",
@@ -171,6 +172,7 @@ const RATES: PublishedRatesData = {
       buyRate: "32.4500",
       sellRate: "32.9000",
       lineId: "l-usd",
+      bands: [],
     },
   ],
 };
@@ -564,6 +566,7 @@ function ratesWith(...currencies: string[]): PublishedRatesData {
       buyRate: "1.0000",
       sellRate: "1.1000",
       lineId: `l-${currency}`,
+      bands: [],
     })),
   };
 }

@@ -79,9 +79,10 @@ function mainPublished(): PublishedRatesData {
     sourceDate: '2026-10-08',
     stale: false,
     lines: [
-      { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.35520000', sellRate: '38.08440000', lineId: 'line-EUR' },
-      { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.25000000', sellRate: '34.10000000', lineId: 'line-USD' },
+      { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.35520000', sellRate: '38.08440000', lineId: 'line-EUR', bands: [] },
+      { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.25000000', sellRate: '34.10000000', lineId: 'line-USD', bands: [] },
     ],
+    bandHeadings: [],
   };
 }
 
