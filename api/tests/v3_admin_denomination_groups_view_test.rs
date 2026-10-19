@@ -36,7 +36,7 @@ async fn view(app: &TestApp, owner: &str) -> Value {
             proto: Some("https".to_owned()),
             ..Call::default()
         }
-        .owner(owner),
+        .session(owner),
     )
     .await;
     assert_eq!(answer.status, 200, "{VIEW}: {}", answer.text);
@@ -93,7 +93,7 @@ async fn seed(pool: &PgPool) {
 async fn the_owner_sees_every_currency_with_its_groups_keys_and_removability() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     seed(&desk.pool).await;
 
     let data = view(&app, &owner).await;
@@ -130,7 +130,7 @@ async fn the_owner_sees_every_currency_with_its_groups_keys_and_removability() {
 async fn a_group_priced_only_by_an_old_publication_is_removable() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     seed(&desk.pool).await;
     // MAIN moves to a newer publication that does not price PRICED.
     exec(

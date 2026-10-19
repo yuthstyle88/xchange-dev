@@ -76,7 +76,7 @@ async fn remove_group(app: &TestApp, owner_token: &str, currency: &str, group: &
                 "group": group,
             }),
         )
-        .owner(owner_token)
+        .session(owner_token)
         .header("idempotency-key", &format!("idem-{}", uuid::Uuid::new_v4())),
     )
     .await
@@ -97,7 +97,7 @@ async fn remove_group_as_staff(
                 "group": group,
             }),
         )
-        .staff(staff_token)
+        .session(staff_token)
         .header("idempotency-key", &format!("idem-{}", uuid::Uuid::new_v4())),
     )
     .await
@@ -143,7 +143,7 @@ fn assert_refusal(answer: &Answer, expected_status: u16, expected_code: &str) {
 async fn the_all_group_gives_409_and_group_all_not_removable() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     seed(&desk.pool).await;
 
     let answer = remove_group(&app, &owner, "USD", "ALL").await;
@@ -154,7 +154,7 @@ async fn the_all_group_gives_409_and_group_all_not_removable() {
 async fn an_unknown_group_gives_404_and_not_found() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     seed(&desk.pool).await;
 
     let answer = remove_group(&app, &owner, "USD", "NONEXISTENT").await;
@@ -165,7 +165,7 @@ async fn an_unknown_group_gives_404_and_not_found() {
 async fn a_group_with_face_values_gives_409_and_group_has_face_values() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     seed(&desk.pool).await;
 
     let answer = remove_group(&app, &owner, "USD", "COINS").await;
@@ -176,7 +176,7 @@ async fn a_group_with_face_values_gives_409_and_group_has_face_values() {
 async fn a_group_priced_by_a_current_publication_gives_409_and_group_priced_by_publication() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     seed(&desk.pool).await;
 
     let answer = remove_group(&app, &owner, "USD", "PRICED").await;
@@ -187,10 +187,11 @@ async fn a_group_priced_by_a_current_publication_gives_409_and_group_priced_by_p
 async fn a_non_owner_caller_still_gets_403_out_of_scope() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
     seed(&desk.pool).await;
 
-    let (_, staff) = working_employee(&app, &desk, &owner, "rates_staff", "RATES", "MAIN").await;
+    let staff = desk
+        .staff_session("rates_staff", "RATE_MANAGER", "MAIN")
+        .await;
     let answer = remove_group_as_staff(&app, &staff, "USD", "LARGE").await;
 
     assert_eq!(answer.status, 403, "status: {}", answer.text);
@@ -206,7 +207,7 @@ async fn a_non_owner_caller_still_gets_403_out_of_scope() {
 async fn a_removable_group_still_succeeds_and_deletes_rows() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     seed(&desk.pool).await;
 
     let before_denom: (i64,) = sqlx::query_as(
