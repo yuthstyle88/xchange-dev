@@ -104,8 +104,7 @@ impl PermissionModule {
             P::TransactionRead | P::ReceiptReprint | P::ReferralRead | P::IdentityDocumentRead => {
                 Some((Customers, View))
             }
-            P::BookingsAdmin
-            | P::ReferralSupersede
+            P::ReferralSupersede
             | P::ConsentPolicyManage
             | P::MarketingCampaigns
             | P::MarketingMembers

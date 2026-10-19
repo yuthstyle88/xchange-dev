@@ -35,7 +35,7 @@
 //!   `customers` through `confirm_in` / `record_exchange_in`), and the phone verification
 //!   (`customerContactVerify`, `ContactVerify::verify_in`, which writes the verified `PHONE`
 //!   identity the `member` flag is read from — BK-10 #1412 re-pinned this from v2's member issue
-//!   and its `members` table).
+//!   and v2's member table).
 //!
 //! Everything goes through the server's whole route table (`bootstrap::configure`) with real
 //! sessions made at the real sign-in doors (`rpc_common`); exchanges are saved through the real
@@ -1520,31 +1520,19 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
 }
 
 /// Re-pinned for BK-10 #1412 by claude/29df2ec5 (ruling 1, issuecomment-6140233542): the flag was
-/// per branch (a `members` row of that branch); it is now company-wide (design §6, PR 639 K1). A v2
-/// `members` row of B9 flags nobody anywhere; a phone verified at B9 flags the customer at MAIN
-/// and at B9.
+/// per branch (v2's member table of that branch); it is now company-wide (design §6, PR 639 K1).
+/// A customer with no verified identity flags nobody anywhere; a phone verified at B9 flags the
+/// customer at MAIN and at B9.
 #[actix_web::test]
 async fn member_flag_is_company_wide() {
     let room = Room::open().await;
     let somchai = room.reserve(MAIN, &Who::new("Somchai Cross Branch")).await;
 
-    sqlx::query(
-        "INSERT INTO members (id, branch_id, customer_id, name, phone, token_hash, verified_at, verified_by) \
-         VALUES ($1, $2, $3, 'Somchai', '0812345678', $4, now(), 'owner')",
-    )
-    .bind(format!("MB-{}", next()))
-    .bind(B9)
-    .bind(&somchai.id)
-    .bind(format!("token-hash-{}", next()))
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("insert member in B9");
-
     let row_before = room.customer(&somchai.id).await;
     assert_eq!(
         row_before["member"],
         json!(false),
-        "a v2 members row of B9 does not flag the customer in MAIN"
+        "a customer with no verified identity is not flagged in MAIN"
     );
 
     room.verify_phone(B9, &somchai.id).await;

@@ -12,7 +12,6 @@ impl RolePermissions {
                 Permission::RatesHistoryRead,
                 Permission::RatePolicySave,
                 Permission::ApprovalsDecide,
-                Permission::BookingsAdmin,
                 Permission::ReferenceRatesRead,
                 Permission::SystemSettings,
                 Permission::MarketingPerformance,

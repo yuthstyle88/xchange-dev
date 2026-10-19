@@ -1183,8 +1183,8 @@ async fn save_step_with_checked_in_booking_completes_with_transaction_id() {
             .await
             .expect("fetch tx");
     assert!(
-        tx_booking_id.is_none(),
-        "transactions.booking_id must stay NULL per R1"
+        tx_booking_id == Some("BK-save-checked-in".to_owned()),
+        "transactions.booking_id names the Blueprint booking (BK-11)"
     );
 
     harness.teardown().await;

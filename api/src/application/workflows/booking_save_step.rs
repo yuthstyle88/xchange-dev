@@ -64,13 +64,6 @@ impl SaveStep for BookingSaveStep {
                 )
                 .await?;
 
-            // Stopgap for #1413: transactions.booking_id FK targets v2_bookings so R14 keeps it NULL; pass claim via session setting until BK-11 repoints FK.
-            sqlx::query("SELECT set_config('xchange.booking_claim', $1, true)")
-                .bind(&claim.booking_id)
-                .execute(&mut **tx)
-                .await
-                .map_err(pos_error::AppError::Database)?;
-
             Ok(())
         })
     }
@@ -82,34 +75,24 @@ impl SaveStep for BookingSaveStep {
         saved: &'a ExchangeTransaction,
     ) -> StepFuture<'a> {
         Box::pin(async move {
-            let claim_id = if let Some(claim) = ctx.booking {
-                Some(claim.booking_id.clone())
-            } else {
-                // Stopgap for #1413: read claim passed via transaction-local setting until BK-11 repoints FK.
-                sqlx::query_scalar("SELECT current_setting('xchange.booking_claim', true)")
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .ok()
-                    .flatten()
-                    .filter(|s: &String| !s.is_empty())
-            };
-
-            let Some(claim_id) = claim_id else {
+            let Some(claim) = ctx.booking else {
                 return Ok(());
             };
 
-            let tx_id: uuid::Uuid =
-                sqlx::query_scalar("SELECT id FROM transactions WHERE document_ref = $1")
-                    .bind(&saved.document_ref)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(pos_error::AppError::Database)?;
+            let tx_id: uuid::Uuid = sqlx::query_scalar(
+                "UPDATE transactions SET booking_id = COALESCE(booking_id, $2) WHERE document_ref = $1 RETURNING id",
+            )
+            .bind(&saved.document_ref)
+            .bind(&claim.booking_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(pos_error::AppError::Database)?;
 
             self.lifecycle
                 .complete_in(
                     tx,
                     ctx.branch,
-                    &claim_id,
+                    &claim.booking_id,
                     &saved.customer_id,
                     tx_id,
                     &ctx.actor.id,
