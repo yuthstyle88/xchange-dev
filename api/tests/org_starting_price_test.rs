@@ -443,23 +443,35 @@ async fn assert_no_starting_price_artifacts(db: &TestDb, context: &str) {
 
 // ------------------------------------------------------------ tests
 
-/// Behaviour table row 1: a non-OWNER saves -> refused (`roleNotAllowedHere`), nothing written.
+/// Behaviour table row 1 (§11.2): a role without `OrgStartingPricesManage` in
+/// `RoleGrants::seed(role)` saves -> refused (`roleNotAllowedHere`), nothing written.
+/// (Under §11.2, `RATE_MANAGER` holds `RATES_STOCK` `FULL` and thus `OrgStartingPricesManage`.)
 #[actix_web::test]
-async fn a_non_owner_saves_refused_role_not_allowed_here_nothing_written() {
+async fn roles_without_org_starting_prices_manage_refused_role_not_allowed_here_nothing_written() {
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let db = TestDb::start().await;
 
-    let non_owners = ["rates", "admin", "branch_manager", "teller"];
-    for who in non_owners {
+    let candidates = [
+        ("rates", AccessRole::RateManager),
+        ("admin", AccessRole::Admin),
+        ("branch_manager", AccessRole::BranchManager),
+        ("teller", AccessRole::Teller),
+    ];
+    for (who, _) in candidates
+        .into_iter()
+        .filter(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::OrgStartingPricesManage))
+    {
         let payload = save_payload(
             vec![entry("USD", Some("32.00000000"), Some("33.00000000"))],
-            &format!("attempt by non-owner {who}"),
+            &format!("attempt by non-holder {who}"),
         );
 
         let a = call(&db, who, Method::POST, CMD_SAVE, Some(payload)).await;
         assert_eq!(
             a.status,
             StatusCode::BAD_REQUEST,
-            "non-OWNER ({who}) save must be refused with 400: {}",
+            "non-holder ({who}) save must be refused with 400: {}",
             a.text
         );
         assert_eq!(
@@ -469,7 +481,7 @@ async fn a_non_owner_saves_refused_role_not_allowed_here_nothing_written() {
             a.text
         );
 
-        assert_no_starting_price_artifacts(&db, &format!("attempt by non-owner {who}")).await;
+        assert_no_starting_price_artifacts(&db, &format!("attempt by non-holder {who}")).await;
     }
 
     db.finish().await;
