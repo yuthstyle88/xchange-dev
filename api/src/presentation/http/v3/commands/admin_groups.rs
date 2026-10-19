@@ -135,13 +135,43 @@ impl CommandAction for AdminGroupSaveCommand {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
+        _branch: &BranchId,
         who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input);
-        todo!("F12")
+        require_executive(who)?;
+        validate_code(&input.code)?;
+        let requested = parse_permissions(&input.permissions)?;
+        if input.code == Role::Customer.as_str() {
+            return Err(not_found());
+        }
+        let store = PgRoleGrantStore::new();
+        let before_snapshot = store.load(&mut **tx).await.map_err(from_store_error)?;
+        let Some(group) = before_snapshot.group(&input.code).cloned() else {
+            return Err(not_found());
+        };
+        let before_set = before_snapshot
+            .permissions(&input.code)
+            .cloned()
+            .unwrap_or_default();
+        let full = check_and_build_full_set(&group, &requested)?;
+        store
+            .save_set(tx, &input.code, &full)
+            .await
+            .map_err(from_store_error)?;
+        let full_set: BTreeSet<Permission> = full.into_iter().collect();
+        let before = group_audit_json(&group, &before_set);
+        let after = group_audit_json(&group, &full_set);
+        record_audit_and_reload(
+            tx,
+            who,
+            input.code,
+            "PERMISSION_CHANGE",
+            Some(before),
+            Some(after),
+        )
+        .await
     }
 }
 
