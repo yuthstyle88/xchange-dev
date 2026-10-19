@@ -73,27 +73,42 @@ void main() {
   });
   tearDown(() => container.dispose());
 
-  test('posts the QR token with the branch to /api/kiosk/bookings/check-in and reads the ticket', () async {
-    adapter.body = {
-      'id': 'bk-1',
-      'status': 'CHECKED_IN',
-      'ticketNumber': 'B-012',
-      'bookingNo': 'BK-2026-0042',
-    };
-    final res = await container.read(kioskBookingRepositoryProvider).checkInBooking('tok-123');
+  test(
+    'posts the QR token with the branch to /api/kiosk/bookings/check-in and reads the ticket',
+    () async {
+      adapter.body = {
+        'id': 'bk-1',
+        'status': 'CHECKED_IN',
+        'ticketNumber': 'B-012',
+        'bookingNo': 'BK-2026-0042',
+      };
+      final res = await container
+          .read(kioskBookingRepositoryProvider)
+          .checkInBooking('tok-123');
 
-    expect(adapter.last?.method, 'POST');
-    expect(adapter.last?.path, '/api/kiosk/bookings/check-in');
-    expect(jsonDecode(adapter.sent!), {'branch': 'B-7', 'qrToken': 'tok-123'});
-    expect(res.id, 'bk-1');
-    expect(res.status, 'CHECKED_IN');
-    expect(res.ticketNumber, 'B-012');
-    expect(res.bookingNo, 'BK-2026-0042');
-  });
+      expect(adapter.last?.method, 'POST');
+      expect(adapter.last?.path, '/api/kiosk/bookings/check-in');
+      expect(jsonDecode(adapter.sent!), {
+        'branch': 'B-7',
+        'qrToken': 'tok-123',
+      });
+      expect(res.id, 'bk-1');
+      expect(res.status, 'CHECKED_IN');
+      expect(res.ticketNumber, 'B-012');
+      expect(res.bookingNo, 'BK-2026-0042');
+    },
+  );
 
   test('a missing bookingNo reads as null', () async {
-    adapter.body = {'id': 'bk-2', 'status': 'CHECKED_IN', 'ticketNumber': 'B-013', 'bookingNo': null};
-    final res = await container.read(kioskBookingRepositoryProvider).checkInBooking('tok-9');
+    adapter.body = {
+      'id': 'bk-2',
+      'status': 'CHECKED_IN',
+      'ticketNumber': 'B-013',
+      'bookingNo': null,
+    };
+    final res = await container
+        .read(kioskBookingRepositoryProvider)
+        .checkInBooking('tok-9');
     expect(res.bookingNo, isNull);
   });
 
@@ -103,24 +118,46 @@ void main() {
     (400, 'queueClosed'),
     (404, 'notFound'),
   ]) {
-    test('a ${c.$1} ${c.$2} refusal throws KioskFailure carrying the code', () async {
-      adapter
-        ..status = c.$1
-        ..body = {
-          'error': {'code': c.$2, 'message': c.$2.toUpperCase()},
-        };
-      await expectLater(
-        container.read(kioskBookingRepositoryProvider).checkInBooking('tok-123'),
-        throwsA(isA<KioskFailure>().having((f) => f.serverMessage, 'serverMessage', c.$2)),
-      );
-    });
+    test(
+      'a ${c.$1} ${c.$2} refusal throws KioskFailure carrying the code',
+      () async {
+        adapter
+          ..status = c.$1
+          ..body = {
+            'error': {'code': c.$2, 'message': c.$2.toUpperCase()},
+          };
+        await expectLater(
+          container
+              .read(kioskBookingRepositoryProvider)
+              .checkInBooking('tok-123'),
+          throwsA(
+            isA<KioskFailure>().having(
+              (f) => f.serverMessage,
+              'serverMessage',
+              c.$2,
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  test('an answer that is not an object throws KioskFailure with no message', () async {
-    adapter.body = 'not json';
-    await expectLater(
-      container.read(kioskBookingRepositoryProvider).checkInBooking('tok-123'),
-      throwsA(isA<KioskFailure>().having((f) => f.serverMessage, 'serverMessage', '')),
-    );
-  });
+  test(
+    'an answer that is not an object throws KioskFailure with no message',
+    () async {
+      adapter.body = 'not json';
+      await expectLater(
+        container
+            .read(kioskBookingRepositoryProvider)
+            .checkInBooking('tok-123'),
+        throwsA(
+          isA<KioskFailure>().having(
+            (f) => f.serverMessage,
+            'serverMessage',
+            '',
+          ),
+        ),
+      );
+    },
+  );
 }
