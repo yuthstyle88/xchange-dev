@@ -222,3 +222,28 @@ async fn user_names_of_nothing_is_empty() {
     assert!(user_names(&db.pool, &[]).await.expect("names").is_empty());
     db.finish().await;
 }
+
+#[tokio::test]
+async fn user_names_reads_through_a_transaction() {
+    let db = TestDb::start().await;
+    let mut tx = db.pool.begin().await.expect("begin");
+    let dana: String = sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         VALUES ($1::uuid, 'Dana', 'ACTIVE', 'test') RETURNING id::text",
+    )
+    .bind(ORG)
+    .fetch_one(&mut *tx)
+    .await
+    .expect("insert Dana inside the transaction");
+
+    let names = user_names(&mut *tx, std::slice::from_ref(&dana))
+        .await
+        .expect("names");
+    assert_eq!(
+        names.get(&dana).map(String::as_str),
+        Some("Dana"),
+        "the uncommitted user is read through the transaction"
+    );
+    tx.rollback().await.expect("rollback");
+    db.finish().await;
+}

@@ -34,7 +34,7 @@ classDiagram
   }
   class directory {
     <<module>>
-    +user_names(pool, ids: &[String]) AppResult~HashMap~String,String~~
+    +user_names(executor: PgExecutor, ids: &[String]) AppResult~HashMap~String,String~~
   }
   class TempPassword {
     +generate() TempPassword
