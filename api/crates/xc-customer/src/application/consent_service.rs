@@ -117,6 +117,52 @@ impl ConsentService {
         tx.commit().await.map_err(AppError::Database)?;
         Ok(customer_id)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ConsentTextRow {
+    pub purpose: String,
+    pub version: i32,
+    pub body: String,
+}
+
+impl ConsentService {
+    /// The newest published version of each purpose's text in `lang` for `org` (§4.3, S6).
+    pub async fn current_texts_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        org: &str,
+        lang: &str,
+    ) -> AppResult<Vec<ConsentTextRow>> {
+        let org_id = Uuid::parse_str(org).map_err(|e| AppError::Domain(e.to_string()))?;
+        let rows: Vec<(String, i32, String)> = sqlx::query_as(
+            "SELECT ct.purpose, ct.version, ct.body \
+             FROM consent_texts ct \
+             WHERE ct.organization_id = $1 \
+               AND ct.lang = $2 \
+               AND ct.version = ( \
+                   SELECT MAX(inner_ct.version) \
+                   FROM consent_texts inner_ct \
+                   WHERE inner_ct.organization_id = ct.organization_id \
+                     AND inner_ct.purpose = ct.purpose \
+                     AND inner_ct.lang = ct.lang \
+               ) \
+             ORDER BY ct.purpose ASC",
+        )
+        .bind(org_id)
+        .bind(lang)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(purpose, version, body)| ConsentTextRow {
+                purpose,
+                version,
+                body,
+            })
+            .collect())
+    }
 
     /// The newest version of `purpose`'s text in `lang`, or `None` when none is published (§4.3).
     pub async fn current_version_in(

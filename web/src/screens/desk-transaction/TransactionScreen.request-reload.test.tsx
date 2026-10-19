@@ -68,6 +68,8 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
     cancelledAt: null,
     cancelReason: null,
     reversal: null,
+    benefits: [],
+    booking: null,
     ...over,
   };
 }

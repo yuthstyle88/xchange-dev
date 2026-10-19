@@ -1,6 +1,6 @@
 //! Tests for `couponCode` on `POST /api/quotes` (MK-5 §7, §8).
 //!
-//! (a) an unknown or invalid coupon -> `validationFailed` / `couponInvalid` (§8), with no quote written;
+//! (a) an unknown or invalid coupon -> `couponInvalid` (§8), with no quote written;
 //! (b) a valid coupon for a live campaign -> its benefit is in `benefits`;
 //! (c) no `couponCode` -> identical to today.
 
@@ -287,7 +287,7 @@ async fn insert_coupon(
     coupon_id
 }
 
-/// (a) An unknown or invalid coupon -> validationFailed / couponInvalid (§8), with no quote written
+/// (a) An unknown or invalid coupon -> couponInvalid (§8), with no quote written
 #[tokio::test]
 async fn unknown_or_invalid_coupon_refuses_validation_failed_and_writes_no_quote() {
     let db = TestDb::empty().await;
@@ -318,9 +318,10 @@ async fn unknown_or_invalid_coupon_refuses_validation_failed_and_writes_no_quote
         "unknown coupon must answer 400 Bad Request: {}",
         ans.text
     );
-    assert_eq!(ans.code(), "validationFailed");
-    assert!(
-        ans.message().contains("couponInvalid"),
+    assert_eq!(ans.code(), "couponInvalid");
+    assert_eq!(
+        ans.message(),
+        "couponInvalid",
         "error message must mention couponInvalid: {}",
         ans.message()
     );
@@ -360,9 +361,10 @@ async fn unknown_or_invalid_coupon_refuses_validation_failed_and_writes_no_quote
         StatusCode::BAD_REQUEST,
         "expired coupon must answer 400 Bad Request"
     );
-    assert_eq!(ans_exp.code(), "validationFailed");
-    assert!(
-        ans_exp.message().contains("couponInvalid"),
+    assert_eq!(ans_exp.code(), "couponInvalid");
+    assert_eq!(
+        ans_exp.message(),
+        "couponInvalid",
         "expired coupon must mention couponInvalid"
     );
     assert_eq!(
@@ -402,9 +404,10 @@ async fn unknown_or_invalid_coupon_refuses_validation_failed_and_writes_no_quote
         StatusCode::BAD_REQUEST,
         "personal coupon for another customer must answer 400 Bad Request"
     );
-    assert_eq!(ans_mismatch.code(), "validationFailed");
-    assert!(
-        ans_mismatch.message().contains("couponInvalid"),
+    assert_eq!(ans_mismatch.code(), "couponInvalid");
+    assert_eq!(
+        ans_mismatch.message(),
+        "couponInvalid",
         "customer mismatch must mention couponInvalid"
     );
     assert_eq!(
