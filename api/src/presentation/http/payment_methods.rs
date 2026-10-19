@@ -125,9 +125,10 @@ async fn handle(
     // D-4 Scope Check for employee:
     // If an employee names a branch outside their scope (e.g. malformed or another branch),
     // they get 403 outOfScope before the shape and existence checks (ruling 5).
-    if callers.owner.is_none() {
-        let out_of_scope = match (&callers.staff, &named) {
-            (Some(staff), Some(named_b)) => Some(named_b) != staff.branch_id(),
+    if callers.owner_standing().is_none() {
+        let staff = callers.staff_standing();
+        let out_of_scope = match (&staff, &named) {
+            (Some(standing), Some(named_b)) => standing.branch.as_ref() != Some(named_b),
             _ => false,
         };
         if out_of_scope {

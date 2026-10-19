@@ -203,11 +203,9 @@ impl SessionReader for HeaderUsers {
         let spec = spec_of(req);
         let org = self.org.clone();
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec, &org);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }

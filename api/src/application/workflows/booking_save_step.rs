@@ -117,7 +117,7 @@ mod tests {
     use std::path::Path;
     use std::str::FromStr;
     use std::sync::Arc;
-    use xc_auth::domain::policy::value_objects::role::Role;
+    use xc_auth::domain::access::StandingKind;
     use xc_booking::infrastructure::booking_repository::PgBookingRepository;
     use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
     use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -347,7 +347,7 @@ mod tests {
             id: "owner".to_string(),
             username: "owner".to_string(),
             employee_id: None,
-            role: Role::Owner,
+            standing: StandingKind::Owner,
         };
         let booking = Some(BookingClaim {
             booking_id: "BK-1".to_string(),
@@ -430,7 +430,7 @@ mod tests {
             id: "owner".to_string(),
             username: "owner".to_string(),
             employee_id: None,
-            role: Role::Owner,
+            standing: StandingKind::Owner,
         };
         let booking = Some(BookingClaim {
             booking_id: "BK-1".to_string(),

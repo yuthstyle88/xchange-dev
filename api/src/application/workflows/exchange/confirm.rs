@@ -13,9 +13,6 @@ use xc_approval::application::approval_service::{ApprovalError, ApprovalService}
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::domain::request::RequestId;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::settings::repository::SettingsRepository;
@@ -47,23 +44,6 @@ pub struct ConfirmTransaction {
     approvals: Arc<ApprovalService>,
     steps: Vec<Arc<dyn SaveStep>>,
     audit: PgAuditLog,
-}
-
-/// G3: the requester AP-1 is told about: the saver at the **transaction's** branch (the owner has
-/// no branch).
-fn actor_of(who: &SaveActor, t: &ExchangeTransaction) -> AppResult<xc_auth::domain::access::Actor> {
-    let v3 = if who.role == Role::Owner {
-        Actor::owner(who.id.clone())
-    } else {
-        Actor::staff(who.id.clone(), who.role, t.branch_id.clone()).ok_or_else(|| {
-            AppError::Internal(format!("{} is not a staff role", who.role.as_str()))
-        })?
-    };
-    Ok(actor_from_v3(
-        &v3,
-        &t.organization_id.to_string(),
-        Utc::now(),
-    ))
 }
 
 /// An approval core refusal as the exchange's own refusal: its code first.
@@ -176,7 +156,7 @@ impl ConfirmTransaction {
                         "settleThb": settle.to_string(),
                         "approvalLimitThb": limit.to_string(),
                     }),
-                    &actor_of(who, &t)?,
+                    &who.access_actor_at(&t.organization_id.to_string(), &t.branch_id, Utc::now()),
                     &format!("confirm:{}", id.0),
                 )
                 .await
@@ -202,7 +182,7 @@ impl ConfirmTransaction {
                     tx,
                     &AuditEvent {
                         actor_id: who.id.clone(),
-                        actor_role: who.role.as_str().to_string(),
+                        actor_role: who.audit_role().to_string(),
                         scope: "branch".to_string(),
                         action: "transaction.pendingApproval".to_string(),
                         object_ref: id.0.to_string(),
@@ -236,7 +216,7 @@ impl ConfirmTransaction {
                 tx,
                 &AuditEvent {
                     actor_id: who.id.clone(),
-                    actor_role: who.role.as_str().to_string(),
+                    actor_role: who.audit_role().to_string(),
                     scope: "branch".to_string(),
                     action: "transaction.confirmed".to_string(),
                     object_ref: id.0.to_string(),
