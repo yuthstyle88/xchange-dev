@@ -536,8 +536,8 @@ impl SessionReader for HeaderUsers {
 
 /// The organisation-wide EXECUTIVE of ORG.
 const EXECUTIVE: &str = "00000000-0000-0000-0000-0000000000e1|EXECUTIVE|*";
-/// A FINANCE of B1 (E-7: branch-scoped), who holds no `OverviewRead`.
-const FINANCE: &str = "00000000-0000-0000-0000-0000000000f1|FINANCE|XC-B01";
+/// A MARKETING caller of B1 (E-7: branch-scoped), who holds no `OverviewRead` under §11.2 (`FINANCE` does).
+const MARKETING: &str = "00000000-0000-0000-0000-0000000000f1|MARKETING|XC-B01";
 
 struct Answer {
     status: StatusCode,
@@ -1190,12 +1190,12 @@ async fn polling_answers_only_what_changed() {
 
 // ------------------------------------------------------------ §9 rows 10 and 11: scope
 
-/// A FINANCE caller, who holds no `OverviewRead`: `outOfScope`, and no data.
+/// Under §11.2, a MARKETING caller holds no `OverviewRead`: `outOfScope`, and no data.
 #[actix_web::test]
-async fn a_finance_caller_is_out_of_scope() {
+async fn a_marketing_caller_is_out_of_scope() {
     let room = Room::start().await;
     room.exchange(Ex::default()).await;
-    let a = overview(&room, FINANCE, PERIOD).await;
+    let a = overview(&room, MARKETING, PERIOD).await;
     assert_eq!(
         (a.status, code(&a).as_str()),
         (StatusCode::FORBIDDEN, "outOfScope"),
