@@ -163,7 +163,13 @@ type ActiveUserRow = (
 );
 /// `users.last_branch_id` and the organisation's branches (`ORG_BRANCHES_JSON`), read at sign-in.
 type SignInBranchRow = (Option<String>, String);
-type RoleRow = (String, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+type RoleRow = (
+    String,
+    String,
+    Option<String>,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
+);
 
 /// The organisation's branches as one JSON text, `[{id, code, name}]`, for a row aliased `u` of `users` (SB-1
 /// §14.3). A sub-select, so it folds into the statement that reads the user: no extra query. `code` is
@@ -189,10 +195,18 @@ fn branch_refs(json: &str) -> Result<Vec<BranchRef>, SessionError> {
 
 fn scoped_roles(rows: Vec<RoleRow>) -> Vec<ScopedRole> {
     rows.into_iter()
-        .filter_map(|(role_code, branch_id, valid_from, valid_to)| {
-            let role = Role::parse(&role_code)?;
-            Some(ScopedRole::new(
-                role,
+        .filter_map(|(role_code, base_role, branch_id, valid_from, valid_to)| {
+            let Some(base) = Role::parse(&base_role) else {
+                tracing::warn!(
+                    role_code = %role_code,
+                    base_role = %base_role,
+                    "dropping user_roles row with unknown base_role"
+                );
+                return None;
+            };
+            Some(ScopedRole::in_group(
+                &role_code,
+                base,
                 branch_id.map(BranchId::new),
                 valid_from,
                 valid_to,
@@ -201,9 +215,10 @@ fn scoped_roles(rows: Vec<RoleRow>) -> Vec<ScopedRole> {
         .collect()
 }
 
-const VALID_ROLES_SQL: &str = "SELECT role_code, branch_id, valid_from, valid_to FROM user_roles \
-     WHERE user_id = $1::uuid AND valid_from <= $2 AND (valid_to IS NULL OR valid_to > $2) \
-     ORDER BY valid_from ASC, id ASC";
+const VALID_ROLES_SQL: &str = "SELECT ur.role_code, r.base_role, ur.branch_id, ur.valid_from, ur.valid_to \
+     FROM user_roles ur JOIN roles r ON r.code = ur.role_code \
+     WHERE ur.user_id = $1::uuid AND ur.valid_from <= $2 AND (ur.valid_to IS NULL OR ur.valid_to > $2) \
+     ORDER BY ur.valid_from ASC, ur.id ASC";
 
 /// One active session as a read answers it (SB-1 §14.3): the user, their valid roles, the session's stored branch,
 /// the user's last choice, and the organisation's branches. Read in two statements, as before §14.
