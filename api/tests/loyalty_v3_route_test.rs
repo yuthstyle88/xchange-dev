@@ -17,14 +17,14 @@ use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::transaction::ExchangeTransaction;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -34,20 +34,24 @@ const ME: &str = "teller";
 struct HeaderSessions;
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
+    fn callers<'a>(
         &'a self,
         req: &'a actix_web::HttpRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Sessions> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
         let staff = match spec.as_str() {
-            "teller" => Actor::staff(TELLER, Role::Front, BranchId::new("MAIN")),
+            "teller" => Some(test_callers::staff(
+                TELLER,
+                &[Role::Teller],
+                BranchId::new("MAIN"),
+            )),
             _ => None,
         };
-        Box::pin(async move { Sessions { owner: None, staff } })
+        Box::pin(async move { test_callers::callers(None, staff) })
     }
 }
 
