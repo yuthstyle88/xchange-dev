@@ -19,8 +19,7 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test, web};
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::application::passport_read::{
     AiLocation, AiProvider, ImageMime, PassportImage, PassportRead, PassportReader, PassportResult,
@@ -28,7 +27,8 @@ use xchange::application::passport_read::{
 };
 use xchange::bootstrap::AppState;
 use xchange::presentation::http::v3::passport_read::{MAX_IMAGE_BYTES, PATH, register};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const HOST: &str = "desk.example";
 const ORIGIN: &str = "http://desk.example";
@@ -40,13 +40,10 @@ const JPEG: &[u8] = &[
 // ── fakes ────────────────────────────────────────────────────────────────
 
 /// `owner` is the owner; `teller` is a Front at MAIN; `rates` is a Rates at MAIN; anything else is nobody.
-struct FakeSessions;
+struct FakeCallers;
 
-impl SessionReader for FakeSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for FakeCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let who = req
                 .headers()
@@ -55,22 +52,16 @@ impl SessionReader for FakeSessions {
                 .unwrap_or("");
             let main = BranchId::new("MAIN");
             match who {
-                "owner" => Sessions {
-                    owner: Some(Actor::owner("owner")),
-                    staff: None,
-                },
-                "teller" => Sessions {
-                    owner: None,
-                    staff: Actor::staff("u-teller", Role::Front, main),
-                },
-                "rates" => Sessions {
-                    owner: None,
-                    staff: Actor::staff("u-rates", Role::Rates, main),
-                },
-                _ => Sessions {
-                    owner: None,
-                    staff: None,
-                },
+                "owner" => test_callers::callers(Some(test_callers::owner("owner")), None),
+                "teller" => test_callers::callers(
+                    None,
+                    Some(test_callers::staff("u-teller", &[Role::Teller], main)),
+                ),
+                "rates" => test_callers::callers(
+                    None,
+                    Some(test_callers::staff("u-rates", &[Role::RateManager], main)),
+                ),
+                _ => test_callers::nobody(),
             }
         })
     }
@@ -174,7 +165,7 @@ impl<'a> Req<'a> {
 }
 
 async fn send(state: AppState, req: Req<'_>) -> Answer {
-    let sessions: Arc<dyn SessionReader> = Arc::new(FakeSessions);
+    let sessions: Arc<dyn SessionReader> = Arc::new(FakeCallers);
     let for_register = state.clone();
     let app = test::init_service(
         App::new()

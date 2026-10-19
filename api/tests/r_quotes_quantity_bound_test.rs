@@ -19,11 +19,11 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::*;
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const HOST: &str = "xc.test";
 const SAME_ORIGIN: &str = "http://xc.test";
@@ -33,15 +33,16 @@ const ROUTE: &str = "/api/quotes";
 struct Front;
 
 impl SessionReader for Front {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: Actor::staff("employee-FRONT", Role::Front, BranchId::new("MAIN")),
-            }
+            test_callers::callers(
+                None,
+                Some(test_callers::staff(
+                    "employee-FRONT",
+                    &[Role::Teller],
+                    BranchId::new("MAIN"),
+                )),
+            )
         })
     }
 }
