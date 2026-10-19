@@ -34,12 +34,12 @@ use actix_web::http::Method;
 use compat_common::Person;
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const RPC: &str = "/api/rpc";
@@ -220,29 +220,30 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
     );
 }
 
+const STAFF: [(&str, &[Role]); 9] = [
+    ("FRONT", &[Role::Teller]),
+    ("BACKEND", &[Role::BranchManager]),
+    ("MANAGER", &[Role::BranchManager]),
+    ("RATES", &[Role::RateManager]),
+    ("MONITOR", &[Role::VerificationReviewer]),
+    ("FINANCE", &[Role::Finance]),
+    ("SYSTEM", &[Role::Admin]),
+    ("DOCUMENTS", &[Role::VerificationReviewer]),
+    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
+];
+
 /// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
 /// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
 fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    actor: Option<&Actor>,
+    path: EntryPath,
     action: &str,
     named: Option<&str>,
 ) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    use xc_auth::domain::policy::entities::policy::Policy;
     let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
     Policy::authorize(
-        user.as_ref(),
+        actor,
         path,
         &act,
         named.map(xc_kernel::ids::BranchId::new).as_ref(),
@@ -263,7 +264,7 @@ async fn nobody_signed_in_is_asked_to_sign_in() {
     room.finish().await;
 }
 
-/// The view answers exactly whom `Policy::allow(_, Rpc, "adminSnapshot")` answers, for every
+/// The view answers exactly whom `Policy::authorize(_, Rpc, "adminSnapshot", ..)` answers, for every
 /// caller kind: the owner every branch, an employee their own branch only, whatever is named.
 #[actix_web::test]
 async fn the_view_answers_exactly_whom_the_admin_snapshot_row_allows() {
@@ -271,17 +272,14 @@ async fn the_view_answers_exactly_whom_the_admin_snapshot_row_allows() {
     let everything = room.snapshot_branches(MAIN).await;
     let mut callers: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for role in Role::STAFF {
+    for (name, roles) in STAFF {
         callers.push((
-            role.as_str().to_string(),
-            Actor::staff("employee", role, BranchId::new(MAIN)),
+            name.to_string(),
+            Some(test_callers::staff("employee", roles, BranchId::new(MAIN))),
         ));
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+        callers.push((format!("OWNER+{name}"), Some(test_callers::owner("owner"))));
     }
     let mut allowed = 0;
     let mut refused = 0;
@@ -298,7 +296,10 @@ async fn the_view_answers_exactly_whom_the_admin_snapshot_row_allows() {
                 assert_eq!(body["changed"], json!(true), "{what}: {body}");
                 // an employee of MAIN: their own branch; the owner (alone or with an
                 // employee in the same browser, `Rpc` answers the owner): every branch
-                let expected = match actor.as_ref().and_then(Actor::branch_id) {
+                let expected = match actor
+                    .as_ref()
+                    .and_then(|a| a.roles.first()?.branch.as_ref())
+                {
                     Some(own) => rows(&[(own.as_str(), MAIN_NAME)]),
                     None => everything.clone(),
                 };
