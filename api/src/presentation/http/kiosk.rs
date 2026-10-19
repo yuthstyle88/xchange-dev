@@ -303,7 +303,10 @@ async fn handle_kiosk(
     // D-4 for a Blueprint session (`__Host-xc_session`): the named branch is authorised. Only a
     // password-session employee keeps v2's own-branch answer, as on `/api/rpc` (`rpc.rs`), which
     // the provided tests pin; `callers.staff` is set for both, so it cannot decide this alone.
-    let blueprint_session = identity_session(&req, now).await.is_some();
+    let blueprint_session = match identity_session(&req, now).await {
+        Ok(session) => session.is_some(),
+        Err(_) => return kiosk_server_error(),
+    };
     let named = if !blueprint_session && callers_peek.staff_standing().is_some() {
         None
     } else {
