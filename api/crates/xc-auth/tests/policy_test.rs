@@ -8,22 +8,22 @@
 //! each of its entry paths. `fixtures/blueprint_policy_cases.json` is the same 1,425 questions
 //! asked by the B1-mapped users (§3.3: OWNER → one user holding EXECUTIVE + ADMIN, FRONT →
 //! TELLER, …), written by `api/tools/policy-map.mjs`: its answers are v2's except where a rule of
-//! §4.2 (C1–C8; C6 and C9 select no v2 case) or D-4 names the case. The custody rows (path
-//! Custody, the staff bridge's `ops…` names, `adminOpenShift`/`adminCloseShift`) are #582's: they
-//! keep v2's answer there and are not replayed here (`policy_custody_v2_test.rs`).
+//! §4.2 (C1–C8; C6 and C9 select no v2 case), §11.2 (S11) or D-4 names the case. The custody rows
+//! (path Custody, the staff bridge's `ops…` names, `adminOpenShift`/`adminCloseShift`) are #582's:
+//! they keep v2's answer there and are not replayed here (`policy_custody_v2_test.rs`).
 //!
 //! What moved, by the old test's line at `8234e77` (§4.3's table):
 //! - kept: `:52` → `the_mapped_fixture_is_whole`; `:99` → `every_mapped_case_is_answered_as_mapped`
-//!   and `the_mapping_changes_exactly_c1_to_c9`; `:128`, `:169`, `:301`, `:320`, `:337`, `:371`,
+//!   and `the_mapping_changes_exactly_c1_to_c9_and_s11`; `:128`, `:169`, `:301`, `:320`, `:337`, `:371`,
 //!   `:382`, `:417`, `:481`, `:548`, `:562`, `:668`, `:784`, `:804`, `:818`;
 //! - renamed to the mapped roles: `:590`, `:609`, `:627`, `:677`;
 //! - changed: `:147` (D-4), `:189`, `:214`, `:235` (§02, §07, B1), `:264` + `:281` (D-4), `:293`,
-//!   `:397` (C2, C3), `:437` (C1), `:462` (C4), `:646` (C5, C7);
+//!   `:397` (C2, C3, S11), `:437` (C1, S11), `:462` (C4, §11.2), `:646` (C5, C7);
 //! - dropped: `:254` (§07 has no owner kind; `scope_rules_hold` covers the rest);
 //! - moved to #582: `:310`, `:523`, `:720`, `:744`, `:762`, and the custody lines of `:417`,
 //!   `:437`, `:481`.
 //!
-//! A changed answer in an assertion below names its rule (C1–C9 of §4.2, or D-4).
+//! A changed answer in an assertion below names its rule (C1–C9 of §4.2, S11 of §11.2, or D-4).
 //!
 //! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
 //! (`docs/design/blueprint/rates.md` §9 row "`xc-auth/tests/policy_test.rs:386,705` |
@@ -142,11 +142,38 @@ fn is_custody(path: &str, name: &str) -> bool {
             && matches!(name, "adminOpenShift" | "adminCloseShift"))
 }
 
-/// Which rule of §4.2 names a main case of v2's fixture, if any.
+/// Which rule of §4.2 / §11.2 names a main case of v2's fixture, if any.
 fn rule_of(c: &Case) -> Option<&'static str> {
     let (p, a, who) = (c.path.as_str(), c.action.as_str(), c.actor.as_str());
     if is_custody(p, a) {
         return None;
+    }
+    if (p == "Rpc"
+        && matches!(a, "reserveCustomer" | "saveTransaction")
+        && matches!(who, "OWNER" | "BACKEND" | "MANAGER" | "RATES"))
+        || (p == "StaffRpc"
+            && matches!(a, "adminDeskConfig" | "reserveCustomer" | "saveTransaction")
+            && matches!(who, "OWNER" | "BACKEND" | "MANAGER" | "RATES"))
+        || (p == "StaffRpc" && a == "documents" && matches!(who, "OWNER" | "RATES"))
+        || (p == "File" && a == "file" && who == "RATES")
+        || (p == "StaffFile" && a == "file" && matches!(who, "OWNER" | "RATES"))
+        || (p == "StaffDesk"
+            && a == "desk"
+            && matches!(who, "OWNER" | "BACKEND" | "MANAGER" | "RATES"))
+        || (p == "Kiosk"
+            && matches!(
+                a,
+                "identityChecked" | "publishReceipt" | "get" | "accept" | "nope"
+            )
+            && matches!(who, "OWNER" | "RATES"))
+        || (p == "OwnerRoute"
+            && c.route == "POST /api/reference-rates"
+            && matches!(
+                who,
+                "RATES" | "MONITOR" | "FINANCE" | "DOCUMENTS" | "DOCUMENT_REVIEW"
+            ))
+    {
+        return Some("S11");
     }
     if matches!(p, "StaffRpc" | "StaffUpload" | "StaffFile" | "StaffDesk") && who == "OWNER" {
         return Some("C1");
@@ -205,6 +232,8 @@ fn becomes(rule: &str, c: &Case, system: &Case) -> Result<(), (String, u16)> {
         "C3" if c.actor == "OWNER" => Err((ROLE_NOT_ALLOWED_HERE.to_owned(), 400)),
         "C3" | "C4" | "C5" | "C7" => Ok(()),
         "C8" => Err((KIOSK_STAFF.to_owned(), 400)),
+        "S11" if c.path == "Kiosk" && c.action == "nope" => Err((KIOSK_UNKNOWN.to_owned(), 400)),
+        "S11" => Ok(()),
         other => panic!("no rule {other}"),
     }
 }
@@ -231,7 +260,7 @@ fn the_mapped_fixture_is_whole() {
     );
     assert_eq!(
         m.rules.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["C1", "C2", "C3", "C4", "C5", "C7", "C8", "D4"]
+        ["C1", "C2", "C3", "C4", "C5", "C7", "C8", "S11", "D4"]
     );
     assert!(m.rules.iter().all(|r| !r.says.is_empty()));
     assert_eq!(m.no_case, ["C6", "C9"]);
@@ -326,7 +355,7 @@ fn the_mapped_fixture_is_whole() {
 }
 
 #[test]
-fn the_mapping_changes_exactly_c1_to_c9() {
+fn the_mapping_changes_exactly_c1_to_c9_and_s11() {
     let v2 = fixture();
     let m = mapped_fixture();
     let mut per_rule: BTreeMap<&str, usize> = BTreeMap::new();
@@ -340,16 +369,14 @@ fn the_mapping_changes_exactly_c1_to_c9() {
                     .iter()
                     .find(|s| s.path == v.path && s.action == v.action && s.actor == "SYSTEM")
                     .expect("SYSTEM asked every name");
-                assert!(differs, "{label}: {rule} names it but nothing changed");
+                assert!(
+                    differs || rule == "S11",
+                    "{label}: {rule} names it but nothing changed"
+                );
                 assert_eq!(c.change.as_deref(), Some(rule), "{label}");
                 assert_eq!(recorded_mapped(c), becomes(rule, v, system), "{label}");
-                // a rule of §4.2 moves no branch: a refusal shows none, a call let through shows v2's
-                let want_branch = if c.allowed && v.allowed {
-                    v.branch.clone()
-                } else {
-                    None
-                };
-                assert_eq!(c.branch, want_branch, "{label}");
+                // a rule of §4.2 / §11.2 moves no branch: a changed row carries no recorded branch
+                assert_eq!(c.branch, None, "{label}");
                 *per_rule.entry(rule).or_default() += 1;
             }
             None => {
@@ -361,16 +388,15 @@ fn the_mapping_changes_exactly_c1_to_c9() {
     assert_eq!(
         per_rule,
         BTreeMap::from([
-            ("C1", 18),
-            ("C2", 2),
+            ("C1", 12),
             ("C3", 3),
             ("C4", 8),
             ("C5", 1),
             ("C7", 4),
-            ("C8", 5),
+            ("S11", 44),
         ])
     );
-    assert_eq!(m.counts.changed, 41);
+    assert_eq!(m.counts.changed, 72);
 
     // D-4 on the branch cases: an employee naming a branch not theirs is refused, except on the
     // public kiosk, where nobody's scope is asked and the call runs on the branch named
@@ -402,6 +428,53 @@ fn the_mapping_changes_exactly_c1_to_c9() {
     }
     assert_eq!(d4, 85);
     assert_eq!(m.counts.branch_changed, 85);
+}
+
+#[test]
+fn every_case_s11_moves_is_the_seeds_answer() {
+    // §11.2 (S11 / S11A): every mapped case S11/S11A selects has a Permission p on its row (or
+    // QueueOperate on the kiosk unknown-action branch), and its answer in the fixture matches
+    // whether one of the caller's mapped roles holds p in RoleGrants::seed.
+    let m = mapped_fixture();
+    let mut s11_n = 0;
+    for c in m
+        .cases
+        .iter()
+        .filter(|c| matches!(c.change.as_deref(), Some("S11" | "S11A")))
+    {
+        s11_n += 1;
+        let on = path(&c.path);
+        let name = asked(&c.route, &c.path, &c.action);
+        let label = format!("{} {:?} as {}", c.path, name, c.actor);
+        let roles = c
+            .roles
+            .as_ref()
+            .unwrap_or_else(|| panic!("{label}: S11 case must have a signed-in caller"));
+        if on == EntryPath::Kiosk && name == "nope" {
+            let p = Permission::QueueOperate;
+            let holds = roles.iter().any(|r| {
+                let role = Role::parse(&r.role).expect("Blueprint role");
+                RoleGrants::seed(role).contains(&p)
+            });
+            assert!(holds, "{label}: S11 kiosk unknown-name case must hold {p:?}");
+            assert_eq!(
+                recorded_mapped(c),
+                Err((KIOSK_UNKNOWN.to_owned(), 400)),
+                "{label}"
+            );
+            continue;
+        }
+        let Some(Need::Permission(p)) = Policy::need(on, &action(&name)) else {
+            panic!("{label}: S11 case must have a Need::Permission row");
+        };
+        let holds = roles.iter().any(|r| {
+            let role = Role::parse(&r.role).expect("Blueprint role");
+            RoleGrants::seed(role).contains(&p)
+        });
+        assert_eq!(c.allowed, holds, "{label}: {p:?}");
+        assert_eq!(recorded_mapped(c).is_ok(), holds, "{label}: {p:?}");
+    }
+    assert_eq!(s11_n, 44);
 }
 
 #[test]
@@ -805,10 +878,11 @@ fn the_desk_configuration_depends_on_the_path() {
             "VERIFICATION_REVIEWER"
         ]
     );
-    // ExchangeTransact on the bridge
+    // §11.2 (S11): ExchangeTransact (CUSTOMERS CREATE) on the bridge is held by EXECUTIVE,
+    // RATE_MANAGER, BRANCH_MANAGER, TELLER
     assert_eq!(
         allowed_roles(EntryPath::StaffRpc, "adminDeskConfig"),
-        ["TELLER"]
+        ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"]
     );
     assert_eq!(
         said(ask(
@@ -828,21 +902,29 @@ fn reading_a_transactions_documents_depends_on_the_path() {
         said(ask(Some(&owner()), EntryPath::Rpc, "documents")),
         (INVALID_REQUEST.to_owned(), 400)
     );
-    // on the staff bridge: IdentityDocumentRead, for everybody v2 let in (B1) — not MARKETING (C6)
+    // §11.2 (S11): on the staff bridge, IdentityDocumentRead (CUSTOMERS VIEW) is held by
+    // EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, TELLER, FINANCE, VERIFICATION_REVIEWER — not ADMIN or MARKETING (C6)
     assert_eq!(
         allowed_roles(EntryPath::StaffRpc, "documents"),
         [
+            "EXECUTIVE",
+            "RATE_MANAGER",
             "BRANCH_MANAGER",
             "TELLER",
             "FINANCE",
             "VERIFICATION_REVIEWER"
         ]
     );
+    // §11.2 (S11): RATE_MANAGER holds IdentityDocumentRead; ADMIN does not
+    assert_eq!(
+        said(ask(
+            Some(&staff(Role::Admin, B2)),
+            EntryPath::StaffRpc,
+            "documents"
+        )),
+        (DOCUMENTS_NOT_READABLE.to_owned(), 400)
+    );
     for r in [Role::RateManager, Role::Admin] {
-        assert_eq!(
-            said(ask(Some(&staff(r, B2)), EntryPath::StaffRpc, "documents")),
-            (DOCUMENTS_NOT_READABLE.to_owned(), 400)
-        );
         // and the documents page lets the same two in
         assert_eq!(
             ask(Some(&staff(r, B2)), EntryPath::UserRoute, "documents"),
@@ -879,9 +961,16 @@ fn the_two_paths_refuse_in_sentences_one_word_apart() {
 #[test]
 fn what_each_role_may_write_on_both_paths() {
     for on in [EntryPath::Rpc, EntryPath::StaffRpc] {
-        // C2: ExchangeTransact is TELLER's alone (§03 B03)
-        assert_eq!(allowed_roles(on, "reserveCustomer"), ["TELLER"]);
-        assert_eq!(allowed_roles(on, "saveTransaction"), ["TELLER"]);
+        // §11.2 (S11, supersedes C2): ExchangeTransact (CUSTOMERS CREATE) is held by EXECUTIVE,
+        // RATE_MANAGER, BRANCH_MANAGER, TELLER
+        assert_eq!(
+            allowed_roles(on, "reserveCustomer"),
+            ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"]
+        );
+        assert_eq!(
+            allowed_roles(on, "saveTransaction"),
+            ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"]
+        );
         // RatesDraft was RATE_MANAGER, and EXECUTIVE per PR 570 A5 (on the bridge too: C1); RE-7
         // #604 removes adminSaveRate (rates.md §9), so nobody may (rateDraft:
         // `policy_rate_engine_test.rs`)
@@ -893,10 +982,10 @@ fn what_each_role_may_write_on_both_paths() {
         assert_eq!(allowed_roles(on, "adminSnapshot").len(), 7);
         assert_eq!(allowed_roles(on, "getConnectionStatus").len(), 7);
     }
-    // C4: BranchesManage is ADMIN's (§03 A04); the bridge has no row for it
+    // C4 and §11.2: BranchesManage (USER_MANAGEMENT FULL) is EXECUTIVE's and ADMIN's; the bridge has no row for it
     assert_eq!(
         allowed_roles(EntryPath::Rpc, "adminCreateBranch"),
-        ["ADMIN"]
+        ["EXECUTIVE", "ADMIN"]
     );
     assert!(allowed_roles(EntryPath::StaffRpc, "adminCreateBranch").is_empty());
     // RequestAbandon (v3-only): EXECUTIVE, the B1 translation of OWNER
@@ -915,7 +1004,7 @@ fn the_owners_user_may_do_the_owner_rpc_actions_its_roles_allow() {
     for name in [
         "adminSnapshot",
         "adminDeskConfig",
-        "adminCreateBranch", // C4: kept through ADMIN
+        "adminCreateBranch", // C4 / §11.2: kept through EXECUTIVE + ADMIN
         "adminAbandonRequest",
         "getConnectionStatus",
     ] {
@@ -926,19 +1015,21 @@ fn the_owners_user_may_do_the_owner_rpc_actions_its_roles_allow() {
         ask(Some(&o), EntryPath::Rpc, "adminSaveRate"),
         Err(PolicyError::InvalidRequest)
     );
-    // C2 (reserveCustomer, saveTransaction): EXECUTIVE is refused and ADMIN holds neither
+    // §11.2 (S11, supersedes C2): EXECUTIVE holds ExchangeTransact (CUSTOMERS CREATE), so the
+    // owner's user passes reserveCustomer and saveTransaction; ADMIN alone is refused
     for name in ["reserveCustomer", "saveTransaction"] {
+        assert_eq!(ask(Some(&o), EntryPath::Rpc, name), Ok(()), "{name}");
         assert_eq!(
-            said(ask(Some(&o), EntryPath::Rpc, name)),
+            said(ask(Some(&staff(Role::Admin, B2)), EntryPath::Rpc, name)),
             (ROLE_NOT_ALLOWED_HERE.to_owned(), 400),
             "{name}"
         );
     }
-    // EXECUTIVE alone, without ADMIN, does not create a branch (C4)
+    // §11.2: EXECUTIVE holds USER_MANAGEMENT FULL (BranchesManage), so EXECUTIVE alone creates a branch too
     let exec = staff(Role::Executive, B2);
     assert_eq!(
-        said(ask(Some(&exec), EntryPath::Rpc, "adminCreateBranch")),
-        (ROLE_NOT_ALLOWED_HERE.to_owned(), 400)
+        ask(Some(&exec), EntryPath::Rpc, "adminCreateBranch"),
+        Ok(())
     );
 }
 
@@ -962,14 +1053,20 @@ fn the_owner_is_let_through_wherever_a_signed_in_caller_is() {
 
 #[test]
 fn a_staff_path_admits_whoever_holds_its_role() {
-    // C1 (§07: one User, no owner kind). The owner's user is answered by its two roles: CompatRead
-    // through ADMIN, RatesDraft and ProofUpload through EXECUTIVE; elsewhere it hears ADMIN's
-    // refusal (`policy_test.rs:437` said EMPLOYEE_AUTH_REQUIRED to all of these)
+    // C1 (§07: one User, no owner kind) and §11.2 (S11): the owner's user holds CUSTOMERS FULL
+    // (ExchangeTransact, IdentityDocumentRead) and DOCUMENTS FULL (FileRead) through EXECUTIVE, so
+    // it is admitted on those staff rows too; an organisation-wide ADMIN alone still hears ADMIN's
+    // refusal on them (`policy_test.rs:437` said EMPLOYEE_AUTH_REQUIRED to all of these)
     let o = owner();
     for (on, name) in [
         (EntryPath::StaffRpc, "adminSnapshot"),
         (EntryPath::StaffRpc, "getConnectionStatus"),
         (EntryPath::StaffUpload, "upload"),
+        (EntryPath::StaffRpc, "reserveCustomer"),
+        (EntryPath::StaffRpc, "adminDeskConfig"),
+        (EntryPath::StaffRpc, "documents"),
+        (EntryPath::StaffFile, "file"),
+        (EntryPath::StaffDesk, "desk"),
     ] {
         assert_eq!(ask(Some(&o), on, name), Ok(()), "{} {name}", path_name(on));
     }
@@ -978,6 +1075,7 @@ fn a_staff_path_admits_whoever_holds_its_role() {
         ask(Some(&o), EntryPath::StaffRpc, "adminSaveRate"),
         Err(PolicyError::RoleNotAllowed)
     );
+    let admin = user("U-A", vec![row(Role::Admin, None)]);
     for (on, name, sentence) in [
         (EntryPath::StaffRpc, "reserveCustomer", ROLE_NOT_ALLOWED),
         (EntryPath::StaffRpc, "adminDeskConfig", FRONT_ONLY),
@@ -986,14 +1084,13 @@ fn a_staff_path_admits_whoever_holds_its_role() {
         (EntryPath::StaffDesk, "desk", FRONT_ONLY),
     ] {
         assert_eq!(
-            said(ask(Some(&o), on, name)),
+            said(ask(Some(&admin), on, name)),
             (sentence.to_owned(), 400),
             "{} {name}",
             path_name(on)
         );
     }
     // an organisation-wide ADMIN alone passes the bridge's reads as the owner does
-    let admin = user("U-A", vec![row(Role::Admin, None)]);
     assert_eq!(
         ask(Some(&admin), EntryPath::StaffRpc, "adminSnapshot"),
         Ok(())
@@ -1002,16 +1099,20 @@ fn a_staff_path_admits_whoever_holds_its_role() {
 
 #[test]
 fn only_admin_passes_branch_and_user_management() {
-    // C4 (§03 A04/A05 user ADMIN; §02 ADMIN "ผู้ใช้ บทบาท สาขา"): UsersManage on the employees route
+    // C4 (§03 A04/A05 user ADMIN; §02 ADMIN "ผู้ใช้ บทบาท สาขา") and §11.2: UsersManage
+    // (USER_MANAGEMENT FULL) on the employees route is held by EXECUTIVE and ADMIN
     // (it asks as "employees"; the view `admin_employees` as "list")
     for name in ["employees", "list"] {
         assert_eq!(ask(Some(&owner()), EntryPath::OwnerRoute, name), Ok(()));
         assert_eq!(
             allowed_roles(EntryPath::OwnerRoute, name),
-            ["ADMIN"],
+            ["EXECUTIVE", "ADMIN"],
             "{name}"
         );
-        for r in BLUEPRINT.into_iter().filter(|r| *r != Role::Admin) {
+        for r in BLUEPRINT
+            .into_iter()
+            .filter(|r| !matches!(r, Role::Executive | Role::Admin))
+        {
             assert_eq!(
                 said(ask(Some(&staff(r, B2)), EntryPath::OwnerRoute, name)),
                 (OWNER_ONLY.to_owned(), 403),
@@ -1135,32 +1236,36 @@ fn teller_and_finance_upload_evidence_and_nobody_else_on_the_staff() {
 
 #[test]
 fn rate_managers_and_admins_read_no_customer_file_and_each_path_says_so_differently() {
-    for r in [Role::RateManager, Role::Admin] {
-        let e = staff(r, B2);
-        assert_eq!(
-            said(ask(Some(&e), EntryPath::File, "file")),
-            (NOT_FOUND.to_owned(), 404)
-        );
-        assert_eq!(
-            said(ask(Some(&e), EntryPath::StaffFile, "file")),
-            (FILES_NOT_READABLE.to_owned(), 400)
-        );
-    }
-    // FileRead: everybody v2 let in, B1-mapped, less MARKETING (C6)
+    // §11.2 (S11): RATE_MANAGER holds DOCUMENTS VIEW (FileRead) and CUSTOMERS FULL
+    // (IdentityDocumentRead); ADMIN holds neither
+    let e = staff(Role::Admin, B2);
+    assert_eq!(
+        said(ask(Some(&e), EntryPath::File, "file")),
+        (NOT_FOUND.to_owned(), 404)
+    );
+    assert_eq!(
+        said(ask(Some(&e), EntryPath::StaffFile, "file")),
+        (FILES_NOT_READABLE.to_owned(), 400)
+    );
+    // §11.2 (S11): FileRead (DOCUMENTS VIEW) is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER,
+    // TELLER, FINANCE, VERIFICATION_REVIEWER — less MARKETING (C6) and ADMIN
     assert_eq!(
         allowed_roles(EntryPath::File, "file"),
         [
             "EXECUTIVE",
+            "RATE_MANAGER",
             "BRANCH_MANAGER",
             "TELLER",
             "FINANCE",
             "VERIFICATION_REVIEWER"
         ]
     );
-    // IdentityDocumentRead on the staff path
+    // §11.2 (S11): IdentityDocumentRead (CUSTOMERS VIEW) on the staff path has the same six holders
     assert_eq!(
         allowed_roles(EntryPath::StaffFile, "file"),
         [
+            "EXECUTIVE",
+            "RATE_MANAGER",
             "BRANCH_MANAGER",
             "TELLER",
             "FINANCE",
@@ -1171,10 +1276,15 @@ fn rate_managers_and_admins_read_no_customer_file_and_each_path_says_so_differen
 
 #[test]
 fn the_staff_desk_page_is_tellers() {
-    assert_eq!(allowed_roles(EntryPath::StaffDesk, "desk"), ["TELLER"]);
+    // §11.2 (S11): ExchangeTransact (CUSTOMERS CREATE) on StaffDesk is held by EXECUTIVE,
+    // RATE_MANAGER, BRANCH_MANAGER, TELLER
+    assert_eq!(
+        allowed_roles(EntryPath::StaffDesk, "desk"),
+        ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"]
+    );
     assert_eq!(
         said(ask(
-            Some(&staff(Role::BranchManager, B2)),
+            Some(&staff(Role::Finance, B2)),
             EntryPath::StaffDesk,
             "desk"
         )),
@@ -1229,16 +1339,14 @@ fn the_customer_kiosk_needs_nobody_signed_in() {
 
 #[test]
 fn the_kiosk_queue_is_for_teller_and_branch_manager() {
-    // C8: QueueOperate (§03 B06, users TELLER/MANAGER); EXECUTIVE is refused
+    // §11.2 (S11, supersedes C8): QueueOperate (CUSTOMERS CREATE) is held by EXECUTIVE,
+    // RATE_MANAGER, BRANCH_MANAGER, TELLER; the owner's user is allowed through EXECUTIVE
     for name in ["accept", "get", "identityChecked", "publishReceipt"] {
         assert_eq!(
             allowed_roles(EntryPath::Kiosk, name),
-            ["BRANCH_MANAGER", "TELLER"]
+            ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"]
         );
-        assert_eq!(
-            said(ask(Some(&owner()), EntryPath::Kiosk, name)),
-            (KIOSK_STAFF.to_owned(), 400)
-        );
+        assert_eq!(ask(Some(&owner()), EntryPath::Kiosk, name), Ok(()));
         assert_eq!(
             said(ask(None, EntryPath::Kiosk, name)),
             (KIOSK_STAFF.to_owned(), 400)
