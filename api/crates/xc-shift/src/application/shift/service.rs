@@ -189,9 +189,7 @@ impl<R: ShiftRepository> ShiftService<R> {
                     AppError::Internal(format!("undecodable shifts.opening: {code_str}"))
                 })?;
                 let money = crate::infrastructure::shift::shift_repository::parse_money_unbounded(
-                    "shifts",
-                    "opening",
-                    &amt_str,
+                    "shifts", "opening", &amt_str,
                 )?;
                 pairs.push((code, money));
             }

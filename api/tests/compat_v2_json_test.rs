@@ -41,8 +41,9 @@ use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xchange::application::compat::v2_json::{
     People, PersonLabel, V2Json, balances_json, branches_json, custody_time_json, customers_json,
-    delta_json, money_json, movements_json, operations_json, operations_with_safe_json, rate_history_json, rate_json,
-    rates_json, shifts_json, stock_delta_json, time_json, time_or_empty_json,
+    delta_json, money_json, movements_json, operations_json, operations_with_safe_json,
+    rate_history_json, rate_json, rates_json, shifts_json, stock_delta_json, time_json,
+    time_or_empty_json,
 };
 
 // ── helpers: building domain values ──────────────────────────────────────────

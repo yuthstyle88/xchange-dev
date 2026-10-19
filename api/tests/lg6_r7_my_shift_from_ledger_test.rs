@@ -275,15 +275,11 @@ impl SessionReader for HeaderUsers {
                 ))
             })();
             match user {
-                Some((id, branch, u)) => Callers {
-                    owner: None,
-                    staff: Actor::staff(id, OldRole::Finance, BranchId::new(branch)),
+                Some((_, _, u)) => Callers {
                     user: Some(u.clone()),
                     staff_user: Some(u),
                 },
                 None => Callers {
-                    owner: None,
-                    staff: None,
                     user: None,
                     staff_user: None,
                 },
@@ -363,7 +359,12 @@ async fn row4_balances_ordered_thb_first_then_a_to_z() {
     let room = Room::start().await;
     let teller = room.teller().await;
     let shift = room.open_shift(&teller).await;
-    for (code, amount) in [("USD", "200"), ("EUR", "150"), ("THB", "1000"), ("AUD", "50")] {
+    for (code, amount) in [
+        ("USD", "200"),
+        ("EUR", "150"),
+        ("THB", "1000"),
+        ("AUD", "50"),
+    ] {
         room.post_ledger(
             CashPlace::Bank,
             CashPlace::Drawer(shift.clone()),

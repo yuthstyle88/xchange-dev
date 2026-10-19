@@ -401,8 +401,10 @@ mod tests {
             .await
             .expect("initial verify");
 
-        let usd_balance_before: Decimal =
-            db.balance(verified.shift_id.as_deref().unwrap(), "USD").await.0;
+        let usd_balance_before: Decimal = db
+            .balance(verified.shift_id.as_deref().unwrap(), "USD")
+            .await
+            .0;
         assert_eq!(usd_balance_before, Decimal::from(1000));
 
         // Now attempt to submit a count where a JPY denomination is sent as "USD"
@@ -431,8 +433,10 @@ mod tests {
         }
 
         // Check USD total is unchanged on shift_balances
-        let usd_balance_after: Decimal =
-            db.balance(verified.shift_id.as_deref().unwrap(), "USD").await.0;
+        let usd_balance_after: Decimal = db
+            .balance(verified.shift_id.as_deref().unwrap(), "USD")
+            .await
+            .0;
         assert_eq!(usd_balance_after, Decimal::from(1000));
 
         let count_rows: i64 =

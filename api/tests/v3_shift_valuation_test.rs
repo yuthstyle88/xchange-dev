@@ -449,10 +449,7 @@ impl TestDb {
         .await
         .expect("insert close count");
         for (code, amount) in counted {
-            let exp = expected
-                .get(*code)
-                .and_then(|v| v.as_str())
-                .unwrap_or("0");
+            let exp = expected.get(*code).and_then(|v| v.as_str()).unwrap_or("0");
             sqlx::query(
                 "INSERT INTO cash_count_totals (count_id, organization_id, currency, counted, expected, difference) \
                  SELECT $1, organization_id, $2, $3::numeric, $4::numeric, $3::numeric - $4::numeric \

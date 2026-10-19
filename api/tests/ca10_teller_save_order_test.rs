@@ -76,12 +76,11 @@ async fn without_an_own_shift(replay: &Replay<'_>) {
             .fetch_one(pool)
             .await
             .expect("the open shift");
-    let held = xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(
-        pool.clone(),
-    )
-    .shift_balances(&shift_id)
-    .await
-    .expect("the open shift's balances");
+    let held =
+        xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(pool.clone())
+            .shift_balances(&shift_id)
+            .await
+            .expect("the open shift's balances");
     let counted: Map<String, Value> = held
         .into_iter()
         .map(|b| {
