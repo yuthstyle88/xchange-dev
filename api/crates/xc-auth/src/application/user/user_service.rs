@@ -673,7 +673,6 @@ impl<R: UserRepository> UserService<R> {
                     version: 1,
                     created_at: now,
                     created_by: input.created_by.to_string(),
-                    legacy_employee_id: None,
                     roles: input.roles.clone(),
                 };
                 self.repo.create_user(&mut tx, &user).await?;
