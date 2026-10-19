@@ -10,13 +10,16 @@ use xc_kernel::pii::{IdentityType, normalize};
 
 use crate::application::user::UserService;
 use crate::application::user::user_service::{CreateStaffError, StaffCreate};
-use crate::domain::access::{BranchRef, Role, ScopedRole, SessionBranch};
+use crate::domain::access::{
+    BranchRef, Role, RoleGrantStore, RoleGrants, ScopedRole, SessionBranch,
+};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
     UNAVAILABLE_MESSAGE,
 };
 use crate::domain::token::{TokenVerifier, VerifiedToken};
 use crate::domain::user::{User, UserStatus};
+use crate::infrastructure::access::PgRoleGrantStore;
 use crate::infrastructure::user::PgUserRepository;
 
 use super::login_recorder::{LoginAttempt, LoginRecorder, LoginResult};
@@ -960,6 +963,18 @@ impl SessionService {
 
         if expires <= now || status != "ACTIVE" || u_version != s_version {
             return Ok(None);
+        }
+
+        let grant_version: i64 = sqlx::query_scalar("SELECT version FROM role_grant_version")
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        if grant_version != RoleGrants::current().version() {
+            let snapshot = PgRoleGrantStore::new()
+                .load(&mut *conn)
+                .await
+                .map_err(|e| SessionError::Database(e.to_string()))?;
+            RoleGrants::install(snapshot);
         }
 
         let roles_rows: Vec<RoleRow> = sqlx::query_as(VALID_ROLES_SQL)
