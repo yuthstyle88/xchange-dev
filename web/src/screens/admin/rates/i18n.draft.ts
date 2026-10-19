@@ -20,6 +20,14 @@ export const th = {
   // Draft section headers
   draftTitle: 'ฉบับร่างเรทปัจจุบัน',
   noOpenDraft: 'ไม่มีฉบับร่างที่เปิดอยู่',
+
+  // A02 manual price lines
+  saveLines: 'บันทึกรายการเรท',
+  modeAuto: 'อัตโนมัติ',
+  modeManual: 'กำหนดเอง',
+  reasonLabel: 'เหตุผล',
+  manualValueRequired: 'กรุณาระบุเรทที่ถูกต้อง',
+  reasonRequired: 'กรุณาระบุเหตุผล',
 };
 
 export const en = {
@@ -44,4 +52,12 @@ export const en = {
   // Draft section headers
   draftTitle: 'Current Rate Draft',
   noOpenDraft: 'No open draft',
+
+  // A02 manual price lines
+  saveLines: 'Save rate lines',
+  modeAuto: 'Auto',
+  modeManual: 'Manual',
+  reasonLabel: 'Reason',
+  manualValueRequired: 'Valid manual rate is required',
+  reasonRequired: 'Reason is required',
 };

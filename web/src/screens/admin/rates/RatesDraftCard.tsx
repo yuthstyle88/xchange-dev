@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Show, type JSX } from 'solid-js';
 import type * as table from './i18n';
 import type { ApiClient } from '../../../shared/api/client';
 import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
@@ -10,11 +10,38 @@ import type {
 import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
 import type { RatesReferenceData } from '../../../shared/api/generated/rates_reference';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { Field } from '../../../shared/ui/Field';
 import { formatRate } from '../../../shared/ui/rate';
+import './rates-draft.css';
 
 export interface OutOfBoundItem {
   currency: string;
   side: 'BUY' | 'SELL';
+}
+
+interface LineFieldErrors {
+  manualBuy?: 'manualValueRequired';
+  manualSell?: 'manualValueRequired';
+  reason?: 'reasonRequired';
+}
+
+function isValidManualDecimal(val: string | null | undefined): boolean {
+  const trimmed = (val ?? '').trim();
+  return /^\d+(\.\d{1,8})?$/.test(trimmed) && /[1-9]/.test(trimmed);
+}
+
+function validateLine(line: RateDraftLineDto): LineFieldErrors {
+  const errs: LineFieldErrors = {};
+  if (line.buyMode === 'MANUAL' && !isValidManualDecimal(line.manualBuy)) {
+    errs.manualBuy = 'manualValueRequired';
+  }
+  if (line.sellMode === 'MANUAL' && !isValidManualDecimal(line.manualSell)) {
+    errs.manualSell = 'manualValueRequired';
+  }
+  if ((line.buyMode === 'MANUAL' || line.sellMode === 'MANUAL') && !(line.reason ?? '').trim()) {
+    errs.reason = 'reasonRequired';
+  }
+  return errs;
 }
 
 export interface RatesDraftCardProps {
@@ -56,6 +83,27 @@ export interface RatesDraftCardProps {
 }
 
 export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
+  const [editLines, setEditLines] = createSignal<RateDraftLineDto[]>([]);
+  const [lineErrors, setLineErrors] = createSignal<Record<string, LineFieldErrors>>({});
+
+  createEffect(() => {
+    const src = props.draftDetail()?.lines ?? [];
+    setEditLines(src.map((l) => ({ ...l })));
+    setLineErrors({});
+  });
+
+  const isEditable = (): boolean => props.draftDetail()?.draft?.status === 'DRAFT';
+
+  const lineCurrencies = createMemo(
+    () => editLines().map((l) => l.currency),
+    [] as string[],
+    { equals: (a, b) => a.length === b.length && a.every((c, i) => c === b[i]) },
+  );
+
+  const updateLine = (currency: string, patch: Partial<RateDraftLineDto>): void => {
+    setEditLines((prev) => prev.map((l) => (l.currency === currency ? { ...l, ...patch } : l)));
+  };
+
   const getUnitSize = (currency: string): string => {
     const pubLine = props.pubData()?.lines?.find((p) => p.currency === currency);
     if (pubLine?.unitSize) return pubLine.unitSize;
@@ -196,6 +244,60 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
     }
   });
 
+  const handleSaveLines = props.guarded(async () => {
+    const draft = props.draftDetail()?.draft;
+    if (!draft) return;
+    const currentLines = editLines();
+    const nextErrors: Record<string, LineFieldErrors> = {};
+    let hasError = false;
+    for (const l of currentLines) {
+      const errs = validateLine(l);
+      if (errs.manualBuy || errs.manualSell || errs.reason) {
+        nextErrors[l.currency] = errs;
+        hasError = true;
+      }
+    }
+    setLineErrors(nextErrors);
+    if (hasError) return;
+
+    const branch = props.branch();
+    const gen = props.readGen();
+    const putLines: RateDraftLineDto[] = currentLines.map((l) => ({
+      currency: l.currency,
+      buyMode: l.buyMode,
+      sellMode: l.sellMode,
+      manualBuy: l.buyMode === 'MANUAL' ? l.manualBuy : null,
+      manualSell: l.sellMode === 'MANUAL' ? l.manualSell : null,
+      reason: l.reason && l.reason.trim() !== '' ? l.reason : null,
+    }));
+
+    try {
+      const res = await props.writeFor<unknown, { id: string; version: number; status: string }>(
+        'saveDraft:' + draft.id,
+        'PUT',
+        `/api/rate-drafts/${draft.id}`,
+      ).send({
+        branch,
+        expectedVersion: draft.version,
+        lines: putLines,
+      });
+      if (gen !== props.readGen()) return;
+      props.setSimulateResult(null);
+      props.setDraftDetail((prev) =>
+        prev && prev.draft
+          ? {
+              ...prev,
+              draft: { ...prev.draft, version: res?.version ?? prev.draft.version },
+              lines: putLines,
+            }
+          : prev,
+      );
+    } catch (err: unknown) {
+      if (gen !== props.readGen()) return;
+      props.toast(wordedError(err));
+    }
+  });
+
   const handleAdjustAll = props.guarded(async () => {
     const draft = props.draftDetail()?.draft;
     const lines = props.draftDetail()?.lines ?? [];
@@ -274,6 +376,16 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
                 {props.t('newDraft')}
               </button>
               <Show when={props.draftDetail()?.draft}>
+                <Show when={isEditable()}>
+                  <button
+                    type="button"
+                    class="btn-save-lines"
+                    disabled={props.busy()}
+                    onClick={handleSaveLines}
+                  >
+                    {props.t('saveLines')}
+                  </button>
+                </Show>
                 <button
                   type="button"
                   class="btn-simulate"
@@ -314,23 +426,21 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
 
         <Show when={props.draftDetail()?.draft}>
           {/* Adjust all form */}
-          <div class="adjust-all-bar" style={{ padding: '12px 24px', display: 'flex', gap: '16px', "align-items": 'center' }}>
-            <label class="adjust-field-label">
-              {props.t('adjustBuyPct')}
+          <div class="adjust-all-bar adjust-all-bar--draft">
+            <Field label={props.t('adjustBuyPct')} class="adjust-field-label">
               <input
                 type="text"
                 value={props.adjustBuyPct()}
                 onInput={(e) => props.setAdjustBuyPct(e.currentTarget.value)}
               />
-            </label>
-            <label class="adjust-field-label">
-              {props.t('adjustSellPct')}
+            </Field>
+            <Field label={props.t('adjustSellPct')} class="adjust-field-label">
               <input
                 type="text"
                 value={props.adjustSellPct()}
                 onInput={(e) => props.setAdjustSellPct(e.currentTarget.value)}
               />
-            </label>
+            </Field>
             <button
               type="button"
               class="btn-adjust-all"
@@ -348,31 +458,122 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
                   <th>{props.t('headerCurrency')}</th>
                   <th class="num">{props.t('headerBuy')}</th>
                   <th class="num">{props.t('headerSell')}</th>
-                  <th></th>
+                  <th>{props.t('reasonLabel')}</th>
                 </tr>
               </thead>
               <tbody>
-                <For each={props.draftDetail()?.lines ?? []}>
-                  {(line) => (
-                    <tr data-draft-line={line.currency}>
-                      <td class="code">{line.currency}</td>
-                      <td class="num rate-number">
-                        {line.buyMode === 'MANUAL' && line.manualBuy
-                          ? formatRate(line.manualBuy, getUnitSize(line.currency), line.currency)
-                          : line.buyMode}
-                      </td>
-                      <td class="num rate-number">
-                        {line.sellMode === 'MANUAL' && line.manualSell
-                          ? formatRate(line.manualSell, getUnitSize(line.currency), line.currency)
-                          : line.sellMode}
-                      </td>
-                      <td>
-                        <Show when={isOutOfBound(line.currency)}>
-                          <span class="out-of-bound">{props.t('outOfBound')}</span>
-                        </Show>
-                      </td>
-                    </tr>
-                  )}
+                <For each={lineCurrencies()}>
+                  {(currency) => {
+                    const line = () => editLines().find((l) => l.currency === currency);
+                    const errs = () => lineErrors()[currency];
+                    return (
+                      <tr data-draft-line={currency}>
+                        <td class="code">{currency}</td>
+                        <td class="num rate-number">
+                          <Show
+                            when={isEditable()}
+                            fallback={
+                              line()?.buyMode === 'MANUAL' && line()?.manualBuy
+                                ? formatRate(line()!.manualBuy!, getUnitSize(currency), currency)
+                                : line()?.buyMode === 'MANUAL'
+                                  ? props.t('modeManual')
+                                  : props.t('modeAuto')
+                            }
+                          >
+                            <select
+                              name="buyMode"
+                              value={line()?.buyMode ?? 'AUTO'}
+                              onChange={(e) =>
+                                updateLine(currency, {
+                                  buyMode: e.currentTarget.value,
+                                  manualBuy: e.currentTarget.value === 'MANUAL' ? (line()?.manualBuy ?? '') : null,
+                                })
+                              }
+                            >
+                              <option value="AUTO">{props.t('modeAuto')}</option>
+                              <option value="MANUAL">{props.t('modeManual')}</option>
+                            </select>
+                            <Show when={line()?.buyMode === 'MANUAL'}>
+                              <input
+                                type="text"
+                                name="manualBuy"
+                                value={line()?.manualBuy ?? ''}
+                                onInput={(e) => updateLine(currency, { manualBuy: e.currentTarget.value })}
+                              />
+                              <Show when={isValidManualDecimal(line()?.manualBuy)}>
+                                <span>{formatRate(line()!.manualBuy!, getUnitSize(currency), currency)}</span>
+                              </Show>
+                            </Show>
+                            <Show when={errs()?.manualBuy}>
+                              <span class="field-error" data-field-error="manualBuy">
+                                {props.t(errs()!.manualBuy!)}
+                              </span>
+                            </Show>
+                          </Show>
+                        </td>
+                        <td class="num rate-number">
+                          <Show
+                            when={isEditable()}
+                            fallback={
+                              line()?.sellMode === 'MANUAL' && line()?.manualSell
+                                ? formatRate(line()!.manualSell!, getUnitSize(currency), currency)
+                                : line()?.sellMode === 'MANUAL'
+                                  ? props.t('modeManual')
+                                  : props.t('modeAuto')
+                            }
+                          >
+                            <select
+                              name="sellMode"
+                              value={line()?.sellMode ?? 'AUTO'}
+                              onChange={(e) =>
+                                updateLine(currency, {
+                                  sellMode: e.currentTarget.value,
+                                  manualSell: e.currentTarget.value === 'MANUAL' ? (line()?.manualSell ?? '') : null,
+                                })
+                              }
+                            >
+                              <option value="AUTO">{props.t('modeAuto')}</option>
+                              <option value="MANUAL">{props.t('modeManual')}</option>
+                            </select>
+                            <Show when={line()?.sellMode === 'MANUAL'}>
+                              <input
+                                type="text"
+                                name="manualSell"
+                                value={line()?.manualSell ?? ''}
+                                onInput={(e) => updateLine(currency, { manualSell: e.currentTarget.value })}
+                              />
+                              <Show when={isValidManualDecimal(line()?.manualSell)}>
+                                <span>{formatRate(line()!.manualSell!, getUnitSize(currency), currency)}</span>
+                              </Show>
+                            </Show>
+                            <Show when={errs()?.manualSell}>
+                              <span class="field-error" data-field-error="manualSell">
+                                {props.t(errs()!.manualSell!)}
+                              </span>
+                            </Show>
+                          </Show>
+                        </td>
+                        <td>
+                          <Show when={isEditable()} fallback={line()?.reason ?? ''}>
+                            <input
+                              type="text"
+                              name="reason"
+                              value={line()?.reason ?? ''}
+                              onInput={(e) => updateLine(currency, { reason: e.currentTarget.value })}
+                            />
+                            <Show when={errs()?.reason}>
+                              <span class="field-error" data-field-error="reason">
+                                {props.t(errs()!.reason!)}
+                              </span>
+                            </Show>
+                          </Show>
+                          <Show when={isOutOfBound(currency)}>
+                            <span class="out-of-bound">{props.t('outOfBound')}</span>
+                          </Show>
+                        </td>
+                      </tr>
+                    );
+                  }}
                 </For>
               </tbody>
             </table>
