@@ -1,0 +1,9 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/customer/home deletes this file.
+screens/customer/home/HomeScreen.clear-error.test.tsx
+screens/customer/home/HomeScreen.client.test.tsx
+screens/customer/home/HomeScreen.currency-sync.test.tsx
+screens/customer/home/HomeScreen.estimate-inputs.test.tsx
+screens/customer/home/HomeScreen.keyed.test.tsx
+screens/customer/home/HomeScreen.save-order.test.tsx
+screens/customer/home/HomeScreen.test.tsx

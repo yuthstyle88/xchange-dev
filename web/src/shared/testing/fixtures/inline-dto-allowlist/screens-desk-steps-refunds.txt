@@ -1,0 +1,10 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/desk/steps/refunds deletes this file.
+screens/desk/steps/refunds/refunds-store.inflight.test.tsx
+screens/desk/steps/refunds/refunds-store.lastdoc.test.tsx
+screens/desk/steps/refunds/refunds-store.outcome.test.tsx
+screens/desk/steps/refunds/refunds-store.print-error.test.tsx
+screens/desk/steps/refunds/refunds-store.read-error.test.tsx
+screens/desk/steps/refunds/refunds-store.receipt-missing.test.tsx
+screens/desk/steps/refunds/refunds-store.reopen.test.tsx
+screens/desk/steps/refunds/refunds.test.tsx

@@ -1,0 +1,5 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/customer/member deletes this file.
+screens/customer/member/Member.dates.test.tsx
+screens/customer/member/Member.test.tsx
+screens/customer/member/worded.test.tsx

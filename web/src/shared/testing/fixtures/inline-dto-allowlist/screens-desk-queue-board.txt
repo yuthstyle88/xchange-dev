@@ -1,0 +1,3 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/desk/queue/board deletes this file.
+screens/desk/queue/board/Board.test.tsx

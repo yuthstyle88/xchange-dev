@@ -1,0 +1,7 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/employees deletes this file.
+screens/admin/employees/Employees.branch-order.test.tsx
+screens/admin/employees/Employees.ops-error.test.tsx
+screens/admin/employees/Employees.recover.test.tsx
+screens/admin/employees/Employees.rework.test.tsx
+screens/admin/employees/worded.test.tsx

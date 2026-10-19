@@ -1,0 +1,6 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/customer/book deletes this file.
+screens/customer/book/Book.client.test.tsx
+screens/customer/book/Book.keyed.test.tsx
+screens/customer/book/Book.submit-guard.test.tsx
+screens/customer/book/Book.success-reset.test.tsx

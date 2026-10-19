@@ -1,0 +1,4 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/rate-alert-settings deletes this file.
+screens/admin/rate-alert-settings/RateAlertSettings.test.tsx
+screens/admin/rate-alert-settings/worded.test.tsx

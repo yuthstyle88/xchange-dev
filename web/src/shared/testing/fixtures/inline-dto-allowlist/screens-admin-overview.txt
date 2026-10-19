@@ -1,0 +1,10 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/overview deletes this file.
+screens/admin/overview/Overview.export-error.test.tsx
+screens/admin/overview/Overview.export-once.test.tsx
+screens/admin/overview/Overview.extra.test.tsx
+screens/admin/overview/Overview.nodata.test.tsx
+screens/admin/overview/Overview.open-shifts.test.tsx
+screens/admin/overview/Overview.period.test.tsx
+screens/admin/overview/Overview.rework.test.tsx
+screens/admin/overview/Overview.test.tsx

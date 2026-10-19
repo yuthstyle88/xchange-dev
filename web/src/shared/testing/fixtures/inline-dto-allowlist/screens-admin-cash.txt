@@ -1,0 +1,11 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/cash deletes this file.
+screens/admin/cash/Cash.ca9.test.tsx
+screens/admin/cash/Cash.extra.test.tsx
+screens/admin/cash/Cash.open-shifts.test.tsx
+screens/admin/cash/CashFlows.form-read-error.test.tsx
+screens/admin/cash/CashFlows.inflight-switch.test.tsx
+screens/admin/cash/CashFlows.rework.test.tsx
+screens/admin/cash/CashFlows.switch-form.test.tsx
+screens/admin/cash/CashFlows.switch.test.tsx
+screens/admin/cash/CashFlows.when-tz.test.tsx

@@ -1,0 +1,8 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/staff/holds deletes this file.
+screens/staff/holds/HoldsCard.inflight.test.tsx
+screens/staff/holds/HoldsCard.no-customer.test.tsx
+screens/staff/holds/HoldsCard.pick.test.tsx
+screens/staff/holds/HoldsCard.rework.test.tsx
+screens/staff/holds/holds.test.tsx
+screens/staff/holds/worded.test.tsx

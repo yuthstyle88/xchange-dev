@@ -1,0 +1,8 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/desk deletes this file.
+screens/desk/desk-store.back-to-edit.test.ts
+screens/desk/desk-store.cleared.test.ts
+screens/desk/desk-store.test.ts
+screens/desk/save.keyed.test.ts
+screens/desk/save.test.ts
+screens/desk/worded-errors.test.tsx

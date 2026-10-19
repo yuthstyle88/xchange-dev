@@ -1,0 +1,14 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/devices deletes this file.
+screens/devices/DevicesScreen.action-order.test.tsx
+screens/devices/DevicesScreen.events-paging.test.tsx
+screens/devices/DevicesScreen.gaps.test.tsx
+screens/devices/DevicesScreen.hidden.test.tsx
+screens/devices/DevicesScreen.keyed.test.tsx
+screens/devices/DevicesScreen.liveread.test.tsx
+screens/devices/DevicesScreen.load-more-once.test.tsx
+screens/devices/DevicesScreen.rework.test.tsx
+screens/devices/DevicesScreen.test.tsx
+screens/devices/banner.test.ts
+screens/devices/csv.test.ts
+screens/devices/worded.test.tsx

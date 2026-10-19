@@ -1,0 +1,10 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/transactions deletes this file.
+screens/admin/transactions/Transactions.export-once.test.tsx
+screens/admin/transactions/Transactions.load-more-once.test.tsx
+screens/admin/transactions/Transactions.load-more-switch.test.tsx
+screens/admin/transactions/Transactions.recover.test.tsx
+screens/admin/transactions/Transactions.rework.test.tsx
+screens/admin/transactions/Transactions.test.tsx
+screens/admin/transactions/extra.test.tsx
+screens/admin/transactions/worded.test.tsx

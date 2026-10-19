@@ -1,0 +1,7 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for shared/session deletes this file.
+shared/session/page-branch.test.ts
+shared/session/session.branch.test.ts
+shared/session/session.end.test.ts
+shared/session/session.roles.test.ts
+shared/session/session.test.ts

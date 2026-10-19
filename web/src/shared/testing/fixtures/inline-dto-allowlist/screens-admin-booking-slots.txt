@@ -1,0 +1,11 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/booking-slots deletes this file.
+screens/admin/booking-slots/BookingSlots.branch-switch.test.tsx
+screens/admin/booking-slots/BookingSlots.i18n.test.tsx
+screens/admin/booking-slots/BookingSlots.inflight.test.tsx
+screens/admin/booking-slots/BookingSlots.policy-empty.test.tsx
+screens/admin/booking-slots/BookingSlots.policy-gate.test.tsx
+screens/admin/booking-slots/BookingSlots.slot-time.test.tsx
+screens/admin/booking-slots/BookingSlots.test.tsx
+screens/admin/booking-slots/BookingSlots.worded.test.tsx
+screens/admin/booking-slots/BookingSlots.write-switch.test.tsx

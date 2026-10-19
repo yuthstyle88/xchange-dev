@@ -1,0 +1,10 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/staff/transfers deletes this file.
+screens/staff/transfers/TransfersCard.cancel-reset.test.tsx
+screens/staff/transfers/TransfersCard.inflight.test.tsx
+screens/staff/transfers/TransfersCard.notice-clear.test.tsx
+screens/staff/transfers/TransfersCard.resubmit.test.tsx
+screens/staff/transfers/TransfersCard.rework.test.tsx
+screens/staff/transfers/shift_transfers.test.tsx
+screens/staff/transfers/transfers.test.tsx
+screens/staff/transfers/worded.test.tsx

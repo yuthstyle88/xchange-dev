@@ -1,0 +1,7 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/cash-policy deletes this file.
+screens/admin/cash-policy/CashPolicy.branch-register.test.tsx
+screens/admin/cash-policy/CashPolicy.invalid.test.tsx
+screens/admin/cash-policy/CashPolicy.rework.test.tsx
+screens/admin/cash-policy/CashPolicy.test.tsx
+screens/admin/cash-policy/worded.test.tsx

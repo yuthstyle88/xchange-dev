@@ -1,0 +1,5 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin deletes this file.
+screens/admin/AdminShell.extra.test.tsx
+screens/admin/AdminShell.menu.test.tsx
+screens/admin/AdminShell.test.tsx

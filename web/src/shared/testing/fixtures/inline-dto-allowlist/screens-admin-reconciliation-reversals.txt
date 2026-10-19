@@ -1,0 +1,3 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/admin/reconciliation/reversals deletes this file.
+screens/admin/reconciliation/reversals/ReversalsPart.test.tsx
