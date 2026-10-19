@@ -3,7 +3,7 @@
 //! your own.
 //!
 //! Design: `docs/design/blueprint/org-roles-branches.md` (#550, merged f0ec3ca) §3.1 (roles), §3.2 (scopes; "a
-//! role row outside `[valid_from, valid_to)` grants nothing"), §3.4 (`Permission`, `RolePermissions`), §3.5 (the
+//! role row outside `[valid_from, valid_to)` grants nothing"), §3.4 (`Permission`, `RoleGrants`), §3.5 (the
 //! check, in order: no actor → `signIn`; organisation → `outOfScope`; permission and branch → `outOfScope` if the
 //! role exists elsewhere, else `roleNotAllowed`; owner of the data → `outOfScope`; and `Grant.branch`), D-4 (a
 //! branch outside scope is **refused**, no longer replaced by the actor's own as `policy.rs:43-53` did).
@@ -25,7 +25,7 @@
 //!   customer_id: Option<&str>) -> Actor` (§4.1 `access::Actor { user_id, organization_id, roles, customer_id }`).
 //! - `xc_auth::domain::access::permission::Permission`, an enum with `Clone + Copy + Debug + PartialEq + Eq`,
 //!   variant names as §3.4 writes them.
-//! - `xc_auth::domain::access::role_permissions::RolePermissions::of(role: Role)` returns a collection with
+//! - `xc_auth::domain::access::role_grants::RoleGrants::seed(role: Role)` returns a collection with
 //!   `contains(&Permission) -> bool` (a slice, a `Vec` or a set).
 //! - `ScopedRole::new` and `Role` as in `scope_rule_test.rs`.
 //! - Ids are compared as given: `Actor` and `Target` do not parse them.
@@ -35,7 +35,7 @@ use xc_auth::domain::access::actor::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Grant, Refusal, Target};
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_kernel::ids::BranchId;
 
@@ -217,10 +217,10 @@ fn a_permission_no_role_carries_is_role_not_allowed() {
 /// VERIFICATION_REVIEWER only.
 #[test]
 fn marketing_never_reads_identity_documents() {
-    assert!(!RolePermissions::of(Role::Marketing).contains(&Permission::IdentityDocumentRead));
-    assert!(RolePermissions::of(Role::Teller).contains(&Permission::IdentityDocumentRead));
+    assert!(!RoleGrants::seed(Role::Marketing).contains(&Permission::IdentityDocumentRead));
+    assert!(RoleGrants::seed(Role::Teller).contains(&Permission::IdentityDocumentRead));
     assert!(
-        RolePermissions::of(Role::VerificationReviewer).contains(&Permission::IdentityDocumentRead)
+        RoleGrants::seed(Role::VerificationReviewer).contains(&Permission::IdentityDocumentRead)
     );
 
     let marketing = user(vec![held(Role::Marketing, None)]);

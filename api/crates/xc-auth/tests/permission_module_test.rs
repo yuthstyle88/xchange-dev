@@ -13,7 +13,7 @@ use xc_auth::domain::access::permission_module::{
     Level, Module, PermissionMatrix, PermissionModule,
 };
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::role_grants::RoleGrants;
 
 use Level::{Create, Full, View};
 use Module::*;
@@ -219,10 +219,14 @@ fn c2_the_rows_are_the_eight_staff_roles_and_customer_has_none() {
 }
 
 #[test]
-fn c2_audit_logs_read_is_held_by_executive_and_admin_only() {
+fn c2_audit_logs_read_holders_per_section_11_2() {
+    // §11.2: AUDIT_LOGS VIEW is held by EXECUTIVE, ADMIN, and VERIFICATION_REVIEWER
     for role in PermissionMatrix::ROLES.into_iter().chain([Role::Customer]) {
-        let holds = RolePermissions::of(role).contains(&Permission::AuditLogsRead);
-        let want = matches!(role, Role::Executive | Role::Admin);
+        let holds = RoleGrants::seed(role).contains(&Permission::AuditLogsRead);
+        let want = matches!(
+            role,
+            Role::Executive | Role::Admin | Role::VerificationReviewer
+        );
         assert_eq!(holds, want, "{} holds AuditLogsRead", role.as_str());
     }
 }
@@ -241,23 +245,24 @@ fn c2_no_role_goes_above_view_on_audit_logs_and_risk_is_empty() {
 }
 
 #[test]
-fn c2_only_executive_and_admin_gain_a_permission() {
+fn c2_role_permission_seed_counts_per_section_11_2() {
+    // §11.2: Permission counts by role for the seed
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
-        .map(|r| (r.as_str(), RolePermissions::of(r).len()))
+        .map(|r| (r.as_str(), RoleGrants::seed(r).len()))
         .collect();
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 30),
+            ("EXECUTIVE", 47),
             ("ADMIN", 10),
-            ("RATE_MANAGER", 7),
-            ("BRANCH_MANAGER", 20),
-            ("TELLER", 20),
-            ("FINANCE", 13),
+            ("RATE_MANAGER", 30),
+            ("BRANCH_MANAGER", 31),
+            ("TELLER", 21),
+            ("FINANCE", 22),
             ("MARKETING", 5),
-            ("VERIFICATION_REVIEWER", 7),
+            ("VERIFICATION_REVIEWER", 17),
             ("CUSTOMER", 2),
         ]
     );
