@@ -1,5 +1,3 @@
-import 'dart:ui' show FontFeature;
-
 import 'package:flutter/material.dart';
 
 import '../../../../core/platform/display_names.dart';
@@ -285,10 +283,9 @@ class PrimaryButton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         textStyle: TextStyle(
           fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
-          fontFamilyFallback: Theme.of(context)
-              .textTheme
-              .titleLarge
-              ?.fontFamilyFallback,
+          fontFamilyFallback: Theme.of(
+            context,
+          ).textTheme.titleLarge?.fontFamilyFallback,
           fontSize: 24,
           fontWeight: FontWeight.w700,
         ),
@@ -318,10 +315,9 @@ class SecondaryButton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         textStyle: TextStyle(
           fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
-          fontFamilyFallback: Theme.of(context)
-              .textTheme
-              .titleLarge
-              ?.fontFamilyFallback,
+          fontFamilyFallback: Theme.of(
+            context,
+          ).textTheme.titleLarge?.fontFamilyFallback,
           fontSize: 22,
           fontWeight: FontWeight.w700,
         ),

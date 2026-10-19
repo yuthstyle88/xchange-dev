@@ -1,5 +1,3 @@
-import 'dart:ui' show FontFeature;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchange_kiosk/features/kiosk/domain/entities/kiosk_models.dart';
@@ -34,7 +32,7 @@ KioskTexts _testL10n() {
         'phaseWaiting': 'Please wait',
       },
     },
-    'errors': {},
+    'errors': <String, String>{},
   });
   return l10n.of('en');
 }
@@ -124,7 +122,7 @@ void main() {
       );
       final style = filledButton.style!;
       expect(
-        style.disabledBackgroundColor?.resolve({WidgetState.disabled}),
+        style.backgroundColor?.resolve({WidgetState.disabled}),
         KioskColors.brand,
       );
     },
@@ -135,10 +133,14 @@ void main() {
     (tester) async {
       final l10nObj = _testL10n();
       final quote = QuoteModel(
-        id: 'q1',
-        queue: 'K-001',
-        orderNo: 'ORD-001',
-        status: 'QUOTED',
+        identity: const RequestIdentity(
+          id: 'q1',
+          queue: 'K-001',
+          orderNo: 'ORD-001',
+          transactionNo: null,
+          status: KioskStatus.quoted,
+          rawStatus: 'QUOTED',
+        ),
         paymentMethod: 'Cash',
         type: ExchangeType.buy,
         currency: 'USD',
@@ -190,10 +192,14 @@ void main() {
   testWidgets('Quote dividers: 3 dividers for 4 rows', (tester) async {
     final l10nObj = _testL10n();
     final quote = QuoteModel(
-      id: 'q1',
-      queue: 'K-001',
-      orderNo: 'ORD-001',
-      status: 'QUOTED',
+      identity: const RequestIdentity(
+        id: 'q1',
+        queue: 'K-001',
+        orderNo: 'ORD-001',
+        transactionNo: null,
+        status: KioskStatus.quoted,
+        rawStatus: 'QUOTED',
+      ),
       paymentMethod: 'Cash',
       type: ExchangeType.buy,
       currency: 'USD',
