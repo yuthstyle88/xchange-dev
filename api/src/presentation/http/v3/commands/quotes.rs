@@ -251,6 +251,14 @@ impl CommandAction for QuotesCommand {
                         msg,
                         StatusCode::CONFLICT,
                     ));
+                } else if msg.starts_with("couponInvalid") {
+                    tracing::info!(reason = %msg, "coupon invalid on quote");
+                    return Err(V3Error::new(
+                        "couponInvalid",
+                        None,
+                        "couponInvalid",
+                        StatusCode::BAD_REQUEST,
+                    ));
                 } else {
                     return Err(V3Error::new(
                         "validationFailed",
