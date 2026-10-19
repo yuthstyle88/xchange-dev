@@ -138,17 +138,16 @@ fn rate_policy_save_is_owner_and_rates_on_rpc_and_no_row_on_the_staff_bridge() {
     );
 }
 
-/// Amended for #874 by its ticket author (claude/f03345fe), per lane controller (2026-10-10):
-/// BRANCH_MANAGER and (RG4 of #682) FINANCE qualify for ApprovalsDecide; each type's policy still decides (rates stay the
-/// owner's through `RatePublicationPolicy`). Every other assertion is unchanged.
+/// §11.2: BRANCH_MANAGER loses ApprovalsDecide; EXECUTIVE and FINANCE qualify for ApprovalsDecide.
 #[test]
-fn approval_decide_and_approval_read_are_the_executives_the_branch_managers_and_finances() {
+fn approval_decide_and_approval_read_are_the_executives_and_finances() {
     for name in ["approvalDecide", "approvalRead"] {
         assert_eq!(ask(Some(&owner()), EntryPath::Rpc, name), Ok(()), "{name}");
+        // §11.2: EXECUTIVE and FINANCE hold ApprovalsDecide
         assert_eq!(
             allowed_roles(EntryPath::Rpc, name),
-            ["EXECUTIVE", "BRANCH_MANAGER", "FINANCE"],
-            "{name}: EXECUTIVE, BRANCH_MANAGER and FINANCE on Rpc"
+            ["EXECUTIVE", "FINANCE"],
+            "{name}: EXECUTIVE and FINANCE on Rpc"
         );
         assert!(
             allowed_roles(EntryPath::StaffRpc, name).is_empty(),
@@ -156,7 +155,7 @@ fn approval_decide_and_approval_read_are_the_executives_the_branch_managers_and_
         );
         for r in BLUEPRINT
             .into_iter()
-            .filter(|r| ![Role::Executive, Role::BranchManager, Role::Finance].contains(r))
+            .filter(|r| ![Role::Executive, Role::Finance].contains(r))
         {
             assert_eq!(
                 ask(Some(&staff(r, B2)), EntryPath::Rpc, name),
