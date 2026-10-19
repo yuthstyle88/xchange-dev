@@ -18,7 +18,7 @@ use xc_auth::domain::access::role_permissions::RolePermissions;
 use Level::{Create, Full, View};
 use Module::*;
 
-/// The ruled table, one row per permission (all 52). `None` = the cross-cutting six.
+/// The ruled table, one row per permission (all 51). `None` = the no-module permissions (§11.2, §11.3 rule 5).
 fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
     use Permission as P;
     vec![
@@ -36,9 +36,10 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::CashTransferPolicySet, Some((Finance, Full))),
         (P::FinanceReconcile, Some((Finance, Full))),
         (P::ApprovalsDecide, Some((Finance, Full))),
-        (P::ShiftOperate, Some((Finance, Create))),
-        (P::BranchDayOperate, Some((Finance, Create))),
-        (P::ShiftCloseCertify, Some((Finance, Create))),
+        // §11.2: the desk basics move from FINANCE CREATE to no module (`None`).
+        (P::ShiftOperate, None),
+        (P::BranchDayOperate, None),
+        (P::ShiftCloseCertify, None),
         (P::ExchangeTransact, Some((Customers, Create))),
         (P::BookingsDesk, Some((Customers, Create))),
         (P::QueueOperate, Some((Customers, Create))),
@@ -55,17 +56,19 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::MarketingMembers, Some((Customers, Full))),
         (P::LoyaltyRulesManage, Some((Customers, Full))),
         (P::FileRead, Some((Documents, View))),
-        (P::ProofUpload, Some((Documents, Create))),
-        (P::DrawerPassport, Some((Documents, Create))),
+        // §11.2: the desk document upload permissions move from DOCUMENTS CREATE to no module (`None`).
+        (P::ProofUpload, None),
+        (P::DrawerPassport, None),
         (P::VerificationReview, Some((Documents, Full))),
         (P::MarketingPerformance, Some((Reports, View))),
         (P::ReportsExport, Some((Reports, Full))),
         (P::UsersManage, Some((UserManagement, Full))),
         (P::BranchesManage, Some((UserManagement, Full))),
         (P::SystemSettings, Some((SystemSettings, Full))),
-        (P::DeviceQueue, Some((SystemSettings, View))),
-        (P::DeviceProcess, Some((SystemSettings, View))),
-        (P::DevicePrinterOnline, Some((SystemSettings, View))),
+        // §11.2: the desk device permissions move from SYSTEM_SETTINGS VIEW to no module (`None`).
+        (P::DeviceQueue, None),
+        (P::DeviceProcess, None),
+        (P::DevicePrinterOnline, None),
         (P::AuditLogsRead, Some((AuditLogs, View))),
         (P::SignedIn, None),
         (P::AttendanceClock, None),
@@ -76,47 +79,59 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
     ]
 }
 
-/// The eight rows, derived by hand from `role_permissions.rs` (+ `AuditLogsRead`) and the table above.
+/// The eight rows, derived from §11.2's seed (`RoleGrants::seed`) and the table above.
 fn expected(role: Role) -> BTreeMap<Module, Level> {
+    // §11.2: `PermissionMatrix::of` now reads `RoleGrants::of(role.as_str())`, seeded from the owner's V.9 matrix.
     let row: &[(Module, Level)] = match role {
         Role::Executive => &[
             (Dashboard, Full),
             (Customers, Full),
-            (Documents, Create),
+            (Documents, Full),
             (RatesStock, Full),
             (Finance, Full),
             (Reports, Full),
-            (SystemSettings, Full),
-            (AuditLogs, View),
-        ],
-        Role::Admin => &[
-            (Dashboard, Full),
-            (Finance, Full),
             (UserManagement, Full),
             (SystemSettings, Full),
             (AuditLogs, View),
         ],
-        Role::RateManager => &[(RatesStock, Full)],
+        Role::Admin => &[
+            (Dashboard, View),
+            (Reports, View),
+            (UserManagement, Full),
+            (SystemSettings, Full),
+            (AuditLogs, View),
+        ],
+        Role::RateManager => &[
+            (Dashboard, Full),
+            (Customers, Full),
+            (Documents, View),
+            (RatesStock, Full),
+            (Reports, Full),
+        ],
         Role::BranchManager => &[
-            (Customers, Create),
-            (Documents, Create),
-            (Finance, Full),
-            (SystemSettings, View),
+            (Dashboard, Full),
+            (Customers, Full),
+            (Documents, Full),
+            (Reports, View),
         ],
-        Role::Teller => &[
-            (Customers, Create),
-            (Documents, Create),
-            (Finance, Create),
-            (SystemSettings, View),
-        ],
+        Role::Teller => &[(Dashboard, View), (Customers, Create), (Documents, View)],
         Role::Finance => &[
+            (Dashboard, Full),
             (Customers, View),
-            (Documents, Create),
+            (Documents, View),
+            (RatesStock, View),
             (Finance, Full),
             (Reports, Full),
         ],
         Role::Marketing => &[(Customers, Full), (Reports, View)],
-        Role::VerificationReviewer => &[(Customers, View), (Documents, Full)],
+        Role::VerificationReviewer => &[
+            (Dashboard, Full),
+            (Customers, View),
+            (Documents, Full),
+            (RatesStock, View),
+            (Reports, Full),
+            (AuditLogs, View),
+        ],
         Role::Customer => &[],
     };
     row.iter().copied().collect()
@@ -151,9 +166,18 @@ fn c2_exactly_the_cross_cutting_six_map_to_no_module() {
         .map(|(p, _)| p)
         .filter(|p| PermissionModule::module(*p).is_none())
         .collect();
+    // §11.2: the cross-cutting six plus the desk basics and the five desk device/document permissions have no module.
     assert_eq!(
         none,
         vec![
+            Permission::ShiftOperate,
+            Permission::BranchDayOperate,
+            Permission::ShiftCloseCertify,
+            Permission::ProofUpload,
+            Permission::DrawerPassport,
+            Permission::DeviceQueue,
+            Permission::DeviceProcess,
+            Permission::DevicePrinterOnline,
             Permission::SignedIn,
             Permission::AttendanceClock,
             Permission::CompatRead,
