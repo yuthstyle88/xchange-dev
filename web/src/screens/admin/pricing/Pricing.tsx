@@ -1,5 +1,6 @@
 // §9 Pricing: loads pricing_board, branch, filter (all · to approve · review · current), search, reload; composes the parts (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { Show, createEffect, createMemo, createSignal, onMount, type JSX } from 'solid-js';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { ApiClient } from '../../../shared/api/client';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
 import { screenT } from '../../../shared/i18n';
@@ -12,6 +13,7 @@ import { OrderRefs } from './OrderRefs';
 import {
   FILTER_STATUSES,
   ROUTE_RATE_REFERENCE_FETCH,
+  type RateReferenceFetchInput,
   VIEW_PRICING_BOARD,
   type MarketSourceCode,
   type PricingBoardData,
@@ -128,9 +130,11 @@ export function Pricing(props: PricingProps): JSX.Element {
     });
   }
 
+  const refreshWrite = keyedWrite<RateReferenceFetchInput, unknown>(api, 'POST', ROUTE_RATE_REFERENCE_FETCH);
+
   function handleRefreshSource(provider: MarketSourceCode): void {
-    void api
-      .command('POST', ROUTE_RATE_REFERENCE_FETCH, { branch: props.branch(), provider }, crypto.randomUUID())
+    void refreshWrite
+      .send({ branch: props.branch(), provider })
       .then(() => loadBoard())
       .catch((err) => setError(wordedError(err)));
   }

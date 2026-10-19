@@ -5,7 +5,7 @@
 // - Rows carrying a blocking flag (`BLOCKING_FLAGS`: BelowCost, StaleSource, Precision) are never sent; `[data-count]`
 //   shows how many rows can be approved.
 // - `button[name=bulkApprove]` asks for a confirmation; `button[name=confirmBulk]` sends ONE `POST /api/pricing/approve`
-//   with `{ branch, requestId (non-empty), policyVersionId, currencies }`, one entry per approvable row in the given
+//   with `{ branch, policyVersionId, currencies }` and an `Idempotency-Key` header (`keyedWrite`; §6's `requestId`), one entry per approvable row in the given
 //   order, each with that row's suggested tier prices; then `onApproved` with the answer.
 // - No approvable row: `bulkApprove` disabled, nothing sent.
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -54,7 +54,7 @@ describe('BulkApprove', () => {
     expect(host.querySelector('[data-count]')?.getAttribute('data-count')).toBe('2');
   });
 
-  it('B2 confirm sends one pricingApprove with the approvable rows only, requestId and policyVersionId', async () => {
+  it('B2 confirm sends one pricingApprove with the approvable rows only, an Idempotency-Key and policyVersionId', async () => {
     const { server, onApproved } = mount(pick('USD', 'EUR', 'JPY', 'GBP', 'AUD'));
     click('bulkApprove');
     await flush();
@@ -66,8 +66,8 @@ describe('BulkApprove', () => {
     const body = sent[0].body as Record<string, any>;
     expect(body.branch).toBe('MAIN');
     expect(body.policyVersionId).toBe('pv-7');
-    expect(typeof body.requestId).toBe('string');
-    expect(body.requestId.length).toBeGreaterThan(0);
+    expect(sent[0].key, 'Idempotency-Key header').toBeTruthy();
+    expect('requestId' in body).toBe(false);
     expect(body.currencies.map((c: { currency: string }) => c.currency)).toEqual(['USD', 'AUD']);
     const usd = BOARD.rows.find((r) => r.currency === 'USD')!;
     expect(body.currencies[0].tiers).toEqual(usd.suggestion!.tiers);

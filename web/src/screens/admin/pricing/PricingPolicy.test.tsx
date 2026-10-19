@@ -2,7 +2,7 @@
 // Tests covering every behaviour row of ticket #3763 (§9 Behaviour table):
 // 1. mayEdit: false — nothing editable (read-only margins + min spread)
 // 2. mayEdit: true — 4 × buy/sell margin inputs prefilled from row.margins
-// 3. save — one POST /api/pricing/configure { branch, requestId, policyVersionId, currency, margins, minSpreadPct }
+// 3. save — one POST /api/pricing/configure { branch, policyVersionId, currency, margins, minSpreadPct } + Idempotency-Key header
 // 4. clear override — margins: null
 // 5. a refusal — a role=alert with wordedError
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -126,8 +126,7 @@ describe('PricingPolicy', () => {
     const body = sent[0].body as PricingConfigureInput;
     expect(body.branch).toBe('MAIN');
     expect(body.policyVersionId).toBe('pv-7');
-    expect(typeof body.requestId).toBe('string');
-    expect(body.requestId.length).toBeGreaterThan(0);
+    expect('requestId' in body).toBe(false);
     expect(body.currency).toBe('USD');
     expect(body.margins).toHaveLength(4);
     expect(body.margins![0].tierNo).toBe(1);
@@ -149,8 +148,7 @@ describe('PricingPolicy', () => {
     const body = sent[0].body as PricingConfigureInput;
     expect(body.branch).toBe('MAIN');
     expect(body.policyVersionId).toBe('pv-7');
-    expect(typeof body.requestId).toBe('string');
-    expect(body.requestId.length).toBeGreaterThan(0);
+    expect('requestId' in body).toBe(false);
     expect(body.currency).toBe('CNY');
     expect(body.margins).toBeNull();
     expect(body.minSpreadPct).toBeNull();

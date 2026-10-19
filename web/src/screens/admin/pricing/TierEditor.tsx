@@ -39,8 +39,6 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     'POST',
     ROUTE_PRICING_APPROVE,
   );
-  let lastPayloadKey = '';
-  let lastRequestId = '';
 
   const suggestedBuy = (tierNo: TierNo): string =>
     props.row.suggestion?.tiers.find((t) => t.tierNo === tierNo)?.buy ?? '';
@@ -85,21 +83,9 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
       buy: buyValue(tierNo),
       sell: sellValue(tierNo),
     }));
-    const payloadKey = JSON.stringify({
-      branch: props.branch,
-      policyVersionId: props.policyVersionId,
-      currency: props.row.currency,
-      tiers,
-    });
-    if (payloadKey !== lastPayloadKey || !lastRequestId) {
-      lastPayloadKey = payloadKey;
-      lastRequestId = crypto.randomUUID();
-    }
-
     try {
       const out = await approveCmd.send({
         branch: props.branch,
-        requestId: lastRequestId,
         policyVersionId: props.policyVersionId,
         currencies: [{ currency: props.row.currency, tiers }],
       });

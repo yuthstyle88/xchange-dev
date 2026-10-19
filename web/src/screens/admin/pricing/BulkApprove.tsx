@@ -41,10 +41,6 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
   );
 
   const approvable = createMemo(() => props.rows.filter(canApprove));
-  // One requestId per distinct payload: a retry of the same body reuses it; any change (other rows, new suggested
-  // prices after a market refresh, another policy version) gets a new one (design §6: requestId is the idempotency key).
-  let lastPayload = '';
-  let lastRequestId = '';
 
   const submit = async () => {
     const list = approvable();
@@ -56,14 +52,8 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
         currency: r.currency,
         tiers: r.suggestion!.tiers,
       }));
-      const payload = JSON.stringify({ branch: props.branch, policyVersionId: props.policyVersionId, currencies });
-      if (payload !== lastPayload || lastRequestId === '') {
-        lastPayload = payload;
-        lastRequestId = crypto.randomUUID();
-      }
       const out = await write.send({
         branch: props.branch,
-        requestId: lastRequestId,
         policyVersionId: props.policyVersionId,
         currencies,
       });

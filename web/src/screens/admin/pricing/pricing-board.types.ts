@@ -132,10 +132,11 @@ export interface PricingBoardData {
 
 export const VIEW_PRICING_BOARD = 'pricing_board';
 
-/** `pricingApprove` (§6). The page sends tier PRICES; the server stores the margin each produces (§2, §5.2). */
+/** `pricingApprove` (§6). The page sends tier PRICES; the server stores the margin each produces (§2, §5.2).
+ *  §6's `requestId` is the command's `Idempotency-Key` header (rates.md §5.6), set by `keyedWrite`, never a body field
+ *  (xchange-v3-web.md §12.24, `keyed-write.gate.test.ts`). */
 export interface PricingApproveInput {
   branch: string;
-  requestId: string;
   policyVersionId: string;
   currencies: { currency: string; tiers: TierPriceView[] }[];
 }
@@ -149,7 +150,6 @@ export const ROUTE_PRICING_APPROVE = '/api/pricing/approve';
 /** `pricingConfigure` (§6): one currency's override margins and min spread; `margins: null` clears the override. */
 export interface PricingConfigureInput {
   branch: string;
-  requestId: string;
   policyVersionId: string;
   currency: string;
   margins: TierMarginView[] | null;

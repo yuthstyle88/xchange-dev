@@ -33,18 +33,6 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
     'POST',
     ROUTE_PRICING_CONFIGURE,
   );
-  // One requestId per distinct payload, so a retry after a lost reply reuses it (design §6: requestId is the
-  // idempotency key; a fresh id per click could write a second policy version).
-  let lastPayload = '';
-  let lastRequestId = '';
-  const requestIdFor = (body: Omit<PricingConfigureInput, 'requestId'>): string => {
-    const key = JSON.stringify(body);
-    if (key !== lastPayload || lastRequestId === '') {
-      lastPayload = key;
-      lastRequestId = crypto.randomUUID();
-    }
-    return lastRequestId;
-  };
 
   const getMargin = (tierNo: TierNo, side: 'buy' | 'sell') => {
     const m = props.row.margins.find((item) => item.tierNo === tierNo);
@@ -103,7 +91,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
         })),
         minSpreadPct: minSpread().trim() === '' ? null : minSpread().trim(),
       };
-      const payload: PricingConfigureInput = { ...body, requestId: requestIdFor(body) };
+      const payload: PricingConfigureInput = body;
       const out = await configureWrite.send(payload);
       props.onSaved(out);
     } catch (err: unknown) {
@@ -126,7 +114,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
         margins: null,
         minSpreadPct: null,
       };
-      const payload: PricingConfigureInput = { ...body, requestId: requestIdFor(body) };
+      const payload: PricingConfigureInput = body;
       const out = await configureWrite.send(payload);
       props.onSaved(out);
     } catch (err: unknown) {

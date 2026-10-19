@@ -7,7 +7,8 @@
 //   user edits that tier's price it shows the `marginOnApprove` text instead: the server stores the margin a price makes
 //   (§2, §5.2), and the page computes no figure (W7).
 // - `button[name=approve]` sends ONE `POST /api/pricing/approve` with body
-//   `{ branch, requestId (non-empty), policyVersionId, currencies: [{ currency, tiers: [4 × {tierNo, buy, sell}] }] }`
+//   `{ branch, policyVersionId, currencies: [{ currency, tiers: [4 × {tierNo, buy, sell}] }] }` and an `Idempotency-Key`
+//   header (`keyedWrite`; design §6's `requestId` is that header, rates.md §5.6)
 //   carrying the edited prices, then calls `onApproved` with the answer.
 // - A row without a suggestion: empty inputs, approve disabled.
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -86,7 +87,7 @@ describe('TierEditor', () => {
     expect(marginCell('buy-1')).toContain(USD.suggestion!.margins[0].buyMarginPct);
   });
 
-  it('E4 approve sends one pricingApprove with the edited prices, requestId and policyVersionId', async () => {
+  it('E4 approve sends one pricingApprove with the edited prices, an Idempotency-Key and policyVersionId', async () => {
     const { server, onApproved } = mount(USD);
     edit('buy-2', '35.09');
     click('approve');
@@ -96,8 +97,8 @@ describe('TierEditor', () => {
     const body = sent[0].body as Record<string, any>;
     expect(body.branch).toBe('MAIN');
     expect(body.policyVersionId).toBe('pv-7');
-    expect(typeof body.requestId).toBe('string');
-    expect(body.requestId.length).toBeGreaterThan(0);
+    expect(sent[0].key, 'Idempotency-Key header').toBeTruthy();
+    expect('requestId' in body).toBe(false);
     expect(body.currencies).toHaveLength(1);
     expect(body.currencies[0].currency).toBe('USD');
     const tiers = body.currencies[0].tiers as { tierNo: number; buy: string; sell: string }[];
