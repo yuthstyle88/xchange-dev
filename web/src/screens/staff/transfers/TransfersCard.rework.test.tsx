@@ -5,28 +5,32 @@ import { errorText, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import type { StaffCtx } from '../cards';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
+import {
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  makeTransferBranchRow,
+  type StaffFloorView,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 
 const BRANCH = 'MAIN';
 const ME = '00000000-0000-4000-8000-0000000000b1';
 
-function me(permissions: string[] = ['CashManage']): StaffMeView {
-  return {
+function me(permissions: string[] = ['CashManage']) {
+  return makeStaffMeView({
     userId: ME,
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -37,11 +41,11 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
-const SAMPLE_TRANSFERS: CashTransferRow[] = [
-  {
+const SAMPLE_TRANSFERS = [
+  makeCashTransferRow({
     id: 'tx-001',
     kind: 'BRANCH',
     fromBranchId: BRANCH,
@@ -53,15 +57,15 @@ const SAMPLE_TRANSFERS: CashTransferRow[] = [
     note: 'test transfer',
     createdAt: '2026-10-11T00:00:00Z',
     lines: [],
-  },
+  }),
 ];
 
-const SAMPLE_DENOMS: DenominationRow[] = [
-  { id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' },
+const SAMPLE_DENOMS = [
+  makeDenominationRow({ id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' }),
 ];
 
-const SAMPLE_BRANCHES: TransferBranchRow[] = [
-  { branchId: 'B99', name: 'Branch 99' },
+const SAMPLE_BRANCHES = [
+  makeTransferBranchRow({ branchId: 'B99', name: 'Branch 99' }),
 ];
 
 let host: HTMLDivElement;
