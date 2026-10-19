@@ -139,9 +139,6 @@ function serve(input: unknown): Promise<Response> {
       }),
     );
   }
-  if (url.pathname === '/api/v2/bookings') {
-    return Promise.resolve(json(200, { items: [], hasMore: false, page: 0 }));
-  }
   return Promise.resolve(json(200, { version: 3, changed: false }));
 }
 

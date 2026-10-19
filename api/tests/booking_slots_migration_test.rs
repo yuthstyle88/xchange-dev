@@ -36,6 +36,7 @@ use sqlx::migrate::Migrator;
 use uuid::Uuid;
 
 const SUFFIX: &str = "_booking_slots.sql";
+const M2_SUFFIX: &str = "_retire_v2_bookings.sql";
 /// `main`'s newest migration when these tests were written.
 const MAINS_NEWEST_AT_WRITING: i64 = 20261112110000;
 const MAIN: &str = "MAIN";
@@ -85,6 +86,14 @@ fn version_before(v: i64) -> i64 {
         .filter(|x| *x < v)
         .max()
         .expect("a migration before it")
+}
+
+fn m2_version() -> i64 {
+    let mut found = names().into_iter().filter(|n| n.ends_with(M2_SUFFIX));
+    let name = found.next().expect("the M2 migration");
+    name[..name.find('_').expect("<version>_")]
+        .parse()
+        .expect("a numeric version")
 }
 
 /// The `-- down:` section, uncommented.
@@ -373,7 +382,8 @@ fn m1_sorts_after_mains_newest_and_carries_a_down_section() {
 
 #[tokio::test]
 async fn every_migration_applies_in_order_on_a_fresh_database() {
-    let db = TestDb::start().await;
+    let db = TestDb::empty().await;
+    db.migrate_through(Some(version_before(m2_version()))).await;
     for table in [
         "v2_bookings",
         "booking_policies",

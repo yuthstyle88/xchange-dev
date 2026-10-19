@@ -1,5 +1,5 @@
-// The desk's entries (design xchange-v3-wave3-desk.md §5.3, §6): `?booking=` and `?kiosk=` open the desk on a booking
-// or a kiosk request. Each lives in ./entries/<name>/entry.ts (DK-I) and is found through the glob, so an entry ticket
+// The desk's entries (design xchange-v3-wave3-desk.md §5.3, §6): `?kiosk=` opens the desk on a kiosk
+// request. Each lives in ./entries/<name>/entry.ts (DK-I) and is found through the glob, so an entry ticket
 // adds files only in its own folder.
 import type { ApiClient } from '../../shared/api/client';
 import type { DeskEntryState, DeskStore } from './desk-store';
@@ -35,7 +35,7 @@ export function collectEntries(glob: Record<string, unknown>): DeskEntry[] {
 
 const ENTRY_MODULES = import.meta.glob('./entries/*/entry.ts', { eager: true });
 
-/** Opens the entry the page URL names (`?booking=` / `?kiosk=`), if any, and hands its state to the store. */
+/** Opens the entry the page URL names (`?kiosk=`), if any, and hands its state to the store. */
 export async function openEntry(
   store: DeskStore,
   entries: DeskEntry[] = collectEntries(ENTRY_MODULES),

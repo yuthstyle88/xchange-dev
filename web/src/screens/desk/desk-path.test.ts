@@ -15,7 +15,6 @@ interface DeskPathShape {
   configView: "desk_config" | "staff_desk_config";
   rpc: "/api/rpc" | "/api/staff/rpc";
   upload: "/api/upload" | "/api/staff/upload";
-  bookings: "/api/v2/bookings" | "/api/staff/bookings";
   fileUrl(key: string): string;
   devicesLink: boolean;
   usesDraft: boolean;
@@ -37,7 +36,6 @@ async function load(): Promise<DeskPathModule> {
 // Each row is one path's required values (design §5.2 and the server routes on main):
 // - rpc: api/src/presentation/http/rpc.rs:94-95
 // - upload: api/src/presentation/http/files.rs:32,37
-// - bookings: api/src/presentation/http/bookings.rs:78,84
 // - files: api/src/application/compat/staff_view.rs:19,21
 // - devicesLink: desk-devices.js:5 (/desk only)
 // - usesDraft: X5 (staff only)
@@ -47,7 +45,6 @@ const EXPECTED = {
     configView: "desk_config",
     rpc: "/api/rpc",
     upload: "/api/upload",
-    bookings: "/api/v2/bookings",
     file: "/files/k1",
     devicesLink: true,
     usesDraft: false,
@@ -57,7 +54,6 @@ const EXPECTED = {
     configView: "staff_desk_config",
     rpc: "/api/staff/rpc",
     upload: "/api/staff/upload",
-    bookings: "/api/staff/bookings",
     file: "/api/staff/file/k1",
     devicesLink: false,
     usesDraft: true,
@@ -70,7 +66,6 @@ function picture(p: DeskPathShape) {
     configView: p.configView,
     rpc: p.rpc,
     upload: p.upload,
-    bookings: p.bookings,
     file: p.fileUrl("k1"),
     devicesLink: p.devicesLink,
     usesDraft: p.usesDraft,
@@ -90,7 +85,7 @@ describe("DeskPath (DK-C #539, design §5.2)", () => {
 
   it("the two paths differ in every route field, so no step can reach the other path's server", async () => {
     const { OWNER_DESK, STAFF_DESK } = await load();
-    for (const field of ["configView", "rpc", "upload", "bookings"] as const) {
+    for (const field of ["configView", "rpc", "upload"] as const) {
       expect(OWNER_DESK[field], field).not.toBe(STAFF_DESK[field]);
     }
     expect(OWNER_DESK.fileUrl("k1")).not.toBe(STAFF_DESK.fileUrl("k1"));

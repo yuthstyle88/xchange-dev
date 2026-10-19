@@ -551,7 +551,6 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
                 &format!("<head><script>window.XC_BRANCH={json_branch};</script>"),
             );
         }
-        content = content.replace("/api/v2/bookings", "/api/staff/bookings");
         content = content.replace("/api/bookings", "/api/staff/bookings");
         content = content.replace("/documents", "/staff/documents");
         content = content.replace("/files/", "/api/staff/file/");

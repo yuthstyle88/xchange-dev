@@ -65,6 +65,14 @@ fn retired_by_ca10(name: &str) -> bool {
             .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_uppercase()))
 }
 
+/// How many mapped cases belong to the retired v2 owner bookings route (BK-11 #1413).
+const BK11_RETIRED_CASES: usize = 22;
+
+/// Known difference: BK-11 #1413 deletes v2's owner bookings route; counted, not asked.
+fn retired_by_bk11(route: &str) -> bool {
+    route == "POST /api/bookings"
+}
+
 fn front() -> Actor {
     staff(Role::Teller, B2)
 }
@@ -403,6 +411,7 @@ fn every_mapped_case_is_answered_as_mapped() {
     let mut asked_n = 0;
     let mut retired = 0;
     let mut retired_ca10 = 0;
+    let mut retired_bk11 = 0;
     for c in m
         .cases
         .iter()
@@ -411,6 +420,12 @@ fn every_mapped_case_is_answered_as_mapped() {
     {
         let who = caller(c.roles.as_deref());
         let name = asked(&c.route, &c.path, &c.action);
+        if retired_by_bk11(&c.route) {
+            // known difference: BK-11 #1413 deletes v2's owner bookings route (design §6)
+            asked_n += 1;
+            retired_bk11 += 1;
+            continue;
+        }
         if retired_by_ca10(&name) {
             // known difference: CA-10 #626 retires the action (design §6)
             asked_n += 1;
@@ -445,6 +460,10 @@ fn every_mapped_case_is_answered_as_mapped() {
     assert_eq!(
         retired_ca10, CA10_RETIRED_CASES,
         "the mapped cases of the names CA-10 retires"
+    );
+    assert_eq!(
+        retired_bk11, BK11_RETIRED_CASES,
+        "the mapped cases of the route BK-11 retires"
     );
     assert!(
         wrong.is_empty(),
@@ -518,7 +537,7 @@ fn every_call_runs_on_the_branch_named_in_scope() {
         .filter(|c| c.owner.is_none())
     {
         let name = asked(&c.route, &c.path, &c.action);
-        if retired_by_re7(&name) || retired_by_ca10(&name) {
+        if retired_by_re7(&name) || retired_by_ca10(&name) || retired_by_bk11(&c.route) {
             // known difference: RE-7 #604 removes adminSaveRate (rates.md §9), CA-10 #626 the
             // direct shift actions and `ops*` (cash-shift-transfer.md §6); counted, not asked
             if c.branch.is_some() {
@@ -558,10 +577,10 @@ fn which_branch_an_employee_belongs_to_changes_no_answer() {
         .iter()
         .filter(|c| c.own.is_some() && c.owner.is_none())
         // known difference: RE-7 #604 removes adminSaveRate (rates.md §9); CA-10 #626 the direct
-        // shift actions and `ops*` (cash-shift-transfer.md §6)
+        // shift actions and `ops*` (cash-shift-transfer.md §6); BK-11 #1413 the v2 owner bookings route
         .filter(|c| {
             let name = asked(&c.route, &c.path, &c.action);
-            !retired_by_re7(&name) && !retired_by_ca10(&name)
+            !retired_by_re7(&name) && !retired_by_ca10(&name) && !retired_by_bk11(&c.route)
         })
     {
         for home in ["MAIN", B9, "B1700000000000-x"] {
@@ -934,7 +953,6 @@ fn the_owner_is_let_through_wherever_a_signed_in_caller_is() {
         (EntryPath::Kiosk, "configure"),
         (EntryPath::OwnerRoute, "employees"),
         (EntryPath::OwnerRoute, "/api/reference-rates"),
-        (EntryPath::OwnerRoute, "/api/v2/bookings"),
         (EntryPath::UserRoute, "documents"),
     ] {
         assert_eq!(ask(Some(&o), on, name), Ok(()), "{} {name}", path_name(on));
