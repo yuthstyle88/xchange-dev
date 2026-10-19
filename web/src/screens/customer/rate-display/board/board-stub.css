@@ -1,5 +1,101 @@
 /* P01 v2 stub (RB-9). */
 .xc-rb-stub {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto 150px;
+  gap: 24px;
+  align-items: center;
+  padding: 4px 52px 22px;
+}
+
+.xc-rb-stub-legal {
+  min-width: 0;
+}
+
+.xc-rb-stub-title {
+  display: block;
+  font-size: 22px;
+  font-style: italic;
+  color: var(--xc-rb-brand, #a5003c);
+}
+
+.xc-rb-stub-conditions {
+  margin: 6px 0 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--xc-rb-muted, #737278);
+}
+
+.xc-rb-stub-hours {
+  margin: 6px 0 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--xc-rb-muted, #737278);
+}
+
+.xc-rb-stub-hours small {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.xc-rb-stub-meta {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.xc-rb-stub-meta span {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-rb-stub-meta small {
+  display: block;
+  font-size: 12px;
+  color: var(--xc-rb-muted, #737278);
+}
+
+.xc-rb-barcode {
+  height: 84px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--xc-rb-ink, #1b1a1f) 0 3px,
+    transparent 3px 6px,
+    var(--xc-rb-ink, #1b1a1f) 6px 7px,
+    transparent 7px 11px,
+    var(--xc-rb-ink, #1b1a1f) 11px 15px,
+    transparent 15px 17px
+  );
+  position: relative;
+  overflow: hidden;
+}
+
+.xc-rb-barcode:after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: #ff2d55;
+  box-shadow: 0 0 14px 4px #ff2d5580;
+  animation: xc-rb-scan 2.4s ease-in-out infinite alternate;
+}
+
+.xc-rb-calm .xc-rb-barcode:after {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xc-rb-barcode:after {
+    animation: none;
+  }
+}
+
+@keyframes xc-rb-scan {
+  to {
+    transform: translateY(80px);
+  }
 }
