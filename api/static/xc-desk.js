@@ -104,7 +104,7 @@
     if (!user || typeof user !== 'object') {
       return false;
     }
-    if (typeof user.username !== 'string' || user.username.length === 0) {
+    if (typeof user.name !== 'string' || user.name.length === 0) {
       return false;
     }
     return true;
@@ -257,20 +257,20 @@
     let staffUsername = null;
     let mutating = false;
 
-    if (win.location && fillsStaff(win.location.pathname, { username: 'x' })) {
+    if (win.location && fillsStaff(win.location.pathname, { name: 'x' })) {
       win
-        .fetch('/api/auth', {
+        .fetch('/api/auth/session', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Xchange-Request': '1',
           },
-          body: JSON.stringify({ action: 'status' }),
+          body: JSON.stringify({}),
         })
         .then((res) => (res && res.ok ? res.json() : null))
         .then((data) => {
           if (data && fillsStaff(win.location.pathname, data.user)) {
-            staffUsername = data.user.username;
+            staffUsername = data.user.name;
             applyDomUpdates();
           }
         })
