@@ -38,11 +38,8 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
-use xc_auth::domain::access::{Actor as User, Permission, Role, ScopedRole};
-use xc_auth::domain::policy::entities::policy::{Need, Policy};
-use xc_auth::domain::policy::value_objects::action::Action;
+use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
@@ -397,17 +394,6 @@ async fn call(
     Answer { status, text, body }
 }
 
-/// A policy refusal: the role code and a client-error status (`PolicyError::status`; the shape of
-/// `tx4_settings_routes_test.rs::policy_refused`).
-fn policy_refused(a: &Answer, what: &str) {
-    assert!(
-        a.status.is_client_error() && a.body["error"]["code"] == "roleNotAllowedHere",
-        "{what}: expected a client-error roleNotAllowedHere refusal; got {} {}",
-        a.status,
-        a.text
-    );
-}
-
 /// A domain refusal with `code` and a client-error status.
 fn refused_with(a: &Answer, code: &str, what: &str) {
     assert!(
@@ -418,17 +404,6 @@ fn refused_with(a: &Answer, code: &str, what: &str) {
     );
 }
 
-async fn ticket_row(db: &TestDb, id: Uuid) -> (String, Option<String>, Option<String>) {
-    sqlx::query_as(
-        "SELECT status, counter_teller_id::text, ended_reason FROM queue_tickets WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_one(&db.pool)
-    .await
-    .expect("read the ticket")
-}
-
-
 const TAKE: &str = "/api/app/queue/tickets";
 const ALICE: &str = "CUSTOMER@customer-alice";
 const ALICE_CUSTOMER_ID: &str = "customer-alice";
@@ -438,7 +413,15 @@ fn branch_body() -> Value {
 }
 
 async fn take(db: &TestDb, who: &str, key: &str) -> Answer {
-    call(db, Some(who), Method::POST, TAKE, Some(branch_body()), Some(key)).await
+    call(
+        db,
+        Some(who),
+        Method::POST,
+        TAKE,
+        Some(branch_body()),
+        Some(key),
+    )
+    .await
 }
 
 /// The customer's tickets at B01 today: (id, service_type, status, sequence).
@@ -493,19 +476,49 @@ async fn s7_b1_a_customer_takes_one_walk_in_ticket_with_the_next_sequence() {
         Some(&unique("k")),
     )
     .await;
-    assert_eq!(desk.status, StatusCode::OK, "B1 setup: the desk issues walk-in 1: {}", desk.text);
+    assert_eq!(
+        desk.status,
+        StatusCode::OK,
+        "B1 setup: the desk issues walk-in 1: {}",
+        desk.text
+    );
     let a = take(&db, ALICE, &unique("k")).await;
     assert_eq!(a.status, StatusCode::OK, "B1: {}", a.text);
     assert_eq!(a.body["branch"], json!(B01), "B1 branch: {}", a.text);
-    assert_eq!(a.body["serviceType"], json!("WALK_IN"), "B1 serviceType: {}", a.text);
+    assert_eq!(
+        a.body["serviceType"],
+        json!("WALK_IN"),
+        "B1 serviceType: {}",
+        a.text
+    );
     assert_eq!(a.body["status"], json!("WAITING"), "B1 status: {}", a.text);
-    assert_eq!(a.body["ticketsAhead"], json!(1), "B1 the desk's walk-in is ahead: {}", a.text);
-    assert!(!a.body["displayNumber"].as_str().unwrap_or_default().is_empty(), "B1 displayNumber: {}", a.text);
+    assert_eq!(
+        a.body["ticketsAhead"],
+        json!(1),
+        "B1 the desk's walk-in is ahead: {}",
+        a.text
+    );
+    assert!(
+        !a.body["displayNumber"]
+            .as_str()
+            .unwrap_or_default()
+            .is_empty(),
+        "B1 displayNumber: {}",
+        a.text
+    );
     let rows = alices_tickets(&db).await;
     assert_eq!(rows.len(), 1, "B1 one ticket for the customer: {rows:?}");
     let (id, service_type, status, sequence) = &rows[0];
-    assert_eq!(id.to_string(), ticket_id(&a), "B1 the answer is the stored ticket");
-    assert_eq!((service_type.as_str(), status.as_str(), *sequence), ("WALK_IN", "WAITING", 2), "B1 row: {rows:?}");
+    assert_eq!(
+        id.to_string(),
+        ticket_id(&a),
+        "B1 the answer is the stored ticket"
+    );
+    assert_eq!(
+        (service_type.as_str(), status.as_str(), *sequence),
+        ("WALK_IN", "WAITING", 2),
+        "B1 row: {rows:?}"
+    );
     db.finish().await;
 }
 
@@ -550,8 +563,18 @@ async fn s7_b4_two_concurrent_takes_make_exactly_one_ticket() {
     let (a, b) = tokio::join!(take(&db, ALICE, &k1), take(&db, ALICE, &k2));
     let mut statuses = [a.status, b.status];
     statuses.sort();
-    assert_eq!(statuses, [StatusCode::OK, StatusCode::CONFLICT], "B4: {} | {}", a.text, b.text);
-    let loser = if a.status == StatusCode::CONFLICT { &a } else { &b };
+    assert_eq!(
+        statuses,
+        [StatusCode::OK, StatusCode::CONFLICT],
+        "B4: {} | {}",
+        a.text,
+        b.text
+    );
+    let loser = if a.status == StatusCode::CONFLICT {
+        &a
+    } else {
+        &b
+    };
     refused_with(loser, "alreadyQueued", "B4 the loser");
     assert_eq!(alices_tickets(&db).await.len(), 1, "B4 exactly one ticket");
     db.finish().await;
@@ -575,14 +598,20 @@ async fn s7_b4_the_index_allows_one_active_walk_in_per_customer_branch_and_day()
     .bind(first)
     .execute(&db.pool)
     .await;
-    let err = second.expect_err("a second active WALK_IN for the same customer, branch and day is refused");
-    let code = err.as_database_error().and_then(|e| e.code()).map(|c| c.into_owned());
+    let err = second
+        .expect_err("a second active WALK_IN for the same customer, branch and day is refused");
+    let code = err
+        .as_database_error()
+        .and_then(|e| e.code())
+        .map(|c| c.into_owned());
     assert_eq!(code.as_deref(), Some("23505"), "a unique violation: {err}");
-    sqlx::query("UPDATE queue_tickets SET status = 'COMPLETED', completed_at = now() WHERE id = $1")
-        .bind(first)
-        .execute(&db.pool)
-        .await
-        .expect("complete the first");
+    sqlx::query(
+        "UPDATE queue_tickets SET status = 'COMPLETED', completed_at = now() WHERE id = $1",
+    )
+    .bind(first)
+    .execute(&db.pool)
+    .await
+    .expect("complete the first");
     seed_walk_in(&db, 3, Some(ALICE_CUSTOMER_ID), "WAITING").await;
     seed_walk_in(&db, 4, None, "WAITING").await;
     seed_walk_in(&db, 5, None, "WAITING").await;
@@ -619,7 +648,11 @@ async fn s7_b6_after_the_ticket_completes_a_new_take_succeeds() {
     let second = take(&db, ALICE, &unique("k")).await;
     assert_eq!(second.status, StatusCode::OK, "B6 second: {}", second.text);
     assert_ne!(ticket_id(&second), ticket_id(&first), "B6 a new ticket");
-    assert_eq!(alices_tickets(&db).await.len(), 2, "B6 two rows, one COMPLETED");
+    assert_eq!(
+        alices_tickets(&db).await.len(),
+        2,
+        "B6 two rows, one COMPLETED"
+    );
     db.finish().await;
 }
 
@@ -627,10 +660,28 @@ async fn s7_b6_after_the_ticket_completes_a_new_take_succeeds() {
 #[actix_web::test]
 async fn s7_only_a_signed_in_customer_may_take() {
     let db = TestDb::start().await;
-    let nobody = call(&db, None, Method::POST, TAKE, Some(branch_body()), Some(&unique("k"))).await;
-    assert_eq!(nobody.status, StatusCode::UNAUTHORIZED, "no session: {}", nobody.text);
+    let nobody = call(
+        &db,
+        None,
+        Method::POST,
+        TAKE,
+        Some(branch_body()),
+        Some(&unique("k")),
+    )
+    .await;
+    assert_eq!(
+        nobody.status,
+        StatusCode::UNAUTHORIZED,
+        "no session: {}",
+        nobody.text
+    );
     let teller = take(&db, "TELLER@XC-B01", &unique("k")).await;
-    assert_eq!(teller.status, StatusCode::FORBIDDEN, "staff: {}", teller.text);
+    assert_eq!(
+        teller.status,
+        StatusCode::FORBIDDEN,
+        "staff: {}",
+        teller.text
+    );
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM queue_tickets WHERE branch_id = $1")
         .bind(B01)
         .fetch_one(&db.pool)
