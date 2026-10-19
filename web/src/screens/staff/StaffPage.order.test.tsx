@@ -3,8 +3,11 @@ import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
 import { ApiClient } from '../../shared/api/client';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
+import {
+  makeStaffFloorHours,
+  makeStaffFloorView,
+  makeStaffMeView,
+} from '../../shared/testing/fixtures';
 import type { StaffCard, StaffCtx } from './cards';
 import { StaffPage } from './StaffPage';
 
@@ -35,39 +38,39 @@ function okBody(data: unknown) {
   return { version: 1, changed: true, data };
 }
 
-function staffMe(name = 'Ploy', permissions: string[] = []): StaffMeView {
-  return {
+function staffMe(name = 'Ploy', permissions: string[] = []) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000a1',
     name,
     roles: [],
     branchId: 'MAIN',
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
 // 10:00–20:00 Asia/Bangkok
-const FLOOR_INITIAL: StaffFloorView = {
+const FLOOR_INITIAL = makeStaffFloorView({
   phase: 'OPEN',
-  hours: { open: '2026-10-11T03:00:00Z', close: '2026-10-11T13:00:00Z' },
+  hours: makeStaffFloorHours({ open: '2026-10-11T03:00:00Z', close: '2026-10-11T13:00:00Z' }),
   myClockIn: null,
   myShift: null,
   cutoff: null,
   target: null,
   safe: null,
-};
+});
 
 // 08:00–17:00 Asia/Bangkok (Refresh A - stale)
-const FLOOR_A: StaffFloorView = {
+const FLOOR_A = makeStaffFloorView({
   ...FLOOR_INITIAL,
-  hours: { open: '2026-10-11T01:00:00Z', close: '2026-10-11T10:00:00Z' },
-};
+  hours: makeStaffFloorHours({ open: '2026-10-11T01:00:00Z', close: '2026-10-11T10:00:00Z' }),
+});
 
 // 11:00–21:00 Asia/Bangkok (Refresh B - latest)
-const FLOOR_B: StaffFloorView = {
+const FLOOR_B = makeStaffFloorView({
   ...FLOOR_INITIAL,
-  hours: { open: '2026-10-11T04:00:00Z', close: '2026-10-11T14:00:00Z' },
-};
+  hours: makeStaffFloorHours({ open: '2026-10-11T04:00:00Z', close: '2026-10-11T14:00:00Z' }),
+});
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 10; i += 1) {
