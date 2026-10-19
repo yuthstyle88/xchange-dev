@@ -1,0 +1,4 @@
+/* P01 v2 split-flap price cell (RB-8). */
+.xc-rb-price {
+  font-variant-numeric: tabular-nums;
+}

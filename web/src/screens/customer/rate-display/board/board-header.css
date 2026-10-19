@@ -1,0 +1,5 @@
+/* P01 v2 header and clock (RB-5). */
+.xc-rb-head {
+  display: flex;
+  justify-content: space-between;
+}

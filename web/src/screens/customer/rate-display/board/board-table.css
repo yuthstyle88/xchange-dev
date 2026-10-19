@@ -1,0 +1,9 @@
+/* P01 v2 table, headings and rows (RB-7). */
+.xc-rb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.xc-rb-row {
+  border-bottom: 1px solid #e6dfd6;
+}

@@ -1,0 +1,5 @@
+/* P01 v2 welcome ticker (RB-9). */
+.xc-rb-ticker {
+  overflow: hidden;
+  white-space: nowrap;
+}

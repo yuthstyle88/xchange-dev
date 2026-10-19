@@ -1,0 +1,5 @@
+/* P01 v2 route / status strip (RB-6). */
+.xc-rb-route {
+  display: flex;
+  gap: 1rem;
+}

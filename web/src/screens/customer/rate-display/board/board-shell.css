@@ -1,0 +1,27 @@
+/* P01 v2 board shell (rate-display.md §9.1). Tokens live on .xc-rb, never on :root (LK-6). RB-4 adds the canvas
+   scaling and the look from docs/design/reference/rate-board-example/rate-board.css. */
+.xc-rb {
+  --xc-rb-ink: #1b1a1f;
+  --xc-rb-paper: #fffdf8;
+  --xc-rb-brand: #a5003c;
+  position: relative;
+  color: var(--xc-rb-ink);
+  background: var(--xc-rb-paper);
+}
+
+.xc-rb-calm {
+  --xc-rb-motion: 0;
+}
+
+.xc-rb-offline .xc-rb-table {
+  display: none;
+}
+
+.xc-rb-delayed {
+  --xc-rb-state: delayed;
+}
+
+.xc-rb-empty {
+  padding: 2rem;
+  text-align: center;
+}
