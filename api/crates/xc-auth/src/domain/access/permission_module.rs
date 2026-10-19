@@ -145,6 +145,15 @@ impl PermissionMatrix {
         Role::VerificationReviewer,
     ];
 
+    /// RBAC §11.4: the highest level among the group `code`'s permissions (`RoleGrants::of`) in each module; a module
+    /// it has none in is absent, and so is every module of an unknown code. F5's matrix view shows it.
+    ///
+    /// Skeleton (claude/65357afb, `feat/rbac-groups`): the body is C6a's, and C6a re-points [`Self::of`] at it.
+    pub fn of_group(code: &str) -> BTreeMap<Module, Level> {
+        let _ = code;
+        todo!("C6a")
+    }
+
     /// The highest level among `role`'s permissions in each module; a module it has none in is absent.
     pub fn of(role: Role) -> BTreeMap<Module, Level> {
         if !Self::ROLES.contains(&role) {
