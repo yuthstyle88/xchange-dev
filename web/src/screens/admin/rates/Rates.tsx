@@ -9,12 +9,13 @@ import type {
 import type { RateDraftsData } from '../../../shared/api/generated/rate_drafts';
 import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
-import type { RatePublicationsData } from '../../../shared/api/generated/rate_publications';
 import type {
   RatesReferenceData,
   RatesReferenceFilter,
   RatesReferenceRow,
 } from '../../../shared/api/generated/rates_reference';
+import { RatesHistory } from './RatesHistory';
+import type { RatePublicationRow } from './rate-history';
 import { locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { RateFreshness } from '../../../shared/ui/RateFreshness';
@@ -292,35 +293,13 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const branch = props.branch();
     const gen = readGen;
     try {
-      const res = await client.view<RatePublicationsData>('rate_publications', { branch });
+      const rows = await client.page<RatePublicationRow>('rate_publications', { branch, limit: 20 });
       if (gen !== readGen) return;
-      const pubs = res.data?.publications ?? [];
       openDialog(
         t('historyTitle'),
         () => (
           <div class="rate-history-dialog">
-            <div class="table-scroll">
-              <table class="rates-table">
-                <thead>
-                  <tr>
-                    <th>{t('headerVersion')}</th>
-                    <th>{t('headerPublishedBy')}</th>
-                    <th>{t('headerPublishedAt')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={pubs}>
-                    {(p) => (
-                      <tr>
-                        <td>{p.version}</td>
-                        <td>{p.publishedBy}</td>
-                        <td>{formatTime(p.publishedAt)}</td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
-            </div>
+            <RatesHistory client={client} branch={branch} first={rows} />
           </div>
         ),
       );
