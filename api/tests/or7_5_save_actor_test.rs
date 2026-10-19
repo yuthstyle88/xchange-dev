@@ -48,16 +48,15 @@ use pos_infra::transactions::Transactor;
 use quote_common::*;
 use serde_json::{Value, json};
 use tx5_common::*;
-use xc_auth::domain::access::scoped_role::ScopedRole;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role, ScopedRole};
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 /// The first organisation, which MAIN belongs to.
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
@@ -92,13 +91,10 @@ fn caller_id(role: &str) -> String {
 
 /// The v3 caller named by the header `x-test-as` (a v3 role name): the owner, or an employee of MAIN. Its
 /// `access::Actor` is the B1-mapped one, as `SessionReader::callers` makes it for a password session.
-struct V3Sessions;
+struct V3Callers;
 
-impl SessionReader for V3Sessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for V3Callers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let role = req
             .headers()
             .get("x-test-as")
@@ -107,16 +103,20 @@ impl SessionReader for V3Sessions {
             .to_owned();
         Box::pin(async move {
             if role == "OWNER" {
-                return Sessions {
-                    owner: Some(Actor::owner("owner")),
-                    staff: None,
-                };
+                return test_callers::callers(Some(test_callers::owner("owner")), None);
             }
-            let staff = Role::STAFF
-                .iter()
-                .find(|r| r.as_str() == role)
-                .and_then(|r| Actor::staff(caller_id(&role), *r, BranchId::new("MAIN")));
-            Sessions { owner: None, staff }
+            let roles: Option<&[Role]> = match role.as_str() {
+                "FRONT" => Some(&[Role::Teller]),
+                "BACKEND" | "MANAGER" => Some(&[Role::BranchManager]),
+                "RATES" => Some(&[Role::RateManager]),
+                "FINANCE" => Some(&[Role::Finance]),
+                "SYSTEM" => Some(&[Role::Admin]),
+                "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => Some(&[Role::VerificationReviewer]),
+                _ => None,
+            };
+            let staff =
+                roles.map(|r| test_callers::staff(&caller_id(&role), r, BranchId::new("MAIN")));
+            test_callers::callers(None, staff)
         })
     }
 }
@@ -128,25 +128,13 @@ struct TellerSession {
 }
 
 impl SessionReader for TellerSession {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let user = xc_auth::domain::access::actor::Actor::new(
                 &self.user_id,
                 ORG,
                 vec![ScopedRole::new(
-                    xc_auth::domain::access::role::Role::Teller,
+                    Role::Teller,
                     Some(BranchId::new("MAIN")),
                     chrono::DateTime::<Utc>::UNIX_EPOCH,
                     None,
@@ -348,7 +336,7 @@ impl Shop {
 #[actix_web::test]
 async fn each_v3_role_saves_or_is_refused_as_today() {
     let shop = Shop::start().await;
-    let reader: Arc<dyn SessionReader> = Arc::new(V3Sessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(V3Callers);
     for role in V3_ROLES {
         let id = caller_id(role);
         let before = shop.count("SELECT count(*) FROM transactions").await;
