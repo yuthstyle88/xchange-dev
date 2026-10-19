@@ -36,10 +36,6 @@ impl Report {
 /// client input there. The list only shrinks.
 pub const ALLOWLIST: &[(&str, &str)] = &[
     (
-        "src/presentation/dto/booking.rs",
-        "v2 compat JSON formatting helper shortest_number (O-G1-2)",
-    ),
-    (
         "src/presentation/dto/v3/my_membership.rs",
         "Loyalty service response DTO, not client input",
     ),
@@ -53,7 +49,7 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
     ),
     (
         "src/presentation/http/v3/commands/bookings/create.rs",
-        "open R-ticket #2983 (bookingCreate)",
+        "BookingCreateOutput.quantity is the command's response DTO, not client input; the input is bounded by #2983",
     ),
     (
         "src/presentation/http/v3/commands/campaign_create.rs",
@@ -69,7 +65,7 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
     ),
     (
         "src/presentation/http/v3/commands/cash.rs",
-        "open R-ticket #2991 (cashTransfer)",
+        "TransferPolicySave checks non-negative and currency minor_unit scale via Decimal::from_str after Money::parse bounds the input (#2116)",
     ),
     (
         "src/presentation/http/v3/commands/margin_guard_set.rs",
@@ -82,10 +78,6 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
     (
         "src/presentation/http/v3/desk/config.rs",
         "stored currency unit_size read back from database (O-G1-2)",
-    ),
-    (
-        "src/presentation/http/v3/views/admin_bookings.rs",
-        "admin bookings view read back from database, not client input",
     ),
     (
         "src/presentation/http/v3/views/admin_cash.rs",
