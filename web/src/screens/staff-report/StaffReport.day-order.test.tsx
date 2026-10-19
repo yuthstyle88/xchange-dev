@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Me } from '../../shared/api/generated/common';
+import { makeBranchRef, makeMe } from '../../shared/testing/fixtures';
 import { warmModules } from '../../shared/testing/warm-modules';
 
 const mainMods = import.meta.glob('./main.tsx');
@@ -86,15 +86,15 @@ function report(over: Partial<Report> = {}): Report {
   };
 }
 
-const SESSION_ME: Me = {
+const SESSION_ME = makeMe({
   id: '00000000-0000-4000-8000-0000000000a1',
   name: 'Ploy',
   roles: [],
   permissions: ['ShiftCloseCertify'],
   branch: 'MAIN',
   branchName: 'XC-B',
-  branches: [{ id: 'MAIN', code: 'XC-B', name: 'XC-B' }],
-};
+  branches: [makeBranchRef({ id: 'MAIN', code: 'XC-B', name: 'XC-B' })],
+});
 
 type Answer = { status: number; body: unknown };
 const ok = (data: unknown): Answer => ({ status: 200, body: { version: 1, changed: true, data } });
