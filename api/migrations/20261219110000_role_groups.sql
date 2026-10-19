@@ -28,3 +28,23 @@ CREATE TABLE role_grant_version (
 );
 
 INSERT INTO role_grant_version (version) VALUES (0);
+
+-- down:
+-- DO $$
+-- BEGIN
+--     IF EXISTS (
+--         SELECT 1 FROM user_roles ur
+--         JOIN roles r ON r.code = ur.role_code
+--         WHERE NOT r.built_in
+--     ) THEN
+--         RAISE EXCEPTION 'role_groups down: user_roles names a custom group';
+--     END IF;
+-- END
+-- $$;
+-- DELETE FROM roles WHERE NOT built_in;
+-- DROP TABLE role_grant_version;
+-- DROP TABLE role_permission_grants;
+-- ALTER TABLE roles
+--     DROP COLUMN built_in,
+--     DROP COLUMN base_role,
+--     DROP COLUMN name;
