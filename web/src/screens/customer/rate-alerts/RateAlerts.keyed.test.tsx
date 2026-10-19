@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { MyRateAlertsData } from '../../../shared/api/generated/my_rate_alerts';
+import { makeMyRateAlertsData } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { RateAlertsScreen } from './RateAlerts';
 
@@ -24,9 +24,9 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const ALERTS_DATA: MyRateAlertsData = {
+const ALERTS_DATA = makeMyRateAlertsData({
   alerts: [],
-};
+});
 
 function makeHarness(steps: StepAnswer[]) {
   const writes: WriteCall[] = [];
