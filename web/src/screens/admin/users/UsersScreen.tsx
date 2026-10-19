@@ -87,6 +87,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
   const [activeTab, setActiveTab] = createSignal<UsersTabId>('users');
   const [users, setUsers] = createSignal<UserRow[]>([]);
+  const [hasMore, setHasMore] = createSignal<boolean>(false);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [loading, setLoading] = createSignal<boolean>(false);
   const [pageError, setPageError] = createSignal<string | null>(null);
@@ -117,6 +118,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   // Grant form state
   const [grantRole, setGrantRole] = createSignal<string>('TELLER');
   const [grantBranch, setGrantBranch] = createSignal<string>('');
+  const [grantValidFrom, setGrantValidFrom] = createSignal<string>('');
+  const [grantValidTo, setGrantValidTo] = createSignal<string>('');
 
   // Profile form state
   const [profileEmployeeCode, setProfileEmployeeCode] = createSignal('');
@@ -126,6 +129,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
   let branchesSeq = 0;
   let usersSeq = 0;
+  const PAGE_SIZE = 50;
 
   const loadBranches = async () => {
     const seq = ++branchesSeq;
@@ -148,17 +152,44 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setLoading(true);
     setPageError(null);
     try {
-      const res = await api.view<UserRow[]>('admin_users', {
+      const rows = await api.page<UserRow>('admin_users', {
         branch: props.branch(),
+        limit: PAGE_SIZE,
       });
       if (seq !== usersSeq) return;
-      if (res.data) {
-        setUsers(res.data);
-      }
+      setUsers(rows);
+      setHasMore(rows.length === PAGE_SIZE);
     } catch (err: unknown) {
       if (seq !== usersSeq) return;
       setPageError(wordedError(err));
       setUsers([]);
+      setHasMore(false);
+    } finally {
+      if (seq === usersSeq) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const loadMoreUsers = async () => {
+    const current = users();
+    const last = current[current.length - 1];
+    if (!last) return;
+    const seq = ++usersSeq;
+    setLoading(true);
+    setPageError(null);
+    try {
+      const rows = await api.page<UserRow>('admin_users', {
+        branch: props.branch(),
+        before: last.userId,
+        limit: PAGE_SIZE,
+      });
+      if (seq !== usersSeq) return;
+      setUsers([...current, ...rows]);
+      setHasMore(rows.length === PAGE_SIZE);
+    } catch (err: unknown) {
+      if (seq !== usersSeq) return;
+      setPageError(wordedError(err));
     } finally {
       if (seq === usersSeq) {
         setLoading(false);
@@ -172,6 +203,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     const branch = props.branch();
     if (activeBranch && activeBranch !== branch) {
       setUsers([]);
+      setHasMore(false);
       setPageSuccess(null);
       setTempPassword(null);
     }
@@ -284,6 +316,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setGrantingUser(user);
     setGrantRole('TELLER');
     setGrantBranch(props.branch());
+    setGrantValidFrom('');
+    setGrantValidTo('');
     setDialogError(null);
   };
 
@@ -297,11 +331,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setPageSuccess(null);
     setDialogSubmitting(true);
 
+    const validFrom = grantValidFrom().trim();
+    const validTo = grantValidTo().trim();
+
     try {
       await grantWrite.send({
         userId: user.userId,
         role: grantRole(),
         branch: grantBranch() ? grantBranch() : null,
+        ...(validFrom ? { validFrom: `${validFrom}T00:00:00+07:00` } : {}),
+        ...(validTo ? { validTo: `${validTo}T00:00:00+07:00` } : {}),
       });
       if (openDialogKey() === sentFrom) setGrantingUser(null);
       setPageSuccess(t('successGranted'));
@@ -450,8 +489,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const activeRoles = (roles: AdminUserRole[]) =>
-    roles.filter((r) => r.validTo === null);
+  const isRoleEnded = (r: AdminUserRole): boolean =>
+    r.validTo !== null && Date.parse(r.validTo) <= Date.now();
+
+  const formatBkkDate = (iso: string): string =>
+    new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
 
   return (
     <div class="users-screen">
@@ -529,6 +571,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
               <table class="users-table">
                 <thead>
                   <tr>
+                    <th class="users-th">{t('colEmployeeCode')}</th>
                     <th class="users-th">{t('colName')}</th>
                     <th class="users-th">{t('colRoles')}</th>
                     <th class="users-th">{t('colStatus')}</th>
@@ -546,32 +589,47 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
                       return (
                         <tr data-user-id={user.userId}>
+                          <td class="users-td">{user.employeeCode ?? '—'}</td>
                           <td class="users-td">
                             <div><strong>{user.name}</strong></div>
                             <small class="users-intro">{user.userId}</small>
                           </td>
                           <td class="users-td">
                             <div class="users-roles-list">
-                              <For each={activeRoles(user.roles)}>
-                                {(r) => (
-                                  <span class="users-role-tag">
-                                    <span class="users-role-name">{r.role}</span>
-                                    <span class="users-role-branch">
-                                      ({r.branch ?? t('orgWide')})
+                              <For each={user.roles}>
+                                {(r) => {
+                                  const ended = isRoleEnded(r);
+                                  return (
+                                    <span
+                                      class="users-role-tag"
+                                      attr:data-role-ended={ended ? '' : undefined}
+                                      style={ended ? { opacity: '0.6' } : undefined}
+                                    >
+                                      <span class="users-role-name">{r.role}</span>
+                                      <span class="users-role-branch">
+                                        ({r.branch ?? t('orgWide')})
+                                      </span>
+                                      <Show when={r.validTo !== null}>
+                                        <span class="users-role-branch">
+                                          {ended
+                                            ? t('roleEnded', { date: formatBkkDate(r.validTo!) })
+                                            : t('roleUntil', { date: formatBkkDate(r.validTo!) })}
+                                        </span>
+                                      </Show>
+                                      <Show when={isActive() && !ended}>
+                                        <button
+                                          type="button"
+                                          class="users-btn users-btn-revoke"
+                                          onClick={() => handleRevoke(user, r)}
+                                          disabled={rowWriting()}
+                                          aria-label={`${t('revoke')} ${r.role}`}
+                                        >
+                                          ×
+                                        </button>
+                                      </Show>
                                     </span>
-                                    <Show when={isActive()}>
-                                      <button
-                                        type="button"
-                                        class="users-btn users-btn-revoke"
-                                        onClick={() => handleRevoke(user, r)}
-                                        disabled={rowWriting()}
-                                        aria-label={`${t('revoke')} ${r.role}`}
-                                      >
-                                        ×
-                                      </button>
-                                    </Show>
-                                  </span>
-                                )}
+                                  );
+                                }}
                               </For>
                             </div>
                           </td>
@@ -663,6 +721,19 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                 </tbody>
               </table>
             </div>
+            <Show when={hasMore()}>
+              <div class="users-actions">
+                <button
+                  type="button"
+                  class="users-btn"
+                  data-action="more"
+                  onClick={loadMoreUsers}
+                  disabled={loading()}
+                >
+                  {t('more')}
+                </button>
+              </div>
+            </Show>
           </Show>
         </div>
       </div>
@@ -859,6 +930,30 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                       {(b) => <option value={b.id}>{b.name} ({b.id})</option>}
                     </For>
                   </select>
+                </div>
+
+                <div class="users-field">
+                  <label class="users-label" for="grant-valid-from">{t('grantValidFrom')}</label>
+                  <input
+                    id="grant-valid-from"
+                    name="grantValidFrom"
+                    type="date"
+                    class="users-input"
+                    value={grantValidFrom()}
+                    onInput={(e) => setGrantValidFrom(e.currentTarget.value)}
+                  />
+                </div>
+
+                <div class="users-field">
+                  <label class="users-label" for="grant-valid-to">{t('grantValidTo')}</label>
+                  <input
+                    id="grant-valid-to"
+                    name="grantValidTo"
+                    type="date"
+                    class="users-input"
+                    value={grantValidTo()}
+                    onInput={(e) => setGrantValidTo(e.currentTarget.value)}
+                  />
                 </div>
 
                 <div class="users-dialog-actions">

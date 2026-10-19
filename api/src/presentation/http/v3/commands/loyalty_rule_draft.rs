@@ -14,7 +14,6 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_loyalty::application::rule_publisher::{LoyaltyRuleError, LoyaltyRuleWriter, RuleKind};
 use xc_loyalty::domain::customer_ref::NS_XC_LOYALTY;
-use xc_loyalty::infrastructure::http_rule_writer::HttpLoyaltyRuleWriter;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -157,13 +156,12 @@ impl CommandAction for LoyaltyRuleDraftCommand {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    let writer = state
-        .settings
-        .loyalty
-        .as_ref()
-        .and_then(HttpLoyaltyRuleWriter::from_config)
-        .map(|w| Arc::new(w) as Arc<dyn LoyaltyRuleWriter>);
-    CommandEndpoint::register(cfg, Arc::new(LoyaltyRuleDraftCommand::new(writer)));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(LoyaltyRuleDraftCommand::new(
+            state.loyalty_rule_writer.clone(),
+        )),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
