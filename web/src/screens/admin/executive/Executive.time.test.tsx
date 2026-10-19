@@ -5,13 +5,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type {
-  AlertDto,
-  BranchRowDto,
-  DrilldownDto,
-  ExecutiveOverviewData,
-  MetricDto,
-} from '../../../shared/api/generated/executive_overview';
+import {
+  makeAlertDto,
+  makeBranchRowDto,
+  makeDrilldownDto,
+  makeExecutiveOverviewData,
+  makeMetricDto,
+  makeOverviewPeriod,
+  makeShiftsDto,
+  type ExecutiveOverviewData,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { Executive } from './Executive';
@@ -31,35 +34,35 @@ const SINCE_TH = '7/10/2569 00:05:00';
 const AS_OF_EN = '07/10/2026, 01:30:00';
 const SINCE_EN = '07/10/2026, 00:05:00';
 
-function drill(view: string, filter: Record<string, string> = {}): DrilldownDto {
-  return { view, filter, dropped: [] };
+function drill(view: string, filter: Record<string, string> = {}) {
+  return makeDrilldownDto({ view, filter, dropped: [] });
 }
 
-function metric(key: string, value: string | null): MetricDto {
-  return { key, value, unavailable: null, drilldown: null };
+function metric(key: string, value: string | null) {
+  return makeMetricDto({ key, value, unavailable: null, drilldown: null });
 }
 
-function branchRow(id: string, asOf: string | null): BranchRowDto {
-  return {
+function branchRow(id: string, asOf: string | null) {
+  return makeBranchRowDto({
     branchId: id,
     name: `สาขา ${id}`,
     volumeThb: '3000.00',
     availableCash: metric('available_cash', '10000.00'),
     inTransit: metric('in_transit', '0.00'),
-    shifts: { open: 1, closedVerified: 0, closedUnverified: 0 },
+    shifts: makeShiftsDto({ open: 1, closedVerified: 0, closedUnverified: 0 }),
     asOf,
     pendingEvents: 0,
     drilldown: drill('admin_overview', { branch: id }),
-  };
+  });
 }
 
-function alert(branchId: string, since: string | null): AlertDto {
-  return { kind: 'staleData', branchId, since, detail: 'detail', drilldown: null };
+function alert(branchId: string, since: string | null) {
+  return makeAlertDto({ kind: 'staleData', branchId, since, detail: 'detail', drilldown: null });
 }
 
-function sampleData(over: Partial<ExecutiveOverviewData> = {}): ExecutiveOverviewData {
-  return {
-    period: { from: FROM, to: TO },
+function sampleData(over: Partial<ExecutiveOverviewData> = {}) {
+  return makeExecutiveOverviewData({
+    period: makeOverviewPeriod({ from: FROM, to: TO }),
     kpis: [metric('buy_volume_thb', '1000.00')],
     branches: [branchRow('B1', AS_OF)],
     alerts: [alert('B1', SINCE)],
@@ -67,7 +70,7 @@ function sampleData(over: Partial<ExecutiveOverviewData> = {}): ExecutiveOvervie
     buyReversedThb: '0.00',
     sellReversedThb: '0.00',
     ...over,
-  };
+  });
 }
 
 let replyData: ExecutiveOverviewData;
