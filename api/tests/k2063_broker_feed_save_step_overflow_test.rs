@@ -13,7 +13,7 @@ use pos_error::AppError;
 use rust_decimal::Decimal;
 use snapshot_common::TestDb;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_customer::domain::customer::value_objects::customer_details::CustomerDetails;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -154,7 +154,7 @@ async fn overflowing_principal_is_refused_with_app_error_internal() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let ctx = SaveContext {
         branch: &branch,
@@ -216,7 +216,7 @@ async fn ordinary_principal_records_completed_broker_exchange_feed() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let ctx = SaveContext {
         branch: &branch,

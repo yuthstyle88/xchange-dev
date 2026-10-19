@@ -152,8 +152,6 @@ impl SessionReader for Executive {
                 None,
             );
             Callers {
-                owner: Some(Actor::owner(EXECUTIVE)),
-                staff: None,
                 user: Some(user.clone()),
                 staff_user: Some(user),
             }

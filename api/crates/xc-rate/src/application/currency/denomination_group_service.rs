@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
+use chrono::Utc;
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Standing};
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::currency::denomination_groups::{DenominationGroups, GroupCode};
@@ -34,11 +34,11 @@ impl DenominationGroupService {
         code: CurrencyCode,
         group: &GroupCode,
     ) -> Result<(), RateEngineError> {
-        if who.role() != Role::Owner {
-            return Err(RateEngineError::OutOfScope(
-                "only OWNER may manage denomination groups".to_string(),
-            ));
-        }
+        let standing = Standing::of(who, Utc::now())
+            .filter(|s| s.is_owner())
+            .ok_or_else(|| {
+                RateEngineError::OutOfScope("only OWNER may manage denomination groups".to_string())
+            })?;
 
         // Check if group already exists for this currency
         let exists: Option<(i64,)> = sqlx::query_as(
@@ -65,8 +65,8 @@ impl DenominationGroupService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         let event = AuditEvent {
-            actor_id: who.id().to_string(),
-            actor_role: who.role().as_str().to_string(),
+            actor_id: who.user_id.clone(),
+            actor_role: standing.kind.audit_text().to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupCreate".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),
@@ -95,11 +95,11 @@ impl DenominationGroupService {
         provider: &str,
         instrument_key: &str,
     ) -> Result<(), RateEngineError> {
-        if who.role() != Role::Owner {
-            return Err(RateEngineError::OutOfScope(
-                "only OWNER may manage denomination groups".to_string(),
-            ));
-        }
+        let standing = Standing::of(who, Utc::now())
+            .filter(|s| s.is_owner())
+            .ok_or_else(|| {
+                RateEngineError::OutOfScope("only OWNER may manage denomination groups".to_string())
+            })?;
 
         let provider_trimmed = provider.trim();
         let key_trimmed = instrument_key.trim();
@@ -162,14 +162,14 @@ impl DenominationGroupService {
         .bind(group.as_str())
         .bind(provider)
         .bind(instrument_key)
-        .bind(who.id())
+        .bind(&who.user_id)
         .execute(&mut **tx)
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         let event = AuditEvent {
-            actor_id: who.id().to_string(),
-            actor_role: who.role().as_str().to_string(),
+            actor_id: who.user_id.clone(),
+            actor_role: standing.kind.audit_text().to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupMap".to_string(),
             object_ref: format!("{}/{}/{}", code.as_str(), group.as_str(), provider),
@@ -201,11 +201,11 @@ impl DenominationGroupService {
         code: CurrencyCode,
         group: &GroupCode,
     ) -> Result<(), RateEngineError> {
-        if who.role() != Role::Owner {
-            return Err(RateEngineError::OutOfScope(
-                "only OWNER may manage denomination groups".to_string(),
-            ));
-        }
+        let standing = Standing::of(who, Utc::now())
+            .filter(|s| s.is_owner())
+            .ok_or_else(|| {
+                RateEngineError::OutOfScope("only OWNER may manage denomination groups".to_string())
+            })?;
 
         if group.as_str() == "ALL" {
             return Err(RateEngineError::Refused {
@@ -287,8 +287,8 @@ impl DenominationGroupService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         let event = AuditEvent {
-            actor_id: who.id().to_string(),
-            actor_role: who.role().as_str().to_string(),
+            actor_id: who.user_id.clone(),
+            actor_role: standing.kind.audit_text().to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupRemove".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),

@@ -30,7 +30,7 @@ use std::sync::Arc;
 use pos_infra::transactions::Transactor;
 use save_common::*;
 use serde_json::Value;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_kernel::branch_tx::BranchTx;
 use xchange::application::workflows::device_save_step::DeviceSaveStep;
 use xchange::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
@@ -44,7 +44,7 @@ fn front() -> SaveActor {
         id: FRONT.to_owned(),
         username: format!("user-{FRONT}"),
         employee_id: Some(FRONT.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

@@ -128,7 +128,7 @@ pub trait CommandAction: Send + Sync + 'static {
 }
 
 /// Helper for commands to map internal failures to `500 serverError`.
-/// What a command answers when an OR-7 bridge call (`legacy_actor`) finds no v2 actor for the caller (#1030 §3.8):
+/// What a command answers when the caller has no `Standing` (OR-7; formerly the `legacy_actor` bridge, #1030 §3.8):
 /// `403 roleNotAllowedHere`, as a refused route does.
 pub(crate) fn role_not_allowed_here() -> V3Error {
     V3Error::from(

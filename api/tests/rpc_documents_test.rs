@@ -452,7 +452,13 @@ async fn the_family_answers_the_owners_links_for_the_branch_it_is_given() {
 
     let front = fixture.person("FR1").expect("FR1");
     let caller = RpcCaller {
-        actor: actor_of(front),
+        standing: xc_auth::domain::access::Standing {
+            user_id: front.id.clone(),
+            kind: xc_auth::domain::access::StandingKind::Staff(
+                xc_auth::domain::access::Role::Teller,
+            ),
+            branch: Some(BranchId::new(front.branch_id.clone().expect("a branch"))),
+        },
         username: front.username.clone(),
         name: front.name.clone(),
     };

@@ -180,8 +180,6 @@ impl SessionReader for HeaderCallers {
     fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             Callers {
-                owner: None,
-                staff: None,
                 user: None,
                 staff_user: None,
             }

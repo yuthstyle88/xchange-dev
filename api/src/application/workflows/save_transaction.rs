@@ -7,8 +7,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use xc_auth::domain::access::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role as AccessRole, StandingKind};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
@@ -331,7 +330,7 @@ impl SaveTransactionWorkflow {
                 id: actor_id.to_owned(),
                 username: cmd.staff.clone(),
                 employee_id: None,
-                role: Role::System,
+                standing: StandingKind::Staff(AccessRole::Admin),
             });
 
         let (this, branch) = (self.clone(), branch.clone());

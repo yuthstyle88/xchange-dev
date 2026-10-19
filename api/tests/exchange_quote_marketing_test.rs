@@ -47,7 +47,7 @@ use chrono::Utc;
 use quote_common::*;
 use rust_decimal::Decimal;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
@@ -76,7 +76,7 @@ fn teller() -> SaveActor {
         id: "teller-mk5".to_owned(),
         username: "user-teller-mk5".to_owned(),
         employee_id: Some("teller-mk5".to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

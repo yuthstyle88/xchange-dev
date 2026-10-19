@@ -1,6 +1,6 @@
 //! The kiosk's part in the save of an exchange.
 
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AuthRole, StandingKind};
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::CurrencyCode;
@@ -33,17 +33,14 @@ fn request_id<'a>(ctx: &SaveContext<'a>) -> Option<&'a str> {
         .filter(|id| !id.is_empty())
 }
 
-/// The kiosk role of a role. A role with no part at the kiosk desk is `Other`.
-fn kiosk_role(role: Role) -> KioskRole {
-    match role {
-        Role::Owner => KioskRole::Owner,
-        Role::Front => KioskRole::Front,
-        Role::Backend => KioskRole::Backend,
-        Role::Manager => KioskRole::Manager,
-        Role::Rates => KioskRole::Rates,
-        Role::Finance | Role::Monitor | Role::System | Role::Documents | Role::DocumentReview => {
-            KioskRole::Other
-        }
+/// The kiosk role of a standing. A role with no part at the kiosk desk is `Other`.
+fn kiosk_role(kind: StandingKind) -> KioskRole {
+    match kind {
+        StandingKind::Owner => KioskRole::Owner,
+        StandingKind::Staff(AuthRole::Teller) => KioskRole::Front,
+        StandingKind::Staff(AuthRole::BranchManager) => KioskRole::Manager,
+        StandingKind::Staff(AuthRole::RateManager) => KioskRole::Rates,
+        _ => KioskRole::Other,
     }
 }
 
@@ -52,7 +49,7 @@ fn kiosk_role(role: Role) -> KioskRole {
 fn kiosk_actor(actor: &SaveActor) -> KioskActor {
     KioskActor::Staff {
         username: actor.id.clone(),
-        role: kiosk_role(actor.role),
+        role: kiosk_role(actor.standing()),
     }
 }
 
@@ -108,5 +105,32 @@ impl SaveStep for KioskSaveStep {
                 .complete_in(tx, ctx.branch, id, &link, &kiosk_actor(ctx.actor), ctx.now)
                 .await
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The kiosk role of every standing: unchanged from the v3 role it maps from (OR-7 R7 #3167).
+    #[test]
+    fn kiosk_role_of_each_standing() {
+        for (kind, role) in [
+            (StandingKind::Owner, KioskRole::Owner),
+            (StandingKind::Staff(AuthRole::Teller), KioskRole::Front),
+            (
+                StandingKind::Staff(AuthRole::BranchManager),
+                KioskRole::Manager,
+            ),
+            (StandingKind::Staff(AuthRole::RateManager), KioskRole::Rates),
+            (StandingKind::Staff(AuthRole::Finance), KioskRole::Other),
+            (StandingKind::Staff(AuthRole::Admin), KioskRole::Other),
+            (
+                StandingKind::Staff(AuthRole::VerificationReviewer),
+                KioskRole::Other,
+            ),
+        ] {
+            assert_eq!(kiosk_role(kind), role, "{kind:?}");
+        }
     }
 }

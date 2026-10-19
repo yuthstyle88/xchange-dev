@@ -8,7 +8,7 @@ use crate::presentation::pages;
 use crate::presentation::ui::UiAssets;
 use actix_web::{HttpRequest, HttpResponse, web};
 use std::path::{Path, PathBuf};
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 
 #[derive(Debug)]
 pub enum ScreenLoadError {
@@ -129,27 +129,30 @@ impl ScreenTable {
         match decl.gate {
             Gate::Anyone => self.render_screen(decl),
             Gate::SignedIn => {
-                let sessions = pages::sessions_of(req).await;
-                if sessions.owner.is_none() && sessions.staff.is_none() {
+                let callers = pages::get_callers(req).await;
+                if callers.owner_standing().is_none() && callers.staff_standing().is_none() {
                     pages::to_login(req)
                 } else {
                     self.render_screen(decl)
                 }
             }
             Gate::Branch => {
-                let sessions = pages::sessions_of(req).await;
-                if sessions.owner.is_none() && sessions.staff.is_none() {
+                let callers = pages::get_callers(req).await;
+                if callers.owner_standing().is_none() && callers.staff_standing().is_none() {
                     pages::to_login(req)
                 } else {
-                    match pages::page_branch(req, &sessions) {
+                    match pages::page_branch(req, &callers) {
                         Ok(_branch) => self.render_screen(decl),
                         Err(resp) => resp,
                     }
                 }
             }
             Gate::Front => {
-                let sessions = pages::sessions_of(req).await;
-                let is_front = matches!(&sessions.staff, Some(s) if s.role() == Role::Front);
+                let callers = pages::get_callers(req).await;
+                let is_front = matches!(
+                    callers.staff_standing(),
+                    Some(s) if s.staff_role() == Some(Role::Teller)
+                );
                 if !is_front {
                     pages::to_staff(req)
                 } else {

@@ -116,11 +116,9 @@ impl SessionReader for HeaderSessions {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = header(req);
         Box::pin(async move {
-            let s = self.sessions(req).await;
+            let _s = self.sessions(req).await;
             let user = actor_of(&spec).map(|(u, _)| u);
             Callers {
-                owner: s.owner,
-                staff: None,
                 user: user.clone(),
                 staff_user: user,
             }

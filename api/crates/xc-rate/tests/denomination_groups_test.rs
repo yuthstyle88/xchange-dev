@@ -34,7 +34,7 @@ use rate_engine_common::*;
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_rate::application::currency::denomination_group_service::DenominationGroupService;
 use xc_rate::domain::currency::denomination_groups::{DenominationGroups, GroupCode};
 use xc_rate::domain::draft::rate_draft::DraftStatus;
