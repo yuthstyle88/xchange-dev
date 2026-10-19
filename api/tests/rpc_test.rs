@@ -718,7 +718,8 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
     desk.db.seed_branch("B-elsewhere", "Elsewhere").await;
     desk.employ(&people).await;
     let cookies = sign_in(&app, ORIGIN, &people).await;
-    sqlx::query("UPDATE employees SET active = false WHERE username = 'role1'")
+    // OR-7.m S-D3/S-D4 (reviewer fix): a closed account is a disabled user; names are `users.name`
+    sqlx::query("UPDATE users SET status = 'DISABLED' WHERE name = 'role1'")
         .execute(&desk.db.pool)
         .await
         .expect("close an account");
@@ -735,9 +736,9 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
         .collect();
     let mut expected: Vec<String> = (0..9)
         .filter(|i| *i != 1)
-        .map(|i| format!("Somebody {i}"))
+        .map(|i| format!("role{i}"))
         .collect();
-    expected.push("Made Last".to_string());
+    expected.push("aaa".to_string());
     assert_eq!(listed, expected);
     desk.finish().await;
 }
