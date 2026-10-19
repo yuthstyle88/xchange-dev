@@ -18,13 +18,16 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_cash::infrastructure::stock_reservations::active_reserved_in;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 
 use crate::application::executive::ports::CashFacts;
 use crate::bootstrap::AppState;
 use crate::infrastructure::executive::ledger_cash_facts::LedgerCashFacts;
-use crate::presentation::dto::v3::branch_stock::{BranchStockData, BranchStockRow};
+use crate::presentation::dto::v3::branch_stock::{
+    BranchStockData, BranchStockRow, TransferPrefill,
+};
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -39,7 +42,7 @@ pub async fn read(
     pool: &PgPool,
     organization_id: Uuid,
     branch: &BranchId,
-    _now: DateTime<Utc>,
+    now: DateTime<Utc>,
 ) -> AppResult<BranchStockData> {
     let on_hand_map: HashMap<CurrencyCode, Decimal> = LedgerCashFacts::new(pool.clone())
         .on_hand_by_currency(branch)
@@ -71,24 +74,32 @@ pub async fn read(
     currencies.sort_by_key(|c| (!c.is_thb(), c.as_str()));
     currencies.dedup();
 
-    let rows = currencies
-        .into_iter()
-        .map(|currency| {
-            let on_hand = on_hand_map.get(&currency).copied().unwrap_or(Decimal::ZERO);
-            let reserved = Decimal::ZERO;
-            let available = on_hand - reserved;
-            let floor = floor_map.get(&currency).copied();
-            BranchStockRow {
-                currency: currency.as_str().to_owned(),
-                on_hand: on_hand.to_string(),
-                reserved: reserved.to_string(),
-                available: available.to_string(),
-                floor: floor.map(|f| f.to_string()),
-                low: false,
-                transfer_prefill: None,
-            }
-        })
-        .collect();
+    let mut conn = pool.acquire().await.map_err(AppError::Database)?;
+    let mut rows = Vec::with_capacity(currencies.len());
+    for currency in currencies {
+        let on_hand = on_hand_map.get(&currency).copied().unwrap_or(Decimal::ZERO);
+        let reserved = if currency.is_thb() {
+            Decimal::ZERO
+        } else {
+            active_reserved_in(&mut conn, organization_id, branch, currency, now).await?
+        };
+        let available = on_hand - reserved;
+        let floor = floor_map.get(&currency).copied();
+        let low = floor.is_some_and(|f| available < f);
+        let transfer_prefill = low.then(|| TransferPrefill {
+            branch_id: branch.as_str().to_owned(),
+            currency: currency.as_str().to_owned(),
+        });
+        rows.push(BranchStockRow {
+            currency: currency.as_str().to_owned(),
+            on_hand: on_hand.to_string(),
+            reserved: reserved.to_string(),
+            available: available.to_string(),
+            floor: floor.map(|f| f.to_string()),
+            low,
+            transfer_prefill,
+        });
+    }
 
     Ok(BranchStockData {
         branch_id: branch.as_str().to_owned(),
