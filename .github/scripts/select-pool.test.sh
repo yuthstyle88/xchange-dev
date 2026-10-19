@@ -14,7 +14,7 @@ if [ ! -x "$SELECT" ]; then
   exit 1
 fi
 
-WANT='["self-hosted","Linux","X64"]'
+WANT='["self-hosted"]'
 
 fail=0
 linux=0
@@ -26,7 +26,7 @@ for slot in $(seq 0 11); do
   [ "$jobs" = 12 ] || { echo "FAIL: slot $slot gave cargo_jobs='$jobs', want ceiling 12 (cargo-jobs.sh lowers it per machine)"; fail=1; }
 done
 
-# Row 1: every slot goes to ONE pool, the Linux OS pool (placement pins removed per #3072).
+# Row 1: every slot goes to ONE pool, any self-hosted runner switched on (Linux or macOS; #3072, owner 2026-10-20).
 [ "$linux" = 12 ] || { echo "FAIL: Linux pool got $linux of 12 slots, want 12"; fail=1; }
 
 # Row 2: a rerun (RUN_ATTEMPT+1) gives the same Linux pool.
