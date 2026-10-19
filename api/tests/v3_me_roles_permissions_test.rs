@@ -891,9 +891,12 @@ async fn a_custom_group_reads_its_installed_permissions_not_the_base_seed() {
     }
     let _reset = ResetSeeded;
 
+    // `CashManage` is outside TELLER's seed, so the answer differs from the base's whatever `Authorizer` filters
+    // (reviewer fix: a subset of the base's seed could not tell the two apart).
     let custom_perms = vec![
         Permission::CompatRead,
         Permission::QueueOperate,
+        Permission::CashManage,
         Permission::SignedIn,
     ];
     let mut groups: Vec<(Group, Vec<Permission>)> = RoleGrants::BUILT_IN
@@ -920,7 +923,7 @@ async fn a_custom_group_reads_its_installed_permissions_not_the_base_seed() {
     .expect("insert custom role");
 
     sqlx::query(
-        "INSERT INTO role_permission_grants (role_code, permission) VALUES ('NIGHT_TELLER', 'CompatRead'), ('NIGHT_TELLER', 'QueueOperate'), ('NIGHT_TELLER', 'SignedIn')",
+        "INSERT INTO role_permission_grants (role_code, permission) VALUES ('NIGHT_TELLER', 'CompatRead'), ('NIGHT_TELLER', 'QueueOperate'), ('NIGHT_TELLER', 'CashManage'), ('NIGHT_TELLER', 'SignedIn')",
     )
     .execute(&desk.pool)
     .await
