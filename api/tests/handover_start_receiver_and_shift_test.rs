@@ -132,14 +132,22 @@ impl Room {
             .await
             .expect("insert a branch");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, safe) \
-             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase) \
+             VALUES ($1, 'OPEN')",
         )
         .bind(B01)
         .execute(&pool)
         .await
         .expect("the branch's safe");
         let safe = || xc_cash::domain::posting::CashPlace::Safe(BranchId::new(B01));
+        lg4_fund(
+            &pool,
+            xc_cash::domain::posting::CashPlace::Bank,
+            safe(),
+            "USD",
+            "500.00",
+        )
+        .await;
         lg4_fund(
             &pool,
             xc_cash::domain::posting::CashPlace::Bank,
@@ -155,38 +163,40 @@ impl Room {
             .await
             .expect("insert branch B02");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, safe) \
-             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase) \
+             VALUES ($1, 'OPEN')",
         )
         .bind(B02)
         .execute(&pool)
         .await
         .expect("B02's safe");
+        let safe_b02 = || xc_cash::domain::posting::CashPlace::Safe(BranchId::new(B02));
+        lg4_fund(
+            &pool,
+            xc_cash::domain::posting::CashPlace::Bank,
+            safe_b02(),
+            "USD",
+            "500.00",
+        )
+        .await;
 
         Self { pool, schema }
     }
 
     async fn person(&self, role: Role, branch: Option<&str>) -> Who {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        let id = xc_testdb::people::seed_person(
+            &mut self.pool.acquire().await.expect("acquire"),
+            ORG,
+            &unique(role.as_str()),
+            &[xc_testdb::people::RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch,
+                valid_from: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+                valid_to: None,
+            }],
         )
-        .bind(ORG)
-        .bind(unique(role.as_str()))
-        .fetch_one(&self.pool)
         .await
-        .expect("insert a user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
-        )
-        .bind(&id)
-        .bind(role.as_str())
-        .bind(ORG)
-        .bind(branch)
-        .execute(&self.pool)
-        .await
-        .expect("give the user a role");
+        .expect("insert a user and give them a role");
         Who {
             spec: format!("{id}|{}|{}", role.as_str(), branch.unwrap_or("*")),
             id,
@@ -479,25 +489,19 @@ impl Room {
              ON CONFLICT DO NOTHING"
         ))
         .await;
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        xc_testdb::people::seed_person(
+            &mut self.pool.acquire().await.expect("acquire"),
+            ORG_B,
+            &unique("orgb-teller"),
+            &[xc_testdb::people::RoleRow {
+                role_code: "TELLER",
+                branch_id: Some("ORGB-B01"),
+                valid_from: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+                valid_to: None,
+            }],
         )
-        .bind(ORG_B)
-        .bind(unique("orgb-teller"))
-        .fetch_one(&self.pool)
         .await
-        .expect("insert an org-B user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, 'TELLER', $2::uuid, 'ORGB-B01')",
-        )
-        .bind(&id)
-        .bind(ORG_B)
-        .execute(&self.pool)
-        .await
-        .expect("org-B role");
-        id
+        .expect("insert an org-B user")
     }
 }
 

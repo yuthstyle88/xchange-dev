@@ -1180,15 +1180,37 @@ async fn ca10_seed_open(
                 .execute(&mut **tx)
                 .await?;
                 for (code, amount) in &opening {
-                    sqlx::query(
-                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                         VALUES ($1, $2, $3::numeric, $3::numeric)",
-                    )
-                    .bind(&id)
-                    .bind(code)
-                    .bind(amount)
-                    .execute(&mut **tx)
-                    .await?;
+                    use std::str::FromStr;
+                    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+                    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+                    use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
+                    use xc_kernel::money::{CurrencyCode, ForeignAmount};
+
+                    let parsed =
+                        rust_decimal::Decimal::from_str(amount).expect("opening decimal");
+                    if parsed <= rust_decimal::Decimal::ZERO {
+                        continue;
+                    }
+                    let quantity = ForeignAmount::from_decimal(parsed);
+                    LedgerCashPostings::new()
+                        .post_in(
+                            &mut *tx,
+                            &[PostingRequest {
+                                from: CashPlace::Bank,
+                                to: CashPlace::Drawer(id.clone()),
+                                currency: CurrencyCode::parse(code).expect("opening currency"),
+                                quantity,
+                                source: SourceRef {
+                                    source_type: SourceType::Opening,
+                                    source_id: format!("r1-fund:{id}:{code}"),
+                                    source_key: "opening".to_owned(),
+                                },
+                                line: None,
+                                reverses: None,
+                            }],
+                            None,
+                        )
+                        .await?;
                 }
                 Ok::<(), pos_error::AppError>(())
             })

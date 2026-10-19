@@ -126,7 +126,7 @@ async fn db() -> (PgPool, BranchId) {
         .execute(&pool)
         .await
         .expect("insert a branch");
-    sqlx::query("INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', '{}'::jsonb)")
+    sqlx::query("INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')")
         .bind(&branch)
         .execute(&pool)
         .await

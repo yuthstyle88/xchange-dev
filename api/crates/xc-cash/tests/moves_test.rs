@@ -22,9 +22,9 @@
 //! - Who (§3.2): create and dispatch need `CashManage` on the branch (BRANCH_MANAGER or FINANCE). The receiver of a
 //!   drawer is **the teller whose shift it is** (`shifts.teller_id`); of the safe, a holder of `CashManage` on the
 //!   branch; of external money, FINANCE (`CashManage`).
-//! - Postings before LG-4 (#929, now the ledger's DRAWER/SAFE; ruling 2): Drawer = `shift_balances.expected` of the shift plus one `stock_movements` row
+//! - Postings before LG-4 (#929, now the ledger's DRAWER/SAFE; ruling 2): Drawer = the v2 drawer store of the shift plus one v2 movement row (both dropped by #1047)
 //!   (`direction` OUT when the drawer pays out, IN when it takes in; `amount` the currency total; `request_id` = the
-//!   transfer id). Safe = `ops_state.safe`. `InTransit` and `Outside` are not balances.
+//!   transfer id). Safe = the v2 safe column (dropped by #1047). `InTransit` and `Outside` are not balances.
 //! - A dispatch beyond the drawer's or the safe's expected is `TransferError::StockInsufficient` and moves nothing.
 
 use std::collections::HashSet;
@@ -54,6 +54,7 @@ use xc_cash::domain::transfer::ends::TransferEnds;
 use xc_cash::domain::transfer::kinds::TransferKinds;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
+use xc_testdb::people::{RoleRow, seed_person};
 
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
@@ -127,14 +128,11 @@ impl Db {
             .execute(&self.pool)
             .await
             .unwrap();
-        sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', jsonb_build_object('USD', $2::bigint))",
-        )
-        .bind(&id)
-        .bind(safe_usd_minor)
-        .execute(&self.pool)
-        .await
-        .expect("the branch's safe");
+        sqlx::query("INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')")
+            .bind(&id)
+            .execute(&self.pool)
+            .await
+            .expect("insert ops_state");
         // LG-4 (#929, 1:1): the same USD amount is the safe's figure in the ledger, which now holds it.
         if safe_usd_minor > 0 {
             lg4_fund_safe(
@@ -150,27 +148,20 @@ impl Db {
 
     /// A user holding `roles`, each on a branch (`None` = organisation-wide), and their `Actor`.
     async fn person(&self, name: &str, roles: &[(Role, Option<&BranchId>)]) -> Actor {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
-        )
-        .bind(ORG)
-        .bind(name)
-        .fetch_one(&self.pool)
-        .await
-        .expect("insert a user");
-        for (role, branch) in roles {
-            sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) VALUES ($1::uuid, $2, $3::uuid, $4)",
-            )
-            .bind(&id)
-            .bind(role.as_str())
-            .bind(ORG)
-            .bind(branch.map(|b| b.as_str().to_owned()))
-            .execute(&self.pool)
-            .await
-            .expect("give the user a role");
-        }
         let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let role_rows: Vec<RoleRow> = roles
+            .iter()
+            .map(|(role, branch)| RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch.map(|b| b.as_str()),
+                valid_from: from,
+                valid_to: None,
+            })
+            .collect();
+        let mut conn = self.pool.acquire().await.expect("acquire connection");
+        let id = seed_person(&mut conn, ORG, name, &role_rows)
+            .await
+            .expect("seed person");
         Actor::new(
             &id,
             ORG,
@@ -193,7 +184,7 @@ impl Db {
     }
 
     /// The branch's SAFE USD, in minor units (0 when absent). LG-4 (#929, 1:1): read through the port,
-    /// `CashPostings::expected_in(Safe(branch))`, instead of `ops_state.safe`.
+    /// `CashPostings::expected_in(Safe(branch))`, instead of the v2 safe column (dropped by #1047).
     async fn safe_usd(&self, branch: &BranchId) -> i64 {
         use xc_cash::domain::posting::{CashPlace, CashPostings};
         let mut tx = self.pool.begin().await.expect("begin");
@@ -255,7 +246,7 @@ impl Db {
     }
 
     /// LG-4 (#929, 1:1): the drawer's USD through the port, `CashPostings::expected_in(Drawer(shift))`, instead of
-    /// `shift_balances.expected`.
+    /// the v2 drawer store (dropped by #1047).
     async fn drawer_usd(&self, shift: &str) -> Decimal {
         use xc_cash::domain::posting::{CashPlace, CashPostings};
         let mut tx = self.pool.begin().await.expect("begin");
@@ -269,7 +260,7 @@ impl Db {
 
     /// `(direction, amount)` of what a transfer moved on a shift's drawer. LG-4 (#929, 1:1): read from the drawer's
     /// ledger entries of that transfer's postings (OUT when the drawer pays out, IN when it takes in) instead of
-    /// `stock_movements`.
+    /// the v2 movement rows (dropped by #1047).
     async fn movements(&self, shift: &str, transfer: &str) -> Vec<(String, Decimal)> {
         sqlx::query_as(
             "SELECT CASE WHEN e.quantity_signed < 0 THEN 'OUT' ELSE 'IN' END, abs(e.quantity_signed) \
@@ -281,7 +272,7 @@ impl Db {
         .bind(transfer)
         .fetch_all(&self.pool)
         .await
-        .expect("read stock_movements")
+        .expect("read ledger_entries")
     }
 }
 
@@ -653,7 +644,7 @@ async fn a_move_out_of_a_drawer_beyond_its_expected_is_refused_and_nothing_moves
     assert_eq!(db.drawer_usd(&shift).await, d("100"));
     assert_eq!(
         db.scalar(&format!(
-            // LG-4 (#929, 1:1): "nothing moved" read from the drawer's TRANSFER ledger entries, not `stock_movements`
+            // LG-4 (#929, 1:1): "nothing moved" read from the drawer's TRANSFER ledger entries, not v2 movement rows
             "SELECT count(*) FROM ledger_entries e JOIN cash_accounts a ON a.id = e.account_id \
              JOIN ledger_postings p ON p.id = e.posting_id \
              WHERE a.kind = 'DRAWER' AND a.shift_id = '{shift}' AND p.source_type = 'TRANSFER'"

@@ -50,11 +50,12 @@ const REASON: Record<Reason, Key> = {
   noBookingsInPeriod: 'noBookingsInPeriod',
 };
 
-/** The wire kinds of #1071's ruling; any other kind shows its raw key. */
+/** The four wire kinds of #1071 and EX-13 (#1077); any other kind shows its raw key. */
 const ALERT_LABEL: Record<string, Key> = {
   ratePending: 'alertRatePending',
   staleData: 'alertStaleData',
   countDifference: 'alertCountDifference',
+  lowStock: 'alertLowStock',
 };
 
 const CHANNELS: { value: Channel; label: Key }[] = [

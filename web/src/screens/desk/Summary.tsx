@@ -4,6 +4,9 @@ import { Show, type JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
 import type { DeskStore, TransactionState } from './desk-store';
 import * as screenI18n from './i18n';
+import { BenefitLines } from './benefits/BenefitLines';
+import { CustomerLoyalty } from './loyalty/CustomerLoyalty';
+import { CouponField } from './coupon/CouponField';
 
 const STATE_KEYS: Record<TransactionState, 'stateDraft' | 'statePending' | 'stateConfirmed' | 'stateCompleted' | 'stateCancelled'> = {
   DRAFT: 'stateDraft',
@@ -35,6 +38,7 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
               </dd>
               <dt>{t('beforeFee')}</dt>
               <dd>{l().thbAmount} THB</dd>
+              <BenefitLines benefits={props.store.quote()?.benefits ?? []} />
               <Show when={props.store.step() >= 3}>
                 <dt>{t('fee')}</dt>
                 <dd>{l().feeThb}</dd>
@@ -49,6 +53,8 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
           <dd>{props.store.customerId()}</dd>
         </Show>
       </dl>
+      <CouponField store={props.store} />
+      <CustomerLoyalty store={props.store} />
       <Show when={props.store.quoting()}>
         <p class="desk-notice">{t('recalculating')}</p>
       </Show>

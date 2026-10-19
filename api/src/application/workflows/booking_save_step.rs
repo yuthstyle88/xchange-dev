@@ -206,13 +206,37 @@ mod tests {
             .await
             .expect("insert shift");
 
-            sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                 VALUES ('shift-1', 'THB', 1000000, 1000000), ('shift-1', 'USD', 10000, 10000)",
-            )
-            .execute(&self.pool)
-            .await
-            .expect("insert shift balances");
+            {
+                use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+                use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+                let mut tx = self.pool.begin().await.expect("begin");
+                for (code, amount) in [("THB", 1_000_000), ("USD", 10_000)] {
+                    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+                        .post_in(
+                            &mut tx,
+                            &[PostingRequest {
+                                from: CashPlace::Bank,
+                                to: CashPlace::Drawer("shift-1".to_owned()),
+                                currency: xc_kernel::money::CurrencyCode::parse(code)
+                                    .expect("currency"),
+                                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                                    rust_decimal::Decimal::from(amount),
+                                ),
+                                source: SourceRef {
+                                    source_type: SourceType::Opening,
+                                    source_id: format!("r1-fund:shift-1:{code}"),
+                                    source_key: "fund".to_string(),
+                                },
+                                line: None,
+                                reverses: None,
+                            }],
+                            None,
+                        )
+                        .await
+                        .expect("fund shift-1 drawer through the ledger");
+                }
+                tx.commit().await.expect("commit");
+            }
 
             // Store passport attachment on disk and in database
             let key = "00000000-0000-0000-0000-000000000001";

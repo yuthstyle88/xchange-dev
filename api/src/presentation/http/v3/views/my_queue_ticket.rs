@@ -19,7 +19,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_queue::application::status::status_service::StatusService;
+use xc_queue::application::status::status_service::{StatusService, TicketRef};
 use xc_queue::domain::repository::QueueRepository;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
@@ -48,11 +48,10 @@ fn refuse(code: &'static str, field: Option<&'static str>, status: StatusCode) -
 }
 
 async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    let query = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    )
-    .map(|q| q.into_inner())
-    .unwrap_or_default();
+    let query =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .map(|q| q.into_inner())
+            .unwrap_or_default();
     // The branch first, for every caller: an unknown branch is the core's `noSuchBranch` with
     // `no-store` (`view::require_branch`; the lane controller's ruling 2 on PR 1336 round 2). It
     // tells nothing `branch_service_status` does not already answer publicly.
@@ -66,7 +65,11 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
         return refuse("signIn", None, StatusCode::UNAUTHORIZED);
     };
     let Some(ticket_id) = query.get("ticketId").and_then(|t| Uuid::parse_str(t).ok()) else {
-        return refuse("validationFailed", Some("ticketId"), StatusCode::BAD_REQUEST);
+        return refuse(
+            "validationFailed",
+            Some("ticketId"),
+            StatusCode::BAD_REQUEST,
+        );
     };
     let since = match query.get("since").map(|s| s.parse::<i64>()) {
         None => None,
@@ -109,32 +112,19 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     }
 
     let now = Utc::now();
-    let (tickets_ahead, estimate, as_of) = if status == "WAITING" {
-        // Call order (Q6): every BOOKING is before a WALK_IN; within a type, the lower sequence.
-        let ahead: i64 = match sqlx::query_scalar(
-            "SELECT count(*) FROM queue_tickets \
-              WHERE branch_id = $1 AND status = 'WAITING' AND id <> $2 \
-                AND ((service_type = $3 AND sequence < $4) \
-                     OR (service_type = 'BOOKING' AND $3 = 'WALK_IN'))",
-        )
-        .bind(&branch)
-        .bind(ticket_id)
-        .bind(&service_type)
-        .bind(sequence)
-        .fetch_one(&pool)
-        .await
-        {
-            Ok(n) => n,
-            Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
-        };
-        let estimate = match estimate_for(&pool, &branch, ahead, now).await {
-            Ok(e) => e,
-            Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
-        };
-        (ahead as i32, estimate, Some(now))
-    } else {
-        (0, None, None)
+    let branch_id = BranchId::new(&branch);
+    let ticket = TicketRef {
+        id: ticket_id,
+        branch: &branch_id,
+        service_type: &service_type,
+        sequence,
+        status: &status,
     };
+    let (tickets_ahead, estimate) = match ticket_wait(&pool, ticket, now).await {
+        Ok(w) => w,
+        Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+    };
+    let as_of = (status == "WAITING").then_some(now);
 
     let data = MyQueueTicketData {
         ticket_id: ticket_id.to_string(),
@@ -151,22 +141,22 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     answer(json!({ "version": version, "changed": true, "data": data }))
 }
 
-/// `StatusService::estimate_for_in` on a read-only transaction of its own: the same estimate the
-/// branch's row is computed with, for this ticket's `ahead`.
-async fn estimate_for(
+/// `StatusService::ticket_wait_in` on a read-only transaction of its own: the same ahead count and
+/// estimate the branch's queue computes for `ticket`.
+async fn ticket_wait(
     pool: &sqlx::PgPool,
-    branch: &str,
-    ahead: i64,
+    ticket: TicketRef<'_>,
     now: DateTime<Utc>,
-) -> pos_error::AppResult<Option<xc_queue::domain::status::wait_estimator::WaitEstimate>> {
+) -> pos_error::AppResult<(
+    i32,
+    Option<xc_queue::domain::status::wait_estimator::WaitEstimate>,
+)> {
     let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
     let status = StatusService::new(BranchTx::new(Transactor::new(pool.clone())), repo);
     let mut tx = pool.begin().await?;
-    let estimate = status
-        .estimate_for_in(&mut tx, &BranchId::new(branch), ahead, now)
-        .await?;
+    let wait = status.ticket_wait_in(&mut tx, ticket, now).await?;
     tx.rollback().await?;
-    Ok(estimate)
+    Ok(wait)
 }
 
 fn answer(body: serde_json::Value) -> HttpResponse {

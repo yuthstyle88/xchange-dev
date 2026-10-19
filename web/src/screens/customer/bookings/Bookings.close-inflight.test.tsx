@@ -28,6 +28,11 @@ function makeBooking(id: string, bookingNo: string, branchId: string, slotId: st
     cancelCutoffAt: '2026-10-15T09:00:00Z',
     qrToken: `QR-${id}`,
     ticketNumber: null,
+    ticketsAhead: null,
+    estimateSeconds: null,
+    estimateLowSeconds: null,
+    estimateHighSeconds: null,
+    estimateAsOf: null,
     quoteSummary: '',
     readiness: 'unknown',
   };

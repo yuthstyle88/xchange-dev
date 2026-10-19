@@ -140,16 +140,8 @@ async fn shifts_and_movements_are_listed_oldest_first() {
             .seed_open_shift(&branch, "a", &rid("open", n), &[("USD", "10")], at(base, 0))
             .await;
         for k in 0..2 {
-            db.seed_movement(
-                &branch,
-                &shift,
-                "USD",
-                "IN",
-                &(k + 1).to_string(),
-                &rid("move", n * 2 + k),
-                at(base + k as i64 + 1, 0),
-            )
-            .await;
+            db.balances
+                .seed_movement(&shift, "USD", "IN", &(k + 1).to_string());
         }
         db.seed_close(
             &shift,
@@ -170,15 +162,6 @@ async fn shifts_and_movements_are_listed_oldest_first() {
         .map(|s| s.id)
         .collect();
     assert_eq!(listed, ids);
-    let movements = service.movements(&branch).await.unwrap();
-    let got: Vec<(String, String)> = movements
-        .iter()
-        .map(|m| (m.shift_id.clone(), m.request_id.clone()))
-        .collect();
-    let want: Vec<(String, String)> = (0..6)
-        .map(|i| (ids[i / 2].clone(), rid("move", i)))
-        .collect();
-    assert_eq!(got, want);
     db.drop_schema().await;
 }
 
@@ -194,8 +177,7 @@ async fn one_branch_knows_nothing_of_another() {
     // an open shift in A does not stop B opening
     let shift_b = open_with(&db, &b, "b", &[("USD", "7")]).await;
     assert_ne!(shift_a, shift_b);
-    db.seed_movement(&b, &shift_b, "USD", "IN", "1", &rid("move", 9), at(4, 0))
-        .await;
+    db.balances.seed_movement(&shift_b, "USD", "IN", "1");
 
     // A's shift id means nothing in B
     assert_eq!(service.shift(&b, &shift_a).await.unwrap(), None);
@@ -210,8 +192,6 @@ async fn one_branch_knows_nothing_of_another() {
     assert_eq!(expected_of(&db, &a, &shift_a, "USD").await, "100.00");
     assert_eq!(expected_of(&db, &b, &shift_b, "USD").await, "8.00");
     assert_eq!(service.shifts(&a).await.unwrap().len(), 1);
-    assert_eq!(service.movements(&a).await.unwrap().len(), 0);
-    assert_eq!(service.movements(&b).await.unwrap().len(), 1);
     db.drop_schema().await;
 }
 

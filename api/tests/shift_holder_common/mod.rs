@@ -53,15 +53,16 @@ pub async fn user_of(pool: &PgPool, saver: &str) -> String {
         .unwrap_or_else(|e| panic!("the user of saver {saver}: {e}"))
 }
 
-/// An OPEN shift of `saver` at `branch`, written straight into the tables (no `opened_by_count`), with `opening` as
-/// its opening and expected balances. Returns the shift id. Fund its ledger drawer yourself where the suite's
-/// postings need it (e.g. `save_common::fund_ledger_drawer`).
+/// An OPEN shift of `saver` at `branch`, written straight into `shifts` (no `opened_by_count`), with `opening`
+/// posted into its ledger drawer from `Bank` as `Opening`. Returns the shift id.
 pub async fn open_shift_for(
     pool: &PgPool,
     branch: &str,
     saver: &str,
     opening: &[(&str, &str)],
 ) -> String {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
     let teller = user_of(pool, saver).await;
     let shift = format!("SH-{}", uuid::Uuid::new_v4());
     sqlx::query(
@@ -76,17 +77,35 @@ pub async fn open_shift_for(
     .execute(pool)
     .await
     .expect("seed the saver's OPEN shift");
+    let mut tx = pool.begin().await.expect("begin");
     for (code, amount) in opening {
-        sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, $3::numeric, $3::numeric)",
-        )
-        .bind(&shift)
-        .bind(code)
-        .bind(amount)
-        .execute(pool)
-        .await
-        .expect("seed an opening balance");
+        let quantity: rust_decimal::Decimal = amount.parse().expect("an opening amount");
+        if quantity <= rust_decimal::Decimal::ZERO {
+            continue;
+        }
+        xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .post_in(
+                &mut tx,
+                &[PostingRequest {
+                    from: CashPlace::Bank,
+                    to: CashPlace::Drawer(shift.clone()),
+                    currency: xc_kernel::money::CurrencyCode::parse(code)
+                        .expect("a register currency"),
+                    quantity: xc_kernel::money::ForeignAmount::from_decimal(quantity),
+                    source: SourceRef {
+                        source_type: SourceType::Opening,
+                        source_id: format!("r1-fund:{shift}:{code}"),
+                        source_key: "fund".to_string(),
+                    },
+                    line: None,
+                    reverses: None,
+                }],
+                None,
+            )
+            .await
+            .expect("fund the open shift's drawer through the ledger");
     }
+    tx.commit().await.expect("commit");
     shift
 }
 
