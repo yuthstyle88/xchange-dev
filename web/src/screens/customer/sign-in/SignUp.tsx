@@ -79,7 +79,7 @@ export function SignUp(props: { navigate: (url: string) => void; fetch?: typeof 
           <input ref={marketingInput} type="checkbox" name="marketing" />
           {tr('marketing')}
         </label>
-        <TermsText fetch={props.fetch} />
+        <TermsText />
         <button type="submit" disabled={pending()}>
           {tr('submitSignUp')}
         </button>

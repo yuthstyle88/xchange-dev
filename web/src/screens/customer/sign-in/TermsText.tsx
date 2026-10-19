@@ -43,15 +43,9 @@ async function loadTerms(fetchFn: typeof fetch, currentLang: string): Promise<Pu
 }
 
 export function TermsText(props: TermsTextProps): JSX.Element {
-  let rootRef: HTMLDivElement | HTMLParagraphElement | undefined;
   const [terms, setTerms] = createSignal<PublicConsentText | null>(null);
 
   onMount(() => {
-    // If inside a form and props.fetch was passed by SignUp's test harness (which only mocks /api/app/register),
-    // skip calling the mock so SignUp's registration call assertion is not corrupted.
-    if (props.fetch && rootRef?.closest('form')) {
-      return;
-    }
     const fetchFn = props.fetch ?? ((input, init) => fetch(input, init));
     void loadTerms(fetchFn, lang()).then(setTerms);
   });
@@ -60,13 +54,13 @@ export function TermsText(props: TermsTextProps): JSX.Element {
     <Show
       when={terms()}
       fallback={
-        <p ref={rootRef as HTMLParagraphElement} class="xc-sign-in-terms">
+        <p class="xc-sign-in-terms">
           {tr('terms')}
         </p>
       }
     >
       {(t) => (
-        <div ref={rootRef as HTMLDivElement} class="xc-sign-in-terms-box">
+        <div class="xc-sign-in-terms-box">
           <p class="xc-sign-in-terms-version" data-testid="terms-version">
             {tr('termsVersion', { version: t().version })}
           </p>
