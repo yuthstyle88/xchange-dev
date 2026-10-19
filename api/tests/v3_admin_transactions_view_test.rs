@@ -1597,7 +1597,6 @@ async fn open_front_shift(room: &Room) {
         .clone();
     shift_holder_common::open_shift_for(pool, MAIN, &front, &[("THB", "100000"), ("USD", "2000")])
         .await;
-    snapshot_common::r1_fund_open_drawers(pool).await;
     shift_holder_common::open_day(pool, MAIN).await;
 }
 
