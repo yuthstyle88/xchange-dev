@@ -21,7 +21,9 @@ export type CustomerRoute =
   | '/app/bookings'
   | '/app/assistant'
   | '/app/rate-alerts'
-  | '/app/notifications';
+  | '/app/notifications'
+  | '/app/member'
+  | '/app/profile';
 
 type NavKey = 'home' | 'branches' | 'bookings' | 'history' | 'assistant';
 
@@ -46,6 +48,8 @@ const NAV_OF: Record<CustomerRoute, CustomerRoute | undefined> = {
   '/app/assistant': '/app/assistant',
   '/app/rate-alerts': undefined,
   '/app/notifications': undefined,
+  '/app/member': undefined,
+  '/app/profile': undefined,
 };
 
 type Profile = { signedIn: true; name: string } | { signedIn: false };
@@ -78,7 +82,29 @@ export function CustomerShell(props: { route: CustomerRoute; children?: JSX.Elem
               }
             >
               {(signedIn) => (
-                <span class="xc-customer-name">{tr('signedInAs', { name: signedIn().name })}</span>
+                <>
+                  <a
+                    class="xc-customer-name"
+                    href="/app/profile"
+                    aria-current={props.route === '/app/profile' ? 'page' : undefined}
+                  >
+                    {tr('signedInAs', { name: signedIn().name })}
+                  </a>
+                  <a
+                    class="xc-customer-member"
+                    href="/app/member"
+                    aria-current={props.route === '/app/member' ? 'page' : undefined}
+                  >
+                    {tr('member')}
+                  </a>
+                  <a
+                    class="xc-customer-rate-alerts"
+                    href="/app/rate-alerts"
+                    aria-current={props.route === '/app/rate-alerts' ? 'page' : undefined}
+                  >
+                    {tr('rateAlerts')}
+                  </a>
+                </>
               )}
             </Show>
           )}

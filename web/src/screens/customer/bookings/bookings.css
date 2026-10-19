@@ -403,3 +403,32 @@
   width: 100%;
   font-size: 0.9375rem;
 }
+
+/* Booking extras (C03) */
+
+.xc-booking-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.xc-cancel-deadline {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--xc-text-muted, #64748b);
+}
+
+.xc-extras-error {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--xc-danger, #ef4444);
+  font-weight: 500;
+}
+
+.xc-booking-extras-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+

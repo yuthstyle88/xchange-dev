@@ -68,7 +68,9 @@ impl DatabaseProbe for PgPool {
 }
 
 use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+use xc_loyalty::application::rule_publisher::LoyaltyRuleWriter;
 use xc_loyalty::domain::summary_source::{LoyaltySummarySource, UnavailableLoyaltySummary};
+use xc_loyalty::infrastructure::http_rule_writer::HttpLoyaltyRuleWriter;
 
 use crate::application::passport_read::{PassportReader, UnconfiguredReader};
 use xc_rate::domain::rate::entities::rate_source::RateSource;
@@ -89,6 +91,7 @@ pub struct AppState {
     /// The desk's passport read (design `recognize-passport-read.md` §3): `RecognizeHttpReader` when
     /// `settings.recognize` is `Ok`, else `UnconfiguredReader`.
     pub passport_reader: Arc<dyn PassportReader>,
+    pub loyalty_rule_writer: Option<Arc<dyn LoyaltyRuleWriter>>,
 }
 
 struct LazyDocumentStore {
@@ -170,6 +173,11 @@ impl AppState {
                 Arc::new(UnconfiguredReader)
             }
         };
+        let loyalty_rule_writer = settings
+            .loyalty
+            .as_ref()
+            .and_then(HttpLoyaltyRuleWriter::from_config)
+            .map(|w| Arc::new(w) as Arc<dyn LoyaltyRuleWriter>);
         Self {
             settings,
             db,
@@ -181,6 +189,7 @@ impl AppState {
             document_store,
             loyalty_summary: Arc::new(UnavailableLoyaltySummary),
             passport_reader,
+            loyalty_rule_writer,
         }
     }
 
@@ -216,6 +225,11 @@ impl AppState {
 
     pub fn with_loyalty_summary(mut self, source: Arc<dyn LoyaltySummarySource>) -> Self {
         self.loyalty_summary = source;
+        self
+    }
+
+    pub fn with_loyalty_rule_writer(mut self, writer: Option<Arc<dyn LoyaltyRuleWriter>>) -> Self {
+        self.loyalty_rule_writer = writer;
         self
     }
 

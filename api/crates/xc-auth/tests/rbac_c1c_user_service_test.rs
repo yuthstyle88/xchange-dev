@@ -17,6 +17,7 @@ use xc_auth::domain::access::{Actor, GrantRefusal, Role, ScopedRole};
 use xc_auth::domain::user::{CustodyHolds, UserProfile};
 use xc_auth::infrastructure::user::PgUserRepository;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_roles};
 
 struct Holds(bool);
 
@@ -73,9 +74,10 @@ async fn start() -> TestDb {
 
 async fn a_user(db: &TestDb, status: &str, bound: bool, roles: &[(&str, Option<&str>)]) -> String {
     let subject = bound.then(|| unique("sub"));
-    let id: String = sqlx::query_scalar(
+    let (id, org_id): (String, String) = sqlx::query_as(
         "INSERT INTO users (organization_id, auth_subject, name, status, created_by) \
-         SELECT id, $1, $2, $3, 'test' FROM organizations WHERE code = 'XC' RETURNING id::text",
+         SELECT id, $1, $2, $3, 'test' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text, organization_id::text",
     )
     .bind(subject)
     .bind(unique("name"))
@@ -83,18 +85,19 @@ async fn a_user(db: &TestDb, status: &str, bound: bool, roles: &[(&str, Option<&
     .fetch_one(&db.pool)
     .await
     .expect("insert the user");
-    for (role, branch) in roles {
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             SELECT $1::uuid, $2, id, $3 FROM organizations WHERE code = 'XC'",
-        )
-        .bind(&id)
-        .bind(role)
-        .bind(branch)
-        .execute(&db.pool)
+    let role_rows: Vec<RoleRow<'_>> = roles
+        .iter()
+        .map(|(role, branch)| RoleRow {
+            role_code: role,
+            branch_id: *branch,
+            valid_from: epoch(),
+            valid_to: None,
+        })
+        .collect();
+    let mut conn = db.pool.acquire().await.expect("acquire connection");
+    seed_roles(&mut conn, &id, &org_id, &role_rows)
         .await
-        .expect("insert the role");
-    }
+        .expect("seed roles");
     id
 }
 

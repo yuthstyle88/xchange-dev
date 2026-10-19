@@ -5,7 +5,7 @@ import type { ApiClient } from '../../shared/api/client';
 import type { DeskEntryState, DeskStore } from './desk-store';
 
 export interface DeskEntry {
-  param: 'booking' | 'kiosk';
+  param: 'kiosk';
   load(store: DeskStore, id: string, api: ApiClient): Promise<DeskEntryState>;
 }
 

@@ -6,7 +6,7 @@ mod account_common;
 use std::sync::{Arc, Mutex};
 
 use account_common::{TestDb, unique};
-use chrono::{Duration, Utc};
+use chrono::{Duration, TimeZone, Utc};
 use futures::future::BoxFuture;
 use xc_auth::application::session::{SessionError, SessionService, sha256_hex};
 use xc_auth::domain::identity::identity_client::{
@@ -14,6 +14,7 @@ use xc_auth::domain::identity::identity_client::{
     IdentityOtpVerifyResponse, IdentityRegisterRequest, IdentityRegisterResponse,
 };
 use xc_auth::domain::token::{TokenError, TokenVerifier, VerifiedToken};
+use xc_testdb::people::{RoleRow, seed_roles};
 
 const LOGIN_ACCESS_TOKEN: &str = "login-access-token-01";
 const LOGIN_REFRESH_TOKEN: &str = "login-refresh-token-01";
@@ -175,24 +176,27 @@ impl TokenVerifier for FakeVerifier {
 
 async fn seed_active_user(db: &TestDb) -> (String, String) {
     let subject = unique("sub");
-    let user_id: String = sqlx::query_scalar(
+    let (user_id, org_id): (String, String) = sqlx::query_as(
         "INSERT INTO users (organization_id, auth_subject, name, status, created_by) \
          SELECT id, $1, 'Somchai', 'ACTIVE', 'test' FROM organizations WHERE code = 'XC' \
-         RETURNING id::text",
+         RETURNING id::text, organization_id::text",
     )
     .bind(&subject)
     .fetch_one(&db.pool)
     .await
     .expect("insert user");
 
-    sqlx::query(
-        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-         SELECT $1::uuid, 'TELLER', id, 'MAIN' FROM organizations WHERE code = 'XC'",
-    )
-    .bind(&user_id)
-    .execute(&db.pool)
-    .await
-    .expect("insert user_role");
+    let valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let role_rows = [RoleRow {
+        role_code: "TELLER",
+        branch_id: Some("MAIN"),
+        valid_from,
+        valid_to: None,
+    }];
+    let mut conn = db.pool.acquire().await.expect("acquire connection");
+    seed_roles(&mut conn, &user_id, &org_id, &role_rows)
+        .await
+        .expect("seed roles");
 
     (user_id, subject)
 }

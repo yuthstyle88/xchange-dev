@@ -648,16 +648,36 @@ async fn seed_opener(pool: &PgPool, id: &str) {
         .await
         .expect("look for the owner's user");
         if !exists {
-            sqlx::query(
-                "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
-                 u AS (INSERT INTO users (organization_id, name, status, created_by) \
-                       SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
-                 INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
+            let (uid, org): (String, String) = sqlx::query_as(
+                "INSERT INTO users (organization_id, name, status, created_by) \
+                 SELECT id, 'owner', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                 RETURNING id::text, organization_id::text",
             )
-            .execute(pool)
+            .fetch_one(pool)
             .await
             .expect("seed the owner's user");
+            let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+            xc_testdb::people::seed_roles(
+                &mut pool.acquire().await.expect("acquire"),
+                &uid,
+                &org,
+                &[
+                    xc_testdb::people::RoleRow {
+                        role_code: "EXECUTIVE",
+                        branch_id: None,
+                        valid_from: from,
+                        valid_to: None,
+                    },
+                    xc_testdb::people::RoleRow {
+                        role_code: "ADMIN",
+                        branch_id: None,
+                        valid_from: from,
+                        valid_to: None,
+                    },
+                ],
+            )
+            .await
+            .expect("seed the owner's roles");
         }
         return;
     }
