@@ -11,6 +11,7 @@ import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
+import './cash-limits.css';
 
 const t = screenT('admin.cash-limits', table);
 
