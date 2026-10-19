@@ -193,7 +193,12 @@ impl Desk {
     /// `form()` saved through `save_as` by `who`; the passport is uploaded by `who` (an attachment is its owner's).
     async fn save(&self, who: &SaveActor) -> Result<String, AppError> {
         let customer = self.shop.reserve(MAIN, save_common::person()).await;
-        let passport = self.shop.upload(MAIN, &who.id, "image/jpeg", JPEG).await;
+        let passport = self
+            .shop
+            .files
+            .upload(&branch(MAIN), &who.id, "image/jpeg", JPEG, at(-10))
+            .await
+            .expect("upload a file");
         let cmd = form(
             &unique("ca10-save-submission").replace('_', "-"),
             &customer,
@@ -243,7 +248,10 @@ async fn a_saver_with_no_open_shift_is_refused_and_nothing_is_written() {
     let before = desk.transactions().await;
 
     let refused = desk
-        .save(&saver("E-NOSHIFT", StandingKind::Staff(AccessRole::Teller)))
+        .save(&saver(
+            &user_of(&desk.shop.pool, "E-NOSHIFT").await,
+            StandingKind::Staff(AccessRole::Teller),
+        ))
         .await;
 
     assert!(
