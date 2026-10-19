@@ -456,7 +456,10 @@ fn every_case_s11_moves_is_the_seeds_answer() {
                 let role = Role::parse(&r.role).expect("Blueprint role");
                 RoleGrants::seed(role).contains(&p)
             });
-            assert!(holds, "{label}: S11 kiosk unknown-name case must hold {p:?}");
+            assert!(
+                holds,
+                "{label}: S11 kiosk unknown-name case must hold {p:?}"
+            );
             assert_eq!(
                 recorded_mapped(c),
                 Err((KIOSK_UNKNOWN.to_owned(), 400)),
