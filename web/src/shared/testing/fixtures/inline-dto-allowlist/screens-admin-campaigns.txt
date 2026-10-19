@@ -1,6 +1,0 @@
-# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
-# The migration ticket for screens/admin/campaigns deletes this file.
-screens/admin/campaigns/Campaigns.numbers.test.tsx
-screens/admin/campaigns/Campaigns.rework.test.tsx
-screens/admin/campaigns/Campaigns.test.tsx
-screens/admin/campaigns/worded.test.tsx
