@@ -206,11 +206,11 @@ fn summary_reads_the_calculators_params_as_decimals() {
     assert_eq!(rate.delta, Some(dec("0.05")));
     assert_eq!((rate.percent, rate.amount, rate.fixed), (None, None, None));
 
-    let mut fee = rule(json!({}), json!({ "percent": "50" }), false);
+    let mut fee = rule(json!({}), json!({ "percent": "0.5" }), false);
     fee.benefit_type = "FEE_WAIVER".to_string();
     let fee = summary(&fee, &registry).expect("fee");
     assert_eq!(fee.benefit_type, "FEE_WAIVER");
-    assert_eq!(fee.percent, Some(dec("50")));
+    assert_eq!(fee.percent, Some(dec("0.5")));
     assert_eq!(fee.delta, None);
 }
 

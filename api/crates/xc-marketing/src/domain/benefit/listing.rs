@@ -95,15 +95,7 @@ pub fn summary(
     let percent = decimal_param(&rule.calculation, "percent", "percent")?;
     let amount = decimal_param(&rule.calculation, "amount", "amount")?;
     let fixed = decimal_param(&rule.calculation, "fixed", "fixed")?;
-    if let Err(err) = calc.validate_params(&rule.calculation) {
-        // shortcut: FeeWaiver::validate_params expects 0 < percent <= 1 while c05_listing_test passes "50", remove once fee_waiver and c05_listing_test agree on percent scale
-        let whole_pct_ok = rule.benefit_type == "FEE_WAIVER"
-            && err.field == "percent"
-            && percent.is_some_and(|p| p > Decimal::ONE && p <= Decimal::from(100));
-        if !whole_pct_ok {
-            return Err(err);
-        }
-    }
+    calc.validate_params(&rule.calculation)?;
     Ok(BenefitSummary {
         benefit_type: rule.benefit_type.clone(),
         benefit_class: rule.benefit_class,
