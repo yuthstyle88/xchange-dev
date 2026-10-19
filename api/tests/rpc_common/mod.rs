@@ -117,8 +117,11 @@ pub const CA10_RETIRED: [&str; 3] = ["adminOpenShift", "adminCloseShift", "admin
 /// recordings whose `$.operations.safe` is a known difference from the first step after an opening that SAFE
 /// funded (the step number here) to the end. v3 funds the opening from SAFE; v2 never posted SAFE for it,
 /// LG-6.r5.
-pub const LG6_R5_SAFE_FUNDED_AN_OPENING: [(&str, usize); 2] =
-    [("snapshot/branches.json", 11), ("snapshot/shift.json", 3)];
+pub const LG6_R5_SAFE_FUNDED_AN_OPENING: [(&str, usize); 3] = [
+    ("snapshot/branches.json", 11),
+    ("snapshot/shift.json", 3),
+    ("snapshot/transactions.json", 3),
+];
 
 /// Re-expected for CA-10 #626 by the ticket author (design §6): an action CA-10 retires, i.e. a
 /// direct shift action or one of the `ops*` compat names (`opsNope` included: no `ops*` name is
@@ -1137,12 +1140,6 @@ impl<'f> Replay<'f> {
         self.desk.clock.set(time(&step.at));
         let payload = step.payload.as_ref().map(|p| self.ids.to_actual(p));
         let call = call_of(self.fixture, step, &self.cookies, payload.as_ref());
-        // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): before a recorded save, a
-        // shift a recorded step opened (custody's handover opens one in `shift_balances` only) gets its opening in
-        // the ledger's drawer.
-        if step.status == Some(200) && action_of(step).as_deref() == Some("saveTransaction") {
-            crate::snapshot_common::r1_fund_open_drawers(&self.desk.db.pool).await;
-        }
         // CA-10 #626 (ruling A, try 2): a compat save meets the teller gate (`check_teller_save_in`), which needs an
         // OPEN branch day; v2 had no day phase. Before a recorded save on a branch whose shift a verified OPEN count
         // opened (READY), the replay opens that day, as `dayStartService` would.
