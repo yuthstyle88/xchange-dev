@@ -84,26 +84,18 @@ fn cut_to(s: &str, max_utf16: usize) -> &str {
     &s[..bytes]
 }
 
-async fn resolve_role(
-    ports: &Arc<dyn CustodyPorts>,
-    tx: &mut Transaction<'_, Postgres>,
-    branch: &BranchId,
-    who: &Actor,
-) -> AppResult<CustodyRole> {
-    if let Some(role) = ports.employee_role(tx, branch, &who.user_id).await? {
-        return Ok(role);
-    }
+fn resolve_role(who: &Actor) -> CustodyRole {
     for sr in &who.roles {
         match sr.role {
-            xc_auth::domain::access::Role::BranchManager => return Ok(CustodyRole::Manager),
-            xc_auth::domain::access::Role::Teller => return Ok(CustodyRole::Front),
-            xc_auth::domain::access::Role::Finance => return Ok(CustodyRole::Finance),
-            xc_auth::domain::access::Role::VerificationReviewer => return Ok(CustodyRole::Monitor),
-            xc_auth::domain::access::Role::Admin => return Ok(CustodyRole::Owner),
+            xc_auth::domain::access::Role::BranchManager => return CustodyRole::Manager,
+            xc_auth::domain::access::Role::Teller => return CustodyRole::Front,
+            xc_auth::domain::access::Role::Finance => return CustodyRole::Finance,
+            xc_auth::domain::access::Role::VerificationReviewer => return CustodyRole::Monitor,
+            xc_auth::domain::access::Role::Admin => return CustodyRole::Owner,
             _ => {}
         }
     }
-    Ok(CustodyRole::Other)
+    CustodyRole::Other
 }
 
 fn check_permission(
@@ -160,7 +152,7 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
         at: DateTime<Utc>,
         details: serde_json::Value,
     ) -> AppResult<()> {
-        let role = resolve_role(&self.ports, tx, branch, who).await?;
+        let role = resolve_role(who);
         let event = StoredEvent {
             id: uuid::Uuid::new_v4().to_string(),
             kind,
@@ -342,15 +334,10 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
                     .iter()
                     .any(|a| a.employee_id == who.user_id && a.clock_out.is_none());
                 if !already_clocked_in {
-                    let role = self
-                        .ports
-                        .employee_role(tx, branch, &who.user_id)
-                        .await?
-                        .unwrap_or(CustodyRole::Front);
                     after.attendance.push(Attendance {
                         id: uuid::Uuid::new_v4().to_string(),
                         employee_id: who.user_id.clone(),
-                        role,
+                        role: CustodyRole::Front,
                         clock_in: custody_now,
                         clock_out: None,
                     });
@@ -544,5 +531,33 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
             .store_state_in(tx, branch, &before, &after)
             .await?;
         Ok(draft_id)
+    }
+}
+
+#[cfg(test)]
+mod resolve_role_tests {
+    // OR-7.m #3282: the mapping now decides every custody event's role.
+    use super::*;
+    use xc_auth::domain::access::{Role as R, ScopedRole};
+
+    #[test]
+    fn each_blueprint_role_maps_to_its_custody_role() {
+        use CustodyRole::*;
+        let cases: [(&[R], CustodyRole); 8] = [
+            (&[R::BranchManager], Manager),
+            (&[R::Teller], Front),
+            (&[R::Finance], Finance),
+            (&[R::VerificationReviewer], Monitor),
+            (&[R::Admin], Owner),
+            (&[R::RateManager], Other),
+            (&[], Other),
+            (&[R::Teller, R::Admin], Front),
+        ];
+        let (main, t0) = (Some(BranchId::new("MAIN")), DateTime::<Utc>::UNIX_EPOCH);
+        for (roles, want) in cases {
+            let at = |&r: &R| ScopedRole::new(r, main.clone(), t0, None);
+            let who = Actor::new("u-1", "org-1", roles.iter().map(at).collect(), None);
+            assert_eq!(resolve_role(&who), want, "{roles:?}");
+        }
     }
 }

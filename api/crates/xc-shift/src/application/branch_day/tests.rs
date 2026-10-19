@@ -23,7 +23,6 @@ use crate::application::shift::service::ShiftService;
 use crate::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use crate::domain::custody::repositories::custody_repository::CustodyRepository;
 use crate::domain::custody::value_objects::custody_error::CustodyError;
-use crate::domain::custody::value_objects::custody_role::CustodyRole;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::phase::Phase;
 use crate::domain::custody::value_objects::service_window::ServiceWindow;
@@ -95,15 +94,6 @@ impl CustodyPorts for TestPorts {
         _keys: &'a [String],
     ) -> BoxFuture<'a, AppResult<bool>> {
         Box::pin(async { Ok(true) })
-    }
-
-    fn employee_role<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _branch: &'a BranchId,
-        _employee_id: &'a str,
-    ) -> BoxFuture<'a, AppResult<Option<CustodyRole>>> {
-        Box::pin(async { Ok(Some(CustodyRole::Front)) })
     }
 
     fn service_window<'a>(

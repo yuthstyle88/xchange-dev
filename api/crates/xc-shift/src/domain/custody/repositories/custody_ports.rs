@@ -5,7 +5,6 @@ use pos_error::AppResult;
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 
-use crate::domain::custody::value_objects::custody_role::CustodyRole;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::service_window::ServiceWindow;
 
@@ -39,13 +38,6 @@ pub trait CustodyPorts: Send + Sync + 'static {
         owner_id: &'a str,
         keys: &'a [String],
     ) -> BoxFuture<'a, AppResult<bool>>;
-
-    fn employee_role<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        branch: &'a BranchId,
-        employee_id: &'a str,
-    ) -> BoxFuture<'a, AppResult<Option<CustodyRole>>>;
 
     fn service_window<'a>(
         &'a self,
