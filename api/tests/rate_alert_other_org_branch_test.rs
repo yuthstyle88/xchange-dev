@@ -31,7 +31,7 @@ use xc_kernel::money::CurrencyCode;
 use xc_rate::infrastructure::currency::currency_register::PgCurrencyRegister;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -253,18 +253,6 @@ fn user_of(spec: &str) -> Option<User> {
 struct HeaderUsers;
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
