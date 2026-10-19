@@ -46,6 +46,11 @@ const SAMPLE_ALERT_ACTIVE: MyRateAlertItem = {
   unitSize: '1',
   currentRate: '34.5000',
   ratePublishedAt: '2026-10-14T10:00:00Z',
+  relation: 'UNKNOWN',
+  expiresAt: null,
+  expired: false,
+  rateStale: null,
+  lastEvent: null,
 };
 
 const SAMPLE_ALERT_PAUSED: MyRateAlertItem = {

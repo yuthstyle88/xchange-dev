@@ -1,26 +1,25 @@
 // P01 v2 board model (rate-display.md §9.3, §9.4): the route's answer → headings and rows of raw rate strings.
 // Formatting is not done here (decimal-format.ts); this module only arranges the route's strings.
-// SKELETON STUB (feat/fe-rateboard): RB-1 replaces `boardModel` and `bandLabel`; the types and signatures stay.
-import type { PublishedLineDto, PublishedRatesData } from '../../../../shared/api/generated/published_rates';
+import type {
+  PublishedBandDto,
+  PublishedBandHeadingDto,
+  PublishedLineDto,
+  PublishedRatesData,
+} from '../../../../shared/api/generated/published_rates';
 
-/** `PublishedBandHeadingDto` as RB-BE states it (§9.3). Local until the generated type has it. */
-export interface BandHeadingIn {
-  tier: string;
-  lowerExclusiveThb: string | null;
-  upperInclusiveThb: string | null;
-}
+/** One band heading of the route (RB-BE #3582, §9.3). */
+export type BandHeadingIn = PublishedBandHeadingDto;
 
-/** `PublishedBandDto` as RB-BE states it (§9.3). Local until the generated type has it. */
-export interface BandIn {
-  tier: string;
-  buyRate: string | null;
-  sellRate: string | null;
-}
+/** One band of a line (RB-BE #3582, §9.3). */
+export type BandIn = PublishedBandDto;
 
-/** The route's answer with RB-BE's two additive fields, optional until the generated type has them. */
-export type BoardRatesData = Omit<PublishedRatesData, 'lines'> & {
+/**
+ * The route's answer. `bandHeadings` and `line.bands` stay optional here on purpose: a server older than RB-BE
+ * (e.g. during a deploy) sends neither, and the board then reads as tiers off (§9.4) instead of failing.
+ */
+export type BoardRatesData = Omit<PublishedRatesData, 'bandHeadings' | 'lines'> & {
   bandHeadings?: BandHeadingIn[];
-  lines: Array<PublishedLineDto & { bands?: BandIn[] }>;
+  lines: Array<Omit<PublishedLineDto, 'bands'> & { bands?: BandIn[] }>;
 };
 
 export interface BandHeading {

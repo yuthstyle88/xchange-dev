@@ -172,6 +172,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
+          bands: [],
         },
         {
           currency: 'JPY',
@@ -180,8 +181,10 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '22.34500000',
           sellRate: '23.10000000',
           lineId: 'l-jpy',
+          bands: [],
         },
       ],
+      bandHeadings: [],
     };
 
     const server = mockServer(() => ratesEurJpy);
@@ -228,6 +231,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
+          bands: [],
         },
         {
           currency: 'JPY',
@@ -236,8 +240,10 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '22.34500000',
           sellRate: '23.10000000',
           lineId: 'l-jpy',
+          bands: [],
         },
       ],
+      bandHeadings: [],
     };
 
     const ratesB02: PublishedRatesData = {
@@ -252,6 +258,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
+          bands: [],
         },
         {
           currency: 'USD',
@@ -260,8 +267,10 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '35.12000000',
           sellRate: '35.42000000',
           lineId: 'l-usd',
+          bands: [],
         },
       ],
+      bandHeadings: [],
     };
 
     const server = mockServer((b) => (b === 'XC-B02' ? ratesB02 : ratesB01));
@@ -312,6 +321,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
+          bands: [],
         },
         {
           currency: 'JPY',
@@ -320,8 +330,10 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '22.34500000',
           sellRate: '23.10000000',
           lineId: 'l-jpy',
+          bands: [],
         },
       ],
+      bandHeadings: [],
     };
 
     const ratesWithoutJpy: PublishedRatesData = {
@@ -336,6 +348,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
+          bands: [],
         },
         {
           currency: 'USD',
@@ -344,8 +357,10 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '35.12000000',
           sellRate: '35.42000000',
           lineId: 'l-usd',
+          bands: [],
         },
       ],
+      bandHeadings: [],
     };
 
     let currentRates = ratesWithJpy;
@@ -390,6 +405,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
+          bands: [],
         },
         {
           currency: 'USD',
@@ -398,8 +414,10 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '35.12000000',
           sellRate: '35.42000000',
           lineId: 'l-usd',
+          bands: [],
         },
       ],
+      bandHeadings: [],
     };
 
     const ratesB02WithEur: PublishedRatesData = {
@@ -414,6 +432,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
+          bands: [],
         },
         {
           currency: 'GBP',
@@ -422,8 +441,10 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
           buyRate: '45.00000000',
           sellRate: '46.00000000',
           lineId: 'l-gbp',
+          bands: [],
         },
       ],
+      bandHeadings: [],
     };
 
     let currentRates = ratesB01;
@@ -458,6 +479,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
       sourceDate: '2026-10-16',
       stale: false,
       lines: [],
+      bandHeadings: [],
     };
 
     const server = mockServer(() => emptyRates);

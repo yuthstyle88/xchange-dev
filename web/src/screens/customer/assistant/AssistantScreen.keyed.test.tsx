@@ -38,6 +38,8 @@ const ASK_ANSWER: AssistantAskAnswerDto = {
     redactedText: 'เรท USD วันนี้คือ 35.10 บาท',
     createdAt: '2026-10-15T08:00:01Z',
   },
+  intent: { kind: 'UNKNOWN' },
+  preview: null,
 };
 
 function makeHarness(steps: StepAnswer[]) {

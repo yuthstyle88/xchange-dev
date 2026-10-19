@@ -44,6 +44,7 @@ const RATES: PublishedRatesData = {
       buyRate: '35.12000000',
       sellRate: '35.42000000',
       lineId: 'l-usd',
+      bands: [],
     },
     {
       currency: 'EUR',
@@ -52,8 +53,10 @@ const RATES: PublishedRatesData = {
       buyRate: '38.10000000',
       sellRate: '38.50000000',
       lineId: 'l-eur',
+      bands: [],
     },
   ],
+  bandHeadings: [],
 };
 
 const PREVIEW_ANSWER: PlannerPreviewAnswer = {

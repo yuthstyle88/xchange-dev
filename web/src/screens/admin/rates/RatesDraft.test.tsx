@@ -70,12 +70,15 @@ import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/g
 import type { RateDraftDetailData, RateDraftLineDto } from '../../../shared/api/generated/rate_draft';
 import type { RateDraftItemDto } from '../../../shared/api/generated/rate_drafts';
 import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
-import type { RatePublicationItemDto } from '../../../shared/api/generated/rate_publications';
+import type { RatePublicationRow } from './rate-history';
 import type { RatesReferenceData, RatesReferenceRow } from '../../../shared/api/generated/rates_reference';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
+
+// A03 (#3399): the publications type is the local row of ./rate-history (generated file changes with #3399).
+type RatePublicationItemDto = Omit<RatePublicationRow, 'lines'>;
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -133,7 +136,7 @@ const THAI = /[฀-๿]/;
 // ── the answers ──────────────────────────────────────────────────────────────
 
 function line(currency: string, unitSize: string, buy: string | null, sell: string | null): PublishedLineDto {
-  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}` };
+  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] };
 }
 
 function publishedOf(version: number | null, lines: PublishedLineDto[]): PublishedRatesData {
@@ -143,6 +146,7 @@ function publishedOf(version: number | null, lines: PublishedLineDto[]): Publish
     sourceDate: '2026-10-08',
     stale: false,
     lines,
+    bandHeadings: [],
   };
 }
 
@@ -328,7 +332,7 @@ async function answer(s: Sent): Promise<Reply> {
       return viewAnswer(200 + JSON.stringify(data).length, data, since);
     }
     if (path === POLICY) return viewAnswer(1, policies[branch] ?? { policy: null }, since);
-    if (path === PUBLICATIONS) return viewAnswer(1, { publications: publications[branch] ?? [] }, since);
+    if (path === PUBLICATIONS) return viewAnswer(1, (publications[branch] ?? []).map((p) => ({ ...p, lines: [] })), since);
     if (path === REFERENCE) return viewAnswer(3, reference, since);
     return refusal(500, 'serverError', `unexpected read ${path}`);
   }

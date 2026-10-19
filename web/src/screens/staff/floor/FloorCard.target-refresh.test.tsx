@@ -36,7 +36,7 @@ function floor(amounts: Record<string, string> | null): StaffFloorView {
 }
 
 function line(currency: string) {
-  return { currency, group: 'ALL', unitSize: '1', buyRate: '1.0000', sellRate: '1.1000', lineId: `l-${currency}` };
+  return { currency, group: 'ALL', unitSize: '1', buyRate: '1.0000', sellRate: '1.1000', lineId: `l-${currency}`, bands: [] };
 }
 
 // Rates keep USD and EUR inputs on screen even when the target drops a currency.
@@ -45,6 +45,7 @@ const RATES: PublishedRatesData = {
   sourceDate: '2026-10-10',
   stale: false,
   lines: [line('USD'), line('EUR')],
+  bandHeadings: [],
 };
 
 function json(status: number, body: unknown): Response {
