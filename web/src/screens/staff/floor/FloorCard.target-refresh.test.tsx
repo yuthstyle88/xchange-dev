@@ -4,54 +4,49 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import {
-  makePublishedLineDto,
-  makePublishedPublicationDto,
-  makePublishedRatesData,
-  makeStaffFloorTarget,
-  makeStaffFloorView,
-  makeStaffMeView,
-  type StaffFloorView,
-} from '../../../shared/testing/fixtures';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
+import type { StaffMeView } from '../../../shared/api/generated/staff_me';
 import type { StaffCtx } from '../cards';
 import { FloorCard } from './FloorCard';
 
 const BRANCH = 'MAIN';
 
-function me() {
-  return makeStaffMeView({
+function me(): StaffMeView {
+  return {
     userId: '00000000-0000-4000-8000-0000000000f1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions: ['AttendanceClock', 'CashTargetSet'],
-  });
+  };
 }
 
-function floor(amounts: Record<string, string> | null) {
-  return makeStaffFloorView({
+function floor(amounts: Record<string, string> | null): StaffFloorView {
+  return {
     phase: 'OPEN',
     hours: null,
     myClockIn: null,
     myShift: null,
     cutoff: null,
-    target: amounts ? makeStaffFloorTarget({ amounts, at: '2026-10-11T01:00:00Z' }) : null,
+    target: amounts ? { amounts, at: '2026-10-11T01:00:00Z' } : null,
     safe: null,
-  });
+  };
 }
 
 function line(currency: string) {
-  return makePublishedLineDto({ currency, group: 'ALL', unitSize: '1', buyRate: '1.0000', sellRate: '1.1000', lineId: `l-${currency}` });
+  return { currency, group: 'ALL', unitSize: '1', buyRate: '1.0000', sellRate: '1.1000', lineId: `l-${currency}`, bands: [] };
 }
 
 // Rates keep USD and EUR inputs on screen even when the target drops a currency.
-const RATES = makePublishedRatesData({
-  publication: makePublishedPublicationDto({ id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: '2026-10-11T02:30:00Z' }),
+const RATES: PublishedRatesData = {
+  publication: { id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: '2026-10-11T02:30:00Z' },
   sourceDate: '2026-10-10',
   stale: false,
   lines: [line('USD'), line('EUR')],
-});
+  bandHeadings: [],
+};
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {

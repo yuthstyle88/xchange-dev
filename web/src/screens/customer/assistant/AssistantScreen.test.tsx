@@ -3,12 +3,13 @@ import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { AssistantScreen } from './AssistantScreen';
 import * as table from './i18n';
-import {
-  makeAssistantAskAnswerDto,
-  makeAssistantConversationDto,
-  makeAssistantMessageDto,
-  makeMyAssistantConversationData,
-} from '../../../shared/testing/fixtures';
+import type {
+  AssistantAskAnswerDto,
+  AssistantAskInput,
+} from '../../../shared/api/generated/assistant_ask';
+import type {
+  MyAssistantConversationData,
+} from '../../../shared/api/generated/my_assistant_conversation';
 
 interface NodeFs {
   readFileSync(file: string, encoding: string): string;
@@ -111,21 +112,21 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
     expect(loadingElem?.textContent).toBe(TH.loading);
 
     // Resolve view
-    const viewData = makeMyAssistantConversationData({
-      conversation: makeAssistantConversationDto({
+    const viewData: MyAssistantConversationData = {
+      conversation: {
         id: 'conv-123',
         locale: 'th',
         createdAt: '2026-10-13T03:00:00Z',
-      }),
+      },
       messages: [
-        makeAssistantMessageDto({
+        {
           id: 'msg-1',
           role: 'CUSTOMER',
           redactedText: 'สวัสดี',
           createdAt: '2026-10-13T03:00:01Z',
-        }),
+        },
       ],
-    });
+    };
 
     resolveView!(
       new Response(JSON.stringify({ version: 1, changed: true, data: viewData }), {
@@ -168,17 +169,17 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
           }),
         );
       }
-      const data = makeMyAssistantConversationData({
-        conversation: makeAssistantConversationDto({ id: 'conv-retry', locale: 'th', createdAt: '2026-10-13T03:00:00Z' }),
+      const data: MyAssistantConversationData = {
+        conversation: { id: 'conv-retry', locale: 'th', createdAt: '2026-10-13T03:00:00Z' },
         messages: [
-          makeAssistantMessageDto({
+          {
             id: 'm1',
             role: 'ASSISTANT',
             redactedText: 'ยินดีต้อนรับครับ',
             createdAt: '2026-10-13T03:00:01Z',
-          }),
+          },
         ],
-      });
+      };
       return Promise.resolve(
         new Response(JSON.stringify({ version: 1, changed: true, data }), {
           status: 200,
@@ -241,23 +242,23 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
   });
 
   it('6. amounts render through MoneyText and do not change with the locale', async () => {
-    const viewData = makeMyAssistantConversationData({
-      conversation: makeAssistantConversationDto({ id: 'conv-money', locale: 'th', createdAt: '2026-10-13T03:00:00Z' }),
+    const viewData: MyAssistantConversationData = {
+      conversation: { id: 'conv-money', locale: 'th', createdAt: '2026-10-13T03:00:00Z' },
       messages: [
-        makeAssistantMessageDto({
+        {
           id: 'msg-cust',
           role: 'CUSTOMER',
           redactedText: 'ต้องการแลก 100 USD ครับ',
           createdAt: '2026-10-13T03:00:01Z',
-        }),
-        makeAssistantMessageDto({
+        },
+        {
           id: 'msg-asst',
           role: 'ASSISTANT',
           redactedText: 'สำหรับ USD 100 ยอดที่ได้รับคือ 3512.50 THB ครับ',
           createdAt: '2026-10-13T03:00:02Z',
-        }),
+        },
       ],
-    });
+    };
 
     const mockFetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ version: 1, changed: true, data: viewData }), {
@@ -300,21 +301,23 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
         const headers = new Headers(init?.headers);
         capturedIdemKey = headers.get('idempotency-key');
 
-        const answer = makeAssistantAskAnswerDto({
+        const answer: AssistantAskAnswerDto = {
           conversationId: 'conv-new-1',
-          customerMessage: makeAssistantMessageDto({
+          customerMessage: {
             id: 'cm-1',
             role: 'CUSTOMER',
             redactedText: 'ขอทราบเรท USD',
             createdAt: '2026-10-13T03:10:00Z',
-          }),
-          assistantReply: makeAssistantMessageDto({
+          },
+          assistantReply: {
             id: 'am-1',
             role: 'ASSISTANT',
             redactedText: 'เรท USD รับซื้อ 35.12 THB ขาย 35.40 THB ครับ',
             createdAt: '2026-10-13T03:10:01Z',
-          }),
-        });
+          },
+          intent: { kind: 'UNKNOWN' },
+          preview: null,
+        };
 
         return Promise.resolve(
           new Response(JSON.stringify(answer), {
@@ -345,7 +348,7 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(capturedIdemKey).toBeTruthy();
     expect(capturedBody).toBeTruthy();
-    const parsedBody: { text?: string; branch?: string; locale?: string } = JSON.parse(capturedBody!);
+    const parsedBody = JSON.parse(capturedBody!) as AssistantAskInput;
     expect(parsedBody.text).toBe('ขอทราบเรท USD');
     expect(parsedBody.branch).toBe('XC-B01');
     expect(parsedBody.locale).toBe('th');
@@ -366,21 +369,23 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
     const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url === '/api/app/assistant/messages') {
         capturedBody = String(init?.body);
-        const answer = makeAssistantAskAnswerDto({
+        const answer: AssistantAskAnswerDto = {
           conversationId: 'conv-prompt',
-          customerMessage: makeAssistantMessageDto({
+          customerMessage: {
             id: 'cm-2',
             role: 'CUSTOMER',
             redactedText: TH.promptRates,
             createdAt: '2026-10-13T03:15:00Z',
-          }),
-          assistantReply: makeAssistantMessageDto({
+          },
+          assistantReply: {
             id: 'am-2',
             role: 'ASSISTANT',
             redactedText: 'สามารถดูเรทสดได้ที่หน้าเรทครับ',
             createdAt: '2026-10-13T03:15:01Z',
-          }),
-        });
+          },
+          intent: { kind: 'UNKNOWN' },
+          preview: null,
+        };
         return Promise.resolve(
           new Response(JSON.stringify(answer), {
             status: 200,
@@ -402,7 +407,7 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
     await flush();
 
     expect(capturedBody).toBeTruthy();
-    const parsed: { text?: string } = JSON.parse(capturedBody!);
+    const parsed = JSON.parse(capturedBody!) as AssistantAskInput;
     expect(parsed.text).toBe(TH.promptRates);
 
     const messageBubbles = Array.from(host.querySelectorAll('.message-bubble'));
@@ -464,21 +469,23 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
           );
         }
 
-        const answer = makeAssistantAskAnswerDto({
+        const answer: AssistantAskAnswerDto = {
           conversationId: 'conv-retry-idem',
-          customerMessage: makeAssistantMessageDto({
+          customerMessage: {
             id: 'cm-r',
             role: 'CUSTOMER',
             redactedText: 'ลองใหม่อีกครั้ง',
             createdAt: '2026-10-13T03:20:00Z',
-          }),
-          assistantReply: makeAssistantMessageDto({
+          },
+          assistantReply: {
             id: 'am-r',
             role: 'ASSISTANT',
             redactedText: 'ได้รับแล้วครับ',
             createdAt: '2026-10-13T03:20:01Z',
-          }),
-        });
+          },
+          intent: { kind: 'UNKNOWN' },
+          preview: null,
+        };
         return Promise.resolve(
           new Response(JSON.stringify(answer), {
             status: 200,

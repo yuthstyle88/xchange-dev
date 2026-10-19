@@ -43,6 +43,7 @@ impl AdminUsersPagedView {
 impl PagedView for AdminUsersPagedView {
     const NAME: &'static str = "admin_users";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminUsers");
+    const CURSOR_FIELD: &'static str = "userId";
     type Row = AdminUserRow;
     type Filter = NoFilter;
 

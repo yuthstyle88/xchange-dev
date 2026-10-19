@@ -3,14 +3,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
-import {
-  makePlannerPreviewAnswer,
-  makePublishedLineDto,
-  makePublishedPublicationDto,
-  makePublishedRatesData,
-  type PublishedRatesData,
-} from '../../../shared/testing/fixtures';
+import type { PlannerPreviewAnswer } from '../../../shared/api/generated/planner_preview';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { HomeScreen, type HomeScreenProps } from './HomeScreen';
 
@@ -37,13 +32,13 @@ const BRANCHES: PublicBranchesData = {
   ],
 };
 
-const PREVIEW_ANSWER = makePlannerPreviewAnswer({
+const PREVIEW_ANSWER: PlannerPreviewAnswer = {
   thb: '3900.00',
   rate: '39.00000000',
   unitSize: '1',
   stale: false,
   sourceDate: '2026-10-16',
-});
+};
 
 interface Call {
   method: string;
@@ -165,33 +160,32 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
   });
 
   it('row 1: Rates list EUR, JPY only (no USD), user presses Calculate without touching the select -> Request sends currency: EUR, select shows EUR, and Save request sends currency: EUR', async () => {
-    const ratesEurJpy = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-1',
-        version: 1,
-        publishedAt: '2026-10-16T08:00:00Z',
-      }),
+    const ratesEurJpy: PublishedRatesData = {
+      publication: { id: 'pub-1', version: 1, publishedAt: '2026-10-16T08:00:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [
-        makePublishedLineDto({
+        {
           currency: 'EUR',
           group: 'ALL',
           unitSize: '1',
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
-        }),
-        makePublishedLineDto({
+          bands: [],
+        },
+        {
           currency: 'JPY',
           group: 'ALL',
           unitSize: '100',
           buyRate: '22.34500000',
           sellRate: '23.10000000',
           lineId: 'l-jpy',
-        }),
+          bands: [],
+        },
       ],
-    });
+      bandHeadings: [],
+    };
 
     const server = mockServer(() => ratesEurJpy);
     const { host } = mount({}, server);
@@ -225,61 +219,59 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
   });
 
   it('row 2: User picked JPY, branch switch gives rates EUR, USD -> calcCurrency becomes EUR; the stale JPY preview is cleared', async () => {
-    const ratesB01 = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-1',
-        version: 1,
-        publishedAt: '2026-10-16T08:00:00Z',
-      }),
+    const ratesB01: PublishedRatesData = {
+      publication: { id: 'pub-1', version: 1, publishedAt: '2026-10-16T08:00:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [
-        makePublishedLineDto({
+        {
           currency: 'EUR',
           group: 'ALL',
           unitSize: '1',
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
-        }),
-        makePublishedLineDto({
+          bands: [],
+        },
+        {
           currency: 'JPY',
           group: 'ALL',
           unitSize: '100',
           buyRate: '22.34500000',
           sellRate: '23.10000000',
           lineId: 'l-jpy',
-        }),
+          bands: [],
+        },
       ],
-    });
+      bandHeadings: [],
+    };
 
-    const ratesB02 = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-2',
-        version: 1,
-        publishedAt: '2026-10-16T08:00:00Z',
-      }),
+    const ratesB02: PublishedRatesData = {
+      publication: { id: 'pub-2', version: 1, publishedAt: '2026-10-16T08:00:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [
-        makePublishedLineDto({
+        {
           currency: 'EUR',
           group: 'ALL',
           unitSize: '1',
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
-        }),
-        makePublishedLineDto({
+          bands: [],
+        },
+        {
           currency: 'USD',
           group: 'ALL',
           unitSize: '1',
           buyRate: '35.12000000',
           sellRate: '35.42000000',
           lineId: 'l-usd',
-        }),
+          bands: [],
+        },
       ],
-    });
+      bandHeadings: [],
+    };
 
     const server = mockServer((b) => (b === 'XC-B02' ? ratesB02 : ratesB01));
     const { host } = mount({}, server);
@@ -317,61 +309,59 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
   });
 
   it('row 2 (same branch poll): Rates poll on same branch drops selected JPY -> calcCurrency becomes first remaining currency and estimate card is cleared', async () => {
-    const ratesWithJpy = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-1',
-        version: 1,
-        publishedAt: '2026-10-16T08:00:00Z',
-      }),
+    const ratesWithJpy: PublishedRatesData = {
+      publication: { id: 'pub-1', version: 1, publishedAt: '2026-10-16T08:00:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [
-        makePublishedLineDto({
+        {
           currency: 'EUR',
           group: 'ALL',
           unitSize: '1',
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
-        }),
-        makePublishedLineDto({
+          bands: [],
+        },
+        {
           currency: 'JPY',
           group: 'ALL',
           unitSize: '100',
           buyRate: '22.34500000',
           sellRate: '23.10000000',
           lineId: 'l-jpy',
-        }),
+          bands: [],
+        },
       ],
-    });
+      bandHeadings: [],
+    };
 
-    const ratesWithoutJpy = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-2',
-        version: 2,
-        publishedAt: '2026-10-16T08:01:00Z',
-      }),
+    const ratesWithoutJpy: PublishedRatesData = {
+      publication: { id: 'pub-2', version: 2, publishedAt: '2026-10-16T08:01:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [
-        makePublishedLineDto({
+        {
           currency: 'EUR',
           group: 'ALL',
           unitSize: '1',
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
-        }),
-        makePublishedLineDto({
+          bands: [],
+        },
+        {
           currency: 'USD',
           group: 'ALL',
           unitSize: '1',
           buyRate: '35.12000000',
           sellRate: '35.42000000',
           lineId: 'l-usd',
-        }),
+          bands: [],
+        },
       ],
-    });
+      bandHeadings: [],
+    };
 
     let currentRates = ratesWithJpy;
     const server = mockServer(() => currentRates);
@@ -403,61 +393,59 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
   });
 
   it('row 3: Current currency still available after a rates refresh -> Unchanged, no preview cleared', async () => {
-    const ratesB01 = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-1',
-        version: 1,
-        publishedAt: '2026-10-16T08:00:00Z',
-      }),
+    const ratesB01: PublishedRatesData = {
+      publication: { id: 'pub-1', version: 1, publishedAt: '2026-10-16T08:00:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [
-        makePublishedLineDto({
+        {
           currency: 'EUR',
           group: 'ALL',
           unitSize: '1',
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
-        }),
-        makePublishedLineDto({
+          bands: [],
+        },
+        {
           currency: 'USD',
           group: 'ALL',
           unitSize: '1',
           buyRate: '35.12000000',
           sellRate: '35.42000000',
           lineId: 'l-usd',
-        }),
+          bands: [],
+        },
       ],
-    });
+      bandHeadings: [],
+    };
 
-    const ratesB02WithEur = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-2',
-        version: 1,
-        publishedAt: '2026-10-16T08:00:00Z',
-      }),
+    const ratesB02WithEur: PublishedRatesData = {
+      publication: { id: 'pub-2', version: 1, publishedAt: '2026-10-16T08:00:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [
-        makePublishedLineDto({
+        {
           currency: 'EUR',
           group: 'ALL',
           unitSize: '1',
           buyRate: '38.50000000',
           sellRate: '39.00000000',
           lineId: 'l-eur',
-        }),
-        makePublishedLineDto({
+          bands: [],
+        },
+        {
           currency: 'GBP',
           group: 'ALL',
           unitSize: '1',
           buyRate: '45.00000000',
           sellRate: '46.00000000',
           lineId: 'l-gbp',
-        }),
+          bands: [],
+        },
       ],
-    });
+      bandHeadings: [],
+    };
 
     let currentRates = ratesB01;
     const server = mockServer(() => currentRates);
@@ -486,16 +474,13 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
   });
 
   it('edge case (§9): Rates empty (fallback list) keeps today behaviour with USD selected', async () => {
-    const emptyRates = makePublishedRatesData({
-      publication: makePublishedPublicationDto({
-        id: 'pub-empty',
-        version: 1,
-        publishedAt: '2026-10-16T08:00:00Z',
-      }),
+    const emptyRates: PublishedRatesData = {
+      publication: { id: 'pub-empty', version: 1, publishedAt: '2026-10-16T08:00:00Z' },
       sourceDate: '2026-10-16',
       stale: false,
       lines: [],
-    });
+      bandHeadings: [],
+    };
 
     const server = mockServer(() => emptyRates);
     const { host } = mount({}, server);

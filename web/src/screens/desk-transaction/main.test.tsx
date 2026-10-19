@@ -6,28 +6,23 @@
 // step past `shell-look.test.ts`, which reads the source: it runs the entry and checks the screen is drawn inside
 // `AppShell`, taking its id from the page's own URL (`/desk/transactions/{id}`).
 import { afterEach, expect, it, vi } from 'vitest';
-import {
-  makeStaffMeView,
-  makeTransactionAuditViewData,
-  makeTransactionDetailDto,
-  makeTransactionViewData,
-  makeTxLineDto,
-  makeTxReceiptDto,
-} from '../../shared/testing/fixtures';
+import type { StaffMeView } from '../../shared/api/generated/staff_me';
+import type { TransactionAuditViewData } from '../../shared/api/generated/transaction_audit';
+import type { TransactionViewData } from '../../shared/api/generated/transaction';
 
 const TX_ID = '3c1d9a7e-2b4f-4e6a-8c0d-1f2e3a4b5c6d';
 
-const ME = makeStaffMeView({
+const ME: StaffMeView = {
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'คุณทดสอบ',
   roles: [],
   branchId: 'MAIN',
   branchName: 'สาขาทดสอบ',
   permissions: ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'],
-});
+};
 
-const TRANSACTION = makeTransactionViewData({
-  transaction: makeTransactionDetailDto({
+const TRANSACTION: TransactionViewData = {
+  transaction: {
     id: TX_ID,
     status: 'COMPLETED',
     documentRef: 'XC-ENTRY-0042',
@@ -36,7 +31,7 @@ const TRANSACTION = makeTransactionViewData({
     quoteId: null,
     quoteExpiresAt: null,
     lines: [
-      makeTxLineDto({
+      {
         lineNo: 1,
         currency: 'USD',
         side: 'BUY',
@@ -46,19 +41,21 @@ const TRANSACTION = makeTransactionViewData({
         thbAmount: '3210.00',
         feeThb: '0.00',
         settleThb: '3210.00',
-      }),
+      },
     ],
     payment: null,
-    receipts: [makeTxReceiptDto({ number: 'XC-ENTRY-0042', revision: 1, issuedAt: '2026-10-11T03:00:05Z' })],
+    receipts: [{ number: 'XC-ENTRY-0042', revision: 1, issuedAt: '2026-10-11T03:00:05Z' }],
     approvalRequest: null,
     completedAt: '2026-10-11T03:00:05Z',
     cancelledAt: null,
     cancelReason: null,
     reversal: null,
-  }),
-});
+    benefits: [],
+    booking: null,
+  },
+};
 
-const AUDIT = makeTransactionAuditViewData({ events: [] });
+const AUDIT: TransactionAuditViewData = { events: [] };
 
 function view(data: unknown): Response {
   return new Response(JSON.stringify({ version: 1, changed: true, data }), {

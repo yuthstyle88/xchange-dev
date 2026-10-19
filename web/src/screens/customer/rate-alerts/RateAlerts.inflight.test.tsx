@@ -53,6 +53,11 @@ function makeAlert(overrides: Partial<MyRateAlertItem> = {}) {
     currentRate: '34.10',
     ratePublishedAt: '2026-10-13T10:00:00Z',
     enabled: true,
+    relation: 'UNKNOWN',
+    expiresAt: null,
+    expired: false,
+    rateStale: null,
+    lastEvent: null,
     ...overrides,
   });
 }

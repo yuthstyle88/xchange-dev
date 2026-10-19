@@ -66,32 +66,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import {
-  makePublishedLineDto,
-  makePublishedPublicationDto,
-  makePublishedRatesData,
-  makeRateDraftDetailData,
-  makeRateDraftDetailItemDto,
-  makeRateDraftItemDto,
-  makeRateDraftLineDto,
-  makeRatePolicyData,
-  makeRatePolicyVersionDto,
-  makeRatePublicationItemDto,
-  makeRatesReferenceData,
-  makeRatesReferenceRow,
-  type PublishedLineDto,
-  type PublishedRatesData,
-  type RateDraftDetailData,
-  type RateDraftItemDto,
-  type RateDraftLineDto,
-  type RatePolicyData,
-  type RatePublicationItemDto,
-  type RatesReferenceData,
-} from '../../../shared/testing/fixtures';
+import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import type { RateDraftDetailData, RateDraftLineDto } from '../../../shared/api/generated/rate_draft';
+import type { RateDraftItemDto } from '../../../shared/api/generated/rate_drafts';
+import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
+import type { RatePublicationRow } from './rate-history';
+import type { RatesReferenceData, RatesReferenceRow } from '../../../shared/api/generated/rates_reference';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 import { PAGE_WIDE, QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
+
+// A03 (#3399): the publications type is the local row of ./rate-history (generated file changes with #3399).
+type RatePublicationItemDto = Omit<RatePublicationRow, 'lines'>;
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -148,24 +135,23 @@ const THAI = /[฀-๿]/;
 
 // ── the answers ──────────────────────────────────────────────────────────────
 
-function line(currency: string, unitSize: string, buy: string | null, sell: string | null) {
-  return makePublishedLineDto({ currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}` });
+function line(currency: string, unitSize: string, buy: string | null, sell: string | null): PublishedLineDto {
+  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] };
 }
 
-function publishedOf(version: number | null, lines: PublishedLineDto[]) {
-  return makePublishedRatesData({
+function publishedOf(version: number | null, lines: PublishedLineDto[]): PublishedRatesData {
+  return {
     publication:
-      version === null
-        ? null
-        : makePublishedPublicationDto({ id: `pub-${version}`, version, publishedAt: '2026-10-09T02:00:00+00:00' }),
+      version === null ? null : { id: `pub-${version}`, version, publishedAt: '2026-10-09T02:00:00+00:00' },
     sourceDate: '2026-10-08',
     stale: false,
     lines,
-  });
+    bandHeadings: [],
+  };
 }
 
 /** MAIN's publication 7: USD per 1, JPY per 100 (§3.1 A1), EUR per 1. */
-function mainPublished() {
+function mainPublished(): PublishedRatesData {
   return publishedOf(7, [
     line('EUR', '1', '37.35520000', '38.08440000'),
     line('JPY', '100', '23.50000000', '24.12345678'),
@@ -173,8 +159,8 @@ function mainPublished() {
   ]);
 }
 
-function draftItem(id: string, status: string, version: number, createdAt: string) {
-  return makeRateDraftItemDto({
+function draftItem(id: string, status: string, version: number, createdAt: string): RateDraftItemDto {
+  return {
     id,
     branchId: 'MAIN',
     status,
@@ -183,27 +169,27 @@ function draftItem(id: string, status: string, version: number, createdAt: strin
     createdAt,
     updatedAt: createdAt,
     evaluation: null,
-  });
+  };
 }
 
-function auto(currency: string) {
-  return makeRateDraftLineDto({ currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null });
+function auto(currency: string): RateDraftLineDto {
+  return { currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null };
 }
 
 /** USD: buy AUTO, sell MANUAL 40 with its reason (the out-of-bound line of `rate_draft_flow_test.rs`). */
-function usdManualSell() {
-  return makeRateDraftLineDto({
+function usdManualSell(): RateDraftLineDto {
+  return {
     currency: 'USD',
     buyMode: 'AUTO',
     sellMode: 'MANUAL',
     manualBuy: null,
     manualSell: '40.00000000',
     reason: 'a spike',
-  });
+  };
 }
 
-function detailOf(item: RateDraftItemDto, lines: RateDraftLineDto[]) {
-  return makeRateDraftDetailData({ draft: makeRateDraftDetailItemDto({ ...item }), lines });
+function detailOf(item: RateDraftItemDto, lines: RateDraftLineDto[]): RateDraftDetailData {
+  return { draft: { ...item }, lines };
 }
 
 const GUARDS = {
@@ -211,9 +197,9 @@ const GUARDS = {
   JPY: { buy: { min_pct: '-2.0000', max_pct: '0.5000' }, sell: { min_pct: '-0.5000', max_pct: '2.0000' } },
 };
 
-function policyOf() {
-  return makeRatePolicyData({
-    policy: makeRatePolicyVersionDto({
+function policyOf(): RatePolicyData {
+  return {
+    policy: {
       id: 'pol-1',
       branchId: 'MAIN',
       version: 1,
@@ -230,25 +216,25 @@ function policyOf() {
       valueTiersOn: false,
       valueTiers: [],
       sharpMoveAlertPct: null,
-    }),
-  });
+    },
+  };
 }
 
-function refRow(code: string, unit: number, sight: string, transfer: string, selling: string) {
-  return makeRatesReferenceRow({ code, date: '2026-10-08', unit, buyingSight: sight, buyingTransfer: transfer, selling });
+function refRow(code: string, unit: number, sight: string, transfer: string, selling: string): RatesReferenceRow {
+  return { code, date: '2026-10-08', unit, buyingSight: sight, buyingTransfer: transfer, selling };
 }
 
 /** After RE-2 #599: BoT JPY per 100, in BoT's own unit (§4.2). */
-function referenceOf() {
-  return makeRatesReferenceData({
+function referenceOf(): RatesReferenceData {
+  return {
     rows: [refRow('USD', 1, '33.4218', '33.5008', '33.8278'), refRow('JPY', 100, '20.9500', '21.0100', '21.6300')],
     fetchedAt: '2026-10-09T01:30:00.000Z',
     error: null,
-  });
+  };
 }
 
-function publication(version: number, by: string, state: string) {
-  return makeRatePublicationItemDto({
+function publication(version: number, by: string, state: string): RatePublicationItemDto {
+  return {
     id: `pub-${version}`,
     branchId: 'MAIN',
     version,
@@ -257,7 +243,7 @@ function publication(version: number, by: string, state: string) {
     approvedRequestId: `req-${version}`,
     draftId: `d-${version}`,
     state,
-  });
+  };
 }
 
 // ── the fake API: the global fetch ──────────────────────────────────────────
@@ -304,18 +290,16 @@ function setDraftStatus(branch: string, id: string, status: string): void {
   if (detail?.draft) detail.draft.status = status;
 }
 
-function linesOfBody(body: Record<string, unknown> | undefined) {
+function linesOfBody(body: Record<string, unknown> | undefined): RateDraftLineDto[] {
   const lines = (body?.lines ?? []) as Array<Record<string, unknown>>;
-  return lines.map((l) =>
-    makeRateDraftLineDto({
-      currency: String(l.currency),
-      buyMode: String(l.buyMode),
-      sellMode: String(l.sellMode),
-      manualBuy: (l.manualBuy as string | null | undefined) ?? null,
-      manualSell: (l.manualSell as string | null | undefined) ?? null,
-      reason: (l.reason as string | null | undefined) ?? null,
-    }),
-  );
+  return lines.map((l) => ({
+    currency: String(l.currency),
+    buyMode: String(l.buyMode),
+    sellMode: String(l.sellMode),
+    manualBuy: (l.manualBuy as string | null | undefined) ?? null,
+    manualSell: (l.manualSell as string | null | undefined) ?? null,
+    reason: (l.reason as string | null | undefined) ?? null,
+  }));
 }
 
 async function answer(s: Sent): Promise<Reply> {
@@ -348,7 +332,7 @@ async function answer(s: Sent): Promise<Reply> {
       return viewAnswer(200 + JSON.stringify(data).length, data, since);
     }
     if (path === POLICY) return viewAnswer(1, policies[branch] ?? { policy: null }, since);
-    if (path === PUBLICATIONS) return viewAnswer(1, { publications: publications[branch] ?? [] }, since);
+    if (path === PUBLICATIONS) return viewAnswer(1, (publications[branch] ?? []).map((p) => ({ ...p, lines: [] })), since);
     if (path === REFERENCE) return viewAnswer(3, reference, since);
     return refusal(500, 'serverError', `unexpected read ${path}`);
   }

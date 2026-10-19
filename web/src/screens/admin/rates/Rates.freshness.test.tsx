@@ -10,12 +10,7 @@ import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { fill, locale, setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
-import {
-  makePublishedLineDto,
-  makePublishedPublicationDto,
-  makePublishedRatesData,
-  type PublishedRatesData,
-} from '../../../shared/testing/fixtures';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
@@ -30,23 +25,15 @@ const sources = import.meta.glob<string>('./Rates.tsx', { query: '?raw', import:
 const PUBLISHED_AT = '2026-10-10T03:15:00+00:00';
 let published: PublishedRatesData;
 
-function publishedOf(over: Partial<PublishedRatesData>) {
-  return makePublishedRatesData({
-    publication: makePublishedPublicationDto({ id: 'pub-7', version: 7, publishedAt: PUBLISHED_AT }),
+function publishedOf(over: Partial<PublishedRatesData>): PublishedRatesData {
+  return {
+    publication: { id: 'pub-7', version: 7, publishedAt: PUBLISHED_AT },
     sourceDate: '2026-10-08',
     stale: false,
-    lines: [
-      makePublishedLineDto({
-        currency: 'USD',
-        group: 'ALL',
-        unitSize: '1',
-        buyRate: '33.25000000',
-        sellRate: '34.10000000',
-        lineId: 'line-USD',
-      }),
-    ],
+    lines: [{ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.25000000', sellRate: '34.10000000', lineId: 'line-USD', bands: [] }],
+    bandHeadings: [],
     ...over,
-  });
+  };
 }
 
 function json(status: number, body: unknown): Response {

@@ -6,6 +6,7 @@ pub mod complete;
 pub mod confirm;
 pub mod create;
 pub mod effects;
+pub mod negative_stock_gate;
 pub mod quote;
 pub mod reversal_approval;
 pub mod reversal_post;

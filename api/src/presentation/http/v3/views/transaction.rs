@@ -17,8 +17,8 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::transaction_detail::{
-    TransactionDetailDto, TransactionFilter, TransactionViewData, TxApprovalDto, TxLineDto,
-    TxPaymentDto, TxReceiptDto,
+    TransactionDetailDto, TransactionFilter, TransactionViewData, TxApprovalDto, TxBenefitDto,
+    TxBookingRefDto, TxLineDto, TxPaymentDto, TxReceiptDto,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -28,6 +28,32 @@ pub struct TransactionView {
 
 fn ts(v: Option<DateTime<Utc>>) -> Option<String> {
     v.map(|t| t.to_rfc3339())
+}
+
+fn parse_benefits(snapshot: Option<serde_json::Value>, tx_id: Uuid) -> Vec<TxBenefitDto> {
+    let Some(items) = snapshot
+        .and_then(|mut s| s.get_mut("applied").map(serde_json::Value::take))
+        .and_then(|v| match v {
+            serde_json::Value::Array(arr) => Some(arr),
+            _ => None,
+        })
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        match serde_json::from_value::<TxBenefitDto>(item) {
+            Ok(b) => out.push(b),
+            Err(err) => {
+                tracing::warn!(
+                    transaction_id = %tx_id,
+                    error = %err,
+                    "skipping malformed applied benefit in quote benefit_snapshot"
+                );
+            }
+        }
+    }
+    out
 }
 
 impl BranchView for TransactionView {
@@ -54,7 +80,7 @@ impl BranchView for TransactionView {
             let Some(r) = sqlx::query(
                 "SELECT t.id, t.status, t.document_ref, t.branch_id, t.customer_id, t.quote_id, \
                  q.expires_at, t.approval_request_id, a.status AS a_status, t.completed_at, \
-                 t.cancelled_at, t.cancel_reason \
+                 t.cancelled_at, t.cancel_reason, q.benefit_snapshot \
                  FROM transactions t LEFT JOIN quotes q ON q.id = t.quote_id \
                  LEFT JOIN approval_requests a ON a.id = t.approval_request_id \
                  WHERE t.id = $1 AND t.branch_id = $2",
@@ -128,6 +154,17 @@ impl BranchView for TransactionView {
                 &branch,
             )
             .await?;
+            let benefits = parse_benefits(r.get(12), id);
+            let booking =
+                sqlx::query("SELECT id, booking_no FROM bookings WHERE transaction_id = $1")
+                    .bind(id)
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(AppError::Database)?
+                    .map(|b| TxBookingRefDto {
+                        id: b.get(0),
+                        booking_no: b.get(1),
+                    });
             Ok(TransactionViewData {
                 transaction: Some(TransactionDetailDto {
                     id: r.get::<Uuid, _>(0).to_string(),
@@ -145,6 +182,8 @@ impl BranchView for TransactionView {
                     cancelled_at: ts(r.get(10)),
                     cancel_reason: r.get(11),
                     reversal,
+                    benefits,
+                    booking,
                 }),
             })
         }

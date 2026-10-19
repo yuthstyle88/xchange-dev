@@ -38,6 +38,8 @@ use xc_queue::domain::ticket::queue_ticket::QueueTicket;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
+use xc_notify::application::notification_service::NotificationService;
+use xc_notify::application::template_registry::TemplateRegistry;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -62,11 +64,16 @@ impl QueueServices {
         let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
         let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
         let status = StatusService::new(branch_tx.clone(), repo.clone());
+        let notifications = Arc::new(NotificationService::new(
+            pool.clone(),
+            Arc::new(TemplateRegistry::generated()),
+        ));
         let booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents> =
             pg_booking_lifecycle(pool);
         Self {
             desk: QueueDesk::new(branch_tx.clone(), repo.clone(), status.clone())
-                .with_booking_events(booking_events.clone()),
+                .with_booking_events(booking_events.clone())
+                .with_notifications(notifications),
             counters: CounterService::new(branch_tx.clone(), repo.clone(), status.clone()),
             issuer: TicketIssuer::new(branch_tx, repo).with_booking_events(booking_events),
             status,

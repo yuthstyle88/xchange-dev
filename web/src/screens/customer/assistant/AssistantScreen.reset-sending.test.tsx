@@ -4,12 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
-import {
-  makeAssistantAskAnswerDto,
-  makeAssistantConversationDto,
-  makeAssistantMessageDto,
-  makeMyAssistantConversationData,
-} from '../../../shared/testing/fixtures';
+import type { AssistantAskAnswerDto } from '../../../shared/api/generated/assistant_ask';
+import type { MyAssistantConversationData } from '../../../shared/api/generated/my_assistant_conversation';
 import { AssistantScreen } from './AssistantScreen';
 
 interface Deferred<T> {
@@ -39,39 +35,41 @@ function makeAnswer(
   conversationId: string,
   customerText: string,
   assistantText: string,
-) {
-  return makeAssistantAskAnswerDto({
+): AssistantAskAnswerDto {
+  return {
     conversationId,
-    customerMessage: makeAssistantMessageDto({
+    customerMessage: {
       id: `${conversationId}-c`,
       role: 'CUSTOMER',
       redactedText: customerText,
       createdAt: '2026-10-16T10:00:00Z',
-    }),
-    assistantReply: makeAssistantMessageDto({
+    },
+    assistantReply: {
       id: `${conversationId}-a`,
       role: 'ASSISTANT',
       redactedText: assistantText,
       createdAt: '2026-10-16T10:00:01Z',
-    }),
-  });
+    },
+    intent: { kind: 'UNKNOWN' },
+    preview: null,
+  };
 }
 
-const INITIAL_CONVERSATION = makeMyAssistantConversationData({
-  conversation: makeAssistantConversationDto({
+const INITIAL_CONVERSATION: MyAssistantConversationData = {
+  conversation: {
     id: 'conv-initial',
     locale: 'th',
     createdAt: '2026-10-16T09:00:00Z',
-  }),
+  },
   messages: [
-    makeAssistantMessageDto({
+    {
       id: 'm-init-1',
       role: 'ASSISTANT',
       redactedText: 'สวัสดีค่ะ มีอะไรให้ช่วยไหมคะ',
       createdAt: '2026-10-16T09:00:01Z',
-    }),
+    },
   ],
-});
+};
 
 describe('AssistantScreen resetConversation sending state (#2712)', () => {
   let host: HTMLDivElement;

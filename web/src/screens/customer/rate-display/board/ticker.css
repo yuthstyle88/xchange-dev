@@ -1,0 +1,48 @@
+/* P01 v2 welcome ticker (RB-9). */
+.xc-rb-ticker {
+  flex: none;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: linear-gradient(90deg, #700028, var(--xc-rb-brand, #a5003c) 50%, #700028);
+  color: #fff;
+}
+
+.xc-rb-ticker-track {
+  display: flex;
+  flex: none;
+  white-space: nowrap;
+  animation: xc-rb-ticker 48s linear infinite;
+}
+
+.xc-rb-ticker-paused,
+.xc-rb-calm .xc-rb-ticker-track {
+  animation: none;
+}
+
+.xc-rb-ticker-item {
+  flex: none;
+  padding-right: 64px;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.xc-rb-ticker-sep {
+  font-style: normal;
+  color: #ffc9da;
+  padding: 0 22px;
+}
+
+@keyframes xc-rb-ticker {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xc-rb-ticker-track {
+    animation: none;
+  }
+}

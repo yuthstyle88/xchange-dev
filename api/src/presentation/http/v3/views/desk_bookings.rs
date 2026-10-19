@@ -1,5 +1,6 @@
 //! Staff `desk_bookings` view (BK-6, #1388).
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
@@ -15,6 +16,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::booking::booking_status::BookingStatus;
 use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_status};
 use xc_kernel::ids::BranchId;
+use xc_verification::application::readiness::Readiness;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::desk_bookings::{
@@ -109,6 +111,20 @@ impl BranchView for DeskBookingsView {
             .await
             .map_err(pos_error::AppError::Database)?;
 
+            let mut readiness_by_customer: HashMap<String, &'static str> = HashMap::new();
+            for row in &rows {
+                if !readiness_by_customer.contains_key(&row.customer_id) {
+                    let r = Readiness::of(&pool, &row.customer_id)
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = %e, "readiness query error");
+                            pos_error::AppError::Internal("failed to query readiness".into())
+                        })?
+                        .as_str();
+                    readiness_by_customer.insert(row.customer_id.clone(), r);
+                }
+            }
+
             let items = rows
                 .into_iter()
                 .map(|row| {
@@ -124,6 +140,11 @@ impl BranchView for DeskBookingsView {
                         .unwrap_or(row.status);
 
                     let customer_id = row.customer_id;
+                    let readiness = readiness_by_customer
+                        .get(&customer_id)
+                        .copied()
+                        .unwrap_or("NONE")
+                        .to_string();
                     let phone_last4 = match (row.key_id, row.encrypted_value) {
                         (Some(k), Some(bytes)) => (|| {
                             let c = cipher.as_ref()?;
@@ -147,7 +168,7 @@ impl BranchView for DeskBookingsView {
                         status,
                         customer_display_name: row.display_name,
                         phone_last4,
-                        readiness: "unknown".to_string(),
+                        readiness,
                         ticket_number: row.ticket_no,
                         slot_id: row.slot_id.to_string(),
                         start_at: row.start_at.to_rfc3339(),

@@ -17,12 +17,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang, t } from '../../../shared/i18n';
-import {
-  makePublishedLineDto,
-  makePublishedPublicationDto,
-  makePublishedRatesData,
-  type PublishedRatesData,
-} from '../../../shared/testing/fixtures';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import { card } from './card';
 
 type Me = {
@@ -37,7 +32,7 @@ type Me = {
 const BRANCH = 'MAIN';
 const NO_SOURCE = t('rate.noSourceDate');
 
-function me() {
+function me(): Me {
   return {
     userId: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
@@ -55,15 +50,16 @@ function ctx(m: Me) {
 }
 
 /** The same published set as rates.test.tsx: strings with trailing zeros. */
-const RATES = makePublishedRatesData({
-  publication: makePublishedPublicationDto({ id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: '2026-10-10T03:15:00Z' }),
+const RATES: PublishedRatesData = {
+  publication: { id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: '2026-10-10T03:15:00Z' },
   sourceDate: '2026-10-09',
   stale: false,
   lines: [
-    makePublishedLineDto({ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd' }),
-    makePublishedLineDto({ currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy' }),
+    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd', bands: [] },
+    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy', bands: [] },
   ],
-});
+  bandHeadings: [],
+};
 const RATE_STRINGS = RATES.lines.flatMap((l) => [l.buyRate, l.sellRate]).filter((r): r is string => r !== null);
 
 /** One answer of the view, in the order the card asks. */
@@ -190,7 +186,7 @@ describe('S-8b a failed read is an error with a retry, never "no reference rate"
 
   it('a successful read of an empty set still says "no reference rate" (the success path is unchanged)', async () => {
     const el = await mount([
-      { kind: 'ok', data: makePublishedRatesData({ publication: null, sourceDate: null, stale: false, lines: [] }) },
+      { kind: 'ok', data: { publication: null, sourceDate: null, stale: false, lines: [] } as unknown as PublishedRatesData },
     ]);
     expect(el.querySelector('[role="alert"]')).toBeNull();
     expect(el.textContent ?? '').toContain(NO_SOURCE);

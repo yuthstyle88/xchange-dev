@@ -1,0 +1,6 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/customer/assistant deletes this file.
+screens/customer/assistant/AssistantScreen.keyed.test.tsx
+screens/customer/assistant/AssistantScreen.reset-inflight.test.tsx
+screens/customer/assistant/AssistantScreen.reset-sending.test.tsx
+screens/customer/assistant/AssistantScreen.test.tsx

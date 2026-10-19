@@ -109,6 +109,8 @@ function completed(over: Partial<TransactionDetailDto> = {}) {
     cancelledAt: null,
     cancelReason: null,
     reversal: null,
+    benefits: [],
+    booking: null,
     ...over,
   });
 }
