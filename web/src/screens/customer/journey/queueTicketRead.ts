@@ -17,17 +17,21 @@ export async function readMyQueueTicket(
   branch: string | null,
   ticketId: string | null,
 ): Promise<QueueTicketRead> {
-  if (!ticketId || !branch) return { state: 'empty' };
+  if (!branch) return { state: 'empty' };
   try {
     const answer = await api.view<MyQueueTicketData, { ticketId: string }>('my_queue_ticket', {
       branch,
-      filter: { ticketId },
+      filter: ticketId ? { ticketId } : undefined,
     });
     const data = answer.data;
     return data && data.ticketId ? { state: 'ready', data } : { state: 'empty' };
   } catch (err: unknown) {
     if ((err as { status?: number })?.status === 401) return { state: 'unauthorized' };
-    if (err instanceof ApiError && err.code === 'httpError' && (err.status === 403 || err.status === 404)) {
+    if (
+      err instanceof ApiError &&
+      ((err.status === 404 && (err.code === 'noTicket' || err.code === 'httpError')) ||
+        (err.status === 403 && err.code === 'httpError'))
+    ) {
       return { state: 'empty' };
     }
     throw err;
