@@ -542,8 +542,6 @@ impl Room {
             "device_events",
             "device_settings",
             "device_agents",
-            "shift_balances",
-            "stock_movements",
             "shifts",
             "transaction_files",
             "transactions",
@@ -1262,22 +1260,14 @@ async fn the_balance_is_the_open_shifts_expected_or_the_closed_shifts_counted() 
     room.finish().await;
 }
 
-/// The metric comes from the ledger via ShiftBalances: after a direct `UPDATE shift_balances ...`,
-/// the view still shows the ledger figure (1790.00 THB), proving it no longer reads the legacy table.
+/// The metric comes from the ledger via ShiftBalances (`shift_balances` is dropped by #1047):
+/// the view shows the ledger figure (1790.00 THB).
 #[actix_web::test]
 async fn the_balance_comes_from_the_ledger_not_the_legacy_shift_balances_table() {
     let room = Room::open().await;
     room.open_shift(MAIN, json!({ "THB": 5000, "USD": 100 }))
         .await;
     room.save(MAIN, "BUY", "100", "0", "LIVE").await;
-    let shift = room.open_shift_id(MAIN).await;
-    sqlx::query(
-        "UPDATE shift_balances SET expected = 4321.09 WHERE shift_id = $1 AND code = 'THB'",
-    )
-    .bind(&shift)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("change the stored figure");
     let data = room.data("OWNER", &path("devices", "branch=MAIN")).await;
     assert_eq!(data["balanceThb"], json!("1790.00"), "{data}");
     assert_eq!(data["balanceUsd"], json!("200.00"), "{data}");
