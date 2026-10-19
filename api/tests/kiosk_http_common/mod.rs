@@ -1147,16 +1147,36 @@ fn text(value: &Value, key: &str) -> String {
         .to_string()
 }
 
+fn merged_v2_role(role: &str) -> Option<&'static str> {
+    match role {
+        "BACKEND" => Some("MANAGER"),
+        "MONITOR" | "DOCUMENTS" => Some("DOCUMENT_REVIEW"),
+        _ => None,
+    }
+}
+
 fn is_one_name_step(step: &Step) -> bool {
     let Some(emp) = step.body.as_ref().and_then(|b| b.get("employee")) else {
         return false;
     };
-    emp.get("id") != Some(&json!("owner")) && emp.get("name") != emp.get("username")
+    emp.get("id") != Some(&json!("owner"))
+        && (emp.get("name") != emp.get("username")
+            || emp
+                .get("role")
+                .and_then(Value::as_str)
+                .and_then(merged_v2_role)
+                .is_some())
 }
 
 fn one_name_employee(expected: &mut Value) {
     if let Some(username) = expected["employee"]["username"].as_str().map(str::to_owned) {
         expected["employee"]["name"] = json!(username);
+    }
+    if let Some(merged) = expected["employee"]["role"]
+        .as_str()
+        .and_then(merged_v2_role)
+    {
+        expected["employee"]["role"] = json!(merged);
     }
 }
 
