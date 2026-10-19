@@ -33,6 +33,7 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_cash::application::transfer::TransferFlow;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -140,26 +141,20 @@ impl Room {
     /// A user with `role` on `branch` (`None` = organisation-wide): a `users` row, its `user_roles` row and
     /// the `x-test-as` spec that signs them in.
     async fn person(&self, role: Role, branch: Option<&str>) -> Who {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let id = seed_person(
+            &mut self.pool.acquire().await.unwrap(),
+            ORG,
+            &unique(role.as_str()),
+            &[RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch,
+                valid_from: from,
+                valid_to: None,
+            }],
         )
-        .bind(ORG)
-        .bind(unique(role.as_str()))
-        .fetch_one(&self.pool)
         .await
         .expect("insert a user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
-        )
-        .bind(&id)
-        .bind(role.as_str())
-        .bind(ORG)
-        .bind(branch)
-        .execute(&self.pool)
-        .await
-        .expect("give the user a role");
         Who {
             spec: format!("{id}|{}|{}", role.as_str(), branch.unwrap_or("*")),
             id,
@@ -430,25 +425,20 @@ async fn finance_of_org_b(room: &Room) -> Who {
         .execute(&room.pool)
         .await
         .expect("organisation B's branch");
-    let id: String = sqlx::query_scalar(
-        "INSERT INTO users (organization_id, name, status, created_by) \
-         VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+    let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let id = seed_person(
+        &mut room.pool.acquire().await.unwrap(),
+        ORG_B,
+        &unique("orgb-finance"),
+        &[RoleRow {
+            role_code: "FINANCE",
+            branch_id: Some(B_BRANCH),
+            valid_from: from,
+            valid_to: None,
+        }],
     )
-    .bind(ORG_B)
-    .bind(unique("orgb-finance"))
-    .fetch_one(&room.pool)
     .await
     .expect("organisation B's user");
-    sqlx::query(
-        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-         VALUES ($1::uuid, 'FINANCE', $2::uuid, $3)",
-    )
-    .bind(&id)
-    .bind(ORG_B)
-    .bind(B_BRANCH)
-    .execute(&room.pool)
-    .await
-    .expect("organisation B's FINANCE role");
     Who {
         spec: format!("{id}|FINANCE|{B_BRANCH}|{ORG_B}"),
         id,

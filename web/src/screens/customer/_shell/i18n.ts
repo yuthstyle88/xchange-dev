@@ -12,6 +12,8 @@ export const th = {
   notifications: 'การแจ้งเตือน',
   signIn: 'เข้าสู่ระบบ',
   signedInAs: 'สวัสดี {name}',
+  member: 'สมาชิก',
+  rateAlerts: 'การแจ้งเตือนเรท',
 };
 
 export const en = {
@@ -25,6 +27,8 @@ export const en = {
   notifications: 'Notifications',
   signIn: 'Sign In',
   signedInAs: 'Hello {name}',
+  member: 'Membership',
+  rateAlerts: 'Rate Alerts',
 };
 
 export const zh = {
@@ -38,4 +42,6 @@ export const zh = {
   notifications: '通知',
   signIn: '登录',
   signedInAs: '您好，{name}',
+  member: '会员',
+  rateAlerts: '汇率提醒',
 };

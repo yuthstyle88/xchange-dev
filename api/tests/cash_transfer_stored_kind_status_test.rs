@@ -61,6 +61,7 @@ use xc_cash::domain::transfer::cash_transfer::{CashTransfer, TransferKind, Trans
 use xc_cash::domain::transfer::transfer_repository::TransferRepository;
 use xc_cash::infrastructure::PgTransferRepository;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -156,26 +157,20 @@ impl Room {
 
     /// A user with `role` on `branch` (`None` = organisation-wide).
     async fn person(&self, role: Role, branch: Option<&str>) -> Who {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let id = seed_person(
+            &mut self.pool.acquire().await.unwrap(),
+            ORG,
+            &unique(role.as_str()),
+            &[RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch,
+                valid_from: from,
+                valid_to: None,
+            }],
         )
-        .bind(ORG)
-        .bind(unique(role.as_str()))
-        .fetch_one(&self.pool)
         .await
         .expect("insert a user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
-        )
-        .bind(&id)
-        .bind(role.as_str())
-        .bind(ORG)
-        .bind(branch)
-        .execute(&self.pool)
-        .await
-        .expect("give the user a role");
         Who {
             spec: format!("{id}|{}|{}", role.as_str(), branch.unwrap_or("*")),
             id,

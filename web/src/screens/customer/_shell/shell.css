@@ -39,6 +39,8 @@
 }
 
 .xc-customer-signin,
-.xc-customer-notifications {
+.xc-customer-notifications,
+.xc-customer-member,
+.xc-customer-rate-alerts {
   color: inherit;
 }
