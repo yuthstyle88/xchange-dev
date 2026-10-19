@@ -155,6 +155,14 @@ export const th = {
   loginsResultNotActive: 'บัญชีไม่ได้เปิดใช้งาน',
   loginsResultTempExpired: 'รหัสผ่านชั่วคราวหมดอายุ',
   loginsResultRateLimited: 'ถูกจำกัดจำนวนครั้ง',
+
+  // A6 users period grant, ended roles, employee code column, paging
+  colEmployeeCode: 'รหัสพนักงาน',
+  grantValidFrom: 'วันเริ่มมีผล',
+  grantValidTo: 'วันสิ้นสุด',
+  roleEnded: 'สิ้นสุด {date}',
+  roleUntil: 'ถึง {date}',
+  more: 'ดูเพิ่มเติม',
 };
 
 export const en = {
@@ -314,4 +322,12 @@ export const en = {
   loginsResultNotActive: 'Account not active',
   loginsResultTempExpired: 'Temporary password expired',
   loginsResultRateLimited: 'Rate limited',
+
+  // A6 users period grant, ended roles, employee code column, paging
+  colEmployeeCode: 'Employee Code',
+  grantValidFrom: 'Valid From',
+  grantValidTo: 'Valid Until',
+  roleEnded: 'ended {date}',
+  roleUntil: 'until {date}',
+  more: 'Load more',
 };

@@ -10,14 +10,16 @@ import type {
   CertificationRow,
   FinanceReconciliationFilter,
   FinanceSheet,
-  Part,
   ReconciliationCertifyInput,
 } from '../../../shared/api/generated/finance_reconciliation';
-import { locale, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { refreshTick } from '../parts/refresh';
 import * as table from './i18n';
 import './reconciliation.css';
+import { Empty, PartBox, stamp } from './parts';
+import { ReversalsPart } from './reversals/ReversalsPart';
+import { TransfersPart } from './transfers/TransfersPart';
 
 const t = screenT('admin.reconciliation', table);
 
@@ -35,44 +37,9 @@ function today(): string {
   return formatter.format(new Date());
 }
 
-function stamp(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), {
-    timeZone: 'Asia/Bangkok',
-  });
-}
 
-type PartName = 'transactions' | 'counts' | 'transfers' | 'exceptions' | 'integrity' | 'reversalsPending';
 
-/** One part of the sheet: its heading, then its body, or what it waits for when unavailable. */
-function PartBox<T>(props: {
-  name: PartName;
-  part: Part<T>;
-  children: (data: T) => JSX.Element;
-}): JSX.Element {
-  return (
-    <section
-      class="reconciliation-part"
-      data-part={props.name}
-      data-unavailable={props.part.available ? undefined : ''}
-    >
-      <h3>{t(props.name)}</h3>
-      <Show
-        when={props.part.available && props.part.data !== null}
-        fallback={
-          <p class="reconciliation-unavailable">
-            {t('unavailable')}: {props.part.reason ?? ''}
-          </p>
-        }
-      >
-        {props.children(props.part.data as T)}
-      </Show>
-    </section>
-  );
-}
 
-function Empty(): JSX.Element {
-  return <p class="reconciliation-none">{t('none')}</p>;
-}
 
 function Certification(props: { row: CertificationRow }): JSX.Element {
   return (
@@ -221,31 +188,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
               )}
             </PartBox>
             <PartBox name="transfers" part={s().transfers}>
-              {(tr) => (
-                <ul>
-                  <For each={tr.byStatus}>
-                    {(b) => (
-                      <li>
-                        {b.status}: {b.count}
-                      </li>
-                    )}
-                  </For>
-                  <For each={tr.inTransit}>
-                    {(i) => (
-                      <li>
-                        {i.transferId} {i.currency} {i.quantity}
-                      </li>
-                    )}
-                  </For>
-                  <For each={tr.shortReceipts}>
-                    {(r) => (
-                      <li>
-                        {r.transferId} {r.currency} {r.sent} → {r.received}
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              )}
+              {(tr) => <TransfersPart data={tr} />}
             </PartBox>
             <PartBox name="exceptions" part={s().exceptions}>
               {(rows) => (
@@ -271,17 +214,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
             </PartBox>
             <PartBox name="reversalsPending" part={s().reversalsPending}>
               {(rows) => (
-                <Show when={rows.length > 0} fallback={<Empty />}>
-                  <ul>
-                    <For each={rows}>
-                      {(r) => (
-                        <li>
-                          {r.requestId} {r.transactionId} {r.requestedBy} {stamp(r.createdAt)}
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
+                <ReversalsPart rows={rows} branch={s().branch} onDecided={() => read(s().branch, s().date)} />
               )}
             </PartBox>
 

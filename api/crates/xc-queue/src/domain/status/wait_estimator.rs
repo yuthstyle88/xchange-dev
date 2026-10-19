@@ -25,8 +25,6 @@ impl WaitEstimator {
             today
         } else if !earlier.is_empty() {
             earlier
-        } else if today.len() == 1 {
-            today
         } else {
             &[]
         }

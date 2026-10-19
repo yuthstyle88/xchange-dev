@@ -38,6 +38,7 @@ export const th = {
   alertStaleData: 'ข้อมูลค้าง',
   alertRatePending: 'เรทรออนุมัติ',
   alertCountDifference: 'เงินนับไม่ตรง',
+  alertLowStock: 'สต็อกต่ำ',
   noAlerts: 'ไม่มีรายการที่ต้องดำเนินการ',
   // drill-down (§4.4)
   open: 'ดูรายการ',
@@ -87,6 +88,7 @@ export const en: Record<keyof typeof th, string> = {
   alertStaleData: 'Stale data',
   alertRatePending: 'Rate awaiting approval',
   alertCountDifference: 'Count difference',
+  alertLowStock: 'Low stock',
   noAlerts: 'Nothing needs action',
   open: 'Open',
   dropped: 'Filters not passed on yet',

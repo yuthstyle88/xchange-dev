@@ -18,5 +18,4 @@ pub enum EntryPath {
     PaymentMethods,
     DrawerPassport,
     DeviceSetup,
-    StaffBookings,
 }

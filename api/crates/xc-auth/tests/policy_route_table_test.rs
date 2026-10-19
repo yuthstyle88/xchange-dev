@@ -97,11 +97,6 @@ fn every_route_and_action_names_its_permission() {
         (E::Kiosk, "status", Some(Need::Public)),
         (E::Kiosk, "customerReceipt", Some(Need::Public)),
         (E::DrawerPassport, "drawer", p(P::DrawerPassport)),
-        (E::StaffBookings, "list", p(P::BookingsDesk)),
-        (E::StaffBookings, "get", p(P::BookingsDesk)),
-        (E::StaffBookings, "create", p(P::BookingsDesk)),
-        (E::StaffBookings, "confirm", p(P::BookingsDesk)),
-        (E::StaffBookings, "cancel", p(P::BookingsDesk)),
         // RE-3's rows (`docs/design/blueprint/rates.md` §6), translated
         (E::Rpc, "rateDraft", p(P::RatesDraft)),
         (E::StaffRpc, "rateDraft", p(P::RatesDraft)),
@@ -137,7 +132,6 @@ fn every_route_and_action_names_its_permission() {
         (E::StaffRpc, "adminCreateBranch", None),
         (E::Kiosk, "nope", None),
         (E::PaymentMethods, "nope", None),
-        (E::StaffBookings, "nope", None),
     ];
     let mut wrong = Vec::new();
     for (on, name, want) in rows {

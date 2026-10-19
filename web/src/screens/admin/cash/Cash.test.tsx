@@ -531,7 +531,7 @@ describe('V2-cash: the banner, the stats and the buttons (A1; admin-html:101-108
     await settle();
     const all = text(m.el);
     expect(all).toContain('ยังไม่มีกะเปิด');
-    expect(all).toContain('ตรวจนับเงินสดและเงินต่างประเทศ แล้วกรอกยอดยกมาตอนเปิดกะ');
+    expect(all).toContain('ยังไม่มีกะเปิด — พนักงานนับเงินที่หน้าพนักงาน › กะของฉัน › นับเปิดกะ แล้วผู้มีสิทธิ์รับรองยืนยันยอด กะจึงเปิด');
     expect(cards(m.el)).toEqual([
       { label: 'เงินสดตั้งต้น', value: '—', unit: 'THB', note: 'ยอด THB ที่ตรวจนับตอนเปิดกะ' },
       { label: 'เงินสดรับเข้า', value: '—', unit: 'THB', note: 'จากแลกเงินและรับเงินเข้าลิ้นชัก' },

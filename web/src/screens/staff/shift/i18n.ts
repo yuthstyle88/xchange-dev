@@ -17,6 +17,8 @@ export const th: Record<string, string> = {
   emptyCounts: 'ไม่มีรายการนับที่รอยืนยัน',
   emptyHandovers: 'ไม่มีรายการส่งมอบ',
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
+  countAwaitingFinance: 'ยอดต่างเกินเกณฑ์ ส่งให้ฝ่ายการเงินอนุมัติแล้ว ยังไม่ถือว่ารับรอง',
+  approvalRequest: 'คำขออนุมัติ',
 };
 
 export const en: Record<string, string> = {
@@ -37,4 +39,6 @@ export const en: Record<string, string> = {
   emptyCounts: 'No counts to verify',
   emptyHandovers: 'No handovers to me',
   connectionError: 'Connection error',
+  countAwaitingFinance: 'The difference is over the limit and went to finance for approval; the count is not verified yet',
+  approvalRequest: 'Approval request',
 };
