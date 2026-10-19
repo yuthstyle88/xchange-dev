@@ -4,13 +4,13 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { PAGE_WIDE } from '../../../shared/testing/page-wide';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { requestRefresh } from '../parts/refresh';
 import { th as slipsTh } from './i18n';
 import { Slips } from './Slips';
 
-const SAMPLE_SLIPS: TransactionRow[] = [
-  {
+const SAMPLE_SLIPS = [
+  makeTransactionRow({
     id: 'XC-20261008-000001',
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -37,7 +37,7 @@ const SAMPLE_SLIPS: TransactionRow[] = [
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  },
+  }),
 ];
 
 const SAMPLE_BRANCHES = [
