@@ -17,7 +17,9 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, out_of_scope};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, out_of_scope, request_ip,
+};
 use crate::presentation::http::v3::error::V3Error;
 use super::user_grant::{
     changed, from_change_error, parse_role, role_branch, user_in_organisation, users,
@@ -72,7 +74,7 @@ impl CommandAction for UserRevokeCommand {
         }
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
-            .revoke(tx, who, None, &user_id, role, role_branch.as_ref(), now)
+            .revoke(tx, who, request_ip().as_deref(), &user_id, role, role_branch.as_ref(), now)
             .await
             .map_err(from_change_error)?;
         let out = changed(tx, &user_id).await?;

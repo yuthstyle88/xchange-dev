@@ -20,7 +20,9 @@ use xc_kernel::ids::BranchId;
 use super::user_grant::{changed, from_change_error, user_in_organisation, users};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, request_ip,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -72,7 +74,7 @@ impl CommandAction for UserProfileSaveCommand {
             tell_code: input.tell_code,
         };
         let saved = users()
-            .save_profile(tx, who, None, &user_id, &profile)
+            .save_profile(tx, who, request_ip().as_deref(), &user_id, &profile)
             .await
             .map_err(|e| match e {
                 UserChangeError::App(AppError::Conflict(ref m)) if m == "employeeCodeTaken" => {

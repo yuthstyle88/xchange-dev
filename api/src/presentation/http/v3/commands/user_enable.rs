@@ -16,7 +16,9 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, request_ip,
+};
 use crate::presentation::http::v3::error::V3Error;
 use super::user_disable::UserChangeOutput;
 use super::user_grant::{changed, from_change_error, user_in_organisation, users};
@@ -48,7 +50,7 @@ impl CommandAction for UserEnableCommand {
     ) -> Result<Self::Output, V3Error> {
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
-            .enable(tx, who, None, &user_id)
+            .enable(tx, who, request_ip().as_deref(), &user_id)
             .await
             .map_err(from_change_error)?;
         let out = changed(tx, &user_id).await?;
