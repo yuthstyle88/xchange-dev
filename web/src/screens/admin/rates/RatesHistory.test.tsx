@@ -25,7 +25,12 @@ import { ApiError } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
 import * as table from './i18n';
 import * as history from './rate-history';
-import type { RatePublicationLine, RatePublicationRow } from './rate-history';
+import {
+  makeRatePublicationLine,
+  makeRatePublicationRow,
+  type RatePublicationLine,
+  type RatePublicationRow,
+} from '../../../shared/testing/fixtures';
 import { RatesHistory } from './RatesHistory';
 
 const THAI = /[฀-๿]/;
@@ -37,21 +42,21 @@ function say(key: string, lang: Lang = 'th'): string {
 }
 
 const sides = (buy: string | null, sell: string | null) => ({ buy, sell });
-function line(currency: string, before: RatePublicationLine['before'], after: RatePublicationLine['after'], tier = 'ALL'): RatePublicationLine {
-  return { currency, group: 'STD', valueTier: tier, unitSize: currency === 'JPY' ? '100' : '1', before, after };
+function line(currency: string, before: RatePublicationLine['before'], after: RatePublicationLine['after'], tier = 'ALL') {
+  return makeRatePublicationLine({ currency, group: 'STD', valueTier: tier, unitSize: currency === 'JPY' ? '100' : '1', before, after });
 }
-function row(version: number, by: string, state: string, lines: RatePublicationLine[] = []): RatePublicationRow {
-  return {
+function row(version: number, by: string, state: string, lines?: RatePublicationLine[]) {
+  return makeRatePublicationRow({
     id: `pub-${version}`,
     branchId: 'MAIN',
     version,
     publishedAt: `2026-10-${String(10 + (version % 9)).padStart(2, '0')}T03:00:00Z`,
     publishedBy: by,
-    approvedRequestId: null,
+    approvedRequestId: `req-${version}`,
     draftId: `d-${version}`,
     state,
-    lines,
-  };
+    lines: lines ?? [],
+  });
 }
 
 let calls: Array<{ name: string; q: Record<string, unknown> }>;

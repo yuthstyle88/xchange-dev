@@ -2,11 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
-import type { RateDraftDetailData, RateDraftLineDto } from '../../../shared/api/generated/rate_draft';
-import type { RateDraftItemDto } from '../../../shared/api/generated/rate_drafts';
-import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
-import type { RatesReferenceData, RatesReferenceRow } from '../../../shared/api/generated/rates_reference';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeRateDraftDetailData,
+  makeRateDraftDetailItemDto,
+  makeRateDraftItemDto,
+  makeRateDraftLineDto,
+  makeRatePolicyData,
+  makeRatePolicyVersionDto,
+  makeRatesReferenceData,
+  makeRatesReferenceRow,
+  type PublishedLineDto,
+  type RateDraftItemDto,
+  type RateDraftLineDto,
+} from '../../../shared/testing/fixtures';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
@@ -31,29 +42,29 @@ const POLICY = '/api/v3/views/rate_policy';
 const PUBLICATIONS = '/api/v3/views/rate_publications';
 const REFERENCE = '/api/v3/views/rates_reference';
 
-function line(currency: string, unitSize: string, buy: string | null, sell: string | null): PublishedLineDto {
-  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] };
+function line(currency: string, unitSize: string, buy: string | null, sell: string | null) {
+  return makePublishedLineDto({ currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] });
 }
 
-function publishedOf(version: number | null, lines: PublishedLineDto[]): PublishedRatesData {
-  return {
-    publication: version === null ? null : { id: `pub-${version}`, version, publishedAt: '2026-10-09T02:00:00+00:00' },
+function publishedOf(version: number | null, lines: PublishedLineDto[]) {
+  return makePublishedRatesData({
+    publication: version === null ? null : makePublishedPublicationDto({ id: `pub-${version}`, version, publishedAt: '2026-10-09T02:00:00+00:00' }),
     sourceDate: '2026-10-08',
     stale: false,
     lines,
     bandHeadings: [],
-  };
+  });
 }
 
-function mainPublished(): PublishedRatesData {
+function mainPublished() {
   return publishedOf(7, [
     line('EUR', '1', '37.35520000', '38.08440000'),
     line('USD', '1', '33.25000000', '34.10000000'),
   ]);
 }
 
-function draftItem(id: string, status: string, version: number, createdAt: string): RateDraftItemDto {
-  return {
+function draftItem(id: string, status: string, version: number, createdAt: string) {
+  return makeRateDraftItemDto({
     id,
     branchId: 'MAIN',
     status,
@@ -62,24 +73,24 @@ function draftItem(id: string, status: string, version: number, createdAt: strin
     createdAt,
     updatedAt: createdAt,
     evaluation: null,
-  };
+  });
 }
 
-function auto(currency: string): RateDraftLineDto {
-  return { currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null };
+function auto(currency: string) {
+  return makeRateDraftLineDto({ currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null });
 }
 
-function detailOf(item: RateDraftItemDto, lines: RateDraftLineDto[]): RateDraftDetailData {
-  return { draft: { ...item }, lines };
+function detailOf(item: RateDraftItemDto, lines: RateDraftLineDto[]) {
+  return makeRateDraftDetailData({ draft: makeRateDraftDetailItemDto({ ...item }), lines });
 }
 
 const GUARDS = {
   USD: { buy: { min_pct: '-1.0000', max_pct: '1.0000' }, sell: { min_pct: '-1.0000', max_pct: '1.0000' } },
 };
 
-function policyOf(): RatePolicyData {
-  return {
-    policy: {
+function policyOf() {
+  return makeRatePolicyData({
+    policy: makeRatePolicyVersionDto({
       id: 'pol-1',
       branchId: 'MAIN',
       version: 1,
@@ -96,20 +107,20 @@ function policyOf(): RatePolicyData {
       valueTiersOn: false,
       valueTiers: [],
       sharpMoveAlertPct: null,
-    },
-  };
+    }),
+  });
 }
 
-function refRow(code: string, unit: number, sight: string, transfer: string, selling: string): RatesReferenceRow {
-  return { code, date: '2026-10-08', unit, buyingSight: sight, buyingTransfer: transfer, selling };
+function refRow(code: string, unit: number, sight: string, transfer: string, selling: string) {
+  return makeRatesReferenceRow({ code, date: '2026-10-08', unit, buyingSight: sight, buyingTransfer: transfer, selling });
 }
 
-function referenceOf(): RatesReferenceData {
-  return {
+function referenceOf() {
+  return makeRatesReferenceData({
     rows: [refRow('USD', 1, '33.4218', '33.5008', '33.8278')],
     fetchedAt: '2026-10-09T01:30:00.000Z',
     error: null,
-  };
+  });
 }
 
 interface Sent {

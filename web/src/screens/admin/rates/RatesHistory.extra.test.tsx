@@ -5,25 +5,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
 import * as table from './i18n';
-import type { RatePublicationLine, RatePublicationRow } from './rate-history';
+import {
+  makeRatePublicationRow,
+  type RatePublicationLine,
+  type RatePublicationRow,
+} from '../../../shared/testing/fixtures';
 import { RatesHistory } from './RatesHistory';
 
 function say(key: string): string {
   return (table.th as Record<string, string>)[key]!;
 }
 
-function row(version: number, by: string, state: string, lines: RatePublicationLine[] = []): RatePublicationRow {
-  return {
+function row(version: number, by: string, state: string, lines?: RatePublicationLine[]) {
+  return makeRatePublicationRow({
     id: `pub-${version}`,
     branchId: 'MAIN',
     version,
     publishedAt: `2026-10-${String(10 + (version % 9)).padStart(2, '0')}T03:00:00Z`,
     publishedBy: by,
-    approvedRequestId: null,
+    approvedRequestId: `req-${version}`,
     draftId: `d-${version}`,
     state,
-    lines,
-  };
+    lines: lines ?? [],
+  });
 }
 
 let calls: Array<{ name: string; q: Record<string, unknown> }>;
