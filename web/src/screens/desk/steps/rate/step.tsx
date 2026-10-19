@@ -20,7 +20,9 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
   };
   const otherError = () => {
     const e = store.quoteError();
-    return e && e.field !== 'amount' && e.field !== 'currency' ? e.message : undefined;
+    return e && e.field !== 'amount' && e.field !== 'currency' && e.field !== 'couponCode'
+      ? e.message
+      : undefined;
   };
   const currencies = () => {
     const codes = (store.config()?.rates ?? []).map((r) => r.code);
