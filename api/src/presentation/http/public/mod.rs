@@ -4,6 +4,7 @@
 
 pub mod branch_rates;
 pub mod branches;
+pub mod consent_texts;
 pub mod host;
 
 use actix_web::http::StatusCode;
@@ -16,6 +17,7 @@ use crate::presentation::http::v3::error::V3Error;
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     branches::configure(cfg, state);
     branch_rates::configure(cfg, state);
+    consent_texts::configure(cfg, state);
     host::configure(cfg, state);
 }
 
