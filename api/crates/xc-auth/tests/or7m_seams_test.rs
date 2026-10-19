@@ -40,11 +40,16 @@ struct TestDb {
 impl TestDb {
     async fn start() -> Self {
         let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            panic!("TEST_DATABASE_URL is not set; these tests need a real PostgreSQL and do not skip")
+            panic!(
+                "TEST_DATABASE_URL is not set; these tests need a real PostgreSQL and do not skip"
+            )
         });
         let options = PgConnectOptions::from_str(&url).expect("a PostgreSQL URL");
         let database = options.get_database().unwrap_or("").to_owned();
-        assert!(database.ends_with("_test"), "'{database}' does not end in `_test`");
+        assert!(
+            database.ends_with("_test"),
+            "'{database}' does not end in `_test`"
+        );
         let schema = unique("or7m_seams");
         let admin = PgPoolOptions::new()
             .max_connections(1)
@@ -106,7 +111,9 @@ impl TestDb {
 }
 
 fn at(minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 10, 19, 6, minute, 0).single().expect("a time")
+    Utc.with_ymd_and_hms(2026, 10, 19, 6, minute, 0)
+        .single()
+        .expect("a time")
 }
 
 // ------------------------------------------------------------ T2: PgAttemptCounter
@@ -120,8 +127,17 @@ async fn increment_counts_per_key_and_window_from_one() {
     assert_eq!(counter.increment("AGENT:a", at(0)).await.expect("2nd"), 2);
     assert_eq!(counter.increment("AGENT:a", at(0)).await.expect("3rd"), 3);
     // Another key, and another window of the same key, each start at 1.
-    assert_eq!(counter.increment("PAIR:a", at(0)).await.expect("other key"), 1);
-    assert_eq!(counter.increment("AGENT:a", at(15)).await.expect("next window"), 1);
+    assert_eq!(
+        counter.increment("PAIR:a", at(0)).await.expect("other key"),
+        1
+    );
+    assert_eq!(
+        counter
+            .increment("AGENT:a", at(15))
+            .await
+            .expect("next window"),
+        1
+    );
 
     assert_eq!(
         db.windows().await,
@@ -142,7 +158,9 @@ async fn concurrent_increments_lose_no_count() {
     let mut tasks = Vec::new();
     for _ in 0..20 {
         let counter = counter.clone();
-        tasks.push(tokio::spawn(async move { counter.increment("AGENT:c", at(0)).await }));
+        tasks.push(tokio::spawn(async move {
+            counter.increment("AGENT:c", at(0)).await
+        }));
     }
     let mut answers = Vec::new();
     for task in tasks {
@@ -189,7 +207,11 @@ async fn user_names_answers_users_by_id_and_skips_the_rest() {
 
     assert_eq!(names.len(), 2, "only the two users asked for: {names:?}");
     assert_eq!(names.get(&anna).map(String::as_str), Some("Anna"));
-    assert_eq!(names.get(&bo).map(String::as_str), Some("Bo"), "a disabled user still answers");
+    assert_eq!(
+        names.get(&bo).map(String::as_str),
+        Some("Bo"),
+        "a disabled user still answers"
+    );
     db.finish().await;
 }
 

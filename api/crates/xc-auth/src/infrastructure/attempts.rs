@@ -23,7 +23,9 @@ impl PgAttemptCounter {
     /// window's count after it (the first attempt answers 1). Concurrent calls never lose a count.
     pub async fn increment(&self, key: &str, window_start: DateTime<Utc>) -> AppResult<i32> {
         let _ = (&self.pool, key, window_start);
-        todo!("OR-7.m T2: INSERT … ON CONFLICT (key, window_start) DO UPDATE SET count = count + 1 RETURNING count")
+        todo!(
+            "OR-7.m T2: INSERT … ON CONFLICT (key, window_start) DO UPDATE SET count = count + 1 RETURNING count"
+        )
     }
 
     /// Deletes every window that started before `current_window` and answers how many went.
