@@ -82,7 +82,29 @@ export function CustomerShell(props: { route: CustomerRoute; children?: JSX.Elem
               }
             >
               {(signedIn) => (
-                <span class="xc-customer-name">{tr('signedInAs', { name: signedIn().name })}</span>
+                <>
+                  <a
+                    class="xc-customer-name"
+                    href="/app/profile"
+                    aria-current={props.route === '/app/profile' ? 'page' : undefined}
+                  >
+                    {tr('signedInAs', { name: signedIn().name })}
+                  </a>
+                  <a
+                    class="xc-customer-member"
+                    href="/app/member"
+                    aria-current={props.route === '/app/member' ? 'page' : undefined}
+                  >
+                    {tr('member')}
+                  </a>
+                  <a
+                    class="xc-customer-rate-alerts"
+                    href="/app/rate-alerts"
+                    aria-current={props.route === '/app/rate-alerts' ? 'page' : undefined}
+                  >
+                    {tr('rateAlerts')}
+                  </a>
+                </>
               )}
             </Show>
           )}
