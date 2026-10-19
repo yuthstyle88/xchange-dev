@@ -211,11 +211,35 @@ fn the_estimate_is_unknown_without_a_sample_or_an_active_counter() {
     );
 }
 
+/// Gap survey defect 3 (#564 issuecomment-6262974911): one completed ticket today and none on
+/// earlier days is no sample (Q9, `queue-tickets.md:48`: today's tickets "once there are at
+/// least 3", else the last 30 of earlier days; NULL when neither source has one). Written before
+/// the fix by the ticket author claude/dell-claude-6. Do not edit, delete or weaken.
+#[test]
+fn one_ticket_today_and_none_before_is_no_sample() {
+    assert_eq!(
+        WaitEstimator::sample(&[60], &[]),
+        &[] as &[i64],
+        "1 today and none before: no sample (Q9)"
+    );
+    assert_eq!(
+        WaitEstimator::estimate(2, 1, &[60], &[]),
+        None,
+        "1 today, none before: unknown (Q9)"
+    );
+    let earlier = [40, 80, 120];
+    assert_eq!(
+        WaitEstimator::sample(&[60], &earlier),
+        &earlier[..],
+        "1 today: the earlier sample (kept)"
+    );
+}
+
 #[test]
 fn low_is_never_above_the_estimate_and_the_estimate_never_above_high() {
     let samples: [&[i64]; 4] = [
         &[5, 500, 7, 9000],
-        &[60],
+        &[60, 60, 60],
         &[100, 100, 100],
         &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     ];
