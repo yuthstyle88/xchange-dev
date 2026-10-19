@@ -449,8 +449,22 @@ fn s5_uri() -> String {
 #[actix_web::test]
 async fn s5_without_a_ticket_id_the_customer_gets_their_waiting_ticket() {
     let db = TestDb::start().await;
-    s5_ticket(&db, 1, "WAITING", None, "current_date").await;
-    let alice = s5_ticket(&db, 2, "WAITING", Some("customer-alice"), "current_date").await;
+    s5_ticket(
+        &db,
+        1,
+        "WAITING",
+        None,
+        "(now() AT TIME ZONE 'Asia/Bangkok')::date",
+    )
+    .await;
+    let alice = s5_ticket(
+        &db,
+        2,
+        "WAITING",
+        Some("customer-alice"),
+        "(now() AT TIME ZONE 'Asia/Bangkok')::date",
+    )
+    .await;
 
     let ans = call(
         &db,
@@ -478,7 +492,14 @@ async fn s5_without_a_ticket_id_the_customer_gets_their_waiting_ticket() {
 #[actix_web::test]
 async fn s5_without_a_ticket_id_a_completed_ticket_is_not_answered() {
     let db = TestDb::start().await;
-    s5_ticket(&db, 1, "COMPLETED", Some("customer-alice"), "current_date").await;
+    s5_ticket(
+        &db,
+        1,
+        "COMPLETED",
+        Some("customer-alice"),
+        "(now() AT TIME ZONE 'Asia/Bangkok')::date",
+    )
+    .await;
 
     let ans = call(
         &db,
@@ -499,7 +520,14 @@ async fn s5_without_a_ticket_id_a_completed_ticket_is_not_answered() {
 #[actix_web::test]
 async fn s5_without_a_ticket_id_another_customers_ticket_is_never_answered() {
     let db = TestDb::start().await;
-    s5_ticket(&db, 1, "WAITING", Some("customer-bob"), "current_date").await;
+    s5_ticket(
+        &db,
+        1,
+        "WAITING",
+        Some("customer-bob"),
+        "(now() AT TIME ZONE 'Asia/Bangkok')::date",
+    )
+    .await;
 
     let ans = call(
         &db,
@@ -525,7 +553,7 @@ async fn s5_without_a_ticket_id_yesterdays_ticket_is_not_answered() {
         1,
         "WAITING",
         Some("customer-alice"),
-        "current_date - 1",
+        "(now() AT TIME ZONE 'Asia/Bangkok')::date - 1",
     )
     .await;
 
