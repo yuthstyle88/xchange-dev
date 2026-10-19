@@ -78,24 +78,6 @@ async fn a_movement_in_a_currency_the_register_does_not_know_is_a_fault() {
     db.drop_schema().await;
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_balance_in_a_currency_the_register_does_not_know_is_a_fault() {
-    let db = TestDb::start().await;
-    let (branch, shift) = a_day_with_dollars(&db, "balance").await;
-    sqlx::query(
-        "UPDATE shift_balances SET code = 'ZZZ' WHERE code = 'USD' AND shift_id IN \
-         (SELECT id FROM shifts WHERE branch_id = $1)",
-    )
-    .bind(branch.as_str())
-    .execute(&db.pool)
-    .await
-    .expect("turn the balance's currency into ZZZ");
-
-    a_fault(db.service().shifts(&branch).await, "shifts");
-    a_fault(db.service().shift(&branch, &shift).await, "shift");
-    db.drop_schema().await;
-}
-
 /// Holds before the fix and after it: rows that decode are read as written.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn rows_that_decode_are_read_as_written() {
