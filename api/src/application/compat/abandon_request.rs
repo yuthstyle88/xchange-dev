@@ -178,17 +178,9 @@ impl AbandonRequest {
         {
             return Ok(true);
         }
-        if self
-            .shifts
-            .find_shift_by_close_request_id(tx, branch, request_id)
-            .await?
-            .is_some()
-        {
-            return Ok(true);
-        }
         Ok(self
             .shifts
-            .find_movement_by_request_id(tx, branch, request_id)
+            .find_shift_by_close_request_id(tx, branch, request_id)
             .await?
             .is_some())
     }
