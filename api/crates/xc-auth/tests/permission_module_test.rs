@@ -30,12 +30,13 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::RatePolicySave, Some((RatesStock, Full))),
         (P::RateAlertSettingsSave, Some((RatesStock, Full))),
         (P::OrgStartingPricesManage, Some((RatesStock, Full))),
-        (P::CashManage, Some((Finance, Full))),
+        // §11.2 "Branch cash basics": CashManage and ApprovalsDecide move from FINANCE FULL to no module (`None`).
+        (P::CashManage, None),
         (P::CashTargetSet, Some((Finance, Full))),
         (P::CashLimitsManage, Some((Finance, Full))),
         (P::CashTransferPolicySet, Some((Finance, Full))),
         (P::FinanceReconcile, Some((Finance, Full))),
-        (P::ApprovalsDecide, Some((Finance, Full))),
+        (P::ApprovalsDecide, None),
         // §11.2: the desk basics move from FINANCE CREATE to no module (`None`).
         (P::ShiftOperate, None),
         (P::BranchDayOperate, None),
@@ -166,10 +167,12 @@ fn c2_exactly_the_cross_cutting_six_map_to_no_module() {
         .map(|(p, _)| p)
         .filter(|p| PermissionModule::module(*p).is_none())
         .collect();
-    // §11.2: the cross-cutting six plus the desk basics and the five desk device/document permissions have no module.
+    // §11.2 ("Branch cash basics"): CashManage and ApprovalsDecide join the desk basics, desk device/document permissions, and cross-cutting six in `None`.
     assert_eq!(
         none,
         vec![
+            Permission::CashManage,
+            Permission::ApprovalsDecide,
             Permission::ShiftOperate,
             Permission::BranchDayOperate,
             Permission::ShiftCloseCertify,
@@ -246,7 +249,7 @@ fn c2_no_role_goes_above_view_on_audit_logs_and_risk_is_empty() {
 
 #[test]
 fn c2_role_permission_seed_counts_per_section_11_2() {
-    // §11.2: Permission counts by role for the seed
+    // §11.2 ("Branch cash basics"): BRANCH_MANAGER gains CashManage and ApprovalsDecide (31 -> 33).
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
@@ -258,7 +261,7 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
             ("EXECUTIVE", 47),
             ("ADMIN", 10),
             ("RATE_MANAGER", 30),
-            ("BRANCH_MANAGER", 31),
+            ("BRANCH_MANAGER", 33),
             ("TELLER", 21),
             ("FINANCE", 22),
             ("MARKETING", 5),
