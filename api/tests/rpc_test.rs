@@ -1065,10 +1065,23 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
     let two = snapshot(RPC, "OWNER", json!({ "branchId": "B-two" })).await;
     // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
     assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(0));
+    // the teller's write on a branch they hold lands (OR-7.m S-D4, reviewer fix)
+    let saved = app
+        .send(
+            Call::action(
+                ORIGIN,
+                RPC,
+                "reserveCustomer",
+                json!({ "branchId": MAIN, "name": "A Customer", "passportNo": "P7000001",
+                        "nationality": "DEU", "mode": "LIVE" }),
+            )
+            .cookie(&cookies["FRONT"]),
+        )
+        .await;
+    assert_eq!(saved.status, 200, "{}", saved.text);
     let main = snapshot(RPC, "OWNER", json!({})).await;
     // CI-4 (#651): the snapshot lists every LIVE customer of the organisation (owner, 2026-10-09).
-    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
-    assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(0));
+    assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(1));
     // CA-10 #626 (design §6): the owner's direct `adminOpenShift` on the branch they name is
     // retired with the direct shift actions; a shift opens by a count (counts' own tests).
     desk.finish().await;
