@@ -390,8 +390,9 @@ impl Room {
 
         let (verifier_user_id, _): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
             "SELECT u.id, u.organization_id FROM users u \
-             JOIN employees e ON e.id = u.legacy_employee_id \
-             WHERE e.role IN ('BRANCH_MANAGER', 'MANAGER') AND e.branch_id = $1 AND u.id != $2",
+             JOIN user_roles r ON r.user_id = u.id \
+             WHERE r.role_code = 'BRANCH_MANAGER' AND r.branch_id = $1 AND u.id != $2 \
+             ORDER BY u.created_at, u.id LIMIT 1",
         )
         .bind(branch)
         .bind(teller_id)
