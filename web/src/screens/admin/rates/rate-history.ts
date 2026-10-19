@@ -31,7 +31,11 @@ export type RatePublicationRow = {
 
 export type LineChange = 'added' | 'dropped' | 'changed' | 'same';
 
-/** Skeleton stub (feat/fe-pricing); the A03 history ticket implements it. */
-export function lineChange(_line: RatePublicationLine): LineChange {
+export function lineChange(line: RatePublicationLine): LineChange {
+  if (line.before === null) return 'added';
+  if (line.after === null) return 'dropped';
+  if (line.before.buy !== line.after.buy || line.before.sell !== line.after.sell) {
+    return 'changed';
+  }
   return 'same';
 }
