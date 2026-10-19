@@ -7,6 +7,10 @@ import {
 } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
+import type {
+  AdminPermissionMatrixData,
+  MatrixGroup,
+} from '../../../shared/api/generated/admin_permission_matrix';
 import type { AdminUserRole, AdminUserRow } from '../../../shared/api/generated/admin_users';
 import type { UserChangeOutput } from '../../../shared/api/generated/user_disable';
 import { keyedWrite } from '../../../shared/api/keyed-write';
@@ -120,6 +124,18 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [grantBranch, setGrantBranch] = createSignal<string>('');
   const [grantValidFrom, setGrantValidFrom] = createSignal<string>('');
   const [grantValidTo, setGrantValidTo] = createSignal<string>('');
+  const [grantGroups, setGrantGroups] = createSignal<MatrixGroup[] | null>(null);
+
+  const grantOptions = () => {
+    const groups = grantGroups();
+    if (groups && groups.length > 0) {
+      return groups.map((g) => ({
+        code: g.code,
+        label: g.name === g.code ? g.code : `${g.name} (${g.code})`,
+      }));
+    }
+    return AVAILABLE_ROLES.map((r) => ({ code: r, label: r }));
+  };
 
   // Profile form state
   const [profileEmployeeCode, setProfileEmployeeCode] = createSignal('');
@@ -319,6 +335,23 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setGrantValidFrom('');
     setGrantValidTo('');
     setDialogError(null);
+    setGrantGroups(null);
+    const sentFrom = openDialogKey();
+
+    void (async () => {
+      try {
+        const res = await api.view<AdminPermissionMatrixData>('admin_permission_matrix', {
+          branch: props.branch(),
+        });
+        if (openDialogKey() === sentFrom && res.data?.groups) {
+          setGrantGroups(res.data.groups);
+        }
+      } catch {
+        if (openDialogKey() === sentFrom) {
+          setGrantGroups(null);
+        }
+      }
+    })();
   };
 
   const handleGrantSubmit = async (e: Event) => {
@@ -910,8 +943,12 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     value={grantRole()}
                     onChange={(e) => setGrantRole(e.currentTarget.value)}
                   >
-                    <For each={AVAILABLE_ROLES}>
-                      {(r) => <option value={r}>{r}</option>}
+                    <For each={grantOptions()}>
+                      {(opt) => (
+                        <option value={opt.code} selected={opt.code === grantRole()}>
+                          {opt.label}
+                        </option>
+                      )}
                     </For>
                   </select>
                 </div>
