@@ -151,7 +151,7 @@ afterEach(() => {
 });
 
 describe('A05 users (#3329): grant period, ended roles, employeeCode column, paging', () => {
-  it('row 1: grant with both dates empty sends validFrom: null, validTo: null', async () => {
+  it('row 1: grant with both dates empty has no validFrom / validTo keys in the body', async () => {
     const { container } = mountScreen();
     await settle();
 
@@ -168,9 +168,9 @@ describe('A05 users (#3329): grant period, ended roles, employeeCode column, pag
       userId: 'u-1',
       role: 'TELLER',
       branch: B01,
-      validFrom: null,
-      validTo: null,
     });
+    expect(grants[0]!.body).not.toHaveProperty('validFrom');
+    expect(grants[0]!.body).not.toHaveProperty('validTo');
   });
 
   it('row 2: grant with 2026-11-01 -> 2026-12-31 sends Bangkok RFC 3339 start-of-day timestamps', async () => {

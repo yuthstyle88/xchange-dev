@@ -339,8 +339,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         userId: user.userId,
         role: grantRole(),
         branch: grantBranch() ? grantBranch() : null,
-        validFrom: validFrom ? `${validFrom}T00:00:00+07:00` : null,
-        validTo: validTo ? `${validTo}T00:00:00+07:00` : null,
+        ...(validFrom ? { validFrom: `${validFrom}T00:00:00+07:00` } : {}),
+        ...(validTo ? { validTo: `${validTo}T00:00:00+07:00` } : {}),
       });
       if (openDialogKey() === sentFrom) setGrantingUser(null);
       setPageSuccess(t('successGranted'));
