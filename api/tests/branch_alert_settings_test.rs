@@ -551,6 +551,13 @@ async fn other_roles_are_refused_and_nothing_is_written() {
         ("MARKETING@XC-B01", Role::Marketing),
         ("VERIFICATION_REVIEWER@XC-B01", Role::VerificationReviewer),
     ];
+    assert!(
+        candidates
+            .map(|(_, r)| r)
+            .iter()
+            .any(|r| !RoleGrants::seed(*r).contains(&Permission::AlertSettingsSave)),
+        "§11.2 must leave some role without AlertSettingsSave, or this test refuses nobody"
+    );
     for (who, _) in candidates
         .into_iter()
         .filter(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::AlertSettingsSave))

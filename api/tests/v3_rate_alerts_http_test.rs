@@ -839,6 +839,12 @@ async fn only_holders_of_rate_alert_settings_save_may_save_or_read_the_settings(
     use xc_auth::domain::access::{Permission, RoleGrants};
 
     let room = Room::start().await;
+    assert!(
+        STAFF_ROLES
+            .iter()
+            .any(|r| !RoleGrants::seed(*r).contains(&Permission::RateAlertSettingsSave)),
+        "§11.2 must leave some role without RateAlertSettingsSave, or this test refuses nobody"
+    );
     for role in STAFF_ROLES
         .iter()
         .copied()

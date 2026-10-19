@@ -458,6 +458,13 @@ async fn roles_without_org_starting_prices_manage_refused_role_not_allowed_here_
         ("branch_manager", AccessRole::BranchManager),
         ("teller", AccessRole::Teller),
     ];
+    assert!(
+        candidates
+            .map(|(_, r)| r)
+            .iter()
+            .any(|r| !RoleGrants::seed(*r).contains(&Permission::OrgStartingPricesManage)),
+        "§11.2 must leave some role without OrgStartingPricesManage, or this test refuses nobody"
+    );
     for (who, _) in candidates
         .into_iter()
         .filter(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::OrgStartingPricesManage))

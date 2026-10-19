@@ -415,6 +415,13 @@ async fn roles_without_cash_limits_manage_may_neither_save_nor_read() {
         ("MARKETING@XC-B01", Role::Marketing),
         ("VERIFICATION_REVIEWER@XC-B01", Role::VerificationReviewer),
     ];
+    assert!(
+        candidates
+            .map(|(_, r)| r)
+            .iter()
+            .any(|r| !RoleGrants::seed(*r).contains(&Permission::CashLimitsManage)),
+        "§11.2 must leave some role without CashLimitsManage, or this test refuses nobody"
+    );
     for (who, _) in candidates
         .into_iter()
         .filter(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::CashLimitsManage))
