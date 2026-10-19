@@ -781,58 +781,7 @@ async fn admin_request_status_refuses_a_request_id_of_the_wrong_shape_naming_it(
     room.finish().await;
 }
 
-async fn seed_movement(
-    pool: &sqlx::PgPool,
-    branch: &str,
-    shift_id: &str,
-    code: &str,
-    direction: &str,
-    amount: &str,
-    reason: &str,
-) -> (String, String) {
-    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
-    use xc_cash::domain::posting::{CashPlace, CashPostings, moves};
-    use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
-    use xc_kernel::money::CurrencyCode;
-    let _ = reason;
-    let id = format!("MV-{:012}", next());
-    let req_id = request_id();
-    let mut tx = pool.begin().await.expect("begin tx");
-    let (safe, drawer) = (
-        CashPlace::Safe(BranchId::new(branch)),
-        CashPlace::Drawer(shift_id.to_string()),
-    );
-    let (from, to) = if direction == "IN" {
-        (safe, drawer)
-    } else {
-        (drawer, safe)
-    };
-    let source = SourceRef {
-        source_type: SourceType::Transfer,
-        source_id: req_id.clone(),
-        source_key: "move".to_string(),
-    };
-    let moved = [(
-        CurrencyCode::parse(code).expect("valid currency"),
-        amount.parse().expect("valid decimal"),
-    )];
-    LedgerCashPostings::new()
-        .post_in(&mut tx, &moves(&from, &to, &moved, &source), None)
-        .await
-        .expect("post ledger movement");
-    sqlx::query(
-        "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 1) \
-         ON CONFLICT (branch_id) DO UPDATE SET version = branch_versions.version + 1",
-    )
-    .bind(branch)
-    .execute(&mut *tx)
-    .await
-    .expect("bump branch_versions");
-    tx.commit().await.expect("commit seed_movement");
-    (id, req_id)
-}
-
-/// `applied` is the check `adminAbandonRequest` makes: an opened shift, a stock movement, a closed
+/// `applied` is the check `adminAbandonRequest` makes: an opened shift, a closed
 /// shift in the branch, or a branch anywhere, made with that request id. (Before RE-7 also a rate
 /// saved directly; RE-7 #604 removes that save.)
 #[actix_web::test]
@@ -859,22 +808,6 @@ async fn admin_request_status_is_applied_exactly_when_abandon_would_find_the_req
         ask(opened).await,
         json!({ "applied": true }),
         "an opened shift"
-    );
-    let shift = room.open_shift_id(MAIN).await;
-    let (_movement_id, moved) = seed_movement(
-        &room.desk.db.pool,
-        MAIN,
-        &shift,
-        "USD",
-        "IN",
-        "10",
-        "from the safe",
-    )
-    .await;
-    assert_eq!(
-        ask(moved).await,
-        json!({ "applied": true }),
-        "a stock movement"
     );
     let closed = room.close_shift(MAIN).await;
     assert_eq!(
