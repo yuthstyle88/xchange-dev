@@ -1,14 +1,13 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type {
   RateDraftDetailData,
   RateDraftFilter,
-  RateDraftLineDto,
 } from '../../../shared/api/generated/rate_draft';
 import type { RateDraftsData } from '../../../shared/api/generated/rate_drafts';
-import type { RatePolicyData, ValueTierDto } from '../../../shared/api/generated/rate_policy';
+import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
 import type { RatePublicationsData } from '../../../shared/api/generated/rate_publications';
 import type {
@@ -24,6 +23,8 @@ import type { AdminMenuProps } from '../menus';
 import { openDialog } from '../parts/Dialog';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
+import { emptyValueTiers, RatesPolicyCard, type TierFormRow } from './RatesPolicyCard';
+import { RatesDraftCard, type OutOfBoundItem } from './RatesDraftCard';
 import './rates.css';
 
 const t = screenT('admin.rates', table);
@@ -31,53 +32,6 @@ const t = screenT('admin.rates', table);
 function formatTime(iso: string): string {
   if (!iso) return '';
   return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-}
-
-interface OutOfBoundItem {
-  currency: string;
-  side: 'BUY' | 'SELL';
-}
-
-interface TierFormRow {
-  tierNo: 1 | 2 | 3 | 4;
-  upperInclusiveThb: string;
-  buyMarginPct: string;
-  sellMarginPct: string;
-}
-
-function emptyValueTiers(): TierFormRow[] {
-  return ([1, 2, 3, 4] as const).map((tierNo) => ({
-    tierNo,
-    upperInclusiveThb: '',
-    buyMarginPct: '',
-    sellMarginPct: '',
-  }));
-}
-
-function parsePositiveDecimalParts(raw: string): { intPart: string; fracPart: string } | null {
-  const trimmed = raw.trim();
-  const m = /^\+?(\d+)(?:\.(\d+))?$/.exec(trimmed);
-  if (!m) return null;
-  const intPart = m[1]!.replace(/^0+/, '') || '0';
-  const fracPart = (m[2] ?? '').replace(/0+$/, '');
-  if (intPart === '0' && fracPart === '') return null;
-  return { intPart, fracPart };
-}
-
-function isDecimalLessThan(
-  a: { intPart: string; fracPart: string },
-  b: { intPart: string; fracPart: string },
-): boolean {
-  if (a.intPart.length !== b.intPart.length) {
-    return a.intPart.length < b.intPart.length;
-  }
-  if (a.intPart !== b.intPart) {
-    return a.intPart < b.intPart;
-  }
-  const maxFrac = Math.max(a.fracPart.length, b.fracPart.length);
-  const aFrac = a.fracPart.padEnd(maxFrac, '0');
-  const bFrac = b.fracPart.padEnd(maxFrac, '0');
-  return aFrac < bFrac;
 }
 
 export function Rates(props: AdminMenuProps): JSX.Element {
@@ -325,293 +279,12 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     }
   });
 
-  const getUnitSize = (currency: string): string => {
-    const pubLine = pubData()?.lines?.find((p) => p.currency === currency);
-    if (pubLine?.unitSize) return pubLine.unitSize;
-    const rRow = refData()?.rows?.find((r) => r.code === currency);
-    if (rRow?.unit) return String(rRow.unit);
-    return '1';
-  };
-
   let lastDraftId: string | undefined;
   createEffect(() => {
     const curDraftId = draftDetail()?.draft?.id;
     if (curDraftId !== lastDraftId) {
       lastDraftId = curDraftId;
       setSimulateResult(null);
-    }
-  });
-
-  const isOutOfBound = (currency: string): boolean => {
-    const sim = simulateResult();
-    if (!sim || !draftDetail()?.draft || !Array.isArray(sim.outOfBound)) return false;
-    return sim.outOfBound.some((item) => item.currency === currency);
-  };
-
-  const formatStatus = (status: string | undefined): string => {
-    if (!status) return '';
-    switch (status) {
-      case 'DRAFT':
-        return t('statusDraft');
-      case 'PENDING_APPROVAL':
-        return t('statusPendingApproval');
-      case 'APPROVED':
-        return t('statusApproved');
-      case 'PUBLISHED':
-        return t('statusPublished');
-      case 'REJECTED':
-        return t('statusRejected');
-      default:
-        return status;
-    }
-  };
-
-  const handleNewDraft = guarded(async () => {
-    const branch = props.branch();
-    const gen = readGen;
-    const curPub = pubData();
-    const lines = (curPub?.lines ?? []).map((l: PublishedLineDto) => ({
-      currency: l.currency,
-      buyMode: 'AUTO',
-      sellMode: 'AUTO',
-      manualBuy: null,
-      manualSell: null,
-      reason: null,
-    }));
-    try {
-      await writeFor('fetchReference', 'POST', '/api/rate-references/fetch').send({ branch });
-
-      const createRes = await writeFor<unknown, { id: string; version: number; status: string }>(
-        'createDraft',
-        'POST',
-        '/api/rate-drafts',
-      ).send({ branch, lines });
-
-      const detailRes = await client.view<RateDraftDetailData, RateDraftFilter>(
-        'rate_draft',
-        { branch, filter: { id: createRes.id } },
-      );
-      if (gen !== readGen) return;
-      if (detailRes.data) {
-        setDraftDetail(detailRes.data);
-      }
-
-      await readDrafts(branch, gen);
-      if (gen !== readGen) return;
-      setSimulateResult(null);
-    } catch (err: unknown) {
-      if (gen !== readGen) return;
-      toast(wordedError(err));
-    }
-  });
-
-  const handleSimulate = guarded(async () => {
-    const draft = draftDetail()?.draft;
-    if (!draft) return;
-    const draftId = draft.id;
-    const branch = props.branch();
-    const gen = readGen;
-    try {
-      const res = await writeFor<
-        unknown,
-        {
-          id: string;
-          isInBound: boolean;
-          outOfBound: OutOfBoundItem[];
-        }
-      >('simulateDraft:' + draftId, 'POST', `/api/rate-drafts/${draftId}/simulate`).send({ branch });
-      if (gen !== readGen || draftDetail()?.draft?.id !== draftId) return;
-      setSimulateResult(res);
-    } catch (err: unknown) {
-      if (gen !== readGen) return;
-      toast(wordedError(err));
-    }
-  });
-
-  const handleSubmit = guarded(async () => {
-    const draft = draftDetail()?.draft;
-    if (!draft) return;
-    const branch = props.branch();
-    const gen = readGen;
-    try {
-      const res = await writeFor<unknown, { requestId?: string; status: string }>(
-        'submitDraft:' + draft.id,
-        'POST',
-        `/api/rate-drafts/${draft.id}/submit`,
-      ).send({ branch });
-      if (gen !== readGen) return;
-      if (res?.status) {
-        setDraftDetail((prev) =>
-          prev && prev.draft ? { ...prev, draft: { ...prev.draft, status: res.status } } : prev,
-        );
-      }
-    } catch (err: unknown) {
-      if (gen !== readGen) return;
-      toast(wordedError(err));
-    }
-  });
-
-  const handlePublish = guarded(async () => {
-    const draft = draftDetail()?.draft;
-    if (!draft) return;
-    const branch = props.branch();
-    const gen = readGen;
-    const curVersion = pubData()?.publication?.version ?? null;
-    try {
-      await writeFor<unknown, { id: string; version: number }>(
-        'publishDraft:' + draft.id,
-        'POST',
-        `/api/rate-drafts/${draft.id}/publish`,
-      ).send({ branch, expectedVersion: curVersion });
-      if (gen === readGen) {
-        setSimulateResult(null);
-      }
-      await readPublished(branch, gen);
-      await readDrafts(branch, gen);
-    } catch (err: unknown) {
-      if (gen !== readGen) return;
-      toast(wordedError(err));
-    }
-  });
-
-  const handleAdjustAll = guarded(async () => {
-    const draft = draftDetail()?.draft;
-    const lines = draftDetail()?.lines ?? [];
-    if (!draft) return;
-    const branch = props.branch();
-    const gen = readGen;
-    const policy = policyData()?.policy;
-    if (!policy) return;
-    try {
-      await writeFor('adjustPolicy', 'POST', '/api/rate-policies').send({
-        branch,
-        buyAdjustPct: adjustBuyPct(),
-        sellAdjustPct: adjustSellPct(),
-        guards: policy.guards,
-        maxReferenceAgeHours: policy.maxReferenceAgeHours,
-        onStale: policy.onStale,
-        staleLimitThb: policy.staleLimitThb,
-        reason: policy.reason || t('adjustAll'),
-      });
-
-      const putLines = lines.map((l: RateDraftLineDto) => ({
-        currency: l.currency,
-        buyMode: l.buyMode,
-        sellMode: l.sellMode,
-        manualBuy: l.manualBuy,
-        manualSell: l.manualSell,
-        reason: l.reason,
-      }));
-
-      await writeFor('saveDraft:' + draft.id, 'PUT', `/api/rate-drafts/${draft.id}`).send({
-        branch,
-        expectedVersion: draft.version,
-        lines: putLines,
-      });
-      if (gen === readGen) {
-        setSimulateResult(null);
-      }
-
-      const updated = await client.view<RateDraftDetailData, RateDraftFilter>(
-        'rate_draft',
-        { branch, filter: { id: draft.id } },
-      );
-      if (gen !== readGen) return;
-      if (updated.data) {
-        setDraftDetail(updated.data);
-      }
-    } catch (err: unknown) {
-      if (gen !== readGen) return;
-      toast(wordedError(err));
-    }
-  });
-
-  const nonRisingTierNo = (): 1 | 2 | 3 | null => {
-    if (!valueTiersOn()) return null;
-    const rows = valueTiers();
-    const u1Raw = rows[0]?.upperInclusiveThb ?? '';
-    const u2Raw = rows[1]?.upperInclusiveThb ?? '';
-    const u3Raw = rows[2]?.upperInclusiveThb ?? '';
-    const u1 = parsePositiveDecimalParts(u1Raw);
-    const u2 = parsePositiveDecimalParts(u2Raw);
-    const u3 = parsePositiveDecimalParts(u3Raw);
-
-    if (u1Raw.trim() !== '' && u1 === null) return 1;
-    if (u2Raw.trim() !== '' && u2 === null) return 2;
-    if (u1 !== null && u2 !== null && !isDecimalLessThan(u1, u2)) return 2;
-    if (u3Raw.trim() !== '' && u3 === null) return 3;
-    if (u2 !== null && u3 !== null && !isDecimalLessThan(u2, u3)) return 3;
-    if (u1 !== null && u3 !== null && !isDecimalLessThan(u1, u3)) return 3;
-    return null;
-  };
-
-  const areValueTiersValid = (): boolean => {
-    if (!valueTiersOn()) return true;
-    const rows = valueTiers();
-    if (rows.length !== 4) return false;
-    const u1 = parsePositiveDecimalParts(rows[0]!.upperInclusiveThb);
-    const u2 = parsePositiveDecimalParts(rows[1]!.upperInclusiveThb);
-    const u3 = parsePositiveDecimalParts(rows[2]!.upperInclusiveThb);
-    if (!u1 || !u2 || !u3) return false;
-    if (!isDecimalLessThan(u1, u2) || !isDecimalLessThan(u2, u3)) return false;
-    if (rows[3]!.upperInclusiveThb !== '') return false;
-    return rows.every((r) => r.buyMarginPct.trim() !== '' && r.sellMarginPct.trim() !== '');
-  };
-
-  const updateTierField = (
-    tierNo: 1 | 2 | 3 | 4,
-    field: 'upperInclusiveThb' | 'buyMarginPct' | 'sellMarginPct',
-    value: string,
-  ) => {
-    setValueTiers((prev) =>
-      prev.map((row) => (row.tierNo === tierNo ? { ...row, [field]: value } : row)),
-    );
-  };
-
-  const handleSavePolicy = guarded(async () => {
-    if (!canSavePolicy()) return;
-    const policy = policyData()?.policy;
-    if (!policy || Boolean(policyError())) return;
-    if (!areValueTiersValid()) return;
-
-    const branch = props.branch();
-    const gen = readGen;
-    const rows = valueTiers();
-    const hasAnyTierInput = rows.some(
-      (r) => r.upperInclusiveThb !== '' || r.buyMarginPct !== '' || r.sellMarginPct !== '',
-    );
-    const tiersPayload: ValueTierDto[] =
-      !valueTiersOn() && !hasAnyTierInput
-        ? []
-        : rows.map((r) => ({
-            tierNo: r.tierNo,
-            upperInclusiveThb:
-              r.tierNo === 4 ? null : r.upperInclusiveThb === '' ? null : r.upperInclusiveThb,
-            buyMarginPct: r.buyMarginPct,
-            sellMarginPct: r.sellMarginPct,
-          }));
-
-    const payload: RatePolicySaveInput & { branch: string } = {
-      branch,
-      buyAdjustPct: adjustBuyPct(),
-      sellAdjustPct: adjustSellPct(),
-      guards: policy.guards,
-      maxReferenceAgeHours: policy.maxReferenceAgeHours,
-      onStale: policy.onStale,
-      staleLimitThb: policy.staleLimitThb,
-      reason: policy.reason || t('savePolicy'),
-      valueTiersOn: valueTiersOn(),
-      valueTiers: tiersPayload,
-      sharpMoveAlertPct: sharpMoveAlertPct() === '' ? null : sharpMoveAlertPct(),
-    };
-
-    try {
-      await savePolicyWrite.send(payload);
-      if (gen !== readGen) return;
-      setSimulateResult(null);
-    } catch (err: unknown) {
-      if (gen !== readGen) return;
-      toast(wordedError(err));
     }
   });
 
@@ -668,284 +341,54 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       </div>
 
       {/* Rate Policy: Value Tiers & Sharp-Move Threshold (VT-5) */}
-      <div class="rates-section">
-        <div class="section-header">
-          <div class="title-row">
-            <div>
-              <div class="eyebrow">{t('policyEyebrow')}</div>
-              <h2>{t('policyTitle')}</h2>
-            </div>
-            <div class="dialog-actions">
-              <button
-                type="button"
-                data-action="save-policy"
-                data-testid="save-policy"
-                disabled={
-                  busy() ||
-                  !canSavePolicy() ||
-                  Boolean(policyError()) ||
-                  !policyData()?.policy ||
-                  !areValueTiersValid()
-                }
-                onClick={handleSavePolicy}
-              >
-                {t('savePolicy')}
-              </button>
-            </div>
-          </div>
-          <Show when={nonRisingTierNo() !== null}>
-            <div
-              class="form-error"
-              role="alert"
-              data-field-error={`tier-${nonRisingTierNo()}`}
-            >
-              {`${t('tierNonRisingPrefix')}${nonRisingTierNo()}${t('tierNonRisingSuffix')}`}
-            </div>
-          </Show>
-        </div>
-
-        <div class="adjust-all-bar" style={{ padding: '12px 24px', display: 'flex', gap: '24px', "align-items": 'center', "flex-wrap": 'wrap' }}>
-          <label class="adjust-field-label" style={{ display: 'flex', gap: '8px', "align-items": 'center' }}>
-            <input
-              type="checkbox"
-              name="valueTiersOn"
-              data-field="valueTiersOn"
-              data-testid="value-tiers-switch"
-              checked={valueTiersOn()}
-              disabled={!canSavePolicy()}
-              onChange={(e) => {
-                setValueTiersOn(e.currentTarget.checked);
-              }}
-            />
-            <span>{t('valueTiersSwitchLabel')}</span>
-          </label>
-
-          <label class="adjust-field-label">
-            {t('sharpMoveThresholdLabel')}
-            <input
-              type="text"
-              name="sharpMoveAlertPct"
-              data-field="sharpMoveAlertPct"
-              data-testid="sharp-move-threshold"
-              value={sharpMoveAlertPct()}
-              disabled={!canSavePolicy()}
-              onInput={(e) => {
-                setSharpMoveAlertPct(e.currentTarget.value);
-              }}
-            />
-          </label>
-        </div>
-
-        <div class="table-scroll">
-          <table class="rates-table">
-            <thead>
-              <tr>
-                <th>{t('headerTierNo')}</th>
-                <th class="num">{t('headerTierUpperThb')}</th>
-                <th class="num">{t('headerTierBuyMargin')}</th>
-                <th class="num">{t('headerTierSellMargin')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={[1, 2, 3, 4] as const}>
-                {(tierNo) => {
-                  const row = () => valueTiers()[tierNo - 1]!;
-                  return (
-                    <tr data-tier-no={tierNo}>
-                      <td>{`${t('tierLabelPrefix')}${tierNo}`}</td>
-                      <td class="num">
-                        <Show
-                          when={tierNo < 4}
-                          fallback={<span>{t('tierAndAbove')}</span>}
-                        >
-                          <input
-                            type="text"
-                            name={`tier-${tierNo}-upperInclusiveThb`}
-                            data-field="upperInclusiveThb"
-                            data-tier-field="upper"
-                            value={row().upperInclusiveThb}
-                            disabled={!canSavePolicy()}
-                            aria-invalid={nonRisingTierNo() === tierNo ? 'true' : undefined}
-                            onInput={(e) =>
-                              updateTierField(tierNo, 'upperInclusiveThb', e.currentTarget.value)
-                            }
-                          />
-                          <Show when={nonRisingTierNo() === tierNo}>
-                            <div class="field-error" data-error>
-                              {`${t('tierNonRisingPrefix')}${tierNo}${t('tierNonRisingSuffix')}`}
-                            </div>
-                          </Show>
-                        </Show>
-                      </td>
-                      <td class="num">
-                        <input
-                          type="text"
-                          name={`tier-${tierNo}-buyMarginPct`}
-                          data-field="buyMarginPct"
-                          data-tier-field="buy-margin"
-                          value={row().buyMarginPct}
-                          disabled={!canSavePolicy()}
-                          onInput={(e) =>
-                            updateTierField(tierNo, 'buyMarginPct', e.currentTarget.value)
-                          }
-                        />
-                      </td>
-                      <td class="num">
-                        <input
-                          type="text"
-                          name={`tier-${tierNo}-sellMarginPct`}
-                          data-field="sellMarginPct"
-                          data-tier-field="sell-margin"
-                          value={row().sellMarginPct}
-                          disabled={!canSavePolicy()}
-                          onInput={(e) =>
-                            updateTierField(tierNo, 'sellMarginPct', e.currentTarget.value)
-                          }
-                        />
-                      </td>
-                    </tr>
-                  );
-                }}
-              </For>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <RatesPolicyCard
+        branch={props.branch}
+        busy={busy}
+        canSavePolicy={canSavePolicy}
+        policyData={policyData}
+        policyError={policyError}
+        valueTiers={valueTiers}
+        setValueTiers={setValueTiers}
+        valueTiersOn={valueTiersOn}
+        setValueTiersOn={setValueTiersOn}
+        sharpMoveAlertPct={sharpMoveAlertPct}
+        setSharpMoveAlertPct={setSharpMoveAlertPct}
+        adjustBuyPct={adjustBuyPct}
+        adjustSellPct={adjustSellPct}
+        savePolicyWrite={savePolicyWrite}
+        readGen={() => readGen}
+        setSimulateResult={setSimulateResult}
+        guarded={guarded}
+        toast={toast}
+        t={t}
+      />
 
       {/* Draft Section */}
-      <div class="rates-section">
-        <div class="section-header">
-          <div class="title-row">
-            <div>
-              <div class="eyebrow">{t('eyebrow')}</div>
-              <h2>{t('draftTitle')}</h2>
-              <Show when={draftDetail()?.draft}>
-                <div class="live-note">
-                  <span class="draft-status-label">
-                    {formatStatus(draftDetail()?.draft?.status)}
-                  </span>
-                </div>
-              </Show>
-            </div>
-            <div class="dialog-actions">
-              <button
-                type="button"
-                class="btn-new-draft"
-                disabled={busy()}
-                onClick={handleNewDraft}
-              >
-                {t('newDraft')}
-              </button>
-              <Show when={draftDetail()?.draft}>
-                <button
-                  type="button"
-                  class="btn-simulate"
-                  disabled={busy()}
-                  onClick={handleSimulate}
-                >
-                  {t('simulate')}
-                </button>
-                <button
-                  type="button"
-                  class="btn-submit"
-                  disabled={busy()}
-                  onClick={handleSubmit}
-                >
-                  {t('submit')}
-                </button>
-                <button
-                  type="button"
-                  class="btn-publish"
-                  disabled={busy()}
-                  onClick={handlePublish}
-                >
-                  {t('publish')}
-                </button>
-              </Show>
-            </div>
-          </div>
-          <Show when={draftDetail()?.draft && simulateResult() && simulateResult()!.isInBound}>
-            <div class="in-bound-status">{t('inBound')}</div>
-          </Show>
-          <Show when={draftsError()}>
-            <div class="form-error" role="alert">{draftsError()}</div>
-          </Show>
-          <Show when={policyError()}>
-            <div class="form-error" role="alert">{policyError()}</div>
-          </Show>
-        </div>
-
-        <Show when={draftDetail()?.draft}>
-          {/* Adjust all form */}
-          <div class="adjust-all-bar" style={{ padding: '12px 24px', display: 'flex', gap: '16px', "align-items": 'center' }}>
-            <label class="adjust-field-label">
-              {t('adjustBuyPct')}
-              <input
-                type="text"
-                value={adjustBuyPct()}
-                onInput={(e) => setAdjustBuyPct(e.currentTarget.value)}
-              />
-            </label>
-            <label class="adjust-field-label">
-              {t('adjustSellPct')}
-              <input
-                type="text"
-                value={adjustSellPct()}
-                onInput={(e) => setAdjustSellPct(e.currentTarget.value)}
-              />
-            </label>
-            <button
-              type="button"
-              class="btn-adjust-all"
-              disabled={busy() || Boolean(policyError()) || !policyData()?.policy}
-              onClick={handleAdjustAll}
-            >
-              {t('adjustAll')}
-            </button>
-          </div>
-
-          <div class="table-scroll">
-            <table class="rates-table">
-              <thead>
-                <tr>
-                  <th>{t('headerCurrency')}</th>
-                  <th class="num">{t('headerBuy')}</th>
-                  <th class="num">{t('headerSell')}</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={draftDetail()?.lines ?? []}>
-                  {(line) => (
-                    <tr data-draft-line={line.currency}>
-                      <td class="code">{line.currency}</td>
-                      <td class="num rate-number">
-                        {line.buyMode === 'MANUAL' && line.manualBuy
-                          ? formatRate(line.manualBuy, getUnitSize(line.currency), line.currency)
-                          : line.buyMode}
-                      </td>
-                      <td class="num rate-number">
-                        {line.sellMode === 'MANUAL' && line.manualSell
-                          ? formatRate(line.manualSell, getUnitSize(line.currency), line.currency)
-                          : line.sellMode}
-                      </td>
-                      <td>
-                        <Show when={isOutOfBound(line.currency)}>
-                          <span class="out-of-bound">{t('outOfBound')}</span>
-                        </Show>
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-          </div>
-        </Show>
-      </div>
-
-      <div class="section-note">
-        <p>{t('ratesLiveNote')}</p>
-      </div>
+      <RatesDraftCard
+        branch={props.branch}
+        busy={busy}
+        draftDetail={draftDetail}
+        setDraftDetail={setDraftDetail}
+        simulateResult={simulateResult}
+        setSimulateResult={setSimulateResult}
+        draftsError={draftsError}
+        policyError={policyError}
+        policyData={policyData}
+        pubData={pubData}
+        refData={refData}
+        adjustBuyPct={adjustBuyPct}
+        setAdjustBuyPct={setAdjustBuyPct}
+        adjustSellPct={adjustSellPct}
+        setAdjustSellPct={setAdjustSellPct}
+        client={client}
+        writeFor={writeFor}
+        readDrafts={readDrafts}
+        readPublished={readPublished}
+        readGen={() => readGen}
+        guarded={guarded}
+        toast={toast}
+        t={t}
+      />
 
       {/* Published Rates Section */}
       <div class="rates-section">

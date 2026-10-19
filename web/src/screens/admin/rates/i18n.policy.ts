@@ -1,0 +1,31 @@
+export const th = {
+  policyEyebrow: 'RATE POLICY',
+  policyTitle: 'นโยบายเรทและระดับมูลค่า',
+  valueTiersSwitchLabel: 'เปิดใช้เรทตามระดับมูลค่า',
+  sharpMoveThresholdLabel: 'เกณฑ์แจ้งเตือนเรทผันผวน (%)',
+  headerTierNo: 'ระดับ',
+  headerTierUpperThb: 'เพดานมูลค่า (THB)',
+  headerTierBuyMargin: 'ส่วนต่างรับซื้อ (%)',
+  headerTierSellMargin: 'ส่วนต่างขาย (%)',
+  tierLabelPrefix: 'ระดับ ',
+  tierAndAbove: 'ขึ้นไป',
+  savePolicy: 'บันทึกนโยบาย',
+  tierNonRisingPrefix: 'เพดานมูลค่าระดับ ',
+  tierNonRisingSuffix: ' ต้องมากกว่าระดับก่อนหน้า',
+};
+
+export const en = {
+  policyEyebrow: 'RATE POLICY',
+  policyTitle: 'Rate Policy & Value Tiers',
+  valueTiersSwitchLabel: 'Enable value tiers',
+  sharpMoveThresholdLabel: 'Sharp-move alert threshold (%)',
+  headerTierNo: 'Tier',
+  headerTierUpperThb: 'Upper Limit (THB)',
+  headerTierBuyMargin: 'Buy Margin (%)',
+  headerTierSellMargin: 'Sell Margin (%)',
+  tierLabelPrefix: 'Tier ',
+  tierAndAbove: 'And above',
+  savePolicy: 'Save Policy',
+  tierNonRisingPrefix: 'Tier ',
+  tierNonRisingSuffix: ' upper limit must be greater than the previous tier',
+};
