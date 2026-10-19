@@ -1,1 +1,43 @@
 /* bulk-approve.css — styles for BulkApprove.tsx (FE pricing-board, #564). */
+
+.bulk-approve {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bulk-approve-count {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.bulk-approve-btn {
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bulk-approve-btn:disabled,
+.bulk-approve-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bulk-approve-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bulk-approve-cancel {
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.bulk-approve-error {
+  margin: 0;
+  font-size: 0.875rem;
+}
