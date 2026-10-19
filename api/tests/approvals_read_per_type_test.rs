@@ -29,6 +29,8 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::TestDb;
 use serde_json::Value;
+use xc_auth::domain::access::v3_roles::blueprint_roles;
+use xc_auth::domain::access::{Permission, RoleGrants};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
@@ -118,7 +120,7 @@ async fn request(db: &TestDb, type_name: &str) {
 }
 
 #[tokio::test]
-async fn a_branch_manager_does_not_see_the_rate_approvals_the_owner_sees() {
+async fn a_staff_holder_of_approvals_decide_does_not_see_the_rate_approvals_the_owner_sees() {
     let db = TestDb::start().await;
     request(&db, "RATE_PUBLICATION").await;
 
@@ -127,11 +129,22 @@ async fn a_branch_manager_does_not_see_the_rate_approvals_the_owner_sees() {
         ["RATE_PUBLICATION"],
         "the owner, who decides rate publications, sees it"
     );
-    for role in ["MANAGER", "BACKEND", "FINANCE"] {
+    // Under §11.2, only staff roles whose `RoleGrants::seed` contains `ApprovalsDecide` pass the route gate.
+    let holders: Vec<Role> = Role::STAFF
+        .into_iter()
+        .filter(|&r| {
+            blueprint_roles(r)
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ApprovalsDecide))
+        })
+        .collect();
+    assert!(!holders.is_empty(), "some staff role holds ApprovalsDecide");
+    for role in holders {
+        let name = role.as_str();
         assert_eq!(
-            listed(&db, &format!("staff:{role}:MAIN")).await,
+            listed(&db, &format!("staff:{name}:MAIN")).await,
             Vec::<String>::new(),
-            "{role}: passes the gate (#874) but may not decide a rate publication, so it is not listed"
+            "{name}: passes the gate (#874) but may not decide a rate publication, so it is not listed"
         );
     }
     db.finish().await;
