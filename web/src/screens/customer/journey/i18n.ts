@@ -38,6 +38,12 @@ export const th = {
   branchLabel: 'สาขา: {branch}',
   retry: 'ลองใหม่',
   refresh: 'รีเฟรช',
+  bookingsTitle: 'การจองที่กำลังจะถึง',
+  noBookings: 'ไม่มีการจองที่กำลังจะถึง',
+  errorBookings: 'โหลดการจองไม่สำเร็จ',
+  bookingQr: 'คิวอาร์โค้ดสำหรับเช็คอิน',
+  deletePlan: 'ลบแผน',
+  deletePlanFailed: 'ลบแผนไม่สำเร็จ',
 };
 
 export const en = {
@@ -77,6 +83,12 @@ export const en = {
   branchLabel: 'Branch: {branch}',
   retry: 'Retry',
   refresh: 'Refresh',
+  bookingsTitle: 'Upcoming bookings',
+  noBookings: 'No upcoming bookings',
+  errorBookings: 'Failed to load your bookings',
+  bookingQr: 'Check-in QR code',
+  deletePlan: 'Delete plan',
+  deletePlanFailed: 'Could not delete the plan',
 };
 
 export const zh = {
@@ -116,4 +128,10 @@ export const zh = {
   branchLabel: '分行: {branch}',
   retry: '重试',
   refresh: '刷新',
+  bookingsTitle: '即将到来的预约',
+  noBookings: '暂无即将到来的预约',
+  errorBookings: '预约加载失败',
+  bookingQr: '签到二维码',
+  deletePlan: '删除计划',
+  deletePlanFailed: '删除计划失败',
 };

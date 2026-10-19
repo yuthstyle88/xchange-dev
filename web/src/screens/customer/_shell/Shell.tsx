@@ -21,7 +21,9 @@ export type CustomerRoute =
   | '/app/bookings'
   | '/app/assistant'
   | '/app/rate-alerts'
-  | '/app/notifications';
+  | '/app/notifications'
+  | '/app/member'
+  | '/app/profile';
 
 type NavKey = 'home' | 'branches' | 'bookings' | 'history' | 'assistant';
 
@@ -46,6 +48,8 @@ const NAV_OF: Record<CustomerRoute, CustomerRoute | undefined> = {
   '/app/assistant': '/app/assistant',
   '/app/rate-alerts': undefined,
   '/app/notifications': undefined,
+  '/app/member': undefined,
+  '/app/profile': undefined,
 };
 
 type Profile = { signedIn: true; name: string } | { signedIn: false };

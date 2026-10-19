@@ -26,6 +26,8 @@ import type {
 import { locale, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
+import { BookingExtras } from './BookingExtras';
+import { loadBranchNames } from './branchNames';
 import * as table from './i18n';
 import './bookings.css';
 
@@ -143,9 +145,16 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     }
   };
 
+  const [branchNames, setBranchNames] = createSignal<Map<string, string>>(new Map());
+
   onMount(() => {
     fetchBookings();
+    void loadBranchNames(fetchFn).then(setBranchNames);
   });
+
+  const patchBooking = (id: string, patch: Partial<MyBookingItemDto>) => {
+    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  };
 
   let commandSeq = 0;
 
@@ -356,7 +365,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
 
                   <div class="xc-booking-body">
                     <div class="xc-booking-info">
-                      <p class="xc-booking-branch">{booking.branchId}</p>
+                      <p class="xc-booking-branch">{branchNames().get(booking.branchId) ?? booking.branchId}</p>
                       <p class="xc-booking-time">
                         {formatSlotTime(booking.startAt, booking.endAt)}
                       </p>
@@ -379,6 +388,12 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                       </div>
                     </Show>
                   </div>
+
+                  <BookingExtras
+                    booking={booking}
+                    api={api}
+                    onChange={(patch) => patchBooking(booking.id, patch)}
+                  />
 
                   {/* Actions: Cancel & Reschedule */}
                   <Show when={canCancel(booking) || canReschedule(booking)}>
