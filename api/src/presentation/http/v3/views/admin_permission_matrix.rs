@@ -10,11 +10,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, RoleGrantStore};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::infrastructure::access::PgRoleGrantStore;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -25,7 +26,6 @@ use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct AdminPermissionMatrixView {
-    #[allow(dead_code)]
     pool: PgPool,
 }
 
@@ -44,7 +44,12 @@ impl BranchView for AdminPermissionMatrixView {
     type Data = AdminPermissionMatrixData;
 
     async fn own_version(&self, _branch: &BranchId, _who: &Actor) -> AppResult<Option<i64>> {
-        todo!("F5")
+        let mut conn = self.pool.acquire().await.map_err(AppError::Database)?;
+        let version = PgRoleGrantStore::new()
+            .version(&mut conn)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        Ok(Some(version))
     }
 
     async fn load(
