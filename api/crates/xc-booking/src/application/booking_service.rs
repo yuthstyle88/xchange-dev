@@ -321,9 +321,10 @@ impl BookingService {
         // 10. Generate booking id, booking no, qr token
         let booking_uuid = Uuid::new_v4();
         let booking_id = format!("BK-{booking_uuid}");
+        let issued_on = org_today(tx, input.organization_id, now).await?;
         let booking_no = self
             .bookings
-            .next_booking_no(tx, input.organization_id, slot.service_date)
+            .next_booking_no(tx, input.organization_id, issued_on)
             .await?;
 
         let qr_key = QrToken::key_from_pii(&self.pii_keys);
@@ -933,4 +934,20 @@ impl BookingService {
         tx.commit().await.map_err(pos_error::AppError::Database)?;
         Ok(res)
     }
+}
+
+async fn org_today(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    org_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<NaiveDate, BookingError> {
+    let tz_str: String = sqlx::query_scalar("SELECT timezone FROM organizations WHERE id = $1")
+        .bind(org_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+    let tz: chrono_tz::Tz = tz_str
+        .parse()
+        .map_err(|e| pos_error::AppError::Internal(format!("invalid timezone {tz_str}: {e}")))?;
+    Ok(now.with_timezone(&tz).date_naive())
 }
