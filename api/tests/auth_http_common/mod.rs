@@ -156,6 +156,66 @@ impl Desk {
             .unwrap_or_else(|e| panic!("the employee {username}: {e}"))
     }
 
+    pub async fn owner_session(&self, name: &str) -> String {
+        let mut conn = self.pool.acquire().await.expect("a connection");
+        let valid_from = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+        let id = xc_testdb::people::seed_person(
+            &mut conn,
+            xchange::presentation::pages::SEEDED_XC_ORG_ID,
+            name,
+            &[
+                xc_testdb::people::RoleRow {
+                    role_code: "EXECUTIVE",
+                    branch_id: None,
+                    valid_from,
+                    valid_to: None,
+                },
+                xc_testdb::people::RoleRow {
+                    role_code: "ADMIN",
+                    branch_id: None,
+                    valid_from,
+                    valid_to: None,
+                },
+            ],
+        )
+        .await
+        .unwrap_or_else(|e| panic!("seed owner {name}: {e}"));
+        xc_testdb::sessions::seed_session(
+            &mut conn,
+            &id,
+            None,
+            chrono::Utc::now() + chrono::Duration::hours(12),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("seed owner session {name}: {e}"))
+    }
+
+    pub async fn staff_session(&self, name: &str, role_code: &str, branch: &str) -> String {
+        let mut conn = self.pool.acquire().await.expect("a connection");
+        let valid_from = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+        let id = xc_testdb::people::seed_person(
+            &mut conn,
+            xchange::presentation::pages::SEEDED_XC_ORG_ID,
+            name,
+            &[xc_testdb::people::RoleRow {
+                role_code,
+                branch_id: Some(branch),
+                valid_from,
+                valid_to: None,
+            }],
+        )
+        .await
+        .unwrap_or_else(|e| panic!("seed staff {name}: {e}"));
+        xc_testdb::sessions::seed_session(
+            &mut conn,
+            &id,
+            Some(branch),
+            chrono::Utc::now() + chrono::Duration::hours(12),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("seed staff session {name}: {e}"))
+    }
+
     pub async fn drop_schema(self) {
         sqlx::query(AssertSqlSafe(format!(
             "DROP SCHEMA {} CASCADE",
@@ -246,6 +306,11 @@ impl Call {
 
     pub fn staff(mut self, token: &str) -> Self {
         self.add_cookie("__Host-xc_staff", token);
+        self
+    }
+
+    pub fn session(mut self, token: &str) -> Self {
+        self.add_cookie(xc_testdb::sessions::SESSION_COOKIE, token);
         self
     }
 
