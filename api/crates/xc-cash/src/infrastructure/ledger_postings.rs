@@ -191,8 +191,7 @@ impl Plan {
                         self.organization_id
                     ))
                 })?;
-                active_reserved_in(&mut **tx, org, &BranchId::new(branch), currency, Utc::now())
-                    .await?
+                active_reserved_in(tx, org, &BranchId::new(branch), currency, Utc::now()).await?
             };
             self.positions.insert(
                 key.clone(),
@@ -290,10 +289,15 @@ impl Plan {
         line: Option<Uuid>,
         movement_type: MovementType,
     ) -> AppResult<Decimal> {
-        let (before, last_average) = {
+        let (before, last_average, reserved) = {
             let pos = self.position(tx, branch, currency).await?;
-            (pos.now, pos.last_average)
+            (pos.now, pos.last_average, pos.reserved)
         };
+        if reserved > Decimal::ZERO && before.quantity - q < reserved {
+            return Err(stock_insufficient(
+                "the posting takes a position into another quote's reserved stock",
+            ));
+        }
         let cost = if before.quantity == q {
             before.cost_thb
         } else if let Some(c) = at_cost {
