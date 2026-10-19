@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 use quote_common::*;
 use serde_json::{Value, json};
 use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::access::{Actor as User, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
 use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_kernel::ids::BranchId;
@@ -130,7 +130,7 @@ fn header(req: &HttpRequest) -> String {
 }
 
 fn role_permissions(role: Role) -> Vec<String> {
-    let mut ps: Vec<String> = RolePermissions::of(role)
+    let mut ps: Vec<String> = RoleGrants::seed(role)
         .iter()
         .map(|p| {
             serde_json::to_string(p)

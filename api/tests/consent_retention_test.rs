@@ -66,7 +66,7 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::access::{Permission, Role as BpRole, RolePermissions};
+use xc_auth::domain::access::{Permission, Role as BpRole, RoleGrants};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
@@ -335,8 +335,9 @@ const EVERY_ROLE: [BpRole; 9] = [
 fn only_executive_holds_consent_policy_manage() {
     for role in EVERY_ROLE {
         assert_eq!(
-            RolePermissions::of(role).contains(&Permission::ConsentPolicyManage),
-            role == BpRole::Executive,
+            RoleGrants::seed(role).contains(&Permission::ConsentPolicyManage),
+            // Follows §11.2 seed: Executive, RateManager and BranchManager have Customers Full (ConsentPolicyManage)
+            matches!(role, BpRole::Executive | BpRole::RateManager | BpRole::BranchManager),
             "{}",
             role.as_str()
         );
@@ -814,11 +815,9 @@ impl SessionReader for HeaderSessions {
     }
 }
 
-const STAFF_ROLES: [&str; 9] = [
+// Follows §11.2 seed: BACKEND, MANAGER, RATES hold Customers Full (ConsentPolicyManage); only the remaining staff are refused
+const STAFF_ROLES: [&str; 6] = [
     "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
     "MONITOR",
     "FINANCE",
     "SYSTEM",
