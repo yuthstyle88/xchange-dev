@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { closeDialog, Dialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
@@ -16,8 +16,8 @@ const EXPORTER_ME: unknown = (() => {
 
 const VIEW = '/api/v3/views/admin_overview';
 
-function row(id: string): TransactionRow {
-  return {
+function row(id: string) {
+  return makeTransactionRow({
     id,
     date: '2026-10-06',
     created: '2026-10-06T03:00:00.000Z',
@@ -44,7 +44,7 @@ function row(id: string): TransactionRow {
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  };
+  });
 }
 
 interface Sent {
