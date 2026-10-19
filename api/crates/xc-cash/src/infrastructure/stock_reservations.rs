@@ -40,6 +40,14 @@ fn stock_insufficient(detail: &str) -> AppError {
     AppError::Domain(format!("stockInsufficient: {detail}"))
 }
 
+/// No `inventory_positions` row means the branch holds none of that currency (design §7 SR-1: "no row ⇒ on hand 0").
+fn no_row_means_zero(quantity: Option<Decimal>) -> Decimal {
+    match quantity {
+        Some(q) => q,
+        None => Decimal::ZERO,
+    }
+}
+
 async fn lock_on_hand(
     conn: &mut PgConnection,
     organization_id: Uuid,
@@ -57,7 +65,7 @@ async fn lock_on_hand(
     .fetch_optional(conn)
     .await
     .map_err(db_err)?;
-    Ok(quantity.unwrap_or(Decimal::ZERO))
+    Ok(no_row_means_zero(quantity))
 }
 
 /// Σ `quantity` of the active reservations (D-3: `RESERVED` and `expires_at > now`) of one (organisation, branch,
