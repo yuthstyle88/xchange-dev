@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../shared/api/client';
-import type { QuoteDto } from '../../shared/api/generated/quote';
+import { makeQuoteDto, makeQuoteLineDto, makeQuotePublicationDto, type QuoteDto } from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { OWNER_DESK, STAFF_DESK } from './desk-path';
 import { createDeskStore, type DeskStore } from './desk-store';
@@ -78,17 +78,17 @@ function fakeServer() {
   };
 }
 
-function quoteDto(over: Partial<QuoteDto> & { quantity?: string; currency?: string } = {}): QuoteDto {
+function quoteDto(over: Partial<QuoteDto> & { quantity?: string; currency?: string } = {}) {
   const q = over.quantity ?? '100';
   const curr = over.currency ?? 'USD';
-  return {
+  return makeQuoteDto({
     id: over.id ?? `q-${q}`,
     type: over.type ?? 'BUY',
     channel: 'DESK',
     expiresAt: over.expiresAt ?? new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: 'pub-1', version: 3 },
+    publication: makeQuotePublicationDto({ id: 'pub-1', version: 3 }),
     lines: over.lines ?? [
-      {
+      makeQuoteLineDto({
         currency: curr,
         shopSide: 'BUY',
         quantity: q,
@@ -99,11 +99,11 @@ function quoteDto(over: Partial<QuoteDto> & { quantity?: string; currency?: stri
         feeThb: '0.00',
         settleThb: '3210.00',
         publishedRateLineId: 'line-1',
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
 function serverWithQuotes(answerFor?: Route) {
