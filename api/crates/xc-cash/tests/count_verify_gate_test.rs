@@ -29,6 +29,7 @@ use xc_cash::application::ledger_approval::count_difference::register as registe
 use xc_cash::domain::count::{CashCount, CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_person};
 
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
@@ -128,28 +129,20 @@ impl Db {
     }
 
     async fn person(&self, name: &str, roles: &[Role]) -> Actor {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
-        )
-        .bind(ORG)
-        .bind(name)
-        .fetch_one(&self.pool)
-        .await
-        .expect("insert a user");
-        for role in roles {
-            sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 VALUES ($1::uuid, $2, $3::uuid, NULL)",
-            )
-            .bind(&id)
-            .bind(role.as_str())
-            .bind(ORG)
-            .execute(&self.pool)
-            .await
-            .expect("insert role");
-        }
         let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let role_rows: Vec<RoleRow> = roles
+            .iter()
+            .map(|r| RoleRow {
+                role_code: r.as_str(),
+                branch_id: None,
+                valid_from: from,
+                valid_to: None,
+            })
+            .collect();
+        let mut conn = self.pool.acquire().await.expect("acquire connection");
+        let id = seed_person(&mut conn, ORG, name, &role_rows)
+            .await
+            .expect("seed person");
         Actor::new(
             &id,
             ORG,
