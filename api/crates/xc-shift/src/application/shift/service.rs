@@ -13,7 +13,6 @@ use xc_kernel::shift_hook::{NoShiftLifecycleHook, ShiftLifecycleHook};
 use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
 use crate::domain::shift::entities::shift_ledger::ShiftLedger;
-use crate::domain::shift::entities::stock_movement::StockMovement;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
 use crate::domain::shift::value_objects::balances::Balances;
 use crate::domain::shift::value_objects::shift_error::ShiftError;
@@ -99,10 +98,6 @@ impl<R: ShiftRepository> ShiftService<R> {
 
     pub async fn shifts(&self, branch: &BranchId) -> AppResult<Vec<Shift>> {
         self.repo.shifts(branch).await
-    }
-
-    pub async fn movements(&self, branch: &BranchId) -> AppResult<Vec<StockMovement>> {
-        self.repo.movements(branch).await
     }
 
     pub async fn apply_delta_for_teller_in(
