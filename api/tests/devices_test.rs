@@ -78,9 +78,10 @@ async fn the_saved_row(
     .expect("the saved row's customer");
     // The shift's teller (`shifts.teller_id` is NOT NULL since #753, one OPEN shift per teller since M3).
     sqlx::query(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, 'dev-teller-' || $1, 'PENDING', 'test', 'dev-teller-' || $1 FROM organizations \
-         WHERE code = 'XC' ON CONFLICT (legacy_employee_id) DO NOTHING",
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         SELECT id, 'dev-teller-' || $1, 'PENDING', 'test' FROM organizations \
+         WHERE code = 'XC' \
+           AND NOT EXISTS (SELECT 1 FROM users WHERE name = 'dev-teller-' || $1 AND created_by = 'test')",
     )
     .bind(branch_id)
     .execute(pool)
@@ -89,7 +90,7 @@ async fn the_saved_row(
     sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
          VALUES ('dev-shift-' || $1, $1, 'OPEN', now(), 'owner', 'dev-open-' || $1, \
-           (SELECT id FROM users WHERE legacy_employee_id = 'dev-teller-' || $1)) \
+           (SELECT id FROM users WHERE name = 'dev-teller-' || $1 AND created_by = 'test' ORDER BY created_at, id LIMIT 1)) \
          ON CONFLICT DO NOTHING",
     )
     .bind(branch_id)

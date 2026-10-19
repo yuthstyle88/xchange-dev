@@ -185,7 +185,7 @@ async fn answer(
         RpcRoute::StaffRpc => callers.staff_user.as_ref(),
     };
 
-    let session = identity_session(req, now).await;
+    let session = identity_session(req, now).await.ok().flatten();
     let blueprint_session = session.is_some();
     // The Blueprint session's `users.id` (#1128): a shift opened or closed with one staffs or
     // releases the shift teller's queue counter. A password session has none.

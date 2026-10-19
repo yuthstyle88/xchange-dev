@@ -118,7 +118,6 @@ pub(crate) async fn resolve_teller(
         return Err(ShiftError::BranchNotFound.into());
     };
 
-    // 1. users.id (users.id::text = opened_by)
     let user_by_id: Option<String> = sqlx::query_scalar(
         "SELECT id::text FROM users WHERE organization_id = $1::uuid AND id::text = $2",
     )
@@ -127,83 +126,7 @@ pub(crate) async fn resolve_teller(
     .fetch_optional(&mut **tx)
     .await?;
 
-    if let Some(uid) = user_by_id {
-        return Ok(uid);
-    }
-
-    // 2. employees.id -> users.legacy_employee_id
-    let user_by_legacy: Option<String> = sqlx::query_scalar(
-        "SELECT id::text FROM users WHERE organization_id = $1::uuid AND legacy_employee_id = $2",
-    )
-    .bind(&org_id)
-    .bind(opened_by)
-    .fetch_optional(&mut **tx)
-    .await?;
-
-    if let Some(uid) = user_by_legacy {
-        return Ok(uid);
-    }
-
-    // 3. employees.username -> that employee's user
-    let user_by_username: Option<String> = sqlx::query_scalar(
-        "SELECT u.id::text FROM employees e \
-         JOIN users u ON u.legacy_employee_id = e.id AND u.organization_id = $1::uuid \
-         WHERE e.username = $2",
-    )
-    .bind(&org_id)
-    .bind(opened_by)
-    .fetch_optional(&mut **tx)
-    .await?;
-
-    if let Some(uid) = user_by_username {
-        return Ok(uid);
-    }
-
-    // 4. "owner" or an owners.username -> the one organisation-wide EXECUTIVE + ADMIN user (legacy_employee_id IS NULL)
-    let is_owner_str = opened_by == "owner";
-    let is_owner_match = if is_owner_str {
-        true
-    } else {
-        let in_owners: Option<bool> =
-            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM owners WHERE username = $1)")
-                .bind(opened_by)
-                .fetch_optional(&mut **tx)
-                .await?;
-        in_owners.unwrap_or(false)
-    };
-
-    if is_owner_match {
-        let owners: Vec<String> = sqlx::query_scalar(
-            "SELECT u.id::text FROM users u \
-             WHERE u.organization_id = $1::uuid \
-               AND u.legacy_employee_id IS NULL \
-               AND EXISTS ( \
-                   SELECT 1 FROM user_roles r \
-                   WHERE r.user_id = u.id \
-                     AND r.organization_id = u.organization_id \
-                     AND r.role_code = 'EXECUTIVE' \
-                     AND r.branch_id IS NULL \
-               ) \
-               AND EXISTS ( \
-                   SELECT 1 FROM user_roles r \
-                   WHERE r.user_id = u.id \
-                     AND r.organization_id = u.organization_id \
-                     AND r.role_code = 'ADMIN' \
-                     AND r.branch_id IS NULL \
-               )",
-        )
-        .bind(&org_id)
-        .fetch_all(&mut **tx)
-        .await?;
-
-        if owners.len() == 1 {
-            return Ok(owners.into_iter().next().unwrap());
-        } else {
-            return Err(ShiftError::TellerUnknown.into());
-        }
-    }
-
-    Err(ShiftError::TellerUnknown.into())
+    user_by_id.ok_or_else(|| ShiftError::TellerUnknown.into())
 }
 
 #[derive(Clone)]
