@@ -295,40 +295,6 @@ impl TestDb {
         self.balances.seed_close(shift_id, counted);
     }
 
-    /// CA-10 (#626, #2955): a stock movement written straight into `stock_movements`, with `expected` moved by
-    /// it in the `ShiftBalances` double. Replaces v2's `ShiftService::move_stock` as setup. Returns the movement's id.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn seed_movement(
-        &self,
-        branch: &BranchId,
-        shift_id: &str,
-        code: &str,
-        direction: &str,
-        amount: &str,
-        request_id: &str,
-        at: DateTime<Utc>,
-    ) -> String {
-        let id = format!("MV-{}", uuid::Uuid::new_v4());
-        sqlx::query(
-            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
-             VALUES ($1, $2, $3, $4, $5, $6::numeric, 'test', $7, $8, 'test')",
-        )
-        .bind(&id)
-        .bind(branch.as_str())
-        .bind(shift_id)
-        .bind(code)
-        .bind(direction)
-        .bind(amount)
-        .bind(request_id)
-        .bind(at)
-        .execute(&self.pool)
-        .await
-        .expect("seed a movement");
-        self.balances
-            .seed_movement(shift_id, code, direction, amount);
-        id
-    }
-
     pub async fn drop_schema(self) {
         let schema = self.schema.clone();
         sqlx::query(AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
