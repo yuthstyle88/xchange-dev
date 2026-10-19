@@ -247,27 +247,9 @@ impl<R: UserRepository> UserService<R> {
         ));
         GrantGuard::check(actor, &target, &action, owners_left)
             .map_err(UserChangeError::Refused)?;
-        if let Some(role) = Role::parse(group) {
-            self.repo
-                .revoke_role(tx, &user.id, role, branch, now)
-                .await?;
-        } else {
-            sqlx::query(
-                "UPDATE user_roles \
-                 SET valid_to = $4 \
-                 WHERE user_id = $1::uuid \
-                   AND role_code = $2 \
-                   AND ((branch_id IS NULL AND $3::text IS NULL) OR branch_id = $3::text) \
-                   AND (valid_to IS NULL OR valid_to > $4)",
-            )
-            .bind(&user.id)
-            .bind(group)
-            .bind(branch.map(BranchId::as_str))
-            .bind(now)
-            .execute(&mut **tx)
-            .await
-            .map_err(AppError::Database)?;
-        }
+        self.repo
+            .revoke_role(tx, &user.id, group, branch, now)
+            .await?;
         self.repo.bump_version(tx, &user.id).await?;
         AccountAuditor::record(
             &*self.repo,
