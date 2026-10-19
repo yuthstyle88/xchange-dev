@@ -104,19 +104,6 @@ async fn backfill_safe(shop: &Shop, branch: &BranchId, currency: &str, amount: &
     .await;
 }
 
-/// `ops_state` of `branch` with `safe` (the custody codec: `{CUR: minor units}`), as v2 left it before the cutover.
-async fn ops_state_with_safe(shop: &Shop, branch: &BranchId, safe: Value) {
-    sqlx::query(
-        "INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', $2) \
-         ON CONFLICT (branch_id) DO UPDATE SET phase = 'OPEN', safe = EXCLUDED.safe",
-    )
-    .bind(branch.as_str())
-    .bind(safe)
-    .execute(&shop.db.pool)
-    .await
-    .expect("store ops_state.safe");
-}
-
 /// An OPEN shift of `branch` (a drawer needs its shift: `ledger_postings.rs` `branch_of`).
 async fn open_shift(shop: &Shop, branch: &BranchId, id: &str) {
     let inserted = sqlx::query(
@@ -157,12 +144,11 @@ async fn safes(shop: &Shop, branch: &BranchId) -> (Value, Value) {
 
 // ── §9 row 1 ────────────────────────────────────────────────────────────────
 
+/// `ops_state.safe` is dropped by #1047; `operations.safe` comes from the ledger's `SAFE` account.
 #[tokio::test]
 async fn row1_the_snapshot_safe_is_the_safe_account_not_the_ops_state_blob() {
     let shop = Shop::open().await;
     let main = branch(MAIN);
-    // The blob says 999.00 THB and 10.00 USD; the ledger says otherwise.
-    ops_state_with_safe(&shop, &main, json!({ "THB": 99_900, "USD": 1_000 })).await;
     backfill_safe(&shop, &main, "THB", "12345.67").await;
     backfill_safe(&shop, &main, "USD", "250").await;
 
@@ -211,8 +197,6 @@ async fn row1_a_branch_with_a_safe_account_and_no_ops_state_row_shows_the_accoun
 async fn row2_a_drawer_to_safe_move_after_cutover_is_in_the_snapshot_safe() {
     let shop = Shop::open().await;
     let main = branch(MAIN);
-    // Before the cutover the blob held 10,000.00 THB; the backfill moved it into SAFE.
-    ops_state_with_safe(&shop, &main, json!({ "THB": 1_000_000 })).await;
     backfill_safe(&shop, &main, "THB", "10000").await;
 
     // After the cutover: a shift opens with 3,000 from the safe, then moves 500 back.
@@ -253,8 +237,7 @@ async fn row2_a_drawer_to_safe_move_after_cutover_is_in_the_snapshot_safe() {
 async fn row3_a_branch_with_no_safe_account_prints_null() {
     let shop = Shop::open().await;
     let main = branch(MAIN);
-    // A stale blob and no SAFE(MAIN) account in the ledger (`Shop::open` funds no safe for MAIN).
-    ops_state_with_safe(&shop, &main, json!({ "THB": 50_000 })).await;
+    // No SAFE(MAIN) account in the ledger (`Shop::open` funds no safe for MAIN).
     let accounts: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM cash_accounts WHERE kind = 'SAFE' AND branch_id = 'MAIN'",
     )
@@ -280,7 +263,6 @@ async fn row3_a_branch_with_no_safe_account_prints_null() {
 async fn emptied_a_safe_that_had_postings_and_nets_to_zero_prints_zeros_not_null() {
     let shop = Shop::open().await;
     let main = branch(MAIN);
-    ops_state_with_safe(&shop, &main, json!({ "THB": 70_000 })).await;
     // SAFE(MAIN) is counted in, then everything leaves it again: it has postings, and nets to zero.
     backfill_safe(&shop, &main, "THB", "1000").await;
     backfill_safe(&shop, &main, "USD", "50").await;

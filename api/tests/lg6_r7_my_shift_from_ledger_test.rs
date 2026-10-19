@@ -139,13 +139,6 @@ impl Room {
         .execute(&self.pool)
         .await
         .expect("insert OPEN shift");
-        let copy_rows: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM shift_balances WHERE shift_id = $1")
-                .bind(&shift_id)
-                .fetch_one(&self.pool)
-                .await
-                .expect("count shift_balances rows");
-        assert_eq!(copy_rows, 0, "no row in shift_balances");
         shift_id
     }
 
