@@ -51,7 +51,7 @@ const PHONE_ERROR_CODES = new Set([
   'smsUnavailable',
 ] as const);
 
-function refusalText(err: unknown): string {
+function phoneRefusal(err: unknown): string {
   if (err instanceof ApiError && PHONE_ERROR_CODES.has(err.code as never)) {
     return t(`error.${err.code}` as keyof typeof texts.th);
   }
@@ -90,7 +90,7 @@ export function PhoneVerify(props: PhoneVerifyProps): JSX.Element {
       setChallengeId(out.challengeId);
       setVerified(false);
     } catch (err: unknown) {
-      setError(refusalText(err));
+      setError(phoneRefusal(err));
     }
   }
 
@@ -114,7 +114,7 @@ export function PhoneVerify(props: PhoneVerifyProps): JSX.Element {
         setCode('');
         if (codeInputRef) codeInputRef.value = '';
       }
-      setError(refusalText(err));
+      setError(phoneRefusal(err));
     }
   }
 
