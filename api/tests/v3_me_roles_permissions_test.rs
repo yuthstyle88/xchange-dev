@@ -880,8 +880,8 @@ fn the_generated_me_type_has_roles_and_permissions_and_no_old_fields() {
 /// RBAC §11 C6h (#3323): an actor holding a custom group reads its installed permissions, not the base's seed.
 #[actix_web::test]
 async fn a_custom_group_reads_its_installed_permissions_not_the_base_seed() {
-    static MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = MUTEX.lock().unwrap();
+    static MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = MUTEX.lock().await;
 
     struct ResetSeeded;
     impl Drop for ResetSeeded {
