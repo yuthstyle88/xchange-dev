@@ -1,5 +1,99 @@
 /* P01 v2 route / status strip (RB-6). */
 .xc-rb-route {
   display: flex;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 14px 52px 8px;
+}
+
+.xc-rb-route-grid {
+  display: grid;
+  grid-template-columns: 150px 92px 150px 200px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+
+.xc-rb-route-from,
+.xc-rb-route-to,
+.xc-rb-route-branch,
+.xc-rb-route-state {
+  display: flex;
+  flex-direction: column;
+}
+
+.xc-rb-route-label {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--xc-rb-muted, #6f6a73);
+  text-transform: uppercase;
+}
+
+.xc-rb-route-code,
+.xc-rb-route-count,
+.xc-rb-route-branch-code {
+  display: block;
+  font-size: 38px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+}
+
+.xc-rb-route-name,
+.xc-rb-route-currencies,
+.xc-rb-route-branch-name,
+.xc-rb-route-substatus {
+  display: block;
+  font-size: 17px;
+  color: var(--xc-rb-muted, #6f6a73);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xc-rb-route-plane {
+  position: relative;
+  height: 56px;
+  color: var(--xc-rb-brand, #a5003c);
+  transform: translateY(8px);
+}
+
+.xc-rb-route-track {
+  display: block;
+}
+
+.xc-rb-route-jet {
+  display: block;
+}
+
+.xc-rb-route-status {
+  display: block;
+  font-size: 26px;
+  line-height: 1.25;
+}
+
+.xc-rb-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--xc-rb-up, #13804f);
+  position: relative;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.xc-rb-delayed .xc-rb-live-dot {
+  background: #d08a00;
+}
+
+.xc-rb-offline .xc-rb-live-dot {
+  background: var(--xc-rb-down, #c0153f);
+}
+
+.xc-rb-route-stale {
+  font-size: 15px;
+  color: #9a6400;
+  padding-top: 4px;
 }
