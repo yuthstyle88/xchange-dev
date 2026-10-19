@@ -27,12 +27,12 @@ const BOOKINGS: MyBookingsData = {
     {
       id: 'bk-1', bookingNo: 'B261015-0001', status: 'CONFIRMED', branchId: 'bkk-1', slotId: 's1',
       startAt: '2099-10-15T10:00:00Z', endAt: '2099-10-15T10:30:00Z', qrToken: null, quoteSummary: '',
-      cancelCutoffAt: null, ticketNumber: null, readiness: 'unknown',
+      cancelCutoffAt: null, ticketNumber: null, ticketsAhead: null, estimateSeconds: null, estimateLowSeconds: null, estimateHighSeconds: null, estimateAsOf: null, readiness: 'unknown',
     },
     {
       id: 'bk-2', bookingNo: 'B261015-0002', status: 'CONFIRMED', branchId: 'zz-9', slotId: 's2',
       startAt: '2099-10-16T10:00:00Z', endAt: '2099-10-16T10:30:00Z', qrToken: null, quoteSummary: '',
-      cancelCutoffAt: null, ticketNumber: null, readiness: 'unknown',
+      cancelCutoffAt: null, ticketNumber: null, ticketsAhead: null, estimateSeconds: null, estimateLowSeconds: null, estimateHighSeconds: null, estimateAsOf: null, readiness: 'unknown',
     },
   ],
 };

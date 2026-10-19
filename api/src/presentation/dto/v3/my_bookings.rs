@@ -20,6 +20,11 @@ pub struct MyBookingItemDto {
     pub quote_summary: String,
     pub cancel_cutoff_at: Option<String>,
     pub ticket_number: Option<String>,
+    pub tickets_ahead: Option<i32>,
+    pub estimate_seconds: Option<i32>,
+    pub estimate_low_seconds: Option<i32>,
+    pub estimate_high_seconds: Option<i32>,
+    pub estimate_as_of: Option<String>,
     pub readiness: String,
 }
 
