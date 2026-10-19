@@ -315,6 +315,8 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
             redactedText: 'เรท USD รับซื้อ 35.12 THB ขาย 35.40 THB ครับ',
             createdAt: '2026-10-13T03:10:01Z',
           },
+          intent: { kind: 'UNKNOWN' },
+          preview: null,
         };
 
         return Promise.resolve(
@@ -381,6 +383,8 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
             redactedText: 'สามารถดูเรทสดได้ที่หน้าเรทครับ',
             createdAt: '2026-10-13T03:15:01Z',
           },
+          intent: { kind: 'UNKNOWN' },
+          preview: null,
         };
         return Promise.resolve(
           new Response(JSON.stringify(answer), {
@@ -479,6 +483,8 @@ describe('APP-14 C12 Assistant Screen (AssistantScreen)', () => {
             redactedText: 'ได้รับแล้วครับ',
             createdAt: '2026-10-13T03:20:01Z',
           },
+          intent: { kind: 'UNKNOWN' },
+          preview: null,
         };
         return Promise.resolve(
           new Response(JSON.stringify(answer), {
