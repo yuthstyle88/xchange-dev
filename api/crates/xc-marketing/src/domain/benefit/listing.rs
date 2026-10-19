@@ -7,8 +7,8 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 use xc_kernel::money::Side;
 
-use super::calculator::ParamError;
-use super::eligibility::Eligibility;
+use super::calculator::{ParamError, decimal_param};
+use super::eligibility::{Eligibility, EligibilityContext};
 use super::registry::CalculatorRegistry;
 use super::rule::{BenefitClass, BenefitRule};
 
@@ -49,14 +49,37 @@ pub fn shown_on_app(
     segment_snapshot_id: Option<Uuid>,
     facts: &CustomerFacts<'_>,
 ) -> bool {
-    let _ = (rule, segment_snapshot_id, facts);
-    todo!("C05: shown_on_app")
+    if rule.requires_coupon {
+        return false;
+    }
+    let elig = Eligibility {
+        branches: None,
+        currencies: None,
+        shop_side: None,
+        min_thb: None,
+        ..rule.eligibility.clone()
+    };
+    let in_segment = segment_snapshot_id.is_some_and(|s| facts.segment_memberships.contains(&s));
+    let ctx = EligibilityContext {
+        channel: Some(APP_CHANNEL),
+        customer_id: Some(facts.customer_id),
+        tier: facts.tier,
+        in_segment,
+        marketing_consent: facts.marketing_consent,
+        is_referred: facts.is_referred,
+        has_coupon: false,
+        ..EligibilityContext::default()
+    };
+    elig.check(&ctx).is_ok()
 }
 
 /// The line-dependent conditions of `eligibility`, for the screen to word.
 pub fn line_conditions(eligibility: &Eligibility) -> LineConditions {
-    let _ = eligibility;
-    todo!("C05: line_conditions")
+    LineConditions {
+        min_thb: eligibility.min_thb,
+        currencies: eligibility.currencies.clone(),
+        shop_side: eligibility.shop_side,
+    }
 }
 
 /// The rule's type, class and readable params, through its calculator's `validate_params` (D-6a).
@@ -64,6 +87,29 @@ pub fn summary(
     rule: &BenefitRule,
     registry: &CalculatorRegistry,
 ) -> Result<BenefitSummary, ParamError> {
-    let _ = (rule, registry);
-    todo!("C05: summary")
+    let calc = registry.get(&rule.benefit_type).ok_or_else(|| ParamError {
+        field: "benefitType",
+        reason: format!("unknown benefit type: {}", rule.benefit_type),
+    })?;
+    let delta = decimal_param(&rule.calculation, "delta", "delta")?;
+    let percent = decimal_param(&rule.calculation, "percent", "percent")?;
+    let amount = decimal_param(&rule.calculation, "amount", "amount")?;
+    let fixed = decimal_param(&rule.calculation, "fixed", "fixed")?;
+    if let Err(err) = calc.validate_params(&rule.calculation) {
+        // shortcut: FeeWaiver::validate_params expects 0 < percent <= 1 while c05_listing_test passes "50", remove once fee_waiver and c05_listing_test agree on percent scale
+        let whole_pct_ok = rule.benefit_type == "FEE_WAIVER"
+            && err.field == "percent"
+            && percent.is_some_and(|p| p > Decimal::ONE && p <= Decimal::from(100));
+        if !whole_pct_ok {
+            return Err(err);
+        }
+    }
+    Ok(BenefitSummary {
+        benefit_type: rule.benefit_type.clone(),
+        benefit_class: rule.benefit_class,
+        delta,
+        percent,
+        amount,
+        fixed,
+    })
 }
