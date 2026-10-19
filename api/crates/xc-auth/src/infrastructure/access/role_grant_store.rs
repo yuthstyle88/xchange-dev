@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use sqlx::{PgConnection, Postgres, Transaction};
 
 use crate::domain::access::{
-    Group, Permission, Role, RoleGrantStore, RoleGrantStoreError, RoleGrantsSnapshot,
+    Group, Permission, Role, RoleGrantStore, RoleGrantStoreError, RoleGrants, RoleGrantsSnapshot,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -22,9 +22,46 @@ fn db_err(e: impl std::fmt::Display) -> RoleGrantStoreError {
     RoleGrantStoreError::Database(e.to_string())
 }
 
+fn perm_name(p: Permission) -> Result<String, RoleGrantStoreError> {
+    match serde_json::to_value(p).map_err(db_err)? {
+        serde_json::Value::String(s) => Ok(s),
+        other => Err(RoleGrantStoreError::Database(format!(
+            "permission {p:?} did not serialize to a string: {other}"
+        ))),
+    }
+}
+
 fn parse_perm(s: &str) -> Result<Permission, RoleGrantStoreError> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
         .map_err(|e| RoleGrantStoreError::Database(format!("invalid stored permission {s:?}: {e}")))
+}
+
+async fn bump_version(tx: &mut Transaction<'_, Postgres>) -> Result<(), RoleGrantStoreError> {
+    sqlx::query("UPDATE role_grant_version SET version = version + 1")
+        .execute(&mut **tx)
+        .await
+        .map_err(db_err)?;
+    Ok(())
+}
+
+async fn insert_grants(
+    tx: &mut Transaction<'_, Postgres>,
+    code: &str,
+    set: &[Permission],
+) -> Result<(), RoleGrantStoreError> {
+    for &p in set {
+        let name = perm_name(p)?;
+        sqlx::query(
+            "INSERT INTO role_permission_grants (role_code, permission) \
+             VALUES ($1, $2) ON CONFLICT (role_code, permission) DO NOTHING",
+        )
+        .bind(code)
+        .bind(name)
+        .execute(&mut **tx)
+        .await
+        .map_err(db_err)?;
+    }
+    Ok(())
 }
 
 impl RoleGrantStore for PgRoleGrantStore {
@@ -84,8 +121,26 @@ impl RoleGrantStore for PgRoleGrantStore {
         &self,
         tx: &mut Transaction<'_, Postgres>,
     ) -> Result<u64, RoleGrantStoreError> {
-        let _ = tx;
-        todo!("C6c")
+        let mut seeded = 0u64;
+        for role in RoleGrants::BUILT_IN {
+            let code = role.as_str();
+            let has_rows: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM role_permission_grants WHERE role_code = $1)",
+            )
+            .bind(code)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(db_err)?;
+            if !has_rows {
+                let seed = RoleGrants::seed(role);
+                insert_grants(tx, code, &seed).await?;
+                seeded += 1;
+            }
+        }
+        if seeded > 0 {
+            bump_version(tx).await?;
+        }
+        Ok(seeded)
     }
 
     async fn save_set(
