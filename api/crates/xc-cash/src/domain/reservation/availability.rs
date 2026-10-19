@@ -15,6 +15,6 @@ pub struct StockAvailability {
 impl StockAvailability {
     /// D-1: `on_hand − reserved`. It may be below zero when an approved posting (N-1) took the position below zero.
     pub fn available(&self) -> Decimal {
-        todo!("SR-1")
+        self.on_hand - self.reserved
     }
 }
