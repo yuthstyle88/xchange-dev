@@ -136,8 +136,8 @@ impl Room {
                 .await
                 .expect("insert a branch");
             sqlx::query(
-                "INSERT INTO ops_state (branch_id, phase, safe) \
-                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+                "INSERT INTO ops_state (branch_id, phase) \
+                 VALUES ($1, 'OPEN')",
             )
             .bind(branch)
             .execute(&pool)

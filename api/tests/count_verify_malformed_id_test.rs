@@ -133,8 +133,8 @@ impl Room {
             .await
             .expect("insert branch");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, safe) \
-             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase) \
+             VALUES ($1, 'OPEN')",
         )
         .bind(B01)
         .execute(&pool)
@@ -142,6 +142,14 @@ impl Room {
         .expect("branch safe");
 
         let safe = || xc_cash::domain::posting::CashPlace::Safe(BranchId::new(B01));
+        lg4_fund(
+            &pool,
+            xc_cash::domain::posting::CashPlace::Bank,
+            safe(),
+            "USD",
+            "500.00",
+        )
+        .await;
         lg4_fund(
             &pool,
             xc_cash::domain::posting::CashPlace::Bank,
