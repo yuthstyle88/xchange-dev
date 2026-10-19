@@ -117,8 +117,11 @@ pub const CA10_RETIRED: [&str; 3] = ["adminOpenShift", "adminCloseShift", "admin
 /// recordings whose `$.operations.safe` is a known difference from the first step after an opening that SAFE
 /// funded (the step number here) to the end. v3 funds the opening from SAFE; v2 never posted SAFE for it,
 /// LG-6.r5.
-pub const LG6_R5_SAFE_FUNDED_AN_OPENING: [(&str, usize); 2] =
-    [("snapshot/branches.json", 11), ("snapshot/shift.json", 3)];
+pub const LG6_R5_SAFE_FUNDED_AN_OPENING: [(&str, usize); 3] = [
+    ("snapshot/branches.json", 11),
+    ("snapshot/shift.json", 3),
+    ("snapshot/transactions.json", 3),
+];
 
 /// Re-expected for CA-10 #626 by the ticket author (design §6): an action CA-10 retires, i.e. a
 /// direct shift action or one of the `ops*` compat names (`opsNope` included: no `ops*` name is
