@@ -333,14 +333,6 @@ impl Env {
         .await;
     }
 
-    async fn copy_rows(&self, shift: &str) -> i64 {
-        sqlx::query_scalar("SELECT count(*) FROM shift_balances WHERE shift_id = $1")
-            .bind(shift)
-            .fetch_one(&self.pool)
-            .await
-            .expect("count shift_balances rows")
-    }
-
     /// `apply_delta_for_teller_in` (the save path, `save_transaction.rs`) in a transaction of its own,
     /// rolled back after: only the answer matters.
     async fn apply_delta_for_teller(
@@ -578,19 +570,14 @@ async fn a_closed_shifts_counted_and_difference_come_from_its_verified_close_cou
 
 /// #1043 §3.2 on every writer left after CA-10: `open_on_verified` (the OPEN count and the
 /// hand-over, each followed by `post_opening_in`), `apply_delta_for_teller_in` (the save path) and
-/// `close_on_verified` (the CLOSE count, whose totals are `cash_count_totals`). None leaves a
-/// `shift_balances` row, the shift reads its balances from the ledger, and the close still writes
+/// `close_on_verified` (the CLOSE count, whose totals are `cash_count_totals`). `shift_balances` is
+/// dropped by #1047, the shift reads its balances from the ledger, and the close still writes
 /// the `shifts` row.
 #[tokio::test]
 async fn the_count_flows_and_the_save_path_write_no_shift_balances_row() {
     let env = env().await;
     env.fund_safe(&[(usd(), "1000")]).await;
     let o = env.open(&[(usd(), "100")]).await;
-    assert_eq!(
-        env.copy_rows(&o.shift.id).await,
-        0,
-        "after open_on_verified"
-    );
 
     let mut tx = env.pool.begin().await.expect("begin");
     env.service
@@ -599,11 +586,6 @@ async fn the_count_flows_and_the_save_path_write_no_shift_balances_row() {
         .expect("apply a USD 30 sale");
     tx.commit().await.expect("commit");
     env.exchange_sell_usd(&o.shift.id, "30", "1050").await;
-    assert_eq!(
-        env.copy_rows(&o.shift.id).await,
-        0,
-        "after apply_delta_for_teller_in"
-    );
 
     env.transfer(&o.shift.id, usd(), "10", false).await;
     let read = env
@@ -635,11 +617,6 @@ async fn the_count_flows_and_the_save_path_write_no_shift_balances_row() {
         .await
         .expect("close on the verified count");
     tx.commit().await.expect("commit");
-    assert_eq!(
-        env.copy_rows(&o.shift.id).await,
-        0,
-        "after close_on_verified"
-    );
 
     let status: String = sqlx::query_scalar("SELECT status FROM shifts WHERE id = $1")
         .bind(&o.shift.id)

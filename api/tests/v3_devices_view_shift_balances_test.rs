@@ -306,18 +306,6 @@ async fn test_no_open_shift_last_shift_not_counted_is_zero() {
         .await;
 
     // The shift has NO count in cash_counts / cash_count_totals.
-    // Insert stale/legacy counted figures into shift_balances table to prove that the view
-    // does not read from shift_balances table (which would show the stale 1234.00 / 56.00).
-    sqlx::query(
-        "INSERT INTO shift_balances (shift_id, code, opening, expected, counted, difference) \
-         VALUES ($1, 'THB', 1000.00, 1000.00, 1234.00, 234.00), \
-                ($1, 'USD', 50.00, 50.00, 56.00, 6.00)",
-    )
-    .bind(&shift_id)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("insert stale shift_balances");
-
     let (thb, usd) = room.balances(MAIN).await;
     assert_eq!(
         thb, "0.00",
