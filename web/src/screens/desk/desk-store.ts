@@ -32,7 +32,7 @@ export interface PassportFields {
 }
 
 export interface DeskEntryState {
-  kind: 'booking' | 'kiosk';
+  kind: 'kiosk';
   id: string;
   banner: Accessor<string>;
   locked: boolean;

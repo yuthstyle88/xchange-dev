@@ -63,7 +63,7 @@ function stubStore(path: unknown, init: { shiftOpen?: boolean; quote?: unknown; 
   const [currency, setCurrency] = createSignal("JPY");
   const [amount, setAmount] = createSignal("10000");
   const [referenceRate, setReferenceRate] = createSignal("");
-  const [entry] = createSignal<any>(init.locked ? { kind: "booking", id: "b1", locked: true } : undefined);
+  const [entry] = createSignal<any>(init.locked ? { kind: "kiosk", id: "b1", locked: true } : undefined);
   const [step] = createSignal(0);
   const store = {
     path,
