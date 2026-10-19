@@ -386,7 +386,7 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 
 use crate::domain::access::{
-    Actor as Who, Authorizer, Grant, Permission, Refusal, Role as BpRole, RolePermissions, Target,
+    Actor as Who, Authorizer, Grant, Permission, Refusal, Role as BpRole, RoleGrants, Target,
 };
 
 /// What a (path, name) requires.
@@ -594,7 +594,7 @@ impl Policy {
                     let has_queue_operate = actor.roles.iter().any(|r| {
                         r.valid_from <= now
                             && r.valid_to.is_none_or(|to| now < to)
-                            && RolePermissions::of(r.role).contains(&Permission::QueueOperate)
+                            && RoleGrants::holds(r.group_code(), Permission::QueueOperate)
                     });
                     if has_queue_operate {
                         Err(PolicyError::KioskUnknown)

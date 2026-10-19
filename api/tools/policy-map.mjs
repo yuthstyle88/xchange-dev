@@ -108,6 +108,26 @@ export const RULES = [
     selects: (c) => c.path === 'Kiosk' && [...KIOSK_QUEUE, 'nope'].includes(c.action) && c.actor === 'OWNER',
     to: () => refused('Staff access required.', 400),
   },
+  {
+    id: 'S11',
+    says: "user-management-rbac.md §11.2: the owner's V.9 matrix seed grants CUSTOMERS FULL (ExchangeTransact, IdentityDocumentRead, QueueOperate) to EXECUTIVE, RATE_MANAGER and BRANCH_MANAGER, DOCUMENTS VIEW (FileRead) to RATE_MANAGER, and RATES_STOCK VIEW/FULL (ReferenceRatesRead) to RATE_MANAGER, FINANCE and VERIFICATION_REVIEWER (supersedes C1, C2 and C8 on the rows they share)",
+    selects: (c) =>
+      (c.path === 'Rpc' &&
+        ['reserveCustomer', 'saveTransaction'].includes(c.action) &&
+        ['OWNER', 'BACKEND', 'MANAGER', 'RATES'].includes(c.actor)) ||
+      (c.path === 'StaffRpc' &&
+        ['adminDeskConfig', 'reserveCustomer', 'saveTransaction'].includes(c.action) &&
+        ['OWNER', 'BACKEND', 'MANAGER', 'RATES'].includes(c.actor)) ||
+      (c.path === 'StaffRpc' && c.action === 'documents' && ['OWNER', 'RATES'].includes(c.actor)) ||
+      (c.path === 'File' && c.action === 'file' && c.actor === 'RATES') ||
+      (c.path === 'StaffFile' && c.action === 'file' && ['OWNER', 'RATES'].includes(c.actor)) ||
+      (c.path === 'StaffDesk' && c.action === 'desk' && ['OWNER', 'BACKEND', 'MANAGER', 'RATES'].includes(c.actor)) ||
+      (c.path === 'Kiosk' && [...KIOSK_QUEUE, 'nope'].includes(c.action) && ['OWNER', 'RATES'].includes(c.actor)) ||
+      (c.path === 'OwnerRoute' &&
+        c.route === 'POST /api/reference-rates' &&
+        ['RATES', 'MONITOR', 'FINANCE', 'DOCUMENTS', 'DOCUMENT_REVIEW'].includes(c.actor)),
+    to: (c) => (c.path === 'Kiosk' && c.action === 'nope' ? refused('Unknown kiosk action.', 400) : allowed()),
+  },
 ];
 
 // D-4 (§2, §3.5): a branch outside the caller's scope is refused, no longer replaced. Branch cases only.
@@ -151,7 +171,6 @@ function mapCase(c, v2, rules, isBranchCase) {
       if (r.selects(c)) {
         next = r.to(c, v2);
         out.change = r.id;
-        break;
       }
     }
   }
