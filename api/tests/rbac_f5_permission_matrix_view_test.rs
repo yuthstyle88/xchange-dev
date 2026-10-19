@@ -607,7 +607,9 @@ async fn a_teller_is_refused() {
     let _serial = SERIAL.lock().await;
     let db = TestDb::start().await;
     let a = get(&db, TELLER_B01, VIEW).await;
-    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    // Restated by claude/65357afb: the seam answers `roleNotAllowedHere` with 400 (`policy_error.rs:110,124`,
+    // ruling #1157 issuecomment-6101472652).
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(code(&a), "roleNotAllowedHere", "{}", a.text);
     assert!(a.body.get("data").is_none(), "no data: {}", a.text);
     db.finish().await;

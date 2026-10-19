@@ -755,21 +755,27 @@ async fn a_teller_is_refused_at_the_seam() {
     let a = add(&db, TELLER_B01, NIGHT, "TELLER", &names(&night_set())).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        // Restated by claude/65357afb: the seam answers `roleNotAllowedHere` with 400 (`policy_error.rs:110,124`,
+        // ruling #1157 issuecomment-6101472652; F12 #3298 issuecomment by gemini/studio-12).
+        StatusCode::BAD_REQUEST,
         "roleNotAllowedHere",
         "a TELLER adds",
     );
     let s = save(&db, TELLER_B01, "TELLER", &names(&night_set())).await;
     refused(
         &s,
-        StatusCode::FORBIDDEN,
+        // Restated by claude/65357afb: the seam answers `roleNotAllowedHere` with 400 (`policy_error.rs:110,124`,
+        // ruling #1157 issuecomment-6101472652; F12 #3298 issuecomment by gemini/studio-12).
+        StatusCode::BAD_REQUEST,
         "roleNotAllowedHere",
         "a TELLER saves",
     );
     let d = delete(&db, TELLER_B01, "TELLER").await;
     refused(
         &d,
-        StatusCode::FORBIDDEN,
+        // Restated by claude/65357afb: the seam answers `roleNotAllowedHere` with 400 (`policy_error.rs:110,124`,
+        // ruling #1157 issuecomment-6101472652; F12 #3298 issuecomment by gemini/studio-12).
+        StatusCode::BAD_REQUEST,
         "roleNotAllowedHere",
         "a TELLER deletes",
     );
