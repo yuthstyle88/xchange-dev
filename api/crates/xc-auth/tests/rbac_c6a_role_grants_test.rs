@@ -580,7 +580,7 @@ fn at(branch: &str) -> Target {
 }
 
 /// §11.7's wiring mutant: an edited set is what `Authorizer::check` sees. `RoleGrants::of` answering the base's seed
-/// (or `Authorizer` still reading `RolePermissions`) turns this red.
+/// (or `Authorizer` still reading static role seeds instead of the installed snapshot) turns this red.
 #[test]
 fn an_edited_set_is_what_authorizer_check_sees() {
     let _g = locked();

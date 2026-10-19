@@ -58,7 +58,7 @@ const MARKER: &str = "VF5-SECRET-BYTES-41d2";
 const SESSION: &str = "session-a";
 const OTHER_SESSION: &str = "session-b";
 /// The seven staff roles V8 refuses, role by role (#1393 §4 item 1). BRANCH_MANAGER, TELLER and FINANCE hold
-/// `IdentityDocumentRead` (`role_permissions.rs:67`, `:88`, `:108`) and are still refused.
+/// `IdentityDocumentRead` (`RoleGrants::seed` / §11.2) and are still refused.
 const REFUSED_STAFF: [Role; 7] = [
     Role::Executive,
     Role::Admin,

@@ -10,7 +10,7 @@
 //! - the owner's answer R-3 (`docs/design/blueprint/reversal.md` §0, §5): FINANCE approves a
 //!   reversal;
 //! - `reversal.md` §4.2: TELLER and BRANCH_MANAGER request a reversal (Blueprint `ReversalRequest`,
-//!   already theirs in `role_permissions.rs`). No route row admitted any of them.
+//!   already theirs in `RoleGrants::seed` / §11.2). No route row admitted any of them.
 //!
 //! Lane controller's rulings (claude/608dff, 2026-10-10): G4 of #672; RG3 and RG4 of #682, folded
 //! into this ticket. Rates stay the owner's through `RatePublicationPolicy`

@@ -84,7 +84,7 @@ fn ask(
     )
 }
 
-/// Only `CustomerHoldPlace` of the two (TELLER, `role_permissions.rs`), at `own`.
+/// Only `CustomerHoldPlace` of the two (TELLER, `RoleGrants::seed` / §11.2), at `own`.
 fn hold_placer(own: &str) -> Actor {
     staff(Role::Teller, own)
 }
