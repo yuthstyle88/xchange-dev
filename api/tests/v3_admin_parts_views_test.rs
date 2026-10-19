@@ -794,24 +794,10 @@ async fn seed_movement(
     use xc_cash::domain::posting::{CashPlace, CashPostings, moves};
     use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
     use xc_kernel::money::CurrencyCode;
+    let _ = reason;
     let id = format!("MV-{:012}", next());
     let req_id = request_id();
     let mut tx = pool.begin().await.expect("begin tx");
-    sqlx::query(
-        "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
-         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, now(), 'fn1')",
-    )
-    .bind(&id)
-    .bind(branch)
-    .bind(shift_id)
-    .bind(code)
-    .bind(direction)
-    .bind(amount)
-    .bind(reason)
-    .bind(&req_id)
-    .execute(&mut *tx)
-    .await
-    .expect("insert stock_movement");
     let (safe, drawer) = (
         CashPlace::Safe(BranchId::new(branch)),
         CashPlace::Drawer(shift_id.to_string()),
