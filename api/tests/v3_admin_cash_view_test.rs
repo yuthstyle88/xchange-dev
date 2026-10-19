@@ -807,26 +807,11 @@ async fn seed_movement(
     amount: &str,
     reason: &str,
 ) -> String {
+    let _ = reason;
     let id = format!("MV-{:012}", next());
     let req_id = request_id();
     let at = Utc::now();
     let mut tx = pool.begin().await.expect("begin tx");
-    sqlx::query(
-        "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
-         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, 'fn1')",
-    )
-    .bind(&id)
-    .bind(branch)
-    .bind(shift_id)
-    .bind(code)
-    .bind(direction)
-    .bind(amount)
-    .bind(reason)
-    .bind(&req_id)
-    .bind(at)
-    .execute(&mut *tx)
-    .await
-    .expect("insert stock_movement");
     let (safe, drawer) = (
         CashPlace::Safe(BranchId::new(branch)),
         CashPlace::Drawer(shift_id.to_string()),
