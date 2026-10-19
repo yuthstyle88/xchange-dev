@@ -278,7 +278,7 @@ impl Db {
         .bind(transfer)
         .fetch_all(&self.pool)
         .await
-        .expect("read stock_movements")
+        .expect("read ledger_entries")
     }
 }
 
