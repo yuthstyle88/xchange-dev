@@ -1,0 +1,119 @@
+/* P01 v2 split-flap price cell (RB-8). */
+.xc-rb-price {
+  display: inline-flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  position: relative;
+  border-radius: 8px;
+}
+
+.xc-rb-ch {
+  display: inline-block;
+  min-width: 0.6em;
+  text-align: center;
+  transform-origin: 50% 55%;
+  backface-visibility: hidden;
+}
+
+.xc-rb-sep {
+  min-width: 0.3em;
+}
+
+.xc-rb-flip {
+  animation: xc-rb-flap 0.55s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+.xc-rb-up {
+  animation: xc-rb-glow-up 3.2s ease-out;
+}
+
+.xc-rb-down {
+  animation: xc-rb-glow-down 3.2s ease-out;
+}
+
+.xc-rb-price em {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-style: normal;
+  font-size: 0.55em;
+  animation: xc-rb-fade 3.2s ease-out forwards;
+}
+
+.xc-rb-up em {
+  color: var(--xc-rb-up, #13804f);
+}
+
+.xc-rb-down em {
+  color: var(--xc-rb-down, #c0153f);
+}
+
+@keyframes xc-rb-flap {
+  0% {
+    transform: perspective(300px) rotateX(0);
+    filter: brightness(1);
+  }
+  45% {
+    transform: perspective(300px) rotateX(-90deg);
+    filter: brightness(0.6);
+  }
+  55% {
+    transform: perspective(300px) rotateX(90deg);
+  }
+  100% {
+    transform: perspective(300px) rotateX(0);
+  }
+}
+
+@keyframes xc-rb-glow-up {
+  0%,
+  30% {
+    background: #d6f5e5;
+    color: var(--xc-rb-up, #13804f);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes xc-rb-glow-down {
+  0%,
+  30% {
+    background: #fde0e8;
+    color: var(--xc-rb-down, #c0153f);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes xc-rb-fade {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.xc-rb-calm .xc-rb-flip,
+.xc-rb-calm .xc-rb-up,
+.xc-rb-calm .xc-rb-down,
+.xc-rb-calm .xc-rb-price em {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xc-rb-flip,
+  .xc-rb-up,
+  .xc-rb-down,
+  .xc-rb-price em {
+    animation: none;
+  }
+}

@@ -1,0 +1,95 @@
+/* P01 v2 header and clock (RB-5). */
+.xc-rb-head {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 52px 18px;
+  background: linear-gradient(120deg, var(--xc-rb-brand, #a5003c), #6e0028);
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.xc-rb-sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 38%, #ffffff40 50%, transparent 62%);
+  transform: translateX(-110%);
+  animation: xc-rb-sheen 8s ease-in-out infinite;
+}
+
+@keyframes xc-rb-sheen {
+  0%, 72% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(110%);
+  }
+}
+
+.xc-rb-brand {
+  position: relative;
+  z-index: 1;
+}
+
+.xc-rb-brand strong {
+  display: block;
+  font-size: 56px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.xc-rb-brand small {
+  display: block;
+  color: #ffd5e3;
+  margin-top: 8px;
+  font-size: 16px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.xc-rb-clock {
+  position: relative;
+  z-index: 1;
+  text-align: right;
+}
+
+.xc-rb-time {
+  display: block;
+  font-size: 58px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.xc-rb-colon {
+  font-style: normal;
+  animation: xc-rb-blink 1s steps(1) infinite;
+}
+
+@keyframes xc-rb-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.xc-rb-date {
+  display: block;
+  color: #ffd5e3;
+  margin-top: 6px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-size: 20px;
+}
+
+.xc-rb-calm .xc-rb-colon,
+.xc-rb-calm .xc-rb-sheen {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xc-rb-colon,
+  .xc-rb-sheen {
+    animation: none;
+  }
+}
