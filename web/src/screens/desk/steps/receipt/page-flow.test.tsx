@@ -11,9 +11,17 @@
 // merged): its fake answers a `TransactionDto` with `status: "COMPLETED"`, and only `id` and `status` are read.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../../../shared/i18n";
-import type { DeskConfig } from "../../../../shared/api/generated/desk_config";
-import type { QuoteDto } from "../../../../shared/api/generated/quote";
-import type { TransactionDto } from "../../../../shared/api/generated/transactions";
+import {
+  makeDeskConfig,
+  makeDeskPaymentMethod,
+  makeDeskRate,
+  makeQuoteDto,
+  makeQuoteLineDto,
+  makeQuotePublicationDto,
+  makeTransactionDto,
+  makeTransactionLineDto,
+  makeTransactionPaymentDto,
+} from "../../../../shared/testing/fixtures";
 import { warmModules } from "../../../../shared/testing/warm-modules";
 
 const HEAD = {
@@ -28,23 +36,23 @@ const DOC = "XC-20261011-000001";
 
 const ME = { kind: "user", id: "u-1", role: "", branch: "MAIN", name: "Ploy", username: "ploy", branchName: "XC-B", branches: [] };
 
-const CONFIG: DeskConfig = {
+const CONFIG = makeDeskConfig({
   branchId: "MAIN",
   branchName: "XC-B",
   shiftOpen: true,
   adminUrl: "/?branch=MAIN",
-  rates: [{ code: "USD", unitSize: "1", buy: "35.12000000", sell: "35.42000000", publication: "pub-1" }],
-  paymentMethods: [{ id: "Cash", enabled: true, buy: true, sell: true, account: "Cash drawer", instruction: "" }],
-};
+  rates: [makeDeskRate({ code: "USD", unitSize: "1", buy: "35.12000000", sell: "35.42000000", publication: "pub-1" })],
+  paymentMethods: [makeDeskPaymentMethod({ id: "Cash", enabled: true, buy: true, sell: true, account: "Cash drawer", instruction: "" })],
+});
 
-const QUOTE: QuoteDto = {
+const QUOTE = makeQuoteDto({
   id: "q-1",
   type: "BUY",
   channel: "DESK",
   expiresAt: "2099-01-01T00:00:00Z",
-  publication: { id: "pub-1", version: 1 },
+  publication: makeQuotePublicationDto({ id: "pub-1", version: 1 }),
   lines: [
-    {
+    makeQuoteLineDto({
       currency: "USD",
       shopSide: "BUY",
       quantity: "100",
@@ -55,14 +63,14 @@ const QUOTE: QuoteDto = {
       feeThb: "0.00",
       settleThb: "3512.00",
       publishedRateLineId: "line-1",
-    },
+    }),
   ],
   benefits: [],
   stale: false,
-};
+});
 
-function tx(status: string, documentRef: string | null = null): TransactionDto {
-  return {
+function tx(status: string, documentRef: string | null = null) {
+  return makeTransactionDto({
     id: "tx-1",
     branchId: "MAIN",
     mode: "LIVE",
@@ -75,10 +83,10 @@ function tx(status: string, documentRef: string | null = null): TransactionDto {
     cancelledAt: null,
     recordedAt: "2026-10-11T03:00:00Z",
     lines: [
-      { currency: "USD", shopSide: "BUY", quantity: "100", unitSize: "1", rateSnapshot: "35.12000000", thbAmount: "3512.00", feeThb: "0.00", settleThb: "3512.00" },
+      makeTransactionLineDto({ currency: "USD", shopSide: "BUY", quantity: "100", unitSize: "1", rateSnapshot: "35.12000000", thbAmount: "3512.00", feeThb: "0.00", settleThb: "3512.00" }),
     ],
-    payment: { method: "Cash", reference: "—", account: "Cash drawer", amountThb: "3512.00", bankFeeThb: "0", paidAt: "2026-10-11T03:00:00Z" },
-  };
+    payment: makeTransactionPaymentDto({ method: "Cash", reference: "—", account: "Cash drawer", amountThb: "3512.00", bankFeeThb: "0", paidAt: "2026-10-11T03:00:00Z" }),
+  });
 }
 
 function json(status: number, body: unknown): Response {
