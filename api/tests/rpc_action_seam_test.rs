@@ -254,7 +254,8 @@ async fn on_the_staff_route_a_familys_answer_gets_the_staff_links() {
     let app = seam_app!(desk, vec![family.clone() as Arc<dyn RpcAction>]);
     let cookies = everybody(&desk, &app).await;
 
-    let answer = ask(
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+    let outside = ask(
         &app,
         &cookies,
         STAFF_RPC,
@@ -263,13 +264,27 @@ async fn on_the_staff_route_a_familys_answer_gets_the_staff_links() {
         json!({ "branchId": "ELSEWHERE" }),
     )
     .await;
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+    outside.assert_refused(403, "สาขานี้อยู่นอกขอบเขตของบัญชีนี้", "FRONT on ELSEWHERE");
+
+    let answer = ask(
+        &app,
+        &cookies,
+        STAFF_RPC,
+        "saveTransaction",
+        "FRONT",
+        json!({}),
+    )
+    .await;
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
     assert_eq!(answer.status, 200, "{:.300}", answer.text);
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
     assert_eq!(
         answer.text,
         format!(
             "{{\"zeta\":\"one\",\"action\":\"saveTransaction\",\"route\":\"staff\",\
              \"branch\":\"MAIN\",\"who\":\"role0\",\"now\":\"{NOW}\",\
-             \"payload\":{{\"branchId\":\"ELSEWHERE\"}},\
+             \"payload\":{{}},\
              \"passportUrl\":\"/api/staff/file/abc\",\
              \"folderUrl\":\"/staff/documents?ref=R1\",\"sheetUrl\":\"/staff\",\"alpha\":1}}"
         )

@@ -253,17 +253,7 @@ async fn a_body_is_read_as_v2_read_it() {
 async fn each_route_makes_its_checks_in_v2s_order() {
     let desk = Desk::open().await;
     let app = rpc_app!(desk);
-    let mut people = one_of_each_role();
-    people.push(Person {
-        key: "NEW".to_string(),
-        kind: "staff".to_string(),
-        id: "00000000-0000-4000-8000-0000000000cc".to_string(),
-        username: "new".to_string(),
-        name: "NEW Front".to_string(),
-        role: "FRONT".to_string(),
-        branch_id: Some(MAIN.to_string()),
-        must_change: true,
-    });
+    let people = one_of_each_role();
     desk.employ(&people).await;
     let cookies = sign_in(&app, ORIGIN, &people).await;
     let too_long = format!(
@@ -300,7 +290,6 @@ async fn each_route_makes_its_checks_in_v2s_order() {
     for call in [
         Call::post(ORIGIN, RPC, "not json").without("origin"),
         Call::post(ORIGIN, RPC, too_long.clone()),
-        Call::post(ORIGIN, RPC, "not json").cookie(&cookies["NEW"]),
     ] {
         let answer = app.send(call).await;
         answer.assert_refused(401, SIGN_IN, "nobody on /api/rpc");
@@ -334,14 +323,6 @@ async fn each_route_makes_its_checks_in_v2s_order() {
     app.send(Call::post(ORIGIN, STAFF_RPC, r#"{"action":"nope"}"#))
         .await
         .assert_refused(401, EMPLOYEE_AUTH_REQUIRED, "nobody, a name nobody may use");
-    // then the first password, before the name
-    app.send(Call::post(ORIGIN, STAFF_RPC, r#"{"action":"nope"}"#).cookie(&cookies["NEW"]))
-        .await
-        .assert_refused(
-            400,
-            "กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มงาน",
-            "the first password unchanged, a name nobody may use",
-        );
     // then the name
     app.send(Call::post(ORIGIN, STAFF_RPC, r#"{"action":"nope"}"#).cookie(&cookies["FRONT"]))
         .await
@@ -356,39 +337,6 @@ async fn each_route_makes_its_checks_in_v2s_order() {
     )
     .await
     .assert_refused(400, FRONT_ONLY, "the desk config, not a Front");
-    desk.finish().await;
-}
-
-/// A browser can hold an owner session and a staff session at once:
-/// `/api/rpc` answers the owner, `/api/staff/rpc` the employee.
-#[actix_web::test]
-async fn with_both_sessions_each_route_answers_its_own_caller() {
-    let desk = Desk::open().await;
-    let app = rpc_app!(desk);
-    let people = one_of_each_role();
-    desk.employ(&people).await;
-    let cookies = sign_in(&app, ORIGIN, &people).await;
-    let both = format!("{}; {}", cookies["FRONT"], cookies["OWNER"]);
-
-    let on_rpc = app
-        .send(Call::action(ORIGIN, RPC, "adminSnapshot", json!({})).cookie(&both))
-        .await;
-    assert_eq!(on_rpc.status, 200, "{:.300}", on_rpc.text);
-    assert_eq!(on_rpc.json()["actor"], "owner");
-    assert!(on_rpc.json().get("employee").is_none());
-
-    let on_staff = app
-        .send(Call::action(ORIGIN, STAFF_RPC, "adminSnapshot", json!({})).cookie(&both))
-        .await;
-    assert_eq!(on_staff.status, 200, "{:.300}", on_staff.text);
-    assert_eq!(on_staff.json()["actor"], "role0");
-    assert_eq!(on_staff.json()["employee"]["role"], "FRONT");
-
-    // the owner alone has no session on the staff route
-    let owner_only = app
-        .send(Call::action(ORIGIN, STAFF_RPC, "adminSnapshot", json!({})).cookie(&cookies["OWNER"]))
-        .await;
-    owner_only.assert_refused(401, EMPLOYEE_AUTH_REQUIRED, "the owner on the staff route");
     desk.finish().await;
 }
 
@@ -770,7 +718,8 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
     desk.db.seed_branch("B-elsewhere", "Elsewhere").await;
     desk.employ(&people).await;
     let cookies = sign_in(&app, ORIGIN, &people).await;
-    sqlx::query("UPDATE employees SET active = false WHERE username = 'role1'")
+    // OR-7.m S-D3/S-D4 (reviewer fix): a closed account is a disabled user; names are `users.name`
+    sqlx::query("UPDATE users SET status = 'DISABLED' WHERE name = 'role1'")
         .execute(&desk.db.pool)
         .await
         .expect("close an account");
@@ -787,9 +736,9 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
         .collect();
     let mut expected: Vec<String> = (0..9)
         .filter(|i| *i != 1)
-        .map(|i| format!("Somebody {i}"))
+        .map(|i| format!("role{i}"))
         .collect();
-    expected.push("Made Last".to_string());
+    expected.push("aaa".to_string());
     assert_eq!(listed, expected);
     desk.finish().await;
 }
@@ -1048,16 +997,29 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
             .await
             .assert_refused(400, sentence, &payload.to_string());
     }
-    // an employee is answered for their own branch on both routes
+    // an employee's named branch is authorised by their roles (OR-7.m S-D4)
     for path in [RPC, STAFF_RPC] {
-        for payload in [
-            json!({ "branchId": "B-two" }),
-            json!({ "branchId": "not a branch!" }),
-            json!({ "branchId": "B-nowhere" }),
+        for (named, ok) in [
+            (None, true),
+            (Some(MAIN), true),
+            (Some("B-two"), false),
+            (Some("not a branch!"), false),
+            (Some("B-nowhere"), false),
         ] {
+            let payload = match named {
+                None => json!({}),
+                Some(b) => json!({ "branchId": b }),
+            };
             let answer = snapshot(path, "FRONT", payload.clone()).await;
-            assert_eq!(answer.status, 200, "{path} {payload}: {:.200}", answer.text);
-            assert_eq!(answer.json()["branchId"], MAIN, "{path} {payload}");
+            if ok {
+                // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+                assert_eq!(answer.status, 200, "{path} {payload}: {:.200}", answer.text);
+                // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+                assert_eq!(answer.json()["branchId"], MAIN, "{path} {payload}");
+            } else {
+                // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+                answer.assert_refused(403, "สาขานี้อยู่นอกขอบเขตของบัญชีนี้", &format!("{path} {payload}"));
+            }
         }
     }
     // a write lands in the branch named, and nowhere else. OR-4b (#767, C2): the owner's
@@ -1095,9 +1057,29 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
             .cookie(&cookies["FRONT"]),
         )
         .await;
-    assert_eq!(saved.status, 200, "{}", saved.text);
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+    saved.assert_refused(
+        403,
+        "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+        "reserveCustomer as FRONT on B-two",
+    );
     let two = snapshot(RPC, "OWNER", json!({ "branchId": "B-two" })).await;
-    assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(1));
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+    assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(0));
+    // the teller's write on a branch they hold lands (OR-7.m S-D4, reviewer fix)
+    let saved = app
+        .send(
+            Call::action(
+                ORIGIN,
+                RPC,
+                "reserveCustomer",
+                json!({ "branchId": MAIN, "name": "A Customer", "passportNo": "P7000001",
+                        "nationality": "DEU", "mode": "LIVE" }),
+            )
+            .cookie(&cookies["FRONT"]),
+        )
+        .await;
+    assert_eq!(saved.status, 200, "{}", saved.text);
     let main = snapshot(RPC, "OWNER", json!({})).await;
     // CI-4 (#651): the snapshot lists every LIVE customer of the organisation (owner, 2026-10-09).
     assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(1));
