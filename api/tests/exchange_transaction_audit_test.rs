@@ -53,7 +53,6 @@ use tx4_common::*;
 use tx5_common::*;
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_auth::domain::access::{Role as AccessRole, StandingKind};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
@@ -70,7 +69,8 @@ use xchange::application::workflows::exchange::create::{
 };
 use xchange::application::workflows::save_step::{SaveActor, SaveExtras};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 /// CI-4 (#651): the test PII key, as `tx4_create_test.rs`.
 const TEST_PII_KEYS: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
@@ -829,20 +829,12 @@ async fn no_audit_row_holds_the_passport_number() {
 struct HeaderSessions;
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let signed_in = req.headers().get("x-test-as").is_some();
         Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: if signed_in {
-                    Actor::staff(TELLER, Role::Front, BranchId::new("MAIN"))
-                } else {
-                    None
-                },
-            }
+            let staff = signed_in
+                .then(|| test_callers::staff(TELLER, &[AccessRole::Teller], BranchId::new("MAIN")));
+            test_callers::callers(None, staff)
         })
     }
 }

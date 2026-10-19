@@ -22,11 +22,11 @@ use sha2::{Digest, Sha256};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::AppState;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 use crate::common::settings;
 
@@ -60,8 +60,20 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// The pages' session port (ticket T1c), answered from a request header instead of cookies:
 /// `owner` is the owner (actor id `owner`); any other name is looked up in `people`. A person
 /// still on the first password has no session, as the real reader has none for them.
+fn roles_of(text: &str) -> &'static [Role] {
+    match text.trim().to_ascii_uppercase().as_str() {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown v2 role {other}"),
+    }
+}
+
 pub struct FakeSessions {
-    pub people: HashMap<String, (String, Role, String, bool)>,
+    pub people: HashMap<String, (String, &'static [Role], String, bool)>,
 }
 
 impl FakeSessions {
@@ -71,12 +83,12 @@ impl FakeSessions {
             .expect("people")
             .iter()
             .map(|(name, p)| {
-                let role = Role::parse(p["role"].as_str().unwrap()).expect("a role");
+                let roles = roles_of(p["role"].as_str().unwrap());
                 (
                     name.clone(),
                     (
                         p["id"].as_str().unwrap().to_owned(),
-                        role,
+                        roles,
                         p["branchId"].as_str().unwrap().to_owned(),
                         p["mustChange"].as_bool().unwrap(),
                     ),
@@ -88,33 +100,31 @@ impl FakeSessions {
 }
 
 impl SessionReader for FakeSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let names = req
                 .headers()
                 .get(AS)
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("");
-            let mut sessions = Sessions {
-                owner: None,
-                staff: None,
-            };
+            let mut owner = None;
+            let mut staff = None;
             for name in names.split(',').filter(|n| !n.is_empty()) {
                 if name == "owner" {
-                    sessions.owner = Some(Actor::owner("owner"));
-                } else if let Some((id, role, branch, must_change)) = self.people.get(name) {
-                    if !must_change {
-                        sessions.staff =
-                            Actor::staff(id.clone(), *role, BranchId::new(branch.clone()));
+                    owner = Some(test_callers::owner("owner"));
+                } else if let Some((id, roles, branch, must_change)) = self.people.get(name) {
+                    if !must_change && !branch.is_empty() {
+                        staff = Some(test_callers::staff(
+                            id,
+                            roles,
+                            BranchId::new(branch.clone()),
+                        ));
                     }
                 } else {
                     panic!("the test signs in as {name:?}, who is not in the fixture's people");
                 }
             }
-            sessions
+            test_callers::callers(owner, staff)
         })
     }
 }

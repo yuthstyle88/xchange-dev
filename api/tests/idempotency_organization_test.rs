@@ -40,17 +40,16 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
-use xc_auth::domain::access::Actor as AccessActor;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::idempotency::pg_store::PgIdempotencyStore;
 use xchange::infrastructure::idempotency::store::{Claim, IdempotencyKey, IdempotencyStore};
 use xchange::presentation::http::v3::command::{CommandAction, CommandEndpoint, Locks};
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -342,27 +341,7 @@ async fn a_record_from_before_the_migration_replays_under_the_install_organisati
 struct HeaderSessions;
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let branch = req
-            .headers()
-            .get(AS)
-            .map(|v| v.to_str().expect("an ASCII header").to_owned())
-            .unwrap_or_default();
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: Actor::staff("employee-7", Role::Front, BranchId::new(branch)),
-            }
-        })
-    }
-
-    fn callers<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = xchange::presentation::pages::Callers> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let branch = req
             .headers()
             .get(AS)
@@ -372,7 +351,6 @@ impl SessionReader for HeaderSessions {
             .app_data::<web::Data<AppState>>()
             .map(|state| state.db.clone());
         Box::pin(async move {
-            let s = self.sessions(req).await;
             let org = match pool {
                 Some(pool) => sqlx::query_scalar::<_, String>(
                     "SELECT organization_id::text FROM branches WHERE id = $1",
@@ -385,7 +363,20 @@ impl SessionReader for HeaderSessions {
                 .unwrap_or_else(|| XC.to_owned()),
                 None => XC.to_owned(),
             };
-            xchange::presentation::pages::old_cookie_callers(s, &org)
+            let staff = (!branch.is_empty()).then(|| {
+                AccessActor::new(
+                    "employee-7",
+                    &org,
+                    vec![ScopedRole::new(
+                        AccessRole::Teller,
+                        Some(BranchId::new(branch)),
+                        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                        None,
+                    )],
+                    None,
+                )
+            });
+            test_callers::callers(None, staff)
         })
     }
 }
