@@ -126,9 +126,9 @@ fn decided_by_603(name: &str) -> (Vec<(usize, Rule)>, Vec<usize>) {
 fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
     // The 10-06 recording answers every step the way v3 decided (`list` for every signed-in
     // role, the holder's repeat `accept`), so each step is replayed as recorded.
-    // RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via `ADMIN`), so the owner's `list`
-    // matches v2; `RATES` (`RATE_MANAGER`) is widened with `QueueOperate`, so its `list` offers
-    // waiting requests (`canAccept: true`).
+    // RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via `EXECUTIVE` (`Customers Full`)),
+    // so the owner's `list` matches v2; `RATES` (`RATE_MANAGER`) is widened with `QueueOperate`, so
+    // its `list` offers waiting requests (`canAccept: true`).
     let fixture = Fixture::load(name);
     let mut rules: Vec<(usize, Rule)> = fixture
         .steps()
@@ -192,6 +192,11 @@ async fn replayed(name: &str) -> (Fixture, usize) {
     let fixture = Fixture::load(name);
     let lines = {
         let mut replay = KioskReplay::start(&fixture).await;
+        // Open shifts and counters only for the three counter roles that had shifts in the
+        // recording (`FRONT`, `BACKEND`, `MANAGER`); `RATES` (`RT1`) has no open shift in the
+        // recording, so its widened `accept` steps (`kiosk/queue.json` #78 and
+        // `kiosk/queue_work.json` #64) reach `QueueDesk::claim_ticket` and are refused with
+        // `noOpenShift`.
         let staff: Vec<&str> = fixture
             .people
             .iter()
@@ -559,8 +564,8 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
         .ask(Some("FR2"), "get", json!({ "id": id }))
         .await
         .assert_refused(400, ACCEPT_FIRST, "another employee");
-    // RBAC §11.2 (#3659): the owner holds QueueOperate again (via ADMIN), so is refused for not
-    // holding the request, not for role
+    // RBAC §11.2 (#3659): the owner holds QueueOperate again (via EXECUTIVE (Customers Full)), so
+    // is refused for not holding the request, not for role
     counter
         .ask(Some("owner"), "get", json!({ "id": id }))
         .await

@@ -69,6 +69,7 @@ async fn the_recorded_day(fixture: &Fixture) -> Replay<'_> {
         replay.step(step).await;
     }
     // the day as recorded: the saves answered the numbers the tests ask for
+    assert_eq!(replay.tally.owner_no_open_shift, vec![10, 11, 21]);
     assert_eq!(fixture.step(18).json()["documentRef"], json!(TRANSFER));
     // decision A2 (#674): #23, a DEMO SELL at 99 against the published 32.6, is refused RATE_MISMATCH
     assert_eq!(fixture.step(23).status, Some(400));

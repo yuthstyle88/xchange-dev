@@ -484,8 +484,9 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // re-expected for RE-7 #604: the 29 `adminSaveRate` steps (#4–#31, #148) and #150
     let retired: Vec<usize> = (4..=31).chain([148]).collect();
     assert_eq!(retired.len(), 29);
-    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again (via ADMIN), so #124 (the owner's
-    // repeated reserveCustomer) is replayed through HTTP and hits CI-4's SameCustomerAs rule.
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full), so
+    // #124 (the owner's repeated reserveCustomer) is replayed through HTTP and hits CI-4's
+    // SameCustomerAs rule.
     let mut differences: Vec<usize> = [124, 150, 151, 159].to_vec();
     differences.extend(&retired);
     // re-expected for CA-10 #626: the 49 direct shift steps (#32–#67, #132–#143, #149)
@@ -513,18 +514,25 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     if NO_FAMILY_WIRED {
         assert_eq!(part_two.len(), 43);
     }
-    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again (via ADMIN), so no step here is
-    // refused by the Blueprint where v2 let it through, and #81, #126 (BE1) and #129 (RT1) are
-    // widened where v2 refused them by role.
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full), so
+    // no step here is refused by the Blueprint where v2 let it through, #81, #126 (BE1) and #129
+    // (RT1) are widened where v2 refused them by role, and the owner's 8 saves (#111, #112, #114,
+    // #115, #120–#123) meet the CA-10 teller gate (`owner_no_open_shift`).
     let owners_c2_c3: Vec<usize> = Vec::new();
     assert_eq!(replay.tally.blueprint, owners_c2_c3);
     assert_eq!(replay.tally.widened, vec![81, 126, 129]);
     assert_eq!(
-        replay.tally.replayed.len(),
-        107 - 50 - 1 + (43 - part_two.len()) - owners_c2_c3.len() - replay.tally.widened.len()
+        replay.tally.owner_no_open_shift,
+        vec![111, 112, 114, 115, 120, 121, 122, 123]
     );
-    // the three uploads, and — while the save is not wired — the three accepted
-    // saves (one of them sent twice)
+    assert_eq!(
+        replay.tally.replayed.len(),
+        107 - 50 - 1 + (43 - part_two.len())
+            - owners_c2_c3.len()
+            - replay.tally.widened.len()
+            - replay.tally.owner_no_open_shift.len()
+    );
+    // the three uploads, the three accepted owner saves (one of them sent twice),
     // and (RE-7 #604) the five accepted direct saves, published behind.
     // Re-expected for TX-6 #674 by the test-writer (decision A2, owner 2026-10-11, design
     // quote-transaction.md §4.6.1): #125, the DEMO save at rate 1, is now the refusal
@@ -532,10 +540,9 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // re-expected for CA-10 #626: the direct shift steps v2 accepted, applied behind the routes
     // (`Replay::retired_behind`): the open #40, the moves #63 and #66, the close #141; their repeats
     // (#41, #64, #142) apply nothing more
-    let mut applied_behind = vec![23, 24, 25, 28, 29, 40, 63, 66, 82, 83, 109, 141];
-    if !Family::Save.wired() {
-        applied_behind.extend([120, 121, 123]);
-    }
+    let mut applied_behind = vec![
+        23, 24, 25, 28, 29, 40, 63, 66, 82, 83, 109, 120, 121, 123, 141,
+    ];
     applied_behind.sort_unstable();
     let mut tallied = replay.tally.applied_behind.clone();
     tallied.sort_unstable();
@@ -582,6 +589,7 @@ async fn empty_json_is_v2s_text_for_every_caller_on_both_routes() {
     replay.run().await;
 
     assert_eq!(replay.tally.widened, vec![12, 16, 20]);
+    assert!(replay.tally.owner_no_open_shift.is_empty());
     assert_eq!(replay.tally.replayed.len(), 45);
     assert_eq!(replay.tally.total(), 48);
     let mut same_text = 0;
@@ -617,6 +625,7 @@ async fn rates_json_is_answered_as_v2_answered_it() {
     // re-expected for RE-7 #604: the five direct saves are known differences
     assert_eq!(tally.differences, vec![1, 2, 3, 6, 7]);
     assert_eq!(tally.widened, vec![17]);
+    assert!(tally.owner_no_open_shift.is_empty());
     assert_eq!(tally.replayed.len(), 15);
     assert_eq!(views.len(), 16);
     assert!(
@@ -651,10 +660,11 @@ async fn branches_json_is_answered_as_v2_answered_it() {
     // #604: the three direct saves (#1, #6, #7) are known differences; re-expected for CA-10
     // #626: the direct shift opens #8 and #37 too (design §6)
     assert_eq!(replay.tally.differences, vec![1, 3, 6, 7, 8, 10, 37]);
-    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again (via ADMIN), so #9 is replayed;
-    // #28 (adminDeskConfig as BE1 on /api/staff/rpc) is widened.
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full), so
+    // #9 is replayed; #28 (adminDeskConfig as BE2 on /api/staff/rpc) is widened.
     assert_eq!(replay.tally.blueprint, Vec::<usize>::new());
     assert_eq!(replay.tally.widened, vec![28]);
+    assert!(replay.tally.owner_no_open_shift.is_empty());
     // CA-10 #626: #8 and #37 left the replayed for the differences
     assert_eq!(replay.tally.replayed.len(), 31);
     let views: Vec<usize> = fixture
@@ -986,8 +996,8 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
             use_case_refusals,
             retired
         ),
-        // RBAC §11.2 (#3659): the owner holds ExchangeTransact again (via ADMIN), and BACKEND,
-        // MANAGER, RATES are widened on ExchangeTransact.
+        // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full),
+        // and BACKEND, MANAGER, RATES are widened on ExchangeTransact.
         (38, 0, 4, 7, 16, 49),
         "what the index holds for the ten actions"
     );

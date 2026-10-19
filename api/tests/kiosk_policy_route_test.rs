@@ -167,9 +167,9 @@ fn assert_answered_as_recorded(answer: &Answer, refusal: Option<&(String, u16)>,
     }
 }
 
-/// RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via `ADMIN`), and `RATES`
-/// (`RATE_MANAGER`) is widened with `QueueOperate` — let through on the queue's work, and
-/// answered `Unknown kiosk action.` on a name the kiosk does not know.
+/// RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via `EXECUTIVE` (`Customers Full`)),
+/// and `RATES` (`RATE_MANAGER`) is widened with `QueueOperate` — let through on the queue's work,
+/// and answered `Unknown kiosk action.` on a name the kiosk does not know.
 fn as_the_blueprint_answers(
     actor: &str,
     action: &str,

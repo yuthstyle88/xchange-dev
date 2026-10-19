@@ -422,8 +422,8 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
     );
     let cookies = everybody(&desk, &app).await;
 
-    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again (via ADMIN), so the gap answers
-    // saveTransaction as INVALID_REQUEST for the owner on /api/rpc
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again (via EXECUTIVE (Customers Full)),
+    // so the gap answers saveTransaction as INVALID_REQUEST for the owner on /api/rpc
     for (path, who, sentence) in [
         (RPC, "OWNER", INVALID_REQUEST),
         (RPC, "FRONT", ROLE_NOT_ALLOWED_RPC),

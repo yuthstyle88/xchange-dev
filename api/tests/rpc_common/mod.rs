@@ -415,9 +415,6 @@ impl Desk {
             .unwrap_or_else(|e| panic!("employ {}: {e}", person.key));
             crate::snapshot_common::seed_opener(&self.db.pool, &person.id).await;
         }
-        if people.iter().any(Person::is_owner) {
-            crate::snapshot_common::seed_opener(&self.db.pool, "owner").await;
-        }
     }
 
     /// The branch's day exists, CLOSED, behind the routes. Since CA-10 (#626 Q2) custody always applies: there is
@@ -887,6 +884,11 @@ pub enum Rule {
     /// #3659) lets through: sent through HTTP, held to not be the role refusal v2 recorded, and
     /// counted in [`Tally::widened`].
     Widened(PolicyError),
+    /// An owner `saveTransaction` step that RBAC §11.2 (#3659) lets past `Policy::authorize` (via
+    /// `EXECUTIVE` Customers Full) and that the CA-10 teller gate (`check_teller_save_in`) refuses
+    /// with `ShiftError::NoOpenShift` (`กรุณาเปิดกะจากหน้าแอดมินก่อน`) because the owner has no open
+    /// shift on the recorded day; those v2 accepted are then applied behind the routes (`save_behind`).
+    OwnerNoOpenShift(&'static str),
 }
 
 /// Recorded steps where v2's `Policy::allow` refused the caller and RBAC §11.2 (`RoleGrants`,
@@ -931,6 +933,69 @@ pub const WIDENED_BY_11_2: &[(&str, usize, Permission)] = &[
     ("kiosk/queue_work.json", 64, Permission::QueueOperate),
 ];
 
+/// CA-10 #626 + RBAC §11.2 (#3659): the owner holds `ExchangeTransact` again via `EXECUTIVE`
+/// (Customers Full), so `Policy::authorize` lets the owner's `saveTransaction` steps through to the
+/// workflow, where the CA-10 teller gate (`check_teller_save_in`) refuses with `ShiftError::NoOpenShift`
+/// (`กรุณาเปิดกะจากหน้าแอดมินก่อน`) because the owner has no open shift on the recorded day:
+/// `(fixture, step, reason)`.
+pub const OWNER_SAVE_NO_OPEN_SHIFT: &[(&str, usize, &str)] = &[
+    (
+        "rpc/engine_actions.json",
+        111,
+        "CA-10 teller gate before customer confirm: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        112,
+        "CA-10 teller gate before customer confirm: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        114,
+        "CA-10 teller gate before shift stock check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        115,
+        "CA-10 teller gate before shift stock check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        120,
+        "CA-10 teller gate on live BUY save: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        121,
+        "CA-10 teller gate on repeat of #120: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        122,
+        "CA-10 teller gate before prior-submission hash check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        123,
+        "CA-10 teller gate on live SELL save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        10,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        11,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        21,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+];
+
 /// Every step of a replay, by what was done with it.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Tally {
@@ -948,6 +1013,8 @@ pub struct Tally {
     pub blueprint: Vec<usize>,
     /// Held to not be v2's recorded role refusal (RBAC §11.2, #3659).
     pub widened: Vec<usize>,
+    /// Owner `saveTransaction` steps refused at the CA-10 teller gate (RBAC §11.2, #3659).
+    pub owner_no_open_shift: Vec<usize>,
 }
 
 impl Tally {
@@ -958,6 +1025,7 @@ impl Tally {
             + self.excluded.len()
             + self.blueprint.len()
             + self.widened.len()
+            + self.owner_no_open_shift.len()
     }
 }
 
@@ -1169,6 +1237,12 @@ impl<'f> Replay<'f> {
             }
         }
         if !is_part_two(&action) {
+            if let Some((_, _, reason)) = OWNER_SAVE_NO_OPEN_SHIFT
+                .iter()
+                .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
+            {
+                return Rule::OwnerNoOpenShift(reason);
+            }
             return Rule::Replay;
         }
         // a part-two name is this part's to answer exactly when Policy refuses
@@ -1216,9 +1290,6 @@ impl<'f> Replay<'f> {
         // CA-10 #626 (ruling A, try 2): a compat save meets the teller gate (`check_teller_save_in`), which needs an
         // OPEN branch day; v2 had no day phase. Before a recorded save on a branch whose shift a verified OPEN count
         // opened (READY), the replay opens that day, as `dayStartService` would.
-        // RBAC §11.2 (#3659): the owner holds `ExchangeTransact` again (via ADMIN), so an owner save on a branch whose
-        // shift `open_behind` opened for `FR1` temporarily lends that open shift to the owner's user for the step.
-        let mut lent_shift_teller: Option<(String, String)> = None;
         if action_of(step).as_deref() == Some("saveTransaction") {
             let branch = payload
                 .as_ref()
@@ -1228,37 +1299,11 @@ impl<'f> Replay<'f> {
                 .to_owned();
             if self.opened_by_count(&branch).await {
                 self.open_day_for_save(&branch).await;
-                if self.fixture.sender(step).is_some_and(Person::is_owner)
-                    && let Some((shift_id, prev_teller)) = sqlx::query_as::<_, (String, String)>(
-                        "SELECT id, teller_id::text FROM shifts \
-                             WHERE branch_id = $1 AND status = 'OPEN' \
-                             ORDER BY opened_at DESC LIMIT 1",
-                    )
-                    .bind(&branch)
-                    .fetch_optional(&self.desk.db.pool)
-                    .await
-                    .expect("read the open shift's teller")
-                {
-                    crate::snapshot_common::seed_opener(&self.desk.db.pool, "owner").await;
-                    sqlx::query(
-                        "UPDATE shifts SET teller_id = ( \
-                             SELECT u.id FROM users u \
-                             WHERE u.legacy_employee_id IS NULL \
-                             AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
-                             LIMIT 1 \
-                         ) WHERE id = $1",
-                    )
-                    .bind(&shift_id)
-                    .execute(&self.desk.db.pool)
-                    .await
-                    .expect("lend the open shift to the owner for a replayed save");
-                    lent_shift_teller = Some((shift_id, prev_teller));
-                }
             }
         }
-        // RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via ADMIN), but the owner's v2 password session
-        // has `actor.user_id = "owner"` (not a UUID) whereas `QueueDesk::call_in` binds `teller_id` as `$3::uuid`.
-        // Detach the waiting queue ticket for the owner's accepted kiosk `accept` and mark it SERVING afterwards.
+        // RBAC §11.2 (#3659): the owner holds `QueueOperate` again via EXECUTIVE (Customers Full), but the owner's v2
+        // password session has `actor.user_id = "owner"` (not a UUID) whereas `QueueDesk::call_in` binds `teller_id` as
+        // `$3::uuid` (#3810). Detach the waiting queue ticket until #3810 merges onto feat/rbac-groups.
         let mut detached_kiosk_ticket: Option<(String, String)> = None;
         if step.path() == Some("/api/kiosk")
             && action_of(step).as_deref() == Some("accept")
@@ -1313,14 +1358,6 @@ impl<'f> Replay<'f> {
             fund_exact(&self.desk.db.pool, b, amounts).await;
         }
         let answer = self.app.send(call).await;
-        if let Some((shift_id, prev_teller)) = lent_shift_teller {
-            sqlx::query("UPDATE shifts SET teller_id = $1::uuid WHERE id = $2")
-                .bind(&prev_teller)
-                .bind(&shift_id)
-                .execute(&self.desk.db.pool)
-                .await
-                .expect("restore the open shift's teller");
-        }
         if let Some((ticket_id, req_id)) = detached_kiosk_ticket {
             sqlx::query(
                 "UPDATE queue_tickets \
@@ -1540,6 +1577,57 @@ impl<'f> Replay<'f> {
                     v2_refusal, answer.text
                 );
                 self.tally.widened.push(step.n);
+            }
+            Rule::OwnerNoOpenShift(reason) => {
+                assert_ne!(
+                    step.error(),
+                    Some("กรุณาเปิดกะจากหน้าแอดมินก่อน"),
+                    "{label} ({reason}): listed in OWNER_SAVE_NO_OPEN_SHIFT, but v2 says the same"
+                );
+                answer.assert_refused(
+                    400,
+                    "กรุณาเปิดกะจากหน้าแอดมินก่อน",
+                    &format!("{label} ({reason})"),
+                );
+                assert_eq!(answer.header("cache-control"), Some("no-store"), "{label}");
+                self.tally.owner_no_open_shift.push(step.n);
+                // When the owner retries the same submissionId (#10/#11 in transactions.json,
+                // #120/#121/#122 in engine_actions.json), apply v2's accepted saves behind the
+                // routes once the last step of that submissionId has been answered so `save_behind`
+                // does not reassign the uploaded file or record the submission under FR1 before the
+                // retry steps run.
+                fn submission_id_of(s: &Step) -> Option<&str> {
+                    s.payload
+                        .as_ref()
+                        .and_then(|p| p.get("submissionId"))
+                        .and_then(Value::as_str)
+                }
+                if let Some(sub_id) = submission_id_of(step) {
+                    let more_retries = self
+                        .fixture
+                        .steps()
+                        .iter()
+                        .any(|s| s.n > step.n && submission_id_of(s) == Some(sub_id));
+                    if !more_retries {
+                        let accepted: Vec<Step> = self
+                            .fixture
+                            .steps()
+                            .iter()
+                            .filter(|s| {
+                                s.n <= step.n
+                                    && submission_id_of(s) == Some(sub_id)
+                                    && s.status == Some(200)
+                                    && s.path() != Some("/api/kiosk")
+                            })
+                            .cloned()
+                            .collect();
+                        for s in &accepted {
+                            self.accepted_behind(s).await;
+                        }
+                    }
+                } else if step.status == Some(200) && step.path() != Some("/api/kiosk") {
+                    self.accepted_behind(step).await;
+                }
             }
             Rule::QueueRefuses(code) => {
                 assert_eq!(answer.status, 400, "{label}: {:.300}", answer.text);
@@ -2321,8 +2409,8 @@ impl<'f> Replay<'f> {
             paid_at: text_of(&payload, "paidAt"),
             payment_confirmed: payload["paymentConfirmed"] == json!(true),
             identity_confirmed: payload["identityConfirmed"] == json!(true),
-            passport,
-            slip,
+            passport: passport.clone(),
+            slip: slip.clone(),
             reference_rate: payload
                 .get("referenceRate")
                 .filter(|v| !v.is_null())
@@ -2334,6 +2422,14 @@ impl<'f> Replay<'f> {
             .save(&branch, command, &saver, time(&step.at))
             .await
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
+        for key in [&passport, &slip].into_iter().flatten() {
+            sqlx::query("UPDATE files SET owner_id = $1 WHERE key = $2")
+                .bind(&sender.id)
+                .bind(key)
+                .execute(&self.desk.db.pool)
+                .await
+                .expect("restore the save's file to its uploader");
+        }
         assert_eq!(
             json!(saved.document_ref),
             step.json()["documentRef"],

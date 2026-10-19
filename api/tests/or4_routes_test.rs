@@ -89,7 +89,8 @@ fn not_refused_with(a: &Answer, not: &str, label: &str) {
 #[actix_web::test]
 async fn the_owners_user_no_longer_sells_or_moves_stock_on_the_owner_rpc() {
     // RBAC §11.2 (#3659): ExchangeTransact is held by TELLER, BRANCH_MANAGER, RATE_MANAGER and
-    // ADMIN (so OWNER, BACKEND, MANAGER and RATES get through, while FINANCE and MONITOR are refused)
+    // EXECUTIVE (Customers Full; so OWNER, BACKEND, MANAGER and RATES get through, while FINANCE
+    // and MONITOR are refused)
     let room = Room::open().await;
     for action in ["reserveCustomer", "saveTransaction"] {
         for who in ["OWNER", "BACKEND", "MANAGER", "RATES"] {
@@ -106,8 +107,9 @@ async fn the_owners_user_no_longer_sells_or_moves_stock_on_the_owner_rpc() {
 
 #[actix_web::test]
 async fn the_owners_user_does_not_work_the_kiosk_queue() {
-    // RBAC §11.2 (#3659): QueueOperate is held by TELLER, BRANCH_MANAGER, RATE_MANAGER and ADMIN
-    // (so OWNER and RATES get through, while FINANCE and MONITOR are refused)
+    // RBAC §11.2 (#3659): QueueOperate is held by TELLER, BRANCH_MANAGER, RATE_MANAGER and
+    // EXECUTIVE (Customers Full; so OWNER and RATES get through, while FINANCE and MONITOR are
+    // refused)
     let room = Room::open().await;
     for action in ["accept", "get", "identityChecked", "publishReceipt"] {
         for who in ["OWNER", "RATES"] {
