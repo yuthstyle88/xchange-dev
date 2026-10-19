@@ -158,10 +158,11 @@ impl KioskPorts for Counter {
     }
 }
 
-fn staff(id: &str, standing: StandingKind) -> SaveActor {
+// OR-7.m G1b (#3797): the username is the user's `users.name`, short and apart from the id
+fn staff(id: &str, name: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
-        username: format!("user-{id}"),
+        username: name.to_owned(),
         employee_id: Some(id.to_owned()),
         standing,
     }
@@ -303,7 +304,7 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
         .save_at(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(&front_id, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&front_id, FRONT, StandingKind::Staff(AccessRole::Teller)),
             save_now,
         )
         .await
@@ -327,7 +328,7 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
         .save_at(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(&front_id, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&front_id, FRONT, StandingKind::Staff(AccessRole::Teller)),
             repeat_now,
         )
         .await

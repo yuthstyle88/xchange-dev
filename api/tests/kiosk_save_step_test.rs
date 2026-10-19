@@ -197,11 +197,12 @@ async fn owner_user(pool: &sqlx::PgPool, branch_id: &str) -> String {
 
 // ------------------------------------------------------------------ the scene
 
-/// A staff member: the id is the employee's id, the username something else.
-fn staff(id: &str, standing: StandingKind) -> SaveActor {
+/// A staff member: the id is the user's `users.id`, the username their `users.name` (OR-7.m G1b,
+/// rule 3, #3797), so the two differ and a request held under the username is not theirs.
+fn staff(id: &str, name: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
-        username: format!("user-{id}"),
+        username: name.to_owned(),
         employee_id: Some(id.to_owned()),
         standing,
     }
@@ -354,7 +355,7 @@ impl Scene {
 async fn a_save_that_names_no_request_is_none_of_the_kiosks_business() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", &s.front_id).await;
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
 
     // no request named, and a request named with the empty text
     let saved = s
@@ -394,7 +395,7 @@ async fn the_employee_holding_a_checked_request_saves_it_and_the_request_is_comp
         .save(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(&s.front_id, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller)),
         )
         .await
         .expect("the holder saves the request");
@@ -440,7 +441,7 @@ async fn the_role_of_the_saver_plays_no_part() {
         s.save(
             s.form(&format!("role-000{n}-aaaaaaaaaa")),
             &with_kiosk(&id),
-            &staff(&s.front_id, standing),
+            &staff(&s.front_id, FRONT, standing),
         )
         .await
         .unwrap_or_else(|e| panic!("{standing:?} holding the request saves it: {e:?}"));
@@ -462,9 +463,9 @@ async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
     s.id_checked(MAIN, "others", &s.other_id).await;
     s.id_checked(B2, "elsewhere", &s.front_id).await;
     // held by somebody whose id is this saver's *username*
-    s.id_checked(MAIN, "by-name", &format!("user-{}", s.front_id))
-        .await;
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    // OR-7.m G1b (#3797): the saver's username is `FRONT`, their `users.name`
+    s.id_checked(MAIN, "by-name", FRONT).await;
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     for request in [
@@ -513,7 +514,7 @@ async fn the_save_must_be_live_and_be_what_the_customer_asked_for() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", &s.front_id).await;
     s.id_checked(MAIN, "q2", &s.other_id).await;
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
     let slip = s.shop.upload(MAIN, FRONT, "application/pdf", PDF).await;
     let before = (s.shop.everything().await, s.requests().await);
     let change = |f: Change| {
@@ -590,7 +591,7 @@ async fn the_save_must_be_live_and_be_what_the_customer_asked_for() {
 async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", &s.front_id).await;
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
     let first = s
         .save(s.form("again-0001-aaaaaaaaa"), &with_kiosk("q1"), &front)
         .await
@@ -617,7 +618,7 @@ async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
         .save(
             form("again-0001-aaaaaaaaa", &s.customer, &others),
             &with_kiosk("q1"),
-            &staff(&s.other_id, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&s.other_id, OTHER, StandingKind::Staff(AccessRole::Teller)),
         )
         .await;
     assert_eq!(refusal(got), NOT_READY);
@@ -630,7 +631,7 @@ async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
 async fn a_save_the_shop_refuses_leaves_the_request_ready() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", &s.front_id).await;
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     // Re-pinned for TX-6 by the test-writer, A3 (kiosk) (design quote-transaction.md §4.6.1; lane controller's
@@ -664,7 +665,7 @@ async fn a_save_the_shop_refuses_leaves_the_request_ready() {
 async fn a_kiosk_save_at_a_rate_that_is_not_its_quotes_is_refused() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", &s.front_id).await;
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     let mut moved = s.form("rate-0001-aaaaaaaaaa");
@@ -702,7 +703,7 @@ async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
     .execute(&s.shop.pool)
     .await
     .expect("insert a checked request with no quote");
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
     let quotes = || async {
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM quotes")
             .fetch_one(&s.shop.pool)
@@ -743,7 +744,7 @@ async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
 async fn a_request_that_cannot_be_completed_undoes_the_save() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", &s.front_id).await;
-    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     s.counter.audit_fails.store(true, Ordering::SeqCst);
