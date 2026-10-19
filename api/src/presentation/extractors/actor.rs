@@ -295,10 +295,7 @@ pub async fn callers(req: &HttpRequest) -> Callers {
 pub fn is_staff_path(path: EntryPath) -> bool {
     matches!(
         path,
-        EntryPath::StaffRpc
-            | EntryPath::StaffDesk
-            | EntryPath::StaffFile
-            | EntryPath::StaffUpload
+        EntryPath::StaffRpc | EntryPath::StaffDesk | EntryPath::StaffFile | EntryPath::StaffUpload
     )
 }
 
