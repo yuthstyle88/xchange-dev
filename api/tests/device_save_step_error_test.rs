@@ -33,11 +33,12 @@ use xchange::infrastructure::devices::device_service::DeviceService;
 const FRONT: &str = "employee-7";
 
 /// The saver, as in `device_save_step_test`: its id is not its username.
-fn front() -> SaveActor {
+// OR-7.m G1a: rule 1 (#3796)
+fn front(id: &str) -> SaveActor {
     SaveActor {
-        id: FRONT.to_owned(),
+        id: id.to_owned(),
         username: format!("user-{FRONT}"),
-        employee_id: Some(FRONT.to_owned()),
+        employee_id: Some(id.to_owned()),
         standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
@@ -53,17 +54,19 @@ const COUNTED: SaveExtras = SaveExtras {
 async fn guarded(
     shop: &Shop,
     ids: &Arc<devices_common::FakeIds>,
-) -> (SaveTransactionWorkflow, String, String) {
+) -> (SaveTransactionWorkflow, String, String, SaveActor) {
     let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    // OR-7.m G1a: rule 1 (#3796)
+    let front_id = shift_holder_common::user_of(&shop.pool, FRONT).await;
     let shift = shift_holder_common::open_shift_for(
         &shop.pool,
         MAIN,
-        FRONT,
+        &front_id,
         &[("THB", "100000"), ("USD", "1000")],
     )
     .await;
     fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
-    let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
+    let passport = shop.upload(MAIN, &front_id, "image/jpeg", JPEG).await;
     let devices = DeviceService::new(
         BranchTx::new(Transactor::new(shop.pool.clone())),
         Arc::new(devices_common::FakeExchanges::default()),
@@ -76,14 +79,14 @@ async fn guarded(
         shop.files.clone(),
     )
     .with_steps(vec![step]);
-    (flow, customer, passport)
+    (flow, customer, passport, front(&front_id))
 }
 
 #[tokio::test]
 async fn the_save_fails_with_the_device_write_s_own_error() {
     let shop = Shop::start().await;
     let ids = Arc::new(devices_common::FakeIds::default());
-    let (flow, customer, passport) = guarded(&shop, &ids).await;
+    let (flow, customer, passport, actor) = guarded(&shop, &ids).await;
     ids.give_one(&devices_common::job_id(5));
     shop.break_writes("device_jobs").await;
     let before = shop.everything().await;
@@ -93,7 +96,7 @@ async fn the_save_fails_with_the_device_write_s_own_error() {
             &branch(MAIN),
             form("dse-0001-aaaaaaaaaaaa", &customer, &passport),
             &COUNTED,
-            &front(),
+            &actor,
             at(0),
         )
         .await;
