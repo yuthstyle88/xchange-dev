@@ -33,6 +33,11 @@ function booking(over: Partial<MyBookingItemDto> = {}): MyBookingItemDto {
     quoteSummary: '',
     cancelCutoffAt: '2099-10-15T09:00:00Z',
     ticketNumber: null,
+    ticketsAhead: null,
+    estimateSeconds: null,
+    estimateLowSeconds: null,
+    estimateHighSeconds: null,
+    estimateAsOf: null,
     readiness: 'unknown',
     ...over,
   };

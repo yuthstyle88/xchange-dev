@@ -49,6 +49,16 @@ async fn samples_in(
     Ok((today_samples, earlier_samples))
 }
 
+/// Ticket fields needed to count how many WAITING tickets are ahead of it in Q6 call order and
+/// estimate its wait (QU-7 #1266, C03 #3404).
+pub struct TicketRef<'a> {
+    pub id: uuid::Uuid,
+    pub branch: &'a BranchId,
+    pub service_type: &'a str,
+    pub sequence: i32,
+    pub status: &'a str,
+}
+
 #[derive(Clone)]
 pub struct StatusService {
     branch_tx: BranchTx,
@@ -58,6 +68,33 @@ pub struct StatusService {
 impl StatusService {
     pub fn new(branch_tx: BranchTx, repo: Arc<dyn QueueRepository>) -> Self {
         Self { branch_tx, repo }
+    }
+
+    /// Counts WAITING tickets ahead of `ticket` in Q6 call order (every BOOKING before a WALK_IN,
+    /// then by sequence) and estimates its wait inside `tx`. A ticket no longer WAITING has `(0, None)`.
+    pub async fn ticket_wait_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        ticket: TicketRef<'_>,
+        now: DateTime<Utc>,
+    ) -> AppResult<(i32, Option<WaitEstimate>)> {
+        if ticket.status != "WAITING" {
+            return Ok((0, None));
+        }
+        let ahead: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM queue_tickets \
+              WHERE branch_id = $1 AND status = 'WAITING' AND id <> $2 \
+                AND ((service_type = $3 AND sequence < $4) \
+                     OR (service_type = 'BOOKING' AND $3 = 'WALK_IN'))",
+        )
+        .bind(ticket.branch.as_str())
+        .bind(ticket.id)
+        .bind(ticket.service_type)
+        .bind(ticket.sequence)
+        .fetch_one(&mut **tx)
+        .await?;
+        let estimate = self.estimate_for_in(tx, ticket.branch, ahead, now).await?;
+        Ok((ahead as i32, estimate))
     }
 
     /// The wait for a customer with `ahead` WAITING tickets before them, as `refresh_in` computes

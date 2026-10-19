@@ -16,7 +16,7 @@ function json(status: number, body: unknown): Response {
 function bk(id: string, status: string, startAt: string, qrToken: string | null): MyBookingItemDto {
   return {
     id, bookingNo: `NO-${id}`, status, branchId: 'bkk-1', slotId: 's', startAt, endAt: startAt, qrToken,
-    quoteSummary: '', cancelCutoffAt: null, ticketNumber: null, readiness: 'unknown',
+    quoteSummary: '', cancelCutoffAt: null, ticketNumber: null, ticketsAhead: null, estimateSeconds: null, estimateLowSeconds: null, estimateHighSeconds: null, estimateAsOf: null, readiness: 'unknown',
   };
 }
 
