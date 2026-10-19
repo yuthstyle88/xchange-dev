@@ -22,12 +22,28 @@
 // the shop of the save tests: its helpers build the rows these tests read
 #[allow(unused_imports)]
 mod save_common;
+mod shift_holder_common;
 
 use std::sync::Arc;
 
 use save_common::*;
+use shift_holder_common::user_of;
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;
+
+async fn owner_user(pool: &sqlx::PgPool, branch_id: &str) -> String {
+    sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u \
+         JOIN branches b ON b.id = $1 AND b.organization_id = u.organization_id \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(branch_id)
+    .fetch_one(pool)
+    .await
+    .expect("read branch owner user id")
+}
 
 const B01: &str = "XC-B01";
 
@@ -373,25 +389,43 @@ async fn evidence_is_owned_when_every_key_is_the_callers_upload_in_that_branch()
     let elsewhere = shop.upload(B01, staff, "image/jpeg", JPEG).await;
     let never = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
-    assert!(owned(&shop, MAIN, staff, &[&a]).await);
-    assert!(owned(&shop, MAIN, staff, &[&a, &b]).await);
+    let staff_id = user_of(&shop.pool, staff).await;
+    let owner_id = owner_user(&shop.pool, MAIN).await;
+
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &staff_id, &[&a]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &staff_id, &[&a, &b]).await);
+    // OR-7.m G1b: rule 2 (#3797)
     assert!(
-        owned(&shop, MAIN, staff, &[&b, &a, &a]).await,
+        owned(&shop, MAIN, &staff_id, &[&b, &a, &a]).await,
         "a key named twice is still owned"
     );
+    // OR-7.m G1b: rule 2 (#3797)
     assert!(
-        owned(&shop, MAIN, staff, &[]).await,
+        owned(&shop, MAIN, &staff_id, &[]).await,
         "nothing to own: how many are needed is the service's rule"
     );
-    assert!(owned(&shop, B01, staff, &[&elsewhere]).await);
-    assert!(owned(&shop, MAIN, OWNER, &[&others]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, B01, &staff_id, &[&elsewhere]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &owner_id, &[&others]).await);
 
     // one key that is not theirs spoils the lot, wherever it stands
     for bad in [others.as_str(), elsewhere.as_str(), never, "", "x", "%"] {
-        assert!(!owned(&shop, MAIN, staff, &[bad]).await, "{bad:?} alone");
-        assert!(!owned(&shop, MAIN, staff, &[&a, bad]).await, "{bad:?} last");
+        // OR-7.m G1b: rule 2 (#3797)
         assert!(
-            !owned(&shop, MAIN, staff, &[bad, &a, &b]).await,
+            !owned(&shop, MAIN, &staff_id, &[bad]).await,
+            "{bad:?} alone"
+        );
+        // OR-7.m G1b: rule 2 (#3797)
+        assert!(
+            !owned(&shop, MAIN, &staff_id, &[&a, bad]).await,
+            "{bad:?} last"
+        );
+        // OR-7.m G1b: rule 2 (#3797)
+        assert!(
+            !owned(&shop, MAIN, &staff_id, &[bad, &a, &b]).await,
             "{bad:?} first"
         );
     }
@@ -399,11 +433,13 @@ async fn evidence_is_owned_when_every_key_is_the_callers_upload_in_that_branch()
         !owned(&shop, MAIN, "Employee-7", &[&a]).await,
         "owners are compared exactly"
     );
-    assert!(!owned(&shop, B01, staff, &[&a]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(!owned(&shop, B01, &staff_id, &[&a]).await);
 
     // v2 asks only for the record: bytes gone from the disk do not change the answer
     std::fs::remove_file(shop.dir.join(&a)).expect("remove an uploaded file");
-    assert!(owned(&shop, MAIN, staff, &[&a]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &staff_id, &[&a]).await);
     shop.finish().await;
 }
 
@@ -416,6 +452,7 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
     // here inside a transaction, asked for through it, and then rolled back.
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    let owner_id = owner_user(&shop.pool, MAIN).await;
     let shift = shop.open_shift_id(MAIN).await;
     shop.save(
         MAIN,
@@ -458,9 +495,10 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
         .execute(&mut *tx)
         .await
         .expect("update a file");
+    // OR-7.m G1b: rule 2 (#3797)
     assert!(
         !ports
-            .evidence_owned(&mut tx, &main, OWNER, std::slice::from_ref(&passport))
+            .evidence_owned(&mut tx, &main, &owner_id, std::slice::from_ref(&passport))
             .await
             .unwrap()
     );
@@ -509,7 +547,8 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
         "RE-7 #604: the publication's committed date, not the one moved in the transaction"
     );
     assert!(known(&shop, MAIN, &customer).await);
-    assert!(owned(&shop, MAIN, OWNER, &[&passport]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &owner_id, &[&passport]).await);
     assert_eq!(
         outside(&shop, MAIN, Some(&shift)).await.last_transaction,
         Some("XC-20261006-000001".to_owned())
