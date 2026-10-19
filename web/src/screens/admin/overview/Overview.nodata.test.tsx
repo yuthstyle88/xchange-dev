@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
 import { formatMoney } from '../../../shared/ui/MoneyText';
@@ -27,8 +27,8 @@ const VIEW_OVERVIEW = '/api/v3/views/admin_overview';
 const VIEW_TRANSACTIONS = '/api/v3/views/admin_transactions';
 const VIEW_BRANCHES = '/api/v3/views/admin_branches';
 
-function row(id: string): TransactionRow {
-  return {
+function row(id: string) {
+  return makeTransactionRow({
     id,
     date: '2026-10-06',
     created: '2026-10-06T03:00:00.000Z',
@@ -55,7 +55,7 @@ function row(id: string): TransactionRow {
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  };
+  });
 }
 
 const LOADED_DATA = {

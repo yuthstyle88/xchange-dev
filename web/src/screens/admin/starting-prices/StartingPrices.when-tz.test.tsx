@@ -5,7 +5,7 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OrgStartingPriceItem } from '../../../shared/api/generated/org_starting_prices';
+import { makeOrgStartingPriceItem } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { StartingPrices } from './StartingPrices';
@@ -28,9 +28,9 @@ describe('#2508: StartingPrices formats the entered-at time in Asia/Bangkok', ()
   let container: HTMLDivElement;
   let dispose: (() => void) | null = null;
   let savedTz: string | undefined;
-  const viewItems: OrgStartingPriceItem[] = [
-    { currency: 'USD', version: 2, buy: '34.10', sell: '34.70', enteredBy: 'alice', enteredAt: ENTERED_AT, reason: 'v2' },
-    { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'bob', enteredAt: ENTERED_AT, reason: 'v1' },
+  const viewItems = [
+    makeOrgStartingPriceItem({ currency: 'USD', version: 2, buy: '34.10', sell: '34.70', enteredBy: 'alice', enteredAt: ENTERED_AT, reason: 'v2' }),
+    makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'bob', enteredAt: ENTERED_AT, reason: 'v1' }),
   ];
 
   beforeEach(() => {

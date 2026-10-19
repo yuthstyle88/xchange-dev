@@ -7,22 +7,27 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
-import type { DeviceEventRow } from '../../shared/api/generated/device_events';
-import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
-import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
-import type { DevicesOverview } from '../../shared/api/generated/devices';
+import {
+  type DeviceEventRow,
+  type DeviceJobRow,
+  type DeviceTransactionRow,
+  type DevicesOverview,
+  makeDeviceBranch,
+  makeDeviceEventRow,
+  makeDevicesOverview,
+} from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { eventsCsv } from './csv';
 import { DevicesScreen } from './DevicesScreen';
 import { th } from './i18n';
 
 const BRANCHES = [
-  { id: 'MAIN', name: 'สำนักงานใหญ่' },
-  { id: 'B1', name: 'สาขาหนึ่ง' },
+  makeDeviceBranch({ id: 'MAIN', name: 'สำนักงานใหญ่' }),
+  makeDeviceBranch({ id: 'B1', name: 'สาขาหนึ่ง' }),
 ];
 
-function overview(branchId: string): DevicesOverview {
-  return {
+function overview(branchId: string) {
+  return makeDevicesOverview({
     branchId,
     branches: BRANCHES,
     printerOnline: true,
@@ -33,15 +38,15 @@ function overview(branchId: string): DevicesOverview {
     balanceThb: '1000.00',
     balanceUsd: '100.00',
     completedCount: 1,
-  };
+  });
 }
 
-function event(seq: string, kind: string, ref = '', detail = '{}', actor = 'backend1', at = '2026-10-08T02:00:00.000Z'): DeviceEventRow {
-  return { seq, kind, ref, at, actor, detail };
+function event(seq: string, kind: string, ref = '', detail = '{}', actor = 'backend1', at = '2026-10-08T02:00:00.000Z') {
+  return makeDeviceEventRow({ seq, kind, ref, at, actor, detail });
 }
 
-function events(from: number, to: number): DeviceEventRow[] {
-  const out: DeviceEventRow[] = [];
+function events(from: number, to: number) {
+  const out = [];
   for (let s = from; s >= to; s--) {
     out.push(event(String(s), s % 2 === 0 ? 'PRINT_RECEIPT' : 'DRAWER_REQUEST', `TX-${s}`, `{"n":${s}}`, `actor${s}`));
   }

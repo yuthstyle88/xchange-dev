@@ -2,8 +2,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { ApiClient } from '../../shared/api/client';
-import type { QuoteDto } from '../../shared/api/generated/quote';
-import type { TransactionDto } from '../../shared/api/generated/transactions';
+import {
+  makeQuoteDto,
+  makeQuoteLineDto,
+  makeQuotePublicationDto,
+  makeTransactionDto,
+  makeTransactionLineDto,
+  makeTransactionPaymentDto,
+  type TransactionDto,
+} from '../../shared/testing/fixtures';
 import { OWNER_DESK } from './desk-path';
 import { createDeskStore } from './desk-store';
 
@@ -40,15 +47,15 @@ const ME = () => ({
 
 const PASSPORT = new File([new Uint8Array([1, 2, 3])], 'passport.jpg', { type: 'image/jpeg' });
 
-function quoteDto(id = 'q-1'): QuoteDto {
-  return {
+function quoteDto(id = 'q-1') {
+  return makeQuoteDto({
     id,
     type: 'BUY',
     channel: 'DESK',
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: 'pub-1', version: 3 },
+    publication: makeQuotePublicationDto({ id: 'pub-1', version: 3 }),
     lines: [
-      {
+      makeQuoteLineDto({
         currency: 'USD',
         shopSide: 'BUY',
         quantity: '100',
@@ -59,15 +66,15 @@ function quoteDto(id = 'q-1'): QuoteDto {
         feeThb: '0.00',
         settleThb: '3210.00',
         publishedRateLineId: 'line-1',
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
-function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}): TransactionDto {
-  return {
+function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}) {
+  return makeTransactionDto({
     id,
     branchId: 'MAIN',
     mode: 'LIVE',
@@ -80,7 +87,7 @@ function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}):
     cancelledAt: null,
     recordedAt: '2026-10-11T03:00:00Z',
     lines: [
-      {
+      makeTransactionLineDto({
         currency: 'USD',
         shopSide: 'BUY',
         quantity: '100',
@@ -89,18 +96,18 @@ function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}):
         thbAmount: '3512.00',
         feeThb: '0.00',
         settleThb: '3512.00',
-      },
+      }),
     ],
-    payment: {
+    payment: makeTransactionPaymentDto({
       method: 'Cash',
       reference: '',
       account: 'Cash drawer 1',
       amountThb: '3512.00',
       bankFeeThb: '0.00',
       paidAt: '2026-10-11T03:00:00Z',
-    },
+    }),
     ...extra,
-  };
+  });
 }
 
 function makeHarness(createSteps: StepAnswer[]) {

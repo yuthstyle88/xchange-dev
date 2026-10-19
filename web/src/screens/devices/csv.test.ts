@@ -9,15 +9,15 @@
 // The kind is the raw code, not its label; `at` is the view's string, not a formatted time.
 // v3's `detail` is already the JSON text v2 built with `JSON.stringify`, so it goes in as it is.
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { DeviceEventRow } from '../../shared/api/generated/device_events';
+import { makeDeviceEventRow } from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { eventsCsv } from './csv';
 
 const BOM = '﻿';
 const HEADER = '"เวลา","ผู้ทำงาน","เหตุการณ์","เลขอ้างอิง","รายละเอียด"';
 
-function row(seq: string, kind: string, ref: string, at: string, actor: string, detail: string): DeviceEventRow {
-  return { seq, kind, ref, at, actor, detail };
+function row(seq: string, kind: string, ref: string, at: string, actor: string, detail: string) {
+  return makeDeviceEventRow({ seq, kind, ref, at, actor, detail });
 }
 
 beforeEach(() => {

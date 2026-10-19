@@ -7,10 +7,12 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
-import type {
-  ApprovalDecisionDto,
-  ApprovalRequestItemDto,
-} from '../../../shared/api/generated/approval_requests';
+import {
+  makeApprovalDecisionDto,
+  makeApprovalRequestItemDto,
+  type ApprovalDecisionDto,
+  type ApprovalRequestItemDto,
+} from '../../../shared/testing/fixtures';
 import { Approvals } from './Approvals';
 import { en as screenEn, th as screenTh } from './i18n';
 import { Toast, toast } from '../parts/toast';
@@ -25,8 +27,8 @@ function makeRequest(
   status: 'PENDING' | 'APPROVED' | 'REJECTED',
   decision: ApprovalDecisionDto | null,
   branch = 'MAIN',
-): ApprovalRequestItemDto {
-  return {
+) {
+  return makeApprovalRequestItemDto({
     id,
     type: 'RATE_PUBLICATION',
     branchId: branch,
@@ -44,7 +46,7 @@ function makeRequest(
     requestedAt: '2026-10-15T09:00:00Z',
     status,
     decision,
-  };
+  });
 }
 
 interface RecordedRead {
@@ -66,20 +68,28 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     itemsByStatus = {
       PENDING: [makeRequest('req-pending-1', 'PENDING', null)],
       APPROVED: [
-        makeRequest('req-approved-1', 'APPROVED', {
-          approverId: 'u-9',
-          outcome: 'APPROVED',
-          reason: 'ok',
-          at: '2026-10-15T10:00:00Z',
-        }),
+        makeRequest(
+          'req-approved-1',
+          'APPROVED',
+          makeApprovalDecisionDto({
+            approverId: 'u-9',
+            outcome: 'APPROVED',
+            reason: 'ok',
+            at: '2026-10-15T10:00:00Z',
+          }),
+        ),
       ],
       REJECTED: [
-        makeRequest('req-rejected-1', 'REJECTED', {
-          approverId: 'u-7',
-          outcome: 'REJECTED',
-          reason: 'spread exceeds branch limit',
-          at: '2026-10-15T11:30:00Z',
-        }),
+        makeRequest(
+          'req-rejected-1',
+          'REJECTED',
+          makeApprovalDecisionDto({
+            approverId: 'u-7',
+            outcome: 'REJECTED',
+            reason: 'spread exceeds branch limit',
+            at: '2026-10-15T11:30:00Z',
+          }),
+        ),
       ],
     };
 

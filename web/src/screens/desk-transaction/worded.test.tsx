@@ -4,9 +4,19 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../shared/i18n';
 import { en as sharedEn } from '../../shared/i18n/en';
 import { th as sharedTh } from '../../shared/i18n/th';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
-import type { TransactionDetailDto } from '../../shared/api/generated/transaction';
-import type { TransactionAuditViewData } from '../../shared/api/generated/transaction_audit';
+import {
+  makeReceiptDocumentDto,
+  makeReceiptDocumentViewData,
+  makeStaffMeView,
+  makeTransactionAuditEventDto,
+  makeTransactionAuditViewData,
+  makeTransactionDetailDto,
+  makeTransactionViewData,
+  makeTxLineDto,
+  makeTxPaymentDto,
+  makeTxReceiptDto,
+  type TransactionDetailDto,
+} from '../../shared/testing/fixtures';
 import { TransactionScreen } from './TransactionScreen';
 
 const TX_ID = '00000000-0000-4000-8000-000000000002';
@@ -19,19 +29,19 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-function sampleStaffMe(): StaffMeView {
-  return {
+function sampleStaffMe() {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
     roles: [],
     branchId: 'MAIN',
     branchName: 'สาขาทดสอบ',
     permissions: ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'],
-  };
+  });
 }
 
-function sampleTx(over: Partial<TransactionDetailDto> = {}): TransactionDetailDto {
-  return {
+function sampleTx(over: Partial<TransactionDetailDto> = {}) {
+  return makeTransactionDetailDto({
     id: TX_ID,
     status: 'COMPLETED',
     documentRef: 'XC-0001',
@@ -40,7 +50,7 @@ function sampleTx(over: Partial<TransactionDetailDto> = {}): TransactionDetailDt
     quoteId: null,
     quoteExpiresAt: null,
     lines: [
-      {
+      makeTxLineDto({
         lineNo: 1,
         currency: 'USD',
         side: 'BUY',
@@ -50,9 +60,9 @@ function sampleTx(over: Partial<TransactionDetailDto> = {}): TransactionDetailDt
         thbAmount: '35120.00',
         feeThb: '0.00',
         settleThb: '35120.00',
-      },
+      }),
     ],
-    payment: {
+    payment: makeTxPaymentDto({
       method: 'CASH',
       reference: '',
       account: '',
@@ -60,8 +70,8 @@ function sampleTx(over: Partial<TransactionDetailDto> = {}): TransactionDetailDt
       amountThb: '35120.00',
       bankFeeThb: '0.00',
       paidAt: '2026-10-11T03:00:00Z',
-    },
-    receipts: [{ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' }],
+    }),
+    receipts: [makeTxReceiptDto({ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' })],
     approvalRequest: null,
     completedAt: '2026-10-11T03:00:05Z',
     cancelledAt: null,
@@ -70,14 +80,14 @@ function sampleTx(over: Partial<TransactionDetailDto> = {}): TransactionDetailDt
     benefits: [],
     booking: null,
     ...over,
-  };
+  });
 }
 
-const sampleAudit: TransactionAuditViewData = {
+const sampleAudit = makeTransactionAuditViewData({
   events: [
-    { at: '2026-10-11T02:59:30Z', actorId: 'u-mgr', actorRole: 'ROLE_A', action: 'approval.approved' },
+    makeTransactionAuditEventDto({ at: '2026-10-11T02:59:30Z', actorId: 'u-mgr', actorRole: 'ROLE_A', action: 'approval.approved' }),
   ],
-};
+});
 
 describe('WE-31 screens/desk-transaction/ worded error (#1780)', () => {
   let root: HTMLDivElement;
@@ -94,13 +104,15 @@ describe('WE-31 screens/desk-transaction/ worded error (#1780)', () => {
     document.body.appendChild(root);
 
     meHandler = async () => json(200, { version: 1, changed: true, data: sampleStaffMe() });
-    txHandler = async () => json(200, { version: 1, changed: true, data: { transaction: sampleTx() } });
+    txHandler = async () => json(200, { version: 1, changed: true, data: makeTransactionViewData({ transaction: sampleTx() }) });
     auditHandler = async () => json(200, { version: 1, changed: true, data: sampleAudit });
     receiptHandler = async () =>
       json(200, {
         version: 1,
         changed: true,
-        data: { receipt: { number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z', html: '<p>ok</p>' } },
+        data: makeReceiptDocumentViewData({
+          receipt: makeReceiptDocumentDto({ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z', html: '<p>ok</p>' }),
+        }),
       });
     reversalHandler = async () => json(200, { id: 'rv-0001', status: 'REQUESTED' });
 

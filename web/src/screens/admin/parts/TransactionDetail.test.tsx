@@ -34,7 +34,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../../shared/api/client';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, makeViewAnswer, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { TransactionDetail } from './TransactionDetail';
@@ -42,8 +42,8 @@ import { TransactionDetail } from './TransactionDetail';
 const THAI = /[฀-๿]/;
 const BIG = '90071992547409.93';
 
-function row(over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function row(over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: 'XC-B-2026-000042',
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -71,7 +71,7 @@ function row(over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 // ── a fake ApiClient: `view` waits until the test answers ─────────────────────
@@ -106,8 +106,8 @@ function fakeApi(): { api: ApiClient; reads: Read[]; pending: Pending[] } {
   return { api: api as unknown as ApiClient, reads, pending };
 }
 
-function documents(ref: string, files: Array<{ kind: string; path: string; download?: string }>): ViewAnswer<unknown> {
-  return { version: 7, changed: true, data: { ref, files } };
+function documents(ref: string, files: Array<{ kind: string; path: string; download?: string }>) {
+  return makeViewAnswer<unknown>({ ref, files }, { version: 7, changed: true });
 }
 
 async function settle(): Promise<void> {

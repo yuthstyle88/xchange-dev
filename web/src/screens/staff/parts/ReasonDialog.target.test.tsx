@@ -3,10 +3,12 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffHoldRow } from '../../../shared/api/generated/staff_holds';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeCashTransferRow,
+  makeStaffFloorView,
+  makeStaffHoldRow,
+  makeStaffMeView,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import type { StaffCtx } from '../cards';
 import { HoldsCard } from '../holds/HoldsCard';
@@ -21,27 +23,27 @@ const HOLD_B = 'h-open-b';
 const TRANSFER_X = 'e0000000-0000-4000-8000-000000000010';
 const TRANSFER_Y = 'e0000000-0000-4000-8000-000000000011';
 
-const HOLDS: StaffHoldRow[] = [
-  {
+const HOLDS = [
+  makeStaffHoldRow({
     id: HOLD_A,
     customerId: 'CX-00000001',
     customerName: 'Somchai Jaidee',
     reason: 'AML check A',
     status: 'OPEN',
     at: '2026-10-11T02:00:00Z',
-  },
-  {
+  }),
+  makeStaffHoldRow({
     id: HOLD_B,
     customerId: 'CX-00000002',
     customerName: 'Suda Jaidee',
     reason: 'AML check B',
     status: 'OPEN',
     at: '2026-10-11T03:00:00Z',
-  },
+  }),
 ];
 
-function receivedTransfer(id: string): CashTransferRow {
-  return {
+function receivedTransfer(id: string) {
+  return makeCashTransferRow({
     id,
     kind: 'BRANCH',
     fromBranchId: ELSEWHERE,
@@ -53,27 +55,27 @@ function receivedTransfer(id: string): CashTransferRow {
     note: 'dispatched cash',
     createdAt: '2026-10-11T02:00:00Z',
     lines: [],
-  };
+  });
 }
 
-const TRANSFERS: CashTransferRow[] = [
+const TRANSFERS = [
   receivedTransfer(TRANSFER_X),
   receivedTransfer(TRANSFER_Y),
 ];
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000c1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -81,7 +83,7 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 function jsonResponse(status: number, body: unknown): Response {

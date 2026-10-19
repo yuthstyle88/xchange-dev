@@ -23,7 +23,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenu, AdminMenuProps } from '../menus';
@@ -84,8 +84,8 @@ interface OverviewData {
   status: { shiftOpen: boolean; pendingCount: number };
 }
 
-function row(id: string, created: string, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function row(id: string, created: string, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id,
     date: created.slice(0, 10),
     created,
@@ -113,7 +113,7 @@ function row(id: string, created: string, over: Partial<TransactionRow> = {}): T
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 /**

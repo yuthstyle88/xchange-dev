@@ -2,8 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
-import type { MyBookingsData } from '../../../shared/api/generated/my_bookings';
+import {
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeMyBookingItemDto,
+  makeMyBookingsData,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { BookingsScreen } from './Bookings';
 
@@ -25,9 +29,9 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const BOOKINGS_DATA: MyBookingsData = {
+const BOOKINGS_DATA = makeMyBookingsData({
   bookings: [
-    {
+    makeMyBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261015-0001',
       branchId: 'bkk-1',
@@ -45,33 +49,33 @@ const BOOKINGS_DATA: MyBookingsData = {
       estimateAsOf: null,
       quoteSummary: '',
       readiness: 'unknown',
-    },
+    }),
   ],
-};
+});
 
-const SLOTS_DATA: BookingSlotsData = {
+const SLOTS_DATA = makeBookingSlotsData({
   asOf: '2026-10-15T08:00:00Z',
   slots: [
-    {
+    makeBookingSlotItemDto({
       id: 'slot-1',
       start: '2026-10-15T10:00:00Z',
       end: '2026-10-15T10:30:00Z',
       available: 3,
-    },
-    {
+    }),
+    makeBookingSlotItemDto({
       id: 'slot-2',
       start: '2026-10-15T11:00:00Z',
       end: '2026-10-15T11:30:00Z',
       available: 4,
-    },
-    {
+    }),
+    makeBookingSlotItemDto({
       id: 'slot-3',
       start: '2026-10-15T13:00:00Z',
       end: '2026-10-15T13:30:00Z',
       available: 5,
-    },
+    }),
   ],
-};
+});
 
 function makeHarness(steps: StepAnswer[]) {
   const writes: WriteCall[] = [];

@@ -8,15 +8,18 @@ import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { th as screenTh, en as screenEn } from './i18n';
-import type { AdminBranchItem } from '../../../shared/api/generated/admin_branches';
-import type { AdminEmployeeRow } from '../../../shared/api/generated/admin_employees';
-import type { AdminOperationsData } from '../../../shared/api/generated/admin_operations';
+import {
+  makeAdminBranchItem,
+  makeAdminEmployeeRow,
+  makeAdminOperationsData,
+  makeAdminOperationsEntity,
+} from '../../../shared/testing/fixtures';
 import { Employees } from './Employees';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 
-const SAMPLE_EMPLOYEES: AdminEmployeeRow[] = [
-  {
+const SAMPLE_EMPLOYEES = [
+  makeAdminEmployeeRow({
     id: 'emp-1',
     name: 'Somchai Prasert',
     username: 'somchai',
@@ -24,20 +27,20 @@ const SAMPLE_EMPLOYEES: AdminEmployeeRow[] = [
     branchId: 'B01',
     active: true,
     mustChange: false,
-  },
+  }),
 ];
 
-const SAMPLE_BRANCHES: AdminBranchItem[] = [
-  { id: 'B01', name: 'Main Branch' },
-  { id: 'B02', name: 'Second Branch' },
+const SAMPLE_BRANCHES = [
+  makeAdminBranchItem({ id: 'B01', name: 'Main Branch' }),
+  makeAdminBranchItem({ id: 'B02', name: 'Second Branch' }),
 ];
 
-const SAMPLE_OPERATIONS: AdminOperationsData = {
-  entity: {
+const SAMPLE_OPERATIONS = makeAdminOperationsData({
+  entity: makeAdminOperationsEntity({
     company: '108 Exchange Co., Ltd.',
     site: 'Headquarters',
-  },
-};
+  }),
+});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

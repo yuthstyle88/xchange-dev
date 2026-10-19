@@ -5,7 +5,12 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../../shared/i18n';
 import { Board } from './Board';
 import { th } from './i18n';
-import type { QueueBoardData } from '../../../../shared/api/generated/queue_board';
+import {
+  makeQueueBoardCalled,
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  type QueueBoardData,
+} from '../../../../shared/testing/fixtures';
 import type { QueueError, QueueStore } from '../../../../shared/queue/queue-store';
 
 const mountedActions = vi.fn();
@@ -84,14 +89,14 @@ describe('Board component (/desk/queue board)', () => {
 
   it('row 3: waiting = [B001 BOOKING, A005 WALK_IN] shows two rows in order with displayNumber and BOOKING/WALK_IN label', () => {
     const store = makeStore({
-      state: {
+      state: makeQueueBoardData({
         waiting: [
-          { id: 'w-1', displayNumber: 'B001', serviceType: 'BOOKING', sequence: 1, issuedAt: '2026-10-19T08:00:00Z' },
-          { id: 'w-2', displayNumber: 'A005', serviceType: 'WALK_IN', sequence: 2, issuedAt: '2026-10-19T08:01:00Z' },
+          makeQueueBoardWaiting({ id: 'w-1', displayNumber: 'B001', serviceType: 'BOOKING', sequence: 1, issuedAt: '2026-10-19T08:00:00Z' }),
+          makeQueueBoardWaiting({ id: 'w-2', displayNumber: 'A005', serviceType: 'WALK_IN', sequence: 2, issuedAt: '2026-10-19T08:01:00Z' }),
         ],
         called: [],
         myCounter: null,
-      },
+      }),
     });
     mount(() => <Board store={store} me={ME} commands={fakeCommands()} />);
 
@@ -108,11 +113,11 @@ describe('Board component (/desk/queue board)', () => {
 
   it('row 4: waiting empty shows an empty text', () => {
     const store = makeStore({
-      state: {
+      state: makeQueueBoardData({
         waiting: [],
         called: [],
         myCounter: null,
-      },
+      }),
     });
     mount(() => <Board store={store} me={ME} commands={fakeCommands()} />);
     expect(host.textContent).toContain(th.emptyWaiting);
@@ -120,14 +125,14 @@ describe('Board component (/desk/queue board)', () => {
 
   it('row 5: called = [A003 CALLED by u-me, A004 SERVING by u-x] shows two rows with number and status, and teller row marked mine', () => {
     const store = makeStore({
-      state: {
+      state: makeQueueBoardData({
         waiting: [],
         called: [
-          { id: 'c-1', displayNumber: 'A003', serviceType: 'WALK_IN', status: 'CALLED', tellerId: 'u-me', calledAt: '2026-10-19T08:02:00Z' },
-          { id: 'c-2', displayNumber: 'A004', serviceType: 'WALK_IN', status: 'SERVING', tellerId: 'u-x', calledAt: '2026-10-19T08:03:00Z' },
+          makeQueueBoardCalled({ id: 'c-1', displayNumber: 'A003', serviceType: 'WALK_IN', status: 'CALLED', tellerId: 'u-me', calledAt: '2026-10-19T08:02:00Z' }),
+          makeQueueBoardCalled({ id: 'c-2', displayNumber: 'A004', serviceType: 'WALK_IN', status: 'SERVING', tellerId: 'u-x', calledAt: '2026-10-19T08:03:00Z' }),
         ],
         myCounter: null,
-      },
+      }),
     });
     mount(() => <Board store={store} me={ME} commands={fakeCommands()} />);
 
@@ -147,15 +152,15 @@ describe('Board component (/desk/queue board)', () => {
 
   it('row 6: any row mounts TicketActions with that ticket and onDone refreshes store', () => {
     const store = makeStore({
-      state: {
+      state: makeQueueBoardData({
         waiting: [
-          { id: 'w-1', displayNumber: 'B001', serviceType: 'BOOKING', sequence: 1, issuedAt: '2026-10-19T08:00:00Z' },
+          makeQueueBoardWaiting({ id: 'w-1', displayNumber: 'B001', serviceType: 'BOOKING', sequence: 1, issuedAt: '2026-10-19T08:00:00Z' }),
         ],
         called: [
-          { id: 'c-1', displayNumber: 'A003', serviceType: 'WALK_IN', status: 'CALLED', tellerId: 'u-me', calledAt: '2026-10-19T08:02:00Z' },
+          makeQueueBoardCalled({ id: 'c-1', displayNumber: 'A003', serviceType: 'WALK_IN', status: 'CALLED', tellerId: 'u-me', calledAt: '2026-10-19T08:02:00Z' }),
         ],
         myCounter: null,
-      },
+      }),
     });
     const commands = fakeCommands();
     mount(() => <Board store={store} me={ME} commands={commands} />);

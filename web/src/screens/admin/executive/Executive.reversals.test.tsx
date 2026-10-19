@@ -4,12 +4,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type {
-  DefinitionDto,
-  DrilldownDto,
-  ExecutiveOverviewData,
-  MetricDto,
-} from '../../../shared/api/generated/executive_overview';
+import {
+  makeBranchRowDto,
+  makeDefinitionDto,
+  makeDrilldownDto,
+  makeExecutiveOverviewData,
+  makeMetricDto,
+  makeOverviewPeriod,
+  makeShiftsDto,
+  type DrilldownDto,
+  type ExecutiveOverviewData,
+  type MetricDto,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { Executive } from './Executive';
@@ -21,45 +27,45 @@ const FROM = '2026-10-05';
 const TO = '2026-10-06';
 const VERSIONS = { B1: 1 };
 
-function drill(view: string, filter: Record<string, string> = {}, dropped: string[] = []): DrilldownDto {
-  return { view, filter, dropped };
+function drill(view: string, filter: Record<string, string> = {}, dropped: string[] = []) {
+  return makeDrilldownDto({ view, filter, dropped });
 }
 
-function metric(key: string, value: string | null, unavailable: MetricDto['unavailable'] = null, drilldown: DrilldownDto | null = null): MetricDto {
-  return { key, value, unavailable, drilldown };
+function metric(key: string, value: string | null, unavailable: MetricDto['unavailable'] = null, drilldown: DrilldownDto | null = null) {
+  return makeMetricDto({ key, value, unavailable, drilldown });
 }
 
-const DEFINITIONS: DefinitionDto[] = [
-  { key: 'buy_volume_thb', th: 'มูลค่าบาทของรายการซื้อที่สำเร็จ', en: 'THB value of completed buys' },
-  { key: 'sell_volume_thb', th: 'มูลค่าบาทของรายการขายที่สำเร็จ', en: 'THB value of completed sells' },
+const DEFINITIONS = [
+  makeDefinitionDto({ key: 'buy_volume_thb', th: 'มูลค่าบาทของรายการซื้อที่สำเร็จ', en: 'THB value of completed buys' }),
+  makeDefinitionDto({ key: 'sell_volume_thb', th: 'มูลค่าบาทของรายการขายที่สำเร็จ', en: 'THB value of completed sells' }),
 ];
 
-function sampleData(over: Partial<ExecutiveOverviewData> = {}): ExecutiveOverviewData {
-  return {
-    period: { from: FROM, to: TO },
+function sampleData(over: Partial<ExecutiveOverviewData> = {}) {
+  return makeExecutiveOverviewData({
+    period: makeOverviewPeriod({ from: FROM, to: TO }),
     kpis: [
       metric('buy_volume_thb', '1000.00'),
       metric('sell_volume_thb', '2000.00'),
     ],
     branches: [
-      {
+      makeBranchRowDto({
         branchId: 'B1',
         name: 'สาขาหนึ่ง',
         volumeThb: '3000.00',
         availableCash: metric('available_cash', '10000.00'),
         inTransit: metric('in_transit', '0.00'),
-        shifts: { open: 1, closedVerified: 0, closedUnverified: 0 },
+        shifts: makeShiftsDto({ open: 1, closedVerified: 0, closedUnverified: 0 }),
         asOf: '2026-10-06T03:00:00Z',
         pendingEvents: 0,
         drilldown: drill('admin_overview', { branch: 'B1' }),
-      },
+      }),
     ],
     alerts: [],
     definitions: DEFINITIONS,
     buyReversedThb: '0.00',
     sellReversedThb: '0.00',
     ...over,
-  };
+  });
 }
 
 let replyData: ExecutiveOverviewData;

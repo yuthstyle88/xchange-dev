@@ -3,11 +3,11 @@ import { createRoot } from 'solid-js';
 import { ApiClient } from '../api/client';
 import { errorText } from '../i18n';
 import { createNotifications } from './notifications';
-import type { MyNotificationItem } from '../api/generated/my_notifications';
+import { makeMyNotificationItem, type MyNotificationItem } from '../testing/fixtures';
 
 describe('createNotifications model', () => {
   let sentRequests: { method: string; path: string; search: string; body: unknown; headers: Record<string, string> }[] = [];
-  let viewItems: MyNotificationItem[] = [];
+  let viewItems: MyNotificationItem[];
   let viewStatus = 200;
   let markReadStatus = 200;
   let markReadAllStatus = 200;
@@ -105,9 +105,9 @@ describe('createNotifications model', () => {
 
   it('loads items and sorts newest first by seq', async () => {
     viewItems = [
-      { id: '1', seq: 5, locale: 'th', title: 'Older', body: 'b1', read: false, createdAt: '2026-10-13T01:00:00Z' },
-      { id: '2', seq: 20, locale: 'th', title: 'Newest', body: 'b2', read: false, createdAt: '2026-10-13T02:00:00Z' },
-      { id: '3', seq: 12, locale: 'th', title: 'Middle', body: 'b3', read: true, createdAt: '2026-10-13T01:30:00Z' },
+      makeMyNotificationItem({ id: '1', seq: 5, locale: 'th', title: 'Older', body: 'b1', read: false, createdAt: '2026-10-13T01:00:00Z' }),
+      makeMyNotificationItem({ id: '2', seq: 20, locale: 'th', title: 'Newest', body: 'b2', read: false, createdAt: '2026-10-13T02:00:00Z' }),
+      makeMyNotificationItem({ id: '3', seq: 12, locale: 'th', title: 'Middle', body: 'b3', read: true, createdAt: '2026-10-13T01:30:00Z' }),
     ];
 
     await createRoot(async (dispose) => {
@@ -124,8 +124,8 @@ describe('createNotifications model', () => {
 
   it('filters unread items when unreadOnly is toggled', async () => {
     viewItems = [
-      { id: '1', seq: 1, locale: 'th', title: 'Unread', body: 'b1', read: false, createdAt: '2026-10-13T01:00:00Z' },
-      { id: '2', seq: 2, locale: 'th', title: 'Read', body: 'b2', read: true, createdAt: '2026-10-13T02:00:00Z' },
+      makeMyNotificationItem({ id: '1', seq: 1, locale: 'th', title: 'Unread', body: 'b1', read: false, createdAt: '2026-10-13T01:00:00Z' }),
+      makeMyNotificationItem({ id: '2', seq: 2, locale: 'th', title: 'Read', body: 'b2', read: true, createdAt: '2026-10-13T02:00:00Z' }),
     ];
 
     await createRoot(async (dispose) => {
@@ -146,7 +146,7 @@ describe('createNotifications model', () => {
 
   it('marks one read with optimistic: true updates immediately and keeps read after refetch', async () => {
     viewItems = [
-      { id: 'item-1', seq: 1, locale: 'th', title: 'Notice', body: 'text', read: false, createdAt: '2026-10-13T01:00:00Z' },
+      makeMyNotificationItem({ id: 'item-1', seq: 1, locale: 'th', title: 'Notice', body: 'text', read: false, createdAt: '2026-10-13T01:00:00Z' }),
     ];
 
     await createRoot(async (dispose) => {
@@ -172,7 +172,7 @@ describe('createNotifications model', () => {
 
   it('rolls back optimistic markOneRead on server failure and shows worded error', async () => {
     viewItems = [
-      { id: 'item-fail', seq: 1, locale: 'th', title: 'Notice', body: 'text', read: false, createdAt: '2026-10-13T01:00:00Z' },
+      makeMyNotificationItem({ id: 'item-fail', seq: 1, locale: 'th', title: 'Notice', body: 'text', read: false, createdAt: '2026-10-13T01:00:00Z' }),
     ];
     markReadStatus = 403;
 
@@ -195,8 +195,8 @@ describe('createNotifications model', () => {
 
   it('marks all read calls /api/app/notifications/read-all with idempotency key', async () => {
     viewItems = [
-      { id: '1', seq: 1, locale: 'th', title: 'N1', body: 'b1', read: false, createdAt: '2026-10-13T01:00:00Z' },
-      { id: '2', seq: 2, locale: 'th', title: 'N2', body: 'b2', read: false, createdAt: '2026-10-13T02:00:00Z' },
+      makeMyNotificationItem({ id: '1', seq: 1, locale: 'th', title: 'N1', body: 'b1', read: false, createdAt: '2026-10-13T01:00:00Z' }),
+      makeMyNotificationItem({ id: '2', seq: 2, locale: 'th', title: 'N2', body: 'b2', read: false, createdAt: '2026-10-13T02:00:00Z' }),
     ];
 
     await createRoot(async (dispose) => {
