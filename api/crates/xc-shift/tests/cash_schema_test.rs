@@ -22,6 +22,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
+use xc_testdb::people::{RoleRow, seed_roles};
 
 const M1: i64 = 20261012100000;
 const M1_FILE: &str = "20261012100000_cash.sql";
@@ -237,18 +238,29 @@ impl Db {
     async fn owner_user(&self) -> String {
         let id = self.user(None).await;
         let org = self.org().await;
-        for role in ["EXECUTIVE", "ADMIN"] {
-            sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 VALUES ($1::uuid, $2, $3::uuid, NULL)",
-            )
-            .bind(&id)
-            .bind(role)
-            .bind(&org)
-            .execute(&self.pool)
-            .await
-            .expect("insert the owner's role");
-        }
+        let valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let roles = [
+            RoleRow {
+                role_code: "EXECUTIVE",
+                branch_id: None,
+                valid_from,
+                valid_to: None,
+            },
+            RoleRow {
+                role_code: "ADMIN",
+                branch_id: None,
+                valid_from,
+                valid_to: None,
+            },
+        ];
+        seed_roles(
+            &mut self.pool.acquire().await.expect("acquire connection"),
+            &id,
+            &org,
+            &roles,
+        )
+        .await
+        .expect("insert the owner's role");
         id
     }
 

@@ -125,7 +125,7 @@ impl CommandAction for ApprovalDecideCommand {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    let deps = ApprovalSubjectDeps::from_settings(state.db.clone(), &state.settings);
+    let deps = ApprovalSubjectDeps::from_state(state);
     let approval_service = make_approval_service_with(&deps);
     CommandEndpoint::register(cfg, Arc::new(ApprovalDecideCommand::new(approval_service)));
 }

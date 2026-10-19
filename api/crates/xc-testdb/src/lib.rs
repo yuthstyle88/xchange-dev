@@ -8,6 +8,8 @@
 //!   and connects to the copy;
 //! - `TestDatabase::drop` closes the pool and drops the copy.
 //!
+pub mod people;
+
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
