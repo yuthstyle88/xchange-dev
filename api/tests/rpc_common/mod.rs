@@ -53,16 +53,13 @@ use actix_web::{Error, test};
 use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
-use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_auth::domain::policy::value_objects::role::Role;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
@@ -84,8 +81,6 @@ use crate::snapshot_common::{
 };
 
 pub const MAIN: &str = "MAIN";
-pub const OWNER_PASSWORD: &str = "owner-password-01";
-pub const STAFF_PASSWORD: &str = "staff-password-02";
 
 pub const RPC: &str = "/api/rpc";
 pub const STAFF_RPC: &str = "/api/staff/rpc";
@@ -318,6 +313,58 @@ pub struct Desk {
     scratch: PathBuf,
 }
 
+thread_local! {
+    static CURRENT_POOL: std::cell::RefCell<Option<sqlx::PgPool>> = const { std::cell::RefCell::new(None) };
+}
+static LAST_POOL: Mutex<Option<sqlx::PgPool>> = Mutex::new(None);
+
+fn set_current_pool(pool: &sqlx::PgPool) {
+    CURRENT_POOL.with(|p| *p.borrow_mut() = Some(pool.clone()));
+    *LAST_POOL.lock().expect("last pool") = Some(pool.clone());
+}
+
+fn take_current_pool() -> sqlx::PgPool {
+    CURRENT_POOL
+        .with(|p| p.borrow().clone())
+        .or_else(|| LAST_POOL.lock().expect("last pool").clone())
+        .expect("a Desk has been opened before App::new")
+}
+
+fn blueprint_role(v2_role: &str) -> &'static str {
+    match v2_role {
+        "FRONT" => "TELLER",
+        "BACKEND" | "MANAGER" => "BRANCH_MANAGER",
+        "RATES" => "RATE_MANAGER",
+        "FINANCE" => "FINANCE",
+        "SYSTEM" => "ADMIN",
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => "VERIFICATION_REVIEWER",
+        other => panic!("unmapped v2 staff role: {other}"),
+    }
+}
+
+async fn xc_organization_id(pool: &sqlx::PgPool) -> String {
+    sqlx::query_scalar("SELECT id::text FROM organizations WHERE code = $1")
+        .bind(ORGANIZATION)
+        .fetch_one(pool)
+        .await
+        .expect("the XC organization")
+}
+
+async fn owner_user_id(pool: &sqlx::PgPool, org_id: &str) -> String {
+    sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE u.organization_id = $1::uuid AND u.legacy_employee_id IS NULL \
+           AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id \
+                       AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at LIMIT 1",
+    )
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .expect("look for the owner's user")
+    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
 impl Desk {
     /// A fresh schema with `api/migrations/` applied (so `MAIN` exists) and the
     /// owner `owner`, as after `xchange create-owner --username owner`.
@@ -333,13 +380,48 @@ impl Desk {
     /// currency from the register, which a funded SAFE's accounts would hold on to.
     pub async fn open_without_cash() -> Desk {
         let db = TestDb::start().await;
-        AccountService::new(
-            Arc::new(PgAccountRepository::new(db.pool.clone())),
-            PasswordHasher::with_cost(8, 1, 1),
+        set_current_pool(&db.pool);
+        let org_id = xc_organization_id(&db.pool).await;
+        let owner_id = owner_user_id(&db.pool, &org_id).await;
+        sqlx::query(
+            "INSERT INTO users (id, organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2::uuid, 'owner', 'ACTIVE', 'test') \
+             ON CONFLICT (id) DO UPDATE SET name = 'owner', status = 'ACTIVE'",
         )
-        .create_owner("owner", OWNER_PASSWORD, SystemTime::now().into())
+        .bind(&owner_id)
+        .bind(&org_id)
+        .execute(&db.pool)
         .await
         .expect("create the owner");
+        sqlx::query("DELETE FROM user_roles WHERE user_id = $1::uuid")
+            .bind(&owner_id)
+            .execute(&db.pool)
+            .await
+            .expect("clear owner roles");
+        {
+            let mut conn = db.pool.acquire().await.expect("acquire connection");
+            xc_testdb::people::seed_roles(
+                &mut conn,
+                &owner_id,
+                &org_id,
+                &[
+                    xc_testdb::people::RoleRow {
+                        role_code: "EXECUTIVE",
+                        branch_id: None,
+                        valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                        valid_to: None,
+                    },
+                    xc_testdb::people::RoleRow {
+                        role_code: "ADMIN",
+                        branch_id: None,
+                        valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                        valid_to: None,
+                    },
+                ],
+            )
+            .await
+            .expect("seed owner roles");
+        }
 
         let scratch = std::env::temp_dir().join(unique("xc-t11a"));
         let _ = std::fs::remove_dir_all(&scratch);
@@ -373,6 +455,7 @@ impl Desk {
     /// files in: a save through the routes finds the files uploaded behind
     /// them (P2-S).
     pub fn state(&self) -> AppState {
+        set_current_pool(&self.db.pool);
         let uploads = self.scratch.join("uploads");
         let uploads = uploads.to_str().expect("a scratch path in UTF-8");
         let mut state = AppState::new(
@@ -385,33 +468,47 @@ impl Desk {
         state
     }
 
-    /// The employees of a recorded file, with the ids v2 gave them (a staff
-    /// answer prints them), in the order recorded (the order they were made
-    /// in), each with the password [`STAFF_PASSWORD`]. Somebody recorded with
-    /// `mustChange` has not changed the first password.
+    /// The people of a recorded file, with the ids v2 gave them, in the order
+    /// recorded (the order they were made in), seeded as Blueprint `users` and
+    /// `user_roles`.
     pub async fn employ(&self, people: &[Person]) {
-        let hash = PasswordHasher::with_cost(8, 1, 1)
-            .hash(STAFF_PASSWORD)
-            .expect("hash the staff password");
+        set_current_pool(&self.db.pool);
+        let org_id = xc_organization_id(&self.db.pool).await;
         let first = time("2026-10-01T00:00:00.000Z");
+        let mut conn = self.db.pool.acquire().await.expect("acquire connection");
         for (i, person) in people.iter().filter(|p| !p.is_owner()).enumerate() {
+            let branch = person.branch_id.as_deref().expect("an employee's branch");
+            let role = blueprint_role(&person.role);
+            let status = if person.must_change {
+                "PENDING"
+            } else {
+                "ACTIVE"
+            };
             sqlx::query(
-                "INSERT INTO employees (id, username, name, role, branch_id, password_hash, \
-                 active, must_change, version, created_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, true, $7, 1, $8)",
+                "INSERT INTO users (id, organization_id, name, status, created_by, created_at) \
+                 VALUES ($1::uuid, $2::uuid, $3, $4, 'test', $5)",
             )
             .bind(&person.id)
+            .bind(&org_id)
             .bind(&person.username)
-            .bind(&person.name)
-            .bind(&person.role)
-            .bind(person.branch_id.as_deref().expect("an employee's branch"))
-            .bind(&hash)
-            .bind(person.must_change)
+            .bind(status)
             .bind(first + Duration::seconds(i as i64))
-            .execute(&self.db.pool)
+            .execute(&mut *conn)
             .await
             .unwrap_or_else(|e| panic!("employ {}: {e}", person.key));
-            crate::snapshot_common::seed_opener(&self.db.pool, &person.id).await;
+            xc_testdb::people::seed_roles(
+                &mut conn,
+                &person.id,
+                &org_id,
+                &[xc_testdb::people::RoleRow {
+                    role_code: role,
+                    branch_id: Some(branch),
+                    valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                    valid_to: None,
+                }],
+            )
+            .await
+            .unwrap_or_else(|e| panic!("seed role for {}: {e}", person.key));
         }
     }
 
@@ -563,6 +660,7 @@ type CallFn = dyn Fn(Call) -> Pin<Box<dyn Future<Output = Answer>>>;
 /// The app under test with its request type hidden.
 pub struct App {
     call: Box<CallFn>,
+    pool: sqlx::PgPool,
 }
 
 impl App {
@@ -575,11 +673,13 @@ impl App {
         B: MessageBody + 'static,
     {
         let service = std::rc::Rc::new(service);
+        let pool = take_current_pool();
         Self {
             call: Box::new(move |call| {
                 let service = service.clone();
                 Box::pin(async move { exchange(&*service, to_request, call).await })
             }),
+            pool,
         }
     }
 
@@ -623,57 +723,33 @@ where
     }
 }
 
-// ── sessions, through the real doors of T4c ──────────────────────────────────
+// ── sessions, through `user_sessions` (OR-7.m S-D) ───────────────────────────
 
 /// Person key → the `Cookie` header that person's browser sends.
 pub type Cookies = BTreeMap<String, String>;
 
-fn session_cookie(answer: &Answer, name: &str, who: &str) -> String {
-    assert_eq!(answer.status, 200, "{who} signs in: {}", answer.text);
-    answer
-        .cookies
-        .iter()
-        .filter_map(|line| line.split(';').next())
-        .find(|pair| pair.starts_with(name) && pair.len() > name.len() + 1)
-        .unwrap_or_else(|| panic!("{who}: no {name} cookie in {:?}", answer.cookies))
-        .to_string()
-}
-
-/// Signs everybody of `people` in — the owner at `/api/auth`, an employee at
-/// `/api/staff/login` — and gives back each one's cookie.
-pub async fn sign_in(app: &App, origin: &str, people: &[Person]) -> Cookies {
+/// Signs everybody of `people` in through `user_sessions` and gives back each
+/// one's `__Host-xc_session` cookie.
+pub async fn sign_in(app: &App, _origin: &str, people: &[Person]) -> Cookies {
     let mut cookies = Cookies::new();
+    let org_id = xc_organization_id(&app.pool).await;
+    let owner_id = owner_user_id(&app.pool, &org_id).await;
+    let mut conn = app.pool.acquire().await.expect("acquire connection");
     for person in people {
-        let cookie = if person.is_owner() {
-            let answer = app
-                .send(
-                    Call::post(
-                        origin,
-                        "/api/auth",
-                        json!({ "action": "login", "payload": {
-                            "username": person.username, "password": OWNER_PASSWORD } })
-                        .to_string(),
-                    )
-                    .header("x-real-ip", &unique("owner-address")),
-                )
-                .await;
-            session_cookie(&answer, "__Host-xc_owner", &person.key)
+        let (user_id, branch) = if person.is_owner() {
+            (owner_id.as_str(), Some(MAIN))
         } else {
-            let answer = app
-                .send(
-                    Call::post(
-                        origin,
-                        "/api/staff/login",
-                        json!({ "payload": {
-                            "username": person.username, "password": STAFF_PASSWORD } })
-                        .to_string(),
-                    )
-                    .header("x-real-ip", &unique("staff-address")),
-                )
-                .await;
-            session_cookie(&answer, "__Host-xc_staff", &person.key)
+            (person.id.as_str(), person.branch_id.as_deref())
         };
-        cookies.insert(person.key.clone(), cookie);
+        let token = xc_testdb::sessions::seed_session(
+            &mut conn,
+            user_id,
+            branch,
+            Utc::now() + Duration::hours(1),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("sign in {}: {e}", person.key));
+        cookies.insert(person.key.clone(), xc_testdb::sessions::cookie(&token));
     }
     cookies
 }
