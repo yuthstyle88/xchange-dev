@@ -1,8 +1,10 @@
 import type { CampaignRuleDetail } from '../../../shared/api/generated/campaign';
+import type { CampaignRuleInput as WireRuleInput } from '../../../shared/api/generated/campaign_version_save';
 
 export type BenefitType = 'RATE_IMPROVEMENT' | 'FEE_WAIVER';
 
-export type CampaignRuleInput = {
+// Narrows the generated wire CampaignRuleInput for the campaign screen editor.
+export type CampaignRuleInput = WireRuleInput & {
   benefitType: BenefitType;
   eligibility: Record<string, unknown>;
   calculation: Record<string, string>;
@@ -11,7 +13,6 @@ export type CampaignRuleInput = {
     perCustomerUses?: number;
     perCustomerPeriodDays?: number;
   };
-  requiresCoupon: boolean;
 };
 
 export type RuleForm = {

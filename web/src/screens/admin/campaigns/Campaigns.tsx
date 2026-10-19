@@ -54,7 +54,6 @@ import {
   ruleErrors,
   ruleFormOf,
   ruleInputOf,
-  type CampaignRuleInput,
   type RuleError,
   type RuleForm,
 } from './campaign-rules';
@@ -157,7 +156,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
   const createWrite = keyedWrite<CampaignCreateInput, CampaignCreateOutput>(api, 'POST', '/api/campaigns');
   const saveWrite = keyedWrite<
-    CampaignVersionSaveInput & { rules?: CampaignRuleInput[] },
+    CampaignVersionSaveInput,
     CampaignVersionSaveOutput
   >(
     api,
@@ -489,7 +488,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
         return;
       }
     }
-    const body: CampaignVersionSaveInput & { rules?: CampaignRuleInput[] } = {
+    const body: CampaignVersionSaveInput = {
       campaignId,
       startsAt: toBangkokStart(formStartsAt()),
       endsAt: toBangkokEnd(formEndsAt()),
