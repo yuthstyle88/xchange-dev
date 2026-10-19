@@ -88,12 +88,10 @@ impl PermissionModule {
             P::RatePolicySave | P::RateAlertSettingsSave | P::OrgStartingPricesManage => {
                 Some((RatesStock, Full))
             }
-            P::CashManage
-            | P::CashTargetSet
+            P::CashTargetSet
             | P::CashLimitsManage
             | P::CashTransferPolicySet
-            | P::FinanceReconcile
-            | P::ApprovalsDecide => Some((Finance, Full)),
+            | P::FinanceReconcile => Some((Finance, Full)),
             P::ExchangeTransact
             | P::BookingsDesk
             | P::QueueOperate
@@ -124,6 +122,8 @@ impl PermissionModule {
             | P::ShiftOperate
             | P::BranchDayOperate
             | P::ShiftCloseCertify
+            | P::CashManage
+            | P::ApprovalsDecide
             | P::DeviceQueue
             | P::DeviceProcess
             | P::DevicePrinterOnline

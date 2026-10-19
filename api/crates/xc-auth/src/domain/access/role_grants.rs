@@ -182,6 +182,8 @@ impl RoleGrants {
         };
         let no_module: &[Permission] = match role {
             Role::Executive => &[
+                P::ApprovalsDecide,
+                P::CashManage,
                 P::AttendanceClock,
                 P::CompatRead,
                 P::RequestAbandon,
@@ -200,6 +202,8 @@ impl RoleGrants {
                 P::SignedIn,
             ],
             Role::BranchManager => &[
+                P::ApprovalsDecide,
+                P::CashManage,
                 P::ShiftOperate,
                 P::ShiftCloseCertify,
                 P::BranchDayOperate,
@@ -224,6 +228,8 @@ impl RoleGrants {
                 P::SignedIn,
             ],
             Role::Finance => &[
+                P::ApprovalsDecide,
+                P::CashManage,
                 P::AttendanceClock,
                 P::CompatRead,
                 P::DocumentsList,
