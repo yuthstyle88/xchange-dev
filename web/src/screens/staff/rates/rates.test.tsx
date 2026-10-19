@@ -65,10 +65,11 @@ const RATES: PublishedRatesData = {
   publication: { id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: PUBLISHED_AT },
   sourceDate: '2026-10-09',
   stale: false,
+  bandHeadings: [],
   lines: [
-    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd' },
-    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy' },
-    { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.12000000', sellRate: null, lineId: 'line-eur' },
+    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd', bands: [] },
+    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy', bands: [] },
+    { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.12000000', sellRate: null, lineId: 'line-eur', bands: [] },
   ],
 };
 
@@ -208,7 +209,7 @@ describe('the read: staff_published_rates for the actor\'s branch (S10, rates.md
   });
 
   it('with no publication yet shows no rate line and says there is no reference, without failing', async () => {
-    const el = await mount(me(['CompatRead']), { publication: null, sourceDate: null, stale: false, lines: [] });
+    const el = await mount(me(['CompatRead']), { publication: null, sourceDate: null, stale: false, bandHeadings: [], lines: [] });
     const text = el.textContent ?? '';
     for (const line of RATES.lines) {
       if (line.buyRate) expect(text).not.toContain(line.buyRate);

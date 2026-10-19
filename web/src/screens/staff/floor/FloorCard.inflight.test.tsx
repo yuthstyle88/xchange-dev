@@ -54,8 +54,10 @@ const RATES: PublishedRatesData = {
       buyRate: '32.4500',
       sellRate: '32.9000',
       lineId: 'l-usd',
+      bands: [],
     },
   ],
+  bandHeadings: [],
 };
 
 function jsonResponse(status: number, body: unknown): Response {

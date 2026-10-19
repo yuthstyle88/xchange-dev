@@ -61,6 +61,14 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
   ],
 };
 
+const baseAlertFields: Pick<MyRateAlertItem, 'relation' | 'expiresAt' | 'expired' | 'rateStale' | 'lastEvent'> = {
+  relation: 'UNKNOWN',
+  expiresAt: null,
+  expired: false,
+  rateStale: null,
+  lastEvent: null,
+};
+
 function mockBackend(options: {
   initialAlerts?: MyRateAlertItem[];
   createResponse?: { id: string; version: number } | { error: { code: string; message: string } };
@@ -159,6 +167,7 @@ function mockBackend(options: {
         currentRate: null,
         ratePublishedAt: null,
         enabled: true,
+        ...baseAlertFields,
       };
       alerts = [createdItem, ...alerts];
       return new Response(
@@ -324,6 +333,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '34.20',
         ratePublishedAt: '2026-10-13T10:00:00Z',
         enabled: true,
+        ...baseAlertFields,
       },
       {
         id: 'alert-2',
@@ -337,6 +347,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: null,
         ratePublishedAt: null,
         enabled: false,
+        ...baseAlertFields,
       },
     ];
 
@@ -437,6 +448,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '34.10',
         ratePublishedAt: '2026-10-13T10:00:00Z',
         enabled: true,
+        ...baseAlertFields,
       },
     ];
 
@@ -541,6 +553,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
           currentRate: null,
           ratePublishedAt: null,
           enabled: true,
+          ...baseAlertFields,
         },
       ],
       viewFailOnce: true,
@@ -584,6 +597,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '33.90',
         ratePublishedAt: '2026-10-13T10:00:00Z',
         enabled: true,
+        ...baseAlertFields,
       },
       {
         id: 'alert-lang-null',
@@ -597,6 +611,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: null,
         ratePublishedAt: null,
         enabled: false,
+        ...baseAlertFields,
       },
     ];
 
@@ -646,6 +661,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '34.75',
         ratePublishedAt: '2026-10-13T12:00:00Z',
         enabled: true,
+        ...baseAlertFields,
       },
     ];
 
@@ -680,6 +696,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: null,
         ratePublishedAt: null,
         enabled: true,
+        ...baseAlertFields,
       },
     ];
 

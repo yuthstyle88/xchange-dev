@@ -1,22 +1,22 @@
 //! `campaignCreate` (MK-4, design `marketing-campaigns.md` §4.5, §7).
 
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{Bound, Sign};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::marketing::branch_scope::CampaignBranchScope;
+use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -70,22 +70,17 @@ impl CommandAction for CampaignCreateCommand {
         let ends_at = chrono::DateTime::parse_from_rfc3339(&input.ends_at)
             .map_err(|e| V3Error::new("validationFailed", Some("endsAt"), e.to_string(), StatusCode::BAD_REQUEST))?
             .with_timezone(&chrono::Utc);
-        let budget_thb = Decimal::from_str(&input.budget_thb)
-            .map_err(|e| V3Error::new("validationFailed", Some("budgetThb"), e.to_string(), StatusCode::BAD_REQUEST))?;
+        let budget_thb = v3::input::decimal(
+            "budgetThb",
+            &input.budget_thb,
+            Bound::numeric(20, 2, Sign::NonNegative),
+        )?;
 
         if ends_at <= starts_at {
             return Err(V3Error::new(
                 "validationFailed",
                 Some("endsAt"),
                 "endsAt must be after startsAt",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
-        if budget_thb < Decimal::ZERO {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("budgetThb"),
-                "budgetThb must not be negative",
                 StatusCode::BAD_REQUEST,
             ));
         }

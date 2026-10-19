@@ -39,6 +39,16 @@ pub struct RateAlertOutput {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "my_rate_alerts.ts")]
+pub struct RateAlertLastEvent {
+    pub observed_rate: String,
+    pub trigger_at: String,
+    #[ts(type = "number")]
+    pub episode_no: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "my_rate_alerts.ts")]
 pub struct MyRateAlertItem {
     pub id: String,
     #[ts(type = "number")]
@@ -52,6 +62,11 @@ pub struct MyRateAlertItem {
     pub unit_size: String,
     pub current_rate: Option<String>,
     pub rate_published_at: Option<String>,
+    pub relation: String,
+    pub expires_at: Option<String>,
+    pub expired: bool,
+    pub rate_stale: Option<bool>,
+    pub last_event: Option<RateAlertLastEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

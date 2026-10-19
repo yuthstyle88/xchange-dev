@@ -57,10 +57,11 @@ const RATES: PublishedRatesData = {
   publication: { id: 'pub-1', version: 7, publishedAt: '2026-10-11T02:00:00Z' },
   sourceDate: '2026-10-10',
   stale: false,
+  bandHeadings: [],
   lines: [
-    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.34500000', sellRate: '22.10000000', lineId: 'l-jpy' },
-    { currency: 'KRW', group: 'ALL', unitSize: '1000', buyRate: '25.00000000', sellRate: '26.50000000', lineId: 'l-krw' },
-    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' },
+    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.34500000', sellRate: '22.10000000', lineId: 'l-jpy', bands: [] },
+    { currency: 'KRW', group: 'ALL', unitSize: '1000', buyRate: '25.00000000', sellRate: '26.50000000', lineId: 'l-krw', bands: [] },
+    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd', bands: [] },
   ],
 };
 
@@ -311,8 +312,8 @@ describe('the board (D6)', () => {
     const body: PublishedRatesData = {
       ...RATES,
       lines: [
-        { currency: 'BTC', group: 'ALL', unitSize: '1', buyRate: '12345678.12345678', sellRate: '99999999.99999999', lineId: 'l-btc' },
-        { currency: 'XAU', group: 'ALL', unitSize: '1', buyRate: '1234567890.12345678', sellRate: '1234567890.12345679', lineId: 'l-xau' },
+        { currency: 'BTC', group: 'ALL', unitSize: '1', buyRate: '12345678.12345678', sellRate: '99999999.99999999', lineId: 'l-btc', bands: [] },
+        { currency: 'XAU', group: 'ALL', unitSize: '1', buyRate: '1234567890.12345678', sellRate: '1234567890.12345679', lineId: 'l-xau', bands: [] },
       ],
     };
     const s = server({ rates: [{ status: 200, body, etag: '"p2-s0"' }] });
@@ -329,7 +330,7 @@ describe('the board (D6)', () => {
   it('shows a null sell rate as —', async () => {
     const body: PublishedRatesData = {
       ...RATES,
-      lines: [{ currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '38.00000000', sellRate: null, lineId: 'l-eur' }],
+      lines: [{ currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '38.00000000', sellRate: null, lineId: 'l-eur', bands: [] }],
     };
     const s = server({ rates: [{ status: 200, body, etag: '"p3-s0"' }] });
     const host = mount('?branch=XC-B01', s);
@@ -344,8 +345,8 @@ describe('the board (D6)', () => {
     const body: PublishedRatesData = {
       ...RATES,
       lines: [
-        { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' },
-        { currency: 'USD', group: 'G100', unitSize: '1', buyRate: '35.20000000', sellRate: '35.40000000', lineId: 'l-usd-g100' },
+        { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd', bands: [] },
+        { currency: 'USD', group: 'G100', unitSize: '1', buyRate: '35.20000000', sellRate: '35.40000000', lineId: 'l-usd-g100', bands: [] },
       ],
     };
     const s = server({ rates: [{ status: 200, body, etag: '"p4-s0"' }] });

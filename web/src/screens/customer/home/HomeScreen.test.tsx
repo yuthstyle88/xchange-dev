@@ -51,10 +51,11 @@ const RATES: PublishedRatesData = {
   sourceDate: '2026-10-12',
   stale: false,
   lines: [
-    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' },
-    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '22.34500000', sellRate: '23.10000000', lineId: 'l-jpy' },
-    { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '38.50000000', sellRate: '39.00000000', lineId: 'l-eur' },
+    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd', bands: [] },
+    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '22.34500000', sellRate: '23.10000000', lineId: 'l-jpy', bands: [] },
+    { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '38.50000000', sellRate: '39.00000000', lineId: 'l-eur', bands: [] },
   ],
+  bandHeadings: [],
 };
 
 const PREVIEW_ANSWER: PlannerPreviewAnswer = {

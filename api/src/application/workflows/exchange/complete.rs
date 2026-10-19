@@ -259,9 +259,14 @@ impl CompleteExchange {
             .run_completed_in(tx, EffectPhase::Consume, &facts)
             .await?;
 
-        // 5. Both legs in one posting, never allowing negative stock (Q7); the costs it answers go on the lines
+        // 5. Both legs in one posting, allowing negative stock when an APPROVED NEGATIVE_STOCK request names this exchange (#3405 §7)
         if let Some(shift) = &shift {
-            let posted = self.postings.post_in(tx, &legs(&t, shift)?, None).await?;
+            let allow_negative =
+                super::negative_stock_gate::NegativeStockGate::approved_for_in(tx, id).await?;
+            let posted = self
+                .postings
+                .post_in(tx, &legs(&t, shift)?, allow_negative)
+                .await?;
             let costs: Vec<LineCosts> = posted
                 .costs
                 .iter()
