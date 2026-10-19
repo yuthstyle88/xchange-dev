@@ -1137,12 +1137,6 @@ impl<'f> Replay<'f> {
         self.desk.clock.set(time(&step.at));
         let payload = step.payload.as_ref().map(|p| self.ids.to_actual(p));
         let call = call_of(self.fixture, step, &self.cookies, payload.as_ref());
-        // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): before a recorded save, a
-        // shift a recorded step opened (custody's handover opens one in `shift_balances` only) gets its opening in
-        // the ledger's drawer.
-        if step.status == Some(200) && action_of(step).as_deref() == Some("saveTransaction") {
-            crate::snapshot_common::r1_fund_open_drawers(&self.desk.db.pool).await;
-        }
         // CA-10 #626 (ruling A, try 2): a compat save meets the teller gate (`check_teller_save_in`), which needs an
         // OPEN branch day; v2 had no day phase. Before a recorded save on a branch whose shift a verified OPEN count
         // opened (READY), the replay opens that day, as `dayStartService` would.
