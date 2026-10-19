@@ -152,7 +152,9 @@ class Gen {
     const g = t.match(/^(\w+)<([\s\S]*)>$/);
     if (g && GENERICS[g[1]]) {
       ctx.use(g[1]);
-      return g[1] === 'Part' ? `makePart(null)` : `make${g[1]}(null as never)`;
+      // The payload's type is passed explicitly: from `null` alone, T would not be the field's type.
+      for (const id of g[2].match(/\b[A-Z]\w*\b/g) ?? []) if (this.byName.has(id)) ctx.useType(id);
+      return g[1] === 'Part' ? `makePart<${g[2]}>(null)` : `make${g[1]}<${g[2]}>(null as never)`;
     }
     if (/^\w+$/.test(t)) return this.named(t, field, owner, ctx, seen);
     throw new Error(`no default for type \`${t}\` (field ${owner}.${field})`);
@@ -186,9 +188,11 @@ function render(modules) {
   for (const mod of modules) {
     const local = new Set(mod.types.map((t) => t.name));
     const factoryUses = new Set();
+    const typeUses = new Set();
     const ctx = {
       use: (n) => factoryUses.add(n),
-      child: () => ({ use: () => {}, child: () => ctx.child() }),
+      useType: (n) => typeUses.add(n),
+      child: () => ({ use: () => {}, useType: () => {}, child: () => ctx.child() }),
     };
     const blocks = [];
     const makers = [];
@@ -213,9 +217,16 @@ function render(modules) {
     // Imports: this file's types (all of them, re-exported for tests) and sibling factories.
     const typeNames = mod.types.map((t) => t.name);
     const lines = [HEADER];
-    const objectNames = mod.types.filter((t) => t.kind === 'object').map((t) => t.name);
-    if (objectNames.length) {
-      lines.push(`import type { ${objectNames.join(', ')} } from '../../api/generated/${mod.base}';`);
+    // Type imports: this file's object types, plus any generated type a generic payload names.
+    const typeFrom = new Map();
+    const addType = (n, from) => {
+      if (!typeFrom.has(from)) typeFrom.set(from, new Set());
+      typeFrom.get(from).add(n);
+    };
+    for (const t of mod.types) if (t.kind === 'object') addType(t.name, mod.base);
+    for (const n of typeUses) addType(n, local.has(n) ? mod.base : (mod.imports[n] ?? gen.byName.get(n).mod.base));
+    for (const [from, names] of [...typeFrom].sort((a, b) => (a[0] === mod.base ? -1 : b[0] === mod.base ? 1 : a[0].localeCompare(b[0])))) {
+      lines.push(`import type { ${[...names].sort().join(', ')} } from '../../api/generated/${from}';`);
     }
     const bySibling = new Map();
     for (const n of [...factoryUses].sort()) {
