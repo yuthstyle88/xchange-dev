@@ -440,14 +440,14 @@ The expected shape, given the current table:
 
 | Role | DASHBOARD | CUSTOMERS | DOCUMENTS | RATES_STOCK | FINANCE | RISK | REPORTS | USER_MANAGEMENT | SYSTEM_SETTINGS | AUDIT_LOGS |
 |---|---|---|---|---|---|---|---|---|---|---|
-| EXECUTIVE | FULL | FULL | CREATE | FULL | FULL | — | FULL | — | FULL | VIEW |
-| ADMIN | FULL | — | — | — | FULL | — | — | FULL | FULL | VIEW |
-| RATE_MANAGER | — | — | — | FULL | — | — | — | — | — | — |
-| BRANCH_MANAGER | — | CREATE | CREATE | — | FULL | — | — | — | VIEW | — |
-| TELLER | — | CREATE | CREATE | — | CREATE | — | — | — | VIEW | — |
-| FINANCE | — | VIEW | CREATE | — | FULL | — | FULL | — | — | — |
+| EXECUTIVE | FULL | FULL | FULL | FULL | FULL | — | FULL | FULL | FULL | VIEW |
+| ADMIN | VIEW | — | — | — | — | — | VIEW | FULL | FULL | VIEW |
+| RATE_MANAGER | FULL | FULL | VIEW | FULL | — | — | FULL | — | — | — |
+| BRANCH_MANAGER | FULL | FULL | FULL | — | — | — | VIEW | — | — | — |
+| TELLER | VIEW | CREATE | VIEW | — | — | — | — | — | — | — |
+| FINANCE | FULL | VIEW | VIEW | VIEW | FULL | — | FULL | — | — | — |
 | MARKETING | — | FULL | — | — | — | — | VIEW | — | — | — |
-| VERIFICATION_REVIEWER | — | VIEW | FULL | — | — | — | — | — | — | — |
+| VERIFICATION_REVIEWER | FULL | VIEW | FULL | VIEW | — | — | FULL | — | — | VIEW |
 
 C2 lists the differences from V.9's matrix in this section, one line each, for the owner's review:
 
@@ -599,8 +599,8 @@ This replaces Q2 A.
 | VERIFICATION_REVIEWER | FULL | VIEW | FULL | VIEW | VIEW | FULL | FULL | — | — | VIEW |
 | MARKETING | today's set (§5) | | | | | | | | | |
 
-**The desk basics stay with every desk group.** Opening and closing a shift, the branch day and the closing count (`ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`) move from FINANCE CREATE to "no module" (`None`), beside `SignedIn` and `AttendanceClock`. They stay seeded as today, and they are not edited in the matrix.
-- **Why:** V.9 gives FRONT, BACKEND and MANAGER no FINANCE at all, yet they run the shift and the cash handover (V.9 :38, :125). Read literally, the table would leave no teller able to open a shift.
+**The desk basics stay with every desk group.** Opening and closing a shift, the branch day and the closing count (`ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`), plus the five desk device and document permissions (`DeviceQueue`, `DeviceProcess`, `DevicePrinterOnline` from SYSTEM_SETTINGS VIEW, and `DrawerPassport`, `ProofUpload` from DOCUMENTS CREATE), move to "no module" (`None`), beside `SignedIn` and `AttendanceClock`. They stay seeded as today, and they are not edited in the matrix.
+- **Why:** V.9 gives FRONT, BACKEND and MANAGER no FINANCE at all, yet they run the shift and the cash handover (V.9 :38, :125), and it gives FRONT and BACKEND/MANAGER no SYSTEM_SETTINGS VIEW or DOCUMENTS CREATE (for FRONT), yet they gate every desk upload and the device queue (`policy.rs:500-537`). Read literally, the table would leave no teller able to open a shift, upload a proof/passport or use the device queue.
 - **Done in C6:** it changes `permission_module.rs`, its test and §5.
 
 **What the seed changes on ship day (for the owner's review; editable afterwards):**
@@ -616,7 +616,7 @@ Checked on every save:
 2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` go **above VIEW** only for groups whose base is EXECUTIVE or ADMIN (V.9 :62). Any group may hold their VIEW-level permissions.
 3. A group whose base is ADMIN holds, outside those two modules, at most VIEW-level permissions.
 4. **The built-in EXECUTIVE group is fixed**, so the owner can't be locked out.
-5. The no-module permissions (§11.2, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix.
+5. The no-module permissions (§11.2: `ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`, `DeviceQueue`, `DeviceProcess`, `DevicePrinterOnline`, `DrawerPassport`, `ProofUpload`, `AttendanceClock`, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix.
 
 **Only EXECUTIVE adds groups and edits permissions** (V.9 :66). Every add, edit or delete writes one `AccountAuditor` row, `PERMISSION_CHANGE` / `GROUP_ADD` / `GROUP_DELETE`, with before and after.
 

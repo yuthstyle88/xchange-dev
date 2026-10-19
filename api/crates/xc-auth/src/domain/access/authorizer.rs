@@ -7,7 +7,7 @@ use xc_kernel::ids::BranchId;
 use super::actor::Actor;
 use super::permission::Permission;
 use super::role::Role;
-use super::role_permissions::RolePermissions;
+use super::role_grants::RoleGrants;
 use super::scoped_role::ScopedRole;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,7 +62,7 @@ pub(crate) fn qualifying(
     actor.roles.iter().filter(move |r| {
         r.valid_from <= now
             && r.valid_to.is_none_or(|to| now < to)
-            && RolePermissions::of(r.role).contains(&permission)
+            && RoleGrants::holds(r.group_code(), permission)
     })
 }
 
