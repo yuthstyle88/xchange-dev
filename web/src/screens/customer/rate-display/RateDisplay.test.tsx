@@ -25,7 +25,11 @@
 // the back-off curve (RD-2's `PublicPoller` tests), the hours' day labels (only the times are checked).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { audience, fill, locale, setAudience, setLang } from '../../../shared/i18n';
 import * as table from './i18n';
@@ -53,16 +57,16 @@ interface Call {
   ifNoneMatch: string | null;
 }
 
-const RATES: PublishedRatesData = {
-  publication: { id: 'pub-1', version: 7, publishedAt: '2026-10-11T02:00:00Z' },
+const RATES = makePublishedRatesData({
+  publication: makePublishedPublicationDto({ id: 'pub-1', version: 7, publishedAt: '2026-10-11T02:00:00Z' }),
   sourceDate: '2026-10-10',
   stale: false,
   lines: [
-    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.34500000', sellRate: '22.10000000', lineId: 'l-jpy' },
-    { currency: 'KRW', group: 'ALL', unitSize: '1000', buyRate: '25.00000000', sellRate: '26.50000000', lineId: 'l-krw' },
-    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' },
+    makePublishedLineDto({ currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.34500000', sellRate: '22.10000000', lineId: 'l-jpy' }),
+    makePublishedLineDto({ currency: 'KRW', group: 'ALL', unitSize: '1000', buyRate: '25.00000000', sellRate: '26.50000000', lineId: 'l-krw' }),
+    makePublishedLineDto({ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' }),
   ],
-};
+});
 
 const BRANCHES: PublicBranchesData = {
   branches: [
@@ -308,13 +312,13 @@ describe('the board (D6)', () => {
   it('shows 12345678.12345678 exactly, and a rate a float cannot hold (1234567890.12345678) too', async () => {
     // §4.3's value survives a double (16 significant digits); the second line's 17 digits do not, so a screen that
     // parses rates as numbers fails here.
-    const body: PublishedRatesData = {
+    const body = makePublishedRatesData({
       ...RATES,
       lines: [
-        { currency: 'BTC', group: 'ALL', unitSize: '1', buyRate: '12345678.12345678', sellRate: '99999999.99999999', lineId: 'l-btc' },
-        { currency: 'XAU', group: 'ALL', unitSize: '1', buyRate: '1234567890.12345678', sellRate: '1234567890.12345679', lineId: 'l-xau' },
+        makePublishedLineDto({ currency: 'BTC', group: 'ALL', unitSize: '1', buyRate: '12345678.12345678', sellRate: '99999999.99999999', lineId: 'l-btc' }),
+        makePublishedLineDto({ currency: 'XAU', group: 'ALL', unitSize: '1', buyRate: '1234567890.12345678', sellRate: '1234567890.12345679', lineId: 'l-xau' }),
       ],
-    };
+    });
     const s = server({ rates: [{ status: 200, body, etag: '"p2-s0"' }] });
     const host = mount('?branch=XC-B01', s);
     await settle();
@@ -327,10 +331,10 @@ describe('the board (D6)', () => {
   });
 
   it('shows a null sell rate as —', async () => {
-    const body: PublishedRatesData = {
+    const body = makePublishedRatesData({
       ...RATES,
-      lines: [{ currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '38.00000000', sellRate: null, lineId: 'l-eur' }],
-    };
+      lines: [makePublishedLineDto({ currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '38.00000000', sellRate: null, lineId: 'l-eur' })],
+    });
     const s = server({ rates: [{ status: 200, body, etag: '"p3-s0"' }] });
     const host = mount('?branch=XC-B01', s);
     await settle();
@@ -341,13 +345,13 @@ describe('the board (D6)', () => {
   });
 
   it('gives a G100 line its own row, with G100 under the currency (owner Q-2 A)', async () => {
-    const body: PublishedRatesData = {
+    const body = makePublishedRatesData({
       ...RATES,
       lines: [
-        { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' },
-        { currency: 'USD', group: 'G100', unitSize: '1', buyRate: '35.20000000', sellRate: '35.40000000', lineId: 'l-usd-g100' },
+        makePublishedLineDto({ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' }),
+        makePublishedLineDto({ currency: 'USD', group: 'G100', unitSize: '1', buyRate: '35.20000000', sellRate: '35.40000000', lineId: 'l-usd-g100' }),
       ],
-    };
+    });
     const s = server({ rates: [{ status: 200, body, etag: '"p4-s0"' }] });
     const host = mount('?branch=XC-B01', s);
     await settle();
