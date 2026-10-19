@@ -6,6 +6,7 @@ import type { DeskStore, TransactionState } from './desk-store';
 import * as screenI18n from './i18n';
 import { BenefitLines } from './benefits/BenefitLines';
 import { CustomerLoyalty } from './loyalty/CustomerLoyalty';
+import { CouponField } from './coupon/CouponField';
 
 const STATE_KEYS: Record<TransactionState, 'stateDraft' | 'statePending' | 'stateConfirmed' | 'stateCompleted' | 'stateCancelled'> = {
   DRAFT: 'stateDraft',
@@ -52,6 +53,7 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
           <dd>{props.store.customerId()}</dd>
         </Show>
       </dl>
+      <CouponField store={props.store} />
       <CustomerLoyalty store={props.store} />
       <Show when={props.store.quoting()}>
         <p class="desk-notice">{t('recalculating')}</p>
