@@ -432,7 +432,7 @@ mod tests {
             other => panic!("expected AppError::Validation, got {other:?}"),
         }
 
-        // Check USD total is unchanged on shift_balances
+        // Check USD total is unchanged in the ledger drawer
         let usd_balance_after: Decimal = db
             .balance(verified.shift_id.as_deref().unwrap(), "USD")
             .await
@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(
             opening,
             Decimal::from(150_000_000),
-            "150M KRW carried into shift_balances at open"
+            "150M KRW carried into ledger drawer at open"
         );
 
         // Test Must-fix 1: apply +100 exchange on KRW 150,000,000 balance
@@ -784,7 +784,7 @@ mod tests {
         assert_eq!(usd_total.expected, Some(Decimal::from(500)));
         assert_eq!(usd_total.difference, Some(Decimal::ZERO));
 
-        // Check shift_balances
+        // Check the drawer balances (ledger)
         let (_, _, thb_cnt, thb_diff) = db.balance(&shift_id, "THB").await;
         let (thb_cnt, thb_diff) = (thb_cnt.expect("thb counted"), thb_diff.expect("thb diff"));
         assert_eq!(thb_cnt, Decimal::ZERO);
