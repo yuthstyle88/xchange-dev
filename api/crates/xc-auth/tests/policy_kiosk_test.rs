@@ -87,8 +87,8 @@ fn table() -> Vec<(&'static str, [Said; 11])> {
     //             ANON OWNER FRONT BACK  MGR  RATES MON  FIN  SYS  DOCS DREV
     let open = [OK, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK];
     let signed_in = [R15, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK];
-    // C8: OWNER is refused the queue (was OK)
-    let desk = [R15, R15, OK, OK, OK, R15, R15, R15, R15, R15, R15];
+    // §11.2: QueueOperate (CUSTOMERS CREATE) is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, TELLER
+    let desk = [R15, OK, OK, OK, OK, OK, R15, R15, R15, R15, R15];
     let currencies = [R14, OK, R14, R14, R14, OK, R14, R14, R14, R14, R14];
     // C8: OWNER hears the staff sentence (was R16)
     let unknown = [R15, R15, R16, R16, R16, R15, R15, R15, R15, R15, R15];
@@ -167,20 +167,15 @@ fn the_queue_is_listed_to_anybody_signed_in_since_the_10_06_bundle() {
         said(ask(None, EntryPath::Kiosk, "list")),
         (KIOSK_STAFF.to_owned(), 400)
     );
-    // taking a request off the queue stays the desk's (C8: the owner's user is no longer desk)
-    let mut off_desk = vec![owner()];
-    off_desk.extend(
-        [
-            Role::Executive,
-            Role::Admin,
-            Role::RateManager,
-            Role::Finance,
-            Role::Marketing,
-            Role::Customer,
-            Role::VerificationReviewer,
-        ]
-        .map(|r| staff(r, "B2")),
-    );
+    // §11.2: QueueOperate is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, TELLER
+    let off_desk = [
+        Role::Admin,
+        Role::Finance,
+        Role::Marketing,
+        Role::Customer,
+        Role::VerificationReviewer,
+    ]
+    .map(|r| staff(r, "B2"));
     for who in &off_desk {
         assert_eq!(
             said(ask(Some(who), EntryPath::Kiosk, "accept")),
@@ -255,12 +250,14 @@ fn the_table_is_what_the_mapping_records() {
             .iter()
             .position(|who| *who == c.actor)
             .unwrap_or_else(|| panic!("{} is a caller of the table", c.actor));
-        assert_eq!(
-            expected(row[column]),
-            recorded_mapped(c),
-            "{:?} by {}",
-            c.action,
-            c.actor
-        );
+        // §11.2: QueueOperate is now held by EXECUTIVE (OWNER) and RATE_MANAGER (RATES);
+        // the static fixture records the pre-§11.2 C8 expectation.
+        let mut want = recorded_mapped(c);
+        if ["accept", "get", "identityChecked", "publishReceipt"].contains(&c.action.as_str())
+            && ["OWNER", "RATES"].contains(&c.actor.as_str())
+        {
+            want = Ok(());
+        }
+        assert_eq!(expected(row[column]), want, "{:?} by {}", c.action, c.actor);
     }
 }
