@@ -24,7 +24,7 @@
 //!     `access/v3_roles.rs:14`) and `FINANCE`;
 //!   - `reversalRequest` for `FRONT` (TELLER), `MANAGER` and `BACKEND`;
 //! - the Blueprint table, `Policy::authorize` (what OR-4b #767 points the routes at):
-//!   - `RolePermissions::of(BranchManager)` and `of(Finance)` hold `ApprovalsDecide`;
+//!   - `RoleGrants::seed(BranchManager)` and `of(Finance)` hold `ApprovalsDecide`;
 //!   - `Policy::need(Rpc, "reversalRequest")` is `Permission::ReversalRequest`.
 //!
 //! Signatures: none new. The action name `reversalRequest` is [required]: RV-2's command inherits
@@ -33,6 +33,7 @@
 mod policy_common;
 
 use policy_common::*;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::policy::value_objects::actor::Actor as V3Actor;
 use xc_auth::domain::policy::value_objects::role::Role as V3Role;
 
@@ -77,21 +78,23 @@ fn v3_allowed(on: EntryPath, name: &str) -> Vec<&'static str> {
 }
 
 #[test]
-fn approvals_decide_is_held_by_the_executive_the_branch_manager_and_finance() {
+fn approvals_decide_is_held_by_the_executive_and_finance() {
+    // §11.2: BRANCH_MANAGER loses ApprovalsDecide; EXECUTIVE and FINANCE hold it
     let holders: Vec<&str> = BLUEPRINT
         .into_iter()
-        .filter(|r| RolePermissions::of(*r).contains(&Permission::ApprovalsDecide))
+        .filter(|r| RoleGrants::seed(*r).contains(&Permission::ApprovalsDecide))
         .map(Role::as_str)
         .collect();
-    assert_eq!(holders, ["EXECUTIVE", "BRANCH_MANAGER", "FINANCE"]);
+    assert_eq!(holders, ["EXECUTIVE", "FINANCE"]);
 }
 
 #[test]
-fn under_the_blueprint_table_approvals_are_reached_by_those_three_on_rpc_only() {
+fn under_the_blueprint_table_approvals_are_reached_by_those_two_on_rpc_only() {
     for name in APPROVAL {
+        // §11.2: EXECUTIVE and FINANCE hold ApprovalsDecide
         assert_eq!(
             blueprint_allowed(EntryPath::Rpc, name),
-            ["EXECUTIVE", "BRANCH_MANAGER", "FINANCE"],
+            ["EXECUTIVE", "FINANCE"],
             "{name} on Rpc"
         );
         assert!(
@@ -100,7 +103,7 @@ fn under_the_blueprint_table_approvals_are_reached_by_those_three_on_rpc_only() 
         );
         for r in BLUEPRINT
             .into_iter()
-            .filter(|r| ![Role::Executive, Role::BranchManager, Role::Finance].contains(r))
+            .filter(|r| ![Role::Executive, Role::Finance].contains(r))
         {
             assert_eq!(
                 ask(Some(&staff(r, B2)), EntryPath::Rpc, name),
@@ -150,10 +153,11 @@ fn a_reversal_request_needs_the_reversal_request_permission_on_rpc() {
         Some(Need::Permission(Permission::ReversalRequest)),
         "the Blueprint row"
     );
+    // §11.2: ReversalRequest is CUSTOMERS CREATE, held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, TELLER
     assert_eq!(
         blueprint_allowed(EntryPath::Rpc, REVERSAL),
-        ["BRANCH_MANAGER", "TELLER"],
-        "the roles that hold ReversalRequest (role_permissions.rs)"
+        ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"],
+        "the roles that hold ReversalRequest (§11.2)"
     );
     assert_eq!(
         v3_allowed(EntryPath::Rpc, REVERSAL),

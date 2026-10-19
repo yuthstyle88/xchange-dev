@@ -11,58 +11,62 @@ use chrono::Utc;
 use policy_common::*;
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 
 #[test]
-fn executive_holds_cash_transfer_policy_set_and_no_other_role_does() {
-    // 1. EXECUTIVE holds CashTransferPolicySet
+fn executive_and_finance_hold_cash_transfer_policy_set_per_section_11_2() {
+    // 1. EXECUTIVE and FINANCE hold CashTransferPolicySet (§11.2 seed)
     assert!(
-        RolePermissions::of(Role::Executive).contains(&Permission::CashTransferPolicySet),
+        RoleGrants::seed(Role::Executive).contains(&Permission::CashTransferPolicySet),
         "EXECUTIVE must hold CashTransferPolicySet"
+    );
+    // §11.2: FINANCE holds Finance FULL, which includes CashTransferPolicySet
+    assert!(
+        RoleGrants::seed(Role::Finance).contains(&Permission::CashTransferPolicySet),
+        "FINANCE must hold CashTransferPolicySet (§11.2)"
     );
 
     // 2. Explicitly verify RATE_MANAGER and ADMIN do not hold CashTransferPolicySet
     assert!(
-        !RolePermissions::of(Role::RateManager).contains(&Permission::CashTransferPolicySet),
+        !RoleGrants::seed(Role::RateManager).contains(&Permission::CashTransferPolicySet),
         "RATE_MANAGER must not hold CashTransferPolicySet"
     );
     assert!(
-        !RolePermissions::of(Role::Admin).contains(&Permission::CashTransferPolicySet),
+        !RoleGrants::seed(Role::Admin).contains(&Permission::CashTransferPolicySet),
         "ADMIN must not hold CashTransferPolicySet"
     );
 
-    // 3. Enumerate every non-executive role
+    // 3. Enumerate every non-executive, non-finance role
     let non_executive_roles = [
         Role::Admin,
         Role::RateManager,
         Role::BranchManager,
         Role::Teller,
-        Role::Finance,
         Role::Marketing,
         Role::Customer,
         Role::VerificationReviewer,
     ];
     for role in non_executive_roles {
         assert!(
-            !RolePermissions::of(role).contains(&Permission::CashTransferPolicySet),
+            !RoleGrants::seed(role).contains(&Permission::CashTransferPolicySet),
             "{:?} must not hold CashTransferPolicySet",
             role
         );
     }
 
-    // 4. Over the entire Blueprint role set, exactly EXECUTIVE holds it
+    // 4. Over the entire Blueprint role set, EXECUTIVE and FINANCE hold it (§11.2)
     let holders: Vec<Role> = BLUEPRINT
         .into_iter()
-        .filter(|r| RolePermissions::of(*r).contains(&Permission::CashTransferPolicySet))
+        .filter(|r| RoleGrants::seed(*r).contains(&Permission::CashTransferPolicySet))
         .collect();
     assert_eq!(
         holders,
-        vec![Role::Executive],
-        "EXECUTIVE alone holds CashTransferPolicySet"
+        vec![Role::Executive, Role::Finance],
+        "// §11.2: EXECUTIVE and FINANCE hold CashTransferPolicySet"
     );
 }
 
@@ -76,7 +80,7 @@ fn transfer_policy_save_needs_cash_transfer_policy_set() {
 }
 
 #[test]
-fn policy_authorize_on_transfer_policy_save_grants_executive_and_refuses_all_other_roles() {
+fn policy_authorize_on_transfer_policy_save_grants_executive_and_finance() {
     let now = Utc::now();
     let action = Action::new("transferPolicySave");
 
@@ -86,6 +90,14 @@ fn policy_authorize_on_transfer_policy_save_grants_executive_and_refuses_all_oth
     assert!(
         grant.is_ok(),
         "EXECUTIVE must be granted transferPolicySave, got: {grant:?}"
+    );
+
+    // §11.2: FINANCE holds Finance FULL (including CashTransferPolicySet), so FINANCE is also granted
+    let finance_actor = staff(Role::Finance, "MAIN");
+    let grant_finance = Policy::authorize(Some(&finance_actor), EntryPath::Rpc, &action, None, now);
+    assert!(
+        grant_finance.is_ok(),
+        "// §11.2: FINANCE must be granted transferPolicySave, got: {grant_finance:?}"
     );
 
     // Explicitly verify RATE_MANAGER and ADMIN are refused with roleNotAllowedHere
@@ -103,13 +115,12 @@ fn policy_authorize_on_transfer_policy_save_grants_executive_and_refuses_all_oth
         "ADMIN must receive roleNotAllowedHere"
     );
 
-    // Enumerate every non-executive role: each receives roleNotAllowedHere
+    // Enumerate every non-executive, non-finance role: each receives roleNotAllowedHere
     let other_roles = [
         Role::Admin,
         Role::RateManager,
         Role::BranchManager,
         Role::Teller,
-        Role::Finance,
         Role::Marketing,
         Role::Customer,
         Role::VerificationReviewer,
