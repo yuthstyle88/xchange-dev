@@ -331,7 +331,7 @@ async function answer(s: Sent): Promise<Reply> {
       return viewAnswer(200 + JSON.stringify(data).length, data, since);
     }
     if (path === POLICY) return viewAnswer(1, policies[branch] ?? { policy: null }, since);
-    if (path === PUBLICATIONS) return viewAnswer(1, { publications: publications[branch] ?? [] }, since);
+    if (path === PUBLICATIONS) return viewAnswer(1, (publications[branch] ?? []).map((p) => ({ ...p, lines: [] })), since);
     if (path === REFERENCE) return viewAnswer(3, reference, since);
     return refusal(500, 'serverError', `unexpected read ${path}`);
   }
