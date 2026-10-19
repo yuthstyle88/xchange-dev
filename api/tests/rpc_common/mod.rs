@@ -496,19 +496,27 @@ impl Desk {
             .execute(&mut *conn)
             .await
             .unwrap_or_else(|e| panic!("employ {}: {e}", person.key));
-            xc_testdb::people::seed_roles(
-                &mut conn,
-                &person.id,
-                &org_id,
-                &[xc_testdb::people::RoleRow {
-                    role_code: role,
-                    branch_id: Some(branch),
-                    valid_from: DateTime::<Utc>::UNIX_EPOCH,
-                    valid_to: None,
-                }],
-            )
-            .await
-            .unwrap_or_else(|e| panic!("seed role for {}: {e}", person.key));
+            let branch_exists: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM branches WHERE id = $1)")
+                    .bind(branch)
+                    .fetch_one(&mut *conn)
+                    .await
+                    .expect("check whether branch exists");
+            if branch_exists {
+                xc_testdb::people::seed_roles(
+                    &mut conn,
+                    &person.id,
+                    &org_id,
+                    &[xc_testdb::people::RoleRow {
+                        role_code: role,
+                        branch_id: Some(branch),
+                        valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                        valid_to: None,
+                    }],
+                )
+                .await
+                .unwrap_or_else(|e| panic!("seed role for {}: {e}", person.key));
+            }
         }
     }
 
@@ -907,6 +915,26 @@ fn text_of(value: &Value, key: &str) -> String {
     }
 }
 
+fn named_branch_of(step: &Step) -> Option<BranchId> {
+    let owned;
+    let payload = if let Some(p) = &step.payload {
+        p
+    } else {
+        let raw = step.raw.as_deref()?;
+        let body: Value = serde_json::from_str(raw).ok()?;
+        owned = body.as_object()?.get("payload")?.clone();
+        &owned
+    };
+    let obj = payload.as_object()?;
+    match obj.get("branchId") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) if s.is_empty() => None,
+        Some(Value::String(s)) => Some(BranchId::new(s.clone())),
+        Some(Value::Number(n)) if n.as_i64() == Some(0) => None,
+        _ => Some(BranchId::new(String::new())),
+    }
+}
+
 // ── the replay ───────────────────────────────────────────────────────────────
 
 /// What is done with one recorded step.
@@ -1123,7 +1151,7 @@ impl<'f> Replay<'f> {
 
     /// The rule of a step: the test's own where it gave one, else by what the
     /// step is.
-    fn rule_of(&self, step: &Step) -> Rule {
+    pub fn rule_of(&self, step: &Step) -> Rule {
         if let Some(rule) = self.rules.get(&step.n) {
             return rule.clone();
         }
@@ -1168,6 +1196,32 @@ impl<'f> Replay<'f> {
                     "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
                     self.label(step)
                 ),
+                Ok(()) => {
+                    // OR-7.m S-D (#3700, ruling #2, D-4): a Blueprint staff caller's named branch
+                    // is authorised by their roles; v2's own-branch rule was the password
+                    // session's alone.
+                    if let (Some(own), Some(named)) =
+                        (caller.and_then(Actor::branch), named_branch_of(step))
+                    {
+                        if &named != own {
+                            if Policy::need(entry, &Action::new(&action)) == Some(Need::Public) {
+                                let sentence = if BranchId::is_well_formed(named.as_str()) {
+                                    NO_SUCH_BRANCH
+                                } else {
+                                    "Invalid branch."
+                                };
+                                return Rule::Differs {
+                                    status: 400,
+                                    sentence,
+                                };
+                            }
+                            return Rule::Differs {
+                                status: PolicyError::OutOfScope.status(),
+                                sentence: "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+                            };
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -1474,6 +1528,61 @@ impl<'f> Replay<'f> {
                 self.tally.blueprint.push(step.n);
             }
             Rule::Excluded(_) => unreachable!("handled above"),
+        }
+        // OR-7.m S-D (#3700, ruling #6): staff whose branch is created during the replay get their
+        // `user_roles` and session branch once the branch row exists.
+        if action_of(step).as_deref() == Some("adminCreateBranch") && step.status == Some(200) {
+            if let (Some(recorded), Some(actual)) = (
+                step.json()["branchId"].as_str(),
+                answer.json()["branchId"].as_str(),
+            ) {
+                let org_id = xc_organization_id(&self.desk.db.pool).await;
+                let mut conn = self
+                    .desk
+                    .db
+                    .pool
+                    .acquire()
+                    .await
+                    .expect("acquire connection");
+                for person in self
+                    .fixture
+                    .people
+                    .iter()
+                    .filter(|p| !p.is_owner() && p.branch_id.as_deref() == Some(recorded))
+                {
+                    let user_exists: bool = sqlx::query_scalar(
+                        "SELECT EXISTS (SELECT 1 FROM users WHERE id = $1::uuid)",
+                    )
+                    .bind(&person.id)
+                    .fetch_one(&mut *conn)
+                    .await
+                    .expect("check whether user exists");
+                    if !user_exists {
+                        continue;
+                    }
+                    xc_testdb::people::seed_roles(
+                        &mut conn,
+                        &person.id,
+                        &org_id,
+                        &[xc_testdb::people::RoleRow {
+                            role_code: blueprint_role(&person.role),
+                            branch_id: Some(actual),
+                            valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                            valid_to: None,
+                        }],
+                    )
+                    .await
+                    .unwrap_or_else(|e| panic!("seed late role for {}: {e}", person.key));
+                    sqlx::query(
+                        "UPDATE user_sessions SET branch_id = $1 WHERE user_id = $2::uuid",
+                    )
+                    .bind(actual)
+                    .bind(&person.id)
+                    .execute(&mut *conn)
+                    .await
+                    .unwrap_or_else(|e| panic!("update session branch for {}: {e}", person.key));
+                }
+            }
         }
         self.answers.insert(step.n, answer);
     }
