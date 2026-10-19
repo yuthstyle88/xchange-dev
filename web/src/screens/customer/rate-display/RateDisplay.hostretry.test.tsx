@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { setAudience, setLang } from '../../../shared/i18n';
 import * as table from './i18n';
@@ -23,16 +27,16 @@ interface Call {
   path: string;
 }
 
-const RATES: PublishedRatesData = {
-  publication: { id: 'pub-1', version: 7, publishedAt: '2026-10-11T02:00:00Z' },
+const RATES = makePublishedRatesData({
+  publication: makePublishedPublicationDto({ id: 'pub-1', version: 7, publishedAt: '2026-10-11T02:00:00Z' }),
   sourceDate: '2026-10-10',
   stale: false,
   lines: [
-    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.34500000', sellRate: '22.10000000', lineId: 'l-jpy' },
-    { currency: 'KRW', group: 'ALL', unitSize: '1000', buyRate: '25.00000000', sellRate: '26.50000000', lineId: 'l-krw' },
-    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' },
+    makePublishedLineDto({ currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.34500000', sellRate: '22.10000000', lineId: 'l-jpy' }),
+    makePublishedLineDto({ currency: 'KRW', group: 'ALL', unitSize: '1000', buyRate: '25.00000000', sellRate: '26.50000000', lineId: 'l-krw' }),
+    makePublishedLineDto({ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000', lineId: 'l-usd' }),
   ],
-};
+});
 
 const BRANCHES: PublicBranchesData = {
   branches: [
