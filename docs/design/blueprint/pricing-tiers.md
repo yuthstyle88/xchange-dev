@@ -103,14 +103,25 @@ ALTER TABLE rate_policy_currency_settings
 - `[required]` **Effective anchor** for (branch, currency) is the currency's `anchor_source` if it is set, otherwise
   the version's. The column on `rate_policy_currency_settings` lets one currency follow TT while the branch stays on
   BoT. `min_spread_pct` on that table becomes nullable, so a row can carry only the anchor.
-- `[required]` **The draft path reads the effective anchor's reference type.** Today `reference_base.rs:27` reads
-  `reference_type = 'BOT'` only. It now reads the effective anchor, so `'BOT'`, `'MARKET_TT'` or `'MARKET_SR'`. `'START'`
-  stays the fallback before a first fetch, exactly as today (`:44`).
-- `[required]` **A missing or stale anchor line never silently swaps sources.** Say the chosen market has no line for
-  the currency, or its line is older than `max_reference_age_hours`: the existing stale policy decides (`stale_policy.rs:47`,
-  STOP or LIMIT), the same as a stale BoT line today. Falling back to BoT on its own would publish a price nobody chose.
-- `[required]` **The snapshot records what priced the line.** `published_rate_lines.source_snapshot` gains
-  `"anchor_source"`, next to `reference_line_id` (`publish_service.rs:421-440`).
+- `[required]` **The draft path reads the effective anchor's reference type, inside `ReferenceBase::newest_in`.**
+  Today `reference_base.rs:27` reads `reference_type = 'BOT'` only. `newest_in(tx, branch, currency)` keeps its signature
+  and resolves the effective anchor itself, so its callers (`rate_draft_service.rs:130`, `:248`,
+  `org_starting_price_save.rs:271`) do not change. The starting-price check then sees the anchor-aware base, as it
+  should, since it checks against "the AUTO base".
+- `[required]` **`'START'` stays the fallback for the `BOT` anchor only** ("before BoT first quotes", `:37-58`).
+- `[required]` **A market anchor with no line for the currency has no AUTO base.** `newest_in` returns `None`, the
+  line needs MANUAL, and the board flags `NoAnchor`. It never falls back to BoT or `START`, since that would publish a price
+  nobody chose.
+- `[required]` **A stale market line is handled like a stale BoT line.** The snapshot carries that line's `fetched_at`,
+  the published side reads stale, and `StalePolicy::admits` (`stale_policy.rs:47`) decides at quote time (STOP or LIMIT).
+- `[required]` **The snapshot records what priced the line.** `"anchor_source"` in `published_rate_lines.source_snapshot`
+  is the `reference_type` of the line `reference_line_id` points at, so no new lookup. It is written in
+  `publish_service.rs:421-440`, which is PT-4's file.
+- `[required]` **Who sets the branch anchor:** `ratePolicySave` takes an optional `anchorSource`.
+  - `PolicyVersionWriter::next` carries the column forward, so an adjust-only save keeps the anchor.
+  - A change to it is a **frame** change, under the EXECUTIVE frame check (`rate_policy_save.rs:340-357`). A RATE_MANAGER
+    changing it gets `roleNotAllowedHere`.
+  - The per-currency override goes through `pricingConfigure` (PT-5), under the same frame rule.
 - **Guards and `adjust_pct` are unchanged.** They measure distance from the line actually used as the anchor.
 - **Who may change it:** the anchor is part of the policy frame, so the same rule applies as for override margins
   (§3: EXECUTIVE-gated frame change through `ratePolicySave` / `pricingConfigure`).
@@ -343,7 +354,10 @@ the migration, and the admin menu entry, so the function tickets touch only thei
 | order saved after a publish with market lines | its published line's snapshot holds those lines |
 | branch anchor `BOT`, no currency setting | AUTO prices exactly as today (reads `'BOT'`) |
 | currency anchor `MARKET_TT` with a fresh TT line | that currency's AUTO price uses the TT line; snapshot `anchor_source = 'MARKET_TT'` |
-| currency anchor `MARKET_TT`, TT line missing or stale | the stale policy decides (STOP/LIMIT); never a silent switch to BoT |
+| currency anchor `MARKET_TT`, no TT line for it | no AUTO base: the line needs MANUAL and the board flags `NoAnchor`; never BoT or `START` |
+| currency anchor `MARKET_TT`, TT line older than `max_reference_age_hours` | published side reads stale; `StalePolicy` decides at quote time (STOP/LIMIT) |
+| RATE_MANAGER saves a policy that changes `anchorSource` | `roleNotAllowedHere`, nothing written |
+| adjust-only `ratePolicySave` on a branch anchored `MARKET_TT` | the new version keeps `anchor_source = 'MARKET_TT'` |
 
 ## 12. Data migration
 
@@ -355,7 +369,9 @@ right before `pr_open`), creating §3's two tables and adding §3.1's two `ancho
    resolves to the branch default. Today's prices are unchanged.
 2. **Backfill:** none. Zero rows is the correct state for every existing version.
 3. **Deploy order:** migration before the new binary (migrations run at boot, embedded). The old binary never reads the
-   new tables, so it works with the new schema.
+   new tables, so it works with the new schema. Its `ratePolicySave` INSERT omits `anchor_source`, so `DEFAULT 'BOT'`
+   fills it, which is safe. **After a rollback to the old binary, any `MARKET_*` anchor is ignored and prices come from
+   BoT again** until the new binary returns.
 4. **What `down` loses:** every per-currency override, min spread and anchor choice ever saved. Policy versions themselves
    survive and price from BoT again.
 
@@ -371,19 +387,20 @@ BE (sub-controller under the BE lane controller claude/a90ab16c), base `feat/pri
 | PT-1 | `PolicyVersionWriter` extracted from `ratePolicySave` (pure move) | mechanical | PT-0 |
 | PT-2 | `CurrencyTierOverride` + `PolicyTiers::for_currency` | logic | PT-0 |
 | PT-3 | `CurrencyTierOverrideStore` | logic | PT-0 |
-| PT-4 | resolve at the three callers + §7 market snapshot | logic | PT-0 |
+| PT-4 | resolve at the three callers + §7 market snapshot + `anchor_source` in the snapshot (§3.1) | logic | PT-0 |
 | PT-5 | `pricingConfigure` | logic | PT-0 |
 | PT-6 | `pricingApprove` | guarded | PT-0 |
 | PT-7 | `pricing_board` view | logic | PT-0 |
 | PT-8 | `MarketQuote`, `PricingFlag`, `RowStatus` | logic | PT-0 |
-| PT-15 | effective anchor in the draft path: `reference_base.rs` reads the effective anchor's reference type; `anchor_source` in the snapshot (§3.1) | guarded | PT-0; its file joins PT-4's set only if they share a file, otherwise disjoint |
+| PT-15 | effective anchor in the draft path: `api/crates/xc-rate/src/application/draft/reference_base.rs` only, `newest_in` signature unchanged (§3.1). The snapshot's `anchor_source` is PT-4's | guarded | PT-0 |
+| PT-16 | `ratePolicySave` takes `anchorSource`, under the frame check; `PolicyVersionWriter::next` carries it forward (§3.1). Files: `rate_policy_save.rs` + `policy_version_writer.rs` | guarded | PT-1 |
 | PT-9 | `PricingSuggestion` | logic | P-2's files |
 | PT-10 | `Recommendation` | logic | P-2's files |
 | PT-11 / PT-12 | TT / Super Rich source + provider | logic | P-2's files |
 | PT-13 | `rateReferenceFetch` `provider` (+ the `MarketRatesRefresh` check) + feed-loop wiring | logic | PT-11, PT-12, PT-14 |
 | PT-14 | `MarketRatesRefresh` variant + its `RATES_STOCK` mapping only (`permission.rs`, `permission_module.rs`) | logic | `feat/rbac-groups` on main |
 
-FE (sub-controller under claude/5edf7bb5), base `feat/fe-pricing-board`: one ticket per §9 row (9 components + labels),
+FE (sub-controller under claude/5edf7bb5), base `feat/fe-pricing-board` (plus one FE ticket for §3.1: `anchorSource` in `pricing-board.types.ts`, shown in `PricingRow`, chosen in `PricingPolicy`): one ticket per §9 row (9 components + labels),
 mechanical except `Pricing`, `TierEditor` and `BulkApprove` (logic). They code against the generated DTOs with a mocked
 fetch; `feat/fe-pricing-board` merges to main only after the BE view and commands land.
 
