@@ -1,5 +1,27 @@
 /* P01 v2 flags (RB-10). */
-.xc-rb-code-box {
+.xc-rb-flag {
   display: inline-block;
-  font-weight: 700;
+  width: 28px;
+  height: 21px;
+  object-fit: cover;
+  border-radius: 3px;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
+
+.xc-rb-code-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 21px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
