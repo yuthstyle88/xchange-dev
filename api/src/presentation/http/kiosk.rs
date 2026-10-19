@@ -12,8 +12,8 @@ use pos_infra::transactions::Transactor;
 use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
+use xc_auth::application::user::directory::user_names;
 use xc_auth::domain::access::Role;
-use xc_auth::domain::account::entities::session::SignedIn;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -47,7 +47,7 @@ use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, 
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::dto::v3::common::RateFreshnessDto;
 use crate::presentation::extractors::actor::{
-    accounts, authorize, callers, identity_session, password_session, refuse, same_origin,
+    authorize, callers, identity_session, refuse, same_origin,
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::http::rpc::RpcClock;
@@ -136,23 +136,10 @@ pub(crate) async fn usernames<'a>(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
-    if ids.is_empty() {
-        return HashMap::new();
-    }
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT id::text, username FROM employees WHERE id::text = ANY($1) \
-         UNION ALL \
-         SELECT 'owner', username FROM (SELECT username FROM owners LIMIT 1) o \
-         WHERE 'owner' = ANY($1)",
-    )
-    .bind(&ids)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_else(|err| {
+    user_names(pool, &ids).await.unwrap_or_else(|err| {
         tracing::error!(error = %err, "kiosk usernames failed");
-        Vec::new()
-    });
-    rows.into_iter().collect()
+        HashMap::new()
+    })
 }
 
 /// The username of a holder, or the id as it is when nobody has it.
@@ -280,17 +267,6 @@ async fn handle_kiosk(
     let now = req
         .app_data::<web::Data<dyn RpcClock>>()
         .map_or_else(Utc::now, |c| c.now());
-
-    let Some(accounts_service) = accounts(&req) else {
-        return kiosk_server_error();
-    };
-    let who = match password_session(accounts_service, &req, now).await {
-        Ok(w) => w,
-        Err(err) => {
-            tracing::error!(error = %err, "status failed");
-            return kiosk_server_error();
-        }
-    };
 
     let empty_payload = json!({});
     let payload = match body_val.as_object() {
@@ -495,38 +471,22 @@ async fn handle_kiosk(
         }
         KioskAction::Notifications => match service.notifications(&branch, &kiosk_actor).await {
             Ok(notifications) => {
-                let emp_info = match who {
-                    Some(SignedIn::Owner(owner)) => dto_kiosk::EmployeeInfo {
+                let emp_info = if callers.owner_standing().is_some() {
+                    dto_kiosk::EmployeeInfo {
                         id: "owner".to_string(),
-                        username: owner.username.clone(),
-                        name: owner.name.clone(),
+                        username: "owner".to_string(),
+                        name: "Owner".to_string(),
                         role: "OWNER".to_string(),
-                    },
-                    Some(SignedIn::Employee(emp)) => dto_kiosk::EmployeeInfo {
-                        id: emp.id.clone(),
-                        username: emp.username.clone(),
-                        name: emp.name.clone(),
-                        role: emp.role.clone(),
-                    },
-                    None => {
-                        if callers.owner_standing().is_some() {
-                            dto_kiosk::EmployeeInfo {
-                                id: "owner".to_string(),
-                                username: "owner".to_string(),
-                                name: "Owner".to_string(),
-                                role: "OWNER".to_string(),
-                            }
-                        } else if let Some(staff) = callers.staff_standing() {
-                            dto_kiosk::EmployeeInfo {
-                                id: staff.user_id.clone(),
-                                username: staff.user_id.clone(),
-                                name: staff.user_id,
-                                role: staff.kind.audit_text().to_string(),
-                            }
-                        } else {
-                            return kiosk_server_error();
-                        }
                     }
+                } else if let Some(staff) = callers.staff_standing() {
+                    dto_kiosk::EmployeeInfo {
+                        id: staff.user_id.clone(),
+                        username: staff.user_id.clone(),
+                        name: staff.user_id,
+                        role: staff.kind.audit_text().to_string(),
+                    }
+                } else {
+                    return kiosk_server_error();
                 };
                 let names =
                     usernames(pool, notifications.working.iter().map(|w| w.staff.as_str())).await;
