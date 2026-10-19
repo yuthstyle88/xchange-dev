@@ -791,6 +791,15 @@ impl<'f> KioskReplay<'f> {
         let accepted = step.status == Some(200);
         let rule = self.replay.rule_of(step);
         let replayed = matches!(rule, crate::rpc_common::Rule::Replay);
+        // OR-7.m S-D5 (#3734, ruling on #3730): a staff employee's `employee.name` is `users.name`
+        // (`employee.username`), where v2 recorded a separate display name.
+        let one_name = Self::is_kiosk(step) && accepted && replayed && is_one_name_step(step);
+        if one_name {
+            self.replay.rules.insert(
+                step.n,
+                crate::rpc_common::Rule::RecordedWith(one_name_employee),
+            );
+        }
 
         let saves = matches!(action, Some("adminSaveRate") | Some("configure"));
         let mut saved_before = self.saved.clone();
@@ -822,6 +831,11 @@ impl<'f> KioskReplay<'f> {
         }
 
         self.replay.step(step).await;
+        if one_name {
+            let popped = self.replay.tally.blueprint.pop();
+            assert_eq!(popped, Some(step.n));
+            self.replay.tally.differences.push(step.n);
+        }
         // OR-4b (#767, §4.2 C8): the owner's queue work v2 accepted is refused by role; what it
         // changed is applied behind the routes, by the owner as v2 recorded
         if Self::is_kiosk(step)
@@ -1131,6 +1145,19 @@ fn text(value: &Value, key: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or_else(|| panic!("no text `{key}` in {value}"))
         .to_string()
+}
+
+fn is_one_name_step(step: &Step) -> bool {
+    let Some(emp) = step.body.as_ref().and_then(|b| b.get("employee")) else {
+        return false;
+    };
+    emp.get("id") != Some(&json!("owner")) && emp.get("name") != emp.get("username")
+}
+
+fn one_name_employee(expected: &mut Value) {
+    if let Some(username) = expected["employee"]["username"].as_str().map(str::to_owned) {
+        expected["employee"]["name"] = json!(username);
+    }
 }
 
 // ── a counter set up by hand, for the tests that are not a replay ────────────

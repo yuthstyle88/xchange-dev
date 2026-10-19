@@ -141,7 +141,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     // the answers of the one action here are v2's bytes, key order included
     let mut same_text = 0;
     for step in fixture.steps() {
-        if step.status == Some(200) {
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+        if step.status == Some(200) && !replay.tally.differences.contains(&step.n) {
             assert_eq!(
                 Some(&replay.answers[&step.n].text),
                 fixture.body_text(step.n).as_ref(),
@@ -151,15 +152,17 @@ async fn transport_json_is_answered_as_v2_answered_it() {
             same_text += 1;
         }
     }
-    assert_eq!(same_text, 24, "answers compared as text");
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    assert_eq!(same_text, 20, "answers compared as text");
 
     // #95-#99 since ticket #146: the owner with a rejected origin
     assert_eq!(fixture.steps().len(), 99);
     assert_eq!(
         replay.tally.differences,
         // CA-10 #626: `opsNope` on `/api/rpc` (#36) is retired too
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
         {
-            let mut all = [ENGINE_SENTENCES.to_vec(), vec![36, 84]].concat();
+            let mut all = [ENGINE_SENTENCES.to_vec(), vec![36, 39, 40, 62, 84, 87, 88]].concat();
             all.sort_unstable();
             all
         }
@@ -167,7 +170,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     assert!(replay.tally.part_two.is_empty());
     assert_eq!(numbers(&replay.tally.excluded), vec![93, 94]);
     // 88 since ticket #146 added #95-#99; 87 since CA-10 #626 retired #36
-    assert_eq!(replay.tally.replayed.len(), 87);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    assert_eq!(replay.tally.replayed.len(), 82);
     assert!(replay.tally.applied_behind.is_empty());
     replay.finish().await;
 }
