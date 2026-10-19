@@ -27,6 +27,9 @@ export const th = {
   'error.staleVersion': 'ข้อมูลการจองมีการเปลี่ยนแปลง กรุณาลองใหม่อีกครั้ง',
   'error.outOfScope': 'ไม่มีสิทธิ์เข้าถึงข้อมูลการจองนี้',
   'error.loadFailed': 'ไม่สามารถโหลดข้อมูลการจองได้',
+  confirm: 'ยืนยันการจอง',
+  reissueQr: 'ขอคิวอาร์โค้ดใหม่',
+  cancelDeadline: 'ยกเลิกได้ถึง {date}',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -57,6 +60,9 @@ export const en: Record<keyof typeof th, string> = {
   'error.staleVersion': 'Booking was updated elsewhere, please refresh',
   'error.outOfScope': 'Access to this booking is not permitted',
   'error.loadFailed': 'Failed to load bookings',
+  confirm: 'Confirm booking',
+  reissueQr: 'Get a new QR code',
+  cancelDeadline: 'Cancel by {date}',
 };
 
 export const zh: Record<keyof typeof th, string> = {
@@ -87,4 +93,7 @@ export const zh: Record<keyof typeof th, string> = {
   'error.staleVersion': '预约信息已更新，请刷新重试',
   'error.outOfScope': '无权访问此预约信息',
   'error.loadFailed': '无法加载预约信息',
+  confirm: '确认预约',
+  reissueQr: '重新获取二维码',
+  cancelDeadline: '{date} 前可取消',
 };

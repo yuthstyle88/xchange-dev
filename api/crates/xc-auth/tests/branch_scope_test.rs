@@ -14,7 +14,7 @@
 //!   with `Debug + PartialEq` [required]. `Branches` is sorted with no duplicates, and may be empty.
 //! - `BranchScope::of(actor: &Actor, permission: Permission, now: DateTime<Utc>) -> BranchScope`, an associated
 //!   function [required].
-//! - `RolePermissions::of`, `Actor::new`, `ScopedRole::new` and `Role` as in `authorizer_test.rs`.
+//! - `RoleGrants::seed`, `Actor::new`, `ScopedRole::new` and `Role` as in `authorizer_test.rs`.
 //!
 //! `Authorizer::check` must answer exactly as before; `authorizer_test.rs` pins that, unchanged.
 
@@ -23,7 +23,7 @@ use xc_auth::domain::access::actor::Actor;
 use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_kernel::ids::BranchId;
 
@@ -85,27 +85,40 @@ fn every_role() -> Vec<Role> {
 fn holders(permission: Permission) -> Vec<Role> {
     every_role()
         .into_iter()
-        .filter(|role| RolePermissions::of(*role).contains(&permission))
+        .filter(|role| RoleGrants::seed(*role).contains(&permission))
         .collect()
 }
 
 // --- the two new permissions (E-2, E-6) ---
 
 #[test]
-fn reports_export_is_held_by_executive_and_finance_only() {
+fn reports_export_holders_per_section_11_2() {
+    // §11.2: ReportsExport (REPORTS FULL) is held by EXECUTIVE, RATE_MANAGER, FINANCE, VERIFICATION_REVIEWER
     assert_eq!(
         holders(Permission::ReportsExport),
-        vec![Role::Executive, Role::Finance],
-        "E-2: export by EXECUTIVE and FINANCE, nobody else"
+        vec![
+            Role::Executive,
+            Role::RateManager,
+            Role::Finance,
+            Role::VerificationReviewer,
+        ],
+        "// §11.2: REPORTS FULL holders"
     );
 }
 
 #[test]
-fn alert_settings_save_is_held_by_executive_and_admin_only() {
+fn alert_settings_save_holders_per_section_11_2() {
+    // §11.2: AlertSettingsSave (DASHBOARD FULL) is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, FINANCE, VERIFICATION_REVIEWER
     assert_eq!(
         holders(Permission::AlertSettingsSave),
-        vec![Role::Executive, Role::Admin],
-        "E-6: EXECUTIVE and ADMIN edit the alert thresholds, nobody else"
+        vec![
+            Role::Executive,
+            Role::RateManager,
+            Role::BranchManager,
+            Role::Finance,
+            Role::VerificationReviewer,
+        ],
+        "// §11.2: DASHBOARD FULL holders"
     );
 }
 
@@ -213,9 +226,10 @@ fn only_rows_holding_the_permission_count() {
 
 #[test]
 fn an_organisation_wide_row_wins_over_branch_rows() {
+    // §11.2: ADMIN holds DASHBOARD VIEW (OverviewRead), not DASHBOARD FULL (AlertSettingsSave)
     let actor = user(vec![held(Role::Admin, None), held(Role::Admin, Some(B2))]);
     assert_eq!(
-        BranchScope::of(&actor, Permission::AlertSettingsSave, now()),
+        BranchScope::of(&actor, Permission::OverviewRead, now()),
         BranchScope::All
     );
 }

@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_loyalty::application::rule_publisher::{LoyaltyRuleWriter, RuleKind, RuleVersion};
-use xc_loyalty::infrastructure::http_rule_writer::HttpLoyaltyRuleWriter;
+use xc_loyalty::application::rule_publisher::{RuleKind, RuleVersion};
 
 use crate::bootstrap::AppState;
 use crate::presentation::http::v3::error::V3Error;
@@ -178,12 +177,7 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
             Err(refusal) => return refusal,
         };
 
-    let Some(writer) = state
-        .settings
-        .loyalty
-        .as_ref()
-        .and_then(HttpLoyaltyRuleWriter::from_config)
-    else {
+    let Some(writer) = state.loyalty_rule_writer.as_ref() else {
         return loyalty_unavailable("loyalty service token is not configured").error_response();
     };
 
