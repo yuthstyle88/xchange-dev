@@ -15,6 +15,7 @@ use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_testdb::people::{RoleRow, seed_person};
 
 use crate::application::branch_day::service::{
     BeginDraft, BranchDayService, ClockDirection, StartService,
@@ -835,16 +836,27 @@ async fn test_teller_of_actor_in_resolves_owner() {
         Arc::new(PgShiftRepository::new(db.pool.clone())),
         BranchTx::new(Transactor::new(db.pool.clone())),
     );
-    let owner_uid: String = sqlx::query_scalar(
-        "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
-         u AS (INSERT INTO users (organization_id, name, status, created_by) \
-               SELECT id, 'Owner', 'ACTIVE', 'test' FROM o RETURNING id, organization_id), \
-         r AS (INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-               SELECT u.id, role.code, u.organization_id, NULL \
-               FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS role(code)) \
-         SELECT id::text FROM u",
+    let valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let roles = [
+        RoleRow {
+            role_code: "EXECUTIVE",
+            branch_id: None,
+            valid_from,
+            valid_to: None,
+        },
+        RoleRow {
+            role_code: "ADMIN",
+            branch_id: None,
+            valid_from,
+            valid_to: None,
+        },
+    ];
+    let owner_uid = seed_person(
+        &mut db.pool.acquire().await.expect("acquire connection"),
+        ORG_ID,
+        "Owner",
+        &roles,
     )
-    .fetch_one(&db.pool)
     .await
     .expect("seed owner user");
 
