@@ -292,16 +292,15 @@ impl Floor {
         &self,
         phase: &str,
         target: Option<Value>,
-        safe: Option<Value>,
+        _safe: Option<Value>,
         cutoff: Option<Value>,
     ) {
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, target, safe, cutoff) \
-             VALUES ('MAIN', $1, $2, $3, $4)",
+            "INSERT INTO ops_state (branch_id, phase, target, cutoff) \
+             VALUES ('MAIN', $1, $2, $3)",
         )
         .bind(phase)
         .bind(target)
-        .bind(safe)
         .bind(cutoff)
         .execute(&self.db.pool)
         .await
