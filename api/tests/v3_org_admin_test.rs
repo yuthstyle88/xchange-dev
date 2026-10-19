@@ -45,12 +45,8 @@ const SAME_ORIGIN: &str = "http://xc.test";
 const B01: &str = "XC-B01";
 const B09: &str = "XC-B09";
 const ADMIN: &str = "ADMIN@*";
-const REFUSED: [&str; 4] = [
-    "EXECUTIVE@*",
-    "BRANCH_MANAGER@XC-B01",
-    "TELLER@XC-B01",
-    "FINANCE@XC-B01",
-];
+// Follows §11.2 seed: EXECUTIVE holds USER_MANAGEMENT FULL (UsersManage, BranchesManage); remaining staff are refused
+const REFUSED: [&str; 3] = ["BRANCH_MANAGER@XC-B01", "TELLER@XC-B01", "FINANCE@XC-B01"];
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
