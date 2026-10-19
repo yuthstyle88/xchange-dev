@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
 const disposers: Array<() => void> = [];
@@ -17,21 +17,21 @@ const BRANCHES_DATA = {
   ],
 };
 
-const SEED_USERS: AdminUserRow[] = [
-  {
+const SEED_USERS = [
+  makeAdminUserRow({
     userId: 'u-1',
     name: 'Somchai Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
+  }),
 ];
 
 function json(body: unknown, status = 200): Response {
