@@ -149,8 +149,22 @@ impl RoleGrantStore for PgRoleGrantStore {
         code: &str,
         set: &[Permission],
     ) -> Result<(), RoleGrantStoreError> {
-        let _ = (tx, code, set);
-        todo!("C6c")
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM roles WHERE code = $1)")
+                .bind(code)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(db_err)?;
+        if !exists {
+            return Err(RoleGrantStoreError::NotFound(code.to_owned()));
+        }
+        sqlx::query("DELETE FROM role_permission_grants WHERE role_code = $1")
+            .bind(code)
+            .execute(&mut **tx)
+            .await
+            .map_err(db_err)?;
+        insert_grants(tx, code, set).await?;
+        bump_version(tx).await
     }
 
     async fn add_group(
@@ -159,8 +173,24 @@ impl RoleGrantStore for PgRoleGrantStore {
         group: &Group,
         set: &[Permission],
     ) -> Result<(), RoleGrantStoreError> {
-        let _ = (tx, group, set);
-        todo!("C6c")
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM roles WHERE code = $1)")
+                .bind(&group.code)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(db_err)?;
+        if exists {
+            return Err(RoleGrantStoreError::CodeTaken(group.code.clone()));
+        }
+        sqlx::query("INSERT INTO roles (code, name, base_role, built_in) VALUES ($1, $2, $3, false)")
+            .bind(&group.code)
+            .bind(&group.name)
+            .bind(group.base.as_str())
+            .execute(&mut **tx)
+            .await
+            .map_err(db_err)?;
+        insert_grants(tx, &group.code, set).await?;
+        bump_version(tx).await
     }
 
     async fn delete_group(
@@ -168,7 +198,32 @@ impl RoleGrantStore for PgRoleGrantStore {
         tx: &mut Transaction<'_, Postgres>,
         code: &str,
     ) -> Result<(), RoleGrantStoreError> {
-        let _ = (tx, code);
-        todo!("C6c")
+        let built_in: Option<bool> =
+            sqlx::query_scalar("SELECT built_in FROM roles WHERE code = $1 FOR UPDATE")
+                .bind(code)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(db_err)?;
+        let Some(built_in) = built_in else {
+            return Err(RoleGrantStoreError::NotFound(code.to_owned()));
+        };
+        if built_in {
+            return Err(RoleGrantStoreError::BuiltIn(code.to_owned()));
+        }
+        let in_use: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_roles WHERE role_code = $1)")
+                .bind(code)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(db_err)?;
+        if in_use {
+            return Err(RoleGrantStoreError::InUse(code.to_owned()));
+        }
+        sqlx::query("DELETE FROM roles WHERE code = $1")
+            .bind(code)
+            .execute(&mut **tx)
+            .await
+            .map_err(db_err)?;
+        bump_version(tx).await
     }
 }
