@@ -3923,6 +3923,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "xc-kernel",
+ "xc-testdb",
 ]
 
 [[package]]
@@ -3971,6 +3972,7 @@ dependencies = [
  "xc-auth",
  "xc-kernel",
  "xc-shift",
+ "xc-testdb",
 ]
 
 [[package]]
@@ -4218,6 +4220,7 @@ dependencies = [
  "uuid",
  "xc-auth",
  "xc-kernel",
+ "xc-testdb",
 ]
 
 [[package]]
@@ -4225,6 +4228,7 @@ name = "xc-testdb"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "sha2 0.10.9",
  "sqlx",
  "tokio",
@@ -4296,6 +4300,7 @@ dependencies = [
  "xc-rate",
  "xc-referral",
  "xc-shift",
+ "xc-testdb",
  "xc-verification",
 ]
 
