@@ -112,6 +112,9 @@ pub struct ReversedCost {
     pub difference_thb: MoneyDelta,
 }
 
+/// One signed net per currency that ever had an entry in a place, sorted by currency code.
+pub type PlaceActivity = Vec<(CurrencyCode, MoneyDelta)>;
+
 pub trait CashPostings: Send + Sync {
     /// Posts `req` as one posting inside `tx`. `allow_negative` names the approved `NEGATIVE_STOCK`
     /// request that lets it take a balance below zero; `None` refuses with `stockInsufficient`.
@@ -134,7 +137,7 @@ pub trait CashPostings: Send + Sync {
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
         _place: &'a CashPlace,
-    ) -> BoxFuture<'a, AppResult<Option<Vec<(CurrencyCode, MoneyDelta)>>>> {
+    ) -> BoxFuture<'a, AppResult<Option<PlaceActivity>>> {
         Box::pin(async move {
             Err(pos_error::AppError::Internal(
                 "activity_in is not implemented by this CashPostings".into(),
