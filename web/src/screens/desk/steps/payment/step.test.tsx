@@ -442,7 +442,7 @@ for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
     it("P18 an entry's identity checkbox (B2) carries its label and writes to the entry", async () => {
       const [confirmed, setConfirmed] = createSignal(false);
       const entry = {
-        kind: "booking",
+        kind: "kiosk",
         id: "b-1",
         banner: () => "",
         locked: true,
