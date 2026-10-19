@@ -47,9 +47,4 @@ pub const ROWS: &[AreaRow] = &[
         action: "queueTicketTake",
         need: Need::Permission(Permission::CustomerSelf),
     },
-    AreaRow {
-        path: EntryPath::OwnerRoute,
-        action: "queueTicketTake",
-        need: Need::Permission(Permission::CustomerSelf),
-    },
 ];
