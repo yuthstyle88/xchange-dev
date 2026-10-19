@@ -18,6 +18,20 @@ const t = screenT('admin.approvals', table);
 type ApprovalStatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED';
 const STATUS_FILTERS: readonly ApprovalStatusFilter[] = ['PENDING', 'APPROVED', 'REJECTED'];
 
+type ApprovalTypeKey = keyof typeof table.th;
+
+const TYPE_LABEL: Record<string, ApprovalTypeKey> = {
+  RATE_PUBLICATION: 'ratePublication',
+  RATE_FEED_PUBLICATION: 'rateFeedPublication',
+  CAMPAIGN_VERSION: 'campaignVersion',
+  LOYALTY_RULE_VERSION: 'loyaltyRuleVersion',
+  EXCHANGE_TRANSACTION: 'exchangeTransaction',
+  TRANSACTION_REVERSAL: 'transactionReversal',
+  COUNT_DIFFERENCE: 'countDifference',
+  NEGATIVE_STOCK: 'negativeStock',
+  CASH_TRANSFER: 'cashTransfer',
+};
+
 function statusLabel(status: string): string {
   if (status === 'APPROVED') return t('approved');
   if (status === 'REJECTED') return t('rejected');
@@ -127,7 +141,9 @@ function RequestCard(props: RequestCardProps): JSX.Element {
     <div data-request={props.request.id} style="display: contents">
       <Card class="approval-card">
         <div class="approval-card-header">
-          <span class="approval-type">{t('ratePublication')}</span>
+          <span class="approval-type" data-request-type={props.request.type}>
+            {TYPE_LABEL[props.request.type] ? t(TYPE_LABEL[props.request.type]) : props.request.type}
+          </span>
           <span class="pill neutral">{statusLabel(props.request.status)}</span>
         </div>
 
