@@ -149,12 +149,11 @@ impl RoleGrantStore for PgRoleGrantStore {
         code: &str,
         set: &[Permission],
     ) -> Result<(), RoleGrantStoreError> {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM roles WHERE code = $1)")
-                .bind(code)
-                .fetch_one(&mut **tx)
-                .await
-                .map_err(db_err)?;
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM roles WHERE code = $1)")
+            .bind(code)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(db_err)?;
         if !exists {
             return Err(RoleGrantStoreError::NotFound(code.to_owned()));
         }
@@ -173,22 +172,23 @@ impl RoleGrantStore for PgRoleGrantStore {
         group: &Group,
         set: &[Permission],
     ) -> Result<(), RoleGrantStoreError> {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM roles WHERE code = $1)")
-                .bind(&group.code)
-                .fetch_one(&mut **tx)
-                .await
-                .map_err(db_err)?;
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM roles WHERE code = $1)")
+            .bind(&group.code)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(db_err)?;
         if exists {
             return Err(RoleGrantStoreError::CodeTaken(group.code.clone()));
         }
-        sqlx::query("INSERT INTO roles (code, name, base_role, built_in) VALUES ($1, $2, $3, false)")
-            .bind(&group.code)
-            .bind(&group.name)
-            .bind(group.base.as_str())
-            .execute(&mut **tx)
-            .await
-            .map_err(db_err)?;
+        sqlx::query(
+            "INSERT INTO roles (code, name, base_role, built_in) VALUES ($1, $2, $3, false)",
+        )
+        .bind(&group.code)
+        .bind(&group.name)
+        .bind(group.base.as_str())
+        .execute(&mut **tx)
+        .await
+        .map_err(db_err)?;
         insert_grants(tx, &group.code, set).await?;
         bump_version(tx).await
     }
