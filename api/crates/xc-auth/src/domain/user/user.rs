@@ -16,6 +16,5 @@ pub struct User {
     pub version: i32,
     pub created_at: DateTime<Utc>,
     pub created_by: String,
-    pub legacy_employee_id: Option<String>,
     pub roles: Vec<ScopedRole>,
 }

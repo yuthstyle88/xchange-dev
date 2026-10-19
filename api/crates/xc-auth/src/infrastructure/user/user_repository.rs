@@ -29,7 +29,7 @@ impl UserRepository for PgUserRepository {
     ) -> AppResult<Option<User>> {
         let row = sqlx::query(
             r#"
-            SELECT id::text, organization_id::text, auth_subject, name, status, version, created_at, created_by, legacy_employee_id
+            SELECT id::text, organization_id::text, auth_subject, name, status, version, created_at, created_by
             FROM users
             WHERE id = $1::uuid
             "#,
@@ -58,7 +58,6 @@ impl UserRepository for PgUserRepository {
             version: row.get("version"),
             created_at: row.get("created_at"),
             created_by: row.get("created_by"),
-            legacy_employee_id: row.get("legacy_employee_id"),
             roles,
         }))
     }
@@ -70,7 +69,7 @@ impl UserRepository for PgUserRepository {
     ) -> AppResult<Option<User>> {
         let row = sqlx::query(
             r#"
-            SELECT id::text, organization_id::text, auth_subject, name, status, version, created_at, created_by, legacy_employee_id
+            SELECT id::text, organization_id::text, auth_subject, name, status, version, created_at, created_by
             FROM users
             WHERE auth_subject = $1
             "#,
@@ -99,7 +98,6 @@ impl UserRepository for PgUserRepository {
             version: row.get("version"),
             created_at: row.get("created_at"),
             created_by: row.get("created_by"),
-            legacy_employee_id: row.get("legacy_employee_id"),
             roles,
         }))
     }
@@ -107,8 +105,8 @@ impl UserRepository for PgUserRepository {
     async fn create_user(&self, tx: &mut Transaction<'_, Postgres>, user: &User) -> AppResult<()> {
         sqlx::query(
             r#"
-            INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, legacy_employee_id)
-            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(&user.id)
@@ -119,7 +117,6 @@ impl UserRepository for PgUserRepository {
         .bind(user.version)
         .bind(user.created_at)
         .bind(&user.created_by)
-        .bind(&user.legacy_employee_id)
         .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
