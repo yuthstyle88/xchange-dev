@@ -22,10 +22,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { Me } from '../../../shared/api/generated/common';
 import { setLang } from '../../../shared/i18n';
 import { queueStore, type QueueError, type QueueStore } from '../../../shared/queue/queue-store';
-import type { QueueBoardData } from '../../../shared/queue/wire';
+import {
+  makeQueueBoardCalled,
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  type QueueBoardData,
+} from '../../../shared/testing/fixtures';
 import { QueueCard } from '../../../shared/ui/QueueCard';
 import { QueueBar } from './QueueBar';
 import { meOf } from '../../../test-support/me';
@@ -77,7 +81,7 @@ vi.mock('../../../shared/ui/QueuePanel', () => ({
   },
 }));
 
-const OWNER: Me = meOf({ id: 'emp-nok', role: 'MANAGER', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] });
+const OWNER = meOf({ id: 'emp-nok', role: 'MANAGER', branch: 'B1', name: 'Nok', branchName: 'B1', branches: [] });
 
 function store(b: string): FakeStore {
   return queueStore(b) as FakeStore;
@@ -99,22 +103,26 @@ function answer(
   const s = store(b);
   s.setError(undefined);
   const count = over.count ?? 0;
-  const waiting = Array.from({ length: count }, (_, i) => ({
-    id: i === count - 1 && over.latest ? over.latest : `${b}-W${i + 1}`,
-    displayNumber: `W${String(i + 1).padStart(3, '0')}`,
-    serviceType: 'WALK_IN',
-    sequence: i + 1,
-    issuedAt: '2026-10-10T03:00:00.000Z',
-  }));
-  const called = (over.working ?? []).map((w) => ({
-    id: w.id,
-    displayNumber: w.queue,
-    serviceType: 'WALK_IN',
-    status: 'SERVING',
-    tellerId: w.staff,
-    calledAt: w.startedAt,
-  }));
-  s.setState({ waiting, called, myCounter: null });
+  const waiting = Array.from({ length: count }, (_, i) =>
+    makeQueueBoardWaiting({
+      id: i === count - 1 && over.latest ? over.latest : `${b}-W${i + 1}`,
+      displayNumber: `W${String(i + 1).padStart(3, '0')}`,
+      serviceType: 'WALK_IN',
+      sequence: i + 1,
+      issuedAt: '2026-10-10T03:00:00.000Z',
+    }),
+  );
+  const called = (over.working ?? []).map((w) =>
+    makeQueueBoardCalled({
+      id: w.id,
+      displayNumber: w.queue,
+      serviceType: 'WALK_IN',
+      status: 'SERVING',
+      tellerId: w.staff,
+      calledAt: w.startedAt,
+    }),
+  );
+  s.setState(makeQueueBoardData({ waiting, called, myCounter: null }));
 }
 
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));

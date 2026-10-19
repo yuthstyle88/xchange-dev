@@ -1,6 +1,6 @@
 import { render } from 'solid-js/web';
 import { describe, expect, it } from 'vitest';
-import type { CampaignRuleDetail } from '../../../shared/api/generated/campaign';
+import { makeCampaignRuleDetail } from '../../../shared/testing/fixtures';
 import { CampaignRulesEditor } from './CampaignRulesEditor';
 import { emptyRuleForm, ruleErrors, ruleFormOf, ruleInputOf } from './campaign-rules';
 
@@ -96,7 +96,7 @@ describe('M02 campaign-rules behaviour table (new rows)', () => {
   });
 
   it('shows a stored calculation with an unknown key read-only and sends it unchanged', () => {
-    const stored: CampaignRuleDetail = {
+    const stored = makeCampaignRuleDetail({
       id: 'rule-unknown-calc',
       ruleNo: 1,
       benefitType: 'RATE_IMPROVEMENT',
@@ -105,7 +105,7 @@ describe('M02 campaign-rules behaviour table (new rows)', () => {
       eligibility: {},
       calculation: { spreadShare: '0.20' },
       caps: {},
-    };
+    });
     const form = ruleFormOf(stored);
     expect(ruleErrors(form)).toEqual({});
     expect(ruleInputOf(form).calculation).toEqual({ spreadShare: '0.20' });

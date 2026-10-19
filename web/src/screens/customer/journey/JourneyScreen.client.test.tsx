@@ -3,8 +3,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
-import type { MyPlannerDraftsData, PlannerDraftDto } from '../../../shared/api/generated/my_planner_drafts';
-import type { MyQueueTicketData } from '../../../shared/api/generated/my_queue_ticket';
+import {
+  makeMyPlannerDraftsData,
+  makeMyQueueTicketData,
+  makePlannerDraftDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
@@ -12,7 +15,7 @@ import { warmModules } from '../../../shared/testing/warm-modules';
 import { JourneyScreen } from './JourneyScreen';
 import { th as screenTh } from './i18n';
 
-const SAMPLE_TICKET: MyQueueTicketData = {
+const SAMPLE_TICKET = makeMyQueueTicketData({
   ticketId: 'tkt-rr3-01',
   branch: 'SIAM',
   displayNumber: 'A088',
@@ -23,9 +26,9 @@ const SAMPLE_TICKET: MyQueueTicketData = {
   estimateLowSeconds: 240,
   estimateHighSeconds: 360,
   estimateAsOf: '2026-10-15T10:00:00Z',
-};
+});
 
-const SAMPLE_DRAFT: PlannerDraftDto = {
+const SAMPLE_DRAFT = makePlannerDraftDto({
   id: 'draft-rr3-01',
   branch: 'SIAM',
   currency: 'USD',
@@ -35,7 +38,7 @@ const SAMPLE_DRAFT: PlannerDraftDto = {
   expiresAt: '2026-10-22T10:00:00Z',
   createdAt: '2026-10-15T10:00:00Z',
   updatedAt: '2026-10-15T10:00:00Z',
-};
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -84,7 +87,7 @@ describe('RR-3 C09 JourneyScreen ApiClient.view & wordedError (#2034 §9)', () =
         return json(200, { version: 1, changed: true, data: SAMPLE_TICKET });
       }
       if (url.startsWith('/api/v3/views/my_planner_drafts')) {
-        const draftsData: MyPlannerDraftsData = { drafts: [SAMPLE_DRAFT] };
+        const draftsData = makeMyPlannerDraftsData({ drafts: [SAMPLE_DRAFT] });
         return json(200, { version: 1, changed: true, data: draftsData });
       }
       return json(404, { error: { code: 'notFound', message: url } });
@@ -228,7 +231,7 @@ describe('RR-3 C09 JourneyScreen ApiClient.view & wordedError (#2034 §9)', () =
         return json(200, { version: 1, changed: true, data: SAMPLE_TICKET });
       }
       if (url.startsWith('/api/v3/views/my_planner_drafts')) {
-        const draftsData: MyPlannerDraftsData = { drafts: [SAMPLE_DRAFT] };
+        const draftsData = makeMyPlannerDraftsData({ drafts: [SAMPLE_DRAFT] });
         return json(200, { version: 1, changed: true, data: draftsData });
       }
       return json(404, { error: { code: 'notFound', message: url } });

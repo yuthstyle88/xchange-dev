@@ -35,8 +35,16 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CampaignData } from '../../../shared/api/generated/campaign';
-import type { CampaignListItem, CampaignsData } from '../../../shared/api/generated/campaigns';
+import {
+  makeCampaignData,
+  makeCampaignDetail,
+  makeCampaignListItem,
+  makeCampaignPeriodTotals,
+  makeCampaignRuleDetail,
+  makeCampaignVersionDetail,
+  makeCampaignsData,
+  type CampaignData,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { Campaigns } from './Campaigns';
@@ -66,7 +74,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-const SAMPLE_LIST_ITEM: CampaignListItem = {
+const SAMPLE_LIST_ITEM = makeCampaignListItem({
   id: 'cmp-1',
   name: 'Golden October',
   versionId: 'ver-1',
@@ -79,12 +87,12 @@ const SAMPLE_LIST_ITEM: CampaignListItem = {
   budgetLeftThb: '74999.50',
   uses: 42,
   maxUses: 100,
-  period: {
+  period: makeCampaignPeriodTotals({
     redemptions: 15,
     priceCostThb: '12345.67',
     rewardExpenseThb: '3000.00',
-  },
-};
+  }),
+});
 
 describe('M02 campaign rules editor (row 23)', () => {
   let container: HTMLDivElement;
@@ -92,11 +100,11 @@ describe('M02 campaign rules editor (row 23)', () => {
   let sentRequests: SentRequest[] = [];
 
   let listStatus = 200;
-  let listData: CampaignsData = { campaigns: [SAMPLE_LIST_ITEM] };
+  let listData = makeCampaignsData({ campaigns: [SAMPLE_LIST_ITEM] });
   let listErrorCode: string | undefined = undefined;
 
   let detailStatus = 200;
-  let detailData: CampaignData = { campaign: null } as unknown as CampaignData;
+  let detailData = makeCampaignData({ campaign: null });
   let detailErrorCode: string | undefined = undefined;
 
   let commandStatus = 200;
@@ -117,11 +125,11 @@ describe('M02 campaign rules editor (row 23)', () => {
     sentRequests = [];
 
     listStatus = 200;
-    listData = { campaigns: [SAMPLE_LIST_ITEM] };
+    listData = makeCampaignsData({ campaigns: [SAMPLE_LIST_ITEM] });
     listErrorCode = undefined;
 
     detailStatus = 200;
-    detailData = { campaign: null } as unknown as CampaignData;
+    detailData = makeCampaignData({ campaign: null });
     detailErrorCode = undefined;
 
     commandStatus = 200;
@@ -237,14 +245,14 @@ describe('M02 campaign rules editor (row 23)', () => {
     'calcInvalid',
   ] as const;
 
-  function draftWithRules(status = 'DRAFT'): CampaignData {
-    return {
-      campaign: {
+  function draftWithRules(status = 'DRAFT') {
+    return makeCampaignData({
+      campaign: makeCampaignDetail({
         id: 'cmp-1',
         name: 'Golden October',
         currentVersionId: 'ver-1',
         versions: [
-          {
+          makeCampaignVersionDetail({
             id: 'ver-1',
             version: 1,
             status,
@@ -256,7 +264,7 @@ describe('M02 campaign rules editor (row 23)', () => {
             priority: 10,
             branches: ['MAIN'],
             rules: [
-              {
+              makeCampaignRuleDetail({
                 id: 'rule-1',
                 ruleNo: 1,
                 benefitType: 'RATE_IMPROVEMENT',
@@ -265,14 +273,14 @@ describe('M02 campaign rules editor (row 23)', () => {
                 eligibility: { currencies: ['USD'], shopSide: 'SELL', minThb: '1000', segment: true, tiers: ['GOLD'] },
                 calculation: { delta: '0.05' },
                 caps: { perTransactionMaxThb: '500', perCustomerUses: 3 },
-              },
+              }),
             ],
             simulations: [],
             approval: null,
-          },
+          }),
         ],
-      } as unknown as CampaignData['campaign'],
-    } as CampaignData;
+      }),
+    });
   }
 
   function editor(): HTMLElement {

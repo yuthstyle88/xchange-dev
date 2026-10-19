@@ -8,12 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { ApiClient, PageParams, ViewAnswer, ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
 import { setLang } from '../i18n';
 import type { SessionStore } from '../session/session';
 import { queueStore, type QueueStore } from '../queue/queue-store';
-import type { QueueBoardData } from '../api/generated/queue_board';
-import type { KioskQueueRow } from '../queue/wire';
+import type { KioskQueueRow, Me } from '../testing/fixtures';
+import { makeKioskQueueRow, makeQueueBoardData } from '../testing/fixtures';
 import { QueuePanel } from './QueuePanel';
 import { meOf } from '../../test-support/me';
 
@@ -31,8 +30,8 @@ const ME: Me = meOf({
 
 type State = 'waiting' | 'working' | 'completed';
 
-function row(branch: string, n: number, over: Partial<KioskQueueRow> = {}): KioskQueueRow {
-  return {
+function row(branch: string, n: number, over: Partial<KioskQueueRow> = {}) {
+  return makeKioskQueueRow({
     id: `${branch}-kq-${n}`,
     queue: `${branch}-Q${n}`,
     orderNo: `ORD-${n}`,
@@ -49,10 +48,10 @@ function row(branch: string, n: number, over: Partial<KioskQueueRow> = {}): Kios
     canAccept: true,
     canContinue: false,
     ...over,
-  };
+  });
 }
 
-function rows(branch: string, count: number, over: Partial<KioskQueueRow> = {}): KioskQueueRow[] {
+function rows(branch: string, count: number, over: Partial<KioskQueueRow> = {}) {
   return Array.from({ length: count }, (_, i) => row(branch, i + 1, over));
 }
 
@@ -61,8 +60,8 @@ class Branch {
   readonly rows: Record<State, KioskQueueRow[]> = { waiting: [], working: [], completed: [] };
   constructor(readonly id: string) {}
   /** The store's poll (`queue_board`): one WAITING ticket per waiting request, in call order. */
-  board(): QueueBoardData {
-    return {
+  board() {
+    return makeQueueBoardData({
       waiting: this.rows.waiting.map((r, i) => ({
         id: r.id,
         displayNumber: r.queue,
@@ -72,7 +71,7 @@ class Branch {
       })),
       called: [],
       myCounter: null,
-    };
+    });
   }
 }
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { ApiClient } from '../api/client';
 import { errorText } from '../i18n';
-import type { MyNotificationItem } from '../api/generated/my_notifications';
+import { makeMyNotificationItem } from '../testing/fixtures';
 import { createNotifications } from './notifications';
 
 interface Deferred<T> {
@@ -28,7 +28,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-const ITEM_A: MyNotificationItem = {
+const ITEM_A = makeMyNotificationItem({
   id: 'a',
   seq: 30,
   locale: 'th',
@@ -36,9 +36,9 @@ const ITEM_A: MyNotificationItem = {
   body: 'body a',
   read: false,
   createdAt: '2026-10-13T03:00:00Z',
-};
+});
 
-const ITEM_B: MyNotificationItem = {
+const ITEM_B = makeMyNotificationItem({
   id: 'b',
   seq: 20,
   locale: 'th',
@@ -46,9 +46,9 @@ const ITEM_B: MyNotificationItem = {
   body: 'body b',
   read: false,
   createdAt: '2026-10-13T02:00:00Z',
-};
+});
 
-const ITEM_C: MyNotificationItem = {
+const ITEM_C = makeMyNotificationItem({
   id: 'c',
   seq: 10,
   locale: 'th',
@@ -56,7 +56,7 @@ const ITEM_C: MyNotificationItem = {
   body: 'body c',
   read: true,
   createdAt: '2026-10-13T01:00:00Z',
-};
+});
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 10; i += 1) {

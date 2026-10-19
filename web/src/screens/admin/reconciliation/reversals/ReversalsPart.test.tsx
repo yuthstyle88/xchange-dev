@@ -6,14 +6,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { render } from 'solid-js/web';
 import { setLang } from '../../../../shared/i18n';
 import { warmModules } from '../../../../shared/testing/warm-modules';
-import type { ReversalPendingRow } from '../../../../shared/api/generated/finance_reconciliation';
+import { makeReversalPendingRow, type ReversalPendingRow } from '../../../../shared/testing/fixtures';
 import { ReversalsPart } from './ReversalsPart';
 
 beforeAll(() => warmModules(() => import('./ReversalsPart')), 60_000);
 
-const ROWS: ReversalPendingRow[] = [
-  { requestId: 'req-1', transactionId: 'tx-1', requestedBy: 'u-teller', createdAt: '2026-10-19T02:00:00Z' },
-  { requestId: 'req-2', transactionId: 'tx-2', requestedBy: 'u-teller', createdAt: '2026-10-19T03:00:00Z' },
+const ROWS = [
+  makeReversalPendingRow({ requestId: 'req-1', transactionId: 'tx-1', requestedBy: 'u-teller', createdAt: '2026-10-19T02:00:00Z' }),
+  makeReversalPendingRow({ requestId: 'req-2', transactionId: 'tx-2', requestedBy: 'u-teller', createdAt: '2026-10-19T03:00:00Z' }),
 ];
 
 interface Sent {

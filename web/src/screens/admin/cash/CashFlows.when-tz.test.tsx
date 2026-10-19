@@ -4,10 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
+import {
+  makeCashCountRow,
+  makeCashCountTotalRow,
+  makeCashTransferLineRow,
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeTransferBranchRow,
+  type TransferBranchRow,
+} from '../../../shared/testing/fixtures';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
@@ -17,15 +22,15 @@ const VIEWS = '/api/v3/views/';
 const ISO_A = '2026-10-15T18:30:00Z';
 const ISO_B = '2026-10-16T19:45:00Z';
 
-const DENOMS: DenominationRow[] = [{ id: 1, currency: 'THB', faceValue: '1000', groupCode: 'NOTE' }];
+const DENOMS = [makeDenominationRow({ id: 1, currency: 'THB', faceValue: '1000', groupCode: 'NOTE' })];
 
 const DESTS: Record<string, TransferBranchRow[]> = {
-  A: [{ branchId: 'X', name: 'Branch X' }],
-  B: [{ branchId: 'Y', name: 'Branch Y' }],
+  A: [makeTransferBranchRow({ branchId: 'X', name: 'Branch X' })],
+  B: [makeTransferBranchRow({ branchId: 'Y', name: 'Branch Y' })],
 };
 
-function countFor(branch: string): CashCountRow {
-  return {
+function countFor(branch: string) {
+  return makeCashCountRow({
     id: `cc-${branch}`,
     branchId: branch,
     shiftId: `S-${branch}`,
@@ -35,12 +40,12 @@ function countFor(branch: string): CashCountRow {
     verifiedBy: null,
     verifiedAt: null,
     note: null,
-    totals: [{ currency: 'THB', counted: '1000', expected: '1000', difference: '0' }],
-  };
+    totals: [makeCashCountTotalRow({ currency: 'THB', counted: '1000', expected: '1000', difference: '0' })],
+  });
 }
 
-function transferFor(branch: string): CashTransferRow {
-  return {
+function transferFor(branch: string) {
+  return makeCashTransferRow({
     id: `tr-${branch}`,
     kind: 'EXTERNAL_IN',
     status: 'DISPATCHED',
@@ -51,8 +56,8 @@ function transferFor(branch: string): CashTransferRow {
     createdBy: `EMP-${branch}`,
     createdAt: branch === 'B' ? ISO_B : ISO_A,
     note: `note-${branch}`,
-    lines: [{ currency: 'THB', denominationId: 1, qtySent: '10', qtyReceived: null }],
-  };
+    lines: [makeCashTransferLineRow({ currency: 'THB', denominationId: 1, qtySent: '10', qtyReceived: null })],
+  });
 }
 
 describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () => {

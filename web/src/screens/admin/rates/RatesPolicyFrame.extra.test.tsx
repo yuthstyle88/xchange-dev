@@ -2,11 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
-import type { RateDraftDetailData, RateDraftLineDto } from '../../../shared/api/generated/rate_draft';
-import type { RateDraftItemDto } from '../../../shared/api/generated/rate_drafts';
-import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
-import type { RatesReferenceData } from '../../../shared/api/generated/rates_reference';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeRateDraftDetailData,
+  makeRateDraftDetailItemDto,
+  makeRateDraftItemDto,
+  makeRateDraftLineDto,
+  makeRatePolicyData,
+  makeRatePolicyVersionDto,
+  makeRatesReferenceData,
+} from '../../../shared/testing/fixtures';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
@@ -31,13 +38,13 @@ const POLICY = `${V}rate_policy`;
 const PUBLICATIONS = `${V}rate_publications`;
 const REFERENCE = `${V}rates_reference`;
 
-function line(currency: string, unitSize: string, buy: string | null, sell: string | null): PublishedLineDto {
-  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] };
+function line(currency: string, unitSize: string, buy: string | null, sell: string | null) {
+  return makePublishedLineDto({ currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}`, bands: [] });
 }
 
-function mainPublished(): PublishedRatesData {
-  return {
-    publication: { id: 'pub-7', version: 7, publishedAt: '2026-10-09T02:00:00+00:00' },
+function mainPublished() {
+  return makePublishedRatesData({
+    publication: makePublishedPublicationDto({ id: 'pub-7', version: 7, publishedAt: '2026-10-09T02:00:00+00:00' }),
     sourceDate: '2026-10-08',
     stale: false,
     lines: [
@@ -46,12 +53,12 @@ function mainPublished(): PublishedRatesData {
       line('USD', '1', '33.25000000', '34.10000000'),
     ],
     bandHeadings: [],
-  };
+  });
 }
 
-function policyOf(): RatePolicyData {
-  return {
-    policy: {
+function policyOf() {
+  return makeRatePolicyData({
+    policy: makeRatePolicyVersionDto({
       id: 'pol-1',
       branchId: 'MAIN',
       version: 1,
@@ -71,8 +78,8 @@ function policyOf(): RatePolicyData {
       valueTiersOn: false,
       valueTiers: [],
       sharpMoveAlertPct: null,
-    },
-  };
+    }),
+  });
 }
 
 interface Sent {
@@ -114,7 +121,7 @@ async function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
   if (method === 'GET') {
     if (url.pathname === PUBLISHED) return json(200, { version: 7, changed: true, data: mainPublished() });
     if (url.pathname === DRAFTS) {
-      const d1: RateDraftItemDto = {
+      const d1 = makeRateDraftItemDto({
         id: 'd1',
         branchId: 'MAIN',
         status: 'DRAFT',
@@ -123,12 +130,12 @@ async function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
         createdAt: '2026-10-09T04:00:00+00:00',
         updatedAt: '2026-10-09T04:00:00+00:00',
         evaluation: null,
-      };
+      });
       return json(200, { version: 1, changed: true, data: { drafts: [d1] } });
     }
     if (url.pathname === DRAFT) {
-      const detail: RateDraftDetailData = {
-        draft: {
+      const detail = makeRateDraftDetailData({
+        draft: makeRateDraftDetailItemDto({
           id: 'd1',
           branchId: 'MAIN',
           status: 'DRAFT',
@@ -137,15 +144,15 @@ async function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
           createdAt: '2026-10-09T04:00:00+00:00',
           updatedAt: '2026-10-09T04:00:00+00:00',
           evaluation: null,
-        },
-        lines: [{ currency: 'USD', buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null } as RateDraftLineDto],
-      };
+        }),
+        lines: [makeRateDraftLineDto({ currency: 'USD', buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null })],
+      });
       return json(200, { version: 1, changed: true, data: detail });
     }
     if (url.pathname === POLICY) return json(200, { version: 1, changed: true, data: policyOf() });
     if (url.pathname === PUBLICATIONS) return json(200, { version: 1, changed: true, data: { publications: [] } });
     if (url.pathname === REFERENCE) {
-      const ref: RatesReferenceData = { rows: [], fetchedAt: '2026-10-09T01:30:00.000Z', error: null };
+      const ref = makeRatesReferenceData({ rows: [], fetchedAt: '2026-10-09T01:30:00.000Z', error: null });
       return json(200, { version: 1, changed: true, data: ref });
     }
   }

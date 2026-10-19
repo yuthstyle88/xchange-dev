@@ -8,10 +8,13 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
-import type { DeviceEventRow } from '../../shared/api/generated/device_events';
-import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
-import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
-import type { DevicesOverview } from '../../shared/api/generated/devices';
+import {
+  makeDeviceBranch,
+  makeDeviceEventRow,
+  makeDeviceJobRow,
+  makeDeviceTransactionRow,
+  makeDevicesOverview,
+} from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { en as sharedEn } from '../../shared/i18n/en';
 import { th as sharedTh } from '../../shared/i18n/th';
@@ -27,11 +30,11 @@ interface FakeServerOptions {
 function makeServer(opts: FakeServerOptions = {}) {
   const branchData = {
     version: 1,
-    devices: {
+    devices: makeDevicesOverview({
       branchId: 'B1',
       branches: [
-        { id: 'B1', name: 'Branch 1' },
-        { id: 'B2', name: 'Branch 2' },
+        makeDeviceBranch({ id: 'B1', name: 'Branch 1' }),
+        makeDeviceBranch({ id: 'B2', name: 'Branch 2' }),
       ],
       printerOnline: true,
       printerKind: 'SIMULATED',
@@ -41,30 +44,30 @@ function makeServer(opts: FakeServerOptions = {}) {
       balanceThb: '1000.00',
       balanceUsd: '50.00',
       completedCount: 2,
-    } as DevicesOverview,
+    }),
     jobs: [
-      {
+      makeDeviceJobRow({
         id: 'J1',
         kind: 'PRINT_RECEIPT',
         ref: 'TX-1',
         status: 'QUEUED',
         actor: 'teller1',
         created: '2026-10-14T10:00:00.000Z',
-      },
-    ] as DeviceJobRow[],
+      }),
+    ],
     events: [
-      {
+      makeDeviceEventRow({
         seq: '10',
         kind: 'PRINT_RECEIPT',
         ref: 'TX-1',
         at: '2026-10-14T10:00:00.000Z',
         actor: 'teller1',
         detail: '{}',
-      },
-    ] as DeviceEventRow[],
+      }),
+    ],
     transactions: [
-      { id: 'TX-1', type: 'BUY', amount: '1000.00', currency: 'USD' },
-    ] as DeviceTransactionRow[],
+      makeDeviceTransactionRow({ id: 'TX-1', type: 'BUY', amount: '1000.00', currency: 'USD' }),
+    ],
   };
 
   const api: Api = {

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { createEffect, onCleanup, type JSX } from 'solid-js';
 import type { ApiClient, ViewAnswer, ViewParams } from '../../shared/api/client';
-import type { Me } from '../../shared/api/generated/common';
+import type { Me } from '../../shared/testing/fixtures';
 import { AdminShell } from './AdminShell';
 import type { AdminMenu, AdminMenuProps } from './menus';
 import { meOf } from '../../test-support/me';

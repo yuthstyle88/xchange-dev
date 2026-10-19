@@ -32,8 +32,12 @@ import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { setLang } from "../../shared/i18n";
 import { ApiClient } from "../../shared/api/client";
-import type { StaffMeView } from "../../shared/api/generated/staff_me";
-import type { StaffFloorView } from "../../shared/api/generated/staff_floor";
+import {
+  makeStaffFloorHours,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffMeView,
+} from "../../shared/testing/fixtures";
 
 type CardsModule = {
   collectCards: (mods: Record<string, { card: unknown }>) => Array<{ id: string; order: number }>;
@@ -70,20 +74,20 @@ async function load<T>(mods: Record<string, () => Promise<T>>, key: string): Pro
 
 type Me = StaffMeView;
 
-function me(permissions: string[]): Me {
+function me(permissions: string[]) {
   // `roles` is deliberately empty: the page must decide from `permissions` only (SD:S2), and this file must hold no
   // role name (the §4 grep criterion covers it too).
-  return {
+  return makeStaffMeView({
     userId: "00000000-0000-4000-8000-0000000000a1",
     name: "Ploy",
     roles: [],
     branchId: "MAIN",
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-const FLOOR_BASE: StaffFloorView = {
+const FLOOR_BASE = makeStaffFloorView({
   phase: "OPEN",
   hours: null,
   myClockIn: null,
@@ -91,13 +95,13 @@ const FLOOR_BASE: StaffFloorView = {
   cutoff: null,
   target: null,
   safe: null,
-};
-const FLOOR_WITH_HOURS: StaffFloorView = {
+});
+const FLOOR_WITH_HOURS = makeStaffFloorView({
   ...FLOOR_BASE,
-  hours: { open: "2026-10-11T03:00:00Z", close: "2026-10-11T13:00:00Z" }, // 10:00–20:00 Bangkok
-};
+  hours: makeStaffFloorHours({ open: "2026-10-11T03:00:00Z", close: "2026-10-11T13:00:00Z" }), // 10:00–20:00 Bangkok
+});
 // S12: a branch with no hours set answers `hours: null` (#573's generated type).
-const FLOOR_NO_HOURS: StaffFloorView = { ...FLOOR_BASE, phase: "READY" };
+const FLOOR_NO_HOURS = makeStaffFloorView({ ...FLOOR_BASE, phase: "READY" });
 
 type Route = { status: number; body: unknown };
 let routes: Record<string, () => Route>;

@@ -14,13 +14,13 @@ import { menus } from '../menus';
 import { BookingSlots } from './BookingSlots';
 import * as table from './i18n';
 import { menu } from './menu';
-import type {
-  AdminBookingPolicyDto,
-  AdminBookingSlotsData,
-  AdminClosureDto,
-  AdminSlotDto,
-  AdminSlotRuleDto,
-} from '../../../shared/api/generated/admin_booking_slots';
+import {
+  makeAdminBookingPolicyDto,
+  makeAdminBookingSlotsData,
+  makeAdminClosureDto,
+  makeAdminSlotDto,
+  makeAdminSlotRuleDto,
+} from '../../../shared/testing/fixtures';
 
 interface SentRequest {
   method: string;
@@ -32,20 +32,20 @@ interface SentRequest {
 
 const B01 = 'XC-B01';
 
-const SAMPLE_SLOT_RULE = {
+const SAMPLE_SLOT_RULE = makeAdminSlotRuleDto({
   branchId: B01,
   slotMinutes: 30,
   capacity: 8,
   horizonDays: 21,
-} satisfies AdminSlotRuleDto;
+});
 
-const SAMPLE_CLOSURE = {
+const SAMPLE_CLOSURE = makeAdminClosureDto({
   branchId: B01,
   closedOn: '2026-12-25',
   reason: 'Christmas Day',
-} satisfies AdminClosureDto;
+});
 
-const SAMPLE_SLOT = {
+const SAMPLE_SLOT = makeAdminSlotDto({
   id: 'slot-uuid-1',
   branchId: B01,
   serviceDate: '2026-10-15',
@@ -54,27 +54,27 @@ const SAMPLE_SLOT = {
   capacity: 8,
   reserved: 2,
   status: 'OPEN',
-} satisfies AdminSlotDto;
+});
 
-const SAMPLE_POLICY = {
+const SAMPLE_POLICY = makeAdminBookingPolicyDto({
   cancelCutoffMinutes: 45,
   noShowGraceMinutes: 20,
   confirmExpiryMinutes: 30,
-} satisfies AdminBookingPolicyDto;
+});
 
-const SAMPLE_VIEW_DATA = {
+const SAMPLE_VIEW_DATA = makeAdminBookingSlotsData({
   rule: SAMPLE_SLOT_RULE,
   closures: [SAMPLE_CLOSURE],
   slots: [SAMPLE_SLOT],
   policy: SAMPLE_POLICY,
-} satisfies AdminBookingSlotsData;
+});
 
-const NO_RULE_VIEW_DATA = {
+const NO_RULE_VIEW_DATA = makeAdminBookingSlotsData({
   rule: null,
   closures: [],
   slots: [],
   policy: SAMPLE_POLICY,
-} satisfies AdminBookingSlotsData;
+});
 
 function dummyProps(overrides: Partial<AdminMenuProps> = {}): AdminMenuProps {
   const [branch] = createSignal(B01);

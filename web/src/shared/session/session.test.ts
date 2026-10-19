@@ -26,7 +26,7 @@
 // the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type ViewAnswer, type ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
+import type { Me } from '../testing/fixtures';
 import { createSessionStore } from './session';
 import { meOf } from '../../test-support/me';
 
@@ -59,7 +59,7 @@ function fakeApi(script: Array<ViewAnswer<Me> | Error>) {
       const next = script[Math.min(i, script.length - 1)]!;
       i += 1;
       if (next instanceof Error) throw next;
-      return next as unknown as ViewAnswer<U>;
+      return next as never;
     },
   };
   return { api, seen, posted };
