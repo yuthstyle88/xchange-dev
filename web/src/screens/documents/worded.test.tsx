@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../shared/api/client';
-import type { DocumentsData } from '../../shared/api/generated/documents';
+import type { DocumentsData } from '../../shared/testing/fixtures';
 import { screenLookup, setLang, translator } from '../../shared/i18n';
 import { th } from '../../shared/i18n/th';
 import { en } from '../../shared/i18n/en';

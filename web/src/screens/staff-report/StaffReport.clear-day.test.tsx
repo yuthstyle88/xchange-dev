@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../shared/i18n';
-import type { StaffDailyReportData } from '../../shared/api/generated/staff_daily_report';
+import {
+  makeReportCurrencyRow,
+  makeReportSigner,
+  makeStaffDailyReportData,
+  type StaffDailyReportData,
+} from '../../shared/testing/fixtures';
 import { StaffReport } from './StaffReport';
 
 type Answer = { status: number; body: unknown };
 const ok = (data: unknown): Answer => ({ status: 200, body: { version: 1, changed: true, data } });
 
-function report(over: Partial<StaffDailyReportData> = {}): StaffDailyReportData {
-  return {
+function report(over: Partial<StaffDailyReportData> = {}) {
+  return makeStaffDailyReportData({
     day: '2026-10-05',
     timezone: 'Asia/Bangkok',
     generatedAt: '2026-10-05T12:34:56Z',
@@ -22,7 +27,7 @@ function report(over: Partial<StaffDailyReportData> = {}): StaffDailyReportData 
     reversedVolume: '0.00',
     pendingTransactions: 0,
     currencies: [
-      {
+      makeReportCurrencyRow({
         currency: 'THB',
         drawerCounted: '1000.00',
         drawerExpected: '1000.00',
@@ -30,17 +35,17 @@ function report(over: Partial<StaffDailyReportData> = {}): StaffDailyReportData 
         safeCounted: '5000.00',
         safeExpected: '5000.00',
         safeDifference: '0.00',
-      },
+      }),
     ],
     pendingRequests: 0,
     openExceptions: 0,
     notes: [],
     openHolds: 0,
     inTransit: [],
-    signers: [{ name: 'Ploy', capacity: 'counted' }],
+    signers: [makeReportSigner({ name: 'Ploy', capacity: 'counted' })],
     financeNote: 'ok',
     ...over,
-  };
+  });
 }
 
 const REPORT_PATH = '/api/v3/views/staff_daily_report';
