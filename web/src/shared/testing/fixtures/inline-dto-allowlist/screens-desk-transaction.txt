@@ -1,6 +1,0 @@
-# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
-# The migration ticket for screens/desk-transaction deletes this file.
-screens/desk-transaction/TransactionScreen.request-reload.test.tsx
-screens/desk-transaction/TransactionScreen.test.tsx
-screens/desk-transaction/main.test.tsx
-screens/desk-transaction/worded.test.tsx
