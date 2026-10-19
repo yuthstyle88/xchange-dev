@@ -1,1 +1,53 @@
 /* pricing-row.css — styles for PricingRow.tsx (FE pricing-board, #564). */
+
+.pricing-row {
+  border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+}
+
+.pricing-cell-select,
+.pricing-cell-code,
+.pricing-cell-quote-tt,
+.pricing-cell-quote-sr,
+.pricing-cell-quote-bot,
+.pricing-cell-current,
+.pricing-cell-suggested,
+.pricing-cell-status,
+.pricing-cell-flags {
+  padding: 0.5rem;
+  vertical-align: middle;
+}
+
+.pricing-btn-code {
+  font-weight: 600;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.pricing-badge-overridden {
+  display: inline-block;
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+}
+
+.pricing-rate-buy {
+  color: inherit;
+}
+
+.pricing-rate-sep {
+  margin: 0 0.25rem;
+  color: var(--text-muted, #6b7280);
+}
+
+.pricing-rate-sell {
+  color: inherit;
+}
+
+.pricing-chip-status,
+.pricing-chip-flag {
+  display: inline-block;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+}
