@@ -68,6 +68,10 @@ export interface DeskStore {
   quoteError: Accessor<{ field?: string; message: string } | undefined>;
   quoting: Accessor<boolean>;
   requote(): Promise<BlueprintQuote | undefined>;
+  /** The coupon the teller typed (marketing-campaigns.md D-9, §10 `couponCode`); '' = none. FE-desk skeleton: kept, not
+   *  yet sent — the coupon ticket sends it on the quote and re-quotes on change (D-5). */
+  couponCode: Accessor<string>;
+  setCouponCode(c: string): void;
   // step 1
   passport: Accessor<File | undefined>;
   setPassport(f: File | undefined): void;
@@ -173,6 +177,7 @@ export function createDeskStore(
   const [quote, setQuote] = createSignal<BlueprintQuote | undefined>();
   const [quoteError, setQuoteError] = createSignal<{ field?: string; message: string } | undefined>();
   const [quoting, setQuoting] = createSignal(false);
+  const [couponCode, setCouponCodeS] = createSignal('');
 
   const [passport, setPassport] = createSignal<File | undefined>();
   const [fields, setFields] = createSignal<PassportFields>({ ...EMPTY_FIELDS });
@@ -340,6 +345,8 @@ export function createDeskStore(
     quoteError,
     quoting,
     requote,
+    couponCode,
+    setCouponCode: (c) => setCouponCodeS(c),
     passport,
     setPassport: (f) => setPassport(f),
     fields,
