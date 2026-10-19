@@ -28,4 +28,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # CI-2 (#649) provided tests: mint Ed25519 tokens and serve keys without a network.
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+xc-testdb = { workspace = true }
 

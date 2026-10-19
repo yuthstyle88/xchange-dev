@@ -34,6 +34,7 @@ use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -321,21 +322,20 @@ fn profile(code: &str) -> Value {
 
 /// An ACTIVE TELLER of XC-B01, seeded as #1157's `userCreate` leaves one; answers the user id.
 async fn a_teller(db: &TestDb) -> String {
-    let user = db
-        .text(&format!(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             SELECT organization_id, 'Somchai', 'ACTIVE', 'test' FROM branches WHERE id = '{B01}' \
-             RETURNING id::text"
-        ))
-        .await
-        .expect("a user of XC-B01's organisation");
-    db.count(&format!(
-        "WITH r AS (INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-         SELECT '{user}'::uuid, 'TELLER', organization_id, id FROM branches WHERE id = '{B01}' \
-         RETURNING 1) SELECT count(*) FROM r"
-    ))
-    .await;
-    user
+    let mut conn = db.pool.acquire().await.expect("acquire connection");
+    seed_person(
+        &mut conn,
+        xchange::presentation::pages::SEEDED_XC_ORG_ID,
+        "Somchai",
+        &[RoleRow {
+            role_code: "TELLER",
+            branch_id: Some(B01),
+            valid_from: DateTime::<Utc>::UNIX_EPOCH,
+            valid_to: None,
+        }],
+    )
+    .await
+    .expect("a user of XC-B01's organisation")
 }
 
 // ------------------------------------------------------------ A04: the branch profile
