@@ -26,7 +26,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 
-use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
@@ -415,22 +415,6 @@ pub async fn call(
 
 /// A policy refusal: the role code and a client-error status (`PolicyError::status` = 400).
 pub fn policy_refused(a: &Answer, what: &str) {
-    // Under RBAC §11.2, BranchManager holds BookingsDesk (Customers: Full).
-    // In bk6_booking_create_test, the request payload is customer-shaped without customerId,
-    // so BranchManager passes the policy check and is refused at command validation with customerId validationFailed.
-    if what.contains("BRANCH_MANAGER")
-        && RoleGrants::seed(Role::BranchManager).contains(&Permission::BookingsDesk)
-    {
-        assert!(
-            a.status == StatusCode::BAD_REQUEST
-                && a.body["error"]["code"] == "validationFailed"
-                && a.body["error"]["field"] == "customerId",
-            "{what}: under §11.2 BRANCH_MANAGER holds BookingsDesk and passes policy: got {} {}",
-            a.status,
-            a.text
-        );
-        return;
-    }
     assert!(
         a.status == StatusCode::BAD_REQUEST
             && (a.body["error"]["code"] == "roleNotAllowed"

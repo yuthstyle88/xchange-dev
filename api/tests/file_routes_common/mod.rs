@@ -535,54 +535,7 @@ pub async fn replay(app: &TestApp, desk: &Desk, fixture: &Value) {
         let answer = send(app, call).await;
 
         // Where v3 differs from v2 on purpose, the fixture says what v3 answers.
-        // Under RBAC §11.2, RateManager holds FileRead (Documents: View), so Rates reads files in its branch.
-        let v3_override = if index == 95 {
-            Some(serde_json::json!({
-                "status": 200,
-                "headers": {
-                    "content-type": "image/jpeg",
-                    "cache-control": "private, no-store",
-                    "x-content-type-options": "nosniff",
-                    "content-security-policy": "sandbox allow-modals; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
-                },
-                "body": {
-                    "length": 30,
-                    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
-                }
-            }))
-        } else if index == 114 {
-            // Under RBAC §11.2, RateManager holds IdentityDocumentRead (Customers: Full), so Rates reads staff files in its branch.
-            Some(serde_json::json!({
-                "status": 200,
-                "headers": {
-                    "content-type": "image/jpeg",
-                    "cache-control": "private, no-store",
-                    "x-content-type-options": "nosniff",
-                    "content-disposition": "inline"
-                },
-                "body": {
-                    "length": 30,
-                    "sha256": "bb45406bf0358436994dd9e663e3b615c1d0aa166b6eeb29cb6d3c889a08b836"
-                }
-            }))
-        } else if index == 116 {
-            // Under RBAC §11.2, Rates passes the role check, so an invalid key is rejected with noFile rather than role refusal.
-            Some(serde_json::json!({
-                "status": 400,
-                "headers": {
-                    "content-type": "application/json",
-                    "cache-control": "private, no-store",
-                    "x-content-type-options": "nosniff",
-                    "content-disposition": "attachment"
-                },
-                "json": {
-                    "error": "ไม่พบไฟล์"
-                }
-            }))
-        } else {
-            None
-        };
-        let want = match v3_override.as_ref().or_else(|| step.get("v3")) {
+        let want = match step.get("v3") {
             Some(v3) => v3,
             None => &step["response"],
         };
@@ -594,7 +547,7 @@ pub async fn replay(app: &TestApp, desk: &Desk, fixture: &Value) {
         );
 
         let is_fallback_404 = want["status"] == 404 && want.get("text").is_some();
-        if step.get("v3").is_none() && !is_fallback_404 {
+        if want.get("headers").is_some() && !is_fallback_404 {
             let mut expected = BTreeMap::new();
             for (name, value) in want["headers"].as_object().unwrap() {
                 expected.insert(name.clone(), with_real_keys(value.as_str().unwrap(), &keys));
