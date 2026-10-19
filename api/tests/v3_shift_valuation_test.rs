@@ -181,18 +181,19 @@ impl TestDb {
     /// The `users.id` of the seeded opener `owner-1`.
     /// The `users.id` of the opener of `branch`'s shifts (`owner-2` at XC-B02, `owner-1` elsewhere).
     async fn teller_at(&self, branch: &str) -> String {
-        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
-            .bind(opener_at(branch))
-            .fetch_one(&self.pool)
-            .await
-            .expect("the opener's user")
+        sqlx::query_scalar(
+            "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+             WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test' \
+             ORDER BY u.created_at, u.id LIMIT 1",
+        )
+        .bind(opener_at(branch))
+        .fetch_one(&self.pool)
+        .await
+        .expect("the opener's user")
     }
 
     async fn teller(&self) -> String {
-        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'owner-1'")
-            .fetch_one(&self.pool)
-            .await
-            .expect("the opener's user")
+        self.teller_at("XC-B01").await
     }
 
     /// Opens a shift on `branch` with `opening`; answers its id.
@@ -1569,13 +1570,12 @@ async fn a_thb_rate_in_rates_is_ignored_and_fixed_at_one() {
 }
 
 /// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3). The user an
-/// opener id resolves to: `users.legacy_employee_id = id`, or, for `"owner"`, the organisation-wide EXECUTIVE +
-/// ADMIN user. Seeded once per id; no test's expectation depends on it. Added by the ticket author in CA-1's
-/// up-front commit.
+/// opener id resolves to: a user with `name = id` and `created_by = 'test'`, or, for `"owner"`, the
+/// organisation-wide EXECUTIVE + ADMIN user. Seeded once per id; no test's expectation depends on it.
 async fn seed_opener(pool: &PgPool, id: &str) {
     if id == "owner" {
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
+            "SELECT EXISTS (SELECT 1 FROM users u WHERE EXISTS \
              (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL))",
         )
         .fetch_one(pool)
@@ -1595,15 +1595,24 @@ async fn seed_opener(pool: &PgPool, id: &str) {
         }
         return;
     }
-    sqlx::query(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
-         ON CONFLICT (legacy_employee_id) DO NOTHING",
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test')",
     )
     .bind(id)
-    .execute(pool)
+    .fetch_one(pool)
     .await
-    .expect("seed an opener's user");
+    .expect("look for an opener's user");
+    if !exists {
+        sqlx::query(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC'",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("seed an opener's user");
+    }
 }
 
 /// CA-10 (#626): one OPEN shift per teller after M3, so each branch's shifts have an opener of their own.
