@@ -1,82 +1,87 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { MyMembershipData } from '../../../shared/api/generated/my_membership';
+import {
+  makeMyMembershipData,
+  makeNextExpiryDto,
+  makePointsDto,
+  makeTierProgressDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import * as table from './i18n';
 import { MemberScreen } from './Member';
 
-const BARE_FULL_MEMBER = {
+const BARE_FULL_MEMBER = makeMyMembershipData({
   tier: 'GOLD',
   effectiveUntil: '2026-11-15T00:00:00Z',
-  points: {
+  points: makePointsDto({
     available: 100,
     pending: 25,
-  },
+  }),
   pointsUnavailable: false,
-  nextExpiry: {
+  nextExpiry: makeNextExpiryDto({
     points: 50,
     at: '2026-12-31T23:59:59Z',
-  },
-  progress: {
+  }),
+  progress: makeTierProgressDto({
     basis: 'VOLUME_THB',
     current: '12500.00',
     next: '20000.00',
-  },
-} satisfies MyMembershipData;
+  }),
+});
 
-const BARE_LOYALTY_DOWN = {
+const BARE_LOYALTY_DOWN = makeMyMembershipData({
   tier: 'PLATINUM',
   effectiveUntil: '2026-11-15T00:00:00Z',
   points: null,
   pointsUnavailable: true,
   nextExpiry: null,
   progress: null,
-} satisfies MyMembershipData;
+});
 
-const BARE_NO_TIER_WITH_POINTS = {
+const BARE_NO_TIER_WITH_POINTS = makeMyMembershipData({
   tier: null,
   effectiveUntil: null,
-  points: {
+  points: makePointsDto({
     available: 80,
     pending: 10,
-  },
+  }),
   pointsUnavailable: false,
   nextExpiry: null,
   progress: null,
-} satisfies MyMembershipData;
+});
 
-const BARE_NO_TIER_WITH_EXPIRING_POINTS = {
+const BARE_NO_TIER_WITH_EXPIRING_POINTS = makeMyMembershipData({
   tier: null,
   effectiveUntil: null,
-  points: {
+  points: makePointsDto({
     available: 0,
     pending: 0,
-  },
+  }),
   pointsUnavailable: false,
-  nextExpiry: {
+  nextExpiry: makeNextExpiryDto({
     points: 30,
     at: '2026-12-31T23:59:59Z',
-  },
+  }),
   progress: null,
-} satisfies MyMembershipData;
+});
 
-const BARE_TOP_TIER = {
+const BARE_TOP_TIER = makeMyMembershipData({
   tier: 'DIAMOND',
   effectiveUntil: '2027-01-01T00:00:00Z',
-  points: {
+  points: makePointsDto({
     available: 5000,
     pending: 0,
-  },
+  }),
   pointsUnavailable: false,
   nextExpiry: null,
-  progress: {
+  progress: makeTierProgressDto({
     basis: 'VOLUME_THB',
     current: '100000.00',
     next: null,
-  },
-} satisfies MyMembershipData;
+  }),
+});
 
 describe('APP-19 / C05: bare MyMembershipData & wordedError handling (#1649)', () => {
   let host: HTMLDivElement;
