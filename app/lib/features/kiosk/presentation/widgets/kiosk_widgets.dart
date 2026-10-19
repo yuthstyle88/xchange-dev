@@ -1,9 +1,15 @@
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/platform/display_names.dart';
 import '../../../../l10n/kiosk_l10n.dart';
 import '../../../../shared/theme/colors.dart';
 import '../../domain/entities/kiosk_models.dart';
+
+const _progressFinished = Color(0xFF18794E);
+const _progressPendingBorder = Color(0xFFDDDDDD);
+const _progressPendingText = Color(0xFF666666);
 
 /// `1234567.5` → `1,234,567.50`.
 String formatMoney(num n) {
@@ -72,14 +78,22 @@ class KioskCard extends StatelessWidget {
   );
 }
 
-class _Row extends StatelessWidget {
-  const _Row(this.label, this.value, {this.ltr = true});
+class _QuoteRow extends StatelessWidget {
+  const _QuoteRow(
+    this.label,
+    this.value, {
+    this.ltr = true,
+    this.isLast = false,
+  });
+
   final String label, value;
   final bool ltr;
+  final bool isLast;
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
+    final color = isLast ? KioskColors.brand : KioskColors.text;
+    final double fontSize = isLast ? 24 : 18;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
@@ -88,12 +102,85 @@ class _Row extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 18, color: KioskColors.muted),
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w400,
+                color: color,
+              ),
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 20),
           Flexible(
-            child: ltr ? Ltr(value, style: style) : Text(value, style: style),
+            child: ltr
+                ? Ltr(
+                    value,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  )
+                : Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IdentityRow extends StatelessWidget {
+  const _IdentityRow(
+    this.label,
+    this.value, {
+    this.ltr = true,
+    this.isStatus = false,
+  });
+
+  final String label, value;
+  final bool ltr;
+  final bool isStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final valueColor = isStatus ? KioskColors.brand : KioskColors.text;
+    final valueStyle = TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+      color: valueColor,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 1,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                color: KioskColors.text,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            flex: 2,
+            child: DefaultTextStyle.merge(
+              textAlign: TextAlign.right,
+              child: ltr
+                  ? Ltr(value, style: valueStyle)
+                  : Text(value, style: valueStyle, textAlign: TextAlign.right),
+            ),
           ),
         ],
       ),
@@ -108,16 +195,26 @@ class IdentityBlock extends StatelessWidget {
   final RequestIdentity identity;
 
   @override
-  Widget build(BuildContext context) => KioskCard(
-    color: KioskColors.soft,
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF8F7F9),
+      borderRadius: BorderRadius.circular(12),
+    ),
     child: Column(
       children: [
-        _Row(l10n.text('orderNo'), identity.orderNo),
-        _Row(
+        _IdentityRow(l10n.text('orderNo'), identity.orderNo),
+        _IdentityRow(
           l10n.text('transactionNo'),
           identity.transactionNo ?? l10n.text('notCreated'),
         ),
-        _Row(l10n.text('status'), statusName(l10n, identity), ltr: false),
+        _IdentityRow(
+          l10n.text('status'),
+          statusName(l10n, identity),
+          ltr: false,
+          isStatus: true,
+        ),
       ],
     ),
   );
@@ -139,20 +236,30 @@ class QuoteSummary extends StatelessWidget {
     final receive = buy
         ? '${formatMoney(quote.thb)} THB'
         : '${formatMoney(quote.foreign)} ${quote.currency}';
-    return KioskCard(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 22),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: KioskColors.line),
+      ),
       child: Column(
         children: [
-          _Row(l10n.text('youGive'), give),
-          _Row(
+          _QuoteRow(l10n.text('youGive'), give),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
+          _QuoteRow(
             l10n.text('payment'),
             paymentName(l10n, quote.paymentMethod),
             ltr: false,
           ),
-          _Row(
+          const Divider(height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
+          _QuoteRow(
             l10n.text('rate'),
             '1 ${quote.currency} = ${_formatRate(quote.rate)} THB',
           ),
-          _Row(l10n.text('youReceive'), receive),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
+          _QuoteRow(l10n.text('youReceive'), receive, isLast: true),
         ],
       ),
     );
@@ -165,22 +272,30 @@ class PrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => FilledButton(
-    onPressed: onPressed,
-    style: FilledButton.styleFrom(
-      backgroundColor: KioskColors.brand,
-      minimumSize: const Size.fromHeight(72),
-      textStyle: TextStyle(
-        fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
-        fontFamilyFallback: Theme.of(
-          context,
-        ).textTheme.titleLarge?.fontFamilyFallback,
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) => Opacity(
+    opacity: onPressed == null ? 0.5 : 1.0,
+    child: FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: KioskColors.brand,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: KioskColors.brand,
+        disabledForegroundColor: Colors.white,
+        minimumSize: const Size.fromHeight(68),
+        padding: const EdgeInsets.all(16),
+        textStyle: TextStyle(
+          fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
+          fontFamilyFallback: Theme.of(context)
+              .textTheme
+              .titleLarge
+              ?.fontFamilyFallback,
+          fontSize: 24,
+          fontWeight: FontWeight.w700,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Text(label, textAlign: TextAlign.center),
     ),
-    child: Text(label, textAlign: TextAlign.center),
   );
 }
 
@@ -190,23 +305,31 @@ class SecondaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => OutlinedButton(
-    onPressed: onPressed,
-    style: OutlinedButton.styleFrom(
-      foregroundColor: KioskColors.ink,
-      minimumSize: const Size.fromHeight(72),
-      textStyle: TextStyle(
-        fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
-        fontFamilyFallback: Theme.of(
-          context,
-        ).textTheme.titleLarge?.fontFamilyFallback,
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) => Opacity(
+    opacity: onPressed == null ? 0.5 : 1.0,
+    child: OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: KioskColors.text,
+        disabledBackgroundColor: Colors.white,
+        disabledForegroundColor: KioskColors.text,
+        minimumSize: const Size.fromHeight(68),
+        padding: const EdgeInsets.all(16),
+        textStyle: TextStyle(
+          fontFamily: Theme.of(context).textTheme.titleLarge?.fontFamily,
+          fontFamilyFallback: Theme.of(context)
+              .textTheme
+              .titleLarge
+              ?.fontFamilyFallback,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+        ),
+        side: const BorderSide(color: KioskColors.line, width: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      side: const BorderSide(color: KioskColors.line, width: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Text(label, textAlign: TextAlign.center),
     ),
-    child: Text(label, textAlign: TextAlign.center),
   );
 }
 
@@ -238,20 +361,23 @@ class OrderProgress extends StatelessWidget {
       children: [
         Row(
           children: [
-            for (var i = 0; i < labels.length; i++)
+            for (var i = 0; i < labels.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
               Expanded(
                 child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 18,
+                    horizontal: 8,
+                  ),
                   decoration: BoxDecoration(
-                    color: i == stage
-                        ? KioskColors.brand
-                        : i < stage
-                        ? KioskColors.soft
-                        : Colors.white,
+                    color: i == stage ? KioskColors.brand : Colors.white,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: i <= stage ? KioskColors.brand : KioskColors.line,
+                      color: i == stage
+                          ? KioskColors.brand
+                          : i < stage
+                          ? _progressFinished
+                          : _progressPendingBorder,
                       width: 2,
                     ),
                   ),
@@ -260,19 +386,28 @@ class OrderProgress extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: i == stage ? Colors.white : KioskColors.ink,
+                      fontWeight: FontWeight.w400,
+                      color: i == stage
+                          ? Colors.white
+                          : i < stage
+                          ? _progressFinished
+                          : _progressPendingText,
                     ),
                   ),
                 ),
               ),
+            ],
           ],
         ),
         const SizedBox(height: 16),
         Text(
           l10n.text(phaseKey(status)),
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w400,
+            color: KioskColors.text,
+          ),
         ),
       ],
     );
@@ -284,13 +419,17 @@ class QueueNumber extends StatelessWidget {
   final String queue;
 
   @override
-  Widget build(BuildContext context) => Ltr(
-    queue,
-    style: const TextStyle(
-      fontSize: 64,
-      fontWeight: FontWeight.w800,
-      color: KioskColors.brand,
-      letterSpacing: 2,
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 14),
+    child: Ltr(
+      queue,
+      style: const TextStyle(
+        fontSize: 44,
+        fontWeight: FontWeight.w700,
+        color: KioskColors.brand,
+        letterSpacing: 2,
+        fontFeatures: [FontFeature.tabularFigures()],
+      ),
     ),
   );
 }
