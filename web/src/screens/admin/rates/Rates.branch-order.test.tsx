@@ -2,10 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
-import type { RateDraftDetailData, RateDraftLineDto } from '../../../shared/api/generated/rate_draft';
-import type { RateDraftItemDto } from '../../../shared/api/generated/rate_drafts';
-import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeRateDraftDetailData,
+  makeRateDraftDetailItemDto,
+  makeRateDraftItemDto,
+  makeRateDraftLineDto,
+  makeRatePolicyData,
+  makeRatePolicyVersionDto,
+  type PublishedLineDto,
+  type RateDraftItemDto,
+  type RateDraftLineDto,
+  type RatePolicyData,
+} from '../../../shared/testing/fixtures';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
@@ -30,21 +41,24 @@ const POLICY = '/api/v3/views/rate_policy';
 const PUBLICATIONS = '/api/v3/views/rate_publications';
 const REFERENCE = '/api/v3/views/rates_reference';
 
-function line(currency: string, unitSize: string, buy: string | null, sell: string | null): PublishedLineDto {
-  return { currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}` };
+function line(currency: string, unitSize: string, buy: string | null, sell: string | null) {
+  return makePublishedLineDto({ currency, group: 'ALL', unitSize, buyRate: buy, sellRate: sell, lineId: `line-${currency}` });
 }
 
-function publishedOf(version: number | null, lines: PublishedLineDto[]): PublishedRatesData {
-  return {
-    publication: version === null ? null : { id: `pub-${version}`, version, publishedAt: '2026-10-09T02:00:00+00:00' },
+function publishedOf(version: number | null, lines: PublishedLineDto[]) {
+  return makePublishedRatesData({
+    publication:
+      version === null
+        ? null
+        : makePublishedPublicationDto({ id: `pub-${version}`, version, publishedAt: '2026-10-09T02:00:00+00:00' }),
     sourceDate: '2026-10-08',
     stale: false,
     lines,
-  };
+  });
 }
 
-function draftItem(id: string, branchId: string, status: string, version: number): RateDraftItemDto {
-  return {
+function draftItem(id: string, branchId: string, status: string, version: number) {
+  return makeRateDraftItemDto({
     id,
     branchId,
     status,
@@ -53,24 +67,24 @@ function draftItem(id: string, branchId: string, status: string, version: number
     createdAt: '2026-10-09T04:00:00+00:00',
     updatedAt: '2026-10-09T04:00:00+00:00',
     evaluation: null,
-  };
+  });
 }
 
-function auto(currency: string): RateDraftLineDto {
-  return { currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null };
+function auto(currency: string) {
+  return makeRateDraftLineDto({ currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null });
 }
 
-function detailOf(item: RateDraftItemDto, lines: RateDraftLineDto[]): RateDraftDetailData {
-  return { draft: { ...item }, lines };
+function detailOf(item: RateDraftItemDto, lines: RateDraftLineDto[]) {
+  return makeRateDraftDetailData({ draft: makeRateDraftDetailItemDto({ ...item }), lines });
 }
 
 const GUARDS = {
   USD: { buy: { min_pct: '-1.0000', max_pct: '1.0000' }, sell: { min_pct: '-1.0000', max_pct: '1.0000' } },
 };
 
-function policyOf(overrides: Partial<NonNullable<RatePolicyData['policy']>> = {}): RatePolicyData {
-  return {
-    policy: {
+function policyOf(overrides: Partial<NonNullable<RatePolicyData['policy']>> = {}) {
+  return makeRatePolicyData({
+    policy: makeRatePolicyVersionDto({
       id: 'pol-1',
       branchId: 'MAIN',
       version: 1,
@@ -88,8 +102,8 @@ function policyOf(overrides: Partial<NonNullable<RatePolicyData['policy']>> = {}
       valueTiers: [],
       sharpMoveAlertPct: null,
       ...overrides,
-    },
-  };
+    }),
+  });
 }
 
 interface Sent {
