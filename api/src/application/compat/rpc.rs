@@ -366,27 +366,12 @@ impl CompatRpc {
     /// The active employees of `branch`, oldest account first: the order v2's
     /// list comes in.
     async fn colleagues(&self, branch: &BranchId) -> AppResult<Vec<StaffMember>> {
-        let mut employees = self
-            .services
-            .accounts
-            .active_employees(branch.as_str())
-            .await?;
-        employees.sort_by(|a, b| {
-            (a.created_at, a.username.as_str()).cmp(&(b.created_at, b.username.as_str()))
-        });
-        Ok(employees
-            .into_iter()
-            .filter_map(|employee| {
-                Some(StaffMember {
-                    role: v3_stored_role(&employee.role)?,
-                    role_text: employee.role,
-                    id: employee.id,
-                    username: employee.username,
-                    name: employee.name,
-                    branch: BranchId::new(employee.branch_id),
-                })
-            })
-            .collect())
+        crate::infrastructure::compat::snapshot_sources::branch_colleagues(
+            self.services.customers.branch_tx().pool(),
+            branch,
+            Utc::now(),
+        )
+        .await
     }
 }
 
