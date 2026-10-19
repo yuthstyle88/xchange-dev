@@ -623,12 +623,14 @@ async fn the_files_an_employee_saved_are_in_both_views() {
         &[("THB", "1000000"), ("USD", "1000")],
     )
     .await;
+    let employee_id = shift_holder_common::user_of(&shop.pool, employee).await;
     let saved = shop
         .workflow
         .save(
             &save_common::branch(save_common::MAIN),
             form,
-            employee,
+            // OR-7.m G1b: rule 1 (#3797)
+            &employee_id,
             save_common::at(100),
         )
         .await

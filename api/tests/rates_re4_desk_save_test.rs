@@ -734,15 +734,31 @@ async fn a_client_rate_of_twelve_places_is_too_many_decimals() {
     shop.finish().await;
 }
 
+async fn owner_user(pool: &sqlx::PgPool, branch_id: &str) -> String {
+    sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u \
+         JOIN branches b ON b.id = $1 AND b.organization_id = u.organization_id \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(branch_id)
+    .fetch_one(pool)
+    .await
+    .expect("read branch owner user id")
+}
+
 /// The `Booked Rate` cell of a saved exchange's receipt.
 async fn booked_rate(shop: &Shop, saved: &SavedTransaction) -> String {
     let key = saved
         .receipt_url
         .strip_prefix("/files/")
         .expect("a file address");
+    let owner_id = owner_user(&shop.pool, MAIN).await;
     let receipt = shop
         .files
-        .open_owned(key, OWNER)
+        // OR-7.m G1b: rule 2 (#3797)
+        .open_owned(key, &owner_id)
         .await
         .expect("read the receipt")
         .expect("the receipt is a stored file");
@@ -1119,6 +1135,7 @@ async fn checked_request(
     amount: &str,
     (line_id, rate, unit_size): (&str, &str, &str),
     thb: &str,
+    staff: &str,
 ) {
     sqlx::query(
         "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, currency, \
@@ -1129,7 +1146,7 @@ async fn checked_request(
     )
     .bind(MAIN)
     .bind(id)
-    .bind(FRONT)
+    .bind(staff)
     .bind(rate)
     .bind(amount)
     .bind(thb)
@@ -1155,12 +1172,14 @@ async fn a_kiosk_save_after_a_republish_is_quote_expired() {
     let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
     publish(&shop.pool, MAIN, &[("JPY", "23.1", "23.5")]).await;
     let quoted = line(&shop.pool, MAIN, "JPY").await;
+    let front_id = shift_holder_common::user_of(&shop.pool, FRONT).await;
     checked_request(
         &shop,
         "q-re4c-1",
         "10000",
         (quoted.id.as_str(), "23.1", "100"),
         "2310.00",
+        &front_id,
     )
     .await;
     quote_kiosk_request(
@@ -1178,9 +1197,10 @@ async fn a_kiosk_save_after_a_republish_is_quote_expired() {
     assert_ne!(current.id, quoted.id);
 
     let front = SaveActor {
-        id: FRONT.to_owned(),
+        // OR-7.m G1b: rule 1 (#3797)
+        id: front_id.clone(),
         username: "front7".to_owned(),
-        employee_id: Some(FRONT.to_owned()),
+        employee_id: Some(front_id),
         standing: StandingKind::Staff(xc_auth::domain::access::Role::Teller),
     };
     let extras = SaveExtras {
@@ -1242,20 +1262,23 @@ async fn a_kiosk_vouched_save_at_another_rate_is_refused() {
     let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
     publish(&shop.pool, MAIN, &[("JPY", "23.1", "23.5")]).await;
     let quoted = line(&shop.pool, MAIN, "JPY").await;
+    let front_id = shift_holder_common::user_of(&shop.pool, FRONT).await;
     checked_request(
         &shop,
         "q-re4c-2",
         "10000",
         (quoted.id.as_str(), "23.1", "100"),
         "2310.00",
+        &front_id,
     )
     .await;
     publish(&shop.pool, MAIN, &[("JPY", "23.3", "23.7")]).await;
 
     let front = SaveActor {
-        id: FRONT.to_owned(),
+        // OR-7.m G1b: rule 1 (#3797)
+        id: front_id.clone(),
         username: "front7".to_owned(),
-        employee_id: Some(FRONT.to_owned()),
+        employee_id: Some(front_id),
         standing: StandingKind::Staff(xc_auth::domain::access::Role::Teller),
     };
     let extras = SaveExtras {

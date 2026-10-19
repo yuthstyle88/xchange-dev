@@ -181,13 +181,27 @@ impl KioskPorts for Counter {
     }
 }
 
+async fn owner_user(pool: &sqlx::PgPool, branch_id: &str) -> String {
+    sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u \
+         JOIN branches b ON b.id = $1 AND b.organization_id = u.organization_id \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(branch_id)
+    .fetch_one(pool)
+    .await
+    .expect("read branch owner user id")
+}
+
 // ------------------------------------------------------------------ the scene
 
 /// A staff member: the id is the employee's id, the username something else.
 fn staff(id: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
-        username: format!("user-{id}"),
+        username: id.to_owned(),
         employee_id: Some(id.to_owned()),
         standing,
     }
@@ -215,6 +229,8 @@ struct Scene {
     customer: String,
     /// A passport uploaded by `FRONT`.
     passport: String,
+    front_id: String,
+    other_id: String,
 }
 
 impl Scene {
@@ -231,6 +247,8 @@ impl Scene {
         )
         .await;
         fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
+        let front_id = shift_holder_common::user_of(&shop.pool, FRONT).await;
+        let other_id = shift_holder_common::user_of(&shop.pool, OTHER).await;
         let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
         let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
         let counter = Arc::new(Counter::default());
@@ -249,6 +267,8 @@ impl Scene {
             flow,
             customer,
             passport,
+            front_id,
+            other_id,
         }
     }
 
@@ -333,8 +353,8 @@ impl Scene {
 #[tokio::test]
 async fn a_save_that_names_no_request_is_none_of_the_kiosks_business() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
 
     // no request named, and a request named with the empty text
     let saved = s
@@ -367,14 +387,14 @@ async fn a_save_that_names_no_request_is_none_of_the_kiosks_business() {
 #[tokio::test]
 async fn the_employee_holding_a_checked_request_saves_it_and_the_request_is_completed() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
-    s.id_checked(MAIN, "q2", FRONT).await;
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    s.id_checked(MAIN, "q2", &s.front_id).await;
 
     let saved = s
         .save(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(FRONT, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&s.front_id, StandingKind::Staff(AccessRole::Teller)),
         )
         .await
         .expect("the holder saves the request");
@@ -394,7 +414,8 @@ async fn the_employee_holding_a_checked_request_saves_it_and_the_request_is_comp
         s.counter.completed(),
         [(
             MAIN.to_owned(),
-            FRONT.to_owned(),
+            // OR-7.m G1b: rule 2 (#3797)
+            s.front_id.clone(),
             "XC-20261006-000001".to_owned()
         )]
     );
@@ -415,11 +436,11 @@ async fn the_role_of_the_saver_plays_no_part() {
     .enumerate()
     {
         let id = format!("r{n}");
-        s.id_checked(MAIN, &id, FRONT).await;
+        s.id_checked(MAIN, &id, &s.front_id).await;
         s.save(
             s.form(&format!("role-000{n}-aaaaaaaaaa")),
             &with_kiosk(&id),
-            &staff(FRONT, standing),
+            &staff(&s.front_id, standing),
         )
         .await
         .unwrap_or_else(|e| panic!("{standing:?} holding the request saves it: {e:?}"));
@@ -437,13 +458,13 @@ async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
     s.shop.set_rate(B2, "USD", "32.1", "33").await;
     s.quoted(MAIN, "quoted").await;
     s.waiting(MAIN, "waiting").await;
-    s.accepted(MAIN, "accepted", FRONT).await;
-    s.id_checked(MAIN, "others", OTHER).await;
-    s.id_checked(B2, "elsewhere", FRONT).await;
+    s.accepted(MAIN, "accepted", &s.front_id).await;
+    s.id_checked(MAIN, "others", &s.other_id).await;
+    s.id_checked(B2, "elsewhere", &s.front_id).await;
     // held by somebody whose id is this saver's *username*
-    s.id_checked(MAIN, "by-name", &format!("user-{FRONT}"))
+    s.id_checked(MAIN, "by-name", &format!("user-{}", s.front_id))
         .await;
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     for request in [
@@ -464,9 +485,11 @@ async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
     }
     assert_eq!((s.shop.everything().await, s.requests().await), before);
     // the owner does not hold it either
+    let owner_id = owner_user(&s.shop.pool, MAIN).await;
     let owner = SaveActor {
-        id: OWNER.to_owned(),
-        username: FRONT.to_owned(),
+        // OR-7.m G1b: rule 1 (#3797)
+        id: owner_id.clone(),
+        username: s.front_id.clone(),
         employee_id: None,
         standing: StandingKind::Owner,
     };
@@ -488,9 +511,9 @@ async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
 #[tokio::test]
 async fn the_save_must_be_live_and_be_what_the_customer_asked_for() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
-    s.id_checked(MAIN, "q2", OTHER).await;
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    s.id_checked(MAIN, "q2", &s.other_id).await;
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
     let slip = s.shop.upload(MAIN, FRONT, "application/pdf", PDF).await;
     let before = (s.shop.everything().await, s.requests().await);
     let change = |f: Change| {
@@ -566,8 +589,8 @@ async fn the_save_must_be_live_and_be_what_the_customer_asked_for() {
 #[tokio::test]
 async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
     let first = s
         .save(s.form("again-0001-aaaaaaaaa"), &with_kiosk("q1"), &front)
         .await
@@ -594,7 +617,7 @@ async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
         .save(
             form("again-0001-aaaaaaaaa", &s.customer, &others),
             &with_kiosk("q1"),
-            &staff(OTHER, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&s.other_id, StandingKind::Staff(AccessRole::Teller)),
         )
         .await;
     assert_eq!(refusal(got), NOT_READY);
@@ -606,8 +629,8 @@ async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
 #[tokio::test]
 async fn a_save_the_shop_refuses_leaves_the_request_ready() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     // Re-pinned for TX-6 by the test-writer, A3 (kiosk) (design quote-transaction.md §4.6.1; lane controller's
@@ -640,8 +663,8 @@ async fn a_save_the_shop_refuses_leaves_the_request_ready() {
 #[tokio::test]
 async fn a_kiosk_save_at_a_rate_that_is_not_its_quotes_is_refused() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     let mut moved = s.form("rate-0001-aaaaaaaaaa");
@@ -675,11 +698,11 @@ async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
          'Cash', '203.0.113.7', 1)",
     )
     .bind(MAIN)
-    .bind(FRONT)
+    .bind(&s.front_id)
     .execute(&s.shop.pool)
     .await
     .expect("insert a checked request with no quote");
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
     let quotes = || async {
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM quotes")
             .fetch_one(&s.shop.pool)
@@ -719,8 +742,8 @@ async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
 #[tokio::test]
 async fn a_request_that_cannot_be_completed_undoes_the_save() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    let front = staff(&s.front_id, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     s.counter.audit_fails.store(true, Ordering::SeqCst);
