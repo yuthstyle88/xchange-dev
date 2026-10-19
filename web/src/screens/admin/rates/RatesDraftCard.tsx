@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from 'solid-js';
+import type * as table from './i18n';
 import type { ApiClient } from '../../../shared/api/client';
 import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type {
@@ -51,7 +52,7 @@ export interface RatesDraftCardProps {
   readGen: () => number;
   guarded: (fn: () => Promise<void>) => () => Promise<void>;
   toast: (msg: string) => void;
-  t: (key: any) => string;
+  t: (key: keyof typeof table.th) => string;
 }
 
 export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {

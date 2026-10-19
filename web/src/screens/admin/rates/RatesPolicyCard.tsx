@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from 'solid-js';
+import type * as table from './i18n';
 import type { RatePolicyData, ValueTierDto } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
 import { wordedError } from '../../../shared/i18n/worded-error';
@@ -67,7 +68,7 @@ export interface RatesPolicyCardProps {
   setSimulateResult: (val: null) => void;
   guarded: (fn: () => Promise<void>) => () => Promise<void>;
   toast: (msg: string) => void;
-  t: (key: any) => string;
+  t: (key: keyof typeof table.th) => string;
 }
 
 export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
