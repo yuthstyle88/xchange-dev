@@ -1,8 +1,11 @@
-import { For, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import type * as table from './i18n';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { RatePolicyData, ValueTierDto } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { Field } from '../../../shared/ui/Field';
+import './rates-policy.css';
 
 export interface TierFormRow {
   tierNo: 1 | 2 | 3 | 4;
@@ -10,6 +13,23 @@ export interface TierFormRow {
   buyMarginPct: string;
   sellMarginPct: string;
 }
+
+export interface GuardFormRow {
+  currency: string;
+  buyMin: string;
+  buyMax: string;
+  sellMin: string;
+  sellMax: string;
+}
+
+export interface FrameFormState {
+  guards: GuardFormRow[];
+  maxReferenceAgeHours: string;
+  onStale: string;
+  staleLimitThb: string;
+}
+
+export type FrameErrorField = 'guards' | 'maxReferenceAgeHours' | 'staleLimitThb';
 
 export function emptyValueTiers(): TierFormRow[] {
   return ([1, 2, 3, 4] as const).map((tierNo) => ({
@@ -46,12 +66,120 @@ function isDecimalLessThan(
   return aFrac < bFrac;
 }
 
+function parseSignedScale4(raw: string): bigint | null {
+  const m = /^([+-])?(\d+)(?:\.(\d{1,4}))?$/.exec(raw.trim());
+  if (!m) return null;
+  const sign = m[1] === '-' ? -1n : 1n;
+  const scaled = BigInt(m[2]! + (m[3] ?? '').padEnd(4, '0'));
+  return scaled === 0n ? 0n : sign * scaled;
+}
+
+function isValidGuardSide(minRaw: string, maxRaw: string): boolean {
+  const minTrim = minRaw.trim();
+  const maxTrim = maxRaw.trim();
+  if (minTrim === '' && maxTrim === '') return true;
+  if (minTrim === '' || maxTrim === '') return false;
+  const minVal = parseSignedScale4(minTrim);
+  const maxVal = parseSignedScale4(maxTrim);
+  if (minVal === null || maxVal === null) return false;
+  return minVal <= maxVal;
+}
+
+function parsePositiveWholeHours(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  if (BigInt(trimmed) <= 0n) return null;
+  return +trimmed;
+}
+
+function isValidStaleLimit(raw: string): boolean {
+  const m = /^\+?(\d+)(?:\.(\d{1,2}))?$/.exec(raw.trim());
+  if (!m) return false;
+  const scaled = BigInt(m[1]! + (m[2] ?? '').padEnd(2, '0'));
+  return scaled > 0n;
+}
+
+export function frameErrors(
+  frame: FrameFormState,
+): Partial<Record<FrameErrorField, keyof typeof table.th>> {
+  const errors: Partial<Record<FrameErrorField, keyof typeof table.th>> = {};
+  for (const row of frame.guards) {
+    if (!isValidGuardSide(row.buyMin, row.buyMax) || !isValidGuardSide(row.sellMin, row.sellMax)) {
+      errors.guards = 'guardRangeInvalid';
+      break;
+    }
+  }
+  if (parsePositiveWholeHours(frame.maxReferenceAgeHours) === null) {
+    errors.maxReferenceAgeHours = 'maxReferenceAgeInvalid';
+  }
+  if (frame.onStale === 'LIMIT' && !isValidStaleLimit(frame.staleLimitThb)) {
+    errors.staleLimitThb = 'staleLimitRequired';
+  }
+  return errors;
+}
+
+interface GuardBandDto {
+  min_pct: string;
+  max_pct: string;
+}
+
+interface CurrencyGuardDto {
+  buy?: GuardBandDto;
+  sell?: GuardBandDto;
+}
+
+function buildGuardsPayload(rows: GuardFormRow[]): Record<string, CurrencyGuardDto> {
+  const out: Record<string, CurrencyGuardDto> = {};
+  for (const row of rows) {
+    const buyMin = row.buyMin.trim();
+    const buyMax = row.buyMax.trim();
+    const sellMin = row.sellMin.trim();
+    const sellMax = row.sellMax.trim();
+    const entry: CurrencyGuardDto = {};
+    if (buyMin !== '' && buyMax !== '') {
+      entry.buy = { min_pct: buyMin, max_pct: buyMax };
+    }
+    if (sellMin !== '' && sellMax !== '') {
+      entry.sell = { min_pct: sellMin, max_pct: sellMax };
+    }
+    if (entry.buy || entry.sell) {
+      out[row.currency] = entry;
+    }
+  }
+  return out;
+}
+
+type GuardValues = Omit<GuardFormRow, 'currency'>;
+
+function emptyGuardValues(): GuardValues {
+  return { buyMin: '', buyMax: '', sellMin: '', sellMax: '' };
+}
+
+function extractStoredGuards(raw: unknown): Record<string, GuardValues> {
+  const out: Record<string, GuardValues> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [code, val] of Object.entries(raw as Record<string, unknown>)) {
+    const g = (val ?? {}) as {
+      buy?: { min_pct?: unknown; max_pct?: unknown };
+      sell?: { min_pct?: unknown; max_pct?: unknown };
+    };
+    out[code] = {
+      buyMin: typeof g.buy?.min_pct === 'string' ? g.buy.min_pct : '',
+      buyMax: typeof g.buy?.max_pct === 'string' ? g.buy.max_pct : '',
+      sellMin: typeof g.sell?.min_pct === 'string' ? g.sell.min_pct : '',
+      sellMax: typeof g.sell?.max_pct === 'string' ? g.sell.max_pct : '',
+    };
+  }
+  return out;
+}
+
 export interface RatesPolicyCardProps {
   branch: () => string;
   busy: () => boolean;
   canSavePolicy: () => boolean;
   policyData: () => RatePolicyData | null;
   policyError: () => string | null;
+  pubData?: () => PublishedRatesData | null;
   valueTiers: () => TierFormRow[];
   setValueTiers: (updater: TierFormRow[] | ((prev: TierFormRow[]) => TierFormRow[])) => void;
   valueTiersOn: () => boolean;
@@ -72,6 +200,90 @@ export interface RatesPolicyCardProps {
 }
 
 export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
+  let sectionRef: HTMLDivElement | undefined;
+  const [domPubCurrencies, setDomPubCurrencies] = createSignal<string[]>([]);
+  const [guardMap, setGuardMap] = createSignal<Record<string, GuardValues>>({});
+  const [maxReferenceAgeHours, setMaxReferenceAgeHours] = createSignal<string>('');
+  const [onStale, setOnStale] = createSignal<string>('STOP');
+  const [staleLimitThb, setStaleLimitThb] = createSignal<string>('');
+  const [frameErrs, setFrameErrs] = createSignal<Partial<Record<FrameErrorField, keyof typeof table.th>>>({});
+
+  const syncDomPubCurrencies = () => {
+    const scope = sectionRef?.closest('.admin-rates-screen') ?? document;
+    const codes: string[] = [];
+    for (const el of Array.from(scope.querySelectorAll<HTMLElement>('[data-published-line]'))) {
+      const code = el.getAttribute('data-published-line');
+      if (code && !codes.includes(code)) codes.push(code);
+    }
+    setDomPubCurrencies((prev) =>
+      prev.length === codes.length && prev.every((c, i) => c === codes[i]) ? prev : codes,
+    );
+  };
+
+  onMount(() => {
+    syncDomPubCurrencies();
+    const target = sectionRef?.closest('.admin-rates-screen') ?? document.body;
+    const observer = new MutationObserver(() => syncDomPubCurrencies());
+    observer.observe(target, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-published-line'],
+    });
+    onCleanup(() => observer.disconnect());
+  });
+
+  createEffect(() => {
+    const policy = props.policyData()?.policy;
+    props.branch();
+    syncDomPubCurrencies();
+    queueMicrotask(syncDomPubCurrencies);
+    if (policy) {
+      setGuardMap(extractStoredGuards(policy.guards));
+      setMaxReferenceAgeHours(policy.maxReferenceAgeHours != null ? String(policy.maxReferenceAgeHours) : '');
+      setOnStale(policy.onStale ?? '');
+      setStaleLimitThb(policy.staleLimitThb ?? '');
+      setFrameErrs({});
+    } else {
+      setGuardMap({});
+      setMaxReferenceAgeHours('');
+      setOnStale('STOP');
+      setStaleLimitThb('');
+      setFrameErrs({});
+    }
+  });
+
+  const guardCurrencies = createMemo<string[]>(() => {
+    const fromProp = props.pubData?.()?.lines?.map((l) => l.currency);
+    const pubList = fromProp ?? domPubCurrencies();
+    const storedKeys = Object.keys(props.policyData()?.policy?.guards ?? {});
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of [...pubList, ...storedKeys]) {
+      if (c && !seen.has(c)) {
+        seen.add(c);
+        out.push(c);
+      }
+    }
+    return out;
+  });
+
+  const currentGuardRows = (): GuardFormRow[] => {
+    const map = guardMap();
+    return guardCurrencies().map((currency) => ({
+      currency,
+      ...(map[currency] ?? emptyGuardValues()),
+    }));
+  };
+
+  const updateGuardField = (currency: string, field: keyof GuardValues, value: string) => {
+    setGuardMap((prev) => {
+      const cur = prev[currency] ?? emptyGuardValues();
+      return { ...prev, [currency]: { ...cur, [field]: value } };
+    });
+    setFrameErrs((prev) => ({ ...prev, guards: undefined }));
+  };
+
   const nonRisingTierNo = (): 1 | 2 | 3 | null => {
     if (!props.valueTiersOn()) return null;
     const rows = props.valueTiers();
@@ -120,6 +332,20 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
     if (!policy || Boolean(props.policyError())) return;
     if (!areValueTiersValid()) return;
 
+    const guardRows = currentGuardRows();
+    const errs = frameErrors({
+      guards: guardRows,
+      maxReferenceAgeHours: maxReferenceAgeHours(),
+      onStale: onStale(),
+      staleLimitThb: staleLimitThb(),
+    });
+    setFrameErrs(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    const parsedAge = parsePositiveWholeHours(maxReferenceAgeHours())!;
+    const staleMode = onStale() === '' ? null : onStale();
+    const staleLimit = staleMode === 'LIMIT' ? staleLimitThb().trim() : null;
+
     const branch = props.branch();
     const gen = props.readGen();
     const rows = props.valueTiers();
@@ -141,10 +367,10 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       branch,
       buyAdjustPct: props.adjustBuyPct(),
       sellAdjustPct: props.adjustSellPct(),
-      guards: policy.guards,
-      maxReferenceAgeHours: policy.maxReferenceAgeHours,
-      onStale: policy.onStale,
-      staleLimitThb: policy.staleLimitThb,
+      guards: buildGuardsPayload(guardRows),
+      maxReferenceAgeHours: parsedAge,
+      onStale: staleMode,
+      staleLimitThb: staleLimit,
       reason: policy.reason || props.t('savePolicy'),
       valueTiersOn: props.valueTiersOn(),
       valueTiers: tiersPayload,
@@ -162,7 +388,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
   });
 
   return (
-    <div class="rates-section">
+    <div class="rates-section" ref={sectionRef}>
       <div class="section-header">
         <div class="title-row">
           <div>
@@ -196,10 +422,31 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             {`${props.t('tierNonRisingPrefix')}${nonRisingTierNo()}${props.t('tierNonRisingSuffix')}`}
           </div>
         </Show>
+        <Show when={frameErrs().guards}>
+          {(key) => (
+            <div class="form-error" role="alert" data-field-error="guards">
+              {props.t(key())}
+            </div>
+          )}
+        </Show>
+        <Show when={frameErrs().maxReferenceAgeHours}>
+          {(key) => (
+            <div class="form-error" role="alert" data-field-error="maxReferenceAgeHours">
+              {props.t(key())}
+            </div>
+          )}
+        </Show>
+        <Show when={frameErrs().staleLimitThb}>
+          {(key) => (
+            <div class="form-error" role="alert" data-field-error="staleLimitThb">
+              {props.t(key())}
+            </div>
+          )}
+        </Show>
       </div>
 
-      <div class="adjust-all-bar" style={{ padding: '12px 24px', display: 'flex', gap: '24px', "align-items": 'center', "flex-wrap": 'wrap' }}>
-        <label class="adjust-field-label" style={{ display: 'flex', gap: '8px', "align-items": 'center' }}>
+      <div class="adjust-all-bar adjust-all-bar--policy">
+        <label class="adjust-field-label adjust-field-label--checkbox">
           <input
             type="checkbox"
             name="valueTiersOn"
@@ -214,8 +461,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
           <span>{props.t('valueTiersSwitchLabel')}</span>
         </label>
 
-        <label class="adjust-field-label">
-          {props.t('sharpMoveThresholdLabel')}
+        <Field label={props.t('sharpMoveThresholdLabel')} class="adjust-field-label">
           <input
             type="text"
             name="sharpMoveAlertPct"
@@ -227,8 +473,117 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
               props.setSharpMoveAlertPct(e.currentTarget.value);
             }}
           />
-        </label>
+        </Field>
+
+        <Field label={props.t('maxReferenceAgeHoursLabel')} class="adjust-field-label">
+          <input
+            type="text"
+            name="maxReferenceAgeHours"
+            value={maxReferenceAgeHours()}
+            disabled={!props.canSavePolicy()}
+            onInput={(e) => {
+              setMaxReferenceAgeHours(e.currentTarget.value);
+              setFrameErrs((prev) => ({ ...prev, maxReferenceAgeHours: undefined }));
+            }}
+          />
+        </Field>
+
+        <Field label={props.t('onStaleLabel')} class="adjust-field-label">
+          <select
+            name="onStale"
+            value={onStale()}
+            disabled={!props.canSavePolicy()}
+            onChange={(e) => {
+              setOnStale(e.currentTarget.value);
+              setFrameErrs((prev) => ({ ...prev, staleLimitThb: undefined }));
+            }}
+          >
+            <option value="STOP">{props.t('onStaleStop')}</option>
+            <option value="LIMIT">{props.t('onStaleLimit')}</option>
+            <option value="">{props.t('onStaleNone')}</option>
+          </select>
+        </Field>
+
+        <Show when={onStale() === 'LIMIT'}>
+          <Field label={props.t('staleLimitThbLabel')} class="adjust-field-label">
+            <input
+              type="text"
+              name="staleLimitThb"
+              value={staleLimitThb()}
+              disabled={!props.canSavePolicy()}
+              onInput={(e) => {
+                setStaleLimitThb(e.currentTarget.value);
+                setFrameErrs((prev) => ({ ...prev, staleLimitThb: undefined }));
+              }}
+            />
+          </Field>
+        </Show>
       </div>
+
+      <Show when={guardCurrencies().length > 0}>
+        <div class="table-scroll">
+          <h3>{props.t('guardsTitle')}</h3>
+          <table class="rates-table">
+            <thead>
+              <tr>
+                <th>{props.t('headerCurrency')}</th>
+                <th class="num">{`${props.t('headerBuy')} ${props.t('guardMin')}`}</th>
+                <th class="num">{`${props.t('headerBuy')} ${props.t('guardMax')}`}</th>
+                <th class="num">{`${props.t('headerSell')} ${props.t('guardMin')}`}</th>
+                <th class="num">{`${props.t('headerSell')} ${props.t('guardMax')}`}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={guardCurrencies()}>
+                {(code) => {
+                  const row = () => guardMap()[code] ?? emptyGuardValues();
+                  return (
+                    <tr data-guard-line={code}>
+                      <td class="code">{code}</td>
+                      <td class="num">
+                        <input
+                          type="text"
+                          name="guardBuyMin"
+                          value={row().buyMin}
+                          disabled={!props.canSavePolicy()}
+                          onInput={(e) => updateGuardField(code, 'buyMin', e.currentTarget.value)}
+                        />
+                      </td>
+                      <td class="num">
+                        <input
+                          type="text"
+                          name="guardBuyMax"
+                          value={row().buyMax}
+                          disabled={!props.canSavePolicy()}
+                          onInput={(e) => updateGuardField(code, 'buyMax', e.currentTarget.value)}
+                        />
+                      </td>
+                      <td class="num">
+                        <input
+                          type="text"
+                          name="guardSellMin"
+                          value={row().sellMin}
+                          disabled={!props.canSavePolicy()}
+                          onInput={(e) => updateGuardField(code, 'sellMin', e.currentTarget.value)}
+                        />
+                      </td>
+                      <td class="num">
+                        <input
+                          type="text"
+                          name="guardSellMax"
+                          value={row().sellMax}
+                          disabled={!props.canSavePolicy()}
+                          onInput={(e) => updateGuardField(code, 'sellMax', e.currentTarget.value)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                }}
+              </For>
+            </tbody>
+          </table>
+        </div>
+      </Show>
 
       <div class="table-scroll">
         <table class="rates-table">
