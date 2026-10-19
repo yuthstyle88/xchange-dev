@@ -337,7 +337,10 @@ fn only_executive_holds_consent_policy_manage() {
         assert_eq!(
             RoleGrants::seed(role).contains(&Permission::ConsentPolicyManage),
             // Follows §11.2 seed: Executive, RateManager and BranchManager have Customers Full (ConsentPolicyManage)
-            matches!(role, BpRole::Executive | BpRole::RateManager | BpRole::BranchManager),
+            matches!(
+                role,
+                BpRole::Executive | BpRole::RateManager | BpRole::BranchManager
+            ),
             "{}",
             role.as_str()
         );
