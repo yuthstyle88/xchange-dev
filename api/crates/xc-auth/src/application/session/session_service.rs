@@ -199,21 +199,15 @@ fn branch_refs(json: &str) -> Result<Vec<BranchRef>, SessionError> {
 fn scoped_roles(rows: Vec<RoleRow>) -> Vec<ScopedRole> {
     rows.into_iter()
         .filter_map(|(role_code, base_role, branch_id, valid_from, valid_to)| {
-            let Some(base) = Role::parse(&base_role) else {
-                tracing::warn!(
-                    role_code = %role_code,
-                    base_role = %base_role,
-                    "dropping user_roles row with unknown base_role"
-                );
-                return None;
-            };
-            Some(ScopedRole::in_group(
-                &role_code,
-                base,
-                branch_id.map(BranchId::new),
-                valid_from,
-                valid_to,
-            ))
+            Role::parse(&base_role).map(|role| {
+                ScopedRole::in_group(
+                    &role_code,
+                    role,
+                    branch_id.map(BranchId::new),
+                    valid_from,
+                    valid_to,
+                )
+            })
         })
         .collect()
 }
