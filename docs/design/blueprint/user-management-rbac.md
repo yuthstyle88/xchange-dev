@@ -604,8 +604,15 @@ This replaces Q2 A.
 - **Why:** V.9 gives FRONT, BACKEND and MANAGER no FINANCE at all, yet they run the shift and the cash handover (V.9 :38, :125), and it gives FRONT and BACKEND/MANAGER no SYSTEM_SETTINGS VIEW or DOCUMENTS CREATE (for FRONT), yet they gate every desk upload and the device queue (`policy.rs:500-537`). Read literally, the table would leave no teller able to open a shift, upload a proof/passport or use the device queue.
 - **Done in C6:** it changes `permission_module.rs`, its test and §5.
 
+**Branch cash basics (owner, 2026-10-19).** The owner's ruling, verbatim (`xchange#564`, relayed by the BE controller claude/a90ab16c): *"A — seed CashManage + ApprovalsDecide on BRANCH_MANAGER as no-module basics, like the shift basics. Write it into §11.2."*
+- `CashManage` and `ApprovalsDecide` move out of FINANCE FULL to "no module" (`None`), like the desk basics above.
+- They are seeded on EXECUTIVE, FINANCE and BRANCH_MANAGER. TELLER still holds neither.
+- The matrix does not edit them (§11.3 rule 5).
+- **Why:** V.9 gives BACKEND and MANAGER no FINANCE. Yet the cash-transfer rules have a branch manager create, receive and, within the limit, approve a branch transfer: `TransferApprovalPolicy::may_decide` (ruling A5/Q2) and the branch and safe ends need `CashManage`. Read literally, the table would leave no built-in role able to complete a within-limit branch transfer (#3663).
+- **Done in:** C6m (`permission_module.rs`, `role_grants.rs` and their tests).
+
 **What the seed changes on ship day (for the owner's review; editable afterwards):**
-- BRANCH_MANAGER and TELLER lose the FINANCE FULL permissions, e.g. `CashManage` and `ApprovalsDecide`.
+- BRANCH_MANAGER and TELLER lose the FINANCE FULL permissions (e.g. `CashTargetSet`, `CashLimitsManage`, `FinanceReconcile`). BRANCH_MANAGER keeps `CashManage` and `ApprovalsDecide` as branch cash basics (above); TELLER holds neither.
 - ADMIN loses FINANCE and DASHBOARD FULL.
 - RATE_MANAGER, FINANCE and VERIFICATION_REVIEWER gain the reads and reports V.9 gives them.
 - EXECUTIVE gains USER_MANAGEMENT.
