@@ -1061,10 +1061,9 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
           <CampaignRulesEditor
             rules={formRules()}
-            readOnly={currentStatus() !== 'DRAFT'}
+            readOnly={currentStatus() !== 'DRAFT' || !rulesSupported()}
             errors={ruleRowErrors()}
             onChange={(next) => {
-              setRulesSupported(true);
               setFormRules(next);
               setRuleRowErrors([]);
               setIsEditedAfterSimulation(true);
