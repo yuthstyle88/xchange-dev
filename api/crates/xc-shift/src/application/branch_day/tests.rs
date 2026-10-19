@@ -15,7 +15,6 @@ use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Side};
-use xc_testdb::people::{RoleRow, seed_person};
 
 use crate::application::branch_day::service::{
     BeginDraft, BranchDayService, ClockDirection, StartService,
@@ -759,102 +758,20 @@ async fn test_teller_of_actor_in_resolves_users_id() {
 }
 
 #[tokio::test]
-async fn test_teller_of_actor_in_resolves_legacy_employee_id() {
+async fn test_teller_of_actor_in_does_not_resolve_a_non_user_id() {
     let db = TestDb::start().await;
-    let branch = db.branch("teller_legacy").await;
+    let branch = db.branch("teller_non_uid").await;
     let shifts = ShiftService::new(
         Arc::new(PgShiftRepository::new(db.pool.clone())),
         BranchTx::new(Transactor::new(db.pool.clone())),
     );
-    let uid: String = sqlx::query_scalar(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, 'Legacy Emp', 'ACTIVE', 'test', 'EMP-LEGACY-1' FROM organizations WHERE code = 'XC' \
-         RETURNING id::text",
-    )
-    .fetch_one(&db.pool)
-    .await
-    .expect("seed user with legacy_employee_id");
+    seed_test_user(&db.pool, TELLER_ID, "front").await;
 
     let mut tx = locked_tx(&db.pool, &branch).await;
     let resolved = shifts
-        .teller_of_actor_in(&mut tx, &branch, "EMP-LEGACY-1")
+        .teller_of_actor_in(&mut tx, &branch, "front")
         .await
-        .expect("teller_of_actor_in succeeds");
-    assert_eq!(resolved, Some(uid));
-    tx.rollback().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_teller_of_actor_in_resolves_employee_username() {
-    let db = TestDb::start().await;
-    let branch = db.branch("teller_uname").await;
-    let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(db.pool.clone())),
-        BranchTx::new(Transactor::new(db.pool.clone())),
-    );
-    sqlx::query(
-        "INSERT INTO employees (id, username, name, role, branch_id, password_hash, created_at) \
-         VALUES ('EMP-UNAME-1', 'somchai_uname', 'Somchai', 'FRONT', $1, 'hash', now())",
-    )
-    .bind(branch.as_str())
-    .execute(&db.pool)
-    .await
-    .expect("seed employee");
-    let uid: String = sqlx::query_scalar(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, 'Somchai', 'ACTIVE', 'test', 'EMP-UNAME-1' FROM organizations WHERE code = 'XC' \
-         RETURNING id::text",
-    )
-    .fetch_one(&db.pool)
-    .await
-    .expect("seed user for employee");
-
-    let mut tx = locked_tx(&db.pool, &branch).await;
-    let resolved = shifts
-        .teller_of_actor_in(&mut tx, &branch, "somchai_uname")
-        .await
-        .expect("teller_of_actor_in succeeds");
-    assert_eq!(resolved, Some(uid));
-    tx.rollback().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_teller_of_actor_in_resolves_owner() {
-    let db = TestDb::start().await;
-    let branch = db.branch("teller_owner").await;
-    let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(db.pool.clone())),
-        BranchTx::new(Transactor::new(db.pool.clone())),
-    );
-    let valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    let roles = [
-        RoleRow {
-            role_code: "EXECUTIVE",
-            branch_id: None,
-            valid_from,
-            valid_to: None,
-        },
-        RoleRow {
-            role_code: "ADMIN",
-            branch_id: None,
-            valid_from,
-            valid_to: None,
-        },
-    ];
-    let owner_uid = seed_person(
-        &mut db.pool.acquire().await.expect("acquire connection"),
-        ORG_ID,
-        "Owner",
-        &roles,
-    )
-    .await
-    .expect("seed owner user");
-
-    let mut tx = locked_tx(&db.pool, &branch).await;
-    let resolved = shifts
-        .teller_of_actor_in(&mut tx, &branch, "owner")
-        .await
-        .expect("teller_of_actor_in succeeds");
-    assert_eq!(resolved, Some(owner_uid));
+        .expect("non-user id returns Ok(None)");
+    assert_eq!(resolved, None);
     tx.rollback().await.unwrap();
 }
