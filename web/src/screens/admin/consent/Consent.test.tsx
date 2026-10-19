@@ -65,8 +65,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
+import {
+  makeConsentTextViewItem,
+  type ConsentTextViewItem,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
-import type { ConsentTextViewItem } from '../../../shared/api/generated/consent_texts';
 import { menus, type AdminMenu, type AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
@@ -149,7 +152,7 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function current(): ConsentTextViewItem[] {
+function current() {
   const newest = new Map<string, ConsentTextViewItem>();
   for (const t of published) {
     const k = `${t.purpose}:${t.lang}`;
@@ -189,7 +192,7 @@ async function answer(s: Sent): Promise<Reply> {
     const purpose = String(body?.purpose);
     const lang = String(body?.lang);
     const version = 1 + Math.max(0, ...published.filter((t) => t.purpose === purpose && t.lang === lang).map((t) => t.version));
-    published.push({ purpose, lang, version, body: String(body?.body), publishedAt: '2026-10-10T07:00:00+00:00' });
+    published.push(makeConsentTextViewItem({ purpose, lang, version, body: String(body?.body), publishedAt: '2026-10-10T07:00:00+00:00' }));
     textsVersion += 1;
     return { status: 200, body: { purpose, lang, version } };
   }
@@ -273,10 +276,10 @@ beforeEach(() => {
   sent = [];
   textsVersion = 1;
   published = [
-    { purpose: 'TERMS', lang: 'th', version: 1, body: 'terms th v1', publishedAt: '2026-10-01T00:00:00+00:00' },
-    { purpose: 'TERMS', lang: 'th', version: 2, body: 'terms th v2', publishedAt: '2026-10-02T00:00:00+00:00' },
-    { purpose: 'TERMS', lang: 'en', version: 1, body: 'terms en v1', publishedAt: '2026-10-02T00:00:00+00:00' },
-    { purpose: 'MARKETING', lang: 'th', version: 3, body: 'marketing th v3', publishedAt: '2026-10-03T00:00:00+00:00' },
+    makeConsentTextViewItem({ purpose: 'TERMS', lang: 'th', version: 1, body: 'terms th v1', publishedAt: '2026-10-01T00:00:00+00:00' }),
+    makeConsentTextViewItem({ purpose: 'TERMS', lang: 'th', version: 2, body: 'terms th v2', publishedAt: '2026-10-02T00:00:00+00:00' }),
+    makeConsentTextViewItem({ purpose: 'TERMS', lang: 'en', version: 1, body: 'terms en v1', publishedAt: '2026-10-02T00:00:00+00:00' }),
+    makeConsentTextViewItem({ purpose: 'MARKETING', lang: 'th', version: 3, body: 'marketing th v3', publishedAt: '2026-10-03T00:00:00+00:00' }),
   ];
   publishRefusal = null;
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
