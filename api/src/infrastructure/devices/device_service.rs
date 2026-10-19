@@ -11,7 +11,6 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
@@ -547,7 +546,6 @@ impl DeviceService {
         &self,
         branch: &BranchId,
         kind: PrinterKind,
-        _actor: &Actor,
         _now: DateTime<Utc>,
     ) -> AppResult<()> {
         self.require_branch(branch).await?;
@@ -587,7 +585,6 @@ impl DeviceService {
         branch: &BranchId,
         model: &str,
         has_drawer: bool,
-        _actor: &Actor,
         _now: DateTime<Utc>,
     ) -> AppResult<()> {
         self.require_branch(branch).await?;

@@ -22,8 +22,6 @@ use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
 
 const ORIGIN: &str = "http://desk.test";
-
-const ROLE_NOT_ALLOWED: &str = "บทบาทนี้ไม่มีสิทธิ์ทำรายการ";
 const ROLE_NOT_ALLOWED_HERE: &str = "บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้";
 const KIOSK_STAFF: &str = "Staff access required.";
 const DEVICE_STEP_NOT_ALLOWED: &str = "บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้";
@@ -107,28 +105,6 @@ async fn the_owners_user_does_not_work_the_kiosk_queue() {
         let a = room.ask("OWNER", "/api/kiosk", action, json!({})).await;
         refused(&a, 400, KIOSK_STAFF, &format!("OWNER kiosk {action}"));
     }
-    room.finish().await;
-}
-
-#[actix_web::test]
-async fn desk_bookings_are_the_tellers() {
-    // C9 (§03 B02: BookingsDesk is TELLER's); FRONT (TELLER) keeps them
-    let room = Room::open().await;
-    for who in ["BACKEND", "MANAGER"] {
-        let a = room
-            .ask(who, "/api/staff/bookings", "list", json!({}))
-            .await;
-        refused(
-            &a,
-            400,
-            ROLE_NOT_ALLOWED,
-            &format!("{who} staff bookings list"),
-        );
-    }
-    let a = room
-        .ask("FRONT", "/api/staff/bookings", "list", json!({}))
-        .await;
-    not_refused_with(&a, ROLE_NOT_ALLOWED, "FRONT staff bookings list");
     room.finish().await;
 }
 

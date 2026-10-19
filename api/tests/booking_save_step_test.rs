@@ -585,8 +585,8 @@ async fn save_claiming_checked_in_booking_completes_with_transaction_id() {
             .await
             .expect("read transactions.booking_id");
     assert!(
-        stored_booking_id.is_none(),
-        "R1: transactions.booking_id must stay NULL for Blueprint bookings (FK points to v2_bookings)"
+        stored_booking_id == Some("BK-save-path".to_owned()),
+        "transactions.booking_id names the Blueprint booking (BK-11)"
     );
 
     assert_eq!(

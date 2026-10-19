@@ -52,6 +52,7 @@ use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
 use xc_approval::domain::request::{Outcome, RequestId};
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_customer::application::customer::service::CustomerService;
@@ -82,28 +83,34 @@ static PII: Once = Once::new();
 
 // ------------------------------------------------------------ callers
 
-fn actor(id: &str, role: Role) -> SaveActor {
+fn actor(id: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
         username: id.trim_start_matches("employee-").to_owned(),
         employee_id: Some(id.to_owned()),
-        role,
+        standing,
     }
 }
 
 /// Makes the exchanges in the create tests.
 fn creator() -> SaveActor {
-    actor("employee-creator", Role::Backend)
+    actor(
+        "employee-creator",
+        StandingKind::Staff(AccessRole::BranchManager),
+    )
 }
 
 /// Confirms: neither the exchange's maker nor its approver.
 fn confirmer() -> SaveActor {
-    actor("employee-confirmer", Role::Front)
+    actor(
+        "employee-confirmer",
+        StandingKind::Staff(AccessRole::Teller),
+    )
 }
 
 /// Cancels and completes.
 fn closer() -> SaveActor {
-    actor("employee-closer", Role::Finance)
+    actor("employee-closer", StandingKind::Staff(AccessRole::Finance))
 }
 
 // ------------------------------------------------------------ the counter
@@ -310,7 +317,7 @@ fn assert_one(
     );
     assert_eq!(
         (row["actorId"].clone(), row["actorRole"].clone()),
-        (json!(who.id), json!(who.role.as_str())),
+        (json!(who.id), json!(who.audit_role())),
         "actor = the caller of {action}"
     );
     assert_eq!(row["scope"], json!("branch"), "scope");

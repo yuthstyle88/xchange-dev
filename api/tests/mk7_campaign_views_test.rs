@@ -552,14 +552,7 @@ impl SessionReader for HeaderCallers {
             .unwrap_or_default();
         let user = user_of(spec);
         let staff_user = user.clone();
-        Box::pin(async move {
-            Callers {
-                owner: None,
-                staff: None,
-                user,
-                staff_user,
-            }
-        })
+        Box::pin(async move { Callers { user, staff_user } })
     }
 }
 

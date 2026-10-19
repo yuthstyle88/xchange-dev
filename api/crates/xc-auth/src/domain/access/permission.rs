@@ -40,8 +40,6 @@ pub enum Permission {
     CashTargetSet,
     BranchDayOperate,
     SignedIn,
-    /// v3-only (#550 OR-4): the owner route `/api/bookings` and the bookings owner actions.
-    BookingsAdmin,
     /// v3-only (#550 OR-4): the owner route `/api/reference-rates`.
     ReferenceRatesRead,
     /// Consent policy manage permission (§3, §5.1, CI-6).

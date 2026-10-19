@@ -1,5 +1,4 @@
 //! Data transfer objects.
-pub mod booking;
 pub mod customer;
 pub mod device;
 pub mod device_agent;

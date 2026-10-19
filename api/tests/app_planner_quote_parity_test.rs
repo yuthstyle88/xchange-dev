@@ -35,7 +35,7 @@ use std::str::FromStr;
 use xc_app::application::planner::planner_preview::{PlannerEstimate, PlannerPreview};
 use xc_app::domain::app_error::CustomerAppError;
 use xc_app::domain::planner::planner_draft::{DraftAmount, DraftPlan};
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, CustomerSide, ForeignAmount};
@@ -52,7 +52,7 @@ fn teller() -> SaveActor {
         id: "employee-7".to_owned(),
         username: "user-employee-7".to_owned(),
         employee_id: Some("employee-7".to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

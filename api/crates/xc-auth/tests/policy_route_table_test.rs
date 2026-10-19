@@ -10,8 +10,8 @@
 //!   `xc_auth::domain::policy::entities::policy`; `Need { Public, Permission(Permission), Custody }`
 //!   with `Debug + Clone + Copy + PartialEq + Eq`. `None` = a name the path has no row for.
 //!   `Custody` = a row #582 decides; until #582 the custody engine asks the v2 rule.
-//! - `Permission` gains `BookingsAdmin` and `ReferenceRatesRead`: v3-only rows of OWNER-only routes
-//!   that §4.2 does not list, given to EXECUTIVE, the B1 translation of OWNER (no role changes).
+//! - `Permission` gains `ReferenceRatesRead`: a v3-only row of an OWNER-only route that §4.2 does not
+//!   list, given to EXECUTIVE, the B1 translation of OWNER (no role changes). (v2's bookings-admin permission went with v2's booking in BK-11 #1413.)
 //! - `xc_auth::domain::access::v3_roles::blueprint_roles(v3: policy Role) -> &'static [Role]` and
 //!   `actor_from_v3(v3: &policy Actor, organization_id: &str, since: DateTime<Utc>) -> access::Actor`
 //!   (B1; the extractor maps a password session through it until OR-7).
@@ -109,11 +109,6 @@ fn every_route_and_action_names_its_permission() {
         (E::Rpc, "approvalDecide", p(P::ApprovalsDecide)),
         (E::Rpc, "approvalRead", p(P::ApprovalsDecide)),
         // OWNER-only routes §4.2 does not list: v3-only permissions, EXECUTIVE's
-        (E::OwnerRoute, "/api/v2/bookings", p(P::BookingsAdmin)),
-        (E::StaffBookings, "member", p(P::BookingsAdmin)),
-        (E::StaffBookings, "settings", p(P::BookingsAdmin)),
-        (E::StaffBookings, "registrations", p(P::BookingsAdmin)),
-        (E::StaffBookings, "approveRegistration", p(P::BookingsAdmin)),
         (
             E::OwnerRoute,
             "/api/reference-rates",
@@ -185,11 +180,7 @@ fn the_role_table_holds_what_b1_translates() {
         [Role::Executive, Role::BranchManager, Role::Finance]
     );
     // OWNER-only rows: EXECUTIVE; and nobody else holds them
-    for p in [
-        Permission::BookingsAdmin,
-        Permission::ReferenceRatesRead,
-        Permission::RequestAbandon,
-    ] {
+    for p in [Permission::ReferenceRatesRead, Permission::RequestAbandon] {
         assert_eq!(
             BLUEPRINT
                 .into_iter()

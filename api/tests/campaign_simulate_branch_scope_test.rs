@@ -358,14 +358,7 @@ impl SessionReader for HeaderCallers {
             .is_some_and(|v| v == "MARKETING");
         let user = as_marketing.then(marketing_of_org_a);
         let staff_user = user.clone();
-        Box::pin(async move {
-            Callers {
-                owner: None,
-                staff: None,
-                user,
-                staff_user,
-            }
-        })
+        Box::pin(async move { Callers { user, staff_user } })
     }
 }
 

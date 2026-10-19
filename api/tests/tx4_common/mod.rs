@@ -22,6 +22,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 use xc_approval::application::approval_service::{ApprovalError, ApprovalService};
 use xc_approval::domain::request::{Outcome, RequestId};
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -86,7 +87,7 @@ pub fn teller() -> SaveActor {
         id: TELLER.to_owned(),
         username: "teller".to_owned(),
         employee_id: Some(TELLER.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 
