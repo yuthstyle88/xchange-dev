@@ -1,28 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { StaffCustomerRow } from '../../../shared/api/generated/staff_customers';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffHoldRow } from '../../../shared/api/generated/staff_holds';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeStaffCustomerRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+} from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { HoldsCard } from './HoldsCard';
 
 const BRANCH = 'MAIN';
 
-function me(permissions = ['CustomerHoldPlace', 'VerificationReview']): StaffMeView {
-  return {
+function me(permissions = ['CustomerHoldPlace', 'VerificationReview']) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000c1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -30,7 +31,7 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 function makeCtx(perms?: string[]): StaffCtx {
@@ -52,9 +53,9 @@ function view(data: unknown): Response {
   return json(200, { version: 1, changed: true, data });
 }
 
-const CUST_A: StaffCustomerRow = { id: 'CX-00000001', displayName: 'Somchai Jaidee' };
+const CUST_A = makeStaffCustomerRow({ id: 'CX-00000001', displayName: 'Somchai Jaidee' });
 
-const SAMPLE_HOLDS: StaffHoldRow[] = [];
+const SAMPLE_HOLDS: unknown[] = [];
 
 describe('HoldsCard #2738: Place hold with no customer picked', () => {
   let host: HTMLDivElement;
