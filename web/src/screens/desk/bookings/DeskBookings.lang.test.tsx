@@ -1,8 +1,14 @@
 // #2149: DeskBookingsScreen (B02) language switching across all 18 render sites (§2, §9 rows 1–4).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeStaffMeView,
+  makeStaffRoleDto,
+  type DeskBookingsData,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 import { en, th } from './i18n';
@@ -14,27 +20,27 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER: StaffMeView = {
+const STAFF_TELLER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: 'XC-B01' }],
+  roles: [makeStaffRoleDto({ role: 'teller', branchId: 'XC-B01' })],
   branchId: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const STAFF_NO_DESK: StaffMeView = {
+const STAFF_NO_DESK = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000002',
   name: 'Somying Manager',
-  roles: [{ role: 'manager', branchId: 'XC-B01' }],
+  roles: [makeStaffRoleDto({ role: 'manager', branchId: 'XC-B01' })],
   branchId: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['RatesRead'],
-};
+});
 
-const ONE_BOOKING: DeskBookingsData = {
+const ONE_BOOKING = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261016-0001',
       status: 'CONFIRMED',
@@ -45,9 +51,9 @@ const ONE_BOOKING: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-16T09:00:00Z',
       endAt: '2026-10-16T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 function stubBookingsFetch(opts?: {
   staff?: StaffMeView;
@@ -251,14 +257,14 @@ describe('DeskBookingsScreen (B02) — §9 language switching (#2149)', () => {
   });
 
   it('row 4 (unknown status): falls back to statusUnknown in the active language', async () => {
-    const unknownBookings: DeskBookingsData = {
+    const unknownBookings = makeDeskBookingsData({
       items: [
-        {
+        makeDeskBookingItemDto({
           ...ONE_BOOKING.items[0],
           status: 'UNMAPPED_FUTURE_STATUS',
-        },
+        }),
       ],
-    };
+    });
 
     setLang('en');
     stubBookingsFetch({ bookings: unknownBookings });
