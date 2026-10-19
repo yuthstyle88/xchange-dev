@@ -5,6 +5,7 @@
 //! `admin_cash`'s policy row (the same `/desk/cash` screen, MANAGER / FINANCE) and is not versioned: a reserve
 //! moves `reserved` without bumping the branch's version.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
@@ -12,14 +13,18 @@ use std::sync::Arc;
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::CurrencyCode;
 
+use crate::application::executive::ports::CashFacts;
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::branch_stock::BranchStockData;
+use crate::infrastructure::executive::ledger_cash_facts::LedgerCashFacts;
+use crate::presentation::dto::v3::branch_stock::{BranchStockData, BranchStockRow};
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -34,10 +39,61 @@ pub async fn read(
     pool: &PgPool,
     organization_id: Uuid,
     branch: &BranchId,
-    now: DateTime<Utc>,
+    _now: DateTime<Utc>,
 ) -> AppResult<BranchStockData> {
-    let _ = (pool, organization_id, branch, now);
-    todo!("SR-4")
+    let on_hand_map: HashMap<CurrencyCode, Decimal> = LedgerCashFacts::new(pool.clone())
+        .on_hand_by_currency(branch)
+        .await?
+        .into_iter()
+        .collect();
+
+    let floor_rows: Vec<(String, Decimal)> = sqlx::query_as(
+        "SELECT currency, min_quantity FROM branch_stock_floors WHERE organization_id = $1 AND branch_id = $2",
+    )
+    .bind(organization_id)
+    .bind(branch.as_str())
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let mut floor_map: HashMap<CurrencyCode, Decimal> = HashMap::with_capacity(floor_rows.len());
+    for (code, min_quantity) in floor_rows {
+        let currency = CurrencyCode::parse(code.trim())
+            .map_err(|_| AppError::Internal(format!("branch_stock: currency {code:?}")))?;
+        floor_map.insert(currency, min_quantity);
+    }
+
+    let mut currencies: Vec<CurrencyCode> = on_hand_map
+        .keys()
+        .chain(floor_map.keys())
+        .copied()
+        .collect();
+    currencies.sort_by_key(|c| (!c.is_thb(), c.as_str()));
+    currencies.dedup();
+
+    let rows = currencies
+        .into_iter()
+        .map(|currency| {
+            let on_hand = on_hand_map.get(&currency).copied().unwrap_or(Decimal::ZERO);
+            let reserved = Decimal::ZERO;
+            let available = on_hand - reserved;
+            let floor = floor_map.get(&currency).copied();
+            BranchStockRow {
+                currency: currency.as_str().to_owned(),
+                on_hand: on_hand.to_string(),
+                reserved: reserved.to_string(),
+                available: available.to_string(),
+                floor: floor.map(|f| f.to_string()),
+                low: false,
+                transfer_prefill: None,
+            }
+        })
+        .collect();
+
+    Ok(BranchStockData {
+        branch_id: branch.as_str().to_owned(),
+        rows,
+    })
 }
 
 pub struct BranchStockView {
