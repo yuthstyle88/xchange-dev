@@ -1,0 +1,9 @@
+# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
+# The migration ticket for screens/desk/bookings part b deletes this file.
+screens/desk/bookings/DeskBookings.qr-reissue.test.tsx
+screens/desk/bookings/DeskBookings.quantity.test.tsx
+screens/desk/bookings/DeskBookings.read-order.test.tsx
+screens/desk/bookings/DeskBookings.readerror.test.tsx
+screens/desk/bookings/DeskBookings.retry-key.test.tsx
+screens/desk/bookings/DeskBookings.test.tsx
+screens/desk/bookings/DeskBookingsScreen.modal-error.test.tsx
