@@ -58,6 +58,7 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ts_rs::TS;
+use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -65,7 +66,8 @@ use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::dto::v3::quote::QuoteDto;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -77,7 +79,44 @@ const FRONT: &str = "staff:FRONT:MAIN";
 
 /// Who is signed in, from the request header `x-test-as`: `owner`, `staff:<ROLE>:<branch>`,
 /// `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
+
+fn staff_caller_of(spec: &str) -> AccessActor {
+    let mut parts = spec.splitn(3, ':');
+    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
+    let role_name = parts.next().expect("a role");
+    let roles: &[AccessRole] = match role_name {
+        "FRONT" => &[AccessRole::Teller],
+        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
+        "RATES" => &[AccessRole::RateManager],
+        "FINANCE" => &[AccessRole::Finance],
+        "SYSTEM" => &[AccessRole::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
+        other => panic!("unknown role {other:?}"),
+    };
+    let branch = parts.next().expect("a branch");
+    test_callers::staff(
+        &format!("employee-{role_name}"),
+        roles,
+        BranchId::new(branch),
+    )
+}
+
+fn callers_of(spec: &str) -> Callers {
+    if spec.is_empty() {
+        return test_callers::nobody();
+    }
+    if spec == "owner" {
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
+    }
+    if let Some(staff) = spec.strip_prefix("owner+") {
+        return test_callers::callers(
+            Some(test_callers::owner("owner-1")),
+            Some(staff_caller_of(staff)),
+        );
+    }
+    test_callers::callers(None, Some(staff_caller_of(spec)))
+}
 
 fn staff_of(spec: &str) -> Option<Actor> {
     let mut parts = spec.splitn(3, ':');
@@ -91,49 +130,26 @@ fn staff_of(spec: &str) -> Option<Actor> {
     )
 }
 
-fn sessions_of(spec: &str) -> Sessions {
-    if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
-    }
-    if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
-    }
-    if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
-    }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
-}
-
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
 /// The actor the seam asks the policy about on Rpc (`view.rs:331`: the owner's session wins).
 fn actor_on_rpc(spec: &str) -> Option<Actor> {
-    let s = sessions_of(spec);
-    s.owner.or(s.staff)
+    if spec.is_empty() {
+        return None;
+    }
+    if spec == "owner" || spec.starts_with("owner+") {
+        return Some(Actor::owner("owner-1"));
+    }
+    staff_of(spec)
 }
 
 const STAFF_ROLES: [&str; 9] = [
@@ -175,7 +191,7 @@ impl Answer {
 /// `POST /api/quotes` as `who` with `body`, sending `key` as the `Idempotency-Key` when given.
 async fn post(db: &TestDb, who: &str, body: &Value, key: Option<&str>) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))

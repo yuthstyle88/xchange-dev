@@ -20,7 +20,8 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::dto::v3::common::NoFilter;
 use xchange::presentation::http::v3::view::{BranchView, PagedView, RowId, ViewEndpoint};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -73,16 +74,8 @@ impl PagedView for KioskRatesPagedView {
 struct EmptySessionReader;
 
 impl SessionReader for EmptySessionReader {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        Box::pin(async move { test_callers::nobody() })
     }
 }
 
