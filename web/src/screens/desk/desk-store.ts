@@ -147,8 +147,13 @@ function pageBranch(path: DeskPath, me: Me | undefined): string {
   return me?.branch ?? '';
 }
 
+const t = screenT('desk', screenI18n);
+
 function quoteErrorOf(e: unknown, fallback: string): { field?: string; message: string } {
   if (e instanceof ApiError) {
+    if (e.code === 'couponInvalid') {
+      return { field: 'couponCode', message: t('couponInvalid') };
+    }
     const message = wordedError(e);
     return e.field ? { field: e.field, message } : { message };
   }
@@ -163,7 +168,6 @@ export function createDeskStore(
   const api = given.api ?? sharedApi();
   const path = given.path ?? deskPathFor(typeof location !== 'undefined' ? location.pathname : '');
   const deps = { me: given.me ?? sharedSession().me };
-  const t = screenT('desk', screenI18n);
   const branch = () => pageBranch(path, deps.me());
 
   const [config, setConfig] = createSignal<DeskConfig | undefined>();
@@ -256,6 +260,7 @@ export function createDeskStore(
     const mine = ++quoteSeq;
     setQuoting(true);
     const feeThb = fee();
+    const coupon = couponCode().trim();
     const body: QuotesCommandInput = {
       branch: null,
       branchId: null,
@@ -270,6 +275,7 @@ export function createDeskStore(
           denominationGroup: null,
         },
       ],
+      ...(coupon !== '' ? { couponCode: coupon } : {}),
     };
     try {
       const answered = await api.command<QuotesCommandInput, QuoteDto>(
@@ -309,6 +315,10 @@ export function createDeskStore(
     setAmountS(v);
     scheduleQuote();
   }
+  function setCouponCode(c: string): void {
+    setCouponCodeS(c);
+    scheduleQuote();
+  }
   function setFee(v: string): void {
     setFeeS(v);
     setPaymentChecked(false);
@@ -346,7 +356,7 @@ export function createDeskStore(
     quoting,
     requote,
     couponCode,
-    setCouponCode: (c) => setCouponCodeS(c),
+    setCouponCode,
     passport,
     setPassport: (f) => setPassport(f),
     fields,
@@ -427,6 +437,7 @@ export function createDeskStore(
     saver.reset();
     setTypeS('BUY');
     setAmountS('');
+    setCouponCodeS('');
     setReferenceRate('');
     setQuote(undefined);
     setQuoteError(undefined);
