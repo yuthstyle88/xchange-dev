@@ -166,10 +166,11 @@ fn rule_3_an_admin_base_is_view_only_outside_its_modules() {
             "{p:?}"
         );
     }
+    // §11.2 "Branch cash basics": CashManage is now a no-module basic (rule 5), so test rule 3 with FinanceReconcile (FINANCE FULL).
     assert_eq!(
         MatrixGuardrails::check(
             &Group::built_in(Role::Admin),
-            &set(Role::Admin, &[P::CashManage])
+            &set(Role::Admin, &[P::FinanceReconcile])
         ),
         Err(GuardrailBreach::AdminBaseAboveView),
         "the built-in ADMIN group too"
@@ -224,7 +225,8 @@ fn rule_1_audit_logs_view_is_allowed() {
 #[test]
 fn rules_are_answered_in_order() {
     let it = custom("IT", Role::Admin);
-    let mut both = set(Role::Admin, &[P::CashManage]);
+    // §11.2 "Branch cash basics": CashManage is now no-module, so use FinanceReconcile (FINANCE FULL) to break rule 3.
+    let mut both = set(Role::Admin, &[P::FinanceReconcile]);
     both.retain(|p| *p != P::SignedIn);
     assert_eq!(
         MatrixGuardrails::check(&it, &both),

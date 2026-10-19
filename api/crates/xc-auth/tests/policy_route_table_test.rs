@@ -163,13 +163,13 @@ fn the_role_table_holds_what_b1_translates() {
     ] {
         assert!(!has(Role::Marketing, p), "{p:?}");
     }
-    // §11.2: ApprovalsDecide (Finance CREATE) is held by EXECUTIVE and FINANCE (Finance FULL)
+    // §11.2 "Branch cash basics": ApprovalsDecide is no-module, seeded on EXECUTIVE, BRANCH_MANAGER, and FINANCE
     assert_eq!(
         BLUEPRINT
             .into_iter()
             .filter(|r| has(*r, Permission::ApprovalsDecide))
             .collect::<Vec<_>>(),
-        [Role::Executive, Role::Finance]
+        [Role::Executive, Role::BranchManager, Role::Finance]
     );
     // §11.2: ReferenceRatesRead (RatesStock VIEW) is held by EXECUTIVE, RATE_MANAGER, FINANCE, VERIFICATION_REVIEWER
     assert_eq!(

@@ -148,8 +148,10 @@ const SEED: [(Role, &[Permission]); 9] = [
     ),
     (
         Role::BranchManager,
+        // §11.2 "Branch cash basics": BRANCH_MANAGER holds ApprovalsDecide and CashManage as no-module basics.
         &[
             P::OverviewRead,
+            P::ApprovalsDecide,
             P::ShiftOperate,
             P::ShiftCloseCertify,
             P::BookingsDesk,
@@ -157,6 +159,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::TransactionRead,
             P::ReceiptReprint,
             P::ReversalRequest,
+            P::CashManage,
             P::QueueOperate,
             P::CompatRead,
             P::DocumentsList,
@@ -270,8 +273,9 @@ const SEED: [(Role, &[Permission]); 9] = [
     ),
 ];
 
-/// The no-module permissions: §11.2's desk basics, `SignedIn` and the rest of §11.3 rule 5, and proposal A's five.
-const NO_MODULE: [Permission; 14] = [
+/// The no-module permissions: §11.2's desk basics, "Branch cash basics" (`CashManage`, `ApprovalsDecide`),
+/// `SignedIn` and the rest of §11.3 rule 5, and proposal A's five.
+const NO_MODULE: [Permission; 16] = [
     P::SignedIn,
     P::AttendanceClock,
     P::CompatRead,
@@ -281,6 +285,8 @@ const NO_MODULE: [Permission; 14] = [
     P::ShiftOperate,
     P::BranchDayOperate,
     P::ShiftCloseCertify,
+    P::CashManage,
+    P::ApprovalsDecide,
     P::DeviceQueue,
     P::DeviceProcess,
     P::DevicePrinterOnline,
@@ -647,4 +653,37 @@ fn an_added_group_is_scoped_like_a_row_and_allowed_by_its_own_set() {
         Err(Refusal::RoleNotAllowed),
         "its base's seed does not leak into it"
     );
+}
+
+/// §11.2 "Branch cash basics" (owner ruling A, #3711): `CashManage` and `ApprovalsDecide` have no module and are
+/// seeded on EXECUTIVE, FINANCE and BRANCH_MANAGER, and on none of TELLER, RATE_MANAGER, ADMIN or
+/// VERIFICATION_REVIEWER.
+#[test]
+fn branch_cash_basics_are_no_module_and_seeded_on_the_ruled_bases() {
+    for p in [P::CashManage, P::ApprovalsDecide] {
+        assert_eq!(
+            PermissionModule::module(p),
+            None,
+            "{p:?} is a no-module branch cash basic"
+        );
+        for role in [Role::Executive, Role::Finance, Role::BranchManager] {
+            assert!(
+                RoleGrants::seed(role).contains(&p),
+                "{} holds {p:?} in RoleGrants::seed",
+                role.as_str()
+            );
+        }
+        for role in [
+            Role::Teller,
+            Role::RateManager,
+            Role::Admin,
+            Role::VerificationReviewer,
+        ] {
+            assert!(
+                !RoleGrants::seed(role).contains(&p),
+                "{} does not hold {p:?} in RoleGrants::seed",
+                role.as_str()
+            );
+        }
+    }
 }

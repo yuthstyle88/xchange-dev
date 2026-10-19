@@ -138,16 +138,22 @@ fn rate_policy_save_is_owner_and_rates_on_rpc_and_no_row_on_the_staff_bridge() {
     );
 }
 
-/// §11.2: BRANCH_MANAGER loses ApprovalsDecide; EXECUTIVE and FINANCE qualify for ApprovalsDecide.
+/// §11.2 "Branch cash basics": EXECUTIVE, BRANCH_MANAGER, and FINANCE qualify for ApprovalsDecide.
 #[test]
-fn approval_decide_and_approval_read_are_the_executives_and_finances() {
+fn approval_decide_and_approval_read_are_the_executives_branch_managers_and_finances() {
+    let holders: Vec<&str> = BLUEPRINT
+        .into_iter()
+        .filter(|r| RoleGrants::seed(*r).contains(&Permission::ApprovalsDecide))
+        .map(Role::as_str)
+        .collect();
+    assert_eq!(holders, ["EXECUTIVE", "BRANCH_MANAGER", "FINANCE"]);
     for name in ["approvalDecide", "approvalRead"] {
         assert_eq!(ask(Some(&owner()), EntryPath::Rpc, name), Ok(()), "{name}");
-        // §11.2: EXECUTIVE and FINANCE hold ApprovalsDecide
+        // §11.2 "Branch cash basics": EXECUTIVE, BRANCH_MANAGER, and FINANCE hold ApprovalsDecide
         assert_eq!(
             allowed_roles(EntryPath::Rpc, name),
-            ["EXECUTIVE", "FINANCE"],
-            "{name}: EXECUTIVE and FINANCE on Rpc"
+            holders,
+            "{name}: EXECUTIVE, BRANCH_MANAGER, and FINANCE on Rpc"
         );
         assert!(
             allowed_roles(EntryPath::StaffRpc, name).is_empty(),
@@ -155,7 +161,7 @@ fn approval_decide_and_approval_read_are_the_executives_and_finances() {
         );
         for r in BLUEPRINT
             .into_iter()
-            .filter(|r| ![Role::Executive, Role::Finance].contains(r))
+            .filter(|r| !RoleGrants::seed(*r).contains(&Permission::ApprovalsDecide))
         {
             assert_eq!(
                 ask(Some(&staff(r, B2)), EntryPath::Rpc, name),

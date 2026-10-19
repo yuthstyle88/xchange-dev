@@ -78,23 +78,28 @@ fn v3_allowed(on: EntryPath, name: &str) -> Vec<&'static str> {
 }
 
 #[test]
-fn approvals_decide_is_held_by_the_executive_and_finance() {
-    // §11.2: BRANCH_MANAGER loses ApprovalsDecide; EXECUTIVE and FINANCE hold it
+fn approvals_decide_is_held_by_the_executive_branch_manager_and_finance() {
+    // §11.2 "Branch cash basics": EXECUTIVE, BRANCH_MANAGER and FINANCE hold ApprovalsDecide
     let holders: Vec<&str> = BLUEPRINT
         .into_iter()
         .filter(|r| RoleGrants::seed(*r).contains(&Permission::ApprovalsDecide))
         .map(Role::as_str)
         .collect();
-    assert_eq!(holders, ["EXECUTIVE", "FINANCE"]);
+    assert_eq!(holders, ["EXECUTIVE", "BRANCH_MANAGER", "FINANCE"]);
 }
 
 #[test]
-fn under_the_blueprint_table_approvals_are_reached_by_those_two_on_rpc_only() {
+fn under_the_blueprint_table_approvals_are_reached_by_those_three_on_rpc_only() {
+    // §11.2 "Branch cash basics": compute ApprovalsDecide holders from RoleGrants::seed
+    let holders: Vec<&str> = BLUEPRINT
+        .into_iter()
+        .filter(|r| RoleGrants::seed(*r).contains(&Permission::ApprovalsDecide))
+        .map(Role::as_str)
+        .collect();
     for name in APPROVAL {
-        // §11.2: EXECUTIVE and FINANCE hold ApprovalsDecide
         assert_eq!(
             blueprint_allowed(EntryPath::Rpc, name),
-            ["EXECUTIVE", "FINANCE"],
+            holders,
             "{name} on Rpc"
         );
         assert!(
@@ -103,7 +108,7 @@ fn under_the_blueprint_table_approvals_are_reached_by_those_two_on_rpc_only() {
         );
         for r in BLUEPRINT
             .into_iter()
-            .filter(|r| ![Role::Executive, Role::Finance].contains(r))
+            .filter(|r| !RoleGrants::seed(*r).contains(&Permission::ApprovalsDecide))
         {
             assert_eq!(
                 ask(Some(&staff(r, B2)), EntryPath::Rpc, name),
