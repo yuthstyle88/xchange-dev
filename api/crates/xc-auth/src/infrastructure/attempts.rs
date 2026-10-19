@@ -5,7 +5,7 @@
 //! `AccountRepository` is deleted; migration 3 keeps the table.
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 
 /// Counts attempts per `(key, window_start)` in `auth_attempts`.
@@ -22,16 +22,33 @@ impl PgAttemptCounter {
     /// Adds one attempt for `key` in the window starting at `window_start` and answers the
     /// window's count after it (the first attempt answers 1). Concurrent calls never lose a count.
     pub async fn increment(&self, key: &str, window_start: DateTime<Utc>) -> AppResult<i32> {
-        let _ = (&self.pool, key, window_start);
-        todo!(
-            "OR-7.m T2: INSERT … ON CONFLICT (key, window_start) DO UPDATE SET count = count + 1 RETURNING count"
+        let count: i32 = sqlx::query_scalar(
+            r#"
+            INSERT INTO auth_attempts (key, window_start, count)
+            VALUES ($1, $2, 1)
+            ON CONFLICT (key, window_start)
+            DO UPDATE SET count = auth_attempts.count + 1
+            RETURNING count
+            "#,
         )
+        .bind(key)
+        .bind(window_start)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(count)
     }
 
     /// Deletes every window that started before `current_window` and answers how many went.
     /// The window `current_window` itself, and later ones, stay.
     pub async fn purge_before(&self, current_window: DateTime<Utc>) -> AppResult<u64> {
-        let _ = (&self.pool, current_window);
-        todo!("OR-7.m T2: DELETE FROM auth_attempts WHERE window_start < $1")
+        let result = sqlx::query("DELETE FROM auth_attempts WHERE window_start < $1")
+            .bind(current_window)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+        Ok(result.rows_affected())
     }
 }
