@@ -42,17 +42,17 @@ use actix_web::http::Method;
 use chrono::{DateTime, Duration, Utc};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const VIEW: &str = "admin_slips";
@@ -422,19 +422,28 @@ impl Room {
     }
 }
 
+const STAFF: [(&str, &[Role]); 9] = [
+    ("FRONT", &[Role::Teller]),
+    ("BACKEND", &[Role::BranchManager]),
+    ("MANAGER", &[Role::BranchManager]),
+    ("RATES", &[Role::RateManager]),
+    ("MONITOR", &[Role::VerificationReviewer]),
+    ("FINANCE", &[Role::Finance]),
+    ("SYSTEM", &[Role::Admin]),
+    ("DOCUMENTS", &[Role::VerificationReviewer]),
+    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
+];
+
 /// The actor `Policy` sees for each caller key of [`Room`] on a path that is not `StaffRpc`.
 fn callers() -> Vec<(String, Option<Actor>)> {
     let mut callers: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        callers.push((role.as_str().to_string(), staff));
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+    for (name, roles) in STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        callers.push((name.to_string(), staff));
+        callers.push((format!("OWNER+{name}"), Some(test_callers::owner("owner"))));
     }
     callers
 }
@@ -481,15 +490,17 @@ async fn admin_slips_answers_exactly_whom_the_snapshot_row_allows() {
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
-        let policy = Policy::allow(
+        let policy = Policy::authorize(
             actor.as_ref(),
             EntryPath::Rpc,
             &Action::new("adminSnapshot"),
+            None,
+            Utc::now(),
         );
         let answer = room.get(&who, &view_path("limit=50")).await;
         let what = format!("{VIEW} as {who:?}");
         match &policy {
-            Ok(()) => {
+            Ok(_) => {
                 allowed += 1;
                 assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                 let body = answer.json();

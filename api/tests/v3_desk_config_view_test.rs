@@ -43,14 +43,14 @@ use chrono::{DateTime, Duration, Utc};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const RPC: &str = "/api/rpc";
@@ -360,10 +360,22 @@ impl Room {
     }
 }
 
+const STAFF: [(&str, &[Role]); 9] = [
+    ("FRONT", &[Role::Teller]),
+    ("BACKEND", &[Role::BranchManager]),
+    ("MANAGER", &[Role::BranchManager]),
+    ("RATES", &[Role::RateManager]),
+    ("MONITOR", &[Role::VerificationReviewer]),
+    ("FINANCE", &[Role::Finance]),
+    ("SYSTEM", &[Role::Admin]),
+    ("DOCUMENTS", &[Role::VerificationReviewer]),
+    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
+];
+
 /// Every caller key of [`Room`] and the actor `Policy` sees for it on `path`: on `StaffRpc` the
 /// staff session only, elsewhere the owner first (`rpc.rs`, `view.rs:339-341`).
 fn callers(path: EntryPath) -> Vec<(String, Option<Actor>)> {
-    let owner = || Some(Actor::owner("owner"));
+    let owner = || Some(test_callers::owner("owner"));
     let mut out: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
         (
@@ -375,11 +387,11 @@ fn callers(path: EntryPath) -> Vec<(String, Option<Actor>)> {
             },
         ),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        out.push((role.as_str().to_string(), staff.clone()));
+    for (name, roles) in STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        out.push((name.to_string(), staff.clone()));
         out.push((
-            format!("OWNER+{}", role.as_str()),
+            format!("OWNER+{name}"),
             if path == EntryPath::StaffRpc {
                 staff
             } else {
@@ -413,7 +425,7 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
     );
 }
 
-/// DK-A §10: each view refuses exactly whom `Policy::allow` refuses for its pair, caller by
+/// DK-A §10: each view refuses exactly whom `Policy::authorize` refuses for its pair, caller by
 /// caller, with the policy's status and sentence.
 #[actix_web::test]
 async fn each_view_answers_exactly_whom_its_pair_allows() {
@@ -426,8 +438,14 @@ async fn each_view_answers_exactly_whom_its_pair_allows() {
         for (who, actor) in callers(path) {
             let answer = room.get(&who, &view_path(view, "")).await;
             let what = format!("{view} as {who:?}");
-            match Policy::allow(actor.as_ref(), path, &Action::new("adminDeskConfig")) {
-                Ok(()) => {
+            match Policy::authorize(
+                actor.as_ref(),
+                path,
+                &Action::new("adminDeskConfig"),
+                None,
+                Utc::now(),
+            ) {
+                Ok(_) => {
                     allowed += 1;
                     assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                     assert!(answer.json().get("data").is_some(), "{what}: data");
