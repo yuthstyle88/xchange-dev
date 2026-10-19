@@ -5,7 +5,7 @@ import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { CashLimitsData } from '../../../shared/api/generated/cash_limits';
 import type { CashLimitsSaveInput } from '../../../shared/api/generated/cash_limits_save';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import { screenT } from '../../../shared/i18n';
+import { locale, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
@@ -20,7 +20,7 @@ const OWN_TEXT: Record<string, Parameters<typeof t>[0]> = {
 };
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
 }
 
 function isLimitFieldRefusal(err: unknown): boolean {
