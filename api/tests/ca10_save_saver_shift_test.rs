@@ -263,15 +263,12 @@ async fn a_saver_with_no_open_shift_is_refused_and_nothing_is_written() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_owner_saves_on_the_owners_own_shift() {
     let desk = Desk::open().await;
-    let owners = seed_shift(
-        &desk.shop.pool,
-        MAIN,
-        &user_of(&desk.shop.pool, "owner").await,
-        true,
-    )
-    .await;
+    let owner = user_of(&desk.shop.pool, "owner").await;
+    let owners = seed_shift(&desk.shop.pool, MAIN, &owner, true).await;
 
-    desk.save(&saver("owner", StandingKind::Owner))
+    // OR-7.m (reviewer fix on #3746): an owner's actor id is the owner's `users.id`; the v2 string
+    // `"owner"` no longer resolves to a teller since #3741.
+    desk.save(&saver(&owner, StandingKind::Owner))
         .await
         .expect("the owner's own shift takes the save");
 
