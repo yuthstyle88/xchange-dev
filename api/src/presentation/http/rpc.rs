@@ -302,7 +302,7 @@ pub(crate) async fn caller_of_rpc(
     if let Some((user, access_actor)) = identity_session_actor(req, now).await {
         return Ok(Standing::of(&access_actor, now).map(|standing| RpcCaller {
             standing,
-            username: user.id,
+            username: user.name.clone(),
             name: user.name,
         }));
     }
@@ -322,7 +322,7 @@ async fn caller_of_staff_rpc(
         return match Standing::of(&access_actor, now) {
             Some(standing) if !standing.is_owner() => Ok(RpcCaller {
                 standing,
-                username: user.id,
+                username: user.name.clone(),
                 name: user.name,
             }),
             _ => Err(RpcRefusal::not_signed_in(route).into()),

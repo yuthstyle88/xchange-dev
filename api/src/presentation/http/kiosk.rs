@@ -479,10 +479,13 @@ async fn handle_kiosk(
                         role: "OWNER".to_string(),
                     }
                 } else if let Some(staff) = callers.staff_standing() {
+                    let staff_names =
+                        usernames(pool, std::iter::once(staff.user_id.as_str())).await;
+                    let staff_name = username_or_id(&staff_names, &staff.user_id);
                     dto_kiosk::EmployeeInfo {
-                        id: staff.user_id.clone(),
-                        username: staff.user_id.clone(),
-                        name: staff.user_id,
+                        id: staff.user_id,
+                        username: staff_name.clone(),
+                        name: staff_name,
                         role: staff.kind.audit_text().to_string(),
                     }
                 } else {

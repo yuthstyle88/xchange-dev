@@ -615,13 +615,14 @@ async fn the_answers_keep_v2s_key_order() {
          \"status\":\"WAITING\"}"
     );
     let notifications = counter.ask(Some("FR1"), "notifications", json!({})).await;
+    // OR-7.m S-D2: one name per user (known difference; rulings on #3730)
     assert_eq!(
         notifications.text,
         format!(
             "{{\"serverNow\":\"2026-10-06T05:00:04.000Z\",\"workingCount\":0,\"working\":[],\
              \"branchId\":\"MAIN\",\"branchName\":\"XC-B\",\"count\":1,\
              \"latest\":\"{id}\",\"employee\":{{\"id\":\"{}\",\"username\":\"fr1\",\
-             \"name\":\"FR1 of the test\",\"role\":\"FRONT\"}}}}",
+             \"name\":\"fr1\",\"role\":\"FRONT\"}}}}",
             fr1.id
         )
     );
