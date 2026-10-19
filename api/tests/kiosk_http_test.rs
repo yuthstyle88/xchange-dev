@@ -126,8 +126,9 @@ fn decided_by_603(name: &str) -> (Vec<(usize, Rule)>, Vec<usize>) {
 fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
     // The 10-06 recording answers every step the way v3 decided (`list` for every signed-in
     // role, the holder's repeat `accept`), so each step is replayed as recorded.
-    // OR-4b (#767, design §4.2 C8): QueueOperate is TELLER's and BRANCH_MANAGER's, so the owner's
-    // `list` offers no request to accept or continue.
+    // RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via `ADMIN`), so the owner's `list`
+    // matches v2; `RATES` (`RATE_MANAGER`) is widened with `QueueOperate`, so its `list` offers
+    // waiting requests (`canAccept: true`).
     let fixture = Fixture::load(name);
     let mut rules: Vec<(usize, Rule)> = fixture
         .steps()
@@ -136,14 +137,26 @@ fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
             s.path() == Some("/api/kiosk")
                 && s.action.as_deref() == Some("list")
                 && s.status == Some(200)
-                && fixture.sender(s).is_some_and(|p| p.is_owner())
+                && fixture.sender(s).is_some_and(|p| p.role == "RATES")
         })
-        .map(|s| (s.n, Rule::RecordedWith(not_offered_the_queue_work)))
+        .map(|s| (s.n, Rule::RecordedWith(offered_the_waiting_queue_work)))
         .collect();
     // QU-6 #1354 (design `queue-tickets.md` §7; QU-3): `accept` starts the request's queue ticket, and a
     // teller holds one CALLED or SERVING ticket. #197–#203 are second claims by tellers who already hold
     // one (FR2 #197/#200/#203, BE1 #198/#201, MG1 #199/#202): held to `alreadyServing`, v2's claim applied
     // behind the routes, so #204, #205 and #212 keep the twelve claims v2 recorded.
+    if name == "kiosk/transport.json" {
+        // RBAC §11.2 (#3659, C6f): `RATES` (`RATE_MANAGER`) holds `QueueOperate`, so an empty body
+        // (`{}`) on `/api/kiosk` as `RT1` (#26) is refused with `Unknown kiosk action.` like `FR1`
+        // (#25), matching #63 and #64.
+        rules.push((
+            26,
+            Rule::Differs {
+                status: 400,
+                sentence: "Unknown kiosk action.",
+            },
+        ));
+    }
     if name == "kiosk/queue_work.json" {
         for n in SECOND_CLAIMS {
             let step = fixture.step(n);
@@ -163,15 +176,13 @@ const SECOND_CLAIMS: std::ops::RangeInclusive<usize> = 197..=203;
 /// QU-3's refusal of a second CALLED or SERVING ticket, as the kiosk route answers it.
 const ALREADY_SERVING: &str = "alreadyServing";
 
-/// C8: the owner's user holds no QueueOperate, so no row of the owner's `list` can be accepted or
-/// continued.
-fn not_offered_the_queue_work(answer: &mut Value) {
+/// RBAC §11.2 (#3659): `RATES` (`RATE_MANAGER`) holds `QueueOperate`, so waiting rows of its `list`
+/// can be accepted (`canAccept: true`).
+fn offered_the_waiting_queue_work(answer: &mut Value) {
     if let Some(rows) = answer["requests"].as_array_mut() {
         for row in rows {
-            for key in ["canAccept", "canContinue"] {
-                if row.get(key).is_some() {
-                    row[key] = json!(false);
-                }
+            if row["status"] == json!("WAITING") && row.get("canAccept").is_some() {
+                row["canAccept"] = json!(true);
             }
         }
     }
@@ -184,7 +195,11 @@ async fn replayed(name: &str) -> (Fixture, usize) {
         let staff: Vec<&str> = fixture
             .people
             .iter()
-            .filter(|p| !p.is_owner() && p.branch_id.as_deref() == Some(rpc_common::MAIN))
+            .filter(|p| {
+                !p.is_owner()
+                    && p.branch_id.as_deref() == Some(rpc_common::MAIN)
+                    && matches!(p.role.as_str(), "FRONT" | "BACKEND" | "MANAGER")
+            })
             .map(|p| p.id.as_str())
             .collect();
         open_counters(&replay.replay.desk.db.pool, &staff).await;
@@ -211,6 +226,15 @@ async fn replayed(name: &str) -> (Fixture, usize) {
         assert!(
             replay.replay.tally.excluded.is_empty() && replay.replay.tally.part_two.is_empty(),
             "{name}: every step is sent and compared"
+        );
+        let expected_widened: &[usize] = match name {
+            "kiosk/queue.json" => &[77, 78, 79, 80],
+            "kiosk/queue_work.json" => &[64],
+            _ => &[],
+        };
+        assert_eq!(
+            replay.replay.tally.widened, expected_widened,
+            "{name}: steps widened by RBAC §11.2 (#3659)"
         );
         let lines = replay.lines_compared;
         replay.finish().await;
@@ -535,11 +559,12 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
         .ask(Some("FR2"), "get", json!({ "id": id }))
         .await
         .assert_refused(400, ACCEPT_FIRST, "another employee");
-    // OR-4b (#767, design §4.2 C8): the owner's user does not work the queue at all
+    // RBAC §11.2 (#3659): the owner holds QueueOperate again (via ADMIN), so is refused for not
+    // holding the request, not for role
     counter
         .ask(Some("owner"), "get", json!({ "id": id }))
         .await
-        .assert_refused(400, "Staff access required.", "the owner");
+        .assert_refused(400, ACCEPT_FIRST, "the owner");
     counter
         .ask(Some("FR2"), "accept", json!({ "id": id }))
         .await
@@ -585,13 +610,6 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
     let second = counter
         .waiting_request("00000000-0000-4000-8000-0000000c0002")
         .await;
-    // OR-4b (#767, design §4.2 C8): the owner's user no longer accepts; a request the owner holds
-    // (as v2 let the owner take one) is taken behind the routes, by the kiosk service as v2's
-    // owner
-    counter
-        .ask(Some("owner"), "accept", json!({ "id": second }))
-        .await
-        .assert_refused(400, "Staff access required.", "the owner accepts");
     let audit: std::sync::Arc<dyn xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog> =
         counter.hands.audit.clone();
     let source: std::sync::Arc<dyn xc_rate::domain::rate::entities::rate_source::RateSource> =
