@@ -13,7 +13,7 @@
 //   build their rows with `liveCsvRow`.
 
 import { describe, expect, it } from 'vitest';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 
 type LiveCsv = {
   LIVE_CSV_HEADERS: string[];
@@ -56,8 +56,8 @@ const HEADERS = [
   'Reference Spread %',
 ];
 
-function row(over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function row(over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: 'XC-20261010-000001',
     date: '2026-10-10',
     created: '2026-10-10T03:04:05.000Z',
@@ -85,7 +85,7 @@ function row(over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 describe('#868 the LIVE transaction CSV', () => {
