@@ -13,7 +13,7 @@
 //!   - `roles` = `[{role, branchId}]`: the caller's valid-now rows, `role` the wire name (`"TELLER"`), `branchId` a
 //!     branch id or `null`, ordered by role name, then branch id.
 //!   - `permissions` = the `Permission` variant names (serde form, e.g. `"ApprovalsDecide"`) that
-//!     `Authorizer::check` grants at `Me.branch`, the candidates being the union of `RolePermissions::of` over the
+//!     `Authorizer::check` grants at `Me.branch`, the candidates being the union of `RoleGrants::seed` over the
 //!     caller's roles; sorted, no duplicates. `Authorizer::check` is the only judge, so these tests use it as the
 //!     oracle rather than copy a scope rule.
 //! - The `me` version moves when a role row is granted or revoked (`identity_version` over `user_id` and the sorted
@@ -47,7 +47,7 @@ use xc_auth::domain::access::actor::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
@@ -219,7 +219,7 @@ fn name_of(p: Permission) -> String {
 }
 
 /// The sorted permission names `Authorizer::check` grants at `branch` to an actor holding exactly `rows`, all valid
-/// now. The candidates are the union of `RolePermissions::of` over the rows (ticket §3.3).
+/// now. The candidates are the union of `RoleGrants::seed` over the rows (ticket §3.3).
 fn granted(rows: &[(&str, Option<&str>)], branch: &str) -> Vec<String> {
     let org = "org-under-test";
     let since = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
@@ -234,9 +234,9 @@ fn granted(rows: &[(&str, Option<&str>)], branch: &str) -> Vec<String> {
     let target = Target::new(org, Some(BranchId::new(branch)), None);
     let mut names: BTreeSet<String> = BTreeSet::new();
     for (role, _) in rows {
-        for p in RolePermissions::of(role_of(role)) {
-            if Authorizer::check(Some(&actor), *p, &target, Utc::now()).is_ok() {
-                names.insert(name_of(*p));
+        for p in RoleGrants::seed(role_of(role)) {
+            if Authorizer::check(Some(&actor), p, &target, Utc::now()).is_ok() {
+                names.insert(name_of(p));
             }
         }
     }
