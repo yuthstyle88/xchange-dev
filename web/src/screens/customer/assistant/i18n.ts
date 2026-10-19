@@ -21,6 +21,16 @@ export const th = {
   promptQueue: 'ตรวจสอบสถานะคิว',
   newConversation: 'เริ่มการสนทนาใหม่',
   estimateHeading: 'ประมาณการ',
+  previewTitle: 'ตัวอย่างการแลก',
+  previewThb: 'ประมาณ {thb} บาท',
+  previewStale: 'อัตรานี้อาจไม่เป็นปัจจุบัน',
+  previewConfirm: 'บันทึกเป็นแผน',
+  previewSaved: 'บันทึกแผนแล้ว',
+  previewSaveFailed: 'บันทึกแผนไม่สำเร็จ',
+  linkPlans: 'ดูแผนของฉัน',
+  linkQueue: 'ดูคิวของฉัน',
+  linkAlerts: 'ไปที่การแจ้งเตือนอัตรา',
+  linkBranches: 'ดูสาขา',
 };
 
 export const en = {
@@ -43,6 +53,16 @@ export const en = {
   promptQueue: 'Check queue status',
   newConversation: 'New conversation',
   estimateHeading: 'Estimate',
+  previewTitle: 'Exchange preview',
+  previewThb: 'About {thb} THB',
+  previewStale: 'This rate may be out of date',
+  previewConfirm: 'Save as a plan',
+  previewSaved: 'Plan saved',
+  previewSaveFailed: 'Could not save the plan',
+  linkPlans: 'See my plans',
+  linkQueue: 'See my queue',
+  linkAlerts: 'Go to rate alerts',
+  linkBranches: 'See branches',
 };
 
 export const zh = {
@@ -65,4 +85,14 @@ export const zh = {
   promptQueue: '查看排队状态',
   newConversation: '新建对话',
   estimateHeading: '预估金额',
+  previewTitle: '兑换预览',
+  previewThb: '约 {thb} 泰铢',
+  previewStale: '此汇率可能不是最新',
+  previewConfirm: '保存为计划',
+  previewSaved: '计划已保存',
+  previewSaveFailed: '计划保存失败',
+  linkPlans: '查看我的计划',
+  linkQueue: '查看我的排队',
+  linkAlerts: '前往汇率提醒',
+  linkBranches: '查看分行',
 };

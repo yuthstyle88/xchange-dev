@@ -36,6 +36,12 @@ export const th = {
   staleVersion: 'ข้อมูลมีการเปลี่ยนแปลง กำลังโหลดข้อมูลใหม่…',
   idempotencyConflict: 'คำขอซ้ำซ้อน',
   validationFailed: 'ข้อมูลไม่ถูกต้อง',
+  expired: 'หมดอายุแล้ว',
+  expiresOn: 'หมดอายุ {at}',
+  rateStale: 'อัตรานี้อาจไม่เป็นปัจจุบัน',
+  relationSatisfied: 'ถึงเป้าหมายแล้ว',
+  relationNotSatisfied: 'ยังไม่ถึงเป้าหมาย',
+  lastEvent: 'แจ้งเตือนล่าสุด {at} ที่อัตรา {rate}',
 };
 
 export const en = {
@@ -73,6 +79,12 @@ export const en = {
   staleVersion: 'Alert version conflict, reloading…',
   idempotencyConflict: 'Idempotency conflict',
   validationFailed: 'Validation failed',
+  expired: 'Expired',
+  expiresOn: 'Expires {at}',
+  rateStale: 'This rate may be out of date',
+  relationSatisfied: 'Target met',
+  relationNotSatisfied: 'Target not met yet',
+  lastEvent: 'Last alert {at} at {rate}',
 };
 
 export const zh = {
@@ -110,4 +122,10 @@ export const zh = {
   staleVersion: '版本已过期，正在刷新…',
   idempotencyConflict: '幂等冲突',
   validationFailed: '验证失败',
+  expired: '已过期',
+  expiresOn: '{at} 到期',
+  rateStale: '此汇率可能不是最新',
+  relationSatisfied: '已达到目标',
+  relationNotSatisfied: '尚未达到目标',
+  lastEvent: '最近提醒 {at}，汇率 {rate}',
 };
