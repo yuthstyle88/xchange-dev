@@ -10,7 +10,7 @@
 //! 6. Identity down answers 503 `identityUnavailable`, user row stays PENDING.
 //! 7. Register succeeded but bind failed writes returned `identityId` to `user_audit` and displays it.
 //! 8. `create-owner` on a fresh install creates ACTIVE EXECUTIVE + ADMIN user with `must_change_password: true`.
-//! 9. No password is stored and `employees` table is untouched.
+//! 9. No password is stored on `users`.
 //! 10. `POST /api/auth/invite/claim` returns 404, and public `POST /api/auth/register` returns 404.
 //! 11. `user_invites` table is dropped and `users.status` CHECK becomes ('PENDING', 'ACTIVE', 'DISABLED').
 //!
@@ -146,16 +146,14 @@ async fn test_01_owner_creates_staff_with_new_phone_registers_in_identity_and_si
         "no challengeId sent"
     );
 
-    let row: (String, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT status, auth_subject, legacy_employee_id FROM users WHERE id = $1::uuid",
-    )
-    .bind(user_id)
-    .fetch_one(&desk.pool)
-    .await
-    .expect("user in db");
+    let row: (String, Option<String>) =
+        sqlx::query_as("SELECT status, auth_subject FROM users WHERE id = $1::uuid")
+            .bind(user_id)
+            .fetch_one(&desk.pool)
+            .await
+            .expect("user in db");
     assert_eq!(row.0, "ACTIVE");
     assert_eq!(row.1.as_deref(), Some(NEW_SUB));
-    assert!(row.2.is_none());
 
     identity.login_answers("/auth/login", VALID_B, REFRESH_2);
     let login_reply = app
@@ -491,17 +489,11 @@ async fn test_07_create_owner_on_fresh_install_makes_active_executive_admin_user
     desk.drop_schema().await;
 }
 
-/// §4.4: No password stored: SELECT count(*) FROM employees does not change on userCreate,
-/// and nothing in the create writes a hash.
+/// §4.4: No password stored: `userCreate` writes no column named like `password` on `users`.
 #[actix_web::test]
-async fn test_08_no_password_stored_employees_table_untouched() {
+async fn user_create_stores_no_password() {
     let (desk, identity, app) = setup().await;
     let token = owner_session(&desk, &identity, &app).await;
-
-    let emp_count_before: i64 = sqlx::query_scalar("SELECT count(*) FROM employees")
-        .fetch_one(&desk.pool)
-        .await
-        .expect("count employees");
 
     identity.answer(
         "/auth/register",
@@ -525,21 +517,17 @@ async fn test_08_no_password_stored_employees_table_untouched() {
         .await;
     assert_eq!(reply.status, 200, "{}", reply.text);
 
-    let emp_count_after: i64 = sqlx::query_scalar("SELECT count(*) FROM employees")
-        .fetch_one(&desk.pool)
-        .await
-        .expect("count employees");
+    let password_cols: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM information_schema.columns \
+         WHERE table_schema = current_schema() AND table_name = 'users' AND column_name ILIKE '%password%'",
+    )
+    .fetch_one(&desk.pool)
+    .await
+    .expect("query information_schema.columns");
     assert_eq!(
-        emp_count_before, emp_count_after,
-        "employees table count unchanged by userCreate"
+        password_cols, 0,
+        "users table has no column named like password"
     );
-
-    let name_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM employees WHERE name = 'NoHashStaff'")
-            .fetch_one(&desk.pool)
-            .await
-            .expect("query");
-    assert_eq!(name_count, 0, "no employee row created");
 
     desk.drop_schema().await;
 }

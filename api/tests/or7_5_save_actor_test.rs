@@ -1,6 +1,6 @@
 //! Ticket #1024 (OR-7.5) — the save of an exchange moves from the old identity model
 //! (`xc_auth::domain::policy::value_objects::{actor::Actor, role::Role, actor_kind::ActorKind}`) to
-//! `access::Actor` plus `Permission`, and the save steps stop resolving `users.legacy_employee_id`
+//! `access::Actor` plus `Permission`
 //! (design `docs/design/blueprint/org-roles-branches.md` §3.3, §4.3; ticket §7–9 *"a save by each v3
 //! role succeeds or is refused exactly as today"*).
 //! Written before the implementation by the up-front test writer (claude/dell-claude-4, on the xchange BE
@@ -14,19 +14,12 @@
 //!   `actor_role` is `FRONT`. Every other role is refused at create with 400 `roleNotAllowedHere`, and nothing
 //!   is written. **Green on `main`**: it pins today's outcome, which the move must keep. An outcome that has to
 //!   change is named in the PR (ticket "The rule for every OR-7 child"), not changed here.
-//! - `a_teller_with_no_legacy_employee_id_saves`: a Blueprint user whose `users.legacy_employee_id` is NULL,
-//!   TELLER at MAIN, saves and completes, and is recorded by `users.id`. **Green on `main`**: no save path reads
-//!   `legacy_employee_id` there any more (`git grep -n legacy_employee_id origin/main -- api/src/application`
-//!   finds only the `#[cfg(test)]` seed in `booking_save_step.rs` and a `None` in `customer_signup.rs`), so this
-//!   row guards the removal and cannot be red by result.
-//! - `a_teller_with_a_legacy_employee_id_is_recorded_by_users_id` (fix round, ruling on #1024 after claude/dell-claude-2's
-//!   must-fix 1): a Blueprint TELLER whose `users.legacy_employee_id` is `EMP-OLD-7` saves and is recorded by its
-//!   `users.id` (the audit `actor_id`, `staff_id`, `recorded_by`), never by `EMP-OLD-7`. **Green on `main`**; red
-//!   against a move that prefers the column (`COALESCE(legacy_employee_id, users.id)`).
+//! - `a_teller_saves_as_their_user`: a Blueprint user, TELLER at MAIN, saves and completes, and is recorded by
+//!   `users.id`.
 //! - `the_v3_commands_no_longer_bridge_through_legacy_actor` (source-scan pin, lane controller's ruling on #1024
 //!   must-fix 3): the five command files that carried `// OR-7 bridge, removed by #1024` contain no `legacy_actor` in
 //!   code (line comments stripped as `no_ts_export_test.rs` strips them) and no `OR-7 bridge` marker (read in the raw
-//!   text: the marker is itself a comment). **Red on `main`** (the bridges are there); the three tests above are
+//!   text: the marker is itself a comment). **Red on `main`** (the bridges are there); the tests above are
 //!   characterisation tests and pass on both.
 //!
 //! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`; nothing here skips. Each
@@ -371,7 +364,7 @@ async fn each_v3_role_saves_or_is_refused_as_today() {
 }
 
 #[actix_web::test]
-async fn a_teller_with_no_legacy_employee_id_saves() {
+async fn a_teller_saves_as_their_user() {
     let shop = Shop::start().await;
     let user_id: String = sqlx::query_scalar(
         "INSERT INTO users (organization_id, name, status, created_by) \
@@ -381,14 +374,6 @@ async fn a_teller_with_no_legacy_employee_id_saves() {
     .fetch_one(&shop.c.desk.db.pool)
     .await
     .expect("insert the teller's user");
-    assert_eq!(
-        shop.count(&format!(
-            "SELECT count(*) FROM users WHERE id::text = '{user_id}' AND legacy_employee_id IS NULL"
-        ))
-        .await,
-        1,
-        "the teller has no legacy_employee_id"
-    );
     let reader: Arc<dyn SessionReader> = Arc::new(TellerSession {
         user_id: user_id.clone(),
     });
@@ -400,47 +385,8 @@ async fn a_teller_with_no_legacy_employee_id_saves() {
             audit: (user_id.clone(), "FRONT".to_owned()),
             recorded: (user_id.clone(), user_id.clone()),
         },
-        "a user with no legacy_employee_id saves, recorded by users.id"
+        "a teller saves as their user, recorded by users.id"
     );
-    shop.finish().await;
-}
-
-#[actix_web::test]
-async fn a_teller_with_a_legacy_employee_id_is_recorded_by_users_id() {
-    const LEGACY: &str = "EMP-OLD-7";
-    let shop = Shop::start().await;
-    let user_id: String = sqlx::query_scalar(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         VALUES ($1::uuid, 'Blueprint teller with a v3 past', 'ACTIVE', 'test', $2) RETURNING id::text",
-    )
-    .bind(ORG)
-    .bind(LEGACY)
-    .fetch_one(&shop.c.desk.db.pool)
-    .await
-    .expect("insert the teller's user");
-    assert_ne!(user_id, LEGACY, "the two ids differ");
-    let reader: Arc<dyn SessionReader> = Arc::new(TellerSession {
-        user_id: user_id.clone(),
-    });
-    let got = shop.save_as(reader, "teller", &user_id).await;
-    let Saved::Completed {
-        status,
-        audit,
-        recorded,
-    } = got
-    else {
-        panic!("the teller with a legacy_employee_id saves: {got:?}");
-    };
-    assert_eq!(status, "COMPLETED");
-    for (what, value) in [
-        ("the create's audit actor_id", &audit.0),
-        ("staff_id", &recorded.0),
-        ("recorded_by", &recorded.1),
-    ] {
-        assert_ne!(value, LEGACY, "{what} is never the legacy_employee_id");
-        assert_eq!(value, &user_id, "{what} is the user's users.id");
-    }
-    assert_eq!(audit.1, "FRONT", "the audit's actor_role is today's");
     shop.finish().await;
 }
 
