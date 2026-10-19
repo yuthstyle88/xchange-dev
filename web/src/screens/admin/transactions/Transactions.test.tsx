@@ -17,7 +17,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenu } from '../menus';
@@ -72,8 +72,8 @@ const CSV_HEADERS = [
   'Reference Spread %',
 ];
 
-function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function tx(n: number, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: `XC-20261008-${String(n).padStart(6, '0')}`,
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -101,12 +101,12 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 /** Rows numbered `from` down to `to`, newest first. */
-function txs(from: number, to: number): TransactionRow[] {
-  const out: TransactionRow[] = [];
+function txs(from: number, to: number) {
+  const out = [];
   for (let n = from; n >= to; n--) out.push(tx(n));
   return out;
 }
