@@ -41,17 +41,16 @@ type Configure = fn(&mut web::ServiceConfig, &AppState);
 /// function or another signature does not compile.
 #[actix_web::test]
 async fn every_handler_module_has_the_same_configure() {
-    let modules: [(&str, Configure); 8] = [
+    let modules: [(&str, Configure); 7] = [
         ("auth", http::auth::configure),
         ("customers", http::customers::configure),
         ("devices", http::devices::configure),
-        ("employees", http::employees::configure),
         ("files", http::files::configure),
         ("kiosk", http::kiosk::configure),
         ("reference_rates", http::reference_rates::configure),
         ("rpc", http::rpc::configure),
     ];
-    assert_eq!(modules.len(), 8);
+    assert_eq!(modules.len(), 7);
     // the table itself, and the two that keep the shape T1a gave them
     let _table: Configure = http::configure;
     let _health: fn(&mut web::ServiceConfig) = http::health::configure;

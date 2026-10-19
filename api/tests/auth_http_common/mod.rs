@@ -17,7 +17,6 @@ use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
 use actix_web::http::{Method, header};
 use actix_web::{Error, test};
-use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -25,9 +24,7 @@ use sqlx::{AssertSqlSafe, PgPool};
 use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
-use xc_kernel::ids::BranchId;
 use xchange::bootstrap::AppState;
-use xchange::presentation::http::employees::EmployeeCustody;
 
 use crate::common::settings;
 
@@ -56,49 +53,12 @@ fn unique(prefix: &str) -> String {
 
 // ── the custody port, faked ──────────────────────────────────────────────
 
-/// What v2's route asks the engine about custody, held in memory: per branch the
-/// `operations` object of the snapshot (`custodian`, `requests`). `calls` stays empty since CA-10
-/// #626 retired `entity` and `enable` (cash-shift-transfer.md §6 Q7): nothing hands custody a write
-/// any more, and the tests that read it check exactly that.
 #[derive(Default)]
 pub struct FakeCustody {
     pub operations: Mutex<HashMap<String, Value>>,
     pub calls: Mutex<Vec<Value>>,
     /// When set, every method fails with this sentence.
     pub refuse_with: Mutex<Option<String>>,
-}
-
-impl FakeCustody {
-    fn refusal(&self) -> AppResult<()> {
-        match self.refuse_with.lock().unwrap().clone() {
-            Some(sentence) => Err(AppError::Domain(sentence)),
-            None => Ok(()),
-        }
-    }
-}
-
-impl EmployeeCustody for FakeCustody {
-    fn holds_cash_or_pending<'a>(
-        &'a self,
-        branch: &'a BranchId,
-        employee_id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = AppResult<bool>> + 'a>> {
-        Box::pin(async move {
-            self.refusal()?;
-            let all = self.operations.lock().unwrap();
-            let Some(ops) = all.get(branch.as_str()) else {
-                return Ok(false);
-            };
-            // v2, `server.mjs:7379`
-            let pending = ops["requests"].as_array().is_some_and(|requests| {
-                requests.iter().any(|r| {
-                    r["status"] == "PENDING"
-                        && (r["sender"] == employee_id || r["receiver"] == employee_id)
-                })
-            });
-            Ok(ops["custodian"] == employee_id || pending)
-        })
-    }
 }
 
 // ── the database and the app ─────────────────────────────────────────────
@@ -208,20 +168,15 @@ impl Desk {
     }
 }
 
-/// The server's whole route table (`bootstrap::configure`) with the fake custody port
-/// registered the way the real one will be: as `web::Data<dyn EmployeeCustody>`.
+/// The server's whole route table (`bootstrap::configure`).
 #[macro_export]
 macro_rules! desk_app {
     ($desk:expr) => {{
-        let custody: std::sync::Arc<dyn xchange::presentation::http::employees::EmployeeCustody> =
-            $desk.custody.clone();
         let state = $desk.state();
         $crate::auth_http_common::TestApp::new(
             actix_web::test::init_service(
-                // after `.configure`: the route table registers the real port, and the later one wins
                 actix_web::App::new()
-                    .configure(move |cfg| xchange::bootstrap::configure(cfg, state))
-                    .app_data(actix_web::web::Data::from(custody)),
+                    .configure(move |cfg| xchange::bootstrap::configure(cfg, state)),
             )
             .await,
             |t| t.to_request(),
@@ -496,30 +451,33 @@ pub async fn owner_signs_in(app: &TestApp) -> String {
     answer.token("owner")
 }
 
-/// Creates an employee through `/api/employees` and takes them past the first password,
+/// Creates an employee and takes them past the first password,
 /// through the staff door. Gives back (employee id, staff token).
 pub async fn working_employee(
     app: &TestApp,
     desk: &Desk,
-    owner: &str,
+    _owner: &str,
     username: &str,
     role: &str,
     branch: &str,
 ) -> (String, String) {
     let first = "first-password-1";
     let password = "second-password-2";
-    let made = send(
-        app,
-        Call::post(
-            "/api/employees",
-            json!({ "action": "create", "payload": {
-                "username": username, "name": format!("คุณ {username}"), "role": role,
-                "branchId": branch, "password": first } }),
-        )
-        .owner(owner),
+    AccountService::new(
+        Arc::new(PgAccountRepository::new(desk.pool.clone())),
+        PasswordHasher::with_cost(8, 1, 1),
     )
-    .await;
-    assert_eq!(made.status, 200, "create {username}: {}", made.text);
+    .employees(
+        "create",
+        &json!({
+            "username": username, "name": format!("คุณ {username}"), "role": role,
+            "branchId": branch, "password": first
+        }),
+        "owner",
+        SystemTime::now().into(),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("create {username}: {e}"));
     let address = unique("staff-address");
     let login = send(
         app,
@@ -666,14 +624,20 @@ pub async fn replay(app: &TestApp, desk: &Desk, story: &Value) {
             story["name"].as_str().unwrap(),
             step["note"].as_str().unwrap()
         );
-        // CA-10 #626 retires `/api/employees`' `entity` and `enable` (cash-shift-transfer.md §6 Q7): v2's
-        // steps of them have no answer to compare any more, and are left out.
-        if step["request"]["path"] == "/api/employees"
-            && matches!(
-                step["request"]["json"]["action"].as_str(),
-                Some("entity" | "enable")
-            )
-        {
+        // route deleted by #1027 (OR-7.m T6)
+        if step["request"]["path"] == "/api/employees" {
+            if step["request"]["json"]["action"] == "create" && step["response"]["status"] == 200 {
+                let payload = symbols.resolve(&step["request"]["json"]["payload"]);
+                AccountService::new(
+                    Arc::new(PgAccountRepository::new(desk.pool.clone())),
+                    PasswordHasher::with_cost(8, 1, 1),
+                )
+                .employees("create", &payload, "owner", SystemTime::now().into())
+                .await
+                .expect("seed employee from v2 fixture");
+                let username = payload["username"].as_str().unwrap().trim().to_lowercase();
+                symbols.employees.push(desk.employee_id(&username).await);
+            }
             continue;
         }
         if let Some(custody) = step.get("custody") {
