@@ -40,14 +40,14 @@ use sqlx::{AssertSqlSafe, PgPool};
 use tokio::sync::Notify;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor as AccessActor;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::idempotency::store::IdempotencyKey;
 use xchange::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const HOST: &str = "xc.test";
@@ -198,19 +198,11 @@ impl TestDb {
 // ------------------------------------------------------------ the command
 
 /// The owner is signed in on every request.
-struct OwnerSessions;
+struct OwnerCallers;
 
-impl SessionReader for OwnerSessions {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: Some(Actor::owner("owner-1")),
-                staff: None,
-            }
-        })
+impl SessionReader for OwnerCallers {
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        Box::pin(async move { test_callers::callers(Some(test_callers::owner("owner-1")), None) })
     }
 }
 
@@ -325,7 +317,7 @@ struct Answer {
 
 async fn post(db: &TestDb, flaky: Arc<Flaky>, amount: &str, key: &str) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(OwnerSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(OwnerCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| {

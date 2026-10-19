@@ -40,9 +40,9 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: StdDuration = StdDuration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -230,22 +230,16 @@ async fn publish_with_groups(pool: &PgPool, lines: &[LineWithGroup]) {
 // ------------------------------------------------------------ callers and requests
 
 /// The owner when the header `x-test-as: owner` is present; nobody otherwise.
-struct HeaderSessions;
+struct HeaderCallers;
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let owner = req
             .headers()
             .get(AS)
             .is_some_and(|v| v.as_bytes() == b"owner");
         Box::pin(async move {
-            Sessions {
-                owner: owner.then(|| Actor::owner("owner-1")),
-                staff: None,
-            }
+            test_callers::callers(owner.then(|| test_callers::owner("owner-1")), None)
         })
     }
 }
@@ -253,7 +247,7 @@ impl SessionReader for HeaderSessions {
 /// `data` of `GET /api/v3/views/<view>?branch=MAIN` as the owner; must be 200 and changed.
 async fn data(db: &TestDb, view: &str) -> Value {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))

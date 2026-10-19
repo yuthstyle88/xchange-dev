@@ -91,7 +91,8 @@ use xchange::application::workflows::exchange::reversal_request::{
 use xchange::application::workflows::save_step::SaveActor;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::files::file_service::FileService;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const FRONT: &str = "staff:FRONT:MAIN";
@@ -112,46 +113,50 @@ const STAFF_ROLES: [&str; 9] = [
 
 // ── sessions ─────────────────────────────────────────────────────────────────
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
-    if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
-    }
-    if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
-    }
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
-            BranchId::new(branch),
-        ),
+fn roles_of(role: &str) -> &'static [AccessRole] {
+    match role {
+        "FRONT" => &[AccessRole::Teller],
+        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
+        "RATES" => &[AccessRole::RateManager],
+        "FINANCE" => &[AccessRole::Finance],
+        "SYSTEM" => &[AccessRole::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
+        other => panic!("unknown role {other}"),
     }
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+fn callers_of(spec: &str) -> Callers {
+    if spec.is_empty() {
+        return test_callers::nobody();
+    }
+    if spec == "owner" {
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
+    }
+    let mut parts = spec.splitn(3, ':');
+    assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
+    let role = parts.next().expect("a role");
+    let roles = roles_of(role);
+    let branch = parts.next().expect("a branch");
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role}"),
+            roles,
+            BranchId::new(branch),
+        )),
+    )
+}
+
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -598,7 +603,7 @@ impl Room {
             )])),
             self.db.pool.clone(),
         );
-        let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+        let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
         let app = atest::init_service(
             App::new()
                 .configure(move |cfg| bootstrap::configure(cfg, state))
