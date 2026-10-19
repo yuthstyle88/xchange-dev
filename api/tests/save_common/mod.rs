@@ -335,22 +335,12 @@ impl Shop {
     /// branch's own opener elsewhere (one OPEN shift per teller). CA-10-save (#626): a save moves stock on the
     /// saver's own OPEN shift.
     pub async fn teller_of(&self, branch_id: &str) -> Option<String> {
-        if branch_id == MAIN {
-            return sqlx::query_scalar(
-                "SELECT u.id::text FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
-                 (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
-                 ORDER BY u.created_at LIMIT 1",
-            )
-            .fetch_optional(&self.pool)
-            .await
-            .expect("read the owner's user id");
-        }
-        let opener = Self::opener_of(branch_id);
-        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
-            .bind(&opener)
-            .fetch_optional(&self.pool)
-            .await
-            .expect("read the opener's user id")
+        let key = if branch_id == MAIN {
+            "owner"
+        } else {
+            &Self::opener_of(branch_id)
+        };
+        lookup_opener_user(&self.pool, key).await
     }
 
     pub async fn open_shift_id(&self, branch_id: &str) -> String {
@@ -713,42 +703,75 @@ pub fn command(
     }
 }
 
-/// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3). The user an
-/// opener id resolves to: `users.legacy_employee_id = id`, or, for `"owner"`, the organisation-wide EXECUTIVE +
-/// ADMIN user. Seeded once per id; no test's expectation depends on it. Added by the ticket author in CA-1's
-/// up-front commit.
-pub async fn seed_opener(pool: &PgPool, id: &str) {
-    if id == "owner" {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
-             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL))",
-        )
-        .fetch_one(pool)
-        .await
-        .expect("look for the owner's user");
-        if !exists {
-            sqlx::query(
-                "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
-                 u AS (INSERT INTO users (organization_id, name, status, created_by) \
-                       SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
-                 INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
-            )
-            .execute(pool)
+/// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3).
+/// Resolved per OR-7.m H1 (§3):
+/// 1. `k` is a `users.id` (`users.id::text = k`) -> that user;
+/// 2. `k == "owner"` -> the organisation-wide user with an `EXECUTIVE` role and `branch_id` NULL (oldest `created_at`);
+/// 3. otherwise -> the XC organisation's user with `name = k` and `created_by = 'test'` (oldest), created as
+///    `name = k`, `status = 'PENDING'`, `created_by = 'test'` if missing.
+async fn lookup_opener_user(pool: &PgPool, k: &str) -> Option<String> {
+    if let Some(id) =
+        sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
+            .bind(k)
+            .fetch_optional(pool)
             .await
-            .expect("seed the owner's user");
-        }
-        return;
+            .expect("check if opener key is a users.id")
+    {
+        return Some(id);
     }
-    sqlx::query(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
-         ON CONFLICT (legacy_employee_id) DO NOTHING",
+    if k == "owner" {
+        return sqlx::query_scalar::<_, String>(
+            "SELECT u.id::text FROM users u WHERE EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+             ORDER BY u.created_at, u.id LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await
+        .expect("read the owner's user id");
+    }
+    sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test' \
+         ORDER BY u.created_at, u.id LIMIT 1",
     )
-    .bind(id)
-    .execute(pool)
+    .bind(k)
+    .fetch_optional(pool)
     .await
-    .expect("seed an opener's user");
+    .expect("read the opener's user id")
+}
+
+async fn opener_user(pool: &PgPool, k: &str) -> String {
+    if let Some(id) = lookup_opener_user(pool, k).await {
+        return id;
+    }
+    if k == "owner" {
+        sqlx::query(
+            "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
+             u AS (INSERT INTO users (organization_id, name, status, created_by) \
+                   SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
+             INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+             SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
+        )
+        .execute(pool)
+        .await
+        .expect("seed the owner's user");
+        return lookup_opener_user(pool, k)
+            .await
+            .expect("read seeded owner user");
+    }
+    sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .bind(k)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the user of opener {k}: {e}"))
+}
+
+pub async fn seed_opener(pool: &PgPool, id: &str) {
+    let _ = opener_user(pool, id).await;
 }
 
 /// CI-4 (#651): the PII keys every test process installs (U3: one `key_id:base64(32 bytes)` line). A test key,
