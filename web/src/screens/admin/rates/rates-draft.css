@@ -1,0 +1,10 @@
+.adjust-all-bar--draft {
+  padding: 12px 24px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.btn-save-lines {
+  cursor: pointer;
+}
