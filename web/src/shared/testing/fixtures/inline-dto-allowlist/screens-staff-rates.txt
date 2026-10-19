@@ -1,5 +1,0 @@
-# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
-# The migration ticket for screens/staff/rates deletes this file.
-screens/staff/rates/RatesCard.order.test.tsx
-screens/staff/rates/rates.error.test.tsx
-screens/staff/rates/rates.test.tsx
