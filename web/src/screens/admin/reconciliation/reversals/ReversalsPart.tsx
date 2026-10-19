@@ -1,8 +1,11 @@
 // F01 (#1068) the sheet's pending reversals, moved out of Reconciliation.tsx as a pure code move
 // (FE-admin skeleton, #564). Survey row A4 adds approve / reject here (executive-finance.md §5).
 import { createSignal, For, Show, type JSX } from 'solid-js';
+import { ApiClient } from '../../../../shared/api/client';
 import type { ReversalPendingRow } from '../../../../shared/api/generated/finance_reconciliation';
+import { keyedWrite } from '../../../../shared/api/keyed-write';
 import { screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
 import { Empty, stamp } from '../parts';
 import * as table from './i18n';
 
@@ -16,18 +19,55 @@ export interface ReversalsPartProps {
   onDecided: () => Promise<void>;
 }
 
+interface DecidePayload {
+  outcome: 'APPROVED' | 'REJECTED';
+  reason: string;
+  branch: string;
+}
+
 function ReversalRow(props: {
   row: ReversalPendingRow;
   branch: string;
   onDecided: () => Promise<void>;
 }): JSX.Element {
+  const api = new ApiClient();
+  const decideWrite = keyedWrite<DecidePayload, unknown>(
+    api,
+    'POST',
+    `/api/approvals/${props.row.requestId}/decide`,
+  );
+
   const [reason, setReason] = createSignal('');
-  const [error] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal(false);
+
+  async function decide(outcome: 'APPROVED' | 'REJECTED') {
+    if (busy()) return;
+    const text = reason();
+    if (outcome === 'REJECTED' && !text.trim()) {
+      setError(t('reasonRequired'));
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await decideWrite.send({
+        outcome,
+        reason: text,
+        branch: props.branch,
+      });
+      await props.onDecided();
+    } catch (err: unknown) {
+      setError(wordedError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <li data-request={props.row.requestId}>
       <span>
-        {props.row.transactionId} {props.row.requestedBy} {stamp(props.row.createdAt)}
+        {props.row.requestId} {props.row.transactionId} {props.row.requestedBy} {stamp(props.row.createdAt)}
       </span>
       <input
         type="text"
@@ -36,10 +76,20 @@ function ReversalRow(props: {
         value={reason()}
         onInput={(e) => setReason(e.currentTarget.value)}
       />
-      <button type="button" data-action="approve">
+      <button
+        type="button"
+        data-action="approve"
+        disabled={busy()}
+        onClick={() => void decide('APPROVED')}
+      >
         {t('approve')}
       </button>
-      <button type="button" data-action="reject">
+      <button
+        type="button"
+        data-action="reject"
+        disabled={busy()}
+        onClick={() => void decide('REJECTED')}
+      >
         {t('reject')}
       </button>
       <Show when={error()}>
