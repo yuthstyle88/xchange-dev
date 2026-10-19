@@ -9,12 +9,15 @@ import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { PAGE_WIDE } from '../../../shared/testing/page-wide';
-import type {
-  BranchRowDto,
-  DefinitionDto,
-  ExecutiveOverviewData,
-  MetricDto,
-} from '../../../shared/api/generated/executive_overview';
+import {
+  makeBranchRowDto,
+  makeDefinitionDto,
+  makeDrilldownDto,
+  makeExecutiveOverviewData,
+  makeMetricDto,
+  makeOverviewPeriod,
+  makeShiftsDto,
+} from '../../../shared/testing/fixtures';
 import { Executive } from './Executive';
 
 const ENDPOINT = '/api/v3/views/executive_overview';
@@ -22,43 +25,43 @@ const FROM = '2026-10-05';
 const TO = '2026-10-06';
 const VERSIONS = { B1: 4, B2: 9 };
 
-function metric(key: string, value: string | null): MetricDto {
-  return { key, value, unavailable: null, drilldown: null };
+function metric(key: string, value: string | null) {
+  return makeMetricDto({ key, value, unavailable: null, drilldown: null });
 }
 
-function branchRow(id: string): BranchRowDto {
-  return {
+function branchRow(id: string) {
+  return makeBranchRowDto({
     branchId: id,
     name: id === 'B1' ? 'สาขาหนึ่ง' : 'สาขาสอง',
     volumeThb: '2000.50',
     availableCash: metric('available_cash', '150000.00'),
     inTransit: metric('in_transit', '5000.00'),
-    shifts: { open: 1, closedVerified: 2, closedUnverified: 3 },
+    shifts: makeShiftsDto({ open: 1, closedVerified: 2, closedUnverified: 3 }),
     asOf: '2026-10-06T03:00:00Z',
     pendingEvents: 0,
-    drilldown: { view: 'admin_overview', filter: { branch: id }, dropped: [] },
-  };
+    drilldown: makeDrilldownDto({ view: 'admin_overview', filter: { branch: id }, dropped: [] }),
+  });
 }
 
-const SAMPLE_DEFINITIONS: DefinitionDto[] = [
-  { key: 'buy_volume_thb', th: 'มูลค่าบาทของรายการซื้อที่สำเร็จ ไม่ใช่รายได้', en: 'THB value of completed buys; not revenue' },
+const SAMPLE_DEFINITIONS = [
+  makeDefinitionDto({ key: 'buy_volume_thb', th: 'มูลค่าบาทของรายการซื้อที่สำเร็จ ไม่ใช่รายได้', en: 'THB value of completed buys; not revenue' }),
 ];
 
-const SAMPLE_KPIS: MetricDto[] = [
-  { key: 'buy_volume_thb', value: '1234567.89', unavailable: null, drilldown: null },
+const SAMPLE_KPIS = [
+  makeMetricDto({ key: 'buy_volume_thb', value: '1234567.89', unavailable: null, drilldown: null }),
 ];
 
-const SAMPLE_BRANCHES: BranchRowDto[] = [branchRow('B1')];
+const SAMPLE_BRANCHES = [branchRow('B1')];
 
-const SAMPLE_DATA: ExecutiveOverviewData = {
-  period: { from: FROM, to: TO },
+const SAMPLE_DATA = makeExecutiveOverviewData({
+  period: makeOverviewPeriod({ from: FROM, to: TO }),
   kpis: SAMPLE_KPIS,
   branches: SAMPLE_BRANCHES,
   alerts: [],
   definitions: SAMPLE_DEFINITIONS,
   buyReversedThb: '0.00',
   sellReversedThb: '0.00',
-};
+});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
