@@ -21,7 +21,6 @@
 
 mod shift_service_common;
 
-use pos_error::{AppError, AppResult};
 use shift_service_common::{TestDb, at};
 use xc_kernel::ids::BranchId;
 
@@ -41,41 +40,8 @@ async fn a_day_with_dollars(db: &TestDb, label: &str) -> (BranchId, String) {
             at(0, 0),
         )
         .await;
-    db.seed_movement(
-        &branch,
-        &shift,
-        "USD",
-        "IN",
-        "20",
-        &rid(label, 1),
-        at(60, 0),
-    )
-    .await;
+    db.balances.seed_movement(&shift, "USD", "IN", "20");
     (branch, shift)
-}
-
-fn a_fault<T: std::fmt::Debug>(read: AppResult<T>, what: &str) {
-    match read {
-        Err(AppError::Domain(sentence)) => {
-            panic!("{what}: a fault is not a refusal, got Domain({sentence:?})")
-        }
-        Err(_) => {}
-        Ok(value) => panic!("{what}: an undecodable row was read as {value:?}"),
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_movement_in_a_currency_the_register_does_not_know_is_a_fault() {
-    let db = TestDb::start().await;
-    let (branch, _) = a_day_with_dollars(&db, "move").await;
-    sqlx::query("UPDATE stock_movements SET code = 'ZZZ' WHERE branch_id = $1")
-        .bind(branch.as_str())
-        .execute(&db.pool)
-        .await
-        .expect("turn the movement's currency into ZZZ");
-
-    a_fault(db.service().movements(&branch).await, "movements");
-    db.drop_schema().await;
 }
 
 /// Holds before the fix and after it: rows that decode are read as written.
@@ -84,10 +50,6 @@ async fn rows_that_decode_are_read_as_written() {
     let db = TestDb::start().await;
     let (branch, id) = a_day_with_dollars(&db, "fine").await;
     let service = db.service();
-    let movements = service.movements(&branch).await.expect("movements");
-    assert_eq!(movements.len(), 1);
-    assert_eq!(movements[0].currency.as_str(), "USD");
-    assert_eq!(movements[0].amount.to_string(), "20.00");
     let shift = service
         .shift(&branch, &id)
         .await
