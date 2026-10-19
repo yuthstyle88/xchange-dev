@@ -40,7 +40,7 @@ use xc_kernel::pii::{PiiCipher, PiiKeys};
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::document_store::FsDocumentStore;
 use xchange::presentation::http::app_verification_upload;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -134,18 +134,6 @@ impl Who {
 struct HeaderUsers;
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()

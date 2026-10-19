@@ -29,7 +29,7 @@ use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::AppState;
 use xchange::presentation::http::branch_verification_intake::{BranchCaseOpenAnswer, ROUTE};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 mod common;
 
@@ -146,18 +146,6 @@ fn user_of(spec: &str) -> Option<AccessActor> {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
@@ -1170,18 +1158,6 @@ const B03: &str = "B03";
 struct FixedActorReader(AccessActor);
 
 impl SessionReader for FixedActorReader {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let user = Some(self.0.clone());
         Box::pin(async move {
