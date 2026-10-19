@@ -188,14 +188,23 @@ impl Db {
     }
 
     async fn balance(&self, shift: &str, currency: &str) -> (Decimal, Decimal, Option<Decimal>) {
-        sqlx::query_as(
-            "SELECT opening, expected, counted FROM shift_balances WHERE shift_id = $1 AND code = $2",
+        use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+        let rows = xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(
+            self.pool.clone(),
         )
-        .bind(shift)
-        .bind(currency)
-        .fetch_one(&self.pool)
+        .shift_balances(&shift.to_owned())
         .await
-        .unwrap_or_else(|e| panic!("the {currency} balance of {shift}: {e}"))
+        .unwrap_or_else(|e| panic!("the {currency} balance of {shift}: {e}"));
+        let row = rows
+            .into_iter()
+            .find(|b| b.currency.as_str() == currency)
+            .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
+        let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
+        (
+            to_dec(row.opening.minor_i128()),
+            to_dec(row.expected.minor()),
+            row.counted.map(|m| to_dec(m.minor_i128())),
+        )
     }
 }
 

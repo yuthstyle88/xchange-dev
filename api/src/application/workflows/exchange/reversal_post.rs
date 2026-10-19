@@ -35,7 +35,6 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
 use xc_referral::application::feed_writer::ExchangeFeedWriter;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use super::complete::{EffectPhase, ExchangeEffects, PostedReversal};
 use crate::application::workflows::save_step::SaveActor;
@@ -238,7 +237,11 @@ impl PostReversal {
         let reversals = PgReversalRepository::new(self.pool.clone());
         let store = PgTransactionStore::new(self.pool.clone());
         let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.pool.clone())),
+            Arc::new(
+                xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                    self.pool.clone(),
+                ),
+            ),
             BranchTx::new(Transactor::new(self.pool.clone())),
         );
 

@@ -172,7 +172,20 @@ impl Room {
     /// `MAIN` (from the migration) and `B9`, the owner and one employee of every staff role
     /// in `MAIN`, all signed in; the USD counter rate 32.1 / 33 in both branches.
     async fn open() -> Room {
-        let desk = Desk::open().await;
+        let mut desk = Desk::open().await;
+        desk.workflow =
+            xchange::application::workflows::save_transaction::SaveTransactionWorkflow::new(
+                desk.db.branch_tx(),
+                xc_shift::application::shift::service::ShiftService::new(
+                    std::sync::Arc::new(
+                        xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                            desk.db.pool.clone(),
+                        ),
+                    ),
+                    desk.db.branch_tx(),
+                ),
+                desk.files.clone(),
+            );
         desk.db.seed_branch(B9, B9_NAME).await;
         let app = rpc_app!(desk);
         let people = one_of_each_role();
@@ -318,17 +331,21 @@ impl Room {
 
     /// The open shift's stored `expected`, `code -> "0.00"`, as a JSON object of strings.
     async fn expected_of_open_shift(&self, branch: &str) -> Value {
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT b.code::text, b.expected::text FROM shift_balances b \
-             JOIN shifts s ON s.id = b.shift_id WHERE s.branch_id = $1 AND s.status = 'OPEN'",
-        )
-        .bind(branch)
-        .fetch_all(&self.desk.db.pool)
-        .await
-        .expect("read the open shift's balances");
+        use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+        use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+        let shift_id = self.open_shift_id(branch).await;
+        let rows = PgLedgerShiftBalances::new(self.desk.db.pool.clone())
+            .shift_balances(&shift_id)
+            .await
+            .expect("read the open shift's balances");
         Value::Object(
             rows.into_iter()
-                .map(|(c, e)| (c.trim().to_owned(), Value::String(e)))
+                .map(|b| {
+                    (
+                        b.currency.as_str().to_owned(),
+                        Value::String(b.expected.to_string()),
+                    )
+                })
                 .collect(),
         )
     }
@@ -525,8 +542,6 @@ impl Room {
             "device_events",
             "device_settings",
             "device_agents",
-            "shift_balances",
-            "stock_movements",
             "shifts",
             "transaction_files",
             "transactions",
@@ -1245,22 +1260,14 @@ async fn the_balance_is_the_open_shifts_expected_or_the_closed_shifts_counted() 
     room.finish().await;
 }
 
-/// The metric comes from the ledger via ShiftBalances: after a direct `UPDATE shift_balances ...`,
-/// the view still shows the ledger figure (1790.00 THB), proving it no longer reads the legacy table.
+/// The metric comes from the ledger via ShiftBalances (`shift_balances` is dropped by #1047):
+/// the view shows the ledger figure (1790.00 THB).
 #[actix_web::test]
 async fn the_balance_comes_from_the_ledger_not_the_legacy_shift_balances_table() {
     let room = Room::open().await;
     room.open_shift(MAIN, json!({ "THB": 5000, "USD": 100 }))
         .await;
     room.save(MAIN, "BUY", "100", "0", "LIVE").await;
-    let shift = room.open_shift_id(MAIN).await;
-    sqlx::query(
-        "UPDATE shift_balances SET expected = 4321.09 WHERE shift_id = $1 AND code = 'THB'",
-    )
-    .bind(&shift)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("change the stored figure");
     let data = room.data("OWNER", &path("devices", "branch=MAIN")).await;
     assert_eq!(data["balanceThb"], json!("1790.00"), "{data}");
     assert_eq!(data["balanceUsd"], json!("200.00"), "{data}");
