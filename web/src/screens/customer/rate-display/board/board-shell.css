@@ -2,15 +2,40 @@
    scaling and the look from docs/design/reference/rate-board-example/rate-board.css. */
 .xc-rb {
   --xc-rb-ink: #1b1a1f;
+  --xc-rb-muted: #6f6a73;
   --xc-rb-paper: #fffdf8;
+  --xc-rb-line: #e6dfd6;
   --xc-rb-brand: #a5003c;
-  position: relative;
-  color: var(--xc-rb-ink);
+  --xc-rb-brand-dark: #6e0028;
+  --xc-rb-night: #121018;
+  --xc-rb-up: #13804f;
+  --xc-rb-down: #c0153f;
+
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1080px;
+  height: 1920px;
+  transform: translate(-50%, -50%) scale(var(--scale, 1));
+  transform-origin: center;
+  display: flex;
+  flex-direction: column;
   background: var(--xc-rb-paper);
+  color: var(--xc-rb-ink);
+  border-radius: 36px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
 }
 
 .xc-rb-calm {
   --xc-rb-motion: 0;
+}
+
+.xc-rb-calm,
+.xc-rb-calm * {
+  animation: none !important;
+  transition: none !important;
 }
 
 .xc-rb-offline .xc-rb-table {

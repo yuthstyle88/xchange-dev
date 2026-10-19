@@ -1,7 +1,7 @@
 // P01 v2 board shell (rate-display.md §9.1, §9.2): the 1080×1920 portrait canvas scaled to the screen, the calm
 // switch (?attract=0), and the composition of the board's parts. The composition is the skeleton's; RB-4 adds the
 // scaling (--scale = min(innerWidth/1080, innerHeight/1920), updated on resize) inside this file.
-import { Show, type JSX } from 'solid-js';
+import { onCleanup, onMount, Show, type JSX } from 'solid-js';
 import type { BoardModel } from './board-model';
 import type { BoardStatusView } from './board-status';
 import { BookingQr } from '../BookingQr';
@@ -29,8 +29,25 @@ export interface BoardShellProps {
 }
 
 export function BoardShell(props: BoardShellProps): JSX.Element {
+  let rootRef: HTMLDivElement | undefined;
+
+  function updateScale(): void {
+    if (!rootRef) return;
+    const scale = Math.min(window.innerWidth / 1080, window.innerHeight / 1920);
+    rootRef.style.setProperty('--scale', String(scale));
+  }
+
+  onMount(() => {
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    onCleanup(() => {
+      window.removeEventListener('resize', updateScale);
+    });
+  });
+
   return (
     <div
+      ref={rootRef}
       class="xc-rb"
       classList={{
         'xc-rb-calm': !props.attract,
@@ -46,7 +63,7 @@ export function BoardShell(props: BoardShellProps): JSX.Element {
         status={props.status}
         stale={props.stale}
       />
-      <Show when={props.status.ratesVisible && props.model.rows.length > 0}>
+      <Show when={props.status.status !== 'offline' && props.status.ratesVisible && props.model.rows.length > 0}>
         <BoardTable model={props.model} attract={props.attract} />
       </Show>
       <Show when={props.status.emptyMessage}>
