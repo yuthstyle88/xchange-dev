@@ -240,7 +240,7 @@ impl UserRepository for PgUserRepository {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         user_id: &str,
-        role: Role,
+        role_code: &str,
         branch: Option<&BranchId>,
         valid_to: DateTime<Utc>,
     ) -> AppResult<()> {
@@ -256,7 +256,7 @@ impl UserRepository for PgUserRepository {
             "#,
         )
         .bind(user_id)
-        .bind(role.as_str())
+        .bind(role_code)
         .bind(branch_str)
         .bind(valid_to)
         .execute(&mut **tx)

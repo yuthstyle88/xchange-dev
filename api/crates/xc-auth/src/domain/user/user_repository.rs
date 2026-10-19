@@ -11,7 +11,7 @@ use super::user::User;
 use super::user_history::{LoginEntry, UserAuditEntry};
 use super::user_profile::UserProfile;
 use super::user_status::UserStatus;
-use crate::domain::access::{Role, ScopedRole};
+use crate::domain::access::ScopedRole;
 
 pub trait UserRepository: Send + Sync + 'static {
     fn find_by_id(
@@ -64,7 +64,7 @@ pub trait UserRepository: Send + Sync + 'static {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         user_id: &str,
-        role: Role,
+        role_code: &str,
         branch: Option<&BranchId>,
         valid_to: DateTime<Utc>,
     ) -> impl Future<Output = AppResult<()>> + Send;
