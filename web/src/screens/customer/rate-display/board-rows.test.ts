@@ -14,28 +14,33 @@
 // - `group` is `null` for `ALL` and the group's name otherwise (Q-2 A: such a line gets its own row);
 // - no arithmetic on a rate: a float would change `12345678.12345678`.
 import { describe, expect, it } from 'vitest';
-import type { PublishedLineDto, PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import {
+  type PublishedLineDto,
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import { formatRate } from '../../../shared/ui/rate';
 import { boardRows } from './board-rows';
 
-function line(over: Partial<PublishedLineDto> & Pick<PublishedLineDto, 'currency'>): PublishedLineDto {
-  return {
+function line(over: Partial<PublishedLineDto> & Pick<PublishedLineDto, 'currency'>) {
+  return makePublishedLineDto({
     group: 'ALL',
     unitSize: '1',
     buyRate: '1.00000000',
     sellRate: '1.10000000',
     lineId: `line-${over.currency}-${over.group ?? 'ALL'}`,
     ...over,
-  };
+  });
 }
 
-function data(lines: PublishedLineDto[]): PublishedRatesData {
-  return {
-    publication: { id: 'pub-1', version: 7, publishedAt: '2026-10-11T02:00:00Z' },
+function data(lines: PublishedLineDto[]) {
+  return makePublishedRatesData({
+    publication: makePublishedPublicationDto({ id: 'pub-1', version: 7, publishedAt: '2026-10-11T02:00:00Z' }),
     sourceDate: '2026-10-10',
     stale: false,
     lines,
-  };
+  });
 }
 
 const USD = line({ currency: 'USD', unitSize: '1', buyRate: '35.12000000', sellRate: '35.42000000' });
