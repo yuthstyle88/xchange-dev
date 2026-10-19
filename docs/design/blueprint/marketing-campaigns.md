@@ -299,6 +299,7 @@ and v3's command seam otherwise (mapping K1).
 | `couponIssue` (N anonymous codes, or one for a customer; codes returned once) | `POST /api/campaigns/:id/coupons` | `MarketingCampaigns` |
 | `segmentDefine` / `segmentSnapshot` | `POST /api/segments`, `POST /api/segments/:id/snapshots` | `MarketingMembers` |
 | `marginGuardSet` | `PUT /api/margin-guard` | EXECUTIVE (`RatePolicySave`, the rate-frame permission) |
+| view `margin_guard` (added 2026-10-19, FE gap section B): `{ maxSpreadShare, setBy, setAt }` of the caller's organisation, every field `null` when no `margin_guards` row exists; file `v3/views/margin_guard.rs`, DTO `dto/v3/margin_guard.rs` | `/api/v3/views/margin_guard` | EXECUTIVE (`RatePolicySave`, as `marginGuardSet`) |
 | view `campaigns` (M01: status incl. derived, budget used/left, uses, period totals) | `/api/v3/views/campaigns` | `MarketingCampaigns` |
 | view `campaign` (M02: versions, rules, simulations, approval) | `/api/v3/views/campaign?id=` | `MarketingCampaigns` |
 | view `segment_preview` (M03: count, metric distribution, masked sample; tiers from #559's mirror) | `/api/v3/views/segment_preview` | `MarketingMembers` |
