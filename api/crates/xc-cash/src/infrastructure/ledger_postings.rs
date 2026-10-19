@@ -26,8 +26,8 @@ use crate::domain::inventory::weighted_average::WeightedAverage;
 use crate::domain::ledger::account::AccountKind;
 use crate::domain::ledger::posting::{PostingId, SourceRef, SourceType};
 use crate::domain::posting::{
-    ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingRequest, PostingResult,
-    ReversedCost, TransactionLineId,
+    ApprovalRequestId, CashPlace, CashPostings, LineCost, PlaceActivity, PostingRequest,
+    PostingResult, ReversedCost, TransactionLineId,
 };
 
 /// Who a posting is recorded as made by: the port carries no actor. `[proposed]`
@@ -1263,7 +1263,7 @@ impl CashPostings for LedgerCashPostings {
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         place: &'a CashPlace,
-    ) -> BoxFuture<'a, AppResult<Option<Vec<(CurrencyCode, MoneyDelta)>>>> {
+    ) -> BoxFuture<'a, AppResult<Option<PlaceActivity>>> {
         Box::pin(async move {
             let kind = kind_of(place);
             let rows: Vec<(String, Decimal)> = match place {
