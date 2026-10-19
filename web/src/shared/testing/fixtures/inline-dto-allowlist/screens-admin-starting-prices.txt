@@ -1,6 +1,0 @@
-# Not yet migrated to shared/testing/fixtures factories (docs/design/web-test-fixtures.md §4.3).
-# The migration ticket for screens/admin/starting-prices deletes this file.
-screens/admin/starting-prices/StartingPrices.reason-reset.test.tsx
-screens/admin/starting-prices/StartingPrices.test.tsx
-screens/admin/starting-prices/StartingPrices.when-tz.test.tsx
-screens/admin/starting-prices/worded.test.tsx
