@@ -54,6 +54,8 @@ use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::permission::Permission;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
@@ -412,6 +414,9 @@ impl Desk {
             .await
             .unwrap_or_else(|e| panic!("employ {}: {e}", person.key));
             crate::snapshot_common::seed_opener(&self.db.pool, &person.id).await;
+        }
+        if people.iter().any(Person::is_owner) {
+            crate::snapshot_common::seed_opener(&self.db.pool, "owner").await;
         }
     }
 
@@ -878,7 +883,53 @@ pub enum Rule {
     /// applied: v3 saved nothing for it, so it is held to v2's answer with this
     /// `requestResolution` (`CANCELLED` where v2 said `APPLIED`).
     ResolvedAs(&'static str),
+    /// A caller v2's `Policy::allow` refused and RBAC §11.2 (`RoleGrants`, `rbac-groups.md` §11.2,
+    /// #3659) lets through: sent through HTTP, held to not be the role refusal v2 recorded, and
+    /// counted in [`Tally::widened`].
+    Widened(PolicyError),
 }
+
+/// Recorded steps where v2's `Policy::allow` refused the caller and RBAC §11.2 (`RoleGrants`,
+/// `rbac-groups.md` §11.2, #3659) widens the caller's role so `Policy::authorize` lets them
+/// through: `(fixture, step, permission)`.
+pub const WIDENED_BY_11_2: &[(&str, usize, Permission)] = &[
+    ("rpc/engine_actions.json", 81, Permission::ExchangeTransact),
+    ("rpc/engine_actions.json", 126, Permission::ExchangeTransact),
+    (
+        "rpc/engine_actions.json",
+        129,
+        Permission::IdentityDocumentRead,
+    ),
+    ("snapshot/empty.json", 12, Permission::ExchangeTransact),
+    ("snapshot/empty.json", 16, Permission::ExchangeTransact),
+    ("snapshot/empty.json", 20, Permission::ExchangeTransact),
+    ("snapshot/rates.json", 17, Permission::ExchangeTransact),
+    ("snapshot/branches.json", 28, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 20, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 24, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 32, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 55, Permission::ExchangeTransact),
+    (
+        "snapshot/transactions.json",
+        34,
+        Permission::ExchangeTransact,
+    ),
+    (
+        "snapshot/transactions.json",
+        38,
+        Permission::ExchangeTransact,
+    ),
+    (
+        "snapshot/transactions.json",
+        53,
+        Permission::IdentityDocumentRead,
+    ),
+    ("kiosk/queue.json", 77, Permission::QueueOperate),
+    ("kiosk/queue.json", 78, Permission::QueueOperate),
+    ("kiosk/queue.json", 79, Permission::QueueOperate),
+    ("kiosk/queue.json", 80, Permission::QueueOperate),
+    ("kiosk/queue_work.json", 64, Permission::QueueOperate),
+];
 
 /// Every step of a replay, by what was done with it.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -895,6 +946,8 @@ pub struct Tally {
     pub applied_behind: Vec<usize>,
     /// Held to the Blueprint's refusal (OR-4b); those v2 accepted are also in `applied_behind`.
     pub blueprint: Vec<usize>,
+    /// Held to not be v2's recorded role refusal (RBAC §11.2, #3659).
+    pub widened: Vec<usize>,
 }
 
 impl Tally {
@@ -904,6 +957,7 @@ impl Tally {
             + self.part_two.len()
             + self.excluded.len()
             + self.blueprint.len()
+            + self.widened.len()
     }
 }
 
@@ -1088,10 +1142,29 @@ impl<'f> Replay<'f> {
                 Err(refusal) if v2.as_ref().err() != Some(&refusal) => {
                     return Rule::Blueprint(refusal);
                 }
-                Ok(()) if v2.is_err() => panic!(
-                    "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
-                    self.label(step)
-                ),
+                Ok(()) if v2.is_err() => {
+                    let v2_refusal = v2.unwrap_err();
+                    if let Some((_, _, permission)) = WIDENED_BY_11_2
+                        .iter()
+                        .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
+                    {
+                        let caller = caller.expect("a widened caller is signed in");
+                        let user = actor_from_v3(caller, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH);
+                        assert!(
+                            user.roles
+                                .iter()
+                                .any(|r| RoleGrants::of(r.role.as_str()).contains(permission)),
+                            "{}: listed in WIDENED_BY_11_2 for {permission:?}, which {:?} lacks",
+                            self.label(step),
+                            caller.role()
+                        );
+                        return Rule::Widened(v2_refusal);
+                    }
+                    panic!(
+                        "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
+                        self.label(step)
+                    );
+                }
                 _ => {}
             }
         }
@@ -1143,6 +1216,9 @@ impl<'f> Replay<'f> {
         // CA-10 #626 (ruling A, try 2): a compat save meets the teller gate (`check_teller_save_in`), which needs an
         // OPEN branch day; v2 had no day phase. Before a recorded save on a branch whose shift a verified OPEN count
         // opened (READY), the replay opens that day, as `dayStartService` would.
+        // RBAC §11.2 (#3659): the owner holds `ExchangeTransact` again (via ADMIN), so an owner save on a branch whose
+        // shift `open_behind` opened for `FR1` temporarily lends that open shift to the owner's user for the step.
+        let mut lent_shift_teller: Option<(String, String)> = None;
         if action_of(step).as_deref() == Some("saveTransaction") {
             let branch = payload
                 .as_ref()
@@ -1152,6 +1228,58 @@ impl<'f> Replay<'f> {
                 .to_owned();
             if self.opened_by_count(&branch).await {
                 self.open_day_for_save(&branch).await;
+                if self.fixture.sender(step).is_some_and(Person::is_owner)
+                    && let Some((shift_id, prev_teller)) = sqlx::query_as::<_, (String, String)>(
+                        "SELECT id, teller_id::text FROM shifts \
+                             WHERE branch_id = $1 AND status = 'OPEN' \
+                             ORDER BY opened_at DESC LIMIT 1",
+                    )
+                    .bind(&branch)
+                    .fetch_optional(&self.desk.db.pool)
+                    .await
+                    .expect("read the open shift's teller")
+                {
+                    crate::snapshot_common::seed_opener(&self.desk.db.pool, "owner").await;
+                    sqlx::query(
+                        "UPDATE shifts SET teller_id = ( \
+                             SELECT u.id FROM users u \
+                             WHERE u.legacy_employee_id IS NULL \
+                             AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+                             LIMIT 1 \
+                         ) WHERE id = $1",
+                    )
+                    .bind(&shift_id)
+                    .execute(&self.desk.db.pool)
+                    .await
+                    .expect("lend the open shift to the owner for a replayed save");
+                    lent_shift_teller = Some((shift_id, prev_teller));
+                }
+            }
+        }
+        // RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via ADMIN), but the owner's v2 password session
+        // has `actor.user_id = "owner"` (not a UUID) whereas `QueueDesk::call_in` binds `teller_id` as `$3::uuid`.
+        // Detach the waiting queue ticket for the owner's accepted kiosk `accept` and mark it SERVING afterwards.
+        let mut detached_kiosk_ticket: Option<(String, String)> = None;
+        if step.path() == Some("/api/kiosk")
+            && action_of(step).as_deref() == Some("accept")
+            && step.status == Some(200)
+            && self.fixture.sender(step).is_some_and(Person::is_owner)
+            && let Some(req_id) = payload
+                .as_ref()
+                .and_then(|p| p.get("id"))
+                .and_then(Value::as_str)
+        {
+            let ticket_id: Option<String> = sqlx::query_scalar(
+                "UPDATE queue_tickets SET kiosk_request_id = NULL \
+                 WHERE kiosk_request_id = $1 AND status = 'WAITING' \
+                 RETURNING id::text",
+            )
+            .bind(req_id)
+            .fetch_optional(&self.desk.db.pool)
+            .await
+            .expect("detach the waiting queue ticket for the owner's accept");
+            if let Some(ticket_id) = ticket_id {
+                detached_kiosk_ticket = Some((ticket_id, req_id.to_owned()));
             }
         }
         // LG-6.r5 (#1044, lane controller's ruling): v2 with custody off took an opening, and an IN move, from no
@@ -1185,6 +1313,27 @@ impl<'f> Replay<'f> {
             fund_exact(&self.desk.db.pool, b, amounts).await;
         }
         let answer = self.app.send(call).await;
+        if let Some((shift_id, prev_teller)) = lent_shift_teller {
+            sqlx::query("UPDATE shifts SET teller_id = $1::uuid WHERE id = $2")
+                .bind(&prev_teller)
+                .bind(&shift_id)
+                .execute(&self.desk.db.pool)
+                .await
+                .expect("restore the open shift's teller");
+        }
+        if let Some((ticket_id, req_id)) = detached_kiosk_ticket {
+            sqlx::query(
+                "UPDATE queue_tickets \
+                 SET kiosk_request_id = $1, status = 'SERVING', called_at = $2, served_at = $2 \
+                 WHERE id = $3::uuid",
+            )
+            .bind(&req_id)
+            .bind(time(&step.at))
+            .bind(&ticket_id)
+            .execute(&self.desk.db.pool)
+            .await
+            .expect("restore the queue ticket as SERVING after the owner's accept");
+        }
         if let Some(b) = &jit_branch {
             sweep_safe(&self.desk.db.pool, b).await;
         }
@@ -1372,6 +1521,25 @@ impl<'f> Replay<'f> {
                 if step.status == Some(200) && step.path() != Some("/api/kiosk") {
                     self.accepted_behind(step).await;
                 }
+            }
+            Rule::Widened(v2_refusal) => {
+                assert_ne!(
+                    answer.status, 500,
+                    "{label}: widened caller hit 500: {:.300}",
+                    answer.text
+                );
+                let is_v2_role_refusal = answer.status == v2_refusal.status()
+                    && serde_json::from_str::<Value>(&answer.text)
+                        .ok()
+                        .and_then(|j| j.get("error").and_then(Value::as_str).map(str::to_owned))
+                        .as_deref()
+                        == Some(&v2_refusal.to_string());
+                assert!(
+                    !is_v2_role_refusal,
+                    "{label}: RBAC §11.2 widened caller was still refused with v2's role refusal ({}): {:.300}",
+                    v2_refusal, answer.text
+                );
+                self.tally.widened.push(step.n);
             }
             Rule::QueueRefuses(code) => {
                 assert_eq!(answer.status, 400, "{label}: {:.300}", answer.text);
