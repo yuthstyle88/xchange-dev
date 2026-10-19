@@ -196,13 +196,14 @@ impl StockReservations for PgStockReservations {
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<()>> {
         Box::pin(async move {
+            // No row lock here: an expired row locks its position first (L-5 order, as `reserve_in`), and the
+            // UPDATE below re-checks `RESERVED`, so a row a concurrent reserve released lazily is left as it is.
             let rows = sqlx::query(
                 "SELECT sr.id, sr.organization_id, sr.branch_id, sr.currency, sr.quantity, sr.expires_at \
                  FROM stock_reservations sr \
                  JOIN quote_lines ql ON ql.id = sr.quote_line_id AND ql.organization_id = sr.organization_id \
                  WHERE ql.quote_id = $1 AND sr.status = $2 \
-                 ORDER BY sr.branch_id, sr.currency, sr.id \
-                 FOR UPDATE OF sr",
+                 ORDER BY sr.branch_id, sr.currency, sr.id",
             )
             .bind(quote_id)
             .bind(ReservationStatus::Reserved.as_str())
@@ -238,12 +239,13 @@ impl StockReservations for PgStockReservations {
                 sqlx::query(
                     "UPDATE stock_reservations \
                      SET status = $1, transaction_id = $2, updated_at = $3 \
-                     WHERE id = $4",
+                     WHERE id = $4 AND status = $5",
                 )
                 .bind(ReservationStatus::Consumed.as_str())
                 .bind(transaction_id)
                 .bind(now)
                 .bind(id)
+                .bind(ReservationStatus::Reserved.as_str())
                 .execute(&mut **tx)
                 .await
                 .map_err(db_err)?;
