@@ -6,16 +6,15 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{Money, MoneyDelta};
 
 use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
-use crate::domain::shift::entities::stock_movement::StockMovement;
 use crate::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
 use crate::domain::shift::value_objects::balances::Balances;
 use crate::domain::shift::value_objects::shift_error::ShiftError;
-use crate::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
+use crate::domain::shift::value_objects::stock_delta::StockDelta;
 
 type ShiftRow = (
     String,                // id
@@ -28,18 +27,6 @@ type ShiftRow = (
     String,                // close_note
     String,                // open_request_id
     Option<String>,        // close_request_id
-);
-
-type MovementRow = (
-    String,        // id
-    String,        // shift_id
-    DateTime<Utc>, // at
-    String,        // by
-    String,        // code
-    String,        // direction
-    String,        // amount
-    String,        // reason
-    String,        // request_id
 );
 
 type OpenShiftSqlRow = (
@@ -68,14 +55,6 @@ pub(crate) fn parse_money_unbounded(table: &str, column: &str, s: &str) -> Resul
     MoneyDelta::from_minor(minor)
         .to_money()
         .map_err(|_| undecodable(table, column, s))
-}
-
-fn parse_direction(s: &str) -> Result<Direction, AppError> {
-    match s.trim() {
-        "IN" => Ok(Direction::In),
-        "OUT" => Ok(Direction::Out),
-        other => Err(undecodable("stock_movements", "direction", other)),
-    }
 }
 
 fn parse_shift_status(s: &str) -> Result<ShiftStatus, AppError> {
@@ -122,26 +101,6 @@ fn build_shift(
         open_request_id: r.8,
         close_request_id: r.9,
     }
-}
-
-fn map_movement_row(row: MovementRow) -> Result<StockMovement, AppError> {
-    let (id, shift_id, at, by, code_str, dir_str, amount_str, reason, request_id) = row;
-    let currency = CurrencyCode::parse(code_str.trim())
-        .map_err(|_| undecodable("stock_movements", "code", &code_str))?;
-    let direction = parse_direction(&dir_str)?;
-    let amount = parse_money_unbounded("stock_movements", "amount", &amount_str)?;
-
-    Ok(StockMovement {
-        id,
-        shift_id,
-        at,
-        by,
-        currency,
-        direction,
-        amount,
-        reason,
-        request_id,
-    })
 }
 
 pub(crate) async fn resolve_teller(
@@ -434,18 +393,6 @@ impl ShiftRepository for PgShiftRepository {
         Ok(out)
     }
 
-    async fn movements(&self, branch: &BranchId) -> AppResult<Vec<StockMovement>> {
-        let rows: Vec<MovementRow> = sqlx::query_as(
-            "SELECT id, shift_id, at, by, code, direction, amount::text, reason, request_id \
-             FROM stock_movements WHERE branch_id = $1 ORDER BY seq ASC",
-        )
-        .bind(branch.as_str())
-        .fetch_all(&self.pool)
-        .await?;
-
-        rows.into_iter().map(map_movement_row).collect()
-    }
-
     async fn shift(&self, branch: &BranchId, id: &str) -> AppResult<Option<Shift>> {
         let row: Option<ShiftRow> =
             sqlx::query_as(select_shifts!("WHERE branch_id = $1 AND id = $2"))
@@ -458,23 +405,6 @@ impl ShiftRepository for PgShiftRepository {
             Some(r) => Ok(Some(self.shift_from_row(r).await?)),
             None => Ok(None),
         }
-    }
-
-    async fn shift_movements(
-        &self,
-        branch: &BranchId,
-        shift_id: &str,
-    ) -> AppResult<Vec<StockMovement>> {
-        let rows: Vec<MovementRow> = sqlx::query_as(
-            "SELECT id, shift_id, at, by, code, direction, amount::text, reason, request_id \
-             FROM stock_movements WHERE branch_id = $1 AND shift_id = $2 ORDER BY seq ASC",
-        )
-        .bind(branch.as_str())
-        .bind(shift_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        rows.into_iter().map(map_movement_row).collect()
     }
 
     async fn is_request_abandoned(
@@ -550,56 +480,6 @@ impl ShiftRepository for PgShiftRepository {
         .bind(&shift.opened_by)
         .bind(&shift.open_request_id)
         .bind(&teller_id)
-        .execute(&mut **tx)
-        .await?;
-
-        Ok(())
-    }
-
-    async fn find_movement_by_request_id(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
-        request_id: &str,
-    ) -> AppResult<Option<StockMovement>> {
-        let row: Option<MovementRow> = sqlx::query_as(
-            "SELECT id, shift_id, at, by, code, direction, amount::text, reason, request_id \
-             FROM stock_movements WHERE branch_id = $1 AND request_id = $2",
-        )
-        .bind(branch.as_str())
-        .bind(request_id)
-        .fetch_optional(&mut **tx)
-        .await?;
-
-        row.map(map_movement_row).transpose()
-    }
-
-    async fn insert_movement(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
-        movement: &StockMovement,
-    ) -> AppResult<()> {
-        let dir_str = match movement.direction {
-            Direction::In => "IN",
-            Direction::Out => "OUT",
-        };
-        let amt_str = movement.amount.to_string();
-
-        sqlx::query(
-            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
-             VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10)",
-        )
-        .bind(&movement.id)
-        .bind(branch.as_str())
-        .bind(&movement.shift_id)
-        .bind(movement.currency.as_str())
-        .bind(dir_str)
-        .bind(&amt_str)
-        .bind(&movement.reason)
-        .bind(&movement.request_id)
-        .bind(movement.at)
-        .bind(&movement.by)
         .execute(&mut **tx)
         .await?;
 
