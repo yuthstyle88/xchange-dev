@@ -8,7 +8,7 @@
 //   drawerNetwork with the printer model; else drawerNone.
 // The texts are the screen's table (`i18n.test.ts` pins the Thai); they follow the language.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { DevicesOverview } from '../../shared/api/generated/devices';
+import { makeDeviceBranch, makeDevicesOverview } from '../../shared/testing/fixtures';
 import { fill, setLang } from '../../shared/i18n';
 import { deviceNotice } from './banner';
 import { en, th } from './i18n';
@@ -18,10 +18,10 @@ function overview(
   drawerAgentActive: boolean,
   hasDrawer: boolean | null,
   printerModel = 'EPSON TM-T82X',
-): DevicesOverview {
-  return {
+) {
+  return makeDevicesOverview({
     branchId: 'B1',
-    branches: [{ id: 'B1', name: 'สาขาหนึ่ง' }],
+    branches: [makeDeviceBranch({ id: 'B1', name: 'สาขาหนึ่ง' })],
     printerOnline: true,
     printerKind,
     printerModel,
@@ -30,7 +30,7 @@ function overview(
     balanceThb: '0.00',
     balanceUsd: '0.00',
     completedCount: 0,
-  };
+  });
 }
 
 beforeEach(() => setLang('th'));

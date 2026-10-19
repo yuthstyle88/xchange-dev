@@ -7,10 +7,17 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
-import type { DeviceEventRow } from '../../shared/api/generated/device_events';
-import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
-import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
-import type { DevicesOverview } from '../../shared/api/generated/devices';
+import {
+  type DeviceEventRow,
+  type DeviceJobRow,
+  type DeviceTransactionRow,
+  type DevicesOverview,
+  makeDeviceBranch,
+  makeDeviceEventRow,
+  makeDeviceJobRow,
+  makeDeviceTransactionRow,
+  makeDevicesOverview,
+} from '../../shared/testing/fixtures';
 import { errorText, setLang } from '../../shared/i18n';
 import { DevicesScreen } from './DevicesScreen';
 import { th } from './i18n';
@@ -18,13 +25,13 @@ import { th } from './i18n';
 const REFUSED = 'บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้';
 
 const BRANCHES = [
-  { id: 'MAIN', name: 'สำนักงานใหญ่' },
-  { id: 'B1', name: 'สาขาหนึ่ง' },
-  { id: 'B2', name: 'สาขาสอง' },
+  makeDeviceBranch({ id: 'MAIN', name: 'สำนักงานใหญ่' }),
+  makeDeviceBranch({ id: 'B1', name: 'สาขาหนึ่ง' }),
+  makeDeviceBranch({ id: 'B2', name: 'สาขาสอง' }),
 ];
 
-function overview(branchId: string, over: Partial<DevicesOverview> = {}): DevicesOverview {
-  return {
+function overview(branchId: string, over: Partial<DevicesOverview> = {}) {
+  return makeDevicesOverview({
     branchId,
     branches: BRANCHES,
     printerOnline: true,
@@ -36,19 +43,19 @@ function overview(branchId: string, over: Partial<DevicesOverview> = {}): Device
     balanceUsd: '33250.00',
     completedCount: 7,
     ...over,
-  };
+  });
 }
 
-function job(id: string, kind: string, ref: string, status: string, actor = 'front1', created = '2026-10-08T03:04:05.000Z'): DeviceJobRow {
-  return { id, kind, ref, status, actor, created };
+function job(id: string, kind: string, ref: string, status: string, actor = 'front1', created = '2026-10-08T03:04:05.000Z') {
+  return makeDeviceJobRow({ id, kind, ref, status, actor, created });
 }
 
-function event(seq: string, kind: string, ref = '', detail = '{}', actor = 'backend1', at = '2026-10-08T02:00:00.000Z'): DeviceEventRow {
-  return { seq, kind, ref, at, actor, detail };
+function event(seq: string, kind: string, ref = '', detail = '{}', actor = 'backend1', at = '2026-10-08T02:00:00.000Z') {
+  return makeDeviceEventRow({ seq, kind, ref, at, actor, detail });
 }
 
-function tx(id: string, type: string, amount: string, currency: string): DeviceTransactionRow {
-  return { id, type, amount, currency };
+function tx(id: string, type: string, amount: string, currency: string) {
+  return makeDeviceTransactionRow({ id, type, amount, currency });
 }
 
 const B1_JOBS = [
