@@ -1,5 +1,6 @@
 import * as policy from './i18n.policy';
 import * as draft from './i18n.draft';
+import * as hist from './i18n.history';
 
 const baseTh = {
   // Menu & Heading
@@ -133,10 +134,12 @@ export const th = {
   ...baseTh,
   ...policy.th,
   ...draft.th,
+  ...hist.th,
 };
 
 export const en = {
   ...baseEn,
   ...policy.en,
   ...draft.en,
+  ...hist.en,
 };
