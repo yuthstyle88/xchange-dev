@@ -97,13 +97,30 @@ impl CommandAction for AdminGroupAddCommand {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
+        _branch: &BranchId,
         who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input);
-        todo!("F12")
+        require_executive(who)?;
+        validate_code(&input.code)?;
+        let name = validate_name(&input.name)?;
+        let base = parse_base(&input.base)?;
+        let requested = parse_permissions(&input.permissions)?;
+        let group = Group {
+            code: input.code.clone(),
+            name,
+            base,
+            built_in: false,
+        };
+        let full = check_and_build_full_set(&group, &requested)?;
+        PgRoleGrantStore::new()
+            .add_group(tx, &group, &full)
+            .await
+            .map_err(from_store_error)?;
+        let full_set: BTreeSet<Permission> = full.into_iter().collect();
+        let after = group_audit_json(&group, &full_set);
+        record_audit_and_reload(tx, who, input.code, "GROUP_ADD", None, Some(after)).await
     }
 }
 
