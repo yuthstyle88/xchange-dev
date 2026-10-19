@@ -190,13 +190,19 @@ async fn each_desk_reads_its_own_branch_and_the_latest_save() {
         room.desk_config("AIRPORT_FRONT", STAFF_RPC, None).await.1["paymentMethods"],
         airport
     );
-    // an employee naming another branch still gets the own one
-    assert_eq!(
-        room.desk_config("AIRPORT_FRONT", STAFF_RPC, Some("MAIN"))
-            .await
-            .1["paymentMethods"],
-        airport
-    );
+    // OR-7.m G2: rule 4 (#3700, #3717)
+    room.app
+        .send(
+            Call::action(
+                ORIGIN,
+                STAFF_RPC,
+                "adminDeskConfig",
+                json!({ "branchId": "MAIN" }),
+            )
+            .cookie(&room.cookies["AIRPORT_FRONT"]),
+        )
+        .await
+        .assert_refused(403, "สาขานี้อยู่นอกขอบเขตของบัญชีนี้", "AIRPORT_FRONT naming MAIN");
     assert_eq!(
         room.desk_config("FRONT", STAFF_RPC, None).await.1["paymentMethods"],
         main
