@@ -523,7 +523,8 @@ async fn dk_j_a_session_that_is_not_front_on_staff_desk_goes_to_staff() {
 }
 
 #[actix_web::test]
-async fn dk_j_the_owner_on_desk_gets_the_v3_desk_for_the_branch_asked_or_main_and_a_bad_branch_is_refused() {
+async fn dk_j_the_owner_on_desk_gets_the_v3_desk_for_the_branch_asked_or_main_and_a_bad_branch_is_refused()
+ {
     // #546 §9 row 2: the owner on /desk?branch=B gets the desk for B. The entry reads B from its own URL; the server
     // checks it first through the `branch` gate (`pages.rs:681-716`), as v2's /desk did.
     let app = desk_app!();
