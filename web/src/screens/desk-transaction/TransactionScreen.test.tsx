@@ -24,6 +24,7 @@ import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
 import {
   makeMe,
+  makeMeRole,
   makeReceiptDocumentDto,
   makeReceiptDocumentViewData,
   makeReversalSummaryDto,
@@ -61,7 +62,7 @@ const TX_ID = '7f0c2b1e-4a5d-4c3b-9e8f-0a1b2c3d4e5f';
 const PATH = `/desk/transactions/${TX_ID}`;
 const RECEIPT_HTML = '<!doctype html><html><body>ใบเสร็จ XC-0001 35,120.00</body></html>';
 
-function me(permissions: string[], roles: MeRole[] = []) {
+function me(permissions: string[], roles?: MeRole[]) {
   return makeMe({
     id: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
@@ -308,8 +309,8 @@ describe('reads: three GETs on open, none on a timer, three again on refresh (D2
       me: me(
         ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'],
         [
-          { role: 'EXECUTIVE', branchId: null },
-          { role: 'ADMIN', branchId: null },
+          makeMeRole({ role: 'EXECUTIVE', branchId: null }),
+          makeMeRole({ role: 'ADMIN', branchId: null }),
         ],
       ),
     });
