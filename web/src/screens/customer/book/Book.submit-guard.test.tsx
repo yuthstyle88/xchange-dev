@@ -242,7 +242,7 @@ describe('Customer Book in-flight submit guard (#2405)', () => {
     expect(host.querySelector('[role="alert"]')).toBeNull();
     const successBanner = host.querySelector('.xc-book-success');
     expect(successBanner).not.toBeNull();
-    expect(successBanner!.textContent).toContain(SAMPLE_CREATE_OK.id);
+    expect(successBanner!.textContent).toContain(SAMPLE_CREATE_OK.bookingNo);
   });
 
   it('row 3: First request fails on the network, then retry -> Same key as the first', async () => {
