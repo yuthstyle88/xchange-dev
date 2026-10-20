@@ -1,9 +1,19 @@
 // Shared helpers for every spec (design docs/design/qa-e2e.md §2). Specs import only from here; a spec that needs a new
 // helper says so on its ticket and never edits this file.
-import { expect, test, type Page } from '@playwright/test';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 export type Role = 'customer' | 'teller' | 'branchManager' | 'finance' | 'admin';
+export const ROLES: readonly Role[] = ['customer', 'teller', 'branchManager', 'finance', 'admin'];
+
+export const ROLE_HOME: Record<Role, string> = {
+  customer: '/app',
+  teller: '/staff',
+  branchManager: '/staff',
+  finance: '/staff',
+  admin: '/',
+};
 export type Lang = 'th' | 'en' | 'zh';
 
 /** One account: staff and customers sign in with `phone`, the admin with `identifier`. */
@@ -70,12 +80,64 @@ export function hasAccount(role: Role): boolean {
   return !!account?.password && !account.password.startsWith('<');
 }
 
-/**
- * Signs in at /login?next=… (web/src/screens/login/LoginScreen.tsx:114, :121, :126) and waits until the page has left
- * /login and is on `next`. Skips the test when users.json has no account for the role.
- */
-export async function signIn(page: Page, role: Role, next: string): Promise<void> {
-  test.skip(!hasAccount(role), `no ${role} account in users.json: run scripts/reseed.sh`);
+/** Results subfolder where storageState sessions are saved (results/.auth/<role>.json). */
+export function authFileFor(role: Role): string {
+  return new URL(`../results/.auth/${role}.json`, import.meta.url).pathname;
+}
+
+/** Saves the browser context's cookies and storage state to `results/.auth/<role>.json` with mode 600. */
+export async function saveStorageState(page: Page, role: Role): Promise<void> {
+  const file = authFileFor(role);
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  try {
+    chmodSync(dirname(file), 0o700);
+  } catch {
+    // best-effort
+  }
+  await page.context().storageState({ path: file });
+  try {
+    chmodSync(file, 0o600);
+  } catch {
+    // best-effort
+  }
+}
+
+/** Loads the saved storage state from `results/.auth/<role>.json` into the page context. */
+export async function loadStorageState(page: Page, role: Role): Promise<boolean> {
+  const file = authFileFor(role);
+  if (!existsSync(file)) return false;
+  try {
+    const raw = readFileSync(file, 'utf8');
+    const state = JSON.parse(raw) as {
+      cookies?: Parameters<BrowserContext['addCookies']>[0];
+      origins?: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;
+    };
+    if (state.cookies && state.cookies.length > 0) {
+      await page.context().addCookies(state.cookies);
+    }
+    if (state.origins && state.origins.length > 0) {
+      await page.context().addInitScript((origins) => {
+        for (const item of origins) {
+          if (window.location.origin === item.origin) {
+            for (const entry of item.localStorage) {
+              try {
+                window.localStorage.setItem(entry.name, entry.value);
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+      }, state.origins);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drives the login form at /login?next=… directly. */
+export async function loginWithForm(page: Page, role: Role, next: string): Promise<void> {
   const account = users[role]!;
   const identifier = account.identifier ?? account.phone ?? '';
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
@@ -89,12 +151,53 @@ export async function signIn(page: Page, role: Role, next: string): Promise<void
   } catch {
     const changePw = await page.getByRole('heading', { name: /เปลี่ยนรหัสผ่าน|Change password/i }).count();
     const message = (await page.locator('#message, [role="alert"]').allInnerTexts()).join(' ').trim();
+    if (changePw) {
+      throw new Error(`${role} (${identifier}) must change its password first: do it once by hand, then update users.json`);
+    }
+    if (/ลองหลายครั้งเกินไป|กรุณารอสักครู่/i.test(message)) {
+      throw new Error(`${role} (${identifier}): ${message}`);
+    }
     throw new Error(
-      changePw
-        ? `${role} (${identifier}) must change its password first: do it once by hand, then update users.json`
-        : `${role} (${identifier}) stayed on /login: ${message || 'no message shown'}`,
+      `${role} (${identifier}) stayed on /login: ${message || 'no message shown'}`,
     );
   }
+}
+
+/**
+ * Signs in as `role` and navigates to `next`.
+ * Reuses saved session from `results/.auth/<role>.json` when available.
+ * Falls back to the login form if the state is missing or the server answers 401 (a stale session),
+ * then saves it again.
+ */
+export async function signIn(page: Page, role: Role, next: string): Promise<void> {
+  test.skip(!hasAccount(role), `no ${role} account in users.json: run scripts/reseed.sh`);
+  const loaded = await loadStorageState(page, role);
+  if (loaded) {
+    let got401 = false;
+    const onResponse = (res: { status(): number }) => {
+      if (res.status() === 401) got401 = true;
+    };
+    page.on('response', onResponse);
+    try {
+      const res = await page.goto(next);
+      if (res?.status() === 401) got401 = true;
+      await page.waitForLoadState('domcontentloaded');
+      const pathname = new URL(page.url(), users.baseUrl).pathname;
+      if (!next.split(/[?#]/)[0].startsWith('/login') && pathname.startsWith('/login')) {
+        got401 = true;
+      }
+    } catch {
+      got401 = true;
+    } finally {
+      page.off('response', onResponse);
+    }
+    if (!got401) {
+      return;
+    }
+  }
+
+  await loginWithForm(page, role, next);
+  await saveStorageState(page, role);
 }
 
 /**

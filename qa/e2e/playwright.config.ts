@@ -8,6 +8,7 @@ const users = loadUsers();
 const PHONE = /(smoke-public|smoke-app-[ab]|flow-booking)\.spec\.ts$/;
 
 export default defineConfig({
+  globalSetup: './tests/global-setup.ts',
   testDir: './tests',
   outputDir: './test-results',
   // One worker, files in name order: flow-cash (F3, funds the safe and opens a shift) runs before flow-queue (F2).
