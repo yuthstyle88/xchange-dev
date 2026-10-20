@@ -1379,7 +1379,6 @@ async fn walk_to(last: Writer) {
                 &[("THB", "100000"), ("USD", "2000")],
             )
             .await;
-            snapshot_common::r1_fund_open_drawers(pool).await;
             shift_holder_common::open_day(pool, MAIN).await;
             let reserved = room
                 .compat_rpc(

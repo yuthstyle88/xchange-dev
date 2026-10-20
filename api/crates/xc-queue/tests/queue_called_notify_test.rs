@@ -142,7 +142,7 @@ async fn main_name(db: &TestDb) -> String {
 
 fn expected(user: &str, ticket: &QueueTicket, n: u32, branch_name: &str) -> String {
     format!(
-        "{user} | queue.called:{}:{n} | queue_called | branchName={branch_name};displayNumber={}",
+        "{user} | queue.called:{}:{n} | queue_called | branch=MAIN;branchName={branch_name};displayNumber={}",
         ticket.id, ticket.display_number
     )
 }

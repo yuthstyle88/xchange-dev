@@ -292,16 +292,15 @@ impl Floor {
         &self,
         phase: &str,
         target: Option<Value>,
-        safe: Option<Value>,
+        _safe: Option<Value>,
         cutoff: Option<Value>,
     ) {
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, target, safe, cutoff) \
-             VALUES ('MAIN', $1, $2, $3, $4)",
+            "INSERT INTO ops_state (branch_id, phase, target, cutoff) \
+             VALUES ('MAIN', $1, $2, $3)",
         )
         .bind(phase)
         .bind(target)
-        .bind(safe)
         .bind(cutoff)
         .execute(&self.db.pool)
         .await
@@ -628,10 +627,11 @@ async fn staff_floor_shows_target_and_safe_only_to_cash_permissions() {
     f.ops(
         "OPEN",
         Some(json!({ "amounts": { "THB": 230000, "USD": 50000 }, "by": "fin", "at": T0 })),
-        Some(json!({ "THB": 1_000_000 })),
+        None,
         None,
     )
     .await;
+    // LG-6.r5 (#1044): the safe is MAIN's ledger SAFE, which `Floor::start` funds with 10,000,000 THB.
     for role in V2_STAFF {
         if !holds(role, Permission::AttendanceClock) {
             continue;
@@ -655,7 +655,7 @@ async fn staff_floor_shows_target_and_safe_only_to_cash_permissions() {
             assert_eq!(instant(&t["at"], "target at"), millis(T0));
             assert_eq!(
                 money(&floor["safe"]["THB"], "safe THB"),
-                Decimal::from(10000)
+                Decimal::from(10_000_000)
             );
         } else {
             assert!(

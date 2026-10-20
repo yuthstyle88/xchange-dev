@@ -29,18 +29,17 @@ fn a_fault<T: std::fmt::Debug>(read: AppResult<T>, what: &str) {
     }
 }
 
-/// A branch with history in every custody table that survives CA-10: the day open with a safe
-/// and a target, a customer on hold, three drafts, and a cash exception (ten dollars short of the
-/// target).
+/// A branch with history in every custody table that survives CA-10: the day open with a target
+/// (the safe is the ledger SAFE since LG-6.r5 #1044, not custody's), a customer on hold, three
+/// drafts, and a cash exception (ten dollars short of the target).
 async fn a_branch_with_history(db: &TestDb) -> Desk {
     let d = Desk::new(db).await;
     let at = custody_common::NOON;
     for sql in [
-        "INSERT INTO ops_state (branch_id, phase, safe, target) VALUES ($1, 'OPEN', \
-         '{\"THB\": 20000000, \"USD\": 500000}'::jsonb, \
+        "INSERT INTO ops_state (branch_id, phase, target) VALUES ($1, 'OPEN', \
          jsonb_build_object('amounts', '{\"THB\": 10000000, \"USD\": 200000}'::jsonb, \
            'by', 'FIN1', 'at', $2::bigint)) \
-         ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase, safe = EXCLUDED.safe, \
+         ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase, \
            target = EXCLUDED.target",
         "INSERT INTO customer_holds (id, branch_id, position, data) VALUES ('hold-1', $1, 0, \
          jsonb_build_object('customerId', 'CX-00000001', 'reason', 'check', 'by', 'MON1', \
@@ -82,8 +81,6 @@ async fn the_seeded_history_reads_as_written() {
     assert_eq!(state.drafts.len(), 3, "{state:?}");
     assert_eq!(state.drafts[2].amount.to_string(), "3.00");
     assert_eq!(state.exceptions.len(), 1, "{state:?}");
-    let safe = state.safe.as_ref().expect("the safe");
-    assert_eq!(safe.get(custody_common::code("USD")).to_string(), "5000.00");
     let target = state.target.as_ref().expect("the target");
     assert_eq!(
         target.amounts.get(custody_common::code("THB")).to_string(),
@@ -198,21 +195,6 @@ async fn a_cash_exception_status_custody_does_not_know_is_a_fault() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_ops_state_safe_currency_custody_does_not_know_is_a_fault() {
-    let db = TestDb::start().await;
-    let d = a_branch_with_history(&db).await;
-    spoil(
-        &db,
-        "UPDATE ops_state SET safe = safe || '{\"ZZZ\": 100}' \
-         WHERE branch_id = $1",
-        &d,
-    )
-    .await;
-    a_fault(d.custody.state(&d.branch).await, "a safe currency of ZZZ");
-    db.drop_schema().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_ops_state_target_time_that_is_not_a_time_is_a_fault() {
     let db = TestDb::start().await;
     let d = a_branch_with_history(&db).await;
@@ -233,24 +215,6 @@ async fn an_ops_state_target_time_that_is_not_a_time_is_a_fault() {
 // Ticket #253 — a stored amount is a JSON integer while it fits 64 bits and its decimal text only
 // beyond that (`minor_to_json`). A text that would fit 64 bits was never written by the server,
 // so reading it is a fault, not the amount it spells. Pins the guard in `minor_from_json`.
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_ops_state_safe_amount_stored_as_text_that_fits_64_bits_is_a_fault() {
-    let db = TestDb::start().await;
-    let d = a_branch_with_history(&db).await;
-    spoil(
-        &db,
-        "UPDATE ops_state SET safe = safe || '{\"USD\": \"5\"}' \
-         WHERE branch_id = $1",
-        &d,
-    )
-    .await;
-    a_fault(
-        d.custody.state(&d.branch).await,
-        "a safe amount of \"5\" (text that fits 64 bits)",
-    );
-    db.drop_schema().await;
-}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_draft_amount_stored_as_text_that_fits_64_bits_is_a_fault() {

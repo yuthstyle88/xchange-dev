@@ -139,14 +139,11 @@ impl Db {
             .execute(&self.pool)
             .await
             .expect("insert a branch");
-        sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, safe) \
-             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
-        )
-        .bind(&id)
-        .execute(&self.pool)
-        .await
-        .expect("the branch's safe");
+        sqlx::query("INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')")
+            .bind(&id)
+            .execute(&self.pool)
+            .await
+            .expect("insert ops_state");
         // LG-4 (#929, 1:1): the same USD 500.00 is the safe's figure in the ledger, which now holds it.
         lg4_fund_safe(&self.pool, &id, "USD", "500.00").await;
         lg4_fund_safe(&self.pool, &id, "THB", "1000000.00").await;

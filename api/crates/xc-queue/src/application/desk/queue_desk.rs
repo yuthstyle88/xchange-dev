@@ -54,6 +54,29 @@ async fn check_counter_active(
     }
 }
 
+async fn check_on_duty(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+    teller_id: &str,
+) -> AppResult<()> {
+    // A non-user actor id (the old owner cookie's `"owner"`) holds no counter; never cast it.
+    if uuid::Uuid::try_parse(teller_id).is_err() {
+        return Err(QueueError::NoOpenShift.into());
+    }
+    let counter_status: Option<(String,)> = sqlx::query_as(
+        "SELECT status FROM queue_counters WHERE branch_id = $1 AND teller_id = $2::uuid",
+    )
+    .bind(branch.as_str())
+    .bind(teller_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    match counter_status {
+        None => Err(QueueError::NoOpenShift.into()),
+        _ => Ok(()),
+    }
+}
+
 async fn check_not_serving(
     tx: &mut Transaction<'_, Postgres>,
     branch: &BranchId,
@@ -243,6 +266,7 @@ impl QueueDesk {
 
         let params = NotificationParams::new()
             .display("displayNumber", display_number)
+            .text("branch", branch.as_str())
             .text("branchName", branch_name);
 
         let event_id = format!("queue.called:{}:{count}", ticket.id);
@@ -250,7 +274,10 @@ impl QueueDesk {
             user_id,
             event_id,
             "queue_called",
-            None,
+            Some(xc_kernel::notifications::NotificationObject {
+                object_type: "QUEUE_TICKET".into(),
+                object_id: ticket.id.to_string(),
+            }),
             params,
         ) {
             Ok(r) => r,
@@ -471,6 +498,7 @@ impl QueueDesk {
         now: DateTime<Utc>,
     ) -> AppResult<QueueTicket> {
         self.authorize_in(tx, actor, branch, now).await?;
+        check_on_duty(tx, branch, &actor.user_id).await?;
         let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
         if ticket.status != TicketStatus::Called {
             return Err(QueueError::StaleVersion.into());
@@ -524,6 +552,7 @@ impl QueueDesk {
         now: DateTime<Utc>,
     ) -> AppResult<QueueTicket> {
         self.authorize_in(tx, actor, branch, now).await?;
+        check_on_duty(tx, branch, &actor.user_id).await?;
         let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
         if ticket.status != TicketStatus::Called {
             return Err(QueueError::StaleVersion.into());
@@ -592,6 +621,7 @@ impl QueueDesk {
         now: DateTime<Utc>,
     ) -> AppResult<QueueTicket> {
         self.authorize_in(tx, actor, branch, now).await?;
+        check_on_duty(tx, branch, &actor.user_id).await?;
         let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
         if ticket.status != TicketStatus::Called {
             return Err(QueueError::StaleVersion.into());
@@ -670,6 +700,7 @@ impl QueueDesk {
         now: DateTime<Utc>,
     ) -> AppResult<QueueTicket> {
         self.authorize_in(tx, actor, branch, now).await?;
+        check_on_duty(tx, branch, &actor.user_id).await?;
         let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
         if ticket.status != TicketStatus::Serving {
             return Err(QueueError::StaleVersion.into());
@@ -743,6 +774,7 @@ impl QueueDesk {
         now: DateTime<Utc>,
     ) -> AppResult<QueueTicket> {
         self.authorize_in(tx, actor, branch, now).await?;
+        check_on_duty(tx, branch, &actor.user_id).await?;
         let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
         if ticket.status != TicketStatus::Waiting && ticket.status != TicketStatus::Called {
             return Err(QueueError::StaleVersion.into());

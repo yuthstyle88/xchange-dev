@@ -41,7 +41,7 @@ async fn the_six_reads_return_the_same_shift() {
         .await;
     let teller = db.teller("opener").await;
 
-    let repo = PgShiftRepository::new(db.pool.clone());
+    let repo = PgShiftRepository::with_balances(db.pool.clone(), db.balances.clone());
     let usd = code("USD");
 
     // Verify the 5 reads applicable before any close_request_id is set on the row.
@@ -149,7 +149,7 @@ async fn a_closed_shift_reads_the_same_by_id_and_in_the_list() {
     )
     .await;
 
-    let repo = PgShiftRepository::new(db.pool.clone());
+    let repo = PgShiftRepository::with_balances(db.pool.clone(), db.balances.clone());
     let usd = code("USD");
 
     let by_id = repo
@@ -219,7 +219,7 @@ async fn an_undecodable_status_is_a_fault_on_every_read() {
     .await
     .unwrap();
 
-    let repo = PgShiftRepository::new(db.pool.clone());
+    let repo = PgShiftRepository::with_balances(db.pool.clone(), db.balances.clone());
 
     assert_internal_fault(repo.shifts(&branch).await, "shifts.status", "BROKEN");
     assert_internal_fault(repo.shift(&branch, &s).await, "shifts.status", "BROKEN");

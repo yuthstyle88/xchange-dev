@@ -15,7 +15,6 @@ use xc_rate::domain::rate::entities::rate_source::RateSource;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::settings::payment_settings::PaymentSettingsService;
 use crate::bootstrap::AppState;
@@ -51,7 +50,11 @@ impl DeskConfigCore {
         let branch_id = here.id.as_str().to_string();
         let branch_name = here.name.as_str().to_string();
 
-        let shift_repo = Arc::new(PgShiftRepository::new(state.db.clone()));
+        let shift_repo = Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                state.db.clone(),
+            ),
+        );
         let shift_service = ShiftService::new(shift_repo, branch_tx.clone());
         let shift_open = !shift_service.open_of_branch(branch).await?.is_empty();
 
