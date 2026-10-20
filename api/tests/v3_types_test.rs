@@ -72,6 +72,8 @@ fn ts_files(dir: &Path) -> BTreeSet<String> {
 }
 
 fn export_everything(dir: &Path) {
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let dir = dir.as_path();
     common::export_types(dir).expect("export the common types");
     for view in VIEWS {
         (view.export_types)(dir).unwrap_or_else(|e| panic!("export view {}: {e}", view.name));
@@ -208,6 +210,37 @@ fn versions_are_numbers_and_money_is_a_decimal_string_on_the_wire() {
         assert!(
             !text.contains("bigint"),
             "{file}: JSON carries numbers, never bigint: {text}"
+        );
+    }
+}
+
+#[test]
+fn export_into_a_relative_out_dir_keeps_every_type() {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("after 1970")
+        .as_nanos();
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let rel = PathBuf::from(format!(
+        "target/xc-v3-types-rel-{}-{nanos}-{n}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&rel).expect("create relative scratch directory");
+    let _cleanup = Scratch(rel.clone());
+
+    export_everything(&rel);
+
+    let check = Scratch::new();
+    export_everything(&check.0);
+
+    let produced = ts_files(&rel);
+    assert_eq!(produced, ts_files(&check.0));
+    for file in &produced {
+        let from_rel = std::fs::read_to_string(rel.join(file)).expect("read relative output");
+        let from_check = std::fs::read_to_string(check.0.join(file)).expect("read check output");
+        assert_eq!(
+            from_rel, from_check,
+            "{file} exported into a relative out dir differs from the check output"
         );
     }
 }
