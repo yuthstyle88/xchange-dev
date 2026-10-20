@@ -436,6 +436,27 @@ jobs:
         working-directory: api
         run: cargo fmt --all --check
 
+      - name: Self-test fmt-included
+        if: matrix.partition == 1
+        env:
+          XC_TEST_TMP: ${{ runner.temp }}
+        run: bash scripts/fmt-included.test.sh
+
+      - name: Check included module formatting
+        if: matrix.partition == 1
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request)
+              bash scripts/fmt-included.sh "origin/${{ github.base_ref }}"
+              ;;
+            push)
+              bash scripts/fmt-included.sh "${{ github.event.before }}"
+              ;;
+            *)
+              echo "Skipping fmt-included check on event '${{ github.event_name }}' (no base ref)"
+              ;;
+          esac
+
       - name: Clippy
         if: matrix.partition == 1 && needs.changes.outputs.packages != ''
         working-directory: api
