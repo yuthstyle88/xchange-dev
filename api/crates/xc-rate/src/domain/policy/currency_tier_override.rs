@@ -1,8 +1,7 @@
 //! One currency's override of a policy version's tier margins (pricing-tiers.md §3, owner P-1: per currency, default
 //! from the branch). Bands (THB bounds) are never overridden: only margins, the minimum spread and the anchor.
-//!
-//! SKELETON (PT-0): `CurrencyTierOverride::new` is PT-2's. The types and signatures stay.
 
+use rust_decimal::Decimal;
 use xc_kernel::money::{CurrencyCode, RatePercent};
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
@@ -33,12 +32,47 @@ impl CurrencyTierOverride {
     /// 1..=4, each once (§3 "all four or none"); anything else is `ValidationFailed`. `min_spread_pct`, when set,
     /// lies in 0..=5 (the column's CHECK).
     pub fn new(
-        _currency: CurrencyCode,
-        _margins: Vec<TierMargin>,
-        _min_spread_pct: Option<RatePercent>,
-        _anchor_source: Option<AnchorSource>,
+        currency: CurrencyCode,
+        mut margins: Vec<TierMargin>,
+        min_spread_pct: Option<RatePercent>,
+        anchor_source: Option<AnchorSource>,
     ) -> Result<CurrencyTierOverride, RateEngineError> {
-        todo!("PT-2: CurrencyTierOverride::new")
+        let tiers = if margins.is_empty() {
+            None
+        } else {
+            if margins.len() != 4 {
+                return Err(RateEngineError::ValidationFailed(format!(
+                    "currency tier override requires 0 or 4 tier rows, got {}",
+                    margins.len()
+                )));
+            }
+            margins.sort_by_key(|t| t.tier_no);
+            for (idx, tier) in margins.iter().enumerate() {
+                if tier.tier_no != (idx + 1) as u8 {
+                    return Err(RateEngineError::ValidationFailed(format!(
+                        "tier_no must be 1..=4 each once, got {}",
+                        tier.tier_no
+                    )));
+                }
+            }
+            Some([margins[0], margins[1], margins[2], margins[3]])
+        };
+
+        if let Some(spread) = min_spread_pct {
+            let v = spread.value();
+            if v < Decimal::ZERO || v > Decimal::from(5) {
+                return Err(RateEngineError::ValidationFailed(format!(
+                    "min_spread_pct must lie in 0..=5, got {spread}"
+                )));
+            }
+        }
+
+        Ok(CurrencyTierOverride {
+            currency,
+            tiers,
+            min_spread_pct,
+            anchor_source,
+        })
     }
 
     /// The margin of tier `n` (1..=4) for `side`, if this currency overrides margins.
