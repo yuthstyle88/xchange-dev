@@ -35,6 +35,7 @@ if [ "${1:-}" = "--json" ]; then
   exec 3>&1 1>&2
   rnd() { printf '%04d' $(( $(od -An -N2 -tu2 /dev/urandom) % 10000 )); }
   TELLER_PHONE="${TELLER_PHONE:-+6680001$(rnd)}"
+  MANAGER_PHONE="${MANAGER_PHONE:-+6680003$(rnd)}"
   CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6680002$(rnd)}"
 fi
 
@@ -49,6 +50,7 @@ fi
 BASE="$1"
 HOST="${BASE#https://}"
 TELLER_PHONE="${TELLER_PHONE:-+66800000101}"
+MANAGER_PHONE="${MANAGER_PHONE:-+66800000103}"
 CUSTOMER_PHONE="${CUSTOMER_PHONE:-+66800000102}"
 SEED_DAYS="${SEED_DAYS:-7}"
 ORG_ID="00000000-0000-0000-0000-000000000001"   # org XC, seeded by 20261011100000_organizations.sql
@@ -144,6 +146,21 @@ else
   TELLER_PW="(unchanged: $TELLER_PHONE was already registered)"
 fi
 
+say "6b. test branch manager $MANAGER_PHONE (BRANCH_MANAGER on $BRANCH: certifies shift counts)"
+MANAGER_PW="$(new_password)"
+MANAGER_SUB="$(identity_register "$MANAGER_PHONE" "$MANAGER_PW")"
+if [ -n "$MANAGER_SUB" ]; then
+  q "WITH u AS (
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$MANAGER_SUB', 'Test Manager', 'ACTIVE', 1, now(), '$OWNER_ID')
+       ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
+     INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
+     SELECT id, 'BRANCH_MANAGER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
+  [ "$JSON" = 1 ] || echo "    branch manager created: $MANAGER_PHONE  password $MANAGER_PW"
+else
+  MANAGER_PW="(unchanged: $MANAGER_PHONE was already registered)"
+fi
+
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
 if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
@@ -160,12 +177,13 @@ else
 fi
 
 if [ "$JSON" = 1 ]; then
-  case "$TELLER_PW$CUSTOMER_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
+  case "$TELLER_PW$CUSTOMER_PW$MANAGER_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
   cat >&3 <<JSON
 {
   "baseUrl": "$BASE",
   "customer": { "phone": "$CUSTOMER_PHONE", "password": "$CUSTOMER_PW" },
   "teller":   { "phone": "$TELLER_PHONE", "password": "$TELLER_PW" },
+  "branchManager": { "phone": "$MANAGER_PHONE", "password": "$MANAGER_PW" },
   "admin":    { "identifier": "<the owner's sign-in>", "password": "<the owner's password>" },
   "referralCode": "TEST1234",
   "branch": "$BRANCH",
