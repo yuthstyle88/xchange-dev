@@ -16,15 +16,11 @@ import { QrCode } from '../../../shared/ui/QrCode';
 import { en, th } from './i18n';
 import './desk-bookings.css';
 
-interface DisplayBookingItem extends DeskBookingItemDto {
-  initialStatus?: string;
-}
-
 interface SlotGroup {
   slotId: string;
   startAt: string;
   endAt: string;
-  bookings: DisplayBookingItem[];
+  bookings: DeskBookingItemDto[];
 }
 
 const DESK_PERMISSION = 'BookingsDesk';
@@ -65,7 +61,7 @@ function formatSlotTime(startAt?: string, endAt?: string, timeZone = 'Asia/Bangk
   }
 }
 
-function groupBookingsBySlot(items: DisplayBookingItem[]): SlotGroup[] {
+function groupBookingsBySlot(items: DeskBookingItemDto[]): SlotGroup[] {
   const map = new Map<string, SlotGroup>();
   for (const item of items) {
     let group = map.get(item.slotId);
@@ -87,7 +83,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const api = new ApiClient();
   const [authorized, setAuthorized] = createSignal<boolean | null>(null);
   const [refusalMessage, setRefusalMessage] = createSignal<string | null>(null);
-  const [items, setItems] = createSignal<DisplayBookingItem[]>([]);
+  const [items, setItems] = createSignal<DeskBookingItemDto[]>([]);
   const [branchId, setBranchId] = createSignal<string>('');
   const [version, setVersion] = createSignal<number | undefined>(undefined);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
@@ -164,10 +160,7 @@ export function DeskBookingsScreen(): JSX.Element {
       }
       if (envelope.data && Array.isArray(envelope.data.items)) {
         loadedQr = qrParam;
-        const mappedItems: DisplayBookingItem[] = envelope.data.items.map((it) => ({
-          ...it,
-          initialStatus: it.status,
-        }));
+        const mappedItems: DeskBookingItemDto[] = envelope.data.items;
         setItems(mappedItems);
         const groups = groupBookingsBySlot(mappedItems);
         const firstSlot = groups[0]?.slotId;
@@ -563,7 +556,7 @@ export function DeskBookingsScreen(): JSX.Element {
     }
   }
 
-  function updateBookingInState(bookingId: string, patch: Partial<DisplayBookingItem>) {
+  function updateBookingInState(bookingId: string, patch: Partial<DeskBookingItemDto>) {
     setItems((prev) => {
       let targetStart: string | undefined;
       let targetEnd: string | undefined;
@@ -687,7 +680,7 @@ export function DeskBookingsScreen(): JSX.Element {
                             </div>
 
                             <div class="xc-booking-actions">
-                              <Show when={(b.initialStatus ?? b.status) === 'CONFIRMED'}>
+                              <Show when={b.status === 'CONFIRMED'}>
                                 <button
                                   type="button"
                                   data-action="check-in"
@@ -698,7 +691,7 @@ export function DeskBookingsScreen(): JSX.Element {
                                   {t('checkIn')}
                                 </button>
                               </Show>
-                              <Show when={(b.initialStatus ?? b.status) === 'CONFIRMED' || (b.initialStatus ?? b.status) === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                              <Show when={b.status === 'CONFIRMED' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
                                 <button
                                   type="button"
                                   data-action="cancel"
@@ -716,7 +709,7 @@ export function DeskBookingsScreen(): JSX.Element {
                                   {t('reschedule')}
                                 </button>
                               </Show>
-                              <Show when={(b.initialStatus ?? b.status) === 'CONFIRMED' || (b.initialStatus ?? b.status) === 'CHECKED_IN' || (b.initialStatus ?? b.status) === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                              <Show when={b.status === 'CONFIRMED' || b.status === 'CHECKED_IN' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
                                 <button
                                   type="button"
                                   name="reissueQr"

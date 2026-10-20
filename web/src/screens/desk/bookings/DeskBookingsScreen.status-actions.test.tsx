@@ -81,15 +81,24 @@ describe('DeskBookingsScreen status-based action buttons (#3849)', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
+        const method = (init?.method ?? 'GET').toUpperCase();
 
         if (u.pathname === '/api/v3/views/staff_me') {
           return viewEnvelope(STAFF_TELLER);
         }
         if (u.pathname === '/api/v3/views/desk_bookings') {
           return viewEnvelope(BOOKINGS_DATA);
+        }
+        if (method === 'POST' && u.pathname === '/api/bookings/bk-confirmed/check-in') {
+          return json(200, {
+            id: 'bk-confirmed',
+            bookingNo: 'B261020-0002',
+            status: 'CHECKED_IN',
+            ticketNumber: 'T-002',
+          });
         }
 
         return json(404, { error: { code: 'notFound', message: u.pathname } });
@@ -142,5 +151,29 @@ describe('DeskBookingsScreen status-based action buttons (#3849)', () => {
         expect(reissueQrBtn, `${c.status} should NOT have reissue-qr button`).toBeNull();
       }
     }
+  });
+
+  it('after a check-in on this screen, cancel and reschedule disappear', async () => {
+    dispose = render(() => <DeskBookingsScreen />, host);
+    await flush();
+
+    const item = host.querySelector('[data-booking-id="bk-confirmed"]');
+    expect(item).not.toBeNull();
+
+    expect(item!.querySelector('button[data-action="check-in"]')).not.toBeNull();
+    expect(item!.querySelector('button[data-action="cancel"]')).not.toBeNull();
+    expect(item!.querySelector('button[data-action="reschedule"]')).not.toBeNull();
+    expect(item!.querySelector('button[data-action="reissue-qr"]')).not.toBeNull();
+
+    const checkInBtn = item!.querySelector('button[data-action="check-in"]') as HTMLButtonElement;
+    checkInBtn.click();
+    await flush();
+
+    const updatedItem = host.querySelector('[data-booking-id="bk-confirmed"]');
+    expect(updatedItem).not.toBeNull();
+    expect(updatedItem!.querySelector('button[data-action="check-in"]')).toBeNull();
+    expect(updatedItem!.querySelector('button[data-action="cancel"]')).toBeNull();
+    expect(updatedItem!.querySelector('button[data-action="reschedule"]')).toBeNull();
+    expect(updatedItem!.querySelector('button[data-action="reissue-qr"]')).not.toBeNull();
   });
 });

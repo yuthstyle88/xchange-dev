@@ -252,7 +252,7 @@ describe('DeskBookingsScreen.tsx — writes are guarded while in flight (#2411)'
     refresh.click();
     await vi.waitFor(() => expect(server.reads()).toBe(before + 1));
 
-    server.answer({ kind: 'http', status: 200, body: { id: 'bk-1', status: 'CHECKED_IN', ticketNumber: 'A001' } });
+    server.answer({ kind: 'http', status: 200, body: { id: 'bk-1', status: 'CONFIRMED', ticketNumber: 'A001' } });
     await vi.waitFor(() =>
       expect(btn('[data-booking-id="bk-1"] button[data-action="check-in"]').disabled).toBe(false),
     );
