@@ -337,7 +337,7 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
                     after.attendance.push(Attendance {
                         id: uuid::Uuid::new_v4().to_string(),
                         employee_id: who.user_id.clone(),
-                        role: CustodyRole::Front,
+                        role: resolve_role(who),
                         clock_in: custody_now,
                         clock_out: None,
                     });
