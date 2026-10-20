@@ -1,7 +1,7 @@
 // QA-S4 — smoke: admin money menus (design docs/design/qa-e2e.md §3, §4). Written by ticket QA-S4; this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { test } from '@playwright/test';
-import { signIn, smoke, STAFF_LANGS } from './helpers';
+import { hasAccount, signIn, smoke, STAFF_LANGS } from './helpers';
 
 test.describe('QA-S4 smoke: admin money menus', () => {
   // key: web/src/screens/admin/overview/Overview.tsx:205
@@ -95,20 +95,22 @@ test.describe('QA-S4 smoke: admin money menus', () => {
     });
   });
 
-  // key: web/src/screens/admin/reconciliation/Reconciliation.tsx:124
+  // key: web/src/screens/admin/reconciliation/Reconciliation.tsx:124 (menu.ts:14 needs FinanceReconcile; finance holds it)
   test('/#reconciliation', async ({ page }) => {
-    await signIn(page, 'admin', '/#reconciliation');
+    const role = hasAccount('finance') ? 'finance' : 'admin';
+    await signIn(page, role, '/#reconciliation');
     await smoke(page, {
       area: 'admin-money',
       screen: 'reconciliation',
       path: '/#reconciliation',
-      role: 'admin',
+      role,
       key: '.reconciliation',
       langs: STAFF_LANGS,
+      needs: 'FinanceReconcile',
     });
   });
 
-  // key: web/src/screens/admin/starting-prices/StartingPrices.tsx:322
+  // key: web/src/screens/admin/starting-prices/StartingPrices.tsx:322 (menu.ts:13 needs OrgStartingPricesManage)
   test('/#starting-prices', async ({ page }) => {
     await signIn(page, 'admin', '/#starting-prices');
     await smoke(page, {
@@ -118,10 +120,11 @@ test.describe('QA-S4 smoke: admin money menus', () => {
       role: 'admin',
       key: '.xc-sp-screen',
       langs: STAFF_LANGS,
+      needs: 'OrgStartingPricesManage',
     });
   });
 
-  // key: web/src/screens/admin/denomination-groups/DenominationGroups.tsx:226
+  // key: web/src/screens/admin/denomination-groups/DenominationGroups.tsx:226 (menu.ts:14 needs RatesDraft)
   test('/#denomination-groups', async ({ page }) => {
     await signIn(page, 'admin', '/#denomination-groups');
     await smoke(page, {
@@ -131,6 +134,7 @@ test.describe('QA-S4 smoke: admin money menus', () => {
       role: 'admin',
       key: '.denomination-groups-screen',
       langs: STAFF_LANGS,
+      needs: 'RatesDraft',
     });
   });
 });
