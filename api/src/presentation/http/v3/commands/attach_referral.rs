@@ -91,9 +91,13 @@ impl CommandAction for AttachReferralCommand {
 
 /// The capture service over PostgreSQL, auditing into `audit_events`.
 pub(crate) fn capture_service(state: &AppState) -> ReferralCaptureService {
+    capture_service_for_pool(state.db.clone())
+}
+
+pub(crate) fn capture_service_for_pool(pool: sqlx::PgPool) -> ReferralCaptureService {
     ReferralCaptureService::new(
         Arc::new(PgCaptureRepository::new()),
-        Arc::new(PgAuditLog::new(state.db.clone())),
+        Arc::new(PgAuditLog::new(pool)),
     )
 }
 
