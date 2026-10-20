@@ -41,7 +41,7 @@
 //! (`quote-transaction.md` §4.7). A revision-2 receipt is a second `receipts` row with its own number
 //! and its own stored file (ticket §9); since RV-1 (V-4) a revision above 1 is `kind = 'REVERSAL'`.
 //!
-//! Needs `TEST_DATABASE_URL`; nothing here skips. Sessions come from the `x-test-as` header
+//! Needs `TEST_DATABASE_URL`; nothing here skips. Callers come from the `x-test-as` header
 //! (`owner`, `staff:<ROLE>:<branch>`), as in `v3_transaction_view_test.rs`.
 
 mod common;
@@ -65,12 +65,10 @@ use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::v3_roles::blueprint_roles;
 use xc_auth::domain::access::{Permission, Role as AccessRole, RoleGrants, StandingKind};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -115,15 +113,7 @@ const STAFF_ROLES: [&str; 9] = [
 struct HeaderCallers;
 
 fn roles_of(role: &str) -> &'static [AccessRole] {
-    match role {
-        "FRONT" => &[AccessRole::Teller],
-        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
-        "RATES" => &[AccessRole::RateManager],
-        "FINANCE" => &[AccessRole::Finance],
-        "SYSTEM" => &[AccessRole::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
-        other => panic!("unknown role {other}"),
-    }
+    test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown role {role}"))
 }
 
 fn callers_of(spec: &str) -> Callers {
@@ -796,17 +786,18 @@ async fn teller_and_branch_manager_reprint_it() {
 async fn a_caller_without_receipt_reprint_is_refused_with_no_body() {
     let room = Room::open().await;
     let c = room.completed("MAIN", "refused").await;
-    let refused: Vec<V2Role> = V2Role::STAFF
+    let refused: Vec<&str> = test_callers::V2_STAFF
         .into_iter()
-        .filter(|&r| {
-            !blueprint_roles(r)
+        .filter_map(|(name, roles)| {
+            (!roles
                 .iter()
-                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReceiptReprint))
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReceiptReprint)))
+            .then_some(name)
         })
         .collect();
     assert!(!refused.is_empty(), "some staff role lacks ReceiptReprint");
     for role in refused {
-        let who = format!("staff:{}:MAIN", role.as_str());
+        let who = format!("staff:{role}:MAIN");
         let (status, body) = room
             .get(
                 &who,

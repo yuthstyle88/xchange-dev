@@ -40,14 +40,14 @@ use quote_common::*;
 use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::transaction::ExchangeTransaction;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -57,36 +57,38 @@ const ME: &str = "teller";
 /// Who is signed in, from `x-test-as`: `teller` (FRONT of MAIN, id `TELLER`), `staff:<ROLE>:<branch>`, or absent.
 struct HeaderSessions;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     let staff = match spec {
         "" => None,
-        "teller" => Actor::staff(TELLER, Role::Front, BranchId::new("MAIN")),
+        "teller" => Some(test_callers::staff(
+            TELLER,
+            &[Role::Teller],
+            BranchId::new("MAIN"),
+        )),
         other => {
             let mut parts = other.splitn(3, ':');
             assert_eq!(parts.next(), Some("staff"), "staff spec {other:?}");
-            let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+            let role = parts.next().expect("a role");
+            let roles = test_callers::v2_staff_roles(role).expect("a known role");
             let branch = parts.next().expect("a branch");
-            Actor::staff(
-                format!("employee-{}", role.as_str()),
-                role,
+            Some(test_callers::staff(
+                &format!("employee-{role}"),
+                roles,
                 BranchId::new(branch),
-            )
+            ))
         }
     };
-    Sessions { owner: None, staff }
+    test_callers::callers(None, staff)
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
