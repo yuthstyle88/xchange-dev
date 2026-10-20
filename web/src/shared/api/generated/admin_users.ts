@@ -15,3 +15,8 @@ status: string, version: number,
  * Every role row of the user, ended ones included, oldest first.
  */
 roles: Array<AdminUserRole>, };
+
+/**
+ * Filter for the `admin_users` view.
+ */
+export type AdminUsersFilter = { q?: string, };
