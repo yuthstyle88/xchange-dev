@@ -5,17 +5,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { Fetch } from '../../../shared/api/client';
-import type { MyQueueTicketData } from '../../../shared/api/generated/my_queue_ticket';
+import { makeMyQueueTicketData } from '../../../shared/testing/fixtures/my_queue_ticket';
 import { setLang } from '../../../shared/i18n';
 import { TakeNumber } from './TakeNumber';
 
 type Reply = { status: number; body: unknown } | 'network';
 
-const TICKET: MyQueueTicketData = {
+const TICKET = makeMyQueueTicketData({
   ticketId: 't-9', branch: 'B01', displayNumber: 'A012', serviceType: 'WALK_IN', status: 'WAITING',
   ticketsAhead: 4, estimateSeconds: 600, estimateLowSeconds: 420, estimateHighSeconds: 780,
   estimateAsOf: '2026-10-19T08:00:00Z',
-};
+});
 
 function server(replies: Reply[] = []) {
   const writes: { path: string; key: string | null; body: unknown }[] = [];

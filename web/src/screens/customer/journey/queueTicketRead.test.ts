@@ -3,14 +3,14 @@
 // `noTicket`). The implementer makes these pass and must not edit them.
 import { describe, expect, it, vi } from 'vitest';
 import { ApiClient, ApiError, type Fetch } from '../../../shared/api/client';
-import type { MyQueueTicketData } from '../../../shared/api/generated/my_queue_ticket';
+import { makeMyQueueTicketData } from '../../../shared/testing/fixtures/my_queue_ticket';
 import { readMyQueueTicket } from './queueTicketRead';
 
-const TICKET: MyQueueTicketData = {
+const TICKET = makeMyQueueTicketData({
   ticketId: 't-1', branch: 'B01', displayNumber: 'A012', serviceType: 'WALK_IN', status: 'WAITING',
   ticketsAhead: 3, estimateSeconds: 600, estimateLowSeconds: 420, estimateHighSeconds: 780,
   estimateAsOf: '2026-10-19T08:00:00Z',
-};
+});
 
 type Reply = { status: number; body: unknown } | 'network';
 

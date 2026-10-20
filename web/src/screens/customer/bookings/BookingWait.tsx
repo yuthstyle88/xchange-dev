@@ -7,17 +7,8 @@ import * as table from './i18n';
 
 const t = screenT('customer.bookings', table);
 
-/** The fields #3404 adds to `MyBookingItemDto`. Optional until the generated type has them. */
-export interface BookingWaitFields {
-  ticketsAhead?: number | null;
-  estimateSeconds?: number | null;
-  estimateLowSeconds?: number | null;
-  estimateHighSeconds?: number | null;
-  estimateAsOf?: string | null;
-}
-
 export interface BookingWaitProps {
-  booking: MyBookingItemDto & BookingWaitFields;
+  booking: MyBookingItemDto;
 }
 
 export function BookingWait(props: BookingWaitProps): JSX.Element {

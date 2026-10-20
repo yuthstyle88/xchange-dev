@@ -17,6 +17,11 @@ function booking(over: Partial<BookingWaitProps['booking']> = {}): BookingWaitPr
     quoteSummary: '',
     cancelCutoffAt: null,
     ticketNumber: 'B003',
+    ticketsAhead: null,
+    estimateSeconds: null,
+    estimateLowSeconds: null,
+    estimateHighSeconds: null,
+    estimateAsOf: null,
     readiness: 'unknown',
     ...over,
   };

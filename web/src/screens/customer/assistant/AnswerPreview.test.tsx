@@ -5,19 +5,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { AssistantAskAnswerDto } from '../../../shared/api/generated/assistant_ask';
+import {
+  makeAssistantAskAnswerDto,
+  makeAssistantIntentDto,
+  type AssistantAskAnswerDto,
+  type AssistantIntentDto,
+} from '../../../shared/testing/fixtures/assistant_ask';
+import { makeAssistantMessageDto } from '../../../shared/testing/fixtures/my_assistant_conversation';
 import { setLang } from '../../../shared/i18n';
-import { AnswerPreview, type AssistantAnswerExtras } from './AnswerPreview';
+import { AnswerPreview } from './AnswerPreview';
 
 type Reply = { status: number; body: unknown } | 'network';
 
-const BASE: AssistantAskAnswerDto = {
+const BASE = makeAssistantAskAnswerDto({
   conversationId: 'c-1',
-  customerMessage: { id: 'm1', role: 'CUSTOMER', redactedText: 'แลก 100 USD', createdAt: '2026-10-19T08:00:00Z' } as AssistantAskAnswerDto['customerMessage'],
-  assistantReply: { id: 'm2', role: 'ASSISTANT', redactedText: 'ok', createdAt: '2026-10-19T08:00:01Z' } as AssistantAskAnswerDto['assistantReply'],
-};
+  customerMessage: makeAssistantMessageDto({ id: 'm1', role: 'CUSTOMER', redactedText: 'แลก 100 USD', createdAt: '2026-10-19T08:00:00Z' }),
+  assistantReply: makeAssistantMessageDto({ id: 'm2', role: 'ASSISTANT', redactedText: 'ok', createdAt: '2026-10-19T08:00:01Z' }),
+  intent: makeAssistantIntentDto({ kind: 'UNKNOWN' }),
+  preview: null,
+});
 const PREVIEW = { thb: '3650.00', rate: '36.50', unitSize: '1', stale: false, sourceDate: null };
-const quote = (over: Partial<NonNullable<AssistantAnswerExtras['intent']>> = {}, preview: AssistantAnswerExtras['preview'] = PREVIEW) => ({
+const quote = (over: Partial<AssistantIntentDto> = {}, preview: AssistantAskAnswerDto['preview'] = PREVIEW) => ({
   ...BASE,
   intent: { kind: 'QUOTE' as const, currency: 'USD', customerSide: 'CUSTOMER_SELL', quantity: '100', ...over },
   preview,
@@ -44,7 +52,7 @@ async function flush(): Promise<void> {
 
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
-function mount(answer: AssistantAskAnswerDto & AssistantAnswerExtras, api: ApiClient, branch?: string): void {
+function mount(answer: AssistantAskAnswerDto, api: ApiClient, branch?: string): void {
   host = document.createElement('div');
   document.body.appendChild(host);
   dispose = render(() => <AnswerPreview answer={answer} api={api} branch={branch} />, host);
@@ -130,7 +138,8 @@ describe('AnswerPreview (C12)', () => {
     expect(host.textContent?.trim()).toBe('');
     dispose?.();
     host.remove();
-    mount(BASE, server().api);
+    const { intent: _intent, preview: _preview, ...olderBackEnd } = BASE;
+    mount(olderBackEnd as unknown as Parameters<typeof mount>[0], server().api);
     expect(host.textContent?.trim()).toBe('');
   });
 });

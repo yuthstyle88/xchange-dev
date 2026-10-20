@@ -18,17 +18,8 @@ function formatRateTime(isoString: string): string {
   }
 }
 
-/** The fields #3396 adds to `MyRateAlertItem`. Optional until the generated type has them. */
-export interface AlertFactsFields {
-  relation?: string;
-  expiresAt?: string | null;
-  expired?: boolean;
-  rateStale?: boolean | null;
-  lastEvent?: { observedRate: string; triggerAt: string; episodeNo: number } | null;
-}
-
 export interface AlertFactsProps {
-  alert: MyRateAlertItem & AlertFactsFields;
+  alert: MyRateAlertItem;
 }
 
 export function AlertFacts(props: AlertFactsProps): JSX.Element {

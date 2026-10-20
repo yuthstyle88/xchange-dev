@@ -5,7 +5,6 @@ import { createEffect, createSignal, Show, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
 import type { AssistantAskAnswerDto } from '../../../shared/api/generated/assistant_ask';
 import type { PlannerDraftSaveInput } from '../../../shared/api/generated/planner_draft_save';
-import type { PlannerPreviewAnswer } from '../../../shared/api/generated/planner_preview';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { MoneyText } from '../../../shared/ui/MoneyText';
@@ -13,24 +12,11 @@ import { en, th, zh } from './i18n';
 
 const t = screenT('customer.assistant', { th, en, zh });
 
-/** `AssistantIntentDto` as #3407 states it; optional fields are omitted when absent. */
-export interface AssistantIntent {
-  kind: 'QUOTE' | 'QUEUE' | 'ALERT' | 'BRANCH' | 'UNKNOWN';
-  currency?: string;
-  customerSide?: string;
-  quantity?: string;
-  budgetThb?: string;
-  branch?: string;
-}
-
-/** The fields #3407 adds to `AssistantAskAnswerDto`. Optional until the generated type has them. */
-export interface AssistantAnswerExtras {
-  intent?: AssistantIntent;
-  preview?: PlannerPreviewAnswer | null;
-}
+/** The intent kinds #3407 sends; the generated `AssistantIntentDto.kind` is a plain string. */
+export type AssistantIntentKind = 'QUOTE' | 'QUEUE' | 'ALERT' | 'BRANCH' | 'UNKNOWN';
 
 export interface AnswerPreviewProps {
-  answer: AssistantAskAnswerDto & AssistantAnswerExtras;
+  answer: AssistantAskAnswerDto;
   /** The screen's client; the planner-draft write goes through `keyedWrite`. */
   api: ApiClient;
   /** The screen's branch, used when the intent names none. */
@@ -38,7 +24,7 @@ export interface AnswerPreviewProps {
 }
 
 const KIND_LINKS: Partial<
-  Record<AssistantIntent['kind'], { href: string; labelKey: 'linkQueue' | 'linkAlerts' | 'linkBranches' }>
+  Record<AssistantIntentKind, { href: string; labelKey: 'linkQueue' | 'linkAlerts' | 'linkBranches' }>
 > = {
   QUEUE: { href: '/app/journey', labelKey: 'linkQueue' },
   ALERT: { href: '/app/rate-alerts', labelKey: 'linkAlerts' },
@@ -110,7 +96,7 @@ export function AnswerPreview(props: AnswerPreviewProps): JSX.Element {
 
   const directLink = () => {
     const kind = props.answer.intent?.kind;
-    return kind ? KIND_LINKS[kind] : undefined;
+    return kind && kind in KIND_LINKS ? KIND_LINKS[kind as AssistantIntentKind] : undefined;
   };
 
   return (

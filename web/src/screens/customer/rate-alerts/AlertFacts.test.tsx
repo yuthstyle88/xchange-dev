@@ -18,6 +18,11 @@ function alert(over: Partial<AlertFactsProps['alert']> = {}): AlertFactsProps['a
     unitSize: '1',
     currentRate: '34.50',
     ratePublishedAt: '2026-10-19T10:00:00Z',
+    relation: 'UNKNOWN',
+    expiresAt: null,
+    expired: false,
+    rateStale: null,
+    lastEvent: null,
     ...over,
   };
 }

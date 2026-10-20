@@ -9,7 +9,7 @@ setAudience('customer');
 
 const tr = screenT('customer.sign-in', table);
 
-/** One item of the public answer, as #3409 states it. Local until a generated type exists. */
+/** One item of the public answer, as #3409 states it. The public routes are hand-written JSON with no ts-rs type. */
 export interface PublicConsentText {
   purpose: 'TERMS' | 'MARKETING';
   version: number;
