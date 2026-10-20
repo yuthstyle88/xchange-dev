@@ -1,7 +1,5 @@
 //! Store of per-currency overrides on a policy version (pricing-tiers.md §3, §10.1): `rate_policy_currency_tiers`
 //! and `rate_policy_currency_settings`. Rows are immutable once inserted; a new version gets them by `carry_forward`.
-//!
-//! SKELETON (PT-0): the bodies are PT-3's. The signatures stay.
 
 use std::collections::BTreeMap;
 
