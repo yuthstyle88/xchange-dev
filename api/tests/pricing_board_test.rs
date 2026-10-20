@@ -318,10 +318,15 @@ async fn a_branch_with_tiers_off_has_no_margins() {
 }
 
 #[tokio::test]
-async fn a_rate_manager_may_read_the_board() {
+async fn the_board_has_the_reference_rates_routes_permission() {
+    // `INHERITS (OwnerRoute, "/api/reference-rates")`, as `rates_reference` does (§8 `ReferenceRatesRead`): the
+    // owner reads it; a TELLER is refused like on that route.
     let room = Room::start().await;
     room.worked_example().await;
-    let a = view(&room, &rate_manager(), "pricing_board", B01).await;
-    a.ok("RATE_MANAGER has ReferenceRatesRead (§8)");
+    view(&room, &owner(), "pricing_board", B01)
+        .await
+        .ok("owner");
+    let a = view(&room, &teller(), "pricing_board", B01).await;
+    a.refused(403, "ownerOnly", "TELLER");
     room.finish().await;
 }

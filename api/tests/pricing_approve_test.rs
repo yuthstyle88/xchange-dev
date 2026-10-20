@@ -23,6 +23,8 @@ mod pricing_common;
 
 use pricing_common::*;
 use serde_json::{Value, json};
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
+use xchange::presentation::http::v3::error::V3Error;
 
 const ROUTE: &str = "/api/pricing/approve";
 
@@ -333,12 +335,16 @@ async fn a_caller_without_rate_policy_save_is_forbidden() {
         None,
     )
     .await;
+    // The permission layer refuses a role outside the command's row (`ratePolicySave`'s, inherited) as it does
+    // for `ratePolicySave` itself: `roleNotAllowedHere` with its status.
+    let err = PolicyError::RoleNotAllowedHere;
     assert_eq!(
         a.status.as_u16(),
-        403,
+        err.status(),
         "§11: user without RatePolicySave; body {}",
         a.text
     );
+    assert_eq!(a.code(), json!(V3Error::from(err).code), "{}", a.text);
     nothing_written(&room, "TELLER").await;
     room.finish().await;
 }
