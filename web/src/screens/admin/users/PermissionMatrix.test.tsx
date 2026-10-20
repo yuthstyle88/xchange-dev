@@ -5,47 +5,51 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { AdminPermissionMatrixData } from '../../../shared/api/generated/admin_permission_matrix';
+import {
+  makeAdminPermissionMatrixData,
+  makeMatrixGroup,
+  makeMatrixPermission,
+} from '../../../shared/testing/fixtures/admin_permission_matrix';
 import { en, th } from './i18n';
 import { PermissionMatrix } from './PermissionMatrix';
 
 const BRANCH = 'XC-B01';
 
-function matrix(editableForCaller: boolean): AdminPermissionMatrixData {
-  return {
+function matrix(editableForCaller: boolean) {
+  return makeAdminPermissionMatrixData({
     version: 7,
     modules: ['DASHBOARD', 'FINANCE', 'USER_MANAGEMENT'],
     permissions: [
-      { name: 'OverviewRead', module: 'DASHBOARD', level: 'VIEW', editable: true },
-      { name: 'CashManage', module: 'FINANCE', level: 'FULL', editable: true },
-      { name: 'CashRead', module: 'FINANCE', level: 'VIEW', editable: true },
-      { name: 'UsersManage', module: 'USER_MANAGEMENT', level: 'FULL', editable: true },
-      { name: 'ShiftOperate', module: null, level: null, editable: false },
+      makeMatrixPermission({ name: 'OverviewRead', module: 'DASHBOARD', level: 'VIEW', editable: true }),
+      makeMatrixPermission({ name: 'CashManage', module: 'FINANCE', level: 'FULL', editable: true }),
+      makeMatrixPermission({ name: 'CashRead', module: 'FINANCE', level: 'VIEW', editable: true }),
+      makeMatrixPermission({ name: 'UsersManage', module: 'USER_MANAGEMENT', level: 'FULL', editable: true }),
+      makeMatrixPermission({ name: 'ShiftOperate', module: null, level: null, editable: false }),
     ],
     groups: [
-      {
+      makeMatrixGroup({
         code: 'EXECUTIVE', name: 'EXECUTIVE', base: 'EXECUTIVE', builtIn: true, editable: false,
         permissions: ['OverviewRead', 'CashManage', 'CashRead', 'UsersManage', 'ShiftOperate'],
         levels: { DASHBOARD: 'VIEW', FINANCE: 'FULL', USER_MANAGEMENT: 'FULL' },
-      },
-      {
+      }),
+      makeMatrixGroup({
         code: 'TELLER', name: 'TELLER', base: 'TELLER', builtIn: true, editable: editableForCaller,
         permissions: ['CashRead', 'ShiftOperate'],
         levels: { FINANCE: 'VIEW' },
-      },
-      {
+      }),
+      makeMatrixGroup({
         code: 'SENIOR_TELLER', name: 'Senior teller', base: 'TELLER', builtIn: false, editable: editableForCaller,
         permissions: ['OverviewRead', 'CashRead', 'ShiftOperate'],
         levels: { DASHBOARD: 'VIEW', FINANCE: 'VIEW' },
-      },
+      }),
     ],
-  };
+  });
 }
 
 type Handler = (u: URL, init: RequestInit | undefined) => Response | Promise<Response>;
 let calls: Array<{ path: string; method: string; body: unknown; key: string | null }> = [];
 let handler: Handler | null = null;
-let viewData: AdminPermissionMatrixData = matrix(false);
+let viewData = matrix(false);
 const disposers: Array<() => void> = [];
 
 function json(status: number, body: unknown): Response {

@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { AdminPermissionMatrixData } from '../../../shared/api/generated/admin_permission_matrix';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import {
+  makeAdminPermissionMatrixData,
+  makeMatrixGroup,
+} from '../../../shared/testing/fixtures/admin_permission_matrix';
+import {
+  makeAdminUserRole,
+  makeAdminUserRow,
+} from '../../../shared/testing/fixtures/admin_users';
 import { AVAILABLE_ROLES, UsersScreen } from './UsersScreen';
 
 const disposers: Array<() => void> = [];
@@ -15,29 +21,29 @@ const BRANCHES_DATA = {
   ],
 };
 
-const SEED_USERS: AdminUserRow[] = [
-  {
+const SEED_USERS = [
+  makeAdminUserRow({
     userId: 'u-1',
     name: 'Somchai Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
+  }),
 ];
 
-const MATRIX_DATA: AdminPermissionMatrixData = {
+const MATRIX_DATA = makeAdminPermissionMatrixData({
   version: 1,
   modules: ['DASHBOARD', 'FINANCE', 'USER_MANAGEMENT'],
   permissions: [],
   groups: [
-    {
+    makeMatrixGroup({
       code: 'TELLER',
       name: 'TELLER',
       base: 'TELLER',
@@ -45,8 +51,8 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: false,
       permissions: [],
       levels: {},
-    },
-    {
+    }),
+    makeMatrixGroup({
       code: 'BRANCH_MANAGER',
       name: 'BRANCH_MANAGER',
       base: 'BRANCH_MANAGER',
@@ -54,8 +60,8 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: false,
       permissions: [],
       levels: {},
-    },
-    {
+    }),
+    makeMatrixGroup({
       code: 'RATE_MANAGER',
       name: 'RATE_MANAGER',
       base: 'RATE_MANAGER',
@@ -63,8 +69,8 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: false,
       permissions: [],
       levels: {},
-    },
-    {
+    }),
+    makeMatrixGroup({
       code: 'FINANCE',
       name: 'FINANCE',
       base: 'FINANCE',
@@ -72,8 +78,8 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: false,
       permissions: [],
       levels: {},
-    },
-    {
+    }),
+    makeMatrixGroup({
       code: 'VERIFICATION_REVIEWER',
       name: 'VERIFICATION_REVIEWER',
       base: 'VERIFICATION_REVIEWER',
@@ -81,8 +87,8 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: false,
       permissions: [],
       levels: {},
-    },
-    {
+    }),
+    makeMatrixGroup({
       code: 'ADMIN',
       name: 'ADMIN',
       base: 'ADMIN',
@@ -90,8 +96,8 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: false,
       permissions: [],
       levels: {},
-    },
-    {
+    }),
+    makeMatrixGroup({
       code: 'EXECUTIVE',
       name: 'EXECUTIVE',
       base: 'EXECUTIVE',
@@ -99,8 +105,8 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: false,
       permissions: [],
       levels: {},
-    },
-    {
+    }),
+    makeMatrixGroup({
       code: 'NIGHT_TELLER',
       name: 'Night teller',
       base: 'TELLER',
@@ -108,9 +114,9 @@ const MATRIX_DATA: AdminPermissionMatrixData = {
       editable: true,
       permissions: [],
       levels: {},
-    },
+    }),
   ],
-};
+});
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
