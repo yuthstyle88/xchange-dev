@@ -6,8 +6,8 @@
 //!
 //! [required] by these tests:
 //! - `xc_auth::domain::access::Permission::ConsentPolicyManage`, held by EXECUTIVE only (§3, §5.1).
-//! - `Policy::need(EntryPath::Rpc, "consentPolicy") == Need::Permission(ConsentPolicyManage)`, and the v2 bridge
-//!   (`Policy::allow`) lets the owner through on `(Rpc, "consentPolicy")` and refuses every staff role, like
+//! - `Policy::need(EntryPath::Rpc, "consentPolicy") == Need::Permission(ConsentPolicyManage)`, and `Policy::authorize`
+//!   lets the owner through on `(Rpc, "consentPolicy")` and refuses every staff role without it, like
 //!   `ratePolicySave` before #602. Both commands and the view inherit `(EntryPath::Rpc, "consentPolicy")`.
 //! - `xc_customer::domain::consent::{Purpose, Channel, ConsentError}`:
 //!   `Purpose::{Terms, Marketing}`, `Channel::{Sms, Email, Push}`, `ConsentError::{TextMissing, InvalidPeriod}`
@@ -66,19 +66,18 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::access::{Permission, Role as BpRole, RoleGrants};
+use xc_auth::domain::access::{Actor, Permission, Role as BpRole, RoleGrants};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_customer::application::consent_service::{ConsentChoice, ConsentService, Registration};
 use xc_customer::application::retention_job::RetentionJob;
 use xc_customer::domain::consent::{Channel, ConsentError, Purpose};
 use xc_customer::domain::retention::DataType;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const CONSENT_POLICY: &str = "consentPolicy";
 const AS: &str = "x-test-as";
@@ -777,44 +776,36 @@ async fn a_period_of_zero_or_less_is_refused() {
 /// Who is signed in, from the request header `x-test-as`: `owner`, `staff:<ROLE>:<branch>`, or absent.
 struct HeaderSessions;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role = parts.next().expect("a role");
+    let roles = test_callers::v2_staff_roles(role).expect("a known role");
     let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role}"),
+            roles,
             BranchId::new(branch),
-        ),
-    }
+        )),
+    )
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -885,12 +876,23 @@ fn routes() -> Vec<(Method, &'static str, Option<Value>)> {
 #[tokio::test]
 async fn nobody_and_every_staff_role_are_refused_by_the_policy_and_write_nothing() {
     let db = Db::start().await;
+    let act = Action::new(CONSENT_POLICY);
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &act) else {
+        panic!("(Rpc, {CONSENT_POLICY:?}) needs a permission");
+    };
     let mut callers = vec![String::new()];
     callers.extend(STAFF_ROLES.iter().map(|r| format!("staff:{r}:MAIN")));
     for who in &callers {
-        let actor = sessions_of(who).owner.or(sessions_of(who).staff);
-        let policy = Policy::allow(actor.as_ref(), EntryPath::Rpc, &Action::new(CONSENT_POLICY));
-        let err = policy.expect_err("the bridge refuses everyone but the owner");
+        let actor: Option<Actor> = callers_of(who).user;
+        let holds = actor.as_ref().is_some_and(|ac| {
+            ac.roles
+                .iter()
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
+        });
+        assert!(!holds, "{who:?} does not hold {perm:?} in RoleGrants::seed");
+        let policy = Policy::authorize(actor.as_ref(), EntryPath::Rpc, &act, None, Utc::now());
+        assert_eq!(policy.is_ok(), holds);
+        let err = policy.expect_err("the policy refuses everyone without the permission");
         for (method, uri, body) in routes() {
             let a = call(&db, who, method.clone(), uri, body).await;
             assert_eq!(

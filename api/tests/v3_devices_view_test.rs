@@ -9,7 +9,7 @@
 //! - `GET /api/v3/views/device_jobs`, `device_events`, `device_transactions` — `PagedView`s,
 //!   newest first, `before` = the row id, `limit` ≤ 100, 50 when absent (§7.2–§7.4).
 //! - All four inherit `(EntryPath::Devices, "snapshot")`: they answer exactly whom
-//!   `Policy::allow` lets read the devices snapshot, on the branch `Policy::branch` gives.
+//!   `Policy::authorize` lets read the devices snapshot, on the branch `Policy::authorize` gives.
 //! - Money is a decimal string computed by the server (W7): the balance is the server's
 //!   figure (§7.5), never a sum the browser could make.
 //!
@@ -54,11 +54,10 @@ use chrono::{DateTime, Duration, Utc};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use xc_auth::domain::access::{Actor as AuthActor, Role as AuthRole, ScopedRole};
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor as AuthActor, Role as AuthRole, RoleGrants, ScopedRole};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
+use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_customer::application::customer::service::CustomerService;
@@ -67,6 +66,7 @@ use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const DEVICES: &str = "/api/devices";
@@ -625,37 +625,6 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
     );
 }
 
-/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
-/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
-fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
-    action: &str,
-    named: Option<&str>,
-) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
-    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
-    Policy::authorize(
-        user.as_ref(),
-        path,
-        &act,
-        named.map(xc_kernel::ids::BranchId::new).as_ref(),
-        chrono::Utc::now(),
-    )
-    .map(|_| ())
-}
-
 /// Nobody signed in: each view answers the policy's refusal as a v3 refusal (§8).
 #[actix_web::test]
 async fn nobody_signed_in_is_asked_to_sign_in_by_every_view() {
@@ -672,36 +641,52 @@ async fn nobody_signed_in_is_asked_to_sign_in_by_every_view() {
     room.finish().await;
 }
 
-/// V1: the four views answer exactly whom `Policy::allow(_, Devices, "snapshot")` answers,
-/// for every caller kind, and on the branch `Policy::branch` gives (staff: their own).
+/// V1: the four views answer exactly whom `Policy::authorize(_, Devices, "snapshot", ...)` answers,
+/// for every caller kind, and on the branch `Policy::authorize` gives (staff: their own).
 #[actix_web::test]
 async fn every_view_answers_exactly_whom_the_devices_snapshot_row_allows() {
     let room = Room::open().await;
-    let mut callers: Vec<(String, Option<Actor>)> = vec![
+    let mut callers: Vec<(String, Option<AuthActor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        callers.push((role.as_str().to_string(), staff));
+    for (role, roles) in test_callers::V2_STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        callers.push((role.to_string(), staff));
         // the owner and an employee in one browser: a view not on StaffRpc answers the owner
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+        callers.push((format!("OWNER+{role}"), Some(test_callers::owner("owner"))));
     }
+    let act = Action::new("snapshot");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Devices, &act) else {
+        panic!("(Devices, snapshot) needs a permission");
+    };
     let named = BranchId::new(B9);
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in &callers {
+        let holds = actor.as_ref().is_some_and(|ac| {
+            ac.roles
+                .iter()
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
+        });
+        assert_eq!(
+            Policy::authorize(actor.as_ref(), EntryPath::Devices, &act, None, Utc::now()).is_ok(),
+            holds,
+            "{who:?}: RoleGrants::seed matches Policy::authorize"
+        );
         // OR-4b (#767): the route table's rule, naming B9 (D-4: an employee of MAIN is refused)
-        let policy = blueprint_rule(actor.as_ref(), EntryPath::Devices, "snapshot", Some(B9));
-        let branch = Policy::branch(actor.as_ref(), Some(&named));
+        let policy = Policy::authorize(
+            actor.as_ref(),
+            EntryPath::Devices,
+            &act,
+            Some(&named),
+            Utc::now(),
+        );
         for view in VIEW_NAMES {
             let answer = room.get(who, &path(view, "branch=B9")).await;
             let what = format!("{view} as {who:?}");
             match &policy {
-                Ok(()) => {
+                Ok(grant) => {
                     allowed += 1;
                     assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                     let body = answer.json();
@@ -709,8 +694,8 @@ async fn every_view_answers_exactly_whom_the_devices_snapshot_row_allows() {
                     if view == "devices" {
                         assert_eq!(
                             body["data"]["branchId"],
-                            json!(branch.as_str()),
-                            "{what}: the branch Policy::branch gives"
+                            json!(grant.branch.as_str()),
+                            "{what}: the branch Policy::authorize gives"
                         );
                     } else {
                         assert!(body["data"].is_array(), "{what}: a page: {body}");
