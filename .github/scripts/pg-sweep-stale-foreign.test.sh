@@ -18,7 +18,7 @@ if [ ! -x "$SWEEP" ]; then
 fi
 
 fail=0
-WORK=$(mktemp -d)
+WORK=$(mktemp -d "${XC_TEST_TMP:-${RUNNER_TEMP:-$PWD}}/pgsweep-test.XXXXXX")
 PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done; rm -rf "$WORK"; }
 trap cleanup EXIT
