@@ -55,11 +55,10 @@ use quote_common::*;
 use serde_json::{Value, json};
 use tx4_common::*;
 use xc_auth::domain::access::{Permission, Role as AccessRole, RoleGrants};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -71,34 +70,29 @@ const LIMIT: &str = "/api/branches/MAIN/exchange-limit";
 
 struct HeaderSessions;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     match spec {
-        "owner" => Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        },
-        "teller" => Sessions {
-            owner: None,
-            staff: Actor::staff(TELLER, Role::Front, BranchId::new("MAIN")),
-        },
-        _ => Sessions {
-            owner: None,
-            staff: None,
-        },
+        "owner" => test_callers::callers(Some(test_callers::owner("owner-1")), None),
+        "teller" => test_callers::callers(
+            None,
+            Some(test_callers::staff(
+                TELLER,
+                &[AccessRole::Teller],
+                BranchId::new("MAIN"),
+            )),
+        ),
+        _ => test_callers::nobody(),
     }
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 

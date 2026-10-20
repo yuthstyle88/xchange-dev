@@ -35,7 +35,7 @@
 //! file therefore does not compile before the view exists; it is its own test target, so the rest
 //! of the suite builds.
 //!
-//! Sessions are made at the real sign-in doors (`rpc_common`). Needs `TEST_DATABASE_URL`.
+//! The sessions are made at the real sign-in doors (`rpc_common`). Needs `TEST_DATABASE_URL`.
 
 mod common;
 mod compat_common;
@@ -54,7 +54,7 @@ use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -351,25 +351,13 @@ impl Room {
     }
 }
 
-const STAFF: [(&str, &[Role]); 9] = [
-    ("FRONT", &[Role::Teller]),
-    ("BACKEND", &[Role::BranchManager]),
-    ("MANAGER", &[Role::BranchManager]),
-    ("RATES", &[Role::RateManager]),
-    ("MONITOR", &[Role::VerificationReviewer]),
-    ("FINANCE", &[Role::Finance]),
-    ("SYSTEM", &[Role::Admin]),
-    ("DOCUMENTS", &[Role::VerificationReviewer]),
-    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
-];
-
 /// The actor `Policy` sees for each caller key on a path that is not `StaffRpc`.
 fn callers() -> Vec<(String, Option<Actor>)> {
     let mut callers: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
         ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for (name, roles) in STAFF {
+    for (name, roles) in test_callers::V2_STAFF {
         let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
         callers.push((name.to_string(), staff));
         callers.push((format!("OWNER+{name}"), Some(test_callers::owner("owner"))));

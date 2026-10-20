@@ -30,8 +30,6 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -44,7 +42,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -532,28 +530,6 @@ fn user_of(spec: &str) -> Option<User> {
     ))
 }
 
-/// The legacy actor the seam still carries beside the user; its role is not what decides here.
-fn legacy_of(spec: &str) -> Sessions {
-    match spec.split_once('@') {
-        None => Sessions {
-            owner: None,
-            staff: None,
-        },
-        Some((role, rest)) => {
-            let (branch, _) = rest.split_once('#').expect("a spec ends in #n");
-            let old = if role == "TELLER" {
-                OldRole::Front
-            } else {
-                OldRole::Finance
-            };
-            Sessions {
-                owner: None,
-                staff: Actor::staff(user_id(spec), old, BranchId::new(branch)),
-            }
-        }
-    }
-}
-
 fn spec_of(req: &HttpRequest) -> String {
     req.headers()
         .get(AS)
@@ -562,18 +538,9 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
                 user: user.clone(),
