@@ -3,8 +3,8 @@
 //! SKELETON (PT-0): `MarketQuote::anchor_for` is PT-8's. The types and signature stay.
 
 use chrono::{DateTime, Utc};
-use xc_kernel::money::Rate;
 use rust_decimal::Decimal;
+use xc_kernel::money::Rate;
 
 use crate::domain::pricing::pricing_flag::PricingFlag;
 
