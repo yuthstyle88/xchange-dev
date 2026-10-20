@@ -33,7 +33,7 @@ qa/e2e/
   tests/smoke-desk-ops.spec.ts       QA-S8
   tests/flow-booking.spec.ts         QA-F1 (PR 3838's booking.spec.ts, moved onto the helpers)
   tests/flow-queue.spec.ts           QA-F2
-  tests/flow-cash.spec.ts            QA-F3
+  tests/flow-cash.spec.ts            QA-F3 (PR 3838's shift.spec.ts, moved onto the helpers)
   tests/flow-rates.spec.ts           QA-F4
   tests/flow-approvals.spec.ts       QA-F5
 ```
@@ -51,6 +51,7 @@ classDiagram
     +customer: Account
     +teller: Account
     +branchManager?: Account
+    +finance?: Account
     +admin: Account
     +branch: string
   }
@@ -77,7 +78,7 @@ classDiagram
 | Function | Contract |
 |---|---|
 | `loadUsers()` | Reads `users.json`; **if it is missing, reads `users.example.json`**, so `--list` and `tsc` work on a worker's machine with no secrets (a real run with the example file fails at sign-in, by design) |
-| `signIn(page, role, next)` | `role`: `customer`, `teller`, `branchManager`, `admin`. Goes to `/login?next=…`, fills `input[autocomplete="username"]` / `"current-password"` (`web/src/screens/login/LoginScreen.tsx:114`, `:121`), submits, and waits until the URL has left `/login` and starts with `next` (the PR 3838 fix). A role with no account in `users.json` ⇒ `test.skip` with a reason |
+| `signIn(page, role, next)` | `role`: `customer`, `teller`, `branchManager`, `finance`, `admin`. Goes to `/login?next=…`, fills `input[autocomplete="username"]` / `"current-password"` (`web/src/screens/login/LoginScreen.tsx:114`, `:121`), submits, and waits until the URL has left `/login` and starts with `next` (the PR 3838 fix). A role with no account in `users.json` ⇒ `test.skip` with a reason |
 | `withLang(page, lang)` | `page.addInitScript` sets `localStorage['xc.lang']` before the page loads (`web/src/shared/i18n/index.ts:9-17`). Customer pages allow th/en/zh, staff and admin th/en (`web/src/shared/i18n/languages.ts:7-8`); any other choice falls back to th (`index.ts:40-44`) |
 | `watchConsole(page)` | Collects `console` errors and `pageerror`s; `smoke` fails the test if any appear |
 | `shot(page, area, screen, lang)` | `results/<area>/<screen>-<lang>.png`, full page |
@@ -155,8 +156,8 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 | Flow | Journey (design) | Steps | Writes, and where |
 |---|---|---|---|
 | F1 booking | `blueprint/booking-slots.md` §4.2–4.4, #1683 | PR 3838's: book from `?ref=`, book again, C03 lists both and cancels one, the desk shows the kept one, admin booking-slots opens | bookings on MAIN for the test customer |
-| F2 queue | `blueprint/queue-tickets.md` §3, §4.3–4.4 | teller: issue a walk-in, call next, start, finish; the board shows each state | queue tickets on MAIN. A call needs the teller's OPEN shift (Q7; F3 first) and an ACTIVE counter, and issuing needs an open queue (`queueOpen`, `BranchDayOperate`). The seed makes neither a counter nor a branch manager, so F2 skips with the reason logged when either is missing |
-| F3 cash | `blueprint/cash-shift-transfer.md` §3.1, `/staff` shift card | teller: open count, close count with the same figures | the teller's own shift on MAIN |
+| F2 queue | `blueprint/queue-tickets.md` §3, §4.3–4.4 | teller: issue a walk-in, call next, start, finish; the board shows each state | queue tickets on MAIN. A call needs the teller's OPEN shift (Q7; F3 first) and an ACTIVE counter, and issuing needs an open queue (`queueOpen`, `BranchDayOperate`). The seed makes no counter, so F2 skips with the reason logged when there is none |
+| F3 cash | `blueprint/cash-shift-transfer.md` §3.1, A5; `ledger-inventory.md` §4.4 | (1) fund the safe: finance records an EXTERNAL_IN on `/staff` › transfers, the branch manager approves it on `/#approvals` (A5: never the creator), finance dispatches and receives it; (2) the teller clocks in and counts the opening, the branch manager verifies it (`person_rules.rs` `verifier_is_not_counter`); (3) the same for the close, with the same figures. Since LG-4 (#929) the opening count leaves the safe, so (1) must come first. Needs #3858 (CASH_TRANSFER in the approval registry) on the host | one EXTERNAL_IN transfer and the teller's own shift on MAIN |
 | F4 rates | `blueprint/rates.md` §4.4 | admin: open A02, create a draft, simulate. **Never submit**: a publish changes the shared counter prices (E-4). The test deletes its draft at the end | one draft, removed |
 | F5 approvals | `blueprint/rates.md` §5, A06 | admin: the list loads with its filters; if a PENDING request exists, open it (read only) | none |
 
@@ -167,8 +168,8 @@ a flow there would test v2. It is cut when #542 merges.
 
 - `fullyParallel: false`, one worker; files run in name order, so `flow-cash` (F3) runs before `flow-queue` (F2): the skeleton
   names them so (`flow-cash.spec.ts` < `flow-queue.spec.ts`).
-- Every flow uses only branch `MAIN` and the seeded `customer` and `teller` (E-4). The seed does not create a branch manager;
-  F2's open/close step skips when `users.json` has none, and logs that.
+- Every flow uses only branch `MAIN` and the seeded accounts (E-4): `customer`, `teller`, `branchManager` (seed step 6b) and
+  `finance` (step 6c, PR 3837). A flow whose account is missing from `users.json` skips and logs why.
 - No flow deletes data it did not create.
 
 ## 6. What the suite cannot do (by hand, with screenshots)
