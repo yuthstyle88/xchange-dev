@@ -18,7 +18,7 @@ use crate::presentation::dto::v3::admin_slips::{AdminSlipStatus, AdminSlipsFilte
 use crate::presentation::dto::v3::transaction_row::{
     TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
 };
-use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
+use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint, push_literal_contains};
 
 struct AdminSlipsPagedView {
     pool: PgPool,
@@ -28,19 +28,6 @@ impl AdminSlipsPagedView {
     fn new(pool: PgPool) -> Self {
         Self { pool }
     }
-}
-
-fn escape_like(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '%' => out.push_str("\\%"),
-            '_' => out.push_str("\\_"),
-            '\\' => out.push_str("\\\\"),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 impl PagedView for AdminSlipsPagedView {
@@ -134,24 +121,17 @@ impl PagedView for AdminSlipsPagedView {
             if let Some(ref q) = filter.q
                 && !q.is_empty()
             {
-                let pattern = format!("%{}%", escape_like(q));
-                builder.push(
-                    " AND (lower(normalize(t.document_ref, NFKC)) LIKE lower(normalize(",
+                push_literal_contains(
+                    &mut builder,
+                    &[
+                        "t.document_ref",
+                        "t.customer_name",
+                        "t.customer_id",
+                        "l.currency::text",
+                        "p.reference",
+                    ],
+                    q,
                 );
-                builder.push_bind(pattern.clone());
-                builder.push(", NFKC)) ESCAPE '\\' \
-                     OR lower(normalize(t.customer_name, NFKC)) LIKE lower(normalize(");
-                builder.push_bind(pattern.clone());
-                builder.push(", NFKC)) ESCAPE '\\' \
-                     OR lower(normalize(t.customer_id, NFKC)) LIKE lower(normalize(");
-                builder.push_bind(pattern.clone());
-                builder.push(", NFKC)) ESCAPE '\\' \
-                     OR lower(normalize(l.currency::text, NFKC)) LIKE lower(normalize(");
-                builder.push_bind(pattern.clone());
-                builder.push(", NFKC)) ESCAPE '\\' \
-                     OR lower(normalize(p.reference, NFKC)) LIKE lower(normalize(");
-                builder.push_bind(pattern);
-                builder.push(", NFKC)) ESCAPE '\\')");
             }
 
             builder.push(" ORDER BY t.recorded_at DESC, t.seq DESC LIMIT ");
