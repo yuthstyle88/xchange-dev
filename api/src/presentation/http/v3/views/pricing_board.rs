@@ -1,7 +1,5 @@
 //! View `pricing_board` (pricing-tiers.md §6): one branch's pricing board. A page load or a click, not polled.
-//!
-//! SKELETON (PT-0): `load` is PT-7's. The view's name, permission (`ReferenceRatesRead`, through the reference-rates
-//! route as `rates_reference` does) and data type stay.
+//! Permission `ReferenceRatesRead`, through the reference-rates route as `rates_reference` does.
 
 use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
