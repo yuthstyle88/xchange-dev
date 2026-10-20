@@ -1,9 +1,12 @@
 // #1683 booking end-to-end check and #1605 app screenshots, against a running v3 host.
 // Accounts come from ../users.json (gitignored). Screenshots go to ../results/.
 import { test, expect, type Page } from '@playwright/test';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
+import { loadUsers } from './helpers';
 
-const users = JSON.parse(readFileSync(new URL('../users.json', import.meta.url), 'utf8'));
+// Its ticket moves this spec onto helpers.ts (signIn, shot, the typed Users) and removes this loose type.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const users = loadUsers() as unknown as Record<string, any>;
 const OUT = new URL('../results/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 

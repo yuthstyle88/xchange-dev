@@ -2,9 +2,12 @@
 // The teller counts, the branch manager verifies: the verifier must not be the counter
 // (api/crates/xc-cash/src/domain/person_rules.rs verifier_is_not_counter). Accounts come from ../users.json.
 import { test, expect, type Page, type Browser } from '@playwright/test';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
+import { loadUsers } from './helpers';
 
-const users = JSON.parse(readFileSync(new URL('../users.json', import.meta.url), 'utf8'));
+// Its ticket moves this spec onto helpers.ts (signIn, shot, the typed Users) and removes this loose type.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const users = loadUsers() as unknown as Record<string, any>;
 const OUT = new URL('../results/shift/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 const shot = (page: Page, name: string) => page.screenshot({ path: `${OUT}${name}.png`, fullPage: true });
