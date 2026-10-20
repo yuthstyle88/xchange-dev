@@ -225,7 +225,7 @@ describe('Customer Book success banner reset (#2594)', () => {
 
     const banner1 = host.querySelector('.xc-book-success');
     expect(banner1).not.toBeNull();
-    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.id);
+    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.bookingNo);
 
     // Second submit fails
     submitBtn.click();
@@ -252,7 +252,7 @@ describe('Customer Book success banner reset (#2594)', () => {
 
     const banner1 = host.querySelector('.xc-book-success');
     expect(banner1).not.toBeNull();
-    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.id);
+    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.bookingNo);
 
     // Second booking submitted, in flight
     submitBtn.click();
@@ -267,6 +267,6 @@ describe('Customer Book success banner reset (#2594)', () => {
 
     const banner2 = host.querySelector('.xc-book-success');
     expect(banner2).not.toBeNull();
-    expect(banner2!.textContent).toContain(SAMPLE_CREATE_OK_2.id);
+    expect(banner2!.textContent).toContain(SAMPLE_CREATE_OK_2.bookingNo);
   });
 });
