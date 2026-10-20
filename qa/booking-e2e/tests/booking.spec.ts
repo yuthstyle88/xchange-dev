@@ -75,8 +75,14 @@ test.describe.serial('#1683 booking', () => {
     await expect(page.getByText(keptBooking).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(toCancel).first()).toBeVisible();
     await shot(page, 'c03-1-list');
-    const card = page.locator('li, article, section, div').filter({ hasText: toCancel }).last();
-    await card.getByRole('button', { name: /ยกเลิกการจอง|Cancel Booking|取消预约/ }).click();
+    // The card is the smallest element holding both this booking number and a cancel button.
+    const cancelName = /ยกเลิกการจอง|Cancel Booking|取消预约/;
+    const card = page
+      .locator('li, article, section, div')
+      .filter({ hasText: toCancel })
+      .filter({ has: page.getByRole('button', { name: cancelName }) })
+      .last();
+    await card.getByRole('button', { name: cancelName }).click();
     await page.getByRole('button', { name: /ยืนยันการยกเลิก|Confirm Cancellation|确认取消/ }).click();
     await shot(page, 'c03-2-cancelled');
     console.log(`[c03] kept ${keptBooking}, cancelled ${toCancel}`);
