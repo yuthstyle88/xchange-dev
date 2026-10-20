@@ -84,6 +84,8 @@ test.describe.serial('#1683 booking', () => {
       .last();
     await card.getByRole('button', { name: cancelName }).click();
     await page.getByRole('button', { name: /ยืนยันการยกเลิก|Confirm Cancellation|确认取消/ }).click();
+    // Criterion 3 is met only when the card itself reads cancelled, not when the dialog closes.
+    await expect(card.getByText(/ยกเลิกแล้ว|Cancelled|已取消/), `${toCancel} shows cancelled`).toBeVisible({ timeout: 15_000 });
     await shot(page, 'c03-2-cancelled');
     console.log(`[c03] kept ${keptBooking}, cancelled ${toCancel}`);
   });
@@ -91,8 +93,8 @@ test.describe.serial('#1683 booking', () => {
   test('teller desk shows the booking', async ({ page }) => {
     test.skip(!keptBooking, 'no booking from the customer test');
     await signIn(page, users.teller.phone, users.teller.password, '/desk/bookings');
-    await shot(page, 'desk-1-bookings');
     await expect(page.getByText(keptBooking).first(), 'the kept booking on the desk screen').toBeVisible({ timeout: 15_000 });
+    await shot(page, 'desk-1-bookings');
   });
 
   test('admin booking-slots opens', async ({ page }) => {
