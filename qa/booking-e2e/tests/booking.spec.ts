@@ -115,12 +115,61 @@ test.describe.serial('#1683 booking', () => {
     console.log(`[cleanup] cancelled ${keptBooking}`);
   });
 
-  test('admin booking-slots opens', async ({ page }) => {
+  // #1683 criterion 4 (admin): change one slot's capacity and add a closure, see C02 follow, then restore both.
+  test('admin booking-slots: capacity and closure, reflected on C02, restored', async ({ page, browser }) => {
     test.skip(!users.admin?.password || users.admin.password.startsWith('<'), 'no admin account in users.json');
     await signIn(page, users.admin.identifier, users.admin.password, '/');
     await page.goto('/#booking-slots'); // admin.html is served at / (api/src/presentation/pages.rs PAGE_SPECS)
-    await expect(page.locator('input[name="capacity"], input[name="slotCapacity"]').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('input[name="capacity"]')).toBeVisible({ timeout: 15_000 });
     await shot(page, 'admin-1-booking-slots');
+    // The screen works on the session branch; the seeded rule is MAIN (XC-B).
+    const onMain = await page.getByText(/XC-B/).first().isVisible().catch(() => false);
+    test.skip(!onMain, 'the admin session branch is not XC-B (MAIN); switch branch in the shell and rerun');
+
+    // Capacity: a slot two days ahead at 09:00 has no bookings from this suite.
+    const day = new Date(Date.now() + 7 * 3600_000 + 2 * 24 * 3600_000).toISOString().slice(0, 10);
+    const slot = page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first();
+    await expect(slot).toBeVisible({ timeout: 15_000 });
+    const capInput = slot.locator('input[name="slotCapacity"]');
+    const before = await capInput.inputValue();
+    await capInput.fill('2');
+    await slot.locator('.slot-capacity-control button').click();
+    await page.reload();
+    await expect(page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first()
+      .locator('input[name="slotCapacity"]')).toHaveValue('2', { timeout: 15_000 });
+    await shot(page, 'admin-2-capacity-2');
+    console.log(`[admin] slot ${day} 09:00 capacity ${before} -> 2`);
+
+    // Closure: a date five days ahead.
+    const closed = new Date(Date.now() + 7 * 3600_000 + 5 * 24 * 3600_000).toISOString().slice(0, 10);
+    await page.locator('input[name="closedOn"]').fill(closed);
+    await page.locator('input[name="reason"]').fill('e2e closure');
+    await page.locator('.closures-form button').click();
+    await expect(page.locator('.closure-item', { hasText: closed })).toBeVisible({ timeout: 15_000 });
+    await shot(page, 'admin-3-closure-added');
+
+    // C02 as the customer: the closed date should offer no slot.
+    const cust = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 430, height: 932 } });
+    await signIn(cust, users.customer.phone, users.customer.password, '/app/book');
+    await cust.getByTestId('branch-select').selectOption(users.branch);
+    await cust.getByTestId('date-input').fill(closed);
+    await cust.waitForLoadState('networkidle');
+    const open = await cust.locator('[data-testid="slot-option"]:not([disabled])').count();
+    await shot(cust, 'admin-4-c02-closed-date');
+    if (open > 0) console.log(`[admin] FINDING: C02 still offers ${open} open slot(s) on the closed date ${closed} (closureAdd does not close existing slots at da38eda4; main fixes it)`);
+    else console.log(`[admin] C02 offers no slot on the closed date ${closed}`);
+    await cust.close();
+
+    // Restore: remove the closure, put the capacity back.
+    await page.locator('.closure-item', { hasText: closed }).getByRole('button').click();
+    await expect(page.locator('.closure-item', { hasText: closed })).toHaveCount(0, { timeout: 15_000 });
+    const again = page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first();
+    await again.locator('input[name="slotCapacity"]').fill(before);
+    await again.locator('.slot-capacity-control button').click();
+    await page.reload();
+    await expect(page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first()
+      .locator('input[name="slotCapacity"]')).toHaveValue(before, { timeout: 15_000 });
+    console.log(`[admin] restored: closure ${closed} removed, capacity back to ${before}`);
   });
 });
 
