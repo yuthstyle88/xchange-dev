@@ -495,6 +495,7 @@ impl Policy {
             },
             EntryPath::OwnerRoute => match act {
                 "/api/reference-rates" => Some(Need::Permission(Permission::ReferenceRatesRead)),
+                "queueTicketTake" => Some(Need::Permission(Permission::CustomerSelf)),
                 _ => Some(Need::Permission(Permission::UsersManage)),
             },
             EntryPath::UserRoute => match act {

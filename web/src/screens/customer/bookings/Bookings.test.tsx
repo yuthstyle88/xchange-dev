@@ -1,17 +1,15 @@
 // Written before the implementation by the test writer gemini/warut-2 (ticket author claude/e92db6), against BK-6 provided tests 7f8e56d1. Do not edit, delete or weaken.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  BookingCancelOutput,
-  BookingRescheduleOutput,
-} from '../../../shared/api/generated/bookings';
-import type {
-  BookingSlotsData,
-} from '../../../shared/api/generated/booking_slots';
-import type {
-  MyBookingItemDto,
-  MyBookingsData,
-} from '../../../shared/api/generated/my_bookings';
+import {
+  makeBookingCancelOutput,
+  makeBookingRescheduleOutput,
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeMyBookingItemDto,
+  makeMyBookingsData,
+  type MyBookingItemDto,
+} from '../../../shared/testing/fixtures';
 import * as table from './i18n';
 
 interface NodeFs {
@@ -48,8 +46,8 @@ const MY_PROFILE = {
   hasPhone: true,
 };
 
-const INITIAL_BOOKINGS: MyBookingItemDto[] = [
-  {
+const INITIAL_BOOKINGS = [
+  makeMyBookingItemDto({
     id: BOOKING_ACTIVE_ID,
     bookingNo: 'B261014-0024',
     status: 'CONFIRMED',
@@ -68,8 +66,8 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'unknown',
-  },
-  {
+  }),
+  makeMyBookingItemDto({
     id: BOOKING_COMPLETED_ID,
     bookingNo: 'B261014-0020',
     status: 'COMPLETED',
@@ -87,8 +85,8 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'unknown',
-  },
-  {
+  }),
+  makeMyBookingItemDto({
     id: BOOKING_CANCELLED_ID,
     bookingNo: 'B261014-0021',
     status: 'CANCELLED',
@@ -106,8 +104,8 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'unknown',
-  },
-  {
+  }),
+  makeMyBookingItemDto({
     id: BOOKING_NO_SHOW_ID,
     bookingNo: 'B261014-0022',
     status: 'NO_SHOW',
@@ -125,8 +123,8 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'unknown',
-  },
-  {
+  }),
+  makeMyBookingItemDto({
     id: BOOKING_EXPIRED_ID,
     bookingNo: 'B261014-0023',
     status: 'EXPIRED',
@@ -144,10 +142,10 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'unknown',
-  },
+  }),
   // Near midnight UTC booking to test Asia/Bangkok timezone formatting:
   // 2026-10-14T23:30:00Z is 2026-10-15T06:30:00+07:00 in Asia/Bangkok
-  {
+  makeMyBookingItemDto({
     id: BOOKING_MIDNIGHT_ID,
     bookingNo: 'B261014-0099',
     status: 'CONFIRMED',
@@ -165,20 +163,20 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'unknown',
-  },
+  }),
 ];
 
-const AVAILABLE_SLOTS = {
+const AVAILABLE_SLOTS = makeBookingSlotsData({
   asOf: '2026-10-14T08:00:00Z',
   slots: [
-    {
+    makeBookingSlotItemDto({
       id: SLOT_RESCHEDULE_ID,
       start: '2026-10-14T11:00:00Z',
       end: '2026-10-14T11:30:00Z',
       available: 3,
-    },
+    }),
   ],
-} satisfies BookingSlotsData;
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -265,10 +263,10 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
           if (bookingId) {
             const found = viewBookings.find((b) => b.id === bookingId);
             if (!found) return json(404, { error: { code: 'notFound', message: 'Booking not found' } });
-            return viewEnvelope({ bookings: [found] } satisfies MyBookingsData);
+            return viewEnvelope(makeMyBookingsData({ bookings: [found] }));
           }
 
-          return viewEnvelope({ bookings: viewBookings } satisfies MyBookingsData);
+          return viewEnvelope(makeMyBookingsData({ bookings: viewBookings }));
         }
 
         // 3. View booking_slots (for choosing new slot on reschedule)
@@ -290,11 +288,11 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingCancelOutput({
                 id: cancelMatch[1],
                 status: 'CANCELLED',
                 bookingNo: item?.bookingNo ?? 'B261014-0024',
-              } satisfies BookingCancelOutput),
+              }),
           );
         }
 
@@ -312,12 +310,12 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingRescheduleOutput({
                 id: reschedMatch[1],
                 slotId: parsedBody?.slotId ?? SLOT_RESCHEDULE_ID,
                 status: 'CONFIRMED',
                 bookingNo: item?.bookingNo ?? 'B261014-0024',
-              } satisfies BookingRescheduleOutput),
+              }),
           );
         }
 
@@ -693,7 +691,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
 
           if (u.pathname === '/api/v3/views/my_profile') return viewEnvelope(MY_PROFILE);
           if (u.pathname === '/api/v3/views/my_bookings') {
-            return viewEnvelope({ bookings: INITIAL_BOOKINGS } satisfies MyBookingsData);
+            return viewEnvelope(makeMyBookingsData({ bookings: INITIAL_BOOKINGS }));
           }
 
           if (method === 'POST' && u.pathname.includes('/cancel')) {
@@ -705,11 +703,11 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
             secondKey = headers.get('idempotency-key');
             return json(
               200,
-              {
+              makeBookingCancelOutput({
                 id: BOOKING_ACTIVE_ID,
                 status: 'CANCELLED',
                 bookingNo: 'B261014-0024',
-              } satisfies BookingCancelOutput,
+              }),
             );
           }
 

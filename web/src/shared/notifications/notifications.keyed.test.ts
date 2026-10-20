@@ -2,7 +2,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { ApiClient, type Fetch } from '../api/client';
-import type { MyNotificationsData } from '../api/generated/my_notifications';
+import {
+  makeMyNotificationItem,
+  makeMyNotificationsData,
+} from '../testing/fixtures';
 import { createNotifications, type NotificationsModel } from './notifications';
 
 interface WriteCall {
@@ -23,9 +26,9 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const NOTIFICATIONS_DATA: MyNotificationsData = {
+const NOTIFICATIONS_DATA = makeMyNotificationsData({
   items: [
-    {
+    makeMyNotificationItem({
       id: 'n-1',
       seq: 2,
       locale: 'th',
@@ -33,8 +36,8 @@ const NOTIFICATIONS_DATA: MyNotificationsData = {
       body: 'Tap to book',
       createdAt: '2026-10-15T08:00:00Z',
       read: false,
-    },
-    {
+    }),
+    makeMyNotificationItem({
       id: 'n-2',
       seq: 1,
       locale: 'th',
@@ -42,9 +45,9 @@ const NOTIFICATIONS_DATA: MyNotificationsData = {
       body: 'Siam Head Office',
       createdAt: '2026-10-15T08:05:00Z',
       read: false,
-    },
+    }),
   ],
-};
+});
 
 function makeHarness(steps: StepAnswer[]) {
   const writes: WriteCall[] = [];

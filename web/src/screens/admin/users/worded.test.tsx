@@ -6,7 +6,7 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
 const B01 = 'XC-B01';
@@ -17,35 +17,35 @@ const SAMPLE_BRANCHES = [
   { id: B09, name: 'Siam Branch' },
 ];
 
-const SEED_USERS: AdminUserRow[] = [
-  {
+const SEED_USERS = [
+  makeAdminUserRow({
     userId: 'u-1',
     name: 'Somchai Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
-  {
+  }),
+  makeAdminUserRow({
     userId: 'u-2',
     name: 'Somsri Invited',
     status: 'INVITED',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
+  }),
 ];
 
 function json(body: unknown, status = 200): Response {

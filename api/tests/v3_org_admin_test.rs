@@ -357,7 +357,9 @@ async fn an_admin_saves_a_branch_profile_and_reads_it_back() {
         "address": "1 Silom Rd",
         "timezone": "Asia/Bangkok",
         "openingHours": { "mon": [{ "open": "09:00", "close": "17:00" }] },
-        "bookingEnabled": true
+        "bookingEnabled": true,
+        "contactChannels": [],
+        "status": "ACTIVE"
     });
     assert_eq!(a.body, want, "the saved profile");
     let r = get(

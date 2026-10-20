@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type {
-  LoyaltyRuleVersionsData,
-  PointRuleVersionItem,
-} from '../../../shared/api/generated/loyalty_rule_versions';
+import {
+  makeLoyaltyRuleVersionsData,
+  makePointRuleVersionItem,
+  type LoyaltyRuleVersionsData,
+} from '../../../shared/testing/fixtures';
 import type { AdminMenu } from '../menus';
 
 const found = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
@@ -15,8 +16,8 @@ const loyaltyMenu = (): AdminMenu | undefined => Object.values(found)[0]?.menu;
 const VIEW = '/api/v3/views/loyalty_rule_versions';
 const DRAFT = '/api/v3/commands/loyalty_rule_draft';
 
-function point(versionId: string, version: number, status: string): PointRuleVersionItem {
-  return {
+function point(versionId: string, version: number, status: string) {
+  return makePointRuleVersionItem({
     versionId,
     version,
     status,
@@ -27,7 +28,7 @@ function point(versionId: string, version: number, status: string): PointRuleVer
     expiryMonths: 6,
     validFrom: '2026-10-01T00:00:00Z',
     validTo: null,
-  };
+  });
 }
 
 interface Call {
@@ -44,10 +45,10 @@ let dispose: (() => void) | undefined;
 
 beforeEach(() => {
   setLang('th');
-  versions = {
+  versions = makeLoyaltyRuleVersionsData({
     pointVersions: [point('pv-3', 3, 'DRAFT')],
     tierVersions: [],
-  };
+  });
   calls = [];
   root = document.createElement('div');
   document.body.appendChild(root);

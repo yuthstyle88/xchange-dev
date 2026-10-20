@@ -600,7 +600,7 @@ mod tests {
             .expect_err("out-of-range safe balance must be refused");
         assert!(
             matches!(err, AppError::Internal(_)),
-            "expected AppError::Internal, got {err:?}"
+            "expected AppError::Internal, got {err}"
         );
     }
 }

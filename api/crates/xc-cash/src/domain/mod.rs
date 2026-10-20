@@ -8,4 +8,5 @@ pub mod ledger;
 pub mod person_rules;
 pub mod posting;
 pub mod repository;
+pub mod reservation;
 pub mod transfer;

@@ -49,9 +49,16 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { PublishedRatesData } from "../../../shared/api/generated/published_rates";
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeStaffFloorTarget,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { th as staffTh } from "../i18n";
 import { warmModules } from "../../../shared/testing/warm-modules";
@@ -123,21 +130,21 @@ function th(key: (typeof KEYS)[number]): string {
 const BRANCH = "MAIN";
 const PUBLISHED_AT = "2026-10-11T02:30:00Z";
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: "00000000-0000-4000-8000-0000000000f1",
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
 const ALL = ["AttendanceClock", "BranchDayOperate", "CashTargetSet"];
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: null,
@@ -146,34 +153,36 @@ function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
     target: null,
     safe: null,
     ...over,
-  };
+  });
 }
 
-const TARGET = {
+const TARGET = makeStaffFloorTarget({
   amounts: { USD: "1000.00", EUR: "500.50" },
   at: "2026-10-11T01:00:00Z",
-};
+});
 const SAFE = { USD: "12500.00", JPY: "300000.00" };
 
-const RATES: PublishedRatesData = {
-  publication: {
+const RATES = makePublishedRatesData({
+  publication: makePublishedPublicationDto({
     id: "11111111-2222-4333-8444-555555555555",
     version: 7,
     publishedAt: PUBLISHED_AT,
-  },
+  }),
   sourceDate: "2026-10-10",
   stale: false,
+  bandHeadings: [],
   lines: [
-    {
+    makePublishedLineDto({
       currency: "USD",
       group: "ALL",
       unitSize: "1",
       buyRate: "32.4500",
       sellRate: "32.9000",
       lineId: "l-usd",
-    },
+      bands: [],
+    }),
   ],
-};
+});
 
 type Sent = {
   url: string;
@@ -554,18 +563,21 @@ function currenciesOf(form: HTMLFormElement): string[] {
   ].map((i) => i.getAttribute("data-currency") ?? "");
 }
 
-function ratesWith(...currencies: string[]): PublishedRatesData {
-  return {
+function ratesWith(...currencies: string[]) {
+  return makePublishedRatesData({
     ...RATES,
-    lines: currencies.map((currency) => ({
-      currency,
-      group: "ALL",
-      unitSize: "1",
-      buyRate: "1.0000",
-      sellRate: "1.1000",
-      lineId: `l-${currency}`,
-    })),
-  };
+    lines: currencies.map((currency) =>
+      makePublishedLineDto({
+        currency,
+        group: "ALL",
+        unitSize: "1",
+        buyRate: "1.0000",
+        sellRate: "1.1000",
+        lineId: `l-${currency}`,
+        bands: [],
+      }),
+    ),
+  });
 }
 
 describe("B5 the target form lists THB, then every published, target or safe currency (#577 ruling)", () => {
@@ -596,7 +608,7 @@ describe("B5 the target form lists THB, then every published, target or safe cur
     await mount(
       me(["AttendanceClock", "CashTargetSet"]),
       floor({
-        target: { amounts: { USD: "1000.00", GBP: "20.00" }, at: TARGET.at },
+        target: makeStaffFloorTarget({ amounts: { USD: "1000.00", GBP: "20.00" }, at: TARGET.at }),
         safe: { JPY: "300000.00", USD: "1.00" },
       }),
     );

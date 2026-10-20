@@ -5,46 +5,51 @@ import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { ShiftCard } from './ShiftCard';
 import type { StaffCtx } from '../cards';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
-import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
+import {
+  makeCashCountRow,
+  makeDenominationRow,
+  makeHandoverPendingRow,
+  makeHandoverReceiverRow,
+  makeStaffFloorMyShift,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 
 const BRANCH = 'MAIN';
 const ME = '00000000-0000-4000-8000-0000000000a1';
 const OTHER = '00000000-0000-4000-8000-0000000000a2';
 
-function mockMe(permissions: string[]): StaffMeView {
-  return {
+function mockMe(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function mockFloor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function mockFloor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
-    myShift: {
+    myShift: makeStaffFloorMyShift({
       id: 'shift-open-001',
       openedAt: '2026-10-11T01:05:00Z',
-    },
+    }),
     cutoff: null,
     target: null,
     safe: null,
     ...over,
-  };
+  });
 }
 
-const SAMPLE_COUNTS: CashCountRow[] = [
-  {
+const SAMPLE_COUNTS = [
+  makeCashCountRow({
     id: 'c-001',
     branchId: BRANCH,
     shiftId: 'shift-001',
@@ -55,26 +60,26 @@ const SAMPLE_COUNTS: CashCountRow[] = [
     verifiedAt: null,
     note: null,
     totals: [],
-  },
+  }),
 ];
 
-const SAMPLE_HANDOVERS: HandoverPendingRow[] = [
-  {
+const SAMPLE_HANDOVERS = [
+  makeHandoverPendingRow({
     id: 'h-001',
     fromShiftId: 'shift-other',
     countId: 'count-other',
     receiverId: ME,
     status: 'PENDING',
     createdAt: '2026-10-11T03:00:00Z',
-  },
+  }),
 ];
 
-const SAMPLE_DENOMS: DenominationRow[] = [
-  { id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' },
+const SAMPLE_DENOMS = [
+  makeDenominationRow({ id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' }),
 ];
 
-const SAMPLE_RECEIVERS: HandoverReceiverRow[] = [
-  { userId: OTHER, name: 'Somchai' },
+const SAMPLE_RECEIVERS = [
+  makeHandoverReceiverRow({ userId: OTHER, name: 'Somchai' }),
 ];
 
 let host: HTMLDivElement;

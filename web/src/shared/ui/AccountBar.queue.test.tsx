@@ -22,10 +22,9 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
-import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
+import { makeQueueBoardWaiting, type Me, type QueueBoardData } from '../testing/fixtures';
 import { meOf, roleLabel } from '../../test-support/me';
 import { warmModules } from '../testing/warm-modules';
 
@@ -124,13 +123,13 @@ const NOK: Me = meOf(NOK_V3);
 const RATES: Me = meOf({ id: 'E9', role: 'RATES', branch: 'B1', name: 'Pim', branchName: 'B1', branches: [] });
 
 /** One WAITING ticket, issued now: `queue_board`'s `waiting` row. */
-const KQ1: QueueBoardWaiting = {
+const KQ1 = makeQueueBoardWaiting({
   id: 'kq-1',
   displayNumber: 'W001',
   serviceType: 'WALK_IN',
   sequence: 1,
   issuedAt: '2026-10-08T03:00:05.000Z',
-};
+});
 
 const disposers: Array<() => void> = [];
 

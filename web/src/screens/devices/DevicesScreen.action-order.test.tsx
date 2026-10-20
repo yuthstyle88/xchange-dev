@@ -7,10 +7,14 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
-import type { DeviceEventRow } from '../../shared/api/generated/device_events';
-import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
-import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
-import type { DevicesOverview } from '../../shared/api/generated/devices';
+import {
+  type DeviceJobRow,
+  makeDeviceBranch,
+  makeDeviceEventRow,
+  makeDeviceJobRow,
+  makeDeviceTransactionRow,
+  makeDevicesOverview,
+} from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { DevicesScreen } from './DevicesScreen';
 import { th } from './i18n';
@@ -18,10 +22,10 @@ import { STATUS_LABELS } from './labels';
 
 type Api = Pick<ApiClient, 'view' | 'post' | 'page'>;
 
-function overview(branchId = 'B1'): DevicesOverview {
-  return {
+function overview(branchId = 'B1') {
+  return makeDevicesOverview({
     branchId,
-    branches: [{ id: 'B1', name: 'สาขาหนึ่ง' }],
+    branches: [makeDeviceBranch({ id: 'B1', name: 'สาขาหนึ่ง' })],
     printerOnline: true,
     printerKind: 'SIMULATED',
     printerModel: 'NEOCAL NTP-8220BT',
@@ -30,41 +34,41 @@ function overview(branchId = 'B1'): DevicesOverview {
     balanceThb: '1000.00',
     balanceUsd: '50.00',
     completedCount: 2,
-  };
+  });
 }
 
-function makeJob(status: DeviceJobRow['status']): DeviceJobRow {
-  return {
+function makeJob(status: DeviceJobRow['status']) {
+  return makeDeviceJobRow({
     id: 'J1',
     kind: 'PRINT_RECEIPT',
     ref: 'TX-1',
     status,
     actor: 'teller1',
     created: '2026-10-14T10:00:00.000Z',
-  };
+  });
 }
 
-const B1_EVENTS: DeviceEventRow[] = [
-  {
+const B1_EVENTS = [
+  makeDeviceEventRow({
     seq: '10',
     kind: 'PRINT_RECEIPT',
     ref: 'TX-1',
     at: '2026-10-14T10:00:00.000Z',
     actor: 'teller1',
     detail: '{}',
-  },
+  }),
 ];
 
-const B1_TXS: DeviceTransactionRow[] = [
-  { id: 'TX-1', type: 'BUY', amount: '1000.00', currency: 'USD' },
+const B1_TXS = [
+  makeDeviceTransactionRow({ id: 'TX-1', type: 'BUY', amount: '1000.00', currency: 'USD' }),
 ];
 
 class FakeServer {
   version = 1;
-  devices: DevicesOverview = overview('B1');
-  jobs: DeviceJobRow[] = [makeJob('QUEUED')];
-  events: DeviceEventRow[] = B1_EVENTS;
-  transactions: DeviceTransactionRow[] = B1_TXS;
+  devices = overview('B1');
+  jobs = [makeJob('QUEUED')];
+  events = B1_EVENTS;
+  transactions = B1_TXS;
 
   onView?: (name: string, q?: ViewParams) => Promise<ViewAnswer<unknown>> | undefined;
   onPost: (path: string, body: unknown) => Promise<unknown> = async () => ({ saved: true });

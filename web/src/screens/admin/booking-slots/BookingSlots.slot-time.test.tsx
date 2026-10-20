@@ -3,10 +3,16 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AdminBookingSlotsData, AdminSlotDto } from '../../../shared/api/generated/admin_booking_slots';
-import type { Me } from '../../../shared/api/generated/common';
 import { setLang } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
+import {
+  type AdminBookingSlotsData,
+  type AdminSlotDto,
+  makeAdminBookingPolicyDto,
+  makeAdminBookingSlotsData,
+  makeAdminSlotDto,
+  makeAdminSlotRuleDto,
+} from '../../../shared/testing/fixtures';
 import { meOf } from '../../../test-support/me';
 import type { AdminMenuProps } from '../menus';
 import { BookingSlots } from './BookingSlots';
@@ -22,13 +28,13 @@ interface SentWrite {
   body: unknown;
 }
 
-function makeViewData(branchId: string, slots: AdminSlotDto[]): AdminBookingSlotsData {
-  return {
-    rule: { branchId, slotMinutes: 30, capacity: 8, horizonDays: 21 },
+function makeViewData(branchId: string, slots: AdminSlotDto[]) {
+  return makeAdminBookingSlotsData({
+    rule: makeAdminSlotRuleDto({ branchId, slotMinutes: 30, capacity: 8, horizonDays: 21 }),
     closures: [],
     slots,
-    policy: { cancelCutoffMinutes: 45, noShowGraceMinutes: 20, confirmExpiryMinutes: 30 },
-  };
+    policy: makeAdminBookingPolicyDto({ cancelCutoffMinutes: 45, noShowGraceMinutes: 20, confirmExpiryMinutes: 30 }),
+  });
 }
 
 describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clock HH:mm times', () => {
@@ -46,7 +52,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
     writes = [];
     branchData = {
       [B01]: makeViewData(B01, [
-        {
+        makeAdminSlotDto({
           id: 'slot-0900',
           branchId: B01,
           serviceDate: '2026-10-17',
@@ -55,10 +61,10 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
           capacity: 8,
           reserved: 2,
           status: 'OPEN',
-        },
+        }),
       ]),
       [B02]: makeViewData(B02, [
-        {
+        makeAdminSlotDto({
           id: 'slot-b02-1330',
           branchId: B02,
           serviceDate: '2026-10-17',
@@ -67,7 +73,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
           capacity: 12,
           reserved: 1,
           status: 'OPEN',
-        },
+        }),
       ]),
     };
 
@@ -106,7 +112,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
     dispose?.();
     dispose = undefined;
     container.remove();
-    sharedSession().updateMe(undefined as unknown as Me);
+    sharedSession().updateMe(undefined as never);
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
@@ -154,7 +160,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
 
   it('row 2: slot startAt 2026-10-16T23:30:00+00:00 (06:30 Bangkok on the 17th) shows 06:30, not a time on the 16th', async () => {
     branchData[B01] = makeViewData(B01, [
-      {
+      makeAdminSlotDto({
         id: 'slot-0630',
         branchId: B01,
         serviceDate: '2026-10-17',
@@ -163,7 +169,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
         capacity: 8,
         reserved: 0,
         status: 'OPEN',
-      },
+      }),
     ]);
 
     await mount();
@@ -239,7 +245,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
 
   it('edge case: a missing or unparsable time shows the raw string rather than Invalid Date while valid times format as Bangkok HH:mm', async () => {
     branchData[B01] = makeViewData(B01, [
-      {
+      makeAdminSlotDto({
         id: 'slot-bad-start',
         branchId: B01,
         serviceDate: '2026-10-17',
@@ -248,8 +254,8 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
         capacity: 8,
         reserved: 0,
         status: 'OPEN',
-      },
-      {
+      }),
+      makeAdminSlotDto({
         id: 'slot-empty-end',
         branchId: B01,
         serviceDate: '2026-10-17',
@@ -258,7 +264,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
         capacity: 8,
         reserved: 0,
         status: 'OPEN',
-      },
+      }),
     ]);
 
     await mount();

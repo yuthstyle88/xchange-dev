@@ -7,13 +7,13 @@ import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { th as screenTh, en as screenEn } from './i18n';
 import type { AdminMenuProps } from '../menus';
-import type { OrgStartingPriceItem } from '../../../shared/api/generated/org_starting_prices';
+import { makeOrgStartingPriceItem } from '../../../shared/testing/fixtures';
 
 const VIEW_URL = '/api/v3/views/org_starting_prices';
 const SAVE_URL = '/api/v3/commands/org_starting_price_save';
 
-const SAMPLE_ITEMS: OrgStartingPriceItem[] = [
-  {
+const SAMPLE_ITEMS = [
+  makeOrgStartingPriceItem({
     currency: 'USD',
     version: 1,
     buy: '34.00',
@@ -21,7 +21,7 @@ const SAMPLE_ITEMS: OrgStartingPriceItem[] = [
     enteredBy: 'admin-1',
     enteredAt: '2026-10-15T01:00:00Z',
     reason: 'Initial rate',
-  },
+  }),
 ];
 
 function jsonResponse(body: unknown, status = 200): Response {

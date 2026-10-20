@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow, type AdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
 type UserRow = AdminUserRow & { employeeCode?: string | null };
@@ -30,19 +30,21 @@ function json(status: number, body: unknown): Response {
 
 function makeUsers(count: number, prefix = 'u'): UserRow[] {
   return Array.from({ length: count }, (_, i) => ({
-    userId: `${prefix}-${i + 1}`,
-    name: `User ${prefix}-${i + 1}`,
-    status: 'ACTIVE',
-    version: 1,
+    ...makeAdminUserRow({
+      userId: `${prefix}-${i + 1}`,
+      name: `User ${prefix}-${i + 1}`,
+      status: 'ACTIVE',
+      version: 1,
+      roles: [
+        makeAdminUserRole({
+          role: 'TELLER',
+          branch: B01,
+          validFrom: '2026-10-01T00:00:00Z',
+          validTo: null,
+        }),
+      ],
+    }),
     employeeCode: i === 0 ? 'E-0042' : null,
-    roles: [
-      {
-        role: 'TELLER',
-        branch: B01,
-        validFrom: '2026-10-01T00:00:00Z',
-        validTo: null,
-      },
-    ],
   }));
 }
 
@@ -71,40 +73,44 @@ beforeEach(() => {
   fetchCalls = [];
   const defaultRows: UserRow[] = [
     {
-      userId: 'u-1',
-      name: 'Somchai Active',
-      status: 'ACTIVE',
-      version: 1,
+      ...makeAdminUserRow({
+        userId: 'u-1',
+        name: 'Somchai Active',
+        status: 'ACTIVE',
+        version: 1,
+        roles: [
+          makeAdminUserRole({
+            role: 'TELLER',
+            branch: B01,
+            validFrom: '2026-10-01T00:00:00Z',
+            validTo: null,
+          }),
+          makeAdminUserRole({
+            role: 'FINANCE',
+            branch: B01,
+            validFrom: '2026-09-01T00:00:00Z',
+            validTo: '2026-10-05T00:00:00Z',
+          }),
+        ],
+      }),
       employeeCode: 'E-0042',
-      roles: [
-        {
-          role: 'TELLER',
-          branch: B01,
-          validFrom: '2026-10-01T00:00:00Z',
-          validTo: null,
-        },
-        {
-          role: 'FINANCE',
-          branch: B01,
-          validFrom: '2026-09-01T00:00:00Z',
-          validTo: '2026-10-05T00:00:00Z',
-        },
-      ],
     },
     {
-      userId: 'u-2',
-      name: 'Somsri Future',
-      status: 'ACTIVE',
-      version: 1,
+      ...makeAdminUserRow({
+        userId: 'u-2',
+        name: 'Somsri Future',
+        status: 'ACTIVE',
+        version: 1,
+        roles: [
+          makeAdminUserRole({
+            role: 'RATE_MANAGER',
+            branch: B01,
+            validFrom: '2026-10-01T00:00:00Z',
+            validTo: '2026-12-31T00:00:00Z',
+          }),
+        ],
+      }),
       employeeCode: null,
-      roles: [
-        {
-          role: 'RATE_MANAGER',
-          branch: B01,
-          validFrom: '2026-10-01T00:00:00Z',
-          validTo: '2026-12-31T00:00:00Z',
-        },
-      ],
     },
   ];
 

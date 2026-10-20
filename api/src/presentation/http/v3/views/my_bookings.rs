@@ -22,6 +22,7 @@ use xc_kernel::ids::BranchId;
 use xc_queue::application::status::status_service::{StatusService, TicketRef};
 use xc_queue::domain::repository::QueueRepository;
 use xc_queue::infrastructure::repository::PgQueueRepository;
+use xc_verification::application::readiness::Readiness;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::ViewAnswer;
@@ -117,6 +118,14 @@ impl BranchView for MyBookingsView {
                 xc_customer::get_pii_keys().map_err(|e| AppError::Internal(e.to_string()))?;
             let qr_key = QrToken::key_from_pii(&pii_keys);
             let now = Utc::now();
+
+            let readiness = Readiness::of(&pool, &customer_id)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "readiness query error");
+                    AppError::Internal("failed to query readiness".into())
+                })?
+                .as_str();
 
             let rows: Vec<MyBookingDbRow> = sqlx::query_as(
                 "SELECT b.id, b.booking_no, b.status, b.branch_id, \
@@ -234,7 +243,7 @@ impl BranchView for MyBookingsView {
                     estimate_low_seconds: estimate.map(|e| e.low_seconds),
                     estimate_high_seconds: estimate.map(|e| e.high_seconds),
                     estimate_as_of,
-                    readiness: "unknown".to_string(),
+                    readiness: readiness.to_string(),
                 });
             }
             tx.rollback().await.map_err(AppError::Database)?;

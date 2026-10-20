@@ -224,3 +224,24 @@ class ReceiptModel {
     image: j['image'] as String?,
   );
 }
+
+class BookingCheckInModel {
+  const BookingCheckInModel({
+    required this.id,
+    required this.status,
+    required this.ticketNumber,
+    this.bookingNo,
+  });
+  final String id;
+  final String status;
+  final String ticketNumber;
+  final String? bookingNo;
+
+  factory BookingCheckInModel.fromJson(Map<String, dynamic> j) =>
+      BookingCheckInModel(
+        id: j['id'] as String,
+        status: j['status'] as String,
+        ticketNumber: j['ticketNumber'] as String,
+        bookingNo: j['bookingNo'] as String?,
+      );
+}

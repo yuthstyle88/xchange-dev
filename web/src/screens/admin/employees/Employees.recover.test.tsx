@@ -3,16 +3,19 @@ import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
-import type { AdminBranchItem } from '../../../shared/api/generated/admin_branches';
-import type { AdminEmployeeRow } from '../../../shared/api/generated/admin_employees';
-import type { AdminOperationsData } from '../../../shared/api/generated/admin_operations';
+import {
+  makeAdminBranchItem,
+  makeAdminEmployeeRow,
+  makeAdminOperationsData,
+  makeAdminOperationsEntity,
+} from '../../../shared/testing/fixtures';
 import { Employees } from './Employees';
 import { Dialog } from '../parts/Dialog';
 import { requestRefresh } from '../parts/refresh';
 import { Toast, toast } from '../parts/toast';
 
-const SAMPLE_EMPLOYEES: AdminEmployeeRow[] = [
-  {
+const SAMPLE_EMPLOYEES = [
+  makeAdminEmployeeRow({
     id: 'emp-1',
     name: 'Somchai Prasert',
     username: 'somchai',
@@ -20,20 +23,20 @@ const SAMPLE_EMPLOYEES: AdminEmployeeRow[] = [
     branchId: 'MAIN',
     active: true,
     mustChange: false,
-  },
+  }),
 ];
 
-const SAMPLE_BRANCHES: AdminBranchItem[] = [
-  { id: 'MAIN', name: 'Main Branch' },
-  { id: 'B2', name: 'Second Branch' },
+const SAMPLE_BRANCHES = [
+  makeAdminBranchItem({ id: 'MAIN', name: 'Main Branch' }),
+  makeAdminBranchItem({ id: 'B2', name: 'Second Branch' }),
 ];
 
-const SAMPLE_OPERATIONS: AdminOperationsData = {
-  entity: {
+const SAMPLE_OPERATIONS = makeAdminOperationsData({
+  entity: makeAdminOperationsEntity({
     company: '108 Exchange Co., Ltd.',
     site: 'Headquarters',
-  },
-};
+  }),
+});
 
 describe('Admin Employees branch-read recovery on refresh (#2179)', () => {
   let root: HTMLElement;

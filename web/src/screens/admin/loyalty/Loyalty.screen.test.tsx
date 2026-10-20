@@ -20,11 +20,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type {
-  LoyaltyRuleVersionsData,
-  PointRuleVersionItem,
-  TierRuleVersionItem,
-} from '../../../shared/api/generated/loyalty_rule_versions';
+import {
+  makeLoyaltyRuleVersionsData,
+  makePointRuleVersionItem,
+  makeTierRuleVersionItem,
+  type LoyaltyRuleVersionsData,
+} from '../../../shared/testing/fixtures';
 import type { AdminMenu } from '../menus';
 
 const found = import.meta.glob<{ menu: AdminMenu }>('./menu.ts', { eager: true });
@@ -34,8 +35,8 @@ const VIEW = '/api/v3/views/loyalty_rule_versions';
 const DRAFT = '/api/v3/commands/loyalty_rule_draft';
 const SUBMIT = '/api/v3/commands/loyalty_rule_submit';
 
-function point(versionId: string, version: number, status: string): PointRuleVersionItem {
-  return {
+function point(versionId: string, version: number, status: string) {
+  return makePointRuleVersionItem({
     versionId,
     version,
     status,
@@ -46,11 +47,11 @@ function point(versionId: string, version: number, status: string): PointRuleVer
     expiryMonths: 6,
     validFrom: '2026-10-01T00:00:00Z',
     validTo: null,
-  };
+  });
 }
 
-function tier(versionId: string, version: number, status: string): TierRuleVersionItem {
-  return {
+function tier(versionId: string, version: number, status: string) {
+  return makeTierRuleVersionItem({
     versionId,
     version,
     status,
@@ -59,7 +60,7 @@ function tier(versionId: string, version: number, status: string): TierRuleVersi
     grace: null,
     validFrom: '2026-10-01T00:00:00Z',
     validTo: null,
-  };
+  });
 }
 
 interface Call {
@@ -94,10 +95,10 @@ function err(status: number, code: string, message: string): Reply {
 
 beforeEach(() => {
   setLang('th');
-  versions = {
+  versions = makeLoyaltyRuleVersionsData({
     pointVersions: [point('pv-3', 3, 'DRAFT'), point('pv-2', 2, 'APPROVED'), point('pv-1', 1, 'SOMETHING_NEW')],
     tierVersions: [tier('tv-1', 1, 'APPROVED')],
-  };
+  });
   viewFailure = null;
   draftReplies = [];
   submitReplies = [];
@@ -119,10 +120,10 @@ beforeEach(() => {
         const r = draftReplies.shift() ?? err(500, 'serverError', 'no reply queued');
         if (r.status === 200) {
           const out = r.body as { versionId: string; status: string };
-          versions = {
+          versions = makeLoyaltyRuleVersionsData({
             ...versions,
             pointVersions: [point(out.versionId, body.fields.version, out.status), ...versions.pointVersions],
-          };
+          });
         }
         return json(r);
       }
@@ -130,12 +131,12 @@ beforeEach(() => {
         const r = submitReplies.shift() ?? err(500, 'serverError', 'no reply queued');
         if (r.status === 200) {
           const out = r.body as { versionId: string; status: string };
-          versions = {
+          versions = makeLoyaltyRuleVersionsData({
             ...versions,
             pointVersions: versions.pointVersions.map((v) =>
-              v.versionId === out.versionId ? { ...v, status: out.status } : v,
+              v.versionId === out.versionId ? makePointRuleVersionItem({ ...v, status: out.status }) : v,
             ),
-          };
+          });
         }
         return json(r);
       }

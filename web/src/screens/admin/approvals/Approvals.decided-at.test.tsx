@@ -6,10 +6,12 @@ import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { locale, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
-import type {
-  ApprovalDecisionDto,
-  ApprovalRequestItemDto,
-} from '../../../shared/api/generated/approval_requests';
+import {
+  makeApprovalDecisionDto,
+  makeApprovalRequestItemDto,
+  type ApprovalDecisionDto,
+  type ApprovalRequestItemDto,
+} from '../../../shared/testing/fixtures';
 import { Approvals } from './Approvals';
 import { en as screenEn, th as screenTh } from './i18n';
 import { Toast, toast } from '../parts/toast';
@@ -24,8 +26,8 @@ function makeRequest(
   status: 'PENDING' | 'APPROVED' | 'REJECTED',
   decision: ApprovalDecisionDto | null,
   branch = 'MAIN',
-): ApprovalRequestItemDto {
-  return {
+) {
+  return makeApprovalRequestItemDto({
     id,
     type: 'RATE_PUBLICATION',
     branchId: branch,
@@ -43,7 +45,7 @@ function makeRequest(
     requestedAt: '2026-10-15T09:00:00Z',
     status,
     decision,
-  };
+  });
 }
 
 describe('108-Plaza/xchange#2507: Admin Approvals decided-at Bangkok date and time (§8, §9)', () => {
@@ -57,12 +59,16 @@ describe('108-Plaza/xchange#2507: Admin Approvals decided-at Bangkok date and ti
     itemsByStatus = {
       PENDING: [],
       APPROVED: [
-        makeRequest('req-approved-1', 'APPROVED', {
-          approverId: 'u-9',
-          outcome: 'APPROVED',
-          reason: 'ok',
-          at: DECIDED_AT_UTC,
-        }),
+        makeRequest(
+          'req-approved-1',
+          'APPROVED',
+          makeApprovalDecisionDto({
+            approverId: 'u-9',
+            outcome: 'APPROVED',
+            reason: 'ok',
+            at: DECIDED_AT_UTC,
+          }),
+        ),
       ],
       REJECTED: [],
     };
@@ -200,18 +206,26 @@ describe('108-Plaza/xchange#2507: Admin Approvals decided-at Bangkok date and ti
 
   it('Edge case: unparsable decision timestamp shows raw string (never "Invalid Date") while valid timestamp formats in Asia/Bangkok', async () => {
     itemsByStatus.APPROVED = [
-      makeRequest('req-bad-date', 'APPROVED', {
-        approverId: 'u-1',
-        outcome: 'APPROVED',
-        reason: 'legacy timestamp',
-        at: 'not-a-valid-date',
-      }),
-      makeRequest('req-good-date', 'APPROVED', {
-        approverId: 'u-2',
-        outcome: 'APPROVED',
-        reason: 'valid timestamp',
-        at: DECIDED_AT_UTC,
-      }),
+      makeRequest(
+        'req-bad-date',
+        'APPROVED',
+        makeApprovalDecisionDto({
+          approverId: 'u-1',
+          outcome: 'APPROVED',
+          reason: 'legacy timestamp',
+          at: 'not-a-valid-date',
+        }),
+      ),
+      makeRequest(
+        'req-good-date',
+        'APPROVED',
+        makeApprovalDecisionDto({
+          approverId: 'u-2',
+          outcome: 'APPROVED',
+          reason: 'valid timestamp',
+          at: DECIDED_AT_UTC,
+        }),
+      ),
     ];
 
     setLang('en');

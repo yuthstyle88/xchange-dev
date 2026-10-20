@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../shared/api/client';
-import type { DevicesOverview } from '../../shared/api/generated/devices';
+import { makeDeviceBranch, makeDevicesOverview } from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { DevicesScreen } from './DevicesScreen';
 import { th } from './i18n';
@@ -25,9 +25,9 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const OVERVIEW_DATA: DevicesOverview = {
+const OVERVIEW_DATA = makeDevicesOverview({
   branchId: 'B1',
-  branches: [{ id: 'B1', name: 'สาขาหนึ่ง' }],
+  branches: [makeDeviceBranch({ id: 'B1', name: 'สาขาหนึ่ง' })],
   printerOnline: true,
   printerKind: 'SIMULATED',
   printerModel: 'NEOCAL NTP-8220BT',
@@ -36,7 +36,7 @@ const OVERVIEW_DATA: DevicesOverview = {
   balanceThb: '1000.00',
   balanceUsd: '50.00',
   completedCount: 1,
-};
+});
 
 function makeHarness(steps: StepAnswer[]) {
   const writes: WriteCall[] = [];

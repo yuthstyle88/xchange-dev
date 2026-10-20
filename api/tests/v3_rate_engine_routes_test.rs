@@ -841,7 +841,13 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
     let data = &a["data"];
     assert_keys(
         data,
-        &["publication", "sourceDate", "stale", "lines"],
+        &[
+            "publication",
+            "sourceDate",
+            "stale",
+            "lines",
+            "bandHeadings",
+        ],
         "data",
     );
     assert_keys(
@@ -868,7 +874,7 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
     assert_keys(
         jpy,
         &[
-            "currency", "group", "unitSize", "buyRate", "sellRate", "lineId",
+            "currency", "group", "unitSize", "buyRate", "sellRate", "lineId", "bands",
         ],
         "a line",
     );

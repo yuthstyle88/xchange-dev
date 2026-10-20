@@ -20,9 +20,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { setLang } from "../../../shared/i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { StaffAttendanceRow } from "../../../shared/api/generated/staff_attendance";
+import {
+  makeStaffAttendanceRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { warmModules } from "../../../shared/testing/warm-modules";
 
@@ -57,19 +60,19 @@ function texts(): Texts {
 const BRANCH = "MAIN";
 const ME = "00000000-0000-4000-8000-0000000000d1";
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: null,
@@ -77,24 +80,24 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 /** As the view answers them: newest first. */
-const ROWS: StaffAttendanceRow[] = [
-  { id: "att-3", name: "Ploy", in: "2026-10-11T03:00:00Z", out: null },
-  {
+const ROWS = [
+  makeStaffAttendanceRow({ id: "att-3", name: "Ploy", in: "2026-10-11T03:00:00Z", out: null }),
+  makeStaffAttendanceRow({
     id: "att-2",
     name: "Somchai",
     in: "2026-10-11T01:00:00Z",
     out: "2026-10-11T02:30:00Z",
-  },
-  {
+  }),
+  makeStaffAttendanceRow({
     id: "att-1",
     name: "Malee",
     in: "2026-10-10T01:00:00Z",
     out: "2026-10-10T10:00:00Z",
-  },
+  }),
 ];
 
 let methods: string[];
