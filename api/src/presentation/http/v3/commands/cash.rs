@@ -26,7 +26,6 @@ use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
-use xc_cash::domain::transfer::cash_transfer::TransferError;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, NumberError};
 
@@ -141,7 +140,7 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
             } else if message == HandoverError::NotPending.to_string() {
                 V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
-            } else if message == TransferError::StockInsufficient.to_string() {
+            } else if message.starts_with("stockInsufficient") {
                 V3Error::new("stockInsufficient", None, message, StatusCode::CONFLICT)
             } else {
                 V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
@@ -408,3 +407,19 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     TransferPolicySaveInput::export_all(&cfg)?;
     Ok(())
 }
+
+// Written before the implementation by the ticket author claude/5edf7bb5. Do not edit, delete or weaken.
+#[cfg(test)]
+mod stock_insufficient_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn a_ledger_stock_refusal_is_a_409_stock_insufficient() {
+        let e = from_cash_error(AppError::Domain(
+            "stockInsufficient: the posting takes a drawer, a safe or a position below zero".into(),
+        ));
+        assert_eq!(e.code, "stockInsufficient");
+        assert_eq!(e.status, StatusCode::CONFLICT);
+    }
+}
+
