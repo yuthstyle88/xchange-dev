@@ -195,14 +195,42 @@ mod tests {
     }
 
     #[test]
-    fn customer_and_marketing_have_no_standing() {
-        assert_eq!(
-            Standing::of(
-                &actor(&[(Role::Customer, None), (Role::Marketing, None)]),
-                at()
-            ),
-            None
-        );
+    fn customer_alone_has_no_standing() {
+        assert_eq!(Standing::of(&actor(&[(Role::Customer, None)]), at()), None);
+    }
+
+    // #3929 ruling (a): MARKETING is an employee role, so it gets a staff standing (lowest priority)
+    #[test]
+    fn marketing_alone_gets_a_staff_standing() {
+        let at_main = Standing::of(&actor(&[(Role::Marketing, Some("MAIN"))]), at())
+            .expect("MARKETING at MAIN must have a standing");
+        assert_eq!(at_main.kind, StandingKind::Staff(Role::Marketing));
+        assert_eq!(at_main.branch, Some(BranchId::new("MAIN")));
+
+        let org_wide = Standing::of(&actor(&[(Role::Marketing, None)]), at())
+            .expect("org-wide MARKETING must have a standing");
+        assert_eq!(org_wide.kind, StandingKind::Staff(Role::Marketing));
+        assert_eq!(org_wide.branch, Some(BranchId::new(FALLBACK_BRANCH)));
+    }
+
+    #[test]
+    fn marketing_is_outranked_by_any_other_staff_role() {
+        for other in [
+            Role::Teller,
+            Role::BranchManager,
+            Role::RateManager,
+            Role::Finance,
+            Role::Admin,
+            Role::VerificationReviewer,
+        ] {
+            let s = Standing::of(
+                &actor(&[(Role::Marketing, Some("MAIN")), (other, Some("B1"))]),
+                at(),
+            )
+            .unwrap_or_else(|| panic!("MARKETING + {other:?} must have a standing"));
+            assert_eq!(s.kind, StandingKind::Staff(other), "MARKETING + {other:?}");
+            assert_eq!(s.branch, Some(BranchId::new("B1")), "MARKETING + {other:?}");
+        }
     }
 
     #[test]
