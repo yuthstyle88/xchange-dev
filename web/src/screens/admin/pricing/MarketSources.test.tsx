@@ -2,14 +2,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
+import { makePricingSourceDto, type PricingSourceDto } from '../../../shared/testing/fixtures/pricing_board';
 import { en, th } from './i18n';
 import { MarketSources } from './MarketSources';
-import type { MarketSourceCode, PricingSource } from './pricing-board.types';
+import type { MarketSourceCode } from './pricing-labels';
 
-const SAMPLE_SOURCES: PricingSource[] = [
-  { source: 'TT', name: 'TT Pattaya', fetchedAt: '2026-10-19T08:00:00Z', stale: false, error: null },
-  { source: 'SR', name: 'Super Rich', fetchedAt: '2026-10-18T20:00:00Z', stale: true, error: null },
-  { source: 'BOT', name: 'BoT', fetchedAt: null, stale: false, error: 'source unreachable' },
+const SAMPLE_SOURCES = [
+  makePricingSourceDto({ source: 'TT', fetchedAt: '2026-10-19T08:00:00Z', stale: false, error: null }),
+  makePricingSourceDto({ source: 'SR', fetchedAt: '2026-10-18T20:00:00Z', stale: true, error: null }),
+  makePricingSourceDto({ source: 'BOT', fetchedAt: null, stale: false, error: 'source unreachable' }),
 ];
 
 let host: HTMLDivElement;
@@ -23,7 +24,7 @@ afterEach(() => {
 });
 
 function mount(props: {
-  sources?: readonly PricingSource[];
+  sources?: readonly PricingSourceDto[];
   canRefresh?: boolean;
   onRefresh?: (source: MarketSourceCode) => void;
 }) {
@@ -43,11 +44,11 @@ function mount(props: {
 }
 
 describe('MarketSources (§9 PB-4)', () => {
-  it('row 1: a fresh source renders a chip with its name and age (fetchedAt via toLocaleString)', () => {
+  it('row 1: a fresh source renders a chip with its name (from i18n) and age (fetchedAt via toLocaleString)', () => {
     mount({ sources: [SAMPLE_SOURCES[0]!] });
     const chip = host.querySelector('[data-source="TT"]');
     expect(chip).not.toBeNull();
-    expect(chip?.textContent).toContain('TT Pattaya');
+    expect(chip?.textContent).toContain(th['source.TT']);
     const expectedDate = new Date('2026-10-19T08:00:00Z').toLocaleString();
     expect(chip?.textContent).toContain(expectedDate);
     expect(chip?.textContent).not.toContain(th.stale);
@@ -58,7 +59,7 @@ describe('MarketSources (§9 PB-4)', () => {
     mount({ sources: [SAMPLE_SOURCES[1]!] });
     const chip = host.querySelector('[data-source="SR"]');
     expect(chip).not.toBeNull();
-    expect(chip?.textContent).toContain('Super Rich');
+    expect(chip?.textContent).toContain(th['source.SR']);
     expect(chip?.textContent).toContain(th.stale);
 
     // In EN
@@ -67,6 +68,7 @@ describe('MarketSources (§9 PB-4)', () => {
     setLang('en');
     mount({ sources: [SAMPLE_SOURCES[1]!] });
     const enChip = host.querySelector('[data-source="SR"]');
+    expect(enChip?.textContent).toContain(en['source.SR']);
     expect(enChip?.textContent).toContain(en.stale);
   });
 
@@ -74,7 +76,7 @@ describe('MarketSources (§9 PB-4)', () => {
     mount({ sources: [SAMPLE_SOURCES[2]!] });
     const chip = host.querySelector('[data-source="BOT"]');
     expect(chip).not.toBeNull();
-    expect(chip?.textContent).toContain('BoT');
+    expect(chip?.textContent).toContain(th['source.BOT']);
     expect(chip?.textContent).toContain(th.sourceError);
     expect(chip?.textContent).toContain('source unreachable');
 
@@ -84,6 +86,7 @@ describe('MarketSources (§9 PB-4)', () => {
     setLang('en');
     mount({ sources: [SAMPLE_SOURCES[2]!] });
     const enChip = host.querySelector('[data-source="BOT"]');
+    expect(enChip?.textContent).toContain(en['source.BOT']);
     expect(enChip?.textContent).toContain(en.sourceError);
     expect(enChip?.textContent).toContain('source unreachable');
   });

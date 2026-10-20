@@ -6,8 +6,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
+import {
+  makePricingRecommendationDto,
+  type PricingRecommendationDto,
+} from '../../../shared/testing/fixtures/pricing_board';
 import { BOARD } from './__fixtures__/pricing-board.fixture';
-import type { RecommendationView } from './pricing-board.types';
 import { Recommendations } from './Recommendations';
 
 let host: HTMLDivElement;
@@ -19,7 +22,7 @@ afterEach(() => {
   host?.remove();
 });
 
-function mount(items: readonly RecommendationView[]) {
+function mount(items: readonly PricingRecommendationDto[]) {
   host = document.createElement('div');
   document.body.appendChild(host);
   dispose = render(() => <Recommendations items={items} />, host);
@@ -27,15 +30,15 @@ function mount(items: readonly RecommendationView[]) {
 
 describe('Recommendations', () => {
   it('items: listed by severity High → Warn → Medium → Low, then in the given order', () => {
-    const items: RecommendationView[] = [
-      { severity: 'Low', code: 'LOW_1', currency: 'USD', side: 'BUY' },
-      { severity: 'Medium', code: 'MED_1', currency: 'EUR', side: null },
-      { severity: 'High', code: 'HIGH_1', currency: null, side: null },
-      { severity: 'Warn', code: 'WARN_1', currency: 'JPY', side: 'SELL' },
-      { severity: 'High', code: 'HIGH_2', currency: 'GBP', side: 'BUY' },
-      { severity: 'Warn', code: 'WARN_2', currency: null, side: 'BUY' },
-      { severity: 'Medium', code: 'MED_2', currency: 'CHF', side: null },
-      { severity: 'Low', code: 'LOW_2', currency: null, side: null },
+    const items = [
+      makePricingRecommendationDto({ severity: 'Low', code: 'LOW_1', currency: 'USD', side: 'BUY' }),
+      makePricingRecommendationDto({ severity: 'Medium', code: 'MED_1', currency: 'EUR', side: null }),
+      makePricingRecommendationDto({ severity: 'High', code: 'HIGH_1', currency: null, side: null }),
+      makePricingRecommendationDto({ severity: 'Warn', code: 'WARN_1', currency: 'JPY', side: 'SELL' }),
+      makePricingRecommendationDto({ severity: 'High', code: 'HIGH_2', currency: 'GBP', side: 'BUY' }),
+      makePricingRecommendationDto({ severity: 'Warn', code: 'WARN_2', currency: null, side: 'BUY' }),
+      makePricingRecommendationDto({ severity: 'Medium', code: 'MED_2', currency: 'CHF', side: null }),
+      makePricingRecommendationDto({ severity: 'Low', code: 'LOW_2', currency: null, side: null }),
     ];
     mount(items);
     const elements = host.querySelectorAll('.recommendation-item');
@@ -54,9 +57,9 @@ describe('Recommendations', () => {
   });
 
   it('an item: severity, code, currency, side (absent ⇒ blank)', () => {
-    const items: RecommendationView[] = [
-      { severity: 'High', code: 'BELOW_COST', currency: 'EUR', side: 'BUY' },
-      { severity: 'Warn', code: 'STALE_SOURCE', currency: null, side: null },
+    const items = [
+      makePricingRecommendationDto({ severity: 'High', code: 'BELOW_COST', currency: 'EUR', side: 'BUY' }),
+      makePricingRecommendationDto({ severity: 'Warn', code: 'STALE_SOURCE', currency: null, side: null }),
     ];
     mount(items);
     const elements = host.querySelectorAll('.recommendation-item');
@@ -78,7 +81,7 @@ describe('Recommendations', () => {
   it('none: nothing rendered when items is empty', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
-    const [items, setItems] = createSignal<readonly RecommendationView[]>(BOARD.recommendations);
+    const [items, setItems] = createSignal<readonly PricingRecommendationDto[]>(BOARD.recommendations);
     dispose = render(() => <Recommendations items={items()} />, host);
     expect(host.querySelectorAll('.recommendation-item')).toHaveLength(4);
     setItems([]);

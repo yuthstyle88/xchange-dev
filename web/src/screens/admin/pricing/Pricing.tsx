@@ -1,25 +1,27 @@
 // §9 Pricing: loads pricing_board, branch, filter (all · to approve · review · current), search, reload; composes the parts (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { Show, createEffect, createMemo, createSignal, onMount, type JSX } from 'solid-js';
-import { keyedWrite } from '../../../shared/api/keyed-write';
 import { ApiClient } from '../../../shared/api/client';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import type { MeView } from '../../../shared/api/generated/me';
+import type { PricingBoardData, PricingRowDto } from '../../../shared/api/generated/pricing_board';
+import type {
+  RateReferenceFetchInput,
+  RateReferenceFetchOutput,
+} from '../../../shared/api/generated/rate_reference_fetch';
+import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import { BulkApprove } from './BulkApprove';
 import * as table from './i18n';
 import { MarketSources } from './MarketSources';
-import { OrderRefs } from './OrderRefs';
 import {
   FILTER_STATUSES,
   ROUTE_RATE_REFERENCE_FETCH,
-  type RateReferenceFetchInput,
   VIEW_PRICING_BOARD,
   type MarketSourceCode,
-  type PricingBoardData,
   type PricingFilter,
-  type PricingRowView,
-} from './pricing-board.types';
+  type RowStatusCode,
+} from './pricing-labels';
 import { PricingGrid } from './PricingGrid';
 import { PricingPolicy } from './PricingPolicy';
 import { Recommendations } from './Recommendations';
@@ -34,7 +36,7 @@ const enCurrencyNames =
     ? new Intl.DisplayNames(['en'], { type: 'currency' })
     : null;
 
-function matchesSearch(row: PricingRowView, query: string): boolean {
+function matchesSearch(row: PricingRowDto, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   if (row.currency.toLowerCase().includes(q)) return true;
@@ -52,7 +54,7 @@ function matchesSearch(row: PricingRowView, query: string): boolean {
 export function Pricing(props: PricingProps): JSX.Element {
   const api = new ApiClient();
   const [board, setBoard] = createSignal<PricingBoardData | null>(null);
-  const [me, setMe] = createSignal<StaffMeView | null>(null);
+  const [me, setMe] = createSignal<MeView | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [filter, setFilter] = createSignal<PricingFilter>('all');
@@ -77,7 +79,7 @@ export function Pricing(props: PricingProps): JSX.Element {
 
   onMount(() => {
     void api
-      .view<StaffMeView>('staff_me')
+      .view<MeView>('me')
       .then((ans) => {
         if (ans.changed && ans.data !== undefined) setMe(ans.data);
       })
@@ -89,20 +91,22 @@ export function Pricing(props: PricingProps): JSX.Element {
     void loadBoard(branch);
   });
 
-  const filteredRows = createMemo<readonly PricingRowView[]>(() => {
+  const filteredRows = createMemo<readonly PricingRowDto[]>(() => {
     const rows = board()?.rows ?? [];
     const f = filter();
     const q = search();
     const allowed = f === 'all' ? null : FILTER_STATUSES[f];
-    return rows.filter((r) => (!allowed || allowed.includes(r.status)) && matchesSearch(r, q));
+    return rows.filter(
+      (r) => (!allowed || allowed.includes(r.status as RowStatusCode)) && matchesSearch(r, q),
+    );
   });
 
-  const selectedRows = createMemo<readonly PricingRowView[]>(() => {
+  const selectedRows = createMemo<readonly PricingRowDto[]>(() => {
     const sel = selected();
     return (board()?.rows ?? []).filter((r) => sel.has(r.currency));
   });
 
-  const openedRow = createMemo<PricingRowView | null>(() => {
+  const openedRow = createMemo<PricingRowDto | null>(() => {
     const cur = openedCurrency();
     if (!cur) return null;
     return (board()?.rows ?? []).find((r) => r.currency === cur) ?? null;
@@ -115,7 +119,9 @@ export function Pricing(props: PricingProps): JSX.Element {
 
   const mayEditPolicy = createMemo(() => {
     const branch = props.branch();
-    return Boolean(me()?.roles.some((r) => r.role === 'EXECUTIVE' && (r.branchId === null || r.branchId === branch)));
+    return Boolean(
+      me()?.roles.some((r) => r.role === 'EXECUTIVE' && (r.branchId === null || r.branchId === branch)),
+    );
   });
 
   function toggleRow(currency: string): void {
@@ -130,11 +136,15 @@ export function Pricing(props: PricingProps): JSX.Element {
     });
   }
 
-  const refreshWrite = keyedWrite<RateReferenceFetchInput, unknown>(api, 'POST', ROUTE_RATE_REFERENCE_FETCH);
+  const refreshWrite = keyedWrite<RateReferenceFetchInput, RateReferenceFetchOutput>(
+    api,
+    'POST',
+    ROUTE_RATE_REFERENCE_FETCH,
+  );
 
-  function handleRefreshSource(provider: MarketSourceCode): void {
+  function handleRefreshSource(_provider: MarketSourceCode): void {
     void refreshWrite
-      .send({ branch: props.branch(), provider })
+      .send({})
       .then(() => loadBoard())
       .catch((err) => setError(wordedError(err)));
   }
@@ -219,9 +229,8 @@ export function Pricing(props: PricingProps): JSX.Element {
 
       <div class="pricing-side">
         <Recommendations items={board()?.recommendations ?? []} />
-        <OrderRefs refs={board()?.orderRefs ?? []} />
+        {/* hidden until the order-reference view exists (design §7) */}
       </div>
     </section>
   );
 }
-

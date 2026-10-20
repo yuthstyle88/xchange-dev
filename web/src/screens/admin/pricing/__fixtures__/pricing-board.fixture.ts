@@ -1,63 +1,97 @@
 // A mocked `pricing_board` answer covering every row status, every flag and every source state of
 // docs/design/blueprint/pricing-tiers.md §11, plus a fetch that serves it. Test data only (invented figures).
-import type {
-  MarketQuoteView,
-  PricingBoardData,
-  PricingFlagCode,
-  PricingRowView,
-  RowStatusCode,
-  TierMarginView,
-  TierPriceView,
-} from '../pricing-board.types';
+import { makeMe, makeMeRole, type Me } from '../../../../shared/testing/fixtures/common';
+import {
+  makePricingBandDto,
+  makePricingBoardData,
+  makePricingQuoteDto,
+  makePricingRecommendationDto,
+  makePricingRowDto,
+  makePricingSourceDto,
+  makePricingTierMarginDto,
+  makePricingTierRateDto,
+  type PricingBoardData,
+  type PricingQuoteDto,
+  type PricingRowDto,
+  type PricingTierMarginDto,
+  type PricingTierRateDto,
+} from '../../../../shared/testing/fixtures/pricing_board';
+import { BLOCKING_FLAGS, type PricingFlagCode, type RowStatusCode } from '../pricing-labels';
 
-const tiers = (buy: string[], sell: string[]): TierPriceView[] =>
-  ([1, 2, 3, 4] as const).map((n, i) => ({ tierNo: n, buy: buy[i] ?? null, sell: sell[i] ?? null }));
-const margins = (buy: string[], sell: string[]): TierMarginView[] =>
-  ([1, 2, 3, 4] as const).map((n, i) => ({ tierNo: n, buyMarginPct: buy[i], sellMarginPct: sell[i] }));
-const quote = (source: 'TT' | 'SR' | 'BOT', buy: string | null, sell: string | null, stale = false): MarketQuoteView => ({
-  source,
-  buy,
-  sell,
-  unitSize: '1',
-  fetchedAt: '2026-10-19T08:00:00Z',
-  stale,
-});
+const tiers = (buy: string[], sell: string[]): PricingTierRateDto[] =>
+  ([1, 2, 3, 4] as const).map((n, i) =>
+    makePricingTierRateDto({ tierNo: n, buy: buy[i] ?? null, sell: sell[i] ?? null }),
+  );
+const margins = (buy: string[], sell: string[]): PricingTierMarginDto[] =>
+  ([1, 2, 3, 4] as const).map((n, i) =>
+    makePricingTierMarginDto({ tierNo: n, buyMarginPct: buy[i]!, sellMarginPct: sell[i]! }),
+  );
+const quote = (
+  source: 'TT' | 'SR' | 'BOT',
+  buy: string | null,
+  sell: string | null,
+  stale = false,
+): PricingQuoteDto =>
+  makePricingQuoteDto({
+    source,
+    buy,
+    sell,
+    fetchedAt: '2026-10-19T08:00:00Z',
+    stale,
+  });
 
-function row(currency: string, status: RowStatusCode, flags: PricingFlagCode[], over: Partial<PricingRowView> = {}): PricingRowView {
-  return {
+function row(
+  currency: string,
+  status: RowStatusCode,
+  flags: PricingFlagCode[],
+  over: Partial<PricingRowDto> = {},
+): PricingRowDto {
+  const suggestion =
+    over.suggestion !== undefined
+      ? over.suggestion
+      : tiers(['35.02', '35.07', '35.12', '35.17'], ['35.48', '35.43', '35.38', '35.33']);
+  const selectable = suggestion !== null && !flags.some((f) => BLOCKING_FLAGS.includes(f));
+  return makePricingRowDto({
     currency,
     enabled: true,
     unitSize: '1',
-    quotes: [quote('TT', '35.10', '35.40'), quote('SR', '35.05', '35.45'), quote('BOT', '35.00', '35.50')],
+    anchorSource: 'MARKET_TT',
+    quotes: [
+      quote('TT', '35.10', '35.40'),
+      quote('SR', '35.05', '35.45'),
+      quote('BOT', '35.00', '35.50'),
+    ],
     published: tiers(['35.00', '35.05', '35.10', '35.15'], ['35.50', '35.45', '35.40', '35.35']),
-    margins: margins(['0.0000', '0.1000', '0.2000', '0.3000'], ['0.0000', '-0.1000', '-0.2000', '-0.3000']),
+    margins: margins(
+      ['0.0000', '0.1000', '0.2000', '0.3000'],
+      ['0.0000', '-0.1000', '-0.2000', '-0.3000'],
+    ),
     overridden: false,
     minSpreadPct: null,
-    suggestion: {
-      tiers: tiers(['35.02', '35.07', '35.12', '35.17'], ['35.48', '35.43', '35.38', '35.33']),
-      margins: margins(['0.0571', '0.2000', '0.3429', '0.4857'], ['-0.0563', '-0.1972', '-0.3380', '-0.4789']),
-    },
+    suggestion,
     flags,
+    selectable,
     status,
-    draftId: null,
     ...over,
-  };
+  });
 }
 
 /** One row per status; flags spread so every flag appears; one disabled currency. */
-export const BOARD: PricingBoardData = {
+export const BOARD: PricingBoardData = makePricingBoardData({
   branch: 'MAIN',
   policyVersionId: 'pv-7',
+  valueTiersOn: true,
+  anchorSource: 'MARKET_TT',
   bands: [
-    { tierNo: 1, lowerThb: '0.00', upperInclusiveThb: '10000.00' },
-    { tierNo: 2, lowerThb: '10000.01', upperInclusiveThb: '50000.00' },
-    { tierNo: 3, lowerThb: '50000.01', upperInclusiveThb: '200000.00' },
-    { tierNo: 4, lowerThb: '200000.01', upperInclusiveThb: null },
+    makePricingBandDto({ tierNo: 1, lowerExclusiveThb: null, upperInclusiveThb: '10000.00' }),
+    makePricingBandDto({ tierNo: 2, lowerExclusiveThb: '10000.00', upperInclusiveThb: '50000.00' }),
+    makePricingBandDto({ tierNo: 3, lowerExclusiveThb: '50000.00', upperInclusiveThb: '200000.00' }),
+    makePricingBandDto({ tierNo: 4, lowerExclusiveThb: '200000.00', upperInclusiveThb: null }),
   ],
   sources: [
-    { source: 'TT', name: 'TT Pattaya', fetchedAt: '2026-10-19T08:00:00Z', stale: false, error: null },
-    { source: 'SR', name: 'Super Rich', fetchedAt: '2026-10-18T20:00:00Z', stale: true, error: null },
-    { source: 'BOT', name: 'BoT', fetchedAt: null, stale: false, error: 'source unreachable' },
+    makePricingSourceDto({ source: 'TT', fetchedAt: '2026-10-19T08:00:00Z', stale: false, error: null }),
+    makePricingSourceDto({ source: 'SR', fetchedAt: '2026-10-18T20:00:00Z', stale: true, error: null }),
+    makePricingSourceDto({ source: 'BOT', fetchedAt: null, stale: false, error: 'source unreachable' }),
   ],
   rows: [
     row('USD', 'Tiers', ['LargeMove']),
@@ -65,35 +99,33 @@ export const BOARD: PricingBoardData = {
     row('JPY', 'Pending', ['StaleSource']),
     row('GBP', 'Unpriced', ['Precision'], { published: tiers([], []) }),
     row('CNY', 'Current', ['MinSpread'], { overridden: true, minSpreadPct: '0.5000' }),
-    row('SGD', 'Review', [], { draftId: 'draft-42' }),
+    row('SGD', 'Review', []),
     row('KRW', 'Manual', ['NoAnchor'], { suggestion: null, quotes: [quote('BOT', '0.0260', '0.0270')] }),
     row('AUD', 'Tiers', ['NoTtQuote'], { quotes: [quote('SR', '23.10', '23.40'), quote('BOT', '23.00', '23.50')] }),
     row('MYR', 'Reference', [], { enabled: false }),
   ],
   recommendations: [
-    { severity: 'High', code: 'BELOW_COST', currency: 'EUR', side: 'BUY' },
-    { severity: 'Warn', code: 'STALE_SOURCE', currency: 'JPY', side: null },
-    { severity: 'Medium', code: 'LARGE_MOVE', currency: 'USD', side: 'SELL' },
-    { severity: 'Low', code: 'MIN_SPREAD', currency: 'CNY', side: null },
+    makePricingRecommendationDto({ severity: 'High', code: 'BELOW_COST', currency: 'EUR', side: 'BUY' }),
+    makePricingRecommendationDto({ severity: 'Warn', code: 'STALE_SOURCE', currency: 'JPY', side: null }),
+    makePricingRecommendationDto({ severity: 'Medium', code: 'LARGE_MOVE', currency: 'USD', side: 'SELL' }),
+    makePricingRecommendationDto({ severity: 'Low', code: 'MIN_SPREAD', currency: 'CNY', side: null }),
   ],
-  orderRefs: [
-    {
-      transactionId: 'tx-1',
-      documentRef: 'XC-20261019-000001',
-      recordedAt: '2026-10-19T09:00:00Z',
-      currency: 'USD',
-      market: [quote('TT', '35.10', '35.40'), quote('SR', '35.05', '35.45')],
-    },
-  ],
-};
+});
+
+export const DEFAULT_ME: Me = makeMe({
+  branch: 'MAIN',
+  roles: [makeMeRole({ role: 'EXECUTIVE', branchId: null })],
+  permissions: ['ReferenceRatesRead', 'MarketRatesRefresh'],
+});
 
 export type Call = { method: string; path: string; key: string | null; body: unknown };
 
-/** A fetch that answers the board view (an envelope like every v3 view) and records every call. `boards` are answered
+/** A fetch that answers the board view and `me` (an envelope like every v3 view) and records every call. `boards` are answered
  *  in turn (the last one repeats); commands answer `command(path, body)`, default 200 `{}`. */
 export function boardFetch(
   boards: PricingBoardData[] = [BOARD],
   command: (path: string, body: unknown) => { status: number; body: unknown } = () => ({ status: 200, body: {} }),
+  me: Me = DEFAULT_ME,
 ) {
   const calls: Call[] = [];
   let n = 0;
@@ -105,9 +137,11 @@ export function boardFetch(
     const a =
       method === 'GET' && path === '/api/v3/views/pricing_board'
         ? { status: 200, body: { version: ++n, changed: true, data: boards[Math.min(n - 1, boards.length - 1)] } }
-        : method === 'POST'
-          ? command(path, body)
-          : { status: 404, body: { error: { code: 'notFound', message: 'nf' } } };
+        : method === 'GET' && path === '/api/v3/views/me'
+          ? { status: 200, body: { version: 1, changed: true, data: me } }
+          : method === 'POST'
+            ? command(path, body)
+            : { status: 404, body: { error: { code: 'notFound', message: 'nf' } } };
     return new Response(JSON.stringify(a.body), { status: a.status, headers: { 'content-type': 'application/json' } });
   };
   return { fn, calls };

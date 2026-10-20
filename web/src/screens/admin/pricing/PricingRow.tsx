@@ -1,16 +1,22 @@
 // §9 PricingRow: code, TT / SR / BoT, current shop rate, suggested tier 1, status chip, flags, select box (disabled when a flag blocks) (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
+import type { PricingRowDto } from '../../../shared/api/generated/pricing_board';
 import { screenT } from '../../../shared/i18n';
 import * as table from './i18n';
-import { BLOCKING_FLAGS, type MarketSourceCode, type PricingRowView } from './pricing-board.types';
-import { flagLabel, statusLabel } from './pricing-labels';
+import {
+  BLOCKING_FLAGS,
+  flagLabel,
+  statusLabel,
+  type MarketSourceCode,
+  type PricingFlagCode,
+} from './pricing-labels';
 import './pricing-row.css';
 
 const t = screenT('admin.pricing', table);
 
 export interface PricingRowProps {
-  row: PricingRowView;
+  row: PricingRowDto;
   selected: boolean;
   onToggle(currency: string): void;
   onOpen(currency: string): void;
@@ -21,10 +27,10 @@ function rate(val: string | null | undefined): string {
 }
 
 export function PricingRow(props: PricingRowProps): JSX.Element {
-  const isBlocked = () => props.row.flags.some((f) => BLOCKING_FLAGS.includes(f));
+  const isBlocked = () => props.row.flags.some((f) => BLOCKING_FLAGS.includes(f as PricingFlagCode));
   const quote = (source: MarketSourceCode) => props.row.quotes.find((q) => q.source === source);
   const currentTier1 = () => props.row.published.find((p) => p.tierNo === 1);
-  const suggestedTier1 = () => props.row.suggestion?.tiers.find((p) => p.tierNo === 1);
+  const suggestedTier1 = () => props.row.suggestion?.find((p) => p.tierNo === 1);
 
   return (
     <tr class="pricing-row" data-currency={props.row.currency}>

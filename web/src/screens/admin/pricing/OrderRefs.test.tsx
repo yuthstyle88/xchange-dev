@@ -1,4 +1,5 @@
 // §9 `OrderRefs` (FE pricing-board PB-9, #3765; docs/design/blueprint/pricing-tiers.md §6, §9).
+// hidden until the order-reference view exists (design §7)
 // Behaviour table (§9):
 // - refs: one line per order: document ref (or id), time, currency, each market quote as sent
 // - a ref with no market: the `—` text
@@ -7,9 +8,21 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { setLang } from '../../../shared/i18n';
-import { BOARD } from './__fixtures__/pricing-board.fixture';
-import type { OrderRefView } from './pricing-board.types';
-import { OrderRefs } from './OrderRefs';
+import { makePricingQuoteDto } from '../../../shared/testing/fixtures/pricing_board';
+import { OrderRefs, type OrderRefView } from './OrderRefs';
+
+const SAMPLE_ORDER_REFS: OrderRefView[] = [
+  {
+    transactionId: 'tx-1',
+    documentRef: 'XC-20261019-000001',
+    recordedAt: '2026-10-19T09:00:00Z',
+    currency: 'USD',
+    market: [
+      makePricingQuoteDto({ source: 'TT', buy: '35.10', sell: '35.40', fetchedAt: '2026-10-19T08:00:00Z', stale: false }),
+      makePricingQuoteDto({ source: 'SR', buy: '35.05', sell: '35.45', fetchedAt: '2026-10-19T08:00:00Z', stale: false }),
+    ],
+  },
+];
 
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
@@ -30,21 +43,20 @@ function mount(refs: readonly OrderRefView[]) {
 describe('OrderRefs', () => {
   it('refs: renders one line per order with document ref (or id), time, currency, and each market quote as sent', () => {
     const refs: OrderRefView[] = [
-      ...BOARD.orderRefs,
+      ...SAMPLE_ORDER_REFS,
       {
         transactionId: 'tx-2',
         documentRef: null,
         recordedAt: '2026-10-19T10:15:00Z',
         currency: 'EUR',
         market: [
-          {
+          makePricingQuoteDto({
             source: 'BOT',
             buy: '38.1200',
             sell: '38.6500',
-            unitSize: '1',
             fetchedAt: '2026-10-19T08:00:00Z',
             stale: false,
-          },
+          }),
         ],
       },
     ];
@@ -98,7 +110,7 @@ describe('OrderRefs', () => {
   it('none: renders nothing when refs is empty', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
-    const [refs, setRefs] = createSignal<readonly OrderRefView[]>(BOARD.orderRefs);
+    const [refs, setRefs] = createSignal<readonly OrderRefView[]>(SAMPLE_ORDER_REFS);
     dispose = render(() => <OrderRefs refs={refs()} />, host);
     expect(host.querySelectorAll('.order-ref-item')).toHaveLength(1);
     setRefs([]);

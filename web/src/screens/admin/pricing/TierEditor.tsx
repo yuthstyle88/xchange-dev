@@ -1,27 +1,25 @@
 // §9 TierEditor: 4 tiers buy/sell prefilled from the suggestion, the margin each makes, approve one currency (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { For, Show, createSignal, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
+import type {
+  PricingApproveInput,
+  PricingApproveOutput,
+  PricingTierPriceInput,
+} from '../../../shared/api/generated/pricing_approve';
+import type { PricingBandDto, PricingRowDto } from '../../../shared/api/generated/pricing_board';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { en, th } from './i18n';
-import {
-  ROUTE_PRICING_APPROVE,
-  type PricingApproveInput,
-  type PricingApproveOutput,
-  type PricingRowView,
-  type TierBandView,
-  type TierNo,
-  type TierPriceView,
-} from './pricing-board.types';
+import { ROUTE_PRICING_APPROVE, type TierNo } from './pricing-labels';
 import './tier-editor.css';
 
 export interface TierEditorProps {
   api: ApiClient;
   branch: string;
   policyVersionId: string;
-  row: PricingRowView;
-  bands: readonly TierBandView[];
+  row: PricingRowDto;
+  bands: readonly PricingBandDto[];
   onApproved(out: PricingApproveOutput): void;
 }
 
@@ -31,6 +29,7 @@ const tr = screenT('admin.pricing', { th, en });
 export function TierEditor(props: TierEditorProps): JSX.Element {
   const [editedBuy, setEditedBuy] = createSignal<Partial<Record<TierNo, string>>>({});
   const [editedSell, setEditedSell] = createSignal<Partial<Record<TierNo, string>>>({});
+  const [reason, setReason] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
 
@@ -41,10 +40,10 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
   );
 
   const suggestedBuy = (tierNo: TierNo): string =>
-    props.row.suggestion?.tiers.find((t) => t.tierNo === tierNo)?.buy ?? '';
+    props.row.suggestion?.find((t) => t.tierNo === tierNo)?.buy ?? '';
 
   const suggestedSell = (tierNo: TierNo): string =>
-    props.row.suggestion?.tiers.find((t) => t.tierNo === tierNo)?.sell ?? '';
+    props.row.suggestion?.find((t) => t.tierNo === tierNo)?.sell ?? '';
 
   const buyValue = (tierNo: TierNo): string => editedBuy()[tierNo] ?? suggestedBuy(tierNo);
   const sellValue = (tierNo: TierNo): string => editedSell()[tierNo] ?? suggestedSell(tierNo);
@@ -55,7 +54,7 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     if (edited !== undefined && edited !== suggestedBuy(tierNo)) {
       return tr('marginOnApprove');
     }
-    return props.row.suggestion.margins.find((m) => m.tierNo === tierNo)?.buyMarginPct ?? '';
+    return props.row.margins.find((m) => m.tierNo === tierNo)?.buyMarginPct ?? '';
   };
 
   const sellMarginText = (tierNo: TierNo): string => {
@@ -64,13 +63,14 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     if (edited !== undefined && edited !== suggestedSell(tierNo)) {
       return tr('marginOnApprove');
     }
-    return props.row.suggestion.margins.find((m) => m.tierNo === tierNo)?.sellMarginPct ?? '';
+    return props.row.margins.find((m) => m.tierNo === tierNo)?.sellMarginPct ?? '';
   };
 
   const bandText = (tierNo: TierNo): string => {
     const b = props.bands.find((band) => band.tierNo === tierNo);
     if (!b) return '';
-    return b.upperInclusiveThb ? `${b.lowerThb} – ${b.upperInclusiveThb}` : `${b.lowerThb}+`;
+    const lower = b.lowerExclusiveThb ?? '0';
+    return b.upperInclusiveThb ? `${lower} – ${b.upperInclusiveThb}` : `${lower}+`;
   };
 
   const handleApprove = async () => {
@@ -78,16 +78,16 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     setErrorMsg(null);
     setSubmitting(true);
 
-    const tiers: TierPriceView[] = TIER_NOS.map((tierNo) => ({
+    const tiers: PricingTierPriceInput[] = TIER_NOS.map((tierNo) => ({
       tierNo,
       buy: buyValue(tierNo),
       sell: sellValue(tierNo),
     }));
     try {
       const out = await approveCmd.send({
-        branch: props.branch,
         policyVersionId: props.policyVersionId,
-        currencies: [{ currency: props.row.currency, tiers }],
+        rows: [{ currency: props.row.currency, tiers }],
+        reason: reason().trim(),
       });
       props.onApproved(out);
     } catch (err: unknown) {
@@ -175,6 +175,17 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
       </table>
 
       <div class="tier-editor-actions">
+        <input
+          type="text"
+          name="reason"
+          class="tier-editor-input"
+          placeholder={tr('reason')}
+          aria-label={tr('reason')}
+          required
+          disabled={!props.row.suggestion || submitting()}
+          value={reason()}
+          onInput={(e) => setReason(e.currentTarget.value)}
+        />
         <button
           type="button"
           name="approve"
@@ -188,4 +199,3 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     </section>
   );
 }
-

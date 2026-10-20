@@ -1,11 +1,20 @@
 // §9 OrderRefs: recent orders with the market they were priced against (FE pricing-board PB-9, #3765; docs/design/blueprint/pricing-tiers.md §9).
+// hidden until the order-reference view exists (design §7)
 import { For, Show, type JSX } from 'solid-js';
+import type { PricingQuoteDto } from '../../../shared/api/generated/pricing_board';
 import { screenT } from '../../../shared/i18n';
 import * as table from './i18n';
-import type { OrderRefView } from './pricing-board.types';
 import './order-refs.css';
 
 const t = screenT('admin.pricing', table);
+
+export interface OrderRefView {
+  transactionId: string;
+  documentRef: string | null;
+  recordedAt: string;
+  currency: string;
+  market: readonly PricingQuoteDto[];
+}
 
 export interface OrderRefsProps {
   refs: readonly OrderRefView[];

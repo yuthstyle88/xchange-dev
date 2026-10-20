@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setLang } from '../../../shared/i18n';
 import { en, th } from './i18n';
-import type { PricingFlagCode, RowStatusCode } from './pricing-board.types';
-import { flagLabel, statusLabel } from './pricing-labels';
+import { flagLabel, statusLabel, type PricingFlagCode, type RowStatusCode } from './pricing-labels';
 
 const ALL_STATUS_CODES: readonly RowStatusCode[] = [
   'Current',
