@@ -400,8 +400,8 @@ impl CommandAction for RatePolicySaveCommand {
             if overrides.iter().any(|ov| ov.tiers.is_some()) {
                 let rate_policy = RatePolicy::new(
                     "rate-policy-save",
-                    RatePercent::parse(&format!("{buy_pct:.4}")).unwrap_or(RatePercent::ZERO),
-                    RatePercent::parse(&format!("{sell_pct:.4}")).unwrap_or(RatePercent::ZERO),
+                    RatePercent::parse(&format!("{buy_pct:.4}")).map_err(|_| server_error())?,
+                    RatePercent::parse(&format!("{sell_pct:.4}")).map_err(|_| server_error())?,
                     &input.guards,
                 )
                 .map_err(|e| {

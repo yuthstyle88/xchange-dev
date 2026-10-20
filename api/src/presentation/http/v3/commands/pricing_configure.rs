@@ -242,9 +242,9 @@ impl CommandAction for PricingConfigureCommand {
             let rate_policy = RatePolicy::new(
                 "pricing-configure",
                 RatePercent::parse(&format!("{:.4}", cur.buy_adjust_pct))
-                    .unwrap_or(RatePercent::ZERO),
+                    .map_err(|_| server_error())?,
                 RatePercent::parse(&format!("{:.4}", cur.sell_adjust_pct))
-                    .unwrap_or(RatePercent::ZERO),
+                    .map_err(|_| server_error())?,
                 &cur.guards,
             )
             .map_err(|e| {
