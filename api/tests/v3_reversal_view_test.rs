@@ -24,7 +24,7 @@
 //! Rows are seeded with SQL in RV-1's and TX-2's schema; a POSTED reversal is seeded as RV-3 will
 //! write it (posting and document), because posting is RV-3's. Exchanges are DEMO (no shift). The
 //! window is MAIN's timezone, Asia/Bangkok: a reversal whose `business_date` is Bangkok's today is
-//! inside it, one of 2026-10-06 is past it. Sessions come from the `x-test-as` header (`owner`,
+//! inside it, one of 2026-10-06 is past it. Callers come from the `x-test-as` header (`owner`,
 //! `staff:<ROLE>:<branch>`), as in `v3_transaction_view_test.rs`. The content tests read as MAIN's MANAGER
 //! (`ME`), as #678's do under ruling A.
 //!
@@ -55,15 +55,7 @@ const ME: &str = "staff:MANAGER:MAIN";
 struct HeaderCallers;
 
 fn roles_of(role: &str) -> &'static [Role] {
-    match role {
-        "FRONT" => &[Role::Teller],
-        "BACKEND" | "MANAGER" => &[Role::BranchManager],
-        "RATES" => &[Role::RateManager],
-        "FINANCE" => &[Role::Finance],
-        "SYSTEM" => &[Role::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
-        other => panic!("unknown role {other}"),
-    }
+    test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown role {role}"))
 }
 
 fn callers_of(spec: &str) -> Callers {

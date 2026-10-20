@@ -52,12 +52,11 @@ use xc_auth::domain::access::permission_module::{Level, Module, PermissionModule
 use xc_auth::domain::access::{
     Actor as User, Group, Permission, Role, RoleGrantStore, RoleGrants, ScopedRole,
 };
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_auth::infrastructure::access::PgRoleGrantStore;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SEEDED_XC_ORG_ID, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SEEDED_XC_ORG_ID, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -359,24 +358,6 @@ fn user_of(spec: &str) -> Option<User> {
     Some(User::new(&user_id(spec), SEEDED_XC_ORG_ID, roles, None))
 }
 
-fn legacy_of(spec: &str) -> Sessions {
-    let first = spec.split(['+', '#']).next().unwrap_or("");
-    match first.split_once('@') {
-        None => Sessions {
-            owner: None,
-            staff: None,
-        },
-        Some((_, "*")) => Sessions {
-            owner: Some(Actor::owner(user_id(spec))),
-            staff: None,
-        },
-        Some((_, branch)) => Sessions {
-            owner: None,
-            staff: Actor::staff(user_id(spec), OldRole::Finance, BranchId::new(branch)),
-        },
-    }
-}
-
 fn spec_of(req: &HttpRequest) -> String {
     req.headers()
         .get(AS)
@@ -385,23 +366,9 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
-        Box::pin(async move {
-            let user = user_of(&spec);
-            Callers {
-                user: user.clone(),
-                staff_user: user,
-            }
-        })
+        Box::pin(async move { test_callers::callers(None, user_of(&spec)) })
     }
 }
 
