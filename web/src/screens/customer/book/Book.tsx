@@ -406,7 +406,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       <Show when={successData()}>
         <div class="xc-book-success alert-success" role="status">
           <p>{t('bookingSuccess')}</p>
-          <p>{fill(t('bookingNo'), { no: successData()!.bookingNo || successData()!.id })}</p>
+          <p>{fill(t('bookingNo'), { no: successData()!.bookingNo })}</p>
         </div>
       </Show>
 
