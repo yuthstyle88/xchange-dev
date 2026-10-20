@@ -187,7 +187,20 @@ impl Room {
     /// `MAIN` (from the migration) and `B9`; the owner and one employee of every staff role in
     /// `MAIN`, all signed in; the USD counter rate 32.1 / 33 in both branches.
     async fn open() -> Room {
-        let desk = Desk::open().await;
+        let mut desk = Desk::open().await;
+        desk.workflow =
+            xchange::application::workflows::save_transaction::SaveTransactionWorkflow::new(
+                desk.db.branch_tx(),
+                xc_shift::application::shift::service::ShiftService::new(
+                    std::sync::Arc::new(
+                        xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                            desk.db.pool.clone(),
+                        ),
+                    ),
+                    desk.db.branch_tx(),
+                ),
+                desk.files.clone(),
+            );
         desk.db.seed_branch(B9, B9_NAME).await;
         let app = rpc_app!(desk);
         let people = one_of_each_role();
@@ -321,17 +334,21 @@ impl Room {
     }
 
     async fn expected_of_open_shift(&self, branch: &str) -> Value {
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT b.code::text, b.expected::text FROM shift_balances b \
-             JOIN shifts s ON s.id = b.shift_id WHERE s.branch_id = $1 AND s.status = 'OPEN'",
-        )
-        .bind(branch)
-        .fetch_all(&self.desk.db.pool)
-        .await
-        .expect("read the open shift's balances");
+        use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
+        use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+        let shift_id = self.open_shift_id(branch).await;
+        let rows = PgLedgerShiftBalances::new(self.desk.db.pool.clone())
+            .shift_balances(&shift_id)
+            .await
+            .expect("read the open shift's balances");
         Value::Object(
             rows.into_iter()
-                .map(|(c, e)| (c.trim().to_owned(), Value::String(e)))
+                .map(|b| {
+                    (
+                        b.currency.as_str().to_owned(),
+                        Value::String(b.expected.to_string()),
+                    )
+                })
                 .collect(),
         )
     }
@@ -764,62 +781,7 @@ async fn admin_request_status_refuses_a_request_id_of_the_wrong_shape_naming_it(
     room.finish().await;
 }
 
-async fn seed_movement(
-    pool: &sqlx::PgPool,
-    branch: &str,
-    shift_id: &str,
-    code: &str,
-    direction: &str,
-    amount: &str,
-    reason: &str,
-) -> (String, String) {
-    let id = format!("MV-{:012}", next());
-    let req_id = request_id();
-    let signed = if direction == "IN" {
-        amount.to_string()
-    } else {
-        format!("-{amount}")
-    };
-    let mut tx = pool.begin().await.expect("begin tx");
-    sqlx::query(
-        "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
-         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, now(), 'fn1')",
-    )
-    .bind(&id)
-    .bind(branch)
-    .bind(shift_id)
-    .bind(code)
-    .bind(direction)
-    .bind(amount)
-    .bind(reason)
-    .bind(&req_id)
-    .execute(&mut *tx)
-    .await
-    .expect("insert stock_movement");
-    sqlx::query(
-        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-         VALUES ($1, $2, 0, GREATEST($3::numeric, 0)) \
-         ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
-    )
-    .bind(shift_id)
-    .bind(code)
-    .bind(&signed)
-    .execute(&mut *tx)
-    .await
-    .expect("update shift_balances");
-    sqlx::query(
-        "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 1) \
-         ON CONFLICT (branch_id) DO UPDATE SET version = branch_versions.version + 1",
-    )
-    .bind(branch)
-    .execute(&mut *tx)
-    .await
-    .expect("bump branch_versions");
-    tx.commit().await.expect("commit seed_movement");
-    (id, req_id)
-}
-
-/// `applied` is the check `adminAbandonRequest` makes: an opened shift, a stock movement, a closed
+/// `applied` is the check `adminAbandonRequest` makes: an opened shift, a closed
 /// shift in the branch, or a branch anywhere, made with that request id. (Before RE-7 also a rate
 /// saved directly; RE-7 #604 removes that save.)
 #[actix_web::test]
@@ -846,22 +808,6 @@ async fn admin_request_status_is_applied_exactly_when_abandon_would_find_the_req
         ask(opened).await,
         json!({ "applied": true }),
         "an opened shift"
-    );
-    let shift = room.open_shift_id(MAIN).await;
-    let (_movement_id, moved) = seed_movement(
-        &room.desk.db.pool,
-        MAIN,
-        &shift,
-        "USD",
-        "IN",
-        "10",
-        "from the safe",
-    )
-    .await;
-    assert_eq!(
-        ask(moved).await,
-        json!({ "applied": true }),
-        "a stock movement"
     );
     let closed = room.close_shift(MAIN).await;
     assert_eq!(

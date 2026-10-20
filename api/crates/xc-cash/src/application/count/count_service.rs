@@ -81,7 +81,11 @@ impl CashCountService {
     pub fn pg(pool: PgPool) -> Self {
         let repo = Arc::new(PgCashRepository::new(pool.clone()));
         let postings: Arc<dyn CashPostings> = Arc::new(LedgerCashPostings::new());
-        let shift_repo = Arc::new(PgShiftRepository::new(pool.clone()));
+        let shift_repo = Arc::new(
+            crate::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                pool.clone(),
+            ),
+        );
         let transactor = Transactor::new(pool.clone());
         let branch_tx = BranchTx::new(transactor);
         let shifts = ShiftService::new(shift_repo, branch_tx);
@@ -325,6 +329,31 @@ mod tests {
                 None,
             )
         }
+
+        async fn balance(
+            &self,
+            shift: &str,
+            currency: &str,
+        ) -> (Decimal, Decimal, Option<Decimal>, Option<Decimal>) {
+            use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+            let rows = crate::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(
+                self.pool.clone(),
+            )
+            .shift_balances(&shift.to_owned())
+            .await
+            .unwrap_or_else(|e| panic!("the {currency} balance of {shift}: {e}"));
+            let row = rows
+                .into_iter()
+                .find(|b| b.currency.as_str() == currency)
+                .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
+            let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
+            (
+                to_dec(row.opening.minor_i128()),
+                to_dec(row.expected.minor()),
+                row.counted.map(|m| to_dec(m.minor_i128())),
+                row.difference.map(|d| to_dec(d.minor())),
+            )
+        }
     }
 
     #[tokio::test]
@@ -372,13 +401,10 @@ mod tests {
             .await
             .expect("initial verify");
 
-        let usd_balance_before: Decimal = sqlx::query_scalar(
-            "SELECT opening FROM shift_balances WHERE shift_id = $1 AND code = 'USD'",
-        )
-        .bind(verified.shift_id.as_deref().unwrap())
-        .fetch_one(&db.pool)
-        .await
-        .expect("fetch usd balance before");
+        let usd_balance_before: Decimal = db
+            .balance(verified.shift_id.as_deref().unwrap(), "USD")
+            .await
+            .0;
         assert_eq!(usd_balance_before, Decimal::from(1000));
 
         // Now attempt to submit a count where a JPY denomination is sent as "USD"
@@ -406,14 +432,11 @@ mod tests {
             other => panic!("expected AppError::Validation, got {other:?}"),
         }
 
-        // Check USD total is unchanged on shift_balances
-        let usd_balance_after: Decimal = sqlx::query_scalar(
-            "SELECT opening FROM shift_balances WHERE shift_id = $1 AND code = 'USD'",
-        )
-        .bind(verified.shift_id.as_deref().unwrap())
-        .fetch_one(&db.pool)
-        .await
-        .expect("fetch usd balance after");
+        // Check USD total is unchanged in the ledger drawer
+        let usd_balance_after: Decimal = db
+            .balance(verified.shift_id.as_deref().unwrap(), "USD")
+            .await
+            .0;
         assert_eq!(usd_balance_after, Decimal::from(1000));
 
         let count_rows: i64 =
@@ -519,18 +542,12 @@ mod tests {
             .expect("verify count");
         let shift_id = verified.shift_id.expect("shift id");
 
-        let opening: Decimal = sqlx::query_scalar(
-            "SELECT opening FROM shift_balances WHERE shift_id = $1 AND code = 'KRW'",
-        )
-        .bind(&shift_id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("fetch shift balance");
+        let opening: Decimal = db.balance(&shift_id, "KRW").await.0;
 
         assert_eq!(
             opening,
             Decimal::from(150_000_000),
-            "150M KRW carried into shift_balances at open"
+            "150M KRW carried into ledger drawer at open"
         );
 
         // Test Must-fix 1: apply +100 exchange on KRW 150,000,000 balance
@@ -545,15 +562,29 @@ mod tests {
             .apply_delta_for_teller_in(&mut tx, &branch, &teller.user_id, &delta_plus_100)
             .await;
         assert!(res_plus.is_ok(), "apply +100 delta succeeds");
+        crate::domain::posting::CashPostings::post_in(
+            &crate::infrastructure::ledger_postings::LedgerCashPostings::new(),
+            &mut tx,
+            &[crate::domain::posting::PostingRequest {
+                from: crate::domain::posting::CashPlace::Customer,
+                to: crate::domain::posting::CashPlace::Drawer(shift_id.clone()),
+                currency: CurrencyCode::parse("KRW").unwrap(),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(Decimal::from(100)),
+                source: crate::domain::ledger::posting::SourceRef {
+                    source_type: crate::domain::ledger::posting::SourceType::Exchange,
+                    source_id: unique("lg4-krw-plus"),
+                    source_key: "complete".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("post +100 KRW exchange");
         tx.commit().await.unwrap();
 
-        let exp_after_plus: Decimal = sqlx::query_scalar(
-            "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = 'KRW'",
-        )
-        .bind(&shift_id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("fetch expected after +100");
+        let exp_after_plus: Decimal = db.balance(&shift_id, "KRW").await.1;
         assert_eq!(
             exp_after_plus,
             Decimal::from(150_000_100),
@@ -575,15 +606,29 @@ mod tests {
             res_minus.is_ok(),
             "-1000 exchange on 150M balance is accepted, not refused as insufficient"
         );
+        crate::domain::posting::CashPostings::post_in(
+            &crate::infrastructure::ledger_postings::LedgerCashPostings::new(),
+            &mut tx,
+            &[crate::domain::posting::PostingRequest {
+                from: crate::domain::posting::CashPlace::Drawer(shift_id.clone()),
+                to: crate::domain::posting::CashPlace::Customer,
+                currency: CurrencyCode::parse("KRW").unwrap(),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(Decimal::from(1000)),
+                source: crate::domain::ledger::posting::SourceRef {
+                    source_type: crate::domain::ledger::posting::SourceType::Exchange,
+                    source_id: unique("lg4-krw-minus"),
+                    source_key: "complete".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("post -1000 KRW exchange");
         tx.commit().await.unwrap();
 
-        let exp_after_minus: Decimal = sqlx::query_scalar(
-            "SELECT expected FROM shift_balances WHERE shift_id = $1 AND code = 'KRW'",
-        )
-        .bind(&shift_id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("fetch expected after -1000");
+        let exp_after_minus: Decimal = db.balance(&shift_id, "KRW").await.1;
         assert_eq!(exp_after_minus, Decimal::from(150_000_100 - 1000));
     }
 
@@ -739,24 +784,14 @@ mod tests {
         assert_eq!(usd_total.expected, Some(Decimal::from(500)));
         assert_eq!(usd_total.difference, Some(Decimal::ZERO));
 
-        // Check shift_balances
-        let (thb_cnt, thb_diff): (Decimal, Decimal) = sqlx::query_as(
-            "SELECT counted, difference FROM shift_balances WHERE shift_id = $1 AND code = 'THB'",
-        )
-        .bind(&shift_id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("fetch thb balance");
+        // Check the drawer balances (ledger)
+        let (_, _, thb_cnt, thb_diff) = db.balance(&shift_id, "THB").await;
+        let (thb_cnt, thb_diff) = (thb_cnt.expect("thb counted"), thb_diff.expect("thb diff"));
         assert_eq!(thb_cnt, Decimal::ZERO);
         assert_eq!(thb_diff, Decimal::from(-1000));
 
-        let (usd_cnt, usd_diff): (Decimal, Decimal) = sqlx::query_as(
-            "SELECT counted, difference FROM shift_balances WHERE shift_id = $1 AND code = 'USD'",
-        )
-        .bind(&shift_id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("fetch usd balance");
+        let (_, _, usd_cnt, usd_diff) = db.balance(&shift_id, "USD").await;
+        let (usd_cnt, usd_diff) = (usd_cnt.expect("usd counted"), usd_diff.expect("usd diff"));
         assert_eq!(usd_cnt, Decimal::from(500));
         assert_eq!(usd_diff, Decimal::ZERO);
 

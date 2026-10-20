@@ -93,7 +93,11 @@ impl AbandonRequest {
         let pool = branch_tx.pool().clone();
         Self {
             branches: PgBranchRepository::new(pool.clone()),
-            shifts: Arc::new(PgShiftRepository::new(pool)),
+            shifts: Arc::new(
+                xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                    pool,
+                ),
+            ),
             abandoned: PgAbandonedRequests,
             branch_tx,
         }
@@ -174,17 +178,9 @@ impl AbandonRequest {
         {
             return Ok(true);
         }
-        if self
-            .shifts
-            .find_shift_by_close_request_id(tx, branch, request_id)
-            .await?
-            .is_some()
-        {
-            return Ok(true);
-        }
         Ok(self
             .shifts
-            .find_movement_by_request_id(tx, branch, request_id)
+            .find_shift_by_close_request_id(tx, branch, request_id)
             .await?
             .is_some())
     }

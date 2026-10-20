@@ -26,8 +26,8 @@ use crate::domain::inventory::weighted_average::WeightedAverage;
 use crate::domain::ledger::account::AccountKind;
 use crate::domain::ledger::posting::{PostingId, SourceRef, SourceType};
 use crate::domain::posting::{
-    ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingRequest, PostingResult,
-    ReversedCost, TransactionLineId,
+    ApprovalRequestId, CashPlace, CashPostings, LineCost, PlaceActivity, PostingRequest,
+    PostingResult, ReversedCost, TransactionLineId,
 };
 
 /// Who a posting is recorded as made by: the port carries no actor. `[proposed]`
@@ -1256,6 +1256,66 @@ impl CashPostings for LedgerCashPostings {
                 }
             }
             Ok(Balances::of(&pairs))
+        })
+    }
+
+    fn activity_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        place: &'a CashPlace,
+    ) -> BoxFuture<'a, AppResult<Option<PlaceActivity>>> {
+        Box::pin(async move {
+            let kind = kind_of(place);
+            let rows: Vec<(String, Decimal)> = match place {
+                CashPlace::Drawer(shift) => {
+                    sqlx::query_as(
+                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                         JOIN cash_accounts a ON a.id = e.account_id \
+                         WHERE a.kind = $1 AND a.shift_id = $2 \
+                         GROUP BY a.currency ORDER BY a.currency",
+                    )
+                    .bind(kind.as_str())
+                    .bind(shift)
+                    .fetch_all(&mut **tx)
+                    .await?
+                }
+                CashPlace::Safe(_) | CashPlace::InTransit(_) | CashPlace::Variance(_) => {
+                    let branch = branch_of(tx, place).await?;
+                    sqlx::query_as(
+                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                         JOIN cash_accounts a ON a.id = e.account_id \
+                         WHERE a.kind = $1 AND a.branch_id = $2 \
+                         GROUP BY a.currency ORDER BY a.currency",
+                    )
+                    .bind(kind.as_str())
+                    .bind(branch)
+                    .fetch_all(&mut **tx)
+                    .await?
+                }
+                CashPlace::Customer | CashPlace::Bank => {
+                    sqlx::query_as(
+                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                         JOIN cash_accounts a ON a.id = e.account_id \
+                         WHERE a.kind = $1 \
+                         GROUP BY a.currency ORDER BY a.currency",
+                    )
+                    .bind(kind.as_str())
+                    .fetch_all(&mut **tx)
+                    .await?
+                }
+            };
+            if rows.is_empty() {
+                return Ok(None);
+            }
+            let mut pairs = Vec::with_capacity(rows.len());
+            for (code, sum) in rows {
+                let code = CurrencyCode::parse(code.trim()).map_err(|e| {
+                    AppError::Internal(format!("invalid currency code in cash_accounts: {e}"))
+                })?;
+                pairs.push((code, delta(sum)?));
+            }
+            pairs.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
+            Ok(Some(pairs))
         })
     }
 }

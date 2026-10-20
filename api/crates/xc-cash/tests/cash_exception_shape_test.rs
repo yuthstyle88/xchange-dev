@@ -159,7 +159,7 @@ impl Db {
         .execute(&self.pool)
         .await
         .unwrap();
-        sqlx::query("INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', '{}')")
+        sqlx::query("INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')")
             .bind(&id)
             .execute(&self.pool)
             .await

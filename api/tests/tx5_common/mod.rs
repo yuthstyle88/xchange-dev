@@ -289,17 +289,6 @@ impl Counter {
                     .bind(&request)
                     .execute(&mut **tx)
                     .await?;
-                    for (code, amount) in [("THB", "10000.00"), ("USD", "1000.00")] {
-                        sqlx::query(
-                            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                             VALUES ($1, $2, $3::numeric, $3::numeric)",
-                        )
-                        .bind(&id)
-                        .bind(code)
-                        .bind(amount)
-                        .execute(&mut **tx)
-                        .await?;
-                    }
                     Ok::<(), pos_error::AppError>(())
                 })
             })
@@ -572,7 +561,7 @@ pub fn leg(posted: &Posted, currency: CurrencyCode) -> &PostingRequest {
 static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// LG-4 (#929, lane controller's 1:1 ruling): moves `currency amount` from `from` into `to` through the ledger
-/// (`OPENING`), the store the cutover reads; before it, this file seeded `ops_state.safe` / `shift_balances`.
+/// (`OPENING`), the store the cutover reads.
 pub async fn lg4_fund(
     pool: &sqlx::PgPool,
     from: xc_cash::domain::posting::CashPlace,

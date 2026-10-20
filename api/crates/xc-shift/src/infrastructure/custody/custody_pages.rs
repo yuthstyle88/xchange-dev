@@ -8,8 +8,8 @@ use sqlx::{PgPool, Row};
 use xc_kernel::ids::BranchId;
 
 use super::decode::{
-    attendance_from_row, balances_from_json, cutoff_from_json, entity_from_json,
-    exception_from_row, hold_from_row, str_to_phase, target_from_json,
+    attendance_from_row, cutoff_from_json, entity_from_json, exception_from_row, hold_from_row,
+    str_to_phase, target_from_json,
 };
 use crate::domain::custody::entities::attendance::Attendance;
 use crate::domain::custody::entities::cash_exception::CashException;
@@ -19,7 +19,6 @@ use crate::domain::custody::value_objects::cash_target::CashTarget;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::entity::Entity;
-use crate::domain::shift::value_objects::balances::Balances;
 
 #[derive(Clone)]
 pub struct PgCustodyPages {
@@ -101,7 +100,7 @@ impl CustodyPages for PgCustodyPages {
     ) -> BoxFuture<'a, AppResult<FloorFacts>> {
         Box::pin(async move {
             let ops_row = sqlx::query(
-                "SELECT phase, entity, target, safe, cutoff, service_opened_at \
+                "SELECT phase, entity, target, cutoff, service_opened_at \
                  FROM ops_state WHERE branch_id = $1",
             )
             .bind(branch.as_str())
@@ -124,27 +123,20 @@ impl CustodyPages for PgCustodyPages {
                         }
                         _ => None,
                     };
-                    let safe: Option<Balances> = match r.get::<Option<Value>, _>(3) {
-                        Some(v) if !v.is_null() => {
-                            Some(balances_from_json("ops_state", "safe", &v)?)
-                        }
-                        _ => None,
-                    };
-                    let cutoff: Option<Cutoff> = match r.get::<Option<Value>, _>(4) {
+                    let cutoff: Option<Cutoff> = match r.get::<Option<Value>, _>(3) {
                         Some(v) if !v.is_null() => {
                             Some(cutoff_from_json("ops_state", "cutoff", &v)?)
                         }
                         _ => None,
                     };
                     let service_opened_at: Option<CustodyTime> = r
-                        .get::<Option<DateTime<Utc>>, _>(5)
+                        .get::<Option<DateTime<Utc>>, _>(4)
                         .map(|t| CustodyTime::from_epoch_millis(t.timestamp_millis()));
 
                     Some(OpsRow {
                         phase,
                         entity,
                         target,
-                        safe,
                         cutoff,
                         service_opened_at,
                     })

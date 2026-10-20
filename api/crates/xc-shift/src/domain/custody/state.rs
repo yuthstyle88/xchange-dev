@@ -9,12 +9,10 @@ use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::entity::Entity;
 use crate::domain::custody::value_objects::phase::Phase;
-use crate::domain::shift::value_objects::balances::Balances;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustodyState {
     pub phase: Phase,
-    pub safe: Option<Balances>,
     pub target: Option<CashTarget>,
     pub entity: Option<Entity>,
     pub attendance: Vec<Attendance>,
@@ -29,7 +27,6 @@ impl CustodyState {
     pub fn initial() -> CustodyState {
         CustodyState {
             phase: Phase::Closed,
-            safe: None,
             target: None,
             entity: None,
             attendance: Vec::new(),
