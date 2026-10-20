@@ -155,3 +155,160 @@ async fn uuid_teller_cases_remain_unchanged() {
 
     db.finish().await;
 }
+
+#[tokio::test]
+async fn owner_recalling_a_waiting_ticket_is_refused_no_open_shift_and_ticket_stays_waiting() {
+    let (db, q) = open_main().await;
+    let w1 = walk_in(&db, "w1", at(3, 0)).await;
+
+    assert_eq!(
+        refused(
+            q.desk
+                .recall(&owner(), &main_branch(), &w1.id, at(3, 10))
+                .await
+        ),
+        "noOpenShift"
+    );
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    let mut tx = db.pool.begin().await.expect("begin");
+    assert_eq!(
+        refused(
+            q.desk
+                .recall_in(&mut tx, &owner(), &main_branch(), &w1.id, at(3, 11))
+                .await
+        ),
+        "noOpenShift"
+    );
+    tx.commit().await.expect("commit");
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn owner_skipping_a_waiting_ticket_is_refused_no_open_shift_and_ticket_stays_waiting() {
+    let (db, q) = open_main().await;
+    let w1 = walk_in(&db, "w1", at(3, 0)).await;
+
+    assert_eq!(
+        refused(
+            q.desk
+                .skip(&owner(), &main_branch(), &w1.id, at(3, 10))
+                .await
+        ),
+        "noOpenShift"
+    );
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    let mut tx = db.pool.begin().await.expect("begin");
+    assert_eq!(
+        refused(
+            q.desk
+                .skip_in(&mut tx, &owner(), &main_branch(), &w1.id, at(3, 11))
+                .await
+        ),
+        "noOpenShift"
+    );
+    tx.commit().await.expect("commit");
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn owner_starting_a_waiting_ticket_is_refused_no_open_shift_and_ticket_stays_waiting() {
+    let (db, q) = open_main().await;
+    let w1 = walk_in(&db, "w1", at(3, 0)).await;
+
+    assert_eq!(
+        refused(
+            q.desk
+                .start(&owner(), &main_branch(), &w1.id, at(3, 10))
+                .await
+        ),
+        "noOpenShift"
+    );
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    let mut tx = db.pool.begin().await.expect("begin");
+    assert_eq!(
+        refused(
+            q.desk
+                .start_in(&mut tx, &owner(), &main_branch(), &w1.id, at(3, 11))
+                .await
+        ),
+        "noOpenShift"
+    );
+    tx.commit().await.expect("commit");
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn owner_finishing_a_waiting_ticket_is_refused_no_open_shift_and_ticket_stays_waiting() {
+    let (db, q) = open_main().await;
+    let w1 = walk_in(&db, "w1", at(3, 0)).await;
+
+    assert_eq!(
+        refused(
+            q.desk
+                .finish(&owner(), &main_branch(), &w1.id, at(3, 10))
+                .await
+        ),
+        "noOpenShift"
+    );
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    let mut tx = db.pool.begin().await.expect("begin");
+    assert_eq!(
+        refused(
+            q.desk
+                .finish_in(&mut tx, &owner(), &main_branch(), &w1.id, at(3, 11))
+                .await
+        ),
+        "noOpenShift"
+    );
+    tx.commit().await.expect("commit");
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn owner_cancelling_a_waiting_ticket_is_refused_no_open_shift_and_ticket_stays_waiting() {
+    let (db, q) = open_main().await;
+    let w1 = walk_in(&db, "w1", at(3, 0)).await;
+
+    assert_eq!(
+        refused(
+            q.desk
+                .cancel(&owner(), &main_branch(), &w1.id, "customer left", at(3, 10))
+                .await
+        ),
+        "noOpenShift"
+    );
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    let mut tx = db.pool.begin().await.expect("begin");
+    assert_eq!(
+        refused(
+            q.desk
+                .cancel_in(
+                    &mut tx,
+                    &owner(),
+                    &main_branch(),
+                    &w1.id,
+                    "customer left",
+                    at(3, 11),
+                )
+                .await
+        ),
+        "noOpenShift"
+    );
+    tx.commit().await.expect("commit");
+    assert_eq!(stored(&db, &w1.id).await, "WAITING W001");
+
+    db.finish().await;
+}
