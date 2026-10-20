@@ -16,6 +16,7 @@ use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, T
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
@@ -106,6 +107,13 @@ impl CashCountService {
         let gate = Arc::new(CountDifferenceGate::new(approvals, inventory));
 
         Self::new(pool, repo, postings, shifts, gate, approvals_repo)
+    }
+
+    pub fn with_shift_lifecycle_hook(self, hook: Arc<dyn ShiftLifecycleHook>) -> Self {
+        Self {
+            shifts: self.shifts.with_lifecycle_hook(hook),
+            ..self
+        }
     }
 
     pub fn postings(&self) -> &Arc<dyn CashPostings> {
