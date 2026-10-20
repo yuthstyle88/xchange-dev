@@ -16,11 +16,15 @@ import { QrCode } from '../../../shared/ui/QrCode';
 import { en, th } from './i18n';
 import './desk-bookings.css';
 
+interface DisplayBookingItem extends DeskBookingItemDto {
+  initialStatus?: string;
+}
+
 interface SlotGroup {
   slotId: string;
   startAt: string;
   endAt: string;
-  bookings: DeskBookingItemDto[];
+  bookings: DisplayBookingItem[];
 }
 
 const DESK_PERMISSION = 'BookingsDesk';
@@ -61,7 +65,7 @@ function formatSlotTime(startAt?: string, endAt?: string, timeZone = 'Asia/Bangk
   }
 }
 
-function groupBookingsBySlot(items: DeskBookingItemDto[]): SlotGroup[] {
+function groupBookingsBySlot(items: DisplayBookingItem[]): SlotGroup[] {
   const map = new Map<string, SlotGroup>();
   for (const item of items) {
     let group = map.get(item.slotId);
@@ -83,7 +87,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const api = new ApiClient();
   const [authorized, setAuthorized] = createSignal<boolean | null>(null);
   const [refusalMessage, setRefusalMessage] = createSignal<string | null>(null);
-  const [items, setItems] = createSignal<DeskBookingItemDto[]>([]);
+  const [items, setItems] = createSignal<DisplayBookingItem[]>([]);
   const [branchId, setBranchId] = createSignal<string>('');
   const [version, setVersion] = createSignal<number | undefined>(undefined);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
@@ -160,8 +164,12 @@ export function DeskBookingsScreen(): JSX.Element {
       }
       if (envelope.data && Array.isArray(envelope.data.items)) {
         loadedQr = qrParam;
-        setItems(envelope.data.items);
-        const groups = groupBookingsBySlot(envelope.data.items);
+        const mappedItems: DisplayBookingItem[] = envelope.data.items.map((it) => ({
+          ...it,
+          initialStatus: it.status,
+        }));
+        setItems(mappedItems);
+        const groups = groupBookingsBySlot(mappedItems);
         const firstSlot = groups[0]?.slotId;
         if (firstSlot && !formSlotId()) {
           setFormSlotId(firstSlot);
@@ -555,7 +563,7 @@ export function DeskBookingsScreen(): JSX.Element {
     }
   }
 
-  function updateBookingInState(bookingId: string, patch: Partial<DeskBookingItemDto>) {
+  function updateBookingInState(bookingId: string, patch: Partial<DisplayBookingItem>) {
     setItems((prev) => {
       let targetStart: string | undefined;
       let targetEnd: string | undefined;
@@ -679,32 +687,36 @@ export function DeskBookingsScreen(): JSX.Element {
                             </div>
 
                             <div class="xc-booking-actions">
-                              <button
-                                type="button"
-                                data-action="check-in"
-                                class="xc-checkin-btn xc-btn-primary"
-                                disabled={writing()}
-                                onClick={() => handleCheckIn(b.id)}
-                              >
-                                {t('checkIn')}
-                              </button>
-                              <button
-                                type="button"
-                                data-action="cancel"
-                                class="xc-cancel-btn xc-btn-secondary"
-                                onClick={() => openCancel(b.id)}
-                              >
-                                {t('cancel')}
-                              </button>
-                              <button
-                                type="button"
-                                data-action="reschedule"
-                                class="xc-reschedule-btn xc-btn-secondary"
-                                onClick={() => openReschedule(b.id)}
-                              >
-                                {t('reschedule')}
-                              </button>
-                              <Show when={b.status === 'CONFIRMED' || b.status === 'CHECKED_IN' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                              <Show when={(b.initialStatus ?? b.status) === 'CONFIRMED'}>
+                                <button
+                                  type="button"
+                                  data-action="check-in"
+                                  class="xc-checkin-btn xc-btn-primary"
+                                  disabled={writing()}
+                                  onClick={() => handleCheckIn(b.id)}
+                                >
+                                  {t('checkIn')}
+                                </button>
+                              </Show>
+                              <Show when={(b.initialStatus ?? b.status) === 'CONFIRMED' || (b.initialStatus ?? b.status) === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                                <button
+                                  type="button"
+                                  data-action="cancel"
+                                  class="xc-cancel-btn xc-btn-secondary"
+                                  onClick={() => openCancel(b.id)}
+                                >
+                                  {t('cancel')}
+                                </button>
+                                <button
+                                  type="button"
+                                  data-action="reschedule"
+                                  class="xc-reschedule-btn xc-btn-secondary"
+                                  onClick={() => openReschedule(b.id)}
+                                >
+                                  {t('reschedule')}
+                                </button>
+                              </Show>
+                              <Show when={(b.initialStatus ?? b.status) === 'CONFIRMED' || (b.initialStatus ?? b.status) === 'CHECKED_IN' || (b.initialStatus ?? b.status) === 'PENDING_CUSTOMER_CONFIRMATION'}>
                                 <button
                                   type="button"
                                   name="reissueQr"
