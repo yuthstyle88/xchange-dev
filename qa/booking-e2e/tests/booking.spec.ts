@@ -148,7 +148,7 @@ test.describe.serial('#1683 booking', () => {
       const body = (await res.text().catch(() => '')).slice(0, 300);
       console.log(`[admin] POST /api/auth/session/branch ${res.status()} ${body}`);
       expect(res.ok(), `branch switch answered ${res.status()}: ${body}`).toBeTruthy();
-      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1500); // the admin page polls, so networkidle never comes
       await page.goto('/#booking-slots');
       await expect(page.locator('.account-bar button[aria-haspopup="menu"]'), 'session branch after the switch').toContainText('XC-B', { timeout: 20_000 });
       await expect(page.locator('input[name="capacity"]')).toBeVisible({ timeout: 15_000 });
