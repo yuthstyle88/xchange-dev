@@ -99,3 +99,16 @@ async fn today_s_three_subjects_are_registered() {
         );
     }
 }
+
+#[tokio::test]
+async fn cash_transfer_is_registered() {
+    let registry = make_approval_registry(common::unreachable_pool());
+    assert!(
+        APPROVAL_SUBJECT_TYPES.contains(&"CASH_TRANSFER"),
+        "CASH_TRANSFER has no file in approval_subjects/: {APPROVAL_SUBJECT_TYPES:?}"
+    );
+    assert!(
+        registry.get("CASH_TRANSFER").is_some(),
+        "make_approval_registry is missing CASH_TRANSFER"
+    );
+}
