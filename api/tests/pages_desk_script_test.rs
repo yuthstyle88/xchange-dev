@@ -523,7 +523,7 @@ async fn dk_j_a_session_that_is_not_front_on_staff_desk_goes_to_staff() {
 }
 
 #[actix_web::test]
-async fn dk_j_the_owner_on_desk_with_a_branch_gets_the_v3_desk_and_without_one_is_refused() {
+async fn dk_j_the_owner_on_desk_gets_the_v3_desk_for_the_branch_asked_or_main_and_a_bad_branch_is_refused() {
     // #546 §9 row 2: the owner on /desk?branch=B gets the desk for B. The entry reads B from its own URL; the server
     // checks it first through the `branch` gate (`pages.rs:681-716`), as v2's /desk did.
     let app = desk_app!();
@@ -532,14 +532,22 @@ async fn dk_j_the_owner_on_desk_with_a_branch_gets_the_v3_desk_and_without_one_i
         let answer = get!(&app, &uri, "owner");
         is_the_v3_entry(&answer, "/desk", &format!("GET {uri} as owner"));
     }
-    for uri in ["/desk", "/desk?branch=%22"] {
-        let answer = get!(&app, uri, "owner");
-        assert_eq!(answer.status, StatusCode::BAD_REQUEST, "GET {uri} as owner");
-        assert!(
-            !answer.text().contains("xc-path"),
-            "GET {uri} as owner: no entry is served"
-        );
-    }
+    // No branch asked: the branch gate defaults to MAIN, as v2's /desk did (`v2_page_cases.json` "the owner
+    // asks": `/desk`, no query, owner → 200 with `XC_BRANCH="MAIN"`). Restated by the controller claude/5edf7bb5
+    // on #546 (2026-10-20): the first version expected 400 here, which contradicts that recording (W9).
+    let answer = get!(&app, "/desk", "owner");
+    is_the_v3_entry(&answer, "/desk", "GET /desk as owner (MAIN)");
+    // A malformed branch is refused before any entry is served.
+    let answer = get!(&app, "/desk?branch=%22", "owner");
+    assert_eq!(
+        answer.status,
+        StatusCode::BAD_REQUEST,
+        "GET /desk?branch=%22 as owner"
+    );
+    assert!(
+        !answer.text().contains("xc-path"),
+        "GET /desk?branch=%22 as owner: no entry is served"
+    );
     // Nobody signed in goes to the sign-in page, not to the entry.
     let answer = get!(&app, "/desk?branch=XC-B01", "none");
     assert_eq!(
