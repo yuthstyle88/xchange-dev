@@ -48,9 +48,7 @@ use common::{FakeDatabase, settings, state_with};
 use pos_error::{AppError, AppResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use xc_auth::domain::access::v3_roles::blueprint_roles;
-use xc_auth::domain::access::{Actor, Permission, Role, RoleGrants};
-use xc_auth::domain::policy::value_objects::role::Role as V2Role;
+use xc_auth::domain::access::{Actor, Permission, RoleGrants};
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xchange::bootstrap;
@@ -82,8 +80,8 @@ const STAFF_ROLES: [&str; 9] = [
 /// RBAC §11.2: whether v2 staff role `role` holds `ReferenceRatesRead` once mapped to its Blueprint
 /// roles (OR-7.m merge of feat/rbac-groups: the staff roles here are v2 names, as `staff` maps them).
 fn holds_reference_rates(role: &str) -> bool {
-    let v2 = V2Role::parse(role).expect("a v2 staff role");
-    blueprint_roles(v2)
+    test_callers::v2_staff_roles(role)
+        .expect("a v2 staff role")
         .iter()
         .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
 }
@@ -234,15 +232,8 @@ fn owner() -> Option<Actor> {
 }
 
 fn staff(role: &str) -> Option<Actor> {
-    let roles: &[Role] = match role {
-        "FRONT" => &[Role::Teller],
-        "BACKEND" | "MANAGER" => &[Role::BranchManager],
-        "RATES" => &[Role::RateManager],
-        "FINANCE" => &[Role::Finance],
-        "SYSTEM" => &[Role::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
-        other => panic!("unknown staff role {other:?}"),
-    };
+    let roles =
+        test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown staff role {role:?}"));
     Some(test_callers::staff(
         &format!("E-{role}"),
         roles,

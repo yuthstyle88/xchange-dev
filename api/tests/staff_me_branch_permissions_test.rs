@@ -21,13 +21,11 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, Utc};
 use quote_common::*;
 use serde_json::{Value, json};
-use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::access::{Actor as User, Role, RoleGrants, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
-use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -50,27 +48,6 @@ fn since() -> DateTime<Utc> {
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = header(req);
-        Box::pin(async move {
-            let staff = parse(&spec).and_then(|(role, id, branch)| {
-                let role = if role == "customer" {
-                    "FRONT".to_owned()
-                } else if role.contains('+') || role.contains('@') {
-                    // Default legacy role to FRONT
-                    "FRONT".to_owned()
-                } else {
-                    role
-                };
-                V2Actor::staff(id, V2Role::parse(&role)?, BranchId::new(branch))
-            });
-            Sessions { owner: None, staff }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = header(req);
         Box::pin(async move {
@@ -80,7 +57,6 @@ impl SessionReader for HeaderSessions {
                     staff_user: None,
                 };
             };
-            let s = self.sessions(req).await;
             let staff_user = if role == "customer" {
                 Some(User::new(
                     &id,
@@ -110,8 +86,9 @@ impl SessionReader for HeaderSessions {
                         .with_branch(Some(BranchId::new(&branch))),
                 )
             } else {
-                s.staff.as_ref().map(|a| {
-                    actor_from_v3(a, ORG_1, since()).with_branch(Some(BranchId::new(&branch)))
+                test_callers::v2_staff_roles(&role).map(|roles| {
+                    test_callers::staff(&id, roles, BranchId::new(&branch))
+                        .with_branch(Some(BranchId::new(&branch)))
                 })
             };
             Callers {
