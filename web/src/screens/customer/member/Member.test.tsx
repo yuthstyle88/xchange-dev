@@ -3,7 +3,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { MemberScreen } from './Member';
-import type { MyMembershipData } from '../../../shared/api/generated/my_membership';
+import {
+  makeMyMembershipData,
+  makeNextExpiryDto,
+  makePointsDto,
+  makeTierProgressDto,
+} from '../../../shared/testing/fixtures';
 import * as table from './i18n';
 
 interface NodeFs {
@@ -33,73 +38,73 @@ interface SentRequest {
 
 // Raw JSON literals — NO generated type is imported (LY-5 is not in main; the implementer
 // will replace raw mock handling with the generated client call when LY-5 merges).
-const MOCK_MEMBER_FULL = {
+const MOCK_MEMBER_FULL = makeMyMembershipData({
   tier: 'GOLD',
   effectiveUntil: '2026-11-15T00:00:00Z',
-  points: {
+  points: makePointsDto({
     available: 100,
     pending: 25,
-  },
+  }),
   pointsUnavailable: false,
-  nextExpiry: {
+  nextExpiry: makeNextExpiryDto({
     points: 50,
     at: '2026-12-31T23:59:59Z',
-  },
-  progress: {
+  }),
+  progress: makeTierProgressDto({
     basis: 'VOLUME_THB',
     current: '12500.00',
     next: '20000.00',
-  },
-} satisfies MyMembershipData;
+  }),
+});
 
-const MOCK_LOYALTY_DOWN = {
+const MOCK_LOYALTY_DOWN = makeMyMembershipData({
   tier: 'PLATINUM',
   effectiveUntil: '2026-11-15T00:00:00Z',
   points: null,
   pointsUnavailable: true,
   nextExpiry: null,
   progress: null,
-} satisfies MyMembershipData;
+});
 
-const MOCK_NOT_MEMBER = {
+const MOCK_NOT_MEMBER = makeMyMembershipData({
   tier: null,
   effectiveUntil: null,
-  points: {
+  points: makePointsDto({
     available: 0,
     pending: 0,
-  },
+  }),
   pointsUnavailable: false,
   nextExpiry: null,
   progress: null,
-} satisfies MyMembershipData;
+});
 
-const MOCK_TOP_TIER = {
+const MOCK_TOP_TIER = makeMyMembershipData({
   tier: 'DIAMOND',
   effectiveUntil: '2027-01-01T00:00:00Z',
-  points: {
+  points: makePointsDto({
     available: 5000,
     pending: 0,
-  },
+  }),
   pointsUnavailable: false,
   nextExpiry: null,
-  progress: {
+  progress: makeTierProgressDto({
     basis: 'VOLUME_THB',
     current: '100000.00',
     next: null,
-  },
-} satisfies MyMembershipData;
+  }),
+});
 
-const MOCK_PENDING_SEPARATE = {
+const MOCK_PENDING_SEPARATE = makeMyMembershipData({
   tier: 'SILVER',
   effectiveUntil: '2026-12-31T00:00:00Z',
-  points: {
+  points: makePointsDto({
     available: 500,
     pending: 120,
-  },
+  }),
   pointsUnavailable: false,
   nextExpiry: null,
   progress: null,
-} satisfies MyMembershipData;
+});
 
 describe('APP-19 / C05: Customer Membership Screen MemberScreen (#1649)', () => {
   let host: HTMLDivElement;

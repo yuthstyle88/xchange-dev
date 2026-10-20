@@ -1,8 +1,12 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { BookingQrReissueOutput } from '../../../shared/api/generated/bookings';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeBookingQrReissueOutput,
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeStaffMeView,
+  makeStaffRoleDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -11,18 +15,18 @@ import { en } from './i18n';
 const BRANCH_ID = 'XC-B01';
 const SLOT_1_ID = '00000000-0000-0000-0000-000000000001';
 
-const STAFF_TELLER: StaffMeView = {
+const STAFF_TELLER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: BRANCH_ID }],
+  roles: [makeStaffRoleDto({ role: 'teller', branchId: BRANCH_ID })],
   branchId: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const BOOKINGS_DATA: DeskBookingsData = {
+const BOOKINGS_DATA = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-confirmed',
       bookingNo: 'B261014-0001',
       status: 'CONFIRMED',
@@ -33,8 +37,8 @@ const BOOKINGS_DATA: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'bk-checked-in',
       bookingNo: 'B261014-0002',
       status: 'CHECKED_IN',
@@ -45,8 +49,8 @@ const BOOKINGS_DATA: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'bk-pending',
       bookingNo: 'B261014-0003',
       status: 'PENDING_CUSTOMER_CONFIRMATION',
@@ -57,8 +61,8 @@ const BOOKINGS_DATA: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'bk-cancelled',
       bookingNo: 'B261014-0004',
       status: 'CANCELLED',
@@ -69,8 +73,8 @@ const BOOKINGS_DATA: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'bk-noshow',
       bookingNo: 'B261014-0005',
       status: 'NO_SHOW',
@@ -81,8 +85,8 @@ const BOOKINGS_DATA: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'bk-completed',
       bookingNo: 'B261014-0006',
       status: 'COMPLETED',
@@ -93,9 +97,9 @@ const BOOKINGS_DATA: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 interface RecordedRequest {
   method: string;
@@ -141,11 +145,14 @@ describe('FE-desk F1 (B02): QR reissue row action and modal (#3335)', () => {
     deskBookingsFetchCount = 0;
 
     qrResponder = () => {
-      return json(200, {
-        id: 'bk-confirmed',
-        qrToken: 'test-qr-token-xyz',
-        qrVersion: 2,
-      } satisfies BookingQrReissueOutput);
+      return json(
+        200,
+        makeBookingQrReissueOutput({
+          id: 'bk-confirmed',
+          qrToken: 'test-qr-token-xyz',
+          qrVersion: 2,
+        }),
+      );
     };
 
     vi.stubGlobal(
@@ -259,11 +266,14 @@ describe('FE-desk F1 (B02): QR reissue row action and modal (#3335)', () => {
 
   it('answer qrToken: null (replay) -> no QR; the "already issued" text shows', async () => {
     qrResponder = () => {
-      return json(200, {
-        id: 'bk-confirmed',
-        qrToken: null,
-        qrVersion: 2,
-      } satisfies BookingQrReissueOutput);
+      return json(
+        200,
+        makeBookingQrReissueOutput({
+          id: 'bk-confirmed',
+          qrToken: null,
+          qrVersion: 2,
+        }),
+      );
     };
 
     dispose = render(() => <DeskBookingsScreen />, host);

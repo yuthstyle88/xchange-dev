@@ -1,13 +1,15 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type {
-  BookingCancelOutput,
-  BookingCheckInOutput,
-  BookingCreateOutput,
-  BookingRescheduleOutput,
-} from '../../../shared/api/generated/bookings';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeBookingCancelOutput,
+  makeBookingCheckInOutput,
+  makeBookingCreateOutput,
+  makeBookingRescheduleOutput,
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeStaffMeView,
+  makeStaffRoleDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
@@ -20,18 +22,18 @@ const SLOT_1_ID = '00000000-0000-0000-0000-000000000001';
 const SLOT_2_ID = '00000000-0000-0000-0000-000000000002';
 const BOOKING_1_ID = 'BK-test-0001';
 
-const STAFF_TELLER: StaffMeView = {
+const STAFF_TELLER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: BRANCH_ID }],
+  roles: [makeStaffRoleDto({ role: 'teller', branchId: BRANCH_ID })],
   branchId: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
+const INITIAL_DESK_BOOKINGS = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: BOOKING_1_ID,
       bookingNo: 'B261014-0021',
       status: 'CONFIRMED',
@@ -42,8 +44,8 @@ const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'BK-test-0002',
       bookingNo: 'B261014-0022',
       status: 'CONFIRMED',
@@ -54,9 +56,9 @@ const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
       slotId: SLOT_2_ID,
       startAt: '2026-10-14T09:30:00Z',
       endAt: '2026-10-14T10:00:00Z',
-    },
+    }),
   ],
-};
+});
 
 interface RecordedRequest {
   method: string;
@@ -103,30 +105,30 @@ describe('B02 DeskBookingsScreen shared ApiClient & wordedError (#1891 §9)', ()
     deskBookingsResponder = () => viewEnvelope(INITIAL_DESK_BOOKINGS);
     writeResponder = (req) => {
       if (req.path.endsWith('/check-in')) {
-        return json(200, {
+        return json(200, makeBookingCheckInOutput({
           id: BOOKING_1_ID,
           status: 'CHECKED_IN',
           ticketNumber: 'B01-009',
           bookingNo: 'B261014-0021',
-        } satisfies BookingCheckInOutput);
+        }));
       }
       if (req.path.endsWith('/cancel')) {
-        return json(200, {
+        return json(200, makeBookingCancelOutput({
           id: BOOKING_1_ID,
           status: 'CANCELLED',
           bookingNo: 'B261014-0021',
-        } satisfies BookingCancelOutput);
+        }));
       }
       if (req.path.endsWith('/reschedule')) {
-        return json(200, {
+        return json(200, makeBookingRescheduleOutput({
           id: BOOKING_1_ID,
           slotId: SLOT_2_ID,
           status: 'CONFIRMED',
           bookingNo: 'B261014-0021',
-        } satisfies BookingRescheduleOutput);
+        }));
       }
       if (req.path === '/api/bookings') {
-        return json(200, {
+        return json(200, makeBookingCreateOutput({
           id: 'BK-new-001',
           bookingNo: 'B261014-0099',
           status: 'CONFIRMED',
@@ -138,7 +140,7 @@ describe('B02 DeskBookingsScreen shared ApiClient & wordedError (#1891 §9)', ()
           currency: 'USD',
           quantity: 100,
           qrToken: null,
-        } satisfies BookingCreateOutput);
+        }));
       }
       return json(404, { error: { code: 'notFound', message: req.path } });
     };
@@ -282,11 +284,11 @@ describe('B02 DeskBookingsScreen shared ApiClient & wordedError (#1891 §9)', ()
       if (attempts === 1) {
         throw new TypeError('Failed to fetch');
       }
-      return json(200, {
+      return json(200, makeBookingCancelOutput({
         id: BOOKING_1_ID,
         status: 'CANCELLED',
         bookingNo: 'B261014-0021',
-      } satisfies BookingCancelOutput);
+      }));
     };
 
     await mountScreen();

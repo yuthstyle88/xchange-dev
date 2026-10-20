@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../../shared/api/client';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { ApiError, type ApiClient, type ViewParams } from '../../../shared/api/client';
+import { makeTransactionRow, makeViewAnswer, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
@@ -108,8 +108,8 @@ afterEach(async () => {
   await settle();
 });
 
-function fakeTransactionRow(over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function fakeTransactionRow(over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: 'XC-B-2026-999999',
     date: '2026-10-15',
     created: '2026-10-15T05:00:00.000Z',
@@ -137,7 +137,7 @@ function fakeTransactionRow(over: Partial<TransactionRow> = {}): TransactionRow 
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 describe('WE-18: screens/admin/parts/ failed-call handling through wordedError', () => {
@@ -653,7 +653,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
       )!;
       inspectBtn.click();
       await settle();
-      fake.last().resolve({ version: 1, changed: true, data: { applied: false } } satisfies ViewAnswer<{ applied: boolean }>);
+      fake.last().resolve(makeViewAnswer({ applied: false }, { version: 1, changed: true }));
       await settle();
 
       // Click discard (abandon)
@@ -695,7 +695,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
       )!;
       inspectBtn.click();
       await settle();
-      fake.last().resolve({ version: 1, changed: true, data: { applied: false } } satisfies ViewAnswer<{ applied: boolean }>);
+      fake.last().resolve(makeViewAnswer({ applied: false }, { version: 1, changed: true }));
       await settle();
 
       const discardBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(
@@ -735,7 +735,7 @@ describe('WE-18: screens/admin/parts/ failed-call handling through wordedError',
       )!;
       inspectBtn.click();
       await settle();
-      fake.last().resolve({ version: 1, changed: true, data: { applied: false } } satisfies ViewAnswer<{ applied: boolean }>);
+      fake.last().resolve(makeViewAnswer({ applied: false }, { version: 1, changed: true }));
       await settle();
 
       const discardBtn = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(

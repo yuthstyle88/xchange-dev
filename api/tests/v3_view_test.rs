@@ -668,9 +668,16 @@ async fn a_staff_caller_naming_another_branch_is_answered_for_their_own() {
 
 #[actix_web::test]
 async fn a_role_outside_the_views_row_gets_the_policys_refusal() {
+    use xc_auth::domain::access::{Permission, Role as BpRole, RoleGrants};
+
     let db = TestDb::start().await;
     let views = Views::new();
-    // (StaffRpc, adminDeskConfig): FRONT only (policy R8)
+    // (StaffRpc, adminDeskConfig): requires ExchangeTransact (§11.2: TELLER holds it, FINANCE does not)
+    assert!(
+        RoleGrants::seed(BpRole::Teller).contains(&Permission::ExchangeTransact)
+            && !RoleGrants::seed(BpRole::Finance).contains(&Permission::ExchangeTransact),
+        "§11.2: TELLER holds ExchangeTransact and FINANCE does not"
+    );
     let ok = get(
         &db,
         &views,
@@ -682,21 +689,25 @@ async fn a_role_outside_the_views_row_gets_the_policys_refusal() {
     let refused = get(
         &db,
         &views,
-        "staff:BACKEND:XC-B01",
+        "staff:FINANCE:XC-B01",
         "/api/v3/views/test-desk-config",
     )
     .await;
-    is_refusal(&refused, 400, "ใช้ได้เฉพาะ Front", "BACKEND");
+    is_refusal(&refused, 400, "ใช้ได้เฉพาะ Front", "FINANCE");
     let nobody = get(&db, &views, "", "/api/v3/views/test-count").await;
     is_refusal(&nobody, 401, "กรุณาเข้าสู่ระบบ", "nobody on Rpc");
     assert_eq!(views.loads(), 0, "a refused caller loads nothing");
     db.finish().await;
 }
 
-/// §9: a view whose INHERITS is (Rpc, "rateDraft") refuses exactly the
-/// callers `Policy::allow` refuses for that pair, and so for the staff path.
+/// §9: a view whose INHERITS is (Rpc, "rateDraft") refuses_exactly the
+/// callers `Policy::authorize` / `RoleGrants::seed` refuses for that pair, and so for the staff path.
 #[actix_web::test]
 async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
+    use xc_auth::domain::access::RoleGrants;
+    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
+    use xc_auth::domain::policy::entities::policy::Need;
+
     let db = TestDb::start().await;
     let views = Views::new();
     let mut allowed = 0;
@@ -705,12 +716,34 @@ async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
         ("test-save-rate", EntryPath::Rpc, "rateDraft"), // RE-7 #604: was adminSaveRate
         ("test-desk-config", EntryPath::StaffRpc, "adminDeskConfig"),
     ] {
+        let act = Action::new(action);
+        let Some(Need::Permission(perm)) = Policy::need(path, &act) else {
+            panic!("({path:?}, {action:?}) needs a permission");
+        };
         for who in every_caller() {
             let a = get(&db, &views, &who, &format!("/api/v3/views/{view}")).await;
             let what = format!("{view} as {who:?}");
             let actor = actor_on(path, &who);
-            match Policy::allow(actor.as_ref(), path, &Action::new(action)) {
-                Ok(()) => {
+            let holds = actor.as_ref().is_some_and(|ac| {
+                blueprint_roles(ac.role())
+                    .iter()
+                    .any(|&r| RoleGrants::seed(r).contains(&perm))
+            });
+            let user = actor.as_ref().map(|ac| {
+                actor_from_v3(
+                    ac,
+                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
+                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                )
+            });
+            let auth = Policy::authorize(user.as_ref(), path, &act, None, chrono::Utc::now());
+            assert_eq!(
+                auth.is_ok(),
+                holds,
+                "{what}: RoleGrants::seed matches Policy::authorize"
+            );
+            match auth {
+                Ok(_) => {
                     allowed += 1;
                     is_changed(&a, 0, &what);
                     assert_eq!(

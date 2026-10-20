@@ -40,9 +40,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { StaffHoldRow } from "../../../shared/api/generated/staff_holds";
+import {
+  makeStaffFloorView,
+  makeStaffHoldRow,
+  makeStaffMeView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { th as staffTh } from "../i18n";
 import { warmModules } from "../../../shared/testing/warm-modules";
@@ -100,19 +103,19 @@ function th(key: (typeof KEYS)[number]): string {
 const BRANCH = "MAIN";
 const ME = "00000000-0000-4000-8000-0000000000c1";
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: "2026-10-11T01:00:00Z",
@@ -120,28 +123,28 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 const H_OPEN = "h-open-1";
 const H_DONE = "h-released-1";
-const HOLDS: StaffHoldRow[] = [
-  {
+const HOLDS = [
+  makeStaffHoldRow({
     id: H_OPEN,
     customerId: "CX-00000001",
     customerName: "Somchai Jaidee",
     reason: "AML check",
     status: "OPEN",
     at: "2026-10-11T02:00:00Z",
-  },
-  {
+  }),
+  makeStaffHoldRow({
     id: H_DONE,
     customerId: "CX-00000002",
     customerName: null,
     reason: "Old",
     status: "RELEASED",
     at: "2026-10-10T02:00:00Z",
-  },
+  }),
 ];
 
 const FOUND = [

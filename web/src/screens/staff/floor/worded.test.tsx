@@ -3,33 +3,37 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeStaffFloorTarget,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+} from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { FloorCard } from './FloorCard';
 
-function me(permissions = ['BranchDayOperate', 'CashTargetSet', 'AttendanceClock']): StaffMeView {
-  return {
+function me(permissions = ['BranchDayOperate', 'CashTargetSet', 'AttendanceClock']) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000f1',
     name: 'Ploy',
     roles: [],
     branchId: 'MAIN',
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: null,
     myShift: null,
     cutoff: null,
-    target: { amounts: { THB: '1000', USD: '50' }, at: '2026-10-15T00:00:00Z' },
+    target: makeStaffFloorTarget({ amounts: { THB: '1000', USD: '50' }, at: '2026-10-15T00:00:00Z' }),
     safe: null,
     ...over,
-  };
+  });
 }
 
 function makeCtx(over: Partial<StaffFloorView> = {}, perms?: string[]): StaffCtx {

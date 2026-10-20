@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -39,7 +39,8 @@ const B01: &str = "XC-B01";
 const B09: &str = "XC-B09";
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 const FINANCE: &str = "FINANCE@XC-B01";
-const ADMIN: &str = "ADMIN@*";
+// §11.2: CashLimitsManage (FINANCE FULL) is held by EXECUTIVE and FINANCE, not ADMIN.
+const EXECUTIVE: &str = "EXECUTIVE@*";
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -150,6 +151,9 @@ fn user_of(spec: &str) -> Option<User> {
         "EXECUTIVE" => Role::Executive,
         "BRANCH_MANAGER" => Role::BranchManager,
         "TELLER" => Role::Teller,
+        "RATE_MANAGER" => Role::RateManager,
+        "MARKETING" => Role::Marketing,
+        "VERIFICATION_REVIEWER" => Role::VerificationReviewer,
         other => panic!("unknown role {other}"),
     };
     let branch = (branch != "*").then(|| BranchId::new(branch));
@@ -306,27 +310,28 @@ async fn finance_saves_a_limit_and_reads_it_back() {
     db.finish().await;
 }
 
+/// §11.2: `CashLimitsManage` (`FINANCE` `FULL`) is held by `EXECUTIVE` and `FINANCE`.
 #[actix_web::test]
-async fn admin_may_set_it_too_and_a_second_save_replaces_the_first() {
+async fn executive_may_set_it_too_and_a_second_save_replaces_the_first() {
     let db = TestDb::start().await;
     save(&db, FINANCE, B01, json!("500.00")).await;
-    let a = save(&db, ADMIN, B01, json!("250.5")).await;
+    let a = save(&db, EXECUTIVE, B01, json!("250.5")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["countDifferenceLimitThb"], "250.50");
-    assert_eq!(a.body["updatedBy"], user_id(ADMIN).as_str());
+    assert_eq!(a.body["updatedBy"], user_id(EXECUTIVE).as_str());
     assert_eq!(db.rows().await, 1, "an upsert, one row per branch");
-    let r = read(&db, ADMIN, B01).await;
+    let r = read(&db, EXECUTIVE, B01).await;
     assert_eq!(r.body["data"]["countDifferenceLimitThb"], "250.50");
 
-    // an organisation-wide ADMIN sets another branch; each branch reads only its own row
-    let other = save(&db, ADMIN, B09, json!("7")).await;
+    // an organisation-wide EXECUTIVE sets another branch; each branch reads only its own row
+    let other = save(&db, EXECUTIVE, B09, json!("7")).await;
     assert_eq!(other.status, StatusCode::OK, "{}", other.text);
     assert_eq!(
-        read(&db, ADMIN, B09).await.body["data"]["countDifferenceLimitThb"],
+        read(&db, EXECUTIVE, B09).await.body["data"]["countDifferenceLimitThb"],
         "7.00"
     );
     assert_eq!(
-        read(&db, ADMIN, B01).await.body["data"]["countDifferenceLimitThb"],
+        read(&db, EXECUTIVE, B01).await.body["data"]["countDifferenceLimitThb"],
         "250.50"
     );
     assert_eq!(db.rows().await, 2);
@@ -366,10 +371,31 @@ async fn a_branch_without_a_row_reads_as_no_limit() {
     db.finish().await;
 }
 
+/// §11.2: roles without `CashLimitsManage` in `RoleGrants::seed(role)` may neither save nor read.
 #[actix_web::test]
-async fn branch_managers_tellers_and_executives_may_neither_save_nor_read() {
+async fn roles_without_cash_limits_manage_may_neither_save_nor_read() {
     let db = TestDb::start().await;
-    for who in ["BRANCH_MANAGER@XC-B01", "TELLER@XC-B01", "EXECUTIVE@*"] {
+    let candidates = [
+        ("EXECUTIVE@*", Role::Executive),
+        ("ADMIN@*", Role::Admin),
+        ("RATE_MANAGER@XC-B01", Role::RateManager),
+        ("BRANCH_MANAGER@XC-B01", Role::BranchManager),
+        ("TELLER@XC-B01", Role::Teller),
+        ("FINANCE@XC-B01", Role::Finance),
+        ("MARKETING@XC-B01", Role::Marketing),
+        ("VERIFICATION_REVIEWER@XC-B01", Role::VerificationReviewer),
+    ];
+    assert!(
+        candidates
+            .map(|(_, r)| r)
+            .iter()
+            .any(|r| !RoleGrants::seed(*r).contains(&Permission::CashLimitsManage)),
+        "§11.2 must leave some role without CashLimitsManage, or this test refuses nobody"
+    );
+    for (who, _) in candidates
+        .into_iter()
+        .filter(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::CashLimitsManage))
+    {
         let a = save(&db, who, B01, json!("100")).await;
         assert_ne!(a.status, StatusCode::OK, "{who} save: {}", a.text);
         assert_eq!(code(&a), "roleNotAllowedHere", "{who} save: {}", a.text);

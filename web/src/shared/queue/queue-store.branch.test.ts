@@ -19,17 +19,17 @@
 // (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Accessor } from 'solid-js';
-import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import { meOf } from '../../test-support/me';
+import { makeBranchRef, type Me } from '../testing/fixtures';
 import { warmModules } from '../testing/warm-modules';
 
-const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
+const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: Me | undefined) => void) }));
 vi.mock('../session/session', async (importOriginal) => {
   const original = await importOriginal<typeof import('../session/session')>();
   const { createSignal: signal } = await import('solid-js');
   const [me, setMe] = signal<Me | undefined>(undefined);
-  shared.setMe = (value) => setMe(() => value as Me | undefined);
+  shared.setMe = (value) => setMe(() => value);
   const session: SessionStore = { me, signOut: async () => {}, dispose: () => {} };
   return { ...original, sharedSession: () => session };
 });
@@ -40,7 +40,7 @@ const ME: Me = meOf({
   branch: 'B-ME',
   name: 'Somchai',
   branchName: 'B-ME',
-  branches: [{ id: 'B-ME', code: 'B-ME', name: 'B-ME' }],
+  branches: [makeBranchRef({ id: 'B-ME', code: 'B-ME', name: 'B-ME' })],
 });
 
 let urls: string[];

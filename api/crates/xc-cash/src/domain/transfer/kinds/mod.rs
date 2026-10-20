@@ -67,7 +67,7 @@ impl TransferKinds {
 }
 
 /// A kind's access rule for one step (D:§3.1, §3.2): `who` holds `permission` on `branch`, decided by
-/// `Authorizer::check` from the one `RolePermissions` table, so no kind names a role.
+/// `Authorizer::check` from `RoleGrants::seed` (§11.2), so no kind names a role.
 ///
 /// `TransferEnds` carries no clock (D:§4.5), so a role's validity window is read at the wall clock here;
 /// `TransferFlow` checks the command's own steps at the command's `now`.

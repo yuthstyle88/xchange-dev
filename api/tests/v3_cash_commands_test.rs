@@ -37,7 +37,7 @@
 //!
 //! The callers are Blueprint `access::Actor`s (roles scoped to a branch, or organisation-wide), backed by
 //! real `users` rows, handed to the seam through `SessionReader::callers`, as `v3_cash_limits_test.rs` does.
-//! Expectations about who may call are computed from `RolePermissions`, never from a role name; roles
+//! Expectations about who may call are computed from `RoleGrants::seed`, never from a role name; roles
 //! appear only to *make* an actor. Needs `TEST_DATABASE_URL`; nothing skips. Each test works in a schema of
 //! its own.
 
@@ -59,7 +59,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_approval::domain::request::Outcome;
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_cash::application::transfer::TransferFlow;
@@ -197,7 +197,7 @@ fn views() -> Vec<(&'static str, Row)> {
 }
 
 fn holds_any(role: Role, row: Row) -> bool {
-    row.iter().any(|p| RolePermissions::of(role).contains(p))
+    row.iter().any(|p| RoleGrants::seed(role).contains(p))
 }
 
 /// A staff role that holds at least one permission of `row`.

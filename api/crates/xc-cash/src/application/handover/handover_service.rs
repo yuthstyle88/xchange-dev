@@ -237,7 +237,7 @@ pub async fn receiver_candidates<'e, E: sqlx::PgExecutor<'e>>(
 }
 
 /// The receiver rule (blueprint `cash-shift-transfer.md`): the Authorizer's answer to whether `c` holds
-/// `ShiftOperate` at `branch` of `organization_id` at `now`. No role codes: policy lives in `role_permissions.rs`.
+/// `ShiftOperate` at `branch` of `organization_id` at `now`. No role codes: policy lives in `RoleGrants::seed` (§11.2).
 pub fn may_receive(
     c: &ReceiverCandidate,
     organization_id: &str,

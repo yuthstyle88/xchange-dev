@@ -1,8 +1,14 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CampaignDetail } from '../../../shared/api/generated/campaign';
-import type { CampaignListItem, CampaignsData } from '../../../shared/api/generated/campaigns';
+import {
+  type CampaignDetail,
+  type CampaignsData,
+  makeCampaignDetail,
+  makeCampaignListItem,
+  makeCampaignPeriodTotals,
+  makeCampaignsData,
+} from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { Campaigns } from './Campaigns';
@@ -24,7 +30,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-const SAMPLE_LIST_ITEM: CampaignListItem = {
+const SAMPLE_LIST_ITEM = makeCampaignListItem({
   id: 'cmp-1',
   name: 'Golden October',
   versionId: 'ver-1',
@@ -37,19 +43,19 @@ const SAMPLE_LIST_ITEM: CampaignListItem = {
   budgetLeftThb: '74999.50',
   uses: 42,
   maxUses: 100,
-  period: {
+  period: makeCampaignPeriodTotals({
     redemptions: 15,
     priceCostThb: '12345.67',
     rewardExpenseThb: '3000.00',
-  },
-};
+  }),
+});
 
-const SAMPLE_DETAIL_NO_VERSIONS: CampaignDetail = {
+const SAMPLE_DETAIL_NO_VERSIONS = makeCampaignDetail({
   id: 'cmp-1',
   name: 'Golden October',
   currentVersionId: 'ver-1',
   versions: [],
-};
+});
 
 describe('Campaigns rework tests (#1699)', () => {
   let host: HTMLDivElement;
@@ -71,7 +77,7 @@ describe('Campaigns rework tests (#1699)', () => {
     setLang('th');
 
     listStatus = 200;
-    listData = { campaigns: [SAMPLE_LIST_ITEM] };
+    listData = makeCampaignsData({ campaigns: [SAMPLE_LIST_ITEM] });
     listError = null;
     listNetworkError = null;
 

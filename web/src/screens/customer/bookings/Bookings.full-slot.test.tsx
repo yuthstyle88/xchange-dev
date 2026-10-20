@@ -1,7 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
-import type { BookingRescheduleOutput } from '../../../shared/api/generated/bookings';
-import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
+import {
+  makeBookingRescheduleOutput,
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeMyBookingItemDto,
+  makeMyBookingsData,
+} from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
 
 const BRANCH_ID = 'XC-B01';
@@ -9,8 +13,8 @@ const BOOKING_ACTIVE_ID = 'BK-alice-001';
 const SLOT_FULL_ID = '00000000-0000-0000-0000-0000000000f0';
 const SLOT_AVAILABLE_ID = '00000000-0000-0000-0000-0000000000a1';
 
-const INITIAL_BOOKINGS: MyBookingItemDto[] = [
-  {
+const INITIAL_BOOKINGS = [
+  makeMyBookingItemDto({
     id: BOOKING_ACTIVE_ID,
     bookingNo: 'B261014-0024',
     status: 'CONFIRMED',
@@ -28,26 +32,26 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'unknown',
-  },
+  }),
 ];
 
-const AVAILABLE_SLOTS: BookingSlotsData = {
+const AVAILABLE_SLOTS = makeBookingSlotsData({
   asOf: '2026-10-14T08:00:00Z',
   slots: [
-    {
+    makeBookingSlotItemDto({
       id: SLOT_FULL_ID,
       start: '2026-10-14T11:00:00Z',
       end: '2026-10-14T11:30:00Z',
       available: 0,
-    },
-    {
+    }),
+    makeBookingSlotItemDto({
       id: SLOT_AVAILABLE_ID,
       start: '2026-10-14T11:30:00Z',
       end: '2026-10-14T12:00:00Z',
       available: 2,
-    },
+    }),
   ],
-};
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -111,7 +115,7 @@ describe('xchange#2607: full slot cannot be selected in reschedule dialog', () =
         }
 
         if (u.pathname === '/api/v3/views/my_bookings') {
-          return viewEnvelope({ bookings: INITIAL_BOOKINGS } satisfies MyBookingsData);
+          return viewEnvelope(makeMyBookingsData({ bookings: INITIAL_BOOKINGS }));
         }
 
         if (u.pathname === '/api/v3/views/booking_slots') {
@@ -120,12 +124,15 @@ describe('xchange#2607: full slot cannot be selected in reschedule dialog', () =
 
         const reschedMatch = u.pathname.match(/^\/api\/bookings\/([^/]+)\/reschedule$/);
         if (method === 'POST' && reschedMatch) {
-          return json(200, {
-            id: reschedMatch[1],
-            slotId: parsedBody?.slotId,
-            status: 'CONFIRMED',
-            bookingNo: 'B261014-0024',
-          } satisfies BookingRescheduleOutput);
+          return json(
+            200,
+            makeBookingRescheduleOutput({
+              id: reschedMatch[1],
+              slotId: parsedBody?.slotId,
+              status: 'CONFIRMED',
+              bookingNo: 'B261014-0024',
+            }),
+          );
         }
 
         return json(404, { error: { code: 'notFound' } });

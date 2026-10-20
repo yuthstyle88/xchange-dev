@@ -13,6 +13,8 @@ pub enum IssueSource {
     Booking { booking_id: String },
     /// A teller at the desk, for a customer without the tablet.
     Desk,
+    /// A signed-in customer in the app (S7, #3410); at most one active walk-in per branch and day.
+    App { customer_id: String },
 }
 
 impl IssueSource {
@@ -20,7 +22,7 @@ impl IssueSource {
     pub fn service_type(&self) -> ServiceType {
         match self {
             Self::Booking { .. } => ServiceType::Booking,
-            Self::Kiosk { .. } | Self::Desk => ServiceType::WalkIn,
+            Self::Kiosk { .. } | Self::Desk | Self::App { .. } => ServiceType::WalkIn,
         }
     }
 }

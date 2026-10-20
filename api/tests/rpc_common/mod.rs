@@ -53,6 +53,8 @@ use actix_web::{Error, test};
 use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
+use xc_auth::domain::access::permission::Permission;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
@@ -993,7 +995,131 @@ pub enum Rule {
     /// applied: v3 saved nothing for it, so it is held to v2's answer with this
     /// `requestResolution` (`CANCELLED` where v2 said `APPLIED`).
     ResolvedAs(&'static str),
+    /// A caller v2's `Policy::allow` refused and RBAC §11.2 (`RoleGrants`, `rbac-groups.md` §11.2,
+    /// #3659) lets through: sent through HTTP, held to not be the role refusal v2 recorded, and
+    /// counted in [`Tally::widened`].
+    Widened(PolicyError),
+    /// An owner `saveTransaction` step that RBAC §11.2 (#3659) lets past `Policy::authorize` (via
+    /// `EXECUTIVE` Customers Full) and that the CA-10 teller gate (`check_teller_save_in`) refuses
+    /// with `ShiftError::NoOpenShift` (`กรุณาเปิดกะจากหน้าแอดมินก่อน`) because the owner has no open
+    /// shift on the recorded day; those v2 accepted are then applied behind the routes (`save_behind`).
+    OwnerNoOpenShift(&'static str),
 }
+
+/// Recorded steps where v2's `Policy::allow` refused the caller and RBAC §11.2 (`RoleGrants`,
+/// `rbac-groups.md` §11.2, #3659) widens the caller's role so `Policy::authorize` lets them
+/// through: `(fixture, step, permission)`.
+pub const WIDENED_BY_11_2: &[(&str, usize, Permission)] = &[
+    ("rpc/engine_actions.json", 81, Permission::ExchangeTransact),
+    ("rpc/engine_actions.json", 126, Permission::ExchangeTransact),
+    (
+        "rpc/engine_actions.json",
+        129,
+        Permission::IdentityDocumentRead,
+    ),
+    ("snapshot/empty.json", 12, Permission::ExchangeTransact),
+    ("snapshot/empty.json", 16, Permission::ExchangeTransact),
+    ("snapshot/empty.json", 20, Permission::ExchangeTransact),
+    ("snapshot/rates.json", 17, Permission::ExchangeTransact),
+    ("snapshot/branches.json", 28, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 20, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 24, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 32, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 55, Permission::ExchangeTransact),
+    (
+        "snapshot/transactions.json",
+        34,
+        Permission::ExchangeTransact,
+    ),
+    (
+        "snapshot/transactions.json",
+        38,
+        Permission::ExchangeTransact,
+    ),
+    (
+        "snapshot/transactions.json",
+        53,
+        Permission::IdentityDocumentRead,
+    ),
+    ("kiosk/queue.json", 77, Permission::QueueOperate),
+    ("kiosk/queue.json", 78, Permission::QueueOperate),
+    ("kiosk/queue.json", 79, Permission::QueueOperate),
+    ("kiosk/queue.json", 80, Permission::QueueOperate),
+    ("kiosk/queue_work.json", 64, Permission::QueueOperate),
+];
+
+/// CA-10 #626 + RBAC §11.2 (#3659): the owner holds `ExchangeTransact` again via `EXECUTIVE`
+/// (Customers Full), so `Policy::authorize` lets the owner's `saveTransaction` steps through to the
+/// workflow, where the CA-10 teller gate (`check_teller_save_in`) refuses with `ShiftError::NoOpenShift`
+/// (`กรุณาเปิดกะจากหน้าแอดมินก่อน`) because the owner has no open shift on the recorded day:
+/// `(fixture, step, reason)`.
+pub const OWNER_SAVE_NO_OPEN_SHIFT: &[(&str, usize, &str)] = &[
+    (
+        "rpc/engine_actions.json",
+        111,
+        "CA-10 teller gate before customer confirm: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        112,
+        "CA-10 teller gate before customer confirm: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        114,
+        "CA-10 teller gate before shift stock check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        115,
+        "CA-10 teller gate before shift stock check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        120,
+        "CA-10 teller gate on live BUY save: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        121,
+        "CA-10 teller gate on repeat of #120: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        122,
+        "CA-10 teller gate before prior-submission hash check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        123,
+        "CA-10 teller gate on live SELL save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        10,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        11,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        21,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "kiosk/queue.json",
+        138,
+        "QU-6 queue desk gate on kiosk accept: owner has no open shift (#3810)",
+    ),
+    (
+        "kiosk/queue_work.json",
+        72,
+        "QU-6 queue desk gate on kiosk accept: owner has no open shift (#3810)",
+    ),
+];
 
 /// Every step of a replay, by what was done with it.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -1010,6 +1136,10 @@ pub struct Tally {
     pub applied_behind: Vec<usize>,
     /// Held to the Blueprint's refusal (OR-4b); those v2 accepted are also in `applied_behind`.
     pub blueprint: Vec<usize>,
+    /// Held to not be v2's recorded role refusal (RBAC §11.2, #3659).
+    pub widened: Vec<usize>,
+    /// Owner `saveTransaction` and kiosk `accept` steps refused for having no open shift (RBAC §11.2, #3659, #3810).
+    pub owner_no_open_shift: Vec<usize>,
 }
 
 impl Tally {
@@ -1019,6 +1149,12 @@ impl Tally {
             + self.part_two.len()
             + self.excluded.len()
             + self.blueprint.len()
+            + self.widened.len()
+            + self
+                .owner_no_open_shift
+                .iter()
+                .filter(|n| !self.blueprint.contains(n))
+                .count()
     }
 }
 
@@ -1211,10 +1347,29 @@ impl<'f> Replay<'f> {
                 Err(refusal) if v2.as_ref().err() != Some(&refusal) => {
                     return Rule::Blueprint(refusal);
                 }
-                Ok(()) if v2.is_err() => panic!(
-                    "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
-                    self.label(step)
-                ),
+                Ok(()) if v2.is_err() => {
+                    let v2_refusal = v2.unwrap_err();
+                    if let Some((_, _, permission)) = WIDENED_BY_11_2
+                        .iter()
+                        .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
+                    {
+                        let caller = caller.expect("a widened caller is signed in");
+                        let user = actor_from_v3(caller, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH);
+                        assert!(
+                            user.roles
+                                .iter()
+                                .any(|r| RoleGrants::of(r.role.as_str()).contains(permission)),
+                            "{}: listed in WIDENED_BY_11_2 for {permission:?}, which {:?} lacks",
+                            self.label(step),
+                            caller.role()
+                        );
+                        return Rule::Widened(v2_refusal);
+                    }
+                    panic!(
+                        "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
+                        self.label(step)
+                    );
+                }
                 Ok(()) => {
                     // OR-7.m S-D (#3700, ruling #2, D-4): a Blueprint staff caller's named branch
                     // is authorised by their roles; v2's own-branch rule was the password
@@ -1244,6 +1399,12 @@ impl<'f> Replay<'f> {
             }
         }
         if !is_part_two(&action) {
+            if let Some((_, _, reason)) = OWNER_SAVE_NO_OPEN_SHIFT
+                .iter()
+                .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
+            {
+                return Rule::OwnerNoOpenShift(reason);
+            }
             return Rule::Replay;
         }
         // a part-two name is this part's to answer exactly when Policy refuses
@@ -1518,6 +1679,83 @@ impl<'f> Replay<'f> {
                 // a kiosk step is applied behind the routes by the kiosk's replay, which holds the
                 // kiosk's audit log
                 if step.status == Some(200) && step.path() != Some("/api/kiosk") {
+                    self.accepted_behind(step).await;
+                }
+            }
+            Rule::Widened(v2_refusal) => {
+                assert_ne!(
+                    answer.status, 500,
+                    "{label}: widened caller hit 500: {:.300}",
+                    answer.text
+                );
+                let is_v2_role_refusal = answer.status == v2_refusal.status()
+                    && serde_json::from_str::<Value>(&answer.text)
+                        .ok()
+                        .and_then(|j| j.get("error").and_then(Value::as_str).map(str::to_owned))
+                        .as_deref()
+                        == Some(&v2_refusal.to_string());
+                assert!(
+                    !is_v2_role_refusal,
+                    "{label}: RBAC §11.2 widened caller was still refused with v2's role refusal ({}): {:.300}",
+                    v2_refusal, answer.text
+                );
+                self.tally.widened.push(step.n);
+            }
+            Rule::OwnerNoOpenShift(reason) => {
+                let expected_sentence = if step.path() == Some("/api/kiosk") {
+                    "noOpenShift"
+                } else {
+                    "กรุณาเปิดกะจากหน้าแอดมินก่อน"
+                };
+                assert_ne!(
+                    step.error(),
+                    Some(expected_sentence),
+                    "{label} ({reason}): listed in OWNER_SAVE_NO_OPEN_SHIFT, but v2 says the same"
+                );
+                answer.assert_refused(400, expected_sentence, &format!("{label} ({reason})"));
+                assert_eq!(answer.header("cache-control"), Some("no-store"), "{label}");
+                self.tally.owner_no_open_shift.push(step.n);
+                if step.path() == Some("/api/kiosk") {
+                    // KioskReplay::step (in kiosk_http_common) applies an accepted owner kiosk
+                    // step behind the routes and records its audit line when `tally.blueprint`
+                    // contains `step.n`.
+                    self.tally.blueprint.push(step.n);
+                }
+                // When the owner retries the same submissionId (#10/#11 in transactions.json,
+                // #120/#121/#122 in engine_actions.json), apply v2's accepted saves behind the
+                // routes once the last step of that submissionId has been answered so `save_behind`
+                // does not reassign the uploaded file or record the submission under FR1 before the
+                // retry steps run.
+                fn submission_id_of(s: &Step) -> Option<&str> {
+                    s.payload
+                        .as_ref()
+                        .and_then(|p| p.get("submissionId"))
+                        .and_then(Value::as_str)
+                }
+                if let Some(sub_id) = submission_id_of(step) {
+                    let more_retries = self
+                        .fixture
+                        .steps()
+                        .iter()
+                        .any(|s| s.n > step.n && submission_id_of(s) == Some(sub_id));
+                    if !more_retries {
+                        let accepted: Vec<Step> = self
+                            .fixture
+                            .steps()
+                            .iter()
+                            .filter(|s| {
+                                s.n <= step.n
+                                    && submission_id_of(s) == Some(sub_id)
+                                    && s.status == Some(200)
+                                    && s.path() != Some("/api/kiosk")
+                            })
+                            .cloned()
+                            .collect();
+                        for s in &accepted {
+                            self.accepted_behind(s).await;
+                        }
+                    }
+                } else if step.status == Some(200) && step.path() != Some("/api/kiosk") {
                     self.accepted_behind(step).await;
                 }
             }
@@ -2354,8 +2592,8 @@ impl<'f> Replay<'f> {
             paid_at: text_of(&payload, "paidAt"),
             payment_confirmed: payload["paymentConfirmed"] == json!(true),
             identity_confirmed: payload["identityConfirmed"] == json!(true),
-            passport,
-            slip,
+            passport: passport.clone(),
+            slip: slip.clone(),
             reference_rate: payload
                 .get("referenceRate")
                 .filter(|v| !v.is_null())
@@ -2367,6 +2605,14 @@ impl<'f> Replay<'f> {
             .save(&branch, command, &saver, time(&step.at))
             .await
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
+        for key in [&passport, &slip].into_iter().flatten() {
+            sqlx::query("UPDATE files SET owner_id = $1 WHERE key = $2")
+                .bind(&sender.id)
+                .bind(key)
+                .execute(&self.desk.db.pool)
+                .await
+                .expect("restore the save's file to its uploader");
+        }
         assert_eq!(
             json!(saved.document_ref),
             step.json()["documentRef"],

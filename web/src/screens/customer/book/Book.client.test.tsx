@@ -2,7 +2,7 @@
 // C02 Book.tsx preview and booking create go through ApiClient and wordedError.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { BookingCreateOutput } from '../../../shared/api/generated/bookings';
+import { makeBookingCreateOutput } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
@@ -46,7 +46,7 @@ const SAMPLE_PREVIEW = {
   sourceDate: '2026-10-15',
 };
 
-const SAMPLE_CREATE_OK: BookingCreateOutput = {
+const SAMPLE_CREATE_OK = makeBookingCreateOutput({
   id: '11111111-1111-4000-8000-000000000001',
   bookingNo: 'B261015-0001',
   status: 'CONFIRMED',
@@ -58,7 +58,7 @@ const SAMPLE_CREATE_OK: BookingCreateOutput = {
   currency: 'USD',
   quantity: 100,
   qrToken: 'qr-token-test-xyz',
-};
+});
 
 interface RecordedRequest {
   method: string;

@@ -310,6 +310,21 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, anyhow::Error> {
     // Run migrations
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    use xc_auth::domain::access::{RoleGrantStore, RoleGrants};
+    use xc_auth::infrastructure::access::PgRoleGrantStore;
+    let store = PgRoleGrantStore::new();
+    let mut tx = pool.begin().await?;
+    let seeded = store.seed_missing(&mut tx).await?;
+    tx.commit().await?;
+    let mut conn = pool.acquire().await?;
+    let snapshot = store.load(&mut conn).await?;
+    tracing::info!(
+        seeded,
+        version = snapshot.version(),
+        "seeded and loaded role permission grants"
+    );
+    RoleGrants::install(snapshot);
+
     Ok(pool)
 }
 

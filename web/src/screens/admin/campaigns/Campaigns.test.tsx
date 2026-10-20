@@ -7,11 +7,21 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../../../shared/api/client';
-import type { CampaignData, CampaignDetail } from '../../../shared/api/generated/campaign';
-import type { CampaignPauseOutput } from '../../../shared/api/generated/campaign_pause';
-import type { CampaignResumeOutput } from '../../../shared/api/generated/campaign_resume';
-import type { CampaignListItem, CampaignsData } from '../../../shared/api/generated/campaigns';
-import type { CouponIssueOutput } from '../../../shared/api/generated/coupon_issue';
+import {
+  makeCampaignApprovalDetail,
+  makeCampaignData,
+  makeCampaignDetail,
+  makeCampaignListItem,
+  makeCampaignPauseOutput,
+  makeCampaignPeriodTotals,
+  makeCampaignResumeOutput,
+  makeCampaignRuleDetail,
+  makeCampaignSimulationDetail,
+  makeCampaignVersionDetail,
+  makeCampaignsData,
+  makeCouponIssueOutput,
+  makeIssuedCouponDto,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { meOf } from '../../../test-support/me';
 import { AdminShell } from '../AdminShell';
@@ -45,7 +55,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-const SAMPLE_LIST_ITEM: CampaignListItem = {
+const SAMPLE_LIST_ITEM = makeCampaignListItem({
   id: 'cmp-1',
   name: 'Golden October',
   versionId: 'ver-1',
@@ -58,21 +68,21 @@ const SAMPLE_LIST_ITEM: CampaignListItem = {
   budgetLeftThb: '74999.50',
   uses: 42,
   maxUses: 100,
-  period: {
+  period: makeCampaignPeriodTotals({
     redemptions: 15,
     priceCostThb: '12345.67',
     rewardExpenseThb: '3000.00',
-  },
-};
+  }),
+});
 
 const SAMPLE_RULE_ID = '00000000-0000-0000-0000-000000000001';
 
-const SAMPLE_DETAIL: CampaignDetail = {
+const SAMPLE_DETAIL = makeCampaignDetail({
   id: 'cmp-1',
   name: 'Golden October',
   currentVersionId: 'ver-1',
   versions: [
-    {
+    makeCampaignVersionDetail({
       id: 'ver-1',
       version: 1,
       status: 'ACTIVE',
@@ -84,7 +94,7 @@ const SAMPLE_DETAIL: CampaignDetail = {
       priority: 10,
       branches: ['MAIN', 'B1'],
       rules: [
-        {
+        makeCampaignRuleDetail({
           id: SAMPLE_RULE_ID,
           ruleNo: 1,
           benefitType: 'RATE_IMPROVEMENT',
@@ -93,76 +103,76 @@ const SAMPLE_DETAIL: CampaignDetail = {
           eligibility: {},
           calculation: { spreadShare: '0.20' },
           caps: {},
-        },
+        }),
       ],
       simulations: [
-        {
+        makeCampaignSimulationDetail({
           id: 'sim-1',
           costSource: 'LEDGER',
           simulatedAt: '2026-10-02T10:00:00Z',
           input: {},
           result: {},
-        },
+        }),
       ],
-      approval: {
+      approval: makeCampaignApprovalDetail({
         id: 'appr-1',
         status: 'APPROVED',
-      },
-    },
+      }),
+    }),
   ],
-};
+});
 
-const DRAFT_DETAIL: CampaignDetail = {
+const DRAFT_DETAIL = makeCampaignDetail({
   ...SAMPLE_DETAIL,
   versions: [
-    {
+    makeCampaignVersionDetail({
       ...SAMPLE_DETAIL.versions[0],
       status: 'DRAFT',
       approval: null,
       simulations: [],
-    },
+    }),
   ],
-};
+});
 
-const SIMULATED_DETAIL: CampaignDetail = {
+const SIMULATED_DETAIL = makeCampaignDetail({
   ...SAMPLE_DETAIL,
   versions: [
-    {
+    makeCampaignVersionDetail({
       ...SAMPLE_DETAIL.versions[0],
       status: 'SIMULATED',
       approval: null,
       simulations: [
-        {
+        makeCampaignSimulationDetail({
           id: 'sim-1',
           costSource: 'LEDGER',
           simulatedAt: '2026-10-02T10:00:00Z',
           input: {},
           result: {},
-        },
+        }),
       ],
-    },
+    }),
   ],
-};
+});
 
-const DRAFT_WITH_OLD_SIMULATION: CampaignDetail = {
+const DRAFT_WITH_OLD_SIMULATION = makeCampaignDetail({
   ...SAMPLE_DETAIL,
   versions: [
-    {
+    makeCampaignVersionDetail({
       ...SAMPLE_DETAIL.versions[0],
       status: 'DRAFT',
       approval: null,
       simulations: [
-        {
+        makeCampaignSimulationDetail({
           id: 'sim-old',
           costSource: 'LEDGER',
           simulatedAt: '2026-10-01T10:00:00Z',
           input: {},
           result: {},
-        },
+        }),
       ],
-    },
+    }),
   ],
-};
+});
 
 describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])', () => {
   let container: HTMLDivElement;
@@ -170,11 +180,11 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   let sentRequests: SentRequest[] = [];
 
   let listStatus = 200;
-  let listData: CampaignsData = { campaigns: [SAMPLE_LIST_ITEM] };
+  let listData = makeCampaignsData({ campaigns: [SAMPLE_LIST_ITEM] });
   let listErrorCode: string | undefined = undefined;
 
   let detailStatus = 200;
-  let detailData: CampaignData = { campaign: SAMPLE_DETAIL };
+  let detailData = makeCampaignData({ campaign: SAMPLE_DETAIL });
   let detailErrorCode: string | undefined = undefined;
 
   let commandStatus = 200;
@@ -195,11 +205,11 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
     sentRequests = [];
 
     listStatus = 200;
-    listData = { campaigns: [SAMPLE_LIST_ITEM] };
+    listData = makeCampaignsData({ campaigns: [SAMPLE_LIST_ITEM] });
     listErrorCode = undefined;
 
     detailStatus = 200;
-    detailData = { campaign: SAMPLE_DETAIL };
+    detailData = makeCampaignData({ campaign: SAMPLE_DETAIL });
     detailErrorCode = undefined;
 
     commandStatus = 200;
@@ -371,7 +381,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   // ── 3. Empty campaign list shows create action, not error (§9 row 4) ───────────
   describe('3. Empty list handling (ticket §9 row 4)', () => {
     it('an empty campaign list shows the create action, not an error', async () => {
-      listData = { campaigns: [] };
+      listData = makeCampaignsData({ campaigns: [] });
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
 
@@ -503,21 +513,21 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   // ── 5. Money display from strings, never recomputed (§7 [required]) ─────────────
   describe('5. Money display from strings (ticket §7 [required])', () => {
     it('money is displayed from the strings the views return and is never computed', async () => {
-      listData = {
+      listData = makeCampaignsData({
         campaigns: [
-          {
+          makeCampaignListItem({
             ...SAMPLE_LIST_ITEM,
             budgetThb: '987654.32',
             budgetUsedThb: '123456.78',
             budgetLeftThb: '864197.54',
-            period: {
+            period: makeCampaignPeriodTotals({
               redemptions: 5,
               priceCostThb: '5555.55',
               rewardExpenseThb: '4444.44',
-            },
-          },
+            }),
+          }),
         ],
-      };
+      });
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
@@ -531,14 +541,14 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   // ── 6. M01 list rendering & derived status (D-2) ──────────────────────────────
   describe('6. M01 list view and status rendering (D-2)', () => {
     it('renders list items with name, version, status, budget and uses', async () => {
-      listData = {
+      listData = makeCampaignsData({
         campaigns: [
-          {
+          makeCampaignListItem({
             ...SAMPLE_LIST_ITEM,
             maxUses: 75,
-          },
+          }),
         ],
-      };
+      });
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
 
@@ -550,7 +560,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
     });
 
     it('calls campaignVersionNew (POST /api/campaigns/{id}/versions) to create a new draft version from an active version (D-3, §7 [required])', async () => {
-      detailData = { campaign: SAMPLE_DETAIL }; // ACTIVE version
+      detailData = makeCampaignData({ campaign: SAMPLE_DETAIL }); // ACTIVE version
       commandStatus = 200;
       commandOutput = { versionId: 'ver-2', version: 2, status: 'DRAFT' };
 
@@ -578,7 +588,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   describe('7. Simulation required before submit (D-4, ticket §7 [required], §9 row 2)', () => {
     it('submit is disabled until current version has a fresh simulation', async () => {
       // Draft version with NO simulations: Submit must be disabled
-      detailData = { campaign: DRAFT_DETAIL };
+      detailData = makeCampaignData({ campaign: DRAFT_DETAIL });
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
@@ -594,7 +604,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
 
     it('a version edited after its simulation: Submit is disabled again (§9 row 2)', async () => {
       // Version with a simulation: Submit is enabled before edit
-      detailData = { campaign: SIMULATED_DETAIL };
+      detailData = makeCampaignData({ campaign: SIMULATED_DETAIL });
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
@@ -621,7 +631,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
     });
 
     it('simulationRequired refusal from server is shown worded (§7 [required], §8)', async () => {
-      detailData = { campaign: SIMULATED_DETAIL };
+      detailData = makeCampaignData({ campaign: SIMULATED_DETAIL });
       commandStatus = 400;
       commandErrorCode = 'simulationRequired';
 
@@ -647,7 +657,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
     });
 
     it('calls campaignSimulate (POST /api/campaigns/{id}/simulate) when simulating a version', async () => {
-      detailData = { campaign: DRAFT_DETAIL };
+      detailData = makeCampaignData({ campaign: DRAFT_DETAIL });
       commandStatus = 200;
       commandOutput = {
         simulation: {
@@ -676,7 +686,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
 
     it('submit is disabled when a saved version is back in DRAFT with an old simulation listed (freshness only from status === SIMULATED) (D-4)', async () => {
       // Version has an old simulation listed, but status is back in DRAFT (e.g. after saved edit)
-      detailData = { campaign: DRAFT_WITH_OLD_SIMULATION };
+      detailData = makeCampaignData({ campaign: DRAFT_WITH_OLD_SIMULATION });
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
@@ -695,9 +705,9 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   describe('8. Coupon codes handling (D-9, ticket §7 [required], §9 row 3)', () => {
     it('coupon codes from couponIssue are shown once with a copy action (D-9, §7)', async () => {
       commandStatus = 200;
-      const issueOutput: CouponIssueOutput = {
-        coupons: [{ id: 'cpn-1', code: 'SAVE100' }],
-      };
+      const issueOutput = makeCouponIssueOutput({
+        coupons: [makeIssuedCouponDto({ id: 'cpn-1', code: 'SAVE100' })],
+      });
       commandOutput = issueOutput;
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
@@ -747,7 +757,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
       const replayedOutput = {
         coupons: [{ id: 'cpn-1' }],
       };
-      commandOutput = replayedOutput as unknown as CouponIssueOutput;
+      commandOutput = replayedOutput;
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
@@ -791,14 +801,14 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
 
     it('couponIssue sends RFC 3339 expiresAt from input and a ruleId chosen from version rules without invented id (§7 [required])', async () => {
       const customRuleId = '99999999-9999-9999-9999-999999999999';
-      detailData = {
-        campaign: {
+      detailData = makeCampaignData({
+        campaign: makeCampaignDetail({
           ...SAMPLE_DETAIL,
           versions: [
-            {
+            makeCampaignVersionDetail({
               ...SAMPLE_DETAIL.versions[0],
               rules: [
-                {
+                makeCampaignRuleDetail({
                   id: customRuleId,
                   ruleNo: 1,
                   benefitType: 'RATE_IMPROVEMENT',
@@ -807,12 +817,12 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
                   eligibility: {},
                   calculation: { spreadShare: '0.20' },
                   caps: {},
-                },
+                }),
               ],
-            },
+            }),
           ],
-        },
-      };
+        }),
+      });
 
       commandStatus = 200;
       commandOutput = { coupons: [{ id: 'cpn-1', code: 'PROMO2026' }] };
@@ -868,7 +878,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   // ── 9. staleVersion on save reloads campaign and keeps unsaved fields (§9 row 5)
   describe('9. staleVersion handling on save (D-3, ticket §9 row 5, §8)', () => {
     it('staleVersion reloads campaign and keeps user unsaved fields visible (§9 row 5)', async () => {
-      detailData = { campaign: DRAFT_DETAIL };
+      detailData = makeCampaignData({ campaign: DRAFT_DETAIL });
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
 
@@ -913,7 +923,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   // ── 10. Idempotency-Key retained across retries (§8) ───────────────────────────
   describe('10. Idempotency-Key header retention across retries (§8)', () => {
     it('commands keep one Idempotency-Key per user action across retries', async () => {
-      detailData = { campaign: DRAFT_DETAIL };
+      detailData = makeCampaignData({ campaign: DRAFT_DETAIL });
       commandStatus = 500;
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
       await settle();
@@ -953,7 +963,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
 
     for (const code of errorCodes) {
       it(`shows worded message for error ${code}`, async () => {
-        detailData = { campaign: DRAFT_DETAIL };
+        detailData = makeCampaignData({ campaign: DRAFT_DETAIL });
         commandStatus = 400;
         commandErrorCode = code;
 
@@ -981,7 +991,7 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
   describe('12. Pause and Resume commands (§7)', () => {
     it('calls campaignPause when pausing an active campaign', async () => {
       commandStatus = 200;
-      const pauseOutput: CampaignPauseOutput = { campaignId: 'cmp-1', status: 'PAUSED' };
+      const pauseOutput = makeCampaignPauseOutput({ campaignId: 'cmp-1', status: 'PAUSED' });
       commandOutput = pauseOutput;
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);
@@ -1001,28 +1011,28 @@ describe('MK-8a: Admin Marketing Campaigns (§9 edge cases and §7 [required])',
 
     it('calls campaignResume when resuming a paused campaign', async () => {
       // Mock PAUSED status for both list and detail
-      listData = {
+      listData = makeCampaignsData({
         campaigns: [
-          {
+          makeCampaignListItem({
             ...SAMPLE_LIST_ITEM,
             status: 'PAUSED',
-          },
+          }),
         ],
-      };
-      detailData = {
-        campaign: {
+      });
+      detailData = makeCampaignData({
+        campaign: makeCampaignDetail({
           ...SAMPLE_DETAIL,
           versions: [
-            {
+            makeCampaignVersionDetail({
               ...SAMPLE_DETAIL.versions[0],
               status: 'PAUSED',
-            },
+            }),
           ],
-        },
-      };
+        }),
+      });
 
       commandStatus = 200;
-      const resumeOutput: CampaignResumeOutput = { campaignId: 'cmp-1', status: 'ACTIVE' };
+      const resumeOutput = makeCampaignResumeOutput({ campaignId: 'cmp-1', status: 'ACTIVE' });
       commandOutput = resumeOutput;
 
       dispose = render(() => <Campaigns {...dummyProps()} />, container);

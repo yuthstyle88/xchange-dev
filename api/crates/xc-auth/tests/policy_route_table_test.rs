@@ -148,12 +148,12 @@ fn every_route_and_action_names_its_permission() {
 
 #[test]
 fn the_role_table_holds_what_b1_translates() {
-    // §4.2's "Roles after" column, where §3.4's first table (OR-2) said otherwise
-    let has = |r: Role, p: Permission| RolePermissions::of(r).contains(&p);
+    // §4.2's "Roles after" column, moved to §11.2's seed (`RoleGrants::seed`)
+    let has = |r: Role, p: Permission| RoleGrants::seed(r).contains(&p);
     // StaffFile and the bridge's `documents` let BACKEND and MANAGER in (v2): BRANCH_MANAGER reads them
     assert!(has(Role::BranchManager, Permission::IdentityDocumentRead));
-    // /files refuses RATES and SYSTEM (v2: Not found): RATE_MANAGER and ADMIN hold no FileRead
-    assert!(!has(Role::RateManager, Permission::FileRead));
+    // §11.2: RATE_MANAGER has Documents VIEW (FileRead); ADMIN has no Documents module
+    assert!(has(Role::RateManager, Permission::FileRead));
     assert!(!has(Role::Admin, Permission::FileRead));
     // C6: MARKETING never opens identity documents (§02), on no door
     for p in [
@@ -163,9 +163,7 @@ fn the_role_table_holds_what_b1_translates() {
     ] {
         assert!(!has(Role::Marketing, p), "{p:?}");
     }
-    // #874 (amended by its ticket author claude/f03345fe, per lane controller 2026-10-10): the
-    // branch's manager and FINANCE (RG4 of #682, reversals) decide what each type's policy lets it (T2's over-limit exchange); rates stay
-    // the owner's through `RatePublicationPolicy`
+    // §11.2 "Branch cash basics": ApprovalsDecide is no-module, seeded on EXECUTIVE, BRANCH_MANAGER, and FINANCE
     assert_eq!(
         BLUEPRINT
             .into_iter()
@@ -173,17 +171,27 @@ fn the_role_table_holds_what_b1_translates() {
             .collect::<Vec<_>>(),
         [Role::Executive, Role::BranchManager, Role::Finance]
     );
-    // OWNER-only rows: EXECUTIVE; and nobody else holds them
-    for p in [Permission::ReferenceRatesRead, Permission::RequestAbandon] {
-        assert_eq!(
-            BLUEPRINT
-                .into_iter()
-                .filter(|r| has(*r, p))
-                .collect::<Vec<_>>(),
-            [Role::Executive],
-            "{p:?}"
-        );
-    }
+    // §11.2: ReferenceRatesRead (RatesStock VIEW) is held by EXECUTIVE, RATE_MANAGER, FINANCE, VERIFICATION_REVIEWER
+    assert_eq!(
+        BLUEPRINT
+            .into_iter()
+            .filter(|r| has(*r, Permission::ReferenceRatesRead))
+            .collect::<Vec<_>>(),
+        [
+            Role::Executive,
+            Role::RateManager,
+            Role::Finance,
+            Role::VerificationReviewer
+        ]
+    );
+    // OWNER-only no-module row: EXECUTIVE; and nobody else holds it
+    assert_eq!(
+        BLUEPRINT
+            .into_iter()
+            .filter(|r| has(*r, Permission::RequestAbandon))
+            .collect::<Vec<_>>(),
+        [Role::Executive]
+    );
     // #602's ruling: RATE_MANAGER saves a policy version (the command keeps it to the percents)
     assert_eq!(
         BLUEPRINT

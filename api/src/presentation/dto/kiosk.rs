@@ -375,7 +375,11 @@ pub fn accept_mine_json(times: &WorkTimes) -> V2Json {
     V2Json::object(pairs)
 }
 
-pub fn get_json(req: &KioskRequest, branch_name: &str) -> AppResult<V2Json> {
+pub fn get_json(
+    req: &KioskRequest,
+    branch_name: &str,
+    quote_id: Option<&str>,
+) -> AppResult<V2Json> {
     let queue = queue_of(&req.id);
     let rate_v2 = compat_rate_json(req.quote.rate, req.quote.unit_size)?;
     Ok(V2Json::object(vec![
@@ -398,6 +402,7 @@ pub fn get_json(req: &KioskRequest, branch_name: &str) -> AppResult<V2Json> {
         ("branchName", V2Json::text(branch_name)),
         ("id", V2Json::text(&req.id)),
         ("queue", V2Json::text(&queue)),
+        ("quoteId", quote_id.map_or(V2Json::Null, V2Json::text)),
     ]))
 }
 

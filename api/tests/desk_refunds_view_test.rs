@@ -40,7 +40,9 @@ use chrono::{DateTime, Utc};
 use quote_common::TestDb;
 use serde_json::{Value, json};
 use xc_auth::domain::access::Role as AccessRole;
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::RoleGrants;
+use xc_auth::domain::access::v3_roles::blueprint_roles;
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -543,25 +545,31 @@ async fn callers_are_admitted_exactly_as_the_reversal_request_row_admits() {
     prepare(&db, "MAIN").await;
     one(&db, "MAIN", 1, Stage::Approved, TODAY).await;
     let action = Action::new("reversalRequest");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &action) else {
+        panic!("reversalRequest needs a permission");
+    };
     let mut admitted = Vec::new();
     for who in callers() {
         let actor = legacy_actor_of(&who);
         let (status, body, text) = get(&db, &who, "MAIN").await;
         let what = format!("as {who:?}");
-        match Policy::allow(actor.as_ref(), EntryPath::Rpc, &action) {
-            Ok(()) => {
-                admitted.push(who.clone());
-                assert_eq!(status, StatusCode::OK, "{what}: {text:.300}");
-                assert_eq!(rows(&body["data"]).len(), 1, "{what}: {text:.300}");
-            }
-            Err(_) => {
-                assert!(status.is_client_error(), "{what}: refused: {text:.300}");
-                assert!(
-                    body["error"]["code"].is_string(),
-                    "{what}: an error code: {text:.300}"
-                );
-                assert!(body.get("data").is_none(), "{what}: no data: {text:.300}");
-            }
+        // Under §11.2, admission follows `RoleGrants::seed(role)` for the row's permission.
+        let holds = actor.is_some_and(|a| {
+            blueprint_roles(a.role())
+                .iter()
+                .any(|&r| RoleGrants::seed(r).contains(&perm))
+        });
+        if holds {
+            admitted.push(who.clone());
+            assert_eq!(status, StatusCode::OK, "{what}: {text:.300}");
+            assert_eq!(rows(&body["data"]).len(), 1, "{what}: {text:.300}");
+        } else {
+            assert!(status.is_client_error(), "{what}: refused: {text:.300}");
+            assert!(
+                body["error"]["code"].is_string(),
+                "{what}: an error code: {text:.300}"
+            );
+            assert!(body.get("data").is_none(), "{what}: no data: {text:.300}");
         }
     }
     assert!(

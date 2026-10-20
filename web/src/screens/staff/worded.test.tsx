@@ -4,21 +4,21 @@ import { setLang } from '../../shared/i18n';
 import { th } from '../../shared/i18n/th';
 import { en } from '../../shared/i18n/en';
 import { ApiClient } from '../../shared/api/client';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
+import { makeStaffMeView } from '../../shared/testing/fixtures';
 import { StaffPage } from './StaffPage';
 
 describe('StaffPage: wordedError on failed calls (WE-38 #1787)', () => {
   let host: HTMLDivElement | undefined;
   let dispose: (() => void) | undefined;
 
-  const staffMe: StaffMeView = {
+  const staffMe = makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000a1',
     name: 'Ploy',
     roles: [],
     branchId: 'MAIN',
     branchName: 'XC-B',
     permissions: [],
-  };
+  });
 
   beforeEach(() => {
     setLang('th');

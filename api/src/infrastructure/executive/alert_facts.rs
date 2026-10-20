@@ -13,6 +13,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use serde_json::Value;
 use sqlx::PgPool;
+use uuid::Uuid;
 use xc_kernel::ids::BranchId;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::infrastructure::custody::decode::exception_from_row;
@@ -145,8 +146,9 @@ impl PgAlertFacts {
 
     async fn low_stock(&self, scope: &[BranchId]) -> AppResult<Vec<Alert>> {
         let ids: Vec<String> = scope.iter().map(|b| b.as_str().to_owned()).collect();
-        let rows: Vec<(String, String, Decimal, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT branch_id, currency, min_quantity, updated_at FROM branch_stock_floors \
+        let rows: Vec<(Uuid, String, String, Decimal, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT organization_id, branch_id, currency, min_quantity, updated_at \
+               FROM branch_stock_floors \
               WHERE branch_id = ANY($1) AND min_quantity > 0 \
               ORDER BY branch_id, currency",
         )
@@ -158,8 +160,10 @@ impl PgAlertFacts {
         let mut alerts = Vec::new();
         let mut on_hand_cache: HashMap<BranchId, Vec<(CurrencyCode, Decimal)>> = HashMap::new();
 
-        for (branch_str, currency, floor, updated_at) in rows {
+        for (organization_id, branch_str, currency, floor, updated_at) in rows {
             let code = currency.trim().to_string();
+            let currency_code = CurrencyCode::parse(&code)
+                .map_err(|_| AppError::Internal(format!("low stock: currency {code:?}")))?;
             let branch = BranchId::new(branch_str.clone());
 
             let on_hand_list = if let Some(cached) = on_hand_cache.get(&branch) {
@@ -175,7 +179,20 @@ impl PgAlertFacts {
                 .map(|(_, q)| *q)
                 .unwrap_or(Decimal::ZERO);
 
-            if on_hand < floor {
+            let mut conn = self.pool.acquire().await.map_err(AppError::Database)?;
+            let reserved = xc_cash::infrastructure::stock_reservations::active_reserved_in(
+                &mut conn,
+                organization_id,
+                &branch,
+                currency_code,
+                Utc::now(),
+            )
+            .await?;
+            drop(conn);
+
+            let available = on_hand - reserved;
+
+            if available < floor {
                 alerts.push(Alert {
                     kind: AlertKind::LowStock,
                     drilldown: Some(Drilldown::to(
@@ -184,7 +201,9 @@ impl PgAlertFacts {
                     )),
                     branch,
                     since: Some(updated_at),
-                    detail: format!("{code}: on hand {on_hand}, floor {floor}"),
+                    detail: format!(
+                        "{code}: available {available} (on hand {on_hand}, reserved {reserved}), floor {floor}"
+                    ),
                 });
             }
         }

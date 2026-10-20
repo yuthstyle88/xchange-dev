@@ -6,28 +6,32 @@ import { th as sharedTh } from '../../../shared/i18n/th';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { Payments } from './Payments';
 import { PAGE_WIDE } from '../../../shared/testing/page-wide';
-import type { AdminPaymentsData } from '../../../shared/api/generated/admin_payments';
+import {
+  makeAdminPaymentsData,
+  makePaymentMethodItem,
+  type AdminPaymentsData,
+} from '../../../shared/testing/fixtures';
 
 const SAMPLE_BRANCHES = [
   { id: 'MAIN', name: 'Main Desk' },
   { id: 'B2', name: 'Branch 2' },
 ];
 
-const SAMPLE_PAYMENTS_DATA: AdminPaymentsData = {
+const SAMPLE_PAYMENTS_DATA: AdminPaymentsData = makeAdminPaymentsData({
   branchId: 'MAIN',
   settingsVersion: 1,
   methods: [
-    { id: 'Cash', enabled: true, buy: true, sell: true, account: 'Main Cash', instruction: 'Pay at counter' },
-    { id: 'Credit Card', enabled: false, buy: false, sell: true, account: '', instruction: '' },
-    { id: 'Alipay', enabled: false, buy: false, sell: true, account: '', instruction: '' },
-    { id: 'PromptPay', enabled: false, buy: false, sell: true, account: '', instruction: '' },
-    { id: 'Bank Transfer', enabled: false, buy: false, sell: true, account: '', instruction: '' },
+    makePaymentMethodItem({ id: 'Cash', enabled: true, buy: true, sell: true, account: 'Main Cash', instruction: 'Pay at counter' }),
+    makePaymentMethodItem({ id: 'Credit Card', enabled: false, buy: false, sell: true, account: '', instruction: '' }),
+    makePaymentMethodItem({ id: 'Alipay', enabled: false, buy: false, sell: true, account: '', instruction: '' }),
+    makePaymentMethodItem({ id: 'PromptPay', enabled: false, buy: false, sell: true, account: '', instruction: '' }),
+    makePaymentMethodItem({ id: 'Bank Transfer', enabled: false, buy: false, sell: true, account: '', instruction: '' }),
   ],
   updatedAt: null,
   updatedBy: null,
   canEdit: true,
   history: [],
-};
+});
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

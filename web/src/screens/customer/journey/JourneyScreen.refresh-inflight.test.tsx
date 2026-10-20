@@ -1,12 +1,14 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { PlannerDraftDto } from '../../../shared/api/generated/my_planner_drafts';
-import type { MyQueueTicketData } from '../../../shared/api/generated/my_queue_ticket';
+import {
+  makeMyQueueTicketData,
+  makePlannerDraftDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { JourneyScreen } from './JourneyScreen';
 
-const WAITING_TICKET: MyQueueTicketData = {
+const WAITING_TICKET = makeMyQueueTicketData({
   ticketId: 'tkt-01',
   branch: 'SIAM',
   displayNumber: 'A001',
@@ -17,9 +19,9 @@ const WAITING_TICKET: MyQueueTicketData = {
   estimateLowSeconds: 240,
   estimateHighSeconds: 360,
   estimateAsOf: '2026-10-15T10:00:00Z',
-};
+});
 
-const CALLED_TICKET: MyQueueTicketData = {
+const CALLED_TICKET = makeMyQueueTicketData({
   ticketId: 'tkt-01',
   branch: 'SIAM',
   displayNumber: 'A001',
@@ -30,9 +32,9 @@ const CALLED_TICKET: MyQueueTicketData = {
   estimateLowSeconds: 0,
   estimateHighSeconds: 0,
   estimateAsOf: '2026-10-15T10:05:00Z',
-};
+});
 
-const DRAFT_1: PlannerDraftDto = {
+const DRAFT_1 = makePlannerDraftDto({
   id: 'draft-01',
   branch: 'SIAM',
   currency: 'USD',
@@ -42,9 +44,9 @@ const DRAFT_1: PlannerDraftDto = {
   expiresAt: '2026-10-22T10:00:00Z',
   createdAt: '2026-10-15T10:00:00Z',
   updatedAt: '2026-10-15T10:00:00Z',
-};
+});
 
-const DRAFT_2: PlannerDraftDto = {
+const DRAFT_2 = makePlannerDraftDto({
   id: 'draft-02',
   branch: 'SIAM',
   currency: 'JPY',
@@ -54,7 +56,7 @@ const DRAFT_2: PlannerDraftDto = {
   expiresAt: '2026-10-22T10:00:00Z',
   createdAt: '2026-10-15T10:00:00Z',
   updatedAt: '2026-10-15T10:00:00Z',
-};
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {

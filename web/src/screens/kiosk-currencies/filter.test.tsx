@@ -10,7 +10,7 @@
 // §4.9 R1, §9 RE-6): `currency()` fills the view's new `unitSize` with `'1'`. The search does not
 // read it.
 import { describe, expect, it } from 'vitest';
-import type { KioskCurrency } from '../../shared/api/generated/kiosk_currencies';
+import { makeKioskCountry, makeKioskCurrency } from '../../shared/testing/fixtures';
 import { matches } from './filter';
 
 function currency(
@@ -18,12 +18,12 @@ function currency(
   name: string,
   nameEn: string,
   countries: Array<[string, string, string]>,
-): KioskCurrency {
-  return {
+) {
+  return makeKioskCurrency({
     code,
     name,
     nameEn,
-    countries: countries.map(([c, en, th]) => ({ code: c, en, th })),
+    countries: countries.map(([c, en, th]) => makeKioskCountry({ code: c, en, th })),
     buy: null,
     sell: null,
     unitSize: '1',
@@ -32,7 +32,7 @@ function currency(
     partnerCost: null,
     enabled: false,
     kbank: [],
-  };
+  });
 }
 
 const JPY = currency('JPY', 'เยนญี่ปุ่น', 'Japanese Yen', [['JP', 'Japan', 'ญี่ปุ่น']]);

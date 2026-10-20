@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import type { AdminMenu } from '../menus';
 import { closeDialog, Dialog } from '../parts/Dialog';
@@ -29,8 +29,8 @@ function theMenu(): AdminMenu {
 
 const VIEW = 'admin_transactions';
 
-function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function tx(n: number, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: `XC-20261008-${String(n).padStart(6, '0')}`,
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -58,7 +58,7 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 interface Seen {

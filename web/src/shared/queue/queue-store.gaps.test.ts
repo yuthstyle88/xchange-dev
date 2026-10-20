@@ -6,10 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Amended for QU-6 (#1354; this directory is the ticket's) by the implementer claude/709ec749: the store polls
 // `queue_board`, so the fixture is `QueueBoardData` (one waiting ticket kq-1). Fixture only; no assertion changes.
 import { createRoot, createSignal, type Accessor } from 'solid-js';
-import type { ApiClient, ViewAnswer, ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
+import type { ApiClient, ViewParams } from '../api/client';
 import type { SessionStore } from '../session/session';
-import type { QueueBoardData } from './wire';
+import {
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  makeViewAnswer,
+  type Me,
+  type QueueBoardData,
+  type ViewAnswer,
+} from '../testing/fixtures';
 import { queueStore, useQueueStore, type QueueStore } from './queue-store';
 import { meOf } from '../../test-support/me';
 
@@ -30,13 +36,21 @@ function freshBranch(): string {
   return `QS-GAP-${branchNo}`;
 }
 
-function board(over: Partial<QueueBoardData> = {}): QueueBoardData {
-  return {
-    waiting: [{ id: 'kq-1', displayNumber: 'W001', serviceType: 'WALK_IN', sequence: 1, issuedAt: new Date(T0).toISOString() }],
+function board(over: Partial<QueueBoardData> = {}) {
+  return makeQueueBoardData({
+    waiting: [
+      makeQueueBoardWaiting({
+        id: 'kq-1',
+        displayNumber: 'W001',
+        serviceType: 'WALK_IN',
+        sequence: 1,
+        issuedAt: new Date(T0).toISOString(),
+      }),
+    ],
     called: [],
     myCounter: null,
     ...over,
-  };
+  });
 }
 
 class FakeServer {
@@ -59,9 +73,9 @@ class FakeServer {
       this.names.push(name);
       this.calls.push({ ...params });
       if (params.since !== undefined && params.since === this.version) {
-        return { version: this.version, changed: false };
+        return makeViewAnswer(undefined as unknown as T, { version: this.version, changed: false });
       }
-      return { version: this.version, changed: true, data: this.data as unknown as T };
+      return makeViewAnswer(this.data as unknown as T, { version: this.version, changed: true });
     },
     post: async () => ({}),
   };

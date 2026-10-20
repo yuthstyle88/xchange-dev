@@ -7,10 +7,14 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
-import type { DeviceEventRow } from '../../shared/api/generated/device_events';
-import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
-import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
-import type { DevicesOverview } from '../../shared/api/generated/devices';
+import {
+  type DeviceEventRow,
+  type DeviceJobRow,
+  type DeviceTransactionRow,
+  type DevicesOverview,
+  makeDeviceBranch,
+  makeDevicesOverview,
+} from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { DevicesScreen } from './DevicesScreen';
 
@@ -33,10 +37,10 @@ interface BranchData {
   olderTransactions: Record<string, DeviceTransactionRow[]>;
 }
 
-function overview(branchId: string): DevicesOverview {
-  return {
+function overview(branchId: string) {
+  return makeDevicesOverview({
     branchId,
-    branches: [{ id: branchId, name: branchId }],
+    branches: [makeDeviceBranch({ id: branchId, name: branchId })],
     printerOnline: true,
     printerKind: 'SIMULATED',
     printerModel: 'NEOCAL NTP-8220BT',
@@ -45,7 +49,7 @@ function overview(branchId: string): DevicesOverview {
     balanceThb: '100.00',
     balanceUsd: '50.00',
     completedCount: 1,
-  };
+  });
 }
 
 class FakeServer {

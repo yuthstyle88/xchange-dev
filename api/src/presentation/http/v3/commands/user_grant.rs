@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::application::user::user_service::{UserService, creator_may_grant};
-use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_auth::domain::access::{Actor, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::infrastructure::user::PgUserRepository;
 use xc_kernel::ids::BranchId;
@@ -67,7 +67,7 @@ impl CommandAction for UserGrantCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let role = parse_role(&input.role)?;
+        let base = parse_role(&input.role)?;
         let valid_from = match input.valid_from.as_deref() {
             Some(text) => parse_instant(text, "validFrom")?,
             None => Utc::now(),
@@ -85,8 +85,9 @@ impl CommandAction for UserGrantCommand {
         let role_branch = role_branch(input.branch.as_deref())?;
         if !creator_may_grant(
             &who.roles,
-            &[ScopedRole::new(
-                role,
+            &[ScopedRole::in_group(
+                &input.role,
+                base,
                 role_branch.clone(),
                 valid_from,
                 valid_to,
@@ -97,7 +98,17 @@ impl CommandAction for UserGrantCommand {
         }
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
-            .grant(tx, who, request_ip().as_deref(), &user_id, role, role_branch, valid_from, valid_to)
+            .grant_group(
+                tx,
+                who,
+                request_ip().as_deref(),
+                &user_id,
+                &input.role,
+                base,
+                role_branch,
+                valid_from,
+                valid_to,
+            )
             .await
             .map_err(from_change_error)?;
         changed(tx, &user_id).await
@@ -121,13 +132,16 @@ pub(crate) fn users() -> UserService {
     UserService::new(Arc::new(PgUserRepository::new()))
 }
 
-pub(crate) fn validation_failed(field: Option<&'static str>, message: impl Into<String>) -> V3Error {
+pub(crate) fn validation_failed(
+    field: Option<&'static str>,
+    message: impl Into<String>,
+) -> V3Error {
     V3Error::new("validationFailed", field, message, StatusCode::BAD_REQUEST)
 }
 
-/// A Blueprint role name (`role.rs`), else `validationFailed` on `role`.
+/// A Blueprint role or custom group code (`RoleGrants::base_of`), else `validationFailed` on `role`.
 pub(crate) fn parse_role(text: &str) -> Result<Role, V3Error> {
-    Role::parse(text).ok_or_else(|| validation_failed(Some("role"), "unknown role"))
+    RoleGrants::base_of(text).ok_or_else(|| validation_failed(Some("role"), "unknown role"))
 }
 
 /// The role's own branch: `null` is organisation-wide.
@@ -189,7 +203,9 @@ pub(crate) fn custody_holds() -> std::sync::Arc<dyn xc_auth::domain::user::Custo
 
 /// Maps an account-change refusal to the wire (design §3.6; codes in the C1a ticket §7, plus `409 statusNotAllowed`,
 /// ruling #564 issuecomment-6246076019 Q6). Skeleton: only `App` is mapped; the rest is the RBAC function ticket.
-pub(crate) fn from_change_error(e: xc_auth::application::user::user_service::UserChangeError) -> V3Error {
+pub(crate) fn from_change_error(
+    e: xc_auth::application::user::user_service::UserChangeError,
+) -> V3Error {
     use xc_auth::application::user::user_service::UserChangeError;
     use xc_auth::domain::access::GrantRefusal;
 
@@ -205,32 +221,36 @@ pub(crate) fn from_change_error(e: xc_auth::application::user::user_service::Use
             GrantRefusal::ProtectedTarget
             | GrantRefusal::ProtectedRole
             | GrantRefusal::EnableNeedsExecutive,
-        ) => V3Error::new("roleNotAllowed", None, "role not allowed", StatusCode::FORBIDDEN),
+        ) => V3Error::new(
+            "roleNotAllowed",
+            None,
+            "role not allowed",
+            StatusCode::FORBIDDEN,
+        ),
         UserChangeError::Refused(GrantRefusal::LastOwner) => {
             V3Error::new("lastOwner", None, "last owner", StatusCode::CONFLICT)
         }
         UserChangeError::Refused(GrantRefusal::Scope(e)) => {
             validation_failed(None, format!("Scope rule rejected: {e}"))
         }
-        UserChangeError::NotActive => {
-            V3Error::new("userNotActive", None, "user not active", StatusCode::CONFLICT)
-        }
-        UserChangeError::HoldsCash => {
-            V3Error::new(
-                "holdsCash",
-                None,
-                "user holds cash or a pending handover",
-                StatusCode::CONFLICT,
-            )
-        }
-        UserChangeError::NotBound => {
-            V3Error::new(
-                "notBound",
-                None,
-                "user not bound to an identity",
-                StatusCode::CONFLICT,
-            )
-        }
+        UserChangeError::NotActive => V3Error::new(
+            "userNotActive",
+            None,
+            "user not active",
+            StatusCode::CONFLICT,
+        ),
+        UserChangeError::HoldsCash => V3Error::new(
+            "holdsCash",
+            None,
+            "user holds cash or a pending handover",
+            StatusCode::CONFLICT,
+        ),
+        UserChangeError::NotBound => V3Error::new(
+            "notBound",
+            None,
+            "user not bound to an identity",
+            StatusCode::CONFLICT,
+        ),
         UserChangeError::BadMove { from, to } => V3Error::new(
             "statusNotAllowed",
             None,
@@ -248,12 +268,9 @@ pub(crate) fn from_app_error(e: AppError) -> V3Error {
         AppError::Domain(message) | AppError::Validation(message) => {
             validation_failed(None, message)
         }
-        AppError::Conflict(message) => V3Error::new(
-            "conflict",
-            None,
-            message,
-            StatusCode::CONFLICT,
-        ),
+        AppError::Conflict(message) => {
+            V3Error::new("conflict", None, message, StatusCode::CONFLICT)
+        }
         other => {
             tracing::error!(error = %other, "user command failed");
             server_error()

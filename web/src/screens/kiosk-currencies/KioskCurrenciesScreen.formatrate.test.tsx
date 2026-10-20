@@ -19,8 +19,17 @@
 // the screen's table keeps `th.buy` / `th.sell` (read through the table).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { ApiClient, ViewAnswer } from '../../shared/api/client';
-import type { KioskCurrencies, KioskCurrency } from '../../shared/api/generated/kiosk_currencies';
+import type { ApiClient } from '../../shared/api/client';
+import {
+  makeKbankComparison,
+  makeKbankReference,
+  makeKioskCountry,
+  makeKioskCurrencies,
+  makeKioskCurrency,
+  makeRateFreshnessDto,
+  makeViewAnswer,
+  type ViewAnswer,
+} from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { formatRate } from '../../shared/ui/rate';
 import { th } from './i18n';
@@ -30,11 +39,11 @@ vi.mock('../../shared/ui/rate', () => ({
   formatRate: vi.fn((rate: string, unitSize: number | string, code: string) => `fmt[${rate}|${unitSize}|${code}]`),
 }));
 
-const CNY: KioskCurrency = {
+const CNY = makeKioskCurrency({
   code: 'CNY',
   name: 'หยวนจีน',
   nameEn: 'Chinese Yuan',
-  countries: [{ code: 'CN', en: 'China', th: 'จีน' }],
+  countries: [makeKioskCountry({ code: 'CN', en: 'China', th: 'จีน' })],
   buy: '45.67800000',
   sell: null,
   unitSize: '10',
@@ -43,15 +52,15 @@ const CNY: KioskCurrency = {
   partnerCost: null,
   enabled: true,
   kbank: [
-    { label: 'CNY', bankBuy: '4.41000', shopBuy: '4.56780', buyDifference: '0.15780', bankSell: null, shopSell: null, sellDifference: null },
+    makeKbankComparison({ label: 'CNY', bankBuy: '4.41000', shopBuy: '4.56780', buyDifference: '0.15780', bankSell: null, shopSell: null, sellDifference: null }),
   ],
-};
+});
 
-const JPY: KioskCurrency = {
+const JPY = makeKioskCurrency({
   code: 'JPY',
   name: 'เยนญี่ปุ่น',
   nameEn: 'Japanese Yen',
-  countries: [{ code: 'JP', en: 'Japan', th: 'ญี่ปุ่น' }],
+  countries: [makeKioskCountry({ code: 'JP', en: 'Japan', th: 'ญี่ปุ่น' })],
   buy: '23.50000000',
   sell: '24.10000000',
   unitSize: '100',
@@ -60,24 +69,26 @@ const JPY: KioskCurrency = {
   partnerCost: null,
   enabled: false,
   kbank: [],
-};
+});
 
-function answer(): ViewAnswer<KioskCurrencies> {
-  return {
-    version: 1,
-    changed: true,
-    data: {
+function answer() {
+  return makeViewAnswer(
+    makeKioskCurrencies({
       currencies: [CNY, JPY],
-      kbank: { source: 'https://www.kasikornbank.com/', publishedAt: '2026-10-02T22:16:01+07:00', round: 10 },
+      kbank: makeKbankReference({ source: 'https://www.kasikornbank.com/', publishedAt: '2026-10-02T22:16:01+07:00', round: 10 }),
       // RF-3 (rates.md §4.10): the view's answer gains `freshness`; re-expected by the RF-3 ticket author.
-      freshness: { stale: false, sourceDate: null, publishedAt: null },
+      freshness: makeRateFreshnessDto({ stale: false, sourceDate: null, publishedAt: null }),
+    }),
+    {
+      version: 1,
+      changed: true,
     },
-  };
+  );
 }
 
 const api: Pick<ApiClient, 'view' | 'post'> = {
   view<T>(): Promise<ViewAnswer<T>> {
-    return Promise.resolve(structuredClone(answer()) as unknown as ViewAnswer<T>);
+    return Promise.resolve(structuredClone(answer()) as any);
   },
   post<B, R>(_path: string, _body: B): Promise<R> {
     return Promise.resolve({ saved: true } as unknown as R);

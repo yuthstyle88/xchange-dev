@@ -2,8 +2,12 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OrgStartingPriceSaveOutput } from '../../../shared/api/generated/org_starting_price_save';
-import type { OrgStartingPriceItem } from '../../../shared/api/generated/org_starting_prices';
+import {
+  makeOrgStartingPriceItem,
+  makeOrgStartingPriceSaveOutput,
+  type OrgStartingPriceItem,
+  type OrgStartingPriceSaveOutput,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { Toast } from '../parts/toast';
@@ -33,10 +37,10 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
   let container: HTMLDivElement;
   let dispose: (() => void) | null = null;
   let sentRequests: SentRequest[] = [];
-  let viewItems: OrgStartingPriceItem[] = [];
+  let viewItems: OrgStartingPriceItem[];
   let viewStatus = 200;
   let saveStatus = 200;
-  let saveOutput: OrgStartingPriceSaveOutput = { unpriced: [] };
+  let saveOutput: OrgStartingPriceSaveOutput = makeOrgStartingPriceSaveOutput({ unpriced: [] });
   let saveErrorCode: string | undefined = undefined;
   let saveErrorField: string | undefined = undefined;
   let saveErrorMessage: string | undefined = undefined;
@@ -49,7 +53,7 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
     viewItems = [];
     viewStatus = 200;
     saveStatus = 200;
-    saveOutput = { unpriced: [] };
+    saveOutput = makeOrgStartingPriceSaveOutput({ unpriced: [] });
     saveErrorCode = undefined;
     saveErrorField = undefined;
     saveErrorMessage = undefined;
@@ -131,7 +135,7 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
   // Row 1: Save succeeds -> Reason field empty
   it('row 1: Save succeeds -> Reason field empty', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' }),
     ];
     mount();
 
@@ -165,8 +169,8 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
   // Row 2: Then another change without typing a reason -> Refused with the reason-required message
   it('row 2: Then another change without typing a reason -> Refused with the reason-required message', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r1' },
-      { currency: 'EUR', version: 1, buy: '38.00', sell: '38.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r2' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r1' }),
+      makeOrgStartingPriceItem({ currency: 'EUR', version: 1, buy: '38.00', sell: '38.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r2' }),
     ];
     mount();
 
@@ -186,8 +190,8 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
 
     // Prepare updated view data so after save, USD version 2 is loaded
     viewItems = [
-      { currency: 'USD', version: 2, buy: '34.20', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T11:00:00Z', reason: 'First reason' },
-      { currency: 'EUR', version: 1, buy: '38.00', sell: '38.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r2' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 2, buy: '34.20', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T11:00:00Z', reason: 'First reason' }),
+      makeOrgStartingPriceItem({ currency: 'EUR', version: 1, buy: '38.00', sell: '38.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r2' }),
     ];
 
     const saveBtn = container.querySelector('.xc-sp-save-btn') as HTMLButtonElement;
@@ -221,7 +225,7 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
   // Row 3: Refused save keeps the reason (kept behaviour)
   it('row 3: Refused save keeps the reason', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' }),
     ];
     mount();
 
@@ -257,7 +261,7 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
   // Edge case §9: Nothing else is reset beyond today's behaviour
   it('edge case §9: Nothing else is reset beyond today\'s behaviour', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' }),
     ];
     mount();
 
@@ -275,9 +279,9 @@ describe('Ticket #2597: StartingPrices reason reset on successful save', () => {
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
 
     saveStatus = 200;
-    saveOutput = {
+    saveOutput = makeOrgStartingPriceSaveOutput({
       unpriced: [{ branch: 'B2', reason: 'noPolicy' }],
-    };
+    });
 
     const saveBtn = container.querySelector('.xc-sp-save-btn') as HTMLButtonElement;
     saveBtn.click();

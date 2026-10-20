@@ -11,14 +11,12 @@ use actix_web::web;
 use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
-use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::admin_users::{AdminUserRole, AdminUserRow};
-use crate::presentation::dto::v3::common::NoFilter;
+use crate::presentation::dto::v3::admin_users::{AdminUserRole, AdminUserRow, AdminUsersFilter};
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
 /// `(user_id, role_code, branch_id, valid_from, valid_to)` of one `user_roles` row.
@@ -43,19 +41,21 @@ impl AdminUsersPagedView {
 impl PagedView for AdminUsersPagedView {
     const NAME: &'static str = "admin_users";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminUsers");
+    const CURSOR_FIELD: &'static str = "userId";
     type Row = AdminUserRow;
-    type Filter = NoFilter;
+    type Filter = AdminUsersFilter;
 
     fn page(
         &self,
         branch: &BranchId,
         _who: &Actor,
-        _filter: &Self::Filter,
+        filter: &Self::Filter,
         before: Option<RowId>,
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
+        let filter = filter.clone();
         async move {
             type UserSqlRow = (
                 String,
@@ -67,20 +67,46 @@ impl PagedView for AdminUsersPagedView {
                 String,
                 i32,
             );
-            let users: Vec<UserSqlRow> = sqlx::query_as(
+            let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
                 "SELECT u.id::text, u.name, u.employee_code, u.department, u.position, u.tell_code, u.status, u.version \
-                 FROM users u JOIN branches b ON b.id = $1 AND u.organization_id = b.organization_id \
-                 WHERE $2::text IS NULL \
-                    OR (u.name, u.id::text) > (SELECT p.name, p.id::text FROM users p JOIN branches pb ON pb.id = $1 AND p.organization_id = pb.organization_id WHERE p.id::text = $2) \
-                 ORDER BY u.name, u.id \
-                 LIMIT $3",
-            )
-            .bind(&branch)
-            .bind(before.as_deref())
-            .bind(i64::from(limit))
-            .fetch_all(&pool)
-            .await
-            .map_err(AppError::Database)?;
+                 FROM users u JOIN branches b ON b.id = ",
+            );
+            builder.push_bind(&branch);
+            builder.push(" AND u.organization_id = b.organization_id WHERE 1=1");
+
+            if let Some(ref before_id) = before {
+                builder.push(
+                    " AND (u.name, u.id::text) > (SELECT p.name, p.id::text FROM users p JOIN branches pb ON pb.id = ",
+                );
+                builder.push_bind(&branch);
+                builder.push(" AND p.organization_id = pb.organization_id WHERE p.id::text = ");
+                builder.push_bind(before_id);
+                builder.push(")");
+            }
+
+            if let Some(ref q) = filter.q
+                && !q.is_empty()
+            {
+                builder.push(
+                    " AND (lower(normalize(u.name, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(",
+                );
+                builder.push_bind(q.as_str());
+                builder.push(
+                    ", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\' \
+                     OR lower(normalize(coalesce(u.employee_code, ''), NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(",
+                );
+                builder.push_bind(q.as_str());
+                builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\')");
+            }
+
+            builder.push(" ORDER BY u.name, u.id LIMIT ");
+            builder.push_bind(i64::from(limit));
+
+            let users: Vec<UserSqlRow> = builder
+                .build_query_as()
+                .fetch_all(&pool)
+                .await
+                .map_err(AppError::Database)?;
 
             let ids: Vec<String> = users.iter().map(|u| u.0.clone()).collect();
             let roles: Vec<RoleRow> =
@@ -140,8 +166,5 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
-    let cfg = ts_rs::Config::new().with_out_dir(dir);
-    AdminUserRole::export_all(&cfg)?;
-    AdminUserRow::export_all(&cfg)?;
-    Ok(())
+    crate::presentation::dto::v3::admin_users::export_types(dir)
 }

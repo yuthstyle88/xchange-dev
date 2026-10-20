@@ -15,15 +15,15 @@ use xc_auth::domain::access::{Actor, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
+use super::user_grant::{
+    changed, from_change_error, parse_role, role_branch, user_in_organisation, users,
+};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, request_ip,
 };
 use crate::presentation::http::v3::error::V3Error;
-use super::user_grant::{
-    changed, from_change_error, parse_role, role_branch, user_in_organisation, users,
-};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -62,19 +62,34 @@ impl CommandAction for UserRevokeCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let role = parse_role(&input.role)?;
+        let base = parse_role(&input.role)?;
         let role_branch = role_branch(input.branch.as_deref())?;
         let now = chrono::Utc::now();
         if !creator_may_grant(
             &who.roles,
-            &[ScopedRole::new(role, role_branch.clone(), now, None)],
+            &[ScopedRole::in_group(
+                &input.role,
+                base,
+                role_branch.clone(),
+                now,
+                None,
+            )],
             now,
         ) {
             return Err(out_of_scope());
         }
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
         users()
-            .revoke(tx, who, request_ip().as_deref(), &user_id, role, role_branch.as_ref(), now)
+            .revoke_group(
+                tx,
+                who,
+                request_ip().as_deref(),
+                &user_id,
+                &input.role,
+                base,
+                role_branch.as_ref(),
+                now,
+            )
             .await
             .map_err(from_change_error)?;
         let out = changed(tx, &user_id).await?;

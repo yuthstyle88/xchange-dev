@@ -242,9 +242,31 @@ impl CompleteExchange {
             DeviceService::require_count_confirmed(t.payment.method.is_cash(), t.count_confirmed)?;
         }
 
-        // 5. Both legs in one posting, never allowing negative stock (Q7); the costs it answers go on the lines
+        // 5a. Consume the quote's stock reservations, before the posting (B05 D-5; Blueprint §09 order)
+        let (branch_name, reversible_until) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
+        let facts = ExchangeCompletedFacts {
+            organization_id: t.organization_id,
+            branch_id: t.branch_id.clone(),
+            transaction_id: id.0,
+            quote_id,
+            customer_id: (!t.customer_id.is_empty()).then(|| t.customer_id.clone()),
+            mode: t.mode,
+            completed_at: now,
+            business_date: t.value_date,
+            reversible_until,
+        };
+        self.effects
+            .run_completed_in(tx, EffectPhase::Consume, &facts)
+            .await?;
+
+        // 5. Both legs in one posting, allowing negative stock when an APPROVED NEGATIVE_STOCK request names this exchange (#3405 §7)
         if let Some(shift) = &shift {
-            let posted = self.postings.post_in(tx, &legs(&t, shift)?, None).await?;
+            let allow_negative =
+                super::negative_stock_gate::NegativeStockGate::approved_for_in(tx, id).await?;
+            let posted = self
+                .postings
+                .post_in(tx, &legs(&t, shift)?, allow_negative)
+                .await?;
             let costs: Vec<LineCosts> = posted
                 .costs
                 .iter()
@@ -258,18 +280,6 @@ impl CompleteExchange {
         }
 
         // 6. Redeem the benefit, before COMPLETED (membership-points §6.2)
-        let (branch_name, reversible_until) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
-        let facts = ExchangeCompletedFacts {
-            organization_id: t.organization_id,
-            branch_id: t.branch_id.clone(),
-            transaction_id: id.0,
-            quote_id,
-            customer_id: (!t.customer_id.is_empty()).then(|| t.customer_id.clone()),
-            mode: t.mode,
-            completed_at: now,
-            business_date: t.value_date,
-            reversible_until,
-        };
         self.effects
             .run_completed_in(tx, EffectPhase::Redeem, &facts)
             .await?;

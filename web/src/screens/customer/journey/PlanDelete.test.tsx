@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { PlannerDraftDto } from '../../../shared/api/generated/my_planner_drafts';
+import { makePlannerDraftDto } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { PlanDelete } from './PlanDelete';
 
@@ -13,14 +13,14 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-const DRAFT = {
+const DRAFT = makePlannerDraftDto({
   id: 'pd-1',
   branch: null,
   currency: 'USD',
   customerSide: 'CUSTOMER_BUY',
   amount: { quantity: '100' },
   expiresAt: '2099-01-01T00:00:00Z',
-} as unknown as PlannerDraftDto;
+});
 
 function server(replies: Reply[] = []) {
   const writes: { path: string; key: string | null; body: unknown }[] = [];

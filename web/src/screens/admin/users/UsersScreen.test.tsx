@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow, type AdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 import { menu } from './menu';
 import { permissionsOf, rolesOf } from '../../../test-support/me';
@@ -18,49 +18,49 @@ const BRANCHES_DATA = {
   ],
 };
 
-const SEED_USERS: AdminUserRow[] = [
-  {
+const SEED_USERS = [
+  makeAdminUserRow({
     userId: 'u-1',
     name: 'Somchai Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
-  {
+  }),
+  makeAdminUserRow({
     userId: 'u-2',
     name: 'Somsak Invited',
     status: 'INVITED',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'FINANCE',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
-  {
+  }),
+  makeAdminUserRow({
     userId: 'u-3',
     name: 'Somying Disabled',
     status: 'DISABLED',
     version: 2,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: '2026-10-05T00:00:00Z',
-      },
+      }),
     ],
-  },
+  }),
 ];
 
 function json(body: unknown, status = 200): Response {
@@ -301,13 +301,13 @@ describe('A05 UsersScreen', () => {
 
   it('activating a row whose roles is [] posts a body with roles: [], and no role the row does not have appears in the body', async () => {
     usersData = [
-      {
+      makeAdminUserRow({
         userId: 'u-noroles',
         name: 'No Roles User',
         status: 'INVITED',
         version: 1,
         roles: [],
-      },
+      }),
     ];
     const { container } = mount();
     await flush();

@@ -364,7 +364,9 @@ async fn the_owner_attaches_too() {
 async fn no_other_role_attaches_and_a_teller_stays_in_their_branch() {
     let db = TestDb::start().await;
     let tx = db.exchange(B01, "C-1").await;
-    for who in ["BRANCH_MANAGER@XC-B01", "FINANCE@XC-B01", "MARKETING@*"] {
+    // Under RBAC §11.2, BranchManager holds ReferralAttach (Customers: Full).
+    // Roles without ReferralAttach (Admin, Finance, Marketing) are refused roleNotAllowedHere.
+    for who in ["ADMIN@*", "FINANCE@XC-B01", "MARKETING@*"] {
         let a = attach(&db, who, B01, &tx, "AB12CD").await;
         assert_ne!(a.status, StatusCode::OK, "{who}: {}", a.text);
         assert_eq!(code(&a), "roleNotAllowedHere", "{who}: {}", a.text);
@@ -495,7 +497,9 @@ async fn only_the_owner_replaces_and_only_with_a_reason_and_only_an_active_code(
     let db = TestDb::start().await;
     let tx = db.exchange(B01, "C-1").await;
     let old = capture_id(&attach(&db, TELLER, B01, &tx, "AB12CD").await);
-    for who in [TELLER, "BRANCH_MANAGER@XC-B01", "FINANCE@XC-B01"] {
+    // Under RBAC §11.2, BranchManager holds ReferralSupersede (Customers: Full).
+    // Roles without ReferralSupersede (Teller, Finance, Admin) are refused roleNotAllowedHere.
+    for who in [TELLER, "FINANCE@XC-B01", "ADMIN@*"] {
         let a = supersede(&db, who, B01, &old, "ZZ99YY", "reason").await;
         assert_eq!(code(&a), "roleNotAllowedHere", "{who}: {}", a.text);
     }
@@ -576,9 +580,15 @@ async fn the_view_is_the_tellers_and_the_owners_only() {
     let db = TestDb::start().await;
     let r = rows(&db, TELLER_B09, B01, None).await;
     assert_eq!(code(&r), "outOfScope", "{}", r.text);
-    for who in ["BRANCH_MANAGER@XC-B01", "FINANCE@XC-B01", "MARKETING@*"] {
+    // Under RBAC §11.2, BranchManager (Customers: Full) and Finance (Customers: View) hold ReferralRead.
+    // Roles without Customers (Admin, Marketing) are refused roleNotAllowedHere.
+    for who in ["ADMIN@*", "MARKETING@*"] {
         let r = rows(&db, who, B01, None).await;
         assert_eq!(code(&r), "roleNotAllowedHere", "{who}: {}", r.text);
+    }
+    for who in ["BRANCH_MANAGER@XC-B01", "FINANCE@XC-B01"] {
+        let r = rows(&db, who, B01, None).await;
+        assert_eq!(r.status, StatusCode::OK, "{who}: {}", r.text);
     }
     db.finish().await;
 }

@@ -417,32 +417,47 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
     );
 }
 
-/// DK-A §10: each view refuses exactly whom `Policy::authorize` refuses for its pair, caller by
-/// caller, with the policy's status and sentence.
+/// DK-A §10: each view refuses exactly whom `Policy::authorize` / `RoleGrants::seed` refuses for
+/// its pair, caller by caller, with the policy's status and sentence.
 #[actix_web::test]
 async fn each_view_answers_exactly_whom_its_pair_allows() {
+    use xc_auth::domain::access::{Permission, RoleGrants};
+    use xc_auth::domain::policy::entities::policy::Need;
+
     let room = Room::open().await;
+    let act = Action::new("adminDeskConfig");
     for (view, path) in [
         (OWNER_VIEW, EntryPath::Rpc),
         (STAFF_VIEW, EntryPath::StaffRpc),
     ] {
+        let Some(Need::Permission(perm)) = Policy::need(path, &act) else {
+            panic!("({path:?}, adminDeskConfig) needs a permission");
+        };
         let mut allowed = 0;
+        let mut refused = 0;
         for (who, actor) in callers(path) {
             let answer = room.get(&who, &view_path(view, "")).await;
             let what = format!("{view} as {who:?}");
-            match Policy::authorize(
-                actor.as_ref(),
-                path,
-                &Action::new("adminDeskConfig"),
-                None,
-                Utc::now(),
-            ) {
+            // OR-7.m (merge of feat/rbac-groups): the caller is already a Blueprint actor
+            let holds = actor.as_ref().is_some_and(|ac| {
+                ac.roles
+                    .iter()
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
+            });
+            let auth = Policy::authorize(actor.as_ref(), path, &act, None, Utc::now());
+            assert_eq!(
+                auth.is_ok(),
+                holds,
+                "{what}: RoleGrants::seed matches Policy::authorize"
+            );
+            match auth {
                 Ok(_) => {
                     allowed += 1;
                     assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                     assert!(answer.json().get("data").is_some(), "{what}: data");
                 }
                 Err(e) => {
+                    refused += 1;
                     assert_eq!(answer.status, e.status(), "{what}: {:.300}", answer.text);
                     let body = answer.json();
                     assert_eq!(body["error"]["message"], json!(e.to_string()), "{what}");
@@ -451,8 +466,23 @@ async fn each_view_answers_exactly_whom_its_pair_allows() {
             }
         }
         if view == STAFF_VIEW {
-            // OR-7.m G2: rule 4 (#3700, #3717)
-            assert_eq!(allowed, 1, "{view}: FRONT");
+            // OR-7.m G2: rule 4 (#3700, #3717): one session per request, so each staff role once
+            let expected_staff = STAFF
+                .iter()
+                .filter(|(_, roles)| {
+                    roles
+                        .iter()
+                        .any(|&r| RoleGrants::seed(r).contains(&Permission::ExchangeTransact))
+                })
+                .count();
+            assert_eq!(
+                allowed, expected_staff,
+                "{view}: staff roles with ExchangeTransact, alone"
+            );
+            assert!(
+                refused > 2,
+                "{view}: §11.2 leaves staff roles without ExchangeTransact"
+            );
         } else {
             assert!(allowed >= 2, "{view}: allowed {allowed}");
         }

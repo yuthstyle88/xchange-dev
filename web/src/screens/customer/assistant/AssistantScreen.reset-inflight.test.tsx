@@ -3,8 +3,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
-import type { AssistantAskAnswerDto } from '../../../shared/api/generated/assistant_ask';
-import type { MyAssistantConversationData } from '../../../shared/api/generated/my_assistant_conversation';
+import {
+  makeAssistantAskAnswerDto,
+  makeAssistantConversationDto,
+  makeAssistantIntentDto,
+  makeAssistantMessageDto,
+  makeMyAssistantConversationData,
+} from '../../../shared/testing/fixtures';
 import { AssistantScreen } from './AssistantScreen';
 
 interface Deferred<T> {
@@ -34,39 +39,41 @@ function makeAnswer(
   conversationId: string,
   customerText: string,
   assistantText: string,
-): AssistantAskAnswerDto {
-  return {
+) {
+  return makeAssistantAskAnswerDto({
     conversationId,
-    customerMessage: {
+    customerMessage: makeAssistantMessageDto({
       id: `${conversationId}-c`,
       role: 'CUSTOMER',
       redactedText: customerText,
       createdAt: '2026-10-16T10:00:00Z',
-    },
-    assistantReply: {
+    }),
+    assistantReply: makeAssistantMessageDto({
       id: `${conversationId}-a`,
       role: 'ASSISTANT',
       redactedText: assistantText,
       createdAt: '2026-10-16T10:00:01Z',
-    },
-  };
+    }),
+    intent: makeAssistantIntentDto({ kind: 'UNKNOWN' }),
+    preview: null,
+  });
 }
 
-const INITIAL_CONVERSATION: MyAssistantConversationData = {
-  conversation: {
+const INITIAL_CONVERSATION = makeMyAssistantConversationData({
+  conversation: makeAssistantConversationDto({
     id: 'conv-initial',
     locale: 'th',
     createdAt: '2026-10-16T09:00:00Z',
-  },
+  }),
   messages: [
-    {
+    makeAssistantMessageDto({
       id: 'm-init-1',
       role: 'ASSISTANT',
       redactedText: 'สวัสดีค่ะ มีอะไรให้ช่วยไหมคะ',
       createdAt: '2026-10-16T09:00:01Z',
-    },
+    }),
   ],
-};
+});
 
 describe('AssistantScreen resetConversation while send is in flight (#2535)', () => {
   let host: HTMLDivElement;

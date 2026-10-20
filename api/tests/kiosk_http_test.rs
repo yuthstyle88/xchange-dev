@@ -125,8 +125,9 @@ fn decided_by_603(name: &str) -> (Vec<(usize, Rule)>, Vec<usize>) {
 fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
     // The 10-06 recording answers every step the way v3 decided (`list` for every signed-in
     // role, the holder's repeat `accept`), so each step is replayed as recorded.
-    // OR-4b (#767, design §4.2 C8): QueueOperate is TELLER's and BRANCH_MANAGER's, so the owner's
-    // `list` offers no request to accept or continue.
+    // RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via `EXECUTIVE` (`Customers Full`)),
+    // so the owner's `list` matches v2; `RATES` (`RATE_MANAGER`) is widened with `QueueOperate`, so
+    // its `list` offers waiting requests (`canAccept: true`).
     let fixture = Fixture::load(name);
     let mut rules: Vec<(usize, Rule)> = fixture
         .steps()
@@ -135,14 +136,26 @@ fn changed_since_the_recording(name: &str) -> Vec<(usize, Rule)> {
             s.path() == Some("/api/kiosk")
                 && s.action.as_deref() == Some("list")
                 && s.status == Some(200)
-                && fixture.sender(s).is_some_and(|p| p.is_owner())
+                && fixture.sender(s).is_some_and(|p| p.role == "RATES")
         })
-        .map(|s| (s.n, Rule::RecordedWith(not_offered_the_queue_work)))
+        .map(|s| (s.n, Rule::RecordedWith(offered_the_waiting_queue_work)))
         .collect();
     // QU-6 #1354 (design `queue-tickets.md` §7; QU-3): `accept` starts the request's queue ticket, and a
     // teller holds one CALLED or SERVING ticket. #197–#203 are second claims by tellers who already hold
     // one (FR2 #197/#200/#203, BE1 #198/#201, MG1 #199/#202): held to `alreadyServing`, v2's claim applied
     // behind the routes, so #204, #205 and #212 keep the twelve claims v2 recorded.
+    if name == "kiosk/transport.json" {
+        // RBAC §11.2 (#3659, C6f): `RATES` (`RATE_MANAGER`) holds `QueueOperate`, so an empty body
+        // (`{}`) on `/api/kiosk` as `RT1` (#26) is refused with `Unknown kiosk action.` like `FR1`
+        // (#25), matching #63 and #64.
+        rules.push((
+            26,
+            Rule::Differs {
+                status: 400,
+                sentence: "Unknown kiosk action.",
+            },
+        ));
+    }
     if name == "kiosk/queue_work.json" {
         for n in SECOND_CLAIMS {
             let step = fixture.step(n);
@@ -162,15 +175,13 @@ const SECOND_CLAIMS: std::ops::RangeInclusive<usize> = 197..=203;
 /// QU-3's refusal of a second CALLED or SERVING ticket, as the kiosk route answers it.
 const ALREADY_SERVING: &str = "alreadyServing";
 
-/// C8: the owner's user holds no QueueOperate, so no row of the owner's `list` can be accepted or
-/// continued.
-fn not_offered_the_queue_work(answer: &mut Value) {
+/// RBAC §11.2 (#3659): `RATES` (`RATE_MANAGER`) holds `QueueOperate`, so waiting rows of its `list`
+/// can be accepted (`canAccept: true`).
+fn offered_the_waiting_queue_work(answer: &mut Value) {
     if let Some(rows) = answer["requests"].as_array_mut() {
         for row in rows {
-            for key in ["canAccept", "canContinue"] {
-                if row.get(key).is_some() {
-                    row[key] = json!(false);
-                }
+            if row["status"] == json!("WAITING") && row.get("canAccept").is_some() {
+                row["canAccept"] = json!(true);
             }
         }
     }
@@ -180,10 +191,19 @@ async fn replayed(name: &str) -> (Fixture, usize) {
     let fixture = Fixture::load(name);
     let lines = {
         let mut replay = KioskReplay::start(&fixture).await;
+        // Open shifts and counters only for the three counter roles that had shifts in the
+        // recording (`FRONT`, `BACKEND`, `MANAGER`); `RATES` (`RT1`) has no open shift in the
+        // recording, so its widened `accept` steps (`kiosk/queue.json` #78 and
+        // `kiosk/queue_work.json` #64) reach `QueueDesk::claim_ticket` and are refused with
+        // `noOpenShift`.
         let staff: Vec<&str> = fixture
             .people
             .iter()
-            .filter(|p| !p.is_owner() && p.branch_id.as_deref() == Some(rpc_common::MAIN))
+            .filter(|p| {
+                !p.is_owner()
+                    && p.branch_id.as_deref() == Some(rpc_common::MAIN)
+                    && matches!(p.role.as_str(), "FRONT" | "BACKEND" | "MANAGER")
+            })
             .map(|p| p.id.as_str())
             .collect();
         open_counters(&replay.replay.desk.db.pool, &staff).await;
@@ -210,6 +230,24 @@ async fn replayed(name: &str) -> (Fixture, usize) {
         assert!(
             replay.replay.tally.excluded.is_empty() && replay.replay.tally.part_two.is_empty(),
             "{name}: every step is sent and compared"
+        );
+        let expected_widened: &[usize] = match name {
+            "kiosk/queue.json" => &[77, 78, 79, 80],
+            "kiosk/queue_work.json" => &[64],
+            _ => &[],
+        };
+        assert_eq!(
+            replay.replay.tally.widened, expected_widened,
+            "{name}: steps widened by RBAC §11.2 (#3659)"
+        );
+        let expected_owner_no_open_shift: &[usize] = match name {
+            "kiosk/queue.json" => &[138],
+            "kiosk/queue_work.json" => &[72],
+            _ => &[],
+        };
+        assert_eq!(
+            replay.replay.tally.owner_no_open_shift, expected_owner_no_open_shift,
+            "{name}: owner accept steps refused with noOpenShift (#3659, #3810)"
         );
         let lines = replay.lines_compared;
         replay.finish().await;
@@ -660,8 +698,19 @@ async fn the_answers_keep_v2s_key_order() {
     let held = counter
         .ask(Some("FR1"), "get", json!({ "id": lettered }))
         .await;
+    // #3473: v3 appends `quoteId` after v2's last key (snapshot_common::V3_ADDED_KEYS);
+    // v2's part is everything before it, unchanged.
+    let (v2_part, added) = held
+        .text
+        .split_once(",\"quoteId\":")
+        .unwrap_or_else(|| panic!("`quoteId` comes after v2's last key: {}", held.text));
+    assert!(
+        added.ends_with('}') && !added[..added.len() - 1].contains(','),
+        "`quoteId` is the last key: {}",
+        held.text
+    );
     assert_eq!(
-        held.text,
+        format!("{v2_part}}}"),
         "{\"paymentMethod\":\"Cash\",\"type\":\"BUY\",\"currency\":\"USD\",\"rate\":32.1,\
          \"foreign\":100,\"thb\":3210,\"inputAmount\":100,\"branchName\":\"XC-B\",\
          \"id\":\"c0ffee12-0000-4000-8000-0000000c0002\",\"queue\":\"K-C0FFEE12\"}"

@@ -25,7 +25,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenu, AdminMenuProps } from '../menus';
@@ -264,8 +264,8 @@ function empty(): ReportsData {
   });
 }
 
-function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function tx(n: number, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: `XC-20261006-${String(n).padStart(6, '0')}`,
     date: '2026-10-06',
     created: '2026-10-06T03:04:05.000Z',
@@ -293,14 +293,12 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 /** Rows numbered `from` down to `to`, newest first, as `admin_transactions` pages them. */
-function txs(from: number, to: number, over: Partial<TransactionRow> = {}): TransactionRow[] {
-  const out: TransactionRow[] = [];
-  for (let n = from; n >= to; n--) out.push(tx(n, over));
-  return out;
+function txs(from: number, to: number, over: Partial<TransactionRow> = {}) {
+  return Array.from({ length: from - to + 1 }, (_, i) => tx(from - i, over));
 }
 
 // ── the fake server: the global fetch ────────────────────────────────────────

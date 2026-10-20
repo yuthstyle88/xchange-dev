@@ -1,14 +1,18 @@
 // Written before the implementation by the test writer gemini/warut-2 (ticket author claude/e92db6), against BK-6 provided tests 7f8e56d1. Do not edit, delete or weaken.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  BookingCancelOutput,
-  BookingCheckInOutput,
-  BookingCreateOutput,
-  BookingRescheduleOutput,
-} from '../../../shared/api/generated/bookings';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  type DeskBookingsData,
+  makeBookingCancelOutput,
+  makeBookingCheckInOutput,
+  makeBookingCreateOutput,
+  makeBookingRescheduleOutput,
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeStaffMeView,
+  makeStaffRoleDto,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import * as texts from './i18n';
 
@@ -20,27 +24,27 @@ const SLOT_2_ID = '00000000-0000-0000-0000-000000000002';
 const BOOKING_1_ID = 'BK-test-0001';
 const BOOKING_2_ID = 'BK-test-0002';
 
-const STAFF_TELLER = {
+const STAFF_TELLER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: BRANCH_ID }],
+  roles: [makeStaffRoleDto({ role: 'teller', branchId: BRANCH_ID })],
   branchId: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-} satisfies StaffMeView;
+});
 
-const STAFF_MANAGER = {
+const STAFF_MANAGER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000002',
   name: 'Somying Manager',
-  roles: [{ role: 'manager', branchId: BRANCH_ID }],
+  roles: [makeStaffRoleDto({ role: 'manager', branchId: BRANCH_ID })],
   branchId: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BranchesManage', 'OverviewRead'], // lacks BookingsDesk
-} satisfies StaffMeView;
+});
 
-const INITIAL_DESK_BOOKINGS = {
+const INITIAL_DESK_BOOKINGS = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: BOOKING_1_ID,
       bookingNo: 'B261014-0021',
       status: 'CONFIRMED',
@@ -51,8 +55,8 @@ const INITIAL_DESK_BOOKINGS = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: BOOKING_2_ID,
       bookingNo: 'B261014-0022',
       status: 'CHECKED_IN',
@@ -63,8 +67,8 @@ const INITIAL_DESK_BOOKINGS = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'BK-test-0003',
       bookingNo: 'B261014-0023',
       status: 'CONFIRMED',
@@ -75,9 +79,9 @@ const INITIAL_DESK_BOOKINGS = {
       slotId: SLOT_2_ID,
       startAt: '2026-10-14T09:30:00Z',
       endAt: '2026-10-14T10:00:00Z',
-    },
+    }),
   ],
-} satisfies DeskBookingsData;
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -193,7 +197,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingCreateOutput({
                 id: 'BK-new-001',
                 bookingNo: 'B261014-0099',
                 status: 'CONFIRMED',
@@ -205,7 +209,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
                 currency: parsedBody?.currency ?? 'USD',
                 quantity: parsedBody?.quantity ?? 250,
                 qrToken: null,
-              } satisfies BookingCreateOutput),
+              }),
           );
         }
 
@@ -221,12 +225,12 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingCheckInOutput({
                 id: checkInMatch[1],
                 status: 'CHECKED_IN',
                 ticketNumber: 'B01-009',
                 bookingNo: 'B261014-0021',
-              } satisfies BookingCheckInOutput),
+              }),
           );
         }
 
@@ -245,11 +249,11 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingCancelOutput({
                 id: cancelMatch[1],
                 status: 'CANCELLED',
                 bookingNo: 'B261014-0021',
-              } satisfies BookingCancelOutput),
+              }),
           );
         }
 
@@ -265,12 +269,12 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingRescheduleOutput({
                 id: reschedMatch[1],
                 slotId: parsedBody?.slotId ?? SLOT_2_ID,
                 status: 'CONFIRMED',
                 bookingNo: 'B261014-0021',
-              } satisfies BookingRescheduleOutput),
+              }),
           );
         }
 

@@ -24,7 +24,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../../shared/api/client';
-import type { ShiftValuation, ShiftValuationCurrency } from '../../../../shared/api/generated/shift_valuation';
+import {
+  makeShiftValuation,
+  makeShiftValuationCurrency,
+  makeShiftValuationResult,
+  makeShiftValuationRow,
+} from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
 import { th as sharedTh } from '../../../../shared/i18n/th';
 import { formatMoney } from '../../../../shared/ui/MoneyText';
@@ -61,27 +66,27 @@ const shared = sharedTh as Record<string, string>;
  * order the real server answers): a panel that sorted them by any rule would show another order.
  * EUR moved in and out back to zero and still needs a rate (§12.20.4).
  */
-function listed(): ShiftValuationCurrency[] {
+function listed() {
   return [
-    { currency: 'THB', opening: '10000.00', current: '6600.00', needsRate: false },
-    { currency: 'USD', opening: '100.00', current: '200.00', needsRate: true },
-    { currency: 'EUR', opening: '0.00', current: '0.00', needsRate: true },
-    { currency: 'AUD', opening: '1234567.00', current: '50.00', needsRate: true },
+    makeShiftValuationCurrency({ currency: 'THB', opening: '10000.00', current: '6600.00', needsRate: false }),
+    makeShiftValuationCurrency({ currency: 'USD', opening: '100.00', current: '200.00', needsRate: true }),
+    makeShiftValuationCurrency({ currency: 'EUR', opening: '0.00', current: '0.00', needsRate: true }),
+    makeShiftValuationCurrency({ currency: 'AUD', opening: '1234567.00', current: '50.00', needsRate: true }),
   ];
 }
 
 /** The answer to a submit: fresh figures (USD current 210.00, not the 200.00 listed on show). */
-function computed(difference = '77.77'): ShiftValuation {
+function computed(difference = '77.77') {
   const currencies = listed();
-  currencies[1] = { ...currencies[1]!, current: '210.00' };
-  return {
+  currencies[1] = makeShiftValuationCurrency({ ...currencies[1]!, current: '210.00' });
+  return makeShiftValuation({
     currencies,
-    result: {
+    result: makeShiftValuationResult({
       rows: [
-        { currency: 'THB', rate: '1.000000', value: '6600.00' },
-        { currency: 'USD', rate: '34.500000', value: '7245.00' },
-        { currency: 'EUR', rate: '40.000000', value: '0.00' },
-        { currency: 'AUD', rate: '22.123457', value: '1106.17' },
+        makeShiftValuationRow({ currency: 'THB', rate: '1.000000', value: '6600.00' }),
+        makeShiftValuationRow({ currency: 'USD', rate: '34.500000', value: '7245.00' }),
+        makeShiftValuationRow({ currency: 'EUR', rate: '40.000000', value: '0.00' }),
+        makeShiftValuationRow({ currency: 'AUD', rate: '22.123457', value: '1106.17' }),
       ],
       // none of these follows from the rows: the panel shows what is answered
       opening: '27469123.45',
@@ -89,8 +94,8 @@ function computed(difference = '77.77'): ShiftValuation {
       movements: '500.00',
       difference,
       adjusted: '-1234.56',
-    },
-  };
+    }),
+  });
 }
 
 // ── the fake server: the global fetch ────────────────────────────────────────
