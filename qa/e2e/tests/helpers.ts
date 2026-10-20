@@ -4,14 +4,15 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export type Role = 'customer' | 'teller' | 'branchManager' | 'finance' | 'admin';
-export const ROLES: readonly Role[] = ['customer', 'teller', 'branchManager', 'finance', 'admin'];
+export type Role = 'customer' | 'teller' | 'branchManager' | 'finance' | 'marketing' | 'admin';
+export const ROLES: readonly Role[] = ['customer', 'teller', 'branchManager', 'finance', 'marketing', 'admin'];
 
 export const ROLE_HOME: Record<Role, string> = {
   customer: '/app',
   teller: '/staff',
   branchManager: '/staff',
   finance: '/staff',
+  marketing: '/',
   admin: '/',
 };
 export type Lang = 'th' | 'en' | 'zh';
@@ -30,6 +31,7 @@ export interface Users {
   teller: Account;
   branchManager?: Account;
   finance?: Account;
+  marketing?: Account;
   admin: Account;
   branch: string;
   referralCode?: string;
