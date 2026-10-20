@@ -911,19 +911,13 @@ async fn export_paged_xlsx<V: PagedView>(
         .body(bytes)
 }
 
-/// Push a case-folded, NFKC-normalised literal substring matching predicate over `columns`.
-///
-/// Pushes ` AND (` + one `lower(normalize(<col>, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize($q, NFKC)), '\', '\\'), '%', '\%'), '_', '\_') || '%') ESCAPE '\'`
-/// per column, joined by ` OR `, + `)`, with one bind per column.
-pub(crate) fn push_literal_contains(
+/// Push the ` OR `-joined case-folded, NFKC-normalised literal substring matching terms over `columns`
+/// (without ` AND (` or `)`), with one bind per column.
+pub(crate) fn push_literal_contains_terms(
     builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     columns: &[&str],
     q: &str,
 ) {
-    if columns.is_empty() {
-        return;
-    }
-    builder.push(" AND (");
     for (i, col) in columns.iter().enumerate() {
         if i > 0 {
             builder.push(" OR ");
@@ -934,6 +928,21 @@ pub(crate) fn push_literal_contains(
         builder.push_bind(q.to_owned());
         builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\'");
     }
+}
+
+/// Push a case-folded, NFKC-normalised literal substring matching predicate over `columns`.
+///
+/// Pushes ` AND (` + [`push_literal_contains_terms`] + `)`.
+pub(crate) fn push_literal_contains(
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
+    columns: &[&str],
+    q: &str,
+) {
+    if columns.is_empty() {
+        return;
+    }
+    builder.push(" AND (");
+    push_literal_contains_terms(builder, columns, q);
     builder.push(")");
 }
 

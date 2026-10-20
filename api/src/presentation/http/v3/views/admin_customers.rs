@@ -15,7 +15,9 @@ use xc_kernel::money::{fixed2, round_cents};
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_customers::{AdminCustomerRow, AdminCustomersFilter};
-use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint, push_literal_contains};
+use crate::presentation::http::v3::view::{
+    PagedView, RowId, ViewEndpoint, push_literal_contains_terms,
+};
 
 struct AdminCustomersPagedView {
     pool: PgPool,
@@ -108,16 +110,14 @@ impl PagedView for AdminCustomersPagedView {
             if let Some(ref q) = filter.q
                 && !q.is_empty()
             {
-                push_literal_contains(&mut builder, &["c.id", "c.display_name"], q);
+                builder.push(" AND (");
+                push_literal_contains_terms(&mut builder, &["c.id", "c.display_name"], q);
                 builder.push(
-                    " OR (b.id = ",
-                );
-                builder.push_bind(branch.as_str());
-                builder.push(
-                    " AND c.mode = 'LIVE' AND EXISTS (SELECT 1 FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PASSPORT' AND ci.status = 'ACTIVE' AND lower(normalize(ci.nationality, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(",
+                    " OR EXISTS (SELECT 1 FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PASSPORT' AND ci.status = 'ACTIVE' AND lower(normalize(ci.nationality, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(",
                 );
                 builder.push_bind(q.as_str());
-                builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\'))",
+                builder.push(
+                    ", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\'))",
                 );
             }
 
