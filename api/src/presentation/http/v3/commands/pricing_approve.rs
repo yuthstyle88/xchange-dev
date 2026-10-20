@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -30,7 +30,6 @@ use xc_rate::application::policy::policy_version_writer::{
 };
 use xc_rate::application::publication::publish_service::PublishService;
 use xc_rate::domain::draft::rate_draft::{DraftLine, DraftStatus, LineSide};
-use xc_rate::domain::draft::rate_engine_error::RateEngineError;
 use xc_rate::domain::policy::currency_tier_override::{CurrencyTierOverride, TierMargin};
 use xc_rate::domain::policy::policy_tiers::PolicyTier;
 use xc_rate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
@@ -456,67 +455,32 @@ impl CommandAction for PricingApproveCommand {
             .await
             .map_err(map_rate_engine_error)?;
 
-        let non_exec_roles: Vec<ScopedRole> = who
-            .roles
-            .iter()
-            .filter(|r| r.role != Role::Executive)
-            .cloned()
-            .collect();
-        let submit_roles = if non_exec_roles.is_empty() {
-            vec![ScopedRole::new(
-                Role::RateManager,
-                Some(branch.clone()),
-                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-                None,
-            )]
-        } else {
-            non_exec_roles
-        };
-        let submit_actor = Actor::new(
-            &who.user_id,
-            &who.organization_id,
-            submit_roles,
-            who.customer_id.as_deref(),
-        );
-
-        let draft_state = match self
+        let outcome = self
             .draft_service
-            .submit(tx, branch, &submit_actor, &draft.id, key.as_str())
+            .submit(tx, branch, who, &draft.id, key.as_str())
             .await
-        {
-            Ok(outcome) => match outcome.status {
-                DraftStatus::Approved => {
-                    let expected_pub_version: Option<i32> = sqlx::query_scalar(
-                        "SELECT p.version FROM branches b \
-                         JOIN rate_publications p ON p.id = b.current_publication_id \
-                         WHERE b.id = $1",
-                    )
-                    .bind(branch.as_str())
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|_| server_error())?;
+            .map_err(map_rate_engine_error)?;
 
-                    self.publish_service
-                        .publish(tx, branch, who, &draft.id, expected_pub_version)
-                        .await
-                        .map_err(map_rate_engine_error)?;
-                    "PUBLISHED"
-                }
-                DraftStatus::PendingApproval => "PENDING_APPROVAL",
-                _ => return Err(server_error()),
-            },
-            Err(RateEngineError::ValidationFailed(_)) => {
-                sqlx::query(
-                    "UPDATE rate_drafts SET status = 'PENDING_APPROVAL', updated_at = now() \
-                     WHERE id = $1",
+        let draft_state = match outcome.status {
+            DraftStatus::Approved => {
+                let expected_pub_version: Option<i32> = sqlx::query_scalar(
+                    "SELECT p.version FROM branches b \
+                     JOIN rate_publications p ON p.id = b.current_publication_id \
+                     WHERE b.id = $1",
                 )
-                .bind(draft.id.as_uuid())
-                .execute(&mut **tx)
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
                 .await
                 .map_err(|_| server_error())?;
-                "PENDING_APPROVAL"
+
+                self.publish_service
+                    .publish(tx, branch, who, &draft.id, expected_pub_version)
+                    .await
+                    .map_err(map_rate_engine_error)?;
+                "PUBLISHED"
             }
-            Err(e) => return Err(map_rate_engine_error(e)),
+            DraftStatus::PendingApproval => "PENDING_APPROVAL",
+            _ => return Err(server_error()),
         };
 
         Ok(PricingApproveOutput {
