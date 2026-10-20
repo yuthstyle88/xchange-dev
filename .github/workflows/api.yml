@@ -39,6 +39,9 @@ jobs:
       release_check: ${{ steps.filter.outputs.release_check }}
       runs_on: ${{ steps.pool.outputs.runs_on }}
       cargo_jobs: ${{ steps.pool.outputs.cargo_jobs }}
+      test_packages: ${{ steps.since.outputs.test_packages }}
+      test_filter: ${{ steps.since.outputs.test_filter }}
+      test_matrix: ${{ steps.since.outputs.test_matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,7 +70,11 @@ jobs:
         run: bash .github/scripts/api-ci-plan.test.sh
 
       - name: Self-test api-rerun-filter
-        run: bash .github/scripts/api-rerun-filter.test.sh
+        run: |
+          bash .github/scripts/api-rerun-filter.test.sh
+          bash .github/scripts/api-rerun-since-last.test.sh
+          bash .github/scripts/api-partition-plan.test.sh
+          bash .github/scripts/api-failed-from-log.test.sh
 
       - name: Self-test main-push-base
         run: bash .github/scripts/main-push-base.test.sh
@@ -172,11 +179,89 @@ jobs:
           printf '%s\n' "$plan_out" >> "$GITHUB_OUTPUT"
           printf 'skip_build=%s\n%s\n' "$skip_build" "$plan_out"
 
+      - name: Start from the last run of this branch
+        id: since
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          GH_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ steps.filter.outputs.packages }}
+          RUN_TESTS: ${{ steps.filter.outputs.run_tests }}
+        run: |
+          PARTITIONS=4
+          RUN_TESTS="$RUN_TESTS" PARTITIONS="$PARTITIONS" RUN_ID="$RUN_ID" RUN_ATTEMPT="$RUN_ATTEMPT" \
+            bash .github/scripts/api-partition-plan.sh >> "$GITHUB_OUTPUT"
+
+          plan() {
+            echo "test plan: $1"
+            { echo "test_packages=$PACKAGES"; echo "test_filter="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$RUN_TESTS" != "true" ]; then
+            plan "today's plan ($EVENT_NAME, run_tests=$RUN_TESTS)"
+          fi
+
+          if [ -d "$HOME/.cargo/bin" ]; then
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          prev_line=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/api.yml/runs?event=pull_request&status=completed&per_page=30&branch=$HEAD_REF" \
+            --jq "[.workflow_runs[] | select(.id != $RUN_ID and .head_repository.full_name == \"$GITHUB_REPOSITORY\" and (.conclusion == \"success\" or .conclusion == \"failure\"))][0] | if . then \"\(.id) \(.head_sha)\" else empty end" 2>/dev/null) || prev_line=""
+          read -r prev prev_sha <<< "$prev_line"
+          if [ -z "${prev:-}" ] || [ -z "${prev_sha:-}" ]; then
+            plan "fallback: no earlier finished run of $HEAD_REF"
+          fi
+
+          job_ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$prev/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name | startswith("test ("))] | if length > 0 and all(.conclusion == "success" or .conclusion == "failure") then .[].id else empty end' 2>/dev/null) || job_ids=""
+          [ -n "$job_ids" ] || plan "fallback: run $prev has no completed test partition jobs"
+
+          FAILED_LIST=$(mktemp)
+          RAW_LIST=$(mktemp)
+          for jid in $job_ids; do
+            LOG_FILE=$(mktemp)
+            if ! gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$jid/logs" --allow-escape-sequences > "$LOG_FILE" 2>/dev/null; then
+              rm -f "$LOG_FILE" "$FAILED_LIST" "$RAW_LIST"
+              plan "fallback: log of job $jid in run $prev could not be read"
+            fi
+            bash .github/scripts/api-failed-from-log.sh < "$LOG_FILE" >> "$RAW_LIST"
+            rm -f "$LOG_FILE"
+          done
+          awk '!seen[$0]++' "$RAW_LIST" > "$FAILED_LIST"
+          rm -f "$RAW_LIST"
+
+          git cat-file -e "$prev_sha^{commit}" 2>/dev/null || git fetch -q --no-tags origin "$prev_sha" 2>/dev/null \
+            || { rm -f "$FAILED_LIST"; plan "fallback: commit $prev_sha tested by run $prev is not fetchable"; }
+
+          CHANGED_FILE=$(mktemp)
+          METADATA_FILE=$(mktemp)
+          git diff --name-only "$prev_sha" HEAD > "$CHANGED_FILE"
+          cargo metadata --format-version 1 --no-deps --manifest-path api/Cargo.toml > "$METADATA_FILE" 2>/dev/null \
+            || { rm -f "$FAILED_LIST" "$CHANGED_FILE" "$METADATA_FILE"; plan "fallback: cargo metadata failed"; }
+          diff_packages=$(bash .github/scripts/api-test-plan.sh "$CHANGED_FILE" "$METADATA_FILE")
+          out=$(bash .github/scripts/api-rerun-filter.sh --since-last "$FAILED_LIST" "$diff_packages")
+          echo "run $prev tested $prev_sha; changed since: $(wc -l < "$CHANGED_FILE") files => [$diff_packages]"
+          rm -f "$FAILED_LIST" "$CHANGED_FILE" "$METADATA_FILE"
+          printf '%s\n' "$out"
+          case "$out" in
+            mode=since-last*) ;;
+            *) plan "fallback: the report of run $prev could not be used" ;;
+          esac
+          {
+            echo "test_packages=$(printf '%s\n' "$out" | sed -n 's/^packages=//p')"
+            echo "test_filter=$(printf '%s\n' "$out" | sed -n 's/^filter=//p')"
+          } >> "$GITHUB_OUTPUT"
+          echo "test plan: since run $prev"
+
   test:
-    name: test
+    name: test (${{ matrix.partition }}/${{ matrix.total }})
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_build != 'true') }}
-    runs-on: ${{ fromJSON(needs.changes.outputs.runs_on || '["self-hosted","Linux","X64"]') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.test_matrix || '{"include":[{"partition":1,"total":1,"runs_on":["self-hosted","heavy-build"]}]}') }}
+    runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 90
     env:
       # Ceiling from select-pool.sh; the "Set cargo jobs" step lowers it to this machine's free cores (#2574).
@@ -206,18 +291,21 @@ jobs:
           fetch-depth: 0
 
       - name: Check migration order
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.partition == 1
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: bash .github/scripts/migration-order.sh "origin/${{ github.base_ref }}" "${{ github.event.pull_request.head.sha }}"
 
       - name: Self-test should-build
+        if: matrix.partition == 1
         run: bash .github/scripts/should-build.test.sh
 
       - name: Self-test api-test-plan
+        if: matrix.partition == 1
         run: bash .github/scripts/api-test-plan.test.sh
 
       - name: Self-test pg-sweep-stale
+        if: matrix.partition == 1
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
@@ -225,7 +313,7 @@ jobs:
           bash .github/scripts/pg-sweep-stale-foreign.test.sh
 
       - name: Start postgres (per run)
-        if: needs.changes.outputs.run_tests == 'true' || needs.changes.outputs.guards == 'true'
+        if: needs.changes.outputs.run_tests == 'true' || (matrix.partition == 1 && needs.changes.outputs.guards == 'true')
         env:
           LC_ALL: C
         run: |
@@ -262,7 +350,7 @@ jobs:
             "$PGBIN/psql" -h 127.0.0.1 -p "$PGPORT" -U postgres -d xchange_test -tAc 'SELECT version()'
           else
             # Fallback when runner has no postgres >= 16: start docker postgres:17
-            CONTAINER_NAME="xcpg-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+            CONTAINER_NAME="xcpg-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-p${{ matrix.partition }}"
             {
               echo "XC_CONTAINER=$CONTAINER_NAME"
               echo "XC_PGPORT=$PGPORT"
@@ -344,11 +432,12 @@ jobs:
           echo "CARGO_BUILD_JOBS=$jobs" >> "$GITHUB_ENV"
 
       - name: Check formatting
+        if: matrix.partition == 1
         working-directory: api
         run: cargo fmt --all --check
 
       - name: Clippy
-        if: needs.changes.outputs.packages != ''
+        if: matrix.partition == 1 && needs.changes.outputs.packages != ''
         working-directory: api
         run: cargo clippy ${{ needs.changes.outputs.packages }} --all-targets -- -D warnings
 
@@ -364,7 +453,7 @@ jobs:
           npm --prefix web run build
 
       - name: Install cargo-nextest
-        if: needs.changes.outputs.run_tests == 'true' || needs.changes.outputs.guards == 'true'
+        if: needs.changes.outputs.run_tests == 'true' || (matrix.partition == 1 && needs.changes.outputs.guards == 'true')
         working-directory: api
         run: |
           VERSION="0.9.137"
@@ -376,14 +465,30 @@ jobs:
             rm -rf "$ROOT/target"
           fi
           echo "$ROOT/bin" >> "$GITHUB_PATH"
+          "$BIN" nextest --version
 
-      - name: Download failed tests artifact (re-run)
+      - name: Read failed tests from previous attempt log (re-run)
         if: needs.changes.outputs.run_tests == 'true' && github.run_attempt > 1
         continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: api-failed-tests-${{ github.run_id }}
-          path: api/target/nextest/prev
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          PARTITION_K: ${{ matrix.partition }}
+          PARTITION_N: ${{ matrix.total }}
+        run: |
+          PREV_ATTEMPT=$(( RUN_ATTEMPT - 1 ))
+          mkdir -p api/target/nextest/prev
+          rm -f api/target/nextest/prev/failed-tests.txt
+          prev_job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/attempts/$PREV_ATTEMPT/jobs?per_page=100" \
+            --jq "[.jobs[] | select(.name | startswith(\"test ($PARTITION_K/$PARTITION_N\"))][0].id // empty" 2>/dev/null) || prev_job=""
+          if [ -n "$prev_job" ]; then
+            RAW_LOG=$(mktemp)
+            if gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$prev_job/logs" --allow-escape-sequences > "$RAW_LOG" 2>/dev/null; then
+              bash .github/scripts/api-failed-from-log.sh < "$RAW_LOG" | awk '{print $2}' > api/target/nextest/prev/failed-tests.txt
+            fi
+            rm -f "$RAW_LOG"
+          fi
 
       - name: Test
         if: needs.changes.outputs.run_tests == 'true'   # github.event_name != 'pull_request' (except batch/merge-*; owner 2026-10-17)
@@ -391,7 +496,10 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ env.XC_PGPORT }}/xchange_test
           XC_REQUIRE_WEB_DIST: 1
-          PACKAGES: ${{ needs.changes.outputs.packages }}
+          PACKAGES: ${{ needs.changes.outputs.test_packages }}
+          SINCE_FILTER: ${{ needs.changes.outputs.test_filter }}
+          PARTITION: hash:${{ matrix.partition }}/${{ matrix.total }}
+          CACHE_KEY: p${{ matrix.partition }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           RUN_ID: ${{ github.run_id }}
         run: |
@@ -405,41 +513,35 @@ jobs:
           for candidate in \
             "target/nextest/prev/failed-tests.txt" \
             "target/nextest/prev/junit.xml" \
-            "$CACHE_DIR/attempt-${PREV_ATTEMPT}-junit.xml"; do
+            "$CACHE_DIR/$CACHE_KEY-attempt-${PREV_ATTEMPT}-junit.xml"; do
             if [ -r "$candidate" ]; then
               PREV_REPORT="$candidate"
               break
             fi
           done
           NEXTEST_ARGS=$(bash ../.github/scripts/api-rerun-filter.sh "$PACKAGES" "${RUN_ATTEMPT:-1}" "$PREV_REPORT")
-          echo "nextest args: $NEXTEST_ARGS"
+          echo "nextest args: $NEXTEST_ARGS --partition $PARTITION"
           rc=0
+          # shellcheck disable=SC2086
           if [[ "$NEXTEST_ARGS" == *" -E '"*"'" ]]; then
             pkg_part="${NEXTEST_ARGS%% -E \'*}"
             filter_part="${NEXTEST_ARGS#* -E \'}"
             filter_part="${filter_part%\'}"
-            cargo nextest run --profile ci $pkg_part -E "$filter_part" --no-fail-fast || rc=$?
+            cargo nextest run --profile ci $pkg_part -E "$filter_part" --partition "$PARTITION" --no-tests=pass --no-fail-fast || rc=$?
+          elif [ -n "$SINCE_FILTER" ]; then
+            echo "starting from the last run: -E '$SINCE_FILTER'"
+            cargo nextest run --profile ci $NEXTEST_ARGS -E "$SINCE_FILTER" --partition "$PARTITION" --no-tests=pass --no-fail-fast || rc=$?
           else
-            cargo nextest run --profile ci $NEXTEST_ARGS --no-fail-fast || rc=$?
+            cargo nextest run --profile ci $NEXTEST_ARGS --partition "$PARTITION" --no-tests=pass --no-fail-fast || rc=$?
           fi
           if [ -r "target/nextest/ci/junit.xml" ]; then
             mkdir -p "$CACHE_DIR"
-            cp "target/nextest/ci/junit.xml" "$CACHE_DIR/attempt-${RUN_ATTEMPT:-1}-junit.xml"
+            cp "target/nextest/ci/junit.xml" "$CACHE_DIR/$CACHE_KEY-attempt-${RUN_ATTEMPT:-1}-junit.xml"
           fi
           exit "$rc"
 
-      - name: Upload failed tests artifact
-        if: failure() && needs.changes.outputs.run_tests == 'true'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-failed-tests-${{ github.run_id }}
-          path: api/target/nextest/ci/junit.xml
-          if-no-files-found: ignore
-          overwrite: true
-
       - name: Guard tests
-        if: needs.changes.outputs.guards == 'true'
+        if: matrix.partition == 1 && needs.changes.outputs.guards == 'true'
         working-directory: api
         env:
           TEST_DATABASE_URL: postgres://postgres@127.0.0.1:${{ env.XC_PGPORT }}/xchange_test
@@ -462,20 +564,22 @@ jobs:
       # The form helper is TypeScript under api/web/forms (#378). The server embeds the built
       # api/static/xc-forms.js, so this fails when that file is not the build of its source.
       - name: Form helper typecheck and build check
+        if: matrix.partition == 1
         run: |
           npm --prefix api/web/forms ci --no-audit --no-fund
           npm --prefix api/web/forms run check
 
       - name: Form validation JS tests
-        if: github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
+        if: matrix.partition == 1 && github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         run: node --test api/tests/js/*.test.mjs
 
       - name: "Release check refuses no screens"
-        if: needs.changes.outputs.release_check == 'true'
+        if: matrix.partition == 1 && needs.changes.outputs.release_check == 'true'
         working-directory: api
         run: cargo check --release --locked
 
       - name: Dependency policy
+        if: matrix.partition == 1
         working-directory: api
         run: |
           VERSION="0.19.9"
@@ -489,7 +593,7 @@ jobs:
           "$BIN" check
 
       - name: Stop postgres and remove its data
-        if: always() && (needs.changes.outputs.run_tests == 'true' || needs.changes.outputs.guards == 'true')
+        if: always() && (needs.changes.outputs.run_tests == 'true' || (matrix.partition == 1 && needs.changes.outputs.guards == 'true'))
         run: |
           if [ -n "${XC_PGROOT:-}" ] && [ -d "$XC_PGROOT" ]; then
             if [ -n "${XC_PGBIN:-}" ] && [ -x "$XC_PGBIN/pg_ctl" ]; then
