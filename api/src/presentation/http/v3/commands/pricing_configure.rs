@@ -1,23 +1,35 @@
 //! `pricingConfigure` (pricing-tiers.md §6, §3, §3.1): one currency's override margins, minimum spread and anchor,
 //! saved as a new policy version through `PolicyVersionWriter` (no draft). A frame change: EXECUTIVE only.
-//!
-//! SKELETON (PT-0): `run` is PT-5's. The name, route, permission (`RatePolicySave`, inherited from `ratePolicySave`)
-//! and the input/output types stay.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::Row;
 use ts_rs::TS;
+use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{CurrencyCode, Money, RatePercent, Side};
+use xc_rate::application::policy::policy_version_writer::{
+    PolicyVersionChange, PolicyVersionWriter,
+};
+use xc_rate::domain::draft::rate_engine_error::RateEngineError;
+use xc_rate::domain::policy::anchor_source::AnchorSource;
+use xc_rate::domain::policy::currency_tier_override::{CurrencyTierOverride, TierMargin};
+use xc_rate::domain::policy::policy_tiers::PolicyTier;
+use xc_rate::domain::policy::rate_policy::RatePolicy;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 /// One tier's margins as decimal strings (signed, scale 4).
@@ -54,6 +66,19 @@ pub struct PricingConfigureOutput {
     pub version: i32,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct CurrentPolicyRow {
+    id: Uuid,
+    buy_adjust_pct: Decimal,
+    sell_adjust_pct: Decimal,
+    guards: Value,
+    max_reference_age_hours: Option<i32>,
+    on_stale: Option<String>,
+    stale_limit_thb: Option<Decimal>,
+    value_tiers_on: bool,
+    sharp_move_alert_pct: Option<Decimal>,
+}
+
 pub struct PricingConfigureCommand;
 
 impl CommandAction for PricingConfigureCommand {
@@ -66,13 +91,268 @@ impl CommandAction for PricingConfigureCommand {
 
     async fn run(
         &self,
-        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &BranchId,
-        _who: &Actor,
-        _input: Self::Input,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        who: &Actor,
+        input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        todo!("PT-5: pricingConfigure")
+        if input.reason.trim().is_empty() {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("reason"),
+                "reason cannot be empty",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        let policy_version_id = Uuid::parse_str(input.policy_version_id.trim()).map_err(|_| {
+            V3Error::new(
+                "validationFailed",
+                Some("policyVersionId"),
+                "invalid policyVersionId",
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+
+        let currency = CurrencyCode::parse(input.currency.trim()).map_err(|_| {
+            V3Error::new(
+                "validationFailed",
+                Some("currency"),
+                "unknown currency code",
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+
+        let margins = match &input.tiers {
+            Some(dtos) => {
+                if dtos.len() != 4 {
+                    return Err(V3Error::new(
+                        "validationFailed",
+                        Some("tiers"),
+                        "tiers must hold exactly four entries 1..=4 or be null",
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+                let mut parsed = Vec::with_capacity(dtos.len());
+                for dto in dtos {
+                    let buy_margin_pct = RatePercent::parse(&dto.buy_margin_pct).map_err(|e| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("tiers"),
+                            format!("invalid buy margin in tier {}: {}", dto.tier_no, e),
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
+                    let sell_margin_pct = RatePercent::parse(&dto.sell_margin_pct).map_err(|e| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("tiers"),
+                            format!("invalid sell margin in tier {}: {}", dto.tier_no, e),
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
+                    parsed.push(TierMargin {
+                        tier_no: dto.tier_no,
+                        buy_margin_pct,
+                        sell_margin_pct,
+                    });
+                }
+                parsed
+            }
+            None => Vec::new(),
+        };
+
+        let min_spread_pct = match input.min_spread_pct.as_deref() {
+            Some(s) => Some(RatePercent::parse(s).map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("minSpreadPct"),
+                    format!("invalid minSpreadPct: {e}"),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?),
+            None => None,
+        };
+
+        let anchor_source = match input.anchor_source.as_deref() {
+            Some(s) => Some(AnchorSource::parse(s).ok_or_else(|| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("anchorSource"),
+                    "unknown anchorSource",
+                    StatusCode::BAD_REQUEST,
+                )
+            })?),
+            None => None,
+        };
+
+        if !crate::presentation::http::v3::rate_policy_save::may_change_the_frame(
+            who,
+            branch,
+            Utc::now(),
+        ) {
+            return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
+        }
+
+        let cur_row: Option<CurrentPolicyRow> = sqlx::query_as(
+            "SELECT id, buy_adjust_pct, sell_adjust_pct, guards, max_reference_age_hours, \
+                    on_stale, stale_limit_thb, value_tiers_on, sharp_move_alert_pct \
+             FROM rate_policy_versions \
+             WHERE branch_id = $1 AND valid_to IS NULL \
+             FOR UPDATE",
+        )
+        .bind(branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
+
+        let Some(cur) = cur_row else {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("policyVersionId"),
+                "branch has no active rate policy version",
+                StatusCode::BAD_REQUEST,
+            ));
+        };
+
+        if cur.id != policy_version_id {
+            return Err(V3Error::new(
+                "staleVersion",
+                None,
+                "policyVersionId does not match the current policy version",
+                StatusCode::CONFLICT,
+            ));
+        }
+
+        let override_entry = CurrencyTierOverride::new(
+            currency,
+            margins,
+            min_spread_pct,
+            anchor_source,
+        )
+        .map_err(|e| match e {
+            RateEngineError::ValidationFailed(msg) => {
+                V3Error::new("validationFailed", None, msg, StatusCode::BAD_REQUEST)
+            }
+            _ => server_error(),
+        })?;
+
+        if let Some(tiers) = &override_entry.tiers {
+            let rate_policy = RatePolicy::new(
+                "pricing-configure",
+                RatePercent::parse(&format!("{:.4}", cur.buy_adjust_pct))
+                    .unwrap_or(RatePercent::ZERO),
+                RatePercent::parse(&format!("{:.4}", cur.sell_adjust_pct))
+                    .unwrap_or(RatePercent::ZERO),
+                &cur.guards,
+            )
+            .map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("tiers"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
+
+            let code_str = currency.as_str();
+            if let Some(guard) = rate_policy.guard_for(code_str, Side::Buy) {
+                for tier in tiers {
+                    let eff = cur.buy_adjust_pct + tier.buy_margin_pct.value();
+                    if eff < guard.min_pct || eff > guard.max_pct {
+                        return Err(V3Error::new(
+                            "validationFailed",
+                            Some("tiers"),
+                            format!(
+                                "tier {} buy margin outside {} guard [{}, {}]",
+                                tier.tier_no, code_str, guard.min_pct, guard.max_pct
+                            ),
+                            StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                }
+            }
+            if let Some(guard) = rate_policy.guard_for(code_str, Side::Sell) {
+                for tier in tiers {
+                    let eff = cur.sell_adjust_pct + tier.sell_margin_pct.value();
+                    if eff < guard.min_pct || eff > guard.max_pct {
+                        return Err(V3Error::new(
+                            "validationFailed",
+                            Some("tiers"),
+                            format!(
+                                "tier {} sell margin outside {} guard [{}, {}]",
+                                tier.tier_no, code_str, guard.min_pct, guard.max_pct
+                            ),
+                            StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                }
+            }
+        }
+
+        let rows = sqlx::query(
+            "SELECT tier_no, upper_inclusive_thb, buy_margin_pct, sell_margin_pct \
+             FROM rate_policy_value_tiers \
+             WHERE policy_version_id = $1 \
+             ORDER BY tier_no ASC",
+        )
+        .bind(cur.id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|_| server_error())?;
+
+        let mut cur_tiers = Vec::with_capacity(rows.len());
+        for r in rows {
+            let tier_no: i16 = r.get(0);
+            let upper_dec: Option<Decimal> = r.get(1);
+            let buy_dec: Decimal = r.get(2);
+            let sell_dec: Decimal = r.get(3);
+            let upper = match upper_dec {
+                Some(u) => Some(Money::parse(&format!("{u:.2}")).map_err(|_| server_error())?),
+                None => None,
+            };
+            let buy_margin = RatePercent::parse(&format!("{buy_dec:.4}")).map_err(|_| server_error())?;
+            let sell_margin = RatePercent::parse(&format!("{sell_dec:.4}")).map_err(|_| server_error())?;
+            cur_tiers.push(PolicyTier::new(
+                tier_no as u8,
+                upper,
+                buy_margin,
+                sell_margin,
+            ));
+        }
+
+        let written = PolicyVersionWriter::next(
+            tx,
+            branch,
+            PolicyVersionChange {
+                buy_adjust_pct: cur.buy_adjust_pct,
+                sell_adjust_pct: cur.sell_adjust_pct,
+                guards: cur.guards,
+                max_reference_age_hours: cur.max_reference_age_hours,
+                on_stale: cur.on_stale,
+                stale_limit_thb: cur.stale_limit_thb,
+                value_tiers_on: cur.value_tiers_on,
+                sharp_move_alert_pct: cur.sharp_move_alert_pct,
+                value_tiers: cur_tiers,
+                anchor_source: None,
+                overrides: Some(vec![override_entry]),
+                approved_by: who.user_id.clone(),
+                reason: input.reason,
+            },
+        )
+        .await
+        .map_err(|e| match e {
+            RateEngineError::ValidationFailed(msg) => {
+                V3Error::new("validationFailed", None, msg, StatusCode::BAD_REQUEST)
+            }
+            _ => server_error(),
+        })?;
+
+        Ok(PricingConfigureOutput {
+            id: written.id.to_string(),
+            version: written.version,
+        })
     }
 }
 
