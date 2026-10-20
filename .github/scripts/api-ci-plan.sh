@@ -31,9 +31,33 @@ print_all() {
   exit 0
 }
 
-# Batch PRs and events other than pull_request / push plan everything.
+# Batch PRs and events other than pull_request / push plan everything (unless workflow_dispatch names packages).
 if [ "$EVENT" = "pull_request" ] && [[ "$HEAD_REF" == batch/merge-* ]]; then
   print_all
+fi
+if [ "$EVENT" = "workflow_dispatch" ] && [ -n "${DISPATCH_PACKAGES:-}" ] && [[ "${DISPATCH_PACKAGES}" =~ [^[:space:]] ]]; then
+  exec python3 - "$METADATA_FILE" "$DISPATCH_PACKAGES" <<'PY'
+import json
+import sys
+
+metadata_file, raw = sys.argv[1], sys.argv[2]
+with open(metadata_file, "r", encoding="utf-8") as f:
+    known = {p["name"] for p in json.load(f).get("packages", []) if "name" in p}
+
+requested = sorted(set(raw.split()))
+unknown = [p for p in requested if p not in known]
+if unknown:
+    sys.stderr.write(f"Error: unknown package(s) in DISPATCH_PACKAGES: {', '.join(unknown)}\n")
+    sys.exit(1)
+
+pkgs = " ".join(f"-p {p}" for p in requested)
+dev = "true" if "xc-device-agent" in requested else "false"
+print(f"packages={pkgs}")
+print("run_tests=true")
+print("guards=false")
+print(f"device_agent={dev}")
+print("release_check=true")
+PY
 fi
 if [ "$EVENT" != "pull_request" ] && [ "$EVENT" != "push" ]; then
   print_all
