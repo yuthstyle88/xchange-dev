@@ -1,6 +1,6 @@
 import { createSignal, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../../shared/api/client';
-import type { StaffMeView } from '../../../../shared/api/generated/staff_me';
+import type { MeView } from '../../../../shared/api/generated/me';
 import { screenT } from '../../../../shared/i18n';
 import { can } from '../../../staff/parts/can';
 import * as texts from './i18n';
@@ -20,7 +20,7 @@ export function createTask<S>(props: { store: S }): TaskHandle {
   const storeAny = props.store as any;
   const path = storeAny?.path;
 
-  // Stub frame store (P7) or STAFF_DESK (O-8): never read staff_me or desk_refunds
+  // Stub frame store (P7) or STAFF_DESK (O-8): never read me or desk_refunds
   if (path?.kind !== 'owner') {
     return {
       nav: () => null,
@@ -34,7 +34,7 @@ export function createTask<S>(props: { store: S }): TaskHandle {
   const refundsStore: RefundsStore = createRefundsStore(api);
 
   api
-    .view<StaffMeView>('staff_me')
+    .view<MeView>('me')
     .then((res) => {
       if (can(res.data, 'ReversalRequest')) {
         setVisible(true);
@@ -42,7 +42,7 @@ export function createTask<S>(props: { store: S }): TaskHandle {
       }
     })
     .catch(() => {
-      // staff_me failed or 404: step stays hidden, desk_refunds is never called
+      // me failed: step stays hidden, desk_refunds is never called
     });
 
   return {

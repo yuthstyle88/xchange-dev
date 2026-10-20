@@ -6,25 +6,14 @@ import {
   makeDeskRefundLine,
   makeDeskRefundPayment,
   makeDeskRefundRow,
+  makeMe,
   makeReversalSummaryDto,
-  makeStaffMeView,
   type DeskRefunds,
+  type MeView,
   type ReversalSummaryDto,
-  type StaffMeView,
 } from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
 import * as texts from './i18n';
-
-const ME = {
-  kind: 'user',
-  id: 'u-1',
-  role: '',
-  branch: 'MAIN',
-  name: 'Ploy',
-  username: 'ploy',
-  branchName: 'XC-B',
-  branches: [],
-};
 
 const CONFIG = {
   branchId: 'MAIN',
@@ -35,8 +24,8 @@ const CONFIG = {
   paymentMethods: [],
 };
 
-function staffMe(permissions: string[]) {
-  return makeStaffMeView({ userId: 'u-1', name: 'Ploy', roles: [], branchId: 'MAIN', branchName: 'XC-B', permissions });
+function me(permissions: string[]) {
+  return makeMe({ id: 'u-1', name: 'Ploy', roles: [], permissions, branch: 'MAIN', branchName: 'XC-B', branches: [] });
 }
 
 function reversal(id: string, original: string, over: Partial<ReversalSummaryDto> = {}) {
@@ -83,7 +72,7 @@ interface Call {
 type Reply = { status: number; body?: unknown; text?: string } | 'network' | 'hang';
 
 interface World {
-  staffMe: StaffMeView;
+  me: MeView;
   refundReads: DeskRefunds[];
   posts: Reply[];
 }
@@ -116,11 +105,10 @@ function install(): void {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? init.body : null;
       calls.push({ method, path: u.pathname, body, key: headers.get('idempotency-key') });
-      if (u.pathname === '/api/v3/views/me') return view(ME);
+      if (u.pathname === '/api/v3/views/me') return view(world.me);
       if (u.pathname === '/api/v3/views/desk_config' || u.pathname === '/api/v3/views/staff_desk_config') {
         return view(CONFIG);
       }
-      if (u.pathname === '/api/v3/views/staff_me') return view(world.staffMe);
       if (u.pathname === '/api/v3/views/desk_refunds') {
         const r = world.refundReads[Math.min(refundReadCount, world.refundReads.length - 1)]!;
         refundReadCount++;
@@ -163,7 +151,7 @@ async function releaseAll(): Promise<void> {
 
 async function boot(over: Partial<World> = {}): Promise<HTMLDivElement> {
   world = {
-    staffMe: staffMe(['ReversalRequest']),
+    me: me(['ReversalRequest']),
     refundReads: [{ rows: ROWS }],
     posts: [{ status: 200, body: posted('rv-1') }],
     ...over,
@@ -177,7 +165,7 @@ async function boot(over: Partial<World> = {}): Promise<HTMLDivElement> {
 
 beforeAll(async () => {
   vi.useFakeTimers();
-  world = { staffMe: staffMe([]), refundReads: [{ rows: [] }], posts: [] };
+  world = { me: me([]), refundReads: [{ rows: [] }], posts: [] };
   install();
   app = document.createElement('div');
   app.id = 'app';
