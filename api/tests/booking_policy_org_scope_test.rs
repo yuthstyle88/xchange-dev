@@ -4,7 +4,7 @@
 //!
 //! `PUT /api/booking-policy` (`commands/bookings/policy.rs`) upserts the one `booking_policies` row keyed on
 //! `who.organization_id`. Its policy row needs `BranchesManage` (`xc-auth` `areas/bookings.rs`), which only
-//! `Role::Admin` holds (`role_permissions.rs`). The seam authorises against the body `branch`, so an ADMIN
+//! `Role::Admin` holds (`RoleGrants::seed` / §11.2). The seam authorises against the body `branch`, so an ADMIN
 //! whose only role row is on XC-B01 is granted XC-B01 and today rewrites the whole organisation's policy.
 //!
 //! Required (lane-controller ruling, security): an organisation-wide policy write needs an

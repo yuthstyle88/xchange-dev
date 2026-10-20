@@ -25,7 +25,7 @@
 //!     none → `SaveClosed` (the kept rule of `custody_machine.rs:1194-1214`);
 //!   - no branch custodian: two tellers, each on their own shift, both save (C1).
 //!
-//! No role literal is asked for: the role table is PR 589's (`role_permissions.rs`), where only BRANCH_MANAGER holds
+//! No role literal is asked for: the role table is §11.2 (`RoleGrants::seed`), where only BRANCH_MANAGER holds
 //! `BranchDayOperate`.
 //!
 //! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c; ruling Q5, cash-shift-transfer.md §4.2): `COUNTING`

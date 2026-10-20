@@ -14,7 +14,7 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::*;
 use serde_json::{Value, json};
 use tx4_common::*;
-use xc_auth::domain::access::{Permission, Role as AccessRole, RolePermissions};
+use xc_auth::domain::access::{Permission, Role as AccessRole, RoleGrants};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
@@ -174,8 +174,8 @@ async fn r4_branch_with_no_limit_row_or_null_answers_approval_limit_thb_null() {
 
 #[actix_web::test]
 async fn r5_caller_without_system_settings_is_refused() {
-    assert!(!RolePermissions::of(AccessRole::Teller).contains(&Permission::SystemSettings));
-    assert!(RolePermissions::of(AccessRole::Admin).contains(&Permission::SystemSettings));
+    assert!(!RoleGrants::seed(AccessRole::Teller).contains(&Permission::SystemSettings));
+    assert!(RoleGrants::seed(AccessRole::Admin).contains(&Permission::SystemSettings));
     let desk = Desk::start().await;
     let a = get(&desk, VIEW, "teller").await;
     assert!(

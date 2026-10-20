@@ -27,7 +27,7 @@
 //!
 //! Customers are made through `CustomerService::reserve`, as the desk makes them (one customer per organisation,
 //! the passport encrypted with its lookup hash). Expectations about who may read are computed from
-//! `RolePermissions`, never from a role name; roles only *make* an actor. Needs `TEST_DATABASE_URL`; nothing
+//! `RoleGrants`, never from a role name; roles only *make* an actor. Needs `TEST_DATABASE_URL`; nothing
 //! skips.
 
 mod common;
@@ -44,7 +44,7 @@ use pos_infra::transactions::Transactor;
 use quote_common::*;
 use serde_json::Value;
 use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
@@ -164,7 +164,7 @@ fn holds(role: V2Role, p: Permission) -> bool {
     mapped(role)
         .roles
         .iter()
-        .any(|r| RolePermissions::of(r.role).contains(&p))
+        .any(|r| RoleGrants::holds(r.group_code(), p))
 }
 
 /// A staff role whose session holds `CustomerHoldPlace`, found in the role table, not named.
@@ -404,7 +404,7 @@ async fn each_staff_role_searches_exactly_when_it_holds_customer_hold_place() {
 async fn a_signed_in_person_without_customer_hold_place_is_refused() {
     let room = Room::start().await;
     room.seed().await;
-    assert!(!RolePermissions::of(Role::Customer).contains(&Permission::CustomerHoldPlace));
+    assert!(!RoleGrants::seed(Role::Customer).contains(&Permission::CustomerHoldPlace));
     let id = room.person("A Customer").await;
     refused(
         &room.get(&format!("customer:{id}:MAIN"), "q=Somchai").await,

@@ -43,8 +43,8 @@ test.describe.serial('shift open and close', () => {
     await form.getByTestId('transfer-kind').selectOption('EXTERNAL_IN');
     await form.getByTestId('transfer-note').fill('e2e: fund the safe for the shift test');
     const thbRows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
+    await expect(thbRows.first(), 'THB rows in the transfer form').toBeVisible({ timeout: 20_000 });
     const thbCount = await thbRows.count();
-    expect(thbCount, 'THB rows in the transfer form').toBeGreaterThan(0);
     for (let i = 0; i < thbCount; i++) await thbRows.nth(i).locator('input[data-denomination-id]').fill(FUND_QTY);
     await shot(finance, 'cash', 'fund-1-form');
     const submitted = finance.waitForResponse(
@@ -90,7 +90,9 @@ test.describe.serial('shift open and close', () => {
     const recv = finance.getByTestId('transfer-receive-form');
     await expect(recv).toBeVisible({ timeout: 15_000 });
     const recvRows = recv.locator('[data-denomination-row]').filter({ hasText: 'THB' });
-    for (let i = 0; i < (await recvRows.count()); i++) await recvRows.nth(i).locator('input[data-denomination-id]').fill(FUND_QTY);
+    await expect(recvRows.first(), 'THB rows in the receive form').toBeVisible({ timeout: 20_000 });
+    const recvCount = await recvRows.count();
+    for (let i = 0; i < recvCount; i++) await recvRows.nth(i).locator('input[data-denomination-id]').fill(FUND_QTY);
     const received = await posted(finance, /\/api\/cash-transfers\/[^/]+\/receive$/, () => recv.getByTestId('transfer-receive-save').click());
     console.log(`[fund] receive ${received.text}`);
     expect(received.ok, `transfer received: ${received.text}`).toBeTruthy();

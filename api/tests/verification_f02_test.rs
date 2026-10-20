@@ -223,10 +223,22 @@ impl Who {
         }
     }
 
+    #[allow(dead_code)]
     fn executive(user_id: &str) -> Self {
         Self {
             user_id: user_id.to_owned(),
             role: Role::Executive,
+            branch: None,
+            customer_id: None,
+            org_id: ORG_1.to_owned(),
+            session: format!("session-{user_id}"),
+        }
+    }
+
+    fn rate_manager(user_id: &str) -> Self {
+        Self {
+            user_id: user_id.to_owned(),
+            role: Role::RateManager,
             branch: None,
             customer_id: None,
             org_id: ORG_1.to_owned(),
@@ -738,9 +750,10 @@ async fn every_f02_route_refuses_without_verification_review() {
             Who::teller("33333333-3333-3333-3333-333333333333", BRANCH_MAIN),
         ),
         ("admin", Who::admin("55555555-5555-5555-5555-555555555555")),
+        // Under RBAC §11.2, Executive holds VerificationReview (Documents: Full); RateManager does not (Documents: View).
         (
-            "executive",
-            Who::executive("66666666-6666-6666-6666-666666666666"),
+            "rate_manager",
+            Who::rate_manager("66666666-6666-6666-6666-666666666666"),
         ),
         (
             "customer",

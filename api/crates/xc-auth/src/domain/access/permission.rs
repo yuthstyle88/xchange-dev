@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Permission {
     OverviewRead,
     RatesDraft,
@@ -68,4 +68,61 @@ pub enum Permission {
     LoyaltyRulesManage,
     /// C2 (user-management-rbac design §3.3): read the account audit and the login history. EXECUTIVE and ADMIN.
     AuditLogsRead,
+}
+
+impl Permission {
+    /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
+    pub const ALL: [Permission; 51] = [
+        Permission::OverviewRead,
+        Permission::RatesDraft,
+        Permission::RatesHistoryRead,
+        Permission::RatePolicySave,
+        Permission::BranchesManage,
+        Permission::UsersManage,
+        Permission::ApprovalsDecide,
+        Permission::ShiftOperate,
+        Permission::ShiftCloseCertify,
+        Permission::BookingsDesk,
+        Permission::ExchangeTransact,
+        Permission::TransactionRead,
+        Permission::ReceiptReprint,
+        Permission::ReversalRequest,
+        Permission::CashManage,
+        Permission::QueueOperate,
+        Permission::SystemSettings,
+        Permission::CompatRead,
+        Permission::RequestAbandon,
+        Permission::DocumentsList,
+        Permission::FileRead,
+        Permission::ProofUpload,
+        Permission::DeviceQueue,
+        Permission::DeviceProcess,
+        Permission::DevicePrinterOnline,
+        Permission::DrawerPassport,
+        Permission::FinanceReconcile,
+        Permission::VerificationReview,
+        Permission::IdentityDocumentRead,
+        Permission::MarketingCampaigns,
+        Permission::MarketingMembers,
+        Permission::MarketingPerformance,
+        Permission::CustomerSelf,
+        Permission::AttendanceClock,
+        Permission::CustomerHoldPlace,
+        Permission::CashTargetSet,
+        Permission::BranchDayOperate,
+        Permission::SignedIn,
+        Permission::ReferenceRatesRead,
+        Permission::ConsentPolicyManage,
+        Permission::ReferralAttach,
+        Permission::ReferralSupersede,
+        Permission::ReferralRead,
+        Permission::CashLimitsManage,
+        Permission::ReportsExport,
+        Permission::AlertSettingsSave,
+        Permission::CashTransferPolicySet,
+        Permission::RateAlertSettingsSave,
+        Permission::OrgStartingPricesManage,
+        Permission::LoyaltyRulesManage,
+        Permission::AuditLogsRead,
+    ];
 }

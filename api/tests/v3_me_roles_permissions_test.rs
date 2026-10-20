@@ -13,7 +13,7 @@
 //!   - `roles` = `[{role, branchId}]`: the caller's valid-now rows, `role` the wire name (`"TELLER"`), `branchId` a
 //!     branch id or `null`, ordered by role name, then branch id.
 //!   - `permissions` = the `Permission` variant names (serde form, e.g. `"ApprovalsDecide"`) that
-//!     `Authorizer::check` grants at `Me.branch`, the candidates being the union of `RolePermissions::of` over the
+//!     `Authorizer::check` grants at `Me.branch`, the candidates being the union of `RoleGrants::seed` over the
 //!     caller's roles; sorted, no duplicates. `Authorizer::check` is the only judge, so these tests use it as the
 //!     oracle rather than copy a scope rule.
 //! - The `me` version moves when a role row is granted or revoked (`identity_version` over `user_id` and the sorted
@@ -47,7 +47,7 @@ use xc_auth::domain::access::actor::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::role_grants::{Group, RoleGrants, RoleGrantsSnapshot};
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
@@ -219,7 +219,7 @@ fn name_of(p: Permission) -> String {
 }
 
 /// The sorted permission names `Authorizer::check` grants at `branch` to an actor holding exactly `rows`, all valid
-/// now. The candidates are the union of `RolePermissions::of` over the rows (ticket §3.3).
+/// now. The candidates are the union of `RoleGrants::seed` over the rows (ticket §3.3).
 fn granted(rows: &[(&str, Option<&str>)], branch: &str) -> Vec<String> {
     let org = "org-under-test";
     let since = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
@@ -234,9 +234,9 @@ fn granted(rows: &[(&str, Option<&str>)], branch: &str) -> Vec<String> {
     let target = Target::new(org, Some(BranchId::new(branch)), None);
     let mut names: BTreeSet<String> = BTreeSet::new();
     for (role, _) in rows {
-        for p in RolePermissions::of(role_of(role)) {
-            if Authorizer::check(Some(&actor), *p, &target, Utc::now()).is_ok() {
-                names.insert(name_of(*p));
+        for p in RoleGrants::seed(role_of(role)) {
+            if Authorizer::check(Some(&actor), p, &target, Utc::now()).is_ok() {
+                names.insert(name_of(p));
             }
         }
     }
@@ -875,4 +875,82 @@ fn the_generated_me_type_has_roles_and_permissions_and_no_old_fields() {
         .unwrap_or_else(|| panic!("an `export type MeRole` line in {}", path.display()));
     assert!(role.contains(" role: string,"), "{role}");
     assert!(role.contains(" branchId: string | null,"), "{role}");
+}
+
+/// RBAC §11 C6h (#3323): an actor holding a custom group reads its installed permissions, not the base's seed.
+#[actix_web::test]
+async fn a_custom_group_reads_its_installed_permissions_not_the_base_seed() {
+    static MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = MUTEX.lock().await;
+
+    struct ResetSeeded;
+    impl Drop for ResetSeeded {
+        fn drop(&mut self) {
+            RoleGrants::install(RoleGrantsSnapshot::seeded());
+        }
+    }
+    let _reset = ResetSeeded;
+
+    // `CashManage` is outside TELLER's seed, so the answer differs from the base's whatever `Authorizer` filters
+    // (reviewer fix: a subset of the base's seed could not tell the two apart).
+    let custom_perms = vec![
+        Permission::CompatRead,
+        Permission::QueueOperate,
+        Permission::CashManage,
+        Permission::SignedIn,
+    ];
+    let mut groups: Vec<(Group, Vec<Permission>)> = RoleGrants::BUILT_IN
+        .into_iter()
+        .map(|r| (Group::built_in(r), RoleGrants::seed(r)))
+        .collect();
+    groups.push((
+        Group {
+            code: "NIGHT_TELLER".to_string(),
+            name: "Night Teller".to_string(),
+            base: Role::Teller,
+            built_in: false,
+        },
+        custom_perms.clone(),
+    ));
+    RoleGrants::install(RoleGrantsSnapshot::new(0, groups));
+
+    let (desk, identity, app, reader) = setup().await;
+    sqlx::query(
+        "INSERT INTO roles (code, name, base_role, built_in) VALUES ('NIGHT_TELLER', 'Night Teller', 'TELLER', false)",
+    )
+    .execute(&desk.pool)
+    .await
+    .expect("insert custom role");
+
+    sqlx::query(
+        "INSERT INTO role_permission_grants (role_code, permission) VALUES ('NIGHT_TELLER', 'CompatRead'), ('NIGHT_TELLER', 'QueueOperate'), ('NIGHT_TELLER', 'CashManage'), ('NIGHT_TELLER', 'SignedIn')",
+    )
+    .execute(&desk.pool)
+    .await
+    .expect("insert custom grants");
+
+    let rows = [("NIGHT_TELLER", Some("B1"))];
+    bound_user(&desk.pool, SUB_A, "ACTIVE", "Night Nok", &rows).await;
+    let token = sign_in(&app, &identity, VALID_A).await;
+
+    let data = me(&reader, &token).await;
+    assert_eq!(keys(&data), me_keys(), "{data}");
+    assert_eq!(data["branch"], json!("B1"));
+
+    let permissions = strings(&data["permissions"]);
+    let mut expected: Vec<String> = custom_perms.into_iter().map(name_of).collect();
+    expected.sort();
+    assert_eq!(permissions, expected);
+
+    let teller_seed: Vec<String> = RoleGrants::seed(Role::Teller)
+        .into_iter()
+        .map(name_of)
+        .collect();
+    assert_ne!(
+        permissions, teller_seed,
+        "Me.permissions must reflect NIGHT_TELLER's set, not TELLER's seed"
+    );
+
+    drop(reader);
+    desk.drop_schema().await;
 }

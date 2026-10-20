@@ -256,7 +256,7 @@ impl SessionReader for FakeSessions {
                         .unwrap_or("");
                     match cookie {
                         "who=owner" => (owner(), None),
-                        "who=staff" => (None, staff(Role::Rates)),
+                        "who=staff" => (None, staff(Role::Front)),
                         _ => (None, None),
                     }
                 }
@@ -519,6 +519,9 @@ async fn another_method_is_the_plain_404_even_without_the_applications_fallback(
 /// Every recorded case through the whole application.
 #[actix_web::test]
 async fn every_recorded_case_is_answered_as_v2_answered_it() {
+    use xc_auth::domain::access::v3_roles::blueprint_roles;
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let fixture = fixture();
     let standard = with_numbers(&fixture.answer);
     let mut wrong = Vec::new();
@@ -530,14 +533,19 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
             "fails" => Rates::Refuse(BANK_DOWN),
             other => panic!("{}: unknown upstream {other}", case.name),
         });
-        let sessions = FakeSessions::new(match case.caller.as_str() {
-            "anonymous" => Who::Nobody,
-            "owner" => Who::Owner,
-            "staff" => Who::Staff(
+        let staff_role = if case.caller == "staff" {
+            Some(
                 Role::parse(case.role.as_deref().expect("a role"))
                     .filter(|role| Role::STAFF.contains(role))
                     .expect("one of the nine staff roles"),
-            ),
+            )
+        } else {
+            None
+        };
+        let sessions = FakeSessions::new(match case.caller.as_str() {
+            "anonymous" => Who::Nobody,
+            "owner" => Who::Owner,
+            "staff" => Who::Staff(staff_role.expect("staff role")),
             // v2 answers 500 when it cannot read the session. The port has no way to
             // say that (`sessions` returns `Sessions`, not a `Result`), so what a
             // failed look-up answers belongs to the reader's ticket (T4c), not to this route.
@@ -562,16 +570,44 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
         let answer = send!(&app, request);
         let mut fail = |what: String| wrong.push(format!("{}: {what}", case.name));
 
-        if answer.status.as_u16() != case.v2.status {
+        // Under §11.2 (rule S11), staff roles holding ReferenceRatesRead in RoleGrants::seed
+        // are admitted where v2 refused all staff with 403.
+        let s11_admitted = staff_role.is_some_and(|r| {
+            blueprint_roles(r)
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
+        }) && case.v2.status == 403;
+        let expected_status = if s11_admitted {
+            if case.upstream == "answers" { 200 } else { 400 }
+        } else {
+            case.v2.status
+        };
+        let expected_body = if s11_admitted && case.upstream == "fails" {
+            error_body(BANK_DOWN)
+        } else {
+            case.v2.body.clone()
+        };
+        let expected_cache_control = if s11_admitted {
+            Some("no-store")
+        } else {
+            case.v2.cache_control.as_deref()
+        };
+        let expected_asked = if s11_admitted {
+            1
+        } else {
+            usize::from(case.v2.upstream_requests > 0)
+        };
+
+        if answer.status.as_u16() != expected_status {
             fail(format!(
-                "status {}, v2 {} — body {:?}",
+                "status {}, expected {} — body {:?}",
                 answer.status.as_u16(),
-                case.v2.status,
+                expected_status,
                 answer.body.chars().take(80).collect::<String>()
             ));
             continue;
         }
-        match case.v2.status {
+        match expected_status {
             200 => {
                 match serde_json::from_str::<Value>(&answer.body) {
                     Ok(body) if body == standard => {}
@@ -583,7 +619,7 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
             }
             404 => {
                 // not this route: the application's fallback answered
-                if method != Method::HEAD && answer.body != case.v2.body {
+                if method != Method::HEAD && answer.body != expected_body {
                     fail(format!("404 body {:?}", answer.body));
                 }
                 if !answer
@@ -595,8 +631,11 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
                 }
             }
             _ => {
-                if answer.body != case.v2.body {
-                    fail(format!("body {:?}, v2 {:?}", answer.body, case.v2.body));
+                if answer.body != expected_body {
+                    fail(format!(
+                        "body {:?}, expected {:?}",
+                        answer.body, expected_body
+                    ));
                 }
                 if !is_json(&answer) {
                     fail(format!("Content-Type {:?}", answer.content_type));
@@ -604,17 +643,18 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
             }
         }
         // where v2 forbids storing the answer, so does v3
-        if case.v2.cache_control.is_some() && answer.cache_control != case.v2.cache_control {
+        if expected_cache_control.is_some()
+            && answer.cache_control.as_deref() != expected_cache_control
+        {
             fail(format!(
-                "Cache-Control {:?}, v2 {:?}",
-                answer.cache_control, case.v2.cache_control
+                "Cache-Control {:?}, expected {:?}",
+                answer.cache_control, expected_cache_control
             ));
         }
         // v2 asks the bank (two requests per fetch) exactly when v3 asks its source once
-        let asked = usize::from(case.v2.upstream_requests > 0);
-        if rates.calls() != asked {
+        if rates.calls() != expected_asked {
             fail(format!(
-                "the source was asked {} times, expected {asked}",
+                "the source was asked {} times, expected {expected_asked}",
                 rates.calls()
             ));
         }
@@ -809,7 +849,22 @@ async fn nobody_signed_in_is_a_401_before_anything_else() {
 
 #[actix_web::test]
 async fn staff_are_a_403_before_the_headers_are_looked_at() {
-    for role in Role::STAFF {
+    use xc_auth::domain::access::v3_roles::blueprint_roles;
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
+    assert!(
+        Role::STAFF.iter().any(|&role| {
+            !blueprint_roles(role)
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
+        }),
+        "§11.2 must leave some staff role without ReferenceRatesRead, or this test refuses nobody"
+    );
+    for role in Role::STAFF.into_iter().filter(|&role| {
+        !blueprint_roles(role)
+            .iter()
+            .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
+    }) {
         let rates = FakeRates::new(Rates::Answer(standard()));
         let sessions = FakeSessions::new(Who::Staff(role));
         let app = application!(&rates, &sessions);
@@ -1092,9 +1147,14 @@ async fn the_401_and_the_403_carry_no_cache_control() {
         );
     }
 
+    assert!(
+        !xc_auth::domain::access::RoleGrants::seed(xc_auth::domain::access::Role::Teller)
+            .contains(&xc_auth::domain::access::Permission::ReferenceRatesRead),
+        "§11.2: TELLER (Role::Front) does not hold ReferenceRatesRead"
+    );
     for (who, status) in [
         (Who::Nobody, StatusCode::UNAUTHORIZED),
-        (Who::Staff(Role::Rates), StatusCode::FORBIDDEN),
+        (Who::Staff(Role::Front), StatusCode::FORBIDDEN),
     ] {
         let rates = FakeRates::new(Rates::Answer(standard()));
         let sessions = FakeSessions::new(who);
