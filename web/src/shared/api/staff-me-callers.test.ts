@@ -58,6 +58,8 @@ function findSourceFiles(dir: string): string[] {
 describe('staff_me caller guard (#3970)', () => {
   it('only staff-only screens may read staff_me (prevents owner 401 bug class)', () => {
     const files = findSourceFiles(SRC_DIR);
+    // A wrong SRC_DIR would scan nothing and pass; web/src holds hundreds of source files.
+    expect(files.length, `scanned ${SRC_DIR}`).toBeGreaterThan(100);
     const violations: string[] = [];
 
     for (const file of files) {
@@ -76,5 +78,12 @@ describe('staff_me caller guard (#3970)', () => {
     }
 
     expect(violations, violations.join('\n')).toEqual([]);
+  });
+
+  it('every allow-listed file still exists and still reads staff_me (no stale entries)', () => {
+    for (const rel of Object.keys(ALLOWED_STAFF_ME_CALLERS)) {
+      const content = fs.readFileSync(path.join(REPO_DIR, rel), 'utf8');
+      expect(content.includes("'staff_me'") || content.includes('"staff_me"'), `${rel} no longer reads staff_me; drop it from the allow-list`).toBe(true);
+    }
   });
 });
