@@ -19,6 +19,7 @@ import type {
 import { lang, locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
+import { AnswerPreview } from './AnswerPreview';
 import { th, en, zh } from './i18n';
 import './assistant.css';
 
@@ -114,6 +115,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
     props.initialConversationId ?? searchParams().conversationId ?? null,
   );
   const [messages, setMessages] = createSignal<AssistantMessageDto[]>([]);
+  const [lastAnswer, setLastAnswer] = createSignal<AssistantAskAnswerDto | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [inputText, setInputText] = createSignal('');
@@ -191,6 +193,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
 
       setConversationId(res.conversationId);
       setMessages((prev) => [...prev, res.customerMessage, res.assistantReply]);
+      setLastAnswer(res);
     } catch (err) {
       if (mine !== sendSeq) return;
       if (isFromInput) {
@@ -207,6 +210,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
     setSending(false);
     setConversationId(null);
     setMessages([]);
+    setLastAnswer(null);
     setLoadError(null);
     setSendError(null);
     setInputText('');
@@ -320,6 +324,10 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
               )}
             </For>
           </div>
+        </Show>
+
+        <Show when={lastAnswer()}>
+          {(answer) => <AnswerPreview answer={answer()} api={client} branch={effectiveBranch() ?? undefined} />}
         </Show>
       </main>
 

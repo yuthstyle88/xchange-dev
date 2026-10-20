@@ -60,13 +60,16 @@ pub struct TransactionCompletedDto {
     pub receipt: CompletedReceiptDto,
 }
 
-/// `stockInsufficient` is a conflict with the drawer as it stands (409, #873 ruling Q9); every other refusal is
-/// TX-4's answer.
+/// `stockInsufficient` and `stockReserved` are conflicts with the drawer or active reservations as they stand
+/// (409, #873 ruling Q9, #3819); every other refusal is TX-4's answer.
 fn complete_refusal(e: AppError) -> V3Error {
-    if let AppError::Domain(m) = &e
-        && m.starts_with("stockInsufficient")
-    {
-        return V3Error::new("stockInsufficient", None, m.clone(), StatusCode::CONFLICT);
+    if let AppError::Domain(m) = &e {
+        if m.starts_with("stockInsufficient") {
+            return V3Error::new("stockInsufficient", None, m.clone(), StatusCode::CONFLICT);
+        }
+        if m.starts_with("stockReserved") {
+            return V3Error::new("stockReserved", None, m.clone(), StatusCode::CONFLICT);
+        }
     }
     refusal(e)
 }

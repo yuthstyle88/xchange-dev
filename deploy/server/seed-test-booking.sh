@@ -22,7 +22,7 @@
 #   TELLER_PHONE   default +66800000101      CUSTOMER_PHONE  default +66800000102
 #   SEED_DAYS      default 7
 #
-# --json: write the test users file for qa/booking-e2e to stdout and everything else to stderr, so
+# --json: write the test users file for qa/e2e to stdout and everything else to stderr, so
 #   ssh do-sgp1 'bash /tmp/seed-test-booking.sh --json https://xc-v3.spacing.cloud' > users.json
 # creates the file with no password on the screen. In this mode the phones default to new random
 # test numbers, so every run makes accounts whose password it knows.

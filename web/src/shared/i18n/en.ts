@@ -39,6 +39,7 @@ export const en: Record<Key, string> = {
   'error.paymentOwnerOnly': 'Only the owner can configure payment methods',
   'error.drawerRoleNotAllowed': 'This account is not permitted to open the cash drawer',
   'error.serverError': 'Server error',
+  'error.stockInsufficient': 'Not enough cash in the safe or drawer for this — record cash into the safe first, then try again',
   'error.loyaltyUnavailable': 'The loyalty service is temporarily unavailable. Please try again.',
   'error.network': 'Cannot reach the server. Please try again.',
   'error.employeeAuthRequired': 'Employee authentication required',

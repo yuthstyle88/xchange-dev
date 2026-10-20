@@ -432,3 +432,20 @@
   flex-wrap: wrap;
 }
 
+.xc-booking-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #64748b);
+  margin-top: 0.25rem;
+}
+
+.xc-booking-wait-ahead {
+  font-weight: 500;
+}
+
+.xc-booking-wait-estimate {
+  font-size: 0.8125rem;
+}
+

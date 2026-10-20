@@ -13,6 +13,7 @@ import { lang, screenT } from '../../../shared/i18n';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import { formatOpeningHours } from '../../../shared/ui/openingHours';
 import { BranchLive } from './BranchLive';
+import { TakeNumber } from './TakeNumber';
 import { th, en, zh } from './i18n';
 import './branches.css';
 
@@ -223,6 +224,7 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
                       </div>
 
                       <BranchLive branch={branch.code} bookingEnabled={branch.bookingEnabled} fetch={fetchFn} />
+                      <TakeNumber branch={branch.code} queueOpen={branch.queueOpen} fetch={fetchFn} />
 
                       <div class="xc-branch-details">
                         <div class="xc-branch-row xc-branch-address">

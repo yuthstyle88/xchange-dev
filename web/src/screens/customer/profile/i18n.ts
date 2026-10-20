@@ -49,7 +49,7 @@ export const en = {
 
 export const zh = {
   title: '个人资料',
-  loading: '加载中…',
+  loading: '正在加载…',
   loadFailed: '个人资料加载失败',
   retry: '重试',
   signInPrompt: '请登录以查看个人资料',

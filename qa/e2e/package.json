@@ -1,0 +1,14 @@
+{
+  "name": "xchange-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Owner-run Playwright suite over every v3 screen against a running host (design docs/design/qa-e2e.md)",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
+  }
+}

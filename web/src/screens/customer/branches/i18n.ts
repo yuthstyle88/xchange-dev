@@ -30,6 +30,13 @@ export const th = {
   liveCounters: 'เปิดให้บริการ {count} ช่อง',
   liveEstimate: 'รอประมาณ {low}–{high} นาที',
   liveFreeSlots: 'รอบว่างวันนี้ {count} รอบ',
+  takeNumber: 'รับบัตรคิว',
+  takenNumber: 'บัตรคิวของคุณ {number}',
+  viewTicket: 'ดูคิวของฉัน',
+  alreadyQueued: 'คุณมีบัตรคิวที่สาขานี้แล้ว',
+  queueClosedNow: 'สาขานี้ปิดรับคิวแล้ว',
+  takeFailed: 'รับบัตรคิวไม่สำเร็จ',
+  signInToTake: 'เข้าสู่ระบบเพื่อรับบัตรคิว',
 };
 
 export const en = {
@@ -61,6 +68,13 @@ export const en = {
   liveCounters: '{count} counters open',
   liveEstimate: 'About {low}–{high} min wait',
   liveFreeSlots: '{count} free slots today',
+  takeNumber: 'Take a queue number',
+  takenNumber: 'Your number is {number}',
+  viewTicket: 'See my queue',
+  alreadyQueued: 'You already have a number at this branch',
+  queueClosedNow: 'This branch is not taking numbers now',
+  takeFailed: 'Could not take a number',
+  signInToTake: 'Sign in to take a number',
 };
 
 export const zh = {
@@ -79,11 +93,11 @@ export const zh = {
   noHours: '暂无营业时间',
   timezone: '时区',
   queueStatus: '排队状态',
-  queueOpen: '排队开放',
-  queueClosed: '排队关闭',
+  queueOpen: '排队开放中',
+  queueClosed: '排队已关闭',
   bookingStatus: '预约服务',
-  bookingEnabled: '支持预约',
-  bookingDisabled: '暂不支持预约',
+  bookingEnabled: '可预约',
+  bookingDisabled: '暂不可预约',
   viewRates: '查看汇率',
   searchPlaceholder: '按名称或代码搜索…',
   noSearchResults: '未找到匹配的分行',
@@ -92,4 +106,11 @@ export const zh = {
   liveCounters: '{count} 个窗口营业',
   liveEstimate: '预计等候 {low}–{high} 分钟',
   liveFreeSlots: '今日剩余 {count} 个时段',
+  takeNumber: '取号',
+  takenNumber: '您的号码是 {number}',
+  viewTicket: '查看我的排队',
+  alreadyQueued: '您在此分行已有号码',
+  queueClosedNow: '此分行暂停取号',
+  takeFailed: '取号失败',
+  signInToTake: '登录后取号',
 };

@@ -52,6 +52,10 @@ fn stock_insufficient(detail: &str) -> AppError {
     AppError::Domain(format!("stockInsufficient: {detail}"))
 }
 
+fn stock_reserved(detail: &str) -> AppError {
+    AppError::Domain(format!("stockReserved: {detail}"))
+}
+
 fn is_thb(currency: CurrencyCode) -> bool {
     currency.as_str() == "THB"
 }
@@ -293,8 +297,11 @@ impl Plan {
             let pos = self.position(tx, branch, currency).await?;
             (pos.now, pos.last_average, pos.reserved)
         };
-        if reserved > Decimal::ZERO && before.quantity - q < reserved {
-            return Err(stock_insufficient(
+        if movement_type == MovementType::Dispose
+            && reserved > Decimal::ZERO
+            && before.quantity - q < reserved
+        {
+            return Err(stock_reserved(
                 "the posting takes a position into another quote's reserved stock",
             ));
         }
