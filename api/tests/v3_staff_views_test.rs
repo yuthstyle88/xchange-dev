@@ -14,7 +14,7 @@
 //! `EntryPath::StaffRpc`; `staff_holds` admits `CustomerHoldPlace` **or** `VerificationReview`
 //! (`Need::AnyOf`, #1149, which #573 waits for).
 //!
-//! The expectations here are computed from `RolePermissions` and a permission, never from a role
+//! The expectations here are computed from `RoleGrants::seed` and a permission, never from a role
 //! name: each case asks "does this actor hold permission P", so the tests hold whatever the role
 //! table says. The roles appear only to *make* an actor (through the v2 session, as the staff page
 //! signs in today, mapped by `actor_from_v3`).
@@ -65,7 +65,7 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_auth::domain::policy::value_objects::role::Role as V2Role;
@@ -188,7 +188,7 @@ fn holds(role: V2Role, p: Permission) -> bool {
     mapped(role, "x", "MAIN")
         .roles
         .iter()
-        .any(|r| RolePermissions::of(r.role).contains(&p))
+        .any(|r| RoleGrants::seed(r.role).contains(&p))
 }
 
 /// The actor's effective permissions on its branch, each serialised as `Permission` is.
@@ -196,7 +196,7 @@ fn permissions_of(role: V2Role) -> Vec<Value> {
     let mut ps: Vec<Value> = mapped(role, "x", "MAIN")
         .roles
         .iter()
-        .flat_map(|r| RolePermissions::of(r.role).iter().copied())
+        .flat_map(|r| RoleGrants::seed(r.role).into_iter())
         .map(|p| serde_json::to_value(p).expect("a permission serialises"))
         .collect();
     ps.sort_by_key(|v| v.to_string());
@@ -479,14 +479,14 @@ async fn a_signed_in_person_without_the_views_permission_is_refused() {
     let id = f.person("A Customer").await;
     let who = format!("customer:{id}:MAIN");
     // CUSTOMER holds SignedIn only: staff_me answers, the other three refuse
-    assert!(RolePermissions::of(Role::Customer).contains(&Permission::SignedIn));
+    assert!(RoleGrants::seed(Role::Customer).contains(&Permission::SignedIn));
     for p in [
         Permission::AttendanceClock,
         Permission::CustomerHoldPlace,
         Permission::VerificationReview,
     ] {
         assert!(
-            !RolePermissions::of(Role::Customer).contains(&p),
+            !RoleGrants::seed(Role::Customer).contains(&p),
             "premise: {p:?}"
         );
     }

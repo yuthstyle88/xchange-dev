@@ -25,6 +25,7 @@
 mod policy_common;
 
 use policy_common::*;
+use xc_auth::domain::access::RoleGrants;
 use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow};
 
 const HOLDS: &[Permission] = &[
@@ -83,7 +84,7 @@ fn ask(
     )
 }
 
-/// Only `CustomerHoldPlace` of the two (TELLER, `role_permissions.rs`), at `own`.
+/// Only `CustomerHoldPlace` of the two (TELLER, `RoleGrants::seed` / §11.2), at `own`.
 fn hold_placer(own: &str) -> Actor {
     staff(Role::Teller, own)
 }
@@ -93,15 +94,16 @@ fn reviewer(own: &str) -> Actor {
     staff(Role::VerificationReviewer, own)
 }
 
-/// Neither of the two (RATE_MANAGER), at `own`.
+/// Neither of the two (ADMIN, §11.2 seed has CUSTOMERS NONE and DOCUMENTS NONE), at `own`.
 fn neither(own: &str) -> Actor {
-    staff(Role::RateManager, own)
+    // §11.2: RATE_MANAGER gained CUSTOMERS FULL; ADMIN holds neither CustomerHoldPlace nor VerificationReview
+    staff(Role::Admin, own)
 }
 
 #[test]
 fn the_fixture_roles_hold_what_the_tests_say() {
     // the premise of every test below, read from the role table, not assumed
-    let has = |r: Role, p: Permission| RolePermissions::of(r).contains(&p);
+    let has = |r: Role, p: Permission| RoleGrants::seed(r).contains(&p);
     assert!(has(Role::Teller, Permission::CustomerHoldPlace));
     assert!(!has(Role::Teller, Permission::VerificationReview));
     assert!(has(
@@ -112,8 +114,9 @@ fn the_fixture_roles_hold_what_the_tests_say() {
         Role::VerificationReviewer,
         Permission::CustomerHoldPlace
     ));
-    assert!(!has(Role::RateManager, Permission::CustomerHoldPlace));
-    assert!(!has(Role::RateManager, Permission::VerificationReview));
+    // §11.2: ADMIN holds neither of the two permissions
+    assert!(!has(Role::Admin, Permission::CustomerHoldPlace));
+    assert!(!has(Role::Admin, Permission::VerificationReview));
 }
 
 #[test]

@@ -347,23 +347,46 @@ impl Shop {
 
 #[actix_web::test]
 async fn each_v3_role_saves_or_is_refused_as_today() {
+    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
+    use xc_auth::domain::access::{Permission, RoleGrants, Standing};
+
     let shop = Shop::start().await;
     let reader: Arc<dyn SessionReader> = Arc::new(V3Sessions);
+    let mut completed_count = 0;
+    let mut refused_count = 0;
     for role in V3_ROLES {
         let id = caller_id(role);
+        let v3_role = Role::parse(role).expect("a v3 role");
+        let holds = blueprint_roles(v3_role)
+            .iter()
+            .any(|&r| RoleGrants::seed(r).contains(&Permission::ExchangeTransact));
+        let v3_actor = if role == "OWNER" {
+            Actor::owner(&id)
+        } else {
+            Actor::staff(&id, v3_role, BranchId::new("MAIN")).expect("a staff role")
+        };
+        let user = actor_from_v3(&v3_actor, ORG, chrono::DateTime::<Utc>::UNIX_EPOCH);
+        let audit_role = Standing::of(&user, Utc::now())
+            .expect("a v3 role has standing")
+            .kind
+            .audit_text()
+            .to_owned();
+
         let before = shop.count("SELECT count(*) FROM transactions").await;
         let got = shop.save_as(reader.clone(), role, &id).await;
-        let expected = if role == "FRONT" {
+        let expected = if holds {
+            completed_count += 1;
             Saved::Completed {
                 status: "COMPLETED".to_owned(),
-                audit: (id.clone(), "FRONT".to_owned()),
+                audit: (id.clone(), audit_role),
                 recorded: (id.clone(), id.clone()),
             }
         } else {
+            refused_count += 1;
             Saved::Refused(400, "roleNotAllowedHere".to_owned())
         };
-        assert_eq!(got, expected, "{role}: the save's outcome is today's");
-        if role != "FRONT" {
+        assert_eq!(got, expected, "{role}: the save's outcome follows §11.2");
+        if !holds {
             assert_eq!(
                 shop.count("SELECT count(*) FROM transactions").await,
                 before,
@@ -379,6 +402,7 @@ async fn each_v3_role_saves_or_is_refused_as_today() {
             );
         }
     }
+    assert!(completed_count > 0 && refused_count > 0);
     shop.finish().await;
 }
 

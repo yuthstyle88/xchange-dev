@@ -112,12 +112,42 @@ impl<R: UserRepository> UserService<R> {
         valid_from: DateTime<Utc>,
         valid_to: Option<DateTime<Utc>>,
     ) -> Result<ScopedRole, UserChangeError> {
+        self.grant_group(
+            tx,
+            actor,
+            ip,
+            user_id,
+            role.as_str(),
+            role,
+            branch,
+            valid_from,
+            valid_to,
+        )
+        .await
+    }
+
+    /// Grants a new scoped group (`group` is stored in `user_roles.role_code`, `base` is its
+    /// base `Role` from `RoleGrants::base_of`) to a user: checks `GrantGuard` and `ScopeRule`
+    /// against current active roles before writing, writes `user_roles` row, and bumps `users.version`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn grant_group(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+        group: &str,
+        base: Role,
+        branch: Option<BranchId>,
+        valid_from: DateTime<Utc>,
+        valid_to: Option<DateTime<Utc>>,
+    ) -> Result<ScopedRole, UserChangeError> {
         let user = self
             .repo
             .find_by_id(tx, user_id)
             .await?
             .ok_or(UserChangeError::NotFound)?;
-        let scoped_role = ScopedRole::new(role, branch, valid_from, valid_to);
+        let scoped_role = ScopedRole::in_group(group, base, branch, valid_from, valid_to);
         let target = TargetUser {
             id: user.id.clone(),
             status: user.status,
@@ -151,7 +181,7 @@ impl<R: UserRepository> UserService<R> {
             &user.organization_id,
             None,
             Some(json!({
-                "role": scoped_role.role.as_str(),
+                "role": scoped_role.group_code(),
                 "branch": scoped_role.branch.as_ref().map(|b| b.as_str()),
                 "validFrom": scoped_role.valid_from,
                 "validTo": scoped_role.valid_to,
@@ -175,6 +205,24 @@ impl<R: UserRepository> UserService<R> {
         branch: Option<&BranchId>,
         now: DateTime<Utc>,
     ) -> Result<(), UserChangeError> {
+        self.revoke_group(tx, actor, ip, user_id, role.as_str(), role, branch, now)
+            .await
+    }
+
+    /// Revokes a group (`user_roles.role_code`) by setting `valid_to` on matching `user_roles`
+    /// rows, and bumps `users.version`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn revoke_group(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+        group: &str,
+        base: Role,
+        branch: Option<&BranchId>,
+        now: DateTime<Utc>,
+    ) -> Result<(), UserChangeError> {
         let user = self
             .repo
             .find_by_id(tx, user_id)
@@ -190,11 +238,17 @@ impl<R: UserRepository> UserService<R> {
             .repo
             .count_active_owners(tx, &user.organization_id)
             .await?;
-        let action = AccountAction::Revoke(ScopedRole::new(role, branch.cloned(), now, None));
+        let action = AccountAction::Revoke(ScopedRole::in_group(
+            group,
+            base,
+            branch.cloned(),
+            now,
+            None,
+        ));
         GrantGuard::check(actor, &target, &action, owners_left)
             .map_err(UserChangeError::Refused)?;
         self.repo
-            .revoke_role(tx, &user.id, role, branch, now)
+            .revoke_role(tx, &user.id, group, branch, now)
             .await?;
         self.repo.bump_version(tx, &user.id).await?;
         AccountAuditor::record(
@@ -205,7 +259,7 @@ impl<R: UserRepository> UserService<R> {
             "userRevoke",
             &user.organization_id,
             Some(json!({
-                "role": role.as_str(),
+                "role": group,
                 "branch": branch.map(|b| b.as_str()),
             })),
             None,

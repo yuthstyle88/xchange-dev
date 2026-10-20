@@ -31,7 +31,7 @@ function makeHarness(steps: StepAnswer[]) {
     const method = (init?.method ?? 'GET').toUpperCase();
     const u = new URL(input, 'http://localhost');
 
-    if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+    if (method === 'GET' && u.pathname === '/api/v3/views/me') {
       return jsonResponse(200, {
         version: 1,
         changed: true,

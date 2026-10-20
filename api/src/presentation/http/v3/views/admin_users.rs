@@ -17,7 +17,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_users::{AdminUserRole, AdminUserRow, AdminUsersFilter};
-use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
+use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint, push_literal_contains};
 
 /// `(user_id, role_code, branch_id, valid_from, valid_to)` of one `user_roles` row.
 type RoleRow = (
@@ -87,16 +87,11 @@ impl PagedView for AdminUsersPagedView {
             if let Some(ref q) = filter.q
                 && !q.is_empty()
             {
-                builder.push(
-                    " AND (lower(normalize(u.name, NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(",
+                push_literal_contains(
+                    &mut builder,
+                    &["u.name", "coalesce(u.employee_code, '')"],
+                    q,
                 );
-                builder.push_bind(q.as_str());
-                builder.push(
-                    ", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\' \
-                     OR lower(normalize(coalesce(u.employee_code, ''), NFKC)) LIKE ('%' || replace(replace(replace(lower(normalize(",
-                );
-                builder.push_bind(q.as_str());
-                builder.push(", NFKC)), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') ESCAPE '\\')");
             }
 
             builder.push(" ORDER BY u.name, u.id LIMIT ");

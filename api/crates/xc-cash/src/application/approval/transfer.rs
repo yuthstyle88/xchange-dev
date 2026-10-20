@@ -10,7 +10,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Permission, Role, RolePermissions};
+use xc_auth::domain::access::{Actor, Permission, Role, RoleGrants};
 use xc_kernel::ids::BranchId;
 
 /// The type name.
@@ -35,7 +35,7 @@ pub fn policy_actor(
     let has_perm = who.roles.iter().any(|r| {
         r.valid_from <= now
             && r.valid_to.is_none_or(|to| now < to)
-            && RolePermissions::of(r.role).contains(&permission)
+            && RoleGrants::holds(r.group_code(), permission)
             && (r.branch.is_none() || r.branch.as_ref() == Some(source))
     });
     if has_perm { Some(who.clone()) } else { None }

@@ -10,13 +10,16 @@ use xc_kernel::pii::{IdentityType, normalize};
 
 use crate::application::user::UserService;
 use crate::application::user::user_service::{CreateStaffError, StaffCreate};
-use crate::domain::access::{BranchRef, Role, ScopedRole, SessionBranch};
+use crate::domain::access::{
+    BranchRef, Role, RoleGrantStore, RoleGrants, ScopedRole, SessionBranch,
+};
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityLoginResponse, IdentityOtpRequestResponse,
     UNAVAILABLE_MESSAGE,
 };
 use crate::domain::token::{TokenVerifier, VerifiedToken};
 use crate::domain::user::{User, UserStatus};
+use crate::infrastructure::access::PgRoleGrantStore;
 use crate::infrastructure::user::PgUserRepository;
 
 use super::login_recorder::{LoginAttempt, LoginRecorder, LoginResult};
@@ -163,7 +166,13 @@ type ActiveUserRow = (
 );
 /// `users.last_branch_id` and the organisation's branches (`ORG_BRANCHES_JSON`), read at sign-in.
 type SignInBranchRow = (Option<String>, String);
-type RoleRow = (String, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+type RoleRow = (
+    String,
+    String,
+    Option<String>,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
+);
 
 /// The organisation's branches as one JSON text, `[{id, code, name}]`, for a row aliased `u` of `users` (SB-1
 /// §14.3). A sub-select, so it folds into the statement that reads the user: no extra query. `code` is
@@ -189,21 +198,24 @@ fn branch_refs(json: &str) -> Result<Vec<BranchRef>, SessionError> {
 
 fn scoped_roles(rows: Vec<RoleRow>) -> Vec<ScopedRole> {
     rows.into_iter()
-        .filter_map(|(role_code, branch_id, valid_from, valid_to)| {
-            let role = Role::parse(&role_code)?;
-            Some(ScopedRole::new(
-                role,
-                branch_id.map(BranchId::new),
-                valid_from,
-                valid_to,
-            ))
+        .filter_map(|(role_code, base_role, branch_id, valid_from, valid_to)| {
+            Role::parse(&base_role).map(|role| {
+                ScopedRole::in_group(
+                    &role_code,
+                    role,
+                    branch_id.map(BranchId::new),
+                    valid_from,
+                    valid_to,
+                )
+            })
         })
         .collect()
 }
 
-const VALID_ROLES_SQL: &str = "SELECT role_code, branch_id, valid_from, valid_to FROM user_roles \
-     WHERE user_id = $1::uuid AND valid_from <= $2 AND (valid_to IS NULL OR valid_to > $2) \
-     ORDER BY valid_from ASC, id ASC";
+const VALID_ROLES_SQL: &str = "SELECT ur.role_code, r.base_role, ur.branch_id, ur.valid_from, ur.valid_to \
+     FROM user_roles ur JOIN roles r ON r.code = ur.role_code \
+     WHERE ur.user_id = $1::uuid AND ur.valid_from <= $2 AND (ur.valid_to IS NULL OR ur.valid_to > $2) \
+     ORDER BY ur.valid_from ASC, ur.id ASC";
 
 /// One active session as a read answers it (SB-1 §14.3): the user, their valid roles, the session's stored branch,
 /// the user's last choice, and the organisation's branches. Read in two statements, as before §14.
@@ -945,6 +957,18 @@ impl SessionService {
 
         if expires <= now || status != "ACTIVE" || u_version != s_version {
             return Ok(None);
+        }
+
+        let grant_version: i64 = sqlx::query_scalar("SELECT version FROM role_grant_version")
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        if grant_version != RoleGrants::current().version() {
+            let snapshot = PgRoleGrantStore::new()
+                .load(&mut *conn)
+                .await
+                .map_err(|e| SessionError::Database(e.to_string()))?;
+            RoleGrants::install(snapshot);
         }
 
         let roles_rows: Vec<RoleRow> = sqlx::query_as(VALID_ROLES_SQL)

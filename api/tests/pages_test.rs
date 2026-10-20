@@ -370,9 +370,14 @@ async fn every_page_answers_as_v2_does() {
                 200 => {
                     seen[0] += 1;
                     if ScreenTable::compiled().holds(path) {
+                        let want_cache = if ["/desk", "/staff/desk"].contains(&path) {
+                            "no-store"
+                        } else {
+                            "no-cache"
+                        };
                         assert_eq!(
                             answer.header("cache-control"),
-                            Some("no-cache"),
+                            Some(want_cache),
                             "{what}: cache-control"
                         );
                         assert!(
@@ -671,6 +676,11 @@ async fn a_page_whose_file_is_missing_is_the_plain_404_after_the_sign_in_check()
             continue;
         }
         let held = ScreenTable::compiled().holds(path);
+        let want_cache = if path == "/desk" {
+            "no-store"
+        } else {
+            "no-cache"
+        };
         let answer = ask(&app, get(path, "owner").to_request()).await;
         if held {
             assert_eq!(
@@ -678,7 +688,7 @@ async fn a_page_whose_file_is_missing_is_the_plain_404_after_the_sign_in_check()
                 StatusCode::OK,
                 "no directory: GET {path} as the owner"
             );
-            assert_eq!(answer.header("cache-control"), Some("no-cache"));
+            assert_eq!(answer.header("cache-control"), Some(want_cache));
         } else {
             answer.is_the_plain_404(&format!("no directory: GET {path} as the owner"));
         }
@@ -692,12 +702,20 @@ async fn a_page_whose_file_is_missing_is_the_plain_404_after_the_sign_in_check()
                 StatusCode::OK,
                 "no directory: GET {path} as nobody"
             );
-            assert_eq!(answer.header("cache-control"), Some("no-cache"));
+            assert_eq!(answer.header("cache-control"), Some(want_cache));
         }
     }
-    ask(&app, get("/staff/desk", "staff:FRONT:XC-B01").to_request())
-        .await
-        .is_the_plain_404("no directory: the desk variant");
+    let answer = ask(&app, get("/staff/desk", "staff:FRONT:XC-B01").to_request()).await;
+    if ScreenTable::compiled().holds("/staff/desk") {
+        assert_eq!(
+            answer.status,
+            StatusCode::OK,
+            "no directory: the desk variant"
+        );
+        assert_eq!(answer.header("cache-control"), Some("no-store"));
+    } else {
+        answer.is_the_plain_404("no directory: the desk variant");
+    }
     let answer = ask(&app, get("/staff/desk", "owner").to_request()).await;
     assert_eq!(answer.status.as_u16(), 302, "no directory: /staff/desk");
     ask(&app, get("/app.js", "none").to_request())
@@ -713,7 +731,9 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     let login_held = ScreenTable::compiled().holds("/login");
     // a v2 branch page read from the directory: `/` until V2-switch (#472) hands it to the
     // v3 admin screen, then `/desk` (`pages.rs` `PAGE_SPECS`)
-    let (live_path, live_file) = if ScreenTable::compiled().holds("/") {
+    let (live_path, live_file) = if ScreenTable::compiled().holds("/desk") {
+        ("/kiosk", "kiosk.html")
+    } else if ScreenTable::compiled().holds("/") {
         ("/desk", "desk.html")
     } else {
         ("/", "admin.html")
