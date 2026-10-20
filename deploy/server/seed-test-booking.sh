@@ -21,7 +21,22 @@
 # Environment (optional):
 #   TELLER_PHONE   default +66800000101      CUSTOMER_PHONE  default +66800000102
 #   SEED_DAYS      default 7
+#
+# --json: write the test users file for qa/booking-e2e to stdout and everything else to stderr, so
+#   ssh do-sgp1 'bash /tmp/seed-test-booking.sh --json https://xc-v3.spacing.cloud' > users.json
+# creates the file with no password on the screen. In this mode the phones default to new random
+# test numbers, so every run makes accounts whose password it knows.
 set -euo pipefail
+
+JSON=0
+if [ "${1:-}" = "--json" ]; then
+  JSON=1
+  shift
+  exec 3>&1 1>&2
+  rnd() { printf '%04d' $(( $(od -An -N2 -tu2 /dev/urandom) % 10000 )); }
+  TELLER_PHONE="${TELLER_PHONE:-+6680001$(rnd)}"
+  CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6680002$(rnd)}"
+fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
@@ -124,7 +139,7 @@ if [ -n "$TELLER_SUB" ]; then
        ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
      INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
      SELECT id, 'TELLER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
-  echo "    teller created: $TELLER_PHONE  password $TELLER_PW"
+  [ "$JSON" = 1 ] || echo "    teller created: $TELLER_PHONE  password $TELLER_PW"
 else
   TELLER_PW="(unchanged: $TELLER_PHONE was already registered)"
 fi
@@ -132,7 +147,7 @@ fi
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
 if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
-  echo "    customer Identity account created: $CUSTOMER_PHONE  password $CUSTOMER_PW"
+  [ "$JSON" = 1 ] || echo "    customer Identity account created: $CUSTOMER_PHONE  password $CUSTOMER_PW"
   resp=$({ cfg url "$BASE/api/app/register"; cfg header 'Content-Type: application/json'
             cfg header "Origin: $BASE"; cfg header 'X-Xchange-Request: 1'
             cfg data "{\"identifier\":\"$CUSTOMER_PHONE\",\"password\":\"$CUSTOMER_PW\",\"displayName\":\"Test Customer\",\"lang\":\"th\",\"marketing\":[]}"
@@ -142,6 +157,24 @@ if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
   [ "$code" = 200 ] || die "POST $BASE/api/app/register answered $code: $(sed '$d' <<<"$resp" | head -c 400)"
 else
   CUSTOMER_PW="(unchanged: $CUSTOMER_PHONE was already registered)"
+fi
+
+if [ "$JSON" = 1 ]; then
+  case "$TELLER_PW$CUSTOMER_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
+  cat >&3 <<JSON
+{
+  "baseUrl": "$BASE",
+  "customer": { "phone": "$CUSTOMER_PHONE", "password": "$CUSTOMER_PW" },
+  "teller":   { "phone": "$TELLER_PHONE", "password": "$TELLER_PW" },
+  "admin":    { "identifier": "<the owner's sign-in>", "password": "<the owner's password>" },
+  "referralCode": "TEST1234",
+  "branch": "$BRANCH",
+  "currency": "USD",
+  "quantity": "100"
+}
+JSON
+  say "users.json written to stdout (teller $TELLER_PHONE, customer $CUSTOMER_PHONE)"
+  exit 0
 fi
 
 echo
