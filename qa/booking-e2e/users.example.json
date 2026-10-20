@@ -12,6 +12,10 @@
     "phone": "+66800000103",
     "password": "<from seed-test-booking.sh>"
   },
+  "finance": {
+    "phone": "<finance phone from the seed>",
+    "password": "<finance password from the seed>"
+  },
   "admin": {
     "identifier": "<the owner's sign-in>",
     "password": "<the owner's password>"
