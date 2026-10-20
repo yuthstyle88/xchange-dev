@@ -100,6 +100,22 @@ test.describe.serial('#1683 booking', () => {
     await shot(page, 'desk-1-bookings');
   });
 
+  // Teardown: cancel the booking kept for the desk check, so reruns do not fill the slots.
+  test('cleanup: the customer cancels the kept booking', async ({ page }) => {
+    test.skip(!keptBooking, 'nothing to clean');
+    await signIn(page, users.customer.phone, users.customer.password, '/app/bookings');
+    const cancelName = /ยกเลิกการจอง|Cancel Booking|取消预约/;
+    const card = page
+      .locator('li, article, section, div')
+      .filter({ hasText: keptBooking })
+      .filter({ has: page.getByRole('button', { name: cancelName }) })
+      .last();
+    await card.getByRole('button', { name: cancelName }).click();
+    await page.getByRole('button', { name: /ยืนยันการยกเลิก|Confirm Cancellation|确认取消/ }).click();
+    await expect(card.getByText(/ยกเลิกแล้ว|Cancelled|已取消/)).toBeVisible({ timeout: 15_000 });
+    console.log(`[cleanup] cancelled ${keptBooking}`);
+  });
+
   test('admin booking-slots opens', async ({ page }) => {
     test.skip(!users.admin?.password || users.admin.password.startsWith('<'), 'no admin account in users.json');
     await signIn(page, users.admin.identifier, users.admin.password, '/');
