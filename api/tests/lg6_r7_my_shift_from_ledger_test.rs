@@ -20,15 +20,13 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -213,31 +211,6 @@ impl Room {
 struct HeaderUsers;
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = req
-            .headers()
-            .get(AS)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
-        Box::pin(async move {
-            let mut parts = spec.splitn(3, '|');
-            match (parts.next(), parts.next(), parts.next()) {
-                (Some(id), Some(_), Some(branch)) => Sessions {
-                    owner: None,
-                    staff: Actor::staff(id, OldRole::Finance, BranchId::new(branch)),
-                },
-                _ => Sessions {
-                    owner: None,
-                    staff: None,
-                },
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
