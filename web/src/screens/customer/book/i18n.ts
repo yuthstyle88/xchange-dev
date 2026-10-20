@@ -105,7 +105,7 @@ export const zh = {
   loading: '正在加载…',
   retry: '重试',
   bookingSuccess: '预约成功',
-  bookingNo: '预约号: {no}',
+  bookingNo: '预约编号：{no}',
   invalidReferralCode: '推荐码无效',
   noBranches: '暂无开放预约的分行',
   available: '可用',
