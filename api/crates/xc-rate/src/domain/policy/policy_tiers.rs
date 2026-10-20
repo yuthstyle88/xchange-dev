@@ -3,6 +3,7 @@
 use xc_kernel::money::{Money, RatePercent, Side};
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
+use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::publication::value_tier::{TierBand, TierCode};
 
 /// One row of rate policy value tiers.
@@ -138,5 +139,27 @@ impl PolicyTiers {
 
     pub fn tiers(&self) -> &[PolicyTier] {
         &self.tiers
+    }
+
+    /// The same bands with `currency`'s margins (pricing-tiers.md §3 "Resolution"): the override's four margins when
+    /// it has them, otherwise these (the branch's) margins. `None` returns a copy of `self`.
+    pub fn for_currency(&self, o: Option<&CurrencyTierOverride>) -> PolicyTiers {
+        let Some(override_tiers) = o.and_then(|ov| ov.tiers.as_ref()) else {
+            return self.clone();
+        };
+        let tiers = self
+            .tiers
+            .iter()
+            .zip(override_tiers.iter())
+            .map(|(band, m)| {
+                PolicyTier::new(
+                    band.tier_no,
+                    band.upper_inclusive_thb,
+                    m.buy_margin_pct,
+                    m.sell_margin_pct,
+                )
+            })
+            .collect();
+        PolicyTiers { tiers }
     }
 }

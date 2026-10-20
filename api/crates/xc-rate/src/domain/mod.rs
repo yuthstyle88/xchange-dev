@@ -3,6 +3,7 @@ pub mod branch;
 pub mod currency;
 pub mod draft;
 pub mod policy;
+pub mod pricing;
 pub mod publication;
 pub mod rate;
 pub mod reference;
