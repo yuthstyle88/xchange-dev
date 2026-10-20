@@ -20,7 +20,10 @@ async function signIn(page: Page, identifier: string, password: string, next: st
   await page.locator('input[autocomplete="username"]').fill(identifier);
   await page.locator('input[autocomplete="current-password"]').fill(password);
   await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => url.pathname.startsWith(next.split('?')[0]), { timeout: 20_000 });
+  // Leave /login first: with next = '/', every path (/login included) would already match.
+  await page.waitForURL((url) => !url.pathname.startsWith('/login') && url.pathname.startsWith(next.split('?')[0]), {
+    timeout: 20_000,
+  });
 }
 
 // Books the first open slot tomorrow; returns the booking id the success panel shows.
