@@ -4,6 +4,7 @@ use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
 
 use crate::domain::branch::branch_hours::BranchHours;
+pub use crate::domain::branch::contact_channel::{BranchStatus, ContactChannel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Branch {
@@ -15,6 +16,8 @@ pub struct Branch {
     pub timezone: String,
     pub opening_hours: Option<serde_json::Value>,
     pub booking_enabled: bool,
+    pub contact_channels: Vec<ContactChannel>,
+    pub status: BranchStatus,
 }
 
 impl Branch {
