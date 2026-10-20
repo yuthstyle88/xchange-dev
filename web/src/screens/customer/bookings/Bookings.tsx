@@ -27,6 +27,7 @@ import { locale, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { BookingExtras } from './BookingExtras';
+import { BookingWait } from './BookingWait';
 import { loadBranchNames } from './branchNames';
 import * as table from './i18n';
 import './bookings.css';
@@ -372,6 +373,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                       <Show when={booking.ticketNumber}>
                         <p class="xc-booking-ticket">{booking.ticketNumber}</p>
                       </Show>
+                      <BookingWait booking={booking} />
                     </div>
 
                     {/* Indicative quote summary */}

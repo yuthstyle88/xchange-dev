@@ -25,6 +25,7 @@ export const th = {
   signUpFailed: 'สมัครสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง',
   consentTextMissing: 'ยังไม่มีข้อกำหนดการใช้บริการในภาษานี้ กรุณาเลือกภาษาอื่น',
   alreadyRegistered: 'บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ',
+  termsVersion: 'ข้อกำหนดฉบับที่ {version}',
 };
 
 export const en = {
@@ -51,6 +52,7 @@ export const en = {
   signUpFailed: 'Sign-up failed. Please try again',
   consentTextMissing: 'The terms of service are not available in this language yet. Please choose another language',
   alreadyRegistered: 'This account is already registered. Please sign in',
+  termsVersion: 'Terms, version {version}',
 };
 
 export const zh = {
@@ -77,4 +79,5 @@ export const zh = {
   signUpFailed: '注册失败，请重试',
   consentTextMissing: '此语言暂无服务条款，请选择其他语言',
   alreadyRegistered: '该账户已注册，请登录',
+  termsVersion: '条款第 {version} 版',
 };
