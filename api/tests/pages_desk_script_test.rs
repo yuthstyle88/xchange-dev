@@ -104,9 +104,10 @@ macro_rules! app_with {
     ($web_dir:expr, $reader:expr) => {{
         let reader: Arc<dyn SessionReader> = $reader;
         let state = state($web_dir);
+        let screens = ScreenTable::from_dist(&fixtures()).expect("empty screen table");
         test::init_service(
             App::new()
-                .configure(move |cfg| bootstrap::configure(cfg, state))
+                .configure(move |cfg| bootstrap::configure_with_screens(cfg, state, screens))
                 .app_data(web::Data::from(reader)),
         )
         .await
