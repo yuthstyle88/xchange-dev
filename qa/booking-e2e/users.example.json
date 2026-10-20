@@ -1,0 +1,10 @@
+{
+  "baseUrl": "https://xc-v3.spacing.cloud",
+  "customer": { "phone": "+66800000112", "password": "<from seed-test-booking.sh>" },
+  "teller":   { "phone": "+66800000111", "password": "<from seed-test-booking.sh>" },
+  "admin":    { "identifier": "<the owner's sign-in>", "password": "<the owner's password>" },
+  "referralCode": "TEST1234",
+  "branch": "MAIN",
+  "currency": "USD",
+  "quantity": "100"
+}

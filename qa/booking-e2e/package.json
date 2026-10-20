@@ -1,0 +1,12 @@
+{
+  "name": "xchange-booking-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Manual-run end-to-end check of the booking screens against a running v3 (#1683) and the app screenshots of #1605",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}
