@@ -10,7 +10,7 @@ use serde_json::Value;
 use ts_rs::TS;
 use uuid::Uuid;
 
-use xc_auth::domain::access::{Actor, Permission, RolePermissions};
+use xc_auth::domain::access::{Actor, Permission, RoleGrants};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_booking::application::booking_service::{ContactInput, CreateBookingInput};
@@ -102,11 +102,11 @@ impl CommandAction for BookingCreate {
         let is_customer = who
             .roles
             .iter()
-            .any(|r| RolePermissions::of(r.role).contains(&Permission::CustomerSelf));
+            .any(|r| RoleGrants::holds(r.group_code(), Permission::CustomerSelf));
         let is_desk = who
             .roles
             .iter()
-            .any(|r| RolePermissions::of(r.role).contains(&Permission::BookingsDesk));
+            .any(|r| RoleGrants::holds(r.group_code(), Permission::BookingsDesk));
 
         let (channel, customer_id, contact) = if is_customer {
             let cid = who.customer_id.clone().ok_or_else(|| {

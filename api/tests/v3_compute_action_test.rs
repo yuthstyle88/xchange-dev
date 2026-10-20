@@ -730,10 +730,14 @@ async fn a_call_never_moves_any_branch_version() {
 
 // ------------------------------------------------------------ who may call
 
-/// §12.20.3 step 1, CA4: an action whose INHERITS is a pair refuses exactly the
-/// callers `Policy::allow` refuses for that pair, with the policy's refusal.
+/// §12.20.3 step 1, CA4: an action whose INHERITS is a pair refuses_exactly the
+/// callers `Policy::authorize` / `RoleGrants::seed` refuses for that pair, with the policy's refusal.
 #[actix_web::test]
 async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pair() {
+    use xc_auth::domain::access::RoleGrants;
+    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
+    use xc_auth::domain::policy::entities::policy::Need;
+
     let db = TestDb::start().await;
     let actions = Actions::new();
     let mut allowed = 0;
@@ -743,6 +747,10 @@ async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pa
         (SAVE_RATE, EntryPath::Rpc, "rateDraft"), // RE-7 #604: was adminSaveRate
         (DESK_CONFIG, EntryPath::StaffRpc, "adminDeskConfig"),
     ] {
+        let act = Action::new(action);
+        let Some(Need::Permission(perm)) = Policy::need(path, &act) else {
+            panic!("({path:?}, {action:?}) needs a permission");
+        };
         for who in every_caller() {
             let a = send(
                 &db,
@@ -752,8 +760,26 @@ async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pa
             .await;
             let what = format!("{uri} as {who:?}");
             let actor = actor_on(path, &who);
-            match Policy::allow(actor.as_ref(), path, &Action::new(action)) {
-                Ok(()) => {
+            let holds = actor.as_ref().is_some_and(|ac| {
+                blueprint_roles(ac.role())
+                    .iter()
+                    .any(|&r| RoleGrants::seed(r).contains(&perm))
+            });
+            let user = actor.as_ref().map(|ac| {
+                actor_from_v3(
+                    ac,
+                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
+                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                )
+            });
+            let auth = Policy::authorize(user.as_ref(), path, &act, None, chrono::Utc::now());
+            assert_eq!(
+                auth.is_ok(),
+                holds,
+                "{what}: RoleGrants::seed matches Policy::authorize"
+            );
+            match auth {
+                Ok(_) => {
                     allowed += 1;
                     let actor = actor.expect("allowed means signed in");
                     let branch = Policy::branch(Some(&actor), None);
@@ -1182,17 +1208,31 @@ async fn the_checks_run_in_the_designs_order() {
     );
 
     // 1 before 2: a role outside the row, no marker, an oversized body
-    let refusal = Policy::allow(
-        actor_on(EntryPath::StaffRpc, "staff:BACKEND:XC-B01").as_ref(),
+    assert!(
+        !xc_auth::domain::access::RoleGrants::seed(xc_auth::domain::access::Role::Finance)
+            .contains(&xc_auth::domain::access::Permission::ExchangeTransact),
+        "§11.2: FINANCE does not hold ExchangeTransact"
+    );
+    let finance = actor_on(EntryPath::StaffRpc, "staff:FINANCE:XC-B01").map(|ac| {
+        xc_auth::domain::access::v3_roles::actor_from_v3(
+            &ac,
+            xchange::presentation::pages::SEEDED_XC_ORG_ID,
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        )
+    });
+    let refusal = Policy::authorize(
+        finance.as_ref(),
         EntryPath::StaffRpc,
         &Action::new("adminDeskConfig"),
+        None,
+        chrono::Utc::now(),
     )
-    .expect_err("BACKEND is outside adminDeskConfig's row");
+    .expect_err("FINANCE is outside adminDeskConfig's row");
     let a = send(
         &db,
         &actions,
         Call::post(
-            "staff:BACKEND:XC-B01",
+            "staff:FINANCE:XC-B01",
             DESK_CONFIG,
             object_of_len(LIMIT + 1, ""),
         )
@@ -1206,7 +1246,7 @@ async fn the_checks_run_in_the_designs_order() {
         V3Error::from(refusal).code,
         None,
         &message,
-        "BACKEND, no marker",
+        "FINANCE, no marker",
     );
 
     // 2 before 3: foreign origin, a body that is not JSON / oversized

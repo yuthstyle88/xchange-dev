@@ -547,7 +547,7 @@ pub async fn replay(app: &TestApp, desk: &Desk, fixture: &Value) {
         );
 
         let is_fallback_404 = want["status"] == 404 && want.get("text").is_some();
-        if step.get("v3").is_none() && !is_fallback_404 {
+        if want.get("headers").is_some() && !is_fallback_404 {
             let mut expected = BTreeMap::new();
             for (name, value) in want["headers"].as_object().unwrap() {
                 expected.insert(name.clone(), with_real_keys(value.as_str().unwrap(), &keys));

@@ -39,7 +39,8 @@ const JPEG: &[u8] = &[
 
 // ── fakes ────────────────────────────────────────────────────────────────
 
-/// `owner` is the owner; `teller` is a Front at MAIN; `rates` is a Rates at MAIN; anything else is nobody.
+/// `owner` is the owner; `teller` is a Front at MAIN; `rates` is a Rates at MAIN; `finance` is a
+/// Finance at MAIN; any `Role::STAFF` name is that role at MAIN; anything else is nobody.
 struct FakeSessions;
 
 impl SessionReader for FakeSessions {
@@ -67,9 +68,15 @@ impl SessionReader for FakeSessions {
                     owner: None,
                     staff: Actor::staff("u-rates", Role::Rates, main),
                 },
-                _ => Sessions {
+                "finance" => Sessions {
                     owner: None,
-                    staff: None,
+                    staff: Actor::staff("u-finance", Role::Finance, main),
+                },
+                other => Sessions {
+                    owner: None,
+                    staff: Role::parse(other)
+                        .filter(|r| Role::STAFF.contains(r))
+                        .and_then(|r| Actor::staff(format!("u-{other}"), r, main)),
                 },
             }
         })
@@ -311,27 +318,59 @@ async fn p4_nobody_signed_in_is_401_sign_in_and_the_reader_is_never_called() {
 
 #[actix_web::test]
 async fn p5_a_role_without_exchange_transact_is_refused_and_the_reader_is_never_called() {
-    let reader = FakeReader::new(Ok(full_read()));
-    let mut req = Req::teller_jpeg();
-    req.who = "rates";
-    let a = send(state(Some(reader.clone()), &[]), req).await;
-    assert_eq!(a.status, StatusCode::BAD_REQUEST, "body: {}", a.body);
-    assert_eq!(a.code(), "roleNotAllowedHere");
-    assert_eq!(reader.calls(), 0);
+    use xc_auth::domain::access::v3_roles::blueprint_roles;
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
+    assert!(
+        Role::STAFF.iter().any(|&r| {
+            !blueprint_roles(r)
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ExchangeTransact))
+        }),
+        "§11.2 must leave some staff role without ExchangeTransact, or this test refuses nobody"
+    );
+    for role in Role::STAFF.into_iter().filter(|&r| {
+        !blueprint_roles(r)
+            .iter()
+            .any(|&br| RoleGrants::seed(br).contains(&Permission::ExchangeTransact))
+    }) {
+        let reader = FakeReader::new(Ok(full_read()));
+        let mut req = Req::teller_jpeg();
+        req.who = role.as_str();
+        let a = send(state(Some(reader.clone()), &[]), req).await;
+        assert_eq!(
+            a.status,
+            StatusCode::BAD_REQUEST,
+            "{role:?}: body: {}",
+            a.body
+        );
+        assert_eq!(a.code(), "roleNotAllowedHere", "{role:?}");
+        assert_eq!(reader.calls(), 0, "{role:?}");
+    }
 }
 
-/// The owner signs in as Executive + Admin (`v3_roles.rs:13`), and neither holds `ExchangeTransact`
-/// (`role_permissions.rs`). The read is refused exactly as `/api/quotes` refuses the owner (same row).
+/// The owner signs in as Executive + Admin (`v3_roles.rs:13`); under §11.2 (`RoleGrants::seed`),
+/// `Executive` holds `ExchangeTransact`, so the read follows `/api/quotes` (same row).
 #[actix_web::test]
 async fn p6_the_owner_gets_the_same_refusal_as_the_desks_quote_route() {
+    use xc_auth::domain::access::{Permission, Role as BpRole, RoleGrants};
+
     let reader = FakeReader::new(Ok(full_read()));
     let mut req = Req::teller_jpeg();
     req.who = "owner";
     req.query = "?branch=MAIN";
     let a = send(state(Some(reader.clone()), &[]), req).await;
-    assert_eq!(a.status, StatusCode::BAD_REQUEST, "body: {}", a.body);
-    assert_eq!(a.code(), "roleNotAllowedHere");
-    assert_eq!(reader.calls(), 0);
+    if [BpRole::Executive, BpRole::Admin]
+        .iter()
+        .any(|&r| RoleGrants::seed(r).contains(&Permission::ExchangeTransact))
+    {
+        assert_eq!(a.status, StatusCode::OK, "body: {}", a.body);
+        assert_eq!(reader.calls(), 1);
+    } else {
+        assert_eq!(a.status, StatusCode::BAD_REQUEST, "body: {}", a.body);
+        assert_eq!(a.code(), "roleNotAllowedHere");
+        assert_eq!(reader.calls(), 0);
+    }
 }
 
 #[actix_web::test]
