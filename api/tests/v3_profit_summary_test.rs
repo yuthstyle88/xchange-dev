@@ -52,10 +52,10 @@ use serde_json::{Map, Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor as AccessActor, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
+use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{fixed2, round_cents, typed_decimal};
 use xchange::bootstrap::{self, AppState};
@@ -188,15 +188,8 @@ fn staff_caller_of(spec: &str) -> AccessActor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
     let role_name = parts.next().expect("a role");
-    let roles: &[AccessRole] = match role_name {
-        "FRONT" => &[AccessRole::Teller],
-        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
-        "RATES" => &[AccessRole::RateManager],
-        "FINANCE" => &[AccessRole::Finance],
-        "SYSTEM" => &[AccessRole::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
-        other => panic!("unknown role {other:?}"),
-    };
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
     test_callers::staff("employee-7", roles, BranchId::new(branch))
 }
@@ -217,24 +210,6 @@ fn callers_of(spec: &str) -> Callers {
     test_callers::callers(None, Some(staff_caller_of(spec)))
 }
 
-fn staff_of(spec: &str) -> Option<Actor> {
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Actor::staff("employee-7", role, BranchId::new(branch))
-}
-
-fn legacy_actor_of(spec: &str) -> Option<Actor> {
-    if spec.is_empty() {
-        return None;
-    }
-    if spec == "owner" || spec.starts_with("owner+") {
-        return Some(Actor::owner("owner-1"));
-    }
-    staff_of(spec)
-}
-
 impl SessionReader for HeaderCallers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
@@ -246,23 +221,11 @@ impl SessionReader for HeaderCallers {
     }
 }
 
-const STAFF_ROLES: [&str; 9] = [
-    "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
-    "MONITOR",
-    "FINANCE",
-    "SYSTEM",
-    "DOCUMENTS",
-    "DOCUMENT_REVIEW",
-];
-
 /// Every caller kind: nobody, the owner, each staff role, and the owner and a
 /// staff member in one browser.
 fn every_caller() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_string()];
-    for role in STAFF_ROLES {
+    for (role, _) in test_callers::V2_STAFF {
         out.push(format!("staff:{role}:XC-B01"));
         out.push(format!("owner+staff:{role}:XC-B01"));
     }
@@ -446,31 +409,32 @@ fn pairs<'a>(keys: &[&'a str]) -> Vec<(&'a str, &'a str)> {
 // ------------------------------------------------------------ discovery and reach
 
 /// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
-/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
+/// as `RoleGrants::seed` admits them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
 fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    user: Option<&AccessActor>,
+    path: EntryPath,
     action: &str,
     named: Option<&str>,
 ) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
-    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
+    let act = Action::new(action);
+    let Some(Need::Permission(perm)) = Policy::need(path, &act) else {
+        panic!("{action} needs a permission");
+    };
+    let holds = user.is_some_and(|a| {
+        a.roles
+            .iter()
+            .any(|r| RoleGrants::seed(r.role).contains(&perm))
     });
+    assert_eq!(
+        Policy::authorize(user, path, &act, None, chrono::Utc::now()).is_ok(),
+        holds,
+        "{action} permission check"
+    );
     Policy::authorize(
-        user.as_ref(),
+        user,
         path,
         &act,
-        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        named.map(BranchId::new).as_ref(),
         chrono::Utc::now(),
     )
     .map(|_| ())
@@ -561,7 +525,7 @@ async fn whoever_the_policy_allows_for_admin_snapshot_gets_the_same_summary() {
     let mut refused = 0;
     for ((who, named), a) in cases.iter().zip(&answers) {
         let what = format!("as {who:?}, naming a branch: {named}");
-        let actor = legacy_actor_of(who);
+        let actor = callers_of(who).user;
         // OR-4b (#767): the route table's rule, naming XC-B02 where the body does (D-4: staff of
         // XC-B01 are refused it)
         match blueprint_rule(
