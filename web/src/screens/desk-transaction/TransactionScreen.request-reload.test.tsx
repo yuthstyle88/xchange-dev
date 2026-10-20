@@ -6,10 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
 import {
+  makeMe,
   makeReceiptDocumentDto,
   makeReceiptDocumentViewData,
   makeReversalSummaryDto,
-  makeStaffMeView,
   makeTransactionAuditEventDto,
   makeTransactionAuditViewData,
   makeTransactionDetailDto,
@@ -17,9 +17,9 @@ import {
   makeTxLineDto,
   makeTxPaymentDto,
   makeTxReceiptDto,
+  type MeView,
   type ReceiptDocumentViewData,
   type ReversalSummaryDto,
-  type StaffMeView,
   type TransactionAuditViewData,
   type TransactionDetailDto,
   type TransactionViewData,
@@ -34,12 +34,13 @@ const PATH = `/desk/transactions/${TX_ID}`;
 const RECEIPT_HTML = '<!doctype html><html><body>ใบเสร็จ XC-0001 35,120.00</body></html>';
 
 function me(permissions: string[]) {
-  return makeStaffMeView({
-    userId: '00000000-0000-4000-8000-000000000001',
+  return makeMe({
+    id: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
     roles: [],
-    branchId: 'MAIN',
+    branch: 'MAIN',
     branchName: 'สาขาทดสอบ',
+    branches: [],
     permissions,
   });
 }
@@ -114,7 +115,7 @@ type Call = { method: string; url: string; path: string; query: URLSearchParams;
 type Reply = { status: number; json?: unknown; network?: true; text?: string };
 
 interface World {
-  me: StaffMeView | Reply;
+  me: MeView | Reply;
   transaction: TransactionViewData | Reply;
   audit: TransactionAuditViewData | Reply;
   receipt: ReceiptDocumentViewData;
@@ -159,7 +160,7 @@ function installFetch() {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? init.body : null;
       calls.push({ method, url, path: u.pathname, query: u.searchParams, body, key: headers.get('Idempotency-Key') });
-      if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') return view(world.me);
+      if (method === 'GET' && u.pathname === '/api/v3/views/me') return view(world.me);
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction') return view(world.transaction);
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction_audit') return view(world.audit);
       if (method === 'GET' && u.pathname === '/api/v3/views/receipt_document') return view(world.receipt);

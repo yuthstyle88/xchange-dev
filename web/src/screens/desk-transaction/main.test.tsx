@@ -7,7 +7,7 @@
 // `AppShell`, taking its id from the page's own URL (`/desk/transactions/{id}`).
 import { afterEach, expect, it, vi } from 'vitest';
 import {
-  makeStaffMeView,
+  makeMe,
   makeTransactionAuditViewData,
   makeTransactionDetailDto,
   makeTransactionViewData,
@@ -17,12 +17,13 @@ import {
 
 const TX_ID = '3c1d9a7e-2b4f-4e6a-8c0d-1f2e3a4b5c6d';
 
-const ME = makeStaffMeView({
-  userId: '00000000-0000-4000-8000-000000000001',
+const ME = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'คุณทดสอบ',
   roles: [],
-  branchId: 'MAIN',
+  branch: 'MAIN',
   branchName: 'สาขาทดสอบ',
+  branches: [],
   permissions: ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'],
 });
 
@@ -87,7 +88,7 @@ it("main.tsx draws the screen inside AppShell, reading the transaction named by 
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const u = new URL(url, 'http://xc.test');
       asked.push(u);
-      if (u.pathname === '/api/v3/views/staff_me') return view(ME);
+      if (u.pathname === '/api/v3/views/me') return view(ME);
       if (u.pathname === '/api/v3/views/transaction') return view(TRANSACTION);
       if (u.pathname === '/api/v3/views/transaction_audit') return view(AUDIT);
       return new Response(JSON.stringify({ error: { code: 'notFound', message: u.pathname } }), {
