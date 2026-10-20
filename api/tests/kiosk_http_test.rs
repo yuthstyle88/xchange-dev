@@ -241,6 +241,15 @@ async fn replayed(name: &str) -> (Fixture, usize) {
             replay.replay.tally.widened, expected_widened,
             "{name}: steps widened by RBAC §11.2 (#3659)"
         );
+        let expected_owner_no_open_shift: &[usize] = match name {
+            "kiosk/queue.json" => &[138],
+            "kiosk/queue_work.json" => &[72],
+            _ => &[],
+        };
+        assert_eq!(
+            replay.replay.tally.owner_no_open_shift, expected_owner_no_open_shift,
+            "{name}: owner accept steps refused with noOpenShift (#3659, #3810)"
+        );
         let lines = replay.lines_compared;
         replay.finish().await;
         lines
@@ -615,6 +624,14 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
     let second = counter
         .waiting_request("00000000-0000-4000-8000-0000000c0002")
         .await;
+    // RBAC §11.2 (#3659): the owner holds QueueOperate again (via EXECUTIVE (Customers Full)),
+    // so reaches the queue desk and is refused with noOpenShift (#3810); a request the owner holds
+    // (as v2 let the owner take one) is taken behind the routes, by the kiosk service as v2's
+    // owner
+    counter
+        .ask(Some("owner"), "accept", json!({ "id": second }))
+        .await
+        .assert_refused(400, "noOpenShift", "the owner accepts");
     let audit: std::sync::Arc<dyn xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog> =
         counter.hands.audit.clone();
     let source: std::sync::Arc<dyn xc_rate::domain::rate::entities::rate_source::RateSource> =

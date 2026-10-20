@@ -994,6 +994,16 @@ pub const OWNER_SAVE_NO_OPEN_SHIFT: &[(&str, usize, &str)] = &[
         21,
         "CA-10 teller gate on live save: owner has no open shift",
     ),
+    (
+        "kiosk/queue.json",
+        138,
+        "QU-6 queue desk gate on kiosk accept: owner has no open shift (#3810)",
+    ),
+    (
+        "kiosk/queue_work.json",
+        72,
+        "QU-6 queue desk gate on kiosk accept: owner has no open shift (#3810)",
+    ),
 ];
 
 /// Every step of a replay, by what was done with it.
@@ -1013,7 +1023,7 @@ pub struct Tally {
     pub blueprint: Vec<usize>,
     /// Held to not be v2's recorded role refusal (RBAC §11.2, #3659).
     pub widened: Vec<usize>,
-    /// Owner `saveTransaction` steps refused at the CA-10 teller gate (RBAC §11.2, #3659).
+    /// Owner `saveTransaction` and kiosk `accept` steps refused for having no open shift (RBAC §11.2, #3659, #3810).
     pub owner_no_open_shift: Vec<usize>,
 }
 
@@ -1025,7 +1035,11 @@ impl Tally {
             + self.excluded.len()
             + self.blueprint.len()
             + self.widened.len()
-            + self.owner_no_open_shift.len()
+            + self
+                .owner_no_open_shift
+                .iter()
+                .filter(|n| !self.blueprint.contains(n))
+                .count()
     }
 }
 
@@ -1301,32 +1315,6 @@ impl<'f> Replay<'f> {
                 self.open_day_for_save(&branch).await;
             }
         }
-        // RBAC §11.2 (#3659): the owner holds `QueueOperate` again via EXECUTIVE (Customers Full), but the owner's v2
-        // password session has `actor.user_id = "owner"` (not a UUID) whereas `QueueDesk::call_in` binds `teller_id` as
-        // `$3::uuid` (#3810). Detach the waiting queue ticket until #3810 merges onto feat/rbac-groups.
-        let mut detached_kiosk_ticket: Option<(String, String)> = None;
-        if step.path() == Some("/api/kiosk")
-            && action_of(step).as_deref() == Some("accept")
-            && step.status == Some(200)
-            && self.fixture.sender(step).is_some_and(Person::is_owner)
-            && let Some(req_id) = payload
-                .as_ref()
-                .and_then(|p| p.get("id"))
-                .and_then(Value::as_str)
-        {
-            let ticket_id: Option<String> = sqlx::query_scalar(
-                "UPDATE queue_tickets SET kiosk_request_id = NULL \
-                 WHERE kiosk_request_id = $1 AND status = 'WAITING' \
-                 RETURNING id::text",
-            )
-            .bind(req_id)
-            .fetch_optional(&self.desk.db.pool)
-            .await
-            .expect("detach the waiting queue ticket for the owner's accept");
-            if let Some(ticket_id) = ticket_id {
-                detached_kiosk_ticket = Some((ticket_id, req_id.to_owned()));
-            }
-        }
         // LG-6.r5 (#1044, lane controller's ruling): v2 with custody off took an opening, and an IN move, from no
         // safe; v3 takes them from the ledger's SAFE (design §4.4). Before a step v2 accepted, SAFE gets exactly what
         // the step takes; after it, whatever is left goes back to BANK, so SAFE holds nothing between steps and
@@ -1358,19 +1346,6 @@ impl<'f> Replay<'f> {
             fund_exact(&self.desk.db.pool, b, amounts).await;
         }
         let answer = self.app.send(call).await;
-        if let Some((ticket_id, req_id)) = detached_kiosk_ticket {
-            sqlx::query(
-                "UPDATE queue_tickets \
-                 SET kiosk_request_id = $1, status = 'SERVING', called_at = $2, served_at = $2 \
-                 WHERE id = $3::uuid",
-            )
-            .bind(&req_id)
-            .bind(time(&step.at))
-            .bind(&ticket_id)
-            .execute(&self.desk.db.pool)
-            .await
-            .expect("restore the queue ticket as SERVING after the owner's accept");
-        }
         if let Some(b) = &jit_branch {
             sweep_safe(&self.desk.db.pool, b).await;
         }
@@ -1579,18 +1554,25 @@ impl<'f> Replay<'f> {
                 self.tally.widened.push(step.n);
             }
             Rule::OwnerNoOpenShift(reason) => {
+                let expected_sentence = if step.path() == Some("/api/kiosk") {
+                    "noOpenShift"
+                } else {
+                    "กรุณาเปิดกะจากหน้าแอดมินก่อน"
+                };
                 assert_ne!(
                     step.error(),
-                    Some("กรุณาเปิดกะจากหน้าแอดมินก่อน"),
+                    Some(expected_sentence),
                     "{label} ({reason}): listed in OWNER_SAVE_NO_OPEN_SHIFT, but v2 says the same"
                 );
-                answer.assert_refused(
-                    400,
-                    "กรุณาเปิดกะจากหน้าแอดมินก่อน",
-                    &format!("{label} ({reason})"),
-                );
+                answer.assert_refused(400, expected_sentence, &format!("{label} ({reason})"));
                 assert_eq!(answer.header("cache-control"), Some("no-store"), "{label}");
                 self.tally.owner_no_open_shift.push(step.n);
+                if step.path() == Some("/api/kiosk") {
+                    // KioskReplay::step (in kiosk_http_common) applies an accepted owner kiosk
+                    // step behind the routes and records its audit line when `tally.blueprint`
+                    // contains `step.n`.
+                    self.tally.blueprint.push(step.n);
+                }
                 // When the owner retries the same submissionId (#10/#11 in transactions.json,
                 // #120/#121/#122 in engine_actions.json), apply v2's accepted saves behind the
                 // routes once the last step of that submissionId has been answered so `save_behind`
