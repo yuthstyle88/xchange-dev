@@ -28,6 +28,7 @@ use xc_rate::application::policy::policy_version_writer::{
     PolicyVersionChange, PolicyVersionWriter,
 };
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
+use xc_rate::domain::policy::anchor_source::AnchorSource;
 use xc_rate::domain::policy::policy_tiers::{PolicyTier, PolicyTiers};
 use xc_rate::domain::policy::rate_policy::RatePolicy;
 
@@ -60,6 +61,9 @@ pub struct RatePolicySaveInput {
     #[serde(default, deserialize_with = "deserialize_some")]
     #[ts(optional = nullable, type = "string | null")]
     pub sharp_move_alert_pct: Option<Value>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub anchor_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -79,6 +83,7 @@ struct CurrentPolicyRow {
     stale_limit_thb: Option<Decimal>,
     value_tiers_on: bool,
     sharp_move_alert_pct: Option<Decimal>,
+    anchor_source: String,
 }
 
 pub struct RatePolicySaveCommand;
@@ -111,6 +116,18 @@ impl CommandAction for RatePolicySaveCommand {
         if let Some(on_stale) = input.on_stale.as_deref() {
             input::one_of("onStale", on_stale, &["STOP", "LIMIT"])?;
         }
+
+        let input_anchor = match input.anchor_source.as_deref() {
+            Some(s) => Some(AnchorSource::parse(s).ok_or_else(|| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("anchorSource"),
+                    format!("invalid anchorSource: {s}"),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?),
+            None => None,
+        };
 
         let buy_pct = input::decimal(
             "buyAdjustPct",
@@ -213,7 +230,7 @@ impl CommandAction for RatePolicySaveCommand {
         // Query current version with valid_to IS NULL
         let cur_row: Option<CurrentPolicyRow> = sqlx::query_as(
             "SELECT id, guards, max_reference_age_hours, on_stale, stale_limit_thb, \
-                    value_tiers_on, sharp_move_alert_pct \
+                    value_tiers_on, sharp_move_alert_pct, anchor_source \
              FROM rate_policy_versions \
              WHERE branch_id = $1 AND valid_to IS NULL \
              FOR UPDATE",
@@ -353,6 +370,7 @@ impl CommandAction for RatePolicySaveCommand {
                 || resolved_value_tiers_on != cur.value_tiers_on
                 || resolved_sharp_move_alert_pct != cur.sharp_move_alert_pct
                 || resolved_tiers != cur_tiers
+                || input_anchor.is_some_and(|a| a.as_str() != cur.anchor_source)
             {
                 return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
             }
@@ -384,7 +402,7 @@ impl CommandAction for RatePolicySaveCommand {
             value_tiers_on: resolved_value_tiers_on,
             sharp_move_alert_pct: resolved_sharp_move_alert_pct,
             value_tiers: resolved_tiers,
-            anchor_source: None,
+            anchor_source: input_anchor,
             overrides: None,
             approved_by: who.user_id.clone(),
             reason: input.reason,
