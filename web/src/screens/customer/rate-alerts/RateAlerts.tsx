@@ -22,6 +22,7 @@ import { fill, locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import * as table from './i18n';
+import { AlertFacts } from './AlertFacts';
 import './rate-alerts.css';
 
 const t = screenT('customer.rate-alerts', table);
@@ -578,6 +579,8 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                       </span>
                     </Show>
                   </div>
+
+                  <AlertFacts alert={alert} />
 
                   <div class="xc-alert-card-actions">
                     <Show

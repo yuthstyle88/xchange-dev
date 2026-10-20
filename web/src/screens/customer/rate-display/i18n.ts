@@ -46,8 +46,8 @@ export const en = {
 export const zh = {
   currency: '币种',
   unit: '单位',
-  weBuy: '买入',
-  weSell: '卖出',
+  weBuy: '买入价',
+  weSell: '卖出价',
   weBuyHint: '本店向客户买入外币',
   weSellHint: '本店向客户卖出外币',
   hours: '营业时间',

@@ -194,6 +194,26 @@ describe('B02 DeskBookingsScreen shared ApiClient & wordedError (#1891 §9)', ()
   }
 
   it('row 1: check-in, cancel, reschedule, create — each request has x-xchange-request: 1 and an Idempotency-Key', async () => {
+    const origResponder = writeResponder;
+    writeResponder = (req) => {
+      if (req.path.endsWith('/check-in')) {
+        return json(200, makeBookingCheckInOutput({
+          id: BOOKING_1_ID,
+          status: 'CONFIRMED',
+          ticketNumber: 'B01-009',
+          bookingNo: 'B261014-0021',
+        }));
+      }
+      if (req.path.endsWith('/cancel')) {
+        return json(200, makeBookingCancelOutput({
+          id: BOOKING_1_ID,
+          status: 'CONFIRMED',
+          bookingNo: 'B261014-0021',
+        }));
+      }
+      return origResponder(req);
+    };
+
     await mountScreen();
 
     // 1. Check-in

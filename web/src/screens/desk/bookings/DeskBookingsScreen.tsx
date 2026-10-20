@@ -160,8 +160,9 @@ export function DeskBookingsScreen(): JSX.Element {
       }
       if (envelope.data && Array.isArray(envelope.data.items)) {
         loadedQr = qrParam;
-        setItems(envelope.data.items);
-        const groups = groupBookingsBySlot(envelope.data.items);
+        const mappedItems: DeskBookingItemDto[] = envelope.data.items;
+        setItems(mappedItems);
+        const groups = groupBookingsBySlot(mappedItems);
         const firstSlot = groups[0]?.slotId;
         if (firstSlot && !formSlotId()) {
           setFormSlotId(firstSlot);
@@ -679,31 +680,35 @@ export function DeskBookingsScreen(): JSX.Element {
                             </div>
 
                             <div class="xc-booking-actions">
-                              <button
-                                type="button"
-                                data-action="check-in"
-                                class="xc-checkin-btn xc-btn-primary"
-                                disabled={writing()}
-                                onClick={() => handleCheckIn(b.id)}
-                              >
-                                {t('checkIn')}
-                              </button>
-                              <button
-                                type="button"
-                                data-action="cancel"
-                                class="xc-cancel-btn xc-btn-secondary"
-                                onClick={() => openCancel(b.id)}
-                              >
-                                {t('cancel')}
-                              </button>
-                              <button
-                                type="button"
-                                data-action="reschedule"
-                                class="xc-reschedule-btn xc-btn-secondary"
-                                onClick={() => openReschedule(b.id)}
-                              >
-                                {t('reschedule')}
-                              </button>
+                              <Show when={b.status === 'CONFIRMED'}>
+                                <button
+                                  type="button"
+                                  data-action="check-in"
+                                  class="xc-checkin-btn xc-btn-primary"
+                                  disabled={writing()}
+                                  onClick={() => handleCheckIn(b.id)}
+                                >
+                                  {t('checkIn')}
+                                </button>
+                              </Show>
+                              <Show when={b.status === 'CONFIRMED' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                                <button
+                                  type="button"
+                                  data-action="cancel"
+                                  class="xc-cancel-btn xc-btn-secondary"
+                                  onClick={() => openCancel(b.id)}
+                                >
+                                  {t('cancel')}
+                                </button>
+                                <button
+                                  type="button"
+                                  data-action="reschedule"
+                                  class="xc-reschedule-btn xc-btn-secondary"
+                                  onClick={() => openReschedule(b.id)}
+                                >
+                                  {t('reschedule')}
+                                </button>
+                              </Show>
                               <Show when={b.status === 'CONFIRMED' || b.status === 'CHECKED_IN' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
                                 <button
                                   type="button"

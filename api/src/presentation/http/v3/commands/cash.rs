@@ -15,6 +15,8 @@ use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
+use pos_infra::transactions::Transactor;
+use xc_cash::domain::transfer::cash_transfer::TransferError;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
@@ -26,9 +28,13 @@ use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
-use xc_cash::domain::transfer::cash_transfer::TransferError;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, NumberError};
+use xc_kernel::shift_hook::ShiftLifecycleHook;
+use xc_queue::application::counter::counter_service::CounterService;
+use xc_queue::application::status::status_service::StatusService;
+use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -141,7 +147,9 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
             } else if message == HandoverError::NotPending.to_string() {
                 V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
-            } else if message == TransferError::StockInsufficient.to_string() {
+            } else if message.starts_with("stockInsufficient")
+                || message == TransferError::StockInsufficient.to_string()
+            {
                 V3Error::new("stockInsufficient", None, message, StatusCode::CONFLICT)
             } else {
                 V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
@@ -180,14 +188,22 @@ pub(crate) fn count_lines(lines: &[CashLineInput]) -> Result<Vec<CountLine>, V3E
         .collect()
 }
 
+pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+    let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let queue = Arc::new(PgQueueRepository::new(pool.clone()));
+    let status = StatusService::new(branch_tx.clone(), queue.clone());
+    Arc::new(CounterService::new(branch_tx, queue, status))
+}
+
 pub struct CountSubmit {
     counts: CashCountService,
 }
 
 impl CountSubmit {
     pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
         Self {
-            counts: CashCountService::pg(pool),
+            counts: CashCountService::pg(pool).with_shift_lifecycle_hook(hook),
         }
     }
 }
@@ -240,8 +256,9 @@ pub struct CountVerify {
 
 impl CountVerify {
     pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
         Self {
-            counts: CashCountService::pg(pool),
+            counts: CashCountService::pg(pool).with_shift_lifecycle_hook(hook),
         }
     }
 }
@@ -408,3 +425,26 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     TransferPolicySaveInput::export_all(&cfg)?;
     Ok(())
 }
+
+// Written before the implementation by the ticket author claude/5edf7bb5. Do not edit, delete or weaken.
+#[cfg(test)]
+mod stock_insufficient_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn a_ledger_stock_refusal_is_a_409_stock_insufficient() {
+        let e = from_cash_error(AppError::Domain(
+            "stockInsufficient: the posting takes a drawer, a safe or a position below zero".into(),
+        ));
+        assert_eq!(e.code, "stockInsufficient");
+        assert_eq!(e.status, StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn a_transfer_stock_refusal_stays_a_409_stock_insufficient() {
+        let e = from_cash_error(AppError::Domain(TransferError::StockInsufficient.to_string()));
+        assert_eq!(e.code, "stockInsufficient");
+        assert_eq!(e.status, StatusCode::CONFLICT);
+    }
+}
+

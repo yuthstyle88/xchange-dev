@@ -26,6 +26,7 @@ use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState, BuildInfo};
 use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::screens::ScreenTable;
 use xchange::presentation::test_callers;
 
 const WHO: &str = "x-test-sessions";
@@ -204,7 +205,15 @@ async fn plain_page_shows_the_build_and_it_matches_health_ready() {
 
 #[actix_web::test]
 async fn desk_variant_page_shows_the_build_and_it_matches_health_ready() {
-    let app = app!(&fixtures().join("web"), None);
+    let reader: Arc<dyn SessionReader> = Arc::new(FakeCallers);
+    let state = state(&fixtures().join("web"), None);
+    let screens = ScreenTable::from_dist(&fixtures()).expect("empty screen table");
+    let app = test::init_service(
+        App::new()
+            .configure(move |cfg| bootstrap::configure_with_screens(cfg, state, screens))
+            .app_data(web::Data::from(reader)),
+    )
+    .await;
     let want = expected!(&app);
     let (status, body) = get!(&app, "/staff/desk", "staff:FRONT:XC-B01");
     assert_eq!(status, StatusCode::OK);

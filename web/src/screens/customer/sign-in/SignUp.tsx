@@ -8,6 +8,7 @@ import { lang, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { useForm } from '../../../shared/ui/form';
 import { PasswordField } from '../../../shared/ui/PasswordField';
+import { TermsText } from './TermsText';
 import * as table from './i18n';
 import './sign-in.css';
 
@@ -78,7 +79,7 @@ export function SignUp(props: { navigate: (url: string) => void; fetch?: typeof 
           <input ref={marketingInput} type="checkbox" name="marketing" />
           {tr('marketing')}
         </label>
-        <p class="xc-sign-in-terms">{tr('terms')}</p>
+        <TermsText />
         <button type="submit" disabled={pending()}>
           {tr('submitSignUp')}
         </button>

@@ -344,3 +344,34 @@
 .xc-btn-delete:hover {
   background-color: #ffe4e6;
 }
+
+.xc-alert-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  margin: 0.5rem 0;
+}
+
+.xc-alert-expired {
+  color: var(--xc-danger, #ef4444);
+  font-weight: 600;
+}
+
+.xc-alert-expires {
+  color: var(--xc-text-muted, #64748b);
+}
+
+.xc-alert-stale {
+  color: var(--xc-warning, #d97706);
+}
+
+.xc-alert-relation {
+  font-weight: 500;
+  color: var(--xc-text, #0f172a);
+}
+
+.xc-alert-last-event {
+  color: var(--xc-text-muted, #64748b);
+}
+
