@@ -9,7 +9,7 @@ import type {
   BookingQrReissueOutput,
   BookingRescheduleOutput,
 } from '../../../shared/api/generated/bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import type { MeView } from '../../../shared/api/generated/me';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
@@ -25,7 +25,7 @@ interface SlotGroup {
 
 const DESK_PERMISSION = 'BookingsDesk';
 const VIEW_DESK_BOOKINGS = 'desk_bookings';
-const VIEW_STAFF_ME = 'staff_me';
+const VIEW_ME = 'me';
 const ROUTE_BOOKINGS = '/api/bookings';
 const routeCheckIn = (id: string) => `/api/bookings/${encodeURIComponent(id)}/check-in`;
 const routeCancel = (id: string) => `/api/bookings/${encodeURIComponent(id)}/cancel`;
@@ -126,8 +126,10 @@ export function DeskBookingsScreen(): JSX.Element {
     const seq = ++readSeq;
     const qrParam = opts?.qr !== undefined ? opts.qr : activeQr();
     const sinceParam = loadedQr === qrParam ? opts?.since : undefined;
+    const branchParam = branchId().trim();
     try {
       const envelope = await api.view<DeskBookingsData>(VIEW_DESK_BOOKINGS, {
+        branch: branchParam ? branchParam : undefined,
         since: sinceParam,
         filter: qrParam ? { qr: qrParam } : undefined,
       });
@@ -160,8 +162,9 @@ export function DeskBookingsScreen(): JSX.Element {
       }
       if (envelope.data && Array.isArray(envelope.data.items)) {
         loadedQr = qrParam;
-        setItems(envelope.data.items);
-        const groups = groupBookingsBySlot(envelope.data.items);
+        const mappedItems: DeskBookingItemDto[] = envelope.data.items;
+        setItems(mappedItems);
+        const groups = groupBookingsBySlot(mappedItems);
         const firstSlot = groups[0]?.slotId;
         if (firstSlot && !formSlotId()) {
           setFormSlotId(firstSlot);
@@ -185,16 +188,25 @@ export function DeskBookingsScreen(): JSX.Element {
 
   onMount(async () => {
     try {
-      const staffEnv = await api.view<StaffMeView>(VIEW_STAFF_ME);
-      const perms: string[] = staffEnv.data?.permissions ?? [];
+      const meEnv = await api.view<MeView>(VIEW_ME);
+      const perms: string[] = meEnv.data?.permissions ?? [];
       if (!perms.includes(DESK_PERMISSION)) {
         setAuthorized(false);
         setRefusalMessage(t('error.roleNotAllowed'));
         return;
       }
-      if (staffEnv.data?.branchId) {
-        setBranchId(staffEnv.data.branchId);
-        setFormBranchId(staffEnv.data.branchId);
+      const urlBranch =
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('branch')?.trim() ?? ''
+          : '';
+      const roleBranch =
+        meEnv.data?.roles
+          ?.find((r) => typeof r.branchId === 'string' && r.branchId.trim() !== '')
+          ?.branchId?.trim() ?? '';
+      const resolvedBranch = urlBranch || roleBranch;
+      if (resolvedBranch) {
+        setBranchId(resolvedBranch);
+        setFormBranchId(resolvedBranch);
       }
     } catch {
       // ignore
@@ -679,31 +691,35 @@ export function DeskBookingsScreen(): JSX.Element {
                             </div>
 
                             <div class="xc-booking-actions">
-                              <button
-                                type="button"
-                                data-action="check-in"
-                                class="xc-checkin-btn xc-btn-primary"
-                                disabled={writing()}
-                                onClick={() => handleCheckIn(b.id)}
-                              >
-                                {t('checkIn')}
-                              </button>
-                              <button
-                                type="button"
-                                data-action="cancel"
-                                class="xc-cancel-btn xc-btn-secondary"
-                                onClick={() => openCancel(b.id)}
-                              >
-                                {t('cancel')}
-                              </button>
-                              <button
-                                type="button"
-                                data-action="reschedule"
-                                class="xc-reschedule-btn xc-btn-secondary"
-                                onClick={() => openReschedule(b.id)}
-                              >
-                                {t('reschedule')}
-                              </button>
+                              <Show when={b.status === 'CONFIRMED'}>
+                                <button
+                                  type="button"
+                                  data-action="check-in"
+                                  class="xc-checkin-btn xc-btn-primary"
+                                  disabled={writing()}
+                                  onClick={() => handleCheckIn(b.id)}
+                                >
+                                  {t('checkIn')}
+                                </button>
+                              </Show>
+                              <Show when={b.status === 'CONFIRMED' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                                <button
+                                  type="button"
+                                  data-action="cancel"
+                                  class="xc-cancel-btn xc-btn-secondary"
+                                  onClick={() => openCancel(b.id)}
+                                >
+                                  {t('cancel')}
+                                </button>
+                                <button
+                                  type="button"
+                                  data-action="reschedule"
+                                  class="xc-reschedule-btn xc-btn-secondary"
+                                  onClick={() => openReschedule(b.id)}
+                                >
+                                  {t('reschedule')}
+                                </button>
+                              </Show>
                               <Show when={b.status === 'CONFIRMED' || b.status === 'CHECKED_IN' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
                                 <button
                                   type="button"

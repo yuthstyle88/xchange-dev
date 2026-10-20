@@ -13,7 +13,7 @@ use xc_cash::application::handover::{HandoverService, StartHandover};
 use xc_cash::domain::handover::Handover;
 use xc_kernel::ids::BranchId;
 
-use super::{caller_in, count_lines, from_cash_error, validation_failed};
+use super::{caller_in, count_lines, from_cash_error, shift_lifecycle_hook, validation_failed};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::cash::{CashRecordInput, CashRecordOutput, HandoverStartInput};
 use crate::presentation::http::v3::command::CommandAction;
@@ -32,8 +32,9 @@ pub struct HandoverStart {
 
 impl HandoverStart {
     pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
         Self {
-            handovers: HandoverService::pg(pool),
+            handovers: HandoverService::pg(pool).with_shift_lifecycle_hook(hook),
         }
     }
 }
@@ -89,8 +90,9 @@ pub struct HandoverAccept {
 
 impl HandoverAccept {
     pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
         Self {
-            handovers: HandoverService::pg(pool),
+            handovers: HandoverService::pg(pool).with_shift_lifecycle_hook(hook),
         }
     }
 }
@@ -128,8 +130,9 @@ pub struct HandoverReject {
 
 impl HandoverReject {
     pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
         Self {
-            handovers: HandoverService::pg(pool),
+            handovers: HandoverService::pg(pool).with_shift_lifecycle_hook(hook),
         }
     }
 }

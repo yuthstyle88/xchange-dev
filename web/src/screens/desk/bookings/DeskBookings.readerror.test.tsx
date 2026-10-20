@@ -2,9 +2,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { BookingCheckInOutput } from '../../../shared/api/generated/bookings';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeBookingCheckInOutput,
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeMe,
+  makeMeRole,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -17,18 +21,18 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER: StaffMeView = {
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: 'XC-B01' }],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'teller', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const INITIAL_BOOKINGS: DeskBookingsData = {
+const INITIAL_BOOKINGS = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261016-0001',
       status: 'CONFIRMED',
@@ -39,14 +43,14 @@ const INITIAL_BOOKINGS: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-16T09:00:00Z',
       endAt: '2026-10-16T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
-const UPDATED_BOOKINGS: DeskBookingsData = {
+const UPDATED_BOOKINGS = makeDeskBookingsData({
   items: [
     ...INITIAL_BOOKINGS.items,
-    {
+    makeDeskBookingItemDto({
       id: 'bk-2',
       bookingNo: 'B261016-0002',
       status: 'CONFIRMED',
@@ -57,9 +61,9 @@ const UPDATED_BOOKINGS: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-16T09:00:00Z',
       endAt: '2026-10-16T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 6; i += 1) {
@@ -97,7 +101,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -135,7 +139,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -177,7 +181,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -221,7 +225,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -235,12 +239,15 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
           if (checkInCalls === 1) {
             return jsonResponse(409, { error: { code: 'qrMismatch', message: 'QR mismatch' } });
           }
-          return jsonResponse(200, {
-            id: 'bk-1',
-            status: 'CHECKED_IN',
-            ticketNumber: 'B01-009',
-            bookingNo: 'B261016-0001',
-          } satisfies BookingCheckInOutput);
+          return jsonResponse(
+            200,
+            makeBookingCheckInOutput({
+              id: 'bk-1',
+              status: 'CHECKED_IN',
+              ticketNumber: 'B01-009',
+              bookingNo: 'B261016-0001',
+            }),
+          );
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
@@ -282,7 +289,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -312,7 +319,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -385,7 +392,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {

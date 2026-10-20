@@ -1,26 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+} from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { FloorCard } from './FloorCard';
 
 const BRANCH = 'MAIN';
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000f1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: null,
@@ -29,7 +32,7 @@ function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
     target: null,
     safe: null,
     ...over,
-  };
+  });
 }
 
 function makeCtx(over: Partial<StaffFloorView> = {}, perms = ['BranchDayOperate']): StaffCtx {

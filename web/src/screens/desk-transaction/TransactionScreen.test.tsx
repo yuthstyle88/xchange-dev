@@ -22,11 +22,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
-import type { ReceiptDocumentViewData } from '../../shared/api/generated/receipt_document';
-import type { ReversalSummaryDto } from '../../shared/api/generated/reversal';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
-import type { TransactionDetailDto, TransactionViewData } from '../../shared/api/generated/transaction';
-import type { TransactionAuditViewData } from '../../shared/api/generated/transaction_audit';
+import {
+  makeMe,
+  makeReceiptDocumentDto,
+  makeReceiptDocumentViewData,
+  makeReversalSummaryDto,
+  makeTransactionAuditEventDto,
+  makeTransactionAuditViewData,
+  makeTransactionDetailDto,
+  makeTransactionViewData,
+  makeTxApprovalDto,
+  makeTxLineDto,
+  makeTxPaymentDto,
+  makeTxReceiptDto,
+  type MeRole,
+  type MeView,
+  type ReceiptDocumentViewData,
+  type ReversalSummaryDto,
+  type TransactionAuditViewData,
+  type TransactionDetailDto,
+  type TransactionViewData,
+} from '../../shared/testing/fixtures';
 import { ReceiptFrame } from '../../shared/receipt/ReceiptFrame';
 import { th } from './i18n';
 import { TransactionScreen } from './TransactionScreen';
@@ -45,20 +61,21 @@ const TX_ID = '7f0c2b1e-4a5d-4c3b-9e8f-0a1b2c3d4e5f';
 const PATH = `/desk/transactions/${TX_ID}`;
 const RECEIPT_HTML = '<!doctype html><html><body>ใบเสร็จ XC-0001 35,120.00</body></html>';
 
-function me(permissions: string[]): StaffMeView {
-  return {
-    userId: '00000000-0000-4000-8000-000000000001',
+function me(permissions: string[], roles: MeRole[] = []) {
+  return makeMe({
+    id: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
-    roles: [],
-    branchId: 'MAIN',
+    roles,
+    branch: 'MAIN',
     branchName: 'สาขาทดสอบ',
+    branches: [],
     permissions,
-  };
+  });
 }
 const ALL = ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'];
 
-function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailDto {
-  return {
+function completed(over: Partial<TransactionDetailDto> = {}) {
+  return makeTransactionDetailDto({
     id: TX_ID,
     status: 'COMPLETED',
     documentRef: 'XC-0001',
@@ -67,7 +84,7 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
     quoteId: null,
     quoteExpiresAt: null,
     lines: [
-      {
+      makeTxLineDto({
         lineNo: 1,
         currency: 'USD',
         side: 'BUY',
@@ -77,9 +94,9 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
         thbAmount: '35120.00',
         feeThb: '0.00',
         settleThb: '35120.00',
-      },
+      }),
     ],
-    payment: {
+    payment: makeTxPaymentDto({
       method: 'CASH',
       reference: '',
       account: '',
@@ -87,8 +104,8 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
       amountThb: '35120.00',
       bankFeeThb: '0.00',
       paidAt: '2026-10-11T03:00:00Z',
-    },
-    receipts: [{ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' }],
+    }),
+    receipts: [makeTxReceiptDto({ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' })],
     approvalRequest: null,
     completedAt: '2026-10-11T03:00:05Z',
     cancelledAt: null,
@@ -97,11 +114,11 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
     benefits: [],
     booking: null,
     ...over,
-  };
+  });
 }
 
-function reversal(status: ReversalStatus, over: Partial<ReversalSummaryDto> = {}): ReversalSummaryDto {
-  return {
+function reversal(status: ReversalStatus, over: Partial<ReversalSummaryDto> = {}) {
+  return makeReversalSummaryDto({
     id: 'rv-0001',
     originalTransactionId: TX_ID,
     status,
@@ -113,19 +130,19 @@ function reversal(status: ReversalStatus, over: Partial<ReversalSummaryDto> = {}
     postedAt: status === 'POSTED' ? '2026-10-11T04:20:00Z' : null,
     documentNumber: status === 'POSTED' ? 'XC-0001-R2' : null,
     ...over,
-  };
+  });
 }
 
 /**
  * Only decision events: `ApprovalService::request` writes no audit event, only a decision does (measured by the BE lane
  * on #1294). Here: the over-limit approval of the exchange decided, then the reversal's FINANCE decision.
  */
-const AUDIT: TransactionAuditData = {
+const AUDIT: TransactionAuditData = makeTransactionAuditViewData({
   events: [
-    { at: '2026-10-11T02:59:30Z', actorId: 'u-mgr', actorRole: 'ROLE_A', action: 'approval.approved' },
-    { at: '2026-10-11T04:10:00Z', actorId: 'u-fin', actorRole: 'ROLE_B', action: 'reversal.approved' },
+    makeTransactionAuditEventDto({ at: '2026-10-11T02:59:30Z', actorId: 'u-mgr', actorRole: 'ROLE_A', action: 'approval.approved' }),
+    makeTransactionAuditEventDto({ at: '2026-10-11T04:10:00Z', actorId: 'u-fin', actorRole: 'ROLE_B', action: 'reversal.approved' }),
   ],
-};
+});
 
 // ── the fake server ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -133,7 +150,7 @@ type Call = { method: string; url: string; path: string; query: URLSearchParams;
 type Reply = { status: number; json?: unknown; network?: true; text?: string };
 
 interface World {
-  me: StaffMeView | Reply;
+  me: MeView | Reply;
   transaction: TransactionData | Reply;
   audit: TransactionAuditData | Reply;
   receipt: ReceiptDocumentData;
@@ -180,7 +197,10 @@ function installFetch() {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? init.body : null;
       calls.push({ method, url, path: u.pathname, query: u.searchParams, body, key: headers.get('Idempotency-Key') });
-      if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') return view(world.me);
+      if (method === 'GET' && u.pathname === '/api/v3/views/me') return view(world.me);
+      if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        return json(401, { error: { code: 'employeeAuthRequired', message: 'employee auth required' } });
+      }
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction') return view(world.transaction);
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction_audit') return view(world.audit);
       if (method === 'GET' && u.pathname === '/api/v3/views/receipt_document') return view(world.receipt);
@@ -207,9 +227,11 @@ async function settle(): Promise<void> {
 async function mount(over: Partial<World> = {}, search = '') {
   world = {
     me: me(ALL),
-    transaction: { transaction: completed() },
+    transaction: makeTransactionViewData({ transaction: completed() }),
     audit: AUDIT,
-    receipt: { receipt: { number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z', html: RECEIPT_HTML } },
+    receipt: makeReceiptDocumentViewData({
+      receipt: makeReceiptDocumentDto({ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z', html: RECEIPT_HTML }),
+    }),
     posts: [{ status: 200, json: { id: 'rv-0001', status: 'REQUESTED' } }],
     ...over,
   };
@@ -261,9 +283,10 @@ afterEach(() => {
 // ── reads (D2) ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('reads: three GETs on open, none on a timer, three again on refresh (D2)', () => {
-  it('opens with exactly staff_me, transaction {id} and transaction_audit {id}, and nothing else', async () => {
+  it('opens with exactly me, transaction {id} and transaction_audit {id}, and nothing else', async () => {
     await mount();
-    expect(gets('staff_me')).toHaveLength(1);
+    expect(gets('me')).toHaveLength(1);
+    expect(gets('staff_me')).toHaveLength(0);
     expect(gets('transaction')).toHaveLength(1);
     expect(gets('transaction')[0]!.query.get('id')).toBe(TX_ID);
     expect(gets('transaction_audit')).toHaveLength(1);
@@ -280,6 +303,23 @@ describe('reads: three GETs on open, none on a timer, three again on refresh (D2
     expect(gets('transaction_audit')[0]!.query.get('branch')).toBe('B2');
   });
 
+  it('owner (EXECUTIVE+ADMIN) with ReversalRequest and ReceiptReprint on me sees both actions and makes no staff_me request (#3963)', async () => {
+    await mount({
+      me: me(
+        ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'],
+        [
+          { role: 'EXECUTIVE', branchId: null },
+          { role: 'ADMIN', branchId: null },
+        ],
+      ),
+    });
+    expect(state()).toBe('ready');
+    expect(btn('reprint')).toHaveLength(1);
+    expect(btn('request-reversal')).toHaveLength(1);
+    expect(gets('me')).toHaveLength(1);
+    expect(gets('staff_me')).toEqual([]);
+  });
+
   it('makes no request in 10 minutes without a click (no polling)', async () => {
     vi.useFakeTimers();
     await mount();
@@ -292,7 +332,7 @@ describe('reads: three GETs on open, none on a timer, three again on refresh (D2
   it('the refresh button reads the same three views once more', async () => {
     await mount();
     await click(btn('refresh')[0]);
-    expect(gets('staff_me')).toHaveLength(2);
+    expect(gets('me')).toHaveLength(2);
     expect(gets('transaction')).toHaveLength(2);
     expect(gets('transaction_audit')).toHaveLength(2);
     expect(calls).toHaveLength(6);
@@ -313,13 +353,13 @@ describe('states (D11)', () => {
     await mount({ transaction: { status: 500, json: { error: { code: 'serverError', message: 'เซิร์ฟเวอร์ขัดข้อง' } } } });
     expect(state()).toBe('error');
     expect(btn('retry')).toHaveLength(1);
-    world.transaction = { transaction: completed() };
+    world.transaction = makeTransactionViewData({ transaction: completed() });
     await click(btn('retry')[0]);
     expect(gets('transaction')).toHaveLength(2);
     expect(state()).toBe('ready');
   });
 
-  it('staff_me failing still shows the data, with no action button', async () => {
+  it('me failing still shows the data, with no action button', async () => {
     await mount({ me: { status: 500, json: { error: { code: 'serverError', message: 'x' } } } });
     expect(state()).toBe('ready');
     expect(text()).toContain('35120.00');
@@ -340,7 +380,7 @@ describe('content: every figure is the server string, unchanged (D3)', () => {
 
   it('DRAFT and CONFIRMED show their status and no receipts, reprint or request button', async () => {
     for (const status of ['DRAFT', 'CONFIRMED'] as const) {
-      await mount({ transaction: { transaction: completed({ status, documentRef: null, receipts: [], completedAt: null }) } });
+      await mount({ transaction: makeTransactionViewData({ transaction: completed({ status, documentRef: null, receipts: [], completedAt: null }) }) });
       expect(state(), status).toBe('ready');
       expect(btn('reprint'), status).toHaveLength(0);
       expect(btn('request-reversal'), status).toHaveLength(0);
@@ -352,15 +392,15 @@ describe('content: every figure is the server string, unchanged (D3)', () => {
 
   it("PENDING_APPROVAL shows the approval request's status and no request button", async () => {
     await mount({
-      transaction: {
+      transaction: makeTransactionViewData({
         transaction: completed({
           status: 'PENDING_APPROVAL',
           documentRef: null,
           receipts: [],
           completedAt: null,
-          approvalRequest: { id: 'ap-1', status: 'PENDING' },
+          approvalRequest: makeTxApprovalDto({ id: 'ap-1', status: 'PENDING' }),
         }),
-      },
+      }),
     });
     expect(text()).toContain('PENDING');
     expect(btn('request-reversal')).toHaveLength(0);
@@ -368,7 +408,7 @@ describe('content: every figure is the server string, unchanged (D3)', () => {
 
   it('CANCELLED shows cancelledAt and cancelReason, and no receipts', async () => {
     await mount({
-      transaction: {
+      transaction: makeTransactionViewData({
         transaction: completed({
           status: 'CANCELLED',
           documentRef: null,
@@ -377,7 +417,7 @@ describe('content: every figure is the server string, unchanged (D3)', () => {
           cancelledAt: '2026-10-11T05:00:00Z',
           cancelReason: 'ลูกค้าเปลี่ยนใจ',
         }),
-      },
+      }),
     });
     expect(text()).toContain('ลูกค้าเปลี่ยนใจ');
     expect(btn('reprint')).toHaveLength(0);
@@ -428,6 +468,12 @@ describe('reprint: a GET of receipt_document, printed through ReceiptFrame (D5)'
 // ── reversal (D6) ───────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('reversal request (D6)', () => {
+  it('without ReversalRequest: no request-reversal button', async () => {
+    await mount({ me: me(['TransactionRead', 'ReceiptReprint']) });
+    expect(state()).toBe('ready');
+    expect(btn('request-reversal')).toHaveLength(0);
+  });
+
   it('ReversalRequest + COMPLETED + no reversal: request → ReasonDialog → POST {reason} with an Idempotency-Key', async () => {
     await mount();
     expect(btn('request-reversal')).toHaveLength(1);
@@ -467,7 +513,7 @@ describe('reversal request (D6)', () => {
   });
 
   it('success re-reads transaction and transaction_audit once each', async () => {
-    await mount({ afterPost: { transaction: completed({ reversal: reversal('REQUESTED') }) } });
+    await mount({ afterPost: makeTransactionViewData({ transaction: completed({ reversal: reversal('REQUESTED') }) }) });
     await requestReversal('ลูกค้าขอยกเลิก');
     expect(gets('transaction')).toHaveLength(2);
     expect(gets('transaction_audit')).toHaveLength(2);
@@ -476,7 +522,7 @@ describe('reversal request (D6)', () => {
 
   it('REQUESTED, APPROVED, POSTED, EXPIRED: no request button; the section shows status, reason and amount', async () => {
     for (const s of ['REQUESTED', 'APPROVED', 'POSTED', 'EXPIRED'] as const) {
-      await mount({ transaction: { transaction: completed({ reversal: reversal(s) }) } });
+      await mount({ transaction: makeTransactionViewData({ transaction: completed({ reversal: reversal(s) }) }) });
       expect(btn('request-reversal'), s).toHaveLength(0);
       expect(text(), s).toContain(s);
       expect(text(), s).toContain('ลูกค้าขอยกเลิก');
@@ -486,29 +532,29 @@ describe('reversal request (D6)', () => {
   });
 
   it('REJECTED: shown rejected, and the request button is shown again', async () => {
-    await mount({ transaction: { transaction: completed({ reversal: reversal('REJECTED') }) } });
+    await mount({ transaction: makeTransactionViewData({ transaction: completed({ reversal: reversal('REJECTED') }) }) });
     expect(text()).toContain('REJECTED');
     expect(btn('request-reversal')).toHaveLength(1);
   });
 
   it('POSTED: the original figures are unchanged, and receipts list revision 1 and 2 with the document number', async () => {
     await mount({
-      transaction: {
+      transaction: makeTransactionViewData({
         transaction: completed({
           reversal: reversal('POSTED'),
           receipts: [
-            { number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' },
-            { number: 'XC-0001-R2', revision: 2, issuedAt: '2026-10-11T04:20:00Z' },
+            makeTxReceiptDto({ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' }),
+            makeTxReceiptDto({ number: 'XC-0001-R2', revision: 2, issuedAt: '2026-10-11T04:20:00Z' }),
           ],
         }),
-      },
+      }),
     });
     for (const s of ['1000.0000', '35.12000000', '35120.00', 'XC-0001-R2']) expect(text(), s).toContain(s);
     expect(btn('reprint')).toHaveLength(2);
   });
 
   it('APPROVED: the owner line บันทึกคืนเงินที่หน้าเดสก์, and no post button or post request in any case (Q-1 B)', async () => {
-    await mount({ transaction: { transaction: completed({ reversal: reversal('APPROVED') }) } });
+    await mount({ transaction: makeTransactionViewData({ transaction: completed({ reversal: reversal('APPROVED') }) }) });
     expect(th.approvedAtDesk).toBe('บันทึกคืนเงินที่หน้าเดสก์');
     expect(text()).toContain('บันทึกคืนเงินที่หน้าเดสก์');
     expect(btn('post-reversal')).toHaveLength(0);

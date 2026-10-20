@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { ApiClient } from '../api/client';
 import { errorText } from '../i18n';
-import type { MyNotificationItem } from '../api/generated/my_notifications';
+import { makeMyNotificationItem } from '../testing/fixtures';
 import { createNotifications } from './notifications';
 
 interface Deferred<T> {
@@ -28,7 +28,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-const UNREAD_ITEM: MyNotificationItem = {
+const UNREAD_ITEM = makeMyNotificationItem({
   id: '1',
   seq: 10,
   locale: 'th',
@@ -36,9 +36,9 @@ const UNREAD_ITEM: MyNotificationItem = {
   body: 'b1',
   read: false,
   createdAt: '2026-10-13T01:00:00Z',
-};
+});
 
-const READ_ITEM: MyNotificationItem = {
+const READ_ITEM = makeMyNotificationItem({
   id: '2',
   seq: 20,
   locale: 'th',
@@ -46,7 +46,7 @@ const READ_ITEM: MyNotificationItem = {
   body: 'b2',
   read: true,
   createdAt: '2026-10-13T02:00:00Z',
-};
+});
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 10; i += 1) {

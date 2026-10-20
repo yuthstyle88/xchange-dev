@@ -12,35 +12,38 @@ import { render } from 'solid-js/web';
 import { ShiftCard } from './ShiftCard';
 import { setLang } from '../../../shared/i18n';
 import type { StaffCtx } from '../cards';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
-import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
+import {
+  makeCashCountRow,
+  makeDenominationRow,
+  makeHandoverPendingRow,
+  makeHandoverReceiverRow,
+  makeStaffFloorMyShift,
+  makeStaffFloorView,
+  makeStaffMeView,
+} from '../../../shared/testing/fixtures';
 
 const BRANCH = 'MAIN';
 const ME = '00000000-0000-4000-8000-0000000000a1';
 const OTHER = '00000000-0000-4000-8000-0000000000a2';
 
-function me(permissions: string[]): StaffMeView {
-  return { userId: ME, name: 'Ploy', roles: [], branchId: BRANCH, branchName: 'XC-B', permissions };
+function me(permissions: string[]) {
+  return makeStaffMeView({ userId: ME, name: 'Ploy', roles: [], branchId: BRANCH, branchName: 'XC-B', permissions });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
-    myShift: { id: 'shift-open-001', openedAt: '2026-10-11T01:05:00Z' },
+    myShift: makeStaffFloorMyShift({ id: 'shift-open-001', openedAt: '2026-10-11T01:05:00Z' }),
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
-const COUNTS: CashCountRow[] = [
-  {
+const COUNTS = [
+  makeCashCountRow({
     id: 'count-w-001',
     branchId: BRANCH,
     shiftId: 'shift-other-001',
@@ -51,23 +54,23 @@ const COUNTS: CashCountRow[] = [
     verifiedAt: null,
     note: null,
     totals: [],
-  },
+  }),
 ];
-const HANDOVERS: HandoverPendingRow[] = [
-  {
+const HANDOVERS = [
+  makeHandoverPendingRow({
     id: 'ho-001',
     fromShiftId: 'shift-other-001',
     countId: 'count-ho-001',
     receiverId: ME,
     status: 'PENDING',
     createdAt: '2026-10-11T02:10:00Z',
-  },
+  }),
 ];
-const DENOMS: DenominationRow[] = [
-  { id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' },
-  { id: 12, currency: 'THB', faceValue: '500.0000', groupCode: 'NOTE' },
+const DENOMS = [
+  makeDenominationRow({ id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' }),
+  makeDenominationRow({ id: 12, currency: 'THB', faceValue: '500.0000', groupCode: 'NOTE' }),
 ];
-const RECEIVERS: HandoverReceiverRow[] = [{ userId: OTHER, name: 'Somchai' }];
+const RECEIVERS = [makeHandoverReceiverRow({ userId: OTHER, name: 'Somchai' })];
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

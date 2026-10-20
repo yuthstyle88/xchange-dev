@@ -6,10 +6,10 @@ import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { Slips } from './Slips';
 import { PAGE_WIDE } from '../../../shared/testing/page-wide';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 
-const SAMPLE_SLIPS: TransactionRow[] = [
-  {
+const SAMPLE_SLIPS = [
+  makeTransactionRow({
     id: 'XC-20261008-000001',
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -36,7 +36,7 @@ const SAMPLE_SLIPS: TransactionRow[] = [
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  },
+  }),
 ];
 
 const SAMPLE_BRANCHES = [

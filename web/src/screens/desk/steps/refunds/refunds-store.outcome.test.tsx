@@ -1,21 +1,17 @@
 // #2189: Desk refunds outcome handling — separate post from readRefunds(), and treat definite 4xx refusals as non-retryable wordedError.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DeskRefundRow, DeskRefunds } from '../../../../shared/api/generated/desk_refunds';
-import type { ReversalSummaryDto } from '../../../../shared/api/generated/reversal';
-import type { StaffMeView } from '../../../../shared/api/generated/staff_me';
+import {
+  makeDeskRefundLine,
+  makeDeskRefundPayment,
+  makeDeskRefundRow,
+  makeMe,
+  makeReversalSummaryDto,
+  type DeskRefunds,
+  type MeView,
+  type ReversalSummaryDto,
+} from '../../../../shared/testing/fixtures';
 import { setLang, t as sharedT } from '../../../../shared/i18n';
 import * as texts from './i18n';
-
-const ME = {
-  kind: 'user',
-  id: 'u-1',
-  role: '',
-  branch: 'MAIN',
-  name: 'Ploy',
-  username: 'ploy',
-  branchName: 'XC-B',
-  branches: [],
-};
 
 const CONFIG = {
   branchId: 'MAIN',
@@ -26,12 +22,12 @@ const CONFIG = {
   paymentMethods: [],
 };
 
-function staffMe(permissions: string[]): StaffMeView {
-  return { userId: 'u-1', name: 'Ploy', roles: [], branchId: 'MAIN', branchName: 'XC-B', permissions };
+function me(permissions: string[]) {
+  return makeMe({ id: 'u-1', name: 'Ploy', roles: [], permissions, branch: 'MAIN', branchName: 'XC-B', branches: [] });
 }
 
-function reversal(id: string, original: string, over: Partial<ReversalSummaryDto> = {}): ReversalSummaryDto {
-  return {
+function reversal(id: string, original: string, over: Partial<ReversalSummaryDto> = {}) {
+  return makeReversalSummaryDto({
     id,
     originalTransactionId: original,
     status: 'APPROVED',
@@ -43,22 +39,22 @@ function reversal(id: string, original: string, over: Partial<ReversalSummaryDto
     postedAt: null,
     documentNumber: null,
     ...over,
-  };
+  });
 }
 
-const ROWS: DeskRefundRow[] = [
-  {
+const ROWS = [
+  makeDeskRefundRow({
     reversal: reversal('rv-1', 'tx-111'),
     receiptNumber: 'XC-0001',
-    lines: [{ shopSide: 'BUY', currency: 'USD', quantity: '1000.0000', settleThb: '35120.00' }],
-    payments: [{ method: 'CASH', amountThb: '35120.00' }],
-  },
-  {
+    lines: [makeDeskRefundLine({ shopSide: 'BUY', currency: 'USD', quantity: '1000.0000', settleThb: '35120.00' })],
+    payments: [makeDeskRefundPayment({ method: 'CASH', amountThb: '35120.00' })],
+  }),
+  makeDeskRefundRow({
     reversal: reversal('rv-2', 'tx-222', { amount: '1.00', reason: 'คืนครึ่ง' }),
     receiptNumber: 'XC-0002',
-    lines: [{ shopSide: 'BUY', currency: 'EUR', quantity: '10.0000', settleThb: '1.00' }],
-    payments: [{ method: 'CASH', amountThb: '1.00' }],
-  },
+    lines: [makeDeskRefundLine({ shopSide: 'BUY', currency: 'EUR', quantity: '10.0000', settleThb: '1.00' })],
+    payments: [makeDeskRefundPayment({ method: 'CASH', amountThb: '1.00' })],
+  }),
 ];
 
 const POSTED_DOC = 'XC-0001-R2';
@@ -75,7 +71,7 @@ type Reply = { status: number; body?: unknown; text?: string } | 'network';
 type RefundReadReply = DeskRefunds | Reply;
 
 interface World {
-  staffMe: StaffMeView;
+  me: MeView;
   refundReads: RefundReadReply[];
   posts: Reply[];
 }
@@ -106,12 +102,9 @@ function install(): void {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? init.body : null;
       calls.push({ method, path: u.pathname, query: u.searchParams, body, key: headers.get('idempotency-key') });
-      if (u.pathname === '/api/v3/views/me') return view(ME);
+      if (u.pathname === '/api/v3/views/me') return view(world.me);
       if (u.pathname === '/api/v3/views/desk_config' || u.pathname === '/api/v3/views/staff_desk_config') {
         return view(CONFIG);
-      }
-      if (u.pathname === '/api/v3/views/staff_me') {
-        return view(world.staffMe);
       }
       if (u.pathname === '/api/v3/views/desk_refunds') {
         const r = world.refundReads[Math.min(refundReadCount, world.refundReads.length - 1)]!;
@@ -136,7 +129,7 @@ function install(): void {
 const reads = (name: string) => calls.filter((c) => c.method === 'GET' && c.path === `/api/v3/views/${name}`);
 const postCalls = () => calls.filter((c) => c.method === 'POST' && c.path.startsWith('/api/reversals/'));
 
-function posted(id: string): ReversalSummaryDto {
+function posted(id: string) {
   return reversal(id, 'tx-111', { status: 'POSTED', postedAt: '2026-10-11T05:00:00Z', documentNumber: POSTED_DOC });
 }
 
@@ -150,7 +143,7 @@ async function settle(): Promise<void> {
 
 async function boot(over: Partial<World> = {}, pathname = '/desk'): Promise<HTMLDivElement> {
   world = {
-    staffMe: staffMe(['ReversalRequest']),
+    me: me(['ReversalRequest']),
     refundReads: [{ rows: ROWS }],
     posts: [{ status: 200, body: posted('rv-1') }],
     ...over,
@@ -165,7 +158,7 @@ async function boot(over: Partial<World> = {}, pathname = '/desk'): Promise<HTML
 beforeAll(async () => {
   vi.useFakeTimers();
   world = {
-    staffMe: staffMe([]),
+    me: me([]),
     refundReads: [{ rows: [] }],
     posts: [],
   };
@@ -387,7 +380,7 @@ describe('Desk refunds post and read outcomes (#2189 §8 & §9)', () => {
     const store = createRefundsStore(new ApiClient());
 
     world = {
-      staffMe: staffMe(['ReversalRequest']),
+      me: me(['ReversalRequest']),
       refundReads: [{ rows: ROWS }, { rows: [ROWS[1]!] }],
       posts: [{ status: 200, body: posted('rv-1') }],
     };

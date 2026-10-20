@@ -430,7 +430,7 @@ async fn each_method_refuses_an_actor_without_its_permission() {
         "hold as FINANCE",
     );
 
-    // release needs VerificationReview (held by VerificationReviewer; BranchManager and Teller lack it).
+    // release needs VerificationReview (held by VerificationReviewer and BranchManager under §11.2; Finance and Teller lack it).
     // They name a real OPEN hold with a note, so nothing but the permission can refuse them, and
     // the hold stays OPEN.
     let hold_id = in_tx!(db, branch, |tx| service.hold(
@@ -445,13 +445,13 @@ async fn each_method_refuses_an_actor_without_its_permission() {
     assert_refused_for_permission(
         in_tx!(db, branch, |tx| service.release(
             tx,
-            &bm,
+            &fin,
             &branch,
             &hold_id,
             "ok note",
             now()
         )),
-        "release as BRANCH_MANAGER",
+        "release as FINANCE",
     );
     assert_refused_for_permission(
         in_tx!(db, branch, |tx| service.release(

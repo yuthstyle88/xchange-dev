@@ -4,8 +4,12 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
+import {
+  makeCashCountRow,
+  makeCashCountTotalRow,
+  makeCashTransferLineRow,
+  makeCashTransferRow,
+} from '../../../shared/testing/fixtures';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
@@ -20,7 +24,7 @@ const VERIFY = 'ShiftCloseCertify';
 const MANAGE = 'CashManage';
 const RECONCILE = 'FinanceReconcile';
 
-const MOCK_COUNT: CashCountRow = {
+const MOCK_COUNT = makeCashCountRow({
   id: 'cc-1',
   branchId: 'MAIN',
   shiftId: 'S-01',
@@ -30,10 +34,10 @@ const MOCK_COUNT: CashCountRow = {
   verifiedBy: null,
   verifiedAt: null,
   note: null,
-  totals: [{ currency: 'THB', counted: '1000', expected: '1000', difference: '0' }],
-};
+  totals: [makeCashCountTotalRow({ currency: 'THB', counted: '1000', expected: '1000', difference: '0' })],
+});
 
-const MOCK_TRANSFER: CashTransferRow = {
+const MOCK_TRANSFER = makeCashTransferRow({
   id: 'tr-1',
   kind: 'EXTERNAL_OUT',
   status: 'DRAFT',
@@ -44,8 +48,8 @@ const MOCK_TRANSFER: CashTransferRow = {
   createdBy: 'EMP-1',
   createdAt: '2026-10-15T01:00:00Z',
   note: 'test note',
-  lines: [{ currency: 'THB', denominationId: 1, qtySent: '10', qtyReceived: null }],
-};
+  lines: [makeCashTransferLineRow({ currency: 'THB', denominationId: 1, qtySent: '10', qtyReceived: null })],
+});
 
 class TestServer {
   meRefusal: Reply | 'network' | null = null;
@@ -63,8 +67,8 @@ class TestServer {
     branches: [{ id: 'MAIN', code: 'MAIN', name: 'Headquarters' }],
   };
 
-  counts: CashCountRow[] = [MOCK_COUNT];
-  transfers: CashTransferRow[] = [MOCK_TRANSFER];
+  counts = [MOCK_COUNT];
+  transfers = [MOCK_TRANSFER];
 
   fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

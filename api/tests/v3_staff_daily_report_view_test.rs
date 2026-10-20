@@ -54,7 +54,7 @@ use tx4_common::*;
 use tx5_common::*;
 use xc_approval::domain::request::Outcome;
 use xc_auth::domain::access::StandingKind;
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_cash::application::count::count_service::{CashCountService, SubmitCount};
@@ -277,8 +277,7 @@ impl Day {
             .await;
         desk.db
             .exec(&format!(
-                "UPDATE ops_state SET phase = 'OPEN', \
-                 safe = jsonb_build_object('USD', 500000::bigint, 'THB', 10000000::bigint) \
+                "UPDATE ops_state SET phase = 'OPEN' \
                  WHERE branch_id = '{MAIN}'"
             ))
             .await;
@@ -298,8 +297,8 @@ impl Day {
             .await;
         desk.db
             .exec(&format!(
-                "INSERT INTO ops_state (branch_id, phase, safe) \
-                 VALUES ('{BR2}', 'OPEN', jsonb_build_object('USD', 500000::bigint)) \
+                "INSERT INTO ops_state (branch_id, phase) \
+                 VALUES ('{BR2}', 'OPEN') \
                  ON CONFLICT (branch_id) DO NOTHING"
             ))
             .await;
@@ -327,17 +326,6 @@ impl Day {
                     .bind(&request)
                     .execute(&mut **tx)
                     .await?;
-                    for (code, amount) in [("THB", "100000.00"), ("USD", "1000.00")] {
-                        sqlx::query(
-                            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                             VALUES ($1, $2, $3::numeric, $3::numeric)",
-                        )
-                        .bind(&id)
-                        .bind(code)
-                        .bind(amount)
-                        .execute(&mut **tx)
-                        .await?;
-                    }
                     Ok::<(), pos_error::AppError>(())
                 })
             })
@@ -950,9 +938,7 @@ fn row<'a>(report: &'a Value, code: &str) -> &'a Value {
 }
 
 fn holds_any(role: Role) -> bool {
-    READERS
-        .iter()
-        .any(|p| RolePermissions::of(role).contains(p))
+    READERS.iter().any(|p| RoleGrants::seed(role).contains(p))
 }
 
 /// The branch a role is given in these tests: organisation-wide for the roles §02 makes so (EXECUTIVE), MAIN
@@ -1039,9 +1025,7 @@ async fn exactly_the_holders_of_the_three_permissions_read_the_report() {
     // each of the three permissions is the reason of at least one admitted role
     for p in READERS {
         assert!(
-            admitted
-                .iter()
-                .any(|r| RolePermissions::of(*r).contains(&p)),
+            admitted.iter().any(|r| RoleGrants::seed(*r).contains(&p)),
             "a holder of {p:?} alone is admitted: {admitted:?}"
         );
     }

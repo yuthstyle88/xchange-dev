@@ -2,10 +2,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { setLang } from "../../../shared/i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { CashTransferRow } from "../../../shared/api/generated/cash_transfers";
-import type { DenominationRow } from "../../../shared/api/generated/denominations";
+import {
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { th as staffTh } from "../i18n";
 import { warmModules } from "../../../shared/testing/warm-modules";
@@ -23,19 +26,19 @@ const BRANCH = "MAIN";
 const ELSEWHERE = "B09";
 const ME = "00000000-0000-4000-8000-0000000000b1";
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: "2026-10-11T01:00:00Z",
@@ -43,13 +46,13 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
-const DENOMS: DenominationRow[] = [
-  { id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" },
-  { id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" },
-  { id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" },
+const DENOMS = [
+  makeDenominationRow({ id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" }),
 ];
 
 function transfer(
@@ -58,8 +61,8 @@ function transfer(
   kind = "BRANCH",
   from = BRANCH,
   to: string | null = ELSEWHERE,
-): CashTransferRow {
-  return {
+) {
+  return makeCashTransferRow({
     id,
     kind,
     fromBranchId: from,
@@ -71,7 +74,7 @@ function transfer(
     note: "n",
     createdAt: "2026-10-11T02:00:00Z",
     lines: [],
-  };
+  });
 }
 
 const T_APPROVED_A = "e0000000-0000-4000-8000-000000000002";
@@ -81,7 +84,7 @@ const T_IN_B = "e0000000-0000-4000-8000-000000000004";
 const T_RECEIVED_A = "e0000000-0000-4000-8000-000000000005";
 const T_RECEIVED_B = "e0000000-0000-4000-8000-000000000006";
 
-const TRANSFERS: CashTransferRow[] = [
+const TRANSFERS = [
   transfer(T_APPROVED_A, "APPROVED"),
   transfer(T_APPROVED_B, "APPROVED"),
   transfer(T_IN_A, "DISPATCHED", "BRANCH", ELSEWHERE, BRANCH),

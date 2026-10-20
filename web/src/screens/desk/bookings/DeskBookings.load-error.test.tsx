@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeMe,
+  makeMeRole,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -14,27 +18,27 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER: StaffMeView = {
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: 'XC-B01' }],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'teller', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const STAFF_NO_DESK: StaffMeView = {
-  userId: '00000000-0000-4000-8000-000000000002',
+const STAFF_NO_DESK = makeMe({
+  id: '00000000-0000-4000-8000-000000000002',
   name: 'Somying Manager',
-  roles: [{ role: 'manager', branchId: 'XC-B01' }],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'manager', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['RatesRead'],
-};
+});
 
-const ONE_BOOKING: DeskBookingsData = {
+const ONE_BOOKING = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261016-0001',
       status: 'CONFIRMED',
@@ -45,9 +49,9 @@ const ONE_BOOKING: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-16T09:00:00Z',
       endAt: '2026-10-16T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 6; i += 1) {
@@ -84,7 +88,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -116,7 +120,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -153,7 +157,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -195,7 +199,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -253,7 +257,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -273,7 +277,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
     expect(host.querySelector('[data-screen="desk-bookings"]')).toBeNull();
   });
 
-  it('row 6: no DESK_PERMISSION in staff_me -> the refusal, as today', async () => {
+  it('row 6: no DESK_PERMISSION in me -> the refusal, as today', async () => {
     let bookingsCall = 0;
     vi.stubGlobal(
       'fetch',
@@ -282,7 +286,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_NO_DESK });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {

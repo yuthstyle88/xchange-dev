@@ -34,7 +34,6 @@ use xc_kiosk::application::kiosk::service::KioskService;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use super::commands::make_approval_service;
 use crate::application::settings::PaymentSettingsService;
@@ -240,7 +239,7 @@ pub(crate) fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
     let pool = &state.db;
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(pool.clone())),
+        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(pool.clone())),
         branch_tx.clone(),
     );
     let custody = pg_custody_service(pool, &shifts, &branch_tx);

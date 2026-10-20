@@ -1,17 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'solid-js/web';
-import type { TransferSummary } from '../../../../shared/api/generated/finance_reconciliation';
+import {
+  makeShortReceiptRow,
+  makeTransferStatusCount,
+  makeTransferSummary,
+  type TransferSummary,
+} from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
 import { TransfersPart } from './TransfersPart';
 import * as table from './i18n';
 
-function summary(over: Partial<TransferSummary> = {}): TransferSummary {
-  return {
+function summary(over: Partial<TransferSummary> = {}) {
+  return makeTransferSummary({
     byStatus: [],
     inTransit: [],
     shortReceipts: [],
     ...over,
-  };
+  });
 }
 
 describe('A5: F01 transfers part reconcile link (#3331)', () => {
@@ -36,7 +41,7 @@ describe('A5: F01 transfers part reconcile link (#3331)', () => {
   }
 
   it('row 1: byStatus has {status: "RECEIVED", count: 2} -> one a[data-action="reconcile"] with href="#cash"', () => {
-    mount(summary({ byStatus: [{ status: 'RECEIVED', count: 2 }] }));
+    mount(summary({ byStatus: [makeTransferStatusCount({ status: 'RECEIVED', count: 2 })] }));
     const links = root.querySelectorAll<HTMLAnchorElement>('a[data-action="reconcile"]');
     expect(links).toHaveLength(1);
     expect(links[0]!.getAttribute('href')).toBe('#cash');
@@ -46,8 +51,8 @@ describe('A5: F01 transfers part reconcile link (#3331)', () => {
     mount(
       summary({
         byStatus: [
-          { status: 'SENT', count: 3 },
-          { status: 'RECEIVED', count: 0 },
+          makeTransferStatusCount({ status: 'SENT', count: 3 }),
+          makeTransferStatusCount({ status: 'RECEIVED', count: 0 }),
         ],
         shortReceipts: [],
       }),
@@ -58,8 +63,8 @@ describe('A5: F01 transfers part reconcile link (#3331)', () => {
   it('row 3: no RECEIVED but one short receipt -> the reconcile link shows', () => {
     mount(
       summary({
-        byStatus: [{ status: 'RECONCILED', count: 1 }],
-        shortReceipts: [{ transferId: 'TR-1', currency: 'USD', sent: '1000', received: '990' }],
+        byStatus: [makeTransferStatusCount({ status: 'RECONCILED', count: 1 })],
+        shortReceipts: [makeShortReceiptRow({ transferId: 'TR-1', currency: 'USD', sent: '1000', received: '990' })],
       }),
     );
     const link = root.querySelector<HTMLAnchorElement>('a[data-action="reconcile"]');
@@ -70,7 +75,7 @@ describe('A5: F01 transfers part reconcile link (#3331)', () => {
   it('row 4: a short receipt sent 1000 received 990 shows its transfer id, currency, sent and received', () => {
     mount(
       summary({
-        shortReceipts: [{ transferId: 'TR-99', currency: 'USD', sent: '1000', received: '990' }],
+        shortReceipts: [makeShortReceiptRow({ transferId: 'TR-99', currency: 'USD', sent: '1000', received: '990' })],
       }),
     );
     const text = root.textContent ?? '';

@@ -57,7 +57,6 @@ use xc_kernel::money::{CurrencyCode, Money};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
@@ -215,14 +214,23 @@ impl Db {
 
     /// `(opening, expected, counted)` of one currency of a shift.
     async fn balance(&self, shift: &str, currency: &str) -> (Decimal, Decimal, Option<Decimal>) {
-        sqlx::query_as(
-            "SELECT opening, expected, counted FROM shift_balances WHERE shift_id = $1 AND code = $2",
+        use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
+        let rows = xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(
+            self.pool.clone(),
         )
-        .bind(shift)
-        .bind(currency)
-        .fetch_one(&self.pool)
+        .shift_balances(&shift.to_owned())
         .await
-        .unwrap_or_else(|e| panic!("the {currency} balance of {shift}: {e}"))
+        .unwrap_or_else(|e| panic!("the {currency} balance of {shift}: {e}"));
+        let row = rows
+            .into_iter()
+            .find(|b| b.currency.as_str() == currency)
+            .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
+        let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
+        (
+            to_dec(row.opening.minor_i128()),
+            to_dec(row.expected.minor()),
+            row.counted.map(|m| to_dec(m.minor_i128())),
+        )
     }
 
     /// `(counted, expected, difference)` of one currency of a count.
@@ -248,7 +256,11 @@ impl Db {
 
     fn shifts(&self) -> ShiftService {
         ShiftService::new(
-            std::sync::Arc::new(PgShiftRepository::new(self.pool.clone())),
+            std::sync::Arc::new(
+                xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                    self.pool.clone(),
+                ),
+            ),
             xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(
                 self.pool.clone(),
             )),
@@ -695,6 +707,7 @@ async fn an_exchange_posts_to_the_savers_shift_only() {
         .apply_delta_for_teller_in(&mut tx, &main, &nok.user_id, &thb_in)
         .await
         .expect("Nok's exchange");
+    lg4_exchange_for_teller(&mut tx, &nok.user_id, "THB", "500").await;
     tx.commit().await.expect("commit");
     assert_eq!(moved, b);
     assert_eq!(db.balance(&b, "THB").await.1, d("2800"));

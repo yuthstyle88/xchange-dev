@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../../shared/api/client';
-import type { ProfitSummary } from '../../../../shared/api/generated/profit_summary';
+import { makeProfitSummary } from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
 import { th as sharedTh } from '../../../../shared/i18n/th';
 import { formatMoney } from '../../../../shared/ui/MoneyText';
@@ -86,8 +86,8 @@ const TYPED: Record<(typeof DEFINITIONS)[number][0], string> = {
 };
 
 /** Not what those figures give (1000.00 / -200.00 / 1000.00): the panel shows what is answered. */
-function answered(realized = '1234567.89'): ProfitSummary {
-  return { realized, unrealized: '-200.01', withdrawable: '42.00' };
+function answered(realized = '1234567.89') {
+  return makeProfitSummary({ realized, unrealized: '-200.01', withdrawable: '42.00' });
 }
 
 // ── the fake server: the global fetch ────────────────────────────────────────

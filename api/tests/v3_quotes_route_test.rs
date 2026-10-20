@@ -526,6 +526,9 @@ async fn the_same_key_with_another_body_is_idempotency_conflict() {
 
 #[actix_web::test]
 async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing() {
+    use xc_auth::domain::access::v3_roles::blueprint_roles;
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let db = TestDb::start().await;
     db.publish("MAIN", &[JPY]).await;
     let mut callers = vec![String::new(), "owner".to_owned()];
@@ -535,9 +538,13 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
     }
     let save = Action::new("saveTransaction");
     let mut written = 0;
+    let mut refused_count = 0;
     for who in &callers {
-        // OR-4b (#767, design §4.2 C2): the route table's rule; ExchangeTransact is TELLER's, so the
-        // owner's user is refused
+        let holds = actor_on_rpc(who).is_some_and(|ac| {
+            blueprint_roles(ac.role())
+                .iter()
+                .any(|&r| RoleGrants::seed(r).contains(&Permission::ExchangeTransact))
+        });
         let allowed = blueprint_rule(
             actor_on_rpc(who).as_ref(),
             EntryPath::Rpc,
@@ -545,6 +552,10 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
             None,
         )
         .is_ok();
+        assert_eq!(
+            allowed, holds,
+            "{who:?}: RoleGrants::seed matches blueprint_rule"
+        );
         let a = ask(&db, who, &body("JPY", "BUY", "1000", None)).await;
         if allowed {
             assert_eq!(a.status, StatusCode::OK, "{who:?} may ask: body {}", a.text);
@@ -559,6 +570,7 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
                 "{who:?}: created_by is the caller"
             );
         } else {
+            refused_count += 1;
             assert_ne!(a.status, StatusCode::OK, "{who:?} may not ask: {}", a.text);
             assert!(
                 POLICY_CODES.contains(&a.code()),
@@ -572,8 +584,24 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
             "{who:?}: only allowed callers store a quote"
         );
     }
-    // C2: FRONT (TELLER) alone is allowed
-    assert_eq!(written, 1, "FRONT is allowed, got {written}");
+    let expected_written = callers
+        .iter()
+        .filter(|who| {
+            actor_on_rpc(who).is_some_and(|ac| {
+                blueprint_roles(ac.role())
+                    .iter()
+                    .any(|&r| RoleGrants::seed(r).contains(&Permission::ExchangeTransact))
+            })
+        })
+        .count() as i64;
+    assert_eq!(
+        written, expected_written,
+        "holders of ExchangeTransact under §11.2 are allowed, got {written}"
+    );
+    assert!(
+        refused_count > 1,
+        "§11.2 leaves staff roles without ExchangeTransact"
+    );
     db.finish().await;
 }
 

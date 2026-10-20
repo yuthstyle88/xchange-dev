@@ -1,4 +1,5 @@
-// RD-3 public customer rate display (design rate-display.md §3, §4.3).
+// RD-3 public customer rate display (design rate-display.md §3, §4.3), P01 v2 board (§9, PR 3558): the host lookup,
+// the pollers and the no-branch / not-linked / not-found states are v1's; everything else is the boarding-pass board.
 import {
   createMemo,
   createSignal,
@@ -7,19 +8,15 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { fill, locale, screenT } from '../../../shared/i18n';
-import { LangSwitch } from '../../../shared/i18n/LangSwitch';
+import { screenT } from '../../../shared/i18n';
 import { PublicPoller } from '../../../shared/live/public-poller';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
-import { RateFreshness } from '../../../shared/ui/RateFreshness';
-import { boardRows } from './board-rows';
+import { boardModel, type BoardRatesData } from './board/board-model';
+import { boardStatus } from './board/board-status';
+import { BoardShell } from './board/BoardShell';
 import { FullscreenButton } from './FullscreenButton';
 import { th, en, zh } from './i18n';
 import { branchFromSearch } from './location';
-import logoUrl from './logo.png';
-import { RateBoard } from './RateBoard';
-import { BookingQr } from './BookingQr';
 import './rate-display.css';
 
 export interface RateDisplayProps {
@@ -27,7 +24,7 @@ export interface RateDisplayProps {
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
   /** `window.location.search`, e.g. `?branch=XC-B01`. */
   search: string;
-  /** The rates poll interval (D4 [proposed]: 60 s). */
+  /** The rates poll interval (§9.5: 10 s, with If-None-Match). */
   ratesIntervalMs?: number;
   /** The branch-list poll interval (D4 [proposed]: 600 s). */
   branchesIntervalMs?: number;
@@ -66,7 +63,7 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
   const [hostState, setHostState] = createSignal<'loading' | 'ready' | 'notFound' | 'error'>('loading');
   const [pollers, setPollers] = createSignal<
     | {
-        rates: PublicPoller<PublishedRatesData>;
+        rates: PublicPoller<BoardRatesData>;
         branches: PublicPoller<PublicBranchesData>;
       }
     | undefined
@@ -106,10 +103,10 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
           const ratesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(branch)}/rates`;
           const branchesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches`;
 
-          const rPoller = new PublicPoller<PublishedRatesData>(
+          const rPoller = new PublicPoller<BoardRatesData>(
             ratesUrl,
             props.fetch,
-            props.ratesIntervalMs ?? 60_000,
+            props.ratesIntervalMs ?? 10_000,
             MAX_HOST_BACKOFF_MS,
           );
           const bPoller = new PublicPoller<PublicBranchesData>(
@@ -156,36 +153,30 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
   const ratesState = () => pollers()?.rates.state() ?? 'loading';
   const branchesData = () => pollers()?.branches.data();
 
-  const branchTitle = () => {
-    const branches = branchesData()?.branches;
-    const match = branches?.find((b) => b.code === branch);
-    return match?.name || branch;
-  };
+  // A one-second tick so the 30 s hide (§9.5) happens without waiting for the next poll.
+  const [now, setNow] = createSignal(Date.now());
+  const tick = setInterval(() => setNow(Date.now()), 1000);
+  onCleanup(() => clearInterval(tick));
 
-  const branchHours = () => {
-    const branches = branchesData()?.branches;
-    const match = branches?.find((b) => b.code === branch);
-    return formatOpeningHours(match?.openingHours);
-  };
+  const attract = new URLSearchParams(props.search).get('attract') !== '0';
 
-  const rows = createMemo(() => {
+  const branchEntry = () => branchesData()?.branches?.find((b) => b.code === branch);
+  const branchName = () => branchEntry()?.name || branch;
+  const branchHours = () => formatOpeningHours(branchEntry()?.openingHours);
+
+  const model = createMemo(() => {
     const d = ratesData();
-    return d ? boardRows(d) : [];
+    return d ? boardModel(d) : { headings: [], singleColumn: true, rows: [] };
   });
 
-  const handleRetry = () => {
-    const rPoller = pollers()?.rates;
-    if (rPoller) {
-      rPoller.stop();
-      rPoller.start();
-    }
-  };
-
-  const publishedAtFormatted = () => {
-    const pubAt = ratesData()?.publication?.publishedAt;
-    if (!pubAt) return '';
-    return new Date(pubAt).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-  };
+  const status = createMemo(() =>
+    boardStatus({
+      pollerState: ratesState(),
+      lastOkAt: pollers()?.rates.lastOkAt(),
+      now: now(),
+      lineCount: ratesData()?.lines.length,
+    }),
+  );
 
   return (
     <div class="xc-rate-display">
@@ -202,76 +193,24 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
       </Show>
 
       <Show when={hostState() === 'ready'}>
-        <Show when={!ratesData()}>
-          <Show when={ratesState() === 'loading'}>
-            <div class="xc-rate-display-loading">{t('loading')}</div>
-          </Show>
-          <Show when={ratesState() === 'notFound'}>
-            <div class="xc-rate-display-message">{t('notFound')}</div>
-          </Show>
-          <Show when={ratesState() === 'error'}>
-            <div class="xc-rate-display-error">
-              <p>{t('loadFailed')}</p>
-              <button
-                type="button"
-                class="xc-rate-display-retry-btn"
-                onClick={handleRetry}
-              >
-                {t('retry')}
-              </button>
-            </div>
-          </Show>
-        </Show>
-
-        <Show when={ratesData()}>
-          <header class="xc-rate-display-header">
-            <div class="xc-rate-display-header-left">
-              <img src={logoUrl} alt="Logo" class="xc-rate-display-logo" />
-              <h1 class="xc-rate-display-title">{branchTitle()}</h1>
-            </div>
-            <div class="xc-rate-display-header-right">
-              <LangSwitch />
-              <FullscreenButton label={t('fullscreen')} />
-            </div>
-          </header>
-
-          <Show when={branchHours()}>
-            <div class="xc-rate-display-hours">
-              <span class="xc-rate-display-hours-label">{t('hours')}: </span>
-              <span class="xc-rate-display-hours-times">{branchHours()}</span>
-            </div>
-          </Show>
-
-          <BookingQr branchCode={branch} bookingEnabled={branchesData()?.branches?.find((b) => b.code === branch)?.bookingEnabled} />
-
-          <Show when={ratesData()?.publication}>
-            <RateFreshness
-              stale={ratesData()!.stale}
-              sourceDate={ratesData()!.sourceDate}
-              publishedAt={ratesData()!.publication!.publishedAt}
-            />
-          </Show>
-
-          <Show when={ratesState() === 'error' && ratesData()?.publication}>
-            <div class="xc-rate-display-banner" role="alert">
-              {fill(t('updateFailed'), { at: publishedAtFormatted() })}
-            </div>
-          </Show>
-
-          <Show
-            when={rows().length > 0}
-            fallback={<div class="xc-rate-display-empty">{t('empty')}</div>}
-          >
-            <RateBoard
-              rows={rows()}
-              currencyHeader={t('currency')}
-              unitHeader={t('unit')}
-              weBuyHeader={t('weBuy')}
-              weSellHeader={t('weSell')}
-              weBuyHint={t('weBuyHint')}
-              weSellHint={t('weSellHint')}
-            />
-          </Show>
+        <Show
+          when={ratesState() !== 'notFound'}
+          fallback={<div class="xc-rate-display-message">{t('notFound')}</div>}
+        >
+          <FullscreenButton label={t('fullscreen')} />
+          <BoardShell
+            branch={branch}
+            branchName={branchName()}
+            model={model()}
+            status={status()}
+            stale={ratesData()?.stale ?? false}
+            lastOkAt={pollers()?.rates.lastOkAt()}
+            sourceDate={ratesData()?.sourceDate ?? null}
+            snapshotId={ratesData()?.publication?.id ?? null}
+            hours={branchHours()}
+            bookingEnabled={branchEntry()?.bookingEnabled}
+            attract={attract}
+          />
         </Show>
       </Show>
     </div>

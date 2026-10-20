@@ -17,6 +17,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
+use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 
@@ -26,9 +27,10 @@ use crate::domain::inventory::weighted_average::WeightedAverage;
 use crate::domain::ledger::account::AccountKind;
 use crate::domain::ledger::posting::{PostingId, SourceRef, SourceType};
 use crate::domain::posting::{
-    ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingRequest, PostingResult,
-    ReversedCost, TransactionLineId,
+    ApprovalRequestId, CashPlace, CashPostings, LineCost, PlaceActivity, PostingRequest,
+    PostingResult, ReversedCost, TransactionLineId,
 };
+use crate::infrastructure::stock_reservations::active_reserved_in;
 
 /// Who a posting is recorded as made by: the port carries no actor. `[proposed]`
 const POSTED_BY: &str = "system";
@@ -48,6 +50,10 @@ fn validation(detail: &str) -> AppError {
 
 fn stock_insufficient(detail: &str) -> AppError {
     AppError::Domain(format!("stockInsufficient: {detail}"))
+}
+
+fn stock_reserved(detail: &str) -> AppError {
+    AppError::Domain(format!("stockReserved: {detail}"))
 }
 
 fn is_thb(currency: CurrencyCode) -> bool {
@@ -105,6 +111,8 @@ struct Position {
     now: WeightedAverage,
     /// The last movement's `average_after` (§4.5: the cost of a sale from an exactly-zero position).
     last_average: Option<Decimal>,
+    /// Active reservation hold on this (branch, currency) under the position lock (SR-6, D-14).
+    reserved: Decimal,
 }
 
 struct LotPlan {
@@ -178,8 +186,25 @@ impl Plan {
             .bind(currency.as_str())
             .fetch_optional(&mut **tx)
             .await?;
-            self.positions
-                .insert(key.clone(), Position { now, last_average });
+            let reserved = if is_thb(currency) {
+                Decimal::ZERO
+            } else {
+                let org = Uuid::parse_str(&self.organization_id).map_err(|e| {
+                    AppError::Internal(format!(
+                        "invalid organization_id '{}': {e}",
+                        self.organization_id
+                    ))
+                })?;
+                active_reserved_in(tx, org, &BranchId::new(branch), currency, Utc::now()).await?
+            };
+            self.positions.insert(
+                key.clone(),
+                Position {
+                    now,
+                    last_average,
+                    reserved,
+                },
+            );
         }
         Ok(self.positions.get_mut(&key).expect("loaded above"))
     }
@@ -268,10 +293,18 @@ impl Plan {
         line: Option<Uuid>,
         movement_type: MovementType,
     ) -> AppResult<Decimal> {
-        let (before, last_average) = {
+        let (before, last_average, reserved) = {
             let pos = self.position(tx, branch, currency).await?;
-            (pos.now, pos.last_average)
+            (pos.now, pos.last_average, pos.reserved)
         };
+        if movement_type == MovementType::Dispose
+            && reserved > Decimal::ZERO
+            && before.quantity - q < reserved
+        {
+            return Err(stock_reserved(
+                "the posting takes a position into another quote's reserved stock",
+            ));
+        }
         let cost = if before.quantity == q {
             before.cost_thb
         } else if let Some(c) = at_cost {
@@ -1256,6 +1289,66 @@ impl CashPostings for LedgerCashPostings {
                 }
             }
             Ok(Balances::of(&pairs))
+        })
+    }
+
+    fn activity_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        place: &'a CashPlace,
+    ) -> BoxFuture<'a, AppResult<Option<PlaceActivity>>> {
+        Box::pin(async move {
+            let kind = kind_of(place);
+            let rows: Vec<(String, Decimal)> = match place {
+                CashPlace::Drawer(shift) => {
+                    sqlx::query_as(
+                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                         JOIN cash_accounts a ON a.id = e.account_id \
+                         WHERE a.kind = $1 AND a.shift_id = $2 \
+                         GROUP BY a.currency ORDER BY a.currency",
+                    )
+                    .bind(kind.as_str())
+                    .bind(shift)
+                    .fetch_all(&mut **tx)
+                    .await?
+                }
+                CashPlace::Safe(_) | CashPlace::InTransit(_) | CashPlace::Variance(_) => {
+                    let branch = branch_of(tx, place).await?;
+                    sqlx::query_as(
+                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                         JOIN cash_accounts a ON a.id = e.account_id \
+                         WHERE a.kind = $1 AND a.branch_id = $2 \
+                         GROUP BY a.currency ORDER BY a.currency",
+                    )
+                    .bind(kind.as_str())
+                    .bind(branch)
+                    .fetch_all(&mut **tx)
+                    .await?
+                }
+                CashPlace::Customer | CashPlace::Bank => {
+                    sqlx::query_as(
+                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                         JOIN cash_accounts a ON a.id = e.account_id \
+                         WHERE a.kind = $1 \
+                         GROUP BY a.currency ORDER BY a.currency",
+                    )
+                    .bind(kind.as_str())
+                    .fetch_all(&mut **tx)
+                    .await?
+                }
+            };
+            if rows.is_empty() {
+                return Ok(None);
+            }
+            let mut pairs = Vec::with_capacity(rows.len());
+            for (code, sum) in rows {
+                let code = CurrencyCode::parse(code.trim()).map_err(|e| {
+                    AppError::Internal(format!("invalid currency code in cash_accounts: {e}"))
+                })?;
+                pairs.push((code, delta(sum)?));
+            }
+            pairs.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
+            Ok(Some(pairs))
         })
     }
 }

@@ -18,7 +18,7 @@
 //! - `[required]` (design §6.1, #873 Q9 ruling issuecomment-6107639056): until LG-4's cutover (#929) the route
 //!   posted through the interim port, which moved the drawer for an `EXCHANGE` source as today's save does
 //!   (`ShiftService::apply_delta_in`): it refuses below zero with `stockInsufficient` (409, mapped in TX-5's
-//!   `commands/complete.rs`), updates `shift_balances.expected`, and writes **no** `stock_movements` row.
+//!   `commands/complete.rs`).
 //!
 //! The caller is MAIN's FRONT teller (`TELLER`). The exchange is a CONFIRMED LIVE one on MAIN's open shift
 //! (`tx5_common::Counter`), made through the services, so only `complete` goes over the wire.
@@ -145,19 +145,8 @@ fn id_of(t: &ExchangeTransaction) -> String {
     t.id.0.to_string()
 }
 
-/// `stock_movements` rows named by the exchange's id: an exchange writes none (Q9).
-async fn movements(c: &Counter, t: &ExchangeTransaction) -> i64 {
-    c.desk
-        .db
-        .count(&format!(
-            "SELECT count(*) FROM stock_movements WHERE request_id = '{}'",
-            t.id.0
-        ))
-        .await
-}
-
 /// The drawer's expected balance of `code` on MAIN's open shift. LG-4 (#929, 1:1): read through the port,
-/// `CashPostings::expected_in(Drawer(shift))`, instead of `shift_balances.expected`.
+/// `CashPostings::expected_in(Drawer(shift))`.
 async fn expected(c: &Counter, code: &str) -> String {
     use xc_cash::domain::posting::{CashPlace, CashPostings};
     let mut tx = c.desk.db.pool.begin().await.expect("begin");
@@ -240,11 +229,6 @@ async fn r3_a_live_cash_buy_moves_the_drawer_as_todays_save_does() {
     assert_eq!(a.status, StatusCode::OK, "body {}", a.text);
     assert_eq!(expected(&c, "USD").await, "1100.00");
     assert_eq!(expected(&c, "THB").await, "6790.00");
-    assert_eq!(
-        movements(&c, &t).await,
-        0,
-        "Q9: an exchange writes no stock_movements row"
-    );
     c.finish().await;
 }
 
@@ -385,7 +369,8 @@ async fn r10_a_sell_beyond_the_drawer_answers_stock_insufficient_and_moves_nothi
     let a = complete(&c, &id_of(&t), ME, Some(&unique("key"))).await;
     assert_eq!(
         (a.status, a.code()),
-        (StatusCode::CONFLICT, "stockInsufficient"),
+        // re-expected for #3405 (owner: negative stock waits for approval)
+        (StatusCode::CONFLICT, "approvalRequired"),
         "body {}",
         a.text
     );

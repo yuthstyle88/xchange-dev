@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
 
-use xc_auth::domain::access::{Actor, Permission, RolePermissions};
+use xc_auth::domain::access::{Actor, Permission, RoleGrants};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::booking::booking_error::BookingError;
 use xc_kernel::ids::BranchId;
@@ -104,7 +104,7 @@ impl CommandAction for BookingReschedule {
         let is_staff = who
             .roles
             .iter()
-            .any(|r| RolePermissions::of(r.role).contains(&Permission::BookingsDesk));
+            .any(|r| RoleGrants::holds(r.group_code(), Permission::BookingsDesk));
 
         let now = Utc::now();
         if !is_staff {

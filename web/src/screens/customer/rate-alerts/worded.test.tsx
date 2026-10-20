@@ -7,7 +7,7 @@ import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
-import type { MyRateAlertItem } from '../../../shared/api/generated/my_rate_alerts';
+import { makeMyRateAlertItem } from '../../../shared/testing/fixtures';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { RateAlertsScreen } from './RateAlerts';
 
@@ -34,7 +34,7 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
   ],
 };
 
-const SAMPLE_ALERT_ACTIVE: MyRateAlertItem = {
+const SAMPLE_ALERT_ACTIVE = makeMyRateAlertItem({
   id: 'alert-active-1',
   version: 1,
   branch: 'XC-B01',
@@ -51,13 +51,13 @@ const SAMPLE_ALERT_ACTIVE: MyRateAlertItem = {
   expired: false,
   rateStale: null,
   lastEvent: null,
-};
+});
 
-const SAMPLE_ALERT_PAUSED: MyRateAlertItem = {
+const SAMPLE_ALERT_PAUSED = makeMyRateAlertItem({
   ...SAMPLE_ALERT_ACTIVE,
   id: 'alert-paused-1',
   enabled: false,
-};
+});
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

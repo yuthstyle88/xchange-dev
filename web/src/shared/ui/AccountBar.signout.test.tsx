@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiError } from '../api/client';
-import type { Me } from '../api/generated/common';
+import { makeBranchRef, type BranchRef, type Me } from '../testing/fixtures';
 import { setAudience, setLang } from '../i18n';
 import { en } from '../i18n/en';
 import { th } from '../i18n/th';
@@ -11,11 +11,10 @@ import type { SessionStore } from '../session/session';
 import { meOf } from '../../test-support/me';
 import { AccountBar } from './AccountBar';
 
-type BranchRef = { id: string; code: string; name: string };
 type MeSB = Me & { branchName: string; branches: BranchRef[] };
 
-const HQ: BranchRef = { id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' };
-const B2: BranchRef = { id: 'B2', code: 'XC-02', name: 'สาขาสอง' };
+const HQ = makeBranchRef({ id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' });
+const B2 = makeBranchRef({ id: 'B2', code: 'XC-02', name: 'สาขาสอง' });
 
 const ADMIN: MeSB = meOf({
   id: 'u-1',

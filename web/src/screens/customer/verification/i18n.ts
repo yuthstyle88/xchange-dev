@@ -108,7 +108,7 @@ export const zh = {
   stepReview: '等待审核',
   stepResult: '审核结果/修改',
   docTypeLabel: '证件类型',
-  docTypePassport: '护照 (Passport)',
+  docTypePassport: '护照',
   docTypeNationalId: '国民身份证',
   startTitle: '开始身份验证',
   startDesc: '请选择证件类型并点击开始以创建验证申请。',

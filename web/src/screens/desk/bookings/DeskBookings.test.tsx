@@ -1,14 +1,18 @@
 // Written before the implementation by the test writer gemini/warut-2 (ticket author claude/e92db6), against BK-6 provided tests 7f8e56d1. Do not edit, delete or weaken.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  BookingCancelOutput,
-  BookingCheckInOutput,
-  BookingCreateOutput,
-  BookingRescheduleOutput,
-} from '../../../shared/api/generated/bookings';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  type DeskBookingsData,
+  makeBookingCancelOutput,
+  makeBookingCheckInOutput,
+  makeBookingCreateOutput,
+  makeBookingRescheduleOutput,
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeMe,
+  makeMeRole,
+  type MeView,
+} from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import * as texts from './i18n';
 
@@ -20,27 +24,34 @@ const SLOT_2_ID = '00000000-0000-0000-0000-000000000002';
 const BOOKING_1_ID = 'BK-test-0001';
 const BOOKING_2_ID = 'BK-test-0002';
 
-const STAFF_TELLER = {
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: BRANCH_ID }],
-  branchId: BRANCH_ID,
+  roles: [makeMeRole({ role: 'teller', branchId: BRANCH_ID })],
+  branch: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-} satisfies StaffMeView;
+});
 
-const STAFF_MANAGER = {
-  userId: '00000000-0000-4000-8000-000000000002',
+const STAFF_MANAGER = makeMe({
+  id: '00000000-0000-4000-8000-000000000002',
   name: 'Somying Manager',
-  roles: [{ role: 'manager', branchId: BRANCH_ID }],
-  branchId: BRANCH_ID,
+  roles: [makeMeRole({ role: 'manager', branchId: BRANCH_ID })],
+  branch: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BranchesManage', 'OverviewRead'], // lacks BookingsDesk
-} satisfies StaffMeView;
+});
 
-const INITIAL_DESK_BOOKINGS = {
+const OWNER_WITH_DESK = makeMe({
+  id: '00000000-0000-4000-8000-000000000003',
+  name: 'Owner User',
+  roles: [makeMeRole({ role: 'owner', branchId: null })],
+  permissions: ['BookingsDesk', 'RatesRead'],
+});
+
+const INITIAL_DESK_BOOKINGS = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: BOOKING_1_ID,
       bookingNo: 'B261014-0021',
       status: 'CONFIRMED',
@@ -51,8 +62,8 @@ const INITIAL_DESK_BOOKINGS = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: BOOKING_2_ID,
       bookingNo: 'B261014-0022',
       status: 'CHECKED_IN',
@@ -63,8 +74,8 @@ const INITIAL_DESK_BOOKINGS = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-14T09:00:00Z',
       endAt: '2026-10-14T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'BK-test-0003',
       bookingNo: 'B261014-0023',
       status: 'CONFIRMED',
@@ -75,9 +86,9 @@ const INITIAL_DESK_BOOKINGS = {
       slotId: SLOT_2_ID,
       startAt: '2026-10-14T09:30:00Z',
       endAt: '2026-10-14T10:00:00Z',
-    },
+    }),
   ],
-} satisfies DeskBookingsData;
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -93,7 +104,7 @@ function viewEnvelope(data: unknown, version = 1, changed = true): Response {
 describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
   let host: HTMLDivElement;
   let sentRequests: { method: string; url: string; path: string; headers: Headers; body: any }[];
-  let currentStaff: StaffMeView;
+  let currentStaff: MeView;
   let bookingsData: DeskBookingsData;
   let bookingsVersion: number;
   let bookingsChanged: boolean;
@@ -151,9 +162,17 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           body: parsedBody,
         });
 
-        // 1. Session / Staff Me
-        if (u.pathname === '/api/v3/views/staff_me' || u.pathname === '/api/v3/views/me') {
+        // 1. Session / Me (staff_me returns 401 employeeAuthRequired as on real server for owner)
+        if (u.pathname === '/api/v3/views/me') {
           return viewEnvelope(currentStaff);
+        }
+        if (u.pathname === '/api/v3/views/staff_me') {
+          return json(401, {
+            error: {
+              code: 'employeeAuthRequired',
+              message: 'Employee authentication required',
+            },
+          });
         }
 
         // 2. View desk_bookings
@@ -163,6 +182,16 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
               error: {
                 code: 'roleNotAllowed',
                 message: 'Desk bookings requires BookingsDesk permission',
+              },
+            });
+          }
+          const roleBranch = currentStaff.roles.find((r) => r.branchId)?.branchId ?? null;
+          const requestedBranch = u.searchParams.get('branch') ?? roleBranch;
+          if (!requestedBranch) {
+            return json(400, {
+              error: {
+                code: 'validationFailed',
+                message: 'branch is required when caller has no assigned branch',
               },
             });
           }
@@ -193,7 +222,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingCreateOutput({
                 id: 'BK-new-001',
                 bookingNo: 'B261014-0099',
                 status: 'CONFIRMED',
@@ -205,7 +234,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
                 currency: parsedBody?.currency ?? 'USD',
                 quantity: parsedBody?.quantity ?? 250,
                 qrToken: null,
-              } satisfies BookingCreateOutput),
+              }),
           );
         }
 
@@ -221,12 +250,12 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingCheckInOutput({
                 id: checkInMatch[1],
                 status: 'CHECKED_IN',
                 ticketNumber: 'B01-009',
                 bookingNo: 'B261014-0021',
-              } satisfies BookingCheckInOutput),
+              }),
           );
         }
 
@@ -245,11 +274,11 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingCancelOutput({
                 id: cancelMatch[1],
                 status: 'CANCELLED',
                 bookingNo: 'B261014-0021',
-              } satisfies BookingCancelOutput),
+              }),
           );
         }
 
@@ -265,12 +294,12 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           return json(
             200,
             commandResponse ??
-              ({
+              makeBookingRescheduleOutput({
                 id: reschedMatch[1],
                 slotId: parsedBody?.slotId ?? SLOT_2_ID,
                 status: 'CONFIRMED',
                 bookingNo: 'B261014-0021',
-              } satisfies BookingRescheduleOutput),
+              }),
           );
         }
 
@@ -306,6 +335,24 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
       // B02 desk bookings container rendered
       const screen = host.querySelector('.xc-desk-bookings, [data-screen="desk-bookings"]');
       expect(screen, 'B02 bookings screen rendered for user with BookingsDesk').not.toBeNull();
+      expect(host.textContent).toContain('B261014-0021');
+      expect(sentRequests.some((r) => r.path === '/api/v3/views/staff_me')).toBe(false);
+      const viewReq = sentRequests.find((r) => r.path === '/api/v3/views/desk_bookings');
+      expect(viewReq?.url).toContain(`branch=${BRANCH_ID}`);
+    });
+
+    it('owner on /desk/bookings?branch=B with BookingsDesk loads bookings of B with no staff_me request (#3950)', async () => {
+      currentStaff = OWNER_WITH_DESK;
+      history.replaceState(null, '', '/desk/bookings?branch=XC-B02');
+      await boot();
+
+      expect(sentRequests.some((r) => r.path === '/api/v3/views/staff_me')).toBe(false);
+      const viewReq = sentRequests.find((r) => r.path === '/api/v3/views/desk_bookings');
+      expect(viewReq, 'requests desk_bookings view for branch XC-B02').toBeDefined();
+      expect(new URL(viewReq!.url, 'http://localhost').searchParams.get('branch')).toBe('XC-B02');
+
+      const screen = host.querySelector('.xc-desk-bookings, [data-screen="desk-bookings"]');
+      expect(screen, 'B02 bookings screen rendered for owner with BookingsDesk').not.toBeNull();
       expect(host.textContent).toContain('B261014-0021');
     });
 
@@ -775,7 +822,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           const method = (init?.method ?? 'GET').toUpperCase();
           const headers = new Headers(init?.headers);
 
-          if (u.pathname === '/api/v3/views/staff_me') return viewEnvelope(STAFF_TELLER);
+          if (u.pathname === '/api/v3/views/me') return viewEnvelope(STAFF_TELLER);
           if (u.pathname === '/api/v3/views/desk_bookings') return viewEnvelope(INITIAL_DESK_BOOKINGS);
 
           if (method === 'POST' && u.pathname.includes('/check-in')) {

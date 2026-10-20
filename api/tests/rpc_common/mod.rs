@@ -54,6 +54,8 @@ use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
 use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::permission::Permission;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
@@ -63,13 +65,14 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_auth::domain::policy::value_objects::role::Role;
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
+use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xchange::application::workflows::save_transaction::SaveTransactionWorkflow;
 use xchange::bootstrap::AppState;
 use xchange::infrastructure::files::file_service::FileService;
@@ -111,6 +114,16 @@ pub const RETIRED: &str = "adminSaveRate";
 /// Re-expected for CA-10 #626 by the ticket author (design `docs/design/blueprint/cash-shift-transfer.md`
 /// §6): the admin direct shift actions, replaced by counts and moves.
 pub const CA10_RETIRED: [&str; 3] = ["adminOpenShift", "adminCloseShift", "adminMoveStock"];
+
+/// LG-6.r5 (#1044, BE controller's rulings A, issuecomment-6245895868, and A″, issuecomment-6245971463): the
+/// recordings whose `$.operations.safe` is a known difference from the first step after an opening that SAFE
+/// funded (the step number here) to the end. v3 funds the opening from SAFE; v2 never posted SAFE for it,
+/// LG-6.r5.
+pub const LG6_R5_SAFE_FUNDED_AN_OPENING: [(&str, usize); 3] = [
+    ("snapshot/branches.json", 11),
+    ("snapshot/shift.json", 3),
+    ("snapshot/transactions.json", 3),
+];
 
 /// Re-expected for CA-10 #626 by the ticket author (design §6): an action CA-10 retires, i.e. a
 /// direct shift action or one of the `ops*` compat names (`opsNope` included: no `ops*` name is
@@ -335,7 +348,7 @@ impl Desk {
         std::fs::create_dir_all(&scratch).expect("create a scratch directory");
         let files = FileService::new(db.pool.clone(), scratch.join("uploads"));
         let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(db.pool.clone())),
+            Arc::new(ledger_shift_repository(db.pool.clone())),
             db.branch_tx(),
         );
         let workflow = SaveTransactionWorkflow::new(db.branch_tx(), shifts, files.clone());
@@ -867,7 +880,131 @@ pub enum Rule {
     /// applied: v3 saved nothing for it, so it is held to v2's answer with this
     /// `requestResolution` (`CANCELLED` where v2 said `APPLIED`).
     ResolvedAs(&'static str),
+    /// A caller v2's `Policy::allow` refused and RBAC §11.2 (`RoleGrants`, `rbac-groups.md` §11.2,
+    /// #3659) lets through: sent through HTTP, held to not be the role refusal v2 recorded, and
+    /// counted in [`Tally::widened`].
+    Widened(PolicyError),
+    /// An owner `saveTransaction` step that RBAC §11.2 (#3659) lets past `Policy::authorize` (via
+    /// `EXECUTIVE` Customers Full) and that the CA-10 teller gate (`check_teller_save_in`) refuses
+    /// with `ShiftError::NoOpenShift` (`กรุณาเปิดกะจากหน้าแอดมินก่อน`) because the owner has no open
+    /// shift on the recorded day; those v2 accepted are then applied behind the routes (`save_behind`).
+    OwnerNoOpenShift(&'static str),
 }
+
+/// Recorded steps where v2's `Policy::allow` refused the caller and RBAC §11.2 (`RoleGrants`,
+/// `rbac-groups.md` §11.2, #3659) widens the caller's role so `Policy::authorize` lets them
+/// through: `(fixture, step, permission)`.
+pub const WIDENED_BY_11_2: &[(&str, usize, Permission)] = &[
+    ("rpc/engine_actions.json", 81, Permission::ExchangeTransact),
+    ("rpc/engine_actions.json", 126, Permission::ExchangeTransact),
+    (
+        "rpc/engine_actions.json",
+        129,
+        Permission::IdentityDocumentRead,
+    ),
+    ("snapshot/empty.json", 12, Permission::ExchangeTransact),
+    ("snapshot/empty.json", 16, Permission::ExchangeTransact),
+    ("snapshot/empty.json", 20, Permission::ExchangeTransact),
+    ("snapshot/rates.json", 17, Permission::ExchangeTransact),
+    ("snapshot/branches.json", 28, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 20, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 24, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 32, Permission::ExchangeTransact),
+    ("snapshot/shift.json", 55, Permission::ExchangeTransact),
+    (
+        "snapshot/transactions.json",
+        34,
+        Permission::ExchangeTransact,
+    ),
+    (
+        "snapshot/transactions.json",
+        38,
+        Permission::ExchangeTransact,
+    ),
+    (
+        "snapshot/transactions.json",
+        53,
+        Permission::IdentityDocumentRead,
+    ),
+    ("kiosk/queue.json", 77, Permission::QueueOperate),
+    ("kiosk/queue.json", 78, Permission::QueueOperate),
+    ("kiosk/queue.json", 79, Permission::QueueOperate),
+    ("kiosk/queue.json", 80, Permission::QueueOperate),
+    ("kiosk/queue_work.json", 64, Permission::QueueOperate),
+];
+
+/// CA-10 #626 + RBAC §11.2 (#3659): the owner holds `ExchangeTransact` again via `EXECUTIVE`
+/// (Customers Full), so `Policy::authorize` lets the owner's `saveTransaction` steps through to the
+/// workflow, where the CA-10 teller gate (`check_teller_save_in`) refuses with `ShiftError::NoOpenShift`
+/// (`กรุณาเปิดกะจากหน้าแอดมินก่อน`) because the owner has no open shift on the recorded day:
+/// `(fixture, step, reason)`.
+pub const OWNER_SAVE_NO_OPEN_SHIFT: &[(&str, usize, &str)] = &[
+    (
+        "rpc/engine_actions.json",
+        111,
+        "CA-10 teller gate before customer confirm: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        112,
+        "CA-10 teller gate before customer confirm: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        114,
+        "CA-10 teller gate before shift stock check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        115,
+        "CA-10 teller gate before shift stock check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        120,
+        "CA-10 teller gate on live BUY save: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        121,
+        "CA-10 teller gate on repeat of #120: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        122,
+        "CA-10 teller gate before prior-submission hash check: owner has no open shift",
+    ),
+    (
+        "rpc/engine_actions.json",
+        123,
+        "CA-10 teller gate on live SELL save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        10,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        11,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "snapshot/transactions.json",
+        21,
+        "CA-10 teller gate on live save: owner has no open shift",
+    ),
+    (
+        "kiosk/queue.json",
+        138,
+        "QU-6 queue desk gate on kiosk accept: owner has no open shift (#3810)",
+    ),
+    (
+        "kiosk/queue_work.json",
+        72,
+        "QU-6 queue desk gate on kiosk accept: owner has no open shift (#3810)",
+    ),
+];
 
 /// Every step of a replay, by what was done with it.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -884,6 +1021,10 @@ pub struct Tally {
     pub applied_behind: Vec<usize>,
     /// Held to the Blueprint's refusal (OR-4b); those v2 accepted are also in `applied_behind`.
     pub blueprint: Vec<usize>,
+    /// Held to not be v2's recorded role refusal (RBAC §11.2, #3659).
+    pub widened: Vec<usize>,
+    /// Owner `saveTransaction` and kiosk `accept` steps refused for having no open shift (RBAC §11.2, #3659, #3810).
+    pub owner_no_open_shift: Vec<usize>,
 }
 
 impl Tally {
@@ -893,6 +1034,12 @@ impl Tally {
             + self.part_two.len()
             + self.excluded.len()
             + self.blueprint.len()
+            + self.widened.len()
+            + self
+                .owner_no_open_shift
+                .iter()
+                .filter(|n| !self.blueprint.contains(n))
+                .count()
     }
 }
 
@@ -922,6 +1069,10 @@ impl<'f> Replay<'f> {
     /// A desk with the people of `fixture` employed and signed in.
     pub async fn start(desk: Desk, app: App, fixture: &'f Fixture) -> Replay<'f> {
         desk.employ(&fixture.people).await;
+        // LG-6.r5 (#1044, lane controller's ruling): a v2 recording with custody off never held a safe and
+        // printed `operations.safe` null. `Desk::open` funded MAIN's ledger SAFE; empty it, and fund each
+        // opening or IN move just in time instead (`Replay::step`).
+        sweep_safe(&desk.db.pool, &BranchId::new(MAIN.to_string())).await;
         let cookies = sign_in(&app, &fixture.origin, &fixture.people).await;
         Replay {
             desk,
@@ -1073,14 +1224,39 @@ impl<'f> Replay<'f> {
                 Err(refusal) if v2.as_ref().err() != Some(&refusal) => {
                     return Rule::Blueprint(refusal);
                 }
-                Ok(()) if v2.is_err() => panic!(
-                    "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
-                    self.label(step)
-                ),
+                Ok(()) if v2.is_err() => {
+                    let v2_refusal = v2.unwrap_err();
+                    if let Some((_, _, permission)) = WIDENED_BY_11_2
+                        .iter()
+                        .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
+                    {
+                        let caller = caller.expect("a widened caller is signed in");
+                        let user = actor_from_v3(caller, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH);
+                        assert!(
+                            user.roles
+                                .iter()
+                                .any(|r| RoleGrants::of(r.role.as_str()).contains(permission)),
+                            "{}: listed in WIDENED_BY_11_2 for {permission:?}, which {:?} lacks",
+                            self.label(step),
+                            caller.role()
+                        );
+                        return Rule::Widened(v2_refusal);
+                    }
+                    panic!(
+                        "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
+                        self.label(step)
+                    );
+                }
                 _ => {}
             }
         }
         if !is_part_two(&action) {
+            if let Some((_, _, reason)) = OWNER_SAVE_NO_OPEN_SHIFT
+                .iter()
+                .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
+            {
+                return Rule::OwnerNoOpenShift(reason);
+            }
             return Rule::Replay;
         }
         // a part-two name is this part's to answer exactly when Policy refuses
@@ -1125,12 +1301,6 @@ impl<'f> Replay<'f> {
         self.desk.clock.set(time(&step.at));
         let payload = step.payload.as_ref().map(|p| self.ids.to_actual(p));
         let call = call_of(self.fixture, step, &self.cookies, payload.as_ref());
-        // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): before a recorded save, a
-        // shift a recorded step opened (custody's handover opens one in `shift_balances` only) gets its opening in
-        // the ledger's drawer.
-        if step.status == Some(200) && action_of(step).as_deref() == Some("saveTransaction") {
-            crate::snapshot_common::r1_fund_open_drawers(&self.desk.db.pool).await;
-        }
         // CA-10 #626 (ruling A, try 2): a compat save meets the teller gate (`check_teller_save_in`), which needs an
         // OPEN branch day; v2 had no day phase. Before a recorded save on a branch whose shift a verified OPEN count
         // opened (READY), the replay opens that day, as `dayStartService` would.
@@ -1145,16 +1315,43 @@ impl<'f> Replay<'f> {
                 self.open_day_for_save(&branch).await;
             }
         }
-        let answer = self.app.send(call).await;
-        let label = self.label(step);
-        // LG-4 (#929, 1:1): a branch a recording creates gets a funded ledger SAFE, as `seed_branch` gives one,
-        // because a shift's opening now leaves it (design §4.4).
-        if action_of(step).as_deref() == Some("adminCreateBranch")
-            && answer.status == 200
-            && let Some(made) = answer.json().get("branchId").and_then(Value::as_str)
-        {
-            crate::snapshot_common::lg4_fund_safe(&self.desk.db.pool, made).await;
+        // LG-6.r5 (#1044, lane controller's ruling): v2 with custody off took an opening, and an IN move, from no
+        // safe; v3 takes them from the ledger's SAFE (design §4.4). Before a step v2 accepted, SAFE gets exactly what
+        // the step takes; after it, whatever is left goes back to BANK, so SAFE holds nothing between steps and
+        // `operations.safe` prints v2's null.
+        let jit = if step.status == Some(200) {
+            let actual = step.payload.as_ref().map(|p| self.ids.to_actual(p));
+            match (action_of(step).as_deref(), actual) {
+                (Some("adminOpenShift"), Some(p)) => {
+                    xc_shift::domain::shift::commands::open_shift::OpenShift::from_payload(&p)
+                        .ok()
+                        .map(|c| c.opening.non_zero())
+                }
+                (Some("adminMoveStock"), Some(p)) => {
+                    MoveStock::from_payload(&p).ok().and_then(|c| {
+                        matches!(
+                            c.direction,
+                            xc_shift::domain::shift::value_objects::stock_delta::Direction::In
+                        )
+                        .then(|| vec![(c.currency, c.amount)])
+                    })
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let jit_branch = jit.as_ref().map(|_| self.branch_of(step));
+        if let (Some(amounts), Some(b)) = (&jit, &jit_branch) {
+            fund_exact(&self.desk.db.pool, b, amounts).await;
         }
+        let answer = self.app.send(call).await;
+        if let Some(b) = &jit_branch {
+            sweep_safe(&self.desk.db.pool, b).await;
+        }
+        let label = self.label(step);
+        // LG-6.r5 (#1044, lane controller's ruling): a branch a recording creates gets no standing funds in its
+        // ledger SAFE (LG-4 #929 gave it 10,000,000 of every code); the opening steps above fund it just in time.
 
         // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
         #[allow(clippy::collapsible_if)]
@@ -1334,6 +1531,83 @@ impl<'f> Replay<'f> {
                 // a kiosk step is applied behind the routes by the kiosk's replay, which holds the
                 // kiosk's audit log
                 if step.status == Some(200) && step.path() != Some("/api/kiosk") {
+                    self.accepted_behind(step).await;
+                }
+            }
+            Rule::Widened(v2_refusal) => {
+                assert_ne!(
+                    answer.status, 500,
+                    "{label}: widened caller hit 500: {:.300}",
+                    answer.text
+                );
+                let is_v2_role_refusal = answer.status == v2_refusal.status()
+                    && serde_json::from_str::<Value>(&answer.text)
+                        .ok()
+                        .and_then(|j| j.get("error").and_then(Value::as_str).map(str::to_owned))
+                        .as_deref()
+                        == Some(&v2_refusal.to_string());
+                assert!(
+                    !is_v2_role_refusal,
+                    "{label}: RBAC §11.2 widened caller was still refused with v2's role refusal ({}): {:.300}",
+                    v2_refusal, answer.text
+                );
+                self.tally.widened.push(step.n);
+            }
+            Rule::OwnerNoOpenShift(reason) => {
+                let expected_sentence = if step.path() == Some("/api/kiosk") {
+                    "noOpenShift"
+                } else {
+                    "กรุณาเปิดกะจากหน้าแอดมินก่อน"
+                };
+                assert_ne!(
+                    step.error(),
+                    Some(expected_sentence),
+                    "{label} ({reason}): listed in OWNER_SAVE_NO_OPEN_SHIFT, but v2 says the same"
+                );
+                answer.assert_refused(400, expected_sentence, &format!("{label} ({reason})"));
+                assert_eq!(answer.header("cache-control"), Some("no-store"), "{label}");
+                self.tally.owner_no_open_shift.push(step.n);
+                if step.path() == Some("/api/kiosk") {
+                    // KioskReplay::step (in kiosk_http_common) applies an accepted owner kiosk
+                    // step behind the routes and records its audit line when `tally.blueprint`
+                    // contains `step.n`.
+                    self.tally.blueprint.push(step.n);
+                }
+                // When the owner retries the same submissionId (#10/#11 in transactions.json,
+                // #120/#121/#122 in engine_actions.json), apply v2's accepted saves behind the
+                // routes once the last step of that submissionId has been answered so `save_behind`
+                // does not reassign the uploaded file or record the submission under FR1 before the
+                // retry steps run.
+                fn submission_id_of(s: &Step) -> Option<&str> {
+                    s.payload
+                        .as_ref()
+                        .and_then(|p| p.get("submissionId"))
+                        .and_then(Value::as_str)
+                }
+                if let Some(sub_id) = submission_id_of(step) {
+                    let more_retries = self
+                        .fixture
+                        .steps()
+                        .iter()
+                        .any(|s| s.n > step.n && submission_id_of(s) == Some(sub_id));
+                    if !more_retries {
+                        let accepted: Vec<Step> = self
+                            .fixture
+                            .steps()
+                            .iter()
+                            .filter(|s| {
+                                s.n <= step.n
+                                    && submission_id_of(s) == Some(sub_id)
+                                    && s.status == Some(200)
+                                    && s.path() != Some("/api/kiosk")
+                            })
+                            .cloned()
+                            .collect();
+                        for s in &accepted {
+                            self.accepted_behind(s).await;
+                        }
+                    }
+                } else if step.status == Some(200) && step.path() != Some("/api/kiosk") {
                     self.accepted_behind(step).await;
                 }
             }
@@ -1626,6 +1900,18 @@ impl<'f> Replay<'f> {
             merged.extend(wanted);
             expected["operations"]["exceptions"] = Value::Array(merged);
         }
+        // LG-6.r5 (#1044, BE controller's rulings A, issuecomment-6245895868, and A″, issuecomment-6245971463):
+        // v3 funds the opening from SAFE; v2 never posted SAFE for it, LG-6.r5. Once SAFE has funded an opening it
+        // prints a map where v2 printed null. Only the two listed recordings, only from the listed step on, only
+        // `$.operations.safe`; every other key and every other recording stays held to v2.
+        if LG6_R5_SAFE_FUNDED_AN_OPENING
+            .iter()
+            .any(|(name, first)| *name == self.fixture.name.as_str() && step.n >= *first)
+            && expected["operations"]["safe"].is_null()
+            && actual["operations"]["safe"].is_object()
+        {
+            expected["operations"]["safe"] = actual["operations"]["safe"].clone();
+        }
         self.ids.learn(&expected, &actual);
         assert_same(&self.ids.to_actual(&expected), &actual, &label);
     }
@@ -1910,10 +2196,10 @@ impl<'f> Replay<'f> {
             Value::String(text) => text.trim().to_owned(),
             other => other.to_string(),
         };
-        let (kind, from_shift, to_shift, signed) = if direction == "IN" {
-            ("SAFE_TO_DRAWER", false, true, amount.clone())
+        let (kind, from_shift, to_shift) = if direction == "IN" {
+            ("SAFE_TO_DRAWER", false, true)
         } else {
-            ("DRAWER_TO_SAFE", true, false, format!("-{amount}"))
+            ("DRAWER_TO_SAFE", true, false)
         };
         let actor = &self
             .fixture
@@ -2001,17 +2287,44 @@ impl<'f> Replay<'f> {
         .execute(&mut *tx)
         .await
         .unwrap_or_else(|e| panic!("{label}: the moved line: {e}"));
-        sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-             VALUES ($1, $2, 0, GREATEST($3::numeric, 0)) \
-             ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
-        )
-        .bind(&shift)
-        .bind(&code)
-        .bind(&signed)
-        .execute(&mut *tx)
-        .await
-        .unwrap_or_else(|e| panic!("{label}: the shift's balance: {e}"));
+        {
+            use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+            use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+            let (from, to) = if direction == "IN" {
+                (
+                    CashPlace::InTransit(transfer.clone()),
+                    CashPlace::Drawer(shift.clone()),
+                )
+            } else {
+                (
+                    CashPlace::Drawer(shift.clone()),
+                    CashPlace::InTransit(transfer.clone()),
+                )
+            };
+            xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+                .post_in(
+                    &mut tx,
+                    &[PostingRequest {
+                        from,
+                        to,
+                        currency: xc_kernel::money::CurrencyCode::parse(&code)
+                            .expect("move currency"),
+                        quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                            amount.parse().expect("move amount"),
+                        ),
+                        source: SourceRef {
+                            source_type: SourceType::Transfer,
+                            source_id: transfer.clone(),
+                            source_key: code.clone(),
+                        },
+                        line: None,
+                        reverses: None,
+                    }],
+                    None,
+                )
+                .await
+                .unwrap_or_else(|e| panic!("{label}: the shift's balance: {e:?}"));
+        }
         sqlx::query(
             "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 1) \
              ON CONFLICT (branch_id) DO UPDATE SET version = branch_versions.version + 1",
@@ -2078,8 +2391,8 @@ impl<'f> Replay<'f> {
             paid_at: text_of(&payload, "paidAt"),
             payment_confirmed: payload["paymentConfirmed"] == json!(true),
             identity_confirmed: payload["identityConfirmed"] == json!(true),
-            passport,
-            slip,
+            passport: passport.clone(),
+            slip: slip.clone(),
             reference_rate: payload
                 .get("referenceRate")
                 .filter(|v| !v.is_null())
@@ -2091,6 +2404,14 @@ impl<'f> Replay<'f> {
             .save(&branch, command, &saver, time(&step.at))
             .await
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
+        for key in [&passport, &slip].into_iter().flatten() {
+            sqlx::query("UPDATE files SET owner_id = $1 WHERE key = $2")
+                .bind(&sender.id)
+                .bind(key)
+                .execute(&self.desk.db.pool)
+                .await
+                .expect("restore the save's file to its uploader");
+        }
         assert_eq!(
             json!(saved.document_ref),
             step.json()["documentRef"],
@@ -2114,4 +2435,85 @@ pub fn text_with_ids(ids: &IdMap, recorded: &Value, text: &str) -> String {
         }
     }
     out
+}
+
+/// LG-6.r5 (#1044): the source ids of the just-in-time postings below.
+static JIT: AtomicU64 = AtomicU64::new(0);
+
+async fn jit_post(
+    pool: &sqlx::PgPool,
+    from: xc_cash::domain::posting::CashPlace,
+    to: xc_cash::domain::posting::CashPlace,
+    amounts: &[(xc_kernel::money::CurrencyCode, xc_kernel::money::Money)],
+) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    for (code, amount) in amounts {
+        let n = JIT.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .post_in(
+                &mut tx,
+                &[PostingRequest {
+                    from: from.clone(),
+                    to: to.clone(),
+                    currency: *code,
+                    quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                        amount.to_string().parse().unwrap(),
+                    ),
+                    source: SourceRef {
+                        source_type: SourceType::Opening,
+                        source_id: format!("jit:{nanos}:{n}"),
+                        source_key: "jit".into(),
+                    },
+                    line: None,
+                    reverses: None,
+                }],
+                None,
+            )
+            .await
+            .expect("jit post");
+    }
+    tx.commit().await.expect("commit");
+}
+
+/// LG-6.r5 (#1044): moves `amounts` from BANK into `branch`'s ledger SAFE (`OPENING`).
+pub async fn fund_exact(
+    pool: &sqlx::PgPool,
+    branch: &BranchId,
+    amounts: &[(xc_kernel::money::CurrencyCode, xc_kernel::money::Money)],
+) {
+    use xc_cash::domain::posting::CashPlace;
+    jit_post(
+        pool,
+        CashPlace::Bank,
+        CashPlace::Safe(branch.clone()),
+        amounts,
+    )
+    .await;
+}
+
+/// LG-6.r5 (#1044): moves whatever `branch`'s ledger SAFE holds back to BANK (`OPENING`), so it holds nothing.
+pub async fn sweep_safe(pool: &sqlx::PgPool, branch: &BranchId) {
+    use xc_cash::domain::posting::{CashPlace, CashPostings};
+    let mut tx = pool.begin().await.expect("begin");
+    let held = xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .expected_in(&mut tx, &CashPlace::Safe(branch.clone()))
+        .await
+        .expect("SAFE balance");
+    tx.rollback().await.expect("rollback");
+    let left = held.non_zero();
+    if !left.is_empty() {
+        jit_post(
+            pool,
+            CashPlace::Safe(branch.clone()),
+            CashPlace::Bank,
+            &left,
+        )
+        .await;
+    }
 }

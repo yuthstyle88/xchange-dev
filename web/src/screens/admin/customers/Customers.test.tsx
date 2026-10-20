@@ -43,7 +43,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal, type JSX } from 'solid-js';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { closeDialog, Dialog } from '../parts/Dialog';
@@ -147,8 +147,8 @@ function customers(from: number, count: number): CustomerRow[] {
   return Array.from({ length: count }, (_, i) => customer(from + i));
 }
 
-function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function tx(n: number, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: `XC-20261008-${String(n).padStart(6, '0')}`,
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -176,7 +176,7 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 // ── a fake server behind the real ApiClient ──────────────────────────────────

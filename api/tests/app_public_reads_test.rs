@@ -418,7 +418,13 @@ async fn the_rates_route_answers_the_published_rates_shape_and_nothing_else() {
     let body = answer.json();
     assert_eq!(
         key_set(&body),
-        set(&["publication", "sourceDate", "stale", "lines"])
+        set(&[
+            "publication",
+            "sourceDate",
+            "stale",
+            "lines",
+            "bandHeadings"
+        ])
     );
     assert_eq!(
         key_set(&body["publication"]),
@@ -437,7 +443,7 @@ async fn the_rates_route_answers_the_published_rates_shape_and_nothing_else() {
         assert_eq!(
             key_set(l),
             set(&[
-                "currency", "group", "unitSize", "buyRate", "sellRate", "lineId"
+                "currency", "group", "unitSize", "buyRate", "sellRate", "lineId", "bands"
             ]),
             "{l}"
         );
@@ -497,7 +503,7 @@ async fn a_branch_with_no_publication_yet_answers_an_empty_board() {
     assert_eq!(answer.status, StatusCode::OK, "{}", answer.text());
     assert_eq!(
         answer.json(),
-        serde_json::json!({ "publication": null, "sourceDate": null, "stale": false, "lines": [] })
+        serde_json::json!({ "publication": null, "sourceDate": null, "stale": false, "lines": [], "bandHeadings": [] })
     );
     db.finish().await;
 }

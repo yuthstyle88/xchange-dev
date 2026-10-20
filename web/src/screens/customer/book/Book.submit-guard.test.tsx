@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { BookingCreateOutput } from '../../../shared/api/generated/bookings';
+import { makeBookingCreateOutput } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { BookScreen } from './Book';
@@ -42,7 +42,7 @@ const SAMPLE_PREVIEW = {
   sourceDate: '2026-10-15',
 };
 
-const SAMPLE_CREATE_OK: BookingCreateOutput = {
+const SAMPLE_CREATE_OK = makeBookingCreateOutput({
   id: '11111111-1111-4000-8000-000000000001',
   bookingNo: 'B261015-0001',
   status: 'CONFIRMED',
@@ -54,7 +54,7 @@ const SAMPLE_CREATE_OK: BookingCreateOutput = {
   currency: 'USD',
   quantity: 100,
   qrToken: 'qr-token-test-xyz',
-};
+});
 
 interface RecordedRequest {
   method: string;
@@ -242,7 +242,7 @@ describe('Customer Book in-flight submit guard (#2405)', () => {
     expect(host.querySelector('[role="alert"]')).toBeNull();
     const successBanner = host.querySelector('.xc-book-success');
     expect(successBanner).not.toBeNull();
-    expect(successBanner!.textContent).toContain(SAMPLE_CREATE_OK.id);
+    expect(successBanner!.textContent).toContain(SAMPLE_CREATE_OK.bookingNo);
   });
 
   it('row 3: First request fails on the network, then retry -> Same key as the first', async () => {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
 interface WriteCall {
@@ -20,25 +20,25 @@ const B01 = 'XC-B01';
 const B02 = 'XC-B02';
 const SUCCESS_REVOKED_TH = 'ยกเลิกสิทธิ์เรียบร้อยแล้ว';
 
-const SEED_USERS: AdminUserRow[] = [
-  {
+const SEED_USERS = [
+  makeAdminUserRow({
     userId: 'u-a',
     name: 'Alpha Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      { role: 'TELLER', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null },
+      makeAdminUserRole({ role: 'TELLER', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null }),
     ],
-  },
-  {
+  }),
+  makeAdminUserRow({
     userId: 'u-b',
     name: 'Bravo Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      { role: 'FINANCE', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null },
+      makeAdminUserRole({ role: 'FINANCE', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null }),
     ],
-  },
+  }),
 ];
 
 function json(status: number, body: unknown): Response {

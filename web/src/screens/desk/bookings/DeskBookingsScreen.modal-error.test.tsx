@@ -2,13 +2,15 @@
 // and show reasonRequired when Cancel is pressed with an empty reason (§8, §9).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type {
-  BookingCancelOutput,
-  BookingCreateOutput,
-  BookingRescheduleOutput,
-} from '../../../shared/api/generated/bookings';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeBookingCancelOutput,
+  makeBookingCreateOutput,
+  makeBookingRescheduleOutput,
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeMe,
+  makeMeRole,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -19,18 +21,18 @@ const SLOT_1_ID = '00000000-0000-0000-0000-000000000001';
 const SLOT_2_ID = '00000000-0000-0000-0000-000000000002';
 const BOOKING_1_ID = 'BK-test-0001';
 
-const STAFF_TELLER: StaffMeView = {
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: BRANCH_ID }],
-  branchId: BRANCH_ID,
+  roles: [makeMeRole({ role: 'teller', branchId: BRANCH_ID })],
+  branch: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
+const INITIAL_DESK_BOOKINGS = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: BOOKING_1_ID,
       bookingNo: 'B261016-0021',
       status: 'CONFIRMED',
@@ -41,8 +43,8 @@ const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-16T09:00:00Z',
       endAt: '2026-10-16T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'BK-test-0002',
       bookingNo: 'B261016-0022',
       status: 'CONFIRMED',
@@ -53,9 +55,9 @@ const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
       slotId: SLOT_2_ID,
       startAt: '2026-10-16T09:30:00Z',
       endAt: '2026-10-16T10:00:00Z',
-    },
+    }),
   ],
-};
+});
 
 interface RecordedRequest {
   method: string;
@@ -91,34 +93,43 @@ describe('DeskBookingsScreen (B02) — modal error display & empty cancel reason
 
     writeResponder = (req) => {
       if (req.path.endsWith('/cancel')) {
-        return jsonResponse(200, {
-          id: BOOKING_1_ID,
-          status: 'CANCELLED',
-          bookingNo: 'B261016-0021',
-        } satisfies BookingCancelOutput);
+        return jsonResponse(
+          200,
+          makeBookingCancelOutput({
+            id: BOOKING_1_ID,
+            status: 'CANCELLED',
+            bookingNo: 'B261016-0021',
+          }),
+        );
       }
       if (req.path.endsWith('/reschedule')) {
-        return jsonResponse(200, {
-          id: BOOKING_1_ID,
-          slotId: SLOT_2_ID,
-          status: 'CONFIRMED',
-          bookingNo: 'B261016-0021',
-        } satisfies BookingRescheduleOutput);
+        return jsonResponse(
+          200,
+          makeBookingRescheduleOutput({
+            id: BOOKING_1_ID,
+            slotId: SLOT_2_ID,
+            status: 'CONFIRMED',
+            bookingNo: 'B261016-0021',
+          }),
+        );
       }
       if (req.path === '/api/bookings') {
-        return jsonResponse(200, {
-          id: 'BK-new-001',
-          bookingNo: 'B261016-0099',
-          status: 'CONFIRMED',
-          sourceChannel: 'DESK',
-          branchId: BRANCH_ID,
-          slotId: SLOT_1_ID,
-          customerId: 'cust-new',
-          shopSide: 'SELL',
-          currency: 'USD',
-          quantity: 100,
-          qrToken: null,
-        } satisfies BookingCreateOutput);
+        return jsonResponse(
+          200,
+          makeBookingCreateOutput({
+            id: 'BK-new-001',
+            bookingNo: 'B261016-0099',
+            status: 'CONFIRMED',
+            sourceChannel: 'DESK',
+            branchId: BRANCH_ID,
+            slotId: SLOT_1_ID,
+            customerId: 'cust-new',
+            shopSide: 'SELL',
+            currency: 'USD',
+            quantity: 100,
+            qrToken: null,
+          }),
+        );
       }
       return jsonResponse(404, { error: { code: 'notFound', message: req.path } });
     };
@@ -138,7 +149,7 @@ describe('DeskBookingsScreen (B02) — modal error display & empty cancel reason
         };
         sentRequests.push(rec);
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -176,11 +187,14 @@ describe('DeskBookingsScreen (B02) — modal error display & empty cancel reason
           error: { code: 'INTERNAL_ERROR', message: 'database timeout' },
         });
       }
-      return jsonResponse(200, {
-        id: BOOKING_1_ID,
-        status: 'CANCELLED',
-        bookingNo: 'B261016-0021',
-      } satisfies BookingCancelOutput);
+      return jsonResponse(
+        200,
+        makeBookingCancelOutput({
+          id: BOOKING_1_ID,
+          status: 'CANCELLED',
+          bookingNo: 'B261016-0021',
+        }),
+      );
     };
 
     await mountScreen();
@@ -226,12 +240,15 @@ describe('DeskBookingsScreen (B02) — modal error display & empty cancel reason
           error: { code: 'capacityFull', message: 'Slot capacity full' },
         });
       }
-      return jsonResponse(200, {
-        id: BOOKING_1_ID,
-        slotId: SLOT_2_ID,
-        status: 'CONFIRMED',
-        bookingNo: 'B261016-0021',
-      } satisfies BookingRescheduleOutput);
+      return jsonResponse(
+        200,
+        makeBookingRescheduleOutput({
+          id: BOOKING_1_ID,
+          slotId: SLOT_2_ID,
+          status: 'CONFIRMED',
+          bookingNo: 'B261016-0021',
+        }),
+      );
     };
 
     await mountScreen();
@@ -274,19 +291,22 @@ describe('DeskBookingsScreen (B02) — modal error display & empty cancel reason
           error: { code: 'capacityFull', message: 'Slot capacity full' },
         });
       }
-      return jsonResponse(200, {
-        id: 'BK-new-001',
-        bookingNo: 'B261016-0099',
-        status: 'CONFIRMED',
-        sourceChannel: 'DESK',
-        branchId: BRANCH_ID,
-        slotId: SLOT_1_ID,
-        customerId: 'cust-new',
-        shopSide: 'SELL',
-        currency: 'USD',
-        quantity: 100,
-        qrToken: null,
-      } satisfies BookingCreateOutput);
+      return jsonResponse(
+        200,
+        makeBookingCreateOutput({
+          id: 'BK-new-001',
+          bookingNo: 'B261016-0099',
+          status: 'CONFIRMED',
+          sourceChannel: 'DESK',
+          branchId: BRANCH_ID,
+          slotId: SLOT_1_ID,
+          customerId: 'cust-new',
+          shopSide: 'SELL',
+          currency: 'USD',
+          quantity: 100,
+          qrToken: null,
+        }),
+      );
     };
 
     await mountScreen();

@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
@@ -29,8 +29,8 @@ const EXPORTER_ME = (() => {
   return { ...m, permissions: [...m.permissions, 'ReportsExport'].sort() };
 })();
 
-function makeTx(id: string): TransactionRow {
-  return {
+function makeTx(id: string) {
+  return makeTransactionRow({
     id,
     date: '2026-10-15',
     created: '2026-10-15T03:00:00.000Z',
@@ -57,7 +57,7 @@ function makeTx(id: string): TransactionRow {
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  };
+  });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

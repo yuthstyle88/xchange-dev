@@ -45,12 +45,8 @@ const SAME_ORIGIN: &str = "http://xc.test";
 const B01: &str = "XC-B01";
 const B09: &str = "XC-B09";
 const ADMIN: &str = "ADMIN@*";
-const REFUSED: [&str; 4] = [
-    "EXECUTIVE@*",
-    "BRANCH_MANAGER@XC-B01",
-    "TELLER@XC-B01",
-    "FINANCE@XC-B01",
-];
+// Follows §11.2 seed: EXECUTIVE holds USER_MANAGEMENT FULL (UsersManage, BranchesManage); remaining staff are refused
+const REFUSED: [&str; 3] = ["BRANCH_MANAGER@XC-B01", "TELLER@XC-B01", "FINANCE@XC-B01"];
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -361,7 +357,9 @@ async fn an_admin_saves_a_branch_profile_and_reads_it_back() {
         "address": "1 Silom Rd",
         "timezone": "Asia/Bangkok",
         "openingHours": { "mon": [{ "open": "09:00", "close": "17:00" }] },
-        "bookingEnabled": true
+        "bookingEnabled": true,
+        "contactChannels": [],
+        "status": "ACTIVE"
     });
     assert_eq!(a.body, want, "the saved profile");
     let r = get(
@@ -462,6 +460,32 @@ async fn only_an_admin_may_use_any_of_them() {
     }
     assert_eq!(db.version(&user).await, 1, "nothing changed the user");
     assert_eq!(db.count("SELECT count(*) FROM users").await, 1);
+    db.finish().await;
+}
+
+/// §11.2: EXECUTIVE holds USER_MANAGEMENT FULL (`UsersManage`, `BranchesManage`), so it may save a
+/// branch profile and read both org-admin views (#3501).
+#[actix_web::test]
+async fn an_executive_holds_user_management_and_is_allowed() {
+    let db = TestDb::start().await;
+    let who = "EXECUTIVE@*";
+    let a = post(
+        &db,
+        who,
+        Method::PUT,
+        "/api/branches/profile",
+        profile("SILOM"),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::OK, "{who}: {}", a.text);
+    for uri in [
+        format!("/api/v3/views/admin_branches_profile?branch={B01}"),
+        format!("/api/v3/views/admin_users?branch={B01}"),
+    ] {
+        let r = get(&db, who, &uri).await;
+        assert_eq!(r.status, StatusCode::OK, "{who} {uri}: {}", r.text);
+    }
     db.finish().await;
 }
 

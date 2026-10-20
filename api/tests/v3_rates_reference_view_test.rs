@@ -370,23 +370,46 @@ fn callers() -> Vec<(String, Option<Actor>)> {
 
 // ── who may read it ──────────────────────────────────────────────────────────
 
-/// W8: the answer `/api/reference-rates` gives each caller (owner only); a refused caller never
-/// makes the BOT be asked.
+/// W8: the answer `/api/reference-rates` gives each caller under §11.2 (`ReferenceRatesRead`);
+/// a refused caller never makes the BOT be asked.
 #[actix_web::test]
 async fn rates_reference_answers_exactly_whom_the_reference_rates_route_allows() {
+    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let room = Room::open().await;
+    let act = Action::new("/api/reference-rates");
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
-        let policy = Policy::allow(
-            actor.as_ref(),
+        let holds = actor.as_ref().is_some_and(|ac| {
+            blueprint_roles(ac.role())
+                .iter()
+                .any(|&r| RoleGrants::seed(r).contains(&Permission::ReferenceRatesRead))
+        });
+        let user = actor.as_ref().map(|ac| {
+            actor_from_v3(
+                ac,
+                xchange::presentation::pages::SEEDED_XC_ORG_ID,
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            )
+        });
+        let policy = Policy::authorize(
+            user.as_ref(),
             EntryPath::OwnerRoute,
-            &Action::new("/api/reference-rates"),
+            &act,
+            None,
+            chrono::Utc::now(),
+        );
+        assert_eq!(
+            policy.is_ok(),
+            holds,
+            "{who:?}: RoleGrants::seed matches Policy::authorize"
         );
         let answer = room.get(&who, "").await;
         let what = format!("{VIEW} as {who:?}");
         match &policy {
-            Ok(()) => {
+            Ok(_) => {
                 allowed += 1;
                 assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                 assert!(answer.json().get("data").is_some(), "{what}: data");
@@ -400,12 +423,33 @@ async fn rates_reference_answers_exactly_whom_the_reference_rates_route_allows()
             }
         }
     }
-    assert_eq!(allowed, 10, "the owner, and the owner beside each role");
-    assert_eq!(refused, 10, "nobody, and each staff role alone");
+    let expected_allowed = callers()
+        .iter()
+        .filter(|(_, actor)| {
+            actor.as_ref().is_some_and(|ac| {
+                blueprint_roles(ac.role())
+                    .iter()
+                    .any(|&r| RoleGrants::seed(r).contains(&Permission::ReferenceRatesRead))
+            })
+        })
+        .count();
+    assert_eq!(
+        allowed, expected_allowed,
+        "holders of ReferenceRatesRead under §11.2"
+    );
+    assert_eq!(
+        refused,
+        callers().len() - expected_allowed,
+        "nobody and roles without ReferenceRatesRead"
+    );
+    assert!(
+        refused > 1,
+        "§11.2 leaves staff roles without ReferenceRatesRead"
+    );
     assert_eq!(
         room.bot.asked(),
         1,
-        "ten allowed reads inside a minute: one BOT call; refusals none"
+        "all allowed reads inside a minute: one BOT call; refusals none"
     );
     room.finish().await;
 }

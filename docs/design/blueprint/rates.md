@@ -1494,7 +1494,8 @@ CREATE TABLE rate_policy_value_tiers (
   bound. The uppers must rise strictly: `ratePolicySave` refuses any other set (`validationFailed`). It is a cross-row
   rule, so the command enforces it, and a test pins it.
 - **The bands are THB value**, the same for every currency of the branch. **The margins are per tier and side**, the
-  same for every currency (owner, O-7, #986 issuecomment-6103819465).
+  same for every currency (owner, O-7, #986 issuecomment-6103819465). Amended 2026-10-19 by P-1: a currency may
+  override the margins, never the bands (`pricing-tiers.md` §3).
 - **`value_tiers_on` is the switch.** `true` requires exactly four rows; `false` may keep rows, so switching back on
   later does not lose the owner's numbers. A version is immutable, so its rows are too.
 - **The tier codes** written to `published_rate_lines.value_tier` are `'T1'`…`'T4'` `[required]`. No reader selects by
@@ -1846,7 +1847,7 @@ each as recommended here (#986 issuecomment-6103819465, also on PR 1240):
 
 | # | Question | Owner's answer | Where it lands |
 |---|---|---|---|
-| O-7 | Tier margins the same for every currency, or per currency? | **the same for every currency** (one margin per tier and side) | §12.3, VT-1's table key |
+| O-7 | Tier margins the same for every currency, or per currency? | **the same for every currency** (one margin per tier and side). **Amended 2026-10-19 (P-1, `pricing-tiers.md` §3): the branch margins are the default and a currency may override them** | §12.3, VT-1's table key |
 | O-8 | A currency BoT never quotes: does it keep the starting price as its AUTO base? | **yes**; MANUAL can still price it | §12.6, SP-2 |
 | O-9 | Additive or compounded? | **additive**: `base × (1 + (adjust_pct + margin_pct) ÷ 100)`, one rounding | §12.3, VT-2 |
 | O-10 | The sharp-move threshold's scope? | **per branch policy, one value** | §12.8, VT-1, VT-4 |

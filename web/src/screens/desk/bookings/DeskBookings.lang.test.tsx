@@ -1,8 +1,14 @@
 // #2149: DeskBookingsScreen (B02) language switching across all 18 render sites (§2, §9 rows 1–4).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeMe,
+  makeMeRole,
+  type DeskBookingsData,
+  type MeView,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 import { en, th } from './i18n';
@@ -14,27 +20,27 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER: StaffMeView = {
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: 'XC-B01' }],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'teller', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const STAFF_NO_DESK: StaffMeView = {
-  userId: '00000000-0000-4000-8000-000000000002',
+const STAFF_NO_DESK = makeMe({
+  id: '00000000-0000-4000-8000-000000000002',
   name: 'Somying Manager',
-  roles: [{ role: 'manager', branchId: 'XC-B01' }],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'manager', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['RatesRead'],
-};
+});
 
-const ONE_BOOKING: DeskBookingsData = {
+const ONE_BOOKING = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261016-0001',
       status: 'CONFIRMED',
@@ -45,12 +51,12 @@ const ONE_BOOKING: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-16T09:00:00Z',
       endAt: '2026-10-16T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 function stubBookingsFetch(opts?: {
-  staff?: StaffMeView;
+  staff?: MeView;
   bookings?: DeskBookingsData;
   checkInStatus?: number;
   checkInBody?: unknown;
@@ -67,7 +73,7 @@ function stubBookingsFetch(opts?: {
     const u = new URL(rawUrl, 'http://localhost');
     const method = (init?.method ?? 'GET').toUpperCase();
 
-    if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+    if (method === 'GET' && u.pathname === '/api/v3/views/me') {
       return jsonResponse(200, { version: 1, changed: true, data: staff });
     }
     if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -251,14 +257,14 @@ describe('DeskBookingsScreen (B02) — §9 language switching (#2149)', () => {
   });
 
   it('row 4 (unknown status): falls back to statusUnknown in the active language', async () => {
-    const unknownBookings: DeskBookingsData = {
+    const unknownBookings = makeDeskBookingsData({
       items: [
-        {
+        makeDeskBookingItemDto({
           ...ONE_BOOKING.items[0],
           status: 'UNMAPPED_FUTURE_STATUS',
-        },
+        }),
       ],
-    };
+    });
 
     setLang('en');
     stubBookingsFetch({ bookings: unknownBookings });

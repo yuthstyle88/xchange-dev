@@ -33,7 +33,9 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_kernel::document_store::{DocumentStore, DocumentStoreError};
 use xc_kernel::ids::BranchId;
@@ -56,7 +58,7 @@ const MARKER: &str = "VF5-SECRET-BYTES-41d2";
 const SESSION: &str = "session-a";
 const OTHER_SESSION: &str = "session-b";
 /// The seven staff roles V8 refuses, role by role (#1393 §4 item 1). BRANCH_MANAGER, TELLER and FINANCE hold
-/// `IdentityDocumentRead` (`role_permissions.rs:67`, `:88`, `:108`) and are still refused.
+/// `IdentityDocumentRead` (`RoleGrants::seed` / §11.2) and are still refused.
 const REFUSED_STAFF: [Role; 7] = [
     Role::Executive,
     Role::Admin,
@@ -587,9 +589,9 @@ async fn the_cases_own_customer_gets_a_link_to_their_document() {
     db.finish().await;
 }
 
-/// #1393 §4 role by role (V8): EXECUTIVE, ADMIN, RATE_MANAGER, BRANCH_MANAGER, TELLER, FINANCE and MARKETING, each
-/// organisation-wide, get `outOfScope` on both doors; BRANCH_MANAGER, TELLER and FINANCE hold `IdentityDocumentRead`
-/// and are still refused.
+/// #1393 §4 role by role (V8): under RBAC §11.2, Executive and BranchManager hold VerificationReview
+/// (Documents: Full) and can open reviewer links. Other staff roles get `outOfScope` on both doors;
+/// TELLER and FINANCE hold `IdentityDocumentRead` and are still refused. All staff get `outOfScope` on the owner door.
 #[tokio::test]
 async fn every_other_staff_role_is_out_of_scope_role_by_role() {
     let db = Db::start().await;
@@ -601,15 +603,22 @@ async fn every_other_staff_role_is_out_of_scope_role_by_role() {
             .access()
             .link_for_reviewer(&actor, SESSION, doc.id, t0)
             .await;
-        assert!(
-            matches!(as_reviewer, Err(AccessError::OutOfScope)),
-            "{role:?} on the reviewer door: {as_reviewer:?}"
-        );
-        assert_eq!(
-            as_reviewer.expect_err("refused").code(),
-            "outOfScope",
-            "{role:?}"
-        );
+        if RoleGrants::seed(role).contains(&Permission::VerificationReview) {
+            assert!(
+                as_reviewer.is_ok(),
+                "{role:?} holds VerificationReview under §11.2: {as_reviewer:?}"
+            );
+        } else {
+            assert!(
+                matches!(as_reviewer, Err(AccessError::OutOfScope)),
+                "{role:?} on the reviewer door: {as_reviewer:?}"
+            );
+            assert_eq!(
+                as_reviewer.expect_err("refused").code(),
+                "outOfScope",
+                "{role:?}"
+            );
+        }
         let as_owner = db
             .access()
             .link_for_owner(&actor, SESSION, doc.id, t0)

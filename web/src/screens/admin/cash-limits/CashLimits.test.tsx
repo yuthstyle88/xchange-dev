@@ -3,8 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
-import type { CashLimitsData } from '../../../shared/api/generated/cash_limits';
-import type { Me } from '../../../shared/api/generated/common';
+import {
+  makeBranchRef,
+  makeCashLimitsData,
+  makeMe,
+  type CashLimitsData,
+  type Me,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { AdminShell } from '../AdminShell';
@@ -17,8 +22,8 @@ import * as texts from './i18n';
 
 const MANAGE = 'CashLimitsManage';
 
-function meWith(permissions: string[]): Me {
-  return {
+function meWith(permissions: string[]) {
+  return makeMe({
     id: 'u-fin',
     name: 'ฝ่ายการเงิน',
     roles: [],
@@ -26,32 +31,32 @@ function meWith(permissions: string[]): Me {
     branch: 'MAIN',
     branchName: 'สำนักงานใหญ่',
     branches: [
-      { id: 'MAIN', code: 'MAIN', name: 'สำนักงานใหญ่' },
-      { id: 'B1', code: 'B1', name: 'สาขาหนึ่ง' },
+      makeBranchRef({ id: 'MAIN', code: 'MAIN', name: 'สำนักงานใหญ่' }),
+      makeBranchRef({ id: 'B1', code: 'B1', name: 'สาขาหนึ่ง' }),
     ],
-  };
+  });
 }
 
-const NO_ROW: CashLimitsData = {
+const NO_ROW = makeCashLimitsData({
   branch: 'MAIN',
   countDifferenceLimitThb: null,
   updatedBy: null,
   updatedAt: null,
-};
+});
 
-const ROW_500: CashLimitsData = {
+const ROW_500 = makeCashLimitsData({
   branch: 'MAIN',
   countDifferenceLimitThb: '500.00',
   updatedBy: 'u-admin',
   updatedAt: '2026-10-12T01:00:00Z',
-};
+});
 
-const ROW_250: CashLimitsData = {
+const ROW_250 = makeCashLimitsData({
   branch: 'MAIN',
   countDifferenceLimitThb: '250.50',
   updatedBy: 'u-fin',
   updatedAt: '2026-10-12T02:00:00Z',
-};
+});
 
 interface Sent {
   method: string;
@@ -219,7 +224,7 @@ describe('CashLimits (#3324)', () => {
   it('1: a branch with no row (countDifferenceLimitThb: null) shows the no-limit wording and no updatedBy', async () => {
     const el = await mount({
       readsByBranch: {
-        MAIN: { branch: 'MAIN', countDifferenceLimitThb: null, updatedBy: 'u-ghost', updatedAt: null },
+        MAIN: makeCashLimitsData({ branch: 'MAIN', countDifferenceLimitThb: null, updatedBy: 'u-ghost', updatedAt: null }),
       },
     });
     const s = screen(el)!;
@@ -311,12 +316,12 @@ describe('CashLimits (#3324)', () => {
     const mainLate = new Promise<CashLimitsData>((r) => {
       resolveMain = r;
     });
-    const b1Row: CashLimitsData = {
+    const b1Row = makeCashLimitsData({
       branch: 'B1',
       countDifferenceLimitThb: '800.00',
       updatedBy: 'u-b1',
       updatedAt: '2026-10-12T03:00:00Z',
-    };
+    });
 
     const el = await mount({
       readsByBranch: {
@@ -331,12 +336,14 @@ describe('CashLimits (#3324)', () => {
     expect(text(s)).toContain('800.00');
     expect(text(s)).toContain('u-b1');
 
-    resolveMain({
-      branch: 'MAIN',
-      countDifferenceLimitThb: '999.00',
-      updatedBy: 'u-stale',
-      updatedAt: '2026-10-12T00:00:00Z',
-    });
+    resolveMain(
+      makeCashLimitsData({
+        branch: 'MAIN',
+        countDifferenceLimitThb: '999.00',
+        updatedBy: 'u-stale',
+        updatedAt: '2026-10-12T00:00:00Z',
+      }),
+    );
     await settle();
 
     expect(text(s)).toContain('800.00');

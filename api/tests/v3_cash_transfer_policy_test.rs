@@ -7,7 +7,7 @@
 //! Everything goes over HTTP through the whole route table, so a missing route or view fails on its answer, not on a
 //! compile error. The callers are Blueprint `access::Actor`s (organisation-wide roles, real `users` rows) handed to the
 //! seams through `SessionReader::callers`; the legacy sessions are empty, so nothing here builds the v2 `Actor` that
-//! #1030 retires from the seams. Who may call is computed from `RolePermissions`, never from a role name.
+//! #1030 retires from the seams. Who may call is computed from `RoleGrants`, never from a role name.
 //!
 //! Choices of this file, each marked where used:
 //! - The command carries `branch` in its body, the optional field every cash command's seam reads (#624 G1).
@@ -38,7 +38,7 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_cash::domain::error::CashError;
 use xc_kernel::ids::BranchId;
 use xc_testdb::people::{RoleRow, seed_person};
@@ -84,10 +84,10 @@ fn unique(prefix: &str) -> String {
 }
 
 fn holds(role: Role) -> bool {
-    RolePermissions::of(role).contains(&Permission::CashTransferPolicySet)
+    RoleGrants::seed(role).contains(&Permission::CashTransferPolicySet)
 }
 
-/// A role holding `CashTransferPolicySet` (EXECUTIVE on main, CA-0p).
+/// A role holding `CashTransferPolicySet` (EXECUTIVE and FINANCE under §11.2).
 fn a_setter() -> Role {
     *STAFF_ROLES
         .iter()

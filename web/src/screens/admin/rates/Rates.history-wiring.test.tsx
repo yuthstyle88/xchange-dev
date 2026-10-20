@@ -2,12 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
-import type { RateDraftDetailData } from '../../../shared/api/generated/rate_draft';
-import type { RateDraftItemDto } from '../../../shared/api/generated/rate_drafts';
-import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
-import type { RatesReferenceData } from '../../../shared/api/generated/rates_reference';
-import type { RatePublicationRow } from './rate-history';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeRateDraftDetailData,
+  makeRateDraftDetailItemDto,
+  makeRateDraftItemDto,
+  makeRateDraftLineDto,
+  makeRatePolicyData,
+  makeRatePolicyVersionDto,
+  makeRatePublicationRow,
+  makeRatesReferenceData,
+  makeRatesReferenceRow,
+  type RateDraftItemDto,
+} from '../../../shared/testing/fixtures';
 import type { RatesHistoryProps } from './RatesHistory';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { closeDialog, Dialog } from '../parts/Dialog';
@@ -46,9 +55,9 @@ const POLICY = '/api/v3/views/rate_policy';
 const PUBLICATIONS = '/api/v3/views/rate_publications';
 const REFERENCE = '/api/v3/views/rates_reference';
 
-function sampleRows(): RatePublicationRow[] {
+function sampleRows() {
   return [
-    {
+    makeRatePublicationRow({
       id: 'pub-18',
       branchId: 'MAIN',
       version: 18,
@@ -58,8 +67,8 @@ function sampleRows(): RatePublicationRow[] {
       draftId: 'd-18',
       state: 'PUBLISHED',
       lines: [],
-    },
-    {
+    }),
+    makeRatePublicationRow({
       id: 'pub-17',
       branchId: 'MAIN',
       version: 17,
@@ -69,24 +78,25 @@ function sampleRows(): RatePublicationRow[] {
       draftId: 'd-17',
       state: 'SUPERSEDED',
       lines: [],
-    },
+    }),
   ];
 }
 
-function mainPublished(): PublishedRatesData {
-  return {
-    publication: { id: 'pub-7', version: 7, publishedAt: '2026-10-09T02:00:00+00:00' },
+function mainPublished() {
+  return makePublishedRatesData({
+    publication: makePublishedPublicationDto({ id: 'pub-7', version: 7, publishedAt: '2026-10-09T02:00:00+00:00' }),
     sourceDate: '2026-10-08',
     stale: false,
     lines: [
-      { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.35520000', sellRate: '38.08440000', lineId: 'line-EUR' },
-      { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.25000000', sellRate: '34.10000000', lineId: 'line-USD' },
+      makePublishedLineDto({ currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.35520000', sellRate: '38.08440000', lineId: 'line-EUR', bands: [] }),
+      makePublishedLineDto({ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.25000000', sellRate: '34.10000000', lineId: 'line-USD', bands: [] }),
     ],
-  };
+    bandHeadings: [],
+  });
 }
 
-function draftItem(id: string, status: string, version: number, createdAt: string): RateDraftItemDto {
-  return {
+function draftItem(id: string, status: string, version: number, createdAt: string) {
+  return makeRateDraftItemDto({
     id,
     branchId: 'MAIN',
     status,
@@ -95,22 +105,22 @@ function draftItem(id: string, status: string, version: number, createdAt: strin
     createdAt,
     updatedAt: createdAt,
     evaluation: null,
-  };
+  });
 }
 
-function detailOf(item: RateDraftItemDto): RateDraftDetailData {
-  return {
-    draft: { ...item },
+function detailOf(item: RateDraftItemDto) {
+  return makeRateDraftDetailData({
+    draft: makeRateDraftDetailItemDto({ ...item }),
     lines: [
-      { currency: 'EUR', buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null },
-      { currency: 'USD', buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null },
+      makeRateDraftLineDto({ currency: 'EUR', buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null }),
+      makeRateDraftLineDto({ currency: 'USD', buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null }),
     ],
-  };
+  });
 }
 
-function policyOf(): RatePolicyData {
-  return {
-    policy: {
+function policyOf() {
+  return makeRatePolicyData({
+    policy: makeRatePolicyVersionDto({
       id: 'pol-1',
       branchId: 'MAIN',
       version: 1,
@@ -129,16 +139,16 @@ function policyOf(): RatePolicyData {
       valueTiersOn: false,
       valueTiers: [],
       sharpMoveAlertPct: null,
-    },
-  };
+    }),
+  });
 }
 
-function referenceOf(): RatesReferenceData {
-  return {
-    rows: [{ code: 'USD', date: '2026-10-08', unit: 1, buyingSight: '33.4218', buyingTransfer: '33.5008', selling: '33.8278' }],
+function referenceOf() {
+  return makeRatesReferenceData({
+    rows: [makeRatesReferenceRow({ code: 'USD', date: '2026-10-08', unit: 1, buyingSight: '33.4218', buyingTransfer: '33.5008', selling: '33.8278' })],
     fetchedAt: '2026-10-09T01:30:00.000Z',
     error: null,
-  };
+  });
 }
 
 interface Sent {

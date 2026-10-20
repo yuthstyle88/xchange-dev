@@ -5,6 +5,7 @@ use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
 
+use crate::domain::branch::contact_channel::{BranchStatus, ContactChannel};
 use crate::domain::branch::entities::branch::Branch;
 use crate::domain::branch::repositories::branch_repository::BranchRepository;
 
@@ -17,10 +18,26 @@ type BranchRow = (
     String,
     Option<serde_json::Value>,
     bool,
+    serde_json::Value,
+    String,
 );
 
 fn row_to_branch(row: BranchRow) -> Branch {
-    let (id, name, request_id, code, address, timezone, opening_hours, booking_enabled) = row;
+    let (
+        id,
+        name,
+        request_id,
+        code,
+        address,
+        timezone,
+        opening_hours,
+        booking_enabled,
+        contact_channels,
+        status,
+    ) = row;
+    let contact_channels: Vec<ContactChannel> =
+        serde_json::from_value(contact_channels).unwrap_or_default();
+    let status = BranchStatus::parse(&status).unwrap_or_default();
     Branch {
         id: BranchId::new(id),
         name,
@@ -30,6 +47,8 @@ fn row_to_branch(row: BranchRow) -> Branch {
         timezone,
         opening_hours,
         booking_enabled,
+        contact_channels,
+        status,
     }
 }
 
@@ -47,7 +66,7 @@ impl PgBranchRepository {
 impl BranchRepository for PgBranchRepository {
     async fn list(&self) -> AppResult<Vec<Branch>> {
         let rows = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches ORDER BY (id = 'MAIN') DESC, created_at ASC, id ASC",
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled, contact_channels, status FROM branches ORDER BY (id = 'MAIN') DESC, created_at ASC, id ASC",
         )
         .fetch_all(&self.pool)
         .await
@@ -58,7 +77,7 @@ impl BranchRepository for PgBranchRepository {
 
     async fn find_by_id(&self, id: &BranchId) -> AppResult<Option<Branch>> {
         let row = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches WHERE id = $1",
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled, contact_channels, status FROM branches WHERE id = $1",
         )
         .bind(id.as_str())
         .fetch_optional(&self.pool)
@@ -82,7 +101,7 @@ impl BranchRepository for PgBranchRepository {
         request_id: &str,
     ) -> AppResult<Option<Branch>> {
         let row = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches WHERE request_id = $1",
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled, contact_channels, status FROM branches WHERE request_id = $1",
         )
         .bind(request_id)
         .fetch_optional(&mut **tx)
@@ -162,7 +181,7 @@ impl PgBranchRepository {
         id: &BranchId,
     ) -> AppResult<Option<Branch>> {
         let row = sqlx::query_as::<_, BranchRow>(
-            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled FROM branches WHERE id = $1 FOR UPDATE",
+            "SELECT id, name, request_id, code, address, timezone, opening_hours, booking_enabled, contact_channels, status FROM branches WHERE id = $1 FOR UPDATE",
         )
         .bind(id.as_str())
         .fetch_optional(&mut **tx)
@@ -202,9 +221,13 @@ impl PgBranchRepository {
         timezone: &str,
         opening_hours: Option<&serde_json::Value>,
         booking_enabled: bool,
+        contact_channels: &[ContactChannel],
+        status: BranchStatus,
     ) -> AppResult<()> {
+        let channels_json =
+            serde_json::to_value(contact_channels).unwrap_or_else(|_| serde_json::json!([]));
         sqlx::query(
-            "UPDATE branches SET code = $2, address = $3, timezone = $4, opening_hours = $5, booking_enabled = $6 WHERE id = $1",
+            "UPDATE branches SET code = $2, address = $3, timezone = $4, opening_hours = $5, booking_enabled = $6, contact_channels = $7, status = $8 WHERE id = $1",
         )
         .bind(id.as_str())
         .bind(code)
@@ -212,6 +235,8 @@ impl PgBranchRepository {
         .bind(timezone)
         .bind(opening_hours)
         .bind(booking_enabled)
+        .bind(channels_json)
+        .bind(status.as_str())
         .execute(&mut **tx)
         .await
         .map_err(|e| match &e {

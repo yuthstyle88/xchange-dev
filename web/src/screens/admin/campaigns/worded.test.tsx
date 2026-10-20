@@ -1,15 +1,21 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CampaignDetail } from '../../../shared/api/generated/campaign';
-import type { CampaignListItem } from '../../../shared/api/generated/campaigns';
+import {
+  makeCampaignDetail,
+  makeCampaignListItem,
+  makeCampaignPeriodTotals,
+  makeCampaignRuleDetail,
+  makeCampaignSimulationDetail,
+  makeCampaignVersionDetail,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { en } from '../../../shared/i18n/en';
 import { th } from '../../../shared/i18n/th';
 import type { AdminMenuProps } from '../menus';
 import { Campaigns } from './Campaigns';
 
-const SAMPLE_LIST_ITEM: CampaignListItem = {
+const SAMPLE_LIST_ITEM = makeCampaignListItem({
   id: 'cmp-1',
   name: 'Golden October',
   versionId: 'ver-1',
@@ -22,20 +28,20 @@ const SAMPLE_LIST_ITEM: CampaignListItem = {
   budgetLeftThb: '74999.50',
   uses: 42,
   maxUses: 100,
-  period: {
+  period: makeCampaignPeriodTotals({
     redemptions: 15,
     priceCostThb: '12345.67',
     rewardExpenseThb: '3000.00',
-  },
-};
+  }),
+});
 
-function makeDetail(status = 'ACTIVE'): CampaignDetail {
-  return {
+function makeDetail(status = 'ACTIVE') {
+  return makeCampaignDetail({
     id: 'cmp-1',
     name: 'Golden October',
     currentVersionId: 'ver-1',
     versions: [
-      {
+      makeCampaignVersionDetail({
         id: 'ver-1',
         version: 1,
         status: status as any,
@@ -47,7 +53,7 @@ function makeDetail(status = 'ACTIVE'): CampaignDetail {
         priority: 10,
         branches: ['MAIN'],
         rules: [
-          {
+          makeCampaignRuleDetail({
             id: 'rule-1',
             ruleNo: 1,
             benefitType: 'RATE_IMPROVEMENT',
@@ -56,21 +62,21 @@ function makeDetail(status = 'ACTIVE'): CampaignDetail {
             eligibility: {},
             calculation: { spreadShare: '0.20' },
             caps: {},
-          },
+          }),
         ],
         simulations: [
-          {
+          makeCampaignSimulationDetail({
             id: 'sim-1',
             costSource: 'LEDGER',
             simulatedAt: '2026-10-02T10:00:00Z',
             input: {},
             result: {},
-          },
+          }),
         ],
         approval: null,
-      },
+      }),
     ],
-  };
+  });
 }
 
 describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/web-worded-error.md §4.1)', () => {

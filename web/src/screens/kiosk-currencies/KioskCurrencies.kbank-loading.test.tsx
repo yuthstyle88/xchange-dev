@@ -7,12 +7,18 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../../shared/api/client';
-import type {
-  KbankComparison,
-  KbankReference,
-  KioskCurrencies,
-  KioskCurrency,
-} from '../../shared/api/generated/kiosk_currencies';
+import {
+  makeKbankComparison,
+  makeKbankReference,
+  makeKioskCountry,
+  makeKioskCurrencies,
+  makeKioskCurrency,
+  makeRateFreshnessDto,
+  makeViewAnswer,
+  type KbankReference,
+  type KioskCurrencies,
+  type KioskCurrency,
+} from '../../shared/testing/fixtures';
 import { errorText, setLang } from '../../shared/i18n';
 import { en, th } from './i18n';
 import { KioskCurrenciesScreen } from './KioskCurrenciesScreen';
@@ -29,15 +35,15 @@ function cmp(
   bankSell: string | null,
   shopSell: string | null,
   sellDifference: string | null,
-): KbankComparison {
-  return { label, bankBuy, shopBuy, buyDifference, bankSell, shopSell, sellDifference };
+) {
+  return makeKbankComparison({ label, bankBuy, shopBuy, buyDifference, bankSell, shopSell, sellDifference });
 }
 
-const AFN: KioskCurrency = {
+const AFN = makeKioskCurrency({
   code: 'AFN',
   name: 'อัฟกานิอัฟกานิสถาน',
   nameEn: 'Afghan Afghani',
-  countries: [{ code: 'AF', en: 'Afghanistan', th: 'อัฟกานิสถาน' }],
+  countries: [makeKioskCountry({ code: 'AF', en: 'Afghanistan', th: 'อัฟกานิสถาน' })],
   buy: null,
   sell: null,
   unitSize: '1',
@@ -46,13 +52,13 @@ const AFN: KioskCurrency = {
   partnerCost: null,
   enabled: false,
   kbank: [cmp('AFN', null, null, null, null, null, null)],
-};
+});
 
-const JPY: KioskCurrency = {
+const JPY = makeKioskCurrency({
   code: 'JPY',
   name: 'เยนญี่ปุ่น',
   nameEn: 'Japanese Yen',
-  countries: [{ code: 'JP', en: 'Japan', th: 'ญี่ปุ่น' }],
+  countries: [makeKioskCountry({ code: 'JP', en: 'Japan', th: 'ญี่ปุ่น' })],
   buy: '23.50000000',
   sell: '24.10000000',
   unitSize: '100',
@@ -61,13 +67,13 @@ const JPY: KioskCurrency = {
   partnerCost: null,
   enabled: false,
   kbank: [cmp('JPY', '0.20715', '0.23500', '0.02785', '0.21844', '0.24100', '0.02256')],
-};
+});
 
-const USD: KioskCurrency = {
+const USD = makeKioskCurrency({
   code: 'USD',
   name: 'ดอลลาร์สหรัฐ',
   nameEn: 'US Dollar',
-  countries: [{ code: 'EC', en: 'Ecuador', th: 'เอกวาดอร์' }],
+  countries: [makeKioskCountry({ code: 'EC', en: 'Ecuador', th: 'เอกวาดอร์' })],
   buy: '32.10000000',
   sell: '33.00000000',
   unitSize: '1',
@@ -76,30 +82,32 @@ const USD: KioskCurrency = {
   partnerCost: '31.90000000',
   enabled: true,
   kbank: [cmp('USD 1', '32.37919', '32.10000', '-0.27919', '33.81656', '33.00000', '-0.81656')],
-};
+});
 
 const CURRENCIES = [AFN, JPY, USD];
 
-const KBANK_REF: KbankReference = {
+const KBANK_REF = makeKbankReference({
   source: SOURCE,
   publishedAt: PUBLISHED,
   round: 10,
-};
+});
 
 function answer(
-  currencies: KioskCurrency[] = CURRENCIES,
-  kbank: KbankReference | null = KBANK_REF,
+  currencies?: KioskCurrency[],
+  kbank?: KbankReference | null,
   version = 7,
-): ViewAnswer<KioskCurrencies> {
-  return {
-    version,
-    changed: true,
-    data: {
-      currencies,
-      kbank,
-      freshness: { stale: false, sourceDate: null, publishedAt: null },
+) {
+  return makeViewAnswer(
+    makeKioskCurrencies({
+      currencies: currencies ?? CURRENCIES,
+      kbank: kbank === undefined ? KBANK_REF : kbank,
+      freshness: makeRateFreshnessDto({ stale: false, sourceDate: null, publishedAt: null }),
+    }),
+    {
+      version,
+      changed: true,
     },
-  };
+  );
 }
 
 interface Deferred<T> {

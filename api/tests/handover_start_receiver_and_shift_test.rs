@@ -132,14 +132,22 @@ impl Room {
             .await
             .expect("insert a branch");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, safe) \
-             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase) \
+             VALUES ($1, 'OPEN')",
         )
         .bind(B01)
         .execute(&pool)
         .await
         .expect("the branch's safe");
         let safe = || xc_cash::domain::posting::CashPlace::Safe(BranchId::new(B01));
+        lg4_fund(
+            &pool,
+            xc_cash::domain::posting::CashPlace::Bank,
+            safe(),
+            "USD",
+            "500.00",
+        )
+        .await;
         lg4_fund(
             &pool,
             xc_cash::domain::posting::CashPlace::Bank,
@@ -155,13 +163,22 @@ impl Room {
             .await
             .expect("insert branch B02");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, phase, safe) \
-             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase) \
+             VALUES ($1, 'OPEN')",
         )
         .bind(B02)
         .execute(&pool)
         .await
         .expect("B02's safe");
+        let safe_b02 = || xc_cash::domain::posting::CashPlace::Safe(BranchId::new(B02));
+        lg4_fund(
+            &pool,
+            xc_cash::domain::posting::CashPlace::Bank,
+            safe_b02(),
+            "USD",
+            "500.00",
+        )
+        .await;
 
         Self { pool, schema }
     }
@@ -664,10 +681,17 @@ async fn h9_close_count_on_own_closed_shift_is_no_open_shift() {
     room.finish().await;
 }
 
-/// H10 (kept): an OPEN count (no shift) by a teller and a SAFE count by a branch manager still answer 200.
+/// H10 (kept): an OPEN count (no shift) by a teller and a SAFE count by a CashManage holder still answer 200.
 #[actix_web::test]
 async fn h10_open_and_safe_counts_are_unchanged() {
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let room = Room::start().await;
+    assert!(
+        RoleGrants::seed(Role::Teller).contains(&Permission::ShiftOperate)
+            && RoleGrants::seed(Role::Finance).contains(&Permission::CashManage),
+        "§11.2: TELLER holds ShiftOperate and FINANCE holds CashManage"
+    );
     let teller = room.person(Role::Teller, Some(B01)).await;
     let a = post(
         &room,
@@ -678,10 +702,10 @@ async fn h10_open_and_safe_counts_are_unchanged() {
     .await;
     ok(&a, "H10 OPEN count");
 
-    let manager = room.person(Role::BranchManager, Some(B01)).await;
+    let finance = room.person(Role::Finance, Some(B01)).await;
     let a = post(
         &room,
-        &manager,
+        &finance,
         "/api/cash-counts",
         json!({
             "branch": B01,

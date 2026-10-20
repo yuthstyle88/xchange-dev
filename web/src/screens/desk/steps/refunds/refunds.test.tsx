@@ -26,10 +26,19 @@
 //     step 02 needs a live quote. What is pinned is the same: the step and every typed field come back unchanged, and
 //     the step reads or writes nothing of the exchange.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DeskRefundRow, DeskRefunds } from '../../../../shared/api/generated/desk_refunds';
-import type { ReceiptDocumentViewData } from '../../../../shared/api/generated/receipt_document';
-import type { ReversalSummaryDto } from '../../../../shared/api/generated/reversal';
-import type { StaffMeView } from '../../../../shared/api/generated/staff_me';
+import {
+  makeDeskRefundLine,
+  makeDeskRefundPayment,
+  makeDeskRefundRow,
+  makeMe,
+  makeReceiptDocumentDto,
+  makeReceiptDocumentViewData,
+  makeReversalSummaryDto,
+  type DeskRefunds,
+  type MeRole,
+  type MeView,
+  type ReversalSummaryDto,
+} from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
 
 interface Texts {
@@ -51,17 +60,6 @@ const ERROR_CODES = ['reversalWindowClosed', 'noOpenShift', 'stockInsufficient',
 
 // ── fixtures ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const ME = {
-  kind: 'user',
-  id: 'u-1',
-  role: '',
-  branch: 'MAIN',
-  name: 'Ploy',
-  username: 'ploy',
-  branchName: 'XC-B',
-  branches: [],
-};
-
 const CONFIG = {
   branchId: 'MAIN',
   branchName: 'XC-B',
@@ -71,12 +69,12 @@ const CONFIG = {
   paymentMethods: [],
 };
 
-function staffMe(permissions: string[]): StaffMeView {
-  return { userId: 'u-1', name: 'Ploy', roles: [], branchId: 'MAIN', branchName: 'XC-B', permissions };
+function me(permissions: string[], roles: MeRole[] = []) {
+  return makeMe({ id: 'u-1', name: 'Ploy', roles, permissions, branch: 'MAIN', branchName: 'XC-B', branches: [] });
 }
 
-function reversal(id: string, original: string, over: Partial<ReversalSummaryDto> = {}): ReversalSummaryDto {
-  return {
+function reversal(id: string, original: string, over: Partial<ReversalSummaryDto> = {}) {
+  return makeReversalSummaryDto({
     id,
     originalTransactionId: original,
     status: 'APPROVED',
@@ -88,29 +86,29 @@ function reversal(id: string, original: string, over: Partial<ReversalSummaryDto
     postedAt: null,
     documentNumber: null,
     ...over,
-  };
+  });
 }
 
 /** Figures that are not what arithmetic would give, so a screen that computed or reformatted them shows otherwise. */
-const ROWS: DeskRefundRow[] = [
-  {
+const ROWS = [
+  makeDeskRefundRow({
     reversal: reversal('rv-1', 'tx-111'),
     receiptNumber: 'XC-0001',
     lines: [
-      { shopSide: 'BUY', currency: 'USD', quantity: '1000.0000', settleThb: '35120.00' },
-      { shopSide: 'SELL', currency: 'JPY', quantity: '0.5000', settleThb: '0.13' },
+      makeDeskRefundLine({ shopSide: 'BUY', currency: 'USD', quantity: '1000.0000', settleThb: '35120.00' }),
+      makeDeskRefundLine({ shopSide: 'SELL', currency: 'JPY', quantity: '0.5000', settleThb: '0.13' }),
     ],
     payments: [
-      { method: 'CASH', amountThb: '35000.00' },
-      { method: 'TRANSFER', amountThb: '120.00' },
+      makeDeskRefundPayment({ method: 'CASH', amountThb: '35000.00' }),
+      makeDeskRefundPayment({ method: 'TRANSFER', amountThb: '120.00' }),
     ],
-  },
-  {
+  }),
+  makeDeskRefundRow({
     reversal: reversal('rv-2', 'tx-222', { amount: '1.00', reason: 'คืนครึ่ง' }),
     receiptNumber: 'XC-0002',
-    lines: [{ shopSide: 'BUY', currency: 'EUR', quantity: '10.0000', settleThb: '1.00' }],
-    payments: [{ method: 'CASH', amountThb: '1.00' }],
-  },
+    lines: [makeDeskRefundLine({ shopSide: 'BUY', currency: 'EUR', quantity: '10.0000', settleThb: '1.00' })],
+    payments: [makeDeskRefundPayment({ method: 'CASH', amountThb: '1.00' })],
+  }),
 ];
 
 const POSTED_DOC = 'XC-0001-R2';
@@ -128,7 +126,7 @@ interface Call {
 type Reply = { status: number; body?: unknown; text?: string } | 'network';
 
 interface World {
-  staffMe: StaffMeView | 'fail';
+  me: MeView | 'fail';
   refunds: DeskRefunds;
   /** How the post answers, call by call (the last repeats). */
   posts: Reply[];
@@ -158,18 +156,20 @@ function install(): void {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? init.body : null;
       calls.push({ method, path: u.pathname, query: u.searchParams, body, key: headers.get('idempotency-key') });
-      if (u.pathname === '/api/v3/views/me') return view(ME);
+      if (u.pathname === '/api/v3/views/me') {
+        return world.me === 'fail' ? json(500, { error: { code: 'serverError', message: 'x' } }) : view(world.me);
+      }
       if (u.pathname === '/api/v3/views/desk_config' || u.pathname === '/api/v3/views/staff_desk_config') {
         return view(CONFIG);
       }
       if (u.pathname === '/api/v3/views/staff_me') {
-        return world.staffMe === 'fail' ? json(500, { error: { code: 'serverError', message: 'x' } }) : view(world.staffMe);
+        return json(401, { error: { code: 'employeeAuthRequired', message: 'employee auth required' } });
       }
       if (u.pathname === '/api/v3/views/desk_refunds') return view(world.refunds);
       if (u.pathname === '/api/v3/views/receipt_document') {
-        const data: ReceiptDocumentViewData = {
-          receipt: { number: POSTED_DOC, revision: 2, issuedAt: '2026-10-11T05:00:00Z', html: RECEIPT_HTML },
-        };
+        const data = makeReceiptDocumentViewData({
+          receipt: makeReceiptDocumentDto({ number: POSTED_DOC, revision: 2, issuedAt: '2026-10-11T05:00:00Z', html: RECEIPT_HTML }),
+        });
         return view(data);
       }
       if (method === 'POST' && /^\/api\/reversals\/[^/]+\/post$/.test(u.pathname)) {
@@ -187,7 +187,7 @@ function install(): void {
 const reads = (name: string) => calls.filter((c) => c.method === 'GET' && c.path === `/api/v3/views/${name}`);
 const postCalls = () => calls.filter((c) => c.method === 'POST' && c.path.startsWith('/api/reversals/'));
 
-function posted(id: string): ReversalSummaryDto {
+function posted(id: string) {
   return reversal(id, 'tx-111', { status: 'POSTED', postedAt: '2026-10-11T05:00:00Z', documentNumber: POSTED_DOC });
 }
 
@@ -204,7 +204,7 @@ async function settle(): Promise<void> {
 /** Boots `/desk` (or `pathname`) through `main.tsx`, as the page's entry runs it. */
 async function boot(over: Partial<World> = {}, pathname = '/desk'): Promise<HTMLDivElement> {
   world = {
-    staffMe: staffMe(['ReversalRequest']),
+    me: me(['ReversalRequest']),
     refunds: { rows: ROWS },
     posts: [{ status: 200, body: posted('rv-1') }],
     ...over,
@@ -219,7 +219,7 @@ async function boot(over: Partial<World> = {}, pathname = '/desk'): Promise<HTML
 beforeAll(async () => {
   vi.useFakeTimers();
   world = {
-    staffMe: staffMe([]),
+    me: me([]),
     refunds: { rows: [] },
     posts: [],
   };
@@ -287,13 +287,13 @@ async function postAndConfirm(id: string): Promise<void> {
 
 describe('RF-9: the step is shown only to ReversalRequest on OWNER_DESK', () => {
   it('without ReversalRequest: no nav item, and desk_refunds is never called', async () => {
-    await boot({ staffMe: staffMe(['TransactionRead', 'ExchangeTransact']) });
+    await boot({ me: me(['TransactionRead', 'ExchangeTransact']) });
     expect(navItem()).toBeNull();
     expect(reads('desk_refunds')).toEqual([]);
   });
 
-  it('when staff_me fails: no nav item, and desk_refunds is never called', async () => {
-    await boot({ staffMe: 'fail' });
+  it('when me fails: no nav item, and desk_refunds is never called', async () => {
+    await boot({ me: 'fail' });
     expect(navItem()).toBeNull();
     expect(reads('desk_refunds')).toEqual([]);
   });
@@ -308,6 +308,21 @@ describe('RF-9: the step is shown only to ReversalRequest on OWNER_DESK', () => 
     await boot();
     expect(navItem()).not.toBeNull();
     expect(app.querySelector('ol.steps button[data-desk-task="refunds"]'), 'not an item of ol.steps').toBeNull();
+  });
+
+  it('owner with ReversalRequest on me (while staff_me answers 401): task visible, desk_refunds read, no staff_me request', async () => {
+    await boot({
+      me: me(
+        ['ReversalRequest'],
+        [
+          { role: 'EXECUTIVE', branchId: null },
+          { role: 'ADMIN', branchId: null },
+        ],
+      ),
+    });
+    expect(navItem()).not.toBeNull();
+    expect(reads('desk_refunds')).toHaveLength(1);
+    expect(reads('staff_me')).toEqual([]);
   });
 });
 

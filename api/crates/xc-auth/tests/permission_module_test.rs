@@ -13,12 +13,12 @@ use xc_auth::domain::access::permission_module::{
     Level, Module, PermissionMatrix, PermissionModule,
 };
 use xc_auth::domain::access::role::Role;
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::role_grants::RoleGrants;
 
 use Level::{Create, Full, View};
 use Module::*;
 
-/// The ruled table, one row per permission (all 52). `None` = the cross-cutting six.
+/// The ruled table, one row per permission (all 52). `None` = the no-module permissions (§11.2, §11.3 rule 5).
 fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
     use Permission as P;
     vec![
@@ -30,15 +30,19 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::RatePolicySave, Some((RatesStock, Full))),
         (P::RateAlertSettingsSave, Some((RatesStock, Full))),
         (P::OrgStartingPricesManage, Some((RatesStock, Full))),
-        (P::CashManage, Some((Finance, Full))),
+        // PT-14 (#3968): the market-rates refresh is RATES_STOCK CREATE.
+        (P::MarketRatesRefresh, Some((RatesStock, Create))),
+        // §11.2 "Branch cash basics": CashManage and ApprovalsDecide move from FINANCE FULL to no module (`None`).
+        (P::CashManage, None),
         (P::CashTargetSet, Some((Finance, Full))),
         (P::CashLimitsManage, Some((Finance, Full))),
         (P::CashTransferPolicySet, Some((Finance, Full))),
         (P::FinanceReconcile, Some((Finance, Full))),
-        (P::ApprovalsDecide, Some((Finance, Full))),
-        (P::ShiftOperate, Some((Finance, Create))),
-        (P::BranchDayOperate, Some((Finance, Create))),
-        (P::ShiftCloseCertify, Some((Finance, Create))),
+        (P::ApprovalsDecide, None),
+        // §11.2: the desk basics move from FINANCE CREATE to no module (`None`).
+        (P::ShiftOperate, None),
+        (P::BranchDayOperate, None),
+        (P::ShiftCloseCertify, None),
         (P::ExchangeTransact, Some((Customers, Create))),
         (P::BookingsDesk, Some((Customers, Create))),
         (P::QueueOperate, Some((Customers, Create))),
@@ -55,17 +59,19 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::MarketingMembers, Some((Customers, Full))),
         (P::LoyaltyRulesManage, Some((Customers, Full))),
         (P::FileRead, Some((Documents, View))),
-        (P::ProofUpload, Some((Documents, Create))),
-        (P::DrawerPassport, Some((Documents, Create))),
+        // §11.2: the desk document upload permissions move from DOCUMENTS CREATE to no module (`None`).
+        (P::ProofUpload, None),
+        (P::DrawerPassport, None),
         (P::VerificationReview, Some((Documents, Full))),
         (P::MarketingPerformance, Some((Reports, View))),
         (P::ReportsExport, Some((Reports, Full))),
         (P::UsersManage, Some((UserManagement, Full))),
         (P::BranchesManage, Some((UserManagement, Full))),
         (P::SystemSettings, Some((SystemSettings, Full))),
-        (P::DeviceQueue, Some((SystemSettings, View))),
-        (P::DeviceProcess, Some((SystemSettings, View))),
-        (P::DevicePrinterOnline, Some((SystemSettings, View))),
+        // §11.2: the desk device permissions move from SYSTEM_SETTINGS VIEW to no module (`None`).
+        (P::DeviceQueue, None),
+        (P::DeviceProcess, None),
+        (P::DevicePrinterOnline, None),
         (P::AuditLogsRead, Some((AuditLogs, View))),
         (P::SignedIn, None),
         (P::AttendanceClock, None),
@@ -76,47 +82,59 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
     ]
 }
 
-/// The eight rows, derived by hand from `role_permissions.rs` (+ `AuditLogsRead`) and the table above.
+/// The eight rows, derived from §11.2's seed (`RoleGrants::seed`) and the table above.
 fn expected(role: Role) -> BTreeMap<Module, Level> {
+    // §11.2: `PermissionMatrix::of` now reads `RoleGrants::of(role.as_str())`, seeded from the owner's V.9 matrix.
     let row: &[(Module, Level)] = match role {
         Role::Executive => &[
             (Dashboard, Full),
             (Customers, Full),
-            (Documents, Create),
+            (Documents, Full),
             (RatesStock, Full),
             (Finance, Full),
             (Reports, Full),
-            (SystemSettings, Full),
-            (AuditLogs, View),
-        ],
-        Role::Admin => &[
-            (Dashboard, Full),
-            (Finance, Full),
             (UserManagement, Full),
             (SystemSettings, Full),
             (AuditLogs, View),
         ],
-        Role::RateManager => &[(RatesStock, Full)],
+        Role::Admin => &[
+            (Dashboard, View),
+            (Reports, View),
+            (UserManagement, Full),
+            (SystemSettings, Full),
+            (AuditLogs, View),
+        ],
+        Role::RateManager => &[
+            (Dashboard, Full),
+            (Customers, Full),
+            (Documents, View),
+            (RatesStock, Full),
+            (Reports, Full),
+        ],
         Role::BranchManager => &[
-            (Customers, Create),
-            (Documents, Create),
-            (Finance, Full),
-            (SystemSettings, View),
+            (Dashboard, Full),
+            (Customers, Full),
+            (Documents, Full),
+            (Reports, View),
         ],
-        Role::Teller => &[
-            (Customers, Create),
-            (Documents, Create),
-            (Finance, Create),
-            (SystemSettings, View),
-        ],
+        Role::Teller => &[(Dashboard, View), (Customers, Create), (Documents, View)],
         Role::Finance => &[
+            (Dashboard, Full),
             (Customers, View),
-            (Documents, Create),
+            (Documents, View),
+            (RatesStock, View),
             (Finance, Full),
             (Reports, Full),
         ],
         Role::Marketing => &[(Customers, Full), (Reports, View)],
-        Role::VerificationReviewer => &[(Customers, View), (Documents, Full)],
+        Role::VerificationReviewer => &[
+            (Dashboard, Full),
+            (Customers, View),
+            (Documents, Full),
+            (RatesStock, View),
+            (Reports, Full),
+            (AuditLogs, View),
+        ],
         Role::Customer => &[],
     };
     row.iter().copied().collect()
@@ -125,7 +143,7 @@ fn expected(role: Role) -> BTreeMap<Module, Level> {
 #[test]
 fn c2_every_permission_maps_to_its_ruled_module_and_level() {
     let rows = table();
-    assert_eq!(rows.len(), 51, "the table covers all 51 permissions");
+    assert_eq!(rows.len(), 52, "the table covers all 52 permissions");
     let wrong: Vec<String> = rows
         .iter()
         .filter(|(p, want)| PermissionModule::module(*p) != *want)
@@ -151,9 +169,20 @@ fn c2_exactly_the_cross_cutting_six_map_to_no_module() {
         .map(|(p, _)| p)
         .filter(|p| PermissionModule::module(*p).is_none())
         .collect();
+    // §11.2 ("Branch cash basics"): CashManage and ApprovalsDecide join the desk basics, desk device/document permissions, and cross-cutting six in `None`.
     assert_eq!(
         none,
         vec![
+            Permission::CashManage,
+            Permission::ApprovalsDecide,
+            Permission::ShiftOperate,
+            Permission::BranchDayOperate,
+            Permission::ShiftCloseCertify,
+            Permission::ProofUpload,
+            Permission::DrawerPassport,
+            Permission::DeviceQueue,
+            Permission::DeviceProcess,
+            Permission::DevicePrinterOnline,
             Permission::SignedIn,
             Permission::AttendanceClock,
             Permission::CompatRead,
@@ -195,10 +224,14 @@ fn c2_the_rows_are_the_eight_staff_roles_and_customer_has_none() {
 }
 
 #[test]
-fn c2_audit_logs_read_is_held_by_executive_and_admin_only() {
+fn c2_audit_logs_read_holders_per_section_11_2() {
+    // §11.2: AUDIT_LOGS VIEW is held by EXECUTIVE, ADMIN, and VERIFICATION_REVIEWER
     for role in PermissionMatrix::ROLES.into_iter().chain([Role::Customer]) {
-        let holds = RolePermissions::of(role).contains(&Permission::AuditLogsRead);
-        let want = matches!(role, Role::Executive | Role::Admin);
+        let holds = RoleGrants::seed(role).contains(&Permission::AuditLogsRead);
+        let want = matches!(
+            role,
+            Role::Executive | Role::Admin | Role::VerificationReviewer
+        );
         assert_eq!(holds, want, "{} holds AuditLogsRead", role.as_str());
     }
 }
@@ -217,23 +250,25 @@ fn c2_no_role_goes_above_view_on_audit_logs_and_risk_is_empty() {
 }
 
 #[test]
-fn c2_only_executive_and_admin_gain_a_permission() {
+fn c2_role_permission_seed_counts_per_section_11_2() {
+    // §11.2 ("Branch cash basics"): BRANCH_MANAGER gains CashManage and ApprovalsDecide (31 -> 33).
+    // PT-14 (#3968): EXECUTIVE and RATE_MANAGER gain MarketRatesRefresh (47 -> 48, 30 -> 31).
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
-        .map(|r| (r.as_str(), RolePermissions::of(r).len()))
+        .map(|r| (r.as_str(), RoleGrants::seed(r).len()))
         .collect();
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 30),
+            ("EXECUTIVE", 48),
             ("ADMIN", 10),
-            ("RATE_MANAGER", 7),
-            ("BRANCH_MANAGER", 20),
-            ("TELLER", 20),
-            ("FINANCE", 13),
+            ("RATE_MANAGER", 31),
+            ("BRANCH_MANAGER", 33),
+            ("TELLER", 21),
+            ("FINANCE", 22),
             ("MARKETING", 5),
-            ("VERIFICATION_REVIEWER", 7),
+            ("VERIFICATION_REVIEWER", 17),
             ("CUSTOMER", 2),
         ]
     );

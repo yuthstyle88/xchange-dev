@@ -37,3 +37,24 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+.xc-sign-in-terms-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.xc-sign-in-terms-version {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--xc-text-muted, #64748b);
+  margin: 0;
+}
+
+.xc-sign-in-terms-body {
+  font-size: 0.8125rem;
+  color: var(--xc-text-muted, #64748b);
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+

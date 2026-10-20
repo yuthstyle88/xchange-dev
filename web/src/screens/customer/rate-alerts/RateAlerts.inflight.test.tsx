@@ -1,6 +1,6 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MyRateAlertItem } from '../../../shared/api/generated/my_rate_alerts';
+import { makeMyRateAlertItem, type MyRateAlertItem } from '../../../shared/testing/fixtures';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { RateAlertsScreen } from './RateAlerts';
@@ -40,8 +40,8 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
   ],
 };
 
-function makeAlert(overrides: Partial<MyRateAlertItem> = {}): MyRateAlertItem {
-  return {
+function makeAlert(overrides: Partial<MyRateAlertItem> = {}) {
+  return makeMyRateAlertItem({
     id: 'alert-1',
     version: 1,
     branch: 'XC-B01',
@@ -59,7 +59,7 @@ function makeAlert(overrides: Partial<MyRateAlertItem> = {}): MyRateAlertItem {
     rateStale: null,
     lastEvent: null,
     ...overrides,
-  };
+  });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -102,7 +102,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
     const calls: RecordedCall[] = [];
     const pendingDelete = deferred<Response>();
     let deleteInFlight = false;
-    let alerts: MyRateAlertItem[] = [makeAlert({ id: 'alert-1', version: 1 })];
+    let alerts = [makeAlert({ id: 'alert-1', version: 1 })];
 
     const fetchFn = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
       const method = init?.method ?? 'GET';
@@ -294,7 +294,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
   it('row 4: Pause/resume/delete send expectedVersion with an Idempotency-Key and disable buttons while in flight', async () => {
     const calls: RecordedCall[] = [];
     const pendingPause = deferred<Response>();
-    let alerts: MyRateAlertItem[] = [makeAlert({ id: 'alert-1', version: 5, enabled: true })];
+    let alerts = [makeAlert({ id: 'alert-1', version: 5, enabled: true })];
 
     const fetchFn = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
       const method = init?.method ?? 'GET';

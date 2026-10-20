@@ -18,12 +18,14 @@ use crate::domain::draft::rate_draft::{DraftId, DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::RateProposal;
 use crate::domain::draft::tier_proposal::TierProposal;
+use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::publication::publication::PublicationId;
 use crate::domain::publication::published_rates::PublicationRef;
 use crate::domain::publication::sharp_move::{ComparablePrice, SharpMove};
 use crate::domain::reference::reference_batch::ReferenceLine;
+use crate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
 
 pub struct PublishService {
@@ -182,8 +184,10 @@ impl PublishService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let mut policy_tiers_cache: std::collections::HashMap<Uuid, Option<PolicyTiers>> =
-            std::collections::HashMap::new();
+        let mut policy_tiers_cache: std::collections::HashMap<
+            Uuid,
+            (Option<PolicyTiers>, Vec<CurrencyTierOverride>),
+        > = std::collections::HashMap::new();
         type CachedPolicyRow = (
             RatePolicy,
             Option<i32>,
@@ -201,7 +205,7 @@ impl PublishService {
             .filter_map(|r| r.get::<Option<Uuid>, _>("reference_line_id"))
             .collect();
         let ref_rows = sqlx::query(
-            "SELECT l.id, l.currency_code, l.unit_size, l.buy, l.sell, b.fetched_at, b.source_date \
+            "SELECT l.id, l.currency_code, l.unit_size, l.buy, l.sell, b.fetched_at, b.source_date, l.reference_type \
              FROM rate_reference_lines l JOIN rate_reference_batches b ON b.id = l.batch_id \
              WHERE l.id = ANY($1)",
         )
@@ -214,6 +218,7 @@ impl PublishService {
             ReferenceLine,
             chrono::DateTime<chrono::Utc>,
             chrono::NaiveDate,
+            String,
         );
         let mut references_by_id: std::collections::HashMap<Uuid, LoadedReference> =
             std::collections::HashMap::with_capacity(ref_rows.len());
@@ -229,6 +234,7 @@ impl PublishService {
             let s_dec: Option<Decimal> = rr.get(4);
             let fat: chrono::DateTime<chrono::Utc> = rr.get(5);
             let sdate: chrono::NaiveDate = rr.get(6);
+            let ref_type: String = rr.get(7);
             let b_rate = match b_dec {
                 Some(d) => Some(
                     Rate::parse(&d.to_string())
@@ -245,7 +251,12 @@ impl PublishService {
             };
             references_by_id.insert(
                 rid,
-                (ReferenceLine::new(curr, u, b_rate, s_rate), fat, sdate),
+                (
+                    ReferenceLine::new(curr, u, b_rate, s_rate),
+                    fat,
+                    sdate,
+                    ref_type,
+                ),
             );
         }
 
@@ -262,13 +273,22 @@ impl PublishService {
             let pol_id: Option<Uuid> = r.get("policy_version_id");
 
             let policy_tiers = if let Some(pid) = pol_id {
-                if let Some(cached) = policy_tiers_cache.get(&pid) {
+                let (branch_tiers, overrides) = if let Some(cached) = policy_tiers_cache.get(&pid) {
                     cached.clone()
                 } else {
-                    let loaded = PolicyTiersStore::for_version(tx, &pid).await?;
+                    let loaded = if let Some(pt) = PolicyTiersStore::for_version(tx, &pid).await? {
+                        let ovs = CurrencyTierOverrideStore::for_version(tx, &pid).await?;
+                        (Some(pt), ovs)
+                    } else {
+                        (None, Vec::new())
+                    };
                     policy_tiers_cache.insert(pid, loaded.clone());
                     loaded
-                }
+                };
+                branch_tiers.map(|pt| {
+                    let ov = overrides.iter().find(|o| o.currency == c);
+                    pt.for_currency(ov)
+                })
             } else {
                 None
             };
@@ -353,10 +373,12 @@ impl PublishService {
             };
 
             // Look up preloaded reference if any
-            let (reference, fetched_at, source_date) =
+            let (reference, fetched_at, source_date, anchor_source) =
                 match ref_id.and_then(|rf| references_by_id.get(&rf).cloned()) {
-                    Some((ref_line, fat, sdate)) => (Some(ref_line), Some(fat), Some(sdate)),
-                    None => (None, None, None),
+                    Some((ref_line, fat, sdate, ref_type)) => {
+                        (Some(ref_line), Some(fat), Some(sdate), Some(ref_type))
+                    }
+                    None => (None, None, None, None),
                 };
 
             // Currency unit size and minor unit
@@ -419,6 +441,40 @@ impl PublishService {
                 })
             });
 
+            // pricing-tiers.md §7 "Order reference": newest MARKET_TT first, then newest MARKET_SR
+            let mut market = Vec::new();
+            for market_type in ["MARKET_TT", "MARKET_SR"] {
+                let m_row = sqlx::query(
+                    "SELECT l.id::text, l.reference_type, l.unit_size, l.buy, l.sell, b.fetched_at \
+                     FROM rate_reference_lines l JOIN rate_reference_batches b ON b.id = l.batch_id \
+                     WHERE l.currency_code = $1 AND l.reference_type = $2 \
+                     ORDER BY b.fetched_at DESC, l.id DESC LIMIT 1",
+                )
+                .bind(c.as_str())
+                .bind(market_type)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+                if let Some(mr) = m_row {
+                    let line_id: String = mr.get(0);
+                    let source: String = mr.get(1);
+                    let unit: Decimal = mr.get(2);
+                    let m_buy: Option<Decimal> = mr.get(3);
+                    let m_sell: Option<Decimal> = mr.get(4);
+                    let m_fetched: chrono::DateTime<chrono::Utc> = mr.get(5);
+                    let text = |d: Decimal| d.normalize().to_string();
+                    market.push(json!({
+                        "source": source,
+                        "reference_line_id": line_id,
+                        "unit_size": text(unit),
+                        "buy": m_buy.map(text),
+                        "sell": m_sell.map(text),
+                        "fetched_at": m_fetched.to_rfc3339(),
+                    }));
+                }
+            }
+
             let mut snapshot = json!({
                 "currency": c.as_str(),
                 "buy_mode": buy_mode,
@@ -428,9 +484,11 @@ impl PublishService {
                 "source_date": source_date.map(|d| d.to_string()),
                 "max_reference_age_hours": max_ref_age,
                 "reference_line_id": ref_id.map(|u| u.to_string()),
+                "anchor_source": anchor_source,
                 "policy_version_id": pol_id.map(|u| u.to_string()),
                 "buy_adjust_pct": pol_buy_pct,
                 "sell_adjust_pct": pol_sell_pct,
+                "market": market,
             });
 
             if let Some(p) = partner {

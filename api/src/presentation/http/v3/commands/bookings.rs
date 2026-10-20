@@ -114,7 +114,11 @@ impl BookingServices {
                 booking_repo.clone(),
                 slot_repo.clone(),
                 contact_reserve,
-                None,
+                Some(Arc::new(
+                    crate::presentation::http::v3::attach_referral::capture_service_for_pool(
+                        self.pool.clone(),
+                    ),
+                )),
                 pii_keys1,
             )
             .with_queue(issuer.clone()),

@@ -26,17 +26,18 @@
 //! `Kiosk`, written by `api/tools/v2-fixtures/gen_policy.mjs` from that bundle); the last test
 //! holds the table below to that recording.
 //!
-//! Moved by the author of OR-4 (#550, `docs/design/blueprint/org-roles-branches.md` §4.2, §4.3):
+//! Moved by the author of OR-4 (#550, `docs/design/blueprint/org-roles-branches.md` §4.2, §4.3)
+//! and restated for §11.2 (`docs/design/blueprint/user-management-rbac.md` §11.2, S11):
 //! each v2 caller is now the user B1 makes of it (§3.3; OWNER → EXECUTIVE + ADMIN), and the
-//! table's columns keep v2's names so the rows read as before. Two cells change, both C8 (§03 B06:
-//! the kiosk queue is TELLER's and MANAGER's, QueueOperate; EXECUTIVE is refused): OWNER on the
-//! desk row (OK → "Staff access required.") and OWNER on an unknown name ("Unknown kiosk action."
-//! is said only to a QueueOperate holder → "Staff access required."). The last test holds the
-//! table to `fixtures/blueprint_policy_cases.json`.
+//! table's columns keep v2's names so the rows read as before. Under §11.2, `QueueOperate`
+//! (CUSTOMERS CREATE) is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, TELLER (superseding C8):
+//! OWNER and RATES are allowed on the desk row and hear "Unknown kiosk action." on an unknown name.
+//! The last test holds the table to `fixtures/blueprint_policy_cases.json`.
 
 mod policy_common;
 
 use policy_common::*;
+use xc_auth::domain::access::role_grants::{Group, RoleGrantsSnapshot};
 
 /// The eleven callers v2 knows, in the order of the table's columns.
 const CALLERS: [&str; 11] = [
@@ -87,11 +88,11 @@ fn table() -> Vec<(&'static str, [Said; 11])> {
     //             ANON OWNER FRONT BACK  MGR  RATES MON  FIN  SYS  DOCS DREV
     let open = [OK, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK];
     let signed_in = [R15, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK];
-    // C8: OWNER is refused the queue (was OK)
-    let desk = [R15, R15, OK, OK, OK, R15, R15, R15, R15, R15, R15];
+    // §11.2 (S11, supersedes C8): QueueOperate (CUSTOMERS CREATE) is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, TELLER
+    let desk = [R15, OK, OK, OK, OK, OK, R15, R15, R15, R15, R15];
     let currencies = [R14, OK, R14, R14, R14, OK, R14, R14, R14, R14, R14];
-    // C8: OWNER hears the staff sentence (was R16)
-    let unknown = [R15, R15, R16, R16, R16, R15, R15, R15, R15, R15, R15];
+    // §11.2 (S11, supersedes C8): EXECUTIVE (OWNER) and RATE_MANAGER (RATES) hold QueueOperate, so both hear R16
+    let unknown = [R15, R16, R16, R16, R16, R16, R15, R15, R15, R15, R15];
     let mut rows = vec![
         ("rates", open),
         ("quote", open),
@@ -167,20 +168,15 @@ fn the_queue_is_listed_to_anybody_signed_in_since_the_10_06_bundle() {
         said(ask(None, EntryPath::Kiosk, "list")),
         (KIOSK_STAFF.to_owned(), 400)
     );
-    // taking a request off the queue stays the desk's (C8: the owner's user is no longer desk)
-    let mut off_desk = vec![owner()];
-    off_desk.extend(
-        [
-            Role::Executive,
-            Role::Admin,
-            Role::RateManager,
-            Role::Finance,
-            Role::Marketing,
-            Role::Customer,
-            Role::VerificationReviewer,
-        ]
-        .map(|r| staff(r, "B2")),
-    );
+    // §11.2: QueueOperate is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, TELLER
+    let off_desk = [
+        Role::Admin,
+        Role::Finance,
+        Role::Marketing,
+        Role::Customer,
+        Role::VerificationReviewer,
+    ]
+    .map(|r| staff(r, "B2"));
     for who in &off_desk {
         assert_eq!(
             said(ask(Some(who), EntryPath::Kiosk, "accept")),
@@ -201,8 +197,21 @@ fn a_name_v2_does_not_answer_is_refused_by_what_the_caller_is() {
             "{name:?} by nobody"
         );
     }
-    // the desk (TELLER, BRANCH_MANAGER): the name is unknown
-    for r in [Role::Teller, Role::BranchManager] {
+    // §11.2 (S11, supersedes C8): QueueOperate holders (EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER,
+    // TELLER, and the owner's user through EXECUTIVE): the name is unknown
+    for name in UNKNOWN_NAMES {
+        assert_eq!(
+            said(ask(Some(&owner()), EntryPath::Kiosk, name)),
+            (KIOSK_UNKNOWN.to_owned(), 400),
+            "{name:?} by owner"
+        );
+    }
+    for r in [
+        Role::Executive,
+        Role::RateManager,
+        Role::BranchManager,
+        Role::Teller,
+    ] {
         for name in UNKNOWN_NAMES {
             assert_eq!(
                 said(ask(Some(&staff(r, "B2")), EntryPath::Kiosk, name)),
@@ -212,21 +221,15 @@ fn a_name_v2_does_not_answer_is_refused_by_what_the_caller_is() {
             );
         }
     }
-    // anybody signed in outside the desk, the owner's user included (C8): refused as staff
-    // before the name is looked at
-    let mut off_desk = vec![owner()];
-    off_desk.extend(
-        [
-            Role::Executive,
-            Role::Admin,
-            Role::RateManager,
-            Role::Finance,
-            Role::Marketing,
-            Role::Customer,
-            Role::VerificationReviewer,
-        ]
-        .map(|r| staff(r, "B2")),
-    );
+    // anybody signed in outside QueueOperate: refused as staff before the name is looked at
+    let off_desk = [
+        Role::Admin,
+        Role::Finance,
+        Role::Marketing,
+        Role::Customer,
+        Role::VerificationReviewer,
+    ]
+    .map(|r| staff(r, "B2"));
     for who in &off_desk {
         for name in UNKNOWN_NAMES {
             assert_eq!(
@@ -263,4 +266,45 @@ fn the_table_is_what_the_mapping_records() {
             c.actor
         );
     }
+}
+
+#[test]
+fn a_custom_group_holding_queue_operate_hears_kiosk_unknown_on_an_unknown_name() {
+    struct ResetSnapshot;
+    impl Drop for ResetSnapshot {
+        fn drop(&mut self) {
+            RoleGrants::install(RoleGrantsSnapshot::seeded());
+        }
+    }
+    let _reset = ResetSnapshot;
+
+    let mut groups: Vec<(Group, Vec<Permission>)> = RoleGrants::BUILT_IN
+        .into_iter()
+        .map(|r| (Group::built_in(r), RoleGrants::seed(r)))
+        .collect();
+    groups.push((
+        Group {
+            code: "KIOSK_DESK_CUSTOM".to_owned(),
+            name: "Kiosk Desk Custom".to_owned(),
+            base: Role::Admin,
+            built_in: false,
+        },
+        vec![Permission::QueueOperate],
+    ));
+    RoleGrants::install(RoleGrantsSnapshot::new(1, groups));
+
+    let custom_caller = user(
+        "U-CUSTOM",
+        vec![ScopedRole::in_group(
+            "KIOSK_DESK_CUSTOM",
+            Role::Admin,
+            Some(branch("B2")),
+            since(),
+            None,
+        )],
+    );
+    assert_eq!(
+        ask(Some(&custom_caller), EntryPath::Kiosk, "nope"),
+        Err(PolicyError::KioskUnknown)
+    );
 }

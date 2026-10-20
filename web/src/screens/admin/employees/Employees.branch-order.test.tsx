@@ -3,16 +3,19 @@ import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
-import type { AdminBranchItem } from '../../../shared/api/generated/admin_branches';
-import type { AdminEmployeeRow } from '../../../shared/api/generated/admin_employees';
-import type { AdminOperationsData } from '../../../shared/api/generated/admin_operations';
+import {
+  makeAdminBranchItem,
+  makeAdminEmployeeRow,
+  makeAdminOperationsData,
+  makeAdminOperationsEntity,
+} from '../../../shared/testing/fixtures';
 import { Employees } from './Employees';
 import { Dialog } from '../parts/Dialog';
 import { requestRefresh } from '../parts/refresh';
 import { Toast, toast } from '../parts/toast';
 
-const MAIN_EMPLOYEES: AdminEmployeeRow[] = [
-  {
+const MAIN_EMPLOYEES = [
+  makeAdminEmployeeRow({
     id: 'emp-main',
     name: 'Somchai Main',
     username: 'somchai_main',
@@ -20,11 +23,11 @@ const MAIN_EMPLOYEES: AdminEmployeeRow[] = [
     branchId: 'MAIN',
     active: true,
     mustChange: false,
-  },
+  }),
 ];
 
-const B2_EMPLOYEES: AdminEmployeeRow[] = [
-  {
+const B2_EMPLOYEES = [
+  makeAdminEmployeeRow({
     id: 'emp-b2',
     name: 'Nok Second',
     username: 'nok_b2',
@@ -32,27 +35,27 @@ const B2_EMPLOYEES: AdminEmployeeRow[] = [
     branchId: 'B2',
     active: true,
     mustChange: false,
-  },
+  }),
 ];
 
-const SAMPLE_BRANCHES: AdminBranchItem[] = [
-  { id: 'MAIN', name: 'Main Branch' },
-  { id: 'B2', name: 'Second Branch' },
+const SAMPLE_BRANCHES = [
+  makeAdminBranchItem({ id: 'MAIN', name: 'Main Branch' }),
+  makeAdminBranchItem({ id: 'B2', name: 'Second Branch' }),
 ];
 
-const MAIN_OPERATIONS: AdminOperationsData = {
-  entity: {
+const MAIN_OPERATIONS = makeAdminOperationsData({
+  entity: makeAdminOperationsEntity({
     company: 'Main Co., Ltd.',
     site: 'Main HQ',
-  },
-};
+  }),
+});
 
-const B2_OPERATIONS: AdminOperationsData = {
-  entity: {
+const B2_OPERATIONS = makeAdminOperationsData({
+  entity: makeAdminOperationsEntity({
     company: 'Second Branch Co., Ltd.',
     site: 'Airport Desk',
-  },
-};
+  }),
+});
 
 interface Deferred<T> {
   promise: Promise<T>;

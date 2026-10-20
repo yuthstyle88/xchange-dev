@@ -1111,26 +1111,56 @@ async fn a_row_without_work_times_answers_null_times() {
 
 // ── who may claim ────────────────────────────────────────────────────────────
 
-/// §9: a caller whose role may not claim (RATES, and the other roles `accept` refuses) sees
+/// §9: a caller whose role may not claim (roles without `QueueOperate` in `RoleGrants::seed`) sees
 /// every row, but `canAccept` and `canContinue` are false on all of them — also on a row the
 /// caller holds.
 #[actix_web::test]
 async fn a_rates_caller_sees_the_rows_but_may_claim_none() {
+    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let room = Room::open().await;
-    room.put_all(&the_day(&room)).await;
-    for who in [
+    let mut day = the_day(&room);
+    // Give rid(7) to FINANCE (which lacks QueueOperate under §11.2) so a non-claiming holder is tested.
+    day[6].staff = Some(room.id_of("FINANCE"));
+    room.put_all(&day).await;
+
+    let candidates = [
         "RATES",
         "MONITOR",
         "FINANCE",
         "SYSTEM",
         "DOCUMENTS",
         "DOCUMENT_REVIEW",
-    ] {
+    ];
+    let non_claiming: Vec<&str> = candidates
+        .into_iter()
+        .filter(|&who| {
+            let role = Role::parse(who).expect("a staff role");
+            !blueprint_roles(role)
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::QueueOperate))
+        })
+        .collect();
+    assert!(
+        non_claiming.contains(&"FINANCE"),
+        "§11.2 must leave FINANCE without QueueOperate, or this test refuses nobody"
+    );
+    for who in non_claiming {
+        let user = room.actor_of(who).map(|ac| {
+            actor_from_v3(
+                &ac,
+                xchange::presentation::pages::SEEDED_XC_ORG_ID,
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            )
+        });
         assert!(
-            Policy::allow(
-                room.actor_of(who).as_ref(),
+            Policy::authorize(
+                user.as_ref(),
                 EntryPath::Kiosk,
-                &Action::new("accept")
+                &Action::new("accept"),
+                None,
+                chrono::Utc::now(),
             )
             .is_err(),
             "{who} may not claim"
@@ -1146,13 +1176,13 @@ async fn a_rates_caller_sees_the_rows_but_may_claim_none() {
         }
         assert_eq!(seen, 9, "{who} sees every listed row");
     }
-    // RATES holds rid(7), ID_CHECKED: still no continuing
-    let working = room.data("RATES", QUEUE, "state=working").await;
+    // FINANCE holds rid(7), ID_CHECKED: still no continuing
+    let working = room.data("FINANCE", QUEUE, "state=working").await;
     let held = rows(&working)
         .iter()
         .find(|r| r["id"] == json!(rid(7)))
-        .expect("RATES's row");
-    assert_eq!(held["staff"], json!(room.username_of("RATES")), "{held}");
+        .expect("FINANCE's row");
+    assert_eq!(held["staff"], json!(room.username_of("FINANCE")), "{held}");
     assert_eq!(held["canContinue"], json!(false), "{held}");
     room.finish().await;
 }
@@ -1379,7 +1409,6 @@ async fn walk_to(last: Writer) {
                 &[("THB", "100000"), ("USD", "2000")],
             )
             .await;
-            snapshot_common::r1_fund_open_drawers(pool).await;
             shift_holder_common::open_day(pool, MAIN).await;
             let reserved = room
                 .compat_rpc(

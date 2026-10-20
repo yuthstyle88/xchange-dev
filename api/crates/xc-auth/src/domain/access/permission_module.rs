@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::permission::Permission;
 use super::role::Role;
-use super::role_permissions::RolePermissions;
+use super::role_grants::RoleGrants;
 
 /// V.9's ten modules, in V.9's column order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -75,7 +75,7 @@ impl Level {
 pub struct PermissionModule;
 
 impl PermissionModule {
-    /// The module and level a permission counts towards, or `None` for the cross-cutting six.
+    /// The module and level a permission counts towards, or `None` for the no-module permissions (§11.2, §11.3 rule 5).
     pub fn module(p: Permission) -> Option<(Module, Level)> {
         use Level::{Create, Full, View};
         use Module::*;
@@ -84,17 +84,14 @@ impl PermissionModule {
             P::OverviewRead => Some((Dashboard, View)),
             P::AlertSettingsSave => Some((Dashboard, Full)),
             P::RatesHistoryRead | P::ReferenceRatesRead => Some((RatesStock, View)),
-            P::RatesDraft => Some((RatesStock, Create)),
+            P::RatesDraft | P::MarketRatesRefresh => Some((RatesStock, Create)),
             P::RatePolicySave | P::RateAlertSettingsSave | P::OrgStartingPricesManage => {
                 Some((RatesStock, Full))
             }
-            P::CashManage
-            | P::CashTargetSet
+            P::CashTargetSet
             | P::CashLimitsManage
             | P::CashTransferPolicySet
-            | P::FinanceReconcile
-            | P::ApprovalsDecide => Some((Finance, Full)),
-            P::ShiftOperate | P::BranchDayOperate | P::ShiftCloseCertify => Some((Finance, Create)),
+            | P::FinanceReconcile => Some((Finance, Full)),
             P::ExchangeTransact
             | P::BookingsDesk
             | P::QueueOperate
@@ -110,22 +107,28 @@ impl PermissionModule {
             | P::MarketingMembers
             | P::LoyaltyRulesManage => Some((Customers, Full)),
             P::FileRead => Some((Documents, View)),
-            P::ProofUpload | P::DrawerPassport => Some((Documents, Create)),
             P::VerificationReview => Some((Documents, Full)),
             P::MarketingPerformance => Some((Reports, View)),
             P::ReportsExport => Some((Reports, Full)),
             P::UsersManage | P::BranchesManage => Some((UserManagement, Full)),
             P::SystemSettings => Some((SystemSettings, Full)),
-            P::DeviceQueue | P::DeviceProcess | P::DevicePrinterOnline => {
-                Some((SystemSettings, View))
-            }
             P::AuditLogsRead => Some((AuditLogs, View)),
             P::SignedIn
             | P::AttendanceClock
             | P::CompatRead
             | P::RequestAbandon
             | P::DocumentsList
-            | P::CustomerSelf => None,
+            | P::CustomerSelf
+            | P::ShiftOperate
+            | P::BranchDayOperate
+            | P::ShiftCloseCertify
+            | P::CashManage
+            | P::ApprovalsDecide
+            | P::DeviceQueue
+            | P::DeviceProcess
+            | P::DevicePrinterOnline
+            | P::DrawerPassport
+            | P::ProofUpload => None,
         }
     }
 }
@@ -145,14 +148,12 @@ impl PermissionMatrix {
         Role::VerificationReviewer,
     ];
 
-    /// The highest level among `role`'s permissions in each module; a module it has none in is absent.
-    pub fn of(role: Role) -> BTreeMap<Module, Level> {
-        if !Self::ROLES.contains(&role) {
-            return BTreeMap::new();
-        }
+    /// RBAC §11.4: the highest level among the group `code`'s permissions (`RoleGrants::of`) in each module; a module
+    /// it has none in is absent, and so is every module of an unknown code. F5's matrix view shows it.
+    pub fn of_group(code: &str) -> BTreeMap<Module, Level> {
         let mut out = BTreeMap::new();
-        for p in RolePermissions::of(role) {
-            if let Some((module, level)) = PermissionModule::module(*p) {
+        for p in RoleGrants::of(code) {
+            if let Some((module, level)) = PermissionModule::module(p) {
                 out.entry(module)
                     .and_modify(|cur| {
                         if level > *cur {
@@ -163,5 +164,13 @@ impl PermissionMatrix {
             }
         }
         out
+    }
+
+    /// The highest level among `role`'s permissions in each module; a module it has none in is absent.
+    pub fn of(role: Role) -> BTreeMap<Module, Level> {
+        if !Self::ROLES.contains(&role) {
+            return BTreeMap::new();
+        }
+        Self::of_group(role.as_str())
     }
 }

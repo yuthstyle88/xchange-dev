@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient, ApiError } from '../../shared/api/client';
-import type { QuoteDto } from '../../shared/api/generated/quote';
+import { makeQuoteDto, makeQuoteLineDto, makeQuotePublicationDto } from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { en as sharedEn } from '../../shared/i18n/en';
 import { th as sharedTh } from '../../shared/i18n/th';
@@ -52,15 +52,15 @@ function fakeServer() {
   };
 }
 
-function quoteDto(quantity = '100'): QuoteDto {
-  return {
+function quoteDto(quantity = '100') {
+  return makeQuoteDto({
     id: 'q-1',
     type: 'BUY',
     channel: 'DESK',
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: 'pub-1', version: 3 },
+    publication: makeQuotePublicationDto({ id: 'pub-1', version: 3 }),
     lines: [
-      {
+      makeQuoteLineDto({
         currency: 'USD',
         shopSide: 'BUY',
         quantity,
@@ -71,11 +71,11 @@ function quoteDto(quantity = '100'): QuoteDto {
         feeThb: '0.00',
         settleThb: '3210.00',
         publishedRateLineId: 'line-1',
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
 describe('Desk worded errors (#2157)', () => {

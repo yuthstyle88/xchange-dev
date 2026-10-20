@@ -27,8 +27,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "solid-js";
 import { ApiClient } from "../../shared/api/client";
-import type { QuoteDto } from "../../shared/api/generated/quote";
-import type { TransactionCreateInput, TransactionDto } from "../../shared/api/generated/transactions";
+import {
+  makeQuoteDto,
+  makeQuoteLineDto,
+  makeQuotePublicationDto,
+  makeTransactionDto,
+  makeTransactionLineDto,
+  makeTransactionPaymentDto,
+  type QuoteDto,
+  type TransactionCreateInput,
+  type TransactionDto,
+} from "../../shared/testing/fixtures";
 
 type Store = Record<string, any>;
 type StoreModule = { createDeskStore: (deps: { api: ApiClient; path: unknown; me: () => unknown }) => Store };
@@ -116,16 +125,16 @@ const view = (data: unknown): Answer => ({
 });
 
 
-function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}): QuoteDto {
+function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}) {
   const q = over.quantity ?? "100";
-  return {
+  return makeQuoteDto({
     id: over.id ?? "q-1",
     type: over.type ?? "BUY",
     channel: "DESK",
     expiresAt: over.expiresAt ?? new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: "pub-1", version: 3 },
+    publication: makeQuotePublicationDto({ id: "pub-1", version: 3 }),
     lines: over.lines ?? [
-      {
+      makeQuoteLineDto({
         currency: "USD",
         shopSide: "BUY",
         quantity: q,
@@ -136,11 +145,11 @@ function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}): QuoteDt
         feeThb: "0.00",
         settleThb: "3210.00",
         publishedRateLineId: "line-1",
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
 /** The answer of `POST /api/transactions` and `…/confirm`: the generated `TransactionDto` (TX-4 #672,
@@ -148,8 +157,8 @@ function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}): QuoteDt
  *  (`command.rs:440`, `serde_json::to_value(&output)`). `…/complete` is TX-5's (#873, not merged): its answer is design
  *  §4.2's "TransactionDto COMPLETED + ReceiptDto"; until #873 generates it, the fake answers the same `TransactionDto`
  *  with `status: "COMPLETED"` and its `documentRef`, and the tests read only `id` and `status` from it. */
-function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}): TransactionDto {
-  return {
+function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}) {
+  return makeTransactionDto({
     id,
     branchId: "MAIN",
     mode: "LIVE",
@@ -162,7 +171,7 @@ function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}):
     cancelledAt: null,
     recordedAt: "2026-10-11T03:00:00Z",
     lines: [
-      {
+      makeTransactionLineDto({
         currency: "USD",
         shopSide: "BUY",
         quantity: "100",
@@ -171,11 +180,11 @@ function txDto(id: string, status: string, extra: Partial<TransactionDto> = {}):
         thbAmount: "3512.00",
         feeThb: "0.00",
         settleThb: "3512.00",
-      },
+      }),
     ],
-    payment: { method: "Cash", reference: "", account: "", amountThb: "3512.00", bankFeeThb: "0.00", paidAt: "2026-10-11T03:00:00Z" },
+    payment: makeTransactionPaymentDto({ method: "Cash", reference: "", account: "", amountThb: "3512.00", bankFeeThb: "0.00", paidAt: "2026-10-11T03:00:00Z" }),
     ...extra,
-  };
+  });
 }
 
 function txAnswer(id: string, status: string, extra: Partial<TransactionDto> = {}): Answer {

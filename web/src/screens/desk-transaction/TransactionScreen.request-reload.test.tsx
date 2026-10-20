@@ -5,11 +5,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
-import type { ReceiptDocumentViewData } from '../../shared/api/generated/receipt_document';
-import type { ReversalSummaryDto } from '../../shared/api/generated/reversal';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
-import type { TransactionDetailDto, TransactionViewData } from '../../shared/api/generated/transaction';
-import type { TransactionAuditViewData } from '../../shared/api/generated/transaction_audit';
+import {
+  makeMe,
+  makeReceiptDocumentDto,
+  makeReceiptDocumentViewData,
+  makeReversalSummaryDto,
+  makeTransactionAuditEventDto,
+  makeTransactionAuditViewData,
+  makeTransactionDetailDto,
+  makeTransactionViewData,
+  makeTxLineDto,
+  makeTxPaymentDto,
+  makeTxReceiptDto,
+  type MeView,
+  type ReceiptDocumentViewData,
+  type ReversalSummaryDto,
+  type TransactionAuditViewData,
+  type TransactionDetailDto,
+  type TransactionViewData,
+} from '../../shared/testing/fixtures';
 import { th } from './i18n';
 import { TransactionScreen } from './TransactionScreen';
 
@@ -19,20 +33,21 @@ const TX_ID = '7f0c2b1e-4a5d-4c3b-9e8f-0a1b2c3d4e5f';
 const PATH = `/desk/transactions/${TX_ID}`;
 const RECEIPT_HTML = '<!doctype html><html><body>ใบเสร็จ XC-0001 35,120.00</body></html>';
 
-function me(permissions: string[]): StaffMeView {
-  return {
-    userId: '00000000-0000-4000-8000-000000000001',
+function me(permissions: string[]) {
+  return makeMe({
+    id: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
     roles: [],
-    branchId: 'MAIN',
+    branch: 'MAIN',
     branchName: 'สาขาทดสอบ',
+    branches: [],
     permissions,
-  };
+  });
 }
 const ALL = ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'];
 
-function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailDto {
-  return {
+function completed(over: Partial<TransactionDetailDto> = {}) {
+  return makeTransactionDetailDto({
     id: TX_ID,
     status: 'COMPLETED',
     documentRef: 'XC-0001',
@@ -41,7 +56,7 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
     quoteId: null,
     quoteExpiresAt: null,
     lines: [
-      {
+      makeTxLineDto({
         lineNo: 1,
         currency: 'USD',
         side: 'BUY',
@@ -51,9 +66,9 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
         thbAmount: '35120.00',
         feeThb: '0.00',
         settleThb: '35120.00',
-      },
+      }),
     ],
-    payment: {
+    payment: makeTxPaymentDto({
       method: 'CASH',
       reference: '',
       account: '',
@@ -61,8 +76,8 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
       amountThb: '35120.00',
       bankFeeThb: '0.00',
       paidAt: '2026-10-11T03:00:00Z',
-    },
-    receipts: [{ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' }],
+    }),
+    receipts: [makeTxReceiptDto({ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z' })],
     approvalRequest: null,
     completedAt: '2026-10-11T03:00:05Z',
     cancelledAt: null,
@@ -71,11 +86,11 @@ function completed(over: Partial<TransactionDetailDto> = {}): TransactionDetailD
     benefits: [],
     booking: null,
     ...over,
-  };
+  });
 }
 
-function reversal(status: ReversalStatus, over: Partial<ReversalSummaryDto> = {}): ReversalSummaryDto {
-  return {
+function reversal(status: ReversalStatus, over: Partial<ReversalSummaryDto> = {}) {
+  return makeReversalSummaryDto({
     id: 'rv-0001',
     originalTransactionId: TX_ID,
     status,
@@ -87,20 +102,20 @@ function reversal(status: ReversalStatus, over: Partial<ReversalSummaryDto> = {}
     postedAt: status === 'POSTED' ? '2026-10-11T04:20:00Z' : null,
     documentNumber: status === 'POSTED' ? 'XC-0001-R2' : null,
     ...over,
-  };
+  });
 }
 
-const AUDIT: TransactionAuditViewData = {
+const AUDIT = makeTransactionAuditViewData({
   events: [
-    { at: '2026-10-11T02:59:30Z', actorId: 'u-mgr', actorRole: 'ROLE_A', action: 'approval.approved' },
+    makeTransactionAuditEventDto({ at: '2026-10-11T02:59:30Z', actorId: 'u-mgr', actorRole: 'ROLE_A', action: 'approval.approved' }),
   ],
-};
+});
 
 type Call = { method: string; url: string; path: string; query: URLSearchParams; body: string | null; key: string | null };
 type Reply = { status: number; json?: unknown; network?: true; text?: string };
 
 interface World {
-  me: StaffMeView | Reply;
+  me: MeView | Reply;
   transaction: TransactionViewData | Reply;
   audit: TransactionAuditViewData | Reply;
   receipt: ReceiptDocumentViewData;
@@ -145,7 +160,7 @@ function installFetch() {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? init.body : null;
       calls.push({ method, url, path: u.pathname, query: u.searchParams, body, key: headers.get('Idempotency-Key') });
-      if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') return view(world.me);
+      if (method === 'GET' && u.pathname === '/api/v3/views/me') return view(world.me);
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction') return view(world.transaction);
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction_audit') return view(world.audit);
       if (method === 'GET' && u.pathname === '/api/v3/views/receipt_document') return view(world.receipt);
@@ -172,9 +187,11 @@ async function settle(): Promise<void> {
 async function mount(over: Partial<World> = {}, search = '') {
   world = {
     me: me(ALL),
-    transaction: { transaction: completed() },
+    transaction: makeTransactionViewData({ transaction: completed() }),
     audit: AUDIT,
-    receipt: { receipt: { number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z', html: RECEIPT_HTML } },
+    receipt: makeReceiptDocumentViewData({
+      receipt: makeReceiptDocumentDto({ number: 'XC-0001', revision: 1, issuedAt: '2026-10-11T03:00:05Z', html: RECEIPT_HTML }),
+    }),
     posts: [{ status: 200, json: { id: 'rv-0001', status: 'REQUESTED' } }],
     ...over,
   };
@@ -225,7 +242,7 @@ afterEach(() => {
 describe('Desk transaction reversal request reload handling (#2244)', () => {
   it('Request succeeds, reload succeeds: "requested" shown, transaction refreshed (and if subsequent refresh after rejected reversal fails reload, keeps requested)', async () => {
     // 1. Request succeeds and reload succeeds with REJECTED so we can also verify reload-fail on a second request
-    await mount({ afterPost: { transaction: completed({ reversal: reversal('REJECTED') }) } });
+    await mount({ afterPost: makeTransactionViewData({ transaction: completed({ reversal: reversal('REJECTED') }) }) });
     await requestReversal('ลูกค้าขอยกเลิก');
 
     expect(state()).toBe('ready');
@@ -300,7 +317,7 @@ describe('Desk transaction reversal request reload handling (#2244)', () => {
     expect(messageText()).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
 
     // Retry succeeds -> ready
-    world.transaction = { transaction: completed() };
+    world.transaction = makeTransactionViewData({ transaction: completed() });
     await click(btn('retry')[0]);
     expect(state()).toBe('ready');
 
@@ -333,7 +350,7 @@ describe('Desk transaction reversal request reload handling (#2244)', () => {
           if (txCallCount === 1) {
             return olderReloadPromise;
           }
-          return view({ transaction: completed({ reversal: reversal('APPROVED') }) });
+          return view(makeTransactionViewData({ transaction: completed({ reversal: reversal('APPROVED') }) }));
         }
         return baseFetch(input, init);
       }),
@@ -353,7 +370,7 @@ describe('Desk transaction reversal request reload handling (#2244)', () => {
     expect(text()).toContain('APPROVED');
 
     // Now let the older post-request reload finish last with stale REQUESTED state
-    resolveOlderReload(view({ transaction: completed({ reversal: reversal('REQUESTED') }) }));
+    resolveOlderReload(view(makeTransactionViewData({ transaction: completed({ reversal: reversal('REQUESTED') }) })));
     await settle();
 
     expect(state()).toBe('ready');
@@ -384,7 +401,7 @@ describe('Desk transaction reversal request reload handling (#2244)', () => {
           if (txCallCount === 1) {
             return olderReloadPromise;
           }
-          return view({ transaction: completed({ reversal: reversal('APPROVED') }) });
+          return view(makeTransactionViewData({ transaction: completed({ reversal: reversal('APPROVED') }) }));
         }
         return baseFetch(input, init);
       }),

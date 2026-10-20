@@ -273,26 +273,32 @@ fn has_staff(spec: &str) -> bool {
 }
 
 fn is_approver_staff(spec: &str) -> bool {
-    sessions_of(spec)
-        .staff
-        .is_some_and(|s| matches!(s.role(), Role::Manager | Role::Backend | Role::Finance))
+    use xc_auth::domain::access::v3_roles::blueprint_roles;
+    use xc_auth::domain::access::{Permission, RoleGrants};
+    sessions_of(spec).staff.is_some_and(|s| {
+        blueprint_roles(s.role())
+            .iter()
+            .any(|&r| RoleGrants::seed(r).contains(&Permission::ApprovalsDecide))
+    })
 }
 
 fn is_rates_staff(spec: &str) -> bool {
-    sessions_of(spec)
-        .staff
-        .is_some_and(|s| s.role() == Role::Rates)
+    use xc_auth::domain::access::v3_roles::blueprint_roles;
+    use xc_auth::domain::access::{Permission, RoleGrants};
+    sessions_of(spec).staff.is_some_and(|s| {
+        blueprint_roles(s.role())
+            .iter()
+            .any(|&r| RoleGrants::seed(r).contains(&Permission::RatesDraft))
+    })
 }
 
-/// The design's role rows (§6 "Policy rows", §4.7 "Who"), written out by hand.
+/// The design's role rows (§6 "Policy rows", §4.7 "Who"), under §11.2 (`RoleGrants::seed`).
 #[derive(Clone, Copy, Debug)]
 enum Who {
-    /// `rateDraft` on Rpc: OWNER and RATES. The owner's session wins on Rpc.
+    /// `rateDraft` and `ratePolicySave` on Rpc: OWNER and RATES. The owner's session wins on Rpc.
     OwnerOrRates,
-    /// `approvalDecide`, `approvalRead` on Rpc: OWNER, and since #874 the v3 roles that become
-    /// BRANCH_MANAGER (MANAGER, BACKEND), and FINANCE (RG4 of #682). Amended by #874's ticket author (claude/f03345fe), per lane
-    /// controller (2026-10-10); a manager is then refused by the type's own policy, not the gate.
-    /// (`ratePolicySave` was here until #602.)
+    /// `approvalDecide`, `approvalRead` on Rpc: OWNER and staff roles holding `ApprovalsDecide`
+    /// under §11.2 (FINANCE).
     OwnerOrApprover,
     /// `adminSnapshot` on Rpc: any signed-in caller.
     AnySession,
@@ -686,7 +692,20 @@ async fn every_route_lets_through_exactly_its_role_row_and_refuses_the_rest_as_t
             let what = format!("{} {} as {who:?}", route.what, route.method);
             let expected = route.who.allows(&who);
             let actor = actor_on(path, &who);
-            let policy = Policy::allow(actor.as_ref(), path, &Action::new(action));
+            let user = actor.as_ref().map(|ac| {
+                xc_auth::domain::access::v3_roles::actor_from_v3(
+                    ac,
+                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
+                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                )
+            });
+            let policy = Policy::authorize(
+                user.as_ref(),
+                path,
+                &Action::new(action),
+                None,
+                chrono::Utc::now(),
+            );
             assert_eq!(
                 policy.is_ok(),
                 expected,
@@ -822,7 +841,13 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
     let data = &a["data"];
     assert_keys(
         data,
-        &["publication", "sourceDate", "stale", "lines"],
+        &[
+            "publication",
+            "sourceDate",
+            "stale",
+            "lines",
+            "bandHeadings",
+        ],
         "data",
     );
     assert_keys(
@@ -849,7 +874,7 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
     assert_keys(
         jpy,
         &[
-            "currency", "group", "unitSize", "buyRate", "sellRate", "lineId",
+            "currency", "group", "unitSize", "buyRate", "sellRate", "lineId", "bands",
         ],
         "a line",
     );

@@ -1,8 +1,12 @@
 // #2411: DeskBookingsScreen must not send a second write while the first is in flight.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeMe,
+  makeMeRole,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 
@@ -25,18 +29,18 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER: StaffMeView = {
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: 'XC-B01' }],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'teller', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'XC-B01',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const DESK_BOOKINGS_DATA: DeskBookingsData = {
+const DESK_BOOKINGS_DATA = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261015-0001',
       status: 'CONFIRMED',
@@ -47,8 +51,8 @@ const DESK_BOOKINGS_DATA: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-15T09:00:00Z',
       endAt: '2026-10-15T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'bk-2',
       bookingNo: 'B261015-0002',
       status: 'CONFIRMED',
@@ -59,9 +63,9 @@ const DESK_BOOKINGS_DATA: DeskBookingsData = {
       slotId: 'slot-2',
       startAt: '2026-10-15T10:00:00Z',
       endAt: '2026-10-15T10:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 /**
  * Fake server. Every booking write is held open until the test resolves it.
@@ -79,7 +83,7 @@ function makeServer() {
     const u = new URL(rawUrl, 'http://localhost');
     const method = (init?.method ?? 'GET').toUpperCase();
 
-    if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+    if (method === 'GET' && u.pathname === '/api/v3/views/me') {
       return jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER });
     }
     if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
@@ -248,7 +252,7 @@ describe('DeskBookingsScreen.tsx — writes are guarded while in flight (#2411)'
     refresh.click();
     await vi.waitFor(() => expect(server.reads()).toBe(before + 1));
 
-    server.answer({ kind: 'http', status: 200, body: { id: 'bk-1', status: 'CHECKED_IN', ticketNumber: 'A001' } });
+    server.answer({ kind: 'http', status: 200, body: { id: 'bk-1', status: 'CONFIRMED', ticketNumber: 'A001' } });
     await vi.waitFor(() =>
       expect(btn('[data-booking-id="bk-1"] button[data-action="check-in"]').disabled).toBe(false),
     );

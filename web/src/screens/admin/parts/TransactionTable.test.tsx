@@ -15,7 +15,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { TransactionTable } from './TransactionTable';
@@ -23,8 +23,8 @@ import { TransactionTable } from './TransactionTable';
 const THAI = /[฀-๿]/;
 const HEADERS = ['รายการ / เวลา', 'ลูกค้า', 'ประเภท', 'จำนวนเงิน', 'ยอดชำระ THB', 'สถานะ'];
 
-function row(over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function row(over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: 'XC-B-2026-000001',
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -52,7 +52,7 @@ function row(over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 let dispose: (() => void) | undefined;

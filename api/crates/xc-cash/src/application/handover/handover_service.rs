@@ -1,5 +1,7 @@
 //! Handover application service (CA-4 #620; design §3.1, §5).
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
@@ -7,13 +9,12 @@ use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
-use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::count::CashCountService;
 use crate::application::count::count_service::{held_of, post_opening_in};
@@ -64,6 +65,13 @@ impl HandoverService {
         Self {
             counts: CashCountService::pg(pool.clone()),
             pool,
+        }
+    }
+
+    pub fn with_shift_lifecycle_hook(self, hook: Arc<dyn ShiftLifecycleHook>) -> Self {
+        Self {
+            counts: self.counts.with_shift_lifecycle_hook(hook),
+            ..self
         }
     }
 
@@ -136,17 +144,14 @@ impl HandoverService {
             return Ok(false);
         };
 
-        let repo = PgShiftRepository::new(
-            sqlx::postgres::PgPoolOptions::new()
-                .connect_lazy("postgres://localhost/unused")
-                .map_err(AppError::Database)?,
-        );
-        let mut sub_tx = sqlx::Acquire::begin(&mut *tx)
-            .await
-            .map_err(AppError::Database)?;
-        let open_shift = repo.open_of_teller_in(&mut sub_tx, &user_id).await?;
-        sub_tx.commit().await.map_err(AppError::Database)?;
-        if open_shift.is_some() {
+        let has_open_shift: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN')",
+        )
+        .bind(&user_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+        if has_open_shift {
             return Ok(true);
         }
 
@@ -243,7 +248,7 @@ pub async fn receiver_candidates<'e, E: sqlx::PgExecutor<'e>>(
 }
 
 /// The receiver rule (blueprint `cash-shift-transfer.md`): the Authorizer's answer to whether `c` holds
-/// `ShiftOperate` at `branch` of `organization_id` at `now`. No role codes: policy lives in `role_permissions.rs`.
+/// `ShiftOperate` at `branch` of `organization_id` at `now`. No role codes: policy lives in `RoleGrants::seed` (§11.2).
 pub fn may_receive(
     c: &ReceiverCandidate,
     organization_id: &str,
