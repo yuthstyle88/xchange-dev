@@ -93,7 +93,7 @@ pub(crate) fn identity_version(who: &Actor) -> i64 {
 
 impl BranchView for MeBranchView {
     const NAME: &'static str = "me";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSnapshot");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "me");
     type Data = MeView;
     type Filter = NoFilter;
 
@@ -116,9 +116,19 @@ impl BranchView for MeBranchView {
         let who = who.clone();
         let db = self.db.clone();
         async move {
+            let now = Utc::now();
+            if !who
+                .roles
+                .iter()
+                .any(|r| valid_at(r, now) && r.role != xc_auth::domain::access::Role::Customer)
+            {
+                return Err(pos_error::AppError::Domain(
+                    crate::presentation::http::v3::view::BRIDGE_REFUSED.to_owned(),
+                ));
+            }
             // A Blueprint session's S (SB-1 §14.4); `None` for the old owner and staff cookies.
             let switchable = SessionService::new(db.clone(), None, None, None)
-                .switchable_of_user(&who.user_id, Utc::now())
+                .switchable_of_user(&who.user_id, now)
                 .await
                 .map_err(|e| match e {
                     SessionError::Database(e) => pos_error::AppError::Internal(e),

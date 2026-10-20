@@ -445,6 +445,7 @@ impl Policy {
                 "adminSnapshot" | "adminDeskConfig" | "getConnectionStatus" => {
                     Some(Need::Permission(Permission::CompatRead))
                 }
+                "me" => Some(Need::Permission(Permission::SignedIn)),
                 "reserveCustomer" | "saveTransaction" => {
                     Some(Need::Permission(Permission::ExchangeTransact))
                 }
@@ -625,10 +626,25 @@ impl Policy {
             named.cloned(),
             actor.customer_id.as_deref(),
         );
+        let non_customer;
+        let check_actor = if path == EntryPath::Rpc && action.as_str() == "me" {
+            non_customer = Who {
+                roles: actor
+                    .roles
+                    .iter()
+                    .filter(|r| r.role != BpRole::Customer)
+                    .cloned()
+                    .collect(),
+                ..actor.clone()
+            };
+            &non_customer
+        } else {
+            actor
+        };
 
         let mut saw_out_of_scope = false;
         for &perm in permissions {
-            match Authorizer::check(Some(actor), perm, &target, now) {
+            match Authorizer::check(Some(check_actor), perm, &target, now) {
                 Ok(grant) => return Ok(grant),
                 Err(Refusal::SignIn) => return Err(PolicyError::SignIn),
                 Err(Refusal::OutOfScope) => {
@@ -672,5 +688,71 @@ impl Policy {
                 _ => Err(PolicyError::RoleNotAllowed),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::access::ScopedRole;
+    use chrono::Duration;
+
+    fn at() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-10-20T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    fn who(roles: &[(BpRole, Option<&str>)]) -> Who {
+        let since = at() - Duration::days(1);
+        Who::new(
+            "u1",
+            "org",
+            roles
+                .iter()
+                .map(|(r, b)| ScopedRole::new(*r, b.map(BranchId::new), since, None))
+                .collect(),
+            None,
+        )
+    }
+
+    #[test]
+    fn me_row_needs_signed_in_and_allows_marketing_staff_and_owner_while_refusing_customer() {
+        let me = Action::new("me");
+        assert_eq!(
+            Policy::need(EntryPath::Rpc, &me),
+            Some(Need::Permission(Permission::SignedIn))
+        );
+        assert!(!RoleGrants::holds("MARKETING", Permission::CompatRead));
+
+        let mkt = who(&[(BpRole::Marketing, Some("MAIN"))]);
+        assert!(Policy::authorize(Some(&mkt), EntryPath::Rpc, &me, None, at()).is_ok());
+        assert_eq!(
+            Policy::authorize(
+                Some(&mkt),
+                EntryPath::Rpc,
+                &Action::new("adminSnapshot"),
+                None,
+                at()
+            ),
+            Err(PolicyError::RoleNotAllowedHere)
+        );
+
+        let teller = who(&[(BpRole::Teller, Some("MAIN"))]);
+        assert!(Policy::authorize(Some(&teller), EntryPath::Rpc, &me, None, at()).is_ok());
+
+        let owner = who(&[(BpRole::Executive, None), (BpRole::Admin, None)]);
+        assert!(Policy::authorize(Some(&owner), EntryPath::Rpc, &me, None, at()).is_ok());
+
+        let customer = who(&[(BpRole::Customer, None)]);
+        assert_eq!(
+            Policy::authorize(Some(&customer), EntryPath::Rpc, &me, None, at()),
+            Err(PolicyError::RoleNotAllowedHere)
+        );
+
+        assert_eq!(
+            Policy::authorize(None, EntryPath::Rpc, &me, None, at()),
+            Err(PolicyError::SignIn)
+        );
     }
 }
