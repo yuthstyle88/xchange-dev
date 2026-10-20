@@ -37,6 +37,7 @@ use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::screens::ScreenTable;
 
 const WHO: &str = "x-test-sessions";
 const HOST: &str = "xc.test";
@@ -375,5 +376,174 @@ async fn the_desk_script_needs_no_session() {
         reader.asked.load(Ordering::SeqCst),
         0,
         "the session reader was asked for the desk script"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// #546 (V3-desk DK-J) up-front tests by the preparer claude/dell-claude-2, on the FE lane controller claude/5edf7bb5's
+// order. Do not edit, delete or weaken. Design `docs/design/xchange-v3-wave3-desk.md` §7.
+//
+// `web/pages/desk.html` (`xc-path /desk`, `xc-gate branch`) and `web/pages/staff-desk.html` (`xc-path /staff/desk`,
+// `xc-gate front`) make the screen table hold both paths, so the server answers the v3 entry instead of v2's
+// `desk.html`. The server here is `bootstrap::configure_with_screens` with a screen table read from a `dist` built in a
+// temp directory from those two source entries plus an empty Vite manifest (the pattern of
+// `v3_documents_screens_test.rs`), so the answer does not depend on whether `web/dist` was built.
+//
+// Mutations that must turn these red:
+// - drop either entry, or give it another xc-path         -> dk_j_both_desk_entries_…, dk_j_the_v3_desk_…
+// - serve the entries with `no-cache` (render_screen today) -> dk_j_both_desk_entries_answer_no_store
+// - give /staff/desk the gate `branch` or `signed-in`     -> dk_j_a_session_that_is_not_front_…
+// - give /desk the gate `anyone` or `signed-in`           -> dk_j_the_owner_on_desk_…
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// The two desk entries, as committed under `web/pages/`, and the path each declares.
+const DESK_ENTRIES: [(&str, &str); 2] =
+    [("desk.html", "/desk"), ("staff-desk.html", "/staff/desk")];
+
+/// A `dist` holding the two desk entries and an empty manifest, in a fresh temp directory.
+fn desk_dist() -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let pages = Path::new(env!("CARGO_MANIFEST_DIR")).join("../web/pages");
+    let dir = std::env::temp_dir().join(format!(
+        "xchange-desk-dist-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::SeqCst)
+    ));
+    std::fs::create_dir_all(dir.join("pages")).unwrap();
+    std::fs::create_dir_all(dir.join(".vite")).unwrap();
+    std::fs::write(dir.join(".vite/manifest.json"), "{}").unwrap();
+    for (file, _) in DESK_ENTRIES {
+        let source = pages.join(file);
+        assert!(source.is_file(), "web/pages/{file} exists (#546 adds it)");
+        std::fs::copy(&source, dir.join("pages").join(file)).unwrap();
+    }
+    dir
+}
+
+fn desk_screens() -> ScreenTable {
+    let table = ScreenTable::from_dist(&desk_dist());
+    assert!(
+        table.is_ok(),
+        "the desk entries make a screen table: {:?}",
+        table.as_ref().err()
+    );
+    table.unwrap()
+}
+
+macro_rules! desk_app {
+    () => {{
+        let reader: Arc<dyn SessionReader> = Arc::new(FakeSessions::default());
+        let state = state(&fixtures().join("web"));
+        let screens = desk_screens();
+        test::init_service(
+            App::new()
+                .configure(move |cfg| bootstrap::configure_with_screens(cfg, state, screens))
+                .app_data(web::Data::from(reader)),
+        )
+        .await
+    }};
+}
+
+/// The v3 entry for `path`: its own `xc-path` meta, and none of v2's desk page.
+fn is_the_v3_entry(answer: &Answer, path: &str, what: &str) {
+    assert_eq!(answer.status, StatusCode::OK, "{what}");
+    let body = answer.text();
+    assert!(
+        body.contains(&format!("<meta name=\"xc-path\" content=\"{path}\">")),
+        "{what}: the v3 entry for {path}, not v2's page: {body}"
+    );
+    assert!(
+        !body.contains(SCRIPT_PATH),
+        "{what}: v2's desk script is not loaded"
+    );
+    assert!(
+        !body.contains("staffDraftId"),
+        "{what}: v2's /staff/desk hook is not inserted"
+    );
+}
+
+#[actix_web::test]
+async fn dk_j_both_desk_entries_make_the_screen_table_hold_the_desk_paths() {
+    let table = desk_screens();
+    for (file, path) in DESK_ENTRIES {
+        assert!(
+            table.holds(path),
+            "web/pages/{file} puts {path} in the screen table"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn dk_j_both_desk_entries_answer_no_store() {
+    // [required] (#546 §7, design §7): the desk shows passport data, so both entries keep v2's `no-store`, where every
+    // other v3 screen answers `no-cache`.
+    let app = desk_app!();
+    for (uri, path, who) in [
+        ("/desk?branch=XC-B01", "/desk", "owner"),
+        ("/desk", "/desk", "staff:FRONT:XC-B01"),
+        ("/staff/desk", "/staff/desk", "staff:FRONT:XC-B01"),
+    ] {
+        let what = format!("GET {uri} as {who}");
+        let answer = get!(&app, uri, who);
+        is_the_v3_entry(&answer, path, &what);
+        let cache = answer.header("cache-control").unwrap_or("");
+        assert!(
+            cache.split(',').any(|d| d.trim() == "no-store"),
+            "{what}: Cache-Control is no-store, got {cache:?}"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn dk_j_a_session_that_is_not_front_on_staff_desk_goes_to_staff() {
+    // #546 §9 row 1: anyone but a FRONT employee is redirected to /staff (`screens.rs:149-151`).
+    let app = desk_app!();
+    for who in ["none", "owner", "staff:BACKEND:XC-B01"] {
+        let what = format!("GET /staff/desk as {who}");
+        let answer = get!(&app, "/staff/desk", who);
+        assert_eq!(answer.status, StatusCode::FOUND, "{what}");
+        assert_eq!(
+            answer.header("location"),
+            Some(format!("http://{HOST}/staff").as_str()),
+            "{what}"
+        );
+        assert!(
+            !answer.text().contains("xc-path"),
+            "{what}: no entry is served"
+        );
+    }
+    // ...and a FRONT employee gets the entry (the gate is `front`, not `branch`).
+    let answer = get!(&app, "/staff/desk", "staff:FRONT:XC-B01");
+    is_the_v3_entry(
+        &answer,
+        "/staff/desk",
+        "GET /staff/desk as staff:FRONT:XC-B01",
+    );
+}
+
+#[actix_web::test]
+async fn dk_j_the_owner_on_desk_with_a_branch_gets_the_v3_desk_and_without_one_is_refused() {
+    // #546 §9 row 2: the owner on /desk?branch=B gets the desk for B. The entry reads B from its own URL; the server
+    // checks it first through the `branch` gate (`pages.rs:681-716`), as v2's /desk did.
+    let app = desk_app!();
+    for branch in ["XC-B01", "XC-B02"] {
+        let uri = format!("/desk?branch={branch}");
+        let answer = get!(&app, &uri, "owner");
+        is_the_v3_entry(&answer, "/desk", &format!("GET {uri} as owner"));
+    }
+    for uri in ["/desk", "/desk?branch=%22"] {
+        let answer = get!(&app, uri, "owner");
+        assert_eq!(answer.status, StatusCode::BAD_REQUEST, "GET {uri} as owner");
+        assert!(
+            !answer.text().contains("xc-path"),
+            "GET {uri} as owner: no entry is served"
+        );
+    }
+    // Nobody signed in goes to the sign-in page, not to the entry.
+    let answer = get!(&app, "/desk?branch=XC-B01", "none");
+    assert_eq!(
+        answer.status,
+        StatusCode::SEE_OTHER,
+        "GET /desk?branch=XC-B01 as none"
     );
 }
