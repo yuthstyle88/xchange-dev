@@ -84,7 +84,7 @@ impl PermissionModule {
             P::OverviewRead => Some((Dashboard, View)),
             P::AlertSettingsSave => Some((Dashboard, Full)),
             P::RatesHistoryRead | P::ReferenceRatesRead => Some((RatesStock, View)),
-            P::RatesDraft => Some((RatesStock, Create)),
+            P::RatesDraft | P::MarketRatesRefresh => Some((RatesStock, Create)),
             P::RatePolicySave | P::RateAlertSettingsSave | P::OrgStartingPricesManage => {
                 Some((RatesStock, Full))
             }
