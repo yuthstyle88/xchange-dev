@@ -24,7 +24,7 @@
 //! The command runs on the server clock, so the originals are completed `now()` (inside the window)
 //! or two days ago (outside it). MAIN's timezone is OR-1's default, Asia/Bangkok.
 //!
-//! Needs `TEST_DATABASE_URL`; nothing here skips. Sessions come from the `x-test-as` header
+//! Needs `TEST_DATABASE_URL`; nothing here skips. Callers come from the `x-test-as` header
 //! (`owner`, `staff:<ROLE>:<branch>`), as in `v3_rate_engine_routes_test.rs`.
 
 mod common;
@@ -38,10 +38,7 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::TestDb;
 use serde_json::{Value, json};
-use xc_auth::domain::access::Role;
-use xc_auth::domain::access::v3_roles::blueprint_roles;
 use xc_auth::domain::access::{Permission, RoleGrants};
-use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -51,18 +48,6 @@ const AS: &str = "x-test-as";
 
 struct HeaderCallers;
 
-fn roles_of(role: &str) -> &'static [Role] {
-    match role {
-        "FRONT" => &[Role::Teller],
-        "BACKEND" | "MANAGER" => &[Role::BranchManager],
-        "RATES" => &[Role::RateManager],
-        "FINANCE" => &[Role::Finance],
-        "SYSTEM" => &[Role::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
-        other => panic!("unknown role {other}"),
-    }
-}
-
 fn callers_of(spec: &str) -> Callers {
     if spec == "owner" {
         return test_callers::callers(Some(test_callers::owner("owner-1")), None);
@@ -70,7 +55,7 @@ fn callers_of(spec: &str) -> Callers {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
     let role = parts.next().expect("a role");
-    let roles = roles_of(role);
+    let roles = test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown role {role}"));
     let branch = parts.next().expect("a branch");
     test_callers::callers(
         None,
@@ -242,17 +227,18 @@ async fn the_branch_manager_may_request_and_roles_without_reversal_request_may_n
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     // Under §11.2, staff roles whose `RoleGrants::seed` lacks `ReversalRequest` are refused by the route row.
-    let refused: Vec<V2Role> = V2Role::STAFF
+    let refused: Vec<&str> = test_callers::V2_STAFF
         .into_iter()
-        .filter(|&r| {
-            !blueprint_roles(r)
+        .filter_map(|(name, roles)| {
+            (!roles
                 .iter()
-                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReversalRequest))
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReversalRequest)))
+            .then_some(name)
         })
         .collect();
     assert!(!refused.is_empty(), "some staff role lacks ReversalRequest");
     for role in refused {
-        let who = format!("staff:{}:MAIN", role.as_str());
+        let who = format!("staff:{role}:MAIN");
         let (status, body) =
             post(&db, &who, &b, json!({ "reason": "x" }), &format!("k-{who}")).await;
         assert!(
