@@ -19,7 +19,7 @@ function tomorrowBangkok(): string {
 // The card of one booking: div.xc-booking-card holding .xc-booking-no with exactly this number
 // (web/src/screens/customer/bookings/Bookings.tsx:349-351). It stays the same element after a cancel.
 function bookingCard(page: Page, bookingNo: string) {
-  const exact = new RegExp(`^\s*${bookingNo}\s*$`);
+  const exact = new RegExp(`^\\s*${bookingNo}\\s*$`);
   return page.locator('.xc-booking-card').filter({ has: page.locator('.xc-booking-no', { hasText: exact }) });
 }
 
