@@ -15,6 +15,7 @@ use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
+use pos_infra::transactions::Transactor;
 use xc_cash::domain::transfer::cash_transfer::TransferError;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -27,8 +28,13 @@ use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, NumberError};
+use xc_kernel::shift_hook::ShiftLifecycleHook;
+use xc_queue::application::counter::counter_service::CounterService;
+use xc_queue::application::status::status_service::StatusService;
+use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -182,14 +188,22 @@ pub(crate) fn count_lines(lines: &[CashLineInput]) -> Result<Vec<CountLine>, V3E
         .collect()
 }
 
+pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+    let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let queue = Arc::new(PgQueueRepository::new(pool.clone()));
+    let status = StatusService::new(branch_tx.clone(), queue.clone());
+    Arc::new(CounterService::new(branch_tx, queue, status))
+}
+
 pub struct CountSubmit {
     counts: CashCountService,
 }
 
 impl CountSubmit {
     pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
         Self {
-            counts: CashCountService::pg(pool),
+            counts: CashCountService::pg(pool).with_shift_lifecycle_hook(hook),
         }
     }
 }
@@ -242,8 +256,9 @@ pub struct CountVerify {
 
 impl CountVerify {
     pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
         Self {
-            counts: CashCountService::pg(pool),
+            counts: CashCountService::pg(pool).with_shift_lifecycle_hook(hook),
         }
     }
 }
