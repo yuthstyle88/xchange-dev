@@ -141,7 +141,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     // the answers of the one action here are v2's bytes, key order included
     let mut same_text = 0;
     for step in fixture.steps() {
-        if step.status == Some(200) {
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+        if step.status == Some(200) && !replay.tally.differences.contains(&step.n) {
             assert_eq!(
                 Some(&replay.answers[&step.n].text),
                 fixture.body_text(step.n).as_ref(),
@@ -151,15 +152,17 @@ async fn transport_json_is_answered_as_v2_answered_it() {
             same_text += 1;
         }
     }
-    assert_eq!(same_text, 24, "answers compared as text");
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    assert_eq!(same_text, 20, "answers compared as text");
 
     // #95-#99 since ticket #146: the owner with a rejected origin
     assert_eq!(fixture.steps().len(), 99);
     assert_eq!(
         replay.tally.differences,
         // CA-10 #626: `opsNope` on `/api/rpc` (#36) is retired too
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
         {
-            let mut all = [ENGINE_SENTENCES.to_vec(), vec![36, 84]].concat();
+            let mut all = [ENGINE_SENTENCES.to_vec(), vec![36, 39, 40, 62, 84, 87, 88]].concat();
             all.sort_unstable();
             all
         }
@@ -167,7 +170,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     assert!(replay.tally.part_two.is_empty());
     assert_eq!(numbers(&replay.tally.excluded), vec![93, 94]);
     // 88 since ticket #146 added #95-#99; 87 since CA-10 #626 retired #36
-    assert_eq!(replay.tally.replayed.len(), 87);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    assert_eq!(replay.tally.replayed.len(), 82);
     assert!(replay.tally.applied_behind.is_empty());
     replay.finish().await;
 }
@@ -538,7 +542,15 @@ async fn empty_json_is_v2s_text_for_every_caller_on_both_routes() {
 
     assert_eq!(replay.tally.widened, vec![12, 16, 20]);
     assert!(replay.tally.owner_no_open_shift.is_empty());
-    assert_eq!(replay.tally.replayed.len(), 45);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(
+        replay.tally.differences,
+        vec![7, 11, 15, 19, 23, 27, 31, 35, 39, 47, 48]
+    );
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(replay.tally.replayed.len(), 34);
     assert_eq!(replay.tally.total(), 48);
     let mut same_text = 0;
     let mut callers = std::collections::BTreeSet::new();
@@ -546,21 +558,27 @@ async fn empty_json_is_v2s_text_for_every_caller_on_both_routes() {
         if step.status != Some(200) {
             continue;
         }
-        assert_eq!(
-            Some(&replay.answers[&step.n].text),
-            fixture.body_text(step.n).as_ref(),
-            "empty#{} ({} as {}): the body, byte for byte",
-            step.n,
-            step.route.as_deref().unwrap_or_default(),
-            step.sent_as
-        );
-        same_text += 1;
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+        // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+        if !replay.tally.differences.contains(&step.n) {
+            assert_eq!(
+                Some(&replay.answers[&step.n].text),
+                fixture.body_text(step.n).as_ref(),
+                "empty#{} ({} as {}): the body, byte for byte",
+                step.n,
+                step.route.as_deref().unwrap_or_default(),
+                step.sent_as
+            );
+            same_text += 1;
+        }
         callers.insert((
             step.sent_as.clone(),
             step.path().unwrap_or_default().to_string(),
         ));
     }
-    assert_eq!(same_text, 37, "accepted answers compared as text");
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(same_text, 26, "accepted answers compared as text");
     // the owner on /api/rpc, nine roles on each route
     assert_eq!(callers.len(), 19);
     replay.finish().await;
@@ -571,16 +589,17 @@ async fn rates_json_is_answered_as_v2_answered_it() {
     let (fixture, views, tally) = replay_whole("snapshot/rates.json").await;
     assert_eq!(fixture.steps().len(), 21);
     // re-expected for RE-7 #604: the five direct saves are known differences
-    assert_eq!(tally.differences, vec![1, 2, 3, 6, 7]);
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(tally.differences, vec![1, 2, 3, 6, 7, 12, 16, 20]);
     assert_eq!(tally.widened, vec![17]);
     assert!(tally.owner_no_open_shift.is_empty());
-    assert_eq!(tally.replayed.len(), 15);
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(tally.replayed.len(), 12);
     assert_eq!(views.len(), 16);
-    assert!(
-        views
-            .iter()
-            .all(|n| tally.replayed.contains(n) || tally.widened.contains(n))
-    );
+    assert!(views.iter().all(|n| tally.replayed.contains(n)
+            || tally.widened.contains(n)
+            // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+            || [12, 16, 20].contains(n)));
 }
 
 // Re-expected for CA-10 #626 by the ticket author: `snapshot/shift.json` recorded v2's direct shift
@@ -607,14 +626,21 @@ async fn branches_json_is_answered_as_v2_answered_it() {
     // CI-4 (#651): #10 is SameCustomerAs (K1, a customer per company); re-expected for RE-7
     // #604: the three direct saves (#1, #6, #7) are known differences; re-expected for CA-10
     // #626: the direct shift opens #8 and #37 too (design §6)
-    assert_eq!(replay.tally.differences, vec![1, 3, 6, 7, 8, 10, 37]);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(
+        replay.tally.differences,
+        vec![1, 3, 6, 7, 8, 10, 19, 23, 27, 31, 33, 34, 37]
+    );
     // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full), so
     // #9 is replayed; #28 (adminDeskConfig as BE2 on /api/staff/rpc) is widened.
     assert_eq!(replay.tally.blueprint, Vec::<usize>::new());
     assert_eq!(replay.tally.widened, vec![28]);
     assert!(replay.tally.owner_no_open_shift.is_empty());
     // CA-10 #626: #8 and #37 left the replayed for the differences
-    assert_eq!(replay.tally.replayed.len(), 31);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(replay.tally.replayed.len(), 25);
     let views: Vec<usize> = fixture
         .steps()
         .iter()
@@ -622,11 +648,10 @@ async fn branches_json_is_answered_as_v2_answered_it() {
         .map(|s| s.n)
         .collect();
     assert_eq!(views.len(), 22);
-    assert!(
-        views
-            .iter()
-            .all(|n| replay.tally.replayed.contains(n) || replay.tally.widened.contains(n))
-    );
+    assert!(views.iter().all(|n| replay.tally.replayed.contains(n)
+            || replay.tally.widened.contains(n)
+            // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+            || [19, 23, 27, 31].contains(n)));
 
     // the difference wrote nothing twice: still one airport
     let airports: i64 = sqlx::query_scalar("SELECT count(*) FROM branches WHERE name = 'Airport'")

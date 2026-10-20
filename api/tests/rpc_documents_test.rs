@@ -376,29 +376,43 @@ async fn an_employee_reads_only_the_exchanges_of_the_own_branch() {
     replay.desk.employ(std::slice::from_ref(&other)).await;
     let cookies = sign_in(&replay.app, ORIGIN, std::slice::from_ref(&other)).await;
 
-    for payload in [
-        json!({ "ref": CASH }),
-        json!({ "ref": CASH, "branchId": MAIN }),
-    ] {
-        replay
-            .app
-            .send(
-                Call::action(ORIGIN, STAFF_RPC, "documents", payload.clone())
-                    .cookie(&cookies[&other.key]),
-            )
-            .await
-            .assert_refused(400, NO_DOCUMENTS, &format!("a Front of BR-2: {payload}"));
-    }
-    // and a Front of MAIN is not sent elsewhere by naming another branch
-    for branch in ["BR-2", "NOWHERE", "MAIN_1", ""] {
-        let answer = documents(&replay, "FR1", json!({ "ref": CASH, "branchId": branch })).await;
-        assert_eq!(
-            answer.status, 200,
-            "branchId {branch:?}: {:.300}",
-            answer.text
+    let no_branch = json!({ "ref": CASH });
+    replay
+        .app
+        .send(
+            Call::action(ORIGIN, STAFF_RPC, "documents", no_branch.clone())
+                .cookie(&cookies[&other.key]),
+        )
+        .await
+        .assert_refused(400, NO_DOCUMENTS, &format!("a Front of BR-2: {no_branch}"));
+    let unheld_branch = json!({ "ref": CASH, "branchId": MAIN });
+    // OR-7.m S-D5: Blueprint session, design D-4 (rulings on #3700)
+    replay
+        .app
+        .send(
+            Call::action(ORIGIN, STAFF_RPC, "documents", unheld_branch.clone())
+                .cookie(&cookies[&other.key]),
+        )
+        .await
+        .assert_refused(
+            403,
+            "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+            &format!("a Front of BR-2: {unheld_branch}"),
         );
-        assert_eq!(answer.text, v2_text(&replay, 51), "branchId {branch:?}");
+    // and a Front of MAIN is refused when naming a branch they do not hold, while "" names none
+    for branch in ["BR-2", "NOWHERE", "MAIN_1"] {
+        // OR-7.m S-D5: Blueprint session, design D-4 (rulings on #3700)
+        documents(&replay, "FR1", json!({ "ref": CASH, "branchId": branch }))
+            .await
+            .assert_refused(
+                403,
+                "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+                &format!("branchId {branch:?}"),
+            );
     }
+    let answer = documents(&replay, "FR1", json!({ "ref": CASH, "branchId": "" })).await;
+    assert_eq!(answer.status, 200, "branchId \"\": {:.300}", answer.text);
+    assert_eq!(answer.text, v2_text(&replay, 51), "branchId \"\"");
     replay.finish().await;
 }
 

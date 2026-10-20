@@ -1583,8 +1583,12 @@ impl<'f> Replay<'f> {
 
         match rule {
             Rule::Replay => {
-                self.hold_to_recorded(step, &answer).await;
-                self.tally.replayed.push(step.n);
+                let differed = self.hold_to_recorded(step, &answer).await;
+                if differed {
+                    self.tally.differences.push(step.n);
+                } else {
+                    self.tally.replayed.push(step.n);
+                }
             }
             Rule::Differs { status, sentence } => {
                 assert_ne!(
@@ -1933,7 +1937,7 @@ impl<'f> Replay<'f> {
     // bank any more (`Rule::Retired`).
 
     /// Status, headers and body against what v2 answered.
-    pub async fn hold_to_recorded(&mut self, step: &Step, answer: &Answer) {
+    pub async fn hold_to_recorded(&mut self, step: &Step, answer: &Answer) -> bool {
         let label = self.label(step);
         assert_eq!(
             Some(answer.status),
@@ -1960,19 +1964,19 @@ impl<'f> Replay<'f> {
 
         if let Some(text) = &step.text {
             assert_eq!(&answer.text, text, "{label}");
-            return;
+            return false;
         }
         if let Some(sentence) = step.error() {
             answer.assert_refused(step.status.unwrap_or(400), sentence, &label);
-            return;
+            return false;
         }
-        self.hold_json_to(step, answer, step.json()).await;
+        self.hold_json_to(step, answer, step.json()).await
     }
 
     /// The JSON of an accepted answer against `recorded` (v2's, or v2's re-expected): ids paired,
     /// the keys v3 leaves out dropped. (Split out of `hold_to_recorded` for RE-7 #604's
     /// `Rule::ResolvedAs` by the ticket author; what it holds is unchanged.)
-    async fn hold_json_to(&mut self, step: &Step, answer: &Answer, recorded: &Value) {
+    async fn hold_json_to(&mut self, step: &Step, answer: &Answer, recorded: &Value) -> bool {
         let label = self.label(step);
         // RF-5 (#877): a key v3 adds by decision (snapshot_common::V3_ADDED_KEYS), shape-checked, then left out.
         // The action is the one the route read, whatever form the body took (a byte-order mark, a body too
@@ -2113,8 +2117,12 @@ impl<'f> Replay<'f> {
         {
             expected["operations"]["safe"] = actual["operations"]["safe"].clone();
         }
+        // OR-7.m S-D6 (#3730, #3734): one name per user (`users.name`) and v2 roles merged into
+        // one Blueprint role (`test_callers.rs:9-16`) on `$.employee` and `$.employees[]`.
+        let one_name_or_merged_role = restate_employee_name_and_role(self.fixture, &mut expected);
         self.ids.learn(&expected, &actual);
         assert_same(&self.ids.to_actual(&expected), &actual, &label);
+        one_name_or_merged_role
     }
 
     /// CA-10 #626: whether `branch` has a verified OPEN count, i.e. a shift opened the Blueprint way
@@ -2236,6 +2244,12 @@ impl<'f> Replay<'f> {
     /// key v3 made is paired with the one v2 answered.
     async fn upload_behind(&mut self, step: &Step) {
         let sender = self.fixture.sender(step).expect("somebody uploaded it");
+        let owner_id = if sender.is_owner() {
+            let org_id = xc_organization_id(&self.desk.db.pool).await;
+            owner_user_id(&self.desk.db.pool, &org_id).await
+        } else {
+            sender.id.clone()
+        };
         let (mime, bytes) = match step.upload.as_deref() {
             Some("png") => ("image/png", PNG),
             Some("pdf") => ("application/pdf", PDF),
@@ -2246,7 +2260,7 @@ impl<'f> Replay<'f> {
             .files
             .upload(
                 &self.branch_of(step),
-                &sender.id,
+                &owner_id,
                 mime,
                 bytes,
                 time(&step.at),
@@ -2605,9 +2619,15 @@ impl<'f> Replay<'f> {
             .save(&branch, command, &saver, time(&step.at))
             .await
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
+        let sender_id = if sender.is_owner() {
+            let org_id = xc_organization_id(&self.desk.db.pool).await;
+            owner_user_id(&self.desk.db.pool, &org_id).await
+        } else {
+            sender.id.clone()
+        };
         for key in [&passport, &slip].into_iter().flatten() {
             sqlx::query("UPDATE files SET owner_id = $1 WHERE key = $2")
-                .bind(&sender.id)
+                .bind(&sender_id)
                 .bind(key)
                 .execute(&self.desk.db.pool)
                 .await
@@ -2717,4 +2737,59 @@ pub async fn sweep_safe(pool: &sqlx::PgPool, branch: &BranchId) {
         )
         .await;
     }
+}
+
+fn merged_v2_role(role: &str) -> Option<&'static str> {
+    match role {
+        "BACKEND" => Some("MANAGER"),
+        "MONITOR" | "DOCUMENTS" => Some("DOCUMENT_REVIEW"),
+        _ => None,
+    }
+}
+
+fn restate_one_employee(fixture: &Fixture, emp: &mut Value) -> bool {
+    if !emp.is_object() || emp.get("id") == Some(&json!("owner")) {
+        return false;
+    }
+    let mut changed = false;
+    let username = emp
+        .get("username")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            let id = emp.get("id")?.as_str()?;
+            fixture
+                .people
+                .iter()
+                .find(|p| p.id == id)
+                .map(|p| p.username.clone())
+        });
+    if let Some(username) = username
+        && emp.get("name").and_then(Value::as_str) != Some(username.as_str())
+    {
+        emp["name"] = json!(username);
+        changed = true;
+    }
+    if let Some(merged) = emp
+        .get("role")
+        .and_then(Value::as_str)
+        .and_then(merged_v2_role)
+    {
+        emp["role"] = json!(merged);
+        changed = true;
+    }
+    changed
+}
+
+fn restate_employee_name_and_role(fixture: &Fixture, expected: &mut Value) -> bool {
+    let mut changed = false;
+    if let Some(emp) = expected.get_mut("employee") {
+        changed |= restate_one_employee(fixture, emp);
+    }
+    if let Some(rows) = expected.get_mut("employees").and_then(Value::as_array_mut) {
+        for row in rows {
+            changed |= restate_one_employee(fixture, row);
+        }
+    }
+    changed
 }
