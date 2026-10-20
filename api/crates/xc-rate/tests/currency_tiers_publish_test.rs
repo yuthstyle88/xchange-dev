@@ -159,11 +159,20 @@ async fn bot_batch(db: &TestDb) {
     .await;
 }
 
-/// Creates, submits and (when approved) publishes an all-AUTO draft for `currencies`; answers the submit status
-/// and the publication id.
+/// Creates, submits and (when approved) publishes an all-AUTO draft for `currencies` as the owner; answers the
+/// submit status and the publication id.
 async fn run_draft(db: &TestDb, currencies: &[&str]) -> (DraftStatus, Option<String>) {
+    run_draft_as(db, owner_actor(), currencies).await
+}
+
+/// `run_draft` as `who`. An EXECUTIVE proposer self-approves an out-of-bound draft (`rates.md` §4.5,
+/// `rate_draft_service.rs` submit), so an out-of-bound test submits as a RATE_MANAGER.
+async fn run_draft_as(
+    db: &TestDb,
+    who: Actor,
+    currencies: &[&str],
+) -> (DraftStatus, Option<String>) {
     let e = db.engine();
-    let who = owner_actor();
     let lines: Vec<DraftLine> = currencies
         .iter()
         .map(|c| DraftLine::new(code(c), LineSide::Auto, LineSide::Auto, None))
@@ -299,7 +308,8 @@ async fn an_override_margin_outside_the_guard_makes_the_draft_out_of_bounds() {
     let db = TestDb::start().await;
     bot_batch(&db).await;
     let v1 = policy(&db, true).await;
-    // T4 buy: −0.5 + 6.0 = 5.5 > the USD guard's 5.0; the branch's own margins are all inside.
+    // T4 sell: +0.4 + 5.0 = 5.4 > the USD guard's 5.0 (buy stays below sell); the branch's own margins are all
+    // inside. Submitted by a RATE_MANAGER: an EXECUTIVE would self-approve (§4.5).
     override_margins(
         &db,
         v1,
@@ -308,11 +318,11 @@ async fn an_override_margin_outside_the_guard_makes_the_draft_out_of_bounds() {
             ("0.0000", "0.0000"),
             ("0.1000", "-0.1000"),
             ("0.2000", "-0.2000"),
-            ("6.0000", "-0.3000"),
+            ("0.3000", "5.0000"),
         ],
     )
     .await;
-    let (status, publication) = run_draft(&db, &["USD"]).await;
+    let (status, publication) = run_draft_as(&db, rates_user(), &["USD"]).await;
     assert_eq!(
         status,
         DraftStatus::PendingApproval,
