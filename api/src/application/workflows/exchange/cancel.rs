@@ -2,12 +2,17 @@
 //! cancelled with its reason, and its quote with it. Nothing was posted before COMPLETED, so
 //! nothing is undone. A PENDING_APPROVAL one ends by the manager's decision only.
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::json;
 use sqlx::PgPool;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
+use xc_cash::domain::reservation::port::StockReservations;
+use xc_cash::domain::reservation::stock_reservation::ReleaseReason;
+use xc_cash::infrastructure::stock_reservations::PgStockReservations;
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::transaction::repository::{StatusMove, TransactionStore};
 use xc_exchange::domain::transaction::transaction::{
@@ -21,6 +26,7 @@ use crate::application::workflows::save_step::SaveActor;
 pub struct CancelTransaction {
     store: PgTransactionStore,
     quotes: PgQuoteRepository,
+    reservations: Arc<dyn StockReservations>,
     audit: PgAuditLog,
 }
 
@@ -29,6 +35,7 @@ impl CancelTransaction {
         Self {
             store: PgTransactionStore::new(pool.clone()),
             quotes: PgQuoteRepository::new(pool.clone()),
+            reservations: Arc::new(PgStockReservations::new()),
             audit: PgAuditLog::new(pool),
         }
     }
@@ -96,6 +103,9 @@ impl CancelTransaction {
             .await?;
         if let Some(quote) = t.quote_id {
             self.quotes.cancel_in(tx, quote).await?;
+            self.reservations
+                .release_for_quote_in(tx, quote, ReleaseReason::Cancelled)
+                .await?;
         }
         self.store
             .find_in(tx, id)
