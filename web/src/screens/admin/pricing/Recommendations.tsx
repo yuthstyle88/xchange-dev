@@ -1,11 +1,11 @@
 // §9 Recommendations: the list by severity (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
-import type { RecommendationView } from './pricing-board.types';
+import type { PricingRecommendationDto } from '../../../shared/api/generated/pricing_board';
 import './recommendations.css';
 
 export interface RecommendationsProps {
-  items: readonly RecommendationView[];
+  items: readonly PricingRecommendationDto[];
 }
 
 const SEVERITY_ORDER: Record<string, number> = {

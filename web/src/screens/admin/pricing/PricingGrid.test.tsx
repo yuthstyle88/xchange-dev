@@ -7,12 +7,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
+import type { PricingRowDto } from '../../../shared/testing/fixtures/pricing_board';
 import { BOARD } from './__fixtures__/pricing-board.fixture';
-import type { PricingRowView } from './pricing-board.types';
 
 vi.mock('./PricingRow', () => ({
   PricingRow: (p: {
-    row: PricingRowView;
+    row: PricingRowDto;
     selected: boolean;
     onToggle(currency: string): void;
     onOpen(currency: string): void;
@@ -50,7 +50,7 @@ async function flush() {
 }
 
 function mount(
-  rows: readonly PricingRowView[],
+  rows: readonly PricingRowDto[],
   selected: ReadonlySet<string> = new Set(),
   onToggle = vi.fn(),
   onOpen = vi.fn(),

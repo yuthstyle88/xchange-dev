@@ -6,7 +6,7 @@
 //   through `new ApiClient()` (global fetch), and passes the filtered rows to `PricingGrid` (`rows` prop), in the
 //   view's order.
 // - `select[name=filter]` values `all` · `toApprove` · `review` · `current`; a non-`all` filter keeps the rows whose
-//   status is in `FILTER_STATUSES[filter]` (pricing-board.types.ts).
+//   status is in `FILTER_STATUSES[filter]` (pricing-labels.ts).
 // - `input[name=search]` keeps the rows whose currency code contains the text, case-insensitive; it combines with the
 //   filter.
 // - `button[name=reload]` reads the view once more and shows the new answer's rows.
@@ -15,8 +15,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { For } from 'solid-js';
 import { setLang } from '../../../shared/i18n';
+import {
+  makePricingBoardData,
+  type PricingBoardData,
+} from '../../../shared/testing/fixtures/pricing_board';
 import { BOARD, boardFetch } from './__fixtures__/pricing-board.fixture';
-import type { PricingBoardData } from './pricing-board.types';
 
 vi.mock('./PricingGrid', () => ({
   PricingGrid: (p: { rows: readonly { currency: string }[] }) => (
@@ -69,6 +72,8 @@ describe('Pricing', () => {
     const server = await mount();
     const reads = server.calls.filter((c) => c.path === '/api/v3/views/pricing_board');
     expect(reads).toHaveLength(1);
+    const meReads = server.calls.filter((c) => c.path === '/api/v3/views/me');
+    expect(meReads).toHaveLength(1);
     expect(shown()).toEqual(BOARD.rows.map((r) => r.currency));
   });
 
@@ -100,7 +105,7 @@ describe('Pricing', () => {
   });
 
   it('P5 reload reads the view again and shows the new rows', async () => {
-    const second: PricingBoardData = { ...BOARD, rows: BOARD.rows.slice(0, 2) };
+    const second = makePricingBoardData({ ...BOARD, rows: BOARD.rows.slice(0, 2) });
     const server = await mount([BOARD, second]);
     const reload = host.querySelector<HTMLButtonElement>('button[name=reload]');
     expect(reload, 'button[name=reload] exists').not.toBeNull();

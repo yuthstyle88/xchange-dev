@@ -5,16 +5,17 @@
 // - Rows carrying a blocking flag (`BLOCKING_FLAGS`: BelowCost, StaleSource, Precision) are never sent; `[data-count]`
 //   shows how many rows can be approved.
 // - `button[name=bulkApprove]` asks for a confirmation; `button[name=confirmBulk]` sends ONE `POST /api/pricing/approve`
-//   with `{ branch, policyVersionId, currencies }` and an `Idempotency-Key` header (`keyedWrite`; §6's `requestId`), one entry per approvable row in the given
+//   with `{ policyVersionId, rows, reason }` and an `Idempotency-Key` header (`keyedWrite`; §6's `requestId`), one entry per approvable row in the given
 //   order, each with that row's suggested tier prices; then `onApproved` with the answer.
 // - No approvable row: `bulkApprove` disabled, nothing sent.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
+import { makePricingApproveOutput } from '../../../shared/testing/fixtures/pricing_approve';
+import type { PricingRowDto } from '../../../shared/testing/fixtures/pricing_board';
 import { BOARD, boardFetch } from './__fixtures__/pricing-board.fixture';
 import { BulkApprove } from './BulkApprove';
-import type { PricingRowView } from './pricing-board.types';
 
 const pick = (...codes: string[]) => codes.map((c) => BOARD.rows.find((r) => r.currency === c)!);
 
@@ -30,8 +31,14 @@ async function flush() {
   for (let i = 0; i < 8; i++) await Promise.resolve();
   await new Promise((r) => setTimeout(r, 0));
 }
-function mount(rows: PricingRowView[], onApproved = vi.fn()) {
-  const server = boardFetch([BOARD], () => ({ status: 200, body: { draftId: 'draft-10', state: 'PENDING_APPROVAL' } }));
+function mount(rows: PricingRowDto[], onApproved = vi.fn()) {
+  const approvedOut = makePricingApproveOutput({
+    policyVersionId: 'pv-7',
+    version: 2,
+    draftId: 'draft-10',
+    draftState: 'PENDING_APPROVAL',
+  });
+  const server = boardFetch([BOARD], () => ({ status: 200, body: approvedOut }));
   const api = new ApiClient(server.fn as unknown as typeof fetch);
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -59,19 +66,30 @@ describe('BulkApprove', () => {
     click('bulkApprove');
     await flush();
     expect(approves(server)).toHaveLength(0);
+    const reasonInput = host.querySelector<HTMLInputElement>('input[name=reason]');
+    expect(reasonInput, 'input[name=reason] exists').not.toBeNull();
+    reasonInput!.value = 'morning market update';
+    reasonInput!.dispatchEvent(new Event('input', { bubbles: true }));
     click('confirmBulk');
     await flush();
     const sent = approves(server);
     expect(sent).toHaveLength(1);
     const body = sent[0].body as Record<string, any>;
-    expect(body.branch).toBe('MAIN');
     expect(body.policyVersionId).toBe('pv-7');
+    expect(body.reason).toBe('morning market update');
     expect(sent[0].key, 'Idempotency-Key header').toBeTruthy();
     expect('requestId' in body).toBe(false);
-    expect(body.currencies.map((c: { currency: string }) => c.currency)).toEqual(['USD', 'AUD']);
+    expect(body.rows.map((c: { currency: string }) => c.currency)).toEqual(['USD', 'AUD']);
     const usd = BOARD.rows.find((r) => r.currency === 'USD')!;
-    expect(body.currencies[0].tiers).toEqual(usd.suggestion!.tiers);
-    expect(onApproved).toHaveBeenCalledWith({ draftId: 'draft-10', state: 'PENDING_APPROVAL' });
+    expect(body.rows[0].tiers).toEqual(usd.suggestion);
+    expect(onApproved).toHaveBeenCalledWith(
+      makePricingApproveOutput({
+        policyVersionId: 'pv-7',
+        version: 2,
+        draftId: 'draft-10',
+        draftState: 'PENDING_APPROVAL',
+      }),
+    );
   });
 
   it('B3 with only blocked rows, bulk approve is disabled and nothing is sent', async () => {

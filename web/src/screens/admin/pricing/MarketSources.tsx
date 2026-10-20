@@ -1,12 +1,13 @@
 // §9 MarketSources: one chip per source: name, age, stale, error; refresh if allowed (FE pricing-board, #564, #3760; docs/design/blueprint/pricing-tiers.md §9).
 import { For, Show, type JSX } from 'solid-js';
+import type { PricingSourceDto } from '../../../shared/api/generated/pricing_board';
 import { screenT } from '../../../shared/i18n';
 import { en, th } from './i18n';
-import type { MarketSourceCode, PricingSource } from './pricing-board.types';
+import { sourceLabel, type MarketSourceCode } from './pricing-labels';
 import './market-sources.css';
 
 export interface MarketSourcesProps {
-  sources: readonly PricingSource[];
+  sources: readonly PricingSourceDto[];
   /** The caller holds `MarketRatesRefresh` (§8). */
   canRefresh: boolean;
   onRefresh(source: MarketSourceCode): void;
@@ -20,7 +21,7 @@ export function MarketSources(props: MarketSourcesProps): JSX.Element {
       <For each={props.sources}>
         {(s) => (
           <div class="xc-market-source-chip" data-source={s.source}>
-            <span class="xc-source-name">{s.name}</span>
+            <span class="xc-source-name">{sourceLabel(s.source)}</span>
             <Show when={s.fetchedAt}>
               <span class="xc-source-time">{new Date(s.fetchedAt!).toLocaleString()}</span>
             </Show>
@@ -35,7 +36,7 @@ export function MarketSources(props: MarketSourcesProps): JSX.Element {
                 type="button"
                 class="xc-source-refresh-btn"
                 name={`refresh-${s.source}`}
-                onClick={() => props.onRefresh(s.source)}
+                onClick={() => props.onRefresh(s.source as MarketSourceCode)}
               >
                 {t('refresh')}
               </button>

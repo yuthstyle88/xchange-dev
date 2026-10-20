@@ -1,24 +1,23 @@
 // §9 PricingPolicy: one currency's override margins and min spread (pricingConfigure) (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
+import type { PricingRowDto } from '../../../shared/api/generated/pricing_board';
+import type {
+  PricingConfigureInput,
+  PricingConfigureOutput,
+} from '../../../shared/api/generated/pricing_configure';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import * as table from './i18n';
-import {
-  ROUTE_PRICING_CONFIGURE,
-  type PricingConfigureInput,
-  type PricingConfigureOutput,
-  type PricingRowView,
-  type TierNo,
-} from './pricing-board.types';
+import { ROUTE_PRICING_CONFIGURE, type TierNo } from './pricing-labels';
 import './pricing-policy.css';
 
 export interface PricingPolicyProps {
   api: ApiClient;
   branch: string;
   policyVersionId: string;
-  row: PricingRowView;
+  row: PricingRowDto;
   /** EXECUTIVE frame (pricing-tiers.md §3: override margins are frame); the editor is hidden otherwise. */
   mayEdit: boolean;
   onSaved(out: PricingConfigureOutput): void;
@@ -51,6 +50,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
   });
 
   const [minSpread, setMinSpread] = createSignal(props.row.minSpreadPct ?? '');
+  const [reason, setReason] = createSignal('');
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -66,6 +66,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
       'sell-4': getMargin(4, 'sell'),
     });
     setMinSpread(props.row.minSpreadPct ?? '');
+    setReason('');
     setError(null);
   });
 
@@ -80,18 +81,18 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
     setSaving(true);
     try {
       const cur = margins();
-      const body = {
-        branch: props.branch,
+      const payload: PricingConfigureInput = {
         policyVersionId: props.policyVersionId,
         currency: props.row.currency,
-        margins: TIERS.map((n) => ({
+        tiers: TIERS.map((n) => ({
           tierNo: n,
           buyMarginPct: cur[`buy-${n}`] ?? '',
           sellMarginPct: cur[`sell-${n}`] ?? '',
         })),
         minSpreadPct: minSpread().trim() === '' ? null : minSpread().trim(),
+        anchorSource: null,
+        reason: reason().trim(),
       };
-      const payload: PricingConfigureInput = body;
       const out = await configureWrite.send(payload);
       props.onSaved(out);
     } catch (err: unknown) {
@@ -107,14 +108,14 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
     setError(null);
     setSaving(true);
     try {
-      const body = {
-        branch: props.branch,
+      const payload: PricingConfigureInput = {
         policyVersionId: props.policyVersionId,
         currency: props.row.currency,
-        margins: null,
+        tiers: null,
         minSpreadPct: null,
+        anchorSource: null,
+        reason: reason().trim(),
       };
-      const payload: PricingConfigureInput = body;
       const out = await configureWrite.send(payload);
       props.onSaved(out);
     } catch (err: unknown) {
@@ -125,7 +126,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
   };
 
   return (
-    <form class="pricing-policy-form" onSubmit={handleSave}>
+    <form class="pricing-policy-form" noValidate onSubmit={handleSave}>
       <Show when={error()}>
         <div role="alert" class="pricing-policy-alert">
           {error()}
@@ -204,6 +205,22 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
           disabled={!props.mayEdit || saving()}
           value={minSpread()}
           onInput={(e) => setMinSpread(e.currentTarget.value)}
+        />
+      </div>
+
+      <div class="pricing-policy-field">
+        <label class="pricing-policy-label" for="reason">
+          {t('reason')}
+        </label>
+        <input
+          id="reason"
+          class="pricing-policy-input"
+          name="reason"
+          type="text"
+          required
+          disabled={!props.mayEdit || saving()}
+          value={reason()}
+          onInput={(e) => setReason(e.currentTarget.value)}
         />
       </div>
 

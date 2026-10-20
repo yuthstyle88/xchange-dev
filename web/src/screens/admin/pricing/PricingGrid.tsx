@@ -1,8 +1,8 @@
 // §9 PricingGrid: the table, enabled currencies first, others folded below (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { createSignal, For, Show, type JSX } from 'solid-js';
+import type { PricingRowDto } from '../../../shared/api/generated/pricing_board';
 import { screenT } from '../../../shared/i18n';
 import * as table from './i18n';
-import type { PricingRowView } from './pricing-board.types';
 import { PricingRow } from './PricingRow';
 import './pricing-grid.css';
 
@@ -10,7 +10,7 @@ const t = screenT('admin.pricing', table);
 
 export interface PricingGridProps {
   /** Already filtered by `Pricing`; the grid lists enabled currencies first and folds the others below. */
-  rows: readonly PricingRowView[];
+  rows: readonly PricingRowDto[];
   selected: ReadonlySet<string>;
   onToggle(currency: string): void;
   onOpen(currency: string): void;

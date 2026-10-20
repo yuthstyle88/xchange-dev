@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
+import type { PricingRowDto } from '../../../shared/testing/fixtures/pricing_board';
 import { BOARD } from './__fixtures__/pricing-board.fixture';
 import { th } from './i18n';
 import { PricingRow, type PricingRowProps } from './PricingRow';
-import type { PricingRowView } from './pricing-board.types';
 
 vi.mock('./pricing-labels', () => ({
+  BLOCKING_FLAGS: ['BelowCost', 'StaleSource', 'Precision'],
   statusLabel: (status: string) => `status:${status}`,
   flagLabel: (flag: string) => `flag:${flag}`,
 }));
@@ -28,7 +29,7 @@ afterEach(() => {
   setLang('th');
 });
 
-function mount(row: PricingRowView, props: Partial<PricingRowProps> = {}) {
+function mount(row: PricingRowDto, props: Partial<PricingRowProps> = {}) {
   host = document.createElement('div');
   document.body.appendChild(host);
   dispose = render(

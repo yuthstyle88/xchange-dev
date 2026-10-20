@@ -32,6 +32,11 @@ export const th = {
   save: 'บันทึก',
   recommendations: 'คำแนะนำ',
   orderRefs: 'รายการล่าสุดและราคาตลาด',
+  reason: 'เหตุผล',
+
+  'source.TT': 'TT Pattaya',
+  'source.SR': 'Super Rich',
+  'source.BOT': 'BoT',
 
   'status.Current': 'ปัจจุบัน',
   'status.Pending': 'รอดำเนินการ',
@@ -82,6 +87,11 @@ export const en: typeof th = {
   save: 'Save',
   recommendations: 'Recommendations',
   orderRefs: 'Recent orders and their market',
+  reason: 'Reason',
+
+  'source.TT': 'TT Pattaya',
+  'source.SR': 'Super Rich',
+  'source.BOT': 'BoT',
 
   'status.Current': 'Current',
   'status.Pending': 'Pending',
