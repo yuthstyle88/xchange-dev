@@ -9,8 +9,8 @@
 //! The rule is unchanged (each outcome stays what the old path gave the mapped role, OR-7):
 //! - org-wide EXECUTIVE and org-wide ADMIN, both valid at `now` → the owner;
 //! - else the first valid role in the order TELLER, BRANCH_MANAGER, RATE_MANAGER, FINANCE, ADMIN,
-//!   VERIFICATION_REVIEWER → staff with that role, at that role's branch, else `MAIN`;
-//! - else (EXECUTIVE alone, MARKETING, CUSTOMER, nothing valid) → no standing.
+//!   VERIFICATION_REVIEWER, MARKETING → staff with that role, at that role's branch, else `MAIN`;
+//! - else (EXECUTIVE alone, CUSTOMER, nothing valid) → no standing.
 //!
 //! The audit text of a standing keeps v3's spelling ([`StandingKind::audit_text`]).
 
@@ -25,13 +25,14 @@ use super::scoped_role::ScopedRole;
 pub const FALLBACK_BRANCH: &str = "MAIN";
 
 /// The staff roles a standing can carry, highest priority first.
-pub const STAFF_PRIORITY: [Role; 6] = [
+pub const STAFF_PRIORITY: [Role; 7] = [
     Role::Teller,
     Role::BranchManager,
     Role::RateManager,
     Role::Finance,
     Role::Admin,
     Role::VerificationReviewer,
+    Role::Marketing,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
