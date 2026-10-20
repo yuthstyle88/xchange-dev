@@ -621,7 +621,8 @@ async fn s10_consume_after_expiry_refuses_when_stock_is_gone() {
         .consume(quote, Uuid::new_v4(), t0() + secs(301))
         .await
         .expect_err("60 > available 30");
-    assert!(is_code(&err, "stockInsufficient"), "{err:?}");
+    // #3819 (claude/a90ab16c's ruling): a reservation refusal answers its own code, never stockInsufficient
+    assert!(is_code(&err, "stockReserved"), "{err:?}");
     // rolled back: the row is as it was
     assert_eq!(
         db.rows(line).await,

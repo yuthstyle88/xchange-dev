@@ -146,7 +146,8 @@ async fn s10_a_refused_consume_stops_the_completion_before_the_posting() {
 
     let got = complete(&c, &service, t.id, now + Duration::seconds(5)).await;
 
-    assert!(is_code(&got, "stockInsufficient"), "{got:?}");
+    // #3819: a refused Consume answers stockReserved (no approval can clear it)
+    assert!(is_code(&got, "stockReserved"), "{got:?}");
     assert!(
         ledger.calls().is_empty(),
         "Consume runs before post_in: nothing was posted"
