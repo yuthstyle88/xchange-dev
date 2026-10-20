@@ -49,6 +49,9 @@ export interface ScreenSpec {
 export const CUSTOMER_LANGS: readonly Lang[] = ['th', 'en', 'zh'];
 export const STAFF_LANGS: readonly Lang[] = ['th', 'en'];
 
+/** What the app writes to <html lang> for each language (web/src/shared/i18n/languages.ts:19-23). */
+export const HTML_LANG: Record<Lang, string> = { th: 'th', en: 'en', zh: 'zh-CN' };
+
 /**
  * users.json, or users.example.json when users.json is missing, so `--list` and `tsc` work on a machine with no
  * secrets. A run with the example file fails at sign-in, by design (E-3: only the owner runs against a host).
@@ -138,9 +141,89 @@ export async function smoke(page: Page, spec: ScreenSpec): Promise<void> {
   for (const lang of spec.langs) {
     log.errors.length = 0;
     await withLang(page, lang);
+    // A fresh document every time: admin menus differ only by hash (/#rates), and a same-page hash change would not
+    // re-run withLang's init script.
+    await page.goto('about:blank');
     await page.goto(spec.path);
     await expect(page.locator(spec.key).first(), `${spec.path} (${lang}): key element ${spec.key}`).toBeVisible({ timeout: 20_000 });
+    // The app writes the chosen language to <html lang> (web/src/shared/i18n/languages.ts:19-23, index.ts syncHtmlLang).
+    await expect(page.locator('html'), `${spec.path} shows ${lang}`).toHaveAttribute('lang', HTML_LANG[lang]);
     await shot(page, spec.area, spec.screen, lang);
     expect(log.errors, `${spec.path} (${lang}): console errors`).toEqual([]);
   }
+}
+
+// ---- Shift steps shared by flow-cash (F3) and flow-queue (F2): a queue counter is a teller with an OPEN shift
+// (docs/design/blueprint/queue-tickets.md Q7). Lifted from PR 3838's shift.spec.ts.
+
+/** Ten of the first THB note at open and at close, so the shift balances. */
+export const SHIFT_QTY = '10';
+
+/** Waits for one POST whose path matches while `act` runs; returns `ok`, `<status> <body>` and the raw body. */
+export async function posted(page: Page, path: RegExp, act: () => Promise<void>): Promise<{ ok: boolean; text: string; body: string }> {
+  const res = page.waitForResponse((r) => r.request().method() === 'POST' && path.test(new URL(r.url()).pathname), { timeout: 15_000 });
+  await act();
+  const r = await res;
+  const body = await r.text().catch(() => '');
+  return { ok: r.ok(), text: `${r.status()} ${body.slice(0, 300)}`, body };
+}
+
+/**
+ * The shift buttons show only to someone clocked in (web/src/screens/staff/shift/ShiftCard.tsx, floor.myClockIn), so
+ * clock in with the floor card (FloorCard.tsx floor-clock, POST /api/attendance) when needed. `page` is on /staff.
+ */
+export async function clockIn(page: Page): Promise<string> {
+  const shiftButton = page.getByTestId('shift-open-count').or(page.getByTestId('shift-close-count')).first();
+  if (await shiftButton.isVisible().catch(() => false)) return 'already clocked in';
+  const clock = page.getByTestId('floor-clock');
+  await expect(clock, 'the floor card clock button').toBeVisible({ timeout: 20_000 });
+  const res = await posted(page, /^\/api\/attendance$/, () => clock.click());
+  await expect(shiftButton, `shift buttons after clock-in (POST /api/attendance ${res.text})`).toBeVisible({ timeout: 20_000 });
+  return `clocked in: POST /api/attendance ${res.text}`;
+}
+
+/** The teller fills the count form (first THB row, SHIFT_QTY) and saves it; returns POST /api/cash-counts's answer. */
+export async function submitCount(page: Page, kind: 'open' | 'close'): Promise<{ ok: boolean; text: string }> {
+  await page.getByTestId(kind === 'open' ? 'shift-open-count' : 'shift-close-count').click();
+  const form = page.getByTestId('shift-count-form');
+  await expect(form).toBeVisible({ timeout: 15_000 });
+  const thb = form.locator('[data-denomination-row]').filter({ hasText: 'THB' }).first();
+  await expect(thb, 'a THB denomination row in the count form').toBeVisible({ timeout: 15_000 });
+  await thb.locator('input[data-denomination-id]').fill(SHIFT_QTY);
+  return posted(page, /^\/api\/cash-counts$/, () => page.getByTestId('shift-count-save').click());
+}
+
+/** The branch manager verifies the newest count of `kind`; returns POST /api/cash-counts/{id}/verify's answer. */
+export async function verifyCount(page: Page, kind: 'OPEN' | 'CLOSE'): Promise<{ ok: boolean; text: string }> {
+  await page.reload();
+  const item = page.locator('[data-count-id]').filter({ hasText: kind }).first();
+  await expect(item, `a ${kind} count waiting for verification`).toBeVisible({ timeout: 20_000 });
+  return posted(page, /^\/api\/cash-counts\/[^/]+\/verify$/, () => item.getByTestId('shift-verify').click());
+}
+
+/**
+ * Opens the teller's shift: the teller (on /staff) clocks in and counts the opening, the branch manager (on /staff)
+ * verifies it; the verifier is never the counter (api/crates/xc-cash/src/domain/person_rules.rs). Needs a funded safe
+ * (flow-cash's first test). Throws with the server's answer when a step is refused.
+ */
+export async function openShift(teller: Page, manager: Page): Promise<void> {
+  console.log(`[shift] ${await clockIn(teller)}`);
+  const count = await submitCount(teller, 'open');
+  expect(count.ok, `opening count accepted: ${count.text}`).toBeTruthy();
+  const verify = await verifyCount(manager, 'OPEN');
+  expect(verify.ok, `opening count verified: ${verify.text}`).toBeTruthy();
+  await teller.reload();
+  await expect(teller.getByTestId('shift-close-count'), 'the shift is open').toBeVisible({ timeout: 20_000 });
+}
+
+/** Closes it with the same figures and clocks the teller out, so the next run starts from the same state. */
+export async function closeShift(teller: Page, manager: Page): Promise<void> {
+  console.log(`[shift] ${await clockIn(teller)}`);
+  const count = await submitCount(teller, 'close');
+  expect(count.ok, `closing count accepted: ${count.text}`).toBeTruthy();
+  const verify = await verifyCount(manager, 'CLOSE');
+  expect(verify.ok, `closing count verified: ${verify.text}`).toBeTruthy();
+  await teller.reload();
+  await expect(teller.getByTestId('shift-open-count'), 'the shift is closed').toBeVisible({ timeout: 20_000 });
+  await teller.getByTestId('floor-clock').click().catch(() => {});
 }
