@@ -15,6 +15,16 @@ function tomorrowBangkok(): string {
   return now.toISOString().slice(0, 10);
 }
 
+
+// The card of one booking: the nearest ancestor of its number that also holds its status chip
+// (web/src/screens/customer/bookings/Bookings.tsx: .xc-booking-no, .xc-booking-status). It stays
+// the same element after a cancel, when the cancel button disappears.
+function bookingCard(page: Page, bookingNo: string) {
+  return page
+    .locator('.xc-booking-no', { hasText: bookingNo })
+    .locator('xpath=ancestor::*[.//*[contains(@class,"xc-booking-status")]][1]');
+}
+
 async function signIn(page: Page, identifier: string, password: string, next: string) {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
   await page.locator('input[autocomplete="username"]').fill(identifier);
@@ -78,13 +88,8 @@ test.describe.serial('#1683 booking', () => {
     await expect(page.getByText(keptBooking).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(toCancel).first()).toBeVisible();
     await shot(page, 'c03-1-list');
-    // The card is the smallest element holding both this booking number and a cancel button.
     const cancelName = /ยกเลิกการจอง|Cancel Booking|取消预约/;
-    const card = page
-      .locator('li, article, section, div')
-      .filter({ hasText: toCancel })
-      .filter({ has: page.getByRole('button', { name: cancelName }) })
-      .last();
+    const card = bookingCard(page, toCancel);
     await card.getByRole('button', { name: cancelName }).click();
     await page.getByRole('button', { name: /ยืนยันการยกเลิก|Confirm Cancellation|确认取消/ }).click();
     // Criterion 3 is met only when the card itself reads cancelled, not when the dialog closes.
@@ -105,11 +110,7 @@ test.describe.serial('#1683 booking', () => {
     test.skip(!keptBooking, 'nothing to clean');
     await signIn(page, users.customer.phone, users.customer.password, '/app/bookings');
     const cancelName = /ยกเลิกการจอง|Cancel Booking|取消预约/;
-    const card = page
-      .locator('li, article, section, div')
-      .filter({ hasText: keptBooking })
-      .filter({ has: page.getByRole('button', { name: cancelName }) })
-      .last();
+    const card = bookingCard(page, keptBooking);
     await card.getByRole('button', { name: cancelName }).click();
     await page.getByRole('button', { name: /ยืนยันการยกเลิก|Confirm Cancellation|确认取消/ }).click();
     await expect(card.getByText(/ยกเลิกแล้ว|Cancelled|已取消/)).toBeVisible({ timeout: 15_000 });
