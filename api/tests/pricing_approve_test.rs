@@ -199,12 +199,13 @@ async fn bulk_approve_writes_one_version_and_one_draft_for_every_currency() {
 async fn approve_out_of_bound_waits_for_executive() {
     let room = Room::start().await;
     let v1 = room.worked_example().await;
-    // T4 buy 34.23475 = 32.45 × 1.055 ⇒ margin 6.0, adjust + margin = 5.5 > USD's 5.
+    // T4 sell 34.6766 = 32.9 × 1.054 ⇒ margin 5.0, adjust + margin = 5.4 > USD's 5 (buy stays below sell).
+    // A RATE_MANAGER approves: an EXECUTIVE proposer self-approves an out-of-bound draft (rates.md §4.5).
     let mut prices = USD_PRICES;
-    prices[3] = ("34.23475", "32.8342");
+    prices[3] = ("32.48245", "34.6766");
     let a = command(
         &room,
-        &owner(),
+        &rate_manager(),
         ROUTE,
         B01,
         body(v1, vec![row("USD", prices)]),
