@@ -238,8 +238,8 @@ describe('DeskBookingsScreen.tsx — §9 idempotency-key retry behaviour (#2023 
 
   it('row 5: submit → 2xx → submit the same input again sends a new key', async () => {
     const { writes } = makeHarness([
-      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CANCELLED', bookingNo: 'B261015-0001' } },
-      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CANCELLED', bookingNo: 'B261015-0001' } },
+      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CONFIRMED', bookingNo: 'B261015-0001' } },
+      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CONFIRMED', bookingNo: 'B261015-0001' } },
     ]);
 
     await mountAndOpenCancel();

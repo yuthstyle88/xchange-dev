@@ -1,14 +1,28 @@
 //! `TransferApprovalSubject` and `TransferApprovalPolicy` implementing `xc_approval` traits (D:§4.5, A5).
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use sqlx::{PgPool, Postgres, Transaction};
+use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
 use xc_auth::domain::access::{Actor, Permission, Role, RolePermissions};
 use xc_kernel::ids::BranchId;
+
+/// The type name.
+pub const CASH_TRANSFER: &str = "CASH_TRANSFER";
+
+/// Registers `CASH_TRANSFER` with `registry`.
+pub fn register(registry: &mut ApprovalRegistry, pool: PgPool) {
+    registry.register(
+        Arc::new(TransferApprovalSubject::new(pool)),
+        Arc::new(TransferApprovalPolicy::new()),
+    );
+}
 
 /// The approval core's actor for `who` acting on a transfer whose source is `source`, or `None` when no role of
 /// `who` grants `permission` there. There is no fallback: an actor that maps to nothing is refused by the caller.
@@ -40,7 +54,7 @@ impl TransferApprovalSubject {
 
 impl ApprovalSubject for TransferApprovalSubject {
     fn type_name(&self) -> &'static str {
-        "CASH_TRANSFER"
+        CASH_TRANSFER
     }
 
     fn version_hash<'a>(

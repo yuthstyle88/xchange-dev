@@ -30,6 +30,8 @@ export const th = {
   confirm: 'ยืนยันการจอง',
   reissueQr: 'ขอคิวอาร์โค้ดใหม่',
   cancelDeadline: 'ยกเลิกได้ถึง {date}',
+  waitAhead: 'มีคิวก่อนหน้า {count} คิว',
+  waitEstimate: 'รอประมาณ {low}–{high} นาที',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -63,6 +65,8 @@ export const en: Record<keyof typeof th, string> = {
   confirm: 'Confirm booking',
   reissueQr: 'Get a new QR code',
   cancelDeadline: 'Cancel by {date}',
+  waitAhead: '{count} ahead of you',
+  waitEstimate: 'About {low}–{high} min wait',
 };
 
 export const zh: Record<keyof typeof th, string> = {
@@ -96,4 +100,6 @@ export const zh: Record<keyof typeof th, string> = {
   confirm: '确认预约',
   reissueQr: '重新获取二维码',
   cancelDeadline: '{date} 前可取消',
+  waitAhead: '前面还有 {count} 位',
+  waitEstimate: '预计等候 {low}–{high} 分钟',
 };

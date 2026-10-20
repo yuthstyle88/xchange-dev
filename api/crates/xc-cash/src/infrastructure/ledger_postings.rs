@@ -17,6 +17,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
+use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 
@@ -29,6 +30,7 @@ use crate::domain::posting::{
     ApprovalRequestId, CashPlace, CashPostings, LineCost, PlaceActivity, PostingRequest,
     PostingResult, ReversedCost, TransactionLineId,
 };
+use crate::infrastructure::stock_reservations::active_reserved_in;
 
 /// Who a posting is recorded as made by: the port carries no actor. `[proposed]`
 const POSTED_BY: &str = "system";
@@ -105,6 +107,8 @@ struct Position {
     now: WeightedAverage,
     /// The last movement's `average_after` (§4.5: the cost of a sale from an exactly-zero position).
     last_average: Option<Decimal>,
+    /// Active reservation hold on this (branch, currency) under the position lock (SR-6, D-14).
+    reserved: Decimal,
 }
 
 struct LotPlan {
@@ -178,8 +182,25 @@ impl Plan {
             .bind(currency.as_str())
             .fetch_optional(&mut **tx)
             .await?;
-            self.positions
-                .insert(key.clone(), Position { now, last_average });
+            let reserved = if is_thb(currency) {
+                Decimal::ZERO
+            } else {
+                let org = Uuid::parse_str(&self.organization_id).map_err(|e| {
+                    AppError::Internal(format!(
+                        "invalid organization_id '{}': {e}",
+                        self.organization_id
+                    ))
+                })?;
+                active_reserved_in(tx, org, &BranchId::new(branch), currency, Utc::now()).await?
+            };
+            self.positions.insert(
+                key.clone(),
+                Position {
+                    now,
+                    last_average,
+                    reserved,
+                },
+            );
         }
         Ok(self.positions.get_mut(&key).expect("loaded above"))
     }
@@ -268,10 +289,15 @@ impl Plan {
         line: Option<Uuid>,
         movement_type: MovementType,
     ) -> AppResult<Decimal> {
-        let (before, last_average) = {
+        let (before, last_average, reserved) = {
             let pos = self.position(tx, branch, currency).await?;
-            (pos.now, pos.last_average)
+            (pos.now, pos.last_average, pos.reserved)
         };
+        if reserved > Decimal::ZERO && before.quantity - q < reserved {
+            return Err(stock_insufficient(
+                "the posting takes a position into another quote's reserved stock",
+            ));
+        }
         let cost = if before.quantity == q {
             before.cost_thb
         } else if let Some(c) = at_cost {

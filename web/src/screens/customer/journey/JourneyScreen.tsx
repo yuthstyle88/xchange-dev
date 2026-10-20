@@ -6,7 +6,7 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient, ApiError, type Fetch } from '../../../shared/api/client';
+import { ApiClient, type Fetch } from '../../../shared/api/client';
 import type {
   MyPlannerDraftsData,
   PlannerDraftDto,
@@ -18,6 +18,7 @@ import { MoneyText } from '../../../shared/ui/MoneyText';
 import { en, th, zh } from './i18n';
 import { JourneyBookings } from './JourneyBookings';
 import { PlanDelete } from './PlanDelete';
+import { readMyQueueTicket } from './queueTicketRead';
 import './journey.css';
 
 export interface JourneyScreenProps {
@@ -88,7 +89,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
     const tId = activeTicketId();
     const br = activeBranch();
 
-    if (!tId || !br) {
+    if (!tId && !br) {
       setTicket(null);
       setQueueError(null);
       setQueueState('empty');
@@ -98,34 +99,18 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
     setQueueState('loading');
     setQueueError(null);
     try {
-      const answer = await api.view<MyQueueTicketData, { ticketId: string }>('my_queue_ticket', {
-        branch: br,
-        filter: { ticketId: tId },
-      });
+      const read = await readMyQueueTicket(api, br, tId);
       if (seq !== ticketSeq) return;
-      const data = answer.data;
-      if (data && data.ticketId) {
-        setTicket(data);
+      if (read.state === 'ready') {
+        setTicket(read.data);
         setQueueState('ready');
       } else {
         setTicket(null);
-        setQueueState('empty');
+        setQueueState(read.state);
       }
     } catch (err: unknown) {
       if (seq !== ticketSeq) return;
       setTicket(null);
-      if ((err as { status?: number })?.status === 401) {
-        setQueueState('unauthorized');
-        return;
-      }
-      if (
-        err instanceof ApiError &&
-        err.code === 'httpError' &&
-        (err.status === 403 || err.status === 404)
-      ) {
-        setQueueState('empty');
-        return;
-      }
       setQueueError(() => err);
       setQueueState('error');
     }
