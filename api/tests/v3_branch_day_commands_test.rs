@@ -30,8 +30,7 @@
 //! changed. Every effect is read back through CA-7b's tables with `PgCustodyRepository::load_state`.
 //!
 //! Callers: `x-test-as: <ROLE>@<branch>`. Each is a Blueprint `access::Actor` of the seeded
-//! organisation with that one role, plus the legacy actor whose v3 role maps to the same Blueprint
-//! role (`v3_roles.rs`), so the routes hold before and after #1030 hands commands the Blueprint actor.
+//! organisation with that one role.
 //!
 //! Needs `TEST_DATABASE_URL`; nothing skips.
 
