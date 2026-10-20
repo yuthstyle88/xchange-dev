@@ -40,7 +40,7 @@ fn currency_unit_size(code: CurrencyCode) -> Decimal {
 }
 
 impl DraftEvaluation {
-    /// Evaluates draft lines with policy value tiers against policy guards.
+    /// Evaluates draft lines with per-currency resolved policy value tiers (`tiers[i]` for `lines[i]`) against policy guards.
     pub fn of_tiered(
         lines: &[DraftLine],
         proposals: &[ProposedLine],
