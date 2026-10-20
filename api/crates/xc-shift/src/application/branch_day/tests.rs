@@ -801,7 +801,7 @@ async fn test_clock_in_records_the_role_its_event_records() {
         service
             .clock(&mut tx, &who, &branch, ClockDirection::In, now())
             .await
-            .unwrap_or_else(|e| panic!("{role:?} clocks in: {e:?}"));
+            .unwrap_or_else(|e| panic!("{role:?} clocks in: {e}"));
 
         let attendance: String = sqlx::query_scalar(
             "SELECT data->>'role' FROM attendance WHERE branch_id = $1 AND employee_id = $2",
