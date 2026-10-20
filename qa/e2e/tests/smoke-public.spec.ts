@@ -25,6 +25,7 @@ test.describe('QA-S1 smoke: public pages (/login, /app/sign-in, /app/sign-up, /r
       role: 'anonymous',
       key: '.xc-sign-in',
       langs: CUSTOMER_LANGS,
+      allowConsole: ['anonymousMyProfile401'],
     });
   });
 
@@ -37,6 +38,7 @@ test.describe('QA-S1 smoke: public pages (/login, /app/sign-in, /app/sign-up, /r
       role: 'anonymous',
       key: '.xc-sign-in',
       langs: CUSTOMER_LANGS,
+      allowConsole: ['anonymousMyProfile401'],
     });
   });
 
