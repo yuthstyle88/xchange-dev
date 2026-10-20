@@ -385,14 +385,15 @@ impl CommandAction for PricingApproveCommand {
                     - sell_adjust_pct)
                     .round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero);
 
-                let buy_margin_pct = RatePercent::parse(&buy_margin_dec.to_string()).map_err(|_| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("tiers"),
-                        "computed buy margin out of range",
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
+                let buy_margin_pct =
+                    RatePercent::parse(&buy_margin_dec.to_string()).map_err(|_| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("tiers"),
+                            "computed buy margin out of range",
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
                 let sell_margin_pct =
                     RatePercent::parse(&sell_margin_dec.to_string()).map_err(|_| {
                         V3Error::new(

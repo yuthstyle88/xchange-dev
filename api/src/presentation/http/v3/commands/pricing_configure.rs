@@ -144,14 +144,15 @@ impl CommandAction for PricingConfigureCommand {
                             StatusCode::BAD_REQUEST,
                         )
                     })?;
-                    let sell_margin_pct = RatePercent::parse(&dto.sell_margin_pct).map_err(|e| {
-                        V3Error::new(
-                            "validationFailed",
-                            Some("tiers"),
-                            format!("invalid sell margin in tier {}: {}", dto.tier_no, e),
-                            StatusCode::BAD_REQUEST,
-                        )
-                    })?;
+                    let sell_margin_pct =
+                        RatePercent::parse(&dto.sell_margin_pct).map_err(|e| {
+                            V3Error::new(
+                                "validationFailed",
+                                Some("tiers"),
+                                format!("invalid sell margin in tier {}: {}", dto.tier_no, e),
+                                StatusCode::BAD_REQUEST,
+                            )
+                        })?;
                     parsed.push(TierMargin {
                         tier_no: dto.tier_no,
                         buy_margin_pct,
@@ -225,18 +226,15 @@ impl CommandAction for PricingConfigureCommand {
             ));
         }
 
-        let override_entry = CurrencyTierOverride::new(
-            currency,
-            margins,
-            min_spread_pct,
-            anchor_source,
-        )
-        .map_err(|e| match e {
-            RateEngineError::ValidationFailed(msg) => {
-                V3Error::new("validationFailed", None, msg, StatusCode::BAD_REQUEST)
-            }
-            _ => server_error(),
-        })?;
+        let override_entry =
+            CurrencyTierOverride::new(currency, margins, min_spread_pct, anchor_source).map_err(
+                |e| match e {
+                    RateEngineError::ValidationFailed(msg) => {
+                        V3Error::new("validationFailed", None, msg, StatusCode::BAD_REQUEST)
+                    }
+                    _ => server_error(),
+                },
+            )?;
 
         if let Some(tiers) = &override_entry.tiers {
             let rate_policy = RatePolicy::new(
@@ -312,8 +310,10 @@ impl CommandAction for PricingConfigureCommand {
                 Some(u) => Some(Money::parse(&format!("{u:.2}")).map_err(|_| server_error())?),
                 None => None,
             };
-            let buy_margin = RatePercent::parse(&format!("{buy_dec:.4}")).map_err(|_| server_error())?;
-            let sell_margin = RatePercent::parse(&format!("{sell_dec:.4}")).map_err(|_| server_error())?;
+            let buy_margin =
+                RatePercent::parse(&format!("{buy_dec:.4}")).map_err(|_| server_error())?;
+            let sell_margin =
+                RatePercent::parse(&format!("{sell_dec:.4}")).map_err(|_| server_error())?;
             cur_tiers.push(PolicyTier::new(
                 tier_no as u8,
                 upper,

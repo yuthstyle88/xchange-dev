@@ -181,14 +181,19 @@ impl CommandAction for RatePolicySaveCommand {
                     let mut tiers = Vec::with_capacity(dtos.len());
                     for dto in dtos {
                         let upper = match &dto.upper_inclusive_thb {
-                            Some(s) if !s.trim().is_empty() => Some(Money::parse(s).map_err(|e| {
-                                V3Error::new(
-                                    "validationFailed",
-                                    Some("valueTiers"),
-                                    format!("invalid upper bound in tier {}: {}", dto.tier_no, e),
-                                    StatusCode::BAD_REQUEST,
-                                )
-                            })?),
+                            Some(s) if !s.trim().is_empty() => {
+                                Some(Money::parse(s).map_err(|e| {
+                                    V3Error::new(
+                                        "validationFailed",
+                                        Some("valueTiers"),
+                                        format!(
+                                            "invalid upper bound in tier {}: {}",
+                                            dto.tier_no, e
+                                        ),
+                                        StatusCode::BAD_REQUEST,
+                                    )
+                                })?)
+                            }
                             _ => None,
                         };
                         let buy_margin = RatePercent::parse(&dto.buy_margin_pct).map_err(|e| {
@@ -199,20 +204,16 @@ impl CommandAction for RatePolicySaveCommand {
                                 StatusCode::BAD_REQUEST,
                             )
                         })?;
-                        let sell_margin = RatePercent::parse(&dto.sell_margin_pct).map_err(|e| {
-                            V3Error::new(
-                                "validationFailed",
-                                Some("valueTiers"),
-                                format!("invalid sell margin in tier {}: {}", dto.tier_no, e),
-                                StatusCode::BAD_REQUEST,
-                            )
-                        })?;
-                        tiers.push(PolicyTier::new(
-                            dto.tier_no,
-                            upper,
-                            buy_margin,
-                            sell_margin,
-                        ));
+                        let sell_margin =
+                            RatePercent::parse(&dto.sell_margin_pct).map_err(|e| {
+                                V3Error::new(
+                                    "validationFailed",
+                                    Some("valueTiers"),
+                                    format!("invalid sell margin in tier {}: {}", dto.tier_no, e),
+                                    StatusCode::BAD_REQUEST,
+                                )
+                            })?;
+                        tiers.push(PolicyTier::new(dto.tier_no, upper, buy_margin, sell_margin));
                     }
                     let pt = PolicyTiers::new(tiers).map_err(|e| {
                         V3Error::new(
@@ -268,8 +269,8 @@ impl CommandAction for RatePolicySaveCommand {
                     };
                     let buy_margin =
                         RatePercent::parse(&format!("{buy_dec:.4}")).map_err(|_| server_error())?;
-                    let sell_margin =
-                        RatePercent::parse(&format!("{sell_dec:.4}")).map_err(|_| server_error())?;
+                    let sell_margin = RatePercent::parse(&format!("{sell_dec:.4}"))
+                        .map_err(|_| server_error())?;
                     tiers.push(PolicyTier::new(
                         tier_no as u8,
                         upper,
@@ -282,9 +283,9 @@ impl CommandAction for RatePolicySaveCommand {
             None => Vec::new(),
         };
 
-        let resolved_value_tiers_on = input.value_tiers_on.unwrap_or_else(|| {
-            cur_row.as_ref().map(|c| c.value_tiers_on).unwrap_or(false)
-        });
+        let resolved_value_tiers_on = input
+            .value_tiers_on
+            .unwrap_or_else(|| cur_row.as_ref().map(|c| c.value_tiers_on).unwrap_or(false));
 
         let resolved_sharp_move_alert_pct = match input_sharp_move {
             Some(explicit) => explicit,
@@ -379,17 +380,19 @@ impl CommandAction for RatePolicySaveCommand {
 
         for tier in &resolved_tiers {
             if let Some(m) = tier.upper_inclusive_thb {
-                m.try_minor().map(|cents| Decimal::new(cents, 2)).map_err(|_| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("valueTiers"),
-                        format!(
-                            "tier {} upper bound exceeds maximum allowed value",
-                            tier.tier_no
-                        ),
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
+                m.try_minor()
+                    .map(|cents| Decimal::new(cents, 2))
+                    .map_err(|_| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("valueTiers"),
+                            format!(
+                                "tier {} upper bound exceeds maximum allowed value",
+                                tier.tier_no
+                            ),
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
             }
         }
 
