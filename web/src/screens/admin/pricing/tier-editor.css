@@ -1,0 +1,73 @@
+/* tier-editor.css — styles for TierEditor.tsx (FE pricing-board, #564). */
+
+.tier-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--line, #e5e6ea);
+  border-radius: 8px;
+}
+
+.tier-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tier-editor-currency {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink, #17181b);
+}
+
+.tier-editor-empty {
+  font-size: 13px;
+  color: var(--muted, #676a73);
+}
+
+.tier-editor-alert {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--soft, #fbf0f4);
+  color: var(--brand, #a5003c);
+  font-size: 13px;
+}
+
+.tier-editor-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tier-editor-band {
+  display: block;
+  font-size: 12px;
+  color: var(--muted, #676a73);
+  font-variant-numeric: tabular-nums;
+}
+
+.tier-editor-input {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.tier-editor-margin {
+  font-size: 13px;
+  color: var(--muted, #676a73);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.tier-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tier-editor-approve {
+  background: var(--brand, #a5003c);
+  color: #fff;
+  border-color: var(--brand, #a5003c);
+}
+

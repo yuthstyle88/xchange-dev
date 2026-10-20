@@ -3,8 +3,8 @@ import { render } from 'solid-js/web';
 import {
   makeDeskBookingItemDto,
   makeDeskBookingsData,
-  makeStaffMeView,
-  makeStaffRoleDto,
+  makeMe,
+  makeMeRole,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
@@ -13,11 +13,11 @@ import { DeskBookingsScreen } from './DeskBookingsScreen';
 const BRANCH_ID = 'XC-B01';
 const SLOT_ID = '00000000-0000-0000-0000-000000000001';
 
-const STAFF_TELLER = makeStaffMeView({
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [makeStaffRoleDto({ role: 'teller', branchId: BRANCH_ID })],
-  branchId: BRANCH_ID,
+  roles: [makeMeRole({ role: 'teller', branchId: BRANCH_ID })],
+  branch: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
 });
@@ -86,7 +86,7 @@ describe('DeskBookingsScreen status-based action buttons (#3849)', () => {
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (u.pathname === '/api/v3/views/staff_me') {
+        if (u.pathname === '/api/v3/views/me') {
           return viewEnvelope(STAFF_TELLER);
         }
         if (u.pathname === '/api/v3/views/desk_bookings') {

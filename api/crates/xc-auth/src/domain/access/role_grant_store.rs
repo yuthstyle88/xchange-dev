@@ -37,8 +37,18 @@ pub trait RoleGrantStore: Send + Sync + 'static {
     ) -> impl Future<Output = Result<i64, RoleGrantStoreError>> + Send;
 
     /// §11.5 item 2: for every built-in group with **no** `role_permission_grants` rows, insert
-    /// `RoleGrants::seed` of it; bump the version once if anything was inserted. Answers how many groups it seeded.
+    /// `RoleGrants::seed` of it and set `seed_version = RoleGrants::SEED_VERSION`; bump the version once if anything
+    /// was inserted. Answers how many groups it seeded.
     fn seed_missing(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> impl Future<Output = Result<u64, RoleGrantStoreError>> + Send;
+
+    /// #3976: for each built-in group with `seed_version < RoleGrants::SEED_VERSION`, insert every `(v, p)` of
+    /// `RoleGrants::SEED_ADDITIONS` with `v > seed_version` and `p ∈ RoleGrants::seed(role)`, then set its
+    /// `seed_version = RoleGrants::SEED_VERSION`. Bump `role_grant_version` once if anything was inserted. Answers how
+    /// many grants it inserted.
+    fn seed_additions(
         &self,
         tx: &mut Transaction<'_, Postgres>,
     ) -> impl Future<Output = Result<u64, RoleGrantStoreError>> + Send;

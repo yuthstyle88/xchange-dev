@@ -128,17 +128,20 @@ if not content:
 failed = []
 seen = set()
 
-def add_name(name):
-    if name and name not in seen:
-        seen.add(name)
-        failed.append(name)
+def add_failure(binary, name):
+    if not name:
+        return
+    term = f"(binary_id(={binary}) & test(={name}))" if binary else f"test(={name})"
+    if term not in seen:
+        seen.add(term)
+        failed.append(term)
 
 if content.startswith("<"):
     try:
         root = ET.fromstring(content)
         for tc in root.iter("testcase"):
             if tc.find("failure") is not None or tc.find("error") is not None:
-                add_name(tc.get("name", "").strip())
+                add_failure(tc.get("classname", "").strip(), tc.get("name", "").strip())
     except Exception:
         print(test_args)
         sys.exit(0)
@@ -146,11 +149,15 @@ else:
     for line in content.splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
-            add_name(line)
+            parts = line.split()
+            if len(parts) >= 2:
+                add_failure(parts[0], parts[1])
+            else:
+                add_failure("", parts[0])
 
 if not failed:
     print(test_args)
 else:
-    expr = " | ".join(f"test(={name})" for name in failed)
+    expr = " | ".join(failed)
     print(f"{test_args} -E '{expr}'")
 PY

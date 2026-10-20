@@ -315,11 +315,13 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, anyhow::Error> {
     let store = PgRoleGrantStore::new();
     let mut tx = pool.begin().await?;
     let seeded = store.seed_missing(&mut tx).await?;
+    let added = store.seed_additions(&mut tx).await?;
     tx.commit().await?;
     let mut conn = pool.acquire().await?;
     let snapshot = store.load(&mut conn).await?;
     tracing::info!(
         seeded,
+        added,
         version = snapshot.version(),
         "seeded and loaded role permission grants"
     );

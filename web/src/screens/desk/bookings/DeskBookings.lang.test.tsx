@@ -4,10 +4,10 @@ import { render } from 'solid-js/web';
 import {
   makeDeskBookingItemDto,
   makeDeskBookingsData,
-  makeStaffMeView,
-  makeStaffRoleDto,
+  makeMe,
+  makeMeRole,
   type DeskBookingsData,
-  type StaffMeView,
+  type MeView,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -20,20 +20,20 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER = makeStaffMeView({
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [makeStaffRoleDto({ role: 'teller', branchId: 'XC-B01' })],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'teller', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
 });
 
-const STAFF_NO_DESK = makeStaffMeView({
-  userId: '00000000-0000-4000-8000-000000000002',
+const STAFF_NO_DESK = makeMe({
+  id: '00000000-0000-4000-8000-000000000002',
   name: 'Somying Manager',
-  roles: [makeStaffRoleDto({ role: 'manager', branchId: 'XC-B01' })],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'manager', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['RatesRead'],
 });
@@ -56,7 +56,7 @@ const ONE_BOOKING = makeDeskBookingsData({
 });
 
 function stubBookingsFetch(opts?: {
-  staff?: StaffMeView;
+  staff?: MeView;
   bookings?: DeskBookingsData;
   checkInStatus?: number;
   checkInBody?: unknown;
@@ -73,7 +73,7 @@ function stubBookingsFetch(opts?: {
     const u = new URL(rawUrl, 'http://localhost');
     const method = (init?.method ?? 'GET').toUpperCase();
 
-    if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+    if (method === 'GET' && u.pathname === '/api/v3/views/me') {
       return jsonResponse(200, { version: 1, changed: true, data: staff });
     }
     if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {

@@ -5,6 +5,17 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      packages:
+        description: "Space-separated Rust package names to build and test (empty = full plan)"
+        required: false
+        default: ""
+        type: string
+      filter:
+        description: "cargo-nextest filterset expression (-E '<filter>') for attempt 1"
+        required: false
+        default: ""
+        type: string
   schedule:
     - cron: "0 20 * * *"
 
@@ -128,6 +139,7 @@ jobs:
           PUSH_AFTER: ${{ github.event.after }}
           REF: ${{ github.ref }}
           HEAD_REF: ${{ github.head_ref }}
+          DISPATCH_PACKAGES: ${{ inputs.packages }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
@@ -506,7 +518,7 @@ jobs:
           if [ -n "$prev_job" ]; then
             RAW_LOG=$(mktemp)
             if gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$prev_job/logs" --allow-escape-sequences > "$RAW_LOG" 2>/dev/null; then
-              bash .github/scripts/api-failed-from-log.sh < "$RAW_LOG" | awk '{print $2}' > api/target/nextest/prev/failed-tests.txt
+              bash .github/scripts/api-failed-from-log.sh < "$RAW_LOG" > api/target/nextest/prev/failed-tests.txt
             fi
             rm -f "$RAW_LOG"
           fi
@@ -519,6 +531,7 @@ jobs:
           XC_REQUIRE_WEB_DIST: 1
           PACKAGES: ${{ needs.changes.outputs.test_packages }}
           SINCE_FILTER: ${{ needs.changes.outputs.test_filter }}
+          DISPATCH_FILTER: ${{ inputs.filter }}
           PARTITION: hash:${{ matrix.partition }}/${{ matrix.total }}
           CACHE_KEY: p${{ matrix.partition }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -549,6 +562,9 @@ jobs:
             filter_part="${NEXTEST_ARGS#* -E \'}"
             filter_part="${filter_part%\'}"
             cargo nextest run --profile ci $pkg_part -E "$filter_part" --partition "$PARTITION" --no-tests=pass --no-fail-fast || rc=$?
+          elif [ "${RUN_ATTEMPT:-1}" -le 1 ] && [ -n "${DISPATCH_FILTER:-}" ]; then
+            echo "dispatch filter: -E '$DISPATCH_FILTER'"
+            cargo nextest run --profile ci $NEXTEST_ARGS -E "$DISPATCH_FILTER" --partition "$PARTITION" --no-tests=pass --no-fail-fast || rc=$?
           elif [ -n "$SINCE_FILTER" ]; then
             echo "starting from the last run: -E '$SINCE_FILTER'"
             cargo nextest run --profile ci $NEXTEST_ARGS -E "$SINCE_FILTER" --partition "$PARTITION" --no-tests=pass --no-fail-fast || rc=$?

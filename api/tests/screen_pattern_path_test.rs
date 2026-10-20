@@ -142,6 +142,7 @@ impl SessionReader for HeaderCallers {
 
 #[derive(Debug)]
 struct Answer {
+    path: String,
     status: StatusCode,
     location: Option<String>,
     content_type: String,
@@ -186,6 +187,7 @@ async fn ask(method: Method, who: &str, uri: &str) -> Answer {
         req = req.insert_header((AS, who));
     }
     let resp = atest::call_service(&app, req.to_request()).await;
+    let path = resp.request().path().to_owned();
     let status = resp.status();
     let location = header_of(&resp, header::LOCATION);
     let content_type = header_of(&resp, header::CONTENT_TYPE).unwrap_or_default();
@@ -193,6 +195,7 @@ async fn ask(method: Method, who: &str, uri: &str) -> Answer {
     let nosniff = header_of(&resp, header::X_CONTENT_TYPE_OPTIONS).as_deref() == Some("nosniff");
     let body = atest::read_body(resp).await.to_vec();
     Answer {
+        path,
         status,
         location,
         content_type,
@@ -204,6 +207,14 @@ async fn ask(method: Method, who: &str, uri: &str) -> Answer {
 
 async fn get(who: &str, uri: &str) -> Answer {
     ask(Method::GET, who, uri).await
+}
+
+fn expected_cache_control(path: &str) -> &'static str {
+    if matches!(path, "/desk" | "/staff/desk") {
+        "no-store"
+    } else {
+        "no-cache"
+    }
 }
 
 fn is_screen(a: &Answer, html: &str, what: &str) {
@@ -219,7 +230,7 @@ fn is_screen(a: &Answer, html: &str, what: &str) {
     );
     assert_eq!(
         a.cache_control.as_deref(),
-        Some("no-cache"),
+        Some(expected_cache_control(&a.path)),
         "{what}: Cache-Control"
     );
     assert!(a.nosniff, "{what}: X-Content-Type-Options: nosniff");

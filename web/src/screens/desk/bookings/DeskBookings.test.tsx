@@ -9,9 +9,9 @@ import {
   makeBookingRescheduleOutput,
   makeDeskBookingItemDto,
   makeDeskBookingsData,
-  makeStaffMeView,
-  makeStaffRoleDto,
-  type StaffMeView,
+  makeMe,
+  makeMeRole,
+  type MeView,
 } from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import * as texts from './i18n';
@@ -24,22 +24,29 @@ const SLOT_2_ID = '00000000-0000-0000-0000-000000000002';
 const BOOKING_1_ID = 'BK-test-0001';
 const BOOKING_2_ID = 'BK-test-0002';
 
-const STAFF_TELLER = makeStaffMeView({
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [makeStaffRoleDto({ role: 'teller', branchId: BRANCH_ID })],
-  branchId: BRANCH_ID,
+  roles: [makeMeRole({ role: 'teller', branchId: BRANCH_ID })],
+  branch: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
 });
 
-const STAFF_MANAGER = makeStaffMeView({
-  userId: '00000000-0000-4000-8000-000000000002',
+const STAFF_MANAGER = makeMe({
+  id: '00000000-0000-4000-8000-000000000002',
   name: 'Somying Manager',
-  roles: [makeStaffRoleDto({ role: 'manager', branchId: BRANCH_ID })],
-  branchId: BRANCH_ID,
+  roles: [makeMeRole({ role: 'manager', branchId: BRANCH_ID })],
+  branch: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BranchesManage', 'OverviewRead'], // lacks BookingsDesk
+});
+
+const OWNER_WITH_DESK = makeMe({
+  id: '00000000-0000-4000-8000-000000000003',
+  name: 'Owner User',
+  roles: [makeMeRole({ role: 'owner', branchId: null })],
+  permissions: ['BookingsDesk', 'RatesRead'],
 });
 
 const INITIAL_DESK_BOOKINGS = makeDeskBookingsData({
@@ -97,7 +104,7 @@ function viewEnvelope(data: unknown, version = 1, changed = true): Response {
 describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
   let host: HTMLDivElement;
   let sentRequests: { method: string; url: string; path: string; headers: Headers; body: any }[];
-  let currentStaff: StaffMeView;
+  let currentStaff: MeView;
   let bookingsData: DeskBookingsData;
   let bookingsVersion: number;
   let bookingsChanged: boolean;
@@ -155,9 +162,17 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           body: parsedBody,
         });
 
-        // 1. Session / Staff Me
-        if (u.pathname === '/api/v3/views/staff_me' || u.pathname === '/api/v3/views/me') {
+        // 1. Session / Me (staff_me returns 401 employeeAuthRequired as on real server for owner)
+        if (u.pathname === '/api/v3/views/me') {
           return viewEnvelope(currentStaff);
+        }
+        if (u.pathname === '/api/v3/views/staff_me') {
+          return json(401, {
+            error: {
+              code: 'employeeAuthRequired',
+              message: 'Employee authentication required',
+            },
+          });
         }
 
         // 2. View desk_bookings
@@ -167,6 +182,16 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
               error: {
                 code: 'roleNotAllowed',
                 message: 'Desk bookings requires BookingsDesk permission',
+              },
+            });
+          }
+          const roleBranch = currentStaff.roles.find((r) => r.branchId)?.branchId ?? null;
+          const requestedBranch = u.searchParams.get('branch') ?? roleBranch;
+          if (!requestedBranch) {
+            return json(400, {
+              error: {
+                code: 'validationFailed',
+                message: 'branch is required when caller has no assigned branch',
               },
             });
           }
@@ -310,6 +335,24 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
       // B02 desk bookings container rendered
       const screen = host.querySelector('.xc-desk-bookings, [data-screen="desk-bookings"]');
       expect(screen, 'B02 bookings screen rendered for user with BookingsDesk').not.toBeNull();
+      expect(host.textContent).toContain('B261014-0021');
+      expect(sentRequests.some((r) => r.path === '/api/v3/views/staff_me')).toBe(false);
+      const viewReq = sentRequests.find((r) => r.path === '/api/v3/views/desk_bookings');
+      expect(viewReq?.url).toContain(`branch=${BRANCH_ID}`);
+    });
+
+    it('owner on /desk/bookings?branch=B with BookingsDesk loads bookings of B with no staff_me request (#3950)', async () => {
+      currentStaff = OWNER_WITH_DESK;
+      history.replaceState(null, '', '/desk/bookings?branch=XC-B02');
+      await boot();
+
+      expect(sentRequests.some((r) => r.path === '/api/v3/views/staff_me')).toBe(false);
+      const viewReq = sentRequests.find((r) => r.path === '/api/v3/views/desk_bookings');
+      expect(viewReq, 'requests desk_bookings view for branch XC-B02').toBeDefined();
+      expect(new URL(viewReq!.url, 'http://localhost').searchParams.get('branch')).toBe('XC-B02');
+
+      const screen = host.querySelector('.xc-desk-bookings, [data-screen="desk-bookings"]');
+      expect(screen, 'B02 bookings screen rendered for owner with BookingsDesk').not.toBeNull();
       expect(host.textContent).toContain('B261014-0021');
     });
 
@@ -779,7 +822,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
           const method = (init?.method ?? 'GET').toUpperCase();
           const headers = new Headers(init?.headers);
 
-          if (u.pathname === '/api/v3/views/staff_me') return viewEnvelope(STAFF_TELLER);
+          if (u.pathname === '/api/v3/views/me') return viewEnvelope(STAFF_TELLER);
           if (u.pathname === '/api/v3/views/desk_bookings') return viewEnvelope(INITIAL_DESK_BOOKINGS);
 
           if (method === 'POST' && u.pathname.includes('/check-in')) {

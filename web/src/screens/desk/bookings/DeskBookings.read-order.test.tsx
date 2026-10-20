@@ -4,8 +4,8 @@ import { render } from 'solid-js/web';
 import {
   makeDeskBookingItemDto,
   makeDeskBookingsData,
-  makeStaffMeView,
-  makeStaffRoleDto,
+  makeMe,
+  makeMeRole,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
@@ -18,11 +18,11 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER = makeStaffMeView({
-  userId: '00000000-0000-4000-8000-000000000001',
+const STAFF_TELLER = makeMe({
+  id: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [makeStaffRoleDto({ role: 'teller', branchId: 'XC-B01' })],
-  branchId: 'XC-B01',
+  roles: [makeMeRole({ role: 'teller', branchId: 'XC-B01' })],
+  branch: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
 });
@@ -123,7 +123,7 @@ describe('DeskBookingsScreen (B02) — §9 read-order sequence guard (#2216)', (
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') {
           return Promise.resolve(jsonResponse(200, { version: 1, changed: true, data: STAFF_TELLER }));
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {

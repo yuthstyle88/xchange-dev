@@ -64,6 +64,8 @@ pub enum Permission {
     RateAlertSettingsSave,
     /// SP-1 (#1585, rates design §12.6, §12.10): enter org starting prices. EXECUTIVE only.
     OrgStartingPricesManage,
+    /// PT-14 (#3968, pricing-tiers design §PT-14, line 210): refresh market rates (`pricing.market:refresh`).
+    MarketRatesRefresh,
     /// LY-6 (#1411, membership-points design §3, §4.6): draft and submit loyalty rule versions. EXECUTIVE only.
     LoyaltyRulesManage,
     /// C2 (user-management-rbac design §3.3): read the account audit and the login history. EXECUTIVE and ADMIN.
@@ -72,7 +74,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 51] = [
+    pub const ALL: [Permission; 52] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -122,6 +124,7 @@ impl Permission {
         Permission::CashTransferPolicySet,
         Permission::RateAlertSettingsSave,
         Permission::OrgStartingPricesManage,
+        Permission::MarketRatesRefresh,
         Permission::LoyaltyRulesManage,
         Permission::AuditLogsRead,
     ];

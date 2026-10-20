@@ -16,6 +16,10 @@
     "phone": "<finance phone from the seed>",
     "password": "<finance password from the seed>"
   },
+  "marketing": {
+    "phone": "<marketing phone from the seed>",
+    "password": "<marketing password from the seed>"
+  },
   "admin": {
     "identifier": "<the owner's sign-in>",
     "password": "<the owner's password>"
