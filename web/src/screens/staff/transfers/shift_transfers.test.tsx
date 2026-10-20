@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
+import {
+  makeCashTransferLineRow,
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  makeTransferBranchRow,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { en as sharedEn } from '../../../shared/i18n/en';
@@ -25,19 +28,19 @@ const BRANCH = 'MAIN';
 const ME = '00000000-0000-4000-8000-0000000000b1';
 const SHIFT_ID = 'shift-open-001';
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floorWithShift(shiftId: string | null): StaffFloorView {
-  return {
+function floorWithShift(shiftId: string | null) {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -45,12 +48,12 @@ function floorWithShift(shiftId: string | null): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
-const DENOMS: DenominationRow[] = [
-  { id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' },
-  { id: 21, currency: 'USD', faceValue: '50.0000', groupCode: 'NOTE' },
+const DENOMS = [
+  makeDenominationRow({ id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' }),
+  makeDenominationRow({ id: 21, currency: 'USD', faceValue: '50.0000', groupCode: 'NOTE' }),
 ];
 
 type Sent = {
@@ -307,7 +310,7 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
   });
 
   it('5. Shows localized kind_* labels in kind select and list rows (TH and EN), not raw codes', async () => {
-    const row: CashTransferRow = {
+    const row = makeCashTransferRow({
       id: 'tx-lang-001',
       kind: 'DRAWER_TO_SAFE',
       fromBranchId: BRANCH,
@@ -319,7 +322,7 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
       note: 'lang test',
       createdAt: '2026-10-11T00:00:00Z',
       lines: [],
-    };
+    });
 
     // Thai check
     setLang('th');
@@ -376,7 +379,7 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
   });
 
   it('7. Reconcile keeps ONE command (one Idempotency-Key) on retry after network error', async () => {
-    const row: CashTransferRow = {
+    const row = makeCashTransferRow({
       id: 'tx-rec-001',
       kind: 'BRANCH',
       fromBranchId: 'B99',
@@ -388,7 +391,7 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
       note: 'reconcile target',
       createdAt: '2026-10-11T00:00:00Z',
       lines: [],
-    };
+    });
     stub({ cash_transfers: [row] });
     answers['/api/cash-transfers/tx-rec-001/reconcile'] = [
       'network',
@@ -428,10 +431,10 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
   });
 
   it('8. The BRANCH destination list keeps transfer_branches server order, with no client re-sort', async () => {
-    const serverBranches: TransferBranchRow[] = [
-      { branchId: 'Z99', name: 'Zebra Branch' },
-      { branchId: 'A01', name: 'Alpha Branch' },
-      { branchId: 'M50', name: 'Middle Branch' },
+    const serverBranches = [
+      makeTransferBranchRow({ branchId: 'Z99', name: 'Zebra Branch' }),
+      makeTransferBranchRow({ branchId: 'A01', name: 'Alpha Branch' }),
+      makeTransferBranchRow({ branchId: 'M50', name: 'Middle Branch' }),
     ];
     stub({ transfer_branches: { rows: serverBranches } });
     await mount(null);
@@ -450,7 +453,7 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
   });
 
   it('9. Receive starts EMPTY, with no prefill from row lines (blind count)', async () => {
-    const row: CashTransferRow = {
+    const row = makeCashTransferRow({
       id: 'tx-recv-001',
       kind: 'BRANCH',
       fromBranchId: 'B99',
@@ -462,10 +465,10 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
       note: 'incoming cash',
       createdAt: '2026-10-11T00:00:00Z',
       lines: [
-        { currency: 'THB', denominationId: 11, qtySent: '50' } as any,
-        { currency: 'USD', denominationId: 21, qtySent: '100' } as any,
+        makeCashTransferLineRow({ currency: 'THB', denominationId: 11, qtySent: '50' }),
+        makeCashTransferLineRow({ currency: 'USD', denominationId: 21, qtySent: '100' }),
       ],
-    };
+    });
     stub({ cash_transfers: [row] });
     await mount(null);
 

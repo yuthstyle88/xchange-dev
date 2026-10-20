@@ -42,6 +42,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Transaction};
 use tokio::sync::Semaphore;
+use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_customer::domain::customer::value_objects::customer_details::CustomerDetails;
@@ -71,7 +72,6 @@ use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::compat::abandon_request::AbandonRequest;
 use xchange::application::compat::snapshot::{SnapshotBuilder, write_answer};
 use xchange::application::compat::snapshot_sources::{
@@ -280,15 +280,19 @@ pub async fn publish_rate_per_one(
 /// is still compared strictly both ways.
 /// - RF-5 (#877, `docs/design/blueprint/rates.md` §4.10): the kiosk `rates` answer
 ///   appends `freshness`.
-pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[(
-    "/api/kiosk",
-    "rates",
-    "freshness",
-    &["publishedAt", "sourceDate", "stale"],
-)];
+/// - #3473: the kiosk `get` answer appends `quoteId`.
+pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
+    (
+        "/api/kiosk",
+        "rates",
+        "freshness",
+        &["publishedAt", "sourceDate", "stale"],
+    ),
+    ("/api/kiosk", "get", "quoteId", &[]),
+];
 
 /// `actual` without the keys [`V3_ADDED_KEYS`] allows on this route and action,
-/// after checking each one present is an object with exactly its fields. The key
+/// after checking each one present has its expected shape. The key
 /// may be absent: the tests of the change that adds it require it.
 pub fn without_v3_added_keys(
     route: Option<&str>,
@@ -305,14 +309,21 @@ pub fn without_v3_added_keys(
             continue;
         };
         if let Some(added) = map.remove(*key) {
-            let mut got: Vec<&str> = added
-                .as_object()
-                .unwrap_or_else(|| panic!("{label}: $.{key} is an object; got {added}"))
-                .keys()
-                .map(String::as_str)
-                .collect();
-            got.sort_unstable();
-            assert_eq!(got, *fields, "{label}: the fields of $.{key}");
+            if fields.is_empty() {
+                assert!(
+                    added.is_string() || added.is_null(),
+                    "{label}: $.{key} is a string or null; got {added}"
+                );
+            } else {
+                let mut got: Vec<&str> = added
+                    .as_object()
+                    .unwrap_or_else(|| panic!("{label}: $.{key} is an object; got {added}"))
+                    .keys()
+                    .map(String::as_str)
+                    .collect();
+                got.sort_unstable();
+                assert_eq!(got, *fields, "{label}: the fields of $.{key}");
+            }
         }
     }
     actual
@@ -439,6 +450,27 @@ impl TestDb {
             .expect("insert into branches");
         // LG-4 (#929, 1:1): a shift's opening now leaves the branch's ledger SAFE.
         lg4_fund_safe(&self.pool, id).await;
+    }
+
+    /// [`TestDb::seed_branch`] without the funded ledger SAFE (LG-6.r5 #1044): for a test that opens no shift
+    /// and compares `operations.safe` with v2's `null`, as `rpc_common::Desk::open_without_cash` does for MAIN.
+    pub async fn seed_branch_without_cash(&self, id: &str, name: &str) {
+        let v2_hours = serde_json::json!({
+            "mon": [{ "open": "11:00", "close": "23:00" }],
+            "tue": [{ "open": "11:00", "close": "23:00" }],
+            "wed": [{ "open": "11:00", "close": "23:00" }],
+            "thu": [{ "open": "11:00", "close": "23:00" }],
+            "fri": [{ "open": "11:00", "close": "23:00" }],
+            "sat": [{ "open": "11:00", "close": "23:00" }],
+            "sun": [{ "open": "11:00", "close": "23:00" }],
+        });
+        sqlx::query("INSERT INTO branches (id, name, timezone, opening_hours) VALUES ($1, $2, 'Asia/Bangkok', $3)")
+            .bind(id)
+            .bind(name)
+            .bind(&v2_hours)
+            .execute(&self.pool)
+            .await
+            .expect("insert into branches");
     }
 
     /// Drop the schema. Reached only by a test that passed; a failed test
@@ -637,7 +669,7 @@ impl Shop {
         let db = TestDb::start().await;
         let source = Arc::new(RecordedSource::default());
         let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(db.pool.clone())),
+            Arc::new(ledger_shift_repository(db.pool.clone())),
             db.branch_tx(),
         );
         let custody_repo = Arc::new(PgCustodyRepository::new(db.pool.clone()));
@@ -1335,10 +1367,6 @@ fn balances_of(object: &Value) -> Balances {
     Balances::of(&pairs)
 }
 
-fn optional_balances(value: &Value, key: &str) -> Option<Balances> {
-    value.get(key).filter(|v| !v.is_null()).map(balances_of)
-}
-
 fn delta_of(object: &Value) -> StockDelta {
     let map = object
         .as_object()
@@ -1421,7 +1449,6 @@ fn cutoff_of(value: &Value) -> Cutoff {
 pub fn state_of(ops: &Value) -> CustodyState {
     CustodyState {
         phase: phase_of(&text_of(ops, "phase")),
-        safe: optional_balances(ops, "safe"),
         target: ops.get("target").filter(|v| !v.is_null()).map(target_of),
         entity: ops.get("entity").filter(|v| !v.is_null()).map(|e| Entity {
             company: text_of(e, "company"),
@@ -1657,9 +1684,6 @@ pub async fn seed_passport_identity(
 #[path = "../lg4_fund/mod.rs"]
 mod lg4_fund;
 pub use lg4_fund::lg4_fund_safe;
-// R1 (TX-6 #674): only the binaries that replay a recorded save, or open a shift by hand, call it.
-#[allow(unused_imports)]
-pub use lg4_fund::r1_fund_open_drawers;
 
 /// A recorded v2 admin write on a shift (CA-10: replayed by SQL, its v2 command is deleted).
 #[derive(Clone, Copy)]
@@ -1755,35 +1779,54 @@ async fn v2_admin_write_in(
             .execute(&mut **tx)
             .await?;
             if let Some(opening) = payload.get("opening").and_then(Value::as_object) {
-                for (code, amount) in opening {
-                    sqlx::query(
-                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                         SELECT $1, $2, $3::numeric, $3::numeric WHERE $3::numeric <> 0",
-                    )
-                    .bind(&id)
-                    .bind(code)
-                    .bind(amount_text(amount))
-                    .execute(&mut **tx)
-                    .await?;
+                use rust_decimal::Decimal;
+                use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+                use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+                for (code_str, amount) in opening {
+                    let qty: Decimal = amount_text(amount).parse().expect("opening decimal");
+                    if qty > Decimal::ZERO
+                        && let Ok(currency) = CurrencyCode::parse(code_str)
+                    {
+                        xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+                            .post_in(
+                                tx,
+                                &[PostingRequest {
+                                    from: CashPlace::Bank,
+                                    to: CashPlace::Drawer(id.clone()),
+                                    currency,
+                                    quantity: xc_kernel::money::ForeignAmount::from_decimal(qty),
+                                    source: SourceRef {
+                                        source_type: SourceType::Opening,
+                                        source_id: format!("v2-open:{id}"),
+                                        source_key: code_str.clone(),
+                                    },
+                                    line: None,
+                                    reverses: None,
+                                }],
+                                None,
+                            )
+                            .await?;
+                    }
                 }
             }
             Ok(id)
         }
         V2Write::Move => {
             let shift = v2_text(payload, "shiftId");
-            let (code, direction) = (v2_text(payload, "currency"), v2_text(payload, "direction"));
+            let (code_str, direction) =
+                (v2_text(payload, "currency"), v2_text(payload, "direction"));
             let amount = amount_text(payload.get("amount").unwrap_or(&Value::Null));
-            let (kind, from_shift, to_shift, signed) = if direction == "IN" {
-                ("SAFE_TO_DRAWER", None, Some(shift), amount.clone())
+            let (kind, from_shift, to_shift) = if direction == "IN" {
+                ("SAFE_TO_DRAWER", None, Some(shift))
             } else {
-                ("DRAWER_TO_SAFE", Some(shift), None, format!("-{amount}"))
+                ("DRAWER_TO_SAFE", Some(shift), None)
             };
             let face: Option<(i64, String)> = sqlx::query_as(
                 "SELECT id, face_value::text FROM denominations \
                  WHERE currency_code = $1 AND face_value IS NOT NULL AND $2::numeric % face_value = 0 \
                  ORDER BY face_value DESC LIMIT 1",
             )
-            .bind(code)
+            .bind(code_str)
             .bind(&amount)
             .fetch_optional(&mut **tx)
             .await?;
@@ -1794,7 +1837,7 @@ async fn v2_admin_write_in(
                         "INSERT INTO denominations (currency_code, face_value, group_code) \
                          VALUES ($1, 0.01, 'ALL') RETURNING id, face_value::text",
                     )
-                    .bind(code)
+                    .bind(code_str)
                     .fetch_one(&mut **tx)
                     .await?
                 }
@@ -1834,31 +1877,49 @@ async fn v2_admin_write_in(
                  FROM cash_transfers t WHERE t.id = $1::uuid",
             )
             .bind(&transfer)
-            .bind(code)
+            .bind(code_str)
             .bind(denomination)
             .bind(&amount)
             .bind(&face)
             .execute(&mut **tx)
             .await?;
-            // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
-            // ON CONFLICT is reached), then the move, as v2's `update_expected` left it
-            sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, 0) \
-                 ON CONFLICT (shift_id, code) DO NOTHING",
-            )
-            .bind(shift)
-            .bind(code)
-            .execute(&mut **tx)
-            .await?;
-            sqlx::query(
-                "UPDATE shift_balances SET expected = expected + $3::numeric WHERE shift_id = $1 AND code = $2",
-            )
-            .bind(shift)
-            .bind(code)
-            .bind(&signed)
-            .execute(&mut **tx)
-            .await?;
-            Ok(format!("{transfer}:{code}"))
+            {
+                use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+                use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+                let (from, to) = if direction == "IN" {
+                    (
+                        CashPlace::InTransit(transfer.clone()),
+                        CashPlace::Drawer(shift.to_owned()),
+                    )
+                } else {
+                    (
+                        CashPlace::Drawer(shift.to_owned()),
+                        CashPlace::InTransit(transfer.clone()),
+                    )
+                };
+                xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+                    .post_in(
+                        tx,
+                        &[PostingRequest {
+                            from,
+                            to,
+                            currency: code(code_str),
+                            quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                                amount.parse().expect("move decimal"),
+                            ),
+                            source: SourceRef {
+                                source_type: SourceType::Transfer,
+                                source_id: transfer.clone(),
+                                source_key: code_str.to_owned(),
+                            },
+                            line: None,
+                            reverses: None,
+                        }],
+                        None,
+                    )
+                    .await?;
+            }
+            Ok(format!("{transfer}:{code_str}"))
         }
         V2Write::Close => {
             let shift = v2_text(payload, "shiftId");
@@ -1873,24 +1934,72 @@ async fn v2_admin_write_in(
             .bind(shift)
             .execute(&mut **tx)
             .await?;
+            let count_id: String = sqlx::query_scalar(
+                "WITH counter AS ( \
+                     INSERT INTO users (organization_id, name, status, created_by) \
+                     SELECT organization_id, 'v2-close-counter', 'PENDING', 'test' FROM branches WHERE id = $1 \
+                     RETURNING id, organization_id \
+                 ), \
+                 verifier AS ( \
+                     INSERT INTO users (organization_id, name, status, created_by) \
+                     SELECT organization_id, 'v2-close-verifier', 'PENDING', 'test' FROM counter \
+                     RETURNING id \
+                 ) \
+                 INSERT INTO cash_counts (organization_id, branch_id, shift_id, kind, counted_by, counted_at, \
+                     verified_by, verified_at, idempotency_key) \
+                 SELECT counter.organization_id, $1, $2, 'CLOSE', counter.id, $3, verifier.id, $3, $4 \
+                 FROM counter, verifier \
+                 RETURNING id::text",
+            )
+            .bind(branch.as_str())
+            .bind(shift)
+            .bind(at)
+            .bind(v2_text(payload, "requestId"))
+            .fetch_one(&mut **tx)
+            .await?;
             if let Some(counted) = payload.get("counted").and_then(Value::as_object) {
-                for (code, amount) in counted {
+                for (code_str, amount) in counted {
                     sqlx::query(
-                        "INSERT INTO shift_balances (shift_id, code, opening, expected, counted) \
-                         VALUES ($1, $2, 0, 0, $3::numeric) \
-                         ON CONFLICT (shift_id, code) DO UPDATE SET counted = $3::numeric",
+                        "INSERT INTO cash_count_totals (count_id, organization_id, currency, counted) \
+                         SELECT c.id, c.organization_id, $2, $3::numeric \
+                         FROM cash_counts c WHERE c.id = $1::uuid \
+                         ON CONFLICT (count_id, currency) DO UPDATE SET counted = EXCLUDED.counted",
                     )
-                    .bind(shift)
-                    .bind(code)
+                    .bind(&count_id)
+                    .bind(code_str)
                     .bind(amount_text(amount))
                     .execute(&mut **tx)
                     .await?;
                 }
             }
             sqlx::query(
-                "UPDATE shift_balances SET counted = COALESCE(counted, 0), \
-                 difference = COALESCE(counted, 0) - expected WHERE shift_id = $1",
+                "INSERT INTO cash_count_totals (count_id, organization_id, currency, counted) \
+                 SELECT c.id, c.organization_id, a.currency, 0 \
+                 FROM cash_counts c \
+                 JOIN cash_accounts a ON a.kind = 'DRAWER' AND a.shift_id = c.shift_id \
+                 WHERE c.id = $1::uuid \
+                 ON CONFLICT (count_id, currency) DO NOTHING",
             )
+            .bind(&count_id)
+            .execute(&mut **tx)
+            .await?;
+            sqlx::query(
+                "UPDATE cash_count_totals cct \
+                 SET expected = COALESCE(( \
+                         SELECT SUM(e.quantity_signed) \
+                         FROM cash_accounts a \
+                         JOIN ledger_entries e ON e.account_id = a.id \
+                         WHERE a.kind = 'DRAWER' AND a.shift_id = $2 AND a.currency = cct.currency \
+                     ), 0), \
+                     difference = cct.counted - COALESCE(( \
+                         SELECT SUM(e.quantity_signed) \
+                         FROM cash_accounts a \
+                         JOIN ledger_entries e ON e.account_id = a.id \
+                         WHERE a.kind = 'DRAWER' AND a.shift_id = $2 AND a.currency = cct.currency \
+                     ), 0) \
+                 WHERE cct.count_id = $1::uuid",
+            )
+            .bind(&count_id)
             .bind(shift)
             .execute(&mut **tx)
             .await?;

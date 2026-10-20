@@ -6,35 +6,41 @@ import { CashPolicy } from './CashPolicy';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { th as screenTh, en as screenEn } from './i18n';
-import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
-import type { CashTransferPolicyData } from '../../../shared/api/generated/cash_transfer_policy';
+import {
+  makeAdminCashData,
+  makeCashTransferPolicyData,
+  makeInvalidTransferLimitEntry,
+  type CashTransferPolicyData,
+} from '../../../shared/testing/fixtures';
 
-const VALID_POLICY: CashTransferPolicyData = {
+const VALID_POLICY = makeCashTransferPolicyData({
   version: 'v-0001',
   limits: { USD: '300.00', EUR: '12.5' },
   valid: true,
   invalidEntries: [],
   setBy: 'u-exec',
   createdAt: '2026-10-12T01:00:00Z',
-};
+});
 
-const INVALID_POLICY: CashTransferPolicyData = {
+const INVALID_POLICY = makeCashTransferPolicyData({
   version: 'v-0002',
   limits: { EUR: '500' },
   valid: false,
-  invalidEntries: [{ currency: 'USD', raw: '12.345', reason: 'too many decimal places' }],
+  invalidEntries: [
+    makeInvalidTransferLimitEntry({ currency: 'USD', raw: '12.345', reason: 'too many decimal places' }),
+  ],
   setBy: 'u-exec',
   createdAt: '2026-10-12T02:00:00Z',
-};
+});
 
-const SAMPLE_CASH: AdminCashData = {
+const SAMPLE_CASH = makeAdminCashData({
   openShifts: [],
   stock: [],
   stats: null,
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
   currencies: ['THB', 'USD', 'EUR'],
   lastCounted: null,
-};
+});
 
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;

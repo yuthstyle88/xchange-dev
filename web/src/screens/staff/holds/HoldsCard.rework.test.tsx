@@ -1,26 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import { makeStaffFloorView, makeStaffMeView } from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { HoldsCard } from './HoldsCard';
 
 const BRANCH = 'MAIN';
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000c1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -28,7 +27,7 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 function makeCtx(perms = ['CustomerHoldPlace', 'VerificationReview']): StaffCtx {

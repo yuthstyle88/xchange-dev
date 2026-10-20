@@ -13,7 +13,6 @@ use xc_kernel::shift_hook::{NoShiftLifecycleHook, ShiftLifecycleHook};
 use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
 use crate::domain::shift::entities::shift_ledger::ShiftLedger;
-use crate::domain::shift::entities::stock_movement::StockMovement;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
 use crate::domain::shift::value_objects::balances::Balances;
 use crate::domain::shift::value_objects::shift_error::ShiftError;
@@ -101,10 +100,6 @@ impl<R: ShiftRepository> ShiftService<R> {
         self.repo.shifts(branch).await
     }
 
-    pub async fn movements(&self, branch: &BranchId) -> AppResult<Vec<StockMovement>> {
-        self.repo.movements(branch).await
-    }
-
     pub async fn apply_delta_for_teller_in(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -125,27 +120,12 @@ impl<R: ShiftRepository> ShiftService<R> {
             None => return Err(ShiftError::NoOpenShift.into()),
         };
 
-        let rows: Vec<(String, String)> =
-            sqlx::query_as("SELECT code, expected::text FROM shift_balances WHERE shift_id = $1")
-                .bind(&shift_id)
-                .fetch_all(&mut **tx)
-                .await?;
-
-        let mut exp_pairs = Vec::new();
-        for (code_str, exp_str) in rows {
-            let code = CurrencyCode::parse(code_str.trim()).map_err(|_| {
-                AppError::Internal(format!("undecodable shift_balances.code: {code_str}"))
-            })?;
-            let amt = crate::infrastructure::shift::shift_repository::parse_money_unbounded(
-                "shift_balances",
-                "expected",
-                &exp_str,
-            )?;
-            if !amt.is_zero() {
-                exp_pairs.push((code, amt));
-            }
-        }
-        let current_expected = Balances::of(&exp_pairs);
+        let current_expected = self
+            .repo
+            .shift(branch, &shift_id)
+            .await?
+            .ok_or_else(|| AppError::Internal(format!("shift {shift_id} vanished")))?
+            .expected;
 
         if let Err(e) = ShiftLedger::ensure_non_negative(&current_expected, delta) {
             return Err(match e {
@@ -154,17 +134,6 @@ impl<R: ShiftRepository> ShiftService<R> {
                 StockError::OutOfRange => ShiftError::AmountInvalid.into(),
             });
         }
-
-        let new_expected = ShiftLedger::expected(&current_expected, std::slice::from_ref(delta))
-            .map_err(|e| match e {
-                StockError::Insufficient(c) => ShiftError::Insufficient(c),
-                StockError::NotAStockCurrency => ShiftError::MovementInvalid,
-                StockError::OutOfRange => ShiftError::AmountInvalid,
-            })?;
-
-        self.repo
-            .update_expected(tx, &shift_id, delta, &new_expected)
-            .await?;
 
         Ok(shift_id)
     }
@@ -210,23 +179,12 @@ impl<R: ShiftRepository> ShiftService<R> {
                     amt_norm.rescale(2);
                 }
                 let amt_str = amt_norm.to_string();
-                sqlx::query(
-                    "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                     VALUES ($1, $2, $3::numeric, $3::numeric)",
-                )
-                .bind(&id)
-                .bind(code_str.as_str())
-                .bind(&amt_str)
-                .execute(&mut **tx)
-                .await?;
 
                 let code = CurrencyCode::parse(code_str.trim()).map_err(|_| {
-                    AppError::Internal(format!("undecodable shift_balances.code: {code_str}"))
+                    AppError::Internal(format!("undecodable shifts.opening: {code_str}"))
                 })?;
                 let money = crate::infrastructure::shift::shift_repository::parse_money_unbounded(
-                    "shift_balances",
-                    "opening",
-                    &amt_str,
+                    "shifts", "opening", &amt_str,
                 )?;
                 pairs.push((code, money));
             }
@@ -274,31 +232,7 @@ impl<R: ShiftRepository> ShiftService<R> {
         .execute(&mut **tx)
         .await?;
 
-        for (code, cnt, diff) in close_balances {
-            let cnt_str = cnt.to_string();
-            let diff_str = diff.to_string();
-            sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected, counted, difference) \
-                 VALUES ($1, $2, 0, 0, $3::numeric, $4::numeric) \
-                 ON CONFLICT (shift_id, code) DO UPDATE SET counted = $3::numeric, difference = $4::numeric",
-            )
-            .bind(shift_id)
-            .bind(code.as_str())
-            .bind(&cnt_str)
-            .bind(&diff_str)
-            .execute(&mut **tx)
-            .await?;
-        }
-
-        sqlx::query(
-            "UPDATE shift_balances \
-             SET counted = COALESCE(counted, 0), difference = COALESCE(difference, 0 - expected) \
-             WHERE shift_id = $1 AND counted IS NULL",
-        )
-        .bind(shift_id)
-        .execute(&mut **tx)
-        .await?;
-
+        let _ = close_balances;
         Ok(())
     }
 }

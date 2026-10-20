@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiError, type ApiClient } from '../../../../shared/api/client';
-import type { DeskRefundRow } from '../../../../shared/api/generated/desk_refunds';
+import { makeDeskRefundRow, makeReversalSummaryDto, type DeskRefundRow } from '../../../../shared/testing/fixtures';
 import { setLang, t as sharedT } from '../../../../shared/i18n';
 import * as texts from './i18n';
 
@@ -31,9 +31,9 @@ vi.mock('./post', () => ({
 const { createRefundsStore } = await import('./refunds-store');
 const { RefundsStep } = await import('./RefundsStep');
 
-function row(id: string): DeskRefundRow {
-  return {
-    reversal: {
+function row(id: string) {
+  return makeDeskRefundRow({
+    reversal: makeReversalSummaryDto({
       id,
       originalTransactionId: `tx-${id}`,
       status: 'APPROVED',
@@ -44,11 +44,11 @@ function row(id: string): DeskRefundRow {
       approvedAt: '2026-10-11T04:10:00Z',
       postedAt: null,
       documentNumber: null,
-    },
+    }),
     receiptNumber: `XC-${id}`,
     lines: [],
     payments: [],
-  } as DeskRefundRow;
+  });
 }
 
 let dispose: (() => void) | undefined;

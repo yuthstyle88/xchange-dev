@@ -42,6 +42,7 @@ use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_cash::domain::posting::CashPlace;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -124,14 +125,11 @@ impl Room {
                 .execute(&pool)
                 .await
                 .expect("insert a branch");
-            sqlx::query(
-                "INSERT INTO ops_state (branch_id, phase, safe) \
-                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
-            )
-            .bind(branch)
-            .execute(&pool)
-            .await
-            .expect("the branch's safe");
+            sqlx::query("INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')")
+                .bind(branch)
+                .execute(&pool)
+                .await
+                .expect("the branch's ops_state");
             // USD 100,000,500.00 in each safe's ledger: enough to dispatch one note of the big face value.
             fund(
                 &pool,
@@ -145,26 +143,20 @@ impl Room {
     }
 
     async fn person(&self, role: Role, branch: Option<&str>) -> Who {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let id = seed_person(
+            &mut self.pool.acquire().await.unwrap(),
+            ORG,
+            &unique(role.as_str()),
+            &[RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch,
+                valid_from: from,
+                valid_to: None,
+            }],
         )
-        .bind(ORG)
-        .bind(unique(role.as_str()))
-        .fetch_one(&self.pool)
         .await
         .expect("insert a user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
-        )
-        .bind(&id)
-        .bind(role.as_str())
-        .bind(ORG)
-        .bind(branch)
-        .execute(&self.pool)
-        .await
-        .expect("give the user a role");
         Who {
             spec: format!("{id}|{}|{}", role.as_str(), branch.unwrap_or("*")),
         }

@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { AssistantAskAnswerDto } from '../../../shared/api/generated/assistant_ask';
+import {
+  makeAssistantAskAnswerDto,
+  makeAssistantIntentDto,
+  makeAssistantMessageDto,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { AssistantScreen } from './AssistantScreen';
 
@@ -24,21 +28,23 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const ASK_ANSWER: AssistantAskAnswerDto = {
+const ASK_ANSWER = makeAssistantAskAnswerDto({
   conversationId: 'conv-1',
-  customerMessage: {
+  customerMessage: makeAssistantMessageDto({
     id: 'msg-1',
     role: 'CUSTOMER',
     redactedText: 'เรท USD วันนี้',
     createdAt: '2026-10-15T08:00:00Z',
-  },
-  assistantReply: {
+  }),
+  assistantReply: makeAssistantMessageDto({
     id: 'msg-2',
     role: 'ASSISTANT',
     redactedText: 'เรท USD วันนี้คือ 35.10 บาท',
     createdAt: '2026-10-15T08:00:01Z',
-  },
-};
+  }),
+  intent: makeAssistantIntentDto({ kind: 'UNKNOWN' }),
+  preview: null,
+});
 
 function makeHarness(steps: StepAnswer[]) {
   const writes: WriteCall[] = [];

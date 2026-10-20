@@ -14,7 +14,6 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::custody_service::pg_custody_service;
@@ -63,7 +62,7 @@ impl BranchView for AdminOperationsBranchView {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(state.db.clone())),
+        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(state.db.clone())),
         branch_tx.clone(),
     );
     let custody = pg_custody_service(&state.db, &shifts, &branch_tx);

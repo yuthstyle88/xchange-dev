@@ -16,8 +16,12 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OrgStartingPriceSaveOutput } from '../../../shared/api/generated/org_starting_price_save';
-import type { OrgStartingPriceItem } from '../../../shared/api/generated/org_starting_prices';
+import {
+  makeOrgStartingPriceItem,
+  makeOrgStartingPriceSaveOutput,
+  type OrgStartingPriceItem,
+  type OrgStartingPriceSaveOutput,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { Toast } from '../parts/toast';
@@ -49,11 +53,11 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   let container: HTMLDivElement;
   let dispose: (() => void) | null = null;
   let sentRequests: SentRequest[] = [];
-  let viewItems: OrgStartingPriceItem[] = [];
+  let viewItems: OrgStartingPriceItem[];
   let viewStatus = 200;
   let viewErrorCode: string | undefined = undefined;
   let saveStatus = 200;
-  let saveOutput: OrgStartingPriceSaveOutput = { unpriced: [] };
+  let saveOutput: OrgStartingPriceSaveOutput = makeOrgStartingPriceSaveOutput({ unpriced: [] });
   let saveErrorCode: string | undefined = undefined;
   let saveErrorField: string | undefined = undefined;
   let saveErrorMessage: string | undefined = undefined;
@@ -67,7 +71,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
     viewStatus = 200;
     viewErrorCode = undefined;
     saveStatus = 200;
-    saveOutput = { unpriced: [] };
+    saveOutput = makeOrgStartingPriceSaveOutput({ unpriced: [] });
     saveErrorCode = undefined;
     saveErrorField = undefined;
     saveErrorMessage = undefined;
@@ -185,12 +189,12 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 2. Rows for two currencies with versions 1–3 in any order render one current line per currency (the highest version), and the history toggle lists the older versions newest first.
   it('2. Rows for two currencies with versions 1–3 in any order render one current line per currency (the highest version), and the history toggle lists the older versions newest first', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'alice', enteredAt: '2026-10-10T10:00:00Z', reason: 'USD v1' },
-      { currency: 'EUR', version: 2, buy: '38.00', sell: '38.80', enteredBy: 'bob', enteredAt: '2026-10-11T12:00:00Z', reason: 'EUR v2' },
-      { currency: 'USD', version: 3, buy: '34.20', sell: '34.80', enteredBy: 'alice', enteredAt: '2026-10-12T10:00:00Z', reason: 'USD v3' },
-      { currency: 'USD', version: 2, buy: '34.10', sell: '34.70', enteredBy: 'carol', enteredAt: '2026-10-11T10:00:00Z', reason: 'USD v2' },
-      { currency: 'EUR', version: 1, buy: '37.50', sell: '38.50', enteredBy: 'bob', enteredAt: '2026-10-10T12:00:00Z', reason: 'EUR v1' },
-      { currency: 'EUR', version: 3, buy: '38.20', sell: '38.90', enteredBy: 'dave', enteredAt: '2026-10-12T12:00:00Z', reason: 'EUR v3' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'alice', enteredAt: '2026-10-10T10:00:00Z', reason: 'USD v1' }),
+      makeOrgStartingPriceItem({ currency: 'EUR', version: 2, buy: '38.00', sell: '38.80', enteredBy: 'bob', enteredAt: '2026-10-11T12:00:00Z', reason: 'EUR v2' }),
+      makeOrgStartingPriceItem({ currency: 'USD', version: 3, buy: '34.20', sell: '34.80', enteredBy: 'alice', enteredAt: '2026-10-12T10:00:00Z', reason: 'USD v3' }),
+      makeOrgStartingPriceItem({ currency: 'USD', version: 2, buy: '34.10', sell: '34.70', enteredBy: 'carol', enteredAt: '2026-10-11T10:00:00Z', reason: 'USD v2' }),
+      makeOrgStartingPriceItem({ currency: 'EUR', version: 1, buy: '37.50', sell: '38.50', enteredBy: 'bob', enteredAt: '2026-10-10T12:00:00Z', reason: 'EUR v1' }),
+      makeOrgStartingPriceItem({ currency: 'EUR', version: 3, buy: '38.20', sell: '38.90', enteredBy: 'dave', enteredAt: '2026-10-12T12:00:00Z', reason: 'EUR v3' }),
     ];
 
     mount();
@@ -242,7 +246,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 3. buy: "35.12345678" renders exactly 35.12345678, and sell: null renders "—", never 0.
   it('3. buy: "35.12345678" renders exactly 35.12345678, and sell: null renders "—", never 0', async () => {
     viewItems = [
-      {
+      makeOrgStartingPriceItem({
         currency: 'GBP',
         version: 1,
         buy: '35.12345678',
@@ -250,7 +254,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
         enteredBy: 'admin',
         enteredAt: '2026-10-13T10:00:00Z',
         reason: 'precise buy only',
-      },
+      }),
     ];
 
     mount();
@@ -278,8 +282,8 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 4. Saving one changed row sends exactly { prices: [{ currency, buy, sell }], reason }, with empty inputs as null, unchanged rows left out, and an Idempotency-Key header; a retry after a network error reuses the same key.
   it('4. Saving one changed row sends exactly { prices: [{ currency, buy, sell }], reason }, with empty inputs as null, unchanged rows left out, and an Idempotency-Key header; a retry after a network error reuses the same key', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r1' },
-      { currency: 'EUR', version: 1, buy: '38.00', sell: '38.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r2' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r1' }),
+      makeOrgStartingPriceItem({ currency: 'EUR', version: 1, buy: '38.00', sell: '38.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r2' }),
     ];
 
     mount();
@@ -329,7 +333,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
 
     // Retry save with server answering 200
     saveStatus = 200;
-    saveOutput = { unpriced: [] };
+    saveOutput = makeOrgStartingPriceSaveOutput({ unpriced: [] });
     saveBtn.click();
 
     await vi.waitFor(() => {
@@ -344,7 +348,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 5. "Add currency" upper-cases usd → USD, and a duplicate code is not added.
   it('5. "Add currency" upper-cases usd → USD, and a duplicate code is not added', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' }),
     ];
 
     mount();
@@ -523,7 +527,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 7b. Server error code roleNotAllowedHere with message 'x' renders errorText's text and not 'x'.
   it('7b. Server error code roleNotAllowedHere with message "x" renders errorText text and not "x"', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' }),
     ];
     mount();
 
@@ -559,7 +563,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 8. An answer { unpriced: [{ branch: "B2", reason: "noPolicy" }] } lists "B2: no policy: not priced". An unknown reason shows the generic text, and [] shows nothing.
   it('8. An answer { unpriced: [{ branch: "B2", reason: "noPolicy" }] } lists "B2: no policy: not priced". An unknown reason shows the generic text, and [] shows nothing', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' }),
     ];
     mount();
 
@@ -578,12 +582,12 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
 
     // Save with unpriced branches containing 'noPolicy' and an unknown reason
     saveStatus = 200;
-    saveOutput = {
+    saveOutput = makeOrgStartingPriceSaveOutput({
       unpriced: [
         { branch: 'B2', reason: 'noPolicy' },
         { branch: 'B3', reason: 'unknownCustomReason' },
       ],
-    };
+    });
 
     const saveBtn = container.querySelector('.xc-sp-save-btn') as HTMLButtonElement;
     saveBtn.click();
@@ -596,7 +600,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
     });
 
     // Save with empty unpriced list shows nothing
-    saveOutput = { unpriced: [] };
+    saveOutput = makeOrgStartingPriceSaveOutput({ unpriced: [] });
     buyInput.value = '34.20';
     buyInput.dispatchEvent(new Event('input', { bubbles: true }));
     reasonInput.value = 'Price update 2';
@@ -612,7 +616,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 9. After a successful save the view is read again.
   it('9. After a successful save the view is read again', async () => {
     viewItems = [
-      { currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' },
+      makeOrgStartingPriceItem({ currency: 'USD', version: 1, buy: '34.00', sell: '34.50', enteredBy: 'a', enteredAt: '2026-10-12T10:00:00Z', reason: 'r' }),
     ];
     mount();
 
@@ -633,7 +637,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
 
     saveStatus = 200;
-    saveOutput = { unpriced: [] };
+    saveOutput = makeOrgStartingPriceSaveOutput({ unpriced: [] });
 
     const saveBtn = container.querySelector('.xc-sp-save-btn') as HTMLButtonElement;
     saveBtn.click();
@@ -647,7 +651,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
   // 10. A reason containing <b>x</b> renders as literal text.
   it('10. A reason containing <b>x</b> renders as literal text', async () => {
     viewItems = [
-      {
+      makeOrgStartingPriceItem({
         currency: 'USD',
         version: 1,
         buy: '34.00',
@@ -655,7 +659,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
         enteredBy: '<b>admin</b>',
         enteredAt: '2026-10-12T10:00:00Z',
         reason: '<b>x</b>',
-      },
+      }),
     ];
 
     mount();

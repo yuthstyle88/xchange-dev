@@ -4,8 +4,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
-import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
+import {
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeMyBookingItemDto,
+  makeMyBookingsData,
+  type MyBookingItemDto,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { BookingsScreen } from './Bookings';
 
@@ -16,8 +21,8 @@ const BRANCH_B = 'bkk-b';
 const SLOT_A = 'slot-a-1';
 const SLOT_B = 'slot-b-1';
 
-function makeBooking(id: string, bookingNo: string, branchId: string, slotId: string): MyBookingItemDto {
-  return {
+function makeBooking(id: string, bookingNo: string, branchId: string, slotId: string) {
+  return makeMyBookingItemDto({
     id,
     bookingNo,
     branchId,
@@ -28,29 +33,34 @@ function makeBooking(id: string, bookingNo: string, branchId: string, slotId: st
     cancelCutoffAt: '2026-10-15T09:00:00Z',
     qrToken: `QR-${id}`,
     ticketNumber: null,
+    ticketsAhead: null,
+    estimateSeconds: null,
+    estimateLowSeconds: null,
+    estimateHighSeconds: null,
+    estimateAsOf: null,
     quoteSummary: '',
     readiness: 'unknown',
-  };
+  });
 }
 
-const INITIAL_BOOKINGS: MyBookingItemDto[] = [
+const INITIAL_BOOKINGS = [
   makeBooking(BOOKING_A, 'B261015-0001', BRANCH_A, SLOT_A),
   makeBooking(BOOKING_B, 'B261015-0002', BRANCH_B, SLOT_B),
 ];
 
-function slotsFor(branch: string | null): BookingSlotsData {
+function slotsFor(branch: string | null) {
   const slotId = branch === BRANCH_B ? SLOT_B : SLOT_A;
-  return {
+  return makeBookingSlotsData({
     asOf: '2026-10-15T08:00:00Z',
     slots: [
-      {
+      makeBookingSlotItemDto({
         id: slotId,
         start: '2026-10-15T11:00:00Z',
         end: '2026-10-15T11:30:00Z',
         available: 4,
-      },
+      }),
     ],
-  };
+  });
 }
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -79,7 +89,7 @@ function makeDeferredHarness() {
     const u = new URL(input, 'http://localhost');
 
     if (method === 'GET' && u.pathname === '/api/v3/views/my_bookings') {
-      const body: MyBookingsData = { bookings: currentBookings.map((b) => ({ ...b })) };
+      const body = makeMyBookingsData({ bookings: currentBookings.map((b) => ({ ...b })) });
       return jsonResponse(200, { version: 1, changed: true, data: body });
     }
     if (method === 'GET' && u.pathname === '/api/v3/views/booking_slots') {

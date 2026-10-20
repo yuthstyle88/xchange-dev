@@ -4,53 +4,57 @@ import { ShiftCard } from './ShiftCard';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import type { StaffCtx } from '../cards';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
-import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
-import type { CountSubmitInput } from '../../../shared/api/generated/cash';
+import {
+  makeCountSubmitInput,
+  makeDenominationRow,
+  makeHandoverReceiverRow,
+  makeStaffFloorMyShift,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type CountSubmitInput,
+  type StaffFloorView,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 
 const BRANCH = 'MAIN';
 const ME = '00000000-0000-4000-8000-0000000000a1';
 const OTHER = '00000000-0000-4000-8000-0000000000a2';
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
-    myShift: {
+    myShift: makeStaffFloorMyShift({
       id: 'shift-open-001',
       openedAt: '2026-10-11T01:05:00Z',
-    },
+    }),
     cutoff: null,
     target: null,
     safe: null,
     ...over,
-  };
+  });
 }
 
-const SAMPLE_COUNTS: CashCountRow[] = [];
-const SAMPLE_HANDOVERS: HandoverPendingRow[] = [];
-const SAMPLE_DENOMS: DenominationRow[] = [
-  { id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' },
-  { id: 12, currency: 'THB', faceValue: '500.0000', groupCode: 'NOTE' },
+const SAMPLE_COUNTS: never[] = [];
+const SAMPLE_HANDOVERS: never[] = [];
+const SAMPLE_DENOMS = [
+  makeDenominationRow({ id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' }),
+  makeDenominationRow({ id: 12, currency: 'THB', faceValue: '500.0000', groupCode: 'NOTE' }),
 ];
-const SAMPLE_RECEIVERS: HandoverReceiverRow[] = [
-  { userId: OTHER, name: 'Somchai' },
+const SAMPLE_RECEIVERS = [
+  makeHandoverReceiverRow({ userId: OTHER, name: 'Somchai' }),
 ];
 
 function json(status: number, body: unknown): Response {
@@ -95,7 +99,7 @@ describe('Staff shift count: empty denominations guard (#2239)', () => {
         }
         if (method === 'POST' && path === '/api/cash-counts') {
           const raw = typeof init?.body === 'string' ? init.body : '{}';
-          cashCountPosts.push(JSON.parse(raw) as CountSubmitInput);
+          cashCountPosts.push(makeCountSubmitInput(JSON.parse(raw)));
           return json(200, { id: 'count-new-001' });
         }
         return json(200, {});

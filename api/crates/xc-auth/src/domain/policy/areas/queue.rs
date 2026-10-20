@@ -42,4 +42,9 @@ pub const ROWS: &[AreaRow] = &[
     queue_operate("queueBoard"),
     branch_day("queueOpen"),
     branch_day("queueClose"),
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "queueTicketTake",
+        need: Need::Permission(Permission::CustomerSelf),
+    },
 ];

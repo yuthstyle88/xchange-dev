@@ -16,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { ApiClient, ViewAnswer, ViewParams } from '../../shared/api/client';
-import type { Me } from '../../shared/api/generated/common';
 import { setLang } from '../../shared/i18n';
 import { AdminShell } from './AdminShell';
 import type { AdminMenu } from './menus';
@@ -56,7 +55,7 @@ const BRANCHES = [
   { id: 'B1', name: 'สาขาหนึ่ง' },
 ];
 
-function meFor(named: string | undefined): Me {
+function meFor(named: string | undefined) {
   return meOf({ id: 'owner', role: 'OWNER', branch: named || 'MAIN', name: 'Owner', branchName: named || 'MAIN', branches: [] });
 }
 

@@ -6,24 +6,23 @@
 // add tests in a file of your own.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ViewAnswer, ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
+import { makeBranchRef, makeMe, makeMeRole, type Me, type MeRole } from '../testing/fixtures';
 import { createSessionStore } from './session';
-import type { MeRole } from '../../test-support/me';
 
-function me(roles: MeRole[], id = 'u-7'): Me {
-  return {
+function me(roles: MeRole[], id = 'u-7') {
+  return makeMe({
     id,
     name: 'Nok',
     roles,
     permissions: [],
     branch: 'B1',
     branchName: 'B1',
-    branches: [{ id: 'B1', code: 'B1', name: 'B1' }],
-  } as unknown as Me;
+    branches: [makeBranchRef({ id: 'B1', code: 'B1', name: 'B1' })],
+  });
 }
 
-const TELLER: MeRole = { role: 'TELLER', branchId: 'B1' };
-const FINANCE: MeRole = { role: 'FINANCE', branchId: 'B1' };
+const TELLER = makeMeRole({ role: 'TELLER', branchId: 'B1' });
+const FINANCE = makeMeRole({ role: 'FINANCE', branchId: 'B1' });
 
 function fakeApi(script: Array<ViewAnswer<Me>>) {
   let i = 0;
@@ -32,7 +31,7 @@ function fakeApi(script: Array<ViewAnswer<Me>>) {
     view: async <U>(_name: string, _params: ViewParams = {}): Promise<ViewAnswer<U>> => {
       const next = script[Math.min(i, script.length - 1)]!;
       i += 1;
-      return next as unknown as ViewAnswer<U>;
+      return next as never;
     },
   };
   return api;
@@ -65,7 +64,7 @@ describe('OR-7.7 session: switched follows id and the set of role grants', () =>
     const first = me([TELLER]);
     const api = fakeApi([
       { version: 4, changed: true, data: first },
-      { version: 9, changed: true, data: me([{ role: 'TELLER', branchId: 'B2' }]) },
+      { version: 9, changed: true, data: me([makeMeRole({ role: 'TELLER', branchId: 'B2' })]) },
     ]);
     const store = createSessionStore(api as never);
     await vi.advanceTimersByTimeAsync(60_000);

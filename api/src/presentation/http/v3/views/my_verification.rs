@@ -121,11 +121,7 @@ impl BranchView for MyVerificationView {
         };
 
         let readiness = match Readiness::of(&self.pool, customer_id).await {
-            Ok(Readiness::None) => "NONE",
-            Ok(Readiness::Pending) => "PENDING",
-            Ok(Readiness::NeedsUpdate) => "NEEDS_UPDATE",
-            Ok(Readiness::Verified { .. }) => "VERIFIED",
-            Ok(Readiness::Expired) => "EXPIRED",
+            Ok(r) => r.as_str(),
             Err(e) => {
                 tracing::error!(error = %e, "readiness query error");
                 return Err(AppError::Internal("failed to query readiness".into()));

@@ -14,8 +14,17 @@
 // 4. After a switch is ticked the screen reads the view again; the freshness shown is the new answer's, still once.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { ApiClient, ViewAnswer, ViewParams } from '../../shared/api/client';
-import type { KioskCurrencies, KioskCurrency } from '../../shared/api/generated/kiosk_currencies';
+import type { ApiClient, ViewParams } from '../../shared/api/client';
+import {
+  makeKbankReference,
+  makeKioskCurrencies,
+  makeKioskCurrency,
+  makeRateFreshnessDto,
+  makeViewAnswer,
+  type KioskCurrencies,
+  type RateFreshnessDto,
+  type ViewAnswer,
+} from '../../shared/testing/fixtures';
 import { fill, locale, setLang } from '../../shared/i18n';
 import { th } from '../../shared/i18n/th';
 import { KioskCurrenciesScreen } from './KioskCurrenciesScreen';
@@ -26,18 +35,10 @@ const sources = import.meta.glob<string>('./KioskCurrenciesScreen.tsx', {
   eager: true,
 });
 
-/** `RateFreshnessDto` on the wire (RF-1, `dto/v3/common.rs`). Declared here so this file does not wait on codegen. */
-interface Freshness {
-  stale: boolean;
-  sourceDate: string | null;
-  publishedAt: string | null;
-}
-type Data = KioskCurrencies & { freshness: Freshness };
-
 const PUBLISHED_AT = '2026-10-10T03:15:00.123Z';
 
-function currency(code: string, name: string, nameEn: string): KioskCurrency {
-  return {
+function currency(code: string, name: string, nameEn: string) {
+  return makeKioskCurrency({
     code,
     name,
     nameEn,
@@ -50,7 +51,7 @@ function currency(code: string, name: string, nameEn: string): KioskCurrency {
     partnerCost: null,
     enabled: false,
     kbank: [],
-  };
+  });
 }
 
 const CURRENCIES = [
@@ -59,16 +60,15 @@ const CURRENCIES = [
   currency('USD', 'ดอลลาร์สหรัฐ', 'US Dollar'),
 ];
 
-function answer(freshness: Freshness, version = 7): ViewAnswer<Data> {
-  return {
-    version,
-    changed: true,
-    data: {
+function answer(freshness: RateFreshnessDto | Partial<RateFreshnessDto>, version = 7) {
+  return makeViewAnswer(
+    makeKioskCurrencies({
       currencies: CURRENCIES,
-      kbank: { source: 'https://www.kasikornbank.com/', publishedAt: '2026-10-02T22:16:01+07:00', round: 10 },
-      freshness,
-    },
-  };
+      kbank: makeKbankReference({ source: 'https://www.kasikornbank.com/', publishedAt: '2026-10-02T22:16:01+07:00', round: 10 }),
+      freshness: makeRateFreshnessDto(freshness),
+    }),
+    { version, changed: true },
+  );
 }
 
 interface Fake {
@@ -77,13 +77,13 @@ interface Fake {
 }
 
 /** `view` answers `answers` in turn (the last one again after that); `post` saves. */
-function fake(answers: Array<ViewAnswer<Data>>): Fake {
+function fake(answers: Array<ViewAnswer<KioskCurrencies>>): Fake {
   const views: string[] = [];
   const api: Pick<ApiClient, 'view' | 'post'> = {
     view<T>(name: string, _q?: ViewParams): Promise<ViewAnswer<T>> {
       views.push(name);
       const a = answers[Math.min(views.length - 1, answers.length - 1)]!;
-      return Promise.resolve(structuredClone(a) as unknown as ViewAnswer<T>);
+      return Promise.resolve(structuredClone(a) as any);
     },
     post<B, R>(_path: string, _body: B): Promise<R> {
       return Promise.resolve({ saved: true } as unknown as R);

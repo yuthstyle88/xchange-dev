@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
-import type { MyBookingsData } from '../../../shared/api/generated/my_bookings';
+import { makeMyBookingItemDto, makeMyBookingsData } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { BookingsScreen } from './Bookings';
 import { loadBranchNames } from './branchNames';
@@ -22,20 +22,20 @@ const BRANCHES = {
   ],
 };
 
-const BOOKINGS: MyBookingsData = {
+const BOOKINGS = makeMyBookingsData({
   bookings: [
-    {
+    makeMyBookingItemDto({
       id: 'bk-1', bookingNo: 'B261015-0001', status: 'CONFIRMED', branchId: 'bkk-1', slotId: 's1',
       startAt: '2099-10-15T10:00:00Z', endAt: '2099-10-15T10:30:00Z', qrToken: null, quoteSummary: '',
-      cancelCutoffAt: null, ticketNumber: null, readiness: 'unknown',
-    },
-    {
+      cancelCutoffAt: null, ticketNumber: null, ticketsAhead: null, estimateSeconds: null, estimateLowSeconds: null, estimateHighSeconds: null, estimateAsOf: null, readiness: 'unknown',
+    }),
+    makeMyBookingItemDto({
       id: 'bk-2', bookingNo: 'B261015-0002', status: 'CONFIRMED', branchId: 'zz-9', slotId: 's2',
       startAt: '2099-10-16T10:00:00Z', endAt: '2099-10-16T10:30:00Z', qrToken: null, quoteSummary: '',
-      cancelCutoffAt: null, ticketNumber: null, readiness: 'unknown',
-    },
+      cancelCutoffAt: null, ticketNumber: null, ticketsAhead: null, estimateSeconds: null, estimateLowSeconds: null, estimateHighSeconds: null, estimateAsOf: null, readiness: 'unknown',
+    }),
   ],
-};
+});
 
 function server(over: { host?: Reply; branches?: Reply } = {}) {
   const paths: string[] = [];

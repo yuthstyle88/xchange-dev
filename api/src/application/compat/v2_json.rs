@@ -481,10 +481,19 @@ pub type People = BTreeMap<String, PersonLabel>;
 /// [`CustodyRole::Other`]; someone it does not know is printed with the name
 /// `""` and the role `OTHER`.
 pub fn operations_json(state: &CustodyState, events: &[StoredEvent], people: &People) -> V2Json {
+    operations_with_safe_json(state, None, events, people)
+}
+
+pub fn operations_with_safe_json(
+    state: &CustodyState,
+    safe: Option<&Balances>,
+    events: &[StoredEvent],
+    people: &People,
+) -> V2Json {
     let mut pairs = vec![
         ("enabled", V2Json::Bool(false)),
         ("phase", V2Json::text(state.phase.as_str())),
-        ("safe", optional(state.safe.as_ref(), balances_json)),
+        ("safe", optional(safe, balances_json)),
         ("target", optional(state.target.as_ref(), target_json)),
         ("entity", optional(state.entity.as_ref(), entity_json)),
         ("custodian", V2Json::Null),

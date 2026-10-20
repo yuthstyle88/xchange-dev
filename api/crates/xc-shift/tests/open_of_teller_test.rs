@@ -102,7 +102,7 @@ async fn shift(
 }
 
 fn repo(db: &TestDb) -> PgShiftRepository {
-    PgShiftRepository::new(db.pool.clone())
+    PgShiftRepository::with_balances(db.pool.clone(), db.balances.clone())
 }
 
 // ── open_of_teller ──────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::domain::branch::branch_hours::BranchHours;
 use crate::domain::branch::commands::create_branch::CreateBranch;
+use crate::domain::branch::contact_channel::{BranchStatus, ContactChannel};
 use crate::domain::branch::entities::branch::Branch;
 use crate::domain::branch::repositories::branch_repository::BranchRepository;
 use crate::domain::validation::{
@@ -134,6 +135,8 @@ impl BranchService {
                         timezone: "Asia/Bangkok".to_string(),
                         opening_hours: None,
                         booking_enabled: false,
+                        contact_channels: Vec::new(),
+                        status: BranchStatus::Active,
                     })
                 })
             })
@@ -173,7 +176,25 @@ impl BranchService {
         branch: &BranchId,
         profile: BranchProfile,
     ) -> AppResult<Branch> {
+        self.save_profile_with_contact_in(tx, branch, profile, None, None)
+            .await
+    }
+
+    /// Saves `branch`'s profile inside `tx`, updating `contact_channels` and `status` when given
+    /// and keeping the stored values when `None` (S3 #3406 B4).
+    pub async fn save_profile_with_contact_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        profile: BranchProfile,
+        contact_channels: Option<Vec<ContactChannel>>,
+        status: Option<BranchStatus>,
+    ) -> AppResult<Branch> {
         let code = validate_profile(&profile)?;
+        let validated_channels = match contact_channels.as_deref() {
+            Some(channels) => Some(ContactChannel::validate_list(channels)?),
+            None => None,
+        };
         let Some(current) = self.repo.find_for_update_in(tx, branch).await? else {
             return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
         };
@@ -182,6 +203,8 @@ impl BranchService {
                 "branch code {code:?} is taken in this organisation"
             )));
         }
+        let next_channels = validated_channels.unwrap_or_else(|| current.contact_channels.clone());
+        let next_status = status.unwrap_or(current.status);
         self.repo
             .update_profile_in(
                 tx,
@@ -191,6 +214,8 @@ impl BranchService {
                 &profile.timezone,
                 profile.opening_hours.as_ref(),
                 profile.booking_enabled,
+                &next_channels,
+                next_status,
             )
             .await?;
         Ok(Branch {
@@ -199,6 +224,8 @@ impl BranchService {
             timezone: profile.timezone,
             opening_hours: profile.opening_hours,
             booking_enabled: profile.booking_enabled,
+            contact_channels: next_channels,
+            status: next_status,
             ..current
         })
     }

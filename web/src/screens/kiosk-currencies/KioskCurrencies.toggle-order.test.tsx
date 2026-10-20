@@ -2,11 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../shared/api/client';
-import type {
-  KbankComparison,
-  KioskCurrencies,
-  KioskCurrency,
-} from '../../shared/api/generated/kiosk_currencies';
+import {
+  makeKbankComparison,
+  makeKbankReference,
+  makeKioskCurrencies,
+  makeKioskCurrency,
+  makeRateFreshnessDto,
+  makeViewAnswer,
+  type KioskCurrencies,
+  type KioskCurrency,
+} from '../../shared/testing/fixtures';
 import { fill, setLang } from '../../shared/i18n';
 import { th as sharedTh } from '../../shared/i18n/th';
 import { th } from './i18n';
@@ -15,8 +20,8 @@ import { KioskCurrenciesScreen } from './KioskCurrenciesScreen';
 const PUBLISHED = '2026-10-02T22:16:01+07:00';
 const SOURCE = 'https://www.kasikornbank.com/en/rate/Pages/Foreign-Exchange.aspx';
 
-function cmp(label: string): KbankComparison {
-  return {
+function cmp(label: string) {
+  return makeKbankComparison({
     label,
     bankBuy: null,
     shopBuy: null,
@@ -24,11 +29,11 @@ function cmp(label: string): KbankComparison {
     bankSell: null,
     shopSell: null,
     sellDifference: null,
-  };
+  });
 }
 
-function currency(code: string, name: string, nameEn: string, enabled: boolean): KioskCurrency {
-  return {
+function currency(code: string, name: string, nameEn: string, enabled: boolean) {
+  return makeKioskCurrency({
     code,
     name,
     nameEn,
@@ -41,7 +46,7 @@ function currency(code: string, name: string, nameEn: string, enabled: boolean):
     partnerCost: null,
     enabled,
     kbank: [cmp(code)],
-  };
+  });
 }
 
 // Branch A's list
@@ -54,16 +59,18 @@ const LIST_A = [AFN, JPY, USD];
 const GBP = currency('GBP', 'ปอนด์สเตอร์ลิง', 'Pound Sterling', true);
 const LIST_B = [JPY, GBP];
 
-function answer(currencies: KioskCurrency[], round = 10): ViewAnswer<KioskCurrencies> {
-  return {
-    version: 1,
-    changed: true,
-    data: {
+function answer(currencies: KioskCurrency[], round = 10) {
+  return makeViewAnswer(
+    makeKioskCurrencies({
       currencies,
-      kbank: { source: SOURCE, publishedAt: PUBLISHED, round },
-      freshness: { stale: false, sourceDate: null, publishedAt: null },
+      kbank: makeKbankReference({ source: SOURCE, publishedAt: PUBLISHED, round }),
+      freshness: makeRateFreshnessDto({ stale: false, sourceDate: null, publishedAt: null }),
+    }),
+    {
+      version: 1,
+      changed: true,
     },
-  };
+  );
 }
 
 type Reply = ViewAnswer<KioskCurrencies> | Error | Promise<ViewAnswer<KioskCurrencies>>;
@@ -84,7 +91,7 @@ function fake(replies: Reply[]): Fake {
       const r = replies[views.length - 1];
       if (r === undefined) return Promise.reject(new Error(`unexpected view call #${views.length}`));
       if (r instanceof Error) return Promise.reject(r);
-      return Promise.resolve(r).then((a) => structuredClone(a) as unknown as ViewAnswer<T>);
+      return Promise.resolve(r).then((a) => structuredClone(a) as any);
     },
     post<B, R>(path: string, body: B): Promise<R> {
       posts.push({ path, body: JSON.parse(JSON.stringify(body)) as unknown });

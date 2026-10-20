@@ -18,7 +18,9 @@ use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::admin_branches_profile::AdminBranchProfileData;
+use crate::presentation::dto::v3::admin_branches_profile::{
+    AdminBranchContactChannel, AdminBranchProfileData,
+};
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -59,6 +61,15 @@ impl BranchView for AdminBranchesProfileBranchView {
                 timezone: saved.timezone,
                 opening_hours: saved.opening_hours,
                 booking_enabled: saved.booking_enabled,
+                contact_channels: saved
+                    .contact_channels
+                    .into_iter()
+                    .map(|ch| AdminBranchContactChannel {
+                        kind: ch.kind.as_str().to_owned(),
+                        value: ch.value,
+                    })
+                    .collect(),
+                status: saved.status.as_str().to_owned(),
             })
         }
     }

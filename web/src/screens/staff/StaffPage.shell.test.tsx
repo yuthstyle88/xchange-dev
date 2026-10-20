@@ -26,9 +26,14 @@ import type { JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../shared/i18n';
 import { ApiClient } from '../../shared/api/client';
-import type { Me } from '../../shared/api/generated/common';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
+import {
+  makeBranchRef,
+  makeMe,
+  makeStaffFloorHours,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+} from '../../shared/testing/fixtures';
 
 type PageModule = {
   StaffPage: (p: { api: ApiClient; cards: readonly unknown[]; navigate: (url: string) => void }) => JSX.Element;
@@ -52,29 +57,29 @@ function staffTitle(): string {
 
 // ── fixtures, as S-3's StaffPage.test.tsx has them ──────────────────────────────────────────
 
-function staffMe(permissions: string[]): StaffMeView {
-  return {
+function staffMe(permissions: string[]) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000a1',
     name: 'Ploy',
     roles: [],
     branchId: 'MAIN',
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
 /** The shared session's `me` (v3 `Me`), for the shell's account bar. */
-const SESSION_ME: Me = {
+const SESSION_ME = makeMe({
   id: '00000000-0000-4000-8000-0000000000a1',
   name: 'Ploy',
   roles: [], // no role literal: it would trip S-3's no-role-names gate (SD:S2); the bar's role text is not under test
   permissions: [],
   branch: 'MAIN',
   branchName: 'XC-B',
-  branches: [{ id: 'MAIN', code: 'XC-B', name: 'XC-B' }],
-};
+  branches: [makeBranchRef({ id: 'MAIN', code: 'XC-B', name: 'XC-B' })],
+});
 
-const FLOOR_BASE: StaffFloorView = {
+const FLOOR_BASE = makeStaffFloorView({
   phase: 'OPEN',
   hours: null,
   myClockIn: null,
@@ -82,11 +87,11 @@ const FLOOR_BASE: StaffFloorView = {
   cutoff: null,
   target: null,
   safe: null,
-};
-const FLOOR_WITH_HOURS: StaffFloorView = {
+});
+const FLOOR_WITH_HOURS = makeStaffFloorView({
   ...FLOOR_BASE,
-  hours: { open: '2026-10-11T03:00:00Z', close: '2026-10-11T13:00:00Z' }, // 10:00–20:00 Bangkok
-};
+  hours: makeStaffFloorHours({ open: '2026-10-11T03:00:00Z', close: '2026-10-11T13:00:00Z' }), // 10:00–20:00 Bangkok
+});
 
 type Route = { status: number; body: unknown };
 let routes: Record<string, () => Route>;

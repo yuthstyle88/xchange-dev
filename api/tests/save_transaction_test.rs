@@ -740,7 +740,7 @@ async fn a_save_that_fails_part_way_leaves_nothing_behind() {
     // record, the customer.
     for table in [
         "counters",
-        "shift_balances",
+        "ledger_entries",
         "files",
         "transactions",
         "transaction_files",

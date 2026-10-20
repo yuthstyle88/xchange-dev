@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
@@ -18,8 +18,8 @@ const EXPORTER_ME: unknown = (() => {
   return { ...m, permissions: [...m.permissions, 'ReportsExport'].sort() };
 })();
 
-function dummyTx(): TransactionRow {
-  return {
+function dummyTx() {
+  return makeTransactionRow({
     id: 'XC-20261008-000001',
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -46,7 +46,7 @@ function dummyTx(): TransactionRow {
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  };
+  });
 }
 
 describe('Transactions rework tests (#1701): worded error on export failure', () => {

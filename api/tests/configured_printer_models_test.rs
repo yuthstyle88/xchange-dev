@@ -130,16 +130,34 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     .await
     .expect("insert shift");
 
-    sqlx::query(
-        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-         VALUES ('shift-1', 'THB', 100000, 100000), ('shift-1', 'USD', 1000, 1000)",
-    )
-    .execute(&desk.db.pool)
-    .await
-    .expect("insert shift balances");
-    // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same opening in the
-    // ledger's drawer of shift-1.
-    snapshot_common::r1_fund_open_drawers(&desk.db.pool).await;
+    let ledger = xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new();
+    for (code, amount) in [("THB", 100_000_i64), ("USD", 1_000_i64)] {
+        use xc_cash::domain::posting::CashPostings;
+        let mut tx = desk.db.pool.begin().await.expect("begin opening");
+        ledger
+            .post_in(
+                &mut tx,
+                &[xc_cash::domain::posting::PostingRequest {
+                    from: xc_cash::domain::posting::CashPlace::Bank,
+                    to: xc_cash::domain::posting::CashPlace::Drawer("shift-1".to_owned()),
+                    currency: xc_kernel::money::CurrencyCode::parse(code).expect("currency"),
+                    quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                        rust_decimal::Decimal::from(amount),
+                    ),
+                    source: xc_cash::domain::ledger::posting::SourceRef {
+                        source_type: xc_cash::domain::ledger::posting::SourceType::Opening,
+                        source_id: "shift-1-opening".to_owned(),
+                        source_key: code.to_owned(),
+                    },
+                    line: None,
+                    reverses: None,
+                }],
+                None,
+            )
+            .await
+            .expect("fund shift-1 drawer in ledger");
+        tx.commit().await.expect("commit opening");
+    }
     // CA-10 (#626, ruling A), setup only: the teller gate refuses a day that is not OPEN (`SAVE_CLOSED`).
     shift_holder_common::open_day(&desk.db.pool, MAIN).await;
 

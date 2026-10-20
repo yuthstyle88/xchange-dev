@@ -1,9 +1,13 @@
 // #2198: Desk bookings (B02) — New booking quantity validation (§8, §9).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { BookingCreateOutput } from '../../../shared/api/generated/bookings';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeBookingCreateOutput,
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeStaffMeView,
+  makeStaffRoleDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 import { th } from './i18n';
@@ -11,18 +15,18 @@ import { th } from './i18n';
 const BRANCH_ID = 'XC-B01';
 const SLOT_1_ID = '00000000-0000-0000-0000-000000000001';
 
-const STAFF_TELLER: StaffMeView = {
+const STAFF_TELLER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: BRANCH_ID }],
+  roles: [makeStaffRoleDto({ role: 'teller', branchId: BRANCH_ID })],
   branchId: BRANCH_ID,
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
+const INITIAL_DESK_BOOKINGS = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'BK-test-0001',
       bookingNo: 'B261016-0001',
       status: 'CONFIRMED',
@@ -33,9 +37,9 @@ const INITIAL_DESK_BOOKINGS: DeskBookingsData = {
       slotId: SLOT_1_ID,
       startAt: '2026-10-16T09:00:00Z',
       endAt: '2026-10-16T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 interface RecordedPost {
   path: string;
@@ -83,19 +87,22 @@ describe('DeskBookingsScreen (B02) — New booking quantity validation (#2198 §
         if (method === 'POST' && u.pathname === '/api/bookings') {
           const parsedBody = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
           bookingPosts.push({ path: u.pathname, body: parsedBody });
-          return jsonResponse(200, {
-            id: 'BK-new-001',
-            bookingNo: 'B261016-0099',
-            status: 'CONFIRMED',
-            sourceChannel: 'DESK',
-            branchId: BRANCH_ID,
-            slotId: SLOT_1_ID,
-            customerId: 'cust-new',
-            shopSide: 'SELL',
-            currency: 'USD',
-            quantity: Number((parsedBody as { quantity?: number })?.quantity ?? 0),
-            qrToken: null,
-          } satisfies BookingCreateOutput);
+          return jsonResponse(
+            200,
+            makeBookingCreateOutput({
+              id: 'BK-new-001',
+              bookingNo: 'B261016-0099',
+              status: 'CONFIRMED',
+              sourceChannel: 'DESK',
+              branchId: BRANCH_ID,
+              slotId: SLOT_1_ID,
+              customerId: 'cust-new',
+              shopSide: 'SELL',
+              currency: 'USD',
+              quantity: Number((parsedBody as { quantity?: number })?.quantity ?? 0),
+              qrToken: null,
+            }),
+          );
         }
         return jsonResponse(404, { error: { code: 'notFound', message: u.pathname } });
       }),

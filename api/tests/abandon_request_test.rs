@@ -248,23 +248,6 @@ impl TestDb {
         .map(|id| Seeded { id })
     }
 
-    /// CA-10: v2's `move_stock` with request `id` on `shift`, written straight in (setup only).
-    async fn move_stock(&self, branch_id: &str, shift: &str, id: &str) {
-        sqlx::query(
-            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
-             VALUES ($1, $2, $3, 'USD', 'IN', 5, 'top up', $4, $5, $6)",
-        )
-        .bind(format!("MV-{}", uuid::Uuid::new_v4()))
-        .bind(branch_id)
-        .bind(shift)
-        .bind(id)
-        .bind(at(1))
-        .bind(ACTOR)
-        .execute(&self.pool)
-        .await
-        .expect("seed a movement");
-    }
-
     /// CA-10: v2's `close` with request `id` of `shift`, written straight in (setup only).
     async fn close_shift(&self, shift: &str, id: &str) {
         sqlx::query(
@@ -458,10 +441,6 @@ async fn applied_stock_movement_and_close_shift_requests_are_applied() {
     let db = TestDb::start().await;
     let shift = db.open_shift(MAIN, &request_id()).await.unwrap();
 
-    let moved = request_id();
-    db.move_stock(MAIN, &shift.id, &moved).await;
-    assert_eq!(db.abandon(MAIN, &moved, 2).await.unwrap(), Applied);
-
     let closed = request_id();
     db.close_shift(&shift.id, &closed).await;
     assert_eq!(db.abandon(MAIN, &closed, 4).await.unwrap(), Applied);
@@ -501,16 +480,14 @@ async fn a_request_applied_in_another_branch_is_not_applied_here() {
     let db = TestDb::start().await;
     db.seed_branch("B2").await;
 
-    // an open shift, a movement and a closed shift — all in B2 (re-expected for RE-7 #604: a
+    // an open shift and a closed shift — both in B2 (re-expected for RE-7 #604: a
     // rate is no longer a write that carries a request id)
     let opened = request_id();
     let shift = db.open_shift("B2", &opened).await.unwrap();
-    let moved = request_id();
-    db.move_stock("B2", &shift.id, &moved).await;
     let closed = request_id();
     db.close_shift(&shift.id, &closed).await;
 
-    let ids = [&opened, &moved, &closed];
+    let ids = [&opened, &closed];
     for id in ids {
         assert_eq!(db.abandon(MAIN, id, 3).await.unwrap(), Cancelled, "in MAIN");
         assert_eq!(db.abandon("B2", id, 4).await.unwrap(), Applied, "in B2");
@@ -671,16 +648,36 @@ async fn seed_opener(pool: &PgPool, id: &str) {
         .await
         .expect("look for the owner's user");
         if !exists {
-            sqlx::query(
-                "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
-                 u AS (INSERT INTO users (organization_id, name, status, created_by) \
-                       SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
-                 INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
+            let (uid, org): (String, String) = sqlx::query_as(
+                "INSERT INTO users (organization_id, name, status, created_by) \
+                 SELECT id, 'owner', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                 RETURNING id::text, organization_id::text",
             )
-            .execute(pool)
+            .fetch_one(pool)
             .await
             .expect("seed the owner's user");
+            let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+            xc_testdb::people::seed_roles(
+                &mut pool.acquire().await.expect("acquire"),
+                &uid,
+                &org,
+                &[
+                    xc_testdb::people::RoleRow {
+                        role_code: "EXECUTIVE",
+                        branch_id: None,
+                        valid_from: from,
+                        valid_to: None,
+                    },
+                    xc_testdb::people::RoleRow {
+                        role_code: "ADMIN",
+                        branch_id: None,
+                        valid_from: from,
+                        valid_to: None,
+                    },
+                ],
+            )
+            .await
+            .expect("seed the owner's roles");
         }
         return;
     }
@@ -720,12 +717,6 @@ async fn seed_shift_in(
     .bind(at(0))
     .bind(ACTOR)
     .bind(id)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query(
-        "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, 'USD', 10, 10)",
-    )
-    .bind(&shift)
     .execute(&mut **tx)
     .await?;
     Ok(shift)

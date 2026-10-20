@@ -4,8 +4,13 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_app::application::assistant::assistant_service::AssistantAnswer;
-use xc_app::domain::assistant::conversation::{AssistantConversation, AssistantMessage, MessageRole};
+use xc_app::application::planner::planner_preview::PlannerEstimate;
+use xc_app::domain::assistant::conversation::{
+    AssistantConversation, AssistantMessage, MessageRole,
+};
+use xc_app::domain::assistant::intent::{Intent, IntentKind};
 
+use crate::presentation::dto::v3::planner::PlannerPreviewAnswer;
 use crate::presentation::http::v3::view::ViewFilter;
 
 // ------------------------------------------------------------ assistantAsk
@@ -26,10 +31,66 @@ pub struct AssistantAskInput {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "assistant_ask.ts")]
+pub struct AssistantIntentDto {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub currency: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub customer_side: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub quantity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub budget_thb: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub branch: Option<String>,
+}
+
+impl AssistantIntentDto {
+    pub fn of(intent: &Intent) -> Self {
+        Self {
+            kind: match intent.kind {
+                IntentKind::Quote => "QUOTE".to_string(),
+                IntentKind::Queue => "QUEUE".to_string(),
+                IntentKind::Alert => "ALERT".to_string(),
+                IntentKind::Branch => "BRANCH".to_string(),
+                IntentKind::Unknown => "UNKNOWN".to_string(),
+            },
+            currency: intent.currency.as_ref().map(|c| c.as_str().to_string()),
+            customer_side: intent
+                .customer_side
+                .as_ref()
+                .map(|s| s.as_str().to_string()),
+            quantity: intent.quantity.as_ref().map(|q| q.to_string()),
+            budget_thb: intent.budget_thb.as_ref().map(|b| b.to_string()),
+            branch: intent.branch.as_ref().map(|b| b.as_str().to_string()),
+        }
+    }
+}
+
+fn preview_of(estimate: &PlannerEstimate) -> PlannerPreviewAnswer {
+    PlannerPreviewAnswer {
+        thb: estimate.thb.to_string(),
+        rate: estimate.rate.to_string(),
+        unit_size: estimate.unit_size.to_string(),
+        stale: estimate.stale,
+        source_date: estimate.source_date.map(|d| d.to_string()),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "assistant_ask.ts")]
 pub struct AssistantAskAnswerDto {
     pub conversation_id: String,
     pub customer_message: AssistantMessageDto,
     pub assistant_reply: AssistantMessageDto,
+    pub intent: AssistantIntentDto,
+    pub preview: Option<PlannerPreviewAnswer>,
 }
 
 impl AssistantAskAnswerDto {
@@ -38,6 +99,8 @@ impl AssistantAskAnswerDto {
             conversation_id: answer.conversation_id.to_string(),
             customer_message: AssistantMessageDto::of(&answer.customer_message),
             assistant_reply: AssistantMessageDto::of(&answer.assistant_reply),
+            intent: AssistantIntentDto::of(&answer.intent),
+            preview: answer.preview.as_ref().map(preview_of),
         }
     }
 }

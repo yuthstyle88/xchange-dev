@@ -4,7 +4,11 @@ import { setAudience, setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { AssistantScreen } from './AssistantScreen';
-import type { MyAssistantConversationData } from '../../../shared/api/generated/my_assistant_conversation';
+import {
+  makeAssistantConversationDto,
+  makeAssistantMessageDto,
+  makeMyAssistantConversationData,
+} from '../../../shared/testing/fixtures';
 
 describe('WE-28: screens/customer/assistant/ — wordedError handling (#1777)', () => {
   let host: HTMLDivElement;
@@ -204,17 +208,17 @@ describe('WE-28: screens/customer/assistant/ — wordedError handling (#1777)', 
   describe('Criterion 3: stale data isolation across reset and error', () => {
     it('shows error without stale message container on failed initial load, recovers on retry, and clears on reset', async () => {
       let callCount = 0;
-      const initialData: MyAssistantConversationData = {
-        conversation: { id: 'c-prev', locale: 'th', createdAt: '2026-10-15T00:00:00Z' },
+      const initialData = makeMyAssistantConversationData({
+        conversation: makeAssistantConversationDto({ id: 'c-prev', locale: 'th', createdAt: '2026-10-15T00:00:00Z' }),
         messages: [
-          {
+          makeAssistantMessageDto({
             id: 'm-1',
             role: 'ASSISTANT',
             redactedText: 'ยินดีต้อนรับสู่บริการสนทนา',
             createdAt: '2026-10-15T00:00:01Z',
-          },
+          }),
         ],
-      };
+      });
 
       const mockFetch = vi.fn().mockImplementation(() => {
         callCount++;

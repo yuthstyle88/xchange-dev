@@ -6,8 +6,13 @@ import { createSignal, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../../shared/i18n';
 import type { DeskStore } from '../../desk-store';
-import type { QuoteDto } from '../../../../shared/api/generated/quote';
-import type { DeskPaymentMethod } from '../../../../shared/api/generated/desk_config';
+import {
+  makeDeskPaymentMethod,
+  makeQuoteDto,
+  makeQuoteLineDto,
+  makeQuotePublicationDto,
+  type QuoteDto,
+} from '../../../../shared/testing/fixtures';
 import { step } from './step';
 import * as texts from './i18n';
 
@@ -23,26 +28,26 @@ const SLIP_PNG = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'slip.png'
   type: 'image/png',
 });
 
-const RULES: DeskPaymentMethod[] = [
-  {
+const RULES = [
+  makeDeskPaymentMethod({
     id: 'Bank Transfer',
     enabled: true,
     buy: true,
     sell: true,
     account: 'SCB 123-4-56789-0',
     instruction: 'โอนเข้าบัญชีร้าน',
-  },
+  }),
 ];
 
-function quote(settleThb: string): QuoteDto {
-  return {
+function quote(settleThb: string) {
+  return makeQuoteDto({
     id: 'q-1',
     type: 'BUY',
     channel: 'DESK',
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: 'p', version: 1 },
+    publication: makeQuotePublicationDto({ id: 'p', version: 1 }),
     lines: [
-      {
+      makeQuoteLineDto({
         currency: 'USD',
         shopSide: 'BUY',
         quantity: '100',
@@ -53,11 +58,11 @@ function quote(settleThb: string): QuoteDto {
         feeThb: '0.00',
         settleThb,
         publishedRateLineId: 'l',
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
 function stubStore(path: unknown) {

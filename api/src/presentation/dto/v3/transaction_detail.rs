@@ -69,6 +69,32 @@ pub struct TxApprovalDto {
 
 pub type ApprovalRefDto = TxApprovalDto;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "transaction.ts")]
+pub struct TxBenefitDto {
+    pub rule_id: String,
+    pub version_id: String,
+    pub benefit_type: String,
+    pub benefit_class: String,
+    #[serde(default)]
+    pub coupon_id: Option<String>,
+    pub amount_thb: String,
+    pub rate_before: String,
+    pub rate_after: String,
+    pub fee_before: String,
+    pub fee_after: String,
+    pub floor_capped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "transaction.ts")]
+pub struct TxBookingRefDto {
+    pub id: String,
+    pub booking_no: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "transaction.ts")]
@@ -88,6 +114,8 @@ pub struct TransactionDetailDto {
     pub cancelled_at: Option<String>,
     pub cancel_reason: Option<String>,
     pub reversal: Option<crate::presentation::dto::v3::reversal::ReversalSummaryDto>,
+    pub benefits: Vec<TxBenefitDto>,
+    pub booking: Option<TxBookingRefDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -100,12 +128,15 @@ pub struct TransactionViewData {
 pub type TransactionDetailData = TransactionViewData;
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     TransactionFilter::export_all(&cfg)?;
     TxLineDto::export_all(&cfg)?;
     TxPaymentDto::export_all(&cfg)?;
     TxReceiptDto::export_all(&cfg)?;
     TxApprovalDto::export_all(&cfg)?;
+    TxBenefitDto::export_all(&cfg)?;
+    TxBookingRefDto::export_all(&cfg)?;
     TransactionDetailDto::export(&cfg)?;
     TransactionViewData::export(&cfg)?;
     Ok(())

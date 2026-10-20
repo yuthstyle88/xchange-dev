@@ -10,7 +10,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { RateAlertSettingsData, SaveRateAlertSettingsInput } from '../../../shared/api/generated/rate_alert_settings';
+import {
+  makeRateAlertSettingsData,
+  makeSaveRateAlertSettingsInput,
+  type RateAlertSettingsData,
+  type SaveRateAlertSettingsInput,
+} from '../../../shared/testing/fixtures';
 import type { AdminMenuProps } from '../menus';
 import { menu } from './menu';
 import { RateAlertSettings } from './RateAlertSettings';
@@ -45,12 +50,12 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
   };
   let saveResponse: { status: number; code?: string; data?: RateAlertSettingsData; error?: string } = {
     status: 200,
-    data: {
+    data: makeRateAlertSettingsData({
       defaultCooldownSeconds: 86400,
       maxActivePerCustomer: 10,
       defaultLifetimeDays: 30,
       observePolicy: 'ALL_FRESH',
-    },
+    }),
   };
 
   beforeEach(() => {
@@ -61,12 +66,12 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
     viewResponse = { status: 200, data: null };
     saveResponse = {
       status: 200,
-      data: {
+      data: makeRateAlertSettingsData({
         defaultCooldownSeconds: 86400,
         maxActivePerCustomer: 10,
         defaultLifetimeDays: 30,
         observePolicy: 'ALL_FRESH',
-      },
+      }),
     };
 
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -221,12 +226,12 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
     // Prepare success response for retry
     viewResponse = {
       status: 200,
-      data: {
+      data: makeRateAlertSettingsData({
         defaultCooldownSeconds: 86400,
         maxActivePerCustomer: 10,
         defaultLifetimeDays: 30,
         observePolicy: 'ALL_FRESH',
-      },
+      }),
     };
 
     sentRequests = [];
@@ -271,7 +276,7 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
     });
 
     const putRequest = sentRequests.find((r) => r.path === '/api/rate-alert-settings' && r.method === 'PUT')!;
-    const body = putRequest.body as SaveRateAlertSettingsInput;
+    const body = makeSaveRateAlertSettingsInput(putRequest.body as Partial<SaveRateAlertSettingsInput>);
     expect(body.defaultCooldownSeconds).toBe(12 * 3600); // 43200 seconds
     expect(body.maxActivePerCustomer).toBe(5);
     expect(body.defaultLifetimeDays).toBe(15);
@@ -543,7 +548,7 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
     });
 
     const putRequest = sentRequests.find((r) => r.path === '/api/rate-alert-settings' && r.method === 'PUT')!;
-    const body = putRequest.body as SaveRateAlertSettingsInput;
+    const body = makeSaveRateAlertSettingsInput(putRequest.body as Partial<SaveRateAlertSettingsInput>);
     expect(body.observePolicy).toBe('AUTO_FRESH');
   });
 
@@ -551,12 +556,12 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
   it('renders correctly in both Thai and English', async () => {
     viewResponse = {
       status: 200,
-      data: {
+      data: makeRateAlertSettingsData({
         defaultCooldownSeconds: 86400,
         maxActivePerCustomer: 10,
         defaultLifetimeDays: 30,
         observePolicy: 'ALL_FRESH',
-      },
+      }),
     };
 
     setLang('en');
@@ -577,21 +582,21 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
   it('does not round stored cooldown: 5400 s loads as 1.5 h and re-saving sends 5400', async () => {
     viewResponse = {
       status: 200,
-      data: {
+      data: makeRateAlertSettingsData({
         defaultCooldownSeconds: 5400,
         maxActivePerCustomer: 10,
         defaultLifetimeDays: 30,
         observePolicy: 'ALL_FRESH',
-      },
+      }),
     };
     saveResponse = {
       status: 200,
-      data: {
+      data: makeRateAlertSettingsData({
         defaultCooldownSeconds: 5400,
         maxActivePerCustomer: 10,
         defaultLifetimeDays: 30,
         observePolicy: 'ALL_FRESH',
-      },
+      }),
     };
     mount();
 
@@ -611,7 +616,7 @@ describe('AL-6: RateAlertSettings (§9 specs)', () => {
     });
 
     const putRequest = sentRequests.find((r) => r.path === '/api/rate-alert-settings' && r.method === 'PUT')!;
-    const body = putRequest.body as SaveRateAlertSettingsInput;
+    const body = makeSaveRateAlertSettingsInput(putRequest.body as Partial<SaveRateAlertSettingsInput>);
     expect(body.defaultCooldownSeconds).toBe(5400);
     expect(cooldownInput.value).toBe('1.5');
   });

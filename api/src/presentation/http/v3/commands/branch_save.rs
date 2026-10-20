@@ -18,12 +18,26 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use pos_infra::transactions::Transactor;
 use xc_rate::application::branch::service::{BranchProfile, BranchService};
+use xc_rate::domain::branch::contact_channel::{BranchStatus, ContactChannel};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, out_of_scope, server_error};
+use crate::presentation::dto::v3::admin_branches_profile::{
+    AdminBranchContactChannel, AdminBranchProfileData,
+};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, out_of_scope, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
-use crate::presentation::dto::v3::admin_branches_profile::AdminBranchProfileData;
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "branch_save.ts")]
+pub struct BranchSaveContactChannelInput {
+    #[ts(type = "\"PHONE\" | \"LINE\" | \"EMAIL\" | \"FACEBOOK\" | \"WEBSITE\"")]
+    pub kind: String,
+    pub value: String,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +49,12 @@ pub struct BranchSaveInput {
     #[ts(type = "Record<string, Array<{ open: string; close: string }>> | null")]
     pub opening_hours: Option<serde_json::Value>,
     pub booking_enabled: bool,
+    #[serde(default)]
+    #[ts(optional)]
+    pub contact_channels: Option<Vec<BranchSaveContactChannelInput>>,
+    #[serde(default)]
+    #[ts(optional, type = "\"ACTIVE\" | \"INACTIVE\"")]
+    pub status: Option<String>,
 }
 
 pub struct BranchSaveCommand(PgPool);
@@ -68,6 +88,42 @@ impl CommandAction for BranchSaveCommand {
         if !ours {
             return Err(out_of_scope());
         }
+        let contact_channels = match input.contact_channels {
+            Some(raw) => {
+                let parsed: Vec<ContactChannel> = raw
+                    .into_iter()
+                    .map(|ch| ContactChannel::parse(&ch.kind, &ch.value))
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("contactChannels"),
+                            e.to_string(),
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
+                Some(ContactChannel::validate_list(&parsed).map_err(|e| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("contactChannels"),
+                        e.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?)
+            }
+            None => None,
+        };
+        let status = match input.status {
+            Some(raw) => Some(BranchStatus::parse(&raw).map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("status"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?),
+            None => None,
+        };
         let branches = BranchService::new(BranchTx::new(Transactor::new(self.0.clone())));
         let profile = BranchProfile {
             code: input.code,
@@ -77,7 +133,7 @@ impl CommandAction for BranchSaveCommand {
             booking_enabled: input.booking_enabled,
         };
         let saved = branches
-            .save_profile_in(tx, branch, profile)
+            .save_profile_with_contact_in(tx, branch, profile, contact_channels, status)
             .await
             .map_err(|e| match e {
                 AppError::Validation(message) | AppError::Domain(message) => V3Error::new(
@@ -102,6 +158,15 @@ impl CommandAction for BranchSaveCommand {
             timezone: saved.timezone,
             opening_hours: saved.opening_hours,
             booking_enabled: saved.booking_enabled,
+            contact_channels: saved
+                .contact_channels
+                .into_iter()
+                .map(|ch| AdminBranchContactChannel {
+                    kind: ch.kind.as_str().to_owned(),
+                    value: ch.value,
+                })
+                .collect(),
+            status: saved.status.as_str().to_owned(),
         })
     }
 }

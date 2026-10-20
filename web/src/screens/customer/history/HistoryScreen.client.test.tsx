@@ -3,7 +3,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
-import type { MyTransactionItem, MyTransactionsData } from '../../../shared/api/generated/my_transactions';
+import { makeMyTransactionItem, makeMyTransactionsData } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
@@ -23,7 +23,7 @@ beforeAll(
   60_000,
 );
 
-const SAMPLE_ROW: MyTransactionItem = {
+const SAMPLE_ROW = makeMyTransactionItem({
   id: 'tx-rr2-1',
   date: '2026-03-31 14:30',
   branch: 'SIAM',
@@ -37,7 +37,7 @@ const SAMPLE_ROW: MyTransactionItem = {
   settlement: '3350.00',
   status: 'COMPLETED',
   receiptRef: 'RCP-20260331-001',
-};
+});
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -77,7 +77,7 @@ describe('HistoryScreen ApiClient.view & wordedError contract (RR-2 #2033)', () 
       return jsonResponse(200, {
         version: 1,
         changed: true,
-        data: { transactions: [SAMPLE_ROW] } satisfies MyTransactionsData,
+        data: makeMyTransactionsData({ transactions: [SAMPLE_ROW] }),
       });
     });
 
@@ -177,7 +177,7 @@ describe('HistoryScreen ApiClient.view & wordedError contract (RR-2 #2033)', () 
       jsonResponse(200, {
         version: 1,
         changed: true,
-        data: { transactions: [SAMPLE_ROW] } satisfies MyTransactionsData,
+        data: makeMyTransactionsData({ transactions: [SAMPLE_ROW] }),
       }),
     );
 
