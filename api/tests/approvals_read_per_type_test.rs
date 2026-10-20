@@ -13,7 +13,7 @@
 //! `may_decide(reader, row)`. A row whose type is not registered is never listed. The branch and
 //! the `status`/`type` filters are unchanged.
 //!
-//! Needs `TEST_DATABASE_URL`; nothing here skips. Sessions come from the `x-test-as` header, as in
+//! Needs `TEST_DATABASE_URL`; nothing here skips. Callers come from the `x-test-as` header, as in
 //! `v3_rate_engine_routes_test.rs` (`owner`, `staff:<ROLE>:<branch>`).
 //!
 //! Signatures: none new on the wire. The view's DTO is unchanged.
@@ -29,7 +29,7 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::TestDb;
 use serde_json::Value;
-use xc_auth::domain::access::Role;
+use xc_auth::domain::access::{Permission, RoleGrants};
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -46,15 +46,8 @@ fn callers_of(spec: &str) -> Callers {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
     let role_name = parts.next().expect("a role");
-    let roles: &[Role] = match role_name {
-        "FRONT" => &[Role::Teller],
-        "BACKEND" | "MANAGER" => &[Role::BranchManager],
-        "RATES" => &[Role::RateManager],
-        "FINANCE" => &[Role::Finance],
-        "SYSTEM" => &[Role::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
-        other => panic!("unknown role {other:?}"),
-    };
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
     test_callers::callers(
         None,
@@ -121,7 +114,7 @@ async fn request(db: &TestDb, type_name: &str) {
 }
 
 #[tokio::test]
-async fn a_branch_manager_does_not_see_the_rate_approvals_the_owner_sees() {
+async fn a_staff_holder_of_approvals_decide_does_not_see_the_rate_approvals_the_owner_sees() {
     let db = TestDb::start().await;
     request(&db, "RATE_PUBLICATION").await;
 
@@ -130,11 +123,22 @@ async fn a_branch_manager_does_not_see_the_rate_approvals_the_owner_sees() {
         ["RATE_PUBLICATION"],
         "the owner, who decides rate publications, sees it"
     );
-    for role in ["MANAGER", "BACKEND", "FINANCE"] {
+    // Under §11.2, only staff roles whose `RoleGrants::seed` contains `ApprovalsDecide` pass the route gate.
+    let holders: Vec<&str> = test_callers::V2_STAFF
+        .into_iter()
+        .filter(|(_, roles)| {
+            roles
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ApprovalsDecide))
+        })
+        .map(|(name, _)| name)
+        .collect();
+    assert!(!holders.is_empty(), "some staff role holds ApprovalsDecide");
+    for name in holders {
         assert_eq!(
-            listed(&db, &format!("staff:{role}:MAIN")).await,
+            listed(&db, &format!("staff:{name}:MAIN")).await,
             Vec::<String>::new(),
-            "{role}: passes the gate (#874) but may not decide a rate publication, so it is not listed"
+            "{name}: passes the gate (#874) but may not decide a rate publication, so it is not listed"
         );
     }
     db.finish().await;

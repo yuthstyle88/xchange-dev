@@ -40,7 +40,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiError } from '../api/client';
-import type { Me } from '../api/generated/common';
+import { makeBranchRef, type BranchRef, type Me } from '../testing/fixtures';
 import { fill, setLang } from '../i18n';
 import { en } from '../i18n/en';
 import { th } from '../i18n/th';
@@ -49,7 +49,6 @@ import type { EndReason, SessionStore } from '../session/session';
 import { AccountBar } from './AccountBar';
 import { meOf } from '../../test-support/me';
 
-type BranchRef = { id: string; code: string; name: string };
 type MeSB = Me & { branchName: string; branches: BranchRef[] };
 
 const TH = th as Record<string, string>;
@@ -58,9 +57,9 @@ const ZH = zh as Record<string, string>;
 
 // Ordered by code, as the server sends S. The names sort differently (ข < ค < ง would put B3 first
 // by name), so a bar that re-sorts by name or by id shows a different order.
-const HQ: BranchRef = { id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' };
-const B2: BranchRef = { id: 'B2', code: 'XC-02', name: 'สาขาสอง' };
-const B3: BranchRef = { id: 'A3', code: 'XC-03', name: 'ขอนแก่น' };
+const HQ = makeBranchRef({ id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' });
+const B2 = makeBranchRef({ id: 'B2', code: 'XC-02', name: 'สาขาสอง' });
+const B3 = makeBranchRef({ id: 'A3', code: 'XC-03', name: 'ขอนแก่น' });
 
 const ADMIN: MeSB = meOf({
   id: 'u-1',

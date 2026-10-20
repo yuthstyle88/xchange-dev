@@ -60,13 +60,16 @@ pub struct TransactionCompletedDto {
     pub receipt: CompletedReceiptDto,
 }
 
-/// `stockInsufficient` is a conflict with the drawer as it stands (409, #873 ruling Q9); every other refusal is
-/// TX-4's answer.
+/// `stockInsufficient` and `stockReserved` are conflicts with the drawer or active reservations as they stand
+/// (409, #873 ruling Q9, #3819); every other refusal is TX-4's answer.
 fn complete_refusal(e: AppError) -> V3Error {
-    if let AppError::Domain(m) = &e
-        && m.starts_with("stockInsufficient")
-    {
-        return V3Error::new("stockInsufficient", None, m.clone(), StatusCode::CONFLICT);
+    if let AppError::Domain(m) = &e {
+        if m.starts_with("stockInsufficient") {
+            return V3Error::new("stockInsufficient", None, m.clone(), StatusCode::CONFLICT);
+        }
+        if m.starts_with("stockReserved") {
+            return V3Error::new("stockReserved", None, m.clone(), StatusCode::CONFLICT);
+        }
     }
     refusal(e)
 }
@@ -108,6 +111,8 @@ async fn this_branchs(
 }
 
 pub struct TransactionCompleteCommand {
+    pool: PgPool,
+    approvals: Arc<xc_approval::application::approval_service::ApprovalService>,
     service: CompleteExchange,
 }
 
@@ -118,7 +123,10 @@ impl TransactionCompleteCommand {
         steps: Vec<Arc<dyn SaveStep>>,
         effects: ExchangeEffects,
     ) -> Self {
+        let approvals = crate::presentation::http::v3::commands::make_approval_service(pool.clone());
         Self {
+            pool: pool.clone(),
+            approvals,
             service: CompleteExchange::new(
                 pool,
                 files,
@@ -144,15 +152,44 @@ impl CommandAction for TransactionCompleteCommand {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        _key: IdempotencyKey,
+        key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let id = this_branchs(tx, branch, &input.id).await?;
         let actor = save_actor(who)?;
-        let done = self
-            .service
-            .run_in(tx, id, &actor, Utc::now())
-            .await
-            .map_err(complete_refusal)?;
+        let done = match self.service.run_in(tx, id, &actor, Utc::now()).await {
+            Ok(done) => done,
+            Err(AppError::Domain(m)) if m.starts_with("stockInsufficient") => {
+                use crate::application::workflows::exchange::negative_stock_gate::{
+                    NegativeStockGate, NegativeStockOutcome,
+                };
+                let outcome = NegativeStockGate::open_after_refusal(
+                    &self.pool,
+                    &self.approvals,
+                    id,
+                    who,
+                    key.as_str(),
+                )
+                .await
+                .map_err(|_| server_error())?;
+                return Err(match outcome {
+                    NegativeStockOutcome::ApprovalRequired(req_id) => V3Error::new(
+                        "approvalRequired",
+                        None,
+                        format!("approvalRequired: {req_id}"),
+                        StatusCode::CONFLICT,
+                    ),
+                    NegativeStockOutcome::Rejected(req_id) => V3Error::new(
+                        "stockInsufficient",
+                        None,
+                        format!(
+                            "stockInsufficient: negative stock approval request {req_id} was rejected"
+                        ),
+                        StatusCode::CONFLICT,
+                    ),
+                });
+            }
+            Err(e) => return Err(complete_refusal(e)),
+        };
         Ok(TransactionCompletedDto {
             transaction: TransactionDto::from_domain(&done.transaction),
             receipt: CompletedReceiptDto {

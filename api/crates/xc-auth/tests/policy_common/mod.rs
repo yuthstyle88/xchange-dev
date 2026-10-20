@@ -22,7 +22,7 @@ pub use xc_auth::domain::access::actor::Actor;
 pub use xc_auth::domain::access::authorizer::Grant;
 pub use xc_auth::domain::access::permission::Permission;
 pub use xc_auth::domain::access::role::Role;
-pub use xc_auth::domain::access::role_permissions::RolePermissions;
+pub use xc_auth::domain::access::role_grants::RoleGrants;
 pub use xc_auth::domain::access::scoped_role::ScopedRole;
 pub use xc_auth::domain::policy::entities::policy::{Need, Policy};
 pub use xc_auth::domain::policy::value_objects::action::Action;

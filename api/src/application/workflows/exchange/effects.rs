@@ -20,9 +20,11 @@ use xc_kernel::mode::Mode;
 /// §6.2's `BoxFuture<'a, AppResult<()>>`, spelled without the `futures` crate.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// §09's two effect steps: `Redeem` = "redeem benefit" (may refuse), `Outbox` = "write outbox".
+/// §09's effect steps: `Consume` = "consume reservation" (B05 D-5, before the posting; may refuse), `Redeem` =
+/// "redeem benefit" (may refuse), `Outbox` = "write outbox".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectPhase {
+    Consume,
     Redeem,
     Outbox,
 }

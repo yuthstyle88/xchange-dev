@@ -9,7 +9,7 @@ import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { RateAlertSettings } from './RateAlertSettings';
-import type { RateAlertSettingsData } from '../../../shared/api/generated/rate_alert_settings';
+import { makeRateAlertSettingsData, type RateAlertSettingsData } from '../../../shared/testing/fixtures';
 
 const VIEW_URL = '/api/v3/views/rate_alert_settings';
 const SAVE_URL = '/api/rate-alert-settings';
@@ -28,12 +28,12 @@ describe('RateAlertSettings worded error handling (#1769)', () => {
   let viewHandler: (url: string) => Response | Promise<Response>;
   let saveHandler: (body: unknown) => Response | Promise<Response>;
 
-  const defaultData: RateAlertSettingsData = {
+  const defaultData: RateAlertSettingsData = makeRateAlertSettingsData({
     defaultCooldownSeconds: 86400,
     maxActivePerCustomer: 10,
     defaultLifetimeDays: 30,
     observePolicy: 'ALL_FRESH',
-  };
+  });
 
   beforeEach(() => {
     setLang('th');

@@ -152,7 +152,7 @@ async fn calling_ticket_with_sequence_1000_writes_one_notification_with_display_
     assert_eq!(
         written(&db).await,
         vec![format!(
-            "{user} | queue.called:{}:1 | queue_called | branchName={};displayNumber=W1000",
+            "{user} | queue.called:{}:1 | queue_called | branch=MAIN;branchName={};displayNumber=W1000",
             ticket.id,
             main_name(&db).await
         )]
@@ -184,7 +184,7 @@ async fn calling_ticket_with_edited_display_number_still_uses_typed_fields() {
     assert_eq!(
         written(&db).await,
         vec![format!(
-            "{user} | queue.called:{}:1 | queue_called | branchName={};displayNumber=W007",
+            "{user} | queue.called:{}:1 | queue_called | branch=MAIN;branchName={};displayNumber=W007",
             ticket.id,
             main_name(&db).await
         )]

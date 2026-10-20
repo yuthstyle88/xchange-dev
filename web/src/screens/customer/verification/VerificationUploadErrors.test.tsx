@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MyVerificationCaseDetail } from '../../../shared/api/generated/my_verification';
+import { makeMyVerificationCaseDetail, makeMyVerificationDocumentMeta } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { mount } from './main';
 
 const WAIT_OPTS = { timeout: 2000 };
 
-const DRAFT_CASE: MyVerificationCaseDetail = {
+const DRAFT_CASE = makeMyVerificationCaseDetail({
   id: 'case-draft-r13',
   organizationId: 'org-1',
   customerId: 'cust-1',
@@ -20,7 +20,7 @@ const DRAFT_CASE: MyVerificationCaseDetail = {
   decisionReasonCode: null,
   version: 1,
   documents: [],
-};
+});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -247,19 +247,19 @@ describe('VF-10 (#1401) R13: Upload validation errors', () => {
   });
 
   it('renders <a href> with the short-lived document URL when view-document is clicked in DRAFT state', async () => {
-    const draftWithOneDoc: MyVerificationCaseDetail = {
+    const draftWithOneDoc = makeMyVerificationCaseDetail({
       ...DRAFT_CASE,
       documents: [
-        {
+        makeMyVerificationDocumentMeta({
           id: 'doc-draft-1',
           documentType: 'PASSPORT',
           mime: 'image/jpeg',
           sizeBytes: 4096,
           uploadedAt: '2026-10-10T10:00:00Z',
           accessClass: 'restricted',
-        },
+        }),
       ],
-    };
+    });
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url =

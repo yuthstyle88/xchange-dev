@@ -40,12 +40,10 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
-use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
+use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
@@ -157,15 +155,8 @@ fn staff_caller_of(spec: &str) -> AccessActor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
     let role_name = parts.next().expect("a role");
-    let roles: &[AccessRole] = match role_name {
-        "FRONT" => &[AccessRole::Teller],
-        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
-        "RATES" => &[AccessRole::RateManager],
-        "FINANCE" => &[AccessRole::Finance],
-        "SYSTEM" => &[AccessRole::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
-        other => panic!("unknown role {other:?}"),
-    };
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
     test_callers::staff("employee-7", roles, BranchId::new(branch))
 }
@@ -184,14 +175,6 @@ fn callers_of(spec: &str) -> Callers {
         );
     }
     test_callers::callers(None, Some(staff_caller_of(spec)))
-}
-
-fn staff_of(spec: &str) -> Option<Actor> {
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Actor::staff("employee-7", role, BranchId::new(branch))
 }
 
 impl SessionReader for HeaderCallers {
@@ -229,19 +212,11 @@ fn every_caller() -> Vec<String> {
 }
 
 /// The actor the policy is asked about on `path`, by the rule of `rpc.rs`.
-fn actor_on(path: EntryPath, spec: &str) -> Option<Actor> {
-    let (owner, staff) = if spec.is_empty() {
-        (None, None)
-    } else if spec == "owner" {
-        (Some(Actor::owner("owner-1")), None)
-    } else if let Some(s) = spec.strip_prefix("owner+") {
-        (Some(Actor::owner("owner-1")), staff_of(s))
-    } else {
-        (None, staff_of(spec))
-    };
+fn actor_on(path: EntryPath, spec: &str) -> Option<AccessActor> {
+    let c = callers_of(spec);
     match path {
-        EntryPath::StaffRpc => staff,
-        _ => owner.or(staff),
+        EntryPath::StaffRpc => c.staff_user,
+        _ => c.user,
     }
 }
 
@@ -668,9 +643,16 @@ async fn a_staff_caller_naming_another_branch_is_answered_for_their_own() {
 
 #[actix_web::test]
 async fn a_role_outside_the_views_row_gets_the_policys_refusal() {
+    use xc_auth::domain::access::{Permission, Role as BpRole, RoleGrants};
+
     let db = TestDb::start().await;
     let views = Views::new();
-    // (StaffRpc, adminDeskConfig): FRONT only (policy R8)
+    // (StaffRpc, adminDeskConfig): requires ExchangeTransact (§11.2: TELLER holds it, FINANCE does not)
+    assert!(
+        RoleGrants::seed(BpRole::Teller).contains(&Permission::ExchangeTransact)
+            && !RoleGrants::seed(BpRole::Finance).contains(&Permission::ExchangeTransact),
+        "§11.2: TELLER holds ExchangeTransact and FINANCE does not"
+    );
     let ok = get(
         &db,
         &views,
@@ -682,21 +664,24 @@ async fn a_role_outside_the_views_row_gets_the_policys_refusal() {
     let refused = get(
         &db,
         &views,
-        "staff:BACKEND:XC-B01",
+        "staff:FINANCE:XC-B01",
         "/api/v3/views/test-desk-config",
     )
     .await;
-    is_refusal(&refused, 400, "ใช้ได้เฉพาะ Front", "BACKEND");
+    is_refusal(&refused, 400, "ใช้ได้เฉพาะ Front", "FINANCE");
     let nobody = get(&db, &views, "", "/api/v3/views/test-count").await;
     is_refusal(&nobody, 401, "กรุณาเข้าสู่ระบบ", "nobody on Rpc");
     assert_eq!(views.loads(), 0, "a refused caller loads nothing");
     db.finish().await;
 }
 
-/// §9: a view whose INHERITS is (Rpc, "rateDraft") refuses exactly the
-/// callers `Policy::allow` refuses for that pair, and so for the staff path.
+/// §9: a view whose INHERITS is (Rpc, "rateDraft") refuses_exactly the
+/// callers `Policy::authorize` / `RoleGrants::seed` refuses for that pair, and so for the staff path.
 #[actix_web::test]
 async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
+    use xc_auth::domain::access::RoleGrants;
+    use xc_auth::domain::policy::entities::policy::Need;
+
     let db = TestDb::start().await;
     let views = Views::new();
     let mut allowed = 0;
@@ -705,17 +690,32 @@ async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
         ("test-save-rate", EntryPath::Rpc, "rateDraft"), // RE-7 #604: was adminSaveRate
         ("test-desk-config", EntryPath::StaffRpc, "adminDeskConfig"),
     ] {
+        let act = Action::new(action);
+        let Some(Need::Permission(perm)) = Policy::need(path, &act) else {
+            panic!("({path:?}, {action:?}) needs a permission");
+        };
         for who in every_caller() {
             let a = get(&db, &views, &who, &format!("/api/v3/views/{view}")).await;
             let what = format!("{view} as {who:?}");
-            let actor = actor_on(path, &who);
-            match Policy::allow(actor.as_ref(), path, &Action::new(action)) {
-                Ok(()) => {
+            let user = actor_on(path, &who);
+            let holds = user.as_ref().is_some_and(|u| {
+                u.roles
+                    .iter()
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
+            });
+            let auth = Policy::authorize(user.as_ref(), path, &act, None, chrono::Utc::now());
+            assert_eq!(
+                auth.is_ok(),
+                holds,
+                "{what}: RoleGrants::seed matches Policy::authorize"
+            );
+            match auth {
+                Ok(_) => {
                     allowed += 1;
                     is_changed(&a, 0, &what);
                     assert_eq!(
                         a.body["data"]["who"],
-                        actor.expect("allowed means signed in").id(),
+                        user.expect("allowed means signed in").user_id,
                         "{what}: answered for the actor of its entry path"
                     );
                 }

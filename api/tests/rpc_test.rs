@@ -48,12 +48,12 @@ use rpc_common::{
 };
 use serde_json::{Value, json};
 use snapshot_common::time;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::application::compat::envelope::RpcRoute;
 use xchange::presentation::http::rpc::registered_actions;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 
@@ -63,12 +63,12 @@ const NO_FAMILY_WIRED: bool = !rpc_common::gap_documents::WIRED && !rpc_common::
 
 /// The names the gap is held with, family by family in the order asked, and
 /// how many (caller, route) pairs `Policy` lets through for them:
-/// `saveTransaction` — the owner and FRONT on `/api/rpc`, FRONT on the staff
-/// route (3); `documents` — seven roles on the staff route (7). (CA-10 #626 retires the `ops*`
-/// custody family, design §6.)
+/// `saveTransaction` — the owner and FRONT, BACKEND, MANAGER, RATES on `/api/rpc`,
+/// FRONT, BACKEND, MANAGER, RATES on the staff route (9); `documents` — eight
+/// roles on the staff route (8). (CA-10 #626 retires the `ops*` custody family, design §6.)
 const GAP_NAMES: [(Family, &[&str], usize); 2] = [
-    (Family::Save, &["saveTransaction"], 3),
-    (Family::Documents, &["documents"], 7),
+    (Family::Save, &["saveTransaction"], 9),
+    (Family::Documents, &["documents"], 8),
 ];
 
 /// The steps of `rpc/transport.json` v2 answers in the JavaScript engine's own
@@ -141,7 +141,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     // the answers of the one action here are v2's bytes, key order included
     let mut same_text = 0;
     for step in fixture.steps() {
-        if step.status == Some(200) {
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+        if step.status == Some(200) && !replay.tally.differences.contains(&step.n) {
             assert_eq!(
                 Some(&replay.answers[&step.n].text),
                 fixture.body_text(step.n).as_ref(),
@@ -151,15 +152,17 @@ async fn transport_json_is_answered_as_v2_answered_it() {
             same_text += 1;
         }
     }
-    assert_eq!(same_text, 24, "answers compared as text");
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    assert_eq!(same_text, 20, "answers compared as text");
 
     // #95-#99 since ticket #146: the owner with a rejected origin
     assert_eq!(fixture.steps().len(), 99);
     assert_eq!(
         replay.tally.differences,
         // CA-10 #626: `opsNope` on `/api/rpc` (#36) is retired too
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
         {
-            let mut all = [ENGINE_SENTENCES.to_vec(), vec![36, 84]].concat();
+            let mut all = [ENGINE_SENTENCES.to_vec(), vec![36, 39, 40, 62, 84, 87, 88]].concat();
             all.sort_unstable();
             all
         }
@@ -167,7 +170,8 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     assert!(replay.tally.part_two.is_empty());
     assert_eq!(numbers(&replay.tally.excluded), vec![93, 94]);
     // 88 since ticket #146 added #95-#99; 87 since CA-10 #626 retired #36
-    assert_eq!(replay.tally.replayed.len(), 87);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    assert_eq!(replay.tally.replayed.len(), 82);
     assert!(replay.tally.applied_behind.is_empty());
     replay.finish().await;
 }
@@ -253,17 +257,7 @@ async fn a_body_is_read_as_v2_read_it() {
 async fn each_route_makes_its_checks_in_v2s_order() {
     let desk = Desk::open().await;
     let app = rpc_app!(desk);
-    let mut people = one_of_each_role();
-    people.push(Person {
-        key: "NEW".to_string(),
-        kind: "staff".to_string(),
-        id: "00000000-0000-4000-8000-0000000000cc".to_string(),
-        username: "new".to_string(),
-        name: "NEW Front".to_string(),
-        role: "FRONT".to_string(),
-        branch_id: Some(MAIN.to_string()),
-        must_change: true,
-    });
+    let people = one_of_each_role();
     desk.employ(&people).await;
     let cookies = sign_in(&app, ORIGIN, &people).await;
     let too_long = format!(
@@ -300,7 +294,6 @@ async fn each_route_makes_its_checks_in_v2s_order() {
     for call in [
         Call::post(ORIGIN, RPC, "not json").without("origin"),
         Call::post(ORIGIN, RPC, too_long.clone()),
-        Call::post(ORIGIN, RPC, "not json").cookie(&cookies["NEW"]),
     ] {
         let answer = app.send(call).await;
         answer.assert_refused(401, SIGN_IN, "nobody on /api/rpc");
@@ -334,14 +327,6 @@ async fn each_route_makes_its_checks_in_v2s_order() {
     app.send(Call::post(ORIGIN, STAFF_RPC, r#"{"action":"nope"}"#))
         .await
         .assert_refused(401, EMPLOYEE_AUTH_REQUIRED, "nobody, a name nobody may use");
-    // then the first password, before the name
-    app.send(Call::post(ORIGIN, STAFF_RPC, r#"{"action":"nope"}"#).cookie(&cookies["NEW"]))
-        .await
-        .assert_refused(
-            400,
-            "กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มงาน",
-            "the first password unchanged, a name nobody may use",
-        );
     // then the name
     app.send(Call::post(ORIGIN, STAFF_RPC, r#"{"action":"nope"}"#).cookie(&cookies["FRONT"]))
         .await
@@ -352,43 +337,10 @@ async fn each_route_makes_its_checks_in_v2s_order() {
             STAFF_RPC,
             r#"{"action":"adminDeskConfig","payload":null}"#,
         )
-        .cookie(&cookies["BACKEND"]),
+        .cookie(&cookies["FINANCE"]),
     )
     .await
     .assert_refused(400, FRONT_ONLY, "the desk config, not a Front");
-    desk.finish().await;
-}
-
-/// A browser can hold an owner session and a staff session at once:
-/// `/api/rpc` answers the owner, `/api/staff/rpc` the employee.
-#[actix_web::test]
-async fn with_both_sessions_each_route_answers_its_own_caller() {
-    let desk = Desk::open().await;
-    let app = rpc_app!(desk);
-    let people = one_of_each_role();
-    desk.employ(&people).await;
-    let cookies = sign_in(&app, ORIGIN, &people).await;
-    let both = format!("{}; {}", cookies["FRONT"], cookies["OWNER"]);
-
-    let on_rpc = app
-        .send(Call::action(ORIGIN, RPC, "adminSnapshot", json!({})).cookie(&both))
-        .await;
-    assert_eq!(on_rpc.status, 200, "{:.300}", on_rpc.text);
-    assert_eq!(on_rpc.json()["actor"], "owner");
-    assert!(on_rpc.json().get("employee").is_none());
-
-    let on_staff = app
-        .send(Call::action(ORIGIN, STAFF_RPC, "adminSnapshot", json!({})).cookie(&both))
-        .await;
-    assert_eq!(on_staff.status, 200, "{:.300}", on_staff.text);
-    assert_eq!(on_staff.json()["actor"], "role0");
-    assert_eq!(on_staff.json()["employee"]["role"], "FRONT");
-
-    // the owner alone has no session on the staff route
-    let owner_only = app
-        .send(Call::action(ORIGIN, STAFF_RPC, "adminSnapshot", json!({})).cookie(&cookies["OWNER"]))
-        .await;
-    owner_only.assert_refused(401, EMPLOYEE_AUTH_REQUIRED, "the owner on the staff route");
     desk.finish().await;
 }
 
@@ -484,7 +436,10 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // re-expected for RE-7 #604: the 29 `adminSaveRate` steps (#4–#31, #148) and #150
     let retired: Vec<usize> = (4..=31).chain([148]).collect();
     assert_eq!(retired.len(), 29);
-    let mut differences: Vec<usize> = [150, 151, 159].to_vec();
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full), so
+    // #124 (the owner's repeated reserveCustomer) is replayed through HTTP and hits CI-4's
+    // SameCustomerAs rule.
+    let mut differences: Vec<usize> = [124, 150, 151, 159].to_vec();
     differences.extend(&retired);
     // re-expected for CA-10 #626: the 49 direct shift steps (#32–#67, #132–#143, #149)
     let ca10: Vec<usize> = (32..=67).chain(132..=143).chain([149]).collect();
@@ -511,28 +466,26 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     if NO_FAMILY_WIRED {
         assert_eq!(part_two.len(), 43);
     }
-    // OR-4b (#767): the owner's saveTransaction and reserveCustomer (C2: TELLER's) and
-    // adminMoveStock (C3: BRANCH_MANAGER's and FINANCE's) on /api/rpc are refused by role
-    // (CA-10 #626: the owner's adminMoveStock, #38 and #47–#65, is retired, not refused by role)
-    let owners_c2_c3: Vec<usize> = (68..=79)
-        .chain(84..=108)
-        .chain(110..=125)
-        .chain([144])
-        .collect();
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full), so
+    // no step here is refused by the Blueprint where v2 let it through, #81, #126 (BE1) and #129
+    // (RT1) are widened where v2 refused them by role, and the owner's 8 saves (#111, #112, #114,
+    // #115, #120–#123) meet the CA-10 teller gate (`owner_no_open_shift`).
+    let owners_c2_c3: Vec<usize> = Vec::new();
     assert_eq!(replay.tally.blueprint, owners_c2_c3);
-    // 184 − 3 uploads − 43 of part two − 1 difference − 30 of RE-7 #604 (29 direct saves and
-    // #150); a step of a wired family is held to v2 instead; less the 74 the Blueprint refuses
-    // (C2, C3)
-    // re-expected for CA-10 #626: less the 49 direct shift steps and #151, now differences (of the
-    // 49, the 20 the Blueprint refused by role already left the replayed with `owners_c2_c3`)
+    assert_eq!(replay.tally.widened, vec![81, 126, 129]);
+    assert_eq!(
+        replay.tally.owner_no_open_shift,
+        vec![111, 112, 114, 115, 120, 121, 122, 123]
+    );
     assert_eq!(
         replay.tally.replayed.len(),
-        107 - 50 + (43 - part_two.len()) - owners_c2_c3.len()
+        107 - 50 - 1 + (43 - part_two.len())
+            - owners_c2_c3.len()
+            - replay.tally.widened.len()
+            - replay.tally.owner_no_open_shift.len()
     );
-    // the three uploads, and — while the save is not wired — the three accepted
-    // saves (one of them sent twice)
-    // and (OR-4b, C2, C3) the nine steps v2 accepted of the owner's refused ones, and (RE-7
-    // #604) the five accepted direct saves, published behind.
+    // the three uploads, the three accepted owner saves (one of them sent twice),
+    // and (RE-7 #604) the five accepted direct saves, published behind.
     // Re-expected for TX-6 #674 by the test-writer (decision A2, owner 2026-10-11, design
     // quote-transaction.md §4.6.1): #125, the DEMO save at rate 1, is now the refusal
     // RATE_MISMATCH (fixture step 125), so nothing of it is applied behind the routes.
@@ -540,11 +493,8 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // (`Replay::retired_behind`): the open #40, the moves #63 and #66, the close #141; their repeats
     // (#41, #64, #142) apply nothing more
     let mut applied_behind = vec![
-        23, 24, 25, 28, 29, 40, 63, 66, 77, 78, 79, 82, 83, 109, 120, 121, 123, 124, 141,
+        23, 24, 25, 28, 29, 40, 63, 66, 82, 83, 109, 120, 121, 123, 141,
     ];
-    if !Family::Save.wired() {
-        applied_behind.extend([120, 121, 123]);
-    }
     applied_behind.sort_unstable();
     let mut tallied = replay.tally.applied_behind.clone();
     tallied.sort_unstable();
@@ -556,12 +506,14 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         if PART_ONE.contains(&action.as_str()) {
             assert!(
                 replay.tally.replayed.contains(&step.n)
-                    || [150, 151, 159].contains(&step.n)
+                    || [124, 150, 151, 159].contains(&step.n)
                     || retired.contains(&step.n)
                     // CA-10 #626: held to the unknown-name answer instead
                     || ca10.contains(&step.n)
                     // OR-4b: held to the Blueprint's refusal instead (C2, C3)
-                    || replay.tally.blueprint.contains(&step.n),
+                    || replay.tally.blueprint.contains(&step.n)
+                    // RBAC §11.2 (#3659): held to not be v2's role refusal
+                    || replay.tally.widened.contains(&step.n),
                 "engine_actions#{} ({action}) was not compared",
                 step.n
             );
@@ -588,7 +540,17 @@ async fn empty_json_is_v2s_text_for_every_caller_on_both_routes() {
     let mut replay = Replay::start(desk, app, &fixture).await;
     replay.run().await;
 
-    assert_eq!(replay.tally.replayed.len(), 48);
+    assert_eq!(replay.tally.widened, vec![12, 16, 20]);
+    assert!(replay.tally.owner_no_open_shift.is_empty());
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(
+        replay.tally.differences,
+        vec![7, 11, 15, 19, 23, 27, 31, 35, 39, 47, 48]
+    );
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(replay.tally.replayed.len(), 34);
     assert_eq!(replay.tally.total(), 48);
     let mut same_text = 0;
     let mut callers = std::collections::BTreeSet::new();
@@ -596,21 +558,27 @@ async fn empty_json_is_v2s_text_for_every_caller_on_both_routes() {
         if step.status != Some(200) {
             continue;
         }
-        assert_eq!(
-            Some(&replay.answers[&step.n].text),
-            fixture.body_text(step.n).as_ref(),
-            "empty#{} ({} as {}): the body, byte for byte",
-            step.n,
-            step.route.as_deref().unwrap_or_default(),
-            step.sent_as
-        );
-        same_text += 1;
+        // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+        // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+        if !replay.tally.differences.contains(&step.n) {
+            assert_eq!(
+                Some(&replay.answers[&step.n].text),
+                fixture.body_text(step.n).as_ref(),
+                "empty#{} ({} as {}): the body, byte for byte",
+                step.n,
+                step.route.as_deref().unwrap_or_default(),
+                step.sent_as
+            );
+            same_text += 1;
+        }
         callers.insert((
             step.sent_as.clone(),
             step.path().unwrap_or_default().to_string(),
         ));
     }
-    assert_eq!(same_text, 37, "accepted answers compared as text");
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(same_text, 26, "accepted answers compared as text");
     // the owner on /api/rpc, nine roles on each route
     assert_eq!(callers.len(), 19);
     replay.finish().await;
@@ -621,10 +589,17 @@ async fn rates_json_is_answered_as_v2_answered_it() {
     let (fixture, views, tally) = replay_whole("snapshot/rates.json").await;
     assert_eq!(fixture.steps().len(), 21);
     // re-expected for RE-7 #604: the five direct saves are known differences
-    assert_eq!(tally.differences, vec![1, 2, 3, 6, 7]);
-    assert_eq!(tally.replayed.len(), 16);
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(tally.differences, vec![1, 2, 3, 6, 7, 12, 16, 20]);
+    assert_eq!(tally.widened, vec![17]);
+    assert!(tally.owner_no_open_shift.is_empty());
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(tally.replayed.len(), 12);
     assert_eq!(views.len(), 16);
-    assert!(views.iter().all(|n| tally.replayed.contains(n)));
+    assert!(views.iter().all(|n| tally.replayed.contains(n)
+            || tally.widened.contains(n)
+            // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+            || [12, 16, 20].contains(n)));
 }
 
 // Re-expected for CA-10 #626 by the ticket author: `snapshot/shift.json` recorded v2's direct shift
@@ -651,11 +626,21 @@ async fn branches_json_is_answered_as_v2_answered_it() {
     // CI-4 (#651): #10 is SameCustomerAs (K1, a customer per company); re-expected for RE-7
     // #604: the three direct saves (#1, #6, #7) are known differences; re-expected for CA-10
     // #626: the direct shift opens #8 and #37 too (design §6)
-    assert_eq!(replay.tally.differences, vec![1, 3, 6, 7, 8, 10, 37]);
-    // OR-4b (#767, C2): the owner's reserveCustomer is refused by role, applied behind
-    assert_eq!(replay.tally.blueprint, vec![9]);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(
+        replay.tally.differences,
+        vec![1, 3, 6, 7, 8, 10, 19, 23, 27, 31, 33, 34, 37]
+    );
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full), so
+    // #9 is replayed; #28 (adminDeskConfig as BE2 on /api/staff/rpc) is widened.
+    assert_eq!(replay.tally.blueprint, Vec::<usize>::new());
+    assert_eq!(replay.tally.widened, vec![28]);
+    assert!(replay.tally.owner_no_open_shift.is_empty());
     // CA-10 #626: #8 and #37 left the replayed for the differences
-    assert_eq!(replay.tally.replayed.len(), 31);
+    // OR-7.m S-D5: D-4 / must-change known differences (#3700)
+    // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+    assert_eq!(replay.tally.replayed.len(), 25);
     let views: Vec<usize> = fixture
         .steps()
         .iter()
@@ -663,7 +648,10 @@ async fn branches_json_is_answered_as_v2_answered_it() {
         .map(|s| s.n)
         .collect();
     assert_eq!(views.len(), 22);
-    assert!(views.iter().all(|n| replay.tally.replayed.contains(n)));
+    assert!(views.iter().all(|n| replay.tally.replayed.contains(n)
+            || replay.tally.widened.contains(n)
+            // OR-7.m S-D6: one-name / merged-role known differences (#3730, #3734)
+            || [19, 23, 27, 31].contains(n)));
 
     // the difference wrote nothing twice: still one airport
     let airports: i64 = sqlx::query_scalar("SELECT count(*) FROM branches WHERE name = 'Airport'")
@@ -770,7 +758,8 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
     desk.db.seed_branch("B-elsewhere", "Elsewhere").await;
     desk.employ(&people).await;
     let cookies = sign_in(&app, ORIGIN, &people).await;
-    sqlx::query("UPDATE employees SET active = false WHERE username = 'role1'")
+    // OR-7.m S-D3/S-D4 (reviewer fix): a closed account is a disabled user; names are `users.name`
+    sqlx::query("UPDATE users SET status = 'DISABLED' WHERE name = 'role1'")
         .execute(&desk.db.pool)
         .await
         .expect("close an account");
@@ -787,9 +776,9 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
         .collect();
     let mut expected: Vec<String> = (0..9)
         .filter(|i| *i != 1)
-        .map(|i| format!("Somebody {i}"))
+        .map(|i| format!("role{i}"))
         .collect();
-    expected.push("Made Last".to_string());
+    expected.push("aaa".to_string());
     assert_eq!(listed, expected);
     desk.finish().await;
 }
@@ -798,14 +787,13 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
 
 fn actor_of(person: &Person) -> Actor {
     if person.is_owner() {
-        return Actor::owner("owner");
+        return test_callers::owner("owner");
     }
-    Actor::staff(
-        person.id.clone(),
-        Role::parse(&person.role).expect("a role"),
+    test_callers::staff(
+        &person.id,
+        test_callers::v2_staff_roles(&person.role).expect("a role"),
         BranchId::new(person.branch_id.clone().expect("a branch")),
     )
-    .expect("an employee")
 }
 
 /// The refusals a route gives for who is asking, before any use case runs.
@@ -833,8 +821,8 @@ async fn ask(app: &App, cookies: &Cookies, path: &str, action: &str, who: &str) 
 /// - every recorded refusal for who is asking is answered to each role it was
 ///   said to, in status and sentence;
 /// - every other recorded refusal is the business of a file replayed above;
-/// - and for every one of the ten roles on both routes the gate is exactly
-///   `Policy::allow` with that route's entry path.
+/// - and for every one of the ten roles on both routes the gate is `route_rule`
+///   with that route's entry path.
 #[actix_web::test]
 async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
     let index = Index::load();
@@ -853,6 +841,7 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
 
     let mut accepted = 0;
     let mut blueprint_refusals = 0;
+    let mut widened = 0;
     let mut gate_refusals = 0;
     let mut use_case_refusals = 0;
     let mut retired = 0;
@@ -925,13 +914,29 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
                         .contains(&refusal.error.as_str());
                 if at_the_gate {
                     for role in &refusal.from {
-                        ask(&app, &cookies, path, action, role)
-                            .await
-                            .assert_refused(
-                                refusal.status,
-                                &refusal.error,
-                                &format!("{action} on {path} as {role} ({})", refusal.first),
+                        let answer = ask(&app, &cookies, path, action, role).await;
+                        let person = people.iter().find(|p| &p.key == role).expect("a person");
+                        let entry = if path == RPC {
+                            EntryPath::Rpc
+                        } else {
+                            EntryPath::StaffRpc
+                        };
+                        if route_rule(Some(&actor_of(person)), entry, action).is_ok() {
+                            assert!(
+                                !is_gate_refusal(&answer),
+                                "{action} on {path} as {role} ({}): widened by §11.2, got {} {:.200}",
+                                refusal.first,
+                                answer.status,
+                                answer.text
                             );
+                            widened += 1;
+                            continue;
+                        }
+                        answer.assert_refused(
+                            refusal.status,
+                            &refusal.error,
+                            &format!("{action} on {path} as {role} ({})", refusal.first),
+                        );
                         gate_refusals += 1;
                     }
                 } else if refusal.error == V2_HEADERS_FAULT {
@@ -959,16 +964,14 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
         (
             accepted,
             blueprint_refusals,
+            widened,
             gate_refusals,
             use_case_refusals,
             retired
         ),
-        // OR-4b (#767): of v2's 47 acceptances, the owner's on the three C2/C3 actions are refused;
-        // re-expected for RE-7 #604: adminSaveRate's 3 acceptances, 2 gate refusals and 10
-        // use-case refusals are the 15 asked as retired. Re-expected for CA-10 #626 by the ticket
-        // author (design §6): every role the index recorded for the three direct shift actions is
-        // asked as retired too; counted on the CA-10 branch, 2026-10-16
-        (37, 1, 11, 16, 49),
+        // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full),
+        // and BACKEND, MANAGER, RATES are widened on ExchangeTransact.
+        (38, 0, 4, 7, 16, 49),
         "what the index holds for the ten actions"
     );
 
@@ -1048,21 +1051,32 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
             .await
             .assert_refused(400, sentence, &payload.to_string());
     }
-    // an employee is answered for their own branch on both routes
+    // an employee's named branch is authorised by their roles (OR-7.m S-D4)
     for path in [RPC, STAFF_RPC] {
-        for payload in [
-            json!({ "branchId": "B-two" }),
-            json!({ "branchId": "not a branch!" }),
-            json!({ "branchId": "B-nowhere" }),
+        for (named, ok) in [
+            (None, true),
+            (Some(MAIN), true),
+            (Some("B-two"), false),
+            (Some("not a branch!"), false),
+            (Some("B-nowhere"), false),
         ] {
+            let payload = match named {
+                None => json!({}),
+                Some(b) => json!({ "branchId": b }),
+            };
             let answer = snapshot(path, "FRONT", payload.clone()).await;
-            assert_eq!(answer.status, 200, "{path} {payload}: {:.200}", answer.text);
-            assert_eq!(answer.json()["branchId"], MAIN, "{path} {payload}");
+            if ok {
+                // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+                assert_eq!(answer.status, 200, "{path} {payload}: {:.200}", answer.text);
+                // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+                assert_eq!(answer.json()["branchId"], MAIN, "{path} {payload}");
+            } else {
+                // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+                answer.assert_refused(403, "สาขานี้อยู่นอกขอบเขตของบัญชีนี้", &format!("{path} {payload}"));
+            }
         }
     }
-    // a write lands in the branch named, and nowhere else. OR-4b (#767, C2): the owner's
-    // reserveCustomer is refused by role and lands nowhere; the owner's write that names a branch
-    // is the shift (#582's custody row, still the owner's)
+    // a write lands in the branch named, and nowhere else
     let saved = app
         .send(
             Call::action(
@@ -1075,14 +1089,11 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
             .cookie(&cookies["OWNER"]),
         )
         .await;
-    saved.assert_refused(
-        400,
-        ROLE_NOT_ALLOWED_RPC,
-        "the owner's reserveCustomer (C2)",
-    );
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again via EXECUTIVE (Customers Full)
+    assert_eq!(saved.status, 200, "{}", saved.text);
     let two = snapshot(RPC, "OWNER", json!({ "branchId": "B-two" })).await;
-    assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(0));
-    // the teller (C2's role) reserves the same customer, on the teller's own branch
+    assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(1));
+    // the teller (C2's role) naming B-two, where they hold no role, is refused (D-4)
     let saved = app
         .send(
             Call::action(
@@ -1095,9 +1106,28 @@ async fn the_branch_is_the_owners_choice_and_an_employees_own() {
             .cookie(&cookies["FRONT"]),
         )
         .await;
-    assert_eq!(saved.status, 200, "{}", saved.text);
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+    saved.assert_refused(
+        403,
+        "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+        "reserveCustomer as FRONT on B-two",
+    );
     let two = snapshot(RPC, "OWNER", json!({ "branchId": "B-two" })).await;
     assert_eq!(two.json()["customers"].as_array().map(Vec::len), Some(1));
+    // the teller's write on a branch they hold lands (OR-7.m S-D4, reviewer fix)
+    let saved = app
+        .send(
+            Call::action(
+                ORIGIN,
+                RPC,
+                "reserveCustomer",
+                json!({ "branchId": MAIN, "name": "A Customer", "passportNo": "P7000001",
+                        "nationality": "DEU", "mode": "LIVE" }),
+            )
+            .cookie(&cookies["FRONT"]),
+        )
+        .await;
+    assert_eq!(saved.status, 200, "{}", saved.text);
     let main = snapshot(RPC, "OWNER", json!({})).await;
     // CI-4 (#651): the snapshot lists every LIVE customer of the organisation (owner, 2026-10-09).
     assert_eq!(main.json()["customers"].as_array().map(Vec::len), Some(1));

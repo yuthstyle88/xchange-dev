@@ -54,17 +54,17 @@ use actix_web::http::Method;
 use chrono::{DateTime, Duration, Utc};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::{Actor, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const RPC: &str = "/api/rpc";
@@ -468,21 +468,18 @@ impl Room {
 fn callers() -> Vec<(String, Option<Actor>)> {
     let mut callers: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        callers.push((role.as_str().to_string(), staff));
+    for (role, roles) in test_callers::V2_STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        callers.push((role.to_string(), staff));
         // the owner and an employee in one browser: a view not on StaffRpc answers the owner
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+        callers.push((format!("OWNER+{role}"), Some(test_callers::owner("owner"))));
     }
     callers
 }
 
-/// Every caller kind gets what `Policy::allow(actor, path, action)` gives: 200 with data when it
+/// Every caller kind gets what `Policy::authorize` / `RoleGrants::seed` gives: 200 with data when it
 /// allows, its refusal otherwise.
 async fn answers_exactly_whom_the_row_allows(
     room: &Room,
@@ -491,14 +488,28 @@ async fn answers_exactly_whom_the_row_allows(
     path: EntryPath,
     action: &str,
 ) -> (usize, usize) {
+    let act = Action::new(action);
+    let Some(Need::Permission(perm)) = Policy::need(path, &act) else {
+        panic!("({path:?}, {action:?}) needs a permission");
+    };
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
-        let policy = Policy::allow(actor.as_ref(), path, &Action::new(action));
-        let answer = room.get(&who, &view_path(view, query)).await;
+        let holds = actor.as_ref().is_some_and(|ac| {
+            ac.roles
+                .iter()
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
+        });
+        let policy = Policy::authorize(actor.as_ref(), path, &act, None, Utc::now());
         let what = format!("{view} as {who:?}");
+        assert_eq!(
+            policy.is_ok(),
+            holds,
+            "{what}: RoleGrants::seed matches Policy::authorize"
+        );
+        let answer = room.get(&who, &view_path(view, query)).await;
         match &policy {
-            Ok(()) => {
+            Ok(_) => {
                 allowed += 1;
                 assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                 let body = answer.json();

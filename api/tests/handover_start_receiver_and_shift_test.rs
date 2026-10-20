@@ -55,11 +55,10 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -295,24 +294,6 @@ fn user_of(spec: &str) -> Option<User> {
     ))
 }
 
-fn legacy_of(spec: &str) -> Sessions {
-    let mut parts = spec.splitn(3, '|');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(id), Some(_), Some("*")) => Sessions {
-            owner: Some(Actor::owner(id)),
-            staff: None,
-        },
-        (Some(id), Some(_), Some(branch)) => Sessions {
-            owner: None,
-            staff: Actor::staff(id, OldRole::Finance, BranchId::new(branch)),
-        },
-        _ => Sessions {
-            owner: None,
-            staff: None,
-        },
-    }
-}
-
 struct HeaderUsers;
 
 fn spec_of(req: &HttpRequest) -> String {
@@ -323,24 +304,9 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
-        Box::pin(async move {
-            let _s = legacy_of(&spec);
-            let user = user_of(&spec);
-            Callers {
-                user: user.clone(),
-                staff_user: user,
-            }
-        })
+        Box::pin(async move { test_callers::callers(None, user_of(&spec)) })
     }
 }
 
@@ -681,10 +647,17 @@ async fn h9_close_count_on_own_closed_shift_is_no_open_shift() {
     room.finish().await;
 }
 
-/// H10 (kept): an OPEN count (no shift) by a teller and a SAFE count by a branch manager still answer 200.
+/// H10 (kept): an OPEN count (no shift) by a teller and a SAFE count by a CashManage holder still answer 200.
 #[actix_web::test]
 async fn h10_open_and_safe_counts_are_unchanged() {
+    use xc_auth::domain::access::{Permission, RoleGrants};
+
     let room = Room::start().await;
+    assert!(
+        RoleGrants::seed(Role::Teller).contains(&Permission::ShiftOperate)
+            && RoleGrants::seed(Role::Finance).contains(&Permission::CashManage),
+        "§11.2: TELLER holds ShiftOperate and FINANCE holds CashManage"
+    );
     let teller = room.person(Role::Teller, Some(B01)).await;
     let a = post(
         &room,
@@ -695,10 +668,10 @@ async fn h10_open_and_safe_counts_are_unchanged() {
     .await;
     ok(&a, "H10 OPEN count");
 
-    let manager = room.person(Role::BranchManager, Some(B01)).await;
+    let finance = room.person(Role::Finance, Some(B01)).await;
     let a = post(
         &room,
-        &manager,
+        &finance,
         "/api/cash-counts",
         json!({
             "branch": B01,

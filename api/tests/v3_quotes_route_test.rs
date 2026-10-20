@@ -58,11 +58,10 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ts_rs::TS;
-use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
+use xc_auth::domain::access::{Actor, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::dto::v3::quote::QuoteDto;
@@ -81,19 +80,12 @@ const FRONT: &str = "staff:FRONT:MAIN";
 /// `owner+staff:<ROLE>:<branch>`, or absent.
 struct HeaderCallers;
 
-fn staff_caller_of(spec: &str) -> AccessActor {
+fn staff_caller_of(spec: &str) -> Actor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
     let role_name = parts.next().expect("a role");
-    let roles: &[AccessRole] = match role_name {
-        "FRONT" => &[AccessRole::Teller],
-        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
-        "RATES" => &[AccessRole::RateManager],
-        "FINANCE" => &[AccessRole::Finance],
-        "SYSTEM" => &[AccessRole::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
-        other => panic!("unknown role {other:?}"),
-    };
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
     test_callers::staff(
         &format!("employee-{role_name}"),
@@ -118,18 +110,6 @@ fn callers_of(spec: &str) -> Callers {
     test_callers::callers(None, Some(staff_caller_of(spec)))
 }
 
-fn staff_of(spec: &str) -> Option<Actor> {
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Actor::staff(
-        format!("employee-{}", role.as_str()),
-        role,
-        BranchId::new(branch),
-    )
-}
-
 impl SessionReader for HeaderCallers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
@@ -143,26 +123,8 @@ impl SessionReader for HeaderCallers {
 
 /// The actor the seam asks the policy about on Rpc (`view.rs:331`: the owner's session wins).
 fn actor_on_rpc(spec: &str) -> Option<Actor> {
-    if spec.is_empty() {
-        return None;
-    }
-    if spec == "owner" || spec.starts_with("owner+") {
-        return Some(Actor::owner("owner-1"));
-    }
-    staff_of(spec)
+    callers_of(spec).user
 }
-
-const STAFF_ROLES: [&str; 9] = [
-    "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
-    "MONITOR",
-    "FINANCE",
-    "SYSTEM",
-    "DOCUMENTS",
-    "DOCUMENT_REVIEW",
-];
 
 /// The codes a policy refusal answers with (`V3Error::from(PolicyError)`).
 const POLICY_CODES: [&str; 6] = [
@@ -262,37 +224,6 @@ async fn refused(db: &TestDb, a: &Answer, code: &str, status: StatusCode, what: 
 }
 
 // ------------------------------------------------------------ the answer
-
-/// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
-/// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
-fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
-    action: &str,
-    named: Option<&str>,
-) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
-    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
-    Policy::authorize(
-        user.as_ref(),
-        path,
-        &act,
-        named.map(xc_kernel::ids::BranchId::new).as_ref(),
-        chrono::Utc::now(),
-    )
-    .map(|_| ())
-}
 
 #[actix_web::test]
 async fn the_answer_has_every_field_with_money_as_strings_and_is_the_stored_quote() {
@@ -545,36 +476,44 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
     let db = TestDb::start().await;
     db.publish("MAIN", &[JPY]).await;
     let mut callers = vec![String::new(), "owner".to_owned()];
-    for role in STAFF_ROLES {
+    for (role, _) in test_callers::V2_STAFF {
         callers.push(format!("staff:{role}:MAIN"));
         callers.push(format!("owner+staff:{role}:MAIN"));
     }
     let save = Action::new("saveTransaction");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &save) else {
+        panic!("(Rpc, saveTransaction) needs a permission");
+    };
     let mut written = 0;
+    let mut refused_count = 0;
     for who in &callers {
-        // OR-4b (#767, design §4.2 C2): the route table's rule; ExchangeTransact is TELLER's, so the
-        // owner's user is refused
-        let allowed = blueprint_rule(
-            actor_on_rpc(who).as_ref(),
-            EntryPath::Rpc,
-            save.as_str(),
-            None,
-        )
-        .is_ok();
+        let actor = actor_on_rpc(who);
+        let holds = actor.as_ref().is_some_and(|ac| {
+            ac.roles
+                .iter()
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
+        });
+        let allowed =
+            Policy::authorize(actor.as_ref(), EntryPath::Rpc, &save, None, Utc::now()).is_ok();
+        assert_eq!(
+            allowed, holds,
+            "{who:?}: RoleGrants::seed matches Policy::authorize"
+        );
         let a = ask(&db, who, &body("JPY", "BUY", "1000", None)).await;
         if allowed {
             assert_eq!(a.status, StatusCode::OK, "{who:?} may ask: body {}", a.text);
             written += 1;
             let id = a.body["id"].as_str().expect("id");
-            let actor = actor_on_rpc(who).expect("a signed-in caller");
+            let actor = actor.expect("a signed-in caller");
             assert_eq!(
                 db.text(&format!("SELECT created_by FROM quotes WHERE id = '{id}'"))
                     .await
                     .as_deref(),
-                Some(actor.id()),
+                Some(actor.user_id.as_str()),
                 "{who:?}: created_by is the caller"
             );
         } else {
+            refused_count += 1;
             assert_ne!(a.status, StatusCode::OK, "{who:?} may not ask: {}", a.text);
             assert!(
                 POLICY_CODES.contains(&a.code()),
@@ -588,8 +527,24 @@ async fn who_may_ask_is_todays_save_transaction_row_and_a_refusal_stores_nothing
             "{who:?}: only allowed callers store a quote"
         );
     }
-    // C2: FRONT (TELLER) alone is allowed
-    assert_eq!(written, 1, "FRONT is allowed, got {written}");
+    let expected_written = callers
+        .iter()
+        .filter(|who| {
+            actor_on_rpc(who).is_some_and(|ac| {
+                ac.roles
+                    .iter()
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
+            })
+        })
+        .count() as i64;
+    assert_eq!(
+        written, expected_written,
+        "holders of ExchangeTransact under §11.2 are allowed, got {written}"
+    );
+    assert!(
+        refused_count > 1,
+        "§11.2 leaves staff roles without ExchangeTransact"
+    );
     db.finish().await;
 }
 

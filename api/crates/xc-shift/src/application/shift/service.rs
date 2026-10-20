@@ -171,6 +171,8 @@ impl<R: ShiftRepository> ShiftService<R> {
         .execute(&mut **tx)
         .await?;
 
+        self.lifecycle.on_opened(tx, branch, teller_id, now).await?;
+
         let mut pairs = Vec::new();
         for (code_str, amount) in opening {
             if !amount.is_zero() {
@@ -220,17 +222,22 @@ impl<R: ShiftRepository> ShiftService<R> {
         note: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        sqlx::query(
+        let (branch_id, teller_id): (String, String) = sqlx::query_as(
             "UPDATE shifts \
              SET status = 'CLOSED', closed_at = $1, closed_by = $2, close_note = $3 \
-             WHERE id = $4",
+             WHERE id = $4 \
+             RETURNING branch_id, teller_id::text",
         )
         .bind(now)
         .bind(closed_by)
         .bind(note)
         .bind(shift_id)
-        .execute(&mut **tx)
+        .fetch_one(&mut **tx)
         .await?;
+
+        self.lifecycle
+            .on_closed(tx, &BranchId::new(branch_id), &teller_id, now)
+            .await?;
 
         let _ = close_balances;
         Ok(())

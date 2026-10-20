@@ -9,7 +9,7 @@
 //! history to exactly the callers who hold `Permission::SystemSettings` for the branch (ADMIN and EXECUTIVE on
 //! `main`), and to nobody else; everyone signed in may list. The owner of today maps to EXECUTIVE + ADMIN
 //! organisation-wide (§3.3), so it edits as it does today; every staff role maps to a role without
-//! `SystemSettings`, so staff list without editing, as today. Who may edit is computed from `RolePermissions`, never
+//! `SystemSettings`, so staff list without editing, as today. Who may edit is computed from `RoleGrants`, never
 //! from a role name.
 //!
 //! **Through both doors that call the service** (#1022 §5, "its callers change only the argument they pass"):
@@ -49,7 +49,7 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::payment::PaymentRules;
@@ -57,7 +57,7 @@ use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xchange::application::settings::PaymentSettingsService;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::settings::branch_setting_store::BranchSettingStore;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -91,7 +91,7 @@ fn unique(prefix: &str) -> String {
 
 /// Whether `role` edits payment settings: it holds `SystemSettings` (#1022 §3).
 fn edits(role: Role) -> bool {
-    RolePermissions::of(role).contains(&Permission::SystemSettings)
+    RoleGrants::seed(role).contains(&Permission::SystemSettings)
 }
 
 /// Organisation-wide for the roles that are organisation-wide on `main` (EXECUTIVE, ADMIN); at MAIN otherwise.
@@ -240,18 +240,6 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {

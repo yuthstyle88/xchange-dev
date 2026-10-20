@@ -3,11 +3,15 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { setLang } from "../../../shared/i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { DenominationRow } from "../../../shared/api/generated/denominations";
-import type { HandoverReceiverRow } from "../../../shared/api/generated/handover_receivers";
-import type { MyShift } from "../../../shared/api/generated/my_shift";
+import {
+  makeDenominationRow,
+  makeHandoverReceiverRow,
+  makeMyShift,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { warmModules } from "../../../shared/testing/warm-modules";
 
@@ -24,19 +28,19 @@ const ME = "00000000-0000-4000-8000-0000000000a1";
 const OTHER = "00000000-0000-4000-8000-0000000000a2";
 const THIRD = "00000000-0000-4000-8000-0000000000a3";
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: null,
@@ -45,7 +49,7 @@ function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
     target: null,
     safe: null,
     ...over,
-  };
+  });
 }
 
 const CLOCKED_IN = "2026-10-11T01:00:00Z";
@@ -53,23 +57,23 @@ const MY_SHIFT = {
   id: "11111111-1111-4111-8111-111111111111",
   openedAt: "2026-10-11T01:05:00Z",
 };
-const MY_SHIFT_VIEW: MyShift = {
+const MY_SHIFT_VIEW = makeMyShift({
   id: MY_SHIFT.id,
   status: "OPEN",
   openedAt: MY_SHIFT.openedAt,
   balances: [],
-};
+});
 
-const DENOMS: DenominationRow[] = [
-  { id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" },
-  { id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" },
-  { id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" },
+const DENOMS = [
+  makeDenominationRow({ id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" }),
 ];
 
-const RECEIVERS: HandoverReceiverRow[] = [
-  { userId: THIRD, name: "Aom" },
-  { userId: ME, name: "Ploy" },
-  { userId: OTHER, name: "Somchai" },
+const RECEIVERS = [
+  makeHandoverReceiverRow({ userId: THIRD, name: "Aom" }),
+  makeHandoverReceiverRow({ userId: ME, name: "Ploy" }),
+  makeHandoverReceiverRow({ userId: OTHER, name: "Somchai" }),
 ];
 
 type Sent = {

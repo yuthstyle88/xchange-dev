@@ -26,10 +26,16 @@
 // `me()` row keeps dropping `since`. Every other row is unchanged.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, createRoot, createSignal, type Accessor } from 'solid-js';
-import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
+import { ApiError, type ApiClient, type ViewParams } from '../api/client';
 import type { SessionStore } from '../session/session';
-import type { QueueBoardData, QueueBoardWaiting } from './wire';
+import {
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  makeViewAnswer,
+  type Me,
+  type QueueBoardData,
+  type ViewAnswer,
+} from '../testing/fixtures';
 import {
   queueBranch,
   queueStore,
@@ -40,12 +46,12 @@ import {
 import { meOf } from '../../test-support/me';
 
 // S8 reads `me().branch` of the shared session; the page has no other session to give it.
-const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: unknown) => void) }));
+const shared = vi.hoisted(() => ({ setMe: undefined as undefined | ((me: Me | undefined) => void) }));
 vi.mock('../session/session', async (importOriginal) => {
   const original = await importOriginal<typeof import('../session/session')>();
   const { createSignal: signal } = await import('solid-js');
   const [me, setMe] = signal<Me | undefined>(undefined);
-  shared.setMe = (value) => setMe(() => value as Me | undefined);
+  shared.setMe = (value) => setMe(() => value);
   const session: SessionStore = { me, signOut: async () => {}, dispose: () => {} };
   return { ...original, sharedSession: () => session };
 });
@@ -69,12 +75,18 @@ function freshBranch(): string {
   return `QS-${branchNo}`;
 }
 
-function ticket(id: string, sequence: number): QueueBoardWaiting {
-  return { id, displayNumber: `W${String(sequence).padStart(3, '0')}`, serviceType: 'WALK_IN', sequence, issuedAt: new Date(T0).toISOString() };
+function ticket(id: string, sequence: number) {
+  return makeQueueBoardWaiting({
+    id,
+    displayNumber: `W${String(sequence).padStart(3, '0')}`,
+    serviceType: 'WALK_IN',
+    sequence,
+    issuedAt: new Date(T0).toISOString(),
+  });
 }
 
-function board(over: Partial<QueueBoardData> = {}): QueueBoardData {
-  return { waiting: [ticket('kq-1', 1)], called: [], myCounter: null, ...over };
+function board(over: Partial<QueueBoardData> = {}) {
+  return makeQueueBoardData({ waiting: [ticket('kq-1', 1)], called: [], myCounter: null, ...over });
 }
 
 /** A fake `ApiClient` for one branch that answers `queue_board` like the server. */
@@ -117,9 +129,9 @@ class FakeServer {
       }
       if (this.fail !== undefined) throw this.fail;
       if (params.since !== undefined && params.since === this.version) {
-        return { version: this.version, changed: false };
+        return makeViewAnswer(undefined as unknown as T, { version: this.version, changed: false });
       }
-      return { version: this.version, changed: true, data: this.data as unknown as T };
+      return makeViewAnswer(this.data as unknown as T, { version: this.version, changed: true });
     },
     post: async (path: string, body: unknown): Promise<unknown> => {
       this.posts.push({ path, body });

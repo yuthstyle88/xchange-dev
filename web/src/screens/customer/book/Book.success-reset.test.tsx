@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { BookingCreateOutput } from '../../../shared/api/generated/bookings';
+import { makeBookingCreateOutput } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { BookScreen } from './Book';
@@ -42,7 +42,7 @@ const SAMPLE_PREVIEW = {
   sourceDate: '2026-10-15',
 };
 
-const SAMPLE_CREATE_OK: BookingCreateOutput = {
+const SAMPLE_CREATE_OK = makeBookingCreateOutput({
   id: '11111111-1111-4000-8000-000000000001',
   bookingNo: 'B261015-0001',
   status: 'CONFIRMED',
@@ -54,9 +54,9 @@ const SAMPLE_CREATE_OK: BookingCreateOutput = {
   currency: 'USD',
   quantity: 100,
   qrToken: 'qr-token-test-xyz',
-};
+});
 
-const SAMPLE_CREATE_OK_2: BookingCreateOutput = {
+const SAMPLE_CREATE_OK_2 = makeBookingCreateOutput({
   id: '22222222-2222-4000-8000-000000000002',
   bookingNo: 'B261015-0002',
   status: 'CONFIRMED',
@@ -68,7 +68,7 @@ const SAMPLE_CREATE_OK_2: BookingCreateOutput = {
   currency: 'USD',
   quantity: 100,
   qrToken: 'qr-token-test-2',
-};
+});
 
 interface RecordedRequest {
   method: string;
@@ -225,7 +225,7 @@ describe('Customer Book success banner reset (#2594)', () => {
 
     const banner1 = host.querySelector('.xc-book-success');
     expect(banner1).not.toBeNull();
-    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.id);
+    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.bookingNo);
 
     // Second submit fails
     submitBtn.click();
@@ -252,7 +252,7 @@ describe('Customer Book success banner reset (#2594)', () => {
 
     const banner1 = host.querySelector('.xc-book-success');
     expect(banner1).not.toBeNull();
-    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.id);
+    expect(banner1!.textContent).toContain(SAMPLE_CREATE_OK.bookingNo);
 
     // Second booking submitted, in flight
     submitBtn.click();
@@ -267,6 +267,6 @@ describe('Customer Book success banner reset (#2594)', () => {
 
     const banner2 = host.querySelector('.xc-book-success');
     expect(banner2).not.toBeNull();
-    expect(banner2!.textContent).toContain(SAMPLE_CREATE_OK_2.id);
+    expect(banner2!.textContent).toContain(SAMPLE_CREATE_OK_2.bookingNo);
   });
 });

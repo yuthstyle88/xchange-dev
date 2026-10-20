@@ -5,28 +5,32 @@ import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { TransfersCard } from './TransfersCard';
 import type { StaffCtx } from '../cards';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
+import {
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  makeTransferBranchRow,
+  type StaffFloorView,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 
 const BRANCH = 'MAIN';
 const ME = '00000000-0000-4000-8000-0000000000b1';
 
-function mockMe(permissions: string[] = ['CashManage', 'FinanceReconcile']): StaffMeView {
-  return {
+function mockMe(permissions: string[] = ['CashManage', 'FinanceReconcile']) {
+  return makeStaffMeView({
     userId: ME,
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function mockFloor(): StaffFloorView {
-  return {
+function mockFloor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -37,11 +41,11 @@ function mockFloor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
-const SAMPLE_TRANSFERS: CashTransferRow[] = [
-  {
+const SAMPLE_TRANSFERS = [
+  makeCashTransferRow({
     id: 'tx-001',
     kind: 'BRANCH',
     fromBranchId: BRANCH,
@@ -53,8 +57,8 @@ const SAMPLE_TRANSFERS: CashTransferRow[] = [
     note: 'test transfer',
     createdAt: '2026-10-11T00:00:00Z',
     lines: [],
-  },
-  {
+  }),
+  makeCashTransferRow({
     id: 'tx-002',
     kind: 'BRANCH',
     fromBranchId: 'B99',
@@ -66,8 +70,8 @@ const SAMPLE_TRANSFERS: CashTransferRow[] = [
     note: 'dispatched transfer',
     createdAt: '2026-10-11T00:00:00Z',
     lines: [],
-  },
-  {
+  }),
+  makeCashTransferRow({
     id: 'tx-003',
     kind: 'BRANCH',
     fromBranchId: 'B99',
@@ -79,15 +83,15 @@ const SAMPLE_TRANSFERS: CashTransferRow[] = [
     note: 'received transfer',
     createdAt: '2026-10-11T00:00:00Z',
     lines: [],
-  },
+  }),
 ];
 
-const SAMPLE_DENOMS: DenominationRow[] = [
-  { id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' },
+const SAMPLE_DENOMS = [
+  makeDenominationRow({ id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' }),
 ];
 
-const SAMPLE_BRANCHES: TransferBranchRow[] = [
-  { branchId: 'B99', name: 'Branch 99' },
+const SAMPLE_BRANCHES = [
+  makeTransferBranchRow({ branchId: 'B99', name: 'Branch 99' }),
 ];
 
 let host: HTMLDivElement;

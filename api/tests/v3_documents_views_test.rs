@@ -99,12 +99,13 @@ fn want(step: usize) -> Want {
         20 => Links("other", THREE, Owner),
         21..=23 => Links("cash", CASH, Owner),
         24..=26 => Refused(401, "employeeAuthRequired", None),
-        28 | 30 => Links("cash", CASH, Staff),
+        28 | 30 | 37 => Links("cash", CASH, Staff),
         29 | 31 => Links("transfer", THREE, Staff),
         32 => Links("other", THREE, Staff),
         33 => Refused(403, "outOfScope", None),
         34..=36 => not_found,
-        37 | 38 => Refused(400, "documentsNotReadable", None),
+        // Under RBAC §11.2, Rates holds IdentityDocumentRead (Customers: Full); System (Admin) does not.
+        38 => Refused(400, "documentsNotReadable", None),
         other => panic!("the fixture has no step {other}"),
     }
 }
@@ -623,12 +624,14 @@ async fn the_files_an_employee_saved_are_in_both_views() {
         &[("THB", "1000000"), ("USD", "1000")],
     )
     .await;
+    let employee_id = shift_holder_common::user_of(&shop.pool, employee).await;
     let saved = shop
         .workflow
         .save(
             &save_common::branch(save_common::MAIN),
             form,
-            employee,
+            // OR-7.m G1b: rule 1 (#3797)
+            &employee_id,
             save_common::at(100),
         )
         .await

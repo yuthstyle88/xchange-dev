@@ -15,7 +15,6 @@ use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Side};
-use xc_testdb::people::{RoleRow, seed_person};
 
 use crate::application::branch_day::service::{
     BeginDraft, BranchDayService, ClockDirection, StartService,
@@ -759,102 +758,77 @@ async fn test_teller_of_actor_in_resolves_users_id() {
 }
 
 #[tokio::test]
-async fn test_teller_of_actor_in_resolves_legacy_employee_id() {
+async fn test_teller_of_actor_in_does_not_resolve_a_non_user_id() {
     let db = TestDb::start().await;
-    let branch = db.branch("teller_legacy").await;
+    let branch = db.branch("teller_non_uid").await;
     let shifts = ShiftService::new(
         Arc::new(PgShiftRepository::new(db.pool.clone())),
         BranchTx::new(Transactor::new(db.pool.clone())),
     );
-    let uid: String = sqlx::query_scalar(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, 'Legacy Emp', 'ACTIVE', 'test', 'EMP-LEGACY-1' FROM organizations WHERE code = 'XC' \
-         RETURNING id::text",
-    )
-    .fetch_one(&db.pool)
-    .await
-    .expect("seed user with legacy_employee_id");
+    seed_test_user(&db.pool, TELLER_ID, "front").await;
 
     let mut tx = locked_tx(&db.pool, &branch).await;
     let resolved = shifts
-        .teller_of_actor_in(&mut tx, &branch, "EMP-LEGACY-1")
+        .teller_of_actor_in(&mut tx, &branch, "front")
         .await
-        .expect("teller_of_actor_in succeeds");
-    assert_eq!(resolved, Some(uid));
+        .expect("non-user id returns Ok(None)");
+    assert_eq!(resolved, None);
     tx.rollback().await.unwrap();
 }
 
+/// #3306 (BE controller ruling, 2026-10-20): clock-in records `resolve_role(who)`, the same rule custody
+/// events use, `Other` included, so a person's attendance row and their CLOCK_IN event never disagree.
+/// Provided test (up front); the implementer must not change it.
 #[tokio::test]
-async fn test_teller_of_actor_in_resolves_employee_username() {
+async fn test_clock_in_records_the_role_its_event_records() {
+    const RATES_ID: &str = "00000000-0000-4000-8000-000000000006";
     let db = TestDb::start().await;
-    let branch = db.branch("teller_uname").await;
-    let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(db.pool.clone())),
-        BranchTx::new(Transactor::new(db.pool.clone())),
-    );
-    sqlx::query(
-        "INSERT INTO employees (id, username, name, role, branch_id, password_hash, created_at) \
-         VALUES ('EMP-UNAME-1', 'somchai_uname', 'Somchai', 'FRONT', $1, 'hash', now())",
-    )
-    .bind(branch.as_str())
-    .execute(&db.pool)
-    .await
-    .expect("seed employee");
-    let uid: String = sqlx::query_scalar(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, 'Somchai', 'ACTIVE', 'test', 'EMP-UNAME-1' FROM organizations WHERE code = 'XC' \
-         RETURNING id::text",
-    )
-    .fetch_one(&db.pool)
-    .await
-    .expect("seed user for employee");
+    let branch = db.branch("BD_CLOCK_ROLE").await;
+    let service = db.service(Arc::new(TestPorts::default()));
 
-    let mut tx = locked_tx(&db.pool, &branch).await;
-    let resolved = shifts
-        .teller_of_actor_in(&mut tx, &branch, "somchai_uname")
-        .await
-        .expect("teller_of_actor_in succeeds");
-    assert_eq!(resolved, Some(uid));
-    tx.rollback().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_teller_of_actor_in_resolves_owner() {
-    let db = TestDb::start().await;
-    let branch = db.branch("teller_owner").await;
-    let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(db.pool.clone())),
-        BranchTx::new(Transactor::new(db.pool.clone())),
-    );
-    let valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    let roles = [
-        RoleRow {
-            role_code: "EXECUTIVE",
-            branch_id: None,
-            valid_from,
-            valid_to: None,
-        },
-        RoleRow {
-            role_code: "ADMIN",
-            branch_id: None,
-            valid_from,
-            valid_to: None,
-        },
+    let rows = [
+        (MANAGER_ID, "Manager", Role::BranchManager, "MANAGER"),
+        (TELLER_ID, "Teller", Role::Teller, "FRONT"),
+        (RATES_ID, "Rates", Role::RateManager, "OTHER"),
     ];
-    let owner_uid = seed_person(
-        &mut db.pool.acquire().await.expect("acquire connection"),
-        ORG_ID,
-        "Owner",
-        &roles,
-    )
-    .await
-    .expect("seed owner user");
+    for (id, name, _, _) in rows {
+        seed_test_user(&db.pool, id, name).await;
+    }
 
     let mut tx = locked_tx(&db.pool, &branch).await;
-    let resolved = shifts
-        .teller_of_actor_in(&mut tx, &branch, "owner")
+    for (id, _, role, want) in rows {
+        let who = actor_scoped(id, role, &branch);
+        service
+            .clock(&mut tx, &who, &branch, ClockDirection::In, now())
+            .await
+            .unwrap_or_else(|e| panic!("{role:?} clocks in: {e}"));
+
+        let attendance: String = sqlx::query_scalar(
+            "SELECT data->>'role' FROM attendance WHERE branch_id = $1 AND employee_id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_one(&mut *tx)
         .await
-        .expect("teller_of_actor_in succeeds");
-    assert_eq!(resolved, Some(owner_uid));
+        .expect("the attendance row");
+        let event: String = sqlx::query_scalar(
+            "SELECT role FROM ops_events WHERE branch_id = $1 AND actor = $2 AND kind = 'CLOCK_IN'",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("the CLOCK_IN event");
+
+        assert_eq!(
+            event, want,
+            "{role:?}: the CLOCK_IN event's role (resolve_role)"
+        );
+        assert_eq!(attendance, want, "{role:?}: the attendance row's role");
+        assert_eq!(
+            attendance, event,
+            "{role:?}: attendance and its event agree"
+        );
+    }
     tx.rollback().await.unwrap();
 }

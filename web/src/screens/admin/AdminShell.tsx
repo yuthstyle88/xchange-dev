@@ -742,7 +742,9 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         </main>
       </div>
 
-      <QueueBar branch={currentBranch} branchLabel={currentBranchName} />
+      <Show when={permissions().includes('QueueOperate')}>
+        <QueueBar branch={currentBranch} branchLabel={currentBranchName} />
+      </Show>
       <Dialog />
       <Toast />
     </AppShell>

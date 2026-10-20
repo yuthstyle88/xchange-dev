@@ -8,12 +8,11 @@ import {
   type ViewAnswer,
   type ViewParams,
 } from '../api/client';
-import type { Me } from '../api/generated/common';
 import { setLang } from '../i18n';
 import type { SessionStore } from '../session/session';
 import { queueStore, type QueueStore } from '../queue/queue-store';
-import type { QueueBoardData } from '../api/generated/queue_board';
-import type { KioskQueueRow } from '../queue/wire';
+import type { KioskQueueRow, Me } from '../testing/fixtures';
+import { makeKioskQueueRow, makeQueueBoardData } from '../testing/fixtures';
 import { QueuePanel } from './QueuePanel';
 import { meOf } from '../../test-support/me';
 
@@ -31,8 +30,8 @@ const ME: Me = meOf({
 
 type State = 'waiting' | 'working' | 'completed';
 
-function row(branch: string, n: number, over: Partial<KioskQueueRow> = {}): KioskQueueRow {
-  return {
+function row(branch: string, n: number, over: Partial<KioskQueueRow> = {}) {
+  return makeKioskQueueRow({
     id: `${branch}-kq-${n}`,
     queue: `${branch}-Q${n}`,
     orderNo: `ORD-${n}`,
@@ -49,15 +48,15 @@ function row(branch: string, n: number, over: Partial<KioskQueueRow> = {}): Kios
     canAccept: true,
     canContinue: false,
     ...over,
-  };
+  });
 }
 
 class Branch {
   version = 7;
   readonly rows: Record<State, KioskQueueRow[]> = { waiting: [], working: [], completed: [] };
   constructor(readonly id: string) {}
-  board(): QueueBoardData {
-    return {
+  board() {
+    return makeQueueBoardData({
       waiting: this.rows.waiting.map((r, i) => ({
         id: r.id,
         displayNumber: r.queue,
@@ -67,7 +66,7 @@ class Branch {
       })),
       called: [],
       myCounter: null,
-    };
+    });
   }
 }
 

@@ -87,22 +87,38 @@ fn not_refused_with(a: &Answer, not: &str, label: &str) {
 
 #[actix_web::test]
 async fn the_owners_user_no_longer_sells_or_moves_stock_on_the_owner_rpc() {
-    // C2 (§03 B03: ExchangeTransact is TELLER's)
+    // RBAC §11.2 (#3659): ExchangeTransact is held by TELLER, BRANCH_MANAGER, RATE_MANAGER and
+    // EXECUTIVE (Customers Full; so OWNER, BACKEND, MANAGER and RATES get through, while FINANCE
+    // and MONITOR are refused)
     let room = Room::open().await;
     for action in ["reserveCustomer", "saveTransaction"] {
-        let a = room.ask("OWNER", "/api/rpc", action, json!({})).await;
-        refused(&a, 400, ROLE_NOT_ALLOWED_HERE, &format!("OWNER {action}"));
+        for who in ["OWNER", "BACKEND", "MANAGER", "RATES"] {
+            let a = room.ask(who, "/api/rpc", action, json!({})).await;
+            not_refused_with(&a, ROLE_NOT_ALLOWED_HERE, &format!("{who} {action}"));
+        }
+        for who in ["FINANCE", "MONITOR"] {
+            let a = room.ask(who, "/api/rpc", action, json!({})).await;
+            refused(&a, 400, ROLE_NOT_ALLOWED_HERE, &format!("{who} {action}"));
+        }
     }
     room.finish().await;
 }
 
 #[actix_web::test]
 async fn the_owners_user_does_not_work_the_kiosk_queue() {
-    // C8 (§03 B06: QueueOperate is TELLER's and MANAGER's)
+    // RBAC §11.2 (#3659): QueueOperate is held by TELLER, BRANCH_MANAGER, RATE_MANAGER and
+    // EXECUTIVE (Customers Full; so OWNER and RATES get through, while FINANCE and MONITOR are
+    // refused)
     let room = Room::open().await;
     for action in ["accept", "get", "identityChecked", "publishReceipt"] {
-        let a = room.ask("OWNER", "/api/kiosk", action, json!({})).await;
-        refused(&a, 400, KIOSK_STAFF, &format!("OWNER kiosk {action}"));
+        for who in ["OWNER", "RATES"] {
+            let a = room.ask(who, "/api/kiosk", action, json!({})).await;
+            not_refused_with(&a, KIOSK_STAFF, &format!("{who} kiosk {action}"));
+        }
+        for who in ["FINANCE", "MONITOR"] {
+            let a = room.ask(who, "/api/kiosk", action, json!({})).await;
+            refused(&a, 400, KIOSK_STAFF, &format!("{who} kiosk {action}"));
+        }
     }
     room.finish().await;
 }

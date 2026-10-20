@@ -216,19 +216,18 @@ impl Db {
             .expect("insert a branch");
     }
 
-    /// A user as OR-2's mirror writes it; `legacy` is the employee id (`None` for the owner's user).
+    /// A user as OR-2's mirror writes it.
     /// Amended by #1157 (claude/08f7f46f): the not-yet-bound status is `INVITED` before #1157's migration
     /// (which drops `user_invites`) and `PENDING` after it; this file runs at both stages.
-    async fn user(&self, legacy: Option<&str>) -> String {
+    async fn user(&self, _legacy: Option<&str>) -> String {
         let org = self.org().await;
         sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
+            "INSERT INTO users (organization_id, name, status, created_by) \
              VALUES ($1::uuid, 'u', \
                      CASE WHEN to_regclass('user_invites') IS NULL THEN 'PENDING' ELSE 'INVITED' END, \
-                     'test', $2) RETURNING id::text",
+                     'test') RETURNING id::text",
         )
         .bind(&org)
-        .bind(legacy)
         .fetch_one(&self.pool)
         .await
         .expect("insert a user")
@@ -264,31 +263,26 @@ impl Db {
         id
     }
 
-    /// An employee row as the pre-OR-7 account code writes it, with its mirrored user (OR-2).
-    async fn employee(&self, id: &str, username: &str, branch: &str) -> String {
-        sqlx::query(
-            "INSERT INTO employees (id, username, name, role, branch_id, password_hash, active, must_change, \
-             version, created_at) VALUES ($1, $2, $2, 'FRONT', $3, 'h', true, false, 1, now())",
+    /// A teller user with a TELLER role at `branch`.
+    async fn employee(&self, _id: &str, _username: &str, branch: &str) -> String {
+        let uid = self.user(None).await;
+        let org = self.org().await;
+        let valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let roles = [RoleRow {
+            role_code: "TELLER",
+            branch_id: Some(branch),
+            valid_from,
+            valid_to: None,
+        }];
+        seed_roles(
+            &mut self.pool.acquire().await.expect("acquire connection"),
+            &uid,
+            &org,
+            &roles,
         )
-        .bind(id)
-        .bind(username)
-        .bind(branch)
-        .execute(&self.pool)
         .await
-        .expect("insert an employee");
-        self.user(Some(id)).await
-    }
-
-    /// The owners row (pre-OR-7) with the given username.
-    async fn owner_row(&self, username: &str) {
-        sqlx::query(
-            "INSERT INTO owners (id, username, name, password_hash, active, version, created_at) \
-             VALUES ('owner-row', $1, 'Owner', 'h', true, 1, now())",
-        )
-        .bind(username)
-        .execute(&self.pool)
-        .await
-        .expect("insert the owners row");
+        .expect("insert the teller's role");
+        uid
     }
 
     /// A shift row as the pre-CA-1 binary writes it.
@@ -325,9 +319,9 @@ async fn existing_shifts_get_the_teller_of_their_opener() {
     db.branch("B").await;
     let alice = db.user(Some("E-ALICE")).await;
     let owner = db.owner_user().await;
-    db.old_shift("S1", "A", "E-ALICE", "CLOSED").await;
+    db.old_shift("S1", "A", &alice, "CLOSED").await;
     db.old_shift("S2", "A", "owner", "OPEN").await;
-    db.old_shift("S3", "B", "E-ALICE", "OPEN").await;
+    db.old_shift("S3", "B", &alice, "OPEN").await;
     db.m1().await.expect("M1 applies");
     assert_eq!(
         db.teller_of("S1").await,
@@ -400,8 +394,8 @@ async fn without_an_owner_opened_shift_m1_needs_no_owner_user() {
     // A fresh install: the migrations run before the owner exists (PR 636).
     let db = Db::before_m1().await;
     db.branch("A").await;
-    db.user(Some("E-ALICE")).await;
-    db.old_shift("S1", "A", "E-ALICE", "CLOSED").await;
+    let alice = db.user(Some("E-ALICE")).await;
+    db.old_shift("S1", "A", &alice, "CLOSED").await;
     db.m1().await.expect("M1 applies with no owner user");
 }
 
@@ -692,9 +686,8 @@ async fn existing_shifts_opened_through_the_rpc_route_name_their_opener_by_usern
     db.branch("A").await;
     let bob = db.employee("E-BOB", "bob", "A").await;
     let owner = db.owner_user().await;
-    db.owner_row("boss").await;
-    db.old_shift("S1", "A", "bob", "CLOSED").await;
-    db.old_shift("S2", "A", "boss", "CLOSED").await;
+    db.old_shift("S1", "A", &bob, "CLOSED").await;
+    db.old_shift("S2", "A", "owner", "CLOSED").await;
     db.m1().await.expect("M1 applies");
     assert_eq!(
         db.teller_of("S1").await,

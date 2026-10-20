@@ -43,14 +43,14 @@ use kiosk_http_common::{Counter, person};
 use rpc_common::{Answer, Call};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::{Actor, Permission, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 /// Amended for QU-6 #1354 (ruling issuecomment-6117792804), setup only: `accept` starts the
 /// request's queue ticket as the accepting teller (queue-tickets.md §4.5), and the queue serves
@@ -316,10 +316,10 @@ struct Room {
 /// One employee of every staff role in `MAIN` (keys are the role names), a second FRONT
 /// employee and a FRONT employee who must change the first password.
 fn the_staff() -> Vec<Person> {
-    let mut staff: Vec<Person> = Role::STAFF
+    let mut staff: Vec<Person> = test_callers::V2_STAFF
         .iter()
         .enumerate()
-        .map(|(i, role)| person(role.as_str(), role.as_str(), 0x31 + i as u8))
+        .map(|(i, (role, _))| person(role, role, 0x31 + i as u8))
         .collect();
     staff.push(person(FRONT2, "FRONT", 0x41));
     let mut must_change = person(MUST_CHANGE, "FRONT", 0x42);
@@ -377,18 +377,15 @@ impl Room {
     fn actor_of(&self, key: &str) -> Option<Actor> {
         match key {
             "" | MUST_CHANGE => None,
-            "owner" => Some(Actor::owner("owner")),
+            "owner" => Some(test_callers::owner("owner")),
             key => {
                 let p = self
                     .staff
                     .iter()
                     .find(|p| p.key == key)
                     .unwrap_or_else(|| panic!("{key} is one of the staff"));
-                Actor::staff(
-                    p.id.clone(),
-                    Role::parse(&p.role).expect("a staff role"),
-                    BranchId::new(MAIN),
-                )
+                let roles = test_callers::v2_staff_roles(&p.role).expect("a staff role");
+                Some(test_callers::staff(&p.id, roles, BranchId::new(MAIN)))
             }
         }
     }
@@ -657,9 +654,9 @@ async fn nobody_signed_in_is_refused_kiosk_staff_on_both_views() {
     room.finish().await;
 }
 
-/// W8: both views answer exactly whom `Policy::allow` lets call `notifications` and `list` on
-/// the path `Kiosk` — the owner, every staff role — and refuse everybody else with the
-/// policy's refusal. No role row of their own.
+/// W8: both views answer exactly whom `RoleGrants::seed` and `Policy::authorize` let call
+/// `notifications` and `list` on the path `Kiosk` — the owner, every staff role — and refuse
+/// everybody else with the policy's refusal. No role row of their own.
 #[actix_web::test]
 async fn both_views_answer_exactly_whom_the_kiosk_rows_allow() {
     let room = Room::open().await;
@@ -667,10 +664,21 @@ async fn both_views_answer_exactly_whom_the_kiosk_rows_allow() {
     for who in room.callers() {
         let actor = room.actor_of(&who);
         for (view, action) in [(QUEUE, "list")] {
-            let policy = Policy::allow(actor.as_ref(), EntryPath::Kiosk, &Action::new(action));
+            let act = Action::new(action);
+            let Some(Need::Permission(perm)) = Policy::need(EntryPath::Kiosk, &act) else {
+                panic!("{action} needs a permission");
+            };
+            let holds = actor.as_ref().is_some_and(|a| {
+                a.roles
+                    .iter()
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
+            });
+            let policy =
+                Policy::authorize(actor.as_ref(), EntryPath::Kiosk, &act, None, Utc::now());
+            assert_eq!(policy.is_ok(), holds, "{view} as {who:?}");
             let answer = room.get(&who, &path(view, "")).await;
             match policy {
-                Ok(()) => {
+                Ok(_) => {
                     allowed += 1;
                     assert_eq!(
                         answer.status, 200,
@@ -1111,26 +1119,47 @@ async fn a_row_without_work_times_answers_null_times() {
 
 // ── who may claim ────────────────────────────────────────────────────────────
 
-/// §9: a caller whose role may not claim (RATES, and the other roles `accept` refuses) sees
+/// §9: a caller whose role may not claim (roles without `QueueOperate` in `RoleGrants::seed`) sees
 /// every row, but `canAccept` and `canContinue` are false on all of them — also on a row the
 /// caller holds.
 #[actix_web::test]
 async fn a_rates_caller_sees_the_rows_but_may_claim_none() {
     let room = Room::open().await;
-    room.put_all(&the_day(&room)).await;
-    for who in [
+    let mut day = the_day(&room);
+    // Give rid(7) to FINANCE (which lacks QueueOperate under §11.2) so a non-claiming holder is tested.
+    day[6].staff = Some(room.id_of("FINANCE"));
+    room.put_all(&day).await;
+
+    let candidates = [
         "RATES",
         "MONITOR",
         "FINANCE",
         "SYSTEM",
         "DOCUMENTS",
         "DOCUMENT_REVIEW",
-    ] {
+    ];
+    let non_claiming: Vec<&str> = candidates
+        .into_iter()
+        .filter(|&who| {
+            let roles = test_callers::v2_staff_roles(who).expect("a staff role");
+            !roles
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::QueueOperate))
+        })
+        .collect();
+    assert!(
+        non_claiming.contains(&"FINANCE"),
+        "§11.2 must leave FINANCE without QueueOperate, or this test refuses nobody"
+    );
+    for who in non_claiming {
+        let user = room.actor_of(who);
         assert!(
-            Policy::allow(
-                room.actor_of(who).as_ref(),
+            Policy::authorize(
+                user.as_ref(),
                 EntryPath::Kiosk,
-                &Action::new("accept")
+                &Action::new("accept"),
+                None,
+                chrono::Utc::now(),
             )
             .is_err(),
             "{who} may not claim"
@@ -1146,13 +1175,13 @@ async fn a_rates_caller_sees_the_rows_but_may_claim_none() {
         }
         assert_eq!(seen, 9, "{who} sees every listed row");
     }
-    // RATES holds rid(7), ID_CHECKED: still no continuing
-    let working = room.data("RATES", QUEUE, "state=working").await;
+    // FINANCE holds rid(7), ID_CHECKED: still no continuing
+    let working = room.data("FINANCE", QUEUE, "state=working").await;
     let held = rows(&working)
         .iter()
         .find(|r| r["id"] == json!(rid(7)))
-        .expect("RATES's row");
-    assert_eq!(held["staff"], json!(room.username_of("RATES")), "{held}");
+        .expect("FINANCE's row");
+    assert_eq!(held["staff"], json!(room.username_of("FINANCE")), "{held}");
     assert_eq!(held["canContinue"], json!(false), "{held}");
     room.finish().await;
 }

@@ -72,6 +72,7 @@ async fn the_recorded_day(fixture: &Fixture) -> Replay<'_> {
         replay.step(step).await;
     }
     // the day as recorded: the saves answered the numbers the tests ask for
+    assert_eq!(replay.tally.owner_no_open_shift, vec![10, 11, 21]);
     assert_eq!(fixture.step(18).json()["documentRef"], json!(TRANSFER));
     // decision A2 (#674): #23, a DEMO SELL at 99 against the published 32.6, is refused RATE_MISMATCH
     assert_eq!(fixture.step(23).status, Some(400));
@@ -151,8 +152,9 @@ async fn the_documents_steps_of_the_recorded_day_are_answered_as_v2_answered_the
         assert_eq!(step.action.as_deref(), Some("documents"), "#{n}");
         replay.step(step).await;
     }
-    // held to v2's recorded answer — not to the unknown-name refusal of the gap
-    for n in asked {
+    // held to v2's recorded answer — not to the unknown-name refusal of the gap;
+    // RBAC §11.2 (#3659) widens RATES (RT1, #53) with IdentityDocumentRead
+    for n in [51, 52, 54, 55] {
         assert!(
             replay.tally.replayed.contains(&n),
             "transactions#{n} was not held to what v2 answered: {:?}",
@@ -160,9 +162,11 @@ async fn the_documents_steps_of_the_recorded_day_are_answered_as_v2_answered_the
         );
         assert!(!replay.tally.part_two.contains(&n), "transactions#{n}");
     }
+    assert_eq!(replay.tally.widened, vec![53]);
     assert_eq!(replay.answers[&51].status, 200);
     assert_eq!(replay.answers[&52].status, 200);
-    replay.answers[&53].assert_refused(400, DOCUMENTS_NOT_READABLE, "#53");
+    assert_eq!(replay.answers[&53].status, 200);
+    assert_eq!(replay.answers[&53].text, v2_text(&replay, 51), "#53");
     replay.answers[&54].assert_refused(400, NO_DOCUMENTS, "#54");
     replay.answers[&55].assert_refused(400, INVALID_REQUEST, "#55");
     replay.finish().await;
@@ -211,21 +215,22 @@ async fn an_accepted_answer_is_v2s_text_byte_for_byte() {
 
 // ── who may ask ──────────────────────────────────────────────────────────────
 
-/// Every employee of the recorded day on the staff route: the four roles the
-/// bridge lets read are answered the same text, RATES and SYSTEM its sentence;
-/// and nobody — not the owner, not a Front — is answered on `/api/rpc`.
+/// Every employee of the recorded day on the staff route: the five roles the
+/// bridge lets read (RBAC §11.2 #3659 widens RATES with `IdentityDocumentRead`)
+/// are answered the same text, SYSTEM its sentence; and nobody — not the owner,
+/// not a Front — is answered on `/api/rpc`.
 #[actix_web::test]
 async fn every_role_but_rates_and_system_reads_the_documents_of_the_branch() {
     let fixture = Fixture::load(DAY);
     let replay = the_recorded_day(&fixture).await;
     let expected = v2_text(&replay, 51);
 
-    for who in ["FR1", "BE1", "MO1", "DO1"] {
+    for who in ["FR1", "BE1", "RT1", "MO1", "DO1"] {
         let answer = documents(&replay, who, json!({ "ref": CASH })).await;
         assert_eq!(answer.status, 200, "{who}: {:.300}", answer.text);
         assert_eq!(answer.text, expected, "{who}");
     }
-    for who in ["RT1", "SY1"] {
+    for who in ["SY1"] {
         documents(&replay, who, json!({ "ref": CASH }))
             .await
             .assert_refused(400, DOCUMENTS_NOT_READABLE, who);
@@ -250,7 +255,7 @@ async fn every_role_but_rates_and_system_reads_the_documents_of_the_branch() {
 /// The whole role table, with an exchange nobody was given: where `Policy`
 /// lets a caller through, the lookup answers (`ไม่พบเอกสารรายการ` — not the
 /// role sentence of a name nobody knows); everywhere else `Policy`'s refusal.
-/// Seven roles get through, all on the staff route.
+/// Eight roles get through (RBAC §11.2 #3659 widens RATES), all on the staff route.
 #[actix_web::test]
 async fn the_role_table_of_documents_is_policys_on_both_routes() {
     let desk = Desk::open().await;
@@ -285,20 +290,16 @@ async fn the_role_table_of_documents_is_policys_on_both_routes() {
             }
         }
     }
-    assert_eq!(let_through.len(), 7, "{let_through:?}");
+    assert_eq!(let_through.len(), 8, "{let_through:?}");
     assert!(let_through.iter().all(|(_, path)| *path == STAFF_RPC));
-    assert!(
-        !let_through
-            .iter()
-            .any(|(who, _)| who == "RATES" || who == "SYSTEM")
-    );
+    assert!(!let_through.iter().any(|(who, _)| who == "SYSTEM"));
     // signed in: refused for the role, not for the session
     app.send(
         Call::action(ORIGIN, STAFF_RPC, "documents", json!({ "ref": "XC-NOPE" }))
-            .cookie(&cookies["RATES"]),
+            .cookie(&cookies["SYSTEM"]),
     )
     .await
-    .assert_refused(400, DOCUMENTS_NOT_READABLE, "RATES");
+    .assert_refused(400, DOCUMENTS_NOT_READABLE, "SYSTEM");
     desk.finish().await;
 }
 
@@ -375,29 +376,43 @@ async fn an_employee_reads_only_the_exchanges_of_the_own_branch() {
     replay.desk.employ(std::slice::from_ref(&other)).await;
     let cookies = sign_in(&replay.app, ORIGIN, std::slice::from_ref(&other)).await;
 
-    for payload in [
-        json!({ "ref": CASH }),
-        json!({ "ref": CASH, "branchId": MAIN }),
-    ] {
-        replay
-            .app
-            .send(
-                Call::action(ORIGIN, STAFF_RPC, "documents", payload.clone())
-                    .cookie(&cookies[&other.key]),
-            )
-            .await
-            .assert_refused(400, NO_DOCUMENTS, &format!("a Front of BR-2: {payload}"));
-    }
-    // and a Front of MAIN is not sent elsewhere by naming another branch
-    for branch in ["BR-2", "NOWHERE", "MAIN_1", ""] {
-        let answer = documents(&replay, "FR1", json!({ "ref": CASH, "branchId": branch })).await;
-        assert_eq!(
-            answer.status, 200,
-            "branchId {branch:?}: {:.300}",
-            answer.text
+    let no_branch = json!({ "ref": CASH });
+    replay
+        .app
+        .send(
+            Call::action(ORIGIN, STAFF_RPC, "documents", no_branch.clone())
+                .cookie(&cookies[&other.key]),
+        )
+        .await
+        .assert_refused(400, NO_DOCUMENTS, &format!("a Front of BR-2: {no_branch}"));
+    let unheld_branch = json!({ "ref": CASH, "branchId": MAIN });
+    // OR-7.m S-D5: Blueprint session, design D-4 (rulings on #3700)
+    replay
+        .app
+        .send(
+            Call::action(ORIGIN, STAFF_RPC, "documents", unheld_branch.clone())
+                .cookie(&cookies[&other.key]),
+        )
+        .await
+        .assert_refused(
+            403,
+            "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+            &format!("a Front of BR-2: {unheld_branch}"),
         );
-        assert_eq!(answer.text, v2_text(&replay, 51), "branchId {branch:?}");
+    // and a Front of MAIN is refused when naming a branch they do not hold, while "" names none
+    for branch in ["BR-2", "NOWHERE", "MAIN_1"] {
+        // OR-7.m S-D5: Blueprint session, design D-4 (rulings on #3700)
+        documents(&replay, "FR1", json!({ "ref": CASH, "branchId": branch }))
+            .await
+            .assert_refused(
+                403,
+                "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+                &format!("branchId {branch:?}"),
+            );
     }
+    let answer = documents(&replay, "FR1", json!({ "ref": CASH, "branchId": "" })).await;
+    assert_eq!(answer.status, 200, "branchId \"\": {:.300}", answer.text);
+    assert_eq!(answer.text, v2_text(&replay, 51), "branchId \"\"");
     replay.finish().await;
 }
 

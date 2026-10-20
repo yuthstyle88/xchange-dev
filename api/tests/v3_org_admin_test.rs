@@ -31,12 +31,11 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
 use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -45,12 +44,8 @@ const SAME_ORIGIN: &str = "http://xc.test";
 const B01: &str = "XC-B01";
 const B09: &str = "XC-B09";
 const ADMIN: &str = "ADMIN@*";
-const REFUSED: [&str; 4] = [
-    "EXECUTIVE@*",
-    "BRANCH_MANAGER@XC-B01",
-    "TELLER@XC-B01",
-    "FINANCE@XC-B01",
-];
+// Follows §11.2 seed: EXECUTIVE holds USER_MANAGEMENT FULL (UsersManage, BranchesManage); remaining staff are refused
+const REFUSED: [&str; 3] = ["BRANCH_MANAGER@XC-B01", "TELLER@XC-B01", "FINANCE@XC-B01"];
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -186,25 +181,6 @@ fn user_of(spec: &str) -> Option<User> {
     ))
 }
 
-/// The legacy actor the seam still carries beside the user (`view.rs:359-371`); its role is not
-/// what decides here.
-fn legacy_of(spec: &str) -> Sessions {
-    match spec.split_once('@') {
-        None => Sessions {
-            owner: None,
-            staff: None,
-        },
-        Some((_, "*")) => Sessions {
-            owner: Some(Actor::owner(user_id(spec))),
-            staff: None,
-        },
-        Some((_, branch)) => Sessions {
-            owner: None,
-            staff: Actor::staff(user_id(spec), OldRole::Finance, BranchId::new(branch)),
-        },
-    }
-}
-
 fn spec_of(req: &HttpRequest) -> String {
     req.headers()
         .get(AS)
@@ -213,24 +189,9 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
-        Box::pin(async move {
-            let _s = legacy_of(&spec);
-            let user = user_of(&spec);
-            Callers {
-                user: user.clone(),
-                staff_user: user,
-            }
-        })
+        Box::pin(async move { test_callers::callers(None, user_of(&spec)) })
     }
 }
 
@@ -361,7 +322,9 @@ async fn an_admin_saves_a_branch_profile_and_reads_it_back() {
         "address": "1 Silom Rd",
         "timezone": "Asia/Bangkok",
         "openingHours": { "mon": [{ "open": "09:00", "close": "17:00" }] },
-        "bookingEnabled": true
+        "bookingEnabled": true,
+        "contactChannels": [],
+        "status": "ACTIVE"
     });
     assert_eq!(a.body, want, "the saved profile");
     let r = get(
@@ -462,6 +425,32 @@ async fn only_an_admin_may_use_any_of_them() {
     }
     assert_eq!(db.version(&user).await, 1, "nothing changed the user");
     assert_eq!(db.count("SELECT count(*) FROM users").await, 1);
+    db.finish().await;
+}
+
+/// §11.2: EXECUTIVE holds USER_MANAGEMENT FULL (`UsersManage`, `BranchesManage`), so it may save a
+/// branch profile and read both org-admin views (#3501).
+#[actix_web::test]
+async fn an_executive_holds_user_management_and_is_allowed() {
+    let db = TestDb::start().await;
+    let who = "EXECUTIVE@*";
+    let a = post(
+        &db,
+        who,
+        Method::PUT,
+        "/api/branches/profile",
+        profile("SILOM"),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(a.status, StatusCode::OK, "{who}: {}", a.text);
+    for uri in [
+        format!("/api/v3/views/admin_branches_profile?branch={B01}"),
+        format!("/api/v3/views/admin_users?branch={B01}"),
+    ] {
+        let r = get(&db, who, &uri).await;
+        assert_eq!(r.status, StatusCode::OK, "{who} {uri}: {}", r.text);
+    }
     db.finish().await;
 }
 

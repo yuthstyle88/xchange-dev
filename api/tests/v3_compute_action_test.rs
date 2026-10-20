@@ -8,7 +8,7 @@
 //! - `presentation::http::v3::action::{ComputeAction, ComputeEndpoint}`:
 //!   `ComputeEndpoint::register(cfg, Arc<A>)` serves only
 //!   `POST /api/v3/compute/{A::NAME}` and runs, in this order: sign-in and
-//!   `Policy::allow(INHERITS)`; `same_origin` (`400 originRejected`); the body
+//!   `Policy::authorize(INHERITS)`; `same_origin` (`400 originRejected`); the body
 //!   (at most 16,384 bytes, a JSON object; else `400 invalidRequest`, no
 //!   field); the reserved key `branch` (`400 invalidRequest`, `field: "branch"`);
 //!   `Policy::branch` then `require_branch` (`400 noSuchBranch`); the body as
@@ -46,12 +46,10 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
-use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::{Actor, Actor as AccessActor, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
@@ -190,19 +188,12 @@ impl TestDb {
 /// `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
 struct HeaderCallers;
 
-fn staff_caller_of(spec: &str) -> AccessActor {
+fn staff_caller_of(spec: &str) -> Actor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
     let role_name = parts.next().expect("a role");
-    let roles: &[AccessRole] = match role_name {
-        "FRONT" => &[AccessRole::Teller],
-        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
-        "RATES" => &[AccessRole::RateManager],
-        "FINANCE" => &[AccessRole::Finance],
-        "SYSTEM" => &[AccessRole::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
-        other => panic!("unknown role {other:?}"),
-    };
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
     test_callers::staff("employee-7", roles, BranchId::new(branch))
 }
@@ -223,14 +214,6 @@ fn callers_of(spec: &str) -> Callers {
     test_callers::callers(None, Some(staff_caller_of(spec)))
 }
 
-fn staff_of(spec: &str) -> Option<Actor> {
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Actor::staff("employee-7", role, BranchId::new(branch))
-}
-
 impl SessionReader for HeaderCallers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
@@ -242,23 +225,11 @@ impl SessionReader for HeaderCallers {
     }
 }
 
-const STAFF_ROLES: [&str; 9] = [
-    "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
-    "MONITOR",
-    "FINANCE",
-    "SYSTEM",
-    "DOCUMENTS",
-    "DOCUMENT_REVIEW",
-];
-
 /// Every caller kind: nobody, the owner, each staff role, and the owner and a
 /// staff member in one browser.
 fn every_caller() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_string()];
-    for role in STAFF_ROLES {
+    for (role, _) in test_callers::V2_STAFF {
         out.push(format!("staff:{role}:XC-B01"));
         out.push(format!("owner+staff:{role}:XC-B01"));
     }
@@ -267,18 +238,10 @@ fn every_caller() -> Vec<String> {
 
 /// The actor the policy is asked about on `path`, by the rule of `rpc.rs`.
 fn actor_on(path: EntryPath, spec: &str) -> Option<Actor> {
-    let (owner, staff) = if spec.is_empty() {
-        (None, None)
-    } else if spec == "owner" {
-        (Some(Actor::owner("owner-1")), None)
-    } else if let Some(s) = spec.strip_prefix("owner+") {
-        (Some(Actor::owner("owner-1")), staff_of(s))
-    } else {
-        (None, staff_of(spec))
-    };
+    let c = callers_of(spec);
     match path {
-        EntryPath::StaffRpc => staff,
-        _ => owner.or(staff),
+        EntryPath::StaffRpc => c.staff_user,
+        _ => c.user,
     }
 }
 
@@ -744,8 +707,8 @@ async fn a_call_never_moves_any_branch_version() {
 
 // ------------------------------------------------------------ who may call
 
-/// §12.20.3 step 1, CA4: an action whose INHERITS is a pair refuses exactly the
-/// callers `Policy::allow` refuses for that pair, with the policy's refusal.
+/// §12.20.3 step 1, CA4: an action whose INHERITS is a pair refuses_exactly the
+/// callers `Policy::authorize` / `RoleGrants::seed` refuses for that pair, with the policy's refusal.
 #[actix_web::test]
 async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pair() {
     let db = TestDb::start().await;
@@ -757,6 +720,10 @@ async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pa
         (SAVE_RATE, EntryPath::Rpc, "rateDraft"), // RE-7 #604: was adminSaveRate
         (DESK_CONFIG, EntryPath::StaffRpc, "adminDeskConfig"),
     ] {
+        let act = Action::new(action);
+        let Some(Need::Permission(perm)) = Policy::need(path, &act) else {
+            panic!("({path:?}, {action:?}) needs a permission");
+        };
         for who in every_caller() {
             let a = send(
                 &db,
@@ -766,14 +733,24 @@ async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pa
             .await;
             let what = format!("{uri} as {who:?}");
             let actor = actor_on(path, &who);
-            match Policy::allow(actor.as_ref(), path, &Action::new(action)) {
-                Ok(()) => {
+            let holds = actor.as_ref().is_some_and(|ac| {
+                ac.roles
+                    .iter()
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
+            });
+            let auth = Policy::authorize(actor.as_ref(), path, &act, None, chrono::Utc::now());
+            assert_eq!(
+                auth.is_ok(),
+                holds,
+                "{what}: RoleGrants::seed matches Policy::authorize"
+            );
+            match auth {
+                Ok(grant) => {
                     allowed += 1;
                     let actor = actor.expect("allowed means signed in");
-                    let branch = Policy::branch(Some(&actor), None);
                     is_answer(
                         &a,
-                        echo(branch.as_str(), actor.id(), "7"),
+                        echo(grant.branch.as_str(), actor.user_id.as_str(), "7"),
                         &format!("{what}: answered for the actor of its entry path"),
                     );
                 }
@@ -1196,17 +1173,25 @@ async fn the_checks_run_in_the_designs_order() {
     );
 
     // 1 before 2: a role outside the row, no marker, an oversized body
-    let refusal = Policy::allow(
-        actor_on(EntryPath::StaffRpc, "staff:BACKEND:XC-B01").as_ref(),
+    assert!(
+        !xc_auth::domain::access::RoleGrants::seed(xc_auth::domain::access::Role::Finance)
+            .contains(&xc_auth::domain::access::Permission::ExchangeTransact),
+        "§11.2: FINANCE does not hold ExchangeTransact"
+    );
+    let finance = actor_on(EntryPath::StaffRpc, "staff:FINANCE:XC-B01");
+    let refusal = Policy::authorize(
+        finance.as_ref(),
         EntryPath::StaffRpc,
         &Action::new("adminDeskConfig"),
+        None,
+        chrono::Utc::now(),
     )
-    .expect_err("BACKEND is outside adminDeskConfig's row");
+    .expect_err("FINANCE is outside adminDeskConfig's row");
     let a = send(
         &db,
         &actions,
         Call::post(
-            "staff:BACKEND:XC-B01",
+            "staff:FINANCE:XC-B01",
             DESK_CONFIG,
             object_of_len(LIMIT + 1, ""),
         )
@@ -1220,7 +1205,7 @@ async fn the_checks_run_in_the_designs_order() {
         V3Error::from(refusal).code,
         None,
         &message,
-        "BACKEND, no marker",
+        "FINANCE, no marker",
     );
 
     // 2 before 3: foreign origin, a body that is not JSON / oversized

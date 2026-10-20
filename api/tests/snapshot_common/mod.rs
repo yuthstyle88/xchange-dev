@@ -280,15 +280,19 @@ pub async fn publish_rate_per_one(
 /// is still compared strictly both ways.
 /// - RF-5 (#877, `docs/design/blueprint/rates.md` §4.10): the kiosk `rates` answer
 ///   appends `freshness`.
-pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[(
-    "/api/kiosk",
-    "rates",
-    "freshness",
-    &["publishedAt", "sourceDate", "stale"],
-)];
+/// - #3473: the kiosk `get` answer appends `quoteId`.
+pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
+    (
+        "/api/kiosk",
+        "rates",
+        "freshness",
+        &["publishedAt", "sourceDate", "stale"],
+    ),
+    ("/api/kiosk", "get", "quoteId", &[]),
+];
 
 /// `actual` without the keys [`V3_ADDED_KEYS`] allows on this route and action,
-/// after checking each one present is an object with exactly its fields. The key
+/// after checking each one present has its expected shape. The key
 /// may be absent: the tests of the change that adds it require it.
 pub fn without_v3_added_keys(
     route: Option<&str>,
@@ -305,14 +309,21 @@ pub fn without_v3_added_keys(
             continue;
         };
         if let Some(added) = map.remove(*key) {
-            let mut got: Vec<&str> = added
-                .as_object()
-                .unwrap_or_else(|| panic!("{label}: $.{key} is an object; got {added}"))
-                .keys()
-                .map(String::as_str)
-                .collect();
-            got.sort_unstable();
-            assert_eq!(got, *fields, "{label}: the fields of $.{key}");
+            if fields.is_empty() {
+                assert!(
+                    added.is_string() || added.is_null(),
+                    "{label}: $.{key} is a string or null; got {added}"
+                );
+            } else {
+                let mut got: Vec<&str> = added
+                    .as_object()
+                    .unwrap_or_else(|| panic!("{label}: $.{key} is an object; got {added}"))
+                    .keys()
+                    .map(String::as_str)
+                    .collect();
+                got.sort_unstable();
+                assert_eq!(got, *fields, "{label}: the fields of $.{key}");
+            }
         }
     }
     actual
@@ -1310,27 +1321,17 @@ impl<'f> Replay<'f> {
 /// LG-6.r6 #1046 (controller ruling): whether `user_id` is the known user id for `username` in this replay.
 pub async fn movement_staff_matches(
     pool: &PgPool,
-    fixture: &Fixture,
+    _fixture: &Fixture,
     user_id: &str,
     username: &str,
 ) -> bool {
-    let row: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT name, legacy_employee_id FROM users WHERE id::text = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
-    let Some((name, legacy)) = row else {
-        return false;
-    };
-    name == username
-        || legacy.is_some_and(|leg| {
-            leg == username
-                || fixture
-                    .people
-                    .iter()
-                    .any(|p| p.id == leg && p.username == username)
-        })
+    sqlx::query_scalar::<_, String>("SELECT name FROM users WHERE id::text = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None)
+        .as_deref()
+        == Some(username)
 }
 
 // ── a recorded `operations` as the state the custody service hands over ──────
@@ -1535,42 +1536,78 @@ pub fn events_of(ops: &Value) -> Vec<StoredEvent> {
         .collect()
 }
 
-/// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3). The user an
-/// opener id resolves to: `users.legacy_employee_id = id`, or, for `"owner"`, the organisation-wide EXECUTIVE +
-/// ADMIN user. Seeded once per id; no test's expectation depends on it. Added by the ticket author in CA-1's
-/// up-front commit.
-pub async fn seed_opener(pool: &PgPool, id: &str) {
-    if id == "owner" {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
-             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL))",
+/// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3).
+/// Resolved per OR-7.m H1 (§3):
+/// 1. `k` is a `users.id` (`users.id::text = k`) -> that user;
+/// 2. `k == "owner"` -> the organisation-wide user with an `EXECUTIVE` role and `branch_id` NULL (oldest `created_at`);
+/// 3. otherwise -> the XC organisation's user with `name = k` and `created_by = 'test'` (oldest), created as
+///    `name = k`, `status = 'PENDING'`, `created_by = 'test'` if missing.
+async fn opener_user(pool: &PgPool, k: &str) -> String {
+    if let Some(id) =
+        sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
+            .bind(k)
+            .fetch_optional(pool)
+            .await
+            .expect("check if opener key is a users.id")
+    {
+        return id;
+    }
+    if k == "owner" {
+        if let Some(id) = sqlx::query_scalar::<_, String>(
+            "SELECT u.id::text FROM users u WHERE EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+             ORDER BY u.created_at, u.id LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await
+        .expect("look up owner user")
+        {
+            return id;
+        }
+        sqlx::query(
+            "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
+             u AS (INSERT INTO users (organization_id, name, status, created_by) \
+                   SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
+             INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+             SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
+        )
+        .execute(pool)
+        .await
+        .expect("seed the owner's user");
+        return sqlx::query_scalar::<_, String>(
+            "SELECT u.id::text FROM users u WHERE EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+             ORDER BY u.created_at, u.id LIMIT 1",
         )
         .fetch_one(pool)
         .await
-        .expect("look for the owner's user");
-        if !exists {
-            sqlx::query(
-                "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
-                 u AS (INSERT INTO users (organization_id, name, status, created_by) \
-                       SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
-                 INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
-            )
-            .execute(pool)
-            .await
-            .expect("seed the owner's user");
-        }
-        return;
+        .expect("read the owner's user");
     }
-    sqlx::query(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
-         ON CONFLICT (legacy_employee_id) DO NOTHING",
+    if let Some(id) = sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test' \
+         ORDER BY u.created_at, u.id LIMIT 1",
     )
-    .bind(id)
-    .execute(pool)
+    .bind(k)
+    .fetch_optional(pool)
     .await
-    .expect("seed an opener's user");
+    .expect("look up opener user by name")
+    {
+        return id;
+    }
+    sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .bind(k)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the user of opener {k}: {e}"))
+}
+
+pub async fn seed_opener(pool: &PgPool, id: &str) {
+    let _ = opener_user(pool, id).await;
 }
 
 /// CI-4 (#651): the PII keys every test process installs (U3: one `key_id:base64(32 bytes)` line). A test key,
@@ -1730,6 +1767,47 @@ pub async fn replay_v2_admin(
         .await
 }
 
+async fn opener_user_in_tx(tx: &mut Transaction<'_, Postgres>, k: &str) -> AppResult<String> {
+    if let Some(id) =
+        sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
+            .bind(k)
+            .fetch_optional(&mut **tx)
+            .await?
+    {
+        return Ok(id);
+    }
+    if k == "owner" {
+        let id: String = sqlx::query_scalar(
+            "SELECT u.id::text FROM users u WHERE EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' \
+             AND r.branch_id IS NULL) ORDER BY u.created_at, u.id LIMIT 1",
+        )
+        .fetch_one(&mut **tx)
+        .await?;
+        return Ok(id);
+    }
+    if let Some(id) = sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test' \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(k)
+    .fetch_optional(&mut **tx)
+    .await?
+    {
+        return Ok(id);
+    }
+    let id: String = sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .bind(k)
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok(id)
+}
+
 async fn v2_admin_write_in(
     tx: &mut Transaction<'_, Postgres>,
     branch: &BranchId,
@@ -1740,20 +1818,7 @@ async fn v2_admin_write_in(
 ) -> AppResult<String> {
     match what {
         V2Write::Open => {
-            let teller: String = if actor == "owner" {
-                sqlx::query_scalar(
-                    "SELECT u.id::text FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
-                     (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' \
-                     AND r.branch_id IS NULL) ORDER BY u.created_at LIMIT 1",
-                )
-                .fetch_one(&mut **tx)
-                .await?
-            } else {
-                sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
-                    .bind(actor)
-                    .fetch_one(&mut **tx)
-                    .await?
-            };
+            let teller: String = opener_user_in_tx(tx, actor).await?;
             let id = format!("SH-{}", uuid::Uuid::new_v4());
             sqlx::query(
                 "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \

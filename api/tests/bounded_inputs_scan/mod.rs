@@ -52,16 +52,8 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
         "BookingCreateOutput.quantity is the command's response DTO, not client input; the input is bounded by #2983",
     ),
     (
-        "src/presentation/http/v3/commands/campaign_create.rs",
-        "uncovered client input budgetThb (O-G1-2)",
-    ),
-    (
         "src/presentation/http/v3/commands/campaign_simulate.rs",
         "parses the stored currencies.unit_size read back from the database, not client input",
-    ),
-    (
-        "src/presentation/http/v3/commands/campaign_version_save.rs",
-        "uncovered client input budgetThb (O-G1-2)",
     ),
     (
         "src/presentation/http/v3/commands/cash.rs",

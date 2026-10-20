@@ -1,7 +1,9 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PlannerDraftDto } from '../../../shared/api/generated/my_planner_drafts';
-import type { MyQueueTicketData } from '../../../shared/api/generated/my_queue_ticket';
+import {
+  makeMyQueueTicketData,
+  makePlannerDraftDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import * as i18n from './i18n';
 import { JourneyScreen } from './JourneyScreen';
@@ -216,8 +218,8 @@ describe('C09 Customer Journey Screen (APP-13, design customer-app.md §4.5, §9
   });
 
   it('renders saved planner drafts with MoneyText and amounts do not change with locale', async () => {
-    const sampleDrafts: PlannerDraftDto[] = [
-      {
+    const sampleDrafts = [
+      makePlannerDraftDto({
         id: 'draft-1',
         branch: 'MAIN',
         currency: 'USD',
@@ -227,8 +229,8 @@ describe('C09 Customer Journey Screen (APP-13, design customer-app.md §4.5, §9
         expiresAt: '2026-10-20T12:00:00Z',
         createdAt: '2026-10-13T12:00:00Z',
         updatedAt: '2026-10-13T12:00:00Z',
-      },
-      {
+      }),
+      makePlannerDraftDto({
         id: 'draft-2',
         branch: null,
         currency: 'JPY',
@@ -238,7 +240,7 @@ describe('C09 Customer Journey Screen (APP-13, design customer-app.md §4.5, §9
         expiresAt: '2026-10-20T12:00:00Z',
         createdAt: '2026-10-13T12:00:00Z',
         updatedAt: '2026-10-13T12:00:00Z',
-      },
+      }),
     ];
 
     const fetchMock = vi.fn().mockImplementation((url: string) => {
@@ -330,7 +332,7 @@ describe('C09 Customer Journey Screen (APP-13, design customer-app.md §4.5, §9
   });
 
   it('C09 shows "unknown" in each language when wait estimate is NULL, never a number (design §9.1 APP-13, issue #1005 §3)', async () => {
-    const ticketWithNullEstimate: MyQueueTicketData = {
+    const ticketWithNullEstimate = makeMyQueueTicketData({
       ticketId: 'tkt-null-est',
       branch: 'MAIN',
       displayNumber: 'A042',
@@ -341,7 +343,7 @@ describe('C09 Customer Journey Screen (APP-13, design customer-app.md §4.5, §9
       estimateLowSeconds: null,
       estimateHighSeconds: null,
       estimateAsOf: null,
-    };
+    });
 
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/my_queue_ticket')) {
@@ -470,7 +472,7 @@ describe('C09 Customer Journey Screen (APP-13, design customer-app.md §4.5, §9
   });
 
   it('shows estimated minutes when wait estimate is a number', async () => {
-    const ticketWithEstimate: MyQueueTicketData = {
+    const ticketWithEstimate = makeMyQueueTicketData({
       ticketId: 'tkt-with-est',
       branch: 'MAIN',
       displayNumber: 'B015',
@@ -481,7 +483,7 @@ describe('C09 Customer Journey Screen (APP-13, design customer-app.md §4.5, §9
       estimateLowSeconds: 240,
       estimateHighSeconds: 360,
       estimateAsOf: '2026-10-13T12:00:00Z',
-    };
+    });
 
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/my_queue_ticket')) {

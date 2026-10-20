@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { MyBookingItemDto } from '../../../shared/api/generated/my_bookings';
+import { makeMyBookingItemDto } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { JourneyBookings } from './JourneyBookings';
 
@@ -13,11 +13,11 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function bk(id: string, status: string, startAt: string, qrToken: string | null): MyBookingItemDto {
-  return {
+function bk(id: string, status: string, startAt: string, qrToken: string | null) {
+  return makeMyBookingItemDto({
     id, bookingNo: `NO-${id}`, status, branchId: 'bkk-1', slotId: 's', startAt, endAt: startAt, qrToken,
     quoteSummary: '', cancelCutoffAt: null, ticketNumber: null, ticketsAhead: null, estimateSeconds: null, estimateLowSeconds: null, estimateHighSeconds: null, estimateAsOf: null, readiness: 'unknown',
-  };
+  });
 }
 
 const LIST = [

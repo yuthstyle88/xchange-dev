@@ -2,7 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../../shared/api/client';
-import type { ShiftValuation, ShiftValuationCurrency } from '../../../../shared/api/generated/shift_valuation';
+import {
+  makeShiftValuation,
+  makeShiftValuationCurrency,
+  makeShiftValuationResult,
+  makeShiftValuationRow,
+} from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
 import { formatMoney } from '../../../../shared/ui/MoneyText';
 import { ShiftValuationPanel } from './ShiftValuationPanel';
@@ -12,31 +17,31 @@ const BRANCH = 'B2';
 const SHIFT = 'S-0042';
 const COMPUTED_ISO = '2026-10-15T18:30:00Z';
 
-function listed(): ShiftValuationCurrency[] {
+function listed() {
   return [
-    { currency: 'THB', opening: '10000.00', current: '6600.00', needsRate: false },
-    { currency: 'USD', opening: '100.00', current: '200.00', needsRate: true },
+    makeShiftValuationCurrency({ currency: 'THB', opening: '10000.00', current: '6600.00', needsRate: false }),
+    makeShiftValuationCurrency({ currency: 'USD', opening: '100.00', current: '200.00', needsRate: true }),
   ];
 }
 
-function computed(): ShiftValuation {
-  return {
+function computed() {
+  return makeShiftValuation({
     currencies: [
-      { currency: 'THB', opening: '10000.00', current: '6600.00', needsRate: false },
-      { currency: 'USD', opening: '100.00', current: '210.00', needsRate: true },
+      makeShiftValuationCurrency({ currency: 'THB', opening: '10000.00', current: '6600.00', needsRate: false }),
+      makeShiftValuationCurrency({ currency: 'USD', opening: '100.00', current: '210.00', needsRate: true }),
     ],
-    result: {
+    result: makeShiftValuationResult({
       rows: [
-        { currency: 'THB', rate: '1.000000', value: '6600.00' },
-        { currency: 'USD', rate: '34.500000', value: '7245.00' },
+        makeShiftValuationRow({ currency: 'THB', rate: '1.000000', value: '6600.00' }),
+        makeShiftValuationRow({ currency: 'USD', rate: '34.500000', value: '7245.00' }),
       ],
       opening: '13450.00',
       current: '13845.00',
       movements: '500.00',
       difference: '395.00',
       adjusted: '-105.00',
-    },
-  };
+    }),
+  });
 }
 
 async function settle(): Promise<void> {

@@ -22,15 +22,14 @@
 // the `Me` fixtures (`kind`/`role`/`username`) → `meOf(…)` (`web/src/test-support/me.ts`, design §3.3). Nothing else changes. The ADMIN's row is organisation-wide; `otherAtB2` drops `username`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type ViewAnswer, type ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
+import { makeBranchRef, type BranchRef, type Me } from '../testing/fixtures';
 import { createSessionStore } from './session';
 import { meOf } from '../../test-support/me';
 
-type BranchRef = { id: string; code: string; name: string };
 type MeSB = Me & { branchName: string; branches: BranchRef[] };
 
-const HQ: BranchRef = { id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' };
-const B2: BranchRef = { id: 'B2', code: 'XC-02', name: 'สาขาสอง' };
+const HQ = makeBranchRef({ id: 'MAIN', code: 'XC-01', name: 'สำนักงานใหญ่' });
+const B2 = makeBranchRef({ id: 'B2', code: 'XC-02', name: 'สาขาสอง' });
 
 const atMain: MeSB = meOf({
   id: 'u-1',
@@ -43,7 +42,7 @@ const atMain: MeSB = meOf({
 });
 const atB2: MeSB = { ...atMain, branch: 'B2', branchName: 'สาขาสอง' };
 const otherAtB2: MeSB = { ...atB2, id: 'u-2' };
-const moreBranches: MeSB = { ...atMain, branches: [HQ, B2, { id: 'B3', code: 'XC-03', name: 'สาขาสาม' }] };
+const moreBranches: MeSB = { ...atMain, branches: [HQ, B2, makeBranchRef({ id: 'B3', code: 'XC-03', name: 'สาขาสาม' })] };
 
 type Switching = { switchBranch(branch: string): Promise<void> };
 
@@ -68,7 +67,7 @@ function fakeApi(script: Array<ViewAnswer<Me> | Error>, postFails?: Error) {
       const next = script[Math.min(i, script.length - 1)]!;
       i += 1;
       if (next instanceof Error) throw next;
-      return next as unknown as ViewAnswer<U>;
+      return next as never;
     },
   };
   return { api, seen, posted };

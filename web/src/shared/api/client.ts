@@ -1,3 +1,5 @@
+import { goChangePassword, needsPasswordChange } from '../session/password-change';
+
 export interface ViewAnswer<T> {
   version: number;
   changed: boolean;
@@ -23,6 +25,23 @@ export interface PageParams<F = unknown> {
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
+const defaultFetch: Fetch = async (input, init) => {
+  const res = await fetch(input, init);
+  if (res.status === 403) {
+    let code: string | undefined;
+    try {
+      const data = await res.clone().json();
+      code = data?.error?.code ?? data?.code;
+    } catch {
+      // not json
+    }
+    if (needsPasswordChange(res.status, code)) {
+      goChangePassword();
+    }
+  }
+  return res;
+};
+
 export class ApiError extends Error {
   readonly code: string;
   readonly field?: string;
@@ -43,7 +62,7 @@ export class ApiClient {
   private readonly fetchFn: Fetch;
 
   constructor(fetchFn?: Fetch) {
-    this.fetchFn = fetchFn ?? ((input, init) => fetch(input, init));
+    this.fetchFn = fetchFn ?? defaultFetch;
   }
 
   private async parseError(res: Response): Promise<never> {

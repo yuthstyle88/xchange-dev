@@ -14,30 +14,30 @@ if [ ! -x "$SELECT" ]; then
   exit 1
 fi
 
-WANT='["self-hosted","Linux","X64"]'
+WANT='["self-hosted","heavy-build"]'
 
 fail=0
-linux=0
+pooled=0
 for slot in $(seq 0 11); do
   out=$(RUN_ID=$slot RUN_ATTEMPT=0 "$SELECT")
   pool=$(printf '%s\n' "$out" | sed -n 's/^runs_on=//p')
   jobs=$(printf '%s\n' "$out" | sed -n 's/^cargo_jobs=//p')
-  if [ "$pool" = "$WANT" ]; then linux=$((linux+1)); else echo "FAIL: slot $slot gave pool '$pool', want $WANT"; fail=1; fi
+  if [ "$pool" = "$WANT" ]; then pooled=$((pooled+1)); else echo "FAIL: slot $slot gave pool '$pool', want $WANT"; fail=1; fi
   [ "$jobs" = 12 ] || { echo "FAIL: slot $slot gave cargo_jobs='$jobs', want ceiling 12 (cargo-jobs.sh lowers it per machine)"; fail=1; }
 done
 
-# Row 1: every slot goes to ONE pool, the Linux OS pool (placement pins removed per #3072).
-[ "$linux" = 12 ] || { echo "FAIL: Linux pool got $linux of 12 slots, want 12"; fail=1; }
+# Row 1: every slot goes to ONE pool, the heavy-build runners (Studio + Dell, Linux or macOS; #3072, owner 2026-10-20).
+[ "$pooled" = 12 ] || { echo "FAIL: heavy-build pool got $pooled of 12 slots, want 12"; fail=1; }
 
-# Row 2: a rerun (RUN_ATTEMPT+1) gives the same Linux pool.
+# Row 2: a rerun (RUN_ATTEMPT+1) gives the same pool.
 a=$(RUN_ID=5 RUN_ATTEMPT=1 "$SELECT" | sed -n 's/^runs_on=//p')
 b=$(RUN_ID=6 RUN_ATTEMPT=0 "$SELECT" | sed -n 's/^runs_on=//p')
 [ "$a" = "$WANT" ] || { echo "FAIL: (5,1) gave $a, want $WANT"; fail=1; }
 [ "$b" = "$WANT" ] || { echo "FAIL: (6,0) gave $b, want $WANT"; fail=1; }
 
-# Row 3: missing RUN_ID falls back to the same Linux pool.
+# Row 3: missing RUN_ID falls back to the same pool.
 c=$(env -u RUN_ID RUN_ATTEMPT=1 "$SELECT" | sed -n 's/^runs_on=//p')
-[ "$c" = "$WANT" ] || { echo "FAIL: missing RUN_ID gave '$c', want Linux pool"; fail=1; }
+[ "$c" = "$WANT" ] || { echo "FAIL: missing RUN_ID gave '$c', want $WANT"; fail=1; }
 
 # Row 4: api.yml calls the script (no inline copy of the slot logic left behind),
 #        and the test job uses its cargo_jobs output for CARGO_BUILD_JOBS.

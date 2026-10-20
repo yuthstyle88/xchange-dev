@@ -24,7 +24,9 @@ use sqlx::{AssertSqlSafe, PgPool};
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 use xc_auth::domain::access::actor::Actor as AccessActor;
+use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role::Role;
+use xc_auth::domain::access::role_grants::RoleGrants;
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::AppState;
@@ -410,7 +412,6 @@ async fn unauthenticated_request_is_refused_unauthorized() {
 
 #[actix_web::test]
 async fn roles_without_verification_review_are_refused_forbidden() {
-    // #1398 done criteria 1: TELLER, BRANCH_MANAGER, FINANCE, EXECUTIVE refused
     let env = TestEnv::start().await;
     env.branch(ORG_1, B01).await;
     let (customer_id, _) = env.customer(ORG_1).await;
@@ -423,7 +424,16 @@ async fn roles_without_verification_review_are_refused_forbidden() {
         Some(("file", "doc.png", &png())),
     );
 
-    for role in ["TELLER", "BRANCH_MANAGER", "FINANCE", "EXECUTIVE"] {
+    // Under RBAC §11.2, Executive and BranchManager hold VerificationReview (Documents: Full).
+    // Test that roles without VerificationReview are refused forbidden.
+    let unauth_roles = ["TELLER", "ADMIN", "RATE_MANAGER", "FINANCE", "MARKETING"]
+        .into_iter()
+        .filter(|role_str| {
+            let role = Role::parse(role_str).expect("valid role");
+            !RoleGrants::seed(role).contains(&Permission::VerificationReview)
+        });
+
+    for role in unauth_roles {
         let user_id = env.user(ORG_1).await;
         let spec = format!("{user_id}|{role}|{B01}|{ORG_1}");
         let answer = env

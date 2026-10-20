@@ -27,50 +27,50 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { fill, locale, setLang } from '../../../shared/i18n';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeStaffMeView,
+  type PublishedRatesData,
+  type StaffMeView,
+  type StaffRoleDto,
+} from '../../../shared/testing/fixtures';
 import { card } from './card';
 import * as ratesI18n from './i18n';
-
-type Me = {
-  userId: string;
-  name: string;
-  roles: { role: string; branchId?: string }[];
-  branchId: string;
-  branchName: string;
-  permissions: string[];
-};
 
 const BRANCH = 'MAIN';
 const PUBLISHED_AT = '2026-10-10T03:15:00Z';
 
-function me(permissions: string[], roles: Me['roles'] = []): Me {
-  return {
+function me(permissions: string[], roles: StaffRoleDto[] = []) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
     roles,
     branchId: BRANCH,
     branchName: 'สาขาทดสอบ',
     permissions,
-  };
+  });
 }
 
-function ctx(m: Me) {
+function ctx(m: StaffMeView) {
   return { me: m, floor: undefined, refresh: vi.fn(async () => {}) } as unknown as Parameters<
     typeof card.visible
   >[0];
 }
 
 /** Rates as the wire carries them: strings, with trailing zeros that a number would lose. */
-const RATES: PublishedRatesData = {
-  publication: { id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: PUBLISHED_AT },
+const RATES = makePublishedRatesData({
+  publication: makePublishedPublicationDto({ id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: PUBLISHED_AT }),
   sourceDate: '2026-10-09',
   stale: false,
+  bandHeadings: [],
   lines: [
-    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd' },
-    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy' },
-    { currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.12000000', sellRate: null, lineId: 'line-eur' },
+    makePublishedLineDto({ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd', bands: [] }),
+    makePublishedLineDto({ currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy', bands: [] }),
+    makePublishedLineDto({ currency: 'EUR', group: 'ALL', unitSize: '1', buyRate: '37.12000000', sellRate: null, lineId: 'line-eur', bands: [] }),
   ],
-};
+});
 
 type Call = { url: string; method: string };
 let calls: Call[] = [];
@@ -96,7 +96,7 @@ function stubView(data: PublishedRatesData) {
   vi.stubGlobal('fetch', fetchFn);
 }
 
-async function mount(m: Me, data: PublishedRatesData = RATES) {
+async function mount(m: StaffMeView, data: PublishedRatesData = RATES) {
   stubView(data);
   const C = card.Component;
   const c = ctx(m);
@@ -208,7 +208,7 @@ describe('the read: staff_published_rates for the actor\'s branch (S10, rates.md
   });
 
   it('with no publication yet shows no rate line and says there is no reference, without failing', async () => {
-    const el = await mount(me(['CompatRead']), { publication: null, sourceDate: null, stale: false, lines: [] });
+    const el = await mount(me(['CompatRead']), makePublishedRatesData({ publication: null, sourceDate: null, stale: false, bandHeadings: [], lines: [] }));
     const text = el.textContent ?? '';
     for (const line of RATES.lines) {
       if (line.buyRate) expect(text).not.toContain(line.buyRate);
@@ -250,7 +250,7 @@ describe('freshness: the shared RateFreshness (rates.md §4.10)', () => {
   });
 
   it('shows the stale badge when the publication is stale', async () => {
-    const el = await mount(me(['CompatRead']), { ...RATES, stale: true });
+    const el = await mount(me(['CompatRead']), makePublishedRatesData({ ...RATES, stale: true }));
     const badge = el.querySelector('.xc-rate-stale[role="status"]');
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain('เรทอ้างอิงเก่า');

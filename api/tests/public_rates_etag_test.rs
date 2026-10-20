@@ -281,7 +281,7 @@ async fn a_branch_with_no_publication_answers_the_none_tag_and_then_304() {
     assert_eq!(first.status, StatusCode::OK, "{}", first.text());
     assert_eq!(
         first.json(),
-        serde_json::json!({ "publication": null, "sourceDate": null, "stale": false, "lines": [] })
+        serde_json::json!({ "publication": null, "sourceDate": null, "stale": false, "lines": [], "bandHeadings": [] })
     );
     assert_eq!(first.etag.as_deref(), Some(NONE_TAG));
     assert_eq!(first.cache_control.as_deref(), Some("no-store"));

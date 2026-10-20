@@ -70,11 +70,15 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { CashTransferRow } from "../../../shared/api/generated/cash_transfers";
-import type { DenominationRow } from "../../../shared/api/generated/denominations";
-import type { TransferBranchRow } from "../../../shared/api/generated/transfer_branches";
+import {
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  makeTransferBranchRow,
+  type StaffFloorView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { th as staffTh } from "../i18n";
 import { warmModules } from "../../../shared/testing/warm-modules";
@@ -139,19 +143,19 @@ const KINDS = [
   "EXTERNAL_OUT",
 ];
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: "2026-10-11T01:00:00Z",
@@ -159,16 +163,14 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
-const DENOMS: DenominationRow[] = [
-  { id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" },
-  { id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" },
-  { id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" },
+const DENOMS = [
+  makeDenominationRow({ id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" }),
 ];
-
-type Transfer = CashTransferRow;
 
 function transfer(
   id: string,
@@ -176,8 +178,8 @@ function transfer(
   kind = "BRANCH",
   from = BRANCH,
   to: string | null = ELSEWHERE,
-): Transfer {
-  return {
+) {
+  return makeCashTransferRow({
     id,
     kind,
     fromBranchId: from,
@@ -189,7 +191,7 @@ function transfer(
     note: "n",
     createdAt: "2026-10-11T02:00:00Z",
     lines: [],
-  };
+  });
 }
 
 const T_DRAFT = "e0000000-0000-4000-8000-000000000001";
@@ -200,7 +202,7 @@ const T_RECEIVED = "e0000000-0000-4000-8000-000000000005";
 const T_DONE = "e0000000-0000-4000-8000-000000000006";
 const T_SAFE = "e0000000-0000-4000-8000-000000000007"; // a drawer-to-safe move inside my branch, dispatched
 
-const TRANSFERS: Transfer[] = [
+const TRANSFERS = [
   transfer(T_DRAFT, "DRAFT"),
   transfer(T_APPROVED, "APPROVED"),
   transfer(T_IN, "DISPATCHED", "BRANCH", ELSEWHERE, BRANCH),
@@ -692,10 +694,10 @@ describe("C8 a new move is transferCreate then transferSubmit", () => {
 // ── C8 a BRANCH transfer's destination (transfer_branches, #624 issuecomment-6107955194) ─────────────
 
 /** transfer_branches as the server orders them (name, then branchId); the session branch is in it only to prove it is never offered. */
-const DESTINATIONS: TransferBranchRow[] = [
-  { branchId: ELSEWHERE, name: "Ayutthaya" },
-  { branchId: BRANCH, name: "Main" },
-  { branchId: "B07", name: "Phuket" },
+const DESTINATIONS = [
+  makeTransferBranchRow({ branchId: ELSEWHERE, name: "Ayutthaya" }),
+  makeTransferBranchRow({ branchId: BRANCH, name: "Main" }),
+  makeTransferBranchRow({ branchId: "B07", name: "Phuket" }),
 ];
 
 function destinationIds(): string[] {

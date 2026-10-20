@@ -103,6 +103,35 @@ All are cut against `feat/or7m`, PRs into `feat/or7m`. File scopes are disjoint 
 | T-last | password login, the old types, `policy.rs` old half, `v3_roles.rs`, `domain/account` go | Argon | all above |
 | M3 | migration 3 | Argon, guarded | T-last; owner confirms OR-3 is live |
 
+### 4.1 T-last, split (sub-controller, 2026-10-20, after `feat/rbac-groups` reached main)
+
+Measured on `or7m-sd` + `main` `5c798023` (merge `13919f61`): 130 files still use the old types. About 19 are
+production, about 98 are tests (`git grep` of `Sessions`, `fn sessions`, `old_cookie_callers`,
+`password_session`, `policy::value_objects::{actor,role}`, `v3_roles`, `Policy::allow` and the account module).
+
+**Rulings for every T-last test ticket:**
+1. A test names a v2 staff role only as a string, and reads its Blueprint roles from
+   `test_callers::V2_STAFF` / `v2_staff_roles(name)` (skeleton `9daf4c08`). There are no private copies of the
+   table, no v2 `Role` / `Actor`, and no `v3_roles`.
+2. A session reader overrides `callers` with `test_callers`. No `Sessions`, `fn sessions` or `old_cookie_callers`.
+3. A test that asked `Policy::allow` for **v2's verdict on a recorded step** reads it from the recording itself:
+   the step's recorded status and sentence.
+4. A test that asked `Policy::allow` for **who a route admits** expects the caller's Blueprint roles to hold
+   `Policy::need`'s permission in `RoleGrants::seed` (RBAC §11.2's convention). It asserts that
+   `Policy::authorize` agrees, so the oracle stays independent of the code under test.
+5. Behaviour is unchanged: each binary's pass count is the same before and after. A shared helper
+   (`*_common/`) keeps its public signatures.
+
+| Wave | Ticket | Files | After |
+|---|---|---|---|
+| 1 | TLX | `xc-auth` / `xc-notify` tests that map v2 roles (not the `Policy::allow` ones) | skeleton |
+| 1 | TLR | `rpc_common/mod.rs`, `rpc_test.rs` (ruling 3 for the replay oracle) | skeleton |
+| 1 | TLO1, TLO2 | view tests whose oracle is `Policy::allow` (ruling 4), 6 files each | skeleton |
+| 1 | TLM1–TLM7 | the other ~70 tests (rulings 1, 2), about 6.6k lines each | skeleton |
+| 2 | P1 | `compat/rpc.rs`, `compat/snapshot_sources.rs`, `http/rpc.rs::compat_rpc`, `http/devices.rs`: the `accounts` parameter goes, with TA's six tests | wave 1 |
+| 2 | P2 | the password path: `http/auth.rs` password routes, `extractors/actor.rs` (`password_session`, `actor_of`, `staff_actor`), `pages.rs` (`Sessions`, `old_cookie_callers`, `resolve_old_cookie_org_id`, `SessionReader::sessions`), `bootstrap/mod.rs` (`old_cookie_org_id`), `http/rpc.rs` password callers, `test_callers`' bridge test; with `auth_http*`, `login_redirect_next_test` and `old_cookie_org_id_test` | P1 |
+| 2 | P3 | `xc-auth`: `domain/account` and its application and infrastructure, `v3_roles.rs`, `Policy::allow`'s old half and the v2 `Actor` / `Role` value objects; with their own tests (`policy_test`, `policy_route_table_test`, `area_rows_seam_test`, `approvals_decide_manager_test`, `account_*`) | P2 |
+
 ## 5. Migration 3 (data migration)
 
 1. **Existing rows:** `owners`, `owner_sessions`, `employees`, `employee_sessions` and their rows go; `users` loses

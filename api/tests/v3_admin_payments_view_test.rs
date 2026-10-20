@@ -487,6 +487,15 @@ async fn admin_payments_answers_the_defaults_before_any_save() {
 #[actix_web::test]
 async fn admin_payments_answers_the_named_branch_for_the_owner_and_their_own_for_staff() {
     let room = Room::open().await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     room.save(AIRPORT, 0, &rows_without("airport", "Alipay"))
         .await;
     room.save(MAIN, 0, &rows("main")).await;
@@ -497,7 +506,8 @@ async fn admin_payments_answers_the_named_branch_for_the_owner_and_their_own_for
         airport["data"]["methods"],
         rows_without("airport", "Alipay")
     );
-    assert_eq!(airport["data"]["updatedBy"], json!("owner"));
+    // OR-7.m G2: rule 2 (#3700)
+    assert_eq!(airport["data"]["updatedBy"], json!(owner_id));
     assert_eq!(
         airport["data"],
         expected_data(&room.list("OWNER", Some(AIRPORT)).await)
@@ -598,6 +608,15 @@ async fn admin_payments_settings_version_is_the_409_guard_not_the_views_version(
 #[actix_web::test]
 async fn admin_payments_history_is_the_last_twenty_newest_first_for_the_owner_only() {
     let room = Room::open().await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     for n in 0..22 {
         room.save(MAIN, n, &rows(&format!("n{n}"))).await;
     }
@@ -624,7 +643,8 @@ async fn admin_payments_history_is_the_last_twenty_newest_first_for_the_owner_on
             ]),
             "{h}"
         );
-        assert_eq!(h["actor"], json!("owner"), "{h}");
+        // OR-7.m G2: rule 2 (#3700)
+        assert_eq!(h["actor"], json!(owner_id), "{h}");
         let v = h["version"].as_i64().expect("a version");
         assert_eq!(h["afterMethods"], rows(&format!("n{}", v - 1)), "{h}");
         assert_eq!(h["beforeMethods"], rows(&format!("n{}", v - 2)), "{h}");
@@ -665,6 +685,15 @@ async fn admin_payments_first_history_entry_starts_from_the_defaults() {
 #[actix_web::test]
 async fn admin_payments_follows_its_branchs_since_through_the_save() {
     let room = Room::open().await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     let v0 = room.version(MAIN).await;
     let same = room.view("OWNER", &format!("branch=MAIN&since={v0}")).await;
     assert_eq!(
@@ -681,7 +710,8 @@ async fn admin_payments_follows_its_branchs_since_through_the_save() {
     assert_eq!(after["version"], json!(v1), "{after}");
     assert_eq!(after["data"]["settingsVersion"], json!(1), "{after}");
     assert_eq!(after["data"]["methods"], rows("saved"), "{after}");
-    assert_eq!(after["data"]["updatedBy"], json!("owner"), "{after}");
+    // OR-7.m G2: rule 2 (#3700)
+    assert_eq!(after["data"]["updatedBy"], json!(owner_id), "{after}");
 
     let quiet = room.view("OWNER", &format!("branch=MAIN&since={v1}")).await;
     assert_eq!(quiet, json!({ "version": v1, "changed": false }));

@@ -9,8 +9,15 @@ import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
-import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
-import type { OpenShiftDto } from '../../../shared/api/generated/common';
+import {
+  makeAdminCashData,
+  makeAdminCashReference,
+  makeAdminCashStats,
+  makeAdminCashStockRow,
+  makeOpenShiftDto,
+  type AdminCashData,
+  type OpenShiftDto,
+} from '../../../shared/testing/fixtures';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
@@ -48,21 +55,21 @@ function when(iso: string): string {
   return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
 }
 
-const SHIFT_A: OpenShiftDto = { shiftId: 'S-0001', tellerId: 'u-7', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' };
+const SHIFT_A = makeOpenShiftDto({ shiftId: 'S-0001', tellerId: 'u-7', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' });
 // Two OPEN shifts as the server orders them; deliberately not sorted by id, and the later teller's name
 // sorts first, so a screen that re-sorts by id, by name or by time-descending shows another order.
-const SHIFT_EARLY: OpenShiftDto = { shiftId: 'S-0009', tellerId: 'u-9', tellerName: 'Zed', openedAt: '2026-10-06T01:00:00.000Z' };
-const SHIFT_LATE: OpenShiftDto = { shiftId: 'S-0002', tellerId: 'u-2', tellerName: 'Ann', openedAt: '2026-10-06T04:15:00.000Z' };
+const SHIFT_EARLY = makeOpenShiftDto({ shiftId: 'S-0009', tellerId: 'u-9', tellerName: 'Zed', openedAt: '2026-10-06T01:00:00.000Z' });
+const SHIFT_LATE = makeOpenShiftDto({ shiftId: 'S-0002', tellerId: 'u-2', tellerName: 'Ann', openedAt: '2026-10-06T04:15:00.000Z' });
 
-function cashWith(openShifts: OpenShiftDto[], withReference = 2): AdminCashData {
-  return {
+function cashWith(openShifts: OpenShiftDto[], withReference = 2) {
+  return makeAdminCashData({
     openShifts,
-    stock: [{ code: 'THB', opening: '100000.00', net: '-2230.00', expected: '97770.00' }],
-    stats: openShifts.length > 0 ? { opening: '100000.00', incoming: '920.00', outgoing: '3150.00', remaining: '12345.67' } : null,
-    reference: { withReference, withoutReference: 1, spread: '240.00', percent: '6.74' },
+    stock: [makeAdminCashStockRow({ code: 'THB', opening: '100000.00', net: '-2230.00', expected: '97770.00' })],
+    stats: openShifts.length > 0 ? makeAdminCashStats({ opening: '100000.00', incoming: '920.00', outgoing: '3150.00', remaining: '12345.67' }) : null,
+    reference: makeAdminCashReference({ withReference, withoutReference: 1, spread: '240.00', percent: '6.74' }),
     currencies: ['THB', 'USD'],
     lastCounted: null,
-  };
+  });
 }
 
 type Reply = { status: number; body: unknown };

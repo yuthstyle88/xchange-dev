@@ -51,6 +51,11 @@ const SUFFIX: &str = "_drop_shift_balances.sql";
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 const SHIFT: &str = "SH-LG6M";
 
+/// Tables today's `LedgerCashPostings` reads that are created by migrations after the drop. The seed runs current code
+/// against the pre-drop schema, so each such table must exist first. When `post_in` learns to read a newer table, add
+/// its migration here.
+const SEED_SCHEMA_EXTRAS: &[&str] = &["stock_reservations"];
+
 fn migrations() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations")
 }
@@ -407,11 +412,33 @@ async fn break_check(db: &TestDb, k: u8) {
     }
 }
 
+fn extra_up_sql(extra: &str) -> String {
+    let suffix = format!("_{extra}.sql");
+    let found: Vec<String> = names()
+        .into_iter()
+        .filter(|n| n.ends_with(&suffix))
+        .collect();
+    let [name] = found.as_slice() else {
+        panic!("expected one api/migrations/*{suffix}: {found:?}");
+    };
+    let text = std::fs::read_to_string(migrations().join(name)).expect("read the extra migration");
+    text.lines()
+        .take_while(|l| l.trim() != "-- down:")
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// A schema migrated up to the migration before the drop, with the clean ledger and, for `Some(k)`, seed *k*.
 async fn seeded(k: Option<u8>) -> (TestDb, i64) {
     let (version, _, _) = the_file();
     let db = TestDb::empty().await;
     db.migrate_through(Some(version_before(version))).await;
+    for extra in SEED_SCHEMA_EXTRAS {
+        sqlx::raw_sql(AssertSqlSafe(extra_up_sql(extra)))
+            .execute(&db.pool)
+            .await
+            .unwrap_or_else(|e| panic!("seed extra {extra}: {e}"));
+    }
     clean_ledger(&db).await;
     if let Some(k) = k {
         break_check(&db, k).await;

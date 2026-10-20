@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc};
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
-use xc_auth::domain::access::role_permissions::RolePermissions;
+use xc_auth::domain::access::RoleGrants;
 use xc_auth::domain::access::scoped_role::ScopedRole;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::application::session::SessionService;
@@ -52,13 +52,13 @@ pub(crate) fn me_roles(who: &Actor, now: DateTime<Utc>) -> Vec<MeRole> {
     rows
 }
 
-/// `Me.permissions` (#1030 §3.3): of the union of `RolePermissions::of` over the actor's roles, the ones
+/// `Me.permissions` (#1030 §3.3): of the union of `RoleGrants::of` over the actor's roles, the ones
 /// `Authorizer::check` grants at `branch`, by their serde names, sorted. `Authorizer::check` is the only judge.
 pub(crate) fn me_permissions(who: &Actor, branch: &BranchId, now: DateTime<Utc>) -> Vec<String> {
     let target = Target::new(&who.organization_id, Some(branch.clone()), None);
     let mut names = BTreeSet::new();
     for row in &who.roles {
-        for &p in RolePermissions::of(row.role) {
+        for p in RoleGrants::of(row.group_code()) {
             if Authorizer::check(Some(who), p, &target, now).is_ok()
                 && let Ok(serde_json::Value::String(name)) = serde_json::to_value(p)
             {

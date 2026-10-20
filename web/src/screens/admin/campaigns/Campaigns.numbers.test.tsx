@@ -1,9 +1,19 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CampaignData, CampaignDetail } from '../../../shared/api/generated/campaign';
-import type { CampaignListItem, CampaignsData } from '../../../shared/api/generated/campaigns';
-import type { CouponIssueOutput } from '../../../shared/api/generated/coupon_issue';
+import {
+  makeCampaignApprovalDetail,
+  makeCampaignData,
+  makeCampaignDetail,
+  makeCampaignListItem,
+  makeCampaignPeriodTotals,
+  makeCampaignRuleDetail,
+  makeCampaignSimulationDetail,
+  makeCampaignVersionDetail,
+  makeCampaignsData,
+  makeCouponIssueOutput,
+  makeIssuedCouponDto,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { Campaigns } from './Campaigns';
@@ -33,7 +43,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-const SAMPLE_LIST_ITEM: CampaignListItem = {
+const SAMPLE_LIST_ITEM = makeCampaignListItem({
   id: 'cmp-1',
   name: 'Golden October',
   versionId: 'ver-1',
@@ -46,21 +56,21 @@ const SAMPLE_LIST_ITEM: CampaignListItem = {
   budgetLeftThb: '74999.50',
   uses: 42,
   maxUses: 100,
-  period: {
+  period: makeCampaignPeriodTotals({
     redemptions: 15,
     priceCostThb: '12345.67',
     rewardExpenseThb: '3000.00',
-  },
-};
+  }),
+});
 
 const SAMPLE_RULE_ID = '00000000-0000-0000-0000-000000000001';
 
-const SAMPLE_DETAIL: CampaignDetail = {
+const SAMPLE_DETAIL = makeCampaignDetail({
   id: 'cmp-1',
   name: 'Golden October',
   currentVersionId: 'ver-1',
   versions: [
-    {
+    makeCampaignVersionDetail({
       id: 'ver-1',
       version: 1,
       status: 'ACTIVE',
@@ -72,7 +82,7 @@ const SAMPLE_DETAIL: CampaignDetail = {
       priority: 10,
       branches: ['MAIN', 'B1'],
       rules: [
-        {
+        makeCampaignRuleDetail({
           id: SAMPLE_RULE_ID,
           ruleNo: 1,
           benefitType: 'RATE_IMPROVEMENT',
@@ -81,52 +91,52 @@ const SAMPLE_DETAIL: CampaignDetail = {
           eligibility: {},
           calculation: { spreadShare: '0.20' },
           caps: {},
-        },
+        }),
       ],
       simulations: [
-        {
+        makeCampaignSimulationDetail({
           id: 'sim-1',
           costSource: 'LEDGER',
           simulatedAt: '2026-10-02T10:00:00Z',
           input: {},
           result: {},
-        },
+        }),
       ],
-      approval: {
+      approval: makeCampaignApprovalDetail({
         id: 'appr-1',
         status: 'APPROVED',
-      },
-    },
+      }),
+    }),
   ],
-};
+});
 
-const SIMULATED_DETAIL: CampaignDetail = {
+const SIMULATED_DETAIL = makeCampaignDetail({
   ...SAMPLE_DETAIL,
   versions: [
-    {
+    makeCampaignVersionDetail({
       ...SAMPLE_DETAIL.versions[0],
       status: 'SIMULATED',
       approval: null,
       simulations: [
-        {
+        makeCampaignSimulationDetail({
           id: 'sim-1',
           costSource: 'LEDGER',
           simulatedAt: '2026-10-02T10:00:00Z',
           input: {},
           result: {},
-        },
+        }),
       ],
-    },
+    }),
   ],
-};
+});
 
 describe('Admin Campaigns coupon count and priority validation (#2184)', () => {
   let container: HTMLDivElement;
   let dispose: (() => void) | null = null;
   let sentRequests: SentRequest[] = [];
 
-  let listData: CampaignsData = { campaigns: [SAMPLE_LIST_ITEM] };
-  let detailData: CampaignData = { campaign: SAMPLE_DETAIL };
+  let listData = makeCampaignsData({ campaigns: [SAMPLE_LIST_ITEM] });
+  let detailData = makeCampaignData({ campaign: SAMPLE_DETAIL });
   let commandStatus = 200;
   let commandOutput: unknown = {};
 
@@ -169,8 +179,8 @@ describe('Admin Campaigns coupon count and priority validation (#2184)', () => {
     document.body.appendChild(container);
     sentRequests = [];
 
-    listData = { campaigns: [SAMPLE_LIST_ITEM] };
-    detailData = { campaign: SAMPLE_DETAIL };
+    listData = makeCampaignsData({ campaigns: [SAMPLE_LIST_ITEM] });
+    detailData = makeCampaignData({ campaign: SAMPLE_DETAIL });
     commandStatus = 200;
     commandOutput = {};
 
@@ -276,9 +286,9 @@ describe('Admin Campaigns coupon count and priority validation (#2184)', () => {
   });
 
   it("row 3: Count '5' -> Issue sends POST with count: 5 after clearing count keeps raw empty string", async () => {
-    const issueOutput: CouponIssueOutput = {
-      coupons: [{ id: 'cpn-1', code: 'PROMO5' }],
-    };
+    const issueOutput = makeCouponIssueOutput({
+      coupons: [makeIssuedCouponDto({ id: 'cpn-1', code: 'PROMO5' })],
+    });
     commandOutput = issueOutput;
 
     dispose = render(() => <Campaigns {...dummyProps()} />, container);

@@ -16,11 +16,11 @@
 // (`web/src/test-support/me.ts`, design §3.3), after main's SB-3 tests reached this branch. Nothing else changes.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createEffect, createRoot, createSignal } from 'solid-js';
-import type { Me } from '../api/generated/common';
+import type { Me } from '../testing/fixtures';
 import { pageBranch } from './page-branch';
 import { meOf } from '../../test-support/me';
 
-function me(branch: string): Me {
+function me(branch: string) {
   return meOf({
     id: 'u-7',
     role: 'FRONT',

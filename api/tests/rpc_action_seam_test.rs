@@ -254,7 +254,8 @@ async fn on_the_staff_route_a_familys_answer_gets_the_staff_links() {
     let app = seam_app!(desk, vec![family.clone() as Arc<dyn RpcAction>]);
     let cookies = everybody(&desk, &app).await;
 
-    let answer = ask(
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+    let outside = ask(
         &app,
         &cookies,
         STAFF_RPC,
@@ -263,13 +264,27 @@ async fn on_the_staff_route_a_familys_answer_gets_the_staff_links() {
         json!({ "branchId": "ELSEWHERE" }),
     )
     .await;
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
+    outside.assert_refused(403, "สาขานี้อยู่นอกขอบเขตของบัญชีนี้", "FRONT on ELSEWHERE");
+
+    let answer = ask(
+        &app,
+        &cookies,
+        STAFF_RPC,
+        "saveTransaction",
+        "FRONT",
+        json!({}),
+    )
+    .await;
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
     assert_eq!(answer.status, 200, "{:.300}", answer.text);
+    // OR-7.m S-D4: Blueprint session, design D-4 (rulings on #3700)
     assert_eq!(
         answer.text,
         format!(
             "{{\"zeta\":\"one\",\"action\":\"saveTransaction\",\"route\":\"staff\",\
              \"branch\":\"MAIN\",\"who\":\"role0\",\"now\":\"{NOW}\",\
-             \"payload\":{{\"branchId\":\"ELSEWHERE\"}},\
+             \"payload\":{{}},\
              \"passportUrl\":\"/api/staff/file/abc\",\
              \"folderUrl\":\"/staff/documents?ref=R1\",\"sheetUrl\":\"/staff\",\"alpha\":1}}"
         )
@@ -299,23 +314,23 @@ async fn the_role_is_judged_before_a_family_is_asked() {
     let app = seam_app!(desk, vec![family.clone() as Arc<dyn RpcAction>]);
     let cookies = everybody(&desk, &app).await;
 
-    // RATES may not save
-    ask(&app, &cookies, RPC, "saveTransaction", "RATES", json!({}))
+    // FINANCE may not save (RBAC §11.2 #3659 widens RATES with ExchangeTransact)
+    ask(&app, &cookies, RPC, "saveTransaction", "FINANCE", json!({}))
         .await
-        .assert_refused(400, ROLE_NOT_ALLOWED_RPC, "RATES saves on /api/rpc");
+        .assert_refused(400, ROLE_NOT_ALLOWED_RPC, "FINANCE saves on /api/rpc");
     ask(
         &app,
         &cookies,
         STAFF_RPC,
         "saveTransaction",
-        "RATES",
+        "FINANCE",
         json!({}),
     )
     .await
     .assert_refused(
         400,
         ROLE_NOT_ALLOWED_STAFF,
-        "RATES saves on the staff route",
+        "FINANCE saves on the staff route",
     );
     // `/api/rpc` knows no `ops*` name, for anybody
     ask(&app, &cookies, RPC, "opsClock", "OWNER", json!({}))
@@ -422,10 +437,10 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
     );
     let cookies = everybody(&desk, &app).await;
 
-    // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so the owner's user no longer asks
-    // saveTransaction; the owner's name of part two here is rateDraft (RatesDraft is EXECUTIVE's)
+    // RBAC §11.2 (#3659): the owner holds ExchangeTransact again (via EXECUTIVE (Customers Full)),
+    // so the gap answers saveTransaction as INVALID_REQUEST for the owner on /api/rpc
     for (path, who, sentence) in [
-        (RPC, "OWNER", ROLE_NOT_ALLOWED_RPC),
+        (RPC, "OWNER", INVALID_REQUEST),
         (RPC, "FRONT", ROLE_NOT_ALLOWED_RPC),
         (STAFF_RPC, "FRONT", ROLE_NOT_ALLOWED_STAFF),
     ] {
@@ -446,11 +461,10 @@ async fn a_family_that_does_not_handle_a_name_leaves_it_to_the_gap() {
         .assert_refused(400, ROLE_NOT_ALLOWED_STAFF, "opsNope");
     assert_eq!(none.ran() + other.ran(), 0);
     // every registered family was asked, each time
-    // (the owner's rateDraft is answered before any family is asked; re-expected for CA-10 #626:
-    // so is `opsNope`, which `Policy` refuses at the gate like any name the staff route does not
-    // know, design §6)
-    assert_eq!(none.asked(), 3);
-    assert_eq!(other.asked(), 3);
+    // (re-expected for CA-10 #626: `opsNope` is refused by `Policy` at the gate like any name the
+    // staff route does not know, design §6)
+    assert_eq!(none.asked(), 4);
+    assert_eq!(other.asked(), 4);
 
     // the one that does handle a name still answers it, behind one that does not
     let answer = ask(&app, &cookies, STAFF_RPC, "documents", "FRONT", json!({})).await;

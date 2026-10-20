@@ -863,9 +863,12 @@ async fn campaigns_is_gated_by_marketing_campaigns() {
         "MARKETING holds MarketingCampaigns: {}",
         marketing.text
     );
-    assert_refused(
-        &get(&room, "EXECUTIVE", &uri).await,
-        "EXECUTIVE holds MarketingPerformance, not MarketingCampaigns",
+    // Under RBAC §11.2, Executive holds MarketingCampaigns (Customers: Full).
+    let exec = get(&room, "EXECUTIVE", &uri).await;
+    assert!(
+        exec.ok_data()["campaigns"].is_array(),
+        "EXECUTIVE holds MarketingCampaigns under §11.2: {}",
+        exec.text
     );
     assert_refused(&get(&room, "TELLER", &uri).await, "TELLER");
     room.finish().await;
@@ -1072,9 +1075,13 @@ async fn campaign_is_gated_by_marketing_campaigns() {
         "MARKETING holds MarketingCampaigns: {}",
         marketing.text
     );
-    assert_refused(
-        &get(&room, "EXECUTIVE", &uri).await,
-        "EXECUTIVE holds MarketingPerformance, not MarketingCampaigns",
+    // Under RBAC §11.2, Executive holds MarketingCampaigns (Customers: Full).
+    let exec = get(&room, "EXECUTIVE", &uri).await;
+    assert_eq!(
+        exec.ok_data()["campaign"]["id"],
+        campaign.to_string(),
+        "EXECUTIVE holds MarketingCampaigns under §11.2: {}",
+        exec.text
     );
     assert_refused(&get(&room, "TELLER", &uri).await, "TELLER");
     room.finish().await;

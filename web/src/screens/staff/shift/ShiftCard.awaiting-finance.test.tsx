@@ -4,11 +4,14 @@ import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
 import { th, en } from "./i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { CashCountRow } from "../../../shared/api/generated/cash_counts";
-import type { DenominationRow } from "../../../shared/api/generated/denominations";
-import type { HandoverPendingRow } from "../../../shared/api/generated/handovers_pending";
+import {
+  makeCashCountRow,
+  makeDenominationRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { warmModules } from "../../../shared/testing/warm-modules";
 
@@ -24,19 +27,19 @@ const BRANCH = "MAIN";
 const ME = "00000000-0000-4000-8000-0000000000a1";
 const OTHER = "00000000-0000-4000-8000-0000000000a2";
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: null,
@@ -45,13 +48,13 @@ function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
     target: null,
     safe: null,
     ...over,
-  };
+  });
 }
 
 const C_OPEN = "c0000000-0000-4000-8000-000000000001";
 
-const COUNTS: CashCountRow[] = [
-  {
+const COUNTS = [
+  makeCashCountRow({
     id: C_OPEN,
     branchId: BRANCH,
     shiftId: "22222222-2222-4222-8222-222222222222",
@@ -62,11 +65,11 @@ const COUNTS: CashCountRow[] = [
     verifiedAt: null,
     note: null,
     totals: [],
-  },
+  }),
 ];
 
-const DENOMS: DenominationRow[] = [
-  { id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" },
+const DENOMS = [
+  makeDenominationRow({ id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" }),
 ];
 
 type Sent = {
@@ -93,7 +96,7 @@ function json(status: number, body: unknown): Response {
 function stub(views: Record<string, unknown> = {}) {
   const all: Record<string, unknown> = {
     cash_counts: COUNTS,
-    handovers_pending: [] as HandoverPendingRow[],
+    handovers_pending: [],
     my_shift: null,
     denominations: { rows: DENOMS },
     handover_receivers: { rows: [] },

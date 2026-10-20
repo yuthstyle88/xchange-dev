@@ -22,7 +22,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import type { ApiClient, ViewAnswer } from '../../../shared/api/client';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { th } from './i18n';
 import { TransactionDetail } from './TransactionDetail';
@@ -37,8 +37,8 @@ vi.mock('../../../shared/ui/rate', () => ({
   },
 }));
 
-function row(over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function row(over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: 'RE4-KRW',
     date: '2026-10-06',
     created: '2026-10-06T03:04:05.000Z',
@@ -66,7 +66,7 @@ function row(over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 function quietApi(): ApiClient {

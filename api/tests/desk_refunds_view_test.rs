@@ -21,7 +21,7 @@
 //!
 //! Rows are seeded with SQL in RV-1's and TX-2's schema, as `v3_reversal_view_test.rs` does. The window is the
 //! branch's timezone (Asia/Bangkok): a reversal whose `business_date` is Bangkok's today is inside it, one of
-//! Bangkok's yesterday is past it. Sessions come from the `x-test-as` header (`owner`, `staff:<ROLE>:<branch>`).
+//! Bangkok's yesterday is past it. Callers come from the `x-test-as` header (`owner`, `staff:<ROLE>:<branch>`).
 //! The content tests read as MAIN's FRONT (TELLER: holds `ReversalRequest`).
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips.
@@ -39,12 +39,10 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, Utc};
 use quote_common::TestDb;
 use serde_json::{Value, json};
-use xc_auth::domain::access::Role as AccessRole;
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::RoleGrants;
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -86,15 +84,8 @@ fn callers_of(spec: &str) -> Callers {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
     let role_name = parts.next().expect("a role");
-    let roles: &[AccessRole] = match role_name {
-        "FRONT" => &[AccessRole::Teller],
-        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
-        "RATES" => &[AccessRole::RateManager],
-        "FINANCE" => &[AccessRole::Finance],
-        "SYSTEM" => &[AccessRole::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
-        other => panic!("unknown role {other:?}"),
-    };
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
     test_callers::callers(
         None,
@@ -103,24 +94,6 @@ fn callers_of(spec: &str) -> Callers {
             roles,
             BranchId::new(branch),
         )),
-    )
-}
-
-fn legacy_actor_of(spec: &str) -> Option<Actor> {
-    if spec.is_empty() {
-        return None;
-    }
-    if spec == "owner" {
-        return Some(Actor::owner("owner-1"));
-    }
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Actor::staff(
-        format!("employee-{}", role.as_str()),
-        role,
-        BranchId::new(branch),
     )
 }
 
@@ -526,42 +499,48 @@ async fn no_reversal_is_an_empty_list() {
 /// Every caller this file compares: signed out, the owner, and each staff role of MAIN.
 fn callers() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_owned()];
-    for role in Role::STAFF {
-        out.push(format!("staff:{}:MAIN", role.as_str()));
+    for (role, _) in test_callers::V2_STAFF {
+        out.push(format!("staff:{role}:MAIN"));
     }
     out
 }
 
-/// RF-6: the view admits exactly whom `Policy::allow` admits for `(Rpc, "reversalRequest")` — the post
-/// command's own row — compared caller by caller; a refused caller gets a 4xx refusal with an error code and no
-/// data. A signed-out caller is refused. The refusal's code and sentence are the v3 seam's, which reads the
-/// caller as an `access::Actor` and so need not word it as `Policy::allow` on the legacy actor does (measured: the
-/// owner is `roleNotAllowedHere` here); only who is admitted is pinned.
+/// RF-6: the view admits exactly whom `RoleGrants::seed` and `Policy::authorize` admit for `(Rpc, "reversalRequest")`
+/// — the post command's own row — compared caller by caller; a refused caller gets a 4xx refusal with an error code
+/// and no data. A signed-out caller is refused.
 #[tokio::test]
 async fn callers_are_admitted_exactly_as_the_reversal_request_row_admits() {
     let db = TestDb::start().await;
     prepare(&db, "MAIN").await;
     one(&db, "MAIN", 1, Stage::Approved, TODAY).await;
     let action = Action::new("reversalRequest");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &action) else {
+        panic!("reversalRequest needs a permission");
+    };
     let mut admitted = Vec::new();
     for who in callers() {
-        let actor = legacy_actor_of(&who);
+        let actor = callers_of(&who).user;
         let (status, body, text) = get(&db, &who, "MAIN").await;
         let what = format!("as {who:?}");
-        match Policy::allow(actor.as_ref(), EntryPath::Rpc, &action) {
-            Ok(()) => {
-                admitted.push(who.clone());
-                assert_eq!(status, StatusCode::OK, "{what}: {text:.300}");
-                assert_eq!(rows(&body["data"]).len(), 1, "{what}: {text:.300}");
-            }
-            Err(_) => {
-                assert!(status.is_client_error(), "{what}: refused: {text:.300}");
-                assert!(
-                    body["error"]["code"].is_string(),
-                    "{what}: an error code: {text:.300}"
-                );
-                assert!(body.get("data").is_none(), "{what}: no data: {text:.300}");
-            }
+        // Under §11.2, admission follows `RoleGrants::seed(role)` for the row's permission.
+        let holds = actor.as_ref().is_some_and(|a| {
+            a.roles
+                .iter()
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
+        });
+        let auth = Policy::authorize(actor.as_ref(), EntryPath::Rpc, &action, None, Utc::now());
+        assert_eq!(auth.is_ok(), holds, "{what}");
+        if holds {
+            admitted.push(who.clone());
+            assert_eq!(status, StatusCode::OK, "{what}: {text:.300}");
+            assert_eq!(rows(&body["data"]).len(), 1, "{what}: {text:.300}");
+        } else {
+            assert!(status.is_client_error(), "{what}: refused: {text:.300}");
+            assert!(
+                body["error"]["code"].is_string(),
+                "{what}: an error code: {text:.300}"
+            );
+            assert!(body.get("data").is_none(), "{what}: no data: {text:.300}");
         }
     }
     assert!(

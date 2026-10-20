@@ -303,7 +303,10 @@ async fn handle_kiosk(
     // D-4 for a Blueprint session (`__Host-xc_session`): the named branch is authorised. Only a
     // password-session employee keeps v2's own-branch answer, as on `/api/rpc` (`rpc.rs`), which
     // the provided tests pin; `callers.staff` is set for both, so it cannot decide this alone.
-    let blueprint_session = identity_session(&req, now).await.is_some();
+    let blueprint_session = match identity_session(&req, now).await {
+        Ok(session) => session.is_some(),
+        Err(_) => return kiosk_server_error(),
+    };
     let named = if !blueprint_session && callers_peek.staff_standing().is_some() {
         None
     } else {
@@ -479,10 +482,13 @@ async fn handle_kiosk(
                         role: "OWNER".to_string(),
                     }
                 } else if let Some(staff) = callers.staff_standing() {
+                    let staff_names =
+                        usernames(pool, std::iter::once(staff.user_id.as_str())).await;
+                    let staff_name = username_or_id(&staff_names, &staff.user_id);
                     dto_kiosk::EmployeeInfo {
-                        id: staff.user_id.clone(),
-                        username: staff.user_id.clone(),
-                        name: staff.user_id,
+                        id: staff.user_id,
+                        username: staff_name.clone(),
+                        name: staff_name,
                         role: staff.kind.audit_text().to_string(),
                     }
                 } else {
@@ -613,7 +619,20 @@ async fn handle_kiosk(
                             .ok()
                             .flatten()
                             .unwrap_or_default();
-                    match dto_kiosk::get_json(&kiosk_req, &branch_name) {
+                    let quote_id: Option<String> = match sqlx::query_scalar(
+                        "SELECT quote_id::text FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+                    )
+                    .bind(branch.as_str())
+                    .bind(&kiosk_req.id)
+                    .fetch_optional(pool)
+                    .await
+                    {
+                        Ok(row) => row.flatten(),
+                        Err(err) => {
+                            return handle_service_error(pos_error::AppError::Database(err));
+                        }
+                    };
+                    match dto_kiosk::get_json(&kiosk_req, &branch_name, quote_id.as_deref()) {
                         Ok(json) => json_response(json),
                         Err(err) => handle_service_error(err),
                     }

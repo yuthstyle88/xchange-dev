@@ -74,12 +74,10 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
+use xc_auth::domain::access::{Actor as AccessActor, Permission, RoleGrants};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::error::V3Error;
@@ -187,15 +185,8 @@ fn staff_caller_of(spec: &str) -> AccessActor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
     let role_name = parts.next().expect("a role");
-    let roles: &[AccessRole] = match role_name {
-        "FRONT" => &[AccessRole::Teller],
-        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
-        "RATES" => &[AccessRole::RateManager],
-        "FINANCE" => &[AccessRole::Finance],
-        "SYSTEM" => &[AccessRole::Admin],
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
-        other => panic!("unknown role {other:?}"),
-    };
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
     test_callers::staff(
         &format!("employee-{role_name}"),
@@ -220,29 +211,20 @@ fn callers_of(spec: &str) -> Callers {
     test_callers::callers(None, Some(staff_caller_of(spec)))
 }
 
-fn staff_of(spec: &str) -> Option<Actor> {
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Actor::staff(
-        format!("employee-{}", role.as_str()),
-        role,
-        BranchId::new(branch),
-    )
-}
-
-fn legacy_actors(spec: &str) -> (Option<Actor>, Option<Actor>) {
+fn actors(spec: &str) -> (Option<AccessActor>, Option<AccessActor>) {
     if spec.is_empty() {
         return (None, None);
     }
     if spec == "owner" {
-        return (Some(Actor::owner("owner-1")), None);
+        return (Some(test_callers::owner("owner-1")), None);
     }
     if let Some(staff) = spec.strip_prefix("owner+") {
-        return (Some(Actor::owner("owner-1")), staff_of(staff));
+        return (
+            Some(test_callers::owner("owner-1")),
+            Some(staff_caller_of(staff)),
+        );
     }
-    (None, staff_of(spec))
+    (None, Some(staff_caller_of(spec)))
 }
 
 impl SessionReader for HeaderCallers {
@@ -256,23 +238,11 @@ impl SessionReader for HeaderCallers {
     }
 }
 
-const STAFF_ROLES: [&str; 9] = [
-    "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
-    "MONITOR",
-    "FINANCE",
-    "SYSTEM",
-    "DOCUMENTS",
-    "DOCUMENT_REVIEW",
-];
-
 /// Every caller kind: nobody, the owner, each staff role of XC-B01, and the owner and a staff
 /// member in one browser.
 fn every_caller() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_string()];
-    for role in STAFF_ROLES {
+    for (role, _) in test_callers::V2_STAFF {
         out.push(format!("staff:{role}:{B01}"));
         out.push(format!("owner+staff:{role}:{B01}"));
     }
@@ -280,43 +250,45 @@ fn every_caller() -> Vec<String> {
 }
 
 /// The actor the policy is asked about on `path`, by the rule of `view.rs:331`.
-fn actor_on(path: EntryPath, spec: &str) -> Option<Actor> {
-    let (owner, staff) = legacy_actors(spec);
+fn actor_on(path: EntryPath, spec: &str) -> Option<AccessActor> {
+    let c = callers_of(spec);
     match path {
-        EntryPath::StaffRpc => staff,
-        _ => owner.or(staff),
+        EntryPath::StaffRpc => c.staff_user,
+        _ => c.user,
     }
 }
 
 fn has_owner(spec: &str) -> bool {
-    legacy_actors(spec).0.is_some()
+    actors(spec).0.is_some()
 }
 
 fn has_staff(spec: &str) -> bool {
-    legacy_actors(spec).1.is_some()
+    actors(spec).1.is_some()
 }
 
 fn is_approver_staff(spec: &str) -> bool {
-    legacy_actors(spec)
-        .1
-        .is_some_and(|s| matches!(s.role(), Role::Manager | Role::Backend | Role::Finance))
+    actors(spec).1.is_some_and(|s| {
+        s.roles
+            .iter()
+            .any(|r| RoleGrants::seed(r.role).contains(&Permission::ApprovalsDecide))
+    })
 }
 
 fn is_rates_staff(spec: &str) -> bool {
-    legacy_actors(spec)
-        .1
-        .is_some_and(|s| s.role() == Role::Rates)
+    actors(spec).1.is_some_and(|s| {
+        s.roles
+            .iter()
+            .any(|r| RoleGrants::seed(r.role).contains(&Permission::RatesDraft))
+    })
 }
 
-/// The design's role rows (§6 "Policy rows", §4.7 "Who"), written out by hand.
+/// The design's role rows (§6 "Policy rows", §4.7 "Who"), under §11.2 (`RoleGrants::seed`).
 #[derive(Clone, Copy, Debug)]
 enum Who {
-    /// `rateDraft` on Rpc: OWNER and RATES. The owner's session wins on Rpc.
+    /// `rateDraft` and `ratePolicySave` on Rpc: OWNER and RATES. The owner's session wins on Rpc.
     OwnerOrRates,
-    /// `approvalDecide`, `approvalRead` on Rpc: OWNER, and since #874 the v3 roles that become
-    /// BRANCH_MANAGER (MANAGER, BACKEND), and FINANCE (RG4 of #682). Amended by #874's ticket author (claude/f03345fe), per lane
-    /// controller (2026-10-10); a manager is then refused by the type's own policy, not the gate.
-    /// (`ratePolicySave` was here until #602.)
+    /// `approvalDecide`, `approvalRead` on Rpc: OWNER and staff roles holding `ApprovalsDecide`
+    /// under §11.2 (FINANCE).
     OwnerOrApprover,
     /// `adminSnapshot` on Rpc: any signed-in caller.
     AnySession,
@@ -335,10 +307,16 @@ impl Who {
     }
 }
 
-/// The branch the request runs on with no branch named (`Policy::branch`).
+/// The branch the request runs on with no branch named: the staff member's own branch, else MAIN
+/// (what v2's `Policy::branch` answered).
 fn branch_of(path: EntryPath, spec: &str) -> String {
     let actor = actor_on(path, spec).expect("a signed-in caller");
-    Policy::branch(Some(&actor), None).as_str().to_owned()
+    actor
+        .branch
+        .as_ref()
+        .or_else(|| actor.roles.iter().find_map(|r| r.branch.as_ref()))
+        .map(|b| b.as_str().to_owned())
+        .unwrap_or_else(|| "MAIN".to_owned())
 }
 
 // ------------------------------------------------------------ requests
@@ -709,8 +687,14 @@ async fn every_route_lets_through_exactly_its_role_row_and_refuses_the_rest_as_t
         for who in every_caller() {
             let what = format!("{} {} as {who:?}", route.what, route.method);
             let expected = route.who.allows(&who);
-            let actor = actor_on(path, &who);
-            let policy = Policy::allow(actor.as_ref(), path, &Action::new(action));
+            let user = actor_on(path, &who);
+            let policy = Policy::authorize(
+                user.as_ref(),
+                path,
+                &Action::new(action),
+                None,
+                chrono::Utc::now(),
+            );
             assert_eq!(
                 policy.is_ok(),
                 expected,
@@ -846,7 +830,13 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
     let data = &a["data"];
     assert_keys(
         data,
-        &["publication", "sourceDate", "stale", "lines"],
+        &[
+            "publication",
+            "sourceDate",
+            "stale",
+            "lines",
+            "bandHeadings",
+        ],
         "data",
     );
     assert_keys(
@@ -873,7 +863,7 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
     assert_keys(
         jpy,
         &[
-            "currency", "group", "unitSize", "buyRate", "sellRate", "lineId",
+            "currency", "group", "unitSize", "buyRate", "sellRate", "lineId", "bands",
         ],
         "a line",
     );

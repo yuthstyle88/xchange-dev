@@ -4,11 +4,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { setLang } from '../../../shared/i18n';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
+import {
+  makeDenominationRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  makeTransferBranchRow,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 import type { StaffCard, StaffCtx } from '../cards';
 import { warmModules } from '../../../shared/testing/warm-modules';
 
@@ -25,19 +27,19 @@ const ELSEWHERE = 'B09';
 const OTHER_BRANCH = 'B07';
 const ME = '00000000-0000-4000-8000-0000000000b1';
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -45,18 +47,18 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
-const DENOMS: DenominationRow[] = [
-  { id: 12, currency: 'THB', faceValue: '100.0000', groupCode: 'NOTE' },
-  { id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' },
-  { id: 21, currency: 'USD', faceValue: '50.0000', groupCode: 'NOTE' },
+const DENOMS = [
+  makeDenominationRow({ id: 12, currency: 'THB', faceValue: '100.0000', groupCode: 'NOTE' }),
+  makeDenominationRow({ id: 11, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' }),
+  makeDenominationRow({ id: 21, currency: 'USD', faceValue: '50.0000', groupCode: 'NOTE' }),
 ];
 
-const DESTINATIONS: TransferBranchRow[] = [
-  { branchId: ELSEWHERE, name: 'Ayutthaya' },
-  { branchId: OTHER_BRANCH, name: 'Phuket' },
+const DESTINATIONS = [
+  makeTransferBranchRow({ branchId: ELSEWHERE, name: 'Ayutthaya' }),
+  makeTransferBranchRow({ branchId: OTHER_BRANCH, name: 'Phuket' }),
 ];
 
 const ID_1 = 'f0000000-0000-4000-8000-0000000000a1';
@@ -84,7 +86,7 @@ function json(status: number, body: unknown): Response {
 
 function stub(views: Record<string, unknown> = {}) {
   const all: Record<string, unknown> = {
-    cash_transfers: [] as CashTransferRow[],
+    cash_transfers: [],
     denominations: { rows: DENOMS },
     transfer_branches: { rows: DESTINATIONS },
     ...views,

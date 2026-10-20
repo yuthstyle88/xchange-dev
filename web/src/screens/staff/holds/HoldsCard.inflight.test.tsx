@@ -2,10 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { StaffCustomerRow } from '../../../shared/api/generated/staff_customers';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffHoldRow } from '../../../shared/api/generated/staff_holds';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeStaffCustomerRow,
+  makeStaffFloorView,
+  makeStaffHoldRow,
+  makeStaffMeView,
+} from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { th as staffTh } from '../i18n';
 import { HoldsCard } from './HoldsCard';
@@ -14,33 +16,33 @@ import { th } from './i18n';
 const BRANCH = 'MAIN';
 const H_OPEN = 'h-open-1';
 
-const CUST_A: StaffCustomerRow = { id: 'CX-00000001', displayName: 'Somchai Jaidee' };
-const CUST_B: StaffCustomerRow = { id: 'CX-00000007', displayName: 'Somchai Jaiyen' };
+const CUST_A = makeStaffCustomerRow({ id: 'CX-00000001', displayName: 'Somchai Jaidee' });
+const CUST_B = makeStaffCustomerRow({ id: 'CX-00000007', displayName: 'Somchai Jaiyen' });
 
-const HOLDS: StaffHoldRow[] = [
-  {
+const HOLDS = [
+  makeStaffHoldRow({
     id: H_OPEN,
     customerId: CUST_A.id,
     customerName: CUST_A.displayName,
     reason: 'AML check',
     status: 'OPEN',
     at: '2026-10-11T02:00:00Z',
-  },
+  }),
 ];
 
-function me(permissions = ['CustomerHoldPlace', 'VerificationReview']): StaffMeView {
-  return {
+function me(permissions = ['CustomerHoldPlace', 'VerificationReview']) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000c1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -48,7 +50,7 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 function jsonResponse(status: number, body: unknown): Response {

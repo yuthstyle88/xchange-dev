@@ -295,16 +295,19 @@ fn code(a: &Answer) -> String {
         .to_owned()
 }
 
+// §11.2: CashLimitsManage (FINANCE FULL) is held by EXECUTIVE and FINANCE, not ADMIN.
+const EXECUTIVE: &str = "EXECUTIVE@*";
+
 // ------------------------------------------------------------ tests
 
 const OTHER_BRANCH: &str = "OB1";
 
-/// An organisation-wide ADMIN of `XC` names a branch of another organisation: refused 403
-/// `outOfScope`, and nothing is written for that branch.
+/// §11.2: an organisation-wide EXECUTIVE of `XC` (holder of `CashLimitsManage`) names a branch of
+/// another organisation: refused 403 `outOfScope`, and nothing is written for that branch.
 #[actix_web::test]
-async fn an_org_wide_admin_cannot_write_another_organisations_branch() {
+async fn an_org_wide_executive_cannot_write_another_organisations_branch() {
     let db = TestDb::start().await;
-    let a = save(&db, ADMIN, OTHER_BRANCH, json!("500")).await;
+    let a = save(&db, EXECUTIVE, OTHER_BRANCH, json!("500")).await;
     assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
     assert_eq!(code(&a), "outOfScope", "{}", a.text);
     assert!(
@@ -314,11 +317,11 @@ async fn an_org_wide_admin_cannot_write_another_organisations_branch() {
     db.finish().await;
 }
 
-/// Kept: the same ADMIN still writes a branch of its own organisation.
+/// Kept: the same EXECUTIVE still writes a branch of its own organisation.
 #[actix_web::test]
-async fn an_org_wide_admin_still_writes_its_own_organisations_branch() {
+async fn an_org_wide_executive_still_writes_its_own_organisations_branch() {
     let db = TestDb::start().await;
-    let a = save(&db, ADMIN, B09, json!("7")).await;
+    let a = save(&db, EXECUTIVE, B09, json!("7")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     let (org, limit, _, _) = db.row(B09).await.expect("one row");
     assert_eq!(org, ORG);

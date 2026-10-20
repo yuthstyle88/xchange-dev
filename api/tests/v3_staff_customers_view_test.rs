@@ -27,7 +27,7 @@
 //!
 //! Customers are made through `CustomerService::reserve`, as the desk makes them (one customer per organisation,
 //! the passport encrypted with its lookup hash). Expectations about who may read are computed from
-//! `RolePermissions`, never from a role name; roles only *make* an actor. Needs `TEST_DATABASE_URL`; nothing
+//! `RoleGrants`, never from a role name; roles only *make* an actor. Needs `TEST_DATABASE_URL`; nothing
 //! skips.
 
 mod common;
@@ -43,38 +43,22 @@ use chrono::{DateTime, Utc};
 use pos_infra::transactions::Transactor;
 use quote_common::*;
 use serde_json::Value;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers::{self, V2_STAFF};
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
 const VIEW: &str = "staff_customers";
-
-/// Every v2 staff role the staff page signs in with, mapped to Blueprint roles as production maps them.
-/// Used only to *make* actors; no expectation names a role.
-const V2_STAFF: [V2Role; 9] = [
-    V2Role::Front,
-    V2Role::Backend,
-    V2Role::Manager,
-    V2Role::Rates,
-    V2Role::Monitor,
-    V2Role::Finance,
-    V2Role::System,
-    V2Role::Documents,
-    V2Role::DocumentReview,
-];
 
 // ------------------------------------------------------------ the signed-in person (as S-1's test)
 
@@ -103,34 +87,12 @@ fn header(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = header(req);
-        Box::pin(async move {
-            let staff = parse(&spec).and_then(|(role, id, branch)| {
-                let role = if role == "customer" {
-                    "FRONT".to_owned()
-                } else {
-                    role
-                };
-                V2Actor::staff(id, V2Role::parse(&role)?, BranchId::new(branch))
-            });
-            Sessions { owner: None, staff }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = header(req);
         Box::pin(async move {
             let Some((role, id, branch)) = parse(&spec) else {
-                return Callers {
-                    user: None,
-                    staff_user: None,
-                };
+                return test_callers::nobody();
             };
-            let s = self.sessions(req).await;
             let staff_user = if role == "customer" {
                 Some(User::new(
                     &id,
@@ -144,34 +106,28 @@ impl SessionReader for HeaderSessions {
                     None,
                 ))
             } else {
-                s.staff.as_ref().map(|a| actor_from_v3(a, ORG_1, since()))
+                test_callers::v2_staff_roles(&role)
+                    .map(|roles| test_callers::staff(&id, roles, BranchId::new(branch)))
             };
-            Callers {
-                user: staff_user.clone(),
-                staff_user,
-            }
+            test_callers::callers(None, staff_user)
         })
     }
 }
 
-fn mapped(role: V2Role) -> User {
-    let v2 = V2Actor::staff("x", role, BranchId::new("MAIN")).expect("a staff role");
-    actor_from_v3(&v2, ORG_1, since())
-}
-
-/// Whether `role`'s session holds `p` on its branch (read from the role table).
-fn holds(role: V2Role, p: Permission) -> bool {
-    mapped(role)
+/// Whether `roles`'s session holds `p` on its branch (read from the role table).
+fn holds(roles: &[Role], p: Permission) -> bool {
+    test_callers::staff("x", roles, BranchId::new("MAIN"))
         .roles
         .iter()
-        .any(|r| RolePermissions::of(r.role).contains(&p))
+        .any(|r| RoleGrants::holds(r.group_code(), p))
 }
 
 /// A staff role whose session holds `CustomerHoldPlace`, found in the role table, not named.
-fn a_role_that_may_search() -> V2Role {
+fn a_role_that_may_search() -> &'static str {
     V2_STAFF
         .into_iter()
-        .find(|r| holds(*r, Permission::CustomerHoldPlace))
+        .find(|(_, roles)| holds(roles, Permission::CustomerHoldPlace))
+        .map(|(name, _)| name)
         .expect("premise: some staff role holds CustomerHoldPlace")
 }
 
@@ -299,7 +255,7 @@ impl Room {
 
     async fn searcher(&self) -> String {
         let id = self.person("Searcher").await;
-        format!("{}:{id}:MAIN", a_role_that_may_search().as_str())
+        format!("{}:{id}:MAIN", a_role_that_may_search())
     }
 
     async fn finish(self) {
@@ -378,23 +334,22 @@ async fn each_staff_role_searches_exactly_when_it_holds_customer_hold_place() {
     assert!(
         V2_STAFF
             .iter()
-            .any(|r| !holds(*r, Permission::CustomerHoldPlace)),
+            .any(|(_, roles)| !holds(roles, Permission::CustomerHoldPlace)),
         "premise: some staff role lacks CustomerHoldPlace, so the refusal is exercised"
     );
-    for role in V2_STAFF {
-        let id = room.person(&format!("p-{}", role.as_str())).await;
-        let who = format!("{}:{id}:MAIN", role.as_str());
+    for (role, roles) in V2_STAFF {
+        let id = room.person(&format!("p-{role}")).await;
+        let who = format!("{role}:{id}:MAIN");
         let a = room.get(&who, "q=Somchai%20Jaidee").await;
-        if holds(role, Permission::CustomerHoldPlace) {
-            assert_eq!(a.status, StatusCode::OK, "{}: {}", role.as_str(), a.text);
+        if holds(roles, Permission::CustomerHoldPlace) {
+            assert_eq!(a.status, StatusCode::OK, "{role}: {}", a.text);
             assert!(
                 a.text.contains(&s.somchai),
-                "{}: finds the customer: {}",
-                role.as_str(),
+                "{role}: finds the customer: {}",
                 a.text
             );
         } else {
-            refused(&a, PolicyError::RoleNotAllowed, role.as_str());
+            refused(&a, PolicyError::RoleNotAllowed, role);
         }
     }
     room.finish().await;
@@ -404,7 +359,7 @@ async fn each_staff_role_searches_exactly_when_it_holds_customer_hold_place() {
 async fn a_signed_in_person_without_customer_hold_place_is_refused() {
     let room = Room::start().await;
     room.seed().await;
-    assert!(!RolePermissions::of(Role::Customer).contains(&Permission::CustomerHoldPlace));
+    assert!(!RoleGrants::seed(Role::Customer).contains(&Permission::CustomerHoldPlace));
     let id = room.person("A Customer").await;
     refused(
         &room.get(&format!("customer:{id}:MAIN"), "q=Somchai").await,

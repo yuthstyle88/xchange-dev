@@ -310,6 +310,21 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, anyhow::Error> {
     // Run migrations
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    use xc_auth::domain::access::{RoleGrantStore, RoleGrants};
+    use xc_auth::infrastructure::access::PgRoleGrantStore;
+    let store = PgRoleGrantStore::new();
+    let mut tx = pool.begin().await?;
+    let seeded = store.seed_missing(&mut tx).await?;
+    tx.commit().await?;
+    let mut conn = pool.acquire().await?;
+    let snapshot = store.load(&mut conn).await?;
+    tracing::info!(
+        seeded,
+        version = snapshot.version(),
+        "seeded and loaded role permission grants"
+    );
+    RoleGrants::install(snapshot);
+
     Ok(pool)
 }
 
@@ -372,7 +387,7 @@ impl Drop for Application {
 
 impl Application {
     pub async fn build(settings: Settings) -> Result<Self, anyhow::Error> {
-        let pii_key_path = std::path::Path::new("/etc/xc-v3/pii.key");
+        let pii_key_path = settings.pii.key_path.as_path();
         if pii_key_path.exists() {
             let keys = xc_kernel::pii::PiiKeys::load(pii_key_path)?;
             let _ = xc_customer::install_pii_keys(std::sync::Arc::new(keys));

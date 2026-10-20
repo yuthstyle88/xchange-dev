@@ -274,11 +274,26 @@ impl Shop {
     /// on the poster's own OPEN shift at the branch (`ShiftService::open_of_teller_in`); there is no fallback to "the
     /// branch's shift", so the harness posts as that shift's own teller (the `test` user, `tx5_common`).
     async fn shift_teller(&self) -> xchange::application::workflows::save_step::SaveActor {
-        let id: String =
-            sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'test'")
-                .fetch_one(self.pool())
-                .await
-                .expect("the shift's teller (tx5_common seeds it)");
+        let id: String = if let Some(id) = sqlx::query_scalar::<_, String>(
+            "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+             WHERE o.code = 'XC' AND u.name = 'test' AND u.created_by = 'test' \
+             ORDER BY u.created_at, u.id LIMIT 1",
+        )
+        .fetch_optional(self.pool())
+        .await
+        .expect("the shift's teller (tx5_common seeds it)")
+        {
+            id
+        } else {
+            sqlx::query_scalar(
+                "INSERT INTO users (organization_id, name, status, created_by) \
+                 SELECT id, 'test', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                 RETURNING id::text",
+            )
+            .fetch_one(self.pool())
+            .await
+            .expect("the shift's teller")
+        };
         xchange::application::workflows::save_step::SaveActor {
             id,
             username: "test".to_owned(),
@@ -1168,15 +1183,33 @@ async fn ca10_seed_open(
     xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(pool.clone()))
         .run(&xc_kernel::ids::BranchId::new(branch), move |tx| {
             Box::pin(async move {
+                let teller_id: uuid::Uuid = if let Some(id) = sqlx::query_scalar::<_, uuid::Uuid>(
+                    "SELECT u.id FROM users u JOIN organizations o ON o.id = u.organization_id \
+                     WHERE o.code = 'XC' AND u.name = 'test' AND u.created_by = 'test' \
+                     ORDER BY u.created_at, u.id LIMIT 1",
+                )
+                .fetch_optional(&mut **tx)
+                .await?
+                {
+                    id
+                } else {
+                    sqlx::query_scalar(
+                        "INSERT INTO users (organization_id, name, status, created_by) \
+                         SELECT id, 'test', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                         RETURNING id",
+                    )
+                    .fetch_one(&mut **tx)
+                    .await?
+                };
                 sqlx::query(
                     "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
-                     teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id FROM users u \
-                     WHERE u.legacy_employee_id = 'test'",
+                     teller_id) VALUES ($1, $2, 'OPEN', $3, 'test', '', $4, $5)",
                 )
                 .bind(&id)
                 .bind(&b)
                 .bind(opened_at)
                 .bind(&request_id)
+                .bind(teller_id)
                 .execute(&mut **tx)
                 .await?;
                 for (code, amount) in &opening {

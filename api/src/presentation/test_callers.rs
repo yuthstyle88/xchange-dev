@@ -59,6 +59,30 @@ pub fn nobody() -> Callers {
     callers(None, None)
 }
 
+/// OR-7.m T-last (#1027): the v2 staff role names tests still use in their specs, each with the
+/// Blueprint roles it maps to (the table above). One shared table, so no test keeps its own copy
+/// or reaches for the v2 `Role` / `v3_roles` that T-last deletes. Pinned against
+/// `old_cookie_callers` by the bridge test below while that bridge exists.
+pub const V2_STAFF: [(&str, &[Role]); 9] = [
+    ("FRONT", &[Role::Teller]),
+    ("BACKEND", &[Role::BranchManager]),
+    ("MANAGER", &[Role::BranchManager]),
+    ("RATES", &[Role::RateManager]),
+    ("FINANCE", &[Role::Finance]),
+    ("SYSTEM", &[Role::Admin]),
+    ("MONITOR", &[Role::VerificationReviewer]),
+    ("DOCUMENTS", &[Role::VerificationReviewer]),
+    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
+];
+
+/// The Blueprint roles of v2 staff role `name` (one of [`V2_STAFF`]), or `None` for any other name.
+pub fn v2_staff_roles(name: &str) -> Option<&'static [Role]> {
+    V2_STAFF
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, roles)| *roles)
+}
+
 #[cfg(test)]
 mod tests {
     //! Bridge test: deleted with `old_cookie_callers` (OR-7.m's last ticket).
@@ -76,18 +100,9 @@ mod tests {
     #[test]
     fn every_v2_actor_builds_the_same_callers_as_the_old_cookies() {
         let branch = BranchId::new("B1");
-        let table: [(V3Role, &[Role]); 9] = [
-            (V3Role::Front, &[Role::Teller]),
-            (V3Role::Backend, &[Role::BranchManager]),
-            (V3Role::Manager, &[Role::BranchManager]),
-            (V3Role::Rates, &[Role::RateManager]),
-            (V3Role::Finance, &[Role::Finance]),
-            (V3Role::System, &[Role::Admin]),
-            (V3Role::Monitor, &[Role::VerificationReviewer]),
-            (V3Role::Documents, &[Role::VerificationReviewer]),
-            (V3Role::DocumentReview, &[Role::VerificationReviewer]),
-        ];
-        for (v3, roles) in table {
+        // OR-7.m T-last: the shared table, by name, is what the old cookies built
+        for (name, roles) in V2_STAFF {
+            let v3 = V3Role::parse(name).expect("a v2 staff role name");
             let old = V3Actor::staff("e1", v3, branch.clone()).expect("a staff role");
             for with_owner in [false, true] {
                 let expected = old_cookie_callers(

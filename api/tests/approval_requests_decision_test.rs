@@ -12,7 +12,7 @@
 //! `at` is RFC 3339 like `requestedAt`. The DTO is `ApprovalDecisionDto`, exported to
 //! `approval_requests.ts`, and the committed generated file is what the DTOs generate.
 //!
-//! Needs `TEST_DATABASE_URL`; the database tests do not skip. Sessions come from the `x-test-as`
+//! Needs `TEST_DATABASE_URL`; the database tests do not skip. Callers come from the `x-test-as`
 //! header, as in `approvals_read_per_type_test.rs`.
 
 mod common;

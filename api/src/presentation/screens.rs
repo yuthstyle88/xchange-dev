@@ -31,6 +31,9 @@ pub struct ScreenTable {
     built: bool,
 }
 
+/// Desk pages show passport data on shared front-desk machines (`docs/design/xchange-v3-wave3-desk.md` §7).
+const NO_STORE_SCREENS: [&str; 2] = ["/desk", "/staff/desk"];
+
 impl ScreenTable {
     pub fn compiled() -> Self {
         let entries = SCREENS
@@ -167,9 +170,15 @@ impl ScreenTable {
             return pages::plain_404();
         };
 
+        let cache_control = if NO_STORE_SCREENS.contains(&decl.path.as_str()) {
+            "no-store"
+        } else {
+            "no-cache"
+        };
+
         HttpResponse::Ok()
             .content_type("text/html; charset=utf-8")
-            .insert_header(("Cache-Control", "no-cache"))
+            .insert_header(("Cache-Control", cache_control))
             .insert_header(("X-Content-Type-Options", "nosniff"))
             .body(bytes)
     }

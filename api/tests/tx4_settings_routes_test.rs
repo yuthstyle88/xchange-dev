@@ -38,7 +38,7 @@
 //!   (`V3Error::from(PolicyError)`); nothing is written and no audit row appears.
 //!
 //! Callers: `owner` (the v2 owner, mapped to EXECUTIVE + ADMIN: both permissions) and `teller` (a
-//! FRONT of MAIN, mapped to TELLER: neither). The premise is checked against `RolePermissions`, not
+//! FRONT of MAIN, mapped to TELLER: neither). The premise is checked against `RoleGrants`, not
 //! assumed.
 
 mod common;
@@ -54,12 +54,11 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::*;
 use serde_json::{Value, json};
 use tx4_common::*;
-use xc_auth::domain::access::{Permission, Role as AccessRole, RolePermissions};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Permission, Role as AccessRole, RoleGrants};
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -71,34 +70,29 @@ const LIMIT: &str = "/api/branches/MAIN/exchange-limit";
 
 struct HeaderSessions;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     match spec {
-        "owner" => Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        },
-        "teller" => Sessions {
-            owner: None,
-            staff: Actor::staff(TELLER, Role::Front, BranchId::new("MAIN")),
-        },
-        _ => Sessions {
-            owner: None,
-            staff: None,
-        },
+        "owner" => test_callers::callers(Some(test_callers::owner("owner-1")), None),
+        "teller" => test_callers::callers(
+            None,
+            Some(test_callers::staff(
+                TELLER,
+                &[AccessRole::Teller],
+                BranchId::new("MAIN"),
+            )),
+        ),
+        _ => test_callers::nobody(),
     }
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -114,12 +108,13 @@ fn policy_refused(a: &Answer, what: &str) {
 
 /// The premise of the refusal tests: the teller's role lacks `p` and the owner's roles hold it.
 fn premise(p: Permission) {
+    // Follows §11.2 seed: TELLER lacks and ADMIN holds the settings permissions
     assert!(
-        !RolePermissions::of(AccessRole::Teller).contains(&p),
+        !RoleGrants::seed(AccessRole::Teller).contains(&p),
         "premise: TELLER lacks {p:?}"
     );
     assert!(
-        RolePermissions::of(AccessRole::Admin).contains(&p),
+        RoleGrants::seed(AccessRole::Admin).contains(&p),
         "premise: ADMIN (the owner's) holds {p:?}"
     );
 }

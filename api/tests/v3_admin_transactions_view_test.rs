@@ -58,17 +58,17 @@ use compat_common::Person;
 use kiosk_http_common::{Counter, person};
 use rpc_common::{Answer, Call};
 use serde_json::{Value, json};
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::{Actor, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 /// Amended for QU-6 #1354 (ruling issuecomment-6117792804), setup only: `accept` starts the
 /// request's queue ticket as the accepting teller (queue-tickets.md §4.5), and the queue serves
@@ -322,10 +322,10 @@ struct Room {
 
 /// One employee of every staff role in `MAIN`; keys are the role names.
 fn the_staff() -> Vec<Person> {
-    Role::STAFF
+    test_callers::V2_STAFF
         .iter()
         .enumerate()
-        .map(|(i, role)| person(role.as_str(), role.as_str(), 0x51 + i as u8))
+        .map(|(i, (role, _))| person(role, role, 0x51 + i as u8))
         .collect()
 }
 
@@ -455,18 +455,15 @@ impl Room {
     fn actor_of(&self, key: &str) -> Option<Actor> {
         match key {
             "" => None,
-            "owner" => Some(Actor::owner("owner")),
+            "owner" => Some(test_callers::owner("owner")),
             key => {
                 let p = self
                     .staff
                     .iter()
                     .find(|p| p.key == key)
                     .unwrap_or_else(|| panic!("{key} is one of the staff"));
-                Actor::staff(
-                    p.id.clone(),
-                    Role::parse(&p.role).expect("a staff role"),
-                    BranchId::new(MAIN),
-                )
+                let roles = test_callers::v2_staff_roles(&p.role).expect("a staff role");
+                Some(test_callers::staff(&p.id, roles, BranchId::new(MAIN)))
             }
         }
     }
@@ -718,25 +715,35 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
     );
 }
 
-/// §4.4: the view asks `Policy::allow(actor, Rpc, adminSnapshot)` and nothing else, so every
+/// §4.4: the view asks `Policy::authorize` / `RoleGrants::seed` for `(Rpc, adminSnapshot)` and nothing else, so every
 /// caller kind gets exactly what that pair gives: 200 with data, or the policy's refusal.
 #[actix_web::test]
 async fn admin_transactions_answers_exactly_whom_the_snapshot_row_allows() {
     let room = Room::open().await;
     room.put_all(&[Tx::new(1, 1)]).await;
+    let act = Action::new("adminSnapshot");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &act) else {
+        panic!("(Rpc, adminSnapshot) needs a permission");
+    };
     let mut allowed = 0;
     let mut refused = 0;
     for who in room.callers() {
         let actor = room.actor_of(&who);
-        let policy = Policy::allow(
-            actor.as_ref(),
-            EntryPath::Rpc,
-            &Action::new("adminSnapshot"),
+        let holds = actor.as_ref().is_some_and(|ac| {
+            ac.roles
+                .iter()
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
+        });
+        let policy = Policy::authorize(actor.as_ref(), EntryPath::Rpc, &act, None, Utc::now());
+        let what = format!("{VIEW} as {who:?}");
+        assert_eq!(
+            policy.is_ok(),
+            holds,
+            "{what}: RoleGrants::seed matches Policy::authorize"
         );
         let answer = room.get(&who, &path("")).await;
-        let what = format!("{VIEW} as {who:?}");
         match &policy {
-            Ok(()) => {
+            Ok(_) => {
                 allowed += 1;
                 assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                 let body = answer.json();
@@ -775,17 +782,24 @@ async fn each_branch_lists_its_own_exchanges_and_staff_read_their_own_branch() {
     let nine = ids(&room.data(&format!("branch={B9}")).await);
     assert_eq!(main, ["XC-20261006-900003", "XC-20261006-900001"]);
     assert_eq!(nine, ["XC-20261006-900004", "XC-20261006-900002"]);
+    let act = Action::new("adminSnapshot");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &act) else {
+        panic!("(Rpc, adminSnapshot) needs a permission");
+    };
     let allowed_staff: Vec<String> = room
         .staff
         .iter()
         .map(|p| p.key.clone())
         .filter(|key| {
-            Policy::allow(
-                room.actor_of(key).as_ref(),
-                EntryPath::Rpc,
-                &Action::new("adminSnapshot"),
-            )
-            .is_ok()
+            let actor = room.actor_of(key);
+            let holds = actor.as_ref().is_some_and(|ac| {
+                ac.roles
+                    .iter()
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
+            });
+            let auth = Policy::authorize(actor.as_ref(), EntryPath::Rpc, &act, None, Utc::now());
+            assert_eq!(auth.is_ok(), holds);
+            holds
         })
         .collect();
     // OR-4b (D-4): an employee naming B9 is refused; naming MAIN they read MAIN

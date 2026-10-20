@@ -1,8 +1,12 @@
 // #2023 KW-4 Phase 1: DeskBookingsScreen idempotency-key retry behaviour (§9 rows 1–5) through HTTP only.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeStaffMeView,
+  makeStaffRoleDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 
@@ -24,18 +28,18 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER: StaffMeView = {
+const STAFF_TELLER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: 'XC-B01' }],
+  roles: [makeStaffRoleDto({ role: 'teller', branchId: 'XC-B01' })],
   branchId: 'XC-B01',
   branchName: 'สาขาหลัก',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const DESK_BOOKINGS_DATA: DeskBookingsData = {
+const DESK_BOOKINGS_DATA = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261015-0001',
       status: 'CONFIRMED',
@@ -46,9 +50,9 @@ const DESK_BOOKINGS_DATA: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-15T09:00:00Z',
       endAt: '2026-10-15T09:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 function makeHarness(steps: StepAnswer[]) {
   const writes: WriteCall[] = [];
@@ -234,8 +238,8 @@ describe('DeskBookingsScreen.tsx — §9 idempotency-key retry behaviour (#2023 
 
   it('row 5: submit → 2xx → submit the same input again sends a new key', async () => {
     const { writes } = makeHarness([
-      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CANCELLED', bookingNo: 'B261015-0001' } },
-      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CANCELLED', bookingNo: 'B261015-0001' } },
+      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CONFIRMED', bookingNo: 'B261015-0001' } },
+      { kind: 'http', status: 200, body: { id: 'bk-1', status: 'CONFIRMED', bookingNo: 'B261015-0001' } },
     ]);
 
     await mountAndOpenCancel();
