@@ -167,21 +167,20 @@ fn assert_answered_as_recorded(answer: &Answer, refusal: Option<&(String, u16)>,
     }
 }
 
-/// OR-4b (#767, design §4.2 C8): QueueOperate is TELLER's and BRANCH_MANAGER's. The owner's user
-/// is refused the queue's work, and — holding no QueueOperate — is answered a name the kiosk does
-/// not know as any other role without it is (`Staff access required.`).
+/// RBAC §11.2 (#3659): the owner holds `QueueOperate` again (via `EXECUTIVE` (`Customers Full`)),
+/// and `RATES` (`RATE_MANAGER`) is widened with `QueueOperate` — let through on the queue's work,
+/// and answered `Unknown kiosk action.` on a name the kiosk does not know.
 fn as_the_blueprint_answers(
     actor: &str,
     action: &str,
     recorded: Option<&(String, u16)>,
 ) -> Option<(String, u16)> {
-    let staff = || Some(("Staff access required.".to_string(), 400));
-    if actor == "OWNER" {
+    if actor == "RATES" {
         if ["accept", "get", "identityChecked", "publishReceipt"].contains(&action) {
-            return staff();
+            return None;
         }
-        if recorded.is_some_and(|(sentence, _)| sentence == "Unknown kiosk action.") {
-            return staff();
+        if recorded.is_some_and(|(sentence, _)| sentence == "Staff access required.") {
+            return Some(("Unknown kiosk action.".to_string(), 400));
         }
     }
     recorded.cloned()
