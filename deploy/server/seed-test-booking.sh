@@ -37,6 +37,7 @@ if [ "${1:-}" = "--json" ]; then
   TELLER_PHONE="${TELLER_PHONE:-+6680001$(rnd)}"
   MANAGER_PHONE="${MANAGER_PHONE:-+6680003$(rnd)}"
   FINANCE_PHONE="${FINANCE_PHONE:-+6680004$(rnd)}"
+  MARKETING_PHONE="${MARKETING_PHONE:-+6680005$(rnd)}"
   CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6680002$(rnd)}"
 fi
 
@@ -53,6 +54,7 @@ HOST="${BASE#https://}"
 TELLER_PHONE="${TELLER_PHONE:-+66800000101}"
 MANAGER_PHONE="${MANAGER_PHONE:-+66800000103}"
 FINANCE_PHONE="${FINANCE_PHONE:-+66800000104}"
+MARKETING_PHONE="${MARKETING_PHONE:-+66800000105}"
 CUSTOMER_PHONE="${CUSTOMER_PHONE:-+66800000102}"
 SEED_DAYS="${SEED_DAYS:-7}"
 ORG_ID="00000000-0000-0000-0000-000000000001"   # org XC, seeded by 20261011100000_organizations.sql
@@ -181,6 +183,21 @@ else
   FINANCE_PW="(unchanged: $FINANCE_PHONE was already registered)"
 fi
 
+say "6d. test marketing $MARKETING_PHONE (MARKETING on $BRANCH: smokes #campaigns, #campaign-performance, #members)"
+MARKETING_PW="$(new_password)"
+MARKETING_SUB="$(identity_register "$MARKETING_PHONE" "$MARKETING_PW")"
+if [ -n "$MARKETING_SUB" ]; then
+  q "WITH u AS (
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$MARKETING_SUB', 'Test Marketing', 'ACTIVE', 1, now(), '$OWNER_ID')
+       ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
+     INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
+     SELECT id, 'MARKETING', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
+  [ "$JSON" = 1 ] || echo "    marketing created: $MARKETING_PHONE  password $MARKETING_PW"
+else
+  MARKETING_PW="(unchanged: $MARKETING_PHONE was already registered)"
+fi
+
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
 if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
@@ -197,7 +214,7 @@ else
 fi
 
 if [ "$JSON" = 1 ]; then
-  case "$TELLER_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
+  case "$TELLER_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW$MARKETING_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
   cat >&3 <<JSON
 {
   "baseUrl": "$BASE",
@@ -205,6 +222,7 @@ if [ "$JSON" = 1 ]; then
   "teller":   { "phone": "$TELLER_PHONE", "password": "$TELLER_PW" },
   "branchManager": { "phone": "$MANAGER_PHONE", "password": "$MANAGER_PW" },
   "finance":  { "phone": "$FINANCE_PHONE", "password": "$FINANCE_PW" },
+  "marketing": { "phone": "$MARKETING_PHONE", "password": "$MARKETING_PW" },
   "admin":    { "identifier": "<the owner's sign-in>", "password": "<the owner's password>" },
   "referralCode": "TEST1234",
   "branch": "$BRANCH",

@@ -23,10 +23,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
 import {
+  makeMe,
   makeReceiptDocumentDto,
   makeReceiptDocumentViewData,
   makeReversalSummaryDto,
-  makeStaffMeView,
   makeTransactionAuditEventDto,
   makeTransactionAuditViewData,
   makeTransactionDetailDto,
@@ -35,9 +35,10 @@ import {
   makeTxLineDto,
   makeTxPaymentDto,
   makeTxReceiptDto,
+  type MeRole,
+  type MeView,
   type ReceiptDocumentViewData,
   type ReversalSummaryDto,
-  type StaffMeView,
   type TransactionAuditViewData,
   type TransactionDetailDto,
   type TransactionViewData,
@@ -60,13 +61,14 @@ const TX_ID = '7f0c2b1e-4a5d-4c3b-9e8f-0a1b2c3d4e5f';
 const PATH = `/desk/transactions/${TX_ID}`;
 const RECEIPT_HTML = '<!doctype html><html><body>ใบเสร็จ XC-0001 35,120.00</body></html>';
 
-function me(permissions: string[]) {
-  return makeStaffMeView({
-    userId: '00000000-0000-4000-8000-000000000001',
+function me(permissions: string[], roles: MeRole[] = []) {
+  return makeMe({
+    id: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
-    roles: [],
-    branchId: 'MAIN',
+    roles,
+    branch: 'MAIN',
     branchName: 'สาขาทดสอบ',
+    branches: [],
     permissions,
   });
 }
@@ -148,7 +150,7 @@ type Call = { method: string; url: string; path: string; query: URLSearchParams;
 type Reply = { status: number; json?: unknown; network?: true; text?: string };
 
 interface World {
-  me: StaffMeView | Reply;
+  me: MeView | Reply;
   transaction: TransactionData | Reply;
   audit: TransactionAuditData | Reply;
   receipt: ReceiptDocumentData;
@@ -195,7 +197,10 @@ function installFetch() {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? init.body : null;
       calls.push({ method, url, path: u.pathname, query: u.searchParams, body, key: headers.get('Idempotency-Key') });
-      if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') return view(world.me);
+      if (method === 'GET' && u.pathname === '/api/v3/views/me') return view(world.me);
+      if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') {
+        return json(401, { error: { code: 'employeeAuthRequired', message: 'employee auth required' } });
+      }
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction') return view(world.transaction);
       if (method === 'GET' && u.pathname === '/api/v3/views/transaction_audit') return view(world.audit);
       if (method === 'GET' && u.pathname === '/api/v3/views/receipt_document') return view(world.receipt);
@@ -278,9 +283,10 @@ afterEach(() => {
 // ── reads (D2) ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('reads: three GETs on open, none on a timer, three again on refresh (D2)', () => {
-  it('opens with exactly staff_me, transaction {id} and transaction_audit {id}, and nothing else', async () => {
+  it('opens with exactly me, transaction {id} and transaction_audit {id}, and nothing else', async () => {
     await mount();
-    expect(gets('staff_me')).toHaveLength(1);
+    expect(gets('me')).toHaveLength(1);
+    expect(gets('staff_me')).toHaveLength(0);
     expect(gets('transaction')).toHaveLength(1);
     expect(gets('transaction')[0]!.query.get('id')).toBe(TX_ID);
     expect(gets('transaction_audit')).toHaveLength(1);
@@ -297,6 +303,23 @@ describe('reads: three GETs on open, none on a timer, three again on refresh (D2
     expect(gets('transaction_audit')[0]!.query.get('branch')).toBe('B2');
   });
 
+  it('owner (EXECUTIVE+ADMIN) with ReversalRequest and ReceiptReprint on me sees both actions and makes no staff_me request (#3963)', async () => {
+    await mount({
+      me: me(
+        ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'],
+        [
+          { role: 'EXECUTIVE', branchId: null },
+          { role: 'ADMIN', branchId: null },
+        ],
+      ),
+    });
+    expect(state()).toBe('ready');
+    expect(btn('reprint')).toHaveLength(1);
+    expect(btn('request-reversal')).toHaveLength(1);
+    expect(gets('me')).toHaveLength(1);
+    expect(gets('staff_me')).toEqual([]);
+  });
+
   it('makes no request in 10 minutes without a click (no polling)', async () => {
     vi.useFakeTimers();
     await mount();
@@ -309,7 +332,7 @@ describe('reads: three GETs on open, none on a timer, three again on refresh (D2
   it('the refresh button reads the same three views once more', async () => {
     await mount();
     await click(btn('refresh')[0]);
-    expect(gets('staff_me')).toHaveLength(2);
+    expect(gets('me')).toHaveLength(2);
     expect(gets('transaction')).toHaveLength(2);
     expect(gets('transaction_audit')).toHaveLength(2);
     expect(calls).toHaveLength(6);
@@ -336,7 +359,7 @@ describe('states (D11)', () => {
     expect(state()).toBe('ready');
   });
 
-  it('staff_me failing still shows the data, with no action button', async () => {
+  it('me failing still shows the data, with no action button', async () => {
     await mount({ me: { status: 500, json: { error: { code: 'serverError', message: 'x' } } } });
     expect(state()).toBe('ready');
     expect(text()).toContain('35120.00');
@@ -445,6 +468,12 @@ describe('reprint: a GET of receipt_document, printed through ReceiptFrame (D5)'
 // ── reversal (D6) ───────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('reversal request (D6)', () => {
+  it('without ReversalRequest: no request-reversal button', async () => {
+    await mount({ me: me(['TransactionRead', 'ReceiptReprint']) });
+    expect(state()).toBe('ready');
+    expect(btn('request-reversal')).toHaveLength(0);
+  });
+
   it('ReversalRequest + COMPLETED + no reversal: request → ReasonDialog → POST {reason} with an Idempotency-Key', async () => {
     await mount();
     expect(btn('request-reversal')).toHaveLength(1);

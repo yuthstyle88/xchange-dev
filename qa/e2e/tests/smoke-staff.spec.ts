@@ -43,14 +43,16 @@ test.describe('QA-S7 smoke: /staff cards, /staff/report, /staff/documents, /staf
     });
   });
 
-  // key: web/src/screens/staff-report/StaffReport.tsx:178
+  // key: web/src/screens/staff-report/StaffReport.tsx:178. Smoked as the branch manager: the view refuses a teller with
+  // 400 roleNotAllowed by design (`staff_daily_report` needs ShiftCloseCertify / FinanceReconcile / OverviewRead;
+  // docs/design/xchange-v3-known-differences.md, "Staff report").
   test('/staff/report', async ({ page }) => {
-    await signIn(page, 'teller', '/staff/report');
+    await signIn(page, 'branchManager', '/staff/report');
     await smoke(page, {
       area: 'staff',
       screen: 'staff-report',
       path: '/staff/report',
-      role: 'teller',
+      role: 'branchManager',
       key: '.staff-report',
       langs: STAFF_LANGS,
     });
@@ -66,6 +68,7 @@ test.describe('QA-S7 smoke: /staff cards, /staff/report, /staff/documents, /staf
       role: 'teller',
       key: '.documents-screen',
       langs: STAFF_LANGS,
+      allowConsole: ['documentsNotFound404'],
     });
   });
 

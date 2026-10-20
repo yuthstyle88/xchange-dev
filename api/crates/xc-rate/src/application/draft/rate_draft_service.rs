@@ -19,9 +19,11 @@ use crate::domain::draft::rate_draft::{DraftId, DraftLine, DraftStatus, LineSide
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::RateProposal;
 use crate::domain::draft::tier_proposal::{TierLine, TierProposal};
+use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::reference::reference_batch::ReferenceLine;
+use crate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
 
 #[derive(Debug, Clone)]
@@ -447,8 +449,10 @@ impl RateDraftService {
         let mut proposals = Vec::new();
         let mut tiers = Vec::with_capacity(lines.len());
         let mut tier_lines_vec = Vec::with_capacity(lines.len());
-        let mut policy_tiers_cache: std::collections::HashMap<Uuid, Option<PolicyTiers>> =
-            std::collections::HashMap::new();
+        let mut policy_tiers_cache: std::collections::HashMap<
+            Uuid,
+            (Option<PolicyTiers>, Vec<CurrencyTierOverride>),
+        > = std::collections::HashMap::new();
 
         for (i, line) in lines.iter().enumerate() {
             // Read currency units
@@ -469,13 +473,22 @@ impl RateDraftService {
 
             let line_pol_id = line_policy_ids.get(i).copied().flatten();
             let pt_opt = if let Some(pid) = line_pol_id {
-                if let Some(cached) = policy_tiers_cache.get(&pid) {
+                let (branch_tiers, overrides) = if let Some(cached) = policy_tiers_cache.get(&pid) {
                     cached.clone()
                 } else {
-                    let loaded = PolicyTiersStore::for_version(tx, &pid).await?;
+                    let loaded = if let Some(pt) = PolicyTiersStore::for_version(tx, &pid).await? {
+                        let ovs = CurrencyTierOverrideStore::for_version(tx, &pid).await?;
+                        (Some(pt), ovs)
+                    } else {
+                        (None, Vec::new())
+                    };
                     policy_tiers_cache.insert(pid, loaded.clone());
                     loaded
-                }
+                };
+                branch_tiers.map(|pt| {
+                    let ov = overrides.iter().find(|o| o.currency == line.currency);
+                    pt.for_currency(ov)
+                })
             } else {
                 None
             };

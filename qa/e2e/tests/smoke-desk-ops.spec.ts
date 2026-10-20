@@ -92,6 +92,7 @@ test.describe('QA-S8 smoke: desk and operations pages', () => {
       role: 'admin',
       key: '.documents-screen',
       langs: STAFF_LANGS,
+      allowConsole: ['documentsNotFound404'],
     });
   });
 
@@ -117,6 +118,32 @@ test.describe('QA-S8 smoke: desk and operations pages', () => {
       path: '/kiosk-currencies.html',
       role: 'admin',
       key: '#bank-reference',
+      langs: STAFF_LANGS,
+    });
+  });
+
+  // key: web/src/screens/desk/DeskPage.tsx:28
+  test('/desk?branch=MAIN', async ({ page }) => {
+    await signIn(page, 'admin', '/desk?branch=MAIN');
+    await smoke(page, {
+      area: 'desk-ops',
+      screen: 'desk',
+      path: '/desk?branch=MAIN',
+      role: 'admin',
+      key: '.desk-page',
+      langs: STAFF_LANGS,
+    });
+  });
+
+  // key: web/src/screens/desk/DeskPage.tsx:28
+  test('/staff/desk', async ({ page }) => {
+    await signIn(page, 'teller', '/staff/desk');
+    await smoke(page, {
+      area: 'desk-ops',
+      screen: 'staff-desk',
+      path: '/staff/desk',
+      role: 'teller',
+      key: '.desk-page',
       langs: STAFF_LANGS,
     });
   });

@@ -4,14 +4,15 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export type Role = 'customer' | 'teller' | 'branchManager' | 'finance' | 'admin';
-export const ROLES: readonly Role[] = ['customer', 'teller', 'branchManager', 'finance', 'admin'];
+export type Role = 'customer' | 'teller' | 'branchManager' | 'finance' | 'marketing' | 'admin';
+export const ROLES: readonly Role[] = ['customer', 'teller', 'branchManager', 'finance', 'marketing', 'admin'];
 
 export const ROLE_HOME: Record<Role, string> = {
   customer: '/app',
   teller: '/staff',
   branchManager: '/staff',
   finance: '/staff',
+  marketing: '/',
   admin: '/',
 };
 export type Lang = 'th' | 'en' | 'zh';
@@ -30,6 +31,7 @@ export interface Users {
   teller: Account;
   branchManager?: Account;
   finance?: Account;
+  marketing?: Account;
   admin: Account;
   branch: string;
   referralCode?: string;
@@ -37,7 +39,7 @@ export interface Users {
   quantity?: string;
 }
 
-export type ConsoleAllowKey = 'anonymousMyProfile401' | 'loyaltyUnavailable503';
+export type ConsoleAllowKey = 'anonymousMyProfile401' | 'loyaltyUnavailable503' | 'documentsNotFound404';
 
 export interface ConsoleAllowEntry {
   url: RegExp;
@@ -59,6 +61,12 @@ export const CONSOLE_ALLOWLIST: Record<ConsoleAllowKey, ConsoleAllowEntry> = {
     status: 503,
     code: 'loyaltyUnavailable',
     log: 'loyalty not configured on host',
+  },
+  // No ?ref= is a refusal by design (documents.rs:125); GET answers 404 documentsNotFound.
+  documentsNotFound404: {
+    url: /\/api\/v3\/views\/(staff_)?documents(?:\?|$)/,
+    status: 404,
+    code: 'documentsNotFound',
   },
 };
 
@@ -286,8 +294,11 @@ export function watchConsole(page: Page, allow: readonly ConsoleAllowKey[] = [])
       pending.push(
         res
           .text()
-          .catch(() => '')
+          .catch(() => null)
           .then((body) => {
+            // The page may navigate before the body is read (e.g. /staff/documents with no ref goes to /staff);
+            // then only the URL and status can be checked, and the entry's URL pattern is narrow enough for that.
+            if (body === null) return;
             if (entry.code && !body.includes(entry.code)) {
               log.errors.push(`${res.status()} ${res.url()}: ${body.slice(0, 200)}`);
               return;
@@ -333,6 +344,7 @@ export async function smoke(page: Page, spec: ScreenSpec): Promise<void> {
     // The app writes the chosen language to <html lang> (web/src/shared/i18n/languages.ts:19-23, index.ts syncHtmlLang).
     await expect(page.locator('html'), `${spec.path} shows ${lang}`).toHaveAttribute('lang', HTML_LANG[lang]);
     await shot(page, spec.area, spec.screen, lang);
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
     if (log.pending?.length) await Promise.all(log.pending.splice(0));
     expect(log.errors, `${spec.path} (${lang}): console errors`).toEqual([]);
   }

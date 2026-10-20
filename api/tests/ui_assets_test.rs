@@ -124,6 +124,7 @@ impl SessionReader for HeaderSessions {
 /// Everything about one answer that a v2 page and a v3 screen are compared on.
 #[derive(Debug)]
 struct Answer {
+    path: String,
     status: StatusCode,
     location: Option<String>,
     content_type: String,
@@ -170,6 +171,7 @@ async fn get(dist: &Path, who: &str, uri: &str) -> Answer {
 }
 
 async fn answer_of(resp: actix_web::dev::ServiceResponse) -> Answer {
+    let path = resp.request().path().to_owned();
     let status = resp.status();
     let location = header_of(&resp, header::LOCATION);
     let content_type = header_of(&resp, header::CONTENT_TYPE).unwrap_or_default();
@@ -177,12 +179,21 @@ async fn answer_of(resp: actix_web::dev::ServiceResponse) -> Answer {
     let nosniff = header_of(&resp, header::X_CONTENT_TYPE_OPTIONS).as_deref() == Some("nosniff");
     let body = atest::read_body(resp).await.to_vec();
     Answer {
+        path,
         status,
         location,
         content_type,
         cache_control,
         nosniff,
         body,
+    }
+}
+
+fn expected_cache_control(path: &str) -> &'static str {
+    if matches!(path, "/desk" | "/staff/desk") {
+        "no-store"
+    } else {
+        "no-cache"
     }
 }
 
@@ -228,7 +239,7 @@ fn is_screen(a: &Answer, entry: &str, what: &str) {
     );
     assert_eq!(
         a.cache_control.as_deref(),
-        Some("no-cache"),
+        Some(expected_cache_control(&a.path)),
         "{what}: Cache-Control"
     );
     assert!(a.nosniff, "{what}: X-Content-Type-Options: nosniff");
