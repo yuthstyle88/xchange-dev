@@ -53,7 +53,6 @@ fn guards() -> Value {
 
 /// Version 1 of `MAIN` with §12.3's bands and margins (T1 0/0, T2 +0.1/−0.1, T3 +0.2/−0.2, T4 +0.3/−0.3).
 async fn policy(db: &TestDb, value_tiers_on: bool) -> Uuid {
-    db.seed_branch(MAIN).await;
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO rate_policy_versions \
            (id, branch_id, version, buy_adjust_pct, sell_adjust_pct, guards, valid_from, valid_to, \

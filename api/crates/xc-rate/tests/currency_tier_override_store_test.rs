@@ -61,7 +61,6 @@ fn settings_only(
 }
 
 async fn version_1(db: &TestDb) -> Uuid {
-    db.seed_branch(MAIN).await;
     let id = db
         .seed_policy(MAIN, "0", "0", json!({}), None, None, None)
         .await;

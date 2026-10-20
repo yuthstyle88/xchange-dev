@@ -91,9 +91,8 @@ async fn start(db: &TestDb, currency: &str, hours_ago: i64) -> Uuid {
     .await
 }
 
-/// `MAIN` (in the seeded organisation) with policy version 1 anchored on `branch_anchor`.
+/// `MAIN` (seeded by the migrations, in the seeded organisation) with policy version 1 anchored on `branch_anchor`.
 async fn branch_anchored(db: &TestDb, branch_anchor: &str) -> Uuid {
-    db.seed_branch(MAIN).await;
     let id = db
         .seed_policy(MAIN, "0", "0", json!({}), None, None, None)
         .await;

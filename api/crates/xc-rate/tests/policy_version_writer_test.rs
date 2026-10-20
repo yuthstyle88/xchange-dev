@@ -151,7 +151,6 @@ async fn write(db: &TestDb, c: PolicyVersionChange) -> Uuid {
 #[tokio::test]
 async fn the_first_version_of_a_branch_is_version_1_anchored_on_bot_with_its_value_tiers() {
     let db = TestDb::start().await;
-    db.seed_branch(MAIN).await;
     let mut tx = db.begin().await;
     let written = PolicyVersionWriter::next(&mut tx, &BranchId::new(MAIN), change(None, None))
         .await
@@ -202,7 +201,6 @@ async fn the_first_version_of_a_branch_is_version_1_anchored_on_bot_with_its_val
 #[tokio::test]
 async fn the_next_version_closes_the_current_one_and_names_it_as_its_source() {
     let db = TestDb::start().await;
-    db.seed_branch(MAIN).await;
     let v1 = write(&db, change(None, None)).await;
     let v2 = write(&db, change(None, None)).await;
 
@@ -216,7 +214,6 @@ async fn the_next_version_closes_the_current_one_and_names_it_as_its_source() {
 #[tokio::test]
 async fn no_anchor_in_the_change_keeps_the_current_versions_anchor() {
     let db = TestDb::start().await;
-    db.seed_branch(MAIN).await;
     let v1 = write(&db, change(Some(AnchorSource::MarketTt), None)).await;
     assert_eq!(row(&db, &v1).await.anchor_source, "MARKET_TT");
 
@@ -234,7 +231,6 @@ async fn no_anchor_in_the_change_keeps_the_current_versions_anchor() {
 #[tokio::test]
 async fn no_overrides_in_the_change_carries_every_override_forward() {
     let db = TestDb::start().await;
-    db.seed_branch(MAIN).await;
     let set = vec![
         over("EUR", Some("0.3"), None),
         over("USD", Some("0.5"), Some(AnchorSource::MarketTt)),
@@ -261,7 +257,6 @@ async fn no_overrides_in_the_change_carries_every_override_forward() {
 #[tokio::test]
 async fn overrides_in_the_change_replace_those_currencies_and_carry_the_others() {
     let db = TestDb::start().await;
-    db.seed_branch(MAIN).await;
     write(
         &db,
         change(
