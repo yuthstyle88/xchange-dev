@@ -114,8 +114,11 @@ const SIGNED_IN_SCREENS = ['/app', '/app/branches', '/app/journey', '/app/assist
 async function captureIn(page: Page, path: string) {
   for (const [lang, label] of LANGS) {
     await page.goto(path);
-    const button = page.getByRole('button', { name: label });
-    if (await button.count()) await button.first().click();
+    // LangSwitch buttons are named by aria-label ("…English"), so match the visible text instead
+    // (web/src/shared/i18n/LangSwitch.tsx). The pressed button proves the switch took.
+    const button = page.locator('button[aria-pressed]').filter({ hasText: label }).first();
+    await button.click();
+    await expect(button, `${path} switched to ${lang}`).toHaveAttribute('aria-pressed', 'true');
     await page.waitForLoadState('networkidle');
     await shot(page, `1605-${path.replace(/\//g, '_').replace(/^_/, '') || 'app'}-${lang}`);
   }
