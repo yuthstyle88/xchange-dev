@@ -292,8 +292,11 @@ export function watchConsole(page: Page, allow: readonly ConsoleAllowKey[] = [])
       pending.push(
         res
           .text()
-          .catch(() => '')
+          .catch(() => null)
           .then((body) => {
+            // The page may navigate before the body is read (e.g. /staff/documents with no ref goes to /staff);
+            // then only the URL and status can be checked, and the entry's URL pattern is narrow enough for that.
+            if (body === null) return;
             if (entry.code && !body.includes(entry.code)) {
               log.errors.push(`${res.status()} ${res.url()}: ${body.slice(0, 200)}`);
               return;
