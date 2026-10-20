@@ -92,7 +92,7 @@ export const en = {
 };
 
 export const zh = {
-  title: '我的旅程',
+  title: '我的行程',
   subtitle: '您的兑换计划与当前排队号码',
   queueTitle: '当前排队号码',
   noQueueTicket: '暂无排队号码',
@@ -109,7 +109,7 @@ export const zh = {
   statusCalled: '正在叫号',
   statusServing: '正在办理',
   statusCompleted: '办理完成',
-  statusNoShow: '未到场',
+  statusNoShow: '已过号',
   statusCancelled: '已取消',
   ticketsAhead: '前方等待人数',
   ticketsAheadCount: '{count} 位',
@@ -123,9 +123,9 @@ export const zh = {
   emptyPlans: '暂无已保存的计划',
   customerBuy: '买入外币',
   customerSell: '卖出外币',
-  expiresAt: '有效期至: {date}',
-  createdAt: '创建于: {date}',
-  branchLabel: '分行: {branch}',
+  expiresAt: '有效期至：{date}',
+  createdAt: '创建于：{date}',
+  branchLabel: '分行：{branch}',
   retry: '重试',
   refresh: '刷新',
   bookingsTitle: '即将到来的预约',

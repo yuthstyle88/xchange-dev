@@ -72,7 +72,7 @@ export const en: Record<keyof typeof th, string> = {
 export const zh: Record<keyof typeof th, string> = {
   title: '我的预约',
   subtitle: '货币兑换预约记录',
-  loading: '加载中...',
+  loading: '正在加载…',
   retry: '重试',
   empty: '暂无预约记录',
   bookNow: '立即预约',
