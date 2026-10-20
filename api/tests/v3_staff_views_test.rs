@@ -17,7 +17,7 @@
 //! The expectations here are computed from `RoleGrants::seed` and a permission, never from a role
 //! name: each case asks "does this actor hold permission P", so the tests hold whatever the role
 //! table says. The roles appear only to *make* an actor (through the v2 session, as the staff page
-//! signs in today, mapped by `actor_from_v3`).
+//! signs in today, mapped by `test_callers`).
 //!
 //! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`; nothing here
 //! skips. Each test works in a schema of its own.
@@ -64,37 +64,21 @@ use chrono_tz::Tz;
 use quote_common::*;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
 const B2: &str = "B2";
 /// 2026-10-06 12:00 in Bangkok, in epoch milliseconds (custody times are stored this way).
 const T0: i64 = 1_791_262_800_000;
-
-/// Every v2 staff role the staff page can sign in with; each becomes the Blueprint role(s)
-/// `actor_from_v3` maps it to. Used only to *make* actors; no expectation names a role.
-const V2_STAFF: [V2Role; 9] = [
-    V2Role::Front,
-    V2Role::Backend,
-    V2Role::Manager,
-    V2Role::Rates,
-    V2Role::Monitor,
-    V2Role::Finance,
-    V2Role::System,
-    V2Role::Documents,
-    V2Role::DocumentReview,
-];
 
 // ------------------------------------------------------------ the signed-in person
 
@@ -119,24 +103,6 @@ fn since() -> DateTime<Utc> {
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = header(req);
-        Box::pin(async move {
-            let staff = parse(&spec).and_then(|(role, id, branch)| {
-                let role = if role == "customer" {
-                    "FRONT".to_owned()
-                } else {
-                    role
-                };
-                V2Actor::staff(id, V2Role::parse(&role)?, BranchId::new(branch))
-            });
-            Sessions { owner: None, staff }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = header(req);
         Box::pin(async move {
@@ -146,7 +112,6 @@ impl SessionReader for HeaderSessions {
                     staff_user: None,
                 };
             };
-            let s = self.sessions(req).await;
             let staff_user = if role == "customer" {
                 Some(User::new(
                     &id,
@@ -160,7 +125,8 @@ impl SessionReader for HeaderSessions {
                     None,
                 ))
             } else {
-                s.staff.as_ref().map(|a| actor_from_v3(a, ORG_1, since()))
+                test_callers::v2_staff_roles(&role)
+                    .map(|roles| test_callers::staff(&id, roles, BranchId::new(branch)))
             };
             Callers {
                 user: staff_user.clone(),
@@ -178,13 +144,13 @@ fn header(req: &HttpRequest) -> String {
 }
 
 /// The Blueprint actor the view sees for a staff session of `role` (as production maps it).
-fn mapped(role: V2Role, id: &str, branch: &str) -> User {
-    let v2 = V2Actor::staff(id, role, BranchId::new(branch)).expect("a staff role");
-    actor_from_v3(&v2, ORG_1, since())
+fn mapped(role: &str, id: &str, branch: &str) -> User {
+    let roles = test_callers::v2_staff_roles(role).expect("a staff role");
+    test_callers::staff(id, roles, BranchId::new(branch))
 }
 
 /// Whether `role`'s session holds `p` on its branch (read from the role table).
-fn holds(role: V2Role, p: Permission) -> bool {
+fn holds(role: &str, p: Permission) -> bool {
     mapped(role, "x", "MAIN")
         .roles
         .iter()
@@ -192,7 +158,7 @@ fn holds(role: V2Role, p: Permission) -> bool {
 }
 
 /// The actor's effective permissions on its branch, each serialised as `Permission` is.
-fn permissions_of(role: V2Role) -> Vec<Value> {
+fn permissions_of(role: &str) -> Vec<Value> {
     let mut ps: Vec<Value> = mapped(role, "x", "MAIN")
         .roles
         .iter()
@@ -204,8 +170,8 @@ fn permissions_of(role: V2Role) -> Vec<Value> {
     ps
 }
 
-fn spec(role: V2Role, id: &str, branch: &str) -> String {
-    format!("{}:{id}:{branch}", role.as_str())
+fn spec(role: &str, id: &str, branch: &str) -> String {
+    format!("{role}:{id}:{branch}")
 }
 
 // ------------------------------------------------------------ the floor
@@ -379,8 +345,8 @@ impl Floor {
     /// manager verifies. Answers the shift id.
     async fn open_shift(&self, teller_id: &str, manager_id: &str) -> String {
         let counts = CashCountService::pg(self.db.pool.clone());
-        let teller = mapped(V2Role::Front, teller_id, "MAIN");
-        let manager = mapped(V2Role::Manager, manager_id, "MAIN");
+        let teller = mapped("FRONT", teller_id, "MAIN");
+        let manager = mapped("MANAGER", manager_id, "MAIN");
         let denomination: i64 = sqlx::query_scalar(
             "SELECT id FROM denominations WHERE currency_code = 'THB' AND face_value = 1000",
         )
@@ -505,8 +471,8 @@ async fn a_signed_in_person_without_the_views_permission_is_refused() {
 async fn each_staff_role_reads_exactly_the_views_its_permissions_allow() {
     let f = Floor::start().await;
     f.ops("READY", None, None, None).await;
-    for role in V2_STAFF {
-        let id = f.person(&format!("p-{}", role.as_str())).await;
+    for (role, _) in test_callers::V2_STAFF {
+        let id = f.person(&format!("p-{role}")).await;
         let who = spec(role, &id, "MAIN");
         let expect = [
             ("staff_me", holds(role, Permission::SignedIn)),
@@ -521,18 +487,12 @@ async fn each_staff_role_reads_exactly_the_views_its_permissions_allow() {
         for (view, allowed) in expect {
             let a = f.get(&who, view, "").await;
             if allowed {
-                assert_eq!(
-                    a.status,
-                    StatusCode::OK,
-                    "{view} as {}: {}",
-                    role.as_str(),
-                    a.body
-                );
+                assert_eq!(a.status, StatusCode::OK, "{view} as {role}: {}", a.body);
             } else {
                 refused(
                     &a,
                     PolicyError::RoleNotAllowed,
-                    &format!("{view} as {}", role.as_str()),
+                    &format!("{view} as {role}"),
                 );
             }
         }
@@ -544,22 +504,24 @@ async fn each_staff_role_reads_exactly_the_views_its_permissions_allow() {
 #[actix_web::test]
 async fn the_holds_list_is_read_with_either_hold_permission_alone() {
     let f = Floor::start().await;
-    let only_place = V2_STAFF
+    let only_place = test_callers::V2_STAFF
         .into_iter()
+        .map(|(r, _)| r)
         .find(|r| {
-            holds(*r, Permission::CustomerHoldPlace) && !holds(*r, Permission::VerificationReview)
+            holds(r, Permission::CustomerHoldPlace) && !holds(r, Permission::VerificationReview)
         })
         .expect("a role with CustomerHoldPlace and not VerificationReview");
-    let only_review = V2_STAFF
+    let only_review = test_callers::V2_STAFF
         .into_iter()
+        .map(|(r, _)| r)
         .find(|r| {
-            holds(*r, Permission::VerificationReview) && !holds(*r, Permission::CustomerHoldPlace)
+            holds(r, Permission::VerificationReview) && !holds(r, Permission::CustomerHoldPlace)
         })
         .expect("a role with VerificationReview and not CustomerHoldPlace");
     for role in [only_place, only_review] {
         let id = f.person("one of two").await;
         let data = f.ok(&spec(role, &id, "MAIN"), "staff_holds", "").await;
-        assert!(data.is_array(), "{}: {data}", role.as_str());
+        assert!(data.is_array(), "{role}: {data}");
     }
     f.finish().await;
 }
@@ -567,11 +529,10 @@ async fn the_holds_list_is_read_with_either_hold_permission_alone() {
 #[actix_web::test]
 async fn another_branch_is_out_of_scope_on_every_view() {
     let f = Floor::start().await;
-    let teller = V2_STAFF
+    let teller = test_callers::V2_STAFF
         .into_iter()
-        .find(|r| {
-            holds(*r, Permission::AttendanceClock) && holds(*r, Permission::CustomerHoldPlace)
-        })
+        .map(|(r, _)| r)
+        .find(|r| holds(r, Permission::AttendanceClock) && holds(r, Permission::CustomerHoldPlace))
         .expect("a role reading all four views");
     let id = f.person("at MAIN").await;
     for view in VIEWS {
@@ -594,11 +555,11 @@ async fn staff_me_answers_the_person_their_roles_branch_and_permissions() {
         f.db.text("SELECT name FROM branches WHERE id = 'MAIN'")
             .await
             .expect("MAIN's name");
-    for role in V2_STAFF {
-        let id = f.person(&format!("Name {}", role.as_str())).await;
+    for (role, _) in test_callers::V2_STAFF {
+        let id = f.person(&format!("Name {role}")).await;
         let me = f.ok(&spec(role, &id, "MAIN"), "staff_me", "").await;
-        assert_eq!(me["userId"], json!(id), "{}", role.as_str());
-        assert_eq!(me["name"], json!(format!("Name {}", role.as_str())));
+        assert_eq!(me["userId"], json!(id), "{role}");
+        assert_eq!(me["name"], json!(format!("Name {role}")));
         assert_eq!(me["branchId"], json!("MAIN"));
         assert_eq!(me["branchName"], json!(branch_name));
         let roles: Vec<Value> = mapped(role, &id, "MAIN")
@@ -606,14 +567,13 @@ async fn staff_me_answers_the_person_their_roles_branch_and_permissions() {
             .iter()
             .map(|r| json!({ "role": r.role.as_str(), "branchId": "MAIN" }))
             .collect();
-        assert_eq!(me["roles"], json!(roles), "{}", role.as_str());
+        assert_eq!(me["roles"], json!(roles), "{role}");
         let mut got: Vec<Value> = me["permissions"].as_array().expect("permissions").clone();
         got.sort_by_key(|v| v.to_string());
         assert_eq!(
             got,
             permissions_of(role),
-            "{}: the role table's permissions",
-            role.as_str()
+            "{role}: the role table's permissions",
         );
     }
     f.finish().await;
@@ -632,13 +592,13 @@ async fn staff_floor_shows_target_and_safe_only_to_cash_permissions() {
     )
     .await;
     // LG-6.r5 (#1044): the safe is MAIN's ledger SAFE, which `Floor::start` funds with 10,000,000 THB.
-    for role in V2_STAFF {
+    for (role, _) in test_callers::V2_STAFF {
         if !holds(role, Permission::AttendanceClock) {
             continue;
         }
         let id = f.person("p").await;
         let floor = f.ok(&spec(role, &id, "MAIN"), "staff_floor", "").await;
-        assert_eq!(floor["phase"], json!("OPEN"), "{}", role.as_str());
+        assert_eq!(floor["phase"], json!("OPEN"), "{role}");
         let cash = holds(role, Permission::BranchDayOperate)
             || holds(role, Permission::CashTargetSet)
             || holds(role, Permission::CashManage);
@@ -661,8 +621,7 @@ async fn staff_floor_shows_target_and_safe_only_to_cash_permissions() {
             assert!(
                 floor.get("target").is_none_or(Value::is_null)
                     && floor.get("safe").is_none_or(Value::is_null),
-                "{}: no cash permission, no money on the floor: {floor}",
-                role.as_str()
+                "{role}: no cash permission, no money on the floor: {floor}",
             );
         }
     }
@@ -673,9 +632,10 @@ async fn staff_floor_shows_target_and_safe_only_to_cash_permissions() {
 async fn staff_floor_hours_come_from_the_branchs_own_hours_and_are_absent_when_none_are_set() {
     let f = Floor::start().await;
     f.ops("READY", None, None, None).await;
-    let teller = V2_STAFF
+    let teller = test_callers::V2_STAFF
         .into_iter()
-        .find(|r| holds(*r, Permission::AttendanceClock))
+        .map(|(r, _)| r)
+        .find(|r| holds(r, Permission::AttendanceClock))
         .unwrap();
     let id = f.person("p").await;
     let who = spec(teller, &id, "MAIN");
@@ -704,9 +664,10 @@ async fn staff_floor_hours_come_from_the_branchs_own_hours_and_are_absent_when_n
 async fn staff_floor_my_clock_in_is_my_newest_row_and_only_while_it_is_open() {
     let f = Floor::start().await;
     f.ops("OPEN", None, None, None).await;
-    let teller = V2_STAFF
+    let teller = test_callers::V2_STAFF
         .into_iter()
-        .find(|r| holds(*r, Permission::AttendanceClock))
+        .map(|(r, _)| r)
+        .find(|r| holds(r, Permission::AttendanceClock))
         .unwrap();
     let me = f.person("me").await;
     let other = f.person("other").await;
@@ -753,15 +714,11 @@ async fn staff_floor_my_shift_is_my_own_open_shift_and_not_another_tellers() {
         .await
         .expect("the shift's opened_at");
 
-    let mine = f
-        .ok(&spec(V2Role::Front, &a, "MAIN"), "staff_floor", "")
-        .await;
+    let mine = f.ok(&spec("FRONT", &a, "MAIN"), "staff_floor", "").await;
     assert_eq!(mine["myShift"]["id"], json!(a_shift));
     assert_eq!(instant(&mine["myShift"]["openedAt"], "openedAt"), opened_at);
 
-    let theirs = f
-        .ok(&spec(V2Role::Front, &b, "MAIN"), "staff_floor", "")
-        .await;
+    let theirs = f.ok(&spec("FRONT", &b, "MAIN"), "staff_floor", "").await;
     assert!(
         theirs.get("myShift").is_none_or(Value::is_null),
         "B has no shift; A's is not B's: {theirs}"
@@ -779,9 +736,10 @@ async fn staff_floor_cutoff_answers_its_time_and_how_many_are_pending() {
         Some(json!({ "at": T0, "by": "bm", "shiftId": "s-1", "pending": ["r-1", "r-2"] })),
     )
     .await;
-    let teller = V2_STAFF
+    let teller = test_callers::V2_STAFF
         .into_iter()
-        .find(|r| holds(*r, Permission::AttendanceClock))
+        .map(|(r, _)| r)
+        .find(|r| holds(r, Permission::AttendanceClock))
         .unwrap();
     let id = f.person("p").await;
     let floor = f.ok(&spec(teller, &id, "MAIN"), "staff_floor", "").await;
@@ -800,9 +758,10 @@ async fn staff_holds_pages_the_branchs_holds_newest_first() {
     let h2 = f.hold("MAIN", 2, "c-2", "RELEASED", T0 + 1_000).await;
     let h3 = f.hold("MAIN", 3, "c-3", "OPEN", T0 + 2_000).await;
     f.hold(B2, 1, "c-9", "OPEN", T0).await; // another branch's
-    let placer = V2_STAFF
+    let placer = test_callers::V2_STAFF
         .into_iter()
-        .find(|r| holds(*r, Permission::CustomerHoldPlace))
+        .map(|(r, _)| r)
+        .find(|r| holds(r, Permission::CustomerHoldPlace))
         .unwrap();
     let id = f.person("p").await;
     let who = spec(placer, &id, "MAIN");
@@ -851,7 +810,7 @@ async fn staff_attendance_is_my_own_rows_unless_i_operate_the_branch_day() {
     let mine_new = f.clock("MAIN", 3, &me, T0 + 3_000, None).await;
     f.clock(B2, 1, &me, T0, None).await; // another branch's
 
-    for role in V2_STAFF {
+    for (role, _) in test_callers::V2_STAFF {
         if !holds(role, Permission::AttendanceClock) {
             continue;
         }
@@ -867,22 +826,21 @@ async fn staff_attendance_is_my_own_rows_unless_i_operate_the_branch_day() {
             assert_eq!(
                 ids,
                 [mine_new.as_str(), theirs.as_str(), mine_old.as_str()],
-                "{}: BranchDayOperate reads the branch's rows, newest first",
-                role.as_str()
+                "{role}: BranchDayOperate reads the branch's rows, newest first",
             );
         } else {
             assert_eq!(
                 ids,
                 [mine_new.as_str(), mine_old.as_str()],
-                "{}: own rows only, newest first",
-                role.as_str()
+                "{role}: own rows only, newest first",
             );
         }
     }
 
-    let reader = V2_STAFF
+    let reader = test_callers::V2_STAFF
         .into_iter()
-        .find(|r| holds(*r, Permission::AttendanceClock))
+        .map(|(r, _)| r)
+        .find(|r| holds(r, Permission::AttendanceClock))
         .unwrap();
     let rows = f
         .ok(&spec(reader, &me, "MAIN"), "staff_attendance", "")
