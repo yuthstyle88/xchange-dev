@@ -40,6 +40,10 @@ fn stock_insufficient(detail: &str) -> AppError {
     AppError::Domain(format!("stockInsufficient: {detail}"))
 }
 
+fn stock_reserved(detail: &str) -> AppError {
+    AppError::Domain(format!("stockReserved: {detail}"))
+}
+
 /// No `inventory_positions` row means the branch holds none of that currency (design §7 SR-1: "no row ⇒ on hand 0").
 fn no_row_means_zero(quantity: Option<Decimal>) -> Decimal {
     match quantity {
@@ -238,7 +242,7 @@ impl StockReservations for PgStockReservations {
                         active_reserved_in(tx, organization_id, &branch, currency, now).await?;
                     let available = StockAvailability { on_hand, reserved }.available();
                     if available < quantity {
-                        return Err(stock_insufficient(
+                        return Err(stock_reserved(
                             "available stock is less than expired reservation quantity",
                         ));
                     }

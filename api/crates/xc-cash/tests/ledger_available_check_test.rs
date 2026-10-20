@@ -5,7 +5,7 @@
 //!
 //! A completion consumes its own reservation before it posts (SR-2, phase `Consume`), so at `post_in` every
 //! active `RESERVED` row of the (organisation, branch, currency) belongs to *other* quotes. The rule is
-//! `position.quantity − active_reserved < q` ⇒ `stockInsufficient`, and nothing is written. An APPROVED
+//! `position.quantity − active_reserved < q` ⇒ `stockReserved` (#3819; was `stockInsufficient`), and nothing is written. An APPROVED
 //! `NEGATIVE_STOCK` (N-1) still lets a posting go below zero, but never into another quote's hold.
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`. Each test works in a fresh schema
@@ -478,6 +478,11 @@ fn is_stock_insufficient(got: &Result<(), AppError>) -> bool {
     matches!(got, Err(AppError::Domain(m)) if m.contains("stockInsufficient"))
 }
 
+/// #3819 (claude/a90ab16c's ruling): a refusal caused by another quote's hold answers its own code.
+fn is_stock_reserved(got: &Result<(), AppError>) -> bool {
+    matches!(got, Err(AppError::Domain(m)) if m.starts_with("stockReserved"))
+}
+
 #[tokio::test]
 async fn s18_a_sale_into_another_quotes_hold_is_refused_and_writes_nothing() {
     let lot = Lot::start().await;
@@ -488,7 +493,7 @@ async fn s18_a_sale_into_another_quotes_hold_is_refused_and_writes_nothing() {
     let got = lot.post(&lot.sell_legs(line, &tx_id, "40"), None).await;
 
     assert!(
-        is_stock_insufficient(&got),
+        is_stock_reserved(&got),
         "100 on hand, 70 held: 40 > available 30 — {got:?}"
     );
     assert_eq!(lot.postings_count().await, before, "nothing is written");
@@ -520,7 +525,7 @@ async fn an_approved_negative_stock_never_reaches_into_another_quotes_hold() {
         .await;
 
     assert!(
-        is_stock_insufficient(&got),
+        is_stock_reserved(&got),
         "N-1 is not a licence to take held stock — {got:?}"
     );
     assert_eq!(lot.usd_position().await, d("100"));
