@@ -36,6 +36,7 @@ if [ "${1:-}" = "--json" ]; then
   rnd() { printf '%04d' $(( $(od -An -N2 -tu2 /dev/urandom) % 10000 )); }
   TELLER_PHONE="${TELLER_PHONE:-+6680001$(rnd)}"
   MANAGER_PHONE="${MANAGER_PHONE:-+6680003$(rnd)}"
+  FINANCE_PHONE="${FINANCE_PHONE:-+6680004$(rnd)}"
   CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6680002$(rnd)}"
 fi
 
@@ -51,6 +52,7 @@ BASE="$1"
 HOST="${BASE#https://}"
 TELLER_PHONE="${TELLER_PHONE:-+66800000101}"
 MANAGER_PHONE="${MANAGER_PHONE:-+66800000103}"
+FINANCE_PHONE="${FINANCE_PHONE:-+66800000104}"
 CUSTOMER_PHONE="${CUSTOMER_PHONE:-+66800000102}"
 SEED_DAYS="${SEED_DAYS:-7}"
 ORG_ID="00000000-0000-0000-0000-000000000001"   # org XC, seeded by 20261011100000_organizations.sql
@@ -161,6 +163,24 @@ else
   MANAGER_PW="(unchanged: $MANAGER_PHONE was already registered)"
 fi
 
+# A5 (cash-shift-transfer.md:17): a transfer within the limit is approved by the source branch's BRANCH_MANAGER and
+# never by its creator, so cash reaches the safe (EXTERNAL_IN, BANK -> SAFE) only when someone else creates it.
+# FINANCE holds CashManage (role_permissions.rs), so it records the move and the branch manager approves it.
+say "6c. test finance $FINANCE_PHONE (FINANCE on $BRANCH: records cash into the safe for the manager to approve)"
+FINANCE_PW="$(new_password)"
+FINANCE_SUB="$(identity_register "$FINANCE_PHONE" "$FINANCE_PW")"
+if [ -n "$FINANCE_SUB" ]; then
+  q "WITH u AS (
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$FINANCE_SUB', 'Test Finance', 'ACTIVE', 1, now(), '$OWNER_ID')
+       ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
+     INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
+     SELECT id, 'FINANCE', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
+  [ "$JSON" = 1 ] || echo "    finance created: $FINANCE_PHONE  password $FINANCE_PW"
+else
+  FINANCE_PW="(unchanged: $FINANCE_PHONE was already registered)"
+fi
+
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
 if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
@@ -177,13 +197,14 @@ else
 fi
 
 if [ "$JSON" = 1 ]; then
-  case "$TELLER_PW$CUSTOMER_PW$MANAGER_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
+  case "$TELLER_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
   cat >&3 <<JSON
 {
   "baseUrl": "$BASE",
   "customer": { "phone": "$CUSTOMER_PHONE", "password": "$CUSTOMER_PW" },
   "teller":   { "phone": "$TELLER_PHONE", "password": "$TELLER_PW" },
   "branchManager": { "phone": "$MANAGER_PHONE", "password": "$MANAGER_PW" },
+  "finance":  { "phone": "$FINANCE_PHONE", "password": "$FINANCE_PW" },
   "admin":    { "identifier": "<the owner's sign-in>", "password": "<the owner's password>" },
   "referralCode": "TEST1234",
   "branch": "$BRANCH",
