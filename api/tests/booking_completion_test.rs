@@ -41,7 +41,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Row};
 use uuid::Uuid;
 
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_booking::infrastructure::booking_repository::PgBookingRepository;
 use xc_booking::infrastructure::slot_repository::PgSlotRepository;
@@ -277,19 +277,10 @@ impl TestHarness {
         let doc_ref = format!("DOC-{tx_id}");
         let sub_id = format!("sub-{tx_id}");
         sqlx::query(
-            "INSERT INTO transactions (\
-                id, organization_id, document_ref, branch_id, mode, status, submission_id, payload_hash, \
-                customer_id, customer_name, nationality, type, code, amount, \
-                unit_size, rate, principal, fee, bank_fee, received, paid, \
-                method, payment_ref, account, staff_id, booking_no, notes, \
-                value_date, paid_at, recorded_at, recorded_by, completed_at, count_confirmed \
-             ) VALUES (\
-                $1, $2, $3, $4, 'DEMO', 'COMPLETED', $5, 'payload-hash', \
-                $6, 'Test Customer', 'THA', 'BUY', 'USD', 100, \
-                1, 32.2, 3220, 0, 0, 3220, 100, \
-                'Cash', '', 'Cash Drawer', 'teller-1', 'B261014-0001', '', \
-                '2026-10-14', now(), now(), 'teller-1', now(), true \
-             ) ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, status, submission_id, payload_hash, \
+                customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+                recorded_at, recorded_by, completed_at, count_confirmed) VALUES ($1, $2, $3, $4, 'DEMO', 'COMPLETED', $5, 'payload-hash', $6, 'Test Customer', 'THA', \
+                'teller-1', 'B261014-0001', '', '2026-10-14', now(), now(), 'teller-1', now(), true) ON CONFLICT (id) DO NOTHING",
         )
         .bind(tx_id)
         .bind(self.org_id)
@@ -1086,7 +1077,7 @@ async fn no_rate_check_depends_on_the_booking() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let claim = BookingClaim {
         booking_id: "BK-test".to_string(),
@@ -1155,7 +1146,7 @@ async fn save_step_with_checked_in_booking_completes_with_transaction_id() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let claim = BookingClaim {
         booking_id: "BK-save-checked-in".to_string(),
@@ -1192,8 +1183,8 @@ async fn save_step_with_checked_in_booking_completes_with_transaction_id() {
             .await
             .expect("fetch tx");
     assert!(
-        tx_booking_id.is_none(),
-        "transactions.booking_id must stay NULL per R1"
+        tx_booking_id == Some("BK-save-checked-in".to_owned()),
+        "transactions.booking_id names the Blueprint booking (BK-11)"
     );
 
     harness.teardown().await;
@@ -1239,7 +1230,7 @@ async fn save_step_with_another_customer_booking_refuses_booking_not_this_custom
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let claim = BookingClaim {
         booking_id: "BK-save-other-cust".to_string(),

@@ -21,7 +21,10 @@
 // - E7 every refusal shows the sentence for its CODE from ./i18n, never err.message and never by HTTP status;
 //   an unknown code → errUnknown; a non-ApiError → errNetwork.
 // - E8 one request while pending; the password is concealed again after a refusal.
-// - E9 a `mustChange` in an answer changes nothing (Identity owns passwords, design §5 B2).
+// - E9 the legacy top-level `mustChange` field in an answer changes nothing. Amended by W5 (claude/177aa7ef, on the
+//   FE controller's ruling xchange#564 issuecomment-6245751076): the owner's Q5 = A (PR 3083
+//   issuecomment-6245259930) overturned "Identity owns passwords" (OR §5.3 / O-4). A forced change now comes only
+//   from `user.mustChangePassword`, pinned in ./LoginScreen.w5.test.tsx; this row keeps the old field unread.
 // - E10 texts and error sentences follow setLang.
 // The texts are asserted through ./i18n (whose Thai is pinned in i18n.test.ts).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -295,7 +298,7 @@ describe('LoginScreen — signing in (E4, E8, E9)', () => {
     expect(navigate.mock.calls).toEqual([[to]]);
   });
 
-  it('a mustChange in the answer changes nothing: no /staff detour (E9)', async () => {
+  it('the legacy top-level mustChange field changes nothing: no /staff detour, only user.mustChangePassword gates (E9, amended by W5)', async () => {
     const { host, navigate } = await signedOutScreen({
       login: async () => ({ user: TELLER, mustChange: true }) as unknown as { user: SessionUser },
     });

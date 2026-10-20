@@ -192,6 +192,24 @@ impl Room {
         answer.json()
     }
 
+    /// `branch`'s entity. It has no writer since CA-10 (#626 Q5, Q7): a read-only column, seeded
+    /// here by SQL in the shape the custody repository reads (`custody_repository.rs`
+    /// `entity_to_json`).
+    async fn seed_entity(&self, branch: &str, company: &str, site: &str) {
+        sqlx::query(
+            "INSERT INTO ops_state (branch_id, phase, entity) VALUES ($1, 'CLOSED', \
+             jsonb_build_object('company', $2::text, 'site', $3::text, 'confirmedBy', 'owner', \
+             'at', 1791342000000::bigint)) \
+             ON CONFLICT (branch_id) DO UPDATE SET entity = EXCLUDED.entity",
+        )
+        .bind(branch)
+        .bind(company)
+        .bind(site)
+        .execute(&self.desk.db.pool)
+        .await
+        .unwrap_or_else(|e| panic!("seed {branch}'s entity: {e}"));
+    }
+
     /// The `employees` of `/api/employees` `list`, as the owner reads it.
     async fn list(&self) -> Value {
         let answer = self.employees("list", json!({})).await;
@@ -274,17 +292,20 @@ fn callers() -> Vec<(String, Option<Actor>)> {
     callers
 }
 
-/// The `{enabled, entity}` the view must answer, read from the snapshot's `operations`:
-/// `entity` is `null` or an object whose `company` and `site` are the snapshot's.
+/// The `{entity}` the view must answer, read from the snapshot's `operations`: `entity` is `null`
+/// or an object whose `company` and `site` are the snapshot's. Re-expected for CA-10 #626 by the
+/// ticket author (ruling Q8 A): `enabled` left the view with the Enable switch (design §6); the
+/// compat snapshot keeps it as a constant `false`.
 fn assert_operations_match(data: &Value, operations: &Value, what: &str) {
     assert_eq!(
         keys(data),
-        set(&["enabled", "entity"]),
-        "{what}: data is exactly {{enabled, entity}} (bounded, design §4.2): {data}"
+        set(&["entity"]),
+        "{what}: data is exactly {{entity}} (bounded, design §4.2): {data}"
     );
     assert_eq!(
-        data["enabled"], operations["enabled"],
-        "{what}: enabled is the snapshot's"
+        operations["enabled"],
+        json!(false),
+        "{what}: the compat snapshot's enabled is a constant false (Q8 A)"
     );
     if operations["entity"].is_null() {
         assert_eq!(data["entity"], Value::Null, "{what}: no entity yet");
@@ -562,12 +583,7 @@ async fn admin_operations_asks_nobody_signed_in_to_sign_in() {
 #[actix_web::test]
 async fn admin_operations_answers_exactly_whom_the_admin_snapshot_row_allows() {
     let room = Room::open().await;
-    room.employees(
-        "entity",
-        json!({ "branchId": "A1", "company": "Alpha Co.", "site": "Alpha Desk",
-                "confirmSeparated": true }),
-    )
-    .await;
+    room.seed_entity("A1", "Alpha Co.", "Alpha Desk").await;
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
@@ -602,10 +618,10 @@ async fn admin_operations_answers_exactly_whom_the_admin_snapshot_row_allows() {
 
 // ── admin_operations: what it answers ───────────────────────────────────────
 
-/// Before anything is set, every branch answers `{enabled: false, entity: null}` — the
-/// snapshot's.
+/// Before anything is set, every branch answers `{entity: null}` — the snapshot's. (CA-10 #626 Q8
+/// A: no `enabled`.)
 #[actix_web::test]
-async fn admin_operations_answers_the_snapshots_enabled_and_entity_and_nothing_else() {
+async fn admin_operations_answers_the_snapshots_entity_and_nothing_else() {
     let room = Room::open().await;
     for branch in [MAIN, "A1", "Z9"] {
         let body = room
@@ -624,7 +640,7 @@ async fn admin_operations_answers_the_snapshots_enabled_and_entity_and_nothing_e
         );
         assert_eq!(
             body["data"],
-            json!({ "enabled": false, "entity": null }),
+            json!({ "entity": null }),
             "{branch}: nothing set yet"
         );
         let operations = room.operations("OWNER", branch).await;
@@ -638,14 +654,8 @@ async fn admin_operations_answers_the_snapshots_enabled_and_entity_and_nothing_e
 #[actix_web::test]
 async fn admin_operations_answers_the_named_branch_and_staff_their_own() {
     let room = Room::open().await;
-    room.employees(
-        "entity",
-        json!({ "branchId": "A1", "company": "Alpha Co.", "site": "Alpha Desk",
-                "confirmSeparated": true }),
-    )
-    .await;
+    room.seed_entity("A1", "Alpha Co.", "Alpha Desk").await;
     let a1 = room.view(OPS_VIEW, "OWNER", "branch=A1").await;
-    assert_eq!(a1["data"]["enabled"], json!(false), "{a1}");
     assert_eq!(a1["data"]["entity"]["company"], json!("Alpha Co."), "{a1}");
     assert_eq!(a1["data"]["entity"]["site"], json!("Alpha Desk"), "{a1}");
     assert_operations_match(&a1["data"], &room.operations("OWNER", "A1").await, "A1");
@@ -670,10 +680,10 @@ async fn admin_operations_answers_the_named_branch_and_staff_their_own() {
 }
 
 /// Versioned (design §4.2, ticket §9 row 3): an equal `since` answers `changed: false` with no
-/// data; each of the view's writers (`/api/employees` `entity`, then `enable`) moves the
-/// branch's version, so the same `since` then answers `changed: true` with what was written.
+/// data. Re-expected for CA-10 #626 by the ticket author: the view's two writers (`/api/employees`
+/// `entity` and `enable`) are retired (Q7, design §6), so the half that followed them retires too.
 #[actix_web::test]
-async fn admin_operations_follows_its_branchs_since_through_entity_and_enable() {
+async fn admin_operations_answers_an_equal_since_with_no_data() {
     let room = Room::open().await;
     let v0 = room.version(MAIN).await;
     let same = room
@@ -683,53 +693,6 @@ async fn admin_operations_follows_its_branchs_since_through_entity_and_enable() 
         same,
         json!({ "version": v0, "changed": false }),
         "nothing changed: O(1), no data"
-    );
-
-    room.employees(
-        "entity",
-        json!({ "branchId": MAIN, "company": "Main Co.", "site": "Main Desk",
-                "confirmSeparated": true }),
-    )
-    .await;
-    let v1 = room.version(MAIN).await;
-    assert!(v1 > v0, "entity moves MAIN's version ({v0} → {v1})");
-    let after_entity = room
-        .view(OPS_VIEW, "OWNER", &format!("branch=MAIN&since={v0}"))
-        .await;
-    assert_eq!(after_entity["changed"], json!(true), "{after_entity}");
-    assert_eq!(after_entity["version"], json!(v1), "{after_entity}");
-    assert_eq!(
-        after_entity["data"]["entity"]["company"],
-        json!("Main Co."),
-        "{after_entity}"
-    );
-    assert_eq!(
-        after_entity["data"]["enabled"],
-        json!(false),
-        "{after_entity}"
-    );
-    let quiet = room
-        .view(OPS_VIEW, "OWNER", &format!("branch=MAIN&since={v1}"))
-        .await;
-    assert_eq!(quiet, json!({ "version": v1, "changed": false }));
-
-    room.employees("enable", json!({ "branchId": MAIN })).await;
-    let v2 = room.version(MAIN).await;
-    assert!(v2 > v1, "enable moves MAIN's version ({v1} → {v2})");
-    let after_enable = room
-        .view(OPS_VIEW, "OWNER", &format!("branch=MAIN&since={v1}"))
-        .await;
-    assert_eq!(after_enable["changed"], json!(true), "{after_enable}");
-    assert_eq!(after_enable["version"], json!(v2), "{after_enable}");
-    assert_eq!(
-        after_enable["data"]["enabled"],
-        json!(true),
-        "{after_enable}"
-    );
-    assert_operations_match(
-        &after_enable["data"],
-        &room.operations("OWNER", MAIN).await,
-        "after enable",
     );
     room.finish().await;
 }
@@ -799,10 +762,11 @@ fn the_employees_type_carries_the_list_rows() {
     assert!(!ts.contains("bigint"), "no bigint\n{ts}");
 }
 
+/// Re-expected for CA-10 #626 by the ticket author (ruling Q8 A): `enabled` leaves the type.
 #[test]
-fn the_operations_type_carries_enabled_and_a_nullable_entity() {
+fn the_operations_type_carries_a_nullable_entity_and_no_enabled() {
     let ts = exported(OPS_VIEW);
-    assert!(ts.contains("enabled: boolean"), "enabled: boolean\n{ts}");
+    assert!(!ts.contains("enabled"), "no enabled\n{ts}");
     assert!(
         ts.lines()
             .any(|l| l.contains("entity: ") && l.contains(" | null")),

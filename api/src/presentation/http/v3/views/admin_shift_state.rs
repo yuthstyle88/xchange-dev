@@ -18,7 +18,7 @@ use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use crate::application::compat::snapshot::uri_component;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_shift_state::AdminShiftStateData;
-use crate::presentation::dto::v3::common::NoFilter;
+use crate::presentation::dto::v3::common::{NoFilter, OpenShiftDto};
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 struct AdminShiftStateBranchView {
@@ -46,13 +46,19 @@ impl BranchView for AdminShiftStateBranchView {
         let shifts = self.shifts.clone();
         let branch = branch.clone();
         async move {
-            let active = shifts.active(&branch).await?;
-            let shift_open = active.is_some();
+            let open_shifts: Vec<OpenShiftDto> = shifts
+                .open_of_branch(&branch)
+                .await?
+                .into_iter()
+                .map(OpenShiftDto::from)
+                .collect();
+            let shift_open = !open_shifts.is_empty();
             let desk_url = format!("/desk?branch={}", uri_component(branch.as_str()));
 
             Ok(AdminShiftStateData {
                 shift_open,
                 desk_url,
+                open_shifts,
             })
         }
     }

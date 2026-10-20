@@ -232,13 +232,11 @@ async fn seed_completed_cash_sale(
 
     let mut tx = pool.begin().await.expect("begin tx");
     sqlx::query(
-        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, \
-         submission_id, payload_hash, customer_id, customer_name, nationality, type, code, \
-         amount, rate, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
-         staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, status, completed_at) \
-         VALUES ($1, $2, $3, 'MAIN', 'LIVE', $4, $5, $6, 'CU-1', 'Somchai', 'THA', 'SELL', $7, \
-         $8::numeric, $9::numeric, $10::numeric, 0, 0, $10::numeric, 0, 'Cash', '', 'Cash drawer 1', \
-         'owner', '', '', CURRENT_DATE, now(), now(), 'owner', 'COMPLETED', now())",
+        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
+         customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+         recorded_at, recorded_by, status, completed_at) \
+         VALUES ($1, $2, $3, 'MAIN', 'LIVE', $4, $5, $6, 'CU-1', 'Somchai', 'THA', 'owner', '', '', \
+         CURRENT_DATE, now(), now(), 'owner', 'COMPLETED', now())",
     )
     .bind(tx_id)
     .bind(org_id)
@@ -246,10 +244,6 @@ async fn seed_completed_cash_sale(
     .bind(shift_id)
     .bind(format!("sub-{req}"))
     .bind(format!("hash-{req}"))
-    .bind(currency)
-    .bind(quantity)
-    .bind(rate)
-    .bind(settle_thb)
     .execute(&mut *tx)
     .await
     .expect("insert transactions");
@@ -330,7 +324,11 @@ async fn case_1_no_open_shift_answers_the_same_empty_answer_as_today_with_last_c
     let data = room.cash("").await;
 
     // The same empty answer as today for shift, stock, stats, reference
-    assert_eq!(data["shift"], json!(null), "no open shift has shift: null");
+    assert_eq!(
+        data["openShifts"],
+        json!([]),
+        "no open shift has openShifts: [] (CA-10q)"
+    );
     assert_eq!(data["stock"], json!([]), "no open shift has empty stock");
     assert_eq!(data["stats"], json!(null), "no open shift has stats: null");
     assert_eq!(
@@ -411,7 +409,7 @@ async fn case_2_the_last_closed_shift_has_a_verified_count_reflected_in_last_cou
 
     let data = room.cash("").await;
 
-    assert_eq!(data["shift"]["id"], "S-OPEN-2");
+    assert_eq!(data["openShifts"][0]["shiftId"], "S-OPEN-2");
     assert_eq!(
         data["lastCounted"],
         json!([
@@ -446,7 +444,7 @@ async fn case_3_a_drawer_to_safe_move_of_500_thb_on_the_open_shift_includes_in_o
 
     let data = room.cash("").await;
 
-    assert_eq!(data["shift"]["id"], "S-OPEN-3");
+    assert_eq!(data["openShifts"][0]["shiftId"], "S-OPEN-3");
 
     // Outgoing stat includes the 500 THB drawer->safe move (thb_out = moved_out)
     let stats = &data["stats"];
@@ -504,7 +502,7 @@ async fn case_4_an_exchange_only_leaves_thb_in_and_thb_out_unchanged() {
 
     let data = room.cash("").await;
 
-    assert_eq!(data["shift"]["id"], "S-OPEN-4");
+    assert_eq!(data["openShifts"][0]["shiftId"], "S-OPEN-4");
 
     // thbIn/thbOut are unchanged by the exchange (both 0.00), so incoming is 4000.00 from cash_received alone
     let stats = &data["stats"];

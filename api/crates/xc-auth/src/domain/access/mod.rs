@@ -1,20 +1,27 @@
 pub mod actor;
 pub mod authorizer;
 pub mod branch_scope;
+pub mod grant_guard;
 pub mod permission;
+pub mod permission_module;
 pub mod role;
 pub mod role_permissions;
 pub mod scope_rule;
 pub mod scoped_role;
 pub mod session_branch;
+pub mod standing;
+pub mod target_user;
 pub mod v3_roles;
 
 pub use actor::Actor;
 pub use authorizer::{Authorizer, Grant, Refusal, Target};
 pub use branch_scope::BranchScope;
+pub use grant_guard::{AccountAction, GrantGuard, GrantRefusal};
 pub use permission::Permission;
 pub use role::Role;
 pub use role_permissions::RolePermissions;
 pub use scope_rule::ScopeRule;
 pub use scoped_role::ScopedRole;
 pub use session_branch::{BranchRef, SessionBranch};
+pub use standing::{Standing, StandingKind};
+pub use target_user::TargetUser;

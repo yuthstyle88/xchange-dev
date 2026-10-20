@@ -1,0 +1,14 @@
+# Guard tests (source-scanning tests that run when guards=true).
+# Format: <package> <test-binary>
+xc-kernel unchecked_minor_ratchet_test
+xchange app_no_completion_route_test
+xchange booking_lifecycle_factory_guard_test
+xchange kiosk_check_stale_has_no_default_test
+xchange log_no_debug_errors_test
+xchange log_no_inline_debug_error_test
+xchange money_silent_zero_ratchet_test
+xchange no_catch_all_error_text_guard_test
+xchange no_ts_export_test
+xchange or4_routes_guard_test
+xchange tx_form_stored_amount_no_silent_zero_test
+xchange write_routes_same_origin_guard_test

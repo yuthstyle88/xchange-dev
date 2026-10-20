@@ -7,36 +7,25 @@
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; it fails without it, it does not skip.
 //!
-//! Signatures assumed:
-//! - `ShiftService::open(&BranchId, OpenShift, actor: &str, now)` as on main; the actor is the opener id in either
-//!   form (an employee id = `users.legacy_employee_id`, a `users.id`, or `"owner"`).
-//! - `ShiftError::TellerUnknown` with the sentence [`TELLER_UNKNOWN`], returned as `AppError::Domain(sentence)`
-//!   like every `ShiftError`.
+//! CA-10 (#626, #2955) retired the four tests of "the binary writes the teller" through v2's
+//! `ShiftService::open(&BranchId, OpenShift, actor, now)`: that path is deleted (BE controller ruling, #626
+//! issuecomment-6234829938 item 2). A v3 shift is opened by a verified count, which names its teller as a
+//! `users.id` (`ShiftService::open_on_verified`), so no opener id is resolved any more. M1's mapping of existing
+//! rows (§8 M1 items 1–2) is still pinned below.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, TimeZone, Utc};
-use pos_error::AppError;
-use pos_infra::transactions::Transactor;
-use serde_json::json;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_kernel::branch_tx::BranchTx;
-use xc_kernel::ids::BranchId;
-use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
+use xc_testdb::people::{RoleRow, seed_roles};
 
 const M1: i64 = 20261012100000;
 const M1_FILE: &str = "20261012100000_cash.sql";
-
-/// The sentence of `ShiftError::TellerUnknown` ([required], design §8 M1 item 3: "no match → `tellerUnknown`").
-const TELLER_UNKNOWN: &str = "ไม่พบผู้เปิดกะในรายชื่อผู้ใช้";
 
 /// The tables §4.1 creates.
 const NEW_TABLES: [&str; 7] = [
@@ -249,18 +238,29 @@ impl Db {
     async fn owner_user(&self) -> String {
         let id = self.user(None).await;
         let org = self.org().await;
-        for role in ["EXECUTIVE", "ADMIN"] {
-            sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 VALUES ($1::uuid, $2, $3::uuid, NULL)",
-            )
-            .bind(&id)
-            .bind(role)
-            .bind(&org)
-            .execute(&self.pool)
-            .await
-            .expect("insert the owner's role");
-        }
+        let valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let roles = [
+            RoleRow {
+                role_code: "EXECUTIVE",
+                branch_id: None,
+                valid_from,
+                valid_to: None,
+            },
+            RoleRow {
+                role_code: "ADMIN",
+                branch_id: None,
+                valid_from,
+                valid_to: None,
+            },
+        ];
+        seed_roles(
+            &mut self.pool.acquire().await.expect("acquire connection"),
+            &id,
+            &org,
+            &roles,
+        )
+        .await
+        .expect("insert the owner's role");
         id
     }
 
@@ -314,19 +314,6 @@ impl Db {
             .await
             .expect("read the shift's teller")
     }
-
-    fn service(&self) -> ShiftService<PgShiftRepository> {
-        ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.pool.clone())),
-            BranchTx::new(Transactor::new(self.pool.clone())),
-        )
-    }
-}
-
-fn open_cmd(n: u32) -> OpenShift {
-    let request_id = format!("00000000-0000-4000-8000-{n:012x}");
-    OpenShift::from_payload(&json!({ "requestId": request_id, "opening": { "THB": "1000" } }))
-        .expect("a well-formed open payload")
 }
 
 // ── M1 on existing rows (§8 M1 items 1–2) ───────────────────────────────────
@@ -699,71 +686,6 @@ async fn every_face_value_fits_its_currencys_minor_unit() {
 // ── the binary writes the teller (§8 M1 item 3) ─────────────────────────────
 
 #[tokio::test]
-async fn opening_a_shift_writes_the_teller_from_either_form_of_the_opener() {
-    let db = Db::fresh().await;
-    let branches = ["A", "B", "C"];
-    for b in branches {
-        db.branch(b).await;
-    }
-    let alice = db.user(Some("E-ALICE")).await;
-    let owner = db.owner_user().await;
-    let service = db.service();
-    let cases = [
-        ("A", "E-ALICE", alice.clone()),
-        ("B", "owner", owner),
-        ("C", alice.as_str(), alice.clone()),
-    ];
-    for (n, (branch, opener, teller)) in cases.into_iter().enumerate() {
-        let shift = service
-            .open(
-                &BranchId::new(branch),
-                open_cmd(n as u32 + 1),
-                opener,
-                at(n as i64),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("open by {opener}: {e:?}"));
-        assert_eq!(
-            db.teller_of(&shift.id).await,
-            Some(teller),
-            "opener {opener}"
-        );
-    }
-}
-
-#[tokio::test]
-async fn an_opener_with_no_user_is_refused_and_no_shift_is_written() {
-    let db = Db::fresh().await;
-    db.branch("A").await;
-    db.user(Some("E-ALICE")).await;
-    let refused = db
-        .service()
-        .open(&BranchId::new("A"), open_cmd(1), "E-NOBODY", at(0))
-        .await;
-    match refused {
-        Err(AppError::Domain(sentence)) => assert_eq!(sentence, TELLER_UNKNOWN),
-        other => panic!("expected AppError::Domain({TELLER_UNKNOWN:?}), got {other:?}"),
-    }
-    assert_eq!(db.count("SELECT count(*) FROM shifts").await, 0);
-    assert_eq!(db.count("SELECT count(*) FROM shift_balances").await, 0);
-}
-
-#[tokio::test]
-async fn owner_with_no_owner_user_is_refused() {
-    let db = Db::fresh().await;
-    db.branch("A").await;
-    let refused = db
-        .service()
-        .open(&BranchId::new("A"), open_cmd(1), "owner", at(0))
-        .await;
-    assert!(
-        matches!(&refused, Err(AppError::Domain(s)) if s == TELLER_UNKNOWN),
-        "got {refused:?}"
-    );
-    assert_eq!(db.count("SELECT count(*) FROM shifts").await, 0);
-}
-
-#[tokio::test]
 async fn existing_shifts_opened_through_the_rpc_route_name_their_opener_by_username() {
     // `/api/rpc` passes `caller.username` as the opener (`compat/rpc.rs`), and v2 prints it as `staff`.
     let db = Db::before_m1().await;
@@ -784,34 +706,4 @@ async fn existing_shifts_opened_through_the_rpc_route_name_their_opener_by_usern
         Some(owner),
         "the owner's username → the owner's user"
     );
-}
-
-#[tokio::test]
-async fn opening_a_shift_by_username_writes_the_same_teller() {
-    let db = Db::fresh().await;
-    db.branch("A").await;
-    db.branch("B").await;
-    let bob = db.employee("E-BOB", "bob", "A").await;
-    let owner = db.owner_user().await;
-    db.owner_row("boss").await;
-    let service = db.service();
-    for (n, (branch, opener, teller)) in [("A", "bob", bob), ("B", "boss", owner)]
-        .into_iter()
-        .enumerate()
-    {
-        let shift = service
-            .open(
-                &BranchId::new(branch),
-                open_cmd(n as u32 + 1),
-                opener,
-                at(n as i64),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("open by {opener}: {e:?}"));
-        assert_eq!(
-            db.teller_of(&shift.id).await,
-            Some(teller),
-            "opener {opener}"
-        );
-    }
 }

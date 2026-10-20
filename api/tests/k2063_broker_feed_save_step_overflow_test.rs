@@ -13,7 +13,7 @@ use pos_error::AppError;
 use rust_decimal::Decimal;
 use snapshot_common::TestDb;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_customer::domain::customer::value_objects::customer_details::CustomerDetails;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -113,11 +113,10 @@ async fn seed_fixtures(db: &TestDb, doc_ref: &str) -> Uuid {
     let tx_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
+             customer_id, customer_name, nationality, staff_id, booking_no, notes, \
              value_date, paid_at, recorded_at, recorded_by, status, completed_at) \
-         VALUES ($1, $2, 'MAIN', 'DEMO', NULL, $3, 'payload-hash', 'CUST-001', 'Customer', 'THA', 'SELL', 'USD', \
-             100, 35, 3500, 0, 0, 3500, 0, 'Cash', '', '', 'owner', '', '', \
+         VALUES ($1, $2, 'MAIN', 'DEMO', NULL, $3, 'payload-hash', 'CUST-001', 'Customer', 'THA', \
+             'owner', '', '', \
              DATE '2026-10-06', now(), now(), 'owner', 'COMPLETED', now())",
     )
     .bind(tx_id)
@@ -126,6 +125,18 @@ async fn seed_fixtures(db: &TestDb, doc_ref: &str) -> Uuid {
     .execute(&db.pool)
     .await
     .expect("seed transaction");
+
+    sqlx::query(
+        "INSERT INTO transaction_lines (id, organization_id, transaction_id, shop_side, currency, \
+             quantity, unit_size, rate_snapshot, thb_amount, fee_thb, settle_thb, line_no, created_at, updated_at) \
+         SELECT gen_random_uuid(), b.organization_id, $1, 'SELL', 'USD', \
+             100, 1, 35, 3500, 0, 3500, 1, now(), now() \
+         FROM branches b WHERE b.id = 'MAIN'",
+    )
+    .bind(tx_id)
+    .execute(&db.pool)
+    .await
+    .expect("seed transaction line");
 
     tx_id
 }
@@ -143,7 +154,7 @@ async fn overflowing_principal_is_refused_with_app_error_internal() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let ctx = SaveContext {
         branch: &branch,
@@ -205,7 +216,7 @@ async fn ordinary_principal_records_completed_broker_exchange_feed() {
         id: "teller-1".to_string(),
         username: "teller-1".to_string(),
         employee_id: Some("teller-1".to_string()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     };
     let ctx = SaveContext {
         branch: &branch,

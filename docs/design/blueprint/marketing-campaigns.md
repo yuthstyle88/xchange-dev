@@ -98,7 +98,8 @@ look may change**.
 | Issue coupons (generate N codes, or one personal code) | MARKETING | `MarketingCampaigns` |
 | Define a segment, take a snapshot, preview (M03) | MARKETING | `MarketingMembers` (no identity values: masked names only, #554 K8) |
 | Read performance (M04) | MARKETING, EXECUTIVE | `MarketingPerformance` |
-| Get a benefit on a quote, use a coupon | TELLER at the desk; the customer app later (#558) | `ExchangeTransact` (desk) |
+| Get a benefit on a quote, use a coupon | TELLER at the desk | `ExchangeTransact` (desk) |
+| See my usable coupons and the benefits I qualify for (C05, read-only, §6.3) | CUSTOMER in the app (#558) | `CustomerSelf` |
 
 ## 4. Model
 
@@ -298,10 +299,12 @@ and v3's command seam otherwise (mapping K1).
 | `couponIssue` (N anonymous codes, or one for a customer; codes returned once) | `POST /api/campaigns/:id/coupons` | `MarketingCampaigns` |
 | `segmentDefine` / `segmentSnapshot` | `POST /api/segments`, `POST /api/segments/:id/snapshots` | `MarketingMembers` |
 | `marginGuardSet` | `PUT /api/margin-guard` | EXECUTIVE (`RatePolicySave`, the rate-frame permission) |
+| view `margin_guard` (added 2026-10-19, FE gap section B): `{ maxSpreadShare, setBy, setAt }` of the caller's organisation, every field `null` when no `margin_guards` row exists; file `v3/views/margin_guard.rs`, DTO `dto/v3/margin_guard.rs` | `/api/v3/views/margin_guard` | EXECUTIVE (`RatePolicySave`, as `marginGuardSet`) |
 | view `campaigns` (M01: status incl. derived, budget used/left, uses, period totals) | `/api/v3/views/campaigns` | `MarketingCampaigns` |
 | view `campaign` (M02: versions, rules, simulations, approval) | `/api/v3/views/campaign?id=` | `MarketingCampaigns` |
 | view `segment_preview` (M03: count, metric distribution, masked sample; tiers from #559's mirror) | `/api/v3/views/segment_preview` | `MarketingMembers` |
 | view `campaign_performance` (M04, D-15) | `/api/v3/views/campaign_performance` | `MarketingPerformance` |
+| view `my_benefits` (C05 "สิทธิ/คูปอง", O-3 decided: the customer's own usable coupons, never their code, and the open benefits they qualify for on APP; read-only, §6.3) | `/api/v3/views/my_benefits` | `CustomerSelf` |
 | `POST /api/quotes` (#551) gains optional `couponCode`; its DTO's `benefits` lists the snapshot's `applied` | unchanged route | `ExchangeTransact` |
 
 Errors: `benefitLimitReached` (Blueprint `BENEFIT_LIMIT_REACHED`; at completion only — at quote an exhausted benefit is
@@ -385,6 +388,11 @@ classDiagram
   class ApprovalSubject { <<trait xc-approval domain/subject.rs>> }
   class ApprovalPolicy { <<trait xc-approval domain/policy.rs>> }
   class ExchangeArithmetic { <<xc-kernel money/exchange_arithmetic.rs>> }
+  class CustomerBenefitListing { <<xc-marketing domain/benefit/listing.rs (C05, §6.3)>> +shown_on_app(rule, segment_snapshot_id, facts) bool +line_conditions(eligibility) LineConditions +summary(rule, registry) Result~BenefitSummary, ParamError~ }
+  class PgCustomerBenefits { <<xc-marketing infrastructure/pg_customer_benefits.rs (C05, §6.3)>> +personal_coupons_in(tx, org, customer, now) +open_rules_in(tx, org, now) }
+  class MyBenefitsView { <<api presentation/http/v3/views/my_benefits.rs (C05, §6.3)>> CustomerSelf, read-only }
+  class MyBenefitsData { <<api presentation/dto/v3/my_benefits.rs → web/src/shared/api/generated/my_benefits.ts>> coupons; benefits }
+  class MembershipMirror { <<trait xc-loyalty domain/membership_mirror.rs (#559)>> +tier_of(org, customer) }
 
   Campaign *-- CampaignVersion
   CampaignVersion *-- BenefitRule
@@ -426,6 +434,14 @@ classDiagram
   SegmentSnapshotService --> ConsentGate
   CustomerMetricsSource <|.. PgCustomerMetrics
   PerformanceReader ..|> PromoExpenseFacts
+  MyBenefitsView --> PgCustomerBenefits : personal_coupons_in / open_rules_in
+  MyBenefitsView --> CustomerBenefitListing : shown_on_app / line_conditions / summary
+  MyBenefitsView --> MembershipMirror : tier_of
+  MyBenefitsView --> MarketingConsentGate : prefetch_in
+  MyBenefitsView --> MarketingReferralSource : prefetch_in
+  MyBenefitsView --> MyBenefitsData : answers
+  CustomerBenefitListing --> Eligibility : check (customer conditions only)
+  CustomerBenefitListing --> CalculatorRegistry : validate_params
 ```
 
 **Files.** Every class above has its own file except two pairs written by one ticket each: `CampaignVersionSubject` +
@@ -469,7 +485,10 @@ save, `branchId` for simulate); `Err` ⇒ its existing 500 `database`. The check
 | Broker-Platform commission | M04 contribution's commission term | `awaitsBroker`, as `executive-finance.md` does |
 | AP-1 `ApprovalService`, `approvalDecide` (merged) | MK-4 | — |
 | this design `PromoExpenseFacts` | `executive-finance.md`'s `contribution_thb` (clears `AwaitsCampaigns`) | executive keeps `AwaitsCampaigns` until a one-line follow-up in its `ports.rs` |
-| this design `BenefitEngine`, `benefit_snapshot` | #558 customer app (C05 "สิทธิ/คูปอง"), #555 bookings (indicative quotes) | — |
+| this design `BenefitEngine`, `benefit_snapshot` | #555 bookings: an INDICATIVE quote shows an estimated benefit with no reservation (O-3 decided, §10) | — |
+| this design `CustomerBenefitListing` (`xc-marketing/src/domain/benefit/listing.rs`), `PgCustomerBenefits` (`xc-marketing/src/infrastructure/pg_customer_benefits.rs`) | `MyBenefitsView` (`api/src/presentation/http/v3/views/my_benefits.rs`), §6.3 | — (one ticket writes all four files) |
+| `MyBenefitsData` (`api/src/presentation/dto/v3/my_benefits.rs`, generated `web/src/shared/api/generated/my_benefits.ts`) | #558 C05 screen "สิทธิ/คูปอง" (`web/src/screens/customer/member/**`, the FE controller's ticket) | before it merges, the screen shows nothing for this block and makes no call (no guessed shape) |
+| #559 `MembershipMirror::tier_of` (`xc-loyalty/src/domain/membership_mirror.rs:21`, `PgMembershipMirror` `infrastructure/pg_membership_mirror.rs:35`) | `MyBenefitsView` (tier conditions) | — (merged) |
 | #2031 `CampaignBranchScope::first_outside_org_in` (`api/src/infrastructure/marketing/branch_scope.rs`) | `campaign_create.rs`, `campaign_version_save.rs`, `campaign_simulate.rs` (replaces #1992's inline query there) | — (one ticket writes it and moves all three callers) |
 
 ### 6.2 What a coupon replay keeps (#1622)
@@ -520,6 +539,127 @@ DROP FUNCTION IF EXISTS strip_coupon_codes_on_finish();
 4. *`down`.* None. The objects were never tracked by a migration, and recreating them would bring the flake back.
 
 The migration drops database objects, so it needs the owner's approval before #1622 gets `ready` (rule: migration and destructive ops ask).
+
+### 6.3 The customer's benefits: view `my_benefits` (C05, O-3)
+
+Added by claude/studio-claude-1 on the BE lane controller claude/a90ab16c's order, 2026-10-19. The decision is O-3's answer A (#564 issuecomment-6262478258, §10). Lines are cited at `main` `7e99ed0a`.
+
+**What it is:** a read-only view of the signed-in customer's own benefits, for C05 `/app/member` "สิทธิ/คูปอง".
+- It makes no quote, no reservation and no budget read, and it writes nothing. The counter stays the only place money is reserved (D-8).
+- It answers two lists:
+  - **(a) `coupons`:** the customer's personal coupons that are usable now. **Never the code**: it is shown once, at issue (D-9).
+  - **(b) `benefits`:** the open rules the customer qualifies for on channel `APP`.
+
+**Files and classes** (each its own new file; §6 diagram):
+
+| Class | File | Holds |
+|---|---|---|
+| `CustomerBenefitListing` (free functions) | `api/crates/xc-marketing/src/domain/benefit/listing.rs` | the pure rules below. Registered by one `pub mod listing;` line in `domain/benefit/mod.rs` |
+| `PgCustomerBenefits` | `api/crates/xc-marketing/src/infrastructure/pg_customer_benefits.rs` | the two reads. Registered by one `pub mod pg_customer_benefits;` line in `src/lib.rs` (`infrastructure`) |
+| `MyBenefitsView` | `api/src/presentation/http/v3/views/my_benefits.rs` | the route; generated into `VIEWS` by `api/build.rs:167-203` (no registry edit) |
+| `MyBenefitsData` and its parts | `api/src/presentation/dto/v3/my_benefits.rs` → `web/src/shared/api/generated/my_benefits.ts` | the answer; generated into `v3_dtos.rs` by `api/build.rs:138-165` |
+| policy row `my_benefits` | `api/crates/xc-auth/src/domain/policy/areas/customer_benefits.rs` | `Need::Permission(Permission::CustomerSelf)` on `EntryPath::Rpc`, as `areas/loyalty.rs:10-15`; generated into `AREA_ROWS` (`areas/mod.rs:19`) |
+
+**[required] The pure core** (`listing.rs`, ♻️: it reuses `Eligibility::check`, `eligibility.rs:114`, and never re-implements a condition):
+
+```rust
+pub const APP_CHANNEL: &str = "APP";
+
+/// What the view knows about the customer, read once per request.
+pub struct CustomerFacts<'a> {
+    pub customer_id: &'a str,
+    pub tier: Option<&'a str>,             // MembershipMirror::tier_of(..).tier_code
+    pub segment_memberships: &'a [Uuid],   // snapshot ids the customer is a member of
+    pub marketing_consent: bool,           // MarketingConsentGate (D-13)
+    pub is_referred: bool,                 // MarketingReferralSource (D-12)
+}
+
+/// The conditions that need a transaction line: shown as text, never evaluated here.
+pub struct LineConditions {
+    pub min_thb: Option<Decimal>,
+    pub currencies: Option<Vec<String>>,
+    pub shop_side: Option<Side>,
+}
+
+pub struct BenefitSummary {
+    pub benefit_type: String,
+    pub benefit_class: BenefitClass,
+    pub delta: Option<Decimal>,
+    pub percent: Option<Decimal>,
+    pub amount: Option<Decimal>,
+    pub fixed: Option<Decimal>,
+}
+
+pub fn shown_on_app(rule: &BenefitRule, segment_snapshot_id: Option<Uuid>, facts: &CustomerFacts<'_>) -> bool;
+pub fn line_conditions(eligibility: &Eligibility) -> LineConditions;
+pub fn summary(rule: &BenefitRule, registry: &CalculatorRegistry) -> Result<BenefitSummary, ParamError>;
+```
+
+- **`shown_on_app`** calls `rule.eligibility.check` on a copy whose line conditions (`branches`, `currencies`, `shop_side`, `min_thb`) are cleared. The `EligibilityContext` (`eligibility.rs:43`) has `channel = "APP"`, the customer's id and tier, `in_segment` = the version's snapshot is in `segment_memberships`, `marketing_consent`, `is_referred`, and `has_coupon = false`. `Ok` ⇒ shown. So:
+  - `channels` absent, or containing `APP`;
+  - `tiers` set ⇒ the customer's tier is in it (no tier ⇒ hidden);
+  - `segment` ⇒ in the version's snapshot **and** MARKETING consent granted (D-13);
+  - `referred` ⇒ the customer is referred (D-12);
+  - `requires_coupon` (either `eligibility.requiresCoupon` or the `benefit_rules.requires_coupon` column) ⇒ hidden: such a rule is usable only with a code, and a personal one is listed under (a).
+- **`line_conditions`** copies `min_thb`, `currencies` and `shop_side`. The screen words them; the view evaluates none of them.
+- **`summary`**: an unknown `benefit_type` is `ParamError { field: "benefitType" }`. It then calls that calculator's `validate_params` (D-6a) and reads `delta`, `percent`, `amount` and `fixed` with `decimal_param` (`calculator.rs:31`). The same parse the quote uses, so a rule the desk refuses is never described.
+
+**[required] The two reads** (`PgCustomerBenefits`, a unit struct; both take the view's `&mut Transaction` and one `now`):
+
+| Method | Returns | Rows |
+|---|---|---|
+| `personal_coupons_in(tx, org, customer, now)` | `Vec<CustomerCoupon { coupon_id, expires_at, label, rule: BenefitRule, branches: Vec<BranchRef> }>` | `coupons` of `org` with `customer_id = customer`, `status = 'ISSUED'`, `expires_at > now`, whose rule's version is `APPROVED` with `starts_at ≤ now < ends_at` (a coupon of a paused, expired or superseded version cannot be used, so it is not listed). Ordered by `expires_at`, then `id`. **`code_hash` is never selected.** |
+| `open_rules_in(tx, org, now)` | `Vec<OpenRule { rule: BenefitRule, version_id, segment_snapshot_id, ends_at, label, branches: Vec<BranchRef> }>` | the rules of `org`'s `APPROVED` versions with `starts_at ≤ now < ends_at`, at **any** branch (unlike `ActiveRules::active_for`, `pg_campaign_repository.rs:274-306`, which needs one), with `requires_coupon = false`. Ordered by `ends_at`, `label`, `rule_no` |
+
+- `label` is the campaign's `name`.
+- `BranchRef { branch_code, name }` lists the version's `campaign_branches` (`branches.code`, `branches.name`), so the screen can say where the benefit applies.
+- An undecodable stored `eligibility` or `caps` is `AppError::Internal`, as in `pg_campaign_repository.rs:331-341`.
+
+**The view, step by step** (`my_benefits.rs`, following `views/my_membership.rs`):
+1. **Caller checks, as `my_membership.rs:30-103`:** `authenticate_and_authorize(&req, (EntryPath::Rpc, "my_benefits"))`.
+   - No `customer_id` on the actor ⇒ 403 `outOfScope` (`:61`).
+   - A `customer` query value other than the caller's own ⇒ `outOfScope` (`:65-71`).
+   - The customer row's organisation not the session's ⇒ `outOfScope` (`:78-103`).
+2. **One read transaction** and `now = Utc::now()`, taken once.
+3. **The customer's facts:**
+   - tier: `PgMembershipMirror::new(pool, LookupHasher::new(&keys)).tier_of(org, customer)` (`pg_membership_mirror.rs:35`); `Ok(None)` ⇒ no tier;
+   - segment memberships: the customer's `segment_snapshot_members.snapshot_id` of snapshots of `org` (the read `quote.rs:335` makes, scoped to the organisation);
+   - consent: `MarketingConsentGate::prefetch_in` (`consent_gate.rs:25`);
+   - referred: `MarketingReferralSource::prefetch_in(tx, customer, now)` (`referral_source.rs:43`).
+4. **(a)** `personal_coupons_in`, and **(b)** `open_rules_in` filtered by `shown_on_app`.
+5. **Each item's summary:** a rule whose `summary` is `Err` is **left out and logged** (`tracing::warn!` with the rule id, type and field), and the rest are answered. `[proposed]`: one marketing data error must not blank a customer's page. The desk still refuses that rule with a 500 (D-6a).
+6. **The answer:** 200 with `Cache-Control: no-store`, as `my_membership.rs:127`.
+
+**[required] The answer** (a bare object, as `my_membership`, #1408 ruling). Decimals are strings and times are RFC 3339:
+
+```ts
+type MyBenefitsData = { coupons: MyCouponDto[]; benefits: MyBenefitDto[] };
+type MyCouponDto   = { couponId: string; label: string; summary: BenefitSummaryDto; conditions: BenefitConditionsDto; expiresAt: string };
+type MyBenefitDto  = { ruleId: string; label: string; summary: BenefitSummaryDto; conditions: BenefitConditionsDto; endsAt: string };
+type BenefitSummaryDto    = { benefitType: string; benefitClass: "PRICE" | "REWARD"; delta: string | null; percent: string | null; amount: string | null; fixed: string | null };
+type BenefitConditionsDto = { minThb: string | null; currencies: string[] | null; shopSide: "BUY" | "SELL" | null; branches: BranchRefDto[] };
+type BranchRefDto         = { branchCode: string; name: string };
+```
+
+- No field carries a coupon code or its hash.
+- The screen (FE) turns `summary` and `conditions` into TH/EN/ZH text (`languages.md`), so the view sends values, not wording.
+
+**Answers:**
+
+| Case | Answer |
+|---|---|
+| no session | the seam's `signIn` |
+| a staff caller without `CustomerSelf` | the policy's refusal, as every `CustomerSelf` view |
+| a CUSTOMER with no `customer_id`, a `customer` that is not theirs, a customer row of another organisation | 403 `outOfScope` |
+| nothing to show | 200 `{ "coupons": [], "benefits": [] }` |
+| a database error, or the PII keys missing (tier lookup) | 500 `serverError` (fixed text, `v3/error.rs:48-53`) |
+
+**A known difference from the desk, measured, not changed here.**
+- At `7e99ed0a`, `MarketingTierSource::tier_of` answers `None` for everyone (`api/src/infrastructure/marketing/tier_source.rs:22-25`), and `quote.rs:348` uses it. So a quote never applies a rule with `tiers`.
+- O-3 tells this view to read `MembershipMirror::tier_of`, so the app can list a tier benefit that the desk does not yet give.
+- The fix belongs to the quote's tier source (it should read the same mirror), not to this view.
+
+**Data migration: none.** The view adds no table, column, index or constraint, and writes no row. It reads `coupons`, `benefit_rules`, `campaign_versions`, `campaigns`, `campaign_branches`, `branches`, `segment_snapshot_members`, `segment_snapshots`, `customer_tier_mirror`, `customer_identities`, `consents` and `referral_attributions`.
 
 ## 7. Edge cases (§09) and the answer
 
@@ -596,8 +736,13 @@ merged, MK-3 creates `referral_attribution_id` without its FK and RF-1's migrati
 |---|---|---|
 | O-1 | M04 source → booking → completion attribution | Broker-Platform's (mapping row M04); M04 links to it when Broker exposes it |
 | O-2 | Incremental lift (control groups) | Blueprint §11 requires a baseline or comparison group; not designed until the owner asks for one |
-| O-3 | Benefits on bookings (#555) and in the customer app (#558) | they call the same engine with channel BOOKING/APP; their designs decide when they quote |
 | O-4 | Points as a benefit or a reward (`membership-points.md` D-12) | owner P5 (2026-10-10): not in phase 5; a later version |
+
+**Decided since:**
+
+| # | Item | Decided |
+|---|---|---|
+| O-3 | Benefits on bookings (#555) and in the customer app (#558) | **Answer A**, by the BE lane controller claude/a90ab16c on the owner's order (#564 issuecomment-6262478258, 2026-10-19). **Bookings:** the INDICATIVE quote calls `BenefitEngine::evaluate` to show an estimated benefit, labelled indicative, with **no reservation** (no budget, no coupon lock); the eligibility channel is APP for `CustomerSelf` and DESK for `BookingsDesk`; the completion's DESK quote alone reserves and applies (D-8). **Customer app (C05):** the read-only view `my_benefits` (§6.3): no quote, no reservation, no budget read. Rejected: B (reserve at booking: starves budget on no-shows, contradicts `booking-slots.md` B1) and C (show nothing: fails C05's row) |
 
 ## 11. Owner decisions (2026-10-10)
 

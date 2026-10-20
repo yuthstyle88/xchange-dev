@@ -16,6 +16,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -191,10 +192,11 @@ impl Room {
             .await
             .expect("reserve the customer")
             .customer_id;
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let (_, buy, sell) = RATES
@@ -229,7 +231,7 @@ impl Room {
         };
         self.desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange: {e:?}"))
             .document_ref
@@ -629,7 +631,7 @@ async fn by_channel_reads_the_payments_method() {
     let room = Room::open().await;
 
     // Seed a COMPLETED exchange whose payment is PromptPay
-    let tx_id = seed_store_tx(
+    let _ = seed_store_tx(
         &room,
         TransactionStatus::Completed,
         Side::Sell,
@@ -644,13 +646,7 @@ async fn by_channel_reads_the_payments_method() {
     )
     .await;
 
-    // Intentionally corrupt the wide row's method to 'Cash' to prove the view
-    // reads transaction_payments.method, not transactions.method.
-    sqlx::query("UPDATE transactions SET method = 'Cash' WHERE id = $1")
-        .bind(tx_id.0)
-        .execute(&room.desk.db.pool)
-        .await
-        .expect("corrupt wide method");
+    // TX-9 (#677) dropped `transactions.method`; the channel can only come from the payment.
 
     let data = room
         .data("OWNER", "branch=MAIN&from=2026-10-06&to=2026-10-06")
@@ -822,7 +818,7 @@ async fn reports_read_figures_from_lines_and_payments_not_wide_columns() {
     // BUY 100 USD at 30, fee 10, bank_fee 5.50, BankTransfer, ref_rate 32.00
     // Child line: shop_side=Buy, currency=USD, quantity=100, unit_size=1, rate=30, ref_rate=32, thb=3000, fee=10, settle=2990
     // Child payment: method=BankTransfer, amount_thb=2990, bank_fee=5.50
-    let buy_id = seed_store_tx(
+    let _ = seed_store_tx(
         &room,
         TransactionStatus::Completed,
         Side::Buy,
@@ -841,7 +837,7 @@ async fn reports_read_figures_from_lines_and_payments_not_wide_columns() {
     // SELL 10000 JPY at 0.25, fee 20, bank_fee 0, Cash, ref_rate 0.24
     // Child line: shop_side=Sell, currency=JPY, quantity=10000, unit_size=1, rate=0.25, ref_rate=0.24, thb=2500, fee=20, settle=2520
     // Child payment: method=Cash, amount_thb=2520, bank_fee=0
-    let sell_id = seed_store_tx(
+    let _ = seed_store_tx(
         &room,
         TransactionStatus::Completed,
         Side::Sell,
@@ -856,32 +852,9 @@ async fn reports_read_figures_from_lines_and_payments_not_wide_columns() {
     )
     .await;
 
-    // Corrupt / desync wide columns in `transactions`:
-    // For BUY: set wide type='SELL', code='EUR', amount=1, rate=1, reference_rate=NULL, unit_size=1000,
-    //          principal=0, fee=0, bank_fee=0, paid=0, received=99999
-    sqlx::query(
-        "UPDATE transactions \
-         SET principal = 0, fee = 0, bank_fee = 0, paid = 0, received = 99999, \
-             type = 'SELL', code = 'EUR', amount = 1, rate = 1, reference_rate = NULL, unit_size = 1000 \
-         WHERE id = $1",
-    )
-    .bind(buy_id.0)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("corrupt wide columns for buy");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
-    // For SELL: set wide type='BUY', code='GBP', amount=1, rate=1, reference_rate=NULL, unit_size=1000,
-    //           principal=0, fee=0, bank_fee=0, paid=99999, received=0
-    sqlx::query(
-        "UPDATE transactions \
-         SET principal = 0, fee = 0, bank_fee = 0, paid = 99999, received = 0, \
-             type = 'BUY', code = 'GBP', amount = 1, rate = 1, reference_rate = NULL, unit_size = 1000 \
-         WHERE id = $1",
-    )
-    .bind(sell_id.0)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("corrupt wide columns for sell");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
     let data = room
         .data("OWNER", "branch=MAIN&from=2026-10-06&to=2026-10-06")

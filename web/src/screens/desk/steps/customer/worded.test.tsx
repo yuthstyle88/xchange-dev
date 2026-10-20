@@ -39,6 +39,7 @@ function createStubStore(
   return {
     api,
     path,
+    branch: () => 'XC-B01',
     type: () => 'BUY',
     currency: () => 'USD',
     amount: () => '500.00',
@@ -182,7 +183,7 @@ describe('screens/desk/steps/customer wordedError (WE-33 #1782)', () => {
       });
     });
 
-    it('staff desk opsBeginTransaction network error shows error.network', async () => {
+    it('staff desk draftBegin network error shows error.network', async () => {
       const fetchFn = vi.fn(async () => {
         throw new TypeError('Failed to fetch');
       });

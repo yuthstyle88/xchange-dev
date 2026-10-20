@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 export const STALE_KNOWN_FAILS = true;
 
 // KW-gate (#2044, docs/design/xchange-v3-web.md §12.24): frozen at the 27 offending files on origin/main
-// outside keyed-write.ts and the 4 named exclusions. Sorted alphabetically, one path per line.
+// outside keyed-write.ts and the 2 named exclusions. Sorted alphabetically, one path per line.
 export const KNOWN: readonly string[] = [];
 
 export function normalizePath(p: string): string {
@@ -33,11 +33,7 @@ const EXCLUDED_FILES: ReadonlySet<string> = new Set([
   // §12.24 named exclusion 1: requestId is a payload field of the admin pending-write protocol
   // (read back through a view filter, :214), not an Idempotency-Key header.
   'web/src/screens/admin/parts/pending-write.tsx',
-  // §12.24 named exclusion 2: memberSecret is a secret value, not an Idempotency-Key header.
-  'web/src/screens/admin/customers/Customers.tsx',
-  // §12.24 named exclusion 3: the v2 bookings screen, deleted by booking-slots.md BK-11.
-  'web/src/screens/admin/bookings/BookingsScreen.tsx',
-  // §12.24 named exclusion 4: the branch-intake upload goes through postForm with a FormData body, which keyedWrite cannot carry; only the upload keeps getOrCreateIdemKey (KW-6b).
+  // §12.24 named exclusion 2: the branch-intake upload goes through postForm with a FormData body, which keyedWrite cannot carry; only the upload keeps getOrCreateIdemKey (KW-6b).
   'web/src/screens/operations/verification/VerificationScreen.tsx',
 ]);
 
@@ -181,13 +177,9 @@ describe('KW-gate keyed-write gate (§9 behaviour table)', () => {
   it('row 4: admin/parts/pending-write.tsx passes (named exclusion)', () => {
     expect(shouldScanFile('admin/parts/pending-write.tsx')).toBe(false);
     expect(shouldScanFile('web/src/screens/admin/parts/pending-write.tsx')).toBe(false);
-    expect(shouldScanFile('admin/customers/Customers.tsx')).toBe(false);
-    expect(shouldScanFile('admin/bookings/BookingsScreen.tsx')).toBe(false);
 
     const fixtures: Record<string, string> = {
       'admin/parts/pending-write.tsx': 'const requestId = crypto.randomUUID();',
-      'admin/customers/Customers.tsx': 'const memberSecret = crypto.randomUUID();',
-      'admin/bookings/BookingsScreen.tsx': 'const key = crypto.randomUUID();',
     };
     const result = checkGate(fixtures, [], false);
 

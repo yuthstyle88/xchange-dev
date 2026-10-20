@@ -223,8 +223,6 @@ impl TestSessions {
     fn callers_of(&self, spec: &str) -> Callers {
         if spec.is_empty() {
             return Callers {
-                owner: None,
-                staff: None,
                 user: None,
                 staff_user: None,
             };
@@ -242,8 +240,6 @@ impl TestSessions {
                 Some(cust_id),
             );
             return Callers {
-                owner: None,
-                staff: None,
                 user: Some(user),
                 staff_user: None,
             };
@@ -262,19 +258,12 @@ impl TestSessions {
                 Some(cust_id),
             );
             return Callers {
-                owner: None,
-                staff: None,
                 user: Some(user),
                 staff_user: None,
             };
         }
         if spec == "teller" {
             let branch = BranchId::new("XC-B01");
-            let staff_actor = xc_auth::domain::policy::value_objects::actor::Actor::staff(
-                "emp-teller",
-                xc_auth::domain::policy::value_objects::role::Role::Front,
-                branch.clone(),
-            );
             let user = xc_auth::domain::access::Actor::new(
                 "emp-teller",
                 &self.org_id,
@@ -288,8 +277,6 @@ impl TestSessions {
             )
             .with_branch(Some(branch));
             return Callers {
-                owner: None,
-                staff: staff_actor,
                 user: Some(user.clone()),
                 staff_user: Some(user),
             };
@@ -307,8 +294,6 @@ impl TestSessions {
                 None,
             );
             return Callers {
-                owner: None,
-                staff: None,
                 user: Some(user),
                 staff_user: None,
             };
@@ -326,8 +311,6 @@ impl TestSessions {
                 None,
             );
             return Callers {
-                owner: None,
-                staff: None,
                 user: Some(user),
                 staff_user: None,
             };
@@ -348,13 +331,12 @@ impl TestSessions {
 impl SessionReader for TestSessions {
     fn sessions<'a>(
         &'a self,
-        req: &'a HttpRequest,
+        _req: &'a HttpRequest,
     ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let callers = self.get_callers_from_req(req);
         Box::pin(async move {
             Sessions {
-                owner: callers.owner,
-                staff: callers.staff,
+                owner: None,
+                staff: None,
             }
         })
     }

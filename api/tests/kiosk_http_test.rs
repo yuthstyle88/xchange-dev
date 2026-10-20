@@ -550,6 +550,15 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
         );
 
     // the account is disabled: the queue still prints who holds the request
+    // CA-10 (#626, batch PR 3108), setup only: disabling is refused while the employee holds an OPEN shift (CA-4),
+    // and fr1 holds MAIN's, which `Counter::open` opened by a count; it is closed by a count first, the same way.
+    kiosk_http_common::shift_setup_common::close_shift_by_count(
+        &counter.desk.db.pool,
+        rpc_common::MAIN,
+        json!({ "THB": 100000, "USD": 2000 }),
+        chrono::Utc::now(),
+    )
+    .await;
     let call = Call::action(
         &counter.origin,
         "/api/employees",
@@ -563,6 +572,14 @@ async fn the_holder_is_stored_by_id_and_printed_by_username() {
     assert_eq!(disabled.status, 200, "disable: {}", disabled.text);
     let list = counter.ask(Some("FR2"), "list", json!({})).await;
     assert_eq!(list.json()["requests"][0]["staff"], "fr1", "{}", list.text);
+    // and MAIN's counter opens again by a count, as `Counter::open` opened it, for the rest of the test
+    kiosk_http_common::shift_setup_common::open_shift_by_count(
+        &counter.desk.db.pool,
+        rpc_common::MAIN,
+        json!({ "THB": 100000, "USD": 2000 }),
+        chrono::Utc::now(),
+    )
+    .await;
 
     // the owner holds a request under the owner's username
     let second = counter
@@ -816,8 +833,19 @@ async fn the_answers_keep_v2s_key_order() {
     let held = counter
         .ask(Some("FR1"), "get", json!({ "id": lettered }))
         .await;
+    // #3473: v3 appends `quoteId` after v2's last key (snapshot_common::V3_ADDED_KEYS);
+    // v2's part is everything before it, unchanged.
+    let (v2_part, added) = held
+        .text
+        .split_once(",\"quoteId\":")
+        .unwrap_or_else(|| panic!("`quoteId` comes after v2's last key: {}", held.text));
+    assert!(
+        added.ends_with('}') && !added[..added.len() - 1].contains(','),
+        "`quoteId` is the last key: {}",
+        held.text
+    );
     assert_eq!(
-        held.text,
+        format!("{v2_part}}}"),
         "{\"paymentMethod\":\"Cash\",\"type\":\"BUY\",\"currency\":\"USD\",\"rate\":32.1,\
          \"foreign\":100,\"thb\":3210,\"inputAmount\":100,\"branchName\":\"XC-B\",\
          \"id\":\"c0ffee12-0000-4000-8000-0000000c0002\",\"queue\":\"K-C0FFEE12\"}"

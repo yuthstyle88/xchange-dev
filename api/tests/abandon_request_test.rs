@@ -1,5 +1,13 @@
 //! Written before the implementation (ticket T11d). Do not edit, delete or weaken.
 //!
+//! CA-10 (#626, #2955): v2's shift path is deleted. The shift writes that apply a request are written straight
+//! into the tables (setup only). Retired with it: the two fixture replays (each holds v2's `adminOpenShift` refusing
+//! an id, #37 / #149), and the tests whose subject or an assertion is v2's open / move / close answering an id
+//! (`a_cancelled_request_is_refused_by_every_write_of_the_branch`, `an_applied_open_shift_request_is_applied`,
+//! `the_same_id_given_up_in_one_branch_is_free_in_another`, `abandoning_and_opening_a_shift_at_once_exactly_one_wins`,
+//! and, ruled on #626, `sixteen_and_sixty_characters_are_accepted_and_the_id_is_trimmed`, whose second half asserts
+//! v2's open refusing an abandoned id).
+//!
 //! `adminAbandonRequest`: the screen gives up waiting for the answer to a write
 //! and asks what became of its request id. Recorded from v2 in
 //! `tests/fixtures/snapshot/branches.json` #35–#39 and
@@ -32,10 +40,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, TimeZone, Utc};
-use compat_common::{Fixture, Step};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
-use serde_json::{Value, json};
+use serde_json::json;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
@@ -44,12 +51,6 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
-use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::close_shift::CloseShift;
-use xc_shift::domain::shift::commands::move_stock::MoveStock;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::entities::shift::Shift;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::compat::abandon_request::{AbandonRequest, RequestResolution};
 
 use RequestResolution::{Applied, Cancelled};
@@ -66,12 +67,6 @@ const MAIN: &str = "MAIN";
 const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 const BAD_REQUEST_ID: &str = "รหัสคำขอไม่ถูกต้อง";
 const NO_SUCH_BRANCH: &str = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
-const ABANDONED: &str = "คำขอนี้ถูกยกเลิกแล้ว กรุณาโหลดข้อมูลล่าสุด";
-const NOT_YOUR_ROLE: &str = "บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้";
-/// Re-expected for RE-7 #604: what this replay answers for a recorded `adminSaveRate`, which no
-/// use case takes any more (known difference: design §9 removes the action). The route's own
-/// answer, that of a name v2 does not know, is held by `rates_re7_retire_test.rs`.
-const RETIRED: &str = "adminSaveRate is retired (RE-7)";
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -209,13 +204,6 @@ impl TestDb {
         BranchService::new(self.branch_tx())
     }
 
-    fn shifts(&self) -> ShiftService {
-        ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.pool.clone())),
-            self.branch_tx(),
-        )
-    }
-
     /// `adminAbandonRequest` with `{requestId: id}` in `branch_id`, at `at(seconds)`.
     async fn abandon(
         &self,
@@ -245,13 +233,51 @@ impl TestDb {
             .expect("insert into branches");
     }
 
-    async fn open_shift(&self, branch_id: &str, id: &str) -> AppResult<Shift> {
+    /// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. An OPEN shift that applied
+    /// request `id`, written straight into the tables in one branch transaction (setup only).
+    async fn open_shift(&self, branch_id: &str, id: &str) -> AppResult<Seeded> {
+        let (b, id) = (branch(branch_id), id.to_owned());
+        let inner = b.clone();
         within(
             "open a shift",
-            self.shifts()
-                .open(&branch(branch_id), opening(id), ACTOR, at(0)),
+            self.branch_tx().run(&b, move |tx| {
+                Box::pin(async move { seed_shift_in(tx, &inner, &id).await })
+            }),
         )
         .await
+        .map(|id| Seeded { id })
+    }
+
+    /// CA-10: v2's `move_stock` with request `id` on `shift`, written straight in (setup only).
+    async fn move_stock(&self, branch_id: &str, shift: &str, id: &str) {
+        sqlx::query(
+            "INSERT INTO stock_movements (id, branch_id, shift_id, code, direction, amount, reason, request_id, at, by) \
+             VALUES ($1, $2, $3, 'USD', 'IN', 5, 'top up', $4, $5, $6)",
+        )
+        .bind(format!("MV-{}", uuid::Uuid::new_v4()))
+        .bind(branch_id)
+        .bind(shift)
+        .bind(id)
+        .bind(at(1))
+        .bind(ACTOR)
+        .execute(&self.pool)
+        .await
+        .expect("seed a movement");
+    }
+
+    /// CA-10: v2's `close` with request `id` of `shift`, written straight in (setup only).
+    async fn close_shift(&self, shift: &str, id: &str) {
+        sqlx::query(
+            "UPDATE shifts SET status = 'CLOSED', closed_at = $1, closed_by = $2, close_note = '', \
+             close_request_id = $3 WHERE id = $4",
+        )
+        .bind(at(2))
+        .bind(ACTOR)
+        .bind(id)
+        .bind(shift)
+        .execute(&self.pool)
+        .await
+        .expect("seed a close");
     }
 
     /// Every row of `abandoned_requests`, ordered by branch and request id.
@@ -293,11 +319,6 @@ impl TestDb {
     }
 }
 
-fn opening(id: &str) -> OpenShift {
-    OpenShift::from_payload(&json!({ "requestId": id, "opening": { "USD": 10 } }))
-        .expect("a valid opening")
-}
-
 fn pair(branch_id: &str, id: &str) -> (String, String) {
     (branch_id.to_string(), id.to_string())
 }
@@ -305,257 +326,6 @@ fn pair(branch_id: &str, id: &str) -> (String, String) {
 // ---------------------------------------------------------------------------
 // The recorded steps
 // ---------------------------------------------------------------------------
-
-/// A payload field as the text the rate service takes: text as it is, a number
-/// as JSON prints it, nothing as `""`.
-fn field(payload: &Value, key: &str) -> String {
-    match payload.get(key) {
-        Some(Value::String(s)) => s.clone(),
-        Some(Value::Number(n)) => n.to_string(),
-        None | Some(Value::Null) => String::new(),
-        Some(other) => panic!("`{key}` is neither text nor a number: {other}"),
-    }
-}
-
-fn payload_of(step: &Step) -> &Value {
-    step.payload
-        .as_ref()
-        .unwrap_or_else(|| panic!("step {} has no payload", step.n))
-}
-
-/// The branch a step is sent to: `payload.branchId`, or the main one.
-fn branch_of(step: &Step) -> BranchId {
-    match payload_of(step).get("branchId") {
-        Some(Value::String(id)) => branch(id),
-        _ => branch(MAIN),
-    }
-}
-
-fn instant_of(step: &Step) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(&step.at)
-        .unwrap_or_else(|e| panic!("step {}: `at` is not a time: {e}", step.n))
-        .with_timezone(&Utc)
-}
-
-/// What v2 answered: `Ok("APPLIED" | "CANCELLED")` or `Err(<the sentence>)`.
-fn recorded(step: &Step) -> Result<String, String> {
-    if let Some(sentence) = step.error() {
-        assert_eq!(step.status, Some(400), "step {}", step.n);
-        return Err(sentence.to_string());
-    }
-    assert_eq!(step.status, Some(200), "step {}", step.n);
-    match step.json().get("requestResolution") {
-        Some(Value::String(r)) => Ok(r.clone()),
-        other => panic!("step {}: no `requestResolution`: {other:?}", step.n),
-    }
-}
-
-/// Applies one recorded step to v3 and returns what the screen would be told.
-async fn replay(db: &TestDb, step: &Step) -> Result<String, String> {
-    let payload = payload_of(step);
-    let branch = branch_of(step);
-    let now = instant_of(step);
-    let answer = match step.action.as_deref() {
-        Some("adminAbandonRequest") => db
-            .abandoning()
-            .abandon(&branch, payload, ACTOR, now)
-            .await
-            .map(|r| r.as_str().to_string()),
-        // re-expected for RE-7 #604: known difference (design §9 removes the action)
-        Some("adminSaveRate") => Err(AppError::Domain(RETIRED.to_string())),
-        Some("adminOpenShift") => match OpenShift::from_payload(payload) {
-            Ok(cmd) => db
-                .shifts()
-                .open(&branch, cmd, ACTOR, now)
-                .await
-                .map(|_| "saved".to_string()),
-            Err(e) => Err(e.into()),
-        },
-        Some("adminCreateBranch") => db
-            .branches()
-            .create(
-                CreateBranch {
-                    request_id: field(payload, "requestId"),
-                    name: field(payload, "name"),
-                    from_branch: branch.clone(),
-                },
-                ACTOR,
-                now,
-            )
-            .await
-            .map(|_| "saved".to_string()),
-        other => panic!("step {}: no replay for {other:?}", step.n),
-    };
-    match answer {
-        Ok(text) => Ok(text),
-        Err(AppError::Domain(sentence)) => Err(sentence),
-        Err(other) => panic!("step {}: not a refusal: {other:?}", step.n),
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn branches_fixture_last_five_steps_answer_as_v2_did() {
-    let db = TestDb::start().await;
-    let fixture = Fixture::load("snapshot/branches.json");
-    let steps = fixture.steps();
-    assert_eq!(steps.len(), 39, "the file this test was written against");
-
-    // #2 created the airport; its request id is the one #39 asks about.
-    let created = fixture.step(2);
-    assert_eq!(created.action.as_deref(), Some("adminCreateBranch"));
-    assert_eq!(replay(&db, created).await, Ok("saved".to_string()));
-    let airport = "B00000000-0000-4000-8000-0000000a0002";
-    assert!(
-        db.branches().require(&branch(airport)).await.is_ok(),
-        "the branch the recorded steps name"
-    );
-
-    let last_five = &steps[34..];
-    let actions: Vec<&str> = last_five
-        .iter()
-        .filter_map(|s| s.action.as_deref())
-        .collect();
-    assert_eq!(
-        actions,
-        [
-            "adminAbandonRequest",
-            "adminAbandonRequest",
-            "adminOpenShift",
-            "adminAbandonRequest",
-            "adminAbandonRequest",
-        ]
-    );
-    let mut answers = Vec::new();
-    for step in last_five {
-        let expected = recorded(step);
-        let actual = replay(&db, step).await;
-        assert_eq!(actual, expected, "snapshot/branches.json#{}", step.n);
-        answers.push(expected);
-    }
-    // what the file holds, spelled out so that a reader of this test sees it
-    assert_eq!(
-        answers,
-        [
-            Ok("CANCELLED".to_string()),
-            Ok("CANCELLED".to_string()),
-            Err(ABANDONED.to_string()),
-            Ok("CANCELLED".to_string()),
-            Ok("APPLIED".to_string()),
-        ]
-    );
-
-    // one row per branch for the id given up; none for the applied one; the row
-    // of MAIN is the one #35 wrote, not #36
-    let given_up = "00000000-0000-4000-8000-0000000a0007";
-    assert_eq!(
-        db.rows().await,
-        vec![
-            (
-                airport.to_string(),
-                given_up.to_string(),
-                instant_of(fixture.step(38)),
-                ACTOR.to_string()
-            ),
-            (
-                MAIN.to_string(),
-                given_up.to_string(),
-                instant_of(fixture.step(35)),
-                ACTOR.to_string()
-            ),
-        ]
-    );
-    assert_eq!(db.count("shifts").await, 0);
-    db.finish().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn engine_actions_fixture_145_to_152_answer_as_v2_did() {
-    let db = TestDb::start().await;
-    let fixture = Fixture::load("rpc/engine_actions.json");
-
-    // The two writes the recorded steps ask about: #23 saved a rate, #40 opened a shift.
-    // Re-expected for RE-7 #604 (known difference: design §9 removes the action): #23 saves
-    // nothing in v3, so #150, which asks about its id, is answered CANCELLED and writes a row.
-    for n in [23, 40] {
-        assert_eq!(
-            fixture.step(n).status,
-            Some(200),
-            "rpc/engine_actions.json#{n}"
-        );
-    }
-    assert_eq!(
-        replay(&db, fixture.step(23)).await,
-        Err(RETIRED.to_string()),
-        "#23"
-    );
-    assert_eq!(
-        replay(&db, fixture.step(40)).await,
-        Ok("saved".to_string()),
-        "#40"
-    );
-
-    let steps: Vec<&Step> = (145..=152).map(|n| fixture.step(n)).collect();
-    let actions: Vec<&str> = steps.iter().filter_map(|s| s.action.as_deref()).collect();
-    assert_eq!(
-        actions,
-        [
-            "adminAbandonRequest",
-            "adminAbandonRequest",
-            "adminAbandonRequest",
-            "adminSaveRate",
-            "adminOpenShift",
-            "adminAbandonRequest",
-            "adminAbandonRequest",
-            "adminAbandonRequest",
-        ]
-    );
-
-    // re-expected for RE-7 #604: v3's answer where it differs from v2's, by step
-    let v3_differs = |n: usize| match n {
-        148 => Some(Err(RETIRED.to_string())),
-        150 => Some(Ok("CANCELLED".to_string())),
-        _ => None,
-    };
-    let mut answers = Vec::new();
-    for step in &steps[..7] {
-        assert_eq!(step.sent_as, "owner", "#{}", step.n);
-        let expected = v3_differs(step.n).unwrap_or_else(|| recorded(step));
-        let actual = replay(&db, step).await;
-        assert_eq!(actual, expected, "rpc/engine_actions.json#{}", step.n);
-        answers.push(recorded(step));
-    }
-    // what v2 answered, spelled out; #148 and #150 are the two v3 answers differently
-    assert_eq!(
-        answers,
-        [
-            Err(BAD_TEXT.to_string()),
-            Err(BAD_REQUEST_ID.to_string()),
-            Ok("CANCELLED".to_string()),
-            Err(ABANDONED.to_string()),
-            Err(ABANDONED.to_string()),
-            Ok("APPLIED".to_string()),
-            Ok("APPLIED".to_string()),
-        ]
-    );
-
-    // #152 is an employee: refused by the role table before any use case runs.
-    // The use case takes no role, so nothing is replayed — the step is pinned
-    // here so that a change of the file is seen.
-    let by_front = steps[7];
-    assert_ne!(by_front.sent_as, "owner");
-    assert_eq!(recorded(by_front), Err(NOT_YOUR_ROLE.to_string()));
-
-    // re-expected for RE-7 #604: #150 wrote the row of #23's id; no rate is saved anywhere
-    assert_eq!(
-        db.keys().await,
-        vec![
-            pair(MAIN, "00000000-0000-4000-8000-0000000a0011"),
-            pair(MAIN, "00000000-0000-4000-8000-0000000a003f"),
-        ]
-    );
-    assert_eq!(db.count("shifts").await, 1);
-    db.finish().await;
-}
 
 // ---------------------------------------------------------------------------
 // Reading the request id
@@ -604,44 +374,6 @@ async fn a_request_id_of_the_wrong_shape_is_refused() {
         assert_eq!(refusal(result), BAD_REQUEST_ID, "id {id:?}");
     }
     assert_eq!(db.rows().await, vec![]);
-    db.finish().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn sixteen_and_sixty_characters_are_accepted_and_the_id_is_trimmed() {
-    let db = TestDb::start().await;
-    let sixteen = "0123456789abcdeF";
-    let sixty = "A-".repeat(30);
-    assert_eq!(db.abandon(MAIN, sixteen, 0).await.unwrap(), Cancelled);
-    assert_eq!(db.abandon(MAIN, &sixty, 0).await.unwrap(), Cancelled);
-
-    // spaces around the id are not part of it
-    let padded = request_id();
-    assert_eq!(
-        db.abandon(MAIN, &format!("  {padded}\t"), 0).await.unwrap(),
-        Cancelled
-    );
-    // a number is read as its digits
-    let result = db
-        .abandoning()
-        .abandon(
-            &branch(MAIN),
-            &json!({ "requestId": 1234567890123456_u64 }),
-            ACTOR,
-            at(0),
-        )
-        .await;
-    assert_eq!(result.unwrap(), Cancelled);
-
-    let mut expected = vec![
-        pair(MAIN, sixteen),
-        pair(MAIN, &sixty),
-        pair(MAIN, &padded),
-        pair(MAIN, "1234567890123456"),
-    ];
-    expected.sort();
-    assert_eq!(db.keys().await, expected);
-    assert_eq!(refusal(db.open_shift(MAIN, &padded).await), ABANDONED);
     db.finish().await;
 }
 
@@ -712,61 +444,6 @@ async fn twice_is_the_same_answer_and_one_row_the_first() {
     db.finish().await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_cancelled_request_is_refused_by_every_write_of_the_branch() {
-    let db = TestDb::start().await;
-    // a shift to move stock in and to close, opened with another request
-    let shift = db.open_shift(MAIN, &request_id()).await.unwrap();
-    db.seed_branch("B2").await;
-
-    let id = request_id();
-    assert_eq!(db.abandon(MAIN, &id, 0).await.unwrap(), Cancelled);
-    assert_eq!(db.abandon("B2", &id, 0).await.unwrap(), Cancelled);
-
-    // re-expected for RE-7 #604: the rate save is no longer a write of the branch
-    assert_eq!(refusal(db.open_shift("B2", &id).await), ABANDONED);
-    let movement = MoveStock::from_payload(&json!({
-        "requestId": id, "shiftId": shift.id, "currency": "USD",
-        "direction": "IN", "amount": 5, "reason": "top up",
-    }))
-    .unwrap();
-    assert_eq!(
-        refusal(
-            db.shifts()
-                .move_stock(&branch(MAIN), movement, ACTOR, at(1))
-                .await
-        ),
-        ABANDONED
-    );
-    let closing = CloseShift::from_payload(&json!({
-        "requestId": id, "shiftId": shift.id,
-        "expected": { "USD": 10 }, "counted": { "USD": 10 }, "note": "",
-    }))
-    .unwrap();
-    assert_eq!(
-        refusal(
-            db.shifts()
-                .close(&branch(MAIN), closing, ACTOR, at(2))
-                .await
-        ),
-        ABANDONED
-    );
-    let create = CreateBranch {
-        request_id: id.clone(),
-        name: "Airport".to_string(),
-        from_branch: branch(MAIN),
-    };
-    assert_eq!(
-        refusal(db.branches().create(create, ACTOR, at(3)).await),
-        ABANDONED
-    );
-
-    assert_eq!(db.count("stock_movements").await, 0);
-    assert_eq!(db.count("shifts").await, 1);
-    assert_eq!(db.count("branches").await, 2);
-    db.finish().await;
-}
-
 // ---------------------------------------------------------------------------
 // APPLIED
 // ---------------------------------------------------------------------------
@@ -777,43 +454,16 @@ async fn a_cancelled_request_is_refused_by_every_write_of_the_branch() {
 // CANCELLED is held by `engine_actions_fixture_145_to_152_answer_as_v2_did` (#150).
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_applied_open_shift_request_is_applied() {
-    let db = TestDb::start().await;
-    let id = request_id();
-    let shift = db.open_shift(MAIN, &id).await.unwrap();
-    assert_eq!(db.abandon(MAIN, &id, 0).await.unwrap(), Applied);
-    assert_eq!(db.rows().await, vec![]);
-    assert_eq!(db.open_shift(MAIN, &id).await.unwrap().id, shift.id);
-    db.finish().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn applied_stock_movement_and_close_shift_requests_are_applied() {
     let db = TestDb::start().await;
     let shift = db.open_shift(MAIN, &request_id()).await.unwrap();
 
     let moved = request_id();
-    let movement = MoveStock::from_payload(&json!({
-        "requestId": moved, "shiftId": shift.id, "currency": "USD",
-        "direction": "IN", "amount": 5, "reason": "top up",
-    }))
-    .unwrap();
-    db.shifts()
-        .move_stock(&branch(MAIN), movement, ACTOR, at(1))
-        .await
-        .unwrap();
+    db.move_stock(MAIN, &shift.id, &moved).await;
     assert_eq!(db.abandon(MAIN, &moved, 2).await.unwrap(), Applied);
 
     let closed = request_id();
-    let closing = CloseShift::from_payload(&json!({
-        "requestId": closed, "shiftId": shift.id,
-        "expected": { "USD": 15 }, "counted": { "USD": 15 }, "note": "",
-    }))
-    .unwrap();
-    db.shifts()
-        .close(&branch(MAIN), closing, ACTOR, at(3))
-        .await
-        .unwrap();
+    db.close_shift(&shift.id, &closed).await;
     assert_eq!(db.abandon(MAIN, &closed, 4).await.unwrap(), Applied);
 
     assert_eq!(db.rows().await, vec![]);
@@ -856,25 +506,9 @@ async fn a_request_applied_in_another_branch_is_not_applied_here() {
     let opened = request_id();
     let shift = db.open_shift("B2", &opened).await.unwrap();
     let moved = request_id();
-    let movement = MoveStock::from_payload(&json!({
-        "requestId": moved, "shiftId": shift.id, "currency": "USD",
-        "direction": "IN", "amount": 5, "reason": "top up",
-    }))
-    .unwrap();
-    db.shifts()
-        .move_stock(&branch("B2"), movement, ACTOR, at(1))
-        .await
-        .unwrap();
+    db.move_stock("B2", &shift.id, &moved).await;
     let closed = request_id();
-    let closing = CloseShift::from_payload(&json!({
-        "requestId": closed, "shiftId": shift.id,
-        "expected": { "USD": 15 }, "counted": { "USD": 15 }, "note": "",
-    }))
-    .unwrap();
-    db.shifts()
-        .close(&branch("B2"), closing, ACTOR, at(2))
-        .await
-        .unwrap();
+    db.close_shift(&shift.id, &closed).await;
 
     let ids = [&opened, &moved, &closed];
     for id in ids {
@@ -884,24 +518,6 @@ async fn a_request_applied_in_another_branch_is_not_applied_here() {
     let mut expected: Vec<_> = ids.iter().map(|id| pair(MAIN, id)).collect();
     expected.sort();
     assert_eq!(db.keys().await, expected);
-    db.finish().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_same_id_given_up_in_one_branch_is_free_in_another() {
-    let db = TestDb::start().await;
-    db.seed_branch("B2").await;
-    let id = request_id();
-    assert_eq!(db.abandon(MAIN, &id, 0).await.unwrap(), Cancelled);
-
-    // B2 knows nothing of it: the id can be applied there … (re-expected for RE-7 #604: by an
-    // open shift, as the rate save is gone)
-    db.open_shift("B2", &id).await.unwrap();
-    assert_eq!(db.abandon("B2", &id, 1).await.unwrap(), Applied);
-    // … and stays given up in MAIN
-    assert_eq!(refusal(db.open_shift(MAIN, &id).await), ABANDONED);
-    assert_eq!(db.abandon(MAIN, &id, 2).await.unwrap(), Cancelled);
-    assert_eq!(db.keys().await, vec![pair(MAIN, &id)]);
     db.finish().await;
 }
 
@@ -935,15 +551,15 @@ async fn open_shift_and_hold(
     let (entered_tx, entered_rx) = oneshot::channel::<()>();
     let (release_tx, release_rx) = oneshot::channel::<()>();
     let branch_tx = db.branch_tx();
-    let shifts = db.shifts();
-    let cmd = opening(id);
+    let id = id.to_owned();
     let holder = tokio::spawn(async move {
         let b = branch(branch_id);
         let inner = b.clone();
         branch_tx
             .run(&b, move |tx| {
                 Box::pin(async move {
-                    shifts.open_in(tx, &inner, cmd, ACTOR, at(0)).await?;
+                    // CA-10: v2's `open_in` is deleted; the same OPEN shift row, in this held transaction
+                    seed_shift_in(tx, &inner, &id).await?;
                     let _ = entered_tx.send(());
                     let _ = release_rx.await;
                     Ok(())
@@ -1012,90 +628,9 @@ async fn a_write_in_flight_in_another_branch_does_not_hold_it_up() {
     db.finish().await;
 }
 
-/// What a race between giving a request up and applying it may end as.
-fn exactly_one_won(
-    what: &str,
-    abandoned: AppResult<RequestResolution>,
-    applied: Result<(), String>,
-    rows_abandoned: i64,
-    rows_applied: i64,
-) -> RequestResolution {
-    let resolution = abandoned.unwrap_or_else(|e| panic!("{what}: abandon failed: {e:?}"));
-    match (resolution, &applied) {
-        (Applied, Ok(())) => {
-            assert_eq!((rows_abandoned, rows_applied), (0, 1), "{what}: applied");
-        }
-        (Cancelled, Err(sentence)) => {
-            assert_eq!(sentence, ABANDONED, "{what}");
-            assert_eq!((rows_abandoned, rows_applied), (1, 0), "{what}: cancelled");
-        }
-        other => panic!("{what}: both won or both lost: {other:?}"),
-    }
-    resolution
-}
-
-fn sentence_of<T>(result: AppResult<T>) -> Result<(), String> {
-    match result {
-        Ok(_) => Ok(()),
-        Err(AppError::Domain(sentence)) => Err(sentence),
-        Err(other) => panic!("not a refusal: {other:?}"),
-    }
-}
-
 // Re-expected for RE-7 #604 by the ticket author: `abandoning_and_saving_a_rate_at_once_exactly_
 // one_wins` is removed with `RateService::save_rate` (design §9). The same race against the
 // writes that remain is held by the tests below.
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn abandoning_and_opening_a_shift_at_once_exactly_one_wins() {
-    let db = TestDb::start().await;
-    for round in 0..24 {
-        let branch_id = format!("S{round}");
-        db.seed_branch(&branch_id).await;
-        let id = request_id();
-        let start = Arc::new(Barrier::new(2));
-
-        let abandoning = {
-            let (use_case, start) = (db.abandoning(), Arc::clone(&start));
-            let (b, payload) = (branch(&branch_id), json!({ "requestId": id }));
-            tokio::spawn(async move {
-                start.wait().await;
-                use_case.abandon(&b, &payload, ACTOR, at(1)).await
-            })
-        };
-        let opening_it = {
-            let (shifts, start) = (db.shifts(), Arc::clone(&start));
-            let (b, cmd) = (branch(&branch_id), opening(&id));
-            tokio::spawn(async move {
-                start.wait().await;
-                shifts.open(&b, cmd, ACTOR, at(1)).await
-            })
-        };
-        let abandoned = within("abandon", abandoning).await.expect("no panic");
-        let opened = within("open", opening_it).await.expect("no panic");
-
-        let rows_abandoned: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM abandoned_requests WHERE branch_id = $1")
-                .bind(&branch_id)
-                .fetch_one(&db.pool)
-                .await
-                .unwrap();
-        let rows_shifts: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM shifts WHERE branch_id = $1")
-                .bind(&branch_id)
-                .fetch_one(&db.pool)
-                .await
-                .unwrap();
-        exactly_one_won(
-            &format!("round {round}"),
-            abandoned,
-            sentence_of(opened),
-            rows_abandoned,
-            rows_shifts,
-        );
-    }
-    db.finish().await;
-}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn many_abandoning_the_same_id_at_once_leave_one_row() {
@@ -1136,16 +671,36 @@ async fn seed_opener(pool: &PgPool, id: &str) {
         .await
         .expect("look for the owner's user");
         if !exists {
-            sqlx::query(
-                "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
-                 u AS (INSERT INTO users (organization_id, name, status, created_by) \
-                       SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id) \
-                 INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 SELECT u.id, r.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS r(code)",
+            let (uid, org): (String, String) = sqlx::query_as(
+                "INSERT INTO users (organization_id, name, status, created_by) \
+                 SELECT id, 'owner', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                 RETURNING id::text, organization_id::text",
             )
-            .execute(pool)
+            .fetch_one(pool)
             .await
             .expect("seed the owner's user");
+            let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+            xc_testdb::people::seed_roles(
+                &mut pool.acquire().await.expect("acquire"),
+                &uid,
+                &org,
+                &[
+                    xc_testdb::people::RoleRow {
+                        role_code: "EXECUTIVE",
+                        branch_id: None,
+                        valid_from: from,
+                        valid_to: None,
+                    },
+                    xc_testdb::people::RoleRow {
+                        role_code: "ADMIN",
+                        branch_id: None,
+                        valid_from: from,
+                        valid_to: None,
+                    },
+                ],
+            )
+            .await
+            .expect("seed the owner's roles");
         }
         return;
     }
@@ -1158,4 +713,40 @@ async fn seed_opener(pool: &PgPool, id: &str) {
     .execute(pool)
     .await
     .expect("seed an opener's user");
+}
+
+/// A shift the setup wrote (CA-10: v2's `Shift` answer is gone with `ShiftService::open`).
+#[derive(Debug)]
+struct Seeded {
+    id: String,
+}
+
+/// CA-10 (#626, #2955): the OPEN shift row v2's `open_in` wrote for request `id` in `branch` (opener `ACTOR`,
+/// USD 10), written in `tx`. Answers the shift's id.
+async fn seed_shift_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &BranchId,
+    id: &str,
+) -> AppResult<String> {
+    let shift = format!("SH-{}", uuid::Uuid::new_v4());
+    sqlx::query(
+        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+         SELECT $1, $2, 'OPEN', $3, $4, '', $5, u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
+         (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at LIMIT 1",
+    )
+    .bind(&shift)
+    .bind(branch.as_str())
+    .bind(at(0))
+    .bind(ACTOR)
+    .bind(id)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, 'USD', 10, 10)",
+    )
+    .bind(&shift)
+    .execute(&mut **tx)
+    .await?;
+    Ok(shift)
 }

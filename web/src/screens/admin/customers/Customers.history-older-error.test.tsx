@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal, type JSX } from 'solid-js';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { closeDialog, Dialog } from '../parts/Dialog';
 import { menu } from './menu';
@@ -43,8 +43,8 @@ function customer(n: number, over: Partial<CustomerRow> = {}): CustomerRow {
   };
 }
 
-function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function tx(n: number, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: `XC-20261008-${String(n).padStart(6, '0')}`,
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -72,7 +72,7 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 type Refusal = { status: number; code: string; message: string; field?: string };
@@ -138,9 +138,6 @@ function serve(input: unknown): Promise<Response> {
         data: { branches: [{ id: 'MAIN', name: 'Main Branch' }] },
       }),
     );
-  }
-  if (url.pathname === '/api/v2/bookings') {
-    return Promise.resolve(json(200, { items: [], hasMore: false, page: 0 }));
   }
   return Promise.resolve(json(200, { version: 3, changed: false }));
 }

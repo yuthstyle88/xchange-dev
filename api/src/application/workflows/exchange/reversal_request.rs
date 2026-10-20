@@ -13,8 +13,6 @@ use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_approval::application::approval_service::ApprovalService;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_exchange::domain::reversal::repository::ReversalRepository;
 use xc_exchange::domain::reversal::reversal::{NewReversal, Reversal, ReversalId};
 use xc_exchange::domain::reversal::window::{ReversalWindow, Tz};
@@ -139,9 +137,7 @@ impl RequestReversal {
             .await?;
 
         // AP-1: the requester at the exchange's branch (the owner has none)
-        let v3 = Actor::staff(who.id.clone(), who.role, input.branch.clone())
-            .unwrap_or_else(|| Actor::owner(who.id.clone()));
-        let by = actor_from_v3(&v3, &organization_id.to_string(), now);
+        let by = who.access_actor_at(&organization_id.to_string(), &input.branch, now);
         let request = self
             .approvals
             .request(

@@ -51,6 +51,28 @@ fn retired_by_re7(name: &str) -> bool {
     name == "adminSaveRate"
 }
 
+/// How many mapped cases name an action CA-10 #626 retires (counted on the CA-10 branch,
+/// 2026-10-16).
+const CA10_RETIRED_CASES: usize = 198;
+
+/// Known difference: CA-10 #626 retires the admin direct shift actions and every `ops*` name
+/// (design `cash-shift-transfer.md` §6). The fixtures keep v2's names; what Policy answers for them
+/// now is pinned by `the_names_ca10_retires_are_answered_as_names_nobody_knows`, not by the replay.
+fn retired_by_ca10(name: &str) -> bool {
+    ["adminOpenShift", "adminCloseShift", "adminMoveStock"].contains(&name)
+        || name
+            .strip_prefix("ops")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_uppercase()))
+}
+
+/// How many mapped cases belong to the retired v2 owner bookings route (BK-11 #1413).
+const BK11_RETIRED_CASES: usize = 22;
+
+/// Known difference: BK-11 #1413 deletes v2's owner bookings route; counted, not asked.
+fn retired_by_bk11(route: &str) -> bool {
+    route == "POST /api/bookings"
+}
+
 fn front() -> Actor {
     staff(Role::Teller, B2)
 }
@@ -388,6 +410,8 @@ fn every_mapped_case_is_answered_as_mapped() {
     let mut wrong = Vec::new();
     let mut asked_n = 0;
     let mut retired = 0;
+    let mut retired_ca10 = 0;
+    let mut retired_bk11 = 0;
     for c in m
         .cases
         .iter()
@@ -396,6 +420,18 @@ fn every_mapped_case_is_answered_as_mapped() {
     {
         let who = caller(c.roles.as_deref());
         let name = asked(&c.route, &c.path, &c.action);
+        if retired_by_bk11(&c.route) {
+            // known difference: BK-11 #1413 deletes v2's owner bookings route (design §6)
+            asked_n += 1;
+            retired_bk11 += 1;
+            continue;
+        }
+        if retired_by_ca10(&name) {
+            // known difference: CA-10 #626 retires the action (design §6)
+            asked_n += 1;
+            retired_ca10 += 1;
+            continue;
+        }
         if retired_by_re7(&name) {
             // known difference: RE-7 #604 removes adminSaveRate (rates.md §9)
             asked_n += 1;
@@ -421,6 +457,14 @@ fn every_mapped_case_is_answered_as_mapped() {
     }
     assert_eq!(asked_n, 1425 - 402 + 285);
     assert_eq!(retired, RETIRED_CASES, "the mapped cases of adminSaveRate");
+    assert_eq!(
+        retired_ca10, CA10_RETIRED_CASES,
+        "the mapped cases of the names CA-10 retires"
+    );
+    assert_eq!(
+        retired_bk11, BK11_RETIRED_CASES,
+        "the mapped cases of the route BK-11 retires"
+    );
     assert!(
         wrong.is_empty(),
         "{} of {} answers differ from the mapped fixture; the first ones:\n{}",
@@ -492,8 +536,10 @@ fn every_call_runs_on_the_branch_named_in_scope() {
         .chain(&m.branch_cases)
         .filter(|c| c.owner.is_none())
     {
-        if retired_by_re7(&asked(&c.route, &c.path, &c.action)) {
-            // known difference: RE-7 #604 removes adminSaveRate (rates.md §9); counted, not asked
+        let name = asked(&c.route, &c.path, &c.action);
+        if retired_by_re7(&name) || retired_by_ca10(&name) || retired_by_bk11(&c.route) {
+            // known difference: RE-7 #604 removes adminSaveRate (rates.md §9), CA-10 #626 the
+            // direct shift actions and `ops*` (cash-shift-transfer.md §6); counted, not asked
             if c.branch.is_some() {
                 ran += 1;
             } else if c.change.as_deref() == Some("D4") {
@@ -530,8 +576,12 @@ fn which_branch_an_employee_belongs_to_changes_no_answer() {
         .cases
         .iter()
         .filter(|c| c.own.is_some() && c.owner.is_none())
-        // known difference: RE-7 #604 removes adminSaveRate (rates.md §9)
-        .filter(|c| !retired_by_re7(&asked(&c.route, &c.path, &c.action)))
+        // known difference: RE-7 #604 removes adminSaveRate (rates.md §9); CA-10 #626 the direct
+        // shift actions and `ops*` (cash-shift-transfer.md §6); BK-11 #1413 the v2 owner bookings route
+        .filter(|c| {
+            let name = asked(&c.route, &c.path, &c.action);
+            !retired_by_re7(&name) && !retired_by_ca10(&name) && !retired_by_bk11(&c.route)
+        })
     {
         for home in ["MAIN", B9, "B1700000000000-x"] {
             let rows: Vec<RoleRow> = c
@@ -903,7 +953,6 @@ fn the_owner_is_let_through_wherever_a_signed_in_caller_is() {
         (EntryPath::Kiosk, "configure"),
         (EntryPath::OwnerRoute, "employees"),
         (EntryPath::OwnerRoute, "/api/reference-rates"),
-        (EntryPath::OwnerRoute, "/api/v2/bookings"),
         (EntryPath::UserRoute, "documents"),
     ] {
         assert_eq!(ask(Some(&o), on, name), Ok(()), "{} {name}", path_name(on));
@@ -1282,4 +1331,46 @@ fn an_action_is_its_v2_name_and_nothing_else() {
         Action::new(String::from("adminSnapshot"))
     );
     assert_ne!(action("adminSnapshot"), action("adminsnapshot"));
+}
+
+/// CA-10 #626 (design `cash-shift-transfer.md` §6): the admin direct shift actions and the `ops*`
+/// names are answered on both rpc routes exactly as a name nobody knows, whoever asks.
+#[test]
+fn the_names_ca10_retires_are_answered_as_names_nobody_knows() {
+    let callers = [
+        None,
+        Some(owner()),
+        Some(staff(Role::Teller, B2)),
+        Some(staff(Role::BranchManager, B2)),
+        Some(staff(Role::Finance, B2)),
+        Some(staff(Role::Executive, B2)),
+    ];
+    let retired = [
+        "adminOpenShift",
+        "adminCloseShift",
+        "adminMoveStock",
+        "opsClock",
+        "opsPropose",
+        "opsCommit",
+        "opsEnable",
+        "opsSetEntity",
+        "opsNope",
+    ];
+    let mut asked_n = 0;
+    for who in &callers {
+        for on in [EntryPath::Rpc, EntryPath::StaffRpc] {
+            let unknown = ask(who.as_ref(), on, "noSuchNameAtAll");
+            for name in retired {
+                assert!(retired_by_ca10(name), "{name}");
+                assert_eq!(
+                    ask(who.as_ref(), on, name),
+                    unknown,
+                    "{name} on {} as {who:?}",
+                    path_name(on)
+                );
+                asked_n += 1;
+            }
+        }
+    }
+    assert_eq!(asked_n, 6 * 2 * 9);
 }

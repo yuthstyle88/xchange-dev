@@ -38,7 +38,7 @@
 //! Needs `TEST_DATABASE_URL` (see `snapshot_common/mod.rs`); nothing here skips.
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -69,7 +69,6 @@ use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::move_stock::MoveStock;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::save_transaction::SaveTransactionWorkflow;
 use xchange::bootstrap::AppState;
@@ -109,6 +108,38 @@ pub const V2_HEADERS_FAULT: &str = "หัวตารางเปลี่ย�
 pub const NO_SUCH_NAME: &str = "re7NoSuchName";
 /// The action RE-7 retired (design §9).
 pub const RETIRED: &str = "adminSaveRate";
+/// Re-expected for CA-10 #626 by the ticket author (design `docs/design/blueprint/cash-shift-transfer.md`
+/// §6): the admin direct shift actions, replaced by counts and moves.
+pub const CA10_RETIRED: [&str; 3] = ["adminOpenShift", "adminCloseShift", "adminMoveStock"];
+
+/// Re-expected for CA-10 #626 by the ticket author (design §6): an action CA-10 retires, i.e. a
+/// direct shift action or one of the `ops*` compat names (`opsNope` included: no `ops*` name is
+/// custody's to answer any more). v3 answers it as a name v2 does not know.
+pub fn retired_by_ca10(action: &str) -> bool {
+    CA10_RETIRED.contains(&action)
+        || action
+            .strip_prefix("ops")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_uppercase()))
+}
+
+/// The name sent in place of a retired `action`: [`NO_SUCH_NAME`] for RE-7's, otherwise a name v2
+/// does not know of the same length (so a body that names it keeps its length).
+pub fn unknown_name_for(action: &str) -> String {
+    if action == RETIRED {
+        NO_SUCH_NAME.to_owned()
+    } else {
+        format!("ca10{}", "Z".repeat(action.len().saturating_sub(4)))
+    }
+}
+
+#[allow(clippy::duplicate_mod)]
+#[path = "../shift_setup_common/mod.rs"]
+mod shift_setup_common;
+
+#[allow(clippy::duplicate_mod)]
+#[rustfmt::skip]
+#[path = "../shift_holder_common/mod.rs"]
+mod shift_holder_common;
 
 /// The ten actions part one of T11a dispatches.
 pub const PART_ONE: [&str; 10] = [
@@ -124,7 +155,6 @@ pub const PART_ONE: [&str; 10] = [
     "reserveCustomer",
 ];
 
-pub mod gap_custody;
 pub mod gap_documents;
 pub mod gap_save;
 
@@ -136,14 +166,13 @@ pub mod gap_save;
 pub enum Family {
     /// `documents`.
     Documents,
-    /// Anything starting `ops`.
-    Custody,
     /// `saveTransaction`.
     Save,
 }
 
 impl Family {
-    pub const ALL: [Family; 3] = [Family::Documents, Family::Custody, Family::Save];
+    // CA-10 #626 (design §6): the custody family (`ops*`) is retired, not part two any more
+    pub const ALL: [Family; 2] = [Family::Documents, Family::Save];
 
     /// The family `action` belongs to; `None` for a name of part one and for a
     /// name nobody knows.
@@ -152,8 +181,6 @@ impl Family {
             Some(Family::Save)
         } else if action == "documents" {
             Some(Family::Documents)
-        } else if action.starts_with("ops") {
-            Some(Family::Custody)
         } else {
             None
         }
@@ -163,7 +190,6 @@ impl Family {
     pub fn wired(self) -> bool {
         match self {
             Family::Documents => gap_documents::WIRED,
-            Family::Custody => gap_custody::WIRED,
             Family::Save => gap_save::WIRED,
         }
     }
@@ -378,12 +404,12 @@ impl Desk {
         }
     }
 
-    /// Switch custody on for `branch` behind the routes (the owner's door to it
-    /// is `/api/employees`, ticket T4c).
+    /// The branch's day exists, CLOSED, behind the routes. Since CA-10 (#626 Q2) custody always applies: there is
+    /// no `enabled` switch left to turn on.
     pub async fn custody_on(&self, branch: &str) {
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase) VALUES ($1, true, 'CLOSED') \
-             ON CONFLICT (branch_id) DO UPDATE SET enabled = true",
+            "INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'CLOSED') \
+             ON CONFLICT (branch_id) DO NOTHING",
         )
         .bind(branch)
         .execute(&self.db.pool)
@@ -887,6 +913,11 @@ pub struct Replay<'f> {
 /// [`Replay::uploads_as`]. Keys are made at random, so one map serves every test.
 static UPLOADS_BY: Mutex<BTreeMap<(String, String), String>> = Mutex::new(BTreeMap::new());
 
+/// (test schema, branch) → this replay opened that branch's day for a save (CA-10 #626, ruling A: try 2):
+/// [`Replay::open_day_for_save`]. Read by the `operations.phase` restatement in the snapshot comparison, so only a
+/// day the replay opened is compared as OPEN; a day the code under test opens by itself is compared as recorded.
+static DAYS_OPENED_FOR_A_SAVE: Mutex<BTreeSet<(String, String)>> = Mutex::new(BTreeSet::new());
+
 impl<'f> Replay<'f> {
     /// A desk with the people of `fixture` employed and signed in.
     pub async fn start(desk: Desk, app: App, fixture: &'f Fixture) -> Replay<'f> {
@@ -1020,7 +1051,8 @@ impl<'f> Replay<'f> {
         let Some(action) = action_of(step) else {
             return Rule::Replay;
         };
-        if action == RETIRED {
+        // CA-10 #626: the direct shift actions and the `ops*` names are retired as RE-7's was
+        if action == RETIRED || retired_by_ca10(&action) {
             return Rule::Retired;
         }
         // the route judges the name before the payload, unless it refuses the request first
@@ -1098,6 +1130,20 @@ impl<'f> Replay<'f> {
         // the ledger's drawer.
         if step.status == Some(200) && action_of(step).as_deref() == Some("saveTransaction") {
             crate::snapshot_common::r1_fund_open_drawers(&self.desk.db.pool).await;
+        }
+        // CA-10 #626 (ruling A, try 2): a compat save meets the teller gate (`check_teller_save_in`), which needs an
+        // OPEN branch day; v2 had no day phase. Before a recorded save on a branch whose shift a verified OPEN count
+        // opened (READY), the replay opens that day, as `dayStartService` would.
+        if action_of(step).as_deref() == Some("saveTransaction") {
+            let branch = payload
+                .as_ref()
+                .and_then(|p| p.get("branchId"))
+                .and_then(Value::as_str)
+                .unwrap_or("MAIN")
+                .to_owned();
+            if self.opened_by_count(&branch).await {
+                self.open_day_for_save(&branch).await;
+            }
         }
         let answer = self.app.send(call).await;
         let label = self.label(step);
@@ -1265,7 +1311,7 @@ impl<'f> Replay<'f> {
                 // keep v2's meaning. The kiosk page's `configure` is published by
                 // `kiosk_http_common`'s replay (#756 RE-4b).
                 if step.status == Some(200) {
-                    self.publish_behind(step).await;
+                    self.retired_behind(step).await;
                 }
             }
             Rule::ResolvedAs(resolution) => {
@@ -1326,13 +1372,18 @@ impl<'f> Replay<'f> {
         let payload = step.payload.as_ref().map(|p| self.ids.to_actual(p));
         let mut call = call_of(self.fixture, step, &self.cookies, payload.as_ref());
         let body = String::from_utf8(call.body.clone()).expect("a recorded body is text");
+        // CA-10 #626: any retired name, not only RE-7's
+        let retired = action_of(step).expect("a retired step names its action");
         assert!(
-            body.contains(&format!("\"{RETIRED}\"")),
-            "{}: the body names {RETIRED}",
+            body.contains(&format!("\"{retired}\"")),
+            "{}: the body names {retired}",
             self.label(step)
         );
         call.body = body
-            .replace(&format!("\"{RETIRED}\""), &format!("\"{NO_SUCH_NAME}\""))
+            .replace(
+                &format!("\"{retired}\""),
+                &format!("\"{}\"", unknown_name_for(&retired)),
+            )
             .into_bytes();
         self.app.send(call).await
     }
@@ -1477,8 +1528,202 @@ impl<'f> Replay<'f> {
                 ),
             );
         }
+        // CA-10 #626 (design §6, CA-7e #1911): a shift the replay opened behind the routes is a
+        // Blueprint count, and a verified OPEN count leaves the branch day READY, where v2's
+        // switched-off branch said CLOSED.
+        if expected["operations"]["phase"] == json!("CLOSED")
+            && actual["operations"]["phase"] == json!("READY")
+            && let Some(branch) = actual["branchId"].as_str()
+            && self.opened_by_count(branch).await
+        {
+            expected["operations"]["phase"] = json!("READY");
+        }
+        // CA-10 #626 (ruling A, option A, beside the CA-7e READY case above): v3 needs an OPEN day to save and v2 had
+        // no day phase, so a day this replay opened for a save (`open_day_for_save`) reads OPEN where v2 said CLOSED.
+        // Only `operations.phase`, and only for such a day.
+        if expected["operations"]["phase"] == json!("CLOSED")
+            && actual["operations"]["phase"] == json!("OPEN")
+            && let Some(branch) = actual["branchId"].as_str()
+            && self.day_opened_for_a_save(branch).await
+        {
+            expected["operations"]["phase"] = json!("OPEN");
+        }
+        // CA-10 #626: such a shift is the counting teller's, not the owner's who sent the direct
+        // action, and a count closes it: who opened and closed it, its request ids, the figures the
+        // close compares (`expected`, `difference`) and the close's note are the Blueprint's. Its
+        // opening, its count, its times and its status stay held to v2.
+        if let (Some(want), Some(got)) = (
+            expected["stock"]["shifts"].as_array().cloned(),
+            actual["stock"]["shifts"].as_array(),
+        ) && want.len() == got.len()
+        {
+            for (i, shift) in got.iter().enumerate() {
+                if let Some(id) = shift["id"].as_str()
+                    && self.counted_open(id).await
+                {
+                    for key in [
+                        "staff",
+                        "openRequest",
+                        "closeRequest",
+                        "closedBy",
+                        "expected",
+                        "difference",
+                        "note",
+                    ] {
+                        if shift.get(key).is_some() {
+                            expected["stock"]["shifts"][i][key] = shift[key].clone();
+                        }
+                    }
+                }
+            }
+        }
+        // LG-6.r6 #1046 (controller ruling): on `$.stock.movements`, `staff` is the user id for v2's username and
+        // `requestId` is `""` (CA-10 retired requests, §7); `id` pairs via `IdMap` and the rest stays held to v2.
+        if let (Some(want), Some(got)) = (
+            expected["stock"]["movements"].as_array().cloned(),
+            actual["stock"]["movements"].as_array(),
+        ) && want.len() == got.len()
+        {
+            for (i, mov) in got.iter().enumerate() {
+                // LG-6.r6 #1046 (controller ruling): `staff` in v3 is the user id for v2's username in the replay's user map.
+                if let (Some(want_staff), Some(got_staff)) =
+                    (want[i]["staff"].as_str(), mov["staff"].as_str())
+                    && crate::snapshot_common::movement_staff_matches(
+                        &self.desk.db.pool,
+                        self.fixture,
+                        got_staff,
+                        want_staff,
+                    )
+                    .await
+                {
+                    expected["stock"]["movements"][i]["staff"] = mov["staff"].clone();
+                }
+                // LG-6.r6 #1046 (controller ruling): `requestId` on `$.stock.movements` is `""` in v3 (CA-10 §7).
+                if !want[i]["requestId"].as_str().unwrap_or_default().is_empty()
+                    && mov["requestId"] == json!("")
+                {
+                    expected["stock"]["movements"][i]["requestId"] = json!("");
+                }
+            }
+        }
+        // CA-10 #626: a CLOSE count whose figures differ from the shift's records the difference as
+        // an exception (CA-3), where v2's direct close kept none.
+        if let (Some(want), Some(got)) = (
+            expected["operations"]["exceptions"].as_array().cloned(),
+            actual["operations"]["exceptions"].as_array(),
+        ) && got.len() > want.len()
+        {
+            let mut wanted = want.into_iter();
+            let mut merged = Vec::new();
+            for item in got {
+                let request = item["requestId"].as_str().unwrap_or_default();
+                if self.close_count(request).await {
+                    merged.push(item.clone());
+                } else if let Some(next) = wanted.next() {
+                    merged.push(next);
+                }
+            }
+            merged.extend(wanted);
+            expected["operations"]["exceptions"] = Value::Array(merged);
+        }
         self.ids.learn(&expected, &actual);
         assert_same(&self.ids.to_actual(&expected), &actual, &label);
+    }
+
+    /// CA-10 #626: whether `branch` has a verified OPEN count, i.e. a shift opened the Blueprint way
+    /// (the replay opens one behind the routes for an accepted `adminOpenShift`).
+    async fn opened_by_count(&self, branch: &str) -> bool {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM cash_counts \
+             WHERE branch_id = $1 AND kind = 'OPEN' AND verified_at IS NOT NULL)",
+        )
+        .bind(branch)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("read the branch's counts")
+    }
+
+    /// CA-10 #626 (ruling A): the branch day OPEN for a replayed save (`shift_holder_common::open_day`), remembered
+    /// per test schema in [`DAYS_OPENED_FOR_A_SAVE`].
+    async fn open_day_for_save(&self, branch: &str) {
+        shift_holder_common::open_day(&self.desk.db.pool, branch).await;
+        let schema = self.schema().await;
+        DAYS_OPENED_FOR_A_SAVE
+            .lock()
+            .expect("the opened days")
+            .insert((schema, branch.to_owned()));
+    }
+
+    /// CA-10 #626 (ruling A): whether this replay opened `branch`'s day for a save.
+    async fn day_opened_for_a_save(&self, branch: &str) -> bool {
+        let schema = self.schema().await;
+        DAYS_OPENED_FOR_A_SAVE
+            .lock()
+            .expect("the opened days")
+            .contains(&(schema, branch.to_owned()))
+    }
+
+    /// The test's own schema (each test migrates a fresh one).
+    async fn schema(&self) -> String {
+        sqlx::query_scalar("SELECT current_schema()")
+            .fetch_one(&self.desk.db.pool)
+            .await
+            .expect("the test schema")
+    }
+
+    /// CA-10 #626: whether `request` names a CLOSE count (its id or its idempotency key).
+    async fn close_count(&self, request: &str) -> bool {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM cash_counts \
+             WHERE kind = 'CLOSE' AND (id::text = $1 OR idempotency_key = $1))",
+        )
+        .bind(request)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("read the counts")
+    }
+
+    /// CA-10 #626: whether shift `id` was opened by a verified OPEN count.
+    async fn counted_open(&self, id: &str) -> bool {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM cash_counts \
+             WHERE shift_id = $1 AND kind = 'OPEN' AND verified_at IS NOT NULL)",
+        )
+        .bind(id)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("read the shift's counts")
+    }
+
+    /// CA-10 #626: of a recorded `{currency: amount}`, the currencies the register holds (v2 let an
+    /// opening name any code, e.g. `XXX`; a Blueprint count counts the register's).
+    async fn registered(&self, amounts: &Value) -> Value {
+        let codes: Vec<String> = sqlx::query_scalar("SELECT code FROM currencies")
+            .fetch_all(&self.desk.db.pool)
+            .await
+            .expect("read the register");
+        let kept: serde_json::Map<String, Value> = amounts
+            .as_object()
+            .map(|all| {
+                all.iter()
+                    .filter(|(code, _)| codes.contains(code))
+                    .map(|(code, amount)| (code.clone(), amount.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Value::Object(kept)
+    }
+
+    /// CA-10 #626: the id of `branch`'s OPEN shift, if any.
+    async fn open_shift(&self, branch: &str) -> Option<String> {
+        sqlx::query_scalar(
+            "SELECT id FROM shifts WHERE branch_id = $1 AND status = 'OPEN' \
+             ORDER BY opened_at DESC LIMIT 1",
+        )
+        .bind(branch)
+        .fetch_optional(&self.desk.db.pool)
+        .await
+        .expect("read the branch's shifts")
     }
 
     fn branch_of(&self, step: &Step) -> BranchId {
@@ -1531,7 +1776,6 @@ impl<'f> Replay<'f> {
         match action_of(step).as_deref() {
             Some("saveTransaction") => self.save_behind(step).await,
             Some("reserveCustomer") => self.reserve_behind(step).await,
-            Some("adminMoveStock") => self.move_behind(step).await,
             other => panic!(
                 "{}: v2 accepted {other:?}; nothing applies it behind the routes",
                 self.label(step)
@@ -1592,34 +1836,191 @@ impl<'f> Replay<'f> {
         self.tally.applied_behind.push(step.n);
     }
 
-    /// An accepted `adminMoveStock`, through the shift service as the route runs it, by whoever v2
-    /// recorded.
-    async fn move_behind(&mut self, step: &Step) {
-        let sender = self.fixture.sender(step).expect("somebody moved it");
+    /// Re-expected for CA-10 #626 by the ticket author (design §6): what an accepted retired step
+    /// did, the v3 way, so the steps after it keep v2's meaning. RE-7's direct rate save is
+    /// published; a direct shift open or close is a Blueprint count (`shift_setup_common`); a stock
+    /// move is written as the move it was. An accepted `ops*` step applies nothing: the request
+    /// model it drove is gone.
+    async fn retired_behind(&mut self, step: &Step) {
+        match action_of(step).as_deref() {
+            Some(RETIRED) => self.publish_behind(step).await,
+            Some("adminOpenShift") => self.open_behind(step).await,
+            Some("adminCloseShift") => self.close_behind(step).await,
+            Some("adminMoveStock") => self.move_behind(step).await,
+            _ => {}
+        }
+    }
+
+    /// An accepted `adminOpenShift`: the branch's shift opened by a verified OPEN count of the
+    /// recorded opening.
+    async fn open_behind(&mut self, step: &Step) {
         let payload = self
             .ids
             .to_actual(step.payload.as_ref().expect("a payload"));
-        let command = MoveStock::from_payload(&payload)
-            .unwrap_or_else(|e| panic!("{}: v2 accepted it: {e:?}", self.label(step)));
         let branch = self.branch_of(step);
-        let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.desk.db.pool.clone())),
-            self.desk.db.branch_tx(),
-        );
-        let who = sender.username.clone();
+        // v2 answered a repeated request as it answered the first: nothing more to open
+        if self.open_shift(branch.as_str()).await.is_some() {
+            return;
+        }
+        let opening = self.registered(&payload["opening"]).await;
+        shift_setup_common::open_shift_by_count(
+            &self.desk.db.pool,
+            branch.as_str(),
+            opening,
+            time(&step.at),
+        )
+        .await;
+        self.tally.applied_behind.push(step.n);
+    }
+
+    /// An accepted `adminCloseShift`: the branch's open shift closed by a verified CLOSE count of
+    /// the recorded `counted`.
+    async fn close_behind(&mut self, step: &Step) {
+        let payload = self
+            .ids
+            .to_actual(step.payload.as_ref().expect("a payload"));
+        let branch = self.branch_of(step);
+        // v2 answered a repeated request as it answered the first: nothing left to close
+        if self.open_shift(branch.as_str()).await.is_none() {
+            return;
+        }
+        let counted = self.registered(&payload["counted"]).await;
+        shift_setup_common::close_shift_by_count(
+            &self.desk.db.pool,
+            branch.as_str(),
+            counted,
+            time(&step.at),
+        )
+        .await;
+        self.tally.applied_behind.push(step.n);
+    }
+
+    /// An accepted `adminMoveStock`: the move written on the branch's open shift as a moved
+    /// `cash_transfers` row (LG-6.r6 #1046 ruling Q1), plus the shift's expected balance and the
+    /// branch version.
+    async fn move_behind(&mut self, step: &Step) {
+        let payload = self
+            .ids
+            .to_actual(step.payload.as_ref().expect("a payload"));
+        let branch = self.branch_of(step);
+        let label = self.label(step);
+        let code = text_of(&payload, "currency");
+        let direction = text_of(&payload, "direction");
+        let amount = match &payload["amount"] {
+            Value::String(text) => text.trim().to_owned(),
+            other => other.to_string(),
+        };
+        let (kind, from_shift, to_shift, signed) = if direction == "IN" {
+            ("SAFE_TO_DRAWER", false, true, amount.clone())
+        } else {
+            ("DRAWER_TO_SAFE", true, false, format!("-{amount}"))
+        };
+        let actor = &self
+            .fixture
+            .sender(step)
+            .expect("somebody moved it")
+            .username;
         let at = time(&step.at);
-        let here = branch.clone();
-        let inner = shifts.clone();
-        shifts
-            .branch_tx()
-            .run(&branch, move |tx| {
-                Box::pin(async move {
-                    inner.move_stock_in(tx, &here, command, &who, at).await?;
-                    Ok(())
-                })
-            })
+        let mut tx = self.desk.db.pool.begin().await.expect("begin");
+        let shift: String = sqlx::query_scalar(
+            "SELECT id FROM shifts WHERE branch_id = $1 AND status = 'OPEN' \
+             ORDER BY opened_at DESC LIMIT 1",
+        )
+        .bind(branch.as_str())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: the branch's open shift: {e}"));
+        let mover: String = sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT organization_id, $2, 'PENDING', 'test' FROM branches WHERE id = $1 \
+             RETURNING id::text",
+        )
+        .bind(branch.as_str())
+        .bind(actor)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: mover user: {e}"));
+        let transfer: Option<String> = sqlx::query_scalar(
+            "INSERT INTO cash_transfers (organization_id, kind, from_branch_id, from_shift_id, \
+                 to_shift_id, status, created_by, dispatched_at, dispatched_by, received_at, \
+                 received_by, note, idempotency_key, created_at, updated_at) \
+             SELECT organization_id, $2, id, $3, $4, 'RECEIVED', $5::uuid, $6, $5::uuid, $6, \
+                 $5::uuid, $7, $8, $6, $6 \
+             FROM branches WHERE id = $1 \
+             ON CONFLICT (from_branch_id, idempotency_key) DO NOTHING \
+             RETURNING id::text",
+        )
+        .bind(branch.as_str())
+        .bind(kind)
+        .bind(from_shift.then_some(shift.as_str()))
+        .bind(to_shift.then_some(shift.as_str()))
+        .bind(&mover)
+        .bind(at)
+        .bind(text_of(&payload, "reason").trim())
+        .bind(text_of(&payload, "requestId"))
+        .fetch_optional(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: the move: {e}"));
+        // v2 answered a repeated request as it answered the first: nothing more to move
+        let Some(transfer) = transfer else {
+            return;
+        };
+        let face: Option<(i64, String)> = sqlx::query_as(
+            "SELECT id, face_value::text FROM denominations \
+             WHERE currency_code = $1 AND face_value IS NOT NULL AND $2::numeric % face_value = 0 \
+             ORDER BY face_value DESC LIMIT 1",
+        )
+        .bind(&code)
+        .bind(&amount)
+        .fetch_optional(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: face value: {e}"));
+        let (denomination, face) = match face {
+            Some(f) => f,
+            None => sqlx::query_as(
+                "INSERT INTO denominations (currency_code, face_value, group_code) \
+                 VALUES ($1, 0.01, 'ALL') RETURNING id, face_value::text",
+            )
+            .bind(&code)
+            .fetch_one(&mut *tx)
             .await
-            .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
+            .unwrap_or_else(|e| panic!("{label}: 0.01 face value: {e}")),
+        };
+        sqlx::query(
+            "INSERT INTO cash_transfer_lines (transfer_id, organization_id, currency, \
+                 denomination_id, qty_sent, qty_received) \
+             SELECT t.id, t.organization_id, $2, $3, ($4::numeric / $5::numeric)::int, \
+                 ($4::numeric / $5::numeric)::int \
+             FROM cash_transfers t WHERE t.id = $1::uuid",
+        )
+        .bind(&transfer)
+        .bind(&code)
+        .bind(denomination)
+        .bind(&amount)
+        .bind(&face)
+        .execute(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: the moved line: {e}"));
+        sqlx::query(
+            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+             VALUES ($1, $2, 0, GREATEST($3::numeric, 0)) \
+             ON CONFLICT (shift_id, code) DO UPDATE SET expected = shift_balances.expected + $3::numeric",
+        )
+        .bind(&shift)
+        .bind(&code)
+        .bind(&signed)
+        .execute(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: the shift's balance: {e}"));
+        sqlx::query(
+            "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 1) \
+             ON CONFLICT (branch_id) DO UPDATE SET version = branch_versions.version + 1",
+        )
+        .bind(branch.as_str())
+        .execute(&mut *tx)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: the branch version: {e}"));
+        tx.commit().await.expect("commit the move");
         self.tally.applied_behind.push(step.n);
     }
 
@@ -1627,6 +2028,9 @@ impl<'f> Replay<'f> {
     /// part two's arm will: `staff` is the caller's username.
     async fn save_behind(&mut self, step: &Step) {
         let sender = self.fixture.sender(step).expect("somebody saved it");
+        let branch = self.branch_of(step);
+        let saver =
+            shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch.as_str()).await;
         let payload = self
             .ids
             .to_actual(step.payload.as_ref().expect("a payload"));
@@ -1637,6 +2041,16 @@ impl<'f> Replay<'f> {
                 .and_then(Value::as_str)
                 .map(str::to_string)
         };
+        let passport = key_of("passport");
+        let slip = key_of("slip");
+        for key in [&passport, &slip].into_iter().flatten() {
+            sqlx::query("UPDATE files SET owner_id = $1 WHERE key = $2")
+                .bind(&saver)
+                .bind(key)
+                .execute(&self.desk.db.pool)
+                .await
+                .expect("assign the save's file to its saver");
+        }
         let command = SaveTransaction {
             customer: ReserveCustomer {
                 name: text_of(&payload, "name"),
@@ -1664,8 +2078,8 @@ impl<'f> Replay<'f> {
             paid_at: text_of(&payload, "paidAt"),
             payment_confirmed: payload["paymentConfirmed"] == json!(true),
             identity_confirmed: payload["identityConfirmed"] == json!(true),
-            passport: key_of("passport"),
-            slip: key_of("slip"),
+            passport,
+            slip,
             reference_rate: payload
                 .get("referenceRate")
                 .filter(|v| !v.is_null())
@@ -1674,7 +2088,7 @@ impl<'f> Replay<'f> {
         let saved = self
             .desk
             .workflow
-            .save(&self.branch_of(step), command, &sender.id, time(&step.at))
+            .save(&branch, command, &saver, time(&step.at))
             .await
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
         assert_eq!(

@@ -1,5 +1,10 @@
-//! Ticket #2187 — posting an APPROVED reversal chooses the poster's own open shift at the branch first,
-//! falling back to the branch's legacy shift (`ShiftService::active_in`).
+//! Ticket #2187 — posting an APPROVED reversal chooses the poster's own open shift at the branch.
+//!
+//! Restated for #2964 (CA-10 split; ticket writer claude/dell-claude-4): the fallback to "the branch's shift"
+//! (`ShiftService::active_in`) is gone with v2's per-branch reads (#626 Q4). The poster's own OPEN shift is read with
+//! `ShiftService::open_of_teller_in(tx, teller)` (CA-10p #2916) and is used only when it is at the reversal's branch.
+//! No own OPEN shift at that branch ⇒ `noOpenShift`, whatever other tellers hold open there. S3, S5a and S6 pinned
+//! the fallback and now pin its absence; S1, S2, S4 and S5b are unchanged.
 
 mod quote_common;
 mod tx4_common;
@@ -21,7 +26,7 @@ use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access;
-use xc_auth::domain::policy::value_objects::role::Role as V3Role;
+use xc_auth::domain::access::StandingKind;
 use xc_cash::domain::posting::{CashPlace, CashPostings};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -69,7 +74,7 @@ fn uuid_actor(id: Uuid) -> SaveActor {
         id: id.to_string(),
         username: format!("teller-{id}"),
         employee_id: None,
-        role: V3Role::Front,
+        standing: StandingKind::Staff(access::Role::Teller),
     }
 }
 
@@ -336,7 +341,12 @@ impl Shop {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        Decimal::new(b.get(CurrencyCode::parse(currency).unwrap()).minor(), 2)
+        Decimal::new(
+            b.get(CurrencyCode::parse(currency).unwrap())
+                .try_minor()
+                .unwrap(),
+            2,
+        )
     }
 
     async fn reversal(&self, id: ReversalId, column: &str) -> String {
@@ -450,34 +460,36 @@ async fn s2_mixed_branch_posts_on_posters_own_shift_not_legacy_shift() {
     s.finish().await;
 }
 
-/// S3: only a legacy OPEN shift; the UUID poster has no own shift -> falls back to the branch's legacy shift.
+/// S3 (#2964): another teller's OPEN shift at the branch, and the UUID poster has none of their own -> `noOpenShift`;
+/// nothing is written and the other teller's drawer is untouched (no fallback to the branch's shift).
 #[tokio::test]
-async fn s3_only_legacy_open_shift_falls_back_to_legacy_shift() {
+async fn s3_a_poster_without_an_own_shift_is_no_open_shift_even_beside_another_tellers_shift() {
     let s = Shop::start().await;
     let now = business_noon();
-    let legacy_shift = s.c.shift.clone();
+    let other_tellers_shift = s.c.shift.clone();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
     let id = s.approved(&t, now).await;
+    let usd_before = s
+        .at(CashPlace::Drawer(other_tellers_shift.clone()), "USD")
+        .await;
 
     let poster_id = Uuid::new_v4();
     s.seed_user(poster_id).await;
     let who = uuid_actor(poster_id);
 
-    s.post_by(id, &who, later(now, 20))
-        .await
-        .expect("S3: UUID poster without own shift falls back to legacy shift");
-
     assert_eq!(
-        s.moved(id, "DRAWER", "USD").await,
-        (d("-100"), Some(legacy_shift.clone())),
-        "S3: USD leave the legacy shift drawer"
+        code(s.post_by(id, &who, later(now, 20)).await),
+        "noOpenShift",
+        "S3: no fallback to the branch's (another teller's) open shift"
     );
+    assert_eq!(s.reversal(id, "status").await, "APPROVED");
+    assert_eq!(s.reversal_postings(id).await, 0);
     assert_eq!(
-        s.reversal(id, "shift_id").await,
-        legacy_shift,
-        "S3: reversals.shift_id is the legacy shift"
+        s.at(CashPlace::Drawer(other_tellers_shift), "USD").await,
+        usd_before,
+        "S3: the other teller's drawer is untouched"
     );
     s.finish().await;
 }
@@ -506,8 +518,8 @@ async fn s4_no_open_shift_at_all_is_refused() {
     s.finish().await;
 }
 
-/// S5: the poster has an OPEN shift at another branch (`BR2`) only -> not used: falls to the legacy shift of this
-/// branch (`MAIN`), else `noOpenShift`.
+/// S5 (#2964): the poster has an OPEN shift at another branch (`BR2`) only -> not used: `noOpenShift` at `MAIN`,
+/// whether or not another teller holds an OPEN shift there.
 #[tokio::test]
 async fn s5_posters_open_shift_at_another_branch_only_is_not_used() {
     let s = Shop::start().await;
@@ -527,15 +539,15 @@ async fn s5_posters_open_shift_at_another_branch_only_is_not_used() {
     let br2_usd_before = s.at(CashPlace::Drawer(br2_shift), "USD").await;
     let who = uuid_actor(poster_id);
 
-    // Subcase 1: MAIN still has its legacy shift -> falls back to MAIN's legacy shift, ignoring BR2's shift.
-    s.post_by(id1, &who, later(now, 20))
-        .await
-        .expect("S5a: falls back to MAIN's legacy shift");
+    // Subcase 1: another teller still holds MAIN's open shift -> noOpenShift; neither that shift nor BR2's is used.
     assert_eq!(
-        s.reversal(id1, "shift_id").await,
-        legacy_shift,
-        "S5a: posts on MAIN's legacy shift, not BR2's shift"
+        code(s.post_by(id1, &who, later(now, 20)).await),
+        "noOpenShift",
+        "S5a: no fallback to MAIN's other open shift, and BR2's own shift is not used"
     );
+    assert_eq!(s.reversal(id1, "status").await, "APPROVED");
+    assert_eq!(s.reversal_postings(id1).await, 0);
+    assert_ne!(s.reversal(id1, "shift_id").await, legacy_shift);
 
     // Subcase 2: MAIN's legacy shift is closed -> answers noOpenShift, still ignoring BR2's shift.
     s.close_legacy_shift().await;
@@ -558,12 +570,12 @@ async fn s5_posters_open_shift_at_another_branch_only_is_not_used() {
     s.finish().await;
 }
 
-/// S6: `who.id` is not a UUID (a legacy actor) -> legacy shift, as today (no parse panic).
+/// S6 (#2964): `who.id` is not a UUID (a legacy actor) -> it can own no shift: `noOpenShift`, nothing written, no
+/// parse panic, even with another teller's OPEN shift at the branch.
 #[tokio::test]
-async fn s6_non_uuid_actor_uses_legacy_shift_without_panic() {
+async fn s6_a_non_uuid_actor_is_no_open_shift_without_panic() {
     let s = Shop::start().await;
     let now = business_noon();
-    let legacy_shift = s.c.shift.clone();
     let t = s
         .completed(Side::Buy, "100", PaymentMethod::Cash, now)
         .await;
@@ -575,14 +587,12 @@ async fn s6_non_uuid_actor_uses_legacy_shift_without_panic() {
         "teller() is a non-UUID legacy actor"
     );
 
-    s.post_by(id, &legacy_actor, later(now, 20))
-        .await
-        .expect("S6: non-UUID actor posts on legacy shift");
-
     assert_eq!(
-        s.reversal(id, "shift_id").await,
-        legacy_shift,
-        "S6: reversals.shift_id is the legacy shift"
+        code(s.post_by(id, &legacy_actor, later(now, 20)).await),
+        "noOpenShift",
+        "S6: a non-UUID actor owns no shift"
     );
+    assert_eq!(s.reversal(id, "status").await, "APPROVED");
+    assert_eq!(s.reversal_postings(id).await, 0);
     s.finish().await;
 }

@@ -4,8 +4,12 @@
 // open, on close and when the read fails.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
-import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
+import {
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeMyBookingItemDto,
+  makeMyBookingsData,
+} from '../../../shared/testing/fixtures';
 import { th } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
 
@@ -18,8 +22,8 @@ const SLOT_A = '00000000-0000-0000-0000-0000000000a1';
 const SLOT_A_FRESH = '00000000-0000-0000-0000-0000000000a2';
 const SLOT_B = '00000000-0000-0000-0000-0000000000b1';
 
-function booking(id: string, bookingNo: string, branchId: string): MyBookingItemDto {
-  return {
+function booking(id: string, bookingNo: string, branchId: string) {
+  return makeMyBookingItemDto({
     id,
     bookingNo,
     status: 'CONFIRMED',
@@ -31,20 +35,32 @@ function booking(id: string, bookingNo: string, branchId: string): MyBookingItem
     quoteSummary: 'เรทสุดท้ายยืนยันเมื่อทำรายการ',
     cancelCutoffAt: '2026-10-14T09:00:00Z',
     ticketNumber: null,
+    ticketsAhead: null,
+    estimateSeconds: null,
+    estimateLowSeconds: null,
+    estimateHighSeconds: null,
+    estimateAsOf: null,
     readiness: 'unknown',
-  };
+  });
 }
 
-const INITIAL_BOOKINGS: MyBookingItemDto[] = [
+const INITIAL_BOOKINGS = [
   booking(BOOKING_A, 'B261014-0024', BRANCH_A),
   booking(BOOKING_B, 'B261014-0025', BRANCH_B),
 ];
 
-function slots(id: string): BookingSlotsData {
-  return {
+function slots(id: string) {
+  return makeBookingSlotsData({
     asOf: '2026-10-14T08:00:00Z',
-    slots: [{ id, start: '2026-10-14T11:00:00Z', end: '2026-10-14T11:30:00Z', available: 3 }],
-  };
+    slots: [
+      makeBookingSlotItemDto({
+        id,
+        start: '2026-10-14T11:00:00Z',
+        end: '2026-10-14T11:30:00Z',
+        available: 3,
+      }),
+    ],
+  });
 }
 
 function json(status: number, body: unknown): Response {
@@ -123,7 +139,7 @@ describe('xchange#2418: reschedule dialog lists only the open booking’s slots'
           return viewEnvelope({ customerId: 'cust-alice', displayName: 'Alice' });
         }
         if (u.pathname === '/api/v3/views/my_bookings') {
-          return viewEnvelope({ bookings: INITIAL_BOOKINGS } satisfies MyBookingsData);
+          return viewEnvelope(makeMyBookingsData({ bookings: INITIAL_BOOKINGS }));
         }
         if (u.pathname === '/api/v3/views/booking_slots') {
           return new Promise<Response>((resolve) => {

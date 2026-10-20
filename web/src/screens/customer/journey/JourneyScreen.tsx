@@ -16,6 +16,8 @@ import { locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { en, th, zh } from './i18n';
+import { JourneyBookings } from './JourneyBookings';
+import { PlanDelete } from './PlanDelete';
 import './journey.css';
 
 export interface JourneyScreenProps {
@@ -149,6 +151,12 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
       setDraftsError(() => err);
       setDraftsState('error');
     }
+  };
+
+  const removeDraft = (id: string) => {
+    const left = drafts().filter((d) => d.id !== id);
+    setDrafts(left);
+    if (left.length === 0) setDraftsState('empty');
   };
 
   const refreshAll = () => {
@@ -343,6 +351,8 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
         </Show>
       </section>
 
+      <JourneyBookings api={api} />
+
       {/* Saved Plans Section */}
       <section class="xc-journey-section" aria-labelledby="plans-section-heading">
         <div class="xc-journey-section-header">
@@ -428,6 +438,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
                       <span class="draft-branch">{t('branchLabel', { branch: draft.branch! })}</span>
                     </Show>
                     <span class="draft-expires">{t('expiresAt', { date: formatDate(draft.expiresAt) })}</span>
+                    <PlanDelete draft={draft} api={api} onDeleted={removeDraft} />
                   </div>
                 </div>
               )}

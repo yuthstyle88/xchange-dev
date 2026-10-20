@@ -1,14 +1,18 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
-import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
+import {
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeMyBookingItemDto,
+  makeMyBookingsData,
+} from '../../../shared/testing/fixtures';
 import { th } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
 
 const BRANCH_ID = 'XC-B01';
 const BOOKING_ACTIVE_ID = 'BK-alice-001';
 
-const INITIAL_BOOKINGS: MyBookingItemDto[] = [
-  {
+const INITIAL_BOOKINGS = [
+  makeMyBookingItemDto({
     id: BOOKING_ACTIVE_ID,
     bookingNo: 'B261014-0024',
     status: 'CONFIRMED',
@@ -20,21 +24,26 @@ const INITIAL_BOOKINGS: MyBookingItemDto[] = [
     quoteSummary: 'เรทสุดท้ายยืนยันเมื่อทำรายการ',
     cancelCutoffAt: '2026-10-14T09:00:00Z',
     ticketNumber: null,
+    ticketsAhead: null,
+    estimateSeconds: null,
+    estimateLowSeconds: null,
+    estimateHighSeconds: null,
+    estimateAsOf: null,
     readiness: 'unknown',
-  },
+  }),
 ];
 
-const AVAILABLE_SLOTS: BookingSlotsData = {
+const AVAILABLE_SLOTS = makeBookingSlotsData({
   asOf: '2026-10-14T08:00:00Z',
   slots: [
-    {
+    makeBookingSlotItemDto({
       id: '00000000-0000-0000-0000-000000000003',
       start: '2026-10-14T11:00:00Z',
       end: '2026-10-14T11:30:00Z',
       available: 3,
-    },
+    }),
   ],
-};
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -77,7 +86,7 @@ describe('APP-17: booking_slots error handling in reschedule dialog', () => {
         }
 
         if (u.pathname === '/api/v3/views/my_bookings') {
-          return viewEnvelope({ bookings: INITIAL_BOOKINGS } satisfies MyBookingsData);
+          return viewEnvelope(makeMyBookingsData({ bookings: INITIAL_BOOKINGS }));
         }
 
         if (u.pathname === '/api/v3/views/booking_slots') {

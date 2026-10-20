@@ -132,8 +132,8 @@ impl Room {
             .await
             .expect("insert a branch");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-             VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase, safe) \
+             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
         )
         .bind(B01)
         .execute(&pool)
@@ -155,8 +155,8 @@ impl Room {
             .await
             .expect("insert branch B02");
         sqlx::query(
-            "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-             VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+            "INSERT INTO ops_state (branch_id, phase, safe) \
+             VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
         )
         .bind(B02)
         .execute(&pool)
@@ -167,26 +167,19 @@ impl Room {
     }
 
     async fn person(&self, role: Role, branch: Option<&str>) -> Who {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        let id = xc_testdb::people::seed_person(
+            &mut self.pool.acquire().await.expect("acquire"),
+            ORG,
+            &unique(role.as_str()),
+            &[xc_testdb::people::RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch,
+                valid_from: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+                valid_to: None,
+            }],
         )
-        .bind(ORG)
-        .bind(unique(role.as_str()))
-        .fetch_one(&self.pool)
         .await
-        .expect("insert a user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
-        )
-        .bind(&id)
-        .bind(role.as_str())
-        .bind(ORG)
-        .bind(branch)
-        .execute(&self.pool)
-        .await
-        .expect("give the user a role");
+        .expect("insert a user and give them a role");
         Who {
             spec: format!("{id}|{}|{}", role.as_str(), branch.unwrap_or("*")),
             id,
@@ -324,11 +317,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }
@@ -481,25 +472,19 @@ impl Room {
              ON CONFLICT DO NOTHING"
         ))
         .await;
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        xc_testdb::people::seed_person(
+            &mut self.pool.acquire().await.expect("acquire"),
+            ORG_B,
+            &unique("orgb-teller"),
+            &[xc_testdb::people::RoleRow {
+                role_code: "TELLER",
+                branch_id: Some("ORGB-B01"),
+                valid_from: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+                valid_to: None,
+            }],
         )
-        .bind(ORG_B)
-        .bind(unique("orgb-teller"))
-        .fetch_one(&self.pool)
         .await
-        .expect("insert an org-B user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, 'TELLER', $2::uuid, 'ORGB-B01')",
-        )
-        .bind(&id)
-        .bind(ORG_B)
-        .execute(&self.pool)
-        .await
-        .expect("org-B role");
-        id
+        .expect("insert an org-B user")
     }
 }
 
@@ -641,7 +626,7 @@ async fn h7_handover_from_own_closed_shift_is_no_open_shift() {
 #[actix_web::test]
 async fn h8_handover_from_own_open_shift_at_another_branch_is_no_open_shift() {
     let room = Room::start().await;
-    let (teller, _, _open) = opened_shift(&room).await;
+    let teller = room.person(Role::Teller, Some(B01)).await;
     let at_b02 = room.seed_shift(&teller, B02, "OPEN").await;
     let receiver = room.person(Role::Teller, Some(B01)).await;
     let before = room.written().await;

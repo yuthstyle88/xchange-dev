@@ -6,6 +6,7 @@
 
 #![allow(dead_code)]
 
+use std::cell::RefCell;
 use std::future::Future;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -82,11 +83,60 @@ pub fn env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// A guard for a test-owned temporary directory that removes the directory on drop (#3066).
+#[derive(Debug)]
+pub struct TestDocsGuard {
+    path: PathBuf,
+}
+
+impl TestDocsGuard {
+    pub fn new() -> Self {
+        let n = TEST_DOCS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = test_docs_root()
+            .join(std::process::id().to_string())
+            .join(n.to_string());
+        let _ = std::fs::create_dir_all(&path);
+        Self { path }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Default for TestDocsGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AsRef<Path> for TestDocsGuard {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TestDocsGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::remove_dir(parent);
+            if let Some(root) = parent.parent() {
+                let _ = std::fs::remove_dir(root);
+            }
+        }
+    }
+}
+
+thread_local! {
+    static TEST_DIR_GUARDS: RefCell<Vec<TestDocsGuard>> = const { RefCell::new(Vec::new()) };
+}
+
 /// Settings from the committed YAML plus exactly the given environment.
 ///
 /// Gives every test settings a fresh temporary `verification.store_dir` outside
 /// the repo (issue #1729) unless `APP_VERIFICATION__STORE_DIR` is explicitly
-/// provided in `pairs`.
+/// provided in `pairs`. Cleaned up when the test finishes (#3066).
 pub fn settings(pairs: &[(&str, &str)]) -> Settings {
     let mut env_pairs = env(pairs);
     if !env_pairs
@@ -96,15 +146,10 @@ pub fn settings(pairs: &[(&str, &str)]) -> Settings {
         static REAP_ONCE: std::sync::Once = std::sync::Once::new();
         let root = test_docs_root();
         REAP_ONCE.call_once(|| reap_dead_test_docs(&root));
-        let n = TEST_DOCS_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let temp_dir = root
-            .join(std::process::id().to_string())
-            .join(n.to_string());
-        let _ = std::fs::create_dir_all(&temp_dir);
-        env_pairs.push((
-            "APP_VERIFICATION__STORE_DIR".to_string(),
-            temp_dir.to_string_lossy().into_owned(),
-        ));
+        let guard = TestDocsGuard::new();
+        let store_dir = guard.path().to_string_lossy().into_owned();
+        TEST_DIR_GUARDS.with(|g| g.borrow_mut().push(guard));
+        env_pairs.push(("APP_VERIFICATION__STORE_DIR".to_string(), store_dir));
     }
     Settings::load_from(&config_dir(), env_pairs)
         .expect("the committed configuration must load with this environment")

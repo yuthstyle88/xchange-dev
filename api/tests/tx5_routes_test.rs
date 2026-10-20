@@ -167,7 +167,10 @@ async fn expected(c: &Counter, code: &str) -> String {
         .expect("the drawer through the port");
     tx.rollback().await.expect("rollback");
     let m = b.get(xc_kernel::money::CurrencyCode::parse(code).expect("a currency"));
-    format!("{:.2}", rust_decimal::Decimal::new(m.minor(), 2))
+    format!(
+        "{:.2}",
+        rust_decimal::Decimal::new(m.try_minor().unwrap(), 2)
+    )
 }
 
 #[actix_web::test]
@@ -382,7 +385,8 @@ async fn r10_a_sell_beyond_the_drawer_answers_stock_insufficient_and_moves_nothi
     let a = complete(&c, &id_of(&t), ME, Some(&unique("key"))).await;
     assert_eq!(
         (a.status, a.code()),
-        (StatusCode::CONFLICT, "stockInsufficient"),
+        // re-expected for #3405 (owner: negative stock waits for approval)
+        (StatusCode::CONFLICT, "approvalRequired"),
         "body {}",
         a.text
     );

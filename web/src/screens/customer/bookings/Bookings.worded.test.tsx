@@ -1,14 +1,13 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  BookingCancelOutput,
-  BookingRescheduleOutput,
-} from '../../../shared/api/generated/bookings';
-import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
-import type {
-  MyBookingItemDto,
-  MyBookingsData,
-} from '../../../shared/api/generated/my_bookings';
+import {
+  makeBookingCancelOutput,
+  makeBookingRescheduleOutput,
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeMyBookingItemDto,
+  makeMyBookingsData,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
@@ -21,7 +20,7 @@ const BOOKING_ACTIVE_ID = 'BK-alice-001';
 const SLOT_1_ID = '00000000-0000-0000-0000-000000000001';
 const SLOT_RESCHEDULE_ID = '00000000-0000-0000-0000-000000000003';
 
-const ACTIVE_BOOKING: MyBookingItemDto = {
+const ACTIVE_BOOKING = makeMyBookingItemDto({
   id: BOOKING_ACTIVE_ID,
   bookingNo: 'B261014-0024',
   status: 'CONFIRMED',
@@ -33,20 +32,25 @@ const ACTIVE_BOOKING: MyBookingItemDto = {
   quoteSummary: 'เรทสุดท้ายยืนยันเมื่อทำรายการ',
   cancelCutoffAt: '2026-10-14T09:00:00Z',
   ticketNumber: null,
+  ticketsAhead: null,
+  estimateSeconds: null,
+  estimateLowSeconds: null,
+  estimateHighSeconds: null,
+  estimateAsOf: null,
   readiness: 'unknown',
-};
+});
 
-const AVAILABLE_SLOTS: BookingSlotsData = {
+const AVAILABLE_SLOTS = makeBookingSlotsData({
   asOf: '2026-10-14T08:00:00Z',
   slots: [
-    {
+    makeBookingSlotItemDto({
       id: SLOT_RESCHEDULE_ID,
       start: '2026-10-14T11:00:00Z',
       end: '2026-10-14T11:30:00Z',
       available: 3,
-    },
+    }),
   ],
-};
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -84,21 +88,27 @@ describe('Customer My Bookings (C03): wordedError handling (#2194)', () => {
     document.body.appendChild(host);
 
     listResponder = () =>
-      viewEnvelope({ bookings: [{ ...ACTIVE_BOOKING }] } satisfies MyBookingsData);
+      viewEnvelope(makeMyBookingsData({ bookings: [{ ...ACTIVE_BOOKING }] }));
     slotsResponder = () => viewEnvelope(AVAILABLE_SLOTS);
     cancelResponder = () =>
-      json(200, {
-        id: BOOKING_ACTIVE_ID,
-        status: 'CANCELLED',
-        bookingNo: ACTIVE_BOOKING.bookingNo,
-      } satisfies BookingCancelOutput);
+      json(
+        200,
+        makeBookingCancelOutput({
+          id: BOOKING_ACTIVE_ID,
+          status: 'CANCELLED',
+          bookingNo: ACTIVE_BOOKING.bookingNo,
+        }),
+      );
     rescheduleResponder = () =>
-      json(200, {
-        id: BOOKING_ACTIVE_ID,
-        slotId: SLOT_RESCHEDULE_ID,
-        status: 'CONFIRMED',
-        bookingNo: ACTIVE_BOOKING.bookingNo,
-      } satisfies BookingRescheduleOutput);
+      json(
+        200,
+        makeBookingRescheduleOutput({
+          id: BOOKING_ACTIVE_ID,
+          slotId: SLOT_RESCHEDULE_ID,
+          status: 'CONFIRMED',
+          bookingNo: ACTIVE_BOOKING.bookingNo,
+        }),
+      );
 
     fetchStub = vi.fn(async (input: string, init?: RequestInit): Promise<Response> => {
       const u = new URL(input, 'http://localhost');
@@ -262,7 +272,7 @@ describe('Customer My Bookings (C03): wordedError handling (#2194)', () => {
 
     // 2. Cancel 500, Slots 500, and Reschedule 500
     listResponder = () =>
-      viewEnvelope({ bookings: [{ ...ACTIVE_BOOKING }] } satisfies MyBookingsData);
+      viewEnvelope(makeMyBookingsData({ bookings: [{ ...ACTIVE_BOOKING }] }));
     cancelResponder = () =>
       json(500, {
         error: { code: 'serverError', message: 'Failed to load' },
@@ -369,7 +379,7 @@ describe('Customer My Bookings (C03): wordedError handling (#2194)', () => {
     expect(errBox?.textContent).not.toContain('Failed to load');
 
     listResponder = () =>
-      viewEnvelope({ bookings: [{ ...ACTIVE_BOOKING }] } satisfies MyBookingsData);
+      viewEnvelope(makeMyBookingsData({ bookings: [{ ...ACTIVE_BOOKING }] }));
     const retryBtn = host.querySelector(
       'button[data-action="retry"]',
     ) as HTMLButtonElement;

@@ -131,67 +131,7 @@ pub fn actor_of(who: &SignedIn) -> Option<Actor> {
 use crate::presentation::extractors::session_actor::{actor_of_user, resolve_session_actor};
 use chrono::{DateTime, Utc};
 use xc_auth::application::session::SessionService;
-use xc_auth::domain::access::ScopedRole;
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
-
-/// Maps an `access::Actor` to a v2 `Actor`.
-///
-/// stopgap, removed by OR-7 (#767 ruling (a)): it builds the v2 actor the downstream services still
-/// take; only the custody rows, which keep the v2 rule (#582), authorise with it.
-pub fn legacy_actor(actor: &xc_auth::domain::access::Actor, now: DateTime<Utc>) -> Option<Actor> {
-    let valid_roles: Vec<&ScopedRole> = actor
-        .roles
-        .iter()
-        .filter(|r| r.valid_from <= now && r.valid_to.is_none_or(|to| to > now))
-        .collect();
-
-    let has_org_exec = valid_roles
-        .iter()
-        .any(|r| r.role == xc_auth::domain::access::Role::Executive && r.branch.is_none());
-    let has_org_admin = valid_roles
-        .iter()
-        .any(|r| r.role == xc_auth::domain::access::Role::Admin && r.branch.is_none());
-
-    if has_org_exec && has_org_admin {
-        return Some(Actor::owner(&actor.user_id));
-    }
-
-    let priority = [
-        (
-            xc_auth::domain::access::Role::Teller,
-            xc_auth::domain::policy::value_objects::role::Role::Front,
-        ),
-        (
-            xc_auth::domain::access::Role::BranchManager,
-            xc_auth::domain::policy::value_objects::role::Role::Manager,
-        ),
-        (
-            xc_auth::domain::access::Role::RateManager,
-            xc_auth::domain::policy::value_objects::role::Role::Rates,
-        ),
-        (
-            xc_auth::domain::access::Role::Finance,
-            xc_auth::domain::policy::value_objects::role::Role::Finance,
-        ),
-        (
-            xc_auth::domain::access::Role::Admin,
-            xc_auth::domain::policy::value_objects::role::Role::System,
-        ),
-        (
-            xc_auth::domain::access::Role::VerificationReviewer,
-            xc_auth::domain::policy::value_objects::role::Role::DocumentReview,
-        ),
-    ];
-
-    for (access_role, v2_role) in priority {
-        if let Some(r) = valid_roles.iter().find(|r| r.role == access_role) {
-            let branch = r.branch.clone().unwrap_or_else(|| BranchId::new("MAIN"));
-            return Actor::staff(&actor.user_id, v2_role, branch);
-        }
-    }
-
-    None
-}
+use xc_auth::domain::access::{ScopedRole, Standing};
 
 /// The reader `pages.rs` looks up as `web::Data<dyn SessionReader>`.
 pub struct AccountSessionReader {
@@ -217,29 +157,26 @@ impl SessionReader for AccountSessionReader {
                     )
                     .await
                     {
-                        let legacy = legacy_actor(&access_actor, now_utc);
-                        let (owner, staff) = match legacy.as_ref().map(|l| l.kind()) {
-                            Some(ActorKind::Owner) => (legacy.clone(), None),
-                            Some(ActorKind::Staff) => (None, legacy.clone()),
-                            None => (None, None),
-                        };
-                        let staff_user = if legacy
-                            .as_ref()
-                            .is_some_and(|l| l.kind() == ActorKind::Staff)
-                        {
-                            Some(access_actor.clone())
-                        } else {
-                            None
-                        };
+                        let staff_user = Standing::of(&access_actor, now_utc)
+                            .filter(|s| !s.is_owner())
+                            .map(|_| access_actor.clone());
                         return Callers {
-                            owner,
-                            staff,
                             user: Some(access_actor),
                             staff_user,
                         };
                     }
                 }
             }
+            let s = self.sessions(req).await;
+            crate::presentation::pages::old_cookie_callers(s, &self.org_id)
+        })
+    }
+
+    fn sessions<'a>(
+        &'a self,
+        req: &'a HttpRequest,
+    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+        Box::pin(async move {
             let now = SystemTime::now();
             let owner = match self
                 .accounts
@@ -257,20 +194,7 @@ impl SessionReader for AccountSessionReader {
                 Ok(Some(who @ SignedIn::Employee(_))) => actor_of(&who),
                 _ => None,
             };
-            crate::presentation::pages::old_cookie_callers(Sessions { owner, staff }, &self.org_id)
-        })
-    }
-
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            let c = self.callers(req).await;
-            Sessions {
-                owner: c.owner,
-                staff: c.staff,
-            }
+            Sessions { owner, staff }
         })
     }
 }
@@ -362,8 +286,6 @@ pub async fn callers(req: &HttpRequest) -> Callers {
         reader.callers(req).await
     } else {
         Callers {
-            owner: None,
-            staff: None,
             user: None,
             staff_user: None,
         }
@@ -373,11 +295,7 @@ pub async fn callers(req: &HttpRequest) -> Callers {
 pub fn is_staff_path(path: EntryPath) -> bool {
     matches!(
         path,
-        EntryPath::StaffRpc
-            | EntryPath::StaffDesk
-            | EntryPath::StaffFile
-            | EntryPath::StaffUpload
-            | EntryPath::StaffBookings
+        EntryPath::StaffRpc | EntryPath::StaffDesk | EntryPath::StaffFile | EntryPath::StaffUpload
     )
 }
 

@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 mod save_common;
+mod shift_holder_common;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -12,7 +13,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use save_common::*;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{MinorUnit, Rate, Side, UnitSize};
@@ -156,12 +157,12 @@ impl KioskPorts for Counter {
     }
 }
 
-fn staff(id: &str, role: Role) -> SaveActor {
+fn staff(id: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
         username: format!("user-{id}"),
         employee_id: Some(id.to_owned()),
-        role,
+        standing,
     }
 }
 
@@ -192,6 +193,14 @@ impl Scene {
     async fn start() -> Self {
         let shop = Shop::start().await;
         let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+        let shift = shift_holder_common::open_shift_for(
+            &shop.pool,
+            MAIN,
+            FRONT,
+            &[("THB", "100000"), ("USD", "1000")],
+        )
+        .await;
+        fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
         let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
         let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
         let counter = Arc::new(Counter::default());
@@ -292,7 +301,7 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
         .save_at(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(FRONT, Role::Front),
+            &staff(FRONT, StandingKind::Staff(AccessRole::Teller)),
             save_now,
         )
         .await
@@ -315,7 +324,7 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
         .save_at(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(FRONT, Role::Front),
+            &staff(FRONT, StandingKind::Staff(AccessRole::Teller)),
             repeat_now,
         )
         .await

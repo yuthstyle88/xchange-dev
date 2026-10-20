@@ -8,9 +8,11 @@ pub mod commands;
 pub mod desk;
 pub mod error;
 pub mod export_gate;
+pub mod input;
 pub mod org_view;
 pub mod system;
 pub mod view;
+pub mod xlsx;
 
 use actix_web::web;
 

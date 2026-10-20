@@ -66,19 +66,21 @@ fn loyalty_unavailable(message: impl Into<String>) -> V3Error {
 }
 
 fn map_loyalty_error(err: LoyaltyRuleError) -> V3Error {
+    tracing::warn!(error = %err, "loyalty rule submit error");
+    let message = err.client_message();
     match err {
-        LoyaltyRuleError::Unavailable(m) => loyalty_unavailable(m),
-        LoyaltyRuleError::Invalid(m) => {
-            V3Error::new("validationFailed", None, m, StatusCode::BAD_REQUEST)
+        LoyaltyRuleError::Unavailable(_) => loyalty_unavailable(message),
+        LoyaltyRuleError::Invalid(_) => {
+            V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
         }
         LoyaltyRuleError::NotFound => V3Error::new(
             "notFound",
             Some("versionId"),
-            "loyalty rule version not found",
+            message,
             StatusCode::NOT_FOUND,
         ),
-        LoyaltyRuleError::InvalidTransition(m) => {
-            V3Error::new("staleVersion", None, m, StatusCode::CONFLICT)
+        LoyaltyRuleError::InvalidTransition(_) => {
+            V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
         }
     }
 }
@@ -205,7 +207,7 @@ impl CommandAction for LoyaltyRuleSubmitCommand {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    let deps = ApprovalSubjectDeps::from_settings(state.db.clone(), &state.settings);
+    let deps = ApprovalSubjectDeps::from_state(state);
     let approval_service = make_approval_service_with(&deps);
     CommandEndpoint::register(
         cfg,

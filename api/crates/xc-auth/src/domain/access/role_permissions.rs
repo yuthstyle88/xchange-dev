@@ -12,7 +12,6 @@ impl RolePermissions {
                 Permission::RatesHistoryRead,
                 Permission::RatePolicySave,
                 Permission::ApprovalsDecide,
-                Permission::BookingsAdmin,
                 Permission::ReferenceRatesRead,
                 Permission::SystemSettings,
                 Permission::MarketingPerformance,
@@ -37,6 +36,7 @@ impl RolePermissions {
                 Permission::RateAlertSettingsSave,
                 Permission::OrgStartingPricesManage,
                 Permission::LoyaltyRulesManage,
+                Permission::AuditLogsRead,
             ],
             Role::Admin => &[
                 Permission::BranchesManage,
@@ -48,6 +48,7 @@ impl RolePermissions {
                 Permission::DocumentsList,
                 Permission::SignedIn,
                 Permission::AlertSettingsSave,
+                Permission::AuditLogsRead,
             ],
             Role::RateManager => &[
                 Permission::RatesDraft,

@@ -13,6 +13,7 @@
 mod common;
 mod compat_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use compat_common::Fixture;
@@ -143,6 +144,9 @@ async fn blueprint_booking_completed_by_the_next_exchange(
 async fn save(replay: &Replay<'_>, payload: &Value) -> Answer {
     // OR-4b (C2): a save attaches its saver's own files; the teller uploads the owner's again
     let payload = replay.uploads_as(TELLER, payload).await;
+    // CA-10 (#626 ruling A): a compat save meets the teller gate, which saves only on an OPEN day
+    let branch = payload["branchId"].as_str().unwrap_or("MAIN");
+    shift_holder_common::open_day(&replay.desk.db.pool, branch).await;
     replay
         .app
         .send(Call::action(ORIGIN, RPC, "saveTransaction", payload).cookie(&replay.cookies[TELLER]))
@@ -180,7 +184,8 @@ async fn feed_of(replay: &Replay<'_>, document: &str) -> Option<Value> {
                 f.phone, f.status, f.value_satang, f.reversed_satang, \
                 f.completed_at = t.recorded_at AS at_ok, \
                 f.organization_id = b.organization_id AS org_ok, \
-                f.value_satang = (t.principal * 100)::bigint AS value_ok \
+                f.value_satang = (SELECT (sum(l.thb_amount) * 100)::bigint FROM transaction_lines l \
+                                  WHERE l.transaction_id = t.id) AS value_ok \
          FROM transactions t \
          JOIN broker_exchange_feed f ON f.transaction_id = t.id \
          JOIN branches b ON b.id = t.branch_id \

@@ -12,30 +12,24 @@ use xc_kernel::money::Side;
 
 use super::decode::{
     attendance_from_row, balances_from_json, currency_from_json, cutoff_from_json,
-    entity_from_json, exception_from_row, hold_from_row, money_from_json, request_from_row,
-    str_to_phase, str_to_role, target_from_json, time_from_json, undecodable,
+    entity_from_json, exception_from_row, hold_from_row, money_from_json, str_to_phase,
+    str_to_role, target_from_json, time_from_json, undecodable,
 };
 use crate::domain::custody::branch_day::BranchDay;
 use crate::domain::custody::entities::attendance::Attendance;
 use crate::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
-use crate::domain::custody::entities::custody_request::{CustodyRequest, Decision};
 use crate::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use crate::domain::custody::entities::stored_event::StoredEvent;
 use crate::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use crate::domain::custody::repositories::custody_repository::CustodyRepository;
 use crate::domain::custody::state::CustodyState;
 use crate::domain::custody::value_objects::cash_target::CashTarget;
-use crate::domain::custody::value_objects::count_sheet::CountSheet;
 use crate::domain::custody::value_objects::custody_event::EventKind;
 use crate::domain::custody::value_objects::custody_role::CustodyRole;
 use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::entity::Entity;
 use crate::domain::custody::value_objects::phase::Phase;
-use crate::domain::custody::value_objects::request_status::{
-    Reconciliation, RequestStatus, TransferStage,
-};
-use crate::domain::custody::value_objects::signature::Signature;
 use crate::domain::shift::value_objects::balances::Balances;
 use crate::domain::shift::value_objects::stock_delta::StockDelta;
 
@@ -99,27 +93,10 @@ fn balances_to_json(b: &Balances) -> Value {
 fn delta_to_json(d: &StockDelta) -> Value {
     let mut map = serde_json::Map::new();
     for (code, delta) in d.non_zero() {
+        // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2856).
         map.insert(code.as_str().to_string(), minor_to_json(delta.minor()));
     }
     Value::Object(map)
-}
-
-fn count_sheet_to_json(cs: &CountSheet) -> Value {
-    let denoms: Vec<Value> = cs
-        .denominations
-        .iter()
-        .map(|r| {
-            json!({
-                "currency": r.currency.as_str(),
-                "denomination": minor_to_json(r.denomination.minor_i128()),
-                "count": r.count
-            })
-        })
-        .collect();
-    json!({
-        "totals": balances_to_json(&cs.totals),
-        "denominations": denoms
-    })
 }
 
 fn target_to_json(target: &CashTarget) -> Value {
@@ -149,14 +126,6 @@ fn entity_to_json(e: &Entity) -> Value {
     })
 }
 
-fn decision_to_json(d: &Decision) -> Value {
-    json!({
-        "by": d.by,
-        "at": d.at.epoch_millis(),
-        "text": d.text
-    })
-}
-
 // ── one row of each table, as it is stored ──────────────────────────────────
 
 fn attendance_data(att: &Attendance) -> Value {
@@ -164,50 +133,6 @@ fn attendance_data(att: &Attendance) -> Value {
         "role": role_to_str(att.role),
         "clockIn": att.clock_in.epoch_millis(),
         "clockOut": att.clock_out.map(|t| t.epoch_millis())
-    })
-}
-
-fn request_status_str(status: RequestStatus) -> &'static str {
-    match status {
-        RequestStatus::Pending => "PENDING",
-        RequestStatus::Rejected => "REJECTED",
-        RequestStatus::Completed => "COMPLETED",
-    }
-}
-
-fn request_data(req: &CustodyRequest) -> Value {
-    json!({
-        "payloadHash": req.payload_hash,
-        "at": req.at.epoch_millis(),
-        "sender": req.sender,
-        "receiver": req.receiver,
-        "note": req.note,
-        "evidenceKeys": req.evidence_keys,
-        "shiftId": req.shift_id,
-        "counted": req.counted.as_ref().map(count_sheet_to_json),
-        "target": req.target.as_ref().map(target_to_json),
-        "targetDifference": req.target_difference.as_ref().map(delta_to_json),
-        "expected": req.expected.as_ref().map(balances_to_json),
-        "variance": req.variance.as_ref().map(delta_to_json),
-        "cutoff": req.cutoff.as_ref().map(cutoff_to_json),
-        "safeCount": req.safe_count.as_ref().map(count_sheet_to_json),
-        "safeExpected": req.safe_expected.as_ref().map(balances_to_json),
-        "safeVariance": req.safe_variance.as_ref().map(delta_to_json),
-        "currency": req.currency.map(|c| c.as_str()),
-        "amount": req.amount.map(|m| minor_to_json(m.minor_i128())),
-        "stage": req.stage.map(|st| match st {
-            TransferStage::InTransit => "IN_TRANSIT",
-            TransferStage::Received => "RECEIVED",
-        }),
-        "dispatchedAt": req.dispatched_at.map(|t| t.epoch_millis()),
-        "dispatchedBy": req.dispatched_by,
-        "rejected": req.rejected.as_ref().map(decision_to_json),
-        "completedAt": req.completed_at.map(|t| t.epoch_millis()),
-        "reconciliation": req.reconciliation.map(|r| match r {
-            Reconciliation::Checked => "CHECKED",
-            Reconciliation::Pending => "PENDING",
-        }),
-        "reconciled": req.reconciled.as_ref().map(decision_to_json)
     })
 }
 
@@ -350,16 +275,6 @@ fn to_write<'a, T: PartialEq>(
         .collect()
 }
 
-fn signature_at(sig: &Signature) -> AppResult<DateTime<Utc>> {
-    let dt = DateTime::from_timestamp_millis(sig.at.epoch_millis()).ok_or_else(|| {
-        AppError::Internal(format!(
-            "signature time out of range: {}",
-            sig.at.epoch_millis()
-        ))
-    })?;
-    Ok(truncate_millis(dt))
-}
-
 #[derive(Clone)]
 pub struct PgCustodyRepository {
     pool: PgPool,
@@ -373,7 +288,7 @@ impl PgCustodyRepository {
 
 async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<CustodyState> {
     let ops_row = sqlx::query(
-        "SELECT enabled, phase, custodian_id, entity, target, safe, cutoff, service_opened_at \
+        "SELECT phase, entity, target, safe, cutoff, service_opened_at \
          FROM ops_state WHERE branch_id = $1",
     )
     .bind(branch.as_str())
@@ -385,28 +300,26 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         None => return Ok(CustodyState::initial()),
     };
 
-    let enabled: bool = ops_row.get(0);
-    let phase_str: String = ops_row.get(1);
+    let phase_str: String = ops_row.get(0);
     let phase = str_to_phase("ops_state", "phase", &phase_str)?;
-    let custodian: Option<String> = ops_row.get(2);
-    let entity: Option<Entity> = match ops_row.get::<Option<Value>, _>(3) {
+    let entity: Option<Entity> = match ops_row.get::<Option<Value>, _>(1) {
         Some(v) if !v.is_null() => Some(entity_from_json("ops_state", "entity", &v)?),
         _ => None,
     };
-    let target: Option<CashTarget> = match ops_row.get::<Option<Value>, _>(4) {
+    let target: Option<CashTarget> = match ops_row.get::<Option<Value>, _>(2) {
         Some(v) if !v.is_null() => Some(target_from_json("ops_state", "target", &v)?),
         _ => None,
     };
-    let safe: Option<Balances> = match ops_row.get::<Option<Value>, _>(5) {
+    let safe: Option<Balances> = match ops_row.get::<Option<Value>, _>(3) {
         Some(v) if !v.is_null() => Some(balances_from_json("ops_state", "safe", &v)?),
         _ => None,
     };
-    let cutoff: Option<Cutoff> = match ops_row.get::<Option<Value>, _>(6) {
+    let cutoff: Option<Cutoff> = match ops_row.get::<Option<Value>, _>(4) {
         Some(v) if !v.is_null() => Some(cutoff_from_json("ops_state", "cutoff", &v)?),
         _ => None,
     };
     let service_opened_at: Option<CustodyTime> = ops_row
-        .get::<Option<DateTime<Utc>>, _>(7)
+        .get::<Option<DateTime<Utc>>, _>(5)
         .map(|t| CustodyTime::from_epoch_millis(t.timestamp_millis()));
 
     // attendance
@@ -421,50 +334,6 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
     let mut attendance = Vec::with_capacity(att_rows.len());
     for r in &att_rows {
         attendance.push(attendance_from_row(r)?);
-    }
-
-    // signatures grouped by request_id
-    let sig_rows = sqlx::query(
-        "SELECT s.request_id, s.employee_id, s.role, s.at \
-         FROM custody_signatures s JOIN custody_requests r ON r.id = s.request_id \
-         WHERE r.branch_id = $1 ORDER BY s.position ASC",
-    )
-    .bind(branch.as_str())
-    .fetch_all(&mut *conn)
-    .await?;
-
-    let mut signatures_by_req: HashMap<String, Vec<Signature>> = HashMap::new();
-    for r in sig_rows {
-        let req_id: String = r.get(0);
-        let employee_id: String = r.get(1);
-        let role_str: String = r.get(2);
-        let at_dt: DateTime<Utc> = r.get(3);
-        let role = str_to_role("custody_signatures", "role", &role_str)?;
-        let at = CustodyTime::from_epoch_millis(at_dt.timestamp_millis());
-        signatures_by_req
-            .entry(req_id)
-            .or_default()
-            .push(Signature {
-                employee_id,
-                role,
-                at,
-            });
-    }
-
-    // requests
-    let req_rows = sqlx::query(
-        "SELECT id, request_id, kind, status, data \
-         FROM custody_requests WHERE branch_id = $1 ORDER BY position ASC",
-    )
-    .bind(branch.as_str())
-    .fetch_all(&mut *conn)
-    .await?;
-
-    let mut requests = Vec::with_capacity(req_rows.len());
-    for r in &req_rows {
-        let id: String = r.get(0);
-        let signatures = signatures_by_req.remove(&id).unwrap_or_default();
-        requests.push(request_from_row(r, signatures)?);
     }
 
     // customer_holds
@@ -569,14 +438,11 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
     }
 
     Ok(CustodyState {
-        enabled,
         phase,
         safe,
         target,
         entity,
-        custodian,
         attendance,
-        requests,
         cutoff,
         exceptions,
         holds,
@@ -627,9 +493,7 @@ impl CustodyRepository for PgCustodyRepository {
             // The branch's one row: written when one of its own values changed,
             // and with the first thing ever stored for the branch (a state that
             // was never stored loads as `initial`).
-            let own_values_changed = before.enabled != after.enabled
-                || before.phase != after.phase
-                || before.custodian != after.custodian
+            let own_values_changed = before.phase != after.phase
                 || before.entity != after.entity
                 || before.target != after.target
                 || before.safe != after.safe
@@ -650,12 +514,10 @@ impl CustodyRepository for PgCustodyRepository {
                     None => None,
                 };
                 sqlx::query(
-                    "INSERT INTO ops_state (branch_id, enabled, phase, custodian_id, entity, target, safe, cutoff, service_opened_at) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+                    "INSERT INTO ops_state (branch_id, phase, entity, target, safe, cutoff, service_opened_at) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7) \
                      ON CONFLICT (branch_id) DO UPDATE SET \
-                       enabled = EXCLUDED.enabled, \
                        phase = EXCLUDED.phase, \
-                       custodian_id = EXCLUDED.custodian_id, \
                        entity = EXCLUDED.entity, \
                        target = EXCLUDED.target, \
                        safe = EXCLUDED.safe, \
@@ -663,9 +525,7 @@ impl CustodyRepository for PgCustodyRepository {
                        service_opened_at = EXCLUDED.service_opened_at",
                 )
                 .bind(branch.as_str())
-                .bind(after.enabled)
                 .bind(after.phase.as_str())
-                .bind(&after.custodian)
                 .bind(after.entity.as_ref().map(entity_to_json))
                 .bind(after.target.as_ref().map(target_to_json))
                 .bind(after.safe.as_ref().map(balances_to_json))
@@ -691,61 +551,6 @@ impl CustodyRepository for PgCustodyRepository {
                 .bind(attendance_data(att))
                 .execute(&mut **tx)
                 .await?;
-            }
-
-            for (pos, req, was) in to_write(&before.requests, &after.requests, |r| &r.id) {
-                // A request is a row of its own and one row per signature: a new
-                // signature alone leaves the request's row as it is.
-                let row_as_stored = was.is_some_and(|was| {
-                    before
-                        .requests
-                        .get(pos)
-                        .is_some_and(|at_pos| at_pos.id == req.id)
-                        && was.request_id == req.request_id
-                        && was.kind == req.kind
-                        && was.status == req.status
-                        && request_data(was) == request_data(req)
-                });
-                if !row_as_stored {
-                    sqlx::query(
-                        "INSERT INTO custody_requests (id, branch_id, position, request_id, kind, status, data) \
-                         VALUES ($1, $2, $3, $4, $5, $6, $7) \
-                         ON CONFLICT (id) DO UPDATE SET \
-                           position = EXCLUDED.position, \
-                           status = EXCLUDED.status, \
-                           data = EXCLUDED.data",
-                    )
-                    .bind(&req.id)
-                    .bind(branch.as_str())
-                    .bind(pos as i32)
-                    .bind(&req.request_id)
-                    .bind(req.kind.as_str())
-                    .bind(request_status_str(req.status))
-                    .bind(request_data(req))
-                    .execute(&mut **tx)
-                    .await?;
-                }
-
-                for (sig_pos, sig) in req.signatures.iter().enumerate() {
-                    if was.and_then(|was| was.signatures.get(sig_pos)) == Some(sig) {
-                        continue;
-                    }
-                    sqlx::query(
-                        "INSERT INTO custody_signatures (request_id, position, employee_id, role, at) \
-                         VALUES ($1, $2, $3, $4, $5) \
-                         ON CONFLICT (request_id, position) DO UPDATE SET \
-                           employee_id = EXCLUDED.employee_id, \
-                           role = EXCLUDED.role, \
-                           at = EXCLUDED.at",
-                    )
-                    .bind(&req.id)
-                    .bind(sig_pos as i32)
-                    .bind(&sig.employee_id)
-                    .bind(role_to_str(sig.role))
-                    .bind(signature_at(sig)?)
-                    .execute(&mut **tx)
-                    .await?;
-                }
             }
 
             for (pos, hold, _) in to_write(&before.holds, &after.holds, |h| &h.id) {
@@ -859,21 +664,6 @@ impl CustodyRepository for PgCustodyRepository {
                 });
             }
             Ok(events)
-        })
-    }
-
-    fn is_enabled_in<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        branch: &'a BranchId,
-    ) -> BoxFuture<'a, AppResult<bool>> {
-        Box::pin(async move {
-            let enabled: Option<bool> =
-                sqlx::query_scalar("SELECT enabled FROM ops_state WHERE branch_id = $1")
-                    .bind(branch.as_str())
-                    .fetch_optional(&mut **tx)
-                    .await?;
-            Ok(enabled.unwrap_or(false))
         })
     }
 }

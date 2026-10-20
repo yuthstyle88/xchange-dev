@@ -14,6 +14,14 @@
 //! from the match (`docs/design/blueprint/rates.md` §9), so its Rpc and StaffRpc rows of `TODAY`
 //! answer `None` (no row) instead of RatesDraft. On every other path it falls to the same
 //! catch-all as before, so those rows are unchanged; so is every other row.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c): CA-10 retires the 13 `ops*`
+//! actions and the direct shift actions `adminOpenShift` / `adminCloseShift` / `adminMoveStock`
+//! with their policy rows (`docs/design/blueprint/cash-shift-transfer.md` §6). So on `Rpc` and
+//! `StaffRpc` those names and the `starts_with("ops")` arm (`ops`, `opsProbe`) answer `None` (no
+//! row). `EntryPath::Custody` and `Need::Custody` stay as types (other suites name them; no route
+//! reaches them), so the `Custody` rows are unchanged. On every other path these names fall to the
+//! same catch-all as before; so is every other row.
 
 use xc_auth::domain::access::Permission;
 use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow, duplicates, shadowed};
@@ -179,11 +187,11 @@ fn shadowed_lets_a_new_row_through() {
 const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::Rpc, "accept", None),
     (EntryPath::Rpc, "adminAbandonRequest", Some(Need::Permission(Permission::RequestAbandon))),
-    (EntryPath::Rpc, "adminCloseShift", Some(Need::Custody)),
+    (EntryPath::Rpc, "adminCloseShift", None),
     (EntryPath::Rpc, "adminCreateBranch", Some(Need::Permission(Permission::BranchesManage))),
     (EntryPath::Rpc, "adminDeskConfig", Some(Need::Permission(Permission::CompatRead))),
-    (EntryPath::Rpc, "adminMoveStock", Some(Need::Permission(Permission::CashManage))),
-    (EntryPath::Rpc, "adminOpenShift", Some(Need::Custody)),
+    (EntryPath::Rpc, "adminMoveStock", None),
+    (EntryPath::Rpc, "adminOpenShift", None),
     (EntryPath::Rpc, "adminSaveRate", None), // RE-7 #604 (rates.md §9): was RatesDraft
     (EntryPath::Rpc, "adminSnapshot", Some(Need::Permission(Permission::CompatRead))),
     (EntryPath::Rpc, "approvalDecide", Some(Need::Permission(Permission::ApprovalsDecide))),
@@ -227,11 +235,11 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::Rpc, "zzNoSuchAction", None),
     (EntryPath::StaffRpc, "accept", None),
     (EntryPath::StaffRpc, "adminAbandonRequest", None),
-    (EntryPath::StaffRpc, "adminCloseShift", Some(Need::Custody)),
+    (EntryPath::StaffRpc, "adminCloseShift", None),
     (EntryPath::StaffRpc, "adminCreateBranch", None),
     (EntryPath::StaffRpc, "adminDeskConfig", Some(Need::Permission(Permission::ExchangeTransact))),
     (EntryPath::StaffRpc, "adminMoveStock", None),
-    (EntryPath::StaffRpc, "adminOpenShift", Some(Need::Custody)),
+    (EntryPath::StaffRpc, "adminOpenShift", None),
     (EntryPath::StaffRpc, "adminSaveRate", None), // RE-7 #604 (rates.md §9): was RatesDraft
     (EntryPath::StaffRpc, "adminSnapshot", Some(Need::Permission(Permission::CompatRead))),
     (EntryPath::StaffRpc, "approvalDecide", None),
@@ -252,8 +260,8 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::StaffRpc, "manage", None),
     (EntryPath::StaffRpc, "member", None),
     (EntryPath::StaffRpc, "notifications", None),
-    (EntryPath::StaffRpc, "ops", Some(Need::Custody)),
-    (EntryPath::StaffRpc, "opsProbe", Some(Need::Custody)),
+    (EntryPath::StaffRpc, "ops", None),
+    (EntryPath::StaffRpc, "opsProbe", None),
     (EntryPath::StaffRpc, "printerOnline", None),
     (EntryPath::StaffRpc, "process", None),
     (EntryPath::StaffRpc, "publishReceipt", None),
@@ -897,52 +905,4 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::DeviceSetup, "settings", Some(Need::Permission(Permission::SystemSettings))),
     (EntryPath::DeviceSetup, "status", Some(Need::Permission(Permission::SystemSettings))),
     (EntryPath::DeviceSetup, "zzNoSuchAction", Some(Need::Permission(Permission::SystemSettings))),
-    (EntryPath::StaffBookings, "accept", None),
-    (EntryPath::StaffBookings, "adminAbandonRequest", None),
-    (EntryPath::StaffBookings, "adminCloseShift", None),
-    (EntryPath::StaffBookings, "adminCreateBranch", None),
-    (EntryPath::StaffBookings, "adminDeskConfig", None),
-    (EntryPath::StaffBookings, "adminMoveStock", None),
-    (EntryPath::StaffBookings, "adminOpenShift", None),
-    (EntryPath::StaffBookings, "adminSaveRate", None),
-    (EntryPath::StaffBookings, "adminSnapshot", None),
-    (EntryPath::StaffBookings, "approvalDecide", None),
-    (EntryPath::StaffBookings, "approvalRead", None),
-    (EntryPath::StaffBookings, "approveRegistration", Some(Need::Permission(Permission::BookingsAdmin))),
-    (EntryPath::StaffBookings, "cancel", Some(Need::Permission(Permission::BookingsDesk))),
-    (EntryPath::StaffBookings, "configure", None),
-    (EntryPath::StaffBookings, "confirm", Some(Need::Permission(Permission::BookingsDesk))),
-    (EntryPath::StaffBookings, "consentPolicy", None),
-    (EntryPath::StaffBookings, "create", Some(Need::Permission(Permission::BookingsDesk))),
-    (EntryPath::StaffBookings, "customerReceipt", None),
-    (EntryPath::StaffBookings, "documents", None),
-    (EntryPath::StaffBookings, "drawerObservation", None),
-    (EntryPath::StaffBookings, "get", Some(Need::Permission(Permission::BookingsDesk))),
-    (EntryPath::StaffBookings, "getConnectionStatus", None),
-    (EntryPath::StaffBookings, "identityChecked", None),
-    (EntryPath::StaffBookings, "list", Some(Need::Permission(Permission::BookingsDesk))),
-    (EntryPath::StaffBookings, "manage", None),
-    (EntryPath::StaffBookings, "member", Some(Need::Permission(Permission::BookingsAdmin))),
-    (EntryPath::StaffBookings, "notifications", None),
-    (EntryPath::StaffBookings, "ops", None),
-    (EntryPath::StaffBookings, "opsProbe", None),
-    (EntryPath::StaffBookings, "printerOnline", None),
-    (EntryPath::StaffBookings, "process", None),
-    (EntryPath::StaffBookings, "publishReceipt", None),
-    (EntryPath::StaffBookings, "queue", None),
-    (EntryPath::StaffBookings, "quote", None),
-    (EntryPath::StaffBookings, "rateDraft", None),
-    (EntryPath::StaffBookings, "ratePolicySave", None),
-    (EntryPath::StaffBookings, "rates", None),
-    (EntryPath::StaffBookings, "registrations", Some(Need::Permission(Permission::BookingsAdmin))),
-    (EntryPath::StaffBookings, "reserveCustomer", None),
-    (EntryPath::StaffBookings, "retry", None),
-    (EntryPath::StaffBookings, "reversalRequest", None),
-    (EntryPath::StaffBookings, "save", None),
-    (EntryPath::StaffBookings, "saveTransaction", None),
-    (EntryPath::StaffBookings, "setDrawer", None),
-    (EntryPath::StaffBookings, "setPrinter", None),
-    (EntryPath::StaffBookings, "settings", Some(Need::Permission(Permission::BookingsAdmin))),
-    (EntryPath::StaffBookings, "status", None),
-    (EntryPath::StaffBookings, "zzNoSuchAction", None),
 ];

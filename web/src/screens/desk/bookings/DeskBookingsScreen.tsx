@@ -6,11 +6,13 @@ import type {
   BookingCancelOutput,
   BookingCheckInOutput,
   BookingCreateOutput,
+  BookingQrReissueOutput,
   BookingRescheduleOutput,
 } from '../../../shared/api/generated/bookings';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { QrCode } from '../../../shared/ui/QrCode';
 import { en, th } from './i18n';
 import './desk-bookings.css';
 
@@ -28,6 +30,7 @@ const ROUTE_BOOKINGS = '/api/bookings';
 const routeCheckIn = (id: string) => `/api/bookings/${encodeURIComponent(id)}/check-in`;
 const routeCancel = (id: string) => `/api/bookings/${encodeURIComponent(id)}/cancel`;
 const routeReschedule = (id: string) => `/api/bookings/${encodeURIComponent(id)}/reschedule`;
+const routeQr = (id: string) => `/api/bookings/${encodeURIComponent(id)}/qr`;
 
 const t = screenT('desk.bookings', { th, en });
 
@@ -97,6 +100,9 @@ export function DeskBookingsScreen(): JSX.Element {
   // Reschedule dialog state
   const [reschedulingBookingId, setReschedulingBookingId] = createSignal<string | null>(null);
   const [targetSlotId, setTargetSlotId] = createSignal('');
+
+  // QR reissue dialog state
+  const [qrDialogData, setQrDialogData] = createSignal<{ bookingNo: string; qrToken: string | null } | null>(null);
 
   // New booking modal state
   const [showNewBookingModal, setShowNewBookingModal] = createSignal(false);
@@ -246,6 +252,12 @@ export function DeskBookingsScreen(): JSX.Element {
     'POST',
     () => routeReschedule(activeRescheduleId),
   );
+  let activeQrId = '';
+  const qrWrite = keyedWrite<{ id: string; branch: string }, BookingQrReissueOutput>(
+    api,
+    'POST',
+    () => routeQr(activeQrId),
+  );
   const createWrite = keyedWrite<Record<string, unknown>, BookingCreateOutput>(
     api,
     'POST',
@@ -287,6 +299,41 @@ export function DeskBookingsScreen(): JSX.Element {
       readErrorActive = false;
       setErrorMessage(deskBookingError(err));
       setRetryAction(() => () => handleCheckIn(bookingId));
+    } finally {
+      setWriting(false);
+    }
+  }
+
+  async function handleReissueQr(bookingId: string, bookingNo: string) {
+    if (writing()) return;
+    if (activeQrId !== bookingId) {
+      qrWrite.reset();
+      activeQrId = bookingId;
+    }
+    readErrorActive = false;
+    setErrorMessage(null);
+    setRetryAction(null);
+
+    setWriting(true);
+    try {
+      const resData = await qrWrite.send({
+        id: bookingId,
+        branch: branchId(),
+      });
+      if (!resData) {
+        readErrorActive = false;
+        setErrorMessage(t('error.validationFailed'));
+        return;
+      }
+      setQrDialogData({
+        bookingNo,
+        qrToken: resData.qrToken ?? null,
+      });
+      await fetchBookings();
+    } catch (err) {
+      readErrorActive = false;
+      setErrorMessage(deskBookingError(err));
+      setRetryAction(() => () => handleReissueQr(bookingId, bookingNo));
     } finally {
       setWriting(false);
     }
@@ -657,6 +704,18 @@ export function DeskBookingsScreen(): JSX.Element {
                               >
                                 {t('reschedule')}
                               </button>
+                              <Show when={b.status === 'CONFIRMED' || b.status === 'CHECKED_IN' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                                <button
+                                  type="button"
+                                  name="reissueQr"
+                                  data-action="reissue-qr"
+                                  class="xc-btn-secondary"
+                                  disabled={writing()}
+                                  onClick={() => handleReissueQr(b.id, b.bookingNo)}
+                                >
+                                  {t('reissueQr')}
+                                </button>
+                              </Show>
                             </div>
                           </div>
                         )}
@@ -945,6 +1004,43 @@ export function DeskBookingsScreen(): JSX.Element {
                 </form>
               </div>
             </div>
+          </Show>
+
+          {/* QR Reissue Dialog */}
+          <Show when={qrDialogData()}>
+            {(data) => (
+              <div class="xc-modal-overlay">
+                <div class="xc-modal">
+                  <h3 class="xc-modal-title">{t('reissueQr')}</h3>
+                  <div class="xc-form-group">
+                    <span class="xc-booking-no">{data().bookingNo}</span>
+                  </div>
+                  <Show
+                    when={data().qrToken}
+                    fallback={
+                      <div class="xc-form-group">
+                        <p>{t('alreadyIssued')}</p>
+                      </div>
+                    }
+                  >
+                    {(token) => (
+                      <div class="xc-form-group">
+                        <QrCode value={token()} label={data().bookingNo} />
+                      </div>
+                    )}
+                  </Show>
+                  <div class="xc-modal-actions">
+                    <button
+                      type="button"
+                      class="xc-btn-secondary"
+                      onClick={() => setQrDialogData(null)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </Show>
         </div>
       </Show>

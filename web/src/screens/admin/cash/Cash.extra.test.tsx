@@ -6,8 +6,14 @@ import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
-import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
-import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
+import {
+  makeAdminCashData,
+  makeAdminCashReference,
+  makeAdminCashStats,
+  makeAdminCashStockRow,
+  makeOpenShiftDto,
+  type AdminShiftRow,
+} from '../../../shared/testing/fixtures';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 
 interface MenuModule {
@@ -61,31 +67,29 @@ class TestServer {
   shiftsPages: Record<string, AdminShiftRow[]> = {};
   shiftsError: { status: number; body: unknown } | null = null;
   posts: Post[] = [];
-  cashData: AdminCashData = {
-    shift: {
-      id: 'S-0002',
-      openedAt: '2026-10-06T08:00:00.000Z',
-      staff: 'EMP-001',
-    },
-    stock: [
-      { code: 'THB', opening: '10000.00', net: '0.00', expected: '10000.00' },
-      { code: 'USD', opening: '500.00', net: '0.00', expected: '500.00' },
+  cashData = makeAdminCashData({
+    openShifts: [
+      makeOpenShiftDto({ shiftId: 'S-0002', tellerId: 'u-1', tellerName: 'EMP-001', openedAt: '2026-10-06T08:00:00.000Z' }),
     ],
-    stats: {
+    stock: [
+      makeAdminCashStockRow({ code: 'THB', opening: '10000.00', net: '0.00', expected: '10000.00' }),
+      makeAdminCashStockRow({ code: 'USD', opening: '500.00', net: '0.00', expected: '500.00' }),
+    ],
+    stats: makeAdminCashStats({
       opening: '10000.00',
       incoming: '0.00',
       outgoing: '0.00',
       remaining: '10000.00',
-    },
-    reference: {
+    }),
+    reference: makeAdminCashReference({
       withReference: 0,
       withoutReference: 0,
       spread: '0.00',
       percent: '0.00',
-    },
+    }),
     currencies: REGISTER,
     lastCounted: null,
-  };
+  });
   sent: Sent[] = [];
 
   fetch = async (input: string, init?: RequestInit): Promise<Response> => {

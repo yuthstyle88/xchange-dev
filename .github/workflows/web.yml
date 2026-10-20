@@ -24,7 +24,7 @@ jobs:
   # `before` the runner cannot resolve, a manual run, or a FAILED `changes` job => full CI.
   changes:
     name: changes
-    runs-on: [self-hosted, light]  # light job: Jam + Studio runners carry `light` (owner 2026-10-17)
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.diff.outputs.docs_only }}
@@ -95,9 +95,9 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     # Node only, so the idle macOS pool, not the saturated Linux pool (#611; owner 2026-10-09).
-    # Runs on fast-mac to avoid Studio timeouts (#696 addendum 2).
-    runs-on: [self-hosted, macOS, ARM64, fast-mac]
-    timeout-minutes: 10
+    runs-on: [self-hosted, macOS, ARM64]
+    # stopgap: the full suite runs ~8 min on the shared macOS pool; root cause #3237. Back to 10 when #3237 lands.
+    timeout-minutes: 20
     steps:
       - name: Refuse to report green when the run was cancelled
         if: cancelled()
@@ -111,12 +111,73 @@ jobs:
         with:
           node-version: 24
 
-      - name: "Web screens: typecheck, test, build"
+      - name: Install (npm ci)
+        timeout-minutes: 5
         run: |
-          npm --prefix web ci --no-audit --no-fund
-          # owner 2026-10-17: tests run only on the merge into main; a PR still typechecks and builds
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            npm --prefix web run typecheck && npm --prefix web run build
-          else
-            npm --prefix web run check
-          fi
+          date -u
+          npm config get registry
+          node -v
+          npm -v
+          npm --prefix web ci --no-audit --no-fund --prefer-offline
+          date -u
+
+      - name: Typecheck
+        timeout-minutes: 5
+        run: |
+          run_with_stall_capture() {
+            "$@" &
+            local pid=$!
+            local elapsed=0
+            while kill -0 "$pid" 2>/dev/null; do
+              sleep 1
+              kill -0 "$pid" 2>/dev/null || break
+              elapsed=$((elapsed + 1))
+              if [ "$elapsed" -ge 120 ] && [ $((elapsed % 30)) -eq 0 ]; then
+                echo "=== stall capture at ${elapsed}s ($(date -u)) ==="
+                # shellcheck disable=SC2009
+                ps -axo pid,ppid,stat,pcpu,etime,wchan,command | grep -E 'tsc|vitest|node' | grep -v grep || true
+                if [ "$elapsed" -eq 120 ]; then
+                  log show --last 5m --style compact --predicate 'process == "syspolicyd" || process == "tccd" || process == "amfid"' | tail -50 || true
+                fi
+              fi
+            done
+            wait "$pid"
+          }
+          date -u
+          run_with_stall_capture npm --prefix web run typecheck
+          date -u
+
+      - name: Test
+        # owner 2026-10-17: tests run only on the merge into main; a PR still typechecks and builds
+        if: github.event_name != 'pull_request'
+        timeout-minutes: 8
+        run: |
+          run_with_stall_capture() {
+            "$@" &
+            local pid=$!
+            local elapsed=0
+            while kill -0 "$pid" 2>/dev/null; do
+              sleep 1
+              kill -0 "$pid" 2>/dev/null || break
+              elapsed=$((elapsed + 1))
+              if [ "$elapsed" -ge 120 ] && [ $((elapsed % 30)) -eq 0 ]; then
+                echo "=== stall capture at ${elapsed}s ($(date -u)) ==="
+                # shellcheck disable=SC2009
+                ps -axo pid,ppid,stat,pcpu,etime,wchan,command | grep -E 'tsc|vitest|node' | grep -v grep || true
+                if [ "$elapsed" -eq 120 ]; then
+                  log show --last 5m --style compact --predicate 'process == "syspolicyd" || process == "tccd" || process == "amfid"' | tail -50 || true
+                fi
+              fi
+            done
+            wait "$pid"
+          }
+          date -u
+          run_with_stall_capture npx --prefix web vitest run --root web --reporter=verbose --teardownTimeout=10000 < /dev/null
+          date -u
+
+      - name: Build
+        timeout-minutes: 5
+        run: |
+          date -u
+          npm --prefix web run build
+          date -u

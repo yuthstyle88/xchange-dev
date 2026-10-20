@@ -24,8 +24,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { setLang } from "../../../../shared/i18n";
-import type { DeskPaymentMethod } from "../../../../shared/api/generated/desk_config";
-import type { QuoteDto } from "../../../../shared/api/generated/quote";
+import {
+  makeDeskPaymentMethod,
+  makeQuoteDto,
+  makeQuoteLineDto,
+  makeQuotePublicationDto,
+  type DeskPaymentMethod,
+  type QuoteDto,
+} from "../../../../shared/testing/fixtures";
 
 type StepModule = { step: { index: number; label: () => string; component: (p: { store: any }) => JSX.Element } };
 type TextsModule = { th: Record<string, string>; en: Record<string, string> };
@@ -57,17 +63,18 @@ const V2_METHODS = ["Credit Card", "Alipay", "PromptPay", "Cash", "Bank Transfer
 
 const PATHS = { OWNER_DESK: { kind: "owner" }, STAFF_DESK: { kind: "staff" } } as const;
 
-const rule = (id: string, over: Partial<DeskPaymentMethod> = {}): DeskPaymentMethod => ({
-  id,
-  enabled: true,
-  buy: true,
-  sell: true,
-  account: "",
-  instruction: "",
-  ...over,
-});
+const rule = (id: string, over: Partial<DeskPaymentMethod> = {}) =>
+  makeDeskPaymentMethod({
+    id,
+    enabled: true,
+    buy: true,
+    sell: true,
+    account: "",
+    instruction: "",
+    ...over,
+  });
 
-const RULES: DeskPaymentMethod[] = [
+const RULES = [
   rule("Cash", { account: "Cash drawer", instruction: "นับเงินต่อหน้าลูกค้า" }),
   rule("Bank Transfer", { account: "SCB 123-4-56789-0", instruction: "โอนเข้าบัญชีร้าน" }),
   rule("PromptPay", { buy: false }),
@@ -75,15 +82,15 @@ const RULES: DeskPaymentMethod[] = [
   rule("Alipay", { sell: false }),
 ];
 
-function quote(settleThb: string): QuoteDto {
-  return {
+function quote(settleThb: string) {
+  return makeQuoteDto({
     id: "q-1",
     type: "BUY",
     channel: "DESK",
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: "p", version: 1 },
+    publication: makeQuotePublicationDto({ id: "p", version: 1 }),
     lines: [
-      {
+      makeQuoteLineDto({
         currency: "USD",
         shopSide: "BUY",
         quantity: "100",
@@ -94,11 +101,11 @@ function quote(settleThb: string): QuoteDto {
         feeThb: "0.00",
         settleThb,
         publishedRateLineId: "l",
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
 type Init = {
@@ -442,7 +449,7 @@ for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
     it("P18 an entry's identity checkbox (B2) carries its label and writes to the entry", async () => {
       const [confirmed, setConfirmed] = createSignal(false);
       const entry = {
-        kind: "booking",
+        kind: "kiosk",
         id: "b-1",
         banner: () => "",
         locked: true,

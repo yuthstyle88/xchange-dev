@@ -1,0 +1,17 @@
+/* #3417: cash-limits screen styling in the admin look */
+.xc-admin .xc-content .cash-limits {
+  display: block;
+}
+
+.xc-admin .xc-content .field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.xc-admin .xc-content .cash-limits-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}

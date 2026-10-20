@@ -58,6 +58,24 @@ const FOREIGN_KEY: &str = "23503";
 const UNIQUE: &str = "23505";
 
 const ORG_2: &str = "00000000-0000-0000-0000-0000000000b2";
+const M2_SUFFIX: &str = "_retire_v2_bookings.sql";
+
+fn m2_version() -> i64 {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let mut found = std::fs::read_dir(&dir)
+        .expect("read api/migrations")
+        .map(|e| {
+            e.expect("an entry")
+                .file_name()
+                .into_string()
+                .expect("UTF-8")
+        })
+        .filter(|n| n.ends_with(M2_SUFFIX));
+    let name = found.next().expect("the M2 migration");
+    name[..name.find('_').expect("<version>_")]
+        .parse()
+        .expect("a numeric version")
+}
 
 async fn migrator() -> Migrator {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
@@ -93,14 +111,35 @@ async fn migration_2() -> i64 {
     found[0]
 }
 
-/// Apply every migration not yet applied; the error text when one fails.
+/// Apply every migration not yet applied up to before M2; the error text when one fails.
 async fn migrate_rest(db: &TestDb) -> Result<(), String> {
     migration_2().await;
-    migrator()
+    let m2 = m2_version();
+    let mut migrator = migrator().await;
+    let kept: Vec<_> = migrator
+        .migrations
+        .iter()
+        .filter(|m| m.version < m2)
+        .cloned()
+        .collect();
+    migrator.migrations = std::borrow::Cow::Owned(kept);
+    migrator.run(&db.pool).await.map_err(|e| e.to_string())
+}
+
+/// A schema migrated through every migration older than M2.
+async fn before_m2() -> TestDb {
+    let m2 = m2_version();
+    let newest_before = migrator()
         .await
-        .run(&db.pool)
-        .await
-        .map_err(|e| e.to_string())
+        .migrations
+        .iter()
+        .map(|m| m.version)
+        .filter(|v| *v < m2)
+        .max()
+        .expect("a migration before M2");
+    let db = TestDb::empty().await;
+    db.migrate_through(Some(newest_before)).await;
+    db
 }
 
 /// A schema migrated through every migration older than migration 2.
@@ -654,18 +693,6 @@ fn tx_sql(over: &[(&str, &str)]) -> String {
         ("customer_id", "'CU-1'".into()),
         ("customer_name", "'Somchai'".into()),
         ("nationality", "'THA'".into()),
-        ("type", "'BUY'".into()),
-        ("code", "'USD'".into()),
-        ("amount", "100".into()),
-        ("rate", "32.1".into()),
-        ("principal", "3210".into()),
-        ("fee", "0".into()),
-        ("bank_fee", "0".into()),
-        ("received", "0".into()),
-        ("paid", "3210".into()),
-        ("method", "'Cash'".into()),
-        ("payment_ref", "''".into()),
-        ("account", "'Cash drawer 1'".into()),
         ("staff_id", "'EMP-001'".into()),
         ("booking_no", "'WALK-IN'".into()),
         ("notes", "''".into()),
@@ -810,7 +837,7 @@ async fn a_number_is_unique_within_its_organisation_only() {
 
 #[tokio::test]
 async fn a_booking_points_at_a_number_of_its_own_organisation() {
-    let db = TestDb::start().await;
+    let db = before_m2().await;
     demo_customer(&db).await;
     org_2(&db).await;
     db.exec(&tx_sql(COMPLETED)).await;

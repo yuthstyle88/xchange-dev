@@ -18,6 +18,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -356,10 +357,11 @@ impl Room {
         let customer = self.reserve(branch, who).await;
         let t = self.tick();
         let here = BranchId::new(branch);
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let cmd = SaveTransaction {
@@ -389,7 +391,7 @@ impl Room {
         let _saved = self
             .desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange of {} in {branch}: {e:?}", who.name));
         (customer.id, t)
@@ -742,12 +744,7 @@ async fn customer_volume_sums_transaction_lines_thb_amount_not_wide_principal() 
     let tx1 = room.make_tx(&customer.id, &who.name, "2500.00", t1);
     room.seed_completed(tx1).await;
 
-    // Zero out transactions.principal to simulate dropping wide column
-    sqlx::query("UPDATE transactions SET principal = 0 WHERE customer_id = $1")
-        .bind(&customer.id)
-        .execute(&room.desk.db.pool)
-        .await
-        .expect("update transactions principal to 0");
+    // TX-9 (#677) dropped `transactions.principal`; the volume can only come from the lines.
 
     let row = room.customer(&customer.id).await;
 

@@ -182,11 +182,11 @@ impl TestDb {
             .unwrap_or_else(|e| panic!("{sql}: {e}"));
     }
 
-    /// The branch's day in `phase` (ops_state), enabled.
+    /// The branch's day in `phase` (ops_state).
     async fn phase_is(&self, branch: &str, phase: &str) {
         self.exec(&format!(
-            "INSERT INTO ops_state (branch_id, enabled, phase) VALUES ('{branch}', true, '{phase}') \
-             ON CONFLICT (branch_id) DO UPDATE SET enabled = true, phase = EXCLUDED.phase"
+            "INSERT INTO ops_state (branch_id, phase) VALUES ('{branch}', '{phase}') \
+             ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase"
         ))
         .await;
     }
@@ -311,11 +311,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }

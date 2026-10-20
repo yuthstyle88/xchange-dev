@@ -20,8 +20,10 @@ use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::validation::NO_SUCH_BRANCH;
 
 use super::caller::Caller;
+use super::command::out_of_scope;
 use super::error::V3Error;
-use super::export_gate::ExportGate;
+use super::export_gate::{ExportGate, ExportGrant};
+use super::xlsx;
 use crate::bootstrap::AppState;
 pub use crate::presentation::dto::v3::common::ViewAnswer;
 use crate::presentation::pages;
@@ -40,6 +42,7 @@ pub trait BranchView: Send + Sync + 'static {
     const NAME: &'static str;
     const INHERITS: (EntryPath, &'static str);
     const VERSIONED: bool = true;
+    const ORG_WIDE: bool = false;
     /// A version that is not the branch's (design §12.16). None = use branch_versions.
     fn own_version(
         &self,
@@ -81,6 +84,7 @@ pub trait BranchView: Send + Sync + 'static {
 pub trait PagedView: Send + Sync + 'static {
     const NAME: &'static str;
     const INHERITS: (EntryPath, &'static str);
+    const CURSOR_FIELD: &'static str = "id";
     type Row: serde::Serialize + ts_rs::TS + Send;
     type Filter: ViewFilter;
     fn page(
@@ -150,8 +154,13 @@ enum Purpose {
     Export,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExportFormat {
+    Xlsx,
+}
+
 /// The query keys the core reads itself; never a filter key, never in an export's audited filter.
-const CORE_KEYS: [&str; 5] = ["branch", "since", "before", "limit", "purpose"];
+const CORE_KEYS: [&str; 6] = ["branch", "since", "before", "limit", "purpose", "format"];
 
 struct ParsedQuery {
     named_branch: Option<BranchId>,
@@ -159,12 +168,22 @@ struct ParsedQuery {
     before: Option<RowId>,
     limit: Option<u16>,
     purpose: Option<Purpose>,
+    format: Option<ExportFormat>,
 }
 
 fn invalid_purpose() -> V3Error {
     V3Error::new(
         "invalidRequest",
         Some("purpose"),
+        "คำขอไม่ถูกต้อง",
+        StatusCode::BAD_REQUEST,
+    )
+}
+
+fn invalid_format() -> V3Error {
+    V3Error::new(
+        "invalidRequest",
+        Some("format"),
         "คำขอไม่ถูกต้อง",
         StatusCode::BAD_REQUEST,
     )
@@ -179,6 +198,7 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
             before: None,
             limit: None,
             purpose: None,
+            format: None,
         });
     }
 
@@ -193,6 +213,7 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
 
     let mut map = HashMap::new();
     let mut purpose = None;
+    let mut format = None;
     for (k, v) in pairs.into_inner() {
         // Every `purpose` is read, not only the first: `export` is its one value (EX-9 #1147).
         if k == "purpose" {
@@ -201,7 +222,17 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
             }
             purpose = Some(Purpose::Export);
         }
+        if k == "format" {
+            if v != "xlsx" {
+                return Err(invalid_format());
+            }
+            format = Some(ExportFormat::Xlsx);
+        }
         map.entry(k).or_insert(v);
+    }
+
+    if format.is_some() && purpose != Some(Purpose::Export) {
+        return Err(invalid_format());
     }
 
     let named_branch = parse_branch(map.get("branch").map(|s| s.as_str())).map_err(|()| {
@@ -255,6 +286,7 @@ fn parse_query(req: &HttpRequest) -> Result<ParsedQuery, V3Error> {
         before,
         limit,
         purpose,
+        format,
     })
 }
 
@@ -410,7 +442,7 @@ pub(super) fn parse_branch(raw: Option<&str>) -> Result<Option<BranchId>, ()> {
     }
 }
 
-/// What a view's `load`/`page` fails with when an OR-7 bridge call (`legacy_actor`) finds no v2 actor for the caller
+/// What a view's `load`/`page` fails with when the caller has no `Standing` (OR-7; formerly the `legacy_actor` bridge)
 /// (#1030 §3.8). The seam answers it as a refused route does: `403 roleNotAllowedHere`.
 pub(crate) const BRIDGE_REFUSED: &str = "OR-7 bridge: the caller maps to no v2 actor";
 
@@ -477,6 +509,52 @@ pub(super) async fn require_branch(req: &HttpRequest, branch: &BranchId) -> Resu
     }
 }
 
+/// 403 outOfScope when a signed-in Blueprint caller names a branch outside its organisation;
+/// 500 serverError when the branch's organisation cannot be read.
+async fn require_branch_in_caller_org(
+    req: &HttpRequest,
+    branch: &BranchId,
+    caller: &Caller,
+) -> Result<(), V3Error> {
+    let Some(ref who) = caller.user else {
+        return Ok(());
+    };
+    let pool = match req.app_data::<web::Data<AppState>>() {
+        Some(state) => state.db.clone(),
+        None => {
+            return Err(V3Error::new(
+                "serverError",
+                None,
+                "เซิร์ฟเวอร์ขัดข้อง",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+    let in_org: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM branches b
+            JOIN organizations o ON o.id = b.organization_id
+            WHERE b.id = $1 AND (o.id::text = $2 OR o.code = $2)
+        )",
+    )
+    .bind(branch.as_str())
+    .bind(&who.organization_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| {
+        V3Error::new(
+            "serverError",
+            None,
+            "เซิร์ฟเวอร์ขัดข้อง",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+    if !in_org {
+        return Err(out_of_scope());
+    }
+    Ok(())
+}
+
 pub(crate) use super::caller::authenticate_caller;
 
 async fn get_branch_version(req: &HttpRequest, branch: &BranchId) -> Result<i64, V3Error> {
@@ -532,6 +610,11 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
     let branch = grant.branch;
 
     if let Err(e) = require_branch(req, &branch).await {
+        return e.error_response();
+    }
+    if !V::ORG_WIDE
+        && let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await
+    {
         return e.error_response();
     }
 
@@ -647,6 +730,9 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     if let Err(e) = require_branch(req, &branch).await {
         return e.error_response();
     }
+    if let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await {
+        return e.error_response();
+    }
 
     let filter = match parse_filter::<V::Filter>(req) {
         Ok(f) => f,
@@ -656,27 +742,22 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
     let pool = match req.app_data::<web::Data<AppState>>() {
         Some(state) => state.db.clone(),
         None => {
-            return V3Error::new(
-                "serverError",
-                None,
-                "เซิร์ฟเวอร์ขัดข้อง",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-            .error_response();
+            return server_error().error_response();
         }
     };
+
+    if query.format == Some(ExportFormat::Xlsx) {
+        let Some(grant) = &export else {
+            return invalid_format().error_response();
+        };
+        return export_paged_xlsx(req, view, &pool, &branch, &caller, &filter, grant, now).await;
+    }
 
     let versions = BranchVersions::new(pool.clone());
     let version = match versions.current(&branch).await {
         Ok(v) => v,
         Err(_) => {
-            return V3Error::new(
-                "serverError",
-                None,
-                "เซิร์ฟเวอร์ขัดข้อง",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-            .error_response();
+            return server_error().error_response();
         }
     };
 
@@ -719,14 +800,115 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
         Err(AppError::Domain(m)) if m == BRIDGE_REFUSED => {
             V3Error::from(PolicyError::RoleNotAllowedHere).error_response()
         }
-        Err(_) => V3Error::new(
-            "serverError",
-            None,
-            "เซิร์ฟเวอร์ขัดข้อง",
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .error_response(),
+        Err(_) => server_error().error_response(),
     }
+}
+
+fn server_error() -> V3Error {
+    V3Error::new(
+        "serverError",
+        None,
+        "เซิร์ฟเวอร์ขัดข้อง",
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn export_paged_xlsx<V: PagedView>(
+    req: &HttpRequest,
+    view: &V,
+    pool: &sqlx::PgPool,
+    branch: &BranchId,
+    caller: &Caller,
+    filter: &V::Filter,
+    grant: &ExportGrant,
+    now: chrono::DateTime<chrono::Utc>,
+) -> HttpResponse {
+    let mut all_rows: Vec<xlsx::OrderedRow> = Vec::new();
+    let mut before: Option<RowId> = None;
+
+    loop {
+        let page = match view.page_as(branch, caller, filter, before, 100).await {
+            Ok(rows) => rows,
+            Err(AppError::Unauthenticated) => {
+                return V3Error::from(PolicyError::SignIn).error_response();
+            }
+            Err(AppError::Domain(m)) if m == BRIDGE_REFUSED => {
+                return V3Error::from(PolicyError::RoleNotAllowedHere).error_response();
+            }
+            Err(_) => return server_error().error_response(),
+        };
+
+        let page_len = page.len();
+        if all_rows.len() + page_len > xlsx::MAX_EXPORT_ROWS {
+            return V3Error::new(
+                "exportTooLarge",
+                None,
+                "ข้อมูลส่งออกเกินขนาดที่กำหนด",
+                StatusCode::PAYLOAD_TOO_LARGE,
+            )
+            .error_response();
+        }
+
+        for row in &page {
+            match xlsx::ordered_row(row) {
+                Ok(ordered) => all_rows.push(ordered),
+                Err(_) => return server_error().error_response(),
+            }
+        }
+
+        if page_len < 100 {
+            break;
+        }
+
+        let Some(last_row) = all_rows.last() else {
+            return server_error().error_response();
+        };
+        let cursor = last_row
+            .iter()
+            .find(|(k, _)| k == V::CURSOR_FIELD)
+            .and_then(|(_, v)| match v {
+                serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            });
+        let Some(next_before) = cursor else {
+            return server_error().error_response();
+        };
+        before = Some(next_before);
+    }
+
+    let bytes = match xlsx::workbook(V::NAME, &all_rows) {
+        Ok(b) => b,
+        Err(_) => return server_error().error_response(),
+    };
+
+    if let Err(e) =
+        ExportGate::record(pool, grant, V::NAME, export_filter(req), all_rows.len()).await
+    {
+        return e.error_response();
+    }
+
+    let mut clean_branch: String = branch
+        .as_str()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(40)
+        .collect();
+    if clean_branch.is_empty() {
+        clean_branch = "unknown".to_owned();
+    }
+    let disposition = format!(
+        "attachment; filename=\"{}-{clean_branch}-{}.xlsx\"",
+        V::NAME,
+        now.format("%Y%m%dT%H%M%SZ")
+    );
+
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, xlsx::XLSX_CONTENT_TYPE))
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .insert_header((header::CONTENT_DISPOSITION, disposition))
+        .body(bytes)
 }
 
 #[cfg(test)]

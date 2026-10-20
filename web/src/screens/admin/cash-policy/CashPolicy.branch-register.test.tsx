@@ -4,26 +4,28 @@ import { render } from 'solid-js/web';
 import { CashPolicy } from './CashPolicy';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
-import type { AdminCashData } from '../../../shared/api/generated/admin_cash';
-import type { CashTransferPolicyData } from '../../../shared/api/generated/cash_transfer_policy';
+import {
+  makeAdminCashData,
+  makeCashTransferPolicyData,
+} from '../../../shared/testing/fixtures';
 
-const SAMPLE_POLICY: CashTransferPolicyData = {
+const SAMPLE_POLICY = makeCashTransferPolicyData({
   version: 'v-0001',
   limits: { USD: '300.00', EUR: '12.5' },
   valid: true,
   invalidEntries: [],
   setBy: 'u-exec',
   createdAt: '2026-10-12T01:00:00Z',
-};
+});
 
-const SAMPLE_CASH: AdminCashData = {
-  shift: null,
+const SAMPLE_CASH = makeAdminCashData({
+  openShifts: [],
   stock: [],
   stats: null,
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
   currencies: ['THB', 'USD', 'EUR'],
   lastCounted: null,
-};
+});
 
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;

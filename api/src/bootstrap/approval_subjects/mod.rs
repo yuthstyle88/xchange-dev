@@ -5,9 +5,8 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use xc_approval::application::registry::ApprovalRegistry;
 use xc_loyalty::application::rule_publisher::LoyaltyRuleWriter;
-use xc_loyalty::infrastructure::http_rule_writer::HttpLoyaltyRuleWriter;
 
-use crate::config::Settings;
+use crate::bootstrap::AppState;
 
 /// Registers one approval subject.
 pub type RegisterFn = fn(&mut ApprovalRegistry, PgPool);
@@ -29,13 +28,11 @@ impl ApprovalSubjectDeps {
         }
     }
 
-    pub fn from_settings(pool: PgPool, settings: &Settings) -> Self {
-        let loyalty = settings
-            .loyalty
-            .as_ref()
-            .and_then(HttpLoyaltyRuleWriter::from_config)
-            .map(|w| Arc::new(w) as Arc<dyn LoyaltyRuleWriter>);
-        Self { pool, loyalty }
+    pub fn from_state(state: &AppState) -> Self {
+        Self {
+            pool: state.db.clone(),
+            loyalty: state.loyalty_rule_writer.clone(),
+        }
     }
 }
 
@@ -43,10 +40,13 @@ impl ApprovalSubjectDeps {
 /// `ApprovalSubjectDeps` (R2).
 pub fn registry_with(deps: &ApprovalSubjectDeps) -> ApprovalRegistry {
     let mut reg = ApprovalRegistry::new();
-    for register in APPROVAL_SUBJECTS {
-        register(&mut reg, deps.pool.clone());
+    for (register, type_name) in APPROVAL_SUBJECTS.iter().zip(APPROVAL_SUBJECT_TYPES) {
+        if *type_name == loyalty_rule_version::TYPE {
+            loyalty_rule_version::register_with_deps(&mut reg, deps);
+        } else {
+            register(&mut reg, deps.pool.clone());
+        }
     }
-    loyalty_rule_version::register_with_deps(&mut reg, deps);
     reg
 }
 

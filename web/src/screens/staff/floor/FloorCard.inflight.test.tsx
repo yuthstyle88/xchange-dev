@@ -3,9 +3,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeStaffFloorTarget,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+} from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { FloorCard } from './FloorCard';
 import { th } from './i18n';
@@ -14,49 +20,51 @@ const BRANCH = 'MAIN';
 const PUBLISHED_AT = '2026-10-11T02:30:00Z';
 const ALL_PERMS = ['AttendanceClock', 'BranchDayOperate', 'CashTargetSet'];
 
-function me(permissions: string[] = ALL_PERMS): StaffMeView {
-  return {
+function me(permissions: string[] = ALL_PERMS) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000f1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: null,
     myShift: null,
     cutoff: null,
-    target: { amounts: { USD: '1000.00' }, at: '2026-10-11T01:00:00Z' },
+    target: makeStaffFloorTarget({ amounts: { USD: '1000.00' }, at: '2026-10-11T01:00:00Z' }),
     safe: null,
     ...over,
-  };
+  });
 }
 
-const RATES: PublishedRatesData = {
-  publication: {
+const RATES = makePublishedRatesData({
+  publication: makePublishedPublicationDto({
     id: '11111111-2222-4333-8444-555555555555',
     version: 7,
     publishedAt: PUBLISHED_AT,
-  },
+  }),
   sourceDate: '2026-10-10',
   stale: false,
   lines: [
-    {
+    makePublishedLineDto({
       currency: 'USD',
       group: 'ALL',
       unitSize: '1',
       buyRate: '32.4500',
       sellRate: '32.9000',
       lineId: 'l-usd',
-    },
+      bands: [],
+    }),
   ],
-};
+  bandHeadings: [],
+});
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {

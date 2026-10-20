@@ -12,6 +12,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use std::sync::Arc;
@@ -112,11 +113,19 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
     rates_re4e_publish::set_counter_rate(&desk.db.pool, MAIN, "USD", "32.1", "33.0").await;
 
+    // CA-10 (#626, ruling A), setup only: the shift is the saver's own, so its teller is the user FRONT's
+    // employee id resolves to (`teller_of_actor_in`), not a user named "FRONT".
+    let front = one_of_each_role()
+        .into_iter()
+        .find(|p| p.key == "FRONT")
+        .expect("FRONT");
+    let front_user_id = shift_holder_common::user_of(&desk.db.pool, &front.id).await;
     sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
-         VALUES ('shift-1', $1, 'OPEN', now(), 'owner', 'open-req-1', (SELECT u.id FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL)))",
+         VALUES ('shift-1', $1, 'OPEN', now(), 'FRONT', 'open-req-1', $2::uuid)",
     )
     .bind(MAIN)
+    .bind(&front_user_id)
     .execute(&desk.db.pool)
     .await
     .expect("insert shift");
@@ -131,6 +140,8 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same opening in the
     // ledger's drawer of shift-1.
     snapshot_common::r1_fund_open_drawers(&desk.db.pool).await;
+    // CA-10 (#626, ruling A), setup only: the teller gate refuses a day that is not OPEN (`SAVE_CLOSED`).
+    shift_holder_common::open_day(&desk.db.pool, MAIN).await;
 
     sqlx::query(
         "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
@@ -143,10 +154,6 @@ async fn setup_cash_save_prerequisites(desk: &Desk) -> String {
     snapshot_common::seed_passport_identity(&desk.db.pool, "cust-1", "AA1234567", "THA").await;
 
     // C2: the teller who saves uploads the passport (a save attaches its saver's own files)
-    let front = one_of_each_role()
-        .into_iter()
-        .find(|p| p.key == "FRONT")
-        .expect("FRONT");
     desk.files
         .upload(
             &BranchId::new(MAIN),

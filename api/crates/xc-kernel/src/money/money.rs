@@ -7,6 +7,8 @@ use std::fmt;
 
 use rust_decimal::Decimal;
 
+use super::bounded::{Bound, BoundError, Sign};
+
 /// Why a number typed by a person or sent by a screen was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum NumberError {
@@ -34,31 +36,38 @@ impl Money {
 
     /// Parses plain decimal notation (`"100"`, `"100.5"`, `"0.07"`), `0 ..= 100,000,000`.
     pub fn parse(text: &str) -> Result<Money, NumberError> {
-        let val = parse_decimal(text, 2, false, Self::MAX_INPUT_UNITS)?;
+        let mut val = Bound::numeric(20, 2, Sign::NonNegative)
+            .at_most(Self::MAX_INPUT_UNITS)
+            .parse(text)?;
+        val.rescale(2);
         Ok(Money(val))
     }
 
-    /// The amount as hundredths (satang, cents).
-    pub fn minor(self) -> i64 {
+    fn hundredths(self) -> Option<i128> {
         let mut d = self.0;
         d.rescale(2);
-        d.mantissa() as i64
+        if d.scale() == 2 {
+            Some(d.mantissa())
+        } else {
+            None
+        }
     }
 
     /// The amount as hundredths with no 64-bit limit.
     pub fn minor_i128(self) -> i128 {
-        let mut d = self.0;
-        d.rescale(2);
-        d.mantissa()
+        self.hundredths()
+            .expect("Money figure is not representable at 2 decimal places")
     }
 
     /// The amount as hundredths (satang, cents), or `Err(NumberError::Invalid)` when it does not
     /// fit in `i64`.
     pub fn try_minor(self) -> Result<i64, NumberError> {
-        i64::try_from(self.minor_i128()).map_err(|_| NumberError::Invalid)
+        self.hundredths()
+            .and_then(|m| i64::try_from(m).ok())
+            .ok_or(NumberError::Invalid)
     }
 
-    /// The inverse of [`Money::minor`]; no upper cap. `Err(Invalid)` when negative.
+    /// The inverse of [`Money::try_minor`]; no upper cap. `Err(Invalid)` when negative.
     pub fn from_minor(minor: i64) -> Result<Money, NumberError> {
         if minor < 0 {
             return Err(NumberError::Invalid);
@@ -99,53 +108,11 @@ impl fmt::Display for Money {
     }
 }
 
-pub(crate) fn parse_decimal(
-    text: &str,
-    max_dp: usize,
-    strictly_positive: bool,
-    max_units: i64,
-) -> Result<Decimal, NumberError> {
-    if text.is_empty() {
-        return Err(NumberError::Invalid);
-    }
-
-    if text.starts_with('.') || text.ends_with('.') {
-        return Err(NumberError::Invalid);
-    }
-
-    let mut dot_count = 0;
-    for b in text.bytes() {
-        if b == b'.' {
-            dot_count += 1;
-            if dot_count > 1 {
-                return Err(NumberError::Invalid);
-            }
-        } else if !b.is_ascii_digit() {
-            return Err(NumberError::Invalid);
+impl From<BoundError> for NumberError {
+    fn from(err: BoundError) -> Self {
+        match err {
+            BoundError::TooManyDecimals { .. } => NumberError::TooManyDecimals,
+            BoundError::Syntax | BoundError::OutOfRange | BoundError::Sign => NumberError::Invalid,
         }
     }
-
-    let frac_part = match text.split_once('.') {
-        Some((_, frac)) => frac,
-        None => "",
-    };
-
-    if frac_part.len() > max_dp && frac_part[max_dp..].bytes().any(|b| b != b'0') {
-        return Err(NumberError::TooManyDecimals);
-    }
-
-    let val = Decimal::from_str_exact(text).map_err(|_| NumberError::Invalid)?;
-
-    if strictly_positive && val.is_zero() {
-        return Err(NumberError::Invalid);
-    }
-
-    let max_limit = Decimal::from(max_units);
-    if val > max_limit {
-        return Err(NumberError::Invalid);
-    }
-
-    let mut val = val;
-    val.rescale(max_dp as u32);
-    Ok(val)
 }

@@ -40,8 +40,6 @@ pub enum Permission {
     CashTargetSet,
     BranchDayOperate,
     SignedIn,
-    /// v3-only (#550 OR-4): the owner route `/api/bookings` and the bookings owner actions.
-    BookingsAdmin,
     /// v3-only (#550 OR-4): the owner route `/api/reference-rates`.
     ReferenceRatesRead,
     /// Consent policy manage permission (§3, §5.1, CI-6).
@@ -68,4 +66,6 @@ pub enum Permission {
     OrgStartingPricesManage,
     /// LY-6 (#1411, membership-points design §3, §4.6): draft and submit loyalty rule versions. EXECUTIVE only.
     LoyaltyRulesManage,
+    /// C2 (user-management-rbac design §3.3): read the account audit and the login history. EXECUTIVE and ADMIN.
+    AuditLogsRead,
 }

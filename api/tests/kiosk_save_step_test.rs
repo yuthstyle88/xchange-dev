@@ -14,6 +14,7 @@
 
 #[allow(unused_imports)]
 mod save_common;
+mod shift_holder_common;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -24,7 +25,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use save_common::*;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{MinorUnit, Rate, Side, UnitSize};
@@ -183,12 +184,12 @@ impl KioskPorts for Counter {
 // ------------------------------------------------------------------ the scene
 
 /// A staff member: the id is the employee's id, the username something else.
-fn staff(id: &str, role: Role) -> SaveActor {
+fn staff(id: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
         username: format!("user-{id}"),
         employee_id: Some(id.to_owned()),
-        role,
+        standing,
     }
 }
 
@@ -222,6 +223,14 @@ impl Scene {
     async fn start() -> Self {
         let shop = Shop::start().await;
         let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+        let shift = shift_holder_common::open_shift_for(
+            &shop.pool,
+            MAIN,
+            FRONT,
+            &[("THB", "100000"), ("USD", "1000")],
+        )
+        .await;
+        fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
         let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
         let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
         let counter = Arc::new(Counter::default());
@@ -325,7 +334,7 @@ impl Scene {
 async fn a_save_that_names_no_request_is_none_of_the_kiosks_business() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
 
     // no request named, and a request named with the empty text
     let saved = s
@@ -365,7 +374,7 @@ async fn the_employee_holding_a_checked_request_saves_it_and_the_request_is_comp
         .save(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(FRONT, Role::Front),
+            &staff(FRONT, StandingKind::Staff(AccessRole::Teller)),
         )
         .await
         .expect("the holder saves the request");
@@ -396,19 +405,24 @@ async fn the_employee_holding_a_checked_request_saves_it_and_the_request_is_comp
 async fn the_role_of_the_saver_plays_no_part() {
     // the old server asked who holds the request, not what they are
     let s = Scene::start().await;
-    for (n, role) in [Role::Owner, Role::Manager, Role::Rates, Role::Documents]
-        .into_iter()
-        .enumerate()
+    for (n, standing) in [
+        StandingKind::Owner,
+        StandingKind::Staff(AccessRole::BranchManager),
+        StandingKind::Staff(AccessRole::RateManager),
+        StandingKind::Staff(AccessRole::VerificationReviewer),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let id = format!("r{n}");
         s.id_checked(MAIN, &id, FRONT).await;
         s.save(
             s.form(&format!("role-000{n}-aaaaaaaaaa")),
             &with_kiosk(&id),
-            &staff(FRONT, role),
+            &staff(FRONT, standing),
         )
         .await
-        .unwrap_or_else(|e| panic!("{role:?} holding the request saves it: {e:?}"));
+        .unwrap_or_else(|e| panic!("{standing:?} holding the request saves it: {e:?}"));
     }
     assert_eq!(s.counter.completed().len(), 4);
     s.shop.finish().await;
@@ -429,7 +443,7 @@ async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
     // held by somebody whose id is this saver's *username*
     s.id_checked(MAIN, "by-name", &format!("user-{FRONT}"))
         .await;
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     for request in [
@@ -454,7 +468,7 @@ async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
         id: OWNER.to_owned(),
         username: FRONT.to_owned(),
         employee_id: None,
-        role: Role::Owner,
+        standing: StandingKind::Owner,
     };
     let owners = s.shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
     let before = (s.shop.everything().await, s.requests().await);
@@ -476,7 +490,7 @@ async fn the_save_must_be_live_and_be_what_the_customer_asked_for() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", FRONT).await;
     s.id_checked(MAIN, "q2", OTHER).await;
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
     let slip = s.shop.upload(MAIN, FRONT, "application/pdf", PDF).await;
     let before = (s.shop.everything().await, s.requests().await);
     let change = |f: Change| {
@@ -553,7 +567,7 @@ async fn the_save_must_be_live_and_be_what_the_customer_asked_for() {
 async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
     let first = s
         .save(s.form("again-0001-aaaaaaaaa"), &with_kiosk("q1"), &front)
         .await
@@ -580,7 +594,7 @@ async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
         .save(
             form("again-0001-aaaaaaaaa", &s.customer, &others),
             &with_kiosk("q1"),
-            &staff(OTHER, Role::Front),
+            &staff(OTHER, StandingKind::Staff(AccessRole::Teller)),
         )
         .await;
     assert_eq!(refusal(got), NOT_READY);
@@ -593,7 +607,7 @@ async fn sending_the_same_save_again_is_answered_and_completes_nothing_twice() {
 async fn a_save_the_shop_refuses_leaves_the_request_ready() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     // Re-pinned for TX-6 by the test-writer, A3 (kiosk) (design quote-transaction.md §4.6.1; lane controller's
@@ -627,7 +641,7 @@ async fn a_save_the_shop_refuses_leaves_the_request_ready() {
 async fn a_kiosk_save_at_a_rate_that_is_not_its_quotes_is_refused() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     let mut moved = s.form("rate-0001-aaaaaaaaaa");
@@ -665,7 +679,7 @@ async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
     .execute(&s.shop.pool)
     .await
     .expect("insert a checked request with no quote");
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
     let quotes = || async {
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM quotes")
             .fetch_one(&s.shop.pool)
@@ -706,7 +720,7 @@ async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
 async fn a_request_that_cannot_be_completed_undoes_the_save() {
     let s = Scene::start().await;
     s.id_checked(MAIN, "q1", FRONT).await;
-    let front = staff(FRONT, Role::Front);
+    let front = staff(FRONT, StandingKind::Staff(AccessRole::Teller));
     let before = (s.shop.everything().await, s.requests().await);
 
     s.counter.audit_fails.store(true, Ordering::SeqCst);

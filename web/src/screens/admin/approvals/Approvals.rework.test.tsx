@@ -4,13 +4,13 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
-import type { ApprovalRequestItemDto } from '../../../shared/api/generated/approval_requests';
+import { makeApprovalRequestItemDto } from '../../../shared/testing/fixtures';
 import { Approvals } from './Approvals';
 import { th as screenTh, en as screenEn } from './i18n';
 import { Toast, toast } from '../parts/toast';
 
-function fakeRequest(id: string, branch = 'MAIN'): ApprovalRequestItemDto {
-  return {
+function fakeRequest(id: string, branch = 'MAIN') {
+  return makeApprovalRequestItemDto({
     id,
     type: 'RATE_PUBLICATION',
     branchId: branch,
@@ -28,7 +28,7 @@ function fakeRequest(id: string, branch = 'MAIN'): ApprovalRequestItemDto {
     requestedAt: '2026-10-14T10:00:00+00:00',
     status: 'PENDING',
     decision: null,
-  };
+  });
 }
 
 describe('Approvals rework (#1695): worded errors on failed reads and commands', () => {

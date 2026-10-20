@@ -25,7 +25,7 @@ use pos_error::{AppError, AppResult};
 use quote_common::*;
 use rust_decimal::Decimal;
 use uuid::Uuid;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
@@ -58,7 +58,7 @@ fn teller() -> SaveActor {
         id: "employee-7".to_owned(),
         username: "user-employee-7".to_owned(),
         employee_id: Some("employee-7".to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

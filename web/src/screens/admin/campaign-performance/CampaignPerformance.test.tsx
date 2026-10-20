@@ -6,10 +6,12 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../../../shared/api/client';
-import type {
-  CampaignPerformanceData,
-  VersionPerformanceRow,
-} from '../../../shared/api/generated/campaign_performance';
+import {
+  makeCampaignPerformanceData,
+  makePerformanceFigure,
+  makeVersionPerformanceRow,
+  type CampaignPerformanceData,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { meOf } from '../../../test-support/me';
@@ -44,7 +46,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-const SAMPLE_PERFORMANCE_ROW: VersionPerformanceRow = {
+const SAMPLE_PERFORMANCE_ROW = makeVersionPerformanceRow({
   campaignId: 'cmp-1',
   campaignName: 'Golden October',
   versionId: 'ver-1',
@@ -53,15 +55,15 @@ const SAMPLE_PERFORMANCE_ROW: VersionPerformanceRow = {
   priceCostThb: '15000.00',
   rewardExpenseThb: '5000.00',
   volumeThb: '2500000.00',
-  realizedMarginThb: {
+  realizedMarginThb: makePerformanceFigure({
     value: '45000.00',
     unavailable: null,
-  },
-  attributedContributionThb: {
+  }),
+  attributedContributionThb: makePerformanceFigure({
     value: '40000.00',
     unavailable: null,
-  },
-};
+  }),
+});
 
 describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [required])', () => {
   let container: HTMLDivElement;
@@ -69,7 +71,7 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
   let sentRequests: SentRequest[] = [];
 
   let viewStatus = 200;
-  let viewData: CampaignPerformanceData = { versions: [SAMPLE_PERFORMANCE_ROW] };
+  let viewData: CampaignPerformanceData = makeCampaignPerformanceData({ versions: [SAMPLE_PERFORMANCE_ROW] });
   let viewErrorCode: string | undefined = undefined;
 
   beforeEach(() => {
@@ -79,7 +81,7 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
     sentRequests = [];
 
     viewStatus = 200;
-    viewData = { versions: [SAMPLE_PERFORMANCE_ROW] };
+    viewData = makeCampaignPerformanceData({ versions: [SAMPLE_PERFORMANCE_ROW] });
     viewErrorCode = undefined;
 
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -260,15 +262,15 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
   // ── 4. Unavailable contribution shows "unavailable", never 0 (§7, §9 row 2, 4) ─
   describe('4. Unavailable contribution handling (ticket §7 [required], §9 row 2, row 4)', () => {
     it('cost_source = UNAVAILABLE (awaitsLedger) gives contribution unavailable, not 0.00 (§9 row 2)', async () => {
-      viewData = {
+      viewData = makeCampaignPerformanceData({
         versions: [
-          {
+          makeVersionPerformanceRow({
             ...SAMPLE_PERFORMANCE_ROW,
-            realizedMarginThb: { value: null, unavailable: 'awaitsLedger' },
-            attributedContributionThb: { value: null, unavailable: 'awaitsLedger' },
-          },
+            realizedMarginThb: makePerformanceFigure({ value: null, unavailable: 'awaitsLedger' }),
+            attributedContributionThb: makePerformanceFigure({ value: null, unavailable: 'awaitsLedger' }),
+          }),
         ],
-      };
+      });
 
       dispose = render(() => <CampaignPerformance {...dummyProps()} />, container);
       await settle();
@@ -284,19 +286,19 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
     });
 
     it('campaign with no redemptions shows zeros for counts but unavailable for contribution when cost unavailable (§9 row 4)', async () => {
-      viewData = {
+      viewData = makeCampaignPerformanceData({
         versions: [
-          {
+          makeVersionPerformanceRow({
             ...SAMPLE_PERFORMANCE_ROW,
             redemptions: 0,
             volumeThb: '0.00',
             priceCostThb: '0.00',
             rewardExpenseThb: '0.00',
-            realizedMarginThb: { value: null, unavailable: 'awaitsLedger' },
-            attributedContributionThb: { value: null, unavailable: 'awaitsLedger' },
-          },
+            realizedMarginThb: makePerformanceFigure({ value: null, unavailable: 'awaitsLedger' }),
+            attributedContributionThb: makePerformanceFigure({ value: null, unavailable: 'awaitsLedger' }),
+          }),
         ],
-      };
+      });
 
       dispose = render(() => <CampaignPerformance {...dummyProps()} />, container);
       await settle();
@@ -319,15 +321,15 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
     });
 
     it('commission awaitsBroker shows "awaits broker" (§7 [required], §6.1)', async () => {
-      viewData = {
+      viewData = makeCampaignPerformanceData({
         versions: [
-          {
+          makeVersionPerformanceRow({
             ...SAMPLE_PERFORMANCE_ROW,
-            realizedMarginThb: { value: '50000.00', unavailable: null },
-            attributedContributionThb: { value: null, unavailable: 'awaitsBroker' },
-          },
+            realizedMarginThb: makePerformanceFigure({ value: '50000.00', unavailable: null }),
+            attributedContributionThb: makePerformanceFigure({ value: null, unavailable: 'awaitsBroker' }),
+          }),
         ],
-      };
+      });
 
       dispose = render(() => <CampaignPerformance {...dummyProps()} />, container);
       await settle();
@@ -345,18 +347,18 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
   // ── 5. Money display from strings, never computed in screen (§7 [required]) ────
   describe('5. Money display from strings (ticket §7 [required])', () => {
     it('money figures are shown directly from view strings, never computed in screen', async () => {
-      viewData = {
+      viewData = makeCampaignPerformanceData({
         versions: [
-          {
+          makeVersionPerformanceRow({
             ...SAMPLE_PERFORMANCE_ROW,
             priceCostThb: '12345.67',
             rewardExpenseThb: '7654.32',
             volumeThb: '9876543.21',
-            realizedMarginThb: { value: '45678.90', unavailable: null },
-            attributedContributionThb: { value: '38024.58', unavailable: null },
-          },
+            realizedMarginThb: makePerformanceFigure({ value: '45678.90', unavailable: null }),
+            attributedContributionThb: makePerformanceFigure({ value: '38024.58', unavailable: null }),
+          }),
         ],
-      };
+      });
 
       dispose = render(() => <CampaignPerformance {...dummyProps()} />, container);
       await settle();
@@ -372,7 +374,7 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
   // ── 6. M04 table rendering per version and period ─────────────────────────────
   describe('6. M04 table rendering and period reactivity', () => {
     it('renders performance table headers and rows', async () => {
-      viewData = { versions: [SAMPLE_PERFORMANCE_ROW] };
+      viewData = makeCampaignPerformanceData({ versions: [SAMPLE_PERFORMANCE_ROW] });
       dispose = render(() => <CampaignPerformance {...dummyProps()} />, container);
       await settle();
 
@@ -401,7 +403,7 @@ describe('MK-8c: Admin Campaign Performance M04 (§9 edge cases and §7 [require
   // ── 7. Loading, empty and error states (§8) ───────────────────────────────────
   describe('7. Loading, empty and error states with retry (§8)', () => {
     it('empty state is shown when no versions exist in period', async () => {
-      viewData = { versions: [] };
+      viewData = makeCampaignPerformanceData({ versions: [] });
       dispose = render(() => <CampaignPerformance {...dummyProps()} />, container);
       await settle();
 

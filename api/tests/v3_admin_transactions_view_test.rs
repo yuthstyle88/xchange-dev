@@ -43,6 +43,7 @@ mod common;
 mod compat_common;
 mod kiosk_http_common;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -528,20 +529,12 @@ impl Room {
             } else {
                 ("32.6", "3260.00")
             };
-            let (paid, received) = if tx.side == "BUY" {
-                (principal, "0")
-            } else {
-                ("0", principal)
-            };
             sqlx::query(
-                "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
-                 payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
-                 reference_rate, principal, fee, bank_fee, received, paid, method, payment_ref, \
-                 account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+                "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+                 customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
                  recorded_by, completed_at) \
-                 VALUES ($1, $2, $3, $4, $1, 'hash', $5, $6, 'THA', $7, $8, 100, $9::numeric, NULL, \
-                 $10::numeric, 0, 0, $11::numeric, $12::numeric, 'Cash', '', 'Cash drawer', $13, \
-                 'WALK-IN', $14, $15::date, $16::timestamptz, $16::timestamptz, 'owner', $16::timestamptz)",
+                 VALUES ($1, $2, $3, $4, $1, 'hash', $5, $6, 'THA', $7, 'WALK-IN', $8, $9::date, \
+                 $10::timestamptz, $10::timestamptz, 'owner', $10::timestamptz)",
             )
             .bind(&tx.id)
             .bind(tx.branch)
@@ -549,12 +542,6 @@ impl Room {
             .bind(shift)
             .bind(customer)
             .bind(&tx.customer)
-            .bind(tx.side)
-            .bind(tx.currency)
-            .bind(rate)
-            .bind(principal)
-            .bind(received)
-            .bind(paid)
             .bind(&tx.staff)
             .bind(&tx.notes)
             .bind(&tx.date)
@@ -562,7 +549,26 @@ impl Room {
             .execute(&self.counter.desk.db.pool)
             .await
             .unwrap_or_else(|e| panic!("put exchange {}: {e}", tx.id));
-            seed_lines(&self.counter.desk.db.pool, std::slice::from_ref(&tx.id)).await;
+            seed_lines(
+                &self.counter.desk.db.pool,
+                &tx.id,
+                &Figures {
+                    side: tx.side,
+                    code: tx.currency,
+                    quantity: "100",
+                    unit_size: "1",
+                    rate,
+                    reference_rate: None,
+                    thb: principal,
+                    fee: "0",
+                    settle: principal,
+                    method: "Cash",
+                    reference: "",
+                    account: "Cash drawer",
+                    bank_fee: "0",
+                },
+            )
+            .await;
         }
     }
 
@@ -572,11 +578,13 @@ impl Room {
         let t = self.advance(7);
         let here = BranchId::new(MAIN);
         let customer_id = self.reserve(MAIN, s.customer, t).await;
+        let saver =
+            shift_holder_common::teller_of_open_shift(&self.counter.desk.db.pool, MAIN).await;
         let passport = self
             .counter
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let slip = if s.transfer {
@@ -584,7 +592,7 @@ impl Room {
                 self.counter
                     .desk
                     .files
-                    .upload(&here, "owner", "application/pdf", PDF, t)
+                    .upload(&here, &saver, "application/pdf", PDF, t)
                     .await
                     .expect("upload a slip"),
             )
@@ -619,7 +627,7 @@ impl Room {
             .counter
             .desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange: {e:?}"));
         Saved {
@@ -1459,6 +1467,7 @@ async fn an_exchange_save_moves_the_version() {
 #[actix_web::test]
 async fn a_desk_save_moves_the_version() {
     let room = Room::open().await;
+    open_front_shift(&room).await;
     let customer = staff_rpc(
         &room,
         "reserveCustomer",
@@ -1498,6 +1507,7 @@ async fn a_desk_save_moves_the_version() {
 async fn a_kiosk_save_moves_the_version() {
     const WALKED: &str = "0000beef-0000-4000-8000-0000000a4641";
     let room = Room::open().await;
+    open_front_shift(&room).await;
     let c = &room.counter;
     c.waiting_request(WALKED).await;
     room.advance(5);
@@ -1571,6 +1581,24 @@ async fn an_abandoned_request_moves_the_version() {
     assert_eq!(answer["requestResolution"], json!("CANCELLED"), "{answer}");
     moves_the_version(&room, v0, None, "adminAbandonRequest").await;
     room.finish().await;
+}
+
+/// Amended for CA-10 (#626, ruling A), setup only: a compat save meets the v3 teller gate
+/// (`check_teller_save_in`), so the saver FRONT holds an OPEN shift of its own at `MAIN`, funded in the
+/// ledger like the room's other shifts, and `MAIN`'s day is OPEN (else `SAVE_CLOSED`).
+async fn open_front_shift(room: &Room) {
+    let pool = &room.counter.desk.db.pool;
+    let front = room
+        .staff
+        .iter()
+        .find(|p| p.key == "FRONT")
+        .expect("FRONT is one of the staff")
+        .id
+        .clone();
+    shift_holder_common::open_shift_for(pool, MAIN, &front, &[("THB", "100000"), ("USD", "2000")])
+        .await;
+    snapshot_common::r1_fund_open_drawers(pool).await;
+    shift_holder_common::open_day(pool, MAIN).await;
 }
 
 async fn staff_rpc(room: &Room, action: &str, payload: Value) -> Value {
@@ -1748,15 +1776,12 @@ async fn reference_percent_padded_to_six_places_when_ending_early() {
     // spread = 800.00 - 790.00 = 10.00
     // percent = 10.00 / 800.00 * 100 = 1.25% -> "1.250000"
     sqlx::query(
-        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
-         payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
-         reference_rate, principal, fee, bank_fee, received, paid, method, payment_ref, \
-         account, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+         customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
          recorded_by, completed_at) \
-         VALUES ('XC-20261006-P01', $1, 'LIVE', $2, 'XC-20261006-P01', 'hash', $3, \
-         'Test Cust', 'THA', 'BUY', 'USD', 100, 7.9, 8.0, 790.00, 0, 0, 790.00, 0, \
-         'Cash', '', 'Cash drawer', 'front', 'WALK-IN', '', '2026-10-06'::date, \
-         '2026-10-06T03:00:00Z'::timestamptz, '2026-10-06T03:00:00Z'::timestamptz, 'owner', '2026-10-06T03:00:00Z'::timestamptz)",
+         VALUES ('XC-20261006-P01', $1, 'LIVE', $2, 'XC-20261006-P01', 'hash', $3, 'Test Cust', 'THA', \
+         'front', 'WALK-IN', '', '2026-10-06'::date, '2026-10-06T03:00:00Z'::timestamptz, \
+         '2026-10-06T03:00:00Z'::timestamptz, 'owner', '2026-10-06T03:00:00Z'::timestamptz)",
     )
     .bind(MAIN)
     .bind(&shift)
@@ -1764,7 +1789,26 @@ async fn reference_percent_padded_to_six_places_when_ending_early() {
     .execute(&room.counter.desk.db.pool)
     .await
     .unwrap();
-    seed_lines(&room.counter.desk.db.pool, &["XC-20261006-P01".to_owned()]).await;
+    seed_lines(
+        &room.counter.desk.db.pool,
+        "XC-20261006-P01",
+        &Figures {
+            side: "BUY",
+            code: "USD",
+            quantity: "100",
+            unit_size: "1",
+            rate: "7.9",
+            reference_rate: Some("8.0"),
+            thb: "790.00",
+            fee: "0",
+            settle: "0",
+            method: "Cash",
+            reference: "",
+            account: "Cash drawer",
+            bank_fee: "0",
+        },
+    )
+    .await;
 
     let row = room.row("XC-20261006-P01").await;
     assert_eq!(row["referenceSpread"], json!("10.00"), "{row}");
@@ -1788,23 +1832,48 @@ async fn reference_value_half_away_from_zero_pins_half_satang() {
     room.finish().await;
 }
 
-/// The `transaction_lines` + `transaction_payments` rows of the wide-only exchanges `refs`, as
-/// TX-2's backfill writes them (migration 20261111170000 steps 7 and 8): an exchange seeded
-/// straight into `transactions` would otherwise have no line, a shape that cannot exist after
-/// TX-2 (#670), and readers moved onto the lines by TX-8 (#676) would not see it.
-async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
+/// One exchange's figures, written straight into its `transaction_lines` and `transaction_payments` rows. TX-9 #677
+/// (ticket author claude/c4d72c): migration 3 drops the wide columns this file used to copy them from, so a seed
+/// names them here, the same values its wide row held.
+struct Figures<'a> {
+    side: &'a str,
+    code: &'a str,
+    quantity: &'a str,
+    unit_size: &'a str,
+    rate: &'a str,
+    reference_rate: Option<&'a str>,
+    thb: &'a str,
+    fee: &'a str,
+    settle: &'a str,
+    method: &'a str,
+    reference: &'a str,
+    account: &'a str,
+    bank_fee: &'a str,
+}
+
+/// The `transaction_lines` + `transaction_payments` rows of the exchange `document_ref`, as TX-2's backfill writes
+/// them (migration 20261111170000 steps 7 and 8), from `f`.
+async fn seed_lines(pool: &sqlx::PgPool, document_ref: &str, f: &Figures<'_>) {
     sqlx::query(
         "INSERT INTO transaction_lines (id, organization_id, transaction_id, quote_line_id, \
             shop_side, currency, denomination_id, quantity, unit_size, rate_snapshot, \
             reference_rate, thb_amount, fee_thb, settle_thb, cost_basis_thb, \
             realized_margin_thb, line_no, created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, t.type, t.code, NULL, \
-            t.amount, t.unit_size, t.rate, t.reference_rate, t.principal, t.fee, \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, NULL, NULL, 1, \
-            t.recorded_at, t.recorded_at \
-         FROM transactions t WHERE t.document_ref = ANY($1)",
+         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, $2, $3, NULL, \
+            $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9::numeric, \
+            $10::numeric, NULL, NULL, 1, t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = $1",
     )
-    .bind(refs)
+    .bind(document_ref)
+    .bind(f.side)
+    .bind(f.code)
+    .bind(f.quantity)
+    .bind(f.unit_size)
+    .bind(f.rate)
+    .bind(f.reference_rate)
+    .bind(f.thb)
+    .bind(f.fee)
+    .bind(f.settle)
     .execute(pool)
     .await
     .expect("seed transaction_lines");
@@ -1812,15 +1881,18 @@ async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
         "INSERT INTO transaction_payments (id, organization_id, transaction_id, payment_no, \
             method, reference, account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
             created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, 1, t.method, t.payment_ref, \
-            t.account, \
+         SELECT gen_random_uuid(), t.organization_id, t.id, 1, $2, $3, $4, \
             (SELECT file_key FROM transaction_files f \
              WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1), \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, t.bank_fee, t.paid_at, \
-            t.recorded_at, t.recorded_at \
-         FROM transactions t WHERE t.document_ref = ANY($1)",
+            $5::numeric, $6::numeric, t.paid_at, t.recorded_at, t.recorded_at \
+         FROM transactions t WHERE t.document_ref = $1",
     )
-    .bind(refs)
+    .bind(document_ref)
+    .bind(f.method)
+    .bind(f.reference)
+    .bind(f.account)
+    .bind(f.settle)
+    .bind(f.bank_fee)
     .execute(pool)
     .await
     .expect("seed transaction_payments");

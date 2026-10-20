@@ -40,10 +40,4 @@ pub trait CustodyRepository: Send + Sync + 'static {
         &'a self,
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<Vec<StoredEvent>>>;
-
-    fn is_enabled_in<'a>(
-        &'a self,
-        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &'a BranchId,
-    ) -> BoxFuture<'a, AppResult<bool>>;
 }

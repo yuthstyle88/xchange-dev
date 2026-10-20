@@ -1,5 +1,4 @@
 //! Infrastructure layer for xchange.
-pub mod bookings;
 pub mod compat;
 
 pub mod custody;
@@ -15,4 +14,5 @@ pub mod loyalty;
 pub mod marketing;
 pub mod notify;
 pub mod rate_feed;
+pub mod recognize;
 pub mod settings;

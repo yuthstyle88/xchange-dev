@@ -58,19 +58,15 @@
 //!   unrounded, with at least four places;
 //! - [required] `StalePolicy::admits` under the line's policy version (`source_snapshot.
 //!   policy_version_id`) decides a LIVE desk save; a stale line is answered `RATE_MISMATCH`;
-//! - [required] a booked save redeems the booking when the form's per-1 rate (up to 11 places)
-//!   equals `CompatRate::per_one(booking.rate, booking.unit_size)` (`RedeemBooking` and the
-//!   redeem comparison in `booking_machine.rs`, ruling of 2026-10-10);
 //! - the merged signatures of `SaveTransactionWorkflow::{new, with_steps, save, save_as}`,
-//!   `save_as_booked`, `KioskSaveStep::new`, `KioskService::new`, `PgKioskPorts::new`,
-//!   `PgKioskAuditLog::new`, `PgDeviceRepository::new`, `BookingSaveStep::new`,
-//!   `BookingService::new`, `PgBookingPorts::new`, `PgBookingRepository::new`,
-//!   `PgMemberRepository::new`, `UuidBookingIds`, `FileService::open_owned`,
+//!   `KioskSaveStep::new`, `KioskService::new`, `PgKioskPorts::new`,
+//!   `PgKioskAuditLog::new`, `PgDeviceRepository::new`, `FileService::open_owned`,
 //!   `RateDraftService::{new, create, submit}`, `PublishService::{new, publish}`,
 //!   `DraftLine::new`, `LineSide::{Auto, Manual}` and `make_approval_service`, as on the merge
 //!   base `d6ce058`.
 
 mod save_common;
+mod shift_holder_common;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -81,7 +77,7 @@ use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use save_common::rates_re4c_common::{d, line, publish};
 use save_common::*;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::StandingKind;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, Side};
@@ -90,9 +86,8 @@ use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::publication::publish_service::PublishService;
 use xc_rate::domain::draft::rate_draft::{DraftLine, LineSide};
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
-use xchange::application::workflows::booking_save_step::BookingSaveStep;
 use xchange::application::workflows::kiosk_save_step::KioskSaveStep;
-use xchange::application::workflows::save_step::{BookingClaim, SaveActor, SaveExtras, SaveStep};
+use xchange::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
 use xchange::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use xchange::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use xchange::presentation::http::v3::commands::make_approval_service;
@@ -150,12 +145,15 @@ async fn row(shop: &Shop, document_ref: &str) -> Row {
         Decimal,
     );
     let (line_id, rate, unit_size, amount, principal, received, paid): Raw = sqlx::query_as(
-        // TX-9 #677: the published line is read through the line's quote line, not the wide column.
-        "SELECT (SELECT ql.published_rate_line_id::text FROM transaction_lines l \
-                 JOIN quote_lines ql ON ql.id = l.quote_line_id \
-                 WHERE l.transaction_id = transactions.id AND l.line_no = 1), \
-                rate, unit_size, amount, principal, received, paid \
-         FROM transactions WHERE document_ref = $1",
+        // TX-9 #677: every figure is read off the first line, the published line through its
+        // quote line; received/paid are the line's settled THB on its side.
+        "SELECT ql.published_rate_line_id::text, l.rate_snapshot, l.unit_size, l.quantity, \
+                l.thb_amount, \
+                CASE l.shop_side WHEN 'SELL' THEN l.settle_thb ELSE 0 END, \
+                CASE l.shop_side WHEN 'BUY' THEN l.settle_thb ELSE 0 END \
+         FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id \
+         LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id \
+         WHERE t.document_ref = $1 AND l.line_no = 1",
     )
     .bind(document_ref)
     .fetch_one(&shop.pool)
@@ -839,7 +837,7 @@ async fn a_reference_rate_sent_per_1_is_stored_per_unit() {
         .await
         .expect("the save is accepted");
     let (rate, reference, unit_size): (Decimal, Option<Decimal>, Decimal) = sqlx::query_as(
-        "SELECT rate, reference_rate, unit_size FROM transactions WHERE document_ref = $1",
+        "SELECT l.rate_snapshot, l.reference_rate, l.unit_size FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id WHERE t.document_ref = $1",
     )
     .bind(&saved.document_ref)
     .fetch_one(&shop.pool)
@@ -1152,6 +1150,7 @@ async fn checked_request(
 async fn a_kiosk_save_after_a_republish_is_quote_expired() {
     let shop = Shop::start().await;
     shop.open_shift(MAIN, &[("THB", "100000")]).await;
+    shift_holder_common::open_shift_for(&shop.pool, MAIN, FRONT, &[("THB", "100000")]).await;
     let customer = shop.reserve(MAIN, person()).await;
     let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
     publish(&shop.pool, MAIN, &[("JPY", "23.1", "23.5")]).await;
@@ -1182,7 +1181,7 @@ async fn a_kiosk_save_after_a_republish_is_quote_expired() {
         id: FRONT.to_owned(),
         username: "front7".to_owned(),
         employee_id: Some(FRONT.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(xc_auth::domain::access::Role::Teller),
     };
     let extras = SaveExtras {
         kiosk_request_id: Some("q-re4c-1".to_owned()),
@@ -1257,7 +1256,7 @@ async fn a_kiosk_vouched_save_at_another_rate_is_refused() {
         id: FRONT.to_owned(),
         username: "front7".to_owned(),
         employee_id: Some(FRONT.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(xc_auth::domain::access::Role::Teller),
     };
     let extras = SaveExtras {
         kiosk_request_id: Some("q-re4c-2".to_owned()),
@@ -1303,108 +1302,10 @@ async fn a_kiosk_vouched_save_at_another_rate_is_refused() {
 
 // ------------------------------------------------------- the booked save (R7, bookings)
 
-/// The booking save step on the real booking service of this shop, as `saveTransaction`
-/// registers it.
-fn booking_flow(shop: &Shop) -> SaveTransactionWorkflow {
-    let branch_tx = BranchTx::new(Transactor::new(shop.pool.clone()));
-    let lifecycle = Arc::new(xc_booking::application::lifecycle::BookingLifecycle::new(
-        Arc::new(
-            xc_booking::infrastructure::booking_repository::PgBookingRepository::new(
-                shop.pool.clone(),
-            ),
-        ),
-    ));
-    let steps: Vec<Arc<dyn SaveStep>> = vec![Arc::new(BookingSaveStep::new(lifecycle))];
-    SaveTransactionWorkflow::new(branch_tx, shop.shifts.clone(), shop.files.clone())
-        .with_steps(steps)
-}
-
-/// A confirmed walk-in booking `id` of 100 USD bought at `rate`, quoted from `line_id` per 1.
-/// RE-4d writes the line and unit at booking create (§4.9 R1); the row is written here so that
-/// this test does not depend on the booking's create.
-async fn confirmed_booking(shop: &Shop, id: &str, line_id: &str, rate: &str) {
-    sqlx::query(
-        "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, type, code, \
-         amount, rate, status, created_at, created_by, expires_at, confirmed_at, confirmed_by, \
-         unit_size, published_rate_line_id) \
-         VALUES ($1, $2, $3, 'hash', 'Walk In', '0800000000', 'BUY', 'USD', 100, $4::numeric, \
-         'CONFIRMED', '2026-10-06T00:00:00Z', 'owner', '2026-10-07T00:00:00Z', \
-         '2026-10-06T00:00:00Z', 'owner', 1, $5::uuid)",
-    )
-    .bind(id)
-    .bind(MAIN)
-    .bind(unique("booking-request"))
-    .bind(rate)
-    .bind(line_id)
-    .execute(&shop.pool)
-    .await
-    .expect("insert a confirmed booking");
-}
-
-/// Re-expected for TX-6 by the test-writer, decision A3 (design quote-transaction.md §4.6.1 and §6.4, #674; the client-rate check at quote comes first, lane controller's ruling issuecomment-6116917556), replacing the ruling of 2026-10-10 (R7 extended to
-/// bookings): a booking no longer sets the rate; a booked save is quoted at the current published
-/// line. The customer booked version 1's USD 32.1; version 2 says 32.2 since. The save at the booked
-/// 32.1 is refused `RATE_MISMATCH`, writes nothing, and the booking stays `CONFIRMED`.
-#[tokio::test]
-async fn a_booked_save_at_the_booked_rate_off_the_current_line_is_refused() {
-    let shop = Shop::start().await;
-    let (customer, passport) = counter(&shop, &[("THB", "100000")]).await;
-    publish(&shop.pool, MAIN, &[("USD", "32.1", "33")]).await;
-    let booked = line(&shop.pool, MAIN, "USD").await;
-    confirmed_booking(&shop, "BK-re4c-0001", &booked.id, "32.1").await;
-    publish(&shop.pool, MAIN, &[("USD", "32.2", "33")]).await;
-    assert_ne!(line(&shop.pool, MAIN, "USD").await.id, booked.id);
-
-    let mut cmd = exchange(
-        "re4c-booked-usd-0001",
-        &customer,
-        &passport,
-        "BUY",
-        "USD",
-        "100",
-        "32.1",
-    );
-    cmd.booking = "BK-re4c-0001".to_owned();
-    let owner = SaveActor {
-        id: OWNER.to_owned(),
-        username: OWNER.to_owned(),
-        employee_id: None,
-        role: Role::Owner,
-    };
-    let claim = BookingClaim {
-        booking_id: "BK-re4c-0001".to_owned(),
-        customer_confirmed: true,
-    };
-    let before = shop.everything().await;
-    let refused = tokio::time::timeout(
-        MUST_FINISH,
-        booking_flow(&shop).save_as_booked(
-            &branch(MAIN),
-            cmd,
-            &SaveExtras::default(),
-            Some(claim),
-            &owner,
-            at(60),
-        ),
-    )
-    .await
-    .expect("a save finishes");
-    assert_eq!(refusal(refused), RATE_MISMATCH, "decision A3");
-    assert_eq!(
-        shop.everything().await,
-        before,
-        "the refused save wrote nothing"
-    );
-    let status: String = sqlx::query_scalar("SELECT status FROM v2_bookings WHERE id = $1")
-        .bind("BK-re4c-0001")
-        .fetch_one(&shop.pool)
-        .await
-        .expect("read the booking");
-    assert_eq!(status, "CONFIRMED");
-    shop.finish().await;
-}
-// The three v2 booked cases (a_booked_save_redeems_a_krw_booking_at_its_11_place_per_1_rate,
+// The four v2 booked cases (a_booked_save_at_the_booked_rate_off_the_current_line_is_refused,
+// a_booked_save_redeems_a_krw_booking_at_its_11_place_per_1_rate,
 // a_booked_save_at_another_rate_is_refused, a_booked_krw_save_off_in_the_eleventh_place_is_refused)
-// and their exclusive helpers (confirmed_krw_booking, booked_krw_save, counter_prepared, booking_status)
-// are retired per design B1 (booking-slots.md:67) and lane controller ruling R8: a booking holds
+// and their exclusive helpers (booking_flow, confirmed_booking, confirmed_krw_booking,
+// booked_krw_save, counter_prepared, booking_status) are retired per design B1 (booking-slots.md:67),
+// lane controller ruling R8, and BK-11 (#1413, M2 drops v2's booking table): a booking holds
 // no rate, and xc_exchange::application::booking is removed from the step (#1405 §4 item 2).

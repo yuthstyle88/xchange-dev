@@ -7,8 +7,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use xc_auth::domain::access::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Role as AccessRole, StandingKind};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
@@ -28,6 +27,7 @@ use xc_kernel::money::{CompatRate, CurrencyCode, ForeignAmount, Rate, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
 use crate::application::workflows::exchange::complete::{
@@ -330,7 +330,7 @@ impl SaveTransactionWorkflow {
                 id: actor_id.to_owned(),
                 username: cmd.staff.clone(),
                 employee_id: None,
-                role: Role::System,
+                standing: StandingKind::Staff(AccessRole::Admin),
             });
 
         let (this, branch) = (self.clone(), branch.clone());
@@ -500,7 +500,7 @@ impl SaveTransactionWorkflow {
                     CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
                         .await?;
 
-                    if mode == Mode::Live {
+                    let resolved_teller = if mode == Mode::Live {
                         let Ok(code) = CurrencyCode::parse(&form.currency) else {
                             return refuse(RATE_MISMATCH);
                         };
@@ -517,20 +517,35 @@ impl SaveTransactionWorkflow {
                                 this.shifts
                                     .apply_delta_for_teller_in(tx, &branch, &t.user_id, &delta)
                                     .await?;
+                                None
                             }
                             None => {
-                                this.shifts.apply_delta_in(tx, &branch, &delta).await?;
+                                let Some(teller) = this
+                                    .shifts
+                                    .teller_of_actor_in(tx, &branch, &save_actor.id)
+                                    .await?
+                                else {
+                                    return Err(ShiftError::NoOpenShift.into());
+                                };
+                                this.shifts
+                                    .apply_delta_for_teller_in(tx, &branch, &teller, &delta)
+                                    .await?;
+                                Some(teller)
                             }
                         }
-                    }
+                    } else {
+                        None
+                    };
 
                     // Step 2: Create Transaction
                     let create_req = CreateRequest {
                         branch_id: branch.clone(),
                         quote_id,
                         customer_id: form.customer_id.clone(),
-                        // Stopgap for #1413: transactions.booking_id FK targets v2_bookings. Keep NULL until BK-11 repoints FK to bookings(id).
-                        booking_id: None,
+                        booking_id: stepped
+                            .as_ref()
+                            .and_then(|(_, b, _)| b.as_ref())
+                            .map(|c| c.booking_id.clone()),
                         kiosk_request_id: extras.and_then(|e| e.kiosk_request_id.clone()),
                         staff_draft_id: extras.and_then(|e| e.staff_draft_id.clone()),
                         passport_key: passport.key.clone(),
@@ -556,7 +571,11 @@ impl SaveTransactionWorkflow {
                         form.reference_rate
                     };
 
-                    let teller_user_id = teller.as_ref().and_then(|t| Uuid::parse_str(&t.user_id).ok());
+                    let teller_user_id = teller
+                        .as_ref()
+                        .map(|t| t.user_id.as_str())
+                        .or(resolved_teller.as_deref())
+                        .and_then(|id| Uuid::parse_str(id).ok());
                     let create_tx = CreateTransaction::new(this.branch_tx.pool().clone(), this.files.clone());
                     let draft = create_tx
                         .run_for_save_in(

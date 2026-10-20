@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset GITHUB_BASE_REF PR_BASE_REF
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SHOULD_BUILD="$SCRIPT_DIR/should-build.sh"

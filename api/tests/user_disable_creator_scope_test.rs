@@ -35,6 +35,7 @@ use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
+use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -224,11 +225,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }
@@ -324,21 +323,20 @@ fn profile(code: &str) -> Value {
 
 /// An ACTIVE TELLER of XC-B01, seeded as #1157's `userCreate` leaves one; answers the user id.
 async fn a_teller(db: &TestDb) -> String {
-    let user = db
-        .text(&format!(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             SELECT organization_id, 'Somchai', 'ACTIVE', 'test' FROM branches WHERE id = '{B01}' \
-             RETURNING id::text"
-        ))
-        .await
-        .expect("a user of XC-B01's organisation");
-    db.count(&format!(
-        "WITH r AS (INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-         SELECT '{user}'::uuid, 'TELLER', organization_id, id FROM branches WHERE id = '{B01}' \
-         RETURNING 1) SELECT count(*) FROM r"
-    ))
-    .await;
-    user
+    let mut conn = db.pool.acquire().await.expect("acquire connection");
+    seed_person(
+        &mut conn,
+        xchange::presentation::pages::SEEDED_XC_ORG_ID,
+        "Somchai",
+        &[RoleRow {
+            role_code: "TELLER",
+            branch_id: Some(B01),
+            valid_from: DateTime::<Utc>::UNIX_EPOCH,
+            valid_to: None,
+        }],
+    )
+    .await
+    .expect("a user of XC-B01's organisation")
 }
 
 // ------------------------------------------------------------ tests
@@ -347,22 +345,20 @@ const BRANCH_ADMIN: &str = "ADMIN@XC-B01";
 
 /// A user holding `role` at `branch` (`None` = organisation-wide); answers the user id.
 async fn a_user_with(db: &TestDb, name: &str, role: &str, branch: Option<&str>) -> String {
-    let user = db
-        .text(&format!(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             SELECT organization_id, '{name}', 'ACTIVE', 'test' FROM branches WHERE id = '{B01}' \
-             RETURNING id::text"
-        ))
-        .await
-        .expect("a user of XC-B01's organisation");
-    let branch_sql = branch.map_or("NULL".to_owned(), |b| format!("'{b}'"));
-    db.count(&format!(
-        "WITH r AS (INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-         SELECT '{user}'::uuid, '{role}', organization_id, {branch_sql} FROM branches WHERE id = '{B01}' \
-         RETURNING 1) SELECT count(*) FROM r"
-    ))
-    .await;
-    user
+    let mut conn = db.pool.acquire().await.expect("acquire connection");
+    seed_person(
+        &mut conn,
+        xchange::presentation::pages::SEEDED_XC_ORG_ID,
+        name,
+        &[RoleRow {
+            role_code: role,
+            branch_id: branch,
+            valid_from: DateTime::<Utc>::UNIX_EPOCH,
+            valid_to: None,
+        }],
+    )
+    .await
+    .expect("a user of XC-B01's organisation")
 }
 
 async fn status_of(db: &TestDb, user: &str) -> String {
@@ -424,13 +420,16 @@ async fn a_branch_admin_still_disables_its_own_branchs_teller() {
     db.finish().await;
 }
 
-/// Kept: an organisation-wide ADMIN disables an organisation-wide EXECUTIVE.
+/// Changed by RBAC C1a (owner decision Q4 A, PR 3083 §2 and §3.1 rule 3): an organisation-wide
+/// ADMIN no longer disables an EXECUTIVE; only EXECUTIVE + ADMIN (the owner, B3) does. The owner's
+/// case is in `rbac_c1a_user_commands_test.rs`.
 #[actix_web::test]
-async fn an_org_wide_admin_still_disables_an_executive() {
+async fn an_org_wide_admin_alone_cannot_disable_an_executive() {
     let db = TestDb::start().await;
     let exec = a_user_with(&db, "Exec", "EXECUTIVE", None).await;
     let a = disable(&db, ADMIN, &exec).await;
-    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
-    assert_eq!(status_of(&db, &exec).await, "DISABLED");
+    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(code(&a), "roleNotAllowed", "{}", a.text);
+    assert_eq!(status_of(&db, &exec).await, "ACTIVE");
     db.finish().await;
 }

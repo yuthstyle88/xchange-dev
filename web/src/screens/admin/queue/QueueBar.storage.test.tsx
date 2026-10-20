@@ -3,7 +3,11 @@ import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { queueStore, type QueueError, type QueueStore } from '../../../shared/queue/queue-store';
-import type { QueueBoardData, QueueBoardWaiting } from '../../../shared/api/generated/queue_board';
+import {
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  type QueueBoardData,
+} from '../../../shared/testing/fixtures';
 import { meOf } from '../../../test-support/me';
 import { QueueBar } from './QueueBar';
 
@@ -87,25 +91,25 @@ function store(b: string): FakeStore {
   return queueStore(b) as FakeStore;
 }
 
-function waitingTicket(id: string, seq = 1): QueueBoardWaiting {
-  return {
+function waitingTicket(id: string, seq = 1) {
+  return makeQueueBoardWaiting({
     id,
     displayNumber: `W00${seq}`,
     serviceType: 'WALK_IN',
     sequence: seq,
     issuedAt: '2026-10-09T03:00:00.000Z',
-  };
+  });
 }
 
 function answer(b: string, over: Partial<QueueBoardData> = {}) {
   const s = store(b);
   s.setError(undefined);
-  const data: QueueBoardData = {
+  const data = makeQueueBoardData({
     waiting: [],
     called: [],
     myCounter: null,
     ...over,
-  };
+  });
   s.setState(data);
 }
 

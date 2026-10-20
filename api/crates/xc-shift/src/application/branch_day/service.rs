@@ -18,7 +18,6 @@ use xc_kernel::money::{CurrencyCode, Money, Side};
 
 use crate::application::shift::service::ShiftService;
 use crate::domain::custody::branch_day::BranchDay;
-pub use crate::domain::custody::commands::custody_command::ClockDirection;
 use crate::domain::custody::entities::attendance::Attendance;
 use crate::domain::custody::entities::customer_hold::{CustomerHold, HoldStatus};
 use crate::domain::custody::entities::stored_event::StoredEvent;
@@ -36,6 +35,12 @@ use crate::domain::shift::repositories::shift_repository::ShiftRepository;
 use crate::domain::shift::value_objects::balances::Balances;
 use crate::infrastructure::custody::custody_repository::PgCustodyRepository;
 use crate::infrastructure::shift::shift_repository::PgShiftRepository;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockDirection {
+    In,
+    Out,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartService {
@@ -228,7 +233,10 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
             BranchDay::cut_off(before.phase, who, &target, now).map_err(map_custody_error)?;
 
         let custody_now = CustodyTime::from_epoch_millis(now.timestamp_millis());
-        let active_shift = self.shifts.active_in(tx, branch).await?;
+        let active_shift = match uuid::Uuid::parse_str(&who.user_id) {
+            Ok(_) => self.shifts.open_of_teller_in(tx, &who.user_id).await?,
+            Err(_) => None,
+        };
         let open_shift_id = active_shift.as_ref().map(|s| s.id.as_str());
         let outside = self.ports.outside_facts(tx, branch, open_shift_id).await?;
         let cutoff = Cutoff {

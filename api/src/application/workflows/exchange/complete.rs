@@ -242,9 +242,14 @@ impl CompleteExchange {
             DeviceService::require_count_confirmed(t.payment.method.is_cash(), t.count_confirmed)?;
         }
 
-        // 5. Both legs in one posting, never allowing negative stock (Q7); the costs it answers go on the lines
+        // 5. Both legs in one posting, allowing negative stock when an APPROVED NEGATIVE_STOCK request names this exchange (#3405 §7)
         if let Some(shift) = &shift {
-            let posted = self.postings.post_in(tx, &legs(&t, shift)?, None).await?;
+            let allow_negative =
+                super::negative_stock_gate::NegativeStockGate::approved_for_in(tx, id).await?;
+            let posted = self
+                .postings
+                .post_in(tx, &legs(&t, shift)?, allow_negative)
+                .await?;
             let costs: Vec<LineCosts> = posted
                 .costs
                 .iter()
@@ -345,7 +350,7 @@ impl CompleteExchange {
                 tx,
                 &AuditEvent {
                     actor_id: who.id.clone(),
-                    actor_role: who.role.as_str().to_string(),
+                    actor_role: who.audit_role().to_string(),
                     scope: "branch".to_string(),
                     action: "transaction.completed".to_string(),
                     object_ref: id.0.to_string(),

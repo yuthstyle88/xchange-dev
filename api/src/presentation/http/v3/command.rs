@@ -27,6 +27,25 @@ use crate::presentation::extractors::app_session::{
     AppSessionCookie, AppSessionGuard, DRAFT_WRITES_PER_MINUTE,
 };
 use crate::presentation::extractors::origin::same_origin;
+use crate::presentation::http::client_address::client_address;
+
+tokio::task_local! {
+    static CLIENT_IP: String;
+}
+
+pub(crate) fn request_ip() -> Option<String> {
+    CLIENT_IP
+        .try_with(|ip| {
+            let trimmed = ip.trim();
+            if trimmed.is_empty() || trimmed.parse::<std::net::IpAddr>().is_err() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .ok()
+        .flatten()
+}
 
 /// The locks required by a command action (§6).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +128,7 @@ pub trait CommandAction: Send + Sync + 'static {
 }
 
 /// Helper for commands to map internal failures to `500 serverError`.
-/// What a command answers when an OR-7 bridge call (`legacy_actor`) finds no v2 actor for the caller (#1030 §3.8):
+/// What a command answers when the caller has no `Standing` (OR-7; formerly the `legacy_actor` bridge, #1030 §3.8):
 /// `403 roleNotAllowedHere`, as a refused route does.
 pub(crate) fn role_not_allowed_here() -> V3Error {
     V3Error::from(
@@ -395,20 +414,82 @@ async fn handle_command<C: CommandAction>(
         None => return server_error().error_response(),
     };
 
-    // Resolve organisation from caller's branch
-    let org_id: String =
-        match sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
+    // Resolve target organisation: for Locks::Org or a customer caller (who has no acting
+    // branch; any `branch` field in the body is command data), use the caller's organisation;
+    // otherwise resolve from the acting branch and verify the caller belongs to it.
+    let org_id: String = match (&locks, caller.user.as_ref()) {
+        (Locks::Org, Some(user)) => {
+            match sqlx::query_scalar(
+                "SELECT o.id::text FROM organizations o WHERE o.id::text = $1 OR o.code = $1",
+            )
+            .bind(&user.organization_id)
+            .fetch_optional(&pool)
+            .await
+            {
+                Ok(Some(org)) => org,
+                Ok(None) => return out_of_scope().error_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to query caller organization");
+                    return server_error().error_response();
+                }
+            }
+        }
+        (_, Some(user)) if user.customer_id.is_some() => {
+            match sqlx::query_scalar(
+                "SELECT o.id::text FROM organizations o WHERE o.id::text = $1 OR o.code = $1",
+            )
+            .bind(&user.organization_id)
+            .fetch_optional(&pool)
+            .await
+            {
+                Ok(Some(org)) => org,
+                Ok(None) => return out_of_scope().error_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to query caller organization");
+                    return server_error().error_response();
+                }
+            }
+        }
+        _ => {
+            let branch_org_id: String = match sqlx::query_scalar(
+                "SELECT organization_id::text FROM branches WHERE id = $1",
+            )
             .bind(branch.as_str())
             .fetch_optional(&pool)
             .await
-        {
-            Ok(Some(org)) => org,
-            Ok(None) => return out_of_scope().error_response(),
-            Err(e) => {
-                tracing::error!(error = %e, "failed to query branch organization");
-                return server_error().error_response();
+            {
+                Ok(Some(org)) => org,
+                Ok(None) => return out_of_scope().error_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to query branch organization");
+                    return server_error().error_response();
+                }
+            };
+
+            if let Some(user) = caller.user.as_ref() {
+                let same_org: bool = match sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT 1 FROM organizations o WHERE o.id::text = $1 AND (o.id::text = $2 OR o.code = $2))",
+                )
+                .bind(&branch_org_id)
+                .bind(&user.organization_id)
+                .fetch_one(&pool)
+                .await
+                {
+                    Ok(same) => same,
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to check caller organization");
+                        return server_error().error_response();
+                    }
+                };
+
+                if !same_org {
+                    return out_of_scope().error_response();
+                }
             }
-        };
+
+            branch_org_id
+        }
+    };
 
     // If Pair, check that the other branch belongs to the same organization
     if let Locks::Pair(a, b) = &locks {
@@ -485,68 +566,74 @@ async fn handle_command<C: CommandAction>(
     let claim_token_clone = claim_token.clone();
     let store_clone = store.clone();
 
-    let run_res = match &locks {
-        Locks::One(b) => {
-            branch_tx
-                .run(b, move |tx| {
-                    Box::pin(async move {
-                        execute_in_tx(
-                            &command_clone,
-                            tx,
-                            &branch_clone,
-                            &caller_clone,
-                            input,
-                            &idem_key_clone,
-                            &claim_token_clone,
-                            &store_clone,
-                            &captured_error_clone,
-                        )
+    let client_ip = client_address(&req).to_owned();
+
+    let run_res = CLIENT_IP
+        .scope(client_ip, async {
+            match &locks {
+                Locks::One(b) => {
+                    branch_tx
+                        .run(b, move |tx| {
+                            Box::pin(async move {
+                                execute_in_tx(
+                                    &command_clone,
+                                    tx,
+                                    &branch_clone,
+                                    &caller_clone,
+                                    input,
+                                    &idem_key_clone,
+                                    &claim_token_clone,
+                                    &store_clone,
+                                    &captured_error_clone,
+                                )
+                                .await
+                            })
+                        })
                         .await
-                    })
-                })
-                .await
-        }
-        Locks::Pair(a, b) => {
-            branch_tx
-                .run_pair(a, b, move |tx| {
-                    Box::pin(async move {
-                        execute_in_tx(
-                            &command_clone,
-                            tx,
-                            &branch_clone,
-                            &caller_clone,
-                            input,
-                            &idem_key_clone,
-                            &claim_token_clone,
-                            &store_clone,
-                            &captured_error_clone,
-                        )
+                }
+                Locks::Pair(a, b) => {
+                    branch_tx
+                        .run_pair(a, b, move |tx| {
+                            Box::pin(async move {
+                                execute_in_tx(
+                                    &command_clone,
+                                    tx,
+                                    &branch_clone,
+                                    &caller_clone,
+                                    input,
+                                    &idem_key_clone,
+                                    &claim_token_clone,
+                                    &store_clone,
+                                    &captured_error_clone,
+                                )
+                                .await
+                            })
+                        })
                         .await
-                    })
-                })
-                .await
-        }
-        Locks::Org => {
-            branch_tx
-                .run_org(&org_id, move |tx| {
-                    Box::pin(async move {
-                        execute_in_tx(
-                            &command_clone,
-                            tx,
-                            &branch_clone,
-                            &caller_clone,
-                            input,
-                            &idem_key_clone,
-                            &claim_token_clone,
-                            &store_clone,
-                            &captured_error_clone,
-                        )
+                }
+                Locks::Org => {
+                    branch_tx
+                        .run_org(&org_id, move |tx| {
+                            Box::pin(async move {
+                                execute_in_tx(
+                                    &command_clone,
+                                    tx,
+                                    &branch_clone,
+                                    &caller_clone,
+                                    input,
+                                    &idem_key_clone,
+                                    &claim_token_clone,
+                                    &store_clone,
+                                    &captured_error_clone,
+                                )
+                                .await
+                            })
+                        })
                         .await
-                    })
-                })
-                .await
-        }
-    };
+                }
+            }
+        })
+        .await;
 
     match run_res {
         Ok(response_val) => ok_answer(response_val, session_cookie),

@@ -145,7 +145,7 @@ async fn the_four_seeded_rows_answer_one_completed_entry_with_its_lines_unit_siz
     let (customer, passport) = shop
         .ready(&[("THB", "100000"), ("USD", "1000"), ("JPY", "1000000")])
         .await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
     let org_id: Uuid = sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
         .bind(MAIN)
         .fetch_one(&shop.pool)
@@ -297,13 +297,7 @@ async fn the_four_seeded_rows_answer_one_completed_entry_with_its_lines_unit_siz
         .expect("complete exchange");
     tx.commit().await.unwrap();
 
-    // Desync the wide row: set `transactions.unit_size = 1` while `transaction_lines.unit_size = 100`.
-    // The reader must read `unit_size` from `transaction_lines`, ignoring the wide row.
-    sqlx::query("UPDATE transactions SET unit_size = 1 WHERE id = $1")
-        .bind(completed.id.0)
-        .execute(&shop.pool)
-        .await
-        .expect("desync wide unit_size");
+    // TX-9 (#677) dropped `transactions.unit_size`: the reader can only read the line's 100.
 
     let sources = sources(&shop);
     let listed = sources
@@ -336,7 +330,7 @@ async fn the_compat_saved_exchange_gives_todays_map() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
     let slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
-    let shift = shop.shifts.active(&branch(MAIN)).await.unwrap().unwrap().id;
+    let shift = shop.open_shift_id(MAIN).await;
 
     let org_id: Uuid = sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
         .bind(MAIN)

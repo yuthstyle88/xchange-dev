@@ -20,6 +20,7 @@ mod common;
 mod compat_common;
 mod kiosk_http_common;
 mod rpc_common;
+mod shift_holder_common;
 mod snapshot_common;
 
 use actix_web::http::Method;
@@ -248,19 +249,7 @@ impl Harness {
             .unwrap();
         sqlx_tx.commit().await.unwrap();
 
-        // Mutate the wide row figures of the store-COMPLETED exchange to different/wrong values (§9, #1154 pattern).
-        sqlx::query(
-            "UPDATE transactions \
-             SET type = 'SELL', code = 'EUR', amount = 9999.00, rate = 99.000000, \
-                 reference_rate = 98.000000, principal = 99999.00, fee = 888.00, \
-                 bank_fee = 777.00, received = 66666.00, paid = 55555.00, \
-                 method = 'PromptPay', payment_ref = 'MUTATED_REF', account = 'MUTATED_ACC' \
-             WHERE id = $1",
-        )
-        .bind(store_completed_id)
-        .execute(&pool)
-        .await
-        .expect("mutate wide columns");
+        // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
         sqlx::query(
             "INSERT INTO transaction_files (transaction_id, kind, file_key) \
@@ -495,16 +484,17 @@ impl Harness {
 
         // 5. COMPAT-SAVED COMPLETED exchange at t4: SELL 100 USD at 32.60, fee 0.00, settle 3260.00
         let here = BranchId::new("MAIN".to_string());
+        let saver = shift_holder_common::teller_of_open_shift(&pool, "MAIN").await;
         let passport_key = counter
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t4)
+            .upload(&here, &saver, "image/jpeg", JPEG, t4)
             .await
             .expect("upload passport");
         let slip_key = counter
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t4)
+            .upload(&here, &saver, "image/jpeg", JPEG, t4)
             .await
             .expect("upload slip");
 
@@ -535,7 +525,7 @@ impl Harness {
         let compat_saved = counter
             .desk
             .workflow
-            .save(&here, cmd, "owner", t4)
+            .save(&here, cmd, &saver, t4)
             .await
             .expect("save compat");
 

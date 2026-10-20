@@ -229,5 +229,5 @@ fn a_zero_amount_is_refused_and_the_largest_inputs_still_compute() {
     let q = per_one(Side::Sell, max, Rate::parse("100000000").unwrap(), max).unwrap();
     assert_eq!(q.principal.to_string(), "10000000000000000.00");
     assert_eq!(q.received.to_string(), "10000000100000000.00");
-    assert_eq!(q.received.minor(), 1_000_000_010_000_000_000);
+    assert_eq!(q.received.try_minor().unwrap(), 1_000_000_010_000_000_000);
 }

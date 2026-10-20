@@ -138,6 +138,13 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
     .await
     .expect("attach set_org trigger to tables");
 
+    // Prepare Org 1 (MAIN) with published JPY rate (per-1: 0.2195 / 0.2295, published unit_size = 100: 21.95 / 22.95)
+    shop.set_rate(MAIN, "JPY", "0.2195", "0.2295").await;
+    shop.open_shift(MAIN, &[("THB", "100000"), ("JPY", "100000")])
+        .await;
+    let customer_1 = shop.reserve(MAIN, person()).await;
+    let passport_1 = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
+
     // Seed owner user for Org 2
     sqlx::query(
         "WITH u AS (INSERT INTO users (organization_id, name, status, created_by) \
@@ -149,13 +156,6 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
     .execute(&shop.pool)
     .await
     .expect("seed org 2 owner user");
-
-    // Prepare Org 1 (MAIN) with published JPY rate (per-1: 0.2195 / 0.2295, published unit_size = 100: 21.95 / 22.95)
-    shop.set_rate(MAIN, "JPY", "0.2195", "0.2295").await;
-    shop.open_shift(MAIN, &[("THB", "100000"), ("JPY", "100000")])
-        .await;
-    let customer_1 = shop.reserve(MAIN, person()).await;
-    let passport_1 = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
 
     // Prepare Org 2 (B2) with published USD rate (unit_size = 1)
     let b2_line_id = publish_rate_direct(
@@ -169,19 +169,45 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
     )
     .await;
 
-    let b2_shift_cmd = OpenShift {
-        request_id: unique("open-shift-b2").replace('_', "-"),
-        opening: Balances::of(&[
-            (code("THB"), money("100000")),
-            (code("USD"), money("10000")),
-        ]),
-    };
-    let b2_shift = shop
-        .shifts
-        .open(&branch("B2"), b2_shift_cmd, "owner", at(-60))
+    // CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The same OPEN shift, written
+    // straight into the tables in one branch transaction (setup only): opener "owner", whose user v2 resolved to
+    // B2's organisation's owner (EXECUTIVE + ADMIN).
+    let b2_shift = format!("SH-{}", uuid::Uuid::new_v4());
+    let (id, request) = (b2_shift.clone(), unique("open-shift-b2").replace('_', "-"));
+    shop.shifts
+        .branch_tx()
+        .clone()
+        .run(&branch("B2"), move |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
+                     teller_id) SELECT $1, 'B2', 'OPEN', $2, 'owner', '', $3, u.id FROM users u \
+                     JOIN branches b ON b.id = 'B2' AND b.organization_id = u.organization_id \
+                     WHERE u.legacy_employee_id IS NULL AND EXISTS (SELECT 1 FROM user_roles r \
+                     WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+                     ORDER BY u.created_at LIMIT 1",
+                )
+                .bind(&id)
+                .bind(at(-60))
+                .bind(&request)
+                .execute(&mut **tx)
+                .await?;
+                for (c, a) in [("THB", "100000"), ("USD", "10000")] {
+                    sqlx::query(
+                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                         VALUES ($1, $2, $3::numeric, $3::numeric)",
+                    )
+                    .bind(&id)
+                    .bind(c)
+                    .bind(a)
+                    .execute(&mut **tx)
+                    .await?;
+                }
+                Ok::<(), pos_error::AppError>(())
+            })
+        })
         .await
-        .expect("open shift in B2")
-        .id;
+        .expect("open shift in B2");
     // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same
     // opening in B2's ledger drawer.
     fund_ledger_drawer(
@@ -219,7 +245,7 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
 
     // Read back Org 1's transaction
     let row_1 = sqlx::query(
-        "SELECT (SELECT ql.published_rate_line_id FROM transaction_lines l JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE l.transaction_id = transactions.id AND l.line_no = 1) AS published_rate_line_id, unit_size, rate FROM transactions WHERE document_ref = $1 AND branch_id = $2",
+        "SELECT ql.published_rate_line_id, l.unit_size, l.rate_snapshot AS rate FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE t.document_ref = $1 AND t.branch_id = $2 AND l.line_no = 1",
     )
     .bind(&save_1.document_ref)
     .bind(MAIN)
@@ -233,7 +259,7 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
 
     // Read back Org 2's transaction
     let row_2 = sqlx::query(
-        "SELECT (SELECT ql.published_rate_line_id FROM transaction_lines l JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE l.transaction_id = transactions.id AND l.line_no = 1) AS published_rate_line_id, unit_size, rate FROM transactions WHERE document_ref = $1 AND branch_id = $2",
+        "SELECT ql.published_rate_line_id, l.unit_size, l.rate_snapshot AS rate FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE t.document_ref = $1 AND t.branch_id = $2 AND l.line_no = 1",
     )
     .bind(&save_2.document_ref)
     .bind("B2")
@@ -334,7 +360,7 @@ async fn a_demo_jpy_save_with_nothing_published_is_refused_while_vouched_records
         .expect("live vouched JPY save");
 
     let live_row = sqlx::query(
-        "SELECT rate, unit_size, (SELECT ql.published_rate_line_id FROM transaction_lines l JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE l.transaction_id = transactions.id AND l.line_no = 1) AS published_rate_line_id FROM transactions WHERE document_ref = $1 AND branch_id = $2",
+        "SELECT l.rate_snapshot AS rate, l.unit_size, ql.published_rate_line_id FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id WHERE t.document_ref = $1 AND t.branch_id = $2 AND l.line_no = 1",
     )
     .bind(&live_saved.document_ref)
     .bind(MAIN)

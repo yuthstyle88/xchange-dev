@@ -35,8 +35,8 @@ async function load<T>(mods: Record<string, () => Promise<T>>, key: string): Pro
   return l!();
 }
 
-const NO_SHIFT = "ยังไม่มีกะเปิด กรุณาเปิดกะจากหน้าแอดมินก่อน";
-const NEED_SHIFT_AND_RATE = "ต้องเปิดกะและตั้งเรทสกุลเงินนี้ในหน้าแอดมินก่อน จากนั้นโหลดหน้านี้ใหม่";
+const NO_SHIFT = "ยังไม่มีกะเปิด — เปิดกะที่หน้าพนักงาน › กะของฉัน › นับเปิดกะ แล้วให้ผู้มีสิทธิ์รับรองยืนยันยอด";
+const NEED_SHIFT_AND_RATE = "ต้องมีกะเปิด (หน้าพนักงาน › กะของฉัน › นับเปิดกะ) และเรทของสกุลเงินนี้ก่อน จากนั้นโหลดหน้านี้ใหม่";
 const HEADING = "เลือกเรทและจำนวนเงิน";
 const NEXT = "ถัดไป · พาสปอร์ต / ลูกค้า →";
 
@@ -63,7 +63,7 @@ function stubStore(path: unknown, init: { shiftOpen?: boolean; quote?: unknown; 
   const [currency, setCurrency] = createSignal("JPY");
   const [amount, setAmount] = createSignal("10000");
   const [referenceRate, setReferenceRate] = createSignal("");
-  const [entry] = createSignal<any>(init.locked ? { kind: "booking", id: "b1", locked: true } : undefined);
+  const [entry] = createSignal<any>(init.locked ? { kind: "kiosk", id: "b1", locked: true } : undefined);
   const [step] = createSignal(0);
   const store = {
     path,

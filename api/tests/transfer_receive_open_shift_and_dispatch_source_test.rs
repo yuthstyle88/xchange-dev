@@ -57,6 +57,7 @@ use xc_cash::application::transfer::TransferFlow;
 use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
 use xc_kernel::ids::BranchId;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
+use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
@@ -135,8 +136,8 @@ impl Room {
                 .await
                 .expect("insert a branch");
             sqlx::query(
-                "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-                 VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+                "INSERT INTO ops_state (branch_id, phase, safe) \
+                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
             )
             .bind(branch)
             .execute(&pool)
@@ -149,33 +150,33 @@ impl Room {
 
     /// A user holding `role` on each of `branches` (`&[]` = organisation-wide).
     async fn person(&self, role: Role, branches: &[&str]) -> Who {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let roles: Vec<RoleRow<'_>> = if branches.is_empty() {
+            vec![RoleRow {
+                role_code: role.as_str(),
+                branch_id: None,
+                valid_from: from,
+                valid_to: None,
+            }]
+        } else {
+            branches
+                .iter()
+                .map(|b| RoleRow {
+                    role_code: role.as_str(),
+                    branch_id: Some(*b),
+                    valid_from: from,
+                    valid_to: None,
+                })
+                .collect()
+        };
+        let id = seed_person(
+            &mut self.pool.acquire().await.unwrap(),
+            ORG,
+            &unique(role.as_str()),
+            &roles,
         )
-        .bind(ORG)
-        .bind(unique(role.as_str()))
-        .fetch_one(&self.pool)
         .await
         .expect("insert a user");
-        let scopes: Vec<Option<&str>> = if branches.is_empty() {
-            vec![None]
-        } else {
-            branches.iter().map(|b| Some(*b)).collect()
-        };
-        for branch in &scopes {
-            sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 VALUES ($1::uuid, $2, $3::uuid, $4)",
-            )
-            .bind(&id)
-            .bind(role.as_str())
-            .bind(ORG)
-            .bind(*branch)
-            .execute(&self.pool)
-            .await
-            .expect("give the user a role");
-        }
         let scope = if branches.is_empty() {
             "*".to_owned()
         } else {
@@ -377,11 +378,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }

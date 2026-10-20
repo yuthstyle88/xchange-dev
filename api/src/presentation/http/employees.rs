@@ -10,7 +10,6 @@ use xc_auth::application::account::service::EmployeesAnswer;
 use xc_auth::domain::account::entities::employee::Employee;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -20,15 +19,13 @@ use crate::application::workflows::disable_employee::{DisableEmployee, DisableOu
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::employee_custody::PgEmployeeCustody;
 use crate::presentation::extractors::actor::{
-    BAD_REQUEST, OWNER_ID, accounts, answer, failure, password_session, payload_of, read, refuse,
-    same_origin, server_error,
+    OWNER_ID, accounts, answer, failure, password_session, payload_of, read, refuse, same_origin,
+    server_error,
 };
 use crate::presentation::http::auth::employee_json;
 use crate::presentation::pages;
 
 const HOLDS_CASH: &str = "ส่งมอบเงินและงานค้างก่อนปิดบัญชี หากเข้าระบบไม่ได้ให้รีเซ็ตรหัสผ่าน";
-const SIX_ROLES: &str =
-    "สร้างบัญชีให้ครบ Front, Backend, Manager, Rates, Monitor และ Finance ในสาขาก่อน";
 
 pub use crate::application::custody::employee_custody::EmployeeCustody;
 
@@ -99,17 +96,14 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
     let payload = payload_of(&body);
     let action = body["action"].as_str().unwrap_or("");
     let custody = req.app_data::<web::Data<dyn EmployeeCustody>>();
-    let actor_id = callers
-        .user
+    let standing = callers
+        .owner_standing()
+        .or_else(|| callers.staff_standing());
+    let by = standing
         .as_ref()
-        .map(|u| u.user_id.as_str())
+        .map(|s| s.user_id.as_str())
+        .or_else(|| callers.user.as_ref().map(|u| u.user_id.as_str()))
         .unwrap_or(OWNER_ID);
-    let dummy_owner = Actor::owner(actor_id);
-    let actor = callers
-        .owner
-        .as_ref()
-        .or(callers.staff.as_ref())
-        .unwrap_or(&dummy_owner);
 
     match action {
         "disable" => {
@@ -143,7 +137,7 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                         custody.cloned().map(web::Data::into_inner),
                         &BranchId::new(employee.branch_id.clone()),
                         &employee.id,
-                        actor.id(),
+                        by,
                         now(),
                     )
                     .await
@@ -164,44 +158,10 @@ async fn employees(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                 }
             }
         }
-        "entity" => {
-            return match custody {
-                None => refuse(400, BAD_REQUEST),
-                Some(custody) => match custody.set_entity(&payload, actor).await {
-                    Ok(body) => answer(200, body, false),
-                    Err(e) => failure(e),
-                },
-            };
-        }
-        "enable" => {
-            let people = match everyone(&req).await {
-                Ok(people) => people,
-                Err(response) => return response,
-            };
-            let branch = payload["branchId"].as_str();
-            for role in ["FRONT", "BACKEND", "MANAGER", "RATES", "MONITOR", "FINANCE"] {
-                if !people
-                    .iter()
-                    .any(|e| Some(e.branch_id.as_str()) == branch && e.active && e.role == role)
-                {
-                    return refuse(400, SIX_ROLES);
-                }
-            }
-            return match custody {
-                None => refuse(400, BAD_REQUEST),
-                Some(custody) => match custody.enable(&payload, actor).await {
-                    Ok(body) => answer(200, body, false),
-                    Err(e) => failure(e),
-                },
-            };
-        }
         _ => {}
     }
 
-    match accounts
-        .employees(action, &payload, actor.id(), now())
-        .await
-    {
+    match accounts.employees(action, &payload, by, now()).await {
         Ok(EmployeesAnswer::List(people)) => answer(
             200,
             json!({ "employees": people.iter().map(employee_json).collect::<Vec<_>>() }),

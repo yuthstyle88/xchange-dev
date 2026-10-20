@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { closeDialog, Dialog } from '../parts/Dialog';
@@ -127,8 +127,8 @@ function report(over: Partial<ReportsData> = {}): ReportsData {
   };
 }
 
-function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function tx(n: number, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: `XC-20261006-${String(n).padStart(6, '0')}`,
     date: '2026-10-06',
     created: '2026-10-06T03:04:05.000Z',
@@ -156,7 +156,7 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 class FakeServer {

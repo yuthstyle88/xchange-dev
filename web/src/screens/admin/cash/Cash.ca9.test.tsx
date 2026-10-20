@@ -27,11 +27,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { Me } from '../../../shared/api/generated/common';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
+import {
+  makeBranchRef,
+  makeCashCountRow,
+  makeCashCountTotalRow,
+  makeCashTransferLineRow,
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeMe,
+  makeTransferBranchRow,
+  type CashCountRow,
+  type CashTransferRow,
+  type Me,
+} from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { AdminShell } from '../AdminShell';
 import { menus } from '../menus';
@@ -48,21 +56,21 @@ const VERIFY = 'ShiftCloseCertify';
 const MANAGE = 'CashManage';
 const RECONCILE = 'FinanceReconcile';
 
-function meWith(permissions: string[]): Me {
-  return {
+function meWith(permissions: string[]) {
+  return makeMe({
     id: 'u-admin',
     name: 'ผู้ดูแลทดสอบ',
     roles: [],
     permissions,
     branch: 'MAIN',
     branchName: 'สำนักงานใหญ่',
-    branches: [{ id: 'MAIN', code: 'MAIN', name: 'สำนักงานใหญ่' }],
-  };
+    branches: [makeBranchRef({ id: 'MAIN', code: 'MAIN', name: 'สำนักงานใหญ่' })],
+  });
 }
 
 /** Figures that do not add up, so a screen that computed them would show something else. */
-const COUNTS: CashCountRow[] = [
-  {
+const COUNTS = [
+  makeCashCountRow({
     id: 'cc-1',
     branchId: 'MAIN',
     shiftId: 'S-0001',
@@ -73,14 +81,14 @@ const COUNTS: CashCountRow[] = [
     verifiedAt: null,
     note: null,
     totals: [
-      { currency: 'THB', counted: '1000.50', expected: '1000.75', difference: '-0.25' },
-      { currency: 'USD', counted: '120.00', expected: '100.00', difference: '+7.00' },
+      makeCashCountTotalRow({ currency: 'THB', counted: '1000.50', expected: '1000.75', difference: '-0.25' }),
+      makeCashCountTotalRow({ currency: 'USD', counted: '120.00', expected: '100.00', difference: '+7.00' }),
     ],
-  },
+  }),
 ];
 
-function transfer(id: string, status: string, over: Partial<CashTransferRow> = {}): CashTransferRow {
-  return {
+function transfer(id: string, status: string, over: Partial<CashTransferRow> = {}) {
+  return makeCashTransferRow({
     id,
     kind: 'EXTERNAL_OUT',
     status,
@@ -92,14 +100,14 @@ function transfer(id: string, status: string, over: Partial<CashTransferRow> = {
     createdAt: '2026-10-06T09:00:00Z',
     note: `note ${id}`,
     lines: [
-      { currency: 'USD', denominationId: 11, qtySent: '3', qtyReceived: null },
-      { currency: 'USD', denominationId: 12, qtySent: '7', qtyReceived: null },
+      makeCashTransferLineRow({ currency: 'USD', denominationId: 11, qtySent: '3', qtyReceived: null }),
+      makeCashTransferLineRow({ currency: 'USD', denominationId: 12, qtySent: '7', qtyReceived: null }),
     ],
     ...over,
-  };
+  });
 }
 
-const TRANSFERS: CashTransferRow[] = [
+const TRANSFERS = [
   transfer('tr-draft', 'DRAFT'),
   transfer('tr-approved', 'APPROVED'),
   transfer('tr-dispatched', 'DISPATCHED'),
@@ -107,20 +115,20 @@ const TRANSFERS: CashTransferRow[] = [
   transfer('tr-reconciled', 'RECONCILED'),
 ];
 
-const DENOMINATIONS: DenominationRow[] = [
-  { id: 11, currency: 'USD', faceValue: '100', groupCode: 'G' },
-  { id: 12, currency: 'USD', faceValue: '50', groupCode: 'G' },
-  { id: 21, currency: 'EUR', faceValue: '20', groupCode: 'G' },
+const DENOMINATIONS = [
+  makeDenominationRow({ id: 11, currency: 'USD', faceValue: '100', groupCode: 'G' }),
+  makeDenominationRow({ id: 12, currency: 'USD', faceValue: '50', groupCode: 'G' }),
+  makeDenominationRow({ id: 21, currency: 'EUR', faceValue: '20', groupCode: 'G' }),
 ];
 
 /** The server's order, deliberately not alphabetical. */
-const BRANCHES: TransferBranchRow[] = [
-  { branchId: 'B9', name: 'สาขาเก้า' },
-  { branchId: 'B2', name: 'สาขาสอง' },
+const BRANCHES = [
+  makeTransferBranchRow({ branchId: 'B9', name: 'สาขาเก้า' }),
+  makeTransferBranchRow({ branchId: 'B2', name: 'สาขาสอง' }),
 ];
 
 const ADMIN_CASH = {
-  shift: { id: 'S-0001', openedAt: '2026-10-06T02:30:00.000Z', staff: 'EMP-007' },
+  openShifts: [{ shiftId: 'S-0001', tellerId: 'u-1', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' }],
   stock: [{ code: 'THB', opening: '100.00', net: '0.00', expected: '100.00' }],
   stats: { opening: '100.00', incoming: '0.00', outgoing: '0.00', remaining: '100.00' },
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },

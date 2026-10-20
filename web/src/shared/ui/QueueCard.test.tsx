@@ -46,10 +46,16 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Accessor, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { Me } from '../api/generated/common';
 import type { SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
-import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
+import {
+  makeMe,
+  makeMeRole,
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  type Me,
+  type QueueBoardData,
+} from '../testing/fixtures';
 import { meOf } from '../../test-support/me';
 import { warmModules } from '../testing/warm-modules';
 
@@ -127,17 +133,19 @@ function queues(): FakeQueues {
  * `count` WAITING tickets in call order (`queue_board`'s `waiting`); the newest one (the latest `issuedAt`) has the id
  * `latest`, so it is the card's "new request" key. The older ones keep the same ids from one answer to the next.
  */
-function waiting(count: number, latest: string | null): QueueBoardWaiting[] {
-  const list: QueueBoardWaiting[] = [];
+function waiting(count: number, latest: string | null) {
+  const list = [];
   for (let i = 1; i <= count; i += 1) {
     const newest = i === count;
-    list.push({
-      id: newest && latest !== null ? latest : `older-${i}`,
-      displayNumber: `W${String(i).padStart(3, '0')}`,
-      serviceType: 'WALK_IN',
-      sequence: i,
-      issuedAt: new Date(Date.parse('2026-10-08T02:00:00.000Z') + i * 60_000).toISOString(),
-    });
+    list.push(
+      makeQueueBoardWaiting({
+        id: newest && latest !== null ? latest : `older-${i}`,
+        displayNumber: `W${String(i).padStart(3, '0')}`,
+        serviceType: 'WALK_IN',
+        sequence: i,
+        issuedAt: new Date(Date.parse('2026-10-08T02:00:00.000Z') + i * 60_000).toISOString(),
+      }),
+    );
   }
   return list;
 }
@@ -146,12 +154,12 @@ function waiting(count: number, latest: string | null): QueueBoardWaiting[] {
 function answer(branch: string, over: Partial<QueueBoardData> = {}) {
   const s = queues().store(branch);
   s.setError(undefined);
-  const data: QueueBoardData = {
+  const data = makeQueueBoardData({
     waiting: [],
     called: [],
     myCounter: null,
     ...over,
-  };
+  });
   s.setState(data);
 }
 
@@ -590,13 +598,25 @@ describe('QueueCard C3: the link to the queue page', () => {
   // #1030 §3.10 (gap 2 of claude/dell-claude-6's review): the link follows `permissions`, never a role
   // name. Hand-built `me`s, because `meOf` always derives the permissions from the roles.
   it('a TELLER row at another branch whose permissions lack QueueOperate: no card, so no link (QU-6 ruling (a))', async () => {
-    await openPage({ ...NOK, roles: [{ role: 'TELLER', branchId: 'B2' }], permissions: ['SignedIn'] } as Me);
+    await openPage(
+      makeMe({
+        ...NOK,
+        roles: [makeMeRole({ role: 'TELLER', branchId: 'B2' })],
+        permissions: ['SignedIn'],
+      }),
+    );
     await settle();
     expect(cards()).toEqual([]);
   });
 
   it('a FINANCE row whose permissions hold QueueOperate: the link', async () => {
-    await openPage({ ...NOK, roles: [{ role: 'FINANCE', branchId: 'B1' }], permissions: ['QueueOperate', 'SignedIn'] } as Me);
+    await openPage(
+      makeMe({
+        ...NOK,
+        roles: [makeMeRole({ role: 'FINANCE', branchId: 'B1' })],
+        permissions: ['QueueOperate', 'SignedIn'],
+      }),
+    );
     await settle();
     expect(shown(link(theCard(), TH.open))).toBe(true);
   });

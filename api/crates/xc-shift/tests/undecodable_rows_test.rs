@@ -15,50 +15,43 @@
 //! would leave it.
 //!
 //! Needs `TEST_DATABASE_URL` (a database whose name ends in `_test`); nothing here skips.
+//!
+//! CA-10 (#626, #2955) restated the setup: v2's `ShiftService::{open, move_stock}` and the per-branch `active` are
+//! deleted, so the shift and its movement are seeded straight into the tables, and the open shift is read by its id.
 
 mod shift_service_common;
 
 use pos_error::{AppError, AppResult};
-use serde_json::json;
 use shift_service_common::{TestDb, at};
 use xc_kernel::ids::BranchId;
-use xc_shift::domain::shift::commands::move_stock::MoveStock;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
 
 fn rid(label: &str, n: usize) -> String {
     format!("req-{label}-{n:04}-000000000000")
 }
 
-/// A branch with an open shift holding USD 100 and one movement of USD 20 in.
-async fn a_day_with_dollars(db: &TestDb, label: &str) -> BranchId {
+/// A branch with an open shift holding USD 100 and one movement of USD 20 in. Returns the branch and the shift.
+async fn a_day_with_dollars(db: &TestDb, label: &str) -> (BranchId, String) {
     let branch = db.branch(label).await;
-    let service = db.service();
-    let shift = service
-        .open(
+    let shift = db
+        .seed_open_shift(
             &branch,
-            OpenShift::from_payload(
-                &json!({ "requestId": rid(label, 0), "opening": { "USD": "100" } }),
-            )
-            .expect("a well-formed open payload"),
             "opener",
+            &rid(label, 0),
+            &[("USD", "100")],
             at(0, 0),
         )
-        .await
-        .expect("open the shift");
-    service
-        .move_stock(
-            &branch,
-            MoveStock::from_payload(&json!({
-                "requestId": rid(label, 1), "shiftId": shift.id, "currency": "USD",
-                "direction": "IN", "amount": "20", "reason": "test",
-            }))
-            .expect("a well-formed movement payload"),
-            "mover",
-            at(60, 0),
-        )
-        .await
-        .expect("move the stock");
-    branch
+        .await;
+    db.seed_movement(
+        &branch,
+        &shift,
+        "USD",
+        "IN",
+        "20",
+        &rid(label, 1),
+        at(60, 0),
+    )
+    .await;
+    (branch, shift)
 }
 
 fn a_fault<T: std::fmt::Debug>(read: AppResult<T>, what: &str) {
@@ -74,7 +67,7 @@ fn a_fault<T: std::fmt::Debug>(read: AppResult<T>, what: &str) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_movement_in_a_currency_the_register_does_not_know_is_a_fault() {
     let db = TestDb::start().await;
-    let branch = a_day_with_dollars(&db, "move").await;
+    let (branch, _) = a_day_with_dollars(&db, "move").await;
     sqlx::query("UPDATE stock_movements SET code = 'ZZZ' WHERE branch_id = $1")
         .bind(branch.as_str())
         .execute(&db.pool)
@@ -88,7 +81,7 @@ async fn a_movement_in_a_currency_the_register_does_not_know_is_a_fault() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_balance_in_a_currency_the_register_does_not_know_is_a_fault() {
     let db = TestDb::start().await;
-    let branch = a_day_with_dollars(&db, "balance").await;
+    let (branch, shift) = a_day_with_dollars(&db, "balance").await;
     sqlx::query(
         "UPDATE shift_balances SET code = 'ZZZ' WHERE code = 'USD' AND shift_id IN \
          (SELECT id FROM shifts WHERE branch_id = $1)",
@@ -99,7 +92,7 @@ async fn a_balance_in_a_currency_the_register_does_not_know_is_a_fault() {
     .expect("turn the balance's currency into ZZZ");
 
     a_fault(db.service().shifts(&branch).await, "shifts");
-    a_fault(db.service().active(&branch).await, "active");
+    a_fault(db.service().shift(&branch, &shift).await, "shift");
     db.drop_schema().await;
 }
 
@@ -107,17 +100,17 @@ async fn a_balance_in_a_currency_the_register_does_not_know_is_a_fault() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn rows_that_decode_are_read_as_written() {
     let db = TestDb::start().await;
-    let branch = a_day_with_dollars(&db, "fine").await;
+    let (branch, id) = a_day_with_dollars(&db, "fine").await;
     let service = db.service();
     let movements = service.movements(&branch).await.expect("movements");
     assert_eq!(movements.len(), 1);
     assert_eq!(movements[0].currency.as_str(), "USD");
     assert_eq!(movements[0].amount.to_string(), "20.00");
     let shift = service
-        .active(&branch)
+        .shift(&branch, &id)
         .await
-        .expect("active")
-        .expect("a shift is open");
+        .expect("shift")
+        .expect("the shift exists");
     assert_eq!(
         shift
             .expected

@@ -56,7 +56,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, onCleanup, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../shared/api/client';
-import type { Me } from '../../shared/api/generated/common';
+import type { Me } from '../../shared/testing/fixtures';
 import { lang, screenLookup, setLang } from '../../shared/i18n';
 import type { AdminMenu, AdminMenuProps } from './menus';
 import { menu as approvalsMenu } from './approvals/menu';

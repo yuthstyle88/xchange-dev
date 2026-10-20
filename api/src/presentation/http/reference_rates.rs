@@ -43,8 +43,6 @@ async fn handler(req: HttpRequest) -> HttpResponse {
         reader.callers(&req).await
     } else {
         pages::Callers {
-            owner: None,
-            staff: None,
             user: None,
             staff_user: None,
         }

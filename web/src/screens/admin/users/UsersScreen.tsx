@@ -8,16 +8,62 @@ import {
 import { ApiClient } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type { AdminUserRole, AdminUserRow } from '../../../shared/api/generated/admin_users';
+import type { UserChangeOutput } from '../../../shared/api/generated/user_disable';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
-import { PasswordField } from '../../../shared/ui/PasswordField';
-import { useForm } from '../../../shared/ui/form';
+import { TempPasswordNotice } from '../../../shared/ui/TempPasswordNotice';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './users.css';
 
 const t = screenT('admin.users', table);
+
+export interface UsersTabProps {
+  shown: () => boolean;
+  branch: () => string;
+}
+
+type UsersTabComponent = (props: UsersTabProps) => JSX.Element;
+
+const TAB_MODULES = import.meta.glob<Record<string, unknown>>(
+  './{PermissionMatrix,UserAudit,LoginHistory}.tsx',
+  { eager: true },
+);
+
+function resolveTabComponent(name: string): UsersTabComponent | null {
+  for (const [path, mod] of Object.entries(TAB_MODULES)) {
+    if (path.endsWith(`/${name}.tsx`) && mod && typeof mod[name] === 'function') {
+      return mod[name] as UsersTabComponent;
+    }
+  }
+  return null;
+}
+
+const TABS = [
+  { id: 'users', labelKey: 'tabUsers', file: null },
+  { id: 'matrix', labelKey: 'tabMatrix', file: 'PermissionMatrix' },
+  { id: 'audit', labelKey: 'tabAudit', file: 'UserAudit' },
+  { id: 'logins', labelKey: 'tabLogins', file: 'LoginHistory' },
+] as const;
+type UsersTabId = (typeof TABS)[number]['id'];
+
+// moves to generated/user_profile_save.ts when C1/F3 merges
+type UserProfileSaveInput = {
+  userId: string;
+  employeeCode: string | null;
+  department: string | null;
+  position: string | null;
+  tellCode: string | null;
+};
+// moves to generated/admin_users.ts when F10 merges (design §3.7)
+type AdminUserProfile = {
+  employeeCode?: string | null;
+  department?: string | null;
+  position?: string | null;
+  tellCode?: string | null;
+};
+type UserRow = AdminUserRow & AdminUserProfile;
 
 export const AVAILABLE_ROLES = [
   'TELLER',
@@ -33,18 +79,26 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
   const grantWrite = keyedWrite(api, 'POST', '/api/users/grant');
   const revokeWrite = keyedWrite(api, 'POST', '/api/users/revoke');
-  const disableWrite = keyedWrite(api, 'POST', '/api/users/disable');
+  const disableWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/disable');
+  const suspendWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/suspend');
+  const resumeWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/resume');
+  const enableWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/enable');
+  const profileWrite = keyedWrite<UserProfileSaveInput, UserChangeOutput>(api, 'POST', '/api/users/profile');
 
-  const [users, setUsers] = createSignal<AdminUserRow[]>([]);
+  const [activeTab, setActiveTab] = createSignal<UsersTabId>('users');
+  const [users, setUsers] = createSignal<UserRow[]>([]);
+  const [hasMore, setHasMore] = createSignal<boolean>(false);
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [loading, setLoading] = createSignal<boolean>(false);
   const [pageError, setPageError] = createSignal<string | null>(null);
   const [pageSuccess, setPageSuccess] = createSignal<string | null>(null);
+  const [tempPassword, setTempPassword] = createSignal<string | null>(null);
 
   // Dialog states
   const [showCreate, setShowCreate] = createSignal<boolean>(false);
   const [activatingUser, setActivatingUser] = createSignal<AdminUserRow | null>(null);
   const [grantingUser, setGrantingUser] = createSignal<AdminUserRow | null>(null);
+  const [profilingUser, setProfilingUser] = createSignal<UserRow | null>(null);
   const [dialogError, setDialogError] = createSignal<string | null>(null);
   const [dialogSubmitting, setDialogSubmitting] = createSignal<boolean>(false);
   // Row writes (revoke ×, Disable): one in flight at a time (#2413).
@@ -55,26 +109,27 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [createUsername, setCreateUsername] = createSignal('');
   const [createPhone, setCreatePhone] = createSignal('');
   const [createEmail, setCreateEmail] = createSignal('');
-  const [createPassword, setCreatePassword] = createSignal('');
   const [createRole, setCreateRole] = createSignal<string>('TELLER');
   const [createBranch, setCreateBranch] = createSignal<string>('');
 
   // Activate form state
   const [activatePhone, setActivatePhone] = createSignal('');
-  const [activatePassword, setActivatePassword] = createSignal('');
 
   // Grant form state
   const [grantRole, setGrantRole] = createSignal<string>('TELLER');
   const [grantBranch, setGrantBranch] = createSignal<string>('');
+  const [grantValidFrom, setGrantValidFrom] = createSignal<string>('');
+  const [grantValidTo, setGrantValidTo] = createSignal<string>('');
 
-  const createForm = useForm();
-  const createPasswordField = createForm.field('password');
-
-  const activateForm = useForm();
-  const activatePasswordField = activateForm.field('activatePassword');
+  // Profile form state
+  const [profileEmployeeCode, setProfileEmployeeCode] = createSignal('');
+  const [profileDepartment, setProfileDepartment] = createSignal('');
+  const [profilePosition, setProfilePosition] = createSignal('');
+  const [profileTellCode, setProfileTellCode] = createSignal('');
 
   let branchesSeq = 0;
   let usersSeq = 0;
+  const PAGE_SIZE = 50;
 
   const loadBranches = async () => {
     const seq = ++branchesSeq;
@@ -97,17 +152,44 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setLoading(true);
     setPageError(null);
     try {
-      const res = await api.view<AdminUserRow[]>('admin_users', {
+      const rows = await api.page<UserRow>('admin_users', {
         branch: props.branch(),
+        limit: PAGE_SIZE,
       });
       if (seq !== usersSeq) return;
-      if (res.data) {
-        setUsers(res.data);
-      }
+      setUsers(rows);
+      setHasMore(rows.length === PAGE_SIZE);
     } catch (err: unknown) {
       if (seq !== usersSeq) return;
       setPageError(wordedError(err));
       setUsers([]);
+      setHasMore(false);
+    } finally {
+      if (seq === usersSeq) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const loadMoreUsers = async () => {
+    const current = users();
+    const last = current[current.length - 1];
+    if (!last) return;
+    const seq = ++usersSeq;
+    setLoading(true);
+    setPageError(null);
+    try {
+      const rows = await api.page<UserRow>('admin_users', {
+        branch: props.branch(),
+        before: last.userId,
+        limit: PAGE_SIZE,
+      });
+      if (seq !== usersSeq) return;
+      setUsers([...current, ...rows]);
+      setHasMore(rows.length === PAGE_SIZE);
+    } catch (err: unknown) {
+      if (seq !== usersSeq) return;
+      setPageError(wordedError(err));
     } finally {
       if (seq === usersSeq) {
         setLoading(false);
@@ -121,7 +203,9 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     const branch = props.branch();
     if (activeBranch && activeBranch !== branch) {
       setUsers([]);
+      setHasMore(false);
       setPageSuccess(null);
+      setTempPassword(null);
     }
     activeBranch = branch;
     loadBranches();
@@ -139,6 +223,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     if (activating) return `activate:${activating.userId}#${dialogOpening}`;
     const granting = grantingUser();
     if (granting) return `grant:${granting.userId}#${dialogOpening}`;
+    const profiling = profilingUser();
+    if (profiling) return `profile:${profiling.userId}#${dialogOpening}`;
     return null;
   };
 
@@ -148,7 +234,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setCreateUsername('');
     setCreatePhone('');
     setCreateEmail('');
-    setCreatePassword('');
     setCreateRole('TELLER');
     setCreateBranch(props.branch());
     setDialogError(null);
@@ -162,28 +247,21 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setPageSuccess(null);
     setDialogSubmitting(true);
 
-    const pwdInput = document.querySelector<HTMLInputElement>('input[name="password"]');
-    const pwd = pwdInput?.value || createPassword();
-    setCreatePassword('');
-    if (pwdInput) {
-      pwdInput.value = '';
-    }
-
     try {
-      await api.post('/api/users', {
+      const res = (await api.post('/api/users', {
         name: createName().trim(),
         username: createUsername().trim() || null,
         phone: createPhone().trim(),
         email: createEmail().trim() || null,
-        password: pwd,
         roles: [
           {
             role: createRole(),
             branch: createBranch() ? createBranch() : null,
           },
         ],
-      });
+      })) as { temporaryPassword?: string };
       if (openDialogKey() === sentFrom) setShowCreate(false);
+      setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successCreated'));
       await loadUsers();
     } catch (err: unknown) {
@@ -197,7 +275,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     dialogOpening++;
     setActivatingUser(user);
     setActivatePhone('');
-    setActivatePassword('');
     setDialogError(null);
   };
 
@@ -211,27 +288,20 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setPageSuccess(null);
     setDialogSubmitting(true);
 
-    const pwdInput = document.querySelector<HTMLInputElement>('input[name="activatePassword"]');
-    const pwd = pwdInput?.value || activatePassword();
-    setActivatePassword('');
-    if (pwdInput) {
-      pwdInput.value = '';
-    }
-
     const roles = user.roles.map((r) => ({
       role: r.role,
       branch: r.branch,
     }));
 
     try {
-      await api.post('/api/users', {
+      const res = (await api.post('/api/users', {
         name: user.name,
         phone: activatePhone().trim(),
-        password: pwd,
         roles: roles,
         userId: user.userId,
-      });
+      })) as { temporaryPassword?: string };
       if (openDialogKey() === sentFrom) setActivatingUser(null);
+      setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successActivated'));
       await loadUsers();
     } catch (err: unknown) {
@@ -246,6 +316,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setGrantingUser(user);
     setGrantRole('TELLER');
     setGrantBranch(props.branch());
+    setGrantValidFrom('');
+    setGrantValidTo('');
     setDialogError(null);
   };
 
@@ -259,14 +331,62 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setPageSuccess(null);
     setDialogSubmitting(true);
 
+    const validFrom = grantValidFrom().trim();
+    const validTo = grantValidTo().trim();
+
     try {
       await grantWrite.send({
         userId: user.userId,
         role: grantRole(),
         branch: grantBranch() ? grantBranch() : null,
+        ...(validFrom ? { validFrom: `${validFrom}T00:00:00+07:00` } : {}),
+        ...(validTo ? { validTo: `${validTo}T00:00:00+07:00` } : {}),
       });
       if (openDialogKey() === sentFrom) setGrantingUser(null);
       setPageSuccess(t('successGranted'));
+      await loadUsers();
+    } catch (err: unknown) {
+      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
+    } finally {
+      setDialogSubmitting(false);
+    }
+  };
+
+  const openProfile = (user: UserRow) => {
+    dialogOpening++;
+    setProfilingUser(user);
+    setProfileEmployeeCode(user.employeeCode ?? '');
+    setProfileDepartment(user.department ?? '');
+    setProfilePosition(user.position ?? '');
+    setProfileTellCode(user.tellCode ?? '');
+    setDialogError(null);
+  };
+
+  const handleProfileSubmit = async (e: Event) => {
+    e.preventDefault();
+    const user = profilingUser();
+    if (!user) return;
+    const sentFrom = openDialogKey();
+
+    setDialogError(null);
+    setPageSuccess(null);
+    setDialogSubmitting(true);
+
+    const trimOrNull = (val: string): string | null => {
+      const trimmed = val.trim();
+      return trimmed === '' ? null : trimmed;
+    };
+
+    try {
+      await profileWrite.send({
+        userId: user.userId,
+        employeeCode: trimOrNull(profileEmployeeCode()),
+        department: trimOrNull(profileDepartment()),
+        position: trimOrNull(profilePosition()),
+        tellCode: trimOrNull(profileTellCode()),
+      });
+      if (openDialogKey() === sentFrom) setProfilingUser(null);
+      setPageSuccess(t('successProfileSaved'));
       await loadUsers();
     } catch (err: unknown) {
       if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
@@ -299,18 +419,22 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const handleDisable = async (user: AdminUserRow) => {
+  const handleStatusWrite = async (
+    write: { send(body: { userId: string }): Promise<UserChangeOutput> },
+    user: AdminUserRow,
+    successKey: 'successDisabled' | 'successSuspended' | 'successResumed' | 'successEnabled',
+  ) => {
     if (rowWriting()) return;
     setRowWriting(true);
     setPageError(null);
     setPageSuccess(null);
     const branch = props.branch();
     try {
-      await disableWrite.send({
+      await write.send({
         userId: user.userId,
       });
       if (props.branch() !== branch) return;
-      setPageSuccess(t('successDisabled'));
+      setPageSuccess(t(successKey));
       await loadUsers();
     } catch (err: unknown) {
       if (props.branch() !== branch) return;
@@ -321,6 +445,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const handleDisable = (user: AdminUserRow) =>
+    handleStatusWrite(disableWrite, user, 'successDisabled');
+  const handleSuspend = (user: AdminUserRow) =>
+    handleStatusWrite(suspendWrite, user, 'successSuspended');
+  const handleResume = (user: AdminUserRow) =>
+    handleStatusWrite(resumeWrite, user, 'successResumed');
+  const handleEnable = (user: AdminUserRow) =>
+    handleStatusWrite(enableWrite, user, 'successEnabled');
+
+
   const statusClass = (status: string) => {
     switch (status.toUpperCase()) {
       case 'ACTIVE':
@@ -329,6 +463,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         return 'users-status-invited';
       case 'PENDING':
         return 'users-status-pending';
+      case 'SUSPENDED':
+        return 'users-status-suspended';
       case 'DISABLED':
         return 'users-status-disabled';
       default:
@@ -344,6 +480,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         return t('statusInvited');
       case 'PENDING':
         return t('statusPending');
+      case 'SUSPENDED':
+        return t('statusSuspended');
       case 'DISABLED':
         return t('statusDisabled');
       default:
@@ -351,16 +489,37 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     }
   };
 
-  const activeRoles = (roles: AdminUserRole[]) =>
-    roles.filter((r) => r.validTo === null);
+  const isRoleEnded = (r: AdminUserRole): boolean =>
+    r.validTo !== null && Date.parse(r.validTo) <= Date.now();
+
+  const formatBkkDate = (iso: string): string =>
+    new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
 
   return (
     <div class="users-screen">
       <div class="users-header">
         <p class="users-intro">{t('intro')}</p>
+        <div class="users-actions" role="tablist">
+          <For each={TABS}>
+            {(tab) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab() === tab.id}
+                class={activeTab() === tab.id ? 'users-btn users-btn-secondary' : 'users-btn'}
+                data-users-tab={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {t(tab.labelKey)}
+              </button>
+            )}
+          </For>
+        </div>
       </div>
 
-      <div class="users-toolbar">
+      <Show when={activeTab() === 'users'}>
+        <div data-users-panel="users">
+          <div class="users-toolbar">
         <div class="users-actions">
           <button
             type="button"
@@ -386,6 +545,18 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
         <Show when={pageSuccess()}>
           <div role="status" class="users-form-success">{pageSuccess()}</div>
         </Show>
+        <Show when={tempPassword()}>
+          {(pwd) => (
+            <TempPasswordNotice
+              password={pwd()}
+              title={t('tempPasswordTitle')}
+              note={t('tempPasswordOnce')}
+              copyLabel={t('tempPasswordCopy')}
+              doneLabel={t('tempPasswordDone')}
+              onDone={() => setTempPassword(null)}
+            />
+          )}
+        </Show>
 
         <div class="users-card">
           <Show
@@ -400,6 +571,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
               <table class="users-table">
                 <thead>
                   <tr>
+                    <th class="users-th">{t('colEmployeeCode')}</th>
                     <th class="users-th">{t('colName')}</th>
                     <th class="users-th">{t('colRoles')}</th>
                     <th class="users-th">{t('colStatus')}</th>
@@ -412,35 +584,52 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                       const isInvited = () =>
                         user.status === 'INVITED' || user.status === 'PENDING';
                       const isActive = () => user.status === 'ACTIVE';
+                      const isSuspended = () => user.status === 'SUSPENDED';
+                      const isDisabled = () => user.status === 'DISABLED';
 
                       return (
-                        <tr>
+                        <tr data-user-id={user.userId}>
+                          <td class="users-td">{user.employeeCode ?? '—'}</td>
                           <td class="users-td">
                             <div><strong>{user.name}</strong></div>
                             <small class="users-intro">{user.userId}</small>
                           </td>
                           <td class="users-td">
                             <div class="users-roles-list">
-                              <For each={activeRoles(user.roles)}>
-                                {(r) => (
-                                  <span class="users-role-tag">
-                                    <span class="users-role-name">{r.role}</span>
-                                    <span class="users-role-branch">
-                                      ({r.branch ?? t('orgWide')})
+                              <For each={user.roles}>
+                                {(r) => {
+                                  const ended = isRoleEnded(r);
+                                  return (
+                                    <span
+                                      class="users-role-tag"
+                                      attr:data-role-ended={ended ? '' : undefined}
+                                      style={ended ? { opacity: '0.6' } : undefined}
+                                    >
+                                      <span class="users-role-name">{r.role}</span>
+                                      <span class="users-role-branch">
+                                        ({r.branch ?? t('orgWide')})
+                                      </span>
+                                      <Show when={r.validTo !== null}>
+                                        <span class="users-role-branch">
+                                          {ended
+                                            ? t('roleEnded', { date: formatBkkDate(r.validTo!) })
+                                            : t('roleUntil', { date: formatBkkDate(r.validTo!) })}
+                                        </span>
+                                      </Show>
+                                      <Show when={isActive() && !ended}>
+                                        <button
+                                          type="button"
+                                          class="users-btn users-btn-revoke"
+                                          onClick={() => handleRevoke(user, r)}
+                                          disabled={rowWriting()}
+                                          aria-label={`${t('revoke')} ${r.role}`}
+                                        >
+                                          ×
+                                        </button>
+                                      </Show>
                                     </span>
-                                    <Show when={isActive()}>
-                                      <button
-                                        type="button"
-                                        class="users-btn users-btn-revoke"
-                                        onClick={() => handleRevoke(user, r)}
-                                        disabled={rowWriting()}
-                                        aria-label={`${t('revoke')} ${r.role}`}
-                                      >
-                                        ×
-                                      </button>
-                                    </Show>
-                                  </span>
-                                )}
+                                  );
+                                }}
                               </For>
                             </div>
                           </td>
@@ -461,6 +650,18 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                 </button>
                               </Show>
 
+                              <Show when={isActive() || isSuspended()}>
+                                <button
+                                  type="button"
+                                  class="users-btn"
+                                  data-users-action="profile"
+                                  onClick={() => openProfile(user)}
+                                  disabled={rowWriting()}
+                                >
+                                  {t('profileButton')}
+                                </button>
+                              </Show>
+
                               <Show when={isActive()}>
                                 <button
                                   type="button"
@@ -471,11 +672,44 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                 </button>
                                 <button
                                   type="button"
+                                  class="users-btn"
+                                  data-users-action="suspend"
+                                  onClick={() => handleSuspend(user)}
+                                  disabled={rowWriting()}
+                                >
+                                  {t('suspend')}
+                                </button>
+                                <button
+                                  type="button"
                                   class="users-btn users-btn-disable"
                                   onClick={() => handleDisable(user)}
                                   disabled={rowWriting()}
                                 >
                                   {t('disable')}
+                                </button>
+                              </Show>
+
+                              <Show when={isSuspended()}>
+                                <button
+                                  type="button"
+                                  class="users-btn"
+                                  data-users-action="resume"
+                                  onClick={() => handleResume(user)}
+                                  disabled={rowWriting()}
+                                >
+                                  {t('resume')}
+                                </button>
+                              </Show>
+
+                              <Show when={isDisabled()}>
+                                <button
+                                  type="button"
+                                  class="users-btn"
+                                  data-users-action="enable"
+                                  onClick={() => handleEnable(user)}
+                                  disabled={rowWriting()}
+                                >
+                                  {t('enable')}
                                 </button>
                               </Show>
                             </div>
@@ -487,6 +721,19 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                 </tbody>
               </table>
             </div>
+            <Show when={hasMore()}>
+              <div class="users-actions">
+                <button
+                  type="button"
+                  class="users-btn"
+                  data-action="more"
+                  onClick={loadMoreUsers}
+                  disabled={loading()}
+                >
+                  {t('more')}
+                </button>
+              </div>
+            </Show>
           </Show>
         </div>
       </div>
@@ -544,14 +791,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                   class="users-input"
                   value={createEmail()}
                   onInput={(e) => setCreateEmail(e.currentTarget.value)}
-                />
-              </div>
-
-              <div class="users-field">
-                <PasswordField
-                  field={createPasswordField}
-                  label={`${t('password')} *`}
-                  required
                 />
               </div>
 
@@ -630,14 +869,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                   />
                 </div>
 
-                <div class="users-field">
-                  <PasswordField
-                    field={activatePasswordField}
-                    label={`${t('password')} *`}
-                    required
-                  />
-                </div>
-
                 <div class="users-dialog-actions">
                   <button
                     type="button"
@@ -701,6 +932,30 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                   </select>
                 </div>
 
+                <div class="users-field">
+                  <label class="users-label" for="grant-valid-from">{t('grantValidFrom')}</label>
+                  <input
+                    id="grant-valid-from"
+                    name="grantValidFrom"
+                    type="date"
+                    class="users-input"
+                    value={grantValidFrom()}
+                    onInput={(e) => setGrantValidFrom(e.currentTarget.value)}
+                  />
+                </div>
+
+                <div class="users-field">
+                  <label class="users-label" for="grant-valid-to">{t('grantValidTo')}</label>
+                  <input
+                    id="grant-valid-to"
+                    name="grantValidTo"
+                    type="date"
+                    class="users-input"
+                    value={grantValidTo()}
+                    onInput={(e) => setGrantValidTo(e.currentTarget.value)}
+                  />
+                </div>
+
                 <div class="users-dialog-actions">
                   <button
                     type="button"
@@ -722,6 +977,107 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
           </div>
         )}
       </Show>
+
+      {/* Profile Dialog */}
+      <Show when={profilingUser()}>
+        {(user) => (
+          <div class="users-dialog-backdrop">
+            <div role="dialog" aria-modal="true" class="users-dialog">
+              <h3 class="users-dialog-title">{t('profileTitle')}: {user().name}</h3>
+              <Show when={dialogError()}>
+                <div role="alert" class="users-form-error">{dialogError()}</div>
+              </Show>
+              <form class="users-dialog-form" data-users-form="profile" onSubmit={handleProfileSubmit}>
+                <div class="users-field">
+                  <label class="users-label" for="profile-employee-code">{t('profileEmployeeCode')}</label>
+                  <input
+                    id="profile-employee-code"
+                    name="employeeCode"
+                    class="users-input"
+                    value={profileEmployeeCode()}
+                    onInput={(e) => setProfileEmployeeCode(e.currentTarget.value)}
+                  />
+                </div>
+
+                <div class="users-field">
+                  <label class="users-label" for="profile-department">{t('profileDepartment')}</label>
+                  <input
+                    id="profile-department"
+                    name="department"
+                    class="users-input"
+                    value={profileDepartment()}
+                    onInput={(e) => setProfileDepartment(e.currentTarget.value)}
+                  />
+                </div>
+
+                <div class="users-field">
+                  <label class="users-label" for="profile-position">{t('profilePosition')}</label>
+                  <input
+                    id="profile-position"
+                    name="position"
+                    class="users-input"
+                    value={profilePosition()}
+                    onInput={(e) => setProfilePosition(e.currentTarget.value)}
+                  />
+                </div>
+
+                <div class="users-field">
+                  <label class="users-label" for="profile-tell-code">{t('profileTellCode')}</label>
+                  <input
+                    id="profile-tell-code"
+                    name="tellCode"
+                    class="users-input"
+                    value={profileTellCode()}
+                    onInput={(e) => setProfileTellCode(e.currentTarget.value)}
+                  />
+                </div>
+
+                <div class="users-dialog-actions">
+                  <button
+                    type="button"
+                    class="users-btn users-btn-secondary"
+                    onClick={() => setProfilingUser(null)}
+                  >
+                    {t('close')}
+                  </button>
+                  <button
+                    type="submit"
+                    class="users-btn users-btn-primary"
+                    data-users-action="profile-save"
+                    disabled={dialogSubmitting()}
+                  >
+                    {t('profileSave')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </Show>
+        </div>
+      </Show>
+
+      <For each={TABS.filter((tab) => tab.id !== 'users')}>
+        {(tab) => {
+          const Comp = resolveTabComponent(tab.file!);
+          return (
+            <Show when={activeTab() === tab.id}>
+              <div data-users-panel={tab.id}>
+                {Comp ? (
+                  <Comp
+                    shown={() => props.shown() && activeTab() === tab.id}
+                    branch={props.branch}
+                  />
+                ) : (
+                  <div class="users-card users-empty" data-users-tab-pending="">
+                    {t('tabPending')}
+                  </div>
+                )}
+              </div>
+            </Show>
+          );
+        }}
+      </For>
     </div>
   );
 }

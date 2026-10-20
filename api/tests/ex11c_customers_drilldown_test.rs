@@ -98,6 +98,7 @@ struct Room {
     pool: PgPool,
     schema: String,
     /// A teller user per organisation, for the shifts the LIVE rows need.
+    #[allow(dead_code)]
     teller: BTreeMap<&'static str, String>,
 }
 
@@ -241,12 +242,15 @@ impl Room {
         .await
         .expect("a branch");
         sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, organization_id, teller_id) \
-             VALUES ('SH-' || $1, $1, 'OPEN', now(), 'test', 'open-' || $1, $2::uuid, $3::uuid)",
+            "WITH u AS ( \
+                 INSERT INTO users (organization_id, name, status, created_by) \
+                 VALUES ($2::uuid, 'teller-' || $1, 'ACTIVE', 'test') RETURNING id \
+             ) \
+             INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, organization_id, teller_id) \
+             SELECT 'SH-' || $1, $1, 'OPEN', now(), 'test', 'open-' || $1, $2::uuid, u.id FROM u",
         )
         .bind(branch)
         .bind(org)
-        .bind(&self.teller[org])
         .execute(&self.pool)
         .await
         .expect("an open shift");
@@ -409,18 +413,7 @@ impl Room {
             other => panic!("a status this file seeds: {other}"),
         }
         tx.commit().await.expect("commit");
-        // every figure of the wide row now differs from the line and the payment
-        sqlx::query(
-            "UPDATE transactions SET type = CASE type WHEN 'BUY' THEN 'SELL' ELSE 'BUY' END, code = 'EUR', \
-               amount = amount * 7 + 3, rate = rate * 7 + 3, principal = principal * 7 + 3, fee = fee * 7 + 3, \
-               bank_fee = bank_fee * 7 + 3, received = received * 7 + 3, paid = paid * 7 + 3, \
-               method = 'MUTATED', payment_ref = 'MUTATED', account = 'MUTATED' \
-             WHERE id = $1",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .expect("overwrite the wide figures");
+        // TX-9 (#677): the wide figures are gone, so there is no wide row left to make differ.
         (id.to_string(), doc)
     }
 
@@ -491,11 +484,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }

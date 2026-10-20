@@ -17,13 +17,14 @@ mod devices_common;
 mod routes_common;
 #[allow(unused_imports)]
 mod save_common;
+mod shift_holder_common;
 
 use std::sync::Arc;
 
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
 use save_common::*;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_kernel::branch_tx::BranchTx;
 use xchange::application::workflows::device_save_step::DeviceSaveStep;
 use xchange::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
@@ -37,7 +38,7 @@ fn front() -> SaveActor {
         id: FRONT.to_owned(),
         username: format!("user-{FRONT}"),
         employee_id: Some(FRONT.to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 
@@ -54,6 +55,14 @@ async fn guarded(
     ids: &Arc<devices_common::FakeIds>,
 ) -> (SaveTransactionWorkflow, String, String) {
     let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    let shift = shift_holder_common::open_shift_for(
+        &shop.pool,
+        MAIN,
+        FRONT,
+        &[("THB", "100000"), ("USD", "1000")],
+    )
+    .await;
+    fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
     let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
     let devices = DeviceService::new(
         BranchTx::new(Transactor::new(shop.pool.clone())),

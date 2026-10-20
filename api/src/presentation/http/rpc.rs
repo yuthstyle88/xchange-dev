@@ -45,13 +45,15 @@ use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
 use crate::application::compat::abandon_request::AbandonRequest;
 use crate::application::compat::actions::RpcActions;
-use crate::application::compat::actions::custody::CustodyAction;
 use crate::application::compat::actions::documents::DocumentsAction;
 use crate::application::compat::actions::save::SaveAction;
 use crate::application::compat::envelope::{
     MAX_BODY_UTF16_UNITS, RpcRefusal, RpcRequest, RpcResponse, RpcRoute,
 };
-use crate::application::compat::rpc::{CompatRpc, RpcCaller, RpcFailure, RpcServices};
+use crate::application::compat::rpc::{
+    CompatRpc, RpcCaller, RpcFailure, RpcServices, v3_stored_role,
+};
+use crate::application::compat::snapshot::SnapshotBuilder;
 use crate::application::compat::v2_json::V2Json;
 use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::documents::DocumentsLookup;
@@ -68,11 +70,11 @@ use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::extractors::actor::{
-    Accounts, accounts, actor_of, identity_session, identity_session_actor, legacy_actor,
-    password_session, same_origin, server_error, staff_actor, staff_password_session,
+    Accounts, OWNER_ID, accounts, identity_session, identity_session_actor, password_session,
+    same_origin, server_error, staff_password_session,
 };
 use crate::presentation::pages;
-use xc_auth::domain::policy::value_objects::actor_kind::ActorKind;
+use xc_auth::domain::access::{Standing, StandingKind};
 
 /// The most bytes a body of 120,000 UTF-16 units can be: three per unit, and a
 /// byte-order mark that is not counted. Anything longer is over v2's limit
@@ -156,7 +158,7 @@ async fn answer(
             let caller = caller_of_rpc(accounts, req, now)
                 .await?
                 .ok_or_else(|| RpcRefusal::not_signed_in(route))?;
-            let staff = caller.actor.branch_id().is_some();
+            let staff = caller.standing.branch.is_some();
             if !same_origin(req) {
                 let refusal = if staff {
                     RpcRefusal::invalid_request()
@@ -192,10 +194,7 @@ async fn answer(
         .as_ref()
         .and_then(|(user, _)| uuid::Uuid::parse_str(&user.id).ok());
 
-    let named = if !blueprint_session
-        && caller.actor.kind()
-            == xc_auth::domain::policy::value_objects::actor_kind::ActorKind::Staff
-    {
+    let named = if !blueprint_session && !caller.standing.is_owner() {
         None
     } else {
         match request.payload() {
@@ -215,14 +214,7 @@ async fn answer(
         }
     };
 
-    let grant = CompatRpc::authorize(
-        route,
-        request.action(),
-        auth_user,
-        named.as_ref(),
-        Some(&caller.actor),
-        now,
-    )?;
+    let grant = CompatRpc::authorize(route, request.action(), auth_user, named.as_ref(), now)?;
 
     if !xc_kernel::ids::BranchId::is_well_formed(grant.branch.as_str()) {
         return Err(RpcRefusal::refused(crate::application::compat::rpc::BAD_BRANCH).into());
@@ -272,33 +264,45 @@ pub(crate) fn rate_source(req: &HttpRequest) -> Arc<dyn RateSource> {
 }
 
 pub(crate) fn caller_of(who: &SignedIn) -> Option<RpcCaller> {
-    let actor = actor_of(who)?;
-    let (username, name) = match who {
-        SignedIn::Owner(owner) => (owner.username.clone(), owner.name.clone()),
-        SignedIn::Employee(employee) => (employee.username.clone(), employee.name.clone()),
-    };
-    Some(RpcCaller {
-        actor,
-        username,
-        name,
-    })
+    match who {
+        SignedIn::Owner(owner) => Some(RpcCaller {
+            standing: Standing {
+                user_id: OWNER_ID.to_string(),
+                kind: StandingKind::Owner,
+                branch: None,
+            },
+            username: owner.username.clone(),
+            name: owner.name.clone(),
+        }),
+        SignedIn::Employee(employee) => {
+            if employee.must_change {
+                return None;
+            }
+            let role = v3_stored_role(&employee.role)?;
+            Some(RpcCaller {
+                standing: Standing {
+                    user_id: employee.id.clone(),
+                    kind: StandingKind::Staff(role),
+                    branch: Some(xc_kernel::ids::BranchId::new(&employee.branch_id)),
+                },
+                username: employee.username.clone(),
+                name: employee.name.clone(),
+            })
+        }
+    }
 }
 
 /// Who `/api/rpc` is answering: the Blueprint session first, else the owner
 /// session, else the staff session. An employee whose first password is
 /// unchanged is nobody here.
-///
-/// The caller's `actor` is the v2 actor the downstream services still take
-/// (ruling (a) on #767: `legacy_actor` for a Blueprint session, stopgap until
-/// OR-7). Who may ask is decided on `Callers` (`answer`), never on it.
 pub(crate) async fn caller_of_rpc(
     accounts: &Accounts,
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> AppResult<Option<RpcCaller>> {
     if let Some((user, access_actor)) = identity_session_actor(req, now).await {
-        return Ok(legacy_actor(&access_actor, now).map(|actor| RpcCaller {
-            actor,
+        return Ok(Standing::of(&access_actor, now).map(|standing| RpcCaller {
+            standing,
             username: user.id,
             name: user.name,
         }));
@@ -316,9 +320,9 @@ async fn caller_of_staff_rpc(
 ) -> Result<RpcCaller, RpcFailure> {
     let route = RpcRoute::StaffRpc;
     if let Some((user, access_actor)) = identity_session_actor(req, now).await {
-        return match legacy_actor(&access_actor, now) {
-            Some(actor) if actor.kind() == ActorKind::Staff => Ok(RpcCaller {
-                actor,
+        return match Standing::of(&access_actor, now) {
+            Some(standing) if !standing.is_owner() => Ok(RpcCaller {
+                standing,
                 username: user.id,
                 name: user.name,
             }),
@@ -333,9 +337,13 @@ async fn caller_of_staff_rpc(
     if employee.must_change {
         return Err(RpcRefusal::first_password_unchanged(route).into());
     }
-    let actor = staff_actor(&employee).ok_or_else(|| RpcRefusal::not_signed_in(route))?;
+    let role = v3_stored_role(&employee.role).ok_or_else(|| RpcRefusal::not_signed_in(route))?;
     Ok(RpcCaller {
-        actor,
+        standing: Standing {
+            user_id: employee.id,
+            kind: StandingKind::Staff(role),
+            branch: Some(xc_kernel::ids::BranchId::new(employee.branch_id)),
+        },
         username: employee.username,
         name: employee.name,
     })
@@ -362,8 +370,8 @@ fn transaction_service(pool: &PgPool, branch_tx: &BranchTx) -> TransactionServic
 }
 
 /// The families of part two the server registers, in the order the dispatcher
-/// asks them: documents, custody, the save. Each is built here once, from the
-/// parts its own file needs; wiring a family does not change this function.
+/// asks them: documents, the save. Each is built here once, from the parts its
+/// own file needs; wiring a family does not change this function.
 pub fn registered_actions(state: &AppState) -> RpcActions {
     let pool = &state.db;
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
@@ -403,7 +411,6 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
     let lifecycle = pg_booking_lifecycle(pool.clone());
     vec![
         Arc::new(DocumentsAction::new(documents)),
-        Arc::new(CustodyAction::new(custody.clone())),
         Arc::new(
             SaveAction::new(save, devices, kiosk, custody)
                 .with_payment_check(payments)
@@ -420,20 +427,28 @@ pub(crate) fn compat_rpc(
     accounts: Accounts,
 ) -> CompatRpc {
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let branches = BranchService::new(branch_tx.clone());
+    let rates = RateService::new(branch_tx.clone(), source);
+    let customers = CustomerService::new(branch_tx.clone());
     let shifts = shift_service(pool, &branch_tx);
     let custody = pg_custody_service(pool, &shifts, &branch_tx);
     let transactions = transaction_service(pool, &branch_tx);
     let sources = Arc::new(ServiceSnapshotSources::new(transactions, accounts.clone()));
+    let snapshots = SnapshotBuilder::new(
+        branches.clone(),
+        rates,
+        customers.clone(),
+        shifts,
+        custody,
+        sources,
+    );
     CompatRpc::new(
         RpcServices {
-            branches: BranchService::new(branch_tx.clone()),
-            rates: RateService::new(branch_tx.clone(), source),
-            customers: CustomerService::new(branch_tx.clone()),
-            shifts,
-            custody,
+            branches,
+            customers,
             abandon: AbandonRequest::new(branch_tx),
             accounts,
         },
-        sources,
+        snapshots,
     )
 }

@@ -116,11 +116,9 @@ impl SessionReader for HeaderSessions {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = header(req);
         Box::pin(async move {
-            let s = self.sessions(req).await;
+            let _s = self.sessions(req).await;
             let user = actor_of(&spec).map(|(u, _)| u);
             Callers {
-                owner: s.owner,
-                staff: None,
                 user: user.clone(),
                 staff_user: user,
             }
@@ -189,14 +187,12 @@ impl Room {
         let at = format!("2026-10-06T05:0{n}:00Z");
         self.db
             .exec(&format!(
-                "INSERT INTO transactions (id, document_ref, branch_id, shift_id, mode, submission_id, payload_hash, \
-                    customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, bank_fee, \
-                    received, paid, method, payment_ref, account, staff_id, booking_no, notes, value_date, paid_at, \
-                    recorded_at, recorded_by, status, completed_at, organization_id) \
-                 VALUES ('{id}', 'XC-{branch}-{n:06}', '{branch}', 'SH-{branch}', 'LIVE', 'sub-{id}', 'hash', 'CX-00000001', \
-                    'Somchai', 'THA', 'BUY', 'USD', 100, 32.1, 3210.00, 10.00, 0, 0, 3200.00, 'Cash', '', '', \
-                    'EMP-001', 'WALK-IN', '', '2026-10-06', '{at}', '{at}', 'owner', 'COMPLETED', '{at}', \
-                    (SELECT organization_id FROM branches WHERE id = '{branch}'))"
+                "INSERT INTO transactions (id, document_ref, branch_id, shift_id, mode, submission_id, payload_hash, customer_id, \
+                    customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+                    recorded_by, status, completed_at, organization_id) \
+                 VALUES ('{id}', 'XC-{branch}-{n:06}', '{branch}', 'SH-{branch}', 'LIVE', 'sub-{id}', 'hash', \
+                    'CX-00000001', 'Somchai', 'THA', 'EMP-001', 'WALK-IN', '', '2026-10-06', '{at}', '{at}', \
+                    'owner', 'COMPLETED', '{at}', (SELECT organization_id FROM branches WHERE id = '{branch}'))"
             ))
             .await;
         // the view joins line 1 and payment 1 (`dto/v3/transaction_row.rs` ROW_FROM)

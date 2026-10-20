@@ -2,14 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient, ApiError } from '../../shared/api/client';
-import type { QuoteDto } from '../../shared/api/generated/quote';
+import { makeQuoteDto, makeQuoteLineDto, makeQuotePublicationDto } from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { en as sharedEn } from '../../shared/i18n/en';
 import { th as sharedTh } from '../../shared/i18n/th';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { OWNER_DESK } from './desk-path';
 import { createDeskStore, type DeskStore } from './desk-store';
-import { entry as bookingEntry } from './entries/booking/entry';
 import { step as rateStep } from './steps/rate/step';
 import { step as receiptStep } from './steps/receipt/step';
 
@@ -53,15 +52,15 @@ function fakeServer() {
   };
 }
 
-function quoteDto(quantity = '100'): QuoteDto {
-  return {
+function quoteDto(quantity = '100') {
+  return makeQuoteDto({
     id: 'q-1',
     type: 'BUY',
     channel: 'DESK',
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: 'pub-1', version: 3 },
+    publication: makeQuotePublicationDto({ id: 'pub-1', version: 3 }),
     lines: [
-      {
+      makeQuoteLineDto({
         currency: 'USD',
         shopSide: 'BUY',
         quantity,
@@ -72,11 +71,11 @@ function quoteDto(quantity = '100'): QuoteDto {
         feeThb: '0.00',
         settleThb: '3210.00',
         publishedRateLineId: 'line-1',
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
 describe('Desk worded errors (#2157)', () => {
@@ -236,30 +235,10 @@ describe('Desk worded errors (#2157)', () => {
     expect(amountLabel?.querySelector('.desk-error')?.textContent).toBe(sharedEn['error.invalidRequest']);
   });
 
-  it('row 4: booking load refused 404 notFound in TH shows the TH worded text', async () => {
-    setLang('th');
-    const s = fakeServer();
-    s.on('POST', OWNER_DESK.bookings, () => ({
-      status: 404,
-      body: { error: { code: 'notFound', message: 'Booking BK-404 was not found' } },
-    }));
-    const store = makeStore(s);
-    await vi.waitFor(() => expect(store.config()).toBeDefined());
-
-    const state = await bookingEntry.load(store, 'BK-404', s.api);
-    expect(state.banner()).toBe(sharedTh['error.notFound']);
-    expect(state.refusal()).toBe(sharedTh['error.notFound']);
-    expect(state.banner()).not.toContain('Booking BK-404 was not found');
-  });
-
   it('row 5: a code with no text in the table falls back to the server message across save, quote and booking load in any language', async () => {
     const s = fakeServer();
     const fallbackMsg = 'ข้อความเฉพาะจากเซิร์ฟเวอร์ที่ไม่อยู่ในตาราง';
     s.on('POST', '/api/transactions', () => ({
-      status: 400,
-      body: { error: { code: 'unmappedDeskCode', message: fallbackMsg } },
-    }));
-    s.on('POST', OWNER_DESK.bookings, () => ({
       status: 400,
       body: { error: { code: 'unmappedDeskCode', message: fallbackMsg } },
     }));
@@ -269,10 +248,6 @@ describe('Desk worded errors (#2157)', () => {
       setLang(l);
       await expect(store.submit()).resolves.toBe('refused');
       expect(store.saveError()).toBe(fallbackMsg);
-
-      const bookingState = await bookingEntry.load(store, 'BK-UNMAPPED', s.api);
-      expect(bookingState.banner()).toBe(fallbackMsg);
-      expect(bookingState.refusal()).toBe(fallbackMsg);
     }
 
     s.on('POST', '/api/quotes', () => ({

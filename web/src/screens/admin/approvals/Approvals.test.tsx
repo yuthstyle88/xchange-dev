@@ -46,7 +46,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { screenLookup, setLang } from '../../../shared/i18n';
-import type { ApprovalRequestItemDto } from '../../../shared/api/generated/approval_requests';
+import {
+  makeApprovalRequestItemDto,
+  type ApprovalRequestItemDto,
+} from '../../../shared/testing/fixtures';
 import { menus, type AdminMenu, type AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
@@ -95,8 +98,8 @@ interface OutOfBoundSide {
   side: 'BUY' | 'SELL';
 }
 
-function request(id: string, by: string, outOfBound: OutOfBoundSide[], branch = 'MAIN'): ApprovalRequestItemDto {
-  return {
+function request(id: string, by: string, outOfBound: OutOfBoundSide[], branch = 'MAIN') {
+  return makeApprovalRequestItemDto({
     id,
     type: 'RATE_PUBLICATION',
     branchId: branch,
@@ -114,7 +117,7 @@ function request(id: string, by: string, outOfBound: OutOfBoundSide[], branch = 
     requestedAt: '2026-10-09T03:00:00+00:00',
     status: 'PENDING',
     decision: null,
-  };
+  });
 }
 
 // ── the fake API ─────────────────────────────────────────────────────────────

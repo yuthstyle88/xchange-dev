@@ -62,6 +62,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -113,15 +114,17 @@ const JPEG: &[u8] = &[
     0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 9,
 ];
 
+// CA-10q (design cash-shift-transfer.md §4.7, #2943): `shift` gave way to `openShifts`.
 const DATA_FIELDS: [&str; 6] = [
-    "shift",
+    "openShifts",
     "stock",
     "stats",
     "reference",
     "currencies",
     "lastCounted",
 ];
-const SHIFT_FIELDS: [&str; 3] = ["id", "openedAt", "staff"];
+/// CA-10q: one row of `openShifts` (CA-10p's `OpenShiftDto`).
+const OPEN_SHIFT_FIELDS: [&str; 4] = ["openedAt", "shiftId", "tellerId", "tellerName"];
 const STOCK_FIELDS: [&str; 4] = ["code", "opening", "net", "expected"];
 const STATS_FIELDS: [&str; 4] = ["opening", "incoming", "outgoing", "remaining"];
 const REFERENCE_FIELDS: [&str; 4] = ["withReference", "withoutReference", "spread", "percent"];
@@ -217,6 +220,13 @@ fn view_path(view: &str, query: &str) -> String {
 }
 
 /// `stock` as `code → (opening, net, expected)`, keeping the wire's strings.
+/// CA-10q: a row's `openedAt` as an instant (RFC 3339 on the wire).
+fn opened_at_of(row: &Value) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(row["openedAt"].as_str().expect("openedAt is a string"))
+        .unwrap_or_else(|e| panic!("openedAt is RFC 3339: {row}: {e}"))
+        .with_timezone(&Utc)
+}
+
 fn stock_of(data: &Value) -> Vec<(String, String, String, String)> {
     list(&data["stock"])
         .iter()
@@ -453,6 +463,17 @@ impl Room {
             .expect("an open shift")
     }
 
+    /// CA-10q: the shift's teller (`shifts.teller_id`) and that user's name.
+    async fn teller_of(&self, shift: &str) -> (String, String) {
+        sqlx::query_as(
+            "SELECT s.teller_id::text, u.name FROM shifts s JOIN users u ON u.id = s.teller_id WHERE s.id = $1",
+        )
+        .bind(shift)
+        .fetch_one(&self.desk.db.pool)
+        .await
+        .expect("the shift's teller")
+    }
+
     /// Who opened , as stored.
     async fn opened_by(&self, shift: &str) -> String {
         sqlx::query_scalar("SELECT opened_by FROM shifts WHERE id = $1")
@@ -665,10 +686,11 @@ impl Room {
             .await
             .expect("reserve the customer")
             .customer_id;
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let rate = if ex.side == "BUY" {
@@ -683,7 +705,7 @@ impl Room {
             Some(
                 self.desk
                     .files
-                    .upload(&here, "owner", "image/jpeg", JPEG, t)
+                    .upload(&here, &saver, "image/jpeg", JPEG, t)
                     .await
                     .expect("upload a slip"),
             )
@@ -722,7 +744,7 @@ impl Room {
         };
         self.desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange in {branch}: {e:?}"))
             .document_ref
@@ -844,6 +866,34 @@ async fn seed_movement(
     id
 }
 
+/// LG-6.r6 (#1046): one RECEIVED `EXTERNAL_IN` of 1 THB into B9, as CA-5/6 leave it; answers the transfer id.
+async fn seed_b9_transfer(pool: &sqlx::PgPool) -> String {
+    let id: String = sqlx::query_scalar(
+        "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
+              u AS (INSERT INTO users (organization_id, name, status, created_by) \
+                    SELECT id, 'r6-b9', 'PENDING', 'test' FROM o RETURNING id) \
+         INSERT INTO cash_transfers (organization_id, kind, from_branch_id, status, created_by, dispatched_at, \
+             dispatched_by, received_at, received_by, note, idempotency_key) \
+         SELECT o.id, 'EXTERNAL_IN', 'B9', 'RECEIVED', u.id, now(), u.id, now(), u.id, 'สาขา B9', \
+             gen_random_uuid()::text \
+         FROM o, u RETURNING id::text",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("seed B9's transfer");
+    sqlx::query(
+        "INSERT INTO cash_transfer_lines (transfer_id, organization_id, currency, denomination_id, qty_sent, \
+             qty_received) \
+         SELECT t.id, t.organization_id, 'THB', d.id, 1, 1 FROM cash_transfers t, denominations d \
+         WHERE t.id = $1::uuid AND d.currency_code = 'THB' AND d.face_value = 1",
+    )
+    .bind(&id)
+    .execute(pool)
+    .await
+    .expect("seed B9's transfer line");
+    id
+}
+
 /// Ticket §8: the three views answer whoever `adminSnapshot` admits on `Rpc` (W8, §4.4).
 #[actix_web::test]
 async fn the_cash_views_answer_exactly_whom_the_snapshot_row_allows_and_the_writes_keep_their_rows()
@@ -885,7 +935,7 @@ async fn the_cash_views_answer_exactly_whom_the_snapshot_row_allows_and_the_writ
     }
 
     let data = room.cash("branch=MAIN").await;
-    assert_eq!(data["shift"], Value::Null, "nothing was opened: {data}");
+    assert_eq!(data["openShifts"], json!([]), "nothing was opened: {data}");
     room.finish().await;
 }
 
@@ -896,7 +946,7 @@ async fn no_open_shift_answers_no_stock_no_stats_an_empty_reference_and_the_regi
     let room = Room::open().await;
     let data = room.cash("branch=MAIN").await;
     assert_eq!(keys(&data), set_of(&DATA_FIELDS), "{data}");
-    assert_eq!(data["shift"], Value::Null, "{data}");
+    assert_eq!(data["openShifts"], json!([]), "{data}");
     assert_eq!(
         data["stock"],
         json!([]),
@@ -992,13 +1042,17 @@ async fn the_open_shift_its_stock_and_its_cash_flow_are_the_servers_figures() {
     .await; // USD +9.50
 
     let data = room.cash("branch=MAIN").await;
-    assert_eq!(keys(&data["shift"]), set_of(&SHIFT_FIELDS), "{data}");
-    assert_eq!(data["shift"]["id"], json!(shift), "{data}");
-    assert_eq!(data["shift"]["openedAt"], json!(iso(opened_at)), "{data}");
+    // CA-10q: the one OPEN shift is the one row of `openShifts`, with its teller
+    let rows = list(&data["openShifts"]);
+    assert_eq!(rows.len(), 1, "{data}");
+    assert_eq!(keys(&rows[0]), set_of(&OPEN_SHIFT_FIELDS), "{data}");
+    assert_eq!(rows[0]["shiftId"], json!(shift), "{data}");
+    assert_eq!(opened_at_of(&rows[0]), opened_at, "{data}");
+    let (teller, name) = room.teller_of(&shift).await;
     assert_eq!(
-        data["shift"]["staff"],
-        json!(room.opened_by(&shift).await),
-        "the one who opened it, as stored: {data}"
+        (&rows[0]["tellerId"], &rows[0]["tellerName"]),
+        (&json!(teller), &json!(name)),
+        "the shift's own teller: {data}"
     );
 
     let stock = stock_of(&data);
@@ -1236,131 +1290,9 @@ async fn last_counted_is_the_last_closed_shifts_count_thb_always_then_the_non_ze
 
 // ── the movements page ───────────────────────────────────────────────────────
 
-/// `admin-html:106`: the branch's movements, newest recorded first — by the order they were
-/// written, not by their time — across shifts, each with v2's fields; keyset paging by `before`.
-#[actix_web::test]
-async fn the_movements_page_is_newest_recorded_first_across_shifts_with_keyset_paging() {
-    let room = Room::open().await;
-    let first_shift = room.open_shift(MAIN).await;
-    let m1 = seed_movement(
-        &room.desk.db.pool,
-        MAIN,
-        &first_shift,
-        "THB",
-        "IN",
-        "500",
-        "เงินเติมลิ้นชัก",
-    )
-    .await;
-    let m2 = seed_movement(
-        &room.desk.db.pool,
-        MAIN,
-        &first_shift,
-        "USD",
-        "OUT",
-        "10.25",
-        "ส่งเซฟ",
-    )
-    .await;
-    room.close_shift(MAIN).await;
-    let second_shift = room.open_shift(MAIN).await;
-    let m3 = seed_movement(
-        &room.desk.db.pool,
-        MAIN,
-        &second_shift,
-        "THB",
-        "OUT",
-        "200",
-        "ค่าใช้จ่าย",
-    )
-    .await;
-    // written last, with a clock set before the others: still the newest row
-    room.desk.clock.set(room.t0 - Duration::days(3));
-    let m4 = seed_movement(
-        &room.desk.db.pool,
-        MAIN,
-        &second_shift,
-        "USD",
-        "IN",
-        "1",
-        "ย้อนเวลา",
-    )
-    .await;
-    sqlx::query("UPDATE stock_movements SET at = $1 WHERE id = $2")
-        .bind(room.t0 - Duration::days(3))
-        .bind(&m4)
-        .execute(&room.desk.db.pool)
-        .await
-        .expect("backdate m4");
-    // another branch's movement is never MAIN's
-    let b9_shift = room.open_shift(B9).await;
-    let other = seed_movement(
-        &room.desk.db.pool,
-        B9,
-        &b9_shift,
-        "THB",
-        "IN",
-        "1",
-        "สาขาอื่น",
-    )
-    .await;
-
-    let rows = room.data(MOVEMENTS, "OWNER", "branch=MAIN").await;
-    assert_eq!(
-        ids(&rows),
-        vec![m4.clone(), m3.clone(), m2.clone(), m1.clone()],
-        "newest recorded first: {rows}"
-    );
-    assert!(!ids(&rows).contains(&other), "{rows}");
-
-    let row = list(&rows)
-        .iter()
-        .find(|r| r["id"] == json!(m2))
-        .expect("m2")
-        .clone();
-    assert_eq!(keys(&row), set_of(&MOVEMENT_FIELDS), "{row}");
-    assert_eq!(row["shiftId"], json!(first_shift), "{row}");
-    assert_eq!(row["direction"], json!("OUT"), "{row}");
-    assert_eq!(row["currency"], json!("USD"), "{row}");
-    assert_eq!(row["amount"], json!("10.25"), "two places, a string: {row}");
-    assert_eq!(row["reason"], json!("ส่งเซฟ"), "{row}");
-    let by: String = sqlx::query_scalar("SELECT by FROM stock_movements WHERE id = $1")
-        .bind(&m2)
-        .fetch_one(&room.desk.db.pool)
-        .await
-        .expect("who moved it");
-    assert_eq!(row["staff"], json!(by), "{row}");
-    let at: DateTime<Utc> = sqlx::query_scalar("SELECT at FROM stock_movements WHERE id = $1")
-        .bind(&m2)
-        .fetch_one(&room.desk.db.pool)
-        .await
-        .expect("when");
-    assert_eq!(row["created"], json!(iso(at)), "{row}");
-    let newest = &list(&rows)[0];
-    assert_eq!(newest["shiftId"], json!(second_shift), "{newest}");
-    assert_eq!(newest["direction"], json!("IN"), "{newest}");
-
-    // keyset paging
-    let page1 = room.data(MOVEMENTS, "OWNER", "branch=MAIN&limit=2").await;
-    assert_eq!(ids(&page1), vec![m4.clone(), m3.clone()], "{page1}");
-    let page2 = room
-        .data(
-            MOVEMENTS,
-            "OWNER",
-            &format!("branch=MAIN&limit=2&before={m3}"),
-        )
-        .await;
-    assert_eq!(ids(&page2), vec![m2.clone(), m1.clone()], "{page2}");
-    let page3 = room
-        .data(
-            MOVEMENTS,
-            "OWNER",
-            &format!("branch=MAIN&limit=2&before={m1}"),
-        )
-        .await;
-    assert_eq!(page3, json!([]), "{page3}");
-    room.finish().await;
-}
+// LG-6.r6 (#1046, ruling A): the movements page lists `cash_transfers`, not `stock_movements`. The test that
+// stood here seeded `stock_movements` and pinned its insertion order; it is retired by the ticket author
+// (claude/d7aa64) and replaced by `tests/lg6_r6_cash_movements_test.rs` (row mapping, order, keyset paging).
 
 // ── the shifts page ──────────────────────────────────────────────────────────
 
@@ -1496,10 +1428,12 @@ async fn the_shifts_page_is_newest_first_with_v2s_difference_and_the_detail_rows
 async fn the_owner_reads_the_branch_named_and_staff_their_own() {
     let room = Room::open().await;
     let nine = room.open_shift(B9).await;
-    let moved = seed_movement(&room.desk.db.pool, B9, &nine, "THB", "IN", "1", "สาขา B9").await;
+    // LG-6.r6 (#1046, ruling A), re-expected by the ticket author: B9's move is a `cash_transfers` row, listed as
+    // `<transfer id>:<currency>`.
+    let moved = format!("{}:THB", seed_b9_transfer(&room.desk.db.pool).await);
 
     let cash = room.data(CASH, "OWNER", "branch=B9").await;
-    assert_eq!(cash["shift"]["id"], json!(nine), "{cash}");
+    assert_eq!(cash["openShifts"][0]["shiftId"], json!(nine), "{cash}");
     assert_eq!(
         ids(&room.data(MOVEMENTS, "OWNER", "branch=B9").await),
         vec![moved.clone()]
@@ -1526,8 +1460,8 @@ async fn the_owner_reads_the_branch_named_and_staff_their_own() {
     ] {
         let cash = room.data(CASH, who, query).await;
         assert_eq!(
-            cash["shift"],
-            Value::Null,
+            cash["openShifts"],
+            json!([]),
             "{who} {query:?}: MAIN's: {cash}"
         );
         assert_eq!(cash["stock"], json!([]), "{who} {query:?}: {cash}");
@@ -1686,6 +1620,12 @@ fn each_cash_view_writes_its_own_file_money_as_strings() {
     has_field(ts, "withoutReference", &["number"]);
     has_field(ts, "all", &["boolean"]);
     has_field(ts, "currencies", &["Array<string>", "string[]"]);
+    // CA-10q: the branch's OPEN shifts, CA-10p's shared row (common.ts); no single `shift` any more
+    has_field(ts, "openShifts", &["Array<OpenShiftDto>", "OpenShiftDto[]"]);
+    assert!(
+        !ts.contains("AdminCashShift"),
+        "AdminCashShift is gone:\n{ts}"
+    );
 
     let moves = exported(MOVEMENTS);
     let ts = &moves["admin_cash_movements.ts"];
@@ -1719,6 +1659,175 @@ async fn the_reference_summary_rounds_midpoint_half_up() {
             "percent": "1.74"
         }),
         "half-up midpoint rounding: {data}"
+    );
+    room.finish().await;
+}
+
+// ── CA-10q: the branch's cash is every OPEN shift's (design cash-shift-transfer.md §4.7, #2943) ─────────────
+//
+// Tests written before the implementation (ticket CA-10q) — do not edit or delete.
+
+/// Two tellers hold OPEN shifts at MAIN: `openShifts` lists both, `stock` adds up their openings per currency, and
+/// `stats.opening` is the sum of their THB openings. (`LIMIT 1` today picks one of them.)
+#[actix_web::test]
+async fn ca10q_the_branchs_cash_adds_up_every_open_shift() {
+    let room = Room::open().await;
+    let first = room
+        .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
+        .await;
+    let second = room
+        .open_shift_with(MAIN, json!({ "THB": 50000, "USD": 250 }))
+        .await;
+
+    let data = room.cash("branch=MAIN").await;
+    assert_eq!(keys(&data), set_of(&DATA_FIELDS), "{data}");
+
+    let rows = list(&data["openShifts"]);
+    assert_eq!(rows.len(), 2, "both OPEN shifts: {data}");
+    let ids: BTreeSet<String> = rows
+        .iter()
+        .map(|r| r["shiftId"].as_str().expect("shiftId").to_string())
+        .collect();
+    assert_eq!(
+        ids,
+        BTreeSet::from([first.clone(), second.clone()]),
+        "{data}"
+    );
+    assert!(
+        opened_at_of(&rows[0]) <= opened_at_of(&rows[1]),
+        "in opened_at order: {data}"
+    );
+    let tellers: BTreeSet<String> = rows
+        .iter()
+        .map(|r| r["tellerId"].as_str().expect("tellerId").to_string())
+        .collect();
+    assert_eq!(tellers.len(), 2, "two tellers: {data}");
+
+    let stock = stock_of(&data);
+    assert_eq!(
+        stock,
+        vec![
+            (
+                "THB".to_string(),
+                "150000.00".to_string(),
+                "0.00".to_string(),
+                "150000.00".to_string()
+            ),
+            (
+                "USD".to_string(),
+                "1250.00".to_string(),
+                "0.00".to_string(),
+                "1250.00".to_string()
+            ),
+        ],
+        "each currency summed over both shifts: {data}"
+    );
+    assert_eq!(
+        data["stats"],
+        json!({ "opening": "150000.00", "incoming": "0.00",
+                "outgoing": "0.00", "remaining": "150000.00" }),
+        "the THB openings summed: {data}"
+    );
+    room.finish().await;
+}
+
+/// CA-10q, ruling #626 issuecomment-6234829938 item 1: `lastCounted` sums, per currency, each teller's newest CLOSED
+/// shift at the branch. T1 closes X (1000), then T1 and T2 hold A and B and close them (2000 and 500): X is T1's older
+/// close and does not count, so THB is 2500. Today's newest-CLOSED-shift-only answer gives 500 or 2000, never 2500.
+#[actix_web::test]
+async fn ca10q_last_counted_sums_each_tellers_newest_closed_shift() {
+    let room = Room::open().await;
+    let pool = &room.desk.db.pool;
+    let teller = |shift: String| async move {
+        sqlx::query_scalar::<_, String>("SELECT teller_id::text FROM shifts WHERE id = $1")
+            .bind(shift)
+            .fetch_one(pool)
+            .await
+            .expect("the shift's teller")
+    };
+
+    let x = room.open_shift_with(MAIN, json!({ "THB": 1000 })).await;
+    room.close_shift_by_count(MAIN, json!({ "THB": 1000 }))
+        .await;
+
+    let a = room.open_shift_with(MAIN, json!({ "THB": 2000 })).await;
+    let b = room.open_shift_with(MAIN, json!({ "THB": 500 })).await;
+
+    // the setup this test relies on: X and A are one teller's, B another's
+    let (tx_, ta, tb) = (
+        teller(x).await,
+        teller(a.clone()).await,
+        teller(b.clone()).await,
+    );
+    assert_eq!(tx_, ta, "X and A are the same teller's shifts");
+    assert_ne!(ta, tb, "B is another teller's shift");
+
+    // Two closes counting 2000 and 500. The helper closes "the" OPEN shift of MAIN without an order, so either may
+    // land on A or on B; the setup's count-difference limit (1,000,000) accepts both, and the sum is 2500 either way.
+    room.close_shift_by_count(MAIN, json!({ "THB": 2000 }))
+        .await;
+    room.close_shift_by_count(MAIN, json!({ "THB": 500 })).await;
+
+    let data = room.cash("branch=MAIN").await;
+    assert_eq!(data["openShifts"], json!([]), "{data}");
+    assert_eq!(
+        data["lastCounted"],
+        json!([{ "code": "THB", "amount": "2500.00" }]),
+        "T1's newest close (2000) + T2's (500); T1's older close (1000) left out: {data}"
+    );
+    room.finish().await;
+}
+
+/// CA-10q: `stats` and `reference` count the transactions of every OPEN shift (`t.shift_id = ANY(..)`). The same
+/// sale is saved once on A (while it is MAIN's only OPEN shift) and once on B, so the incoming THB and the reference
+/// line count of the two-shift answer are exactly twice the one-shift answer.
+#[actix_web::test]
+async fn ca10q_stats_and_reference_count_every_open_shifts_transactions() {
+    let room = Room::open().await;
+    let _a = room
+        .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
+        .await;
+    room.save(MAIN, Ex::sell("10", "20")).await; // on A, MAIN's only OPEN shift
+    let one = room.cash("branch=MAIN").await;
+    let incoming_one = dec(one["stats"]["incoming"].as_str().expect("incoming"));
+    let lines_one = one["reference"]["withoutReference"]
+        .as_u64()
+        .expect("withoutReference")
+        + one["reference"]["withReference"]
+            .as_u64()
+            .expect("withReference");
+    assert!(
+        incoming_one > Decimal::ZERO,
+        "the sale brought THB in: {one}"
+    );
+    assert!(lines_one > 0, "the sale is a reference line: {one}");
+
+    let b = room
+        .open_shift_with(MAIN, json!({ "THB": 100000, "USD": 1000 }))
+        .await;
+    room.save(MAIN, Ex::sell("10", "20")).await;
+    let on_b: i64 = sqlx::query_scalar("SELECT count(*) FROM transactions WHERE shift_id = $1")
+        .bind(&b)
+        .fetch_one(&room.desk.db.pool)
+        .await
+        .expect("count B's transactions");
+    assert_eq!(on_b, 1, "setup: the second sale is on B");
+
+    let two = room.cash("branch=MAIN").await;
+    assert_eq!(
+        dec(two["stats"]["incoming"].as_str().expect("incoming")),
+        incoming_one * Decimal::TWO,
+        "both shifts' sales come in: {two}"
+    );
+    assert_eq!(
+        two["reference"]["withoutReference"]
+            .as_u64()
+            .expect("withoutReference")
+            + two["reference"]["withReference"]
+                .as_u64()
+                .expect("withReference"),
+        lines_one * 2,
+        "both shifts' lines are counted: {two}"
     );
     room.finish().await;
 }

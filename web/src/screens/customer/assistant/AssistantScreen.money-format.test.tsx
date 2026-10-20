@@ -2,24 +2,28 @@
 // span without splitting at the comma or leaving trailing decimals behind.
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MyAssistantConversationData } from '../../../shared/api/generated/my_assistant_conversation';
+import {
+  makeAssistantConversationDto,
+  makeAssistantMessageDto,
+  makeMyAssistantConversationData,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { AssistantScreen, renderTextWithMoney } from './AssistantScreen';
 
 let dispose: (() => void) | undefined;
 
 function mountReply(redactedText: string): Promise<HTMLElement> {
-  const viewData: MyAssistantConversationData = {
-    conversation: { id: 'conv-2565', locale: 'th', createdAt: '2026-10-16T03:00:00Z' },
+  const viewData = makeMyAssistantConversationData({
+    conversation: makeAssistantConversationDto({ id: 'conv-2565', locale: 'th', createdAt: '2026-10-16T03:00:00Z' }),
     messages: [
-      {
+      makeAssistantMessageDto({
         id: 'msg-1',
         role: 'ASSISTANT',
         redactedText,
         createdAt: '2026-10-16T03:00:01Z',
-      },
+      }),
     ],
-  };
+  });
 
   const mockFetch = vi.fn().mockResolvedValue(
     new Response(JSON.stringify({ version: 1, changed: true, data: viewData }), {

@@ -34,7 +34,7 @@
 //!   `BalancesChanged`, `ShiftAlreadyOpen`.
 //!
 //! What the tests read from the database: `handovers`, `cash_counts` (kind, counted_by, verified_by, shift_id),
-//! `cash_count_totals`, `shifts` (teller_id, status, opened_by_count), `shift_balances` and `cash_exceptions`.
+//! `cash_count_totals`, `shifts` (teller_id, status), `shift_balances` and `cash_exceptions`.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -151,8 +151,8 @@ impl Db {
         .expect("insert a user");
         for role in roles {
             sqlx::query(
-                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-                 VALUES ($1::uuid, $2, $3::uuid, NULL)",
+                "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+                 VALUES ($1::uuid, $2, $3::uuid, NULL, '2026-01-01T00:00:00Z')",
             )
             .bind(&id)
             .bind(role.as_str())
@@ -275,14 +275,6 @@ impl Db {
         .fetch_one(&self.pool)
         .await
         .unwrap_or_else(|e| panic!("the count {id}: {e}"))
-    }
-
-    async fn opened_by_count(&self, shift: &str) -> Option<String> {
-        sqlx::query_scalar("SELECT opened_by_count::text FROM shifts WHERE id = $1")
-            .bind(shift)
-            .fetch_one(&self.pool)
-            .await
-            .expect("read opened_by_count")
     }
 
     async fn handover_rows(&self) -> i64 {
@@ -551,11 +543,9 @@ async fn the_receiver_accepts_a_shift_closes_and_b_shift_opens_with_the_same_lin
         (d("2300"), d("2300")),
         "B opens with the same lines"
     );
-    assert_eq!(
-        f.db.opened_by_count(&b_shift).await,
-        Some(h.count_id.clone()),
-        "B's shift is opened by the verified hand-over count (§4.1 opened_by_count, §4.3)"
-    );
+    // CA-10 (#626): M3 drops `shifts.opened_by_count`, so nothing records which count opened B's shift any more
+    // (the hand-over count's own `shift_id` is A's, the shift it closes). What stays is pinned just above: B holds
+    // exactly one OPEN shift, as its own teller, opened with A's lines.
     assert!(
         f.db.open_shifts_of(&f.a).await.is_empty(),
         "A holds no open shift"

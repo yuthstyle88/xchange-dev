@@ -46,7 +46,7 @@ use stale_policy_769_common::{
     Names, id_of, policy, policy_rows, publish_auto, reference_age, unfindable,
 };
 use std::str::FromStr;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
@@ -64,7 +64,7 @@ fn teller() -> SaveActor {
         id: "employee-7".to_owned(),
         username: "user-employee-7".to_owned(),
         employee_id: Some("employee-7".to_owned()),
-        role: Role::Front,
+        standing: StandingKind::Staff(AccessRole::Teller),
     }
 }
 

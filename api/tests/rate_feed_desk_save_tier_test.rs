@@ -86,11 +86,11 @@ async fn publish_tiered_usd(shop: &Shop) -> Vec<String> {
 
 async fn stored(shop: &Shop, document_ref: &str) -> (Option<String>, Decimal) {
     sqlx::query_as(
-        // TX-9 #677: the published line is read through the line's quote line, not the wide column.
-        "SELECT (SELECT ql.published_rate_line_id::text FROM transaction_lines l \
-                 JOIN quote_lines ql ON ql.id = l.quote_line_id \
-                 WHERE l.transaction_id = transactions.id AND l.line_no = 1), rate \
-         FROM transactions WHERE document_ref = $1",
+        // TX-9 #677: the published line through the first line's quote line, the rate off the line.
+        "SELECT ql.published_rate_line_id::text, l.rate_snapshot \
+         FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id \
+         LEFT JOIN quote_lines ql ON ql.id = l.quote_line_id \
+         WHERE t.document_ref = $1 AND l.line_no = 1",
     )
     .bind(document_ref)
     .fetch_one(&shop.pool)

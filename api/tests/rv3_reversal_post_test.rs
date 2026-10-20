@@ -62,8 +62,6 @@ use xc_referral::application::feed_writer::{
 };
 use xc_referral::domain::customer_keys::CustomerKeys;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::complete::{
     BoxFuture, CompleteExchange, EffectPhase, ExchangeCompletedFacts, ExchangeEffect,
@@ -77,10 +75,6 @@ use xchange::application::workflows::exchange::reversal_request::{
 
 fn d(s: &str) -> Decimal {
     s.parse().unwrap()
-}
-
-fn usd_code() -> CurrencyCode {
-    CurrencyCode::parse("USD").unwrap()
 }
 
 fn finance() -> access::Actor {
@@ -276,6 +270,25 @@ impl Shop {
         r.id
     }
 
+    /// The poster (#2964): the teller of MAIN's open shift, by `users.id`, as a v3 session carries it. A reversal posts
+    /// on the poster's own OPEN shift at the branch (`ShiftService::open_of_teller_in`); there is no fallback to "the
+    /// branch's shift", so the harness posts as that shift's own teller (the `test` user, `tx5_common`).
+    async fn shift_teller(&self) -> xchange::application::workflows::save_step::SaveActor {
+        let id: String =
+            sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'test'")
+                .fetch_one(self.pool())
+                .await
+                .expect("the shift's teller (tx5_common seeds it)");
+        xchange::application::workflows::save_step::SaveActor {
+            id,
+            username: "test".to_owned(),
+            employee_id: None,
+            standing: xc_auth::domain::access::StandingKind::Staff(
+                xc_auth::domain::access::Role::Teller,
+            ),
+        }
+    }
+
     fn poster(&self, effects: Vec<Arc<dyn ExchangeEffect>>) -> PostReversal {
         PostReversal::new(
             self.pool().clone(),
@@ -307,7 +320,9 @@ impl Shop {
     async fn post_at(&self, id: ReversalId, now: DateTime<Utc>) -> AppResult<PostedReversal> {
         let poster = self.poster(self.watched(false));
         let mut tx = self.pool().begin().await.unwrap();
-        let got = poster.run_in(&mut tx, id, &teller(), now).await;
+        let got = poster
+            .run_in(&mut tx, id, &self.shift_teller().await, now)
+            .await;
         tx.commit().await.unwrap();
         got
     }
@@ -320,7 +335,9 @@ impl Shop {
         now: DateTime<Utc>,
     ) -> AppResult<PostedReversal> {
         let mut tx = self.pool().begin().await.unwrap();
-        let got = poster.run_in(&mut tx, id, &teller(), now).await;
+        let got = poster
+            .run_in(&mut tx, id, &self.shift_teller().await, now)
+            .await;
         match &got {
             Ok(_) => tx.commit().await.unwrap(),
             Err(_) => tx.rollback().await.unwrap(),
@@ -388,7 +405,12 @@ impl Shop {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        Decimal::new(b.get(CurrencyCode::parse(currency).unwrap()).minor(), 2)
+        Decimal::new(
+            b.get(CurrencyCode::parse(currency).unwrap())
+                .try_minor()
+                .unwrap(),
+            2,
+        )
     }
 
     async fn reversal(&self, id: ReversalId, column: &str) -> String {
@@ -778,19 +800,15 @@ async fn cash_moves_on_the_posters_open_shift_not_the_originals() {
         Arc::new(PgShiftRepository::new(s.pool().clone())),
         BranchTx::new(Transactor::new(s.pool().clone())),
     );
-    let second = shifts
-        .open(
-            &BranchId::new("MAIN"),
-            OpenShift {
-                request_id: unique("rv3-open").replace('_', "-"),
-                opening: Balances::of(&[(usd_code(), money("500.00"))]),
-            },
-            "test",
-            later(now, 12),
-        )
-        .await
-        .unwrap_or_else(|e| panic!("open the poster's shift: {e}"))
-        .id;
+    let _ = &shifts;
+    let second = ca10_seed_open(
+        s.pool(),
+        "MAIN",
+        unique("rv3-open").replace('_', "-"),
+        &[("USD", "500.00")],
+        later(now, 12),
+    )
+    .await;
     lg4_fund(
         s.pool(),
         CashPlace::Bank,
@@ -986,7 +1004,7 @@ async fn the_reversal_document_is_revision_2_numbered_r2_and_the_reversal_is_mar
         "the posting is source REVERSAL / the reversal id / 'post'"
     );
     assert_eq!(s.reversal(id, "shift_id").await, s.c.shift);
-    assert_eq!(s.reversal(id, "posted_by").await, teller().id);
+    assert_eq!(s.reversal(id, "posted_by").await, s.shift_teller().await.id);
     assert_eq!(
         s.dec(&format!(
             "SELECT extract(epoch FROM posted_at)::numeric FROM reversals WHERE id = '{}'",
@@ -1130,4 +1148,52 @@ async fn a_refusing_effect_rolls_the_whole_reversal_back() {
         "both effects were reached, on the reversal's own transaction"
     );
     s.finish().await;
+}
+
+/// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The OPEN shift it wrote (opener `test`,
+/// the given opening), written straight into the tables in one branch transaction (setup only). Answers its id.
+async fn ca10_seed_open(
+    pool: &sqlx::PgPool,
+    branch: &str,
+    request_id: String,
+    opening: &[(&str, &str)],
+    opened_at: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let shift = format!("SH-{}", uuid::Uuid::new_v4());
+    let (id, b) = (shift.clone(), branch.to_owned());
+    let opening: Vec<(String, String)> = opening
+        .iter()
+        .map(|(c, a)| ((*c).to_owned(), (*a).to_owned()))
+        .collect();
+    xc_kernel::branch_tx::BranchTx::new(pos_infra::transactions::Transactor::new(pool.clone()))
+        .run(&xc_kernel::ids::BranchId::new(branch), move |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, \
+                     teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id FROM users u \
+                     WHERE u.legacy_employee_id = 'test'",
+                )
+                .bind(&id)
+                .bind(&b)
+                .bind(opened_at)
+                .bind(&request_id)
+                .execute(&mut **tx)
+                .await?;
+                for (code, amount) in &opening {
+                    sqlx::query(
+                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                         VALUES ($1, $2, $3::numeric, $3::numeric)",
+                    )
+                    .bind(&id)
+                    .bind(code)
+                    .bind(amount)
+                    .execute(&mut **tx)
+                    .await?;
+                }
+                Ok::<(), pos_error::AppError>(())
+            })
+        })
+        .await
+        .unwrap_or_else(|e| panic!("open a shift at {branch}: {e}"));
+    shift
 }

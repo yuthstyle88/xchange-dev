@@ -1,3 +1,5 @@
+// Amended by W8 (claude/177aa7ef): userCreate no longer takes a typed password (F9 #3155, owner Q5 A); the server
+// answers temporaryPassword once. xchange#564, the BE controller's F9 contract.
 // WE-15 (#1764): screens/admin/employees/ — show failed calls through wordedError
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
@@ -6,15 +8,18 @@ import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { th as screenTh, en as screenEn } from './i18n';
-import type { AdminBranchItem } from '../../../shared/api/generated/admin_branches';
-import type { AdminEmployeeRow } from '../../../shared/api/generated/admin_employees';
-import type { AdminOperationsData } from '../../../shared/api/generated/admin_operations';
+import {
+  makeAdminBranchItem,
+  makeAdminEmployeeRow,
+  makeAdminOperationsData,
+  makeAdminOperationsEntity,
+} from '../../../shared/testing/fixtures';
 import { Employees } from './Employees';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast, toast } from '../parts/toast';
 
-const SAMPLE_EMPLOYEES: AdminEmployeeRow[] = [
-  {
+const SAMPLE_EMPLOYEES = [
+  makeAdminEmployeeRow({
     id: 'emp-1',
     name: 'Somchai Prasert',
     username: 'somchai',
@@ -22,21 +27,20 @@ const SAMPLE_EMPLOYEES: AdminEmployeeRow[] = [
     branchId: 'B01',
     active: true,
     mustChange: false,
-  },
+  }),
 ];
 
-const SAMPLE_BRANCHES: AdminBranchItem[] = [
-  { id: 'B01', name: 'Main Branch' },
-  { id: 'B02', name: 'Second Branch' },
+const SAMPLE_BRANCHES = [
+  makeAdminBranchItem({ id: 'B01', name: 'Main Branch' }),
+  makeAdminBranchItem({ id: 'B02', name: 'Second Branch' }),
 ];
 
-const SAMPLE_OPERATIONS: AdminOperationsData = {
-  enabled: false,
-  entity: {
+const SAMPLE_OPERATIONS = makeAdminOperationsData({
+  entity: makeAdminOperationsEntity({
     company: '108 Exchange Co., Ltd.',
     site: 'Headquarters',
-  },
-};
+  }),
+});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -347,10 +351,8 @@ describe('Employees worded error handling (#1764)', () => {
         const d = theDialog();
         const nameInput = d.querySelector('input[name="name"]') as HTMLInputElement;
         const phoneInput = d.querySelector('input[name="phone"]') as HTMLInputElement;
-        const passInput = d.querySelector('input[name="password"]') as HTMLInputElement;
         nameInput.value = 'New User';
         phoneInput.value = '0812345678';
-        passInput.value = 'Secret1234!';
         (d.querySelector('button[type="submit"]') as HTMLButtonElement).click();
       });
     }
@@ -622,7 +624,7 @@ describe('Employees worded error handling (#1764)', () => {
         jsonResponse({
           version: 2,
           changed: true,
-          data: { enabled: true, entity: { company: 'Second Branch Co.', site: 'Kiosk' } },
+          data: { entity: { company: 'Second Branch Co.', site: 'Kiosk' } },
         });
       employeesHandler = () =>
         jsonResponse(

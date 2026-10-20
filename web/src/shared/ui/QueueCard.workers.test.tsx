@@ -23,12 +23,13 @@
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSignal, type Accessor, type JSX } from 'solid-js';
+import type { Accessor, JSX } from 'solid-js';
+import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { Me } from '../api/generated/common';
 import { locale, setLang, t } from '../i18n';
 import { queueStore, type QueueError, type QueueStore } from '../queue/queue-store';
-import type { QueueBoardData } from '../api/generated/queue_board';
+import type { Me, QueueBoardData } from '../testing/fixtures';
+import { makeQueueBoardData } from '../testing/fixtures';
 import { QueueCard } from './QueueCard';
 import { QueueBar } from '../../screens/admin/queue/QueueBar';
 import { meOf } from '../../test-support/me';
@@ -119,11 +120,11 @@ function answer(
           },
         ]
       : []);
-  const data: QueueBoardData = {
+  const data = makeQueueBoardData({
     waiting,
     called,
     myCounter: over.myCounter ?? null,
-  };
+  });
   s.setState(data);
 }
 

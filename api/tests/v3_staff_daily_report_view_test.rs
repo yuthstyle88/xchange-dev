@@ -11,8 +11,9 @@
 //!   `tx4_common`/`tx5_common`; the posting port is `tx5_common::Ledger`, whose postings the report never reads);
 //! - counts: `CashCountService::{submit, verify}`; hand-overs: `HandoverService::start`; transfers:
 //!   `TransferFlow::{create, submit, decide, dispatch, receive}`;
-//! - holds and the entity (company, site): the kept custody service (`pg_custody_service`, `opsHold`,
-//!   `opsSetEntity`), until CA-8b #1274 (ruling N3 on #1350);
+//! - holds: CA-8b's `BranchDayService::hold`; the entity (company, site): an SQL row of `ops_state.entity`, which
+//!   has no writer since CA-10 #626 retired `opsSetEntity` (ruling Q5; re-expected by CA-10's ticket author
+//!   claude/c4d72c, who also drops the retired `ops_state.enabled` from this file's seed);
 //! - a POSTED reversal: `RequestReversal::run_in` → AP-1's decide (FINANCE) → `ReversalRepository::post_in` with a
 //!   receipt row this file writes, because RV-3 #684 is not merged (ruling N2 (a) on #1350);
 //! - **the one exception:** a `reconciliation_certifications` row is INSERTed by SQL, because its writer FN-1
@@ -52,6 +53,7 @@ use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
 use xc_approval::domain::request::Outcome;
+use xc_auth::domain::access::StandingKind;
 use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::role::Role as OldRole;
@@ -69,11 +71,9 @@ use xc_exchange::infrastructure::reversal::repository::PgReversalRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Side};
+use xc_shift::application::branch_day::service::BranchDayService;
 use xc_shift::application::shift::service::ShiftService;
-use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
-use xc_shift::domain::shift::commands::open_shift::OpenShift;
-use xc_shift::domain::shift::value_objects::balances::Balances;
+use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::application::workflows::exchange::confirm::ConfirmOutcome;
 use xchange::application::workflows::exchange::reversal_request::{
@@ -81,7 +81,7 @@ use xchange::application::workflows::exchange::reversal_request::{
 };
 use xchange::application::workflows::save_step::SaveActor;
 use xchange::bootstrap::{self, AppState};
-use xchange::infrastructure::custody::custody_service::pg_custody_service;
+use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;
 use xchange::presentation::pages::{Callers, SessionReader, Sessions};
 
 const VIEW: &str = "staff_daily_report";
@@ -204,11 +204,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = sessions_of(&spec);
+            let _s = sessions_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }
@@ -267,24 +265,19 @@ impl Day {
             Arc::new(PgShiftRepository::new(pool.clone())),
             branch_tx.clone(),
         );
-        // the entity is set while custody is off and no shift is open (custody_machine.rs:112-121)
-        pg_custody_service(&pool, &shifts, &branch_tx)
-            .command(
-                &BranchId::new(MAIN),
-                "opsSetEntity",
-                &json!({ "company": COMPANY, "site": SITE, "confirmSeparated": true }),
-                &CustodyActor {
-                    id: "owner".to_owned(),
-                    employee_id: None,
-                    role: CustodyRole::Owner,
-                },
-                Utc::now(),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("set MAIN's entity: {e}"));
+        // the entity has no writer since CA-10 (#626 Q5): a read-only column, seeded here by SQL in the shape the
+        // custody repository reads (`custody_repository.rs` `entity_to_json`)
         desk.db
             .exec(&format!(
-                "UPDATE ops_state SET enabled = true, phase = 'OPEN', \
+                "INSERT INTO ops_state (branch_id, phase, entity) VALUES ('{MAIN}', 'CLOSED', \
+                 jsonb_build_object('company', '{COMPANY}', 'site', '{SITE}', 'confirmedBy', 'owner', \
+                 'at', 1791342000000::bigint)) \
+                 ON CONFLICT (branch_id) DO UPDATE SET entity = EXCLUDED.entity"
+            ))
+            .await;
+        desk.db
+            .exec(&format!(
+                "UPDATE ops_state SET phase = 'OPEN', \
                  safe = jsonb_build_object('USD', 500000::bigint, 'THB', 10000000::bigint) \
                  WHERE branch_id = '{MAIN}'"
             ))
@@ -305,27 +298,51 @@ impl Day {
             .await;
         desk.db
             .exec(&format!(
-                "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-                 VALUES ('{BR2}', true, 'OPEN', jsonb_build_object('USD', 500000::bigint)) \
+                "INSERT INTO ops_state (branch_id, phase, safe) \
+                 VALUES ('{BR2}', 'OPEN', jsonb_build_object('USD', 500000::bigint)) \
                  ON CONFLICT (branch_id) DO NOTHING"
             ))
             .await;
-        let shift = shifts
-            .open(
-                &BranchId::new(MAIN),
-                OpenShift {
-                    request_id: unique("open-shift").replace('_', "-"),
-                    opening: Balances::of(&[
-                        (CurrencyCode::THB, money("100000.00")),
-                        (CurrencyCode::parse("USD").unwrap(), money("1000.00")),
-                    ]),
-                },
-                "test",
-                whole_second_now(),
-            )
+        // CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core. The same OPEN shift (opener
+        // `test`, THB 100000 / USD 1000), written straight into the tables in one branch transaction (setup only).
+        let shift = format!("SH-{}", uuid::Uuid::new_v4());
+        let (id, request, opened_at) = (
+            shift.clone(),
+            unique("open-shift").replace('_', "-"),
+            whole_second_now(),
+        );
+        shifts
+            .branch_tx()
+            .clone()
+            .run(&BranchId::new(MAIN), move |tx| {
+                Box::pin(async move {
+                    sqlx::query(
+                        "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, \
+                         open_request_id, teller_id) SELECT $1, $2, 'OPEN', $3, 'test', '', $4, u.id \
+                         FROM users u WHERE u.legacy_employee_id = 'test'",
+                    )
+                    .bind(&id)
+                    .bind(MAIN)
+                    .bind(opened_at)
+                    .bind(&request)
+                    .execute(&mut **tx)
+                    .await?;
+                    for (code, amount) in [("THB", "100000.00"), ("USD", "1000.00")] {
+                        sqlx::query(
+                            "INSERT INTO shift_balances (shift_id, code, opening, expected) \
+                             VALUES ($1, $2, $3::numeric, $3::numeric)",
+                        )
+                        .bind(&id)
+                        .bind(code)
+                        .bind(amount)
+                        .execute(&mut **tx)
+                        .await?;
+                    }
+                    Ok::<(), pos_error::AppError>(())
+                })
+            })
             .await
-            .unwrap_or_else(|e| panic!("open MAIN's v2 shift: {e}"))
-            .id;
+            .unwrap_or_else(|e| panic!("open MAIN's v2 shift: {e}"));
         let scratch = std::env::temp_dir().join(unique("xc-1350"));
         std::fs::create_dir_all(&scratch).unwrap();
         let c = Counter {
@@ -366,8 +383,8 @@ impl Day {
         .await
         .expect("insert a user");
         sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
+            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id, valid_from) \
+             VALUES ($1::uuid, $2, $3::uuid, $4, '2026-01-01T00:00:00Z')",
         )
         .bind(&id)
         .bind(role.as_str())
@@ -674,46 +691,42 @@ impl Day {
 
     async fn hold(&self, at: DateTime<Utc>) {
         let customer = self.live_customer().await;
-        let branch_tx = BranchTx::new(Transactor::new(self.db().pool.clone()));
-        let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.db().pool.clone())),
-            branch_tx.clone(),
+        let pool = self.db().pool.clone();
+        let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+        let shifts = ShiftService::new(Arc::new(PgShiftRepository::new(pool.clone())), branch_tx);
+        // CA-8b's path (`commands/branch_day.rs` builds the same service): a TELLER of MAIN holds the customer
+        let days = BranchDayService::new(
+            Arc::new(PgCustodyRepository::new(pool.clone())),
+            shifts,
+            Arc::new(PgCustodyPorts),
         );
-        let custody = pg_custody_service(&self.db().pool, &shifts, &branch_tx);
-        // v2's MONITOR, an `employees` row (the kept custody path reads it, `custody_ports.rs:151-165`)
-        self.db()
-            .exec(&format!(
-                "INSERT INTO employees (id, username, name, role, branch_id, password_hash, created_at) \
-                 VALUES ('employee-monitor', 'monitor', 'Monitor', 'MONITOR', '{MAIN}', 'x', now()) \
-                 ON CONFLICT (id) DO NOTHING"
-            ))
-            .await;
-        let monitor = CustodyActor {
-            id: "employee-monitor".to_owned(),
-            employee_id: Some("employee-monitor".to_owned()),
-            role: CustodyRole::Monitor,
-        };
-        // a hold is made by someone clocked in (custody_machine.rs, `Clock` before any other command)
-        custody
-            .command(
-                &BranchId::new(MAIN),
-                "opsClock",
-                &json!({ "direction": "IN" }),
-                &monitor,
-                at - Duration::seconds(1),
-            )
+        let teller = self.person(Role::Teller, Some(MAIN)).await;
+        let who = user_of(&teller.spec).expect("a teller of MAIN");
+        let main = BranchId::new(MAIN);
+        let mut tx = pool.begin().await.expect("begin");
+        sqlx::query(
+            "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 0) ON CONFLICT (branch_id) DO NOTHING",
+        )
+        .bind(MAIN)
+        .execute(&mut *tx)
+        .await
+        .expect("the branch's version row");
+        sqlx::query("SELECT version FROM branch_versions WHERE branch_id = $1 FOR UPDATE")
+            .bind(MAIN)
+            .execute(&mut *tx)
             .await
-            .unwrap_or_else(|e| panic!("clock the monitor in: {e}"));
-        custody
-            .command(
-                &BranchId::new(MAIN),
-                "opsHold",
-                &json!({ "customerId": customer, "reason": unique("check the passport") }),
-                &monitor,
-                at,
-            )
-            .await
-            .unwrap_or_else(|e| panic!("hold the customer: {e}"));
+            .expect("lock the branch");
+        days.hold(
+            &mut tx,
+            &who,
+            &main,
+            &customer,
+            &unique("check the passport"),
+            at,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("hold the customer: {e}"));
+        tx.commit().await.expect("commit the hold");
     }
 
     /// FN-1 #1068 is not merged, so nothing writes `reconciliation_certifications` yet: this row is INSERTed
@@ -745,7 +758,7 @@ impl Day {
             id: "employee-manager".to_owned(),
             username: "manager".to_owned(),
             employee_id: Some("employee-manager".to_owned()),
-            role: OldRole::Manager,
+            standing: StandingKind::Staff(xc_auth::domain::access::Role::BranchManager),
         };
         let mut tx = pool.begin().await.unwrap();
         let reversal = RequestReversal::new(pool.clone(), self.c.desk.approvals.clone())
@@ -1537,47 +1550,6 @@ async fn the_status_moves_from_preliminary_to_closed_to_reconciled() {
     d.finish().await;
 }
 
-/// B.1 row 8 and B.6: a v2-opened shift of the day (`opened_by_count IS NULL`; the fixture opens MAIN's at the
-/// start of the test, today) is left out of the status rule: today's one counted shift, closed and verified, makes
-/// the day `closedAwaitingReconciliation` although the v2 shift has no CLOSE count.
-#[actix_web::test]
-async fn a_v2_opened_shift_of_the_day_does_not_hold_the_status_back() {
-    let d = Day::start().await;
-    let reader = d.reader().await;
-    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
-    let now = Utc::now();
-    let today = now.with_timezone(&bangkok()).date_naive();
-    let v2_today = d
-        .db()
-        .count(&format!(
-            "SELECT count(*) FROM shifts WHERE branch_id = '{MAIN}' AND opened_by_count IS NULL \
-             AND status = 'OPEN' AND opened_at >= now() - interval '1 hour'"
-        ))
-        .await;
-    assert_eq!(
-        v2_today, 1,
-        "the fixture: MAIN's v2-opened shift, opened today"
-    );
-    let (a, a_shift) = d
-        .counted_shift(&manager, &[("THB", "1000", 1)], now - Duration::seconds(30))
-        .await;
-    d.close(
-        &a,
-        &manager,
-        &a_shift,
-        &[("THB", "1000", 1)],
-        None,
-        now - Duration::seconds(10),
-        true,
-    )
-    .await;
-    assert_eq!(
-        d.report(&reader, Some(today)).await["status"],
-        "closedAwaitingReconciliation"
-    );
-    d.finish().await;
-}
-
 /// B.1 row 18 (Q-SR1): the signers are every verified CLOSE count's `counted_by` and `verified_by`, named from
 /// `users`, with the capacity, not a role; an unverified CLOSE count signs nothing; none → an empty list.
 #[actix_web::test]
@@ -2336,73 +2308,6 @@ async fn shift_opened_and_closed_on_d_is_included_in_d_and_excluded_in_d_plus_1(
         report_d1["signers"],
         json!([]),
         "Day D+1 signers exclude Day D shift: {report_d1}"
-    );
-
-    d.finish().await;
-}
-
-/// Issue #1521, row 3: a verified CLOSE whose shift is v2-opened (`opened_by_count IS NULL`).
-/// Day D: excluded.
-/// Day D+1: excluded.
-#[actix_web::test]
-async fn verified_close_whose_shift_is_v2_opened_is_excluded_from_both_days() {
-    let d = Day::start().await;
-    let reader = d.reader().await;
-    let manager = d.person(Role::BranchManager, Some(MAIN)).await;
-    let teller = d.person(Role::Teller, Some(MAIN)).await;
-
-    // Create a v2-opened shift directly in DB with opened_by_count NULL on Day D
-    let shift_id = unique("v2-shift");
-    let open_req = unique("open-req");
-    d.db()
-        .exec(&format!(
-            "UPDATE shifts SET status = 'CLOSED' WHERE id = '{}'",
-            d.c.shift
-        ))
-        .await;
-    d.db()
-        .exec(&format!(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count) \
-             VALUES ('{shift_id}', '{MAIN}', 'OPEN', '{}', 'owner', '{open_req}', '{}'::uuid, NULL)",
-            local(bangkok(), day(), 10, 0, 0),
-            teller.id
-        ))
-        .await;
-
-    // Verified CLOSE count for that v2-opened shift on Day D
-    d.close(
-        &teller,
-        &manager,
-        &shift_id,
-        &[("THB", "1000", 5)],
-        None,
-        noon(3_600),
-        true,
-    )
-    .await;
-
-    // Day D: excluded
-    let report_d = d.report(&reader, Some(day())).await;
-    assert!(
-        row(&report_d, "THB")["drawerCounted"].is_null(),
-        "Day D drawer must exclude v2-opened shift's CLOSE count: {report_d}"
-    );
-    assert_eq!(
-        report_d["signers"],
-        json!([]),
-        "Day D signers must exclude v2-opened shift's CLOSE count: {report_d}"
-    );
-
-    // Day D+1: excluded
-    let report_d1 = d.report(&reader, Some(day().succ_opt().unwrap())).await;
-    assert!(
-        row(&report_d1, "THB")["drawerCounted"].is_null(),
-        "Day D+1 drawer must exclude v2-opened shift's CLOSE count: {report_d1}"
-    );
-    assert_eq!(
-        report_d1["signers"],
-        json!([]),
-        "Day D+1 signers must exclude v2-opened shift's CLOSE count: {report_d1}"
     );
 
     d.finish().await;

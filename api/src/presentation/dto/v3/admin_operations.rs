@@ -16,6 +16,5 @@ pub struct AdminOperationsEntity {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "admin_operations.ts")]
 pub struct AdminOperationsData {
-    pub enabled: bool,
     pub entity: Option<AdminOperationsEntity>,
 }

@@ -148,6 +148,14 @@ pub trait IdentityClient: Send + Sync + 'static {
         &'a self,
         request: &'a IdentityRegisterRequest<'a>,
     ) -> BoxFuture<'a, Result<IdentityRegisterResponse, IdentityError>>;
+
+    fn change_password<'a>(
+        &'a self,
+        access_token: &'a str,
+        current_password: &'a str,
+        new_password: &'a str,
+        client_ip: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<(), IdentityError>>;
 }
 
 /// What a server-side create sends to Identity `POST /auth/register` (camelCase on the wire).

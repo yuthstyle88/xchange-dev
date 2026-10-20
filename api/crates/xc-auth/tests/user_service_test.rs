@@ -1,5 +1,8 @@
 //! Tests for UserService (OR-2): grant with ScopeRule check, revoke, and disable.
 //! #1157: users are seeded as `userCreate` leaves them before Identity binds them (`seed_user`).
+//! RBAC C1 (PR 3083 §3.1, §3.2): the calls name the acting user (the owner, EXECUTIVE + ADMIN
+//! organisation-wide, so `GrantGuard` admits each change), the client IP (`None`) and, for
+//! `disable`, the cash guard. The assertions are unchanged.
 
 mod account_common;
 
@@ -8,10 +11,37 @@ use std::sync::Arc;
 use account_common::TestDb;
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use xc_auth::application::user::UserService;
-use xc_auth::domain::access::{Role, ScopedRole};
-use xc_auth::domain::user::{User, UserRepository, UserStatus};
+use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_auth::domain::user::{CustodyHolds, User, UserRepository, UserStatus};
 use xc_auth::infrastructure::user::PgUserRepository;
 use xc_kernel::ids::BranchId;
+
+/// The owner of B3: EXECUTIVE + ADMIN organisation-wide (RBAC C1).
+fn by_owner() -> Actor {
+    let epoch = DateTime::<Utc>::UNIX_EPOCH;
+    Actor::new(
+        "owner-test",
+        "XC",
+        vec![
+            ScopedRole::new(Role::Executive, None, epoch, None),
+            ScopedRole::new(Role::Admin, None, epoch, None),
+        ],
+        None,
+    )
+}
+
+/// A cash guard that finds no cash (today's behaviour of `userDisable`).
+struct NoCash;
+
+impl CustodyHolds for NoCash {
+    fn holds_cash_or_pending_handover<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _user_id: &'a str,
+    ) -> futures::future::BoxFuture<'a, pos_error::AppResult<bool>> {
+        Box::pin(async { Ok(false) })
+    }
+}
 
 async fn organization(db: &TestDb) -> String {
     sqlx::query_scalar("SELECT id::text FROM organizations WHERE code = 'XC'")
@@ -92,6 +122,8 @@ async fn test_grant_refused_by_scope_rule() {
     let err = user_service
         .grant(
             &mut tx,
+            &by_owner(),
+            None,
             &user.id,
             Role::Teller,
             Some(BranchId::new("B2")),
@@ -110,6 +142,8 @@ async fn test_grant_refused_by_scope_rule() {
     let err_exec = user_service
         .grant(
             &mut tx,
+            &by_owner(),
+            None,
             &user.id,
             Role::Executive,
             Some(BranchId::new("B2")),
@@ -159,6 +193,8 @@ async fn test_revoke_ends_role() {
     user_service
         .revoke(
             &mut tx,
+            &by_owner(),
+            None,
             &user.id,
             Role::RateManager,
             Some(&main_branch),
@@ -224,7 +260,7 @@ async fn test_disable_sets_status_disabled_and_bumps_version() {
 
     // Disable user
     user_service
-        .disable(&mut tx, &active_user.id)
+        .disable(&mut tx, &by_owner(), None, &active_user.id, &NoCash)
         .await
         .expect("disable");
 
@@ -239,7 +275,16 @@ async fn test_disable_sets_status_disabled_and_bumps_version() {
 
     // Further grant on disabled user is refused
     let grant_err = user_service
-        .grant(&mut tx, &disabled_user.id, Role::Marketing, None, now, None)
+        .grant(
+            &mut tx,
+            &by_owner(),
+            None,
+            &disabled_user.id,
+            Role::Marketing,
+            None,
+            now,
+            None,
+        )
         .await;
     assert!(grant_err.is_err());
 

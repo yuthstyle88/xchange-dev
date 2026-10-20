@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use xc_auth::application::user::UserService;
 use xc_auth::application::user::user_service::{CreateStaffError, StaffCreate};
 use xc_auth::domain::access::{Role, ScopedRole};
+use xc_auth::domain::account::temp_password::TempPassword;
 use xc_auth::domain::identity::identity_client::{IdentityClient, IdentityError};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
@@ -46,8 +47,9 @@ pub struct UserCreateInput {
     /// Required; `validationFailed` on `phone` when missing.
     pub phone: Option<String>,
     pub email: Option<String>,
-    /// Sent to Identity only; never stored or echoed by xchange.
-    pub password: String,
+    /// Ignored (Q5 A: temporary password is generated server-side).
+    #[serde(default)]
+    pub password: Option<String>,
     pub roles: Vec<UserCreateRole>,
     /// Completes a `PENDING` user left by an earlier attempt (Identity refused or was down).
     pub user_id: Option<String>,
@@ -59,6 +61,7 @@ pub struct UserCreateOutput {
     pub user_id: String,
     pub status: String,
     pub version: i32,
+    pub temporary_password: String,
 }
 
 fn invalid(field: &'static str, message: impl Into<String>) -> HttpResponse {
@@ -192,15 +195,16 @@ async fn user_create(
         CLIENT_ADDRESS_HEADER,
     ));
 
+    let temp = TempPassword::generate();
     let users = UserService::new(Arc::new(PgUserRepository::new()));
     let create = StaffCreate {
         name: &input.name,
         username: input.username.as_deref().filter(|u| !u.trim().is_empty()),
         phone: &phone,
         email: input.email.as_deref().filter(|e| !e.trim().is_empty()),
-        password: &input.password,
+        password: temp.expose(),
         roles,
-        must_change_password: false,
+        must_change_password: true,
         retry_user_id,
         created_by: &actor.user_id,
         creator_roles: Some(&actor.roles),
@@ -220,6 +224,7 @@ async fn user_create(
             user_id: user.id,
             status: user.status.as_str().to_string(),
             version: user.version,
+            temporary_password: temp.expose().to_string(),
         }),
         Err(CreateStaffError::Validation { field, message }) => invalid(field, message),
         Err(CreateStaffError::OutOfScope) => V3Error::new(

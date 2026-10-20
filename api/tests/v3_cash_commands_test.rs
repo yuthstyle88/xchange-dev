@@ -261,8 +261,8 @@ impl Room {
                 .expect("insert a branch");
             // USD 500.00 in each safe, for the transfer flow
             sqlx::query(
-                "INSERT INTO ops_state (branch_id, enabled, phase, safe) \
-                 VALUES ($1, true, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+                "INSERT INTO ops_state (branch_id, phase, safe) \
+                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
             )
             .bind(branch)
             .execute(&pool)
@@ -294,26 +294,19 @@ impl Room {
     /// A user with `role` on `branch` (`None` = organisation-wide): a `users` row, its `user_roles` row and
     /// the `x-test-as` spec that signs them in.
     async fn person(&self, role: Role, branch: Option<&str>) -> Who {
-        let id: String = sqlx::query_scalar(
-            "INSERT INTO users (organization_id, name, status, created_by) \
-             VALUES ($1::uuid, $2, 'ACTIVE', 'test') RETURNING id::text",
+        let id = xc_testdb::people::seed_person(
+            &mut self.pool.acquire().await.expect("acquire"),
+            ORG,
+            &unique(role.as_str()),
+            &[xc_testdb::people::RoleRow {
+                role_code: role.as_str(),
+                branch_id: branch,
+                valid_from: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+                valid_to: None,
+            }],
         )
-        .bind(ORG)
-        .bind(unique(role.as_str()))
-        .fetch_one(&self.pool)
         .await
-        .expect("insert a user");
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
-             VALUES ($1::uuid, $2, $3::uuid, $4)",
-        )
-        .bind(&id)
-        .bind(role.as_str())
-        .bind(ORG)
-        .bind(branch)
-        .execute(&self.pool)
-        .await
-        .expect("give the user a role");
+        .expect("insert a user and give them a role");
         Who {
             spec: format!("{id}|{}|{}", role.as_str(), branch.unwrap_or("*")),
             id,
@@ -416,11 +409,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }
@@ -1827,21 +1818,17 @@ async fn handover_receivers_lists_the_branchs_shift_operators_but_the_caller() {
     .execute(&room.pool)
     .await
     .expect("another organisation");
-    let foreign: String = sqlx::query_scalar(
-        "INSERT INTO users (organization_id, name, status, created_by) \
-         VALUES ($1::uuid, 'Foreign manager', 'ACTIVE', 'test') RETURNING id::text",
+    let foreign = xc_testdb::people::seed_person(
+        &mut room.pool.acquire().await.expect("acquire"),
+        other_org,
+        "Foreign manager",
+        &[xc_testdb::people::RoleRow {
+            role_code: Role::BranchManager.as_str(),
+            branch_id: None,
+            valid_from: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            valid_to: None,
+        }],
     )
-    .bind(other_org)
-    .fetch_one(&room.pool)
-    .await
-    .expect("a user of another organisation");
-    sqlx::query(
-        "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) VALUES ($1::uuid, $2, $3::uuid, NULL)",
-    )
-    .bind(&foreign)
-    .bind(Role::BranchManager.as_str())
-    .bind(other_org)
-    .execute(&room.pool)
     .await
     .expect("an organisation-wide BRANCH_MANAGER of that organisation");
 

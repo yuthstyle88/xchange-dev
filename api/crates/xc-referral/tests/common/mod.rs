@@ -152,12 +152,10 @@ impl TestDb {
     pub async fn seed_transaction(&self, customer_id: &str) -> (Uuid, String) {
         let document_ref = unique("DOC");
         let id: String = sqlx::query_scalar(
-            "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
-                 customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-                 bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-                 value_date, paid_at, recorded_at, recorded_by, completed_at) \
-             VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Customer', 'THA', 'SELL', 'USD', \
-                 1000.50, 32.6, 32616.30, 0, 0, 32616.30, 0, 'Cash', '', '', 'owner', '', '', \
+            "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, customer_id, customer_name, \
+                 nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, \
+                 completed_at) \
+             VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Customer', 'THA', 'owner', '', '', \
                  DATE '2026-10-06', $5, $5, 'owner', $5) RETURNING id::text",
         )
         .bind(&document_ref)
@@ -169,42 +167,6 @@ impl TestDb {
         .await
         .expect("insert into transactions");
         (Uuid::parse_str(&id).expect("a uuid"), document_ref)
-    }
-
-    /// A member of MAIN (verified by staff: `members.verified_at` is NOT NULL).
-    pub async fn seed_member(&self, id: &str, customer_id: &str) {
-        sqlx::query(
-            "INSERT INTO members (id, branch_id, customer_id, name, phone, token_hash, verified_at, verified_by) \
-             VALUES ($1, $2, $3, 'Name', $4, $5, now(), 'owner')",
-        )
-        .bind(id)
-        .bind(MAIN)
-        .bind(customer_id)
-        .bind(MEMBER_PHONE)
-        .bind(unique("hash"))
-        .execute(&self.pool)
-        .await
-        .expect("insert into members");
-    }
-
-    /// A USED booking that became `document_ref`, made by `member_id` (or by nobody).
-    pub async fn seed_used_booking(&self, member_id: Option<&str>, document_ref: &str) {
-        sqlx::query(
-            "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
-                 type, code, amount, rate, status, created_at, created_by, expires_at, submission_id, \
-                 transaction_ref) \
-             VALUES ($1, $2, $3, 'h', 'Name', '0899999999', $4, 'SELL', 'USD', 100, 32.6, 'USED', \
-                 now(), 'owner', now() + interval '1 hour', $5, $6)",
-        )
-        .bind(unique("BK"))
-        .bind(MAIN)
-        .bind(unique("req"))
-        .bind(member_id)
-        .bind(unique("sub"))
-        .bind(document_ref)
-        .execute(&self.pool)
-        .await
-        .expect("insert into bookings");
     }
 
     pub async fn row(&self, transaction_id: Uuid) -> Option<Row> {

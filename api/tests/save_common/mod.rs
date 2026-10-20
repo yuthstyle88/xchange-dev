@@ -46,8 +46,6 @@ pub use xc_exchange::domain::exchange::entities::transaction::Transaction;
 pub use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 pub use xc_kernel::mode::Mode;
 pub use xc_shift::application::shift::service::ShiftService;
-pub use xc_shift::domain::shift::commands::open_shift::OpenShift;
-pub use xc_shift::domain::shift::value_objects::balances::Balances;
 pub use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 pub use xchange::application::workflows::save_transaction::{
     SaveTransactionWorkflow, SavedTransaction,
@@ -319,22 +317,81 @@ impl Shop {
         rates_re4c_common::set_counter_rate(&self.pool, branch_id, currency, buy, sell).await;
     }
 
-    pub async fn open_shift(&self, branch_id: &str, opening: &[(&str, &str)]) -> String {
-        let pairs: Vec<(CurrencyCode, Money)> =
-            opening.iter().map(|(c, a)| (code(c), money(a))).collect();
-        let cmd = OpenShift {
-            request_id: unique("open-shift").replace('_', "-"),
-            opening: Balances::of(&pairs),
-        };
-        let shift = self
-            .shifts
-            .open(&branch(branch_id), cmd, "test", at(-60))
+    fn opener_of(branch_id: &str) -> String {
+        if branch_id == MAIN {
+            "test".to_owned()
+        } else {
+            format!("test-{branch_id}")
+        }
+    }
+
+    /// The teller of `branch_id`'s test shift: the owner's user at `MAIN` (whom `Shop::save` saves as), the
+    /// branch's own opener elsewhere (one OPEN shift per teller). CA-10-save (#626): a save moves stock on the
+    /// saver's own OPEN shift.
+    pub async fn teller_of(&self, branch_id: &str) -> Option<String> {
+        if branch_id == MAIN {
+            return sqlx::query_scalar(
+                "SELECT u.id::text FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
+                 (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+                 ORDER BY u.created_at LIMIT 1",
+            )
+            .fetch_optional(&self.pool)
             .await
-            .expect("open a shift")
-            .id;
-        // R1 (TX-6 #674, lane controller's ruling: compat saves post through the ledger): the same
-        // opening in the ledger's drawer of this shift, so a compat save's posting meets the cash the
-        // v2 shift holds. Equal to the v2 opening, so the v2 check still answers first.
+            .expect("read the owner's user id");
+        }
+        let opener = Self::opener_of(branch_id);
+        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
+            .bind(&opener)
+            .fetch_optional(&self.pool)
+            .await
+            .expect("read the opener's user id")
+    }
+
+    pub async fn open_shift_id(&self, branch_id: &str) -> String {
+        let teller = self
+            .teller_of(branch_id)
+            .await
+            .unwrap_or_else(|| panic!("no opener seeded for {branch_id}"));
+        self.shifts
+            .open_of_teller(&teller)
+            .await
+            .expect("read the open shift")
+            .expect("a shift is open")
+            .id
+    }
+
+    pub async fn open_shift(&self, branch_id: &str, opening: &[(&str, &str)]) -> String {
+        let opener = Self::opener_of(branch_id);
+        if branch_id != MAIN {
+            seed_opener(&self.pool, &opener).await;
+        }
+        seed_opener(&self.pool, OWNER).await;
+        let teller: String = self.teller_of(branch_id).await.expect("the opener's user");
+        let shift = format!("SH-{}", uuid::Uuid::new_v4());
+        sqlx::query(
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
+             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $6::uuid)",
+        )
+        .bind(&shift)
+        .bind(branch_id)
+        .bind(at(-60))
+        .bind(&opener)
+        .bind(unique("open-shift").replace('_', "-"))
+        .bind(&teller)
+        .execute(&self.pool)
+        .await
+        .expect("seed an OPEN shift");
+        for (c, a) in opening {
+            sqlx::query(
+                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, $3::numeric, $3::numeric)",
+            )
+            .bind(&shift)
+            .bind(c)
+            .bind(money(a).to_string())
+            .execute(&self.pool)
+            .await
+            .expect("seed an opening balance");
+        }
         fund_ledger_drawer(&self.pool, &shift, opening).await;
         shift
     }
@@ -394,9 +451,10 @@ impl Shop {
     }
 
     pub async fn balances(&self, branch_id: &str) -> Seen {
+        let teller = self.teller_of(branch_id).await?;
         let shift = self
             .shifts
-            .active(&branch(branch_id))
+            .open_of_teller(&teller)
             .await
             .expect("read the open shift")?;
         Some(
@@ -920,7 +978,9 @@ pub async fn kiosk_quote_in(
         id: xc_kiosk::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK.to_owned(),
         username: xc_kiosk::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK.to_owned(),
         employee_id: None,
-        role: xc_auth::domain::policy::value_objects::role::Role::System,
+        standing: xc_auth::domain::access::StandingKind::Staff(
+            xc_auth::domain::access::Role::Admin,
+        ),
     };
     let quote = QuoteService::new(pool.clone())
         .quote_in(tx, request, &kiosk, now)

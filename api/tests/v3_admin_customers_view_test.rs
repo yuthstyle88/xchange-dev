@@ -35,7 +35,7 @@
 //!   `customers` through `confirm_in` / `record_exchange_in`), and the phone verification
 //!   (`customerContactVerify`, `ContactVerify::verify_in`, which writes the verified `PHONE`
 //!   identity the `member` flag is read from — BK-10 #1412 re-pinned this from v2's member issue
-//!   and its `members` table).
+//!   and v2's member table).
 //!
 //! Everything goes through the server's whole route table (`bootstrap::configure`) with real
 //! sessions made at the real sign-in doors (`rpc_common`); exchanges are saved through the real
@@ -49,6 +49,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -461,10 +462,11 @@ impl Room {
         let customer = self.reserve(branch, who).await;
         let t = self.tick();
         let here = BranchId::new(branch);
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let cmd = SaveTransaction {
@@ -494,7 +496,7 @@ impl Room {
         let saved = self
             .desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save an exchange of {} in {branch}: {e:?}", who.name));
         Saved {
@@ -1475,12 +1477,10 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
 
     let demo_ref = format!("TX-DEMO-{}", next());
     sqlx::query(
-        "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-             value_date, paid_at, recorded_at, recorded_by, completed_at) \
-         VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Somchai Demo', 'THA', 'SELL', 'USD', \
-             1000.00, 32.0, 32000.00, 0, 0, 32000.00, 0, 'Cash', '', '', 'owner', '', '', \
+        "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, customer_id, customer_name, \
+             nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, \
+             completed_at) \
+         VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Somchai Demo', 'THA', 'owner', '', '', \
              DATE '2026-10-06', now(), now(), 'owner', now())",
     )
     .bind(&demo_ref)
@@ -1490,7 +1490,12 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
     .execute(&room.desk.db.pool)
     .await
     .expect("insert demo transaction");
-    seed_lines(&room.desk.db.pool, &[demo_ref]).await;
+    seed_lines(
+        &room.desk.db.pool,
+        &[demo_ref],
+        ("SELL", "USD", "1000.00", "32.0", "32000.00"),
+    )
+    .await;
 
     let row = room.customer(&somchai.id).await;
     assert_eq!(
@@ -1515,31 +1520,19 @@ async fn demo_exchanges_are_not_counted_in_completed_volume_or_last_activity() {
 }
 
 /// Re-pinned for BK-10 #1412 by claude/29df2ec5 (ruling 1, issuecomment-6140233542): the flag was
-/// per branch (a `members` row of that branch); it is now company-wide (design §6, PR 639 K1). A v2
-/// `members` row of B9 flags nobody anywhere; a phone verified at B9 flags the customer at MAIN
-/// and at B9.
+/// per branch (v2's member table of that branch); it is now company-wide (design §6, PR 639 K1).
+/// A customer with no verified identity flags nobody anywhere; a phone verified at B9 flags the
+/// customer at MAIN and at B9.
 #[actix_web::test]
 async fn member_flag_is_company_wide() {
     let room = Room::open().await;
     let somchai = room.reserve(MAIN, &Who::new("Somchai Cross Branch")).await;
 
-    sqlx::query(
-        "INSERT INTO members (id, branch_id, customer_id, name, phone, token_hash, verified_at, verified_by) \
-         VALUES ($1, $2, $3, 'Somchai', '0812345678', $4, now(), 'owner')",
-    )
-    .bind(format!("MB-{}", next()))
-    .bind(B9)
-    .bind(&somchai.id)
-    .bind(format!("token-hash-{}", next()))
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("insert member in B9");
-
     let row_before = room.customer(&somchai.id).await;
     assert_eq!(
         row_before["member"],
         json!(false),
-        "a v2 members row of B9 does not flag the customer in MAIN"
+        "a customer with no verified identity is not flagged in MAIN"
     );
 
     room.verify_phone(B9, &somchai.id).await;
@@ -1567,15 +1560,13 @@ async fn volume_never_prints_hash_fill_on_very_large_sums() {
 
     sqlx::query(
         "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-             customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-             bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
+             customer_id, customer_name, nationality, staff_id, booking_no, notes, \
              value_date, paid_at, recorded_at, recorded_by, completed_at) \
          SELECT 'TX-LARGE-' || $2 || '-' || n, $3, 'LIVE', \
              (SELECT id FROM shifts WHERE branch_id = $3 LIMIT 1), \
              'sub-' || $2 || '-' || n, 'hash', \
-             $1, 'Rich Customer', 'THA', 'SELL', 'USD', \
-             9000000000000000.00, 100.0, 900000000000000000.00, 0, 0, 900000000000000000.00, 0, \
-             'Cash', '', '', 'owner', '', '', DATE '2026-10-06', now(), now(), 'owner', now() \
+             $1, 'Rich Customer', 'THA', \
+             'owner', '', '', DATE '2026-10-06', now(), now(), 'owner', now() \
          FROM generate_series(1, 150) AS n",
     )
     .bind(&rich.id)
@@ -1585,7 +1576,18 @@ async fn volume_never_prints_hash_fill_on_very_large_sums() {
     .await
     .expect("insert 150 large transactions");
     let large: Vec<String> = (1..=150).map(|n| format!("TX-LARGE-{batch}-{n}")).collect();
-    seed_lines(&room.desk.db.pool, &large).await;
+    seed_lines(
+        &room.desk.db.pool,
+        &large,
+        (
+            "SELL",
+            "USD",
+            "9000000000000000.00",
+            "100.0",
+            "900000000000000000.00",
+        ),
+    )
+    .await;
 
     let row = room.customer(&rich.id).await;
     let volume = row["volume"].as_str().expect("volume is a string");
@@ -1632,23 +1634,30 @@ async fn full_width_wildcards_are_treated_as_literals_not_wildcards() {
     room.finish().await;
 }
 
-/// The `transaction_lines` + `transaction_payments` rows of the wide-only exchanges `refs`, as
-/// TX-2's backfill writes them (migration 20261111170000 steps 7 and 8): an exchange seeded
-/// straight into `transactions` would otherwise have no line, a shape that cannot exist after
-/// TX-2 (#670), and readers moved onto the lines by TX-8 (#676) would not see it.
-async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
+/// The `transaction_lines` + `transaction_payments` rows of the exchanges `refs`, cash, no fee,
+/// all with the same `(side, code, quantity, rate per 1, thb)` (TX-9 #677: the figures live on the
+/// line and the payment only; `transactions` keeps the header).
+async fn seed_lines(
+    pool: &sqlx::PgPool,
+    refs: &[String],
+    (side, code, quantity, rate, thb): (&str, &str, &str, &str, &str),
+) {
     sqlx::query(
         "INSERT INTO transaction_lines (id, organization_id, transaction_id, quote_line_id, \
             shop_side, currency, denomination_id, quantity, unit_size, rate_snapshot, \
             reference_rate, thb_amount, fee_thb, settle_thb, cost_basis_thb, \
             realized_margin_thb, line_no, created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, t.type, t.code, NULL, \
-            t.amount, t.unit_size, t.rate, t.reference_rate, t.principal, t.fee, \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, NULL, NULL, 1, \
+         SELECT gen_random_uuid(), t.organization_id, t.id, NULL, $2, $3, NULL, $4::numeric, 1, \
+            $5::numeric, NULL, $6::numeric, 0, $6::numeric, NULL, NULL, 1, \
             t.recorded_at, t.recorded_at \
          FROM transactions t WHERE t.document_ref = ANY($1)",
     )
     .bind(refs)
+    .bind(side)
+    .bind(code)
+    .bind(quantity)
+    .bind(rate)
+    .bind(thb)
     .execute(pool)
     .await
     .expect("seed transaction_lines");
@@ -1656,15 +1665,12 @@ async fn seed_lines(pool: &sqlx::PgPool, refs: &[String]) {
         "INSERT INTO transaction_payments (id, organization_id, transaction_id, payment_no, \
             method, reference, account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
             created_at, updated_at) \
-         SELECT gen_random_uuid(), t.organization_id, t.id, 1, t.method, t.payment_ref, \
-            t.account, \
-            (SELECT file_key FROM transaction_files f \
-             WHERE f.transaction_id = t.id AND f.kind = 'SLIP' LIMIT 1), \
-            CASE t.type WHEN 'BUY' THEN t.paid ELSE t.received END, t.bank_fee, t.paid_at, \
-            t.recorded_at, t.recorded_at \
+         SELECT gen_random_uuid(), t.organization_id, t.id, 1, 'Cash', '', '', NULL, \
+            $2::numeric, 0, t.paid_at, t.recorded_at, t.recorded_at \
          FROM transactions t WHERE t.document_ref = ANY($1)",
     )
     .bind(refs)
+    .bind(thb)
     .execute(pool)
     .await
     .expect("seed transaction_payments");

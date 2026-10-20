@@ -143,7 +143,7 @@ async fn a_jpy_row_shows_its_rate_per_1() {
     .await
     .expect("the USD save is accepted");
     let stored: (Decimal, Decimal) =
-        sqlx::query_as("SELECT rate, unit_size FROM transactions WHERE document_ref = $1")
+        sqlx::query_as("SELECT l.rate_snapshot, l.unit_size FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id WHERE t.document_ref = $1")
             .bind(&jpy.document_ref)
             .fetch_one(&shop.pool)
             .await
@@ -216,7 +216,7 @@ async fn a_jpy_reference_is_listed_per_1() {
         .await
         .expect("the JPY save is accepted");
     let stored: Option<Decimal> =
-        sqlx::query_scalar("SELECT reference_rate FROM transactions WHERE document_ref = $1")
+        sqlx::query_scalar("SELECT l.reference_rate FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id WHERE t.document_ref = $1")
             .bind(&saved.document_ref)
             .fetch_one(&shop.pool)
             .await
@@ -289,14 +289,6 @@ async fn a_row_without_a_line_lists_its_stored_rate_per_its_own_unit() {
         )
         .await
         .expect("the JPY save is accepted");
-    sqlx::query(
-        "UPDATE transactions SET published_rate_line_id = NULL, rate = 0.2195, unit_size = 1 \
-         WHERE document_ref = $1",
-    )
-    .bind(&saved.document_ref)
-    .execute(&shop.pool)
-    .await
-    .expect("make it a row from before RE-4");
     sqlx::query(
         "UPDATE transaction_lines l SET rate_snapshot = 0.2195, unit_size = 1 FROM transactions t \
          WHERE l.transaction_id = t.id AND t.document_ref = $1",

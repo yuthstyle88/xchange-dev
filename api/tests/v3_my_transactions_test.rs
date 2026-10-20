@@ -239,14 +239,12 @@ impl Room {
     ) {
         let now = "2026-10-12T08:00:00Z";
         self.exec(&format!(
-            "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
-                customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, bank_fee, \
-                received, paid, method, payment_ref, account, staff_id, booking_no, notes, value_date, paid_at, \
-                recorded_at, recorded_by, status, completed_at, organization_id) \
+            "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+                customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+                recorded_by, status, completed_at, organization_id) \
              VALUES ('{tx_id}', '{doc_ref}', '{branch}', 'LIVE', '{shift_id}', 'sub-{tx_id}', 'hash-{tx_id}', \
-                '{customer_id}', 'Customer {customer_id}', 'THA', 'BUY', '{currency}', {amount}, 33.5, {settle_thb}, \
-                0, 0, 0, {settle_thb}, 'Cash', '', 'drawer', 'teller-1', '', '', '2026-10-12', '{now}', \
-                '{now}', 'teller-1', 'COMPLETED', '{now}', '{ORG}')"
+                '{customer_id}', 'Customer {customer_id}', 'THA', 'teller-1', '', '', '2026-10-12', \
+                '{now}', '{now}', 'teller-1', 'COMPLETED', '{now}', '{ORG}')"
         ))
         .await;
 
@@ -394,8 +392,6 @@ impl SessionReader for HeaderUsers {
         Box::pin(async move {
             let user = user_of(&spec);
             Callers {
-                owner: None,
-                staff: None,
                 user: user.clone(),
                 staff_user: user,
             }

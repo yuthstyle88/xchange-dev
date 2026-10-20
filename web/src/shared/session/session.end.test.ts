@@ -24,7 +24,7 @@
 // rename keeps the roles and changes only `name`.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type Fetch, type ViewAnswer, type ViewParams } from '../api/client';
-import type { Me } from '../api/generated/common';
+import { makeMe, type Me } from '../testing/fixtures';
 import { createSessionStore, endingFetch, endsSession } from './session';
 import { meOf } from '../../test-support/me';
 import { QUEUE_CARD_PATH, QUEUE_CARD_VIEW } from '../testing/page-wide';
@@ -36,7 +36,7 @@ const owner: Me = meOf({ id: 'owner', role: 'OWNER', branch: 'MAIN', name: 'Somc
 const rates: Me = meOf({ id: 'e-7', role: 'RATES', branch: 'XC-B01', name: 'Nok', branchName: 'XC-B01', branches: [] });
 const ratesOther: Me = meOf({ id: 'e-8', role: 'RATES', branch: 'XC-B01', name: 'Ploy', branchName: 'XC-B01', branches: [] });
 const frontSameId: Me = meOf({ id: 'e-7', role: 'FRONT', branch: 'XC-B01', name: 'Nok', branchName: 'XC-B01', branches: [] });
-const ratesRenamed: Me = { ...rates, name: 'Nok K.' };
+const ratesRenamed = makeMe({ ...rates, name: 'Nok K.' });
 
 const refusal = (status: number, code: string, message = 'refused') =>
   new ApiError({ code, message, status });
@@ -55,7 +55,7 @@ function fakeApi(script: Array<ViewAnswer<Me> | Error>) {
       const next = script[Math.min(i, script.length - 1)]!;
       i += 1;
       if (next instanceof Error) throw next;
-      return next as unknown as ViewAnswer<U>;
+      return next as never;
     },
   };
   return { api, seen, posted };

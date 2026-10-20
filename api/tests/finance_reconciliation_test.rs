@@ -89,7 +89,13 @@ const VERIFIER: &str = "FINANCE@XC-B01#2";
 const OTHER_BRANCH: &str = "FINANCE@XC-B02#3";
 /// The teller who counted.
 const COUNTER: &str = "TELLER@XC-B01#4";
-const CALLERS: [&str; 4] = [CERTIFIER, VERIFIER, OTHER_BRANCH, COUNTER];
+const CALLERS: [&str; 5] = [
+    CERTIFIER,
+    VERIFIER,
+    OTHER_BRANCH,
+    COUNTER,
+    "TELLER@XC-B02#5",
+];
 
 /// The four parts FN-2 fills, and the ticket each waits for until then (§7, `UnavailableParts`).
 const WAITING: [(&str, &str); 4] = [
@@ -243,7 +249,7 @@ impl Room {
             )
             .bind(branch)
             .bind(ORG)
-            .bind(user_id(COUNTER))
+            .bind(user_id(if branch == B1 { COUNTER } else { "TELLER@XC-B02#5" }))
             .execute(&room.pool)
             .await
             .expect("an open shift");
@@ -590,11 +596,9 @@ impl SessionReader for HeaderUsers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let s = legacy_of(&spec);
+            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
-                owner: s.owner,
-                staff: s.staff,
                 user: user.clone(),
                 staff_user: user,
             }

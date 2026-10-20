@@ -210,12 +210,27 @@ pub struct TransactionRow {
 impl TransactionRow {
     /// Builds a row from a saved exchange record (design §12.2, W7).
     pub fn from_record(record: &TransactionRecord) -> Self {
-        let is_buy = record.side == "BUY";
+        Self::try_from_record(record)
+            .expect("transaction figure is not representable at 2 decimal places")
+    }
 
-        // principal = amount * rate / unit_size, half up to satang (2 decimals) through ExchangeArithmetic::thb
+    /// Builds a row from a saved exchange record, answering `AppError::Internal` if a computed THB
+    /// figure cannot be represented at 2 decimal places (#2063 / #3064).
+    pub fn try_from_record(record: &TransactionRecord) -> Result<Self, AppError> {
+        let is_buy = record.side == "BUY";
+        let overflow = |what: &str| {
+            AppError::Internal(format!(
+                "{what} of transaction {} is not representable at 2 decimal places",
+                record.document_ref
+            ))
+        };
+
+        // principal = amount * rate / unit_size, half up to satang (2 decimals) through ExchangeArithmetic::try_thb
         let foreign = ForeignAmount::from_decimal(record.amount);
         let principal = Decimal::from_i128_with_scale(
-            ExchangeArithmetic::thb(foreign, record.rate, record.unit_size).minor_i128(),
+            ExchangeArithmetic::try_thb(foreign, record.rate, record.unit_size)
+                .map_err(|_| overflow("principal"))?
+                .minor_i128(),
             2,
         );
 
@@ -230,7 +245,9 @@ impl TransactionRow {
         let (ref_rate_str, ref_val_str, ref_spread_str, ref_pct_str) =
             if let Some(ref_rate) = record.reference_rate {
                 let ref_val = Decimal::from_i128_with_scale(
-                    ExchangeArithmetic::thb(foreign, ref_rate, record.unit_size).minor_i128(),
+                    ExchangeArithmetic::try_thb(foreign, ref_rate, record.unit_size)
+                        .map_err(|_| overflow("reference value"))?
+                        .minor_i128(),
                     2,
                 );
 
@@ -283,7 +300,7 @@ impl TransactionRow {
 
         let slip_url = record.slip_key.as_ref().map(|k| format!("/files/{k}"));
 
-        Self {
+        Ok(Self {
             id: record.document_ref.clone(),
             date: record.value_date.format("%Y-%m-%d").to_string(),
             created: record
@@ -312,7 +329,7 @@ impl TransactionRow {
             reference_percent: ref_pct_str,
             payment_ref,
             slip_url,
-        }
+        })
     }
 
     /// Builds a row from a SQL row and child lines/payments.
@@ -322,7 +339,7 @@ impl TransactionRow {
         let principal_str = r.principal.clone();
         let settlement_str = r.settlement.clone();
         let record = TransactionRecord::try_from(r)?;
-        let mut row = Self::from_record(&record);
+        let mut row = Self::try_from_record(&record)?;
         row.status = status;
         row.cancel_reason = cancel_reason;
         if let Ok(p) = principal_str.parse::<Decimal>() {

@@ -297,6 +297,7 @@ completion, or the desk asked for a new quote) | `EXPIRED` (derived, D-5).
 | `GET /api/v3/views/transaction?id=` | view (B04) | `TransactionRead` | the transaction, lines, payment, receipts, approval state |
 | `PUT /api/exchange-settings` | command | `SystemSettings` | the new settings |
 | `PUT /api/branches/:id/exchange-limit` | command | `BranchesManage` (A04) | the new limit |
+| `GET /api/v3/views/exchange_settings` (added 2026-10-19, FE gap section B) | view, inherits `(Rpc, "exchangeSettingsSave")`, so it needs what the save needs | `SystemSettings` | `{ quoteTtlSeconds, approvalLimitThb }`: the organisation's quote lifetime (T1) and the caller's branch's approval limit (T2, `null` = no limit). One view, not two: a second view would have to export the limit's type to a file that is not its own (`v3_types_test`). File `v3/views/exchange_settings.rs`, DTO `dto/v3/exchange_settings.rs`, beside the two commands' types (the `rate_alert_settings` precedent: a view and its save command share one generated file) |
 
 **`POST /api/quotes` input** `[required]`: `{ branch?, customerId?, channel, lines: [{ currency, shopSide, quantity,
 feeThb? }] }`. The branch is the command seam's `branch`, the key every v3 command uses. It is never a body `branchId`.

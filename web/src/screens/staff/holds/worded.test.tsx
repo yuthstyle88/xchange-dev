@@ -3,28 +3,30 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
-import type { StaffHoldRow } from '../../../shared/api/generated/staff_holds';
-import type { StaffCustomerRow } from '../../../shared/api/generated/staff_customers';
+import {
+  makeStaffCustomerRow,
+  makeStaffFloorView,
+  makeStaffHoldRow,
+  makeStaffMeView,
+} from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { HoldsCard } from './HoldsCard';
 
 const BRANCH = 'MAIN';
 
-function me(permissions = ['CustomerHoldPlace', 'VerificationReview']): StaffMeView {
-  return {
+function me(permissions = ['CustomerHoldPlace', 'VerificationReview']) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000c1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: '2026-10-11T01:00:00Z',
@@ -32,7 +34,7 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 function makeCtx(perms?: string[]): StaffCtx {
@@ -50,22 +52,22 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-const SAMPLE_HOLDS: StaffHoldRow[] = [
-  {
+const SAMPLE_HOLDS = [
+  makeStaffHoldRow({
     id: 'hold-123',
     customerId: 'cust-456',
     customerName: 'Somchai Prasert',
     reason: 'Suspicious transaction pattern',
     status: 'OPEN',
     at: '2026-10-15T00:00:00Z',
-  },
+  }),
 ];
 
-const SAMPLE_CUSTOMERS: StaffCustomerRow[] = [
-  {
+const SAMPLE_CUSTOMERS = [
+  makeStaffCustomerRow({
     id: 'cust-456',
     displayName: 'Somchai Prasert',
-  },
+  }),
 ];
 
 describe('HoldsCard: wordedError on failed calls (WE-41 #1790)', () => {

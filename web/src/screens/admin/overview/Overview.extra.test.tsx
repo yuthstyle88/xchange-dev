@@ -1,11 +1,12 @@
 // Tests for #461 Decisions:
-// (2) Decision 2 (issuecomment-6067199516): status.openedBy displayed when shift is open.
+// (2) Decision 2 (issuecomment-6067199516): the opener's name is displayed when the shift is open.
+//     Since CA-10p (#2916 / #2914) the names come from status.openShifts; openedBy is gone (design §4.7).
 // (5) Decision 5 (issuecomment-6067199516): CSV export walks admin_transactions for the period.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { closeDialog, Dialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
@@ -23,8 +24,8 @@ const EXPORTER_ME: unknown = (() => {
 
 const VIEW = '/api/v3/views/admin_overview';
 
-function row(id: string): TransactionRow {
-  return {
+function row(id: string) {
+  return makeTransactionRow({
     id,
     date: '2026-10-06',
     created: '2026-10-06T03:00:00.000Z',
@@ -51,7 +52,7 @@ function row(id: string): TransactionRow {
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  };
+  });
 }
 
 interface Sent {
@@ -155,7 +156,7 @@ describe('V2-overview: extra tests for controller decisions (#461)', () => {
             pendingCount: 0,
           },
           latest: [row('XC-001')],
-          status: { shiftOpen: true, pendingCount: 0, openedBy: 'Somchai' },
+          status: { shiftOpen: true, pendingCount: 0, openShifts: [{ shiftId: 'SH-1', tellerId: 'U-1', tellerName: 'Somchai', openedAt: '2026-10-06T01:00:00Z' }] },
         }),
       '/api/v3/views/admin_branches': () =>
         ok({ branches: [{ id: 'MAIN', name: 'Main Branch' }] }),
@@ -182,7 +183,7 @@ describe('V2-overview: extra tests for controller decisions (#461)', () => {
     await settle();
   });
 
-  it('Decision 2: shows openedBy display name when shift is open, and switches language', async () => {
+  it('Decision 2: shows the open shift teller name from openShifts when the shift is open, and switches language', async () => {
     const m = mount();
     await settle();
     expect(m.el.textContent).toContain('ผู้เปิดกะ Somchai');

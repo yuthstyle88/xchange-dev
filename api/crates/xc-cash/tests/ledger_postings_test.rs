@@ -126,13 +126,11 @@ async fn db() -> (PgPool, BranchId) {
         .execute(&pool)
         .await
         .expect("insert a branch");
-    sqlx::query(
-        "INSERT INTO ops_state (branch_id, enabled, phase, safe) VALUES ($1, true, 'OPEN', '{}'::jsonb)",
-    )
-    .bind(&branch)
-    .execute(&pool)
-    .await
-    .expect("insert ops_state");
+    sqlx::query("INSERT INTO ops_state (branch_id, phase, safe) VALUES ($1, 'OPEN', '{}'::jsonb)")
+        .bind(&branch)
+        .execute(&pool)
+        .await
+        .expect("insert ops_state");
 
     (pool, BranchId::new(branch))
 }
@@ -204,14 +202,11 @@ async fn seed_transaction_line(
     let doc_ref = unique("DOC");
 
     sqlx::query(
-        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, \
-         submission_id, payload_hash, customer_id, customer_name, nationality, type, code, \
-         amount, rate, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
-         staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, status, \
-         completed_at) \
-         VALUES ($1, $2::uuid, $3, $4, 'LIVE', $5, $6, 'hash', $7, 'Somchai', 'THA', $8, $9, \
-         $10, 1.0, $11, 0, 0, 0, $11, 'Cash', '', 'Cash drawer', 'system', 'WALK-IN', '', \
-         current_date, now(), now(), 'system', 'COMPLETED', now())",
+        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
+         customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
+         recorded_at, recorded_by, status, completed_at) \
+         VALUES ($1, $2::uuid, $3, $4, 'LIVE', $5, $6, 'hash', $7, 'Somchai', 'THA', 'system', 'WALK-IN', \
+         '', current_date, now(), now(), 'system', 'COMPLETED', now())",
     )
     .bind(tx_id)
     .bind(ORG)
@@ -220,10 +215,6 @@ async fn seed_transaction_line(
     .bind(shift_id)
     .bind(unique("sub"))
     .bind(cust_id)
-    .bind(shop_side)
-    .bind(currency.as_str())
-    .bind(quantity)
-    .bind(thb_amount)
     .execute(pool)
     .await
     .expect("insert transaction");
@@ -435,7 +426,7 @@ fn from_balances(b: &Balances) -> Vec<(String, i64)> {
     comparable(
         b.non_zero()
             .into_iter()
-            .map(|(c, m)| (c.as_str().to_string(), m.minor())),
+            .map(|(c, m)| (c.as_str().to_string(), m.try_minor().unwrap())),
     )
     .0
 }

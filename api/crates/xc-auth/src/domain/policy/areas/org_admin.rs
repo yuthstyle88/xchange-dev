@@ -25,4 +25,13 @@ pub const ROWS: &[AreaRow] = &[
     row("userRevoke", Permission::UsersManage),
     row("userDisable", Permission::UsersManage),
     row("adminUsers", Permission::UsersManage),
+    row("userSuspend", Permission::UsersManage),
+    row("userResume", Permission::UsersManage),
+    row("userEnable", Permission::UsersManage),
+    row("userResetPassword", Permission::UsersManage),
+    row("userProfileSave", Permission::UsersManage),
+    row("adminPermissionMatrix", Permission::UsersManage),
+    row("adminUserAudit", Permission::AuditLogsRead),
+    row("adminLoginHistory", Permission::AuditLogsRead),
+    row("adminEmployeeRegister", Permission::UsersManage),
 ];

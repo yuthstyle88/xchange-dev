@@ -5,47 +5,6 @@
   display: block;
 }
 
-/* v2 src/devices-public/admin-workspace.css:25 .workspace-tabs */
-.xc-admin .xc-content .tab-list {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  background: #eee9ed;
-  border-radius: 8px;
-  margin-bottom: 22px;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-/* v2 src/devices-public/admin-workspace.css:25 .workspace-tabs button */
-.xc-admin .xc-content .tab-list button {
-  background: transparent;
-  color: #6b5966;
-  border: 0;
-  white-space: nowrap;
-  font-size: 14px;
-  padding: 11px 20px;
-  border-radius: 5px;
-  min-height: 44px;
-  cursor: pointer;
-}
-
-/* v2 src/devices-public/admin-workspace.css:25 .workspace-tabs button[aria-selected=true] */
-.xc-admin .xc-content .tab-list button[aria-selected="true"] {
-  background: white;
-  color: var(--brand);
-  box-shadow: 0 1px 4px #33202b12;
-}
-
-/* v2 src/devices-public/admin-workspace.css:34 @media (max-width: 600px) .workspace-tabs button */
-@media (max-width: 600px) {
-  .xc-admin .xc-content .tab-list button {
-    font-size: 13px;
-    padding: 10px 14px;
-  }
-}
-
 /* v2 src/online/lib/admin-html.ts:2 .xc-workspace .toolbar */
 .xc-admin .xc-content .search-section {
   padding: 20px;
@@ -115,54 +74,6 @@
   padding: 18px;
 }
 
-/* v2 src/online/public/registrations.js:3 .pagination */
-.xc-admin .xc-content .reg-pagination {
-  justify-content: normal;
-  gap: 12px;
-  padding: 16px;
-}
-
-/* v2 src/online/public/registrations.js:3 #registration-panel */
-.xc-admin .xc-content .registrations-card {
-  margin-top: 24px;
-}
-
-/* v2 src/online/public/registrations.js:3 padding:20px */
-.xc-admin .xc-content .reg-top-section {
-  padding: 20px;
-}
-
-/* v2 src/online/public/registrations.js:3 flex row */
-.xc-admin .xc-content .reg-search-bar {
-  display: flex;
-  gap: 12px;
-  margin: 0;
-  flex-wrap: wrap;
-}
-
-/* v2 src/online/public/registrations.js:3 input */
-.xc-admin .xc-content .reg-search-bar input {
-  width: 100%;
-}
-
-/* v2 src/online/public/registrations.js:4 empty text */
-.xc-admin .xc-content .reg-empty {
-  padding: 20px;
-  text-align: start;
-  margin: 0;
-}
-
-/* v2 src/online/public/registrations.js:4 bare text */
-.xc-admin .xc-content .registrations-card .error-banner {
-  color: inherit;
-  background: none;
-  border: 0;
-  padding: 0;
-  border-radius: 0;
-  font-size: inherit;
-  margin: 0;
-}
-
 /* v2 src/online/lib/admin-html.ts:1 label */
 .xc-admin .xc-content .search-bar {
   margin: 16px 0;
@@ -206,21 +117,3 @@
   padding: 16px 0;
 }
 
-/* no v2 source: member form container */
-.xc-admin .xc-content .member-form {
-  display: block;
-}
-
-/* v2 src/online/public/bookings.js:13 p */
-.xc-admin .xc-content .customer-info {
-  font-size: 14px;
-  color: var(--ink);
-  margin-bottom: 12px;
-}
-
-/* v2 src/online/lib/admin-html.ts:2 .dialog-note */
-.xc-admin .xc-content .reissue-note {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 12px 0;
-}

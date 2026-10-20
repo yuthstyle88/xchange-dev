@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
 import { meOf } from '../../../test-support/me';
@@ -22,8 +22,8 @@ const VIEW_OVERVIEW = '/api/v3/views/admin_overview';
 const VIEW_TRANSACTIONS = '/api/v3/views/admin_transactions';
 const VIEW_BRANCHES = '/api/v3/views/admin_branches';
 
-function row(id: string): TransactionRow {
-  return {
+function row(id: string) {
+  return makeTransactionRow({
     id,
     date: '2026-10-06',
     created: '2026-10-06T03:00:00.000Z',
@@ -50,7 +50,7 @@ function row(id: string): TransactionRow {
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
-  };
+  });
 }
 
 const DEFAULT_OVERVIEW_DATA = {
@@ -72,7 +72,7 @@ const DEFAULT_OVERVIEW_DATA = {
     pendingCount: 0,
   },
   latest: [row('XC-001')],
-  status: { shiftOpen: true, pendingCount: 0, openedBy: 'Somchai' },
+  status: { shiftOpen: true, pendingCount: 0, openShifts: [{ shiftId: 'SH-1', tellerId: 'U-1', tellerName: 'Somchai', openedAt: '2026-10-06T01:00:00Z' }] },
 };
 
 interface Sent {
@@ -193,7 +193,7 @@ describe('#2722: Admin Overview export failure error isolation', () => {
     handlers[VIEW_OVERVIEW] = () =>
       ok({
         ...DEFAULT_OVERVIEW_DATA,
-        status: { shiftOpen: true, pendingCount: 3, openedBy: 'Somchai' },
+        status: { shiftOpen: true, pendingCount: 3, openShifts: [{ shiftId: 'SH-1', tellerId: 'U-1', tellerName: 'Somchai', openedAt: '2026-10-06T01:00:00Z' }] },
       });
     handlers[VIEW_TRANSACTIONS] = () => ({
       status: 500,

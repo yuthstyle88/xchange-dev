@@ -60,9 +60,27 @@ use sqlx::{AssertSqlSafe, PgPool};
 use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
 const MIGRATION_5: i64 = 20261010125000;
+const M2_SUFFIX: &str = "_retire_v2_bookings.sql";
 /// CI-4 (#651) M1, `20261019100000_customers_org.sql`.
 const CUSTOMERS_ORG: i64 = 20261019100000;
 const MUST_FINISH: Duration = Duration::from_secs(30);
+
+fn m2_version() -> i64 {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let mut found = std::fs::read_dir(&dir)
+        .expect("read api/migrations")
+        .map(|e| {
+            e.expect("an entry")
+                .file_name()
+                .into_string()
+                .expect("UTF-8")
+        })
+        .filter(|n| n.ends_with(M2_SUFFIX));
+    let name = found.next().expect("the M2 migration");
+    name[..name.find('_').expect("<version>_")]
+        .parse()
+        .expect("a numeric version")
+}
 
 /// §8 migration 5, "Count before deploy", verbatim.
 const COUNT_BEFORE_DEPLOY: &str = "\
@@ -384,7 +402,9 @@ fn thb(amount: Decimal, rate: Decimal, unit: Decimal) -> Decimal {
     let amount = ForeignAmount::from_decimal(amount);
     let rate = Rate::parse(&rate.normalize().to_string()).expect("a stored rate parses");
     let unit = UnitSize::parse(&unit.normalize().to_string()).expect("a stored unit parses");
-    d(&ExchangeArithmetic::thb(amount, rate, unit).to_string())
+    d(&ExchangeArithmetic::try_thb(amount, rate, unit)
+        .expect("no overflow")
+        .to_string())
 }
 
 // ------------------------------------------------------------ tests
@@ -556,14 +576,16 @@ async fn migration_5_converts_stored_jpy_and_krw_rates_to_their_unit_size() {
 #[tokio::test]
 async fn migration_5_adds_a_nullable_line_id_referencing_published_rate_lines() {
     let db = TestDb::empty().await;
-    migrator()
+    before(m2_version())
         .await
         .run(&db.pool)
         .await
         .expect("apply api/migrations");
 
     // Every migration ran, so v2's `bookings` is `v2_bookings` (BK-1's `*_booking_slots.sql`, #1377).
-    for table in ["transactions", "kiosk_requests", "v2_bookings"] {
+    // TX-9 (#677) drops `transactions.published_rate_line_id`: a saved line reaches its published
+    // line through `transaction_lines.quote_line_id` → `quote_lines.published_rate_line_id`.
+    for table in ["kiosk_requests", "v2_bookings"] {
         let column: Option<(String, String)> = sqlx::query_as(
             "SELECT data_type, is_nullable FROM information_schema.columns \
              WHERE table_schema = current_schema() AND table_name = $1 \

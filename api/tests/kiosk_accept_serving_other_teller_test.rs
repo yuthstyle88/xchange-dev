@@ -152,19 +152,16 @@ impl TestDb {
         .expect("insert cash counts");
 
         sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id, opened_by_count) \
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
              VALUES \
-             ('shift-a', $1, 'OPEN', now(), 'test', 'req-open-a', $2::uuid, $5), \
-             ('shift-b', $1, 'OPEN', now(), 'test', 'req-open-b', $3::uuid, $6), \
-             ('shift-m', $1, 'OPEN', now(), 'test', 'req-open-m', $4::uuid, $7)",
+             ('shift-a', $1, 'OPEN', now(), 'test', 'req-open-a', $2::uuid), \
+             ('shift-b', $1, 'OPEN', now(), 'test', 'req-open-b', $3::uuid), \
+             ('shift-m', $1, 'OPEN', now(), 'test', 'req-open-m', $4::uuid)",
         )
         .bind(B01)
         .bind(TELLER_A_ID)
         .bind(TELLER_B_ID)
         .bind(MANAGER_ID)
-        .bind(count_a)
-        .bind(count_b)
-        .bind(count_m)
         .execute(&pool)
         .await
         .expect("insert shifts");
@@ -303,18 +300,14 @@ impl SessionReader for HeaderUsers {
         Box::pin(async move {
             match spec {
                 Some(s) => {
-                    let leg = legacy_of(&s);
+                    let _leg = legacy_of(&s);
                     let user = user_of(&s);
                     Callers {
-                        owner: leg.owner,
-                        staff: leg.staff,
                         user: user.clone(),
                         staff_user: user,
                     }
                 }
                 None => Callers {
-                    owner: None,
-                    staff: None,
                     user: None,
                     staff_user: None,
                 },

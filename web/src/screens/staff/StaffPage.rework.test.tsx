@@ -5,8 +5,11 @@ import { errorText, setLang } from '../../shared/i18n';
 import { th } from '../../shared/i18n/th';
 import { en } from '../../shared/i18n/en';
 import { ApiClient } from '../../shared/api/client';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
+import {
+  makeStaffFloorHours,
+  makeStaffFloorView,
+  makeStaffMeView,
+} from '../../shared/testing/fixtures';
 
 type PageModule = {
   StaffPage: (p: {
@@ -18,26 +21,26 @@ type PageModule = {
 
 const pageMods = import.meta.glob<PageModule>('./StaffPage.tsx');
 
-function staffMe(permissions: string[] = []): StaffMeView {
-  return {
+function staffMe(permissions: string[] = []) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000a1',
     name: 'Ploy',
     roles: [],
     branchId: 'MAIN',
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-const FLOOR_WITH_HOURS: StaffFloorView = {
+const FLOOR_WITH_HOURS = makeStaffFloorView({
   phase: 'OPEN',
-  hours: { open: '2026-10-11T03:00:00Z', close: '2026-10-11T13:00:00Z' },
+  hours: makeStaffFloorHours({ open: '2026-10-11T03:00:00Z', close: '2026-10-11T13:00:00Z' }),
   myClockIn: null,
   myShift: null,
   cutoff: null,
   target: null,
   safe: null,
-};
+});
 
 type Route = { status: number; body: unknown };
 let routes: Record<string, () => Route>;

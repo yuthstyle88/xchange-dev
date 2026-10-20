@@ -3,10 +3,15 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AdminBookingSlotsData } from '../../../shared/api/generated/admin_booking_slots';
-import type { Me } from '../../../shared/api/generated/common';
 import { setLang } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
+import {
+  makeAdminBookingPolicyDto,
+  makeAdminBookingSlotsData,
+  makeAdminClosureDto,
+  makeAdminSlotDto,
+  makeAdminSlotRuleDto,
+} from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { meOf } from '../../../test-support/me';
 import type { AdminMenuProps } from '../menus';
@@ -15,22 +20,22 @@ import * as table from './i18n';
 
 const B01 = 'XC-B01';
 
-const SAMPLE_VIEW_DATA: AdminBookingSlotsData = {
-  rule: {
+const SAMPLE_VIEW_DATA = makeAdminBookingSlotsData({
+  rule: makeAdminSlotRuleDto({
     branchId: B01,
     slotMinutes: 30,
     capacity: 8,
     horizonDays: 21,
-  },
+  }),
   closures: [
-    {
+    makeAdminClosureDto({
       branchId: B01,
       closedOn: '2026-12-25',
       reason: 'Christmas Day',
-    },
+    }),
   ],
   slots: [
-    {
+    makeAdminSlotDto({
       id: 'slot-uuid-1',
       branchId: B01,
       serviceDate: '2026-10-15',
@@ -39,14 +44,14 @@ const SAMPLE_VIEW_DATA: AdminBookingSlotsData = {
       capacity: 8,
       reserved: 2,
       status: 'OPEN',
-    },
+    }),
   ],
-  policy: {
+  policy: makeAdminBookingPolicyDto({
     cancelCutoffMinutes: 45,
     noShowGraceMinutes: 20,
     confirmExpiryMinutes: 30,
-  },
-};
+  }),
+});
 
 interface SentRequest {
   method: string;
@@ -73,7 +78,7 @@ describe('BK-9b: A04 BookingSlots policy section org-wide ADMIN gate (#2090 §9)
     container = document.createElement('div');
     document.body.appendChild(container);
     sentRequests = [];
-    sharedSession().updateMe(undefined as unknown as Me);
+    sharedSession().updateMe(undefined as never);
 
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -107,7 +112,7 @@ describe('BK-9b: A04 BookingSlots policy section org-wide ADMIN gate (#2090 §9)
     dispose?.();
     dispose = undefined;
     container.remove();
-    sharedSession().updateMe(undefined as unknown as Me);
+    sharedSession().updateMe(undefined as never);
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -205,7 +210,7 @@ describe('BK-9b: A04 BookingSlots policy section org-wide ADMIN gate (#2090 §9)
   });
 
   it('row 4: me not loaded yet (undefined) — policy section is hidden, with no error and no policy request', async () => {
-    sharedSession().updateMe(undefined as unknown as Me);
+    sharedSession().updateMe(undefined as never);
     await mount();
 
     expect(hasSections1To3(), 'rule, closures and slots sections are shown').toBe(true);

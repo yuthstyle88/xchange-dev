@@ -21,8 +21,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
-import type { CashTransferPolicyData } from '../../../shared/api/generated/cash_transfer_policy';
-import type { Me } from '../../../shared/api/generated/common';
+import {
+  makeCashTransferPolicyData,
+  makeMe,
+  type CashTransferPolicyData,
+} from '../../../shared/testing/fixtures';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { setLang } from '../../../shared/i18n';
 import { AdminShell } from '../AdminShell';
@@ -61,8 +64,8 @@ const TOO_MANY_DECIMALS = 'จำนวนเงินมีทศนิยม�
 
 // ── fixtures ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-function meWith(permissions: string[]): Me {
-  return {
+function meWith(permissions: string[]) {
+  return makeMe({
     id: 'u-exec',
     name: 'ผู้บริหาร',
     roles: [],
@@ -70,26 +73,26 @@ function meWith(permissions: string[]): Me {
     branch: 'MAIN',
     branchName: 'สำนักงานใหญ่',
     branches: [{ id: 'MAIN', code: 'MAIN', name: 'สำนักงานใหญ่' }],
-  };
+  });
 }
 
 /** Strings no arithmetic would give back unchanged: `12.5` (not `12.50`) and `0300.00`-free `300.00`. */
-const V1: CashTransferPolicyData = {
+const V1 = makeCashTransferPolicyData({
   version: 'v-0001',
   limits: { USD: '300.00', EUR: '12.5' },
   valid: true,
   invalidEntries: [],
   setBy: 'u-exec',
   createdAt: '2026-10-12T01:00:00Z',
-};
-const V2: CashTransferPolicyData = {
+});
+const V2 = makeCashTransferPolicyData({
   version: 'v-0002',
   limits: { USD: '450.00' },
   valid: true,
   invalidEntries: [],
   setBy: 'u-exec',
   createdAt: '2026-10-12T02:00:00Z',
-};
+});
 
 // ── the fake server ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -102,7 +105,7 @@ interface Sent {
 type Reply = { status: number; body?: unknown } | 'network';
 
 class Server {
-  me: Me = meWith([SET]);
+  me = meWith([SET]);
   /** What the view answers, read by read (the last repeats). */
   current: (CashTransferPolicyData | null)[] = [null];
   saves: Reply[] = [{ status: 200, body: V1 }];
@@ -128,7 +131,7 @@ class Server {
           return view({ branches: [{ id: 'MAIN', name: 'สำนักงานใหญ่' }] });
         case '/api/v3/views/admin_cash':
           return view({
-            shift: null,
+            openShifts: [],
             stock: [],
             stats: null,
             reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },

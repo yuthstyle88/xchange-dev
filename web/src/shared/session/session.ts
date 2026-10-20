@@ -2,6 +2,9 @@ import { createSignal, type Accessor } from 'solid-js';
 import { ApiClient, type Fetch, type ViewAnswer, type ViewParams } from '../api/client';
 import type { Me, MeRole } from '../api/generated/common';
 import { ViewPoller } from '../live/view-poller';
+import { goChangePassword, needsPasswordChange, passwordChangeUrl } from './password-change';
+
+export { needsPasswordChange, passwordChangeUrl };
 
 export type EndReason = 'expired' | 'switched' | 'branchChanged';
 
@@ -45,9 +48,23 @@ export function endsSession(status: number, code: string | undefined): boolean {
   return status === 401 || (status === 400 && code === 'kioskStaff');
 }
 
-export function endingFetch(inner: Fetch, onEnd: () => void): Fetch {
+export function endingFetch(inner: Fetch, onEnd: () => void, onPasswordChange?: () => void): Fetch {
   return async (input: string, init?: RequestInit): Promise<Response> => {
     const res = await inner(input, init);
+
+    if (res.status === 403) {
+      let code: string | undefined;
+      try {
+        const data = await res.clone().json();
+        code = data?.error?.code ?? data?.code;
+      } catch {
+        // not json
+      }
+      if (needsPasswordChange(res.status, code)) {
+        onPasswordChange?.();
+        return res;
+      }
+    }
 
     const method = (init?.method ?? 'GET').toUpperCase();
 
@@ -165,6 +182,7 @@ export function sharedApi(): ApiClient {
             shared.end('expired');
           }
         },
+        goChangePassword,
       ),
     );
   }

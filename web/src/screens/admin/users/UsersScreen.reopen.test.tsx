@@ -1,8 +1,10 @@
+// Amended by W8 (claude/177aa7ef): userCreate no longer takes a typed password (F9 #3155, owner Q5 A); the server
+// answers temporaryPassword once. xchange#564, the BE controller's F9 contract.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
 // #2472: each dialog opening is its own generation. A write's late answer only
@@ -23,25 +25,25 @@ const disposers: Array<() => void> = [];
 const B01 = 'XC-B01';
 const B02 = 'XC-B02';
 
-const SEED_USERS: AdminUserRow[] = [
-  {
+const SEED_USERS = [
+  makeAdminUserRow({
     userId: 'u-a',
     name: 'Alpha Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      { role: 'TELLER', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null },
+      makeAdminUserRole({ role: 'TELLER', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null }),
     ],
-  },
-  {
+  }),
+  makeAdminUserRow({
     userId: 'u-b',
     name: 'Bravo Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      { role: 'FINANCE', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null },
+      makeAdminUserRole({ role: 'FINANCE', branch: B01, validFrom: '2026-10-01T00:00:00Z', validTo: null }),
     ],
-  },
+  }),
 ];
 
 function json(status: number, body: unknown): Response {
@@ -138,7 +140,6 @@ async function closedCreate_thenReopenAndType(c: HTMLElement): Promise<void> {
   await settle();
   type(c, 'input[name="name"]', 'First Person');
   type(c, 'input[name="phone"]', '0811111111');
-  type(c, 'input[name="password"]', 'Secret123!');
   submitDialog(c);
   await settle();
   expect(writes.filter((w) => w.path === '/api/users').length).toBe(1);

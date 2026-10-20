@@ -10,8 +10,8 @@
 //!   `xc_auth::domain::policy::entities::policy`; `Need { Public, Permission(Permission), Custody }`
 //!   with `Debug + Clone + Copy + PartialEq + Eq`. `None` = a name the path has no row for.
 //!   `Custody` = a row #582 decides; until #582 the custody engine asks the v2 rule.
-//! - `Permission` gains `BookingsAdmin` and `ReferenceRatesRead`: v3-only rows of OWNER-only routes
-//!   that §4.2 does not list, given to EXECUTIVE, the B1 translation of OWNER (no role changes).
+//! - `Permission` gains `ReferenceRatesRead`: a v3-only row of an OWNER-only route that §4.2 does not
+//!   list, given to EXECUTIVE, the B1 translation of OWNER (no role changes). (v2's bookings-admin permission went with v2's booking in BK-11 #1413.)
 //! - `xc_auth::domain::access::v3_roles::blueprint_roles(v3: policy Role) -> &'static [Role]` and
 //!   `actor_from_v3(v3: &policy Actor, organization_id: &str, since: DateTime<Utc>) -> access::Actor`
 //!   (B1; the extractor maps a password session through it until OR-7).
@@ -19,6 +19,12 @@
 //! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
 //! (`docs/design/blueprint/rates.md` §9), so its two rows (Rpc and StaffRpc, RatesDraft) move to
 //! "no row". Every other row, `rateDraft`'s included, is unchanged.
+//!
+//! Re-expected for CA-10 #626 by its ticket author (claude/c4d72c): CA-10 retires the `ops*`
+//! actions and the direct shift actions with their policy rows (`cash-shift-transfer.md` §6), so on
+//! `Rpc` and `StaffRpc` `adminOpenShift`, `adminCloseShift`, `adminMoveStock`, `opsClock`, `ops` and
+//! `opsEnable` move to "no row". The `Custody` path's own rows stay (the type stays; no route
+//! reaches it). Every other row is unchanged.
 
 mod policy_common;
 
@@ -54,9 +60,6 @@ fn every_route_and_action_names_its_permission() {
         (E::Rpc, "saveTransaction", p(P::ExchangeTransact)),
         (E::Kiosk, "manage", p(P::RatesDraft)),
         (E::Kiosk, "configure", p(P::RatesDraft)),
-        (E::Rpc, "adminOpenShift", Some(Need::Custody)),
-        (E::Rpc, "adminCloseShift", Some(Need::Custody)),
-        (E::Rpc, "adminMoveStock", p(P::CashManage)),
         (E::Rpc, "adminCreateBranch", p(P::BranchesManage)),
         (E::OwnerRoute, "employees", p(P::UsersManage)),
         (E::OwnerRoute, "list", p(P::UsersManage)),
@@ -94,11 +97,6 @@ fn every_route_and_action_names_its_permission() {
         (E::Kiosk, "status", Some(Need::Public)),
         (E::Kiosk, "customerReceipt", Some(Need::Public)),
         (E::DrawerPassport, "drawer", p(P::DrawerPassport)),
-        (E::StaffBookings, "list", p(P::BookingsDesk)),
-        (E::StaffBookings, "get", p(P::BookingsDesk)),
-        (E::StaffBookings, "create", p(P::BookingsDesk)),
-        (E::StaffBookings, "confirm", p(P::BookingsDesk)),
-        (E::StaffBookings, "cancel", p(P::BookingsDesk)),
         // RE-3's rows (`docs/design/blueprint/rates.md` §6), translated
         (E::Rpc, "rateDraft", p(P::RatesDraft)),
         (E::StaffRpc, "rateDraft", p(P::RatesDraft)),
@@ -106,11 +104,6 @@ fn every_route_and_action_names_its_permission() {
         (E::Rpc, "approvalDecide", p(P::ApprovalsDecide)),
         (E::Rpc, "approvalRead", p(P::ApprovalsDecide)),
         // OWNER-only routes §4.2 does not list: v3-only permissions, EXECUTIVE's
-        (E::OwnerRoute, "/api/v2/bookings", p(P::BookingsAdmin)),
-        (E::StaffBookings, "member", p(P::BookingsAdmin)),
-        (E::StaffBookings, "settings", p(P::BookingsAdmin)),
-        (E::StaffBookings, "registrations", p(P::BookingsAdmin)),
-        (E::StaffBookings, "approveRegistration", p(P::BookingsAdmin)),
         (
             E::OwnerRoute,
             "/api/reference-rates",
@@ -119,11 +112,15 @@ fn every_route_and_action_names_its_permission() {
         // #582's
         (E::Custody, "opsClock", Some(Need::Custody)),
         (E::Custody, "opsNope", Some(Need::Custody)),
-        (E::StaffRpc, "opsClock", Some(Need::Custody)),
-        (E::StaffRpc, "ops", Some(Need::Custody)),
-        (E::StaffRpc, "opsEnable", Some(Need::Custody)),
-        (E::StaffRpc, "adminOpenShift", Some(Need::Custody)),
         // no row
+        // CA-10 #626 retires these (cash-shift-transfer.md §6)
+        (E::Rpc, "adminOpenShift", None),
+        (E::Rpc, "adminCloseShift", None),
+        (E::Rpc, "adminMoveStock", None),
+        (E::StaffRpc, "opsClock", None),
+        (E::StaffRpc, "ops", None),
+        (E::StaffRpc, "opsEnable", None),
+        (E::StaffRpc, "adminOpenShift", None),
         // RE-7 #604 removes adminSaveRate (rates.md §9): it was RatesDraft on both paths
         (E::Rpc, "adminSaveRate", None),
         (E::StaffRpc, "adminSaveRate", None),
@@ -135,7 +132,6 @@ fn every_route_and_action_names_its_permission() {
         (E::StaffRpc, "adminCreateBranch", None),
         (E::Kiosk, "nope", None),
         (E::PaymentMethods, "nope", None),
-        (E::StaffBookings, "nope", None),
     ];
     let mut wrong = Vec::new();
     for (on, name, want) in rows {
@@ -178,11 +174,7 @@ fn the_role_table_holds_what_b1_translates() {
         [Role::Executive, Role::BranchManager, Role::Finance]
     );
     // OWNER-only rows: EXECUTIVE; and nobody else holds them
-    for p in [
-        Permission::BookingsAdmin,
-        Permission::ReferenceRatesRead,
-        Permission::RequestAbandon,
-    ] {
+    for p in [Permission::ReferenceRatesRead, Permission::RequestAbandon] {
         assert_eq!(
             BLUEPRINT
                 .into_iter()

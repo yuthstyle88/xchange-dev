@@ -13,6 +13,7 @@ mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
 mod rpc_common;
+mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
 
@@ -148,10 +149,11 @@ impl Room {
             .await
             .expect("reserve the customer")
             .customer_id;
+        let saver = shift_holder_common::teller_of_open_shift(&self.desk.db.pool, branch).await;
         let passport = self
             .desk
             .files
-            .upload(&here, "owner", "image/jpeg", JPEG, t)
+            .upload(&here, &saver, "image/jpeg", JPEG, t)
             .await
             .expect("upload a passport");
         let cmd = SaveTransaction {
@@ -181,7 +183,7 @@ impl Room {
         let reference = self
             .desk
             .workflow
-            .save(&here, cmd, "owner", t)
+            .save(&here, cmd, &saver, t)
             .await
             .unwrap_or_else(|e| panic!("save a {side} in {branch}: {e:?}"))
             .document_ref;
@@ -457,18 +459,7 @@ async fn completed_exchange_reads_figures_from_transaction_lines_when_wide_row_d
     let room = Room::open().await;
     let saved = room.save(MAIN, "BUY", "100", "0").await;
 
-    // Mutate the wide row in `transactions` to have completely different dummy figures.
-    // Child table `transaction_lines` remains unchanged:
-    // shop_side = 'BUY', currency = 'USD', quantity = 100, rate_snapshot = 32.1, fee_thb = 0.
-    sqlx::query(
-        "UPDATE transactions \
-         SET type = 'SELL', code = 'EUR', amount = 999.0000, rate = 50.00000000, fee = 99.00 \
-         WHERE document_ref = $1",
-    )
-    .bind(&saved.reference)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("update wide columns on transactions");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
     let path = receipt(&format!("branch=MAIN&ref={}", saved.reference));
     let answer = room.get("OWNER", &path).await;
@@ -517,18 +508,7 @@ async fn completed_exchange_reads_sell_with_fee_from_transaction_lines() {
     let room = Room::open().await;
     let saved = room.save(MAIN, "SELL", "50", "20").await;
 
-    // Mutate the wide row in `transactions` to have different figures:
-    // wide row says BUY 10 GBP rate 40 fee 0.
-    // child table `transaction_lines` has SELL 50 USD rate 33 fee 20 -> รับ 1,670 THB.
-    sqlx::query(
-        "UPDATE transactions \
-         SET type = 'BUY', code = 'GBP', amount = 10.0000, rate = 40.00000000, fee = 0.00 \
-         WHERE document_ref = $1",
-    )
-    .bind(&saved.reference)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("update wide columns on transactions");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
     let path = receipt(&format!("ref={}", saved.reference));
     let answer = room.get("FRONT", &path).await;
@@ -584,18 +564,7 @@ async fn completed_exchange_reads_unit_size_from_transaction_lines() {
     .await
     .expect("update transaction_lines to JPY with unit_size 100");
 
-    // Update wide row to have unit_size = 1 and amount = 100:
-    // If wide row is read, it displays "BUY 100 JPY", and unit_size=1 would compute 25 THB for 100 units.
-    // If lines are read, it displays "BUY 10,000 JPY" and computes 25 THB with unit_size 100.
-    sqlx::query(
-        "UPDATE transactions \
-         SET code = 'JPY', amount = 100.0000, rate = 0.25000000, unit_size = 1.0000, fee = 0.00 \
-         WHERE document_ref = $1",
-    )
-    .bind(&saved.reference)
-    .execute(&room.desk.db.pool)
-    .await
-    .expect("update wide columns on transactions");
+    // TX-9 (#677): the wide figures are gone; nothing left to make differ from the line.
 
     let path = receipt(&format!("branch=MAIN&ref={}", saved.reference));
     let answer = room.get("OWNER", &path).await;

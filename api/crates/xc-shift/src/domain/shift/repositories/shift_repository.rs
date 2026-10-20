@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use pos_error::AppResult;
 use xc_kernel::ids::BranchId;
 
+use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::Shift;
 use crate::domain::shift::entities::stock_movement::StockMovement;
 use crate::domain::shift::value_objects::balances::Balances;
@@ -15,15 +16,31 @@ pub trait ShiftRepository: Send + Sync + 'static {
         branch: &BranchId,
     ) -> impl std::future::Future<Output = AppResult<bool>> + Send;
 
-    fn active(
-        &self,
-        branch: &BranchId,
-    ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send;
-
     fn shifts(
         &self,
         branch: &BranchId,
     ) -> impl std::future::Future<Output = AppResult<Vec<Shift>>> + Send;
+
+    /// The teller's OPEN shift on any branch (CA-10p, design §4.7), keyed by `shifts.teller_id`.
+    /// Two OPEN shifts for one teller is an `AppError::Internal` naming the teller.
+    fn open_of_teller(
+        &self,
+        teller: &str,
+    ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send;
+
+    /// [`ShiftRepository::open_of_teller`] in the caller's transaction.
+    fn open_of_teller_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        teller: &'a str,
+    ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send + 'a;
+
+    /// Every OPEN shift of the branch with its teller, by `opened_at` then shift id (CA-10p, §4.7).
+    /// An OPEN shift with no teller, or a teller that is no user, is an `AppError::Internal`.
+    fn open_of_branch(
+        &self,
+        branch: &BranchId,
+    ) -> impl std::future::Future<Output = AppResult<Vec<OpenShiftRow>>> + Send;
 
     fn movements(
         &self,
@@ -61,12 +78,6 @@ pub trait ShiftRepository: Send + Sync + 'static {
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
         request_id: &'a str,
-    ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send + 'a;
-
-    fn active_in<'a>(
-        &'a self,
-        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &'a BranchId,
     ) -> impl std::future::Future<Output = AppResult<Option<Shift>>> + Send + 'a;
 
     fn insert_shift<'a>(

@@ -2,46 +2,45 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
+import {
+  makePublishedLineDto,
+  makePublishedPublicationDto,
+  makePublishedRatesData,
+  makeStaffMeView,
+  type PublishedRatesData,
+  type StaffMeView,
+} from '../../../shared/testing/fixtures';
 import { card } from './card';
-
-type Me = {
-  userId: string;
-  name: string;
-  roles: { role: string; branchId?: string }[];
-  branchId: string;
-  branchName: string;
-  permissions: string[];
-};
 
 const BRANCH = 'MAIN';
 
-function me(): Me {
-  return {
+function me() {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
     roles: [],
     branchId: BRANCH,
     branchName: 'สาขาทดสอบ',
     permissions: ['CompatRead'],
-  };
+  });
 }
 
-function ctx(m: Me) {
+function ctx(m: StaffMeView) {
   return { me: m, floor: undefined, refresh: vi.fn(async () => {}) } as unknown as Parameters<
     typeof card.visible
   >[0];
 }
 
-const RATES: PublishedRatesData = {
-  publication: { id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: '2026-10-10T03:15:00Z' },
+const RATES = makePublishedRatesData({
+  publication: makePublishedPublicationDto({ id: '11111111-2222-4333-8444-555555555555', version: 7, publishedAt: '2026-10-10T03:15:00Z' }),
   sourceDate: '2026-10-09',
   stale: false,
   lines: [
-    { currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd' },
-    { currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy' },
+    makePublishedLineDto({ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '32.4500', sellRate: '32.9000', lineId: 'line-usd', bands: [] }),
+    makePublishedLineDto({ currency: 'JPY', group: 'ALL', unitSize: '100', buyRate: '21.0450', sellRate: '21.5926', lineId: 'line-jpy', bands: [] }),
   ],
-};
+  bandHeadings: [],
+});
 
 const RATE_STRINGS = RATES.lines.flatMap((l) => [l.buyRate, l.sellRate]).filter((r): r is string => r !== null);
 

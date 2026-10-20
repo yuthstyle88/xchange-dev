@@ -1,10 +1,12 @@
+// Amended by W8 (claude/177aa7ef): userCreate no longer takes a typed password (F9 #3155, owner Q5 A); the server
+// answers temporaryPassword once. xchange#564, the BE controller's F9 contract.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
-import type { AdminUserRow } from '../../../shared/api/generated/admin_users';
+import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
 const B01 = 'XC-B01';
@@ -15,35 +17,35 @@ const SAMPLE_BRANCHES = [
   { id: B09, name: 'Siam Branch' },
 ];
 
-const SEED_USERS: AdminUserRow[] = [
-  {
+const SEED_USERS = [
+  makeAdminUserRow({
     userId: 'u-1',
     name: 'Somchai Active',
     status: 'ACTIVE',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
-  {
+  }),
+  makeAdminUserRow({
     userId: 'u-2',
     name: 'Somsri Invited',
     status: 'INVITED',
     version: 1,
     roles: [
-      {
+      makeAdminUserRole({
         role: 'TELLER',
         branch: B01,
         validFrom: '2026-10-01T00:00:00Z',
         validTo: null,
-      },
+      }),
     ],
-  },
+  }),
 ];
 
 function json(body: unknown, status = 200): Response {
@@ -266,13 +268,10 @@ describe('WE-27: screens/admin/users/ worded error tests (web-worded-error.md)',
 
       const nameInput = container.querySelector<HTMLInputElement>('#create-name');
       const phoneInput = container.querySelector<HTMLInputElement>('#create-phone');
-      const pwdInput = container.querySelector<HTMLInputElement>('input[name="password"]');
       nameInput!.value = 'New Staff';
       nameInput!.dispatchEvent(new Event('input', { bubbles: true }));
       phoneInput!.value = '0812345678';
       phoneInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      pwdInput!.value = 'secret123';
-      pwdInput!.dispatchEvent(new Event('input', { bubbles: true }));
 
       const form = container.querySelector<HTMLFormElement>('.users-dialog-form');
       form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -337,11 +336,8 @@ describe('WE-27: screens/admin/users/ worded error tests (web-worded-error.md)',
       await settle();
 
       const phoneInput = container.querySelector<HTMLInputElement>('#activate-phone');
-      const pwdInput = container.querySelector<HTMLInputElement>('input[name="activatePassword"]');
       phoneInput!.value = '0899999999';
       phoneInput!.dispatchEvent(new Event('input', { bubbles: true }));
-      pwdInput!.value = 'newpass123';
-      pwdInput!.dispatchEvent(new Event('input', { bubbles: true }));
 
       const form = container.querySelector<HTMLFormElement>('.users-dialog-form');
       form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));

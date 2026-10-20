@@ -299,23 +299,6 @@ impl Db {
         id
     }
 
-    /// A v2 `members` row of `branch` for `customer_id` (staff-verified, BK-11 drops the table).
-    async fn seed_member(&self, branch: &str, customer_id: &str) {
-        sqlx::query(
-            "INSERT INTO members (id, branch_id, customer_id, name, phone, token_hash, verified_at, verified_by) \
-             VALUES ($1, $2, $3, 'Name', $4, $5, $6, 'owner')",
-        )
-        .bind(unique("MB"))
-        .bind(branch)
-        .bind(customer_id)
-        .bind(NATIONAL)
-        .bind(unique("hash"))
-        .bind(at(-600))
-        .execute(&self.pool)
-        .await
-        .expect("insert into members");
-    }
-
     async fn phone_identities(&self, customer_id: &str) -> Vec<IdentityRow> {
         sqlx::query_as(
             "SELECT id, organization_id, type, encrypted_value, key_id, lookup_hash, verified_at, status \
@@ -350,12 +333,10 @@ impl Db {
     async fn seed_transaction(&self, customer_id: &str) -> (Uuid, String) {
         let document_ref = unique("DOC");
         let id: String = sqlx::query_scalar(
-            "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, \
-                 customer_id, customer_name, nationality, type, code, amount, rate, principal, fee, \
-                 bank_fee, received, paid, method, payment_ref, account, staff_id, booking_no, notes, \
-                 value_date, paid_at, recorded_at, recorded_by, completed_at) \
-             VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Customer', 'THA', 'SELL', 'USD', \
-                 1000.50, 32.6, 32616.30, 0, 0, 32616.30, 0, 'Cash', '', '', 'owner', '', '', \
+            "INSERT INTO transactions (document_ref, branch_id, mode, submission_id, payload_hash, customer_id, customer_name, \
+                 nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, \
+                 completed_at) \
+             VALUES ($1, $2, 'DEMO', $3, 'payload-hash', $4, 'Customer', 'THA', 'owner', '', '', \
                  DATE '2026-10-13', $5, $5, 'owner', $5) RETURNING id::text",
         )
         .bind(&document_ref)
@@ -406,34 +387,6 @@ impl Db {
         .execute(&self.pool)
         .await
         .expect("insert a Blueprint booking");
-    }
-
-    /// A v2 booking (`v2_bookings`, renamed by M1) that became `document_ref`, made by a v2 member.
-    async fn seed_v2_member_booking(&self, member_id: &str, document_ref: &str) {
-        sqlx::query(
-            "INSERT INTO v2_bookings (id, branch_id, request_id, request_hash, name, phone, member_id, \
-                 type, code, amount, rate, status, created_at, created_by, expires_at, submission_id, \
-                 transaction_ref) \
-             VALUES ($1, $2, $3, 'h', 'Name', '0899999999', $4, 'SELL', 'USD', 100, 32.6, 'USED', \
-                 now(), 'owner', now() + interval '1 hour', $5, $6)",
-        )
-        .bind(unique("BK"))
-        .bind(MAIN)
-        .bind(unique("req"))
-        .bind(member_id)
-        .bind(unique("sub"))
-        .bind(document_ref)
-        .execute(&self.pool)
-        .await
-        .expect("insert into v2_bookings");
-    }
-
-    async fn member_id_of(&self, customer_id: &str) -> String {
-        sqlx::query_scalar("SELECT id FROM members WHERE customer_id = $1 LIMIT 1")
-            .bind(customer_id)
-            .fetch_one(&self.pool)
-            .await
-            .expect("the member's id")
     }
 
     async fn keys_of(&self, transaction_id: Uuid) -> CustomerKeys {
@@ -569,8 +522,6 @@ impl SessionReader for HeaderUsers {
         Box::pin(async move {
             let u = user_of(&spec);
             Callers {
-                owner: None,
-                staff: None,
                 user: u.clone(),
                 staff_user: u,
             }
@@ -880,7 +831,6 @@ async fn admin_customers_flags_a_verified_phone_member_at_every_branch_and_nothi
     )
     .await;
     let v2_member = db.customer(xc_org()).await;
-    db.seed_member(MAIN, &v2_member).await;
 
     for (as_, branch) in [(&at_main, MAIN), (&at_b2, B2)] {
         assert_eq!(
@@ -932,8 +882,6 @@ async fn the_snapshot_member_marks_come_from_the_verified_phone_identity_not_mem
         "REVOKED",
     )
     .await;
-    let v2_member = db.customer(xc_org()).await;
-    db.seed_member(MAIN, &v2_member).await;
     let other = db.other_org().await;
     let elsewhere = db.customer(other).await;
     db.seed_phone(other, &elsewhere, "+66833333333", Some(at(-30)), "ACTIVE")
@@ -1002,12 +950,9 @@ async fn no_blueprint_booking_or_no_verified_active_phone_gives_no_keys_and_no_e
     let (revoked_ex, _) = db.seed_transaction(&revoked).await;
     db.seed_completed_booking(&revoked, revoked_ex).await;
 
-    // a v2 member's v2 booking, the source BK-10 retires
+    // what a v2 member's v2 booking looks like after M2 (BK-11): an exchange with no Blueprint booking
     let v2_member = db.customer(xc_org()).await;
-    db.seed_member(MAIN, &v2_member).await;
-    let member_id = db.member_id_of(&v2_member).await;
-    let (v2_ex, v2_ref) = db.seed_transaction(&v2_member).await;
-    db.seed_v2_member_booking(&member_id, &v2_ref).await;
+    let (v2_ex, _) = db.seed_transaction(&v2_member).await;
 
     for (exchange, what) in [
         (no_booking, "an exchange with no booking"),

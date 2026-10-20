@@ -17,13 +17,6 @@
 //   volume note, its own search (`ค้นหาในประวัติ`, placeholder `เลขรายการ / สกุลเงิน / วันที่`), the
 //   table (`วัน / เวลา`, `เลขรายการ` — a button opening the exchange's detail, `customers.js:22` —,
 //   `ประเภท`, `~จำนวน`, `~มูลค่า THB`, `สถานะ` with customers.js's own words), its empty text, `ปิด`.
-// - C3 `admin-workspace.js:99-110`, `:159-161`; `registrations.js:1-4`: two tabs in a
-//   `role="tablist"` named `ข้อมูลลูกค้า` — `รายชื่อลูกค้าและประวัติ` and `คำขอลงทะเบียน`; the second is the
-//   registrations panel, read on show through `/api/v2/bookings` `registrations` `{page, query}`;
-//   v3 answers no item (design §12.10), so it shows `ไม่พบการลงทะเบียนในสาขานี้`.
-// - C4 `bookings.js:13-15`: the history dialog's `ยืนยันตัวตนหน้าร้าน / ออกรหัส Member` opens the member
-//   form, which posts `/api/v2/bookings` `member` with a `memberSecret` made when the form opens
-//   (`crypto.randomUUID()`), and shows the member card.
 //
 // v3: the list is the paged view `admin_customers` (`?branch=&limit=50&before=` + `q`), the history
 // `admin_customer_history` (`?branch=&customer=` + `q`); the server filters and sorts, the screen
@@ -35,7 +28,7 @@
 // tests answer at `fetch` — a fake server behind the real `ApiClient`. Branch names come from the
 // shell's `admin_branches` view (same decision). The page-wide reads AppShell makes (the `me` view,
 // the queue card's read, `PAGE_WIDE` in `shared/testing/page-wide.ts`) and `transaction_documents` are answered and ignored;
-// only `admin_customers`, `admin_customer_history` and `/api/v2/bookings` are counted.
+// only `admin_customers` and `admin_customer_history` are counted.
 //
 // The rows of `admin_customers` are typed here by hand (`CustomerRow`) so this file compiles before
 // the view's generated `admin_customers.ts` exists; its fields are the ones
@@ -50,7 +43,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal, type JSX } from 'solid-js';
-import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
+import { makeTransactionRow, type TransactionRow } from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { closeDialog, Dialog } from '../parts/Dialog';
@@ -86,7 +79,6 @@ function own(text: string): string {
 
 const THAI = /[฀-๿]/;
 const BIG = '90071992547409.93';
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const T = {
   search: 'ค้นหาลูกค้า',
@@ -117,28 +109,6 @@ const T = {
   historyEmpty: 'ไม่มีรายการที่ตรงกับคำค้น หรือยังไม่มีประวัติแลกเงิน',
   close: 'ปิด',
   detailTitle: 'รายละเอียดรายการ',
-  // the tabs (admin-workspace.js:100, :159-160)
-  tabs: 'ข้อมูลลูกค้า',
-  listTab: 'รายชื่อลูกค้าและประวัติ',
-  registrationsTab: 'คำขอลงทะเบียน',
-  // the registrations panel (registrations.js:3-4)
-  regHeading: 'ลงทะเบียนสมาชิกออนไลน์',
-  regIntro: 'ตรวจเอกสารหน้าร้านและเลือกรหัสลูกค้าให้ตรงกันก่อนยืนยัน Member',
-  regPlaceholder: 'ค้นหาเลขลงทะเบียน / ชื่อ / เบอร์โทร',
-  regSearch: 'ค้นหา',
-  regRefresh: 'โหลดล่าสุด',
-  regEmpty: 'ไม่พบการลงทะเบียนในสาขานี้',
-  // the member form and card (bookings.js:13-15)
-  memberButton: 'ยืนยันตัวตนหน้าร้าน / ออกรหัส Member',
-  memberTitle: 'ยืนยัน Member หน้าร้าน',
-  memberPhone: 'เบอร์ติดต่อ',
-  memberVerified: 'พนักงานตรวจเอกสารและยืนยันตัวตนลูกค้าที่หน้าร้านแล้ว',
-  memberReissue: 'กรณีออกบัตรซ้ำ รหัส Member เดิมจะใช้จองไม่ได้',
-  memberBack: 'กลับ',
-  memberSubmit: 'ยืนยันและออกรหัส Member',
-  memberHandOver: 'ส่งมอบรหัสนี้ให้ลูกค้าที่หน้าร้าน เก็บไว้เป็นส่วนตัว ใช้กรอกในหน้าจองออนไลน์',
-  memberCode: 'รหัส Member',
-  memberCardNote: 'การจอง Member รอพนักงานกำหนดวันเวลาหมดอายุและยืนยันเรท',
 };
 
 // ── rows ─────────────────────────────────────────────────────────────────────
@@ -177,8 +147,8 @@ function customers(from: number, count: number): CustomerRow[] {
   return Array.from({ length: count }, (_, i) => customer(from + i));
 }
 
-function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
-  return {
+function tx(n: number, over: Partial<TransactionRow> = {}) {
+  return makeTransactionRow({
     id: `XC-20261008-${String(n).padStart(6, '0')}`,
     date: '2026-10-08',
     created: '2026-10-08T03:04:05.000Z',
@@ -206,7 +176,7 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
     paymentRef: null,
     slipUrl: null,
     ...over,
-  };
+  });
 }
 
 // ── a fake server behind the real ApiClient ──────────────────────────────────
@@ -214,26 +184,16 @@ function tx(n: number, over: Partial<TransactionRow> = {}): TransactionRow {
 type Refusal = { status: number; code: string; message: string; field?: string };
 type ListAnswer = { rows: CustomerRow[] } | Refusal;
 type HistoryAnswer = { rows: TransactionRow[] } | Refusal;
-/** What `/api/v2/bookings` answers: a JSON body, or v2's refusal `{error: "<sentence>"}`. */
-type BookingAnswer = { body: unknown } | { status: number; sentence: string };
 
 interface Read<A> {
   params: URLSearchParams;
   respond: (answer: A) => void;
 }
 
-interface Post {
-  action: string;
-  payload: Record<string, unknown>;
-  respond: (answer: BookingAnswer) => void;
-}
-
 let lists: Read<ListAnswer>[];
 let histories: Read<HistoryAnswer>[];
-let posts: Post[];
 let autoList: ((params: URLSearchParams) => ListAnswer) | null;
 let autoHistory: ((params: URLSearchParams) => HistoryAnswer) | null;
-let autoBooking: ((post: Post) => BookingAnswer) | null;
 let fetchSpy: ReturnType<typeof vi.fn>;
 
 function json(status: number, body: unknown): Response {
@@ -250,23 +210,7 @@ function viewResponse(answer: ListAnswer | HistoryAnswer): Response {
   return json(answer.status, { error });
 }
 
-function bookingResponse(answer: BookingAnswer): Response {
-  if ('body' in answer) return json(200, answer.body);
-  return json(answer.status, { error: answer.sentence });
-}
-
-/** v3's `/api/v2/bookings` (`bookings.rs`): no registration ever; a member card echoing the secret. */
-function bookingDefault(post: Post): BookingAnswer {
-  if (post.action === 'registrations') {
-    return { body: { items: [], hasMore: false, page: post.payload.page ?? 0 } };
-  }
-  if (post.action === 'member') {
-    return { body: { saved: true, name: 'Customer 1', memberCode: post.payload.memberSecret } };
-  }
-  return { status: 400, sentence: 'คำขอไม่ถูกต้อง' };
-}
-
-function serve(input: unknown, init?: RequestInit): Promise<Response> {
+function serve(input: unknown): Promise<Response> {
   const url = new URL(String(input), 'http://desk.test');
   const view = url.pathname.startsWith('/api/v3/views/')
     ? url.pathname.replace(/^\/api\/v3\/views\//, '')
@@ -303,21 +247,6 @@ function serve(input: unknown, init?: RequestInit): Promise<Response> {
   if (view === 'transaction_documents') {
     // the detail's receipt section: left loading, it is TransactionDetail's (V2-parts)
     return new Promise<Response>(() => {});
-  }
-  if (url.pathname === '/api/v2/bookings') {
-    const body = JSON.parse(String(init?.body ?? '{}')) as {
-      action: string;
-      payload: Record<string, unknown>;
-    };
-    return new Promise<Response>((resolve) => {
-      const post: Post = {
-        action: body.action,
-        payload: body.payload ?? {},
-        respond: (a) => resolve(bookingResponse(a)),
-      };
-      posts.push(post);
-      if (autoBooking) post.respond(autoBooking(post));
-    });
   }
   // the page-wide reads AppShell makes (`PAGE_WIDE`, `shared/testing/page-wide.ts`): answered, ignored
   return Promise.resolve(json(200, { version: 3, changed: false }));
@@ -375,33 +304,9 @@ function text(): string {
   return root.textContent ?? '';
 }
 
-/** The customers' panel: the tab panel the list tab controls, else the whole menu. */
+/** The customers' panel: the root element. */
 function listPanel(): HTMLElement {
-  const tab = [...root.querySelectorAll<HTMLElement>('[role="tab"]')].find(
-    (b) => (b.textContent ?? '').trim() === T.listTab,
-  );
-  const id = tab?.getAttribute('aria-controls');
-  const panel = id ? document.getElementById(id) : null;
-  return panel ?? root;
-}
-
-function registrationsPanel(): HTMLElement {
-  const tab = registrationsTab();
-  const id = tab.getAttribute('aria-controls');
-  expect(id, 'the registrations tab names its panel').toBeTruthy();
-  const panel = document.getElementById(id!);
-  expect(panel, 'the registrations panel').not.toBeNull();
-  return panel!;
-}
-
-function tabs(): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>('[role="tab"]')];
-}
-
-function registrationsTab(): HTMLElement {
-  const tab = tabs().find((b) => (b.textContent ?? '').trim() === T.registrationsTab);
-  expect(tab, `a tab "${T.registrationsTab}"`).toBeDefined();
-  return tab!;
+  return root;
 }
 
 function bodyRows(scope: ParentNode = listPanel()): HTMLTableRowElement[] {
@@ -468,17 +373,6 @@ function lastHistory(): Read<HistoryAnswer> {
   return r!;
 }
 
-function registrationPosts(): Post[] {
-  return posts.filter((p) => p.action === 'registrations');
-}
-
-function lastRegistrations(): Post {
-  const all = registrationPosts();
-  const p = all[all.length - 1];
-  expect(p, 'a /api/v2/bookings registrations post').toBeDefined();
-  return p!;
-}
-
 /** The value the read carried, '' for a key not sent. */
 function sent<A>(r: Read<A>, key: string): string {
   return r.params.get(key) ?? '';
@@ -500,10 +394,8 @@ async function openHistory(rowIndex = 0): Promise<void> {
 beforeEach(() => {
   lists = [];
   histories = [];
-  posts = [];
   autoList = null;
   autoHistory = null;
-  autoBooking = bookingDefault;
   fetchSpy = vi.fn(serve);
   vi.stubGlobal('fetch', fetchSpy);
   setLang('th');
@@ -560,7 +452,6 @@ describe('V2-customers: what the list reads (#466 §8, C1; design §12.1, §12.6
     const m = mount({ shown: false });
     await settle();
     expect(lists.length, 'no read while the menu is not shown').toBe(0);
-    expect(posts.length, 'no registrations post while the menu is not shown').toBe(0);
     m.setShown(true);
     await until(() => lists.length > 0, 'the first read');
     const r = lastList();
@@ -572,28 +463,20 @@ describe('V2-customers: what the list reads (#466 §8, C1; design §12.1, §12.6
     expect(r.params.has('to')).toBe(false);
   });
 
-  it('reads only through ApiClient — v3 views and /api/v2/bookings — and never on a timer', async () => {
+  it('reads only through ApiClient — v3 views — and never on a timer', async () => {
     autoList = () => ({ rows: customers(1, 3) });
     // fake timers from before the mount, so a timer the menu starts is a fake one; they move
     // with real time too, so the reads still settle
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mount();
-    await until(() => lists.length === 1 && posts.length === 1, 'the first reads');
+    await until(() => lists.length === 1, 'the first read');
     for (const call of fetchSpy.mock.calls) {
       const url = String(call[0]);
-      if (url === '/api/v2/bookings') {
-        const init = call[1] as RequestInit;
-        expect(init.method).toBe('POST');
-        const headers = new Headers(init.headers);
-        expect(headers.get('x-xchange-request'), 'ApiClient.post marks the request').toBe('1');
-      } else {
-        expect(url, 'every other request is a v3 view read').toMatch(/^\/api\/v3\/views\//);
-      }
+      expect(url, 'every request is a v3 view read').toMatch(/^\/api\/v3\/views\//);
     }
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
     await settle();
     expect(lists.length, 'no admin menu polls (design §12.6)').toBe(1);
-    expect(posts.length, 'the registrations are not polled either').toBe(1);
   });
 
   it('re-reads when refreshTick moves (the shell’s รีเฟรช, a saved write)', async () => {
@@ -928,307 +811,6 @@ describe('V2-customers: the history dialog (C2; customers.js:15-17, :22; design 
   });
 });
 
-// ── the tabs and the registrations panel (C3) ────────────────────────────────
-
-describe('V2-customers: the two tabs (C3; admin-workspace.js:99-110, :159-161)', () => {
-  it('is a tablist ข้อมูลลูกค้า with รายชื่อลูกค้าและประวัติ selected and คำขอลงทะเบียน, each controlling its panel', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    mount();
-    await until(() => bodyRows().length === 3, 'the list');
-    const list = root.querySelector('[role="tablist"]');
-    expect(list, 'a tablist').not.toBeNull();
-    expect(list!.getAttribute('aria-label')).toBe(own(T.tabs));
-    const all = tabs();
-    expect(all.map((b) => (b.textContent ?? '').trim())).toEqual([own(T.listTab), own(T.registrationsTab)]);
-    expect(all.map((b) => b.getAttribute('aria-selected'))).toEqual(['true', 'false']);
-    expect(all.map((b) => b.tabIndex)).toEqual([0, -1]);
-    const panels = all.map((b) => document.getElementById(b.getAttribute('aria-controls') ?? ''));
-    expect(panels.every((p) => p?.getAttribute('role') === 'tabpanel'), 'each tab controls a tabpanel').toBe(true);
-    expect(panels.map((p) => p!.getAttribute('aria-labelledby'))).toEqual(all.map((b) => b.id));
-    expect(panels.map((p) => p!.hidden)).toEqual([false, true]);
-    expect(bodyRows(panels[0]!).length, 'the customers are in the first panel').toBe(3);
-    expect(panels[1]!.textContent, 'the registrations are in the second panel').toContain(T.regHeading);
-  });
-
-  it('switches by click and by ArrowRight / ArrowLeft / Home / End, moving the focus', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    mount();
-    await until(() => bodyRows().length === 3, 'the list');
-    const [first, second] = tabs();
-    const panelOf = (b: HTMLElement) => document.getElementById(b.getAttribute('aria-controls') ?? '')!;
-
-    second!.click();
-    await settle();
-    expect([first!.getAttribute('aria-selected'), second!.getAttribute('aria-selected')]).toEqual(['false', 'true']);
-    expect([panelOf(first!).hidden, panelOf(second!).hidden]).toEqual([true, false]);
-
-    for (const [key, expected] of [
-      ['ArrowRight', first],
-      ['ArrowLeft', second],
-      ['Home', first],
-      ['End', second],
-    ] as const) {
-      const from = tabs().find((b) => b.getAttribute('aria-selected') === 'true')!;
-      from.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
-      await settle();
-      expect(expected!.getAttribute('aria-selected'), key).toBe('true');
-      expect(document.activeElement, `${key} moves the focus`).toBe(expected);
-      expect(panelOf(expected!).hidden, key).toBe(false);
-    }
-  });
-});
-
-describe('V2-customers: the registrations panel (C3; registrations.js:1-4; design §12.10)', () => {
-  it('posts registrations page 0 with no query when shown, and shows v2’s panel with the empty text v3 always answers', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    mount();
-    await until(() => registrationPosts().length === 1, 'the registrations post');
-    const p = lastRegistrations();
-    expect(p.payload).toEqual({ branchId: 'MAIN', page: 0, query: '' });
-
-    registrationsTab().click();
-    await until(() => (registrationsPanel().textContent ?? '').includes(T.regEmpty), 'the empty text');
-    const panel = registrationsPanel();
-    expect(panel.querySelector('h2')?.textContent?.trim()).toBe(own(T.regHeading));
-    expect(panel.textContent).toContain(own(T.regIntro));
-    const input = searchInput(panel);
-    expect(input.maxLength).toBe(100);
-    expect(input.getAttribute('placeholder')).toBe(own(T.regPlaceholder));
-    expect(buttonIn(panel, own(T.regSearch))).toBeDefined();
-    expect(buttonIn(panel, own(T.regRefresh))).toBeDefined();
-    expect(panel.textContent).toContain(own(T.regEmpty));
-    expect(pageText(panel)).toBe('หน้า 1');
-    expect(buttonIn(panel, T.prev).disabled, 'page 0 has no previous').toBe(true);
-    expect(buttonIn(panel, T.next).disabled, 'hasMore false has no next').toBe(true);
-  });
-
-  it('searches with the query trimmed from page 0 (ค้นหา or Enter), and โหลดล่าสุด reloads the same page and query', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    mount();
-    await until(() => registrationPosts().length === 1, 'the registrations post');
-    registrationsTab().click();
-    await settle();
-    const panel = registrationsPanel();
-
-    type(searchInput(panel), '  0812  ');
-    expect(registrationPosts().length, 'typing alone does not search').toBe(1);
-    buttonIn(panel, T.regSearch).click();
-    await until(() => registrationPosts().length === 2, 'a search post');
-    expect(lastRegistrations().payload).toEqual({ branchId: 'MAIN', page: 0, query: '0812' });
-
-    type(searchInput(panel), 'Somchai');
-    searchInput(panel).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    await until(() => registrationPosts().length === 3, 'a search post by Enter');
-    expect(lastRegistrations().payload).toEqual({ branchId: 'MAIN', page: 0, query: 'Somchai' });
-
-    buttonIn(panel, T.regRefresh).click();
-    await until(() => registrationPosts().length === 4, 'a reload post');
-    expect(lastRegistrations().payload).toEqual({ branchId: 'MAIN', page: 0, query: 'Somchai' });
-  });
-
-  it('pages with ถัดไป while hasMore, and back with ก่อนหน้า', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    autoBooking = (post) =>
-      post.action === 'registrations'
-        ? { body: { items: [], hasMore: post.payload.page === 0, page: post.payload.page } }
-        : bookingDefault(post);
-    mount();
-    await until(() => registrationPosts().length === 1, 'the registrations post');
-    registrationsTab().click();
-    await settle();
-    const panel = registrationsPanel();
-    await until(() => !buttonIn(panel, T.next).disabled, 'hasMore enables ถัดไป');
-    expect(pageText(panel)).toBe('หน้า 1');
-
-    buttonIn(panel, T.next).click();
-    await until(() => registrationPosts().length === 2, 'page 1 post');
-    expect(lastRegistrations().payload).toEqual({ branchId: 'MAIN', page: 1, query: '' });
-    await until(() => pageText(panel) === 'หน้า 2', 'page 2 drawn');
-    expect(buttonIn(panel, T.next).disabled).toBe(true);
-    expect(buttonIn(panel, T.prev).disabled).toBe(false);
-
-    buttonIn(panel, T.prev).click();
-    await until(() => registrationPosts().length === 3, 'page 0 post');
-    expect(lastRegistrations().payload).toEqual({ branchId: 'MAIN', page: 0, query: '' });
-
-    // a search from page 2 starts again at page 0 (registrations.js:3 `registrationPage=0`)
-    await until(() => !buttonIn(panel, T.next).disabled, 'page 1 again');
-    buttonIn(panel, T.next).click();
-    await until(() => registrationPosts().length === 4, 'page 1 post again');
-    await until(() => pageText(panel) === 'หน้า 2', 'page 2 drawn again');
-    type(searchInput(panel), 'Somchai');
-    buttonIn(panel, T.regSearch).click();
-    await until(() => registrationPosts().length === 5, 'a search post');
-    expect(lastRegistrations().payload).toEqual({ branchId: 'MAIN', page: 0, query: 'Somchai' });
-  });
-
-  it('on a branch change posts the new branch from page 0 with the query cleared', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    const m = mount();
-    await until(() => registrationPosts().length === 1, 'the registrations post');
-    registrationsTab().click();
-    await settle();
-    type(searchInput(registrationsPanel()), 'Somchai');
-    buttonIn(registrationsPanel(), T.regSearch).click();
-    await until(() => registrationPosts().length === 2, 'a search post');
-
-    m.setBranch('B9');
-    await until(() => lastRegistrations().payload.branchId === 'B9', 'a post for B9');
-    expect(lastRegistrations().payload).toEqual({ branchId: 'B9', page: 0, query: '' });
-    await settle();
-    expect(searchInput(registrationsPanel()).value).toBe('');
-  });
-
-  it('shows the server’s sentence when the post is refused', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    autoBooking = (post) =>
-      post.action === 'registrations'
-        ? { status: 403, sentence: 'บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้' }
-        : bookingDefault(post);
-    mount();
-    await until(() => registrationPosts().length === 1, 'the registrations post');
-    registrationsTab().click();
-    await until(
-      () => (registrationsPanel().textContent ?? '').includes('บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้'),
-      'the refusal',
-    );
-    expect(registrationsPanel().textContent).not.toContain(T.regEmpty);
-  });
-});
-
-// ── the member button (C4) ───────────────────────────────────────────────────
-
-describe('V2-customers: the member button in the history dialog (C4; bookings.js:13-15; design §12.14)', () => {
-  async function openMemberForm(): Promise<void> {
-    await openHistory();
-    buttonIn(dialog(), own(T.memberButton)).click();
-    await until(() => dialogTitle() === T.memberTitle, 'the member form');
-  }
-
-  function phoneInput(): HTMLInputElement {
-    const input = dialog().querySelector<HTMLInputElement>('input[type="tel"]');
-    expect(input, 'the phone input').not.toBeNull();
-    return input!;
-  }
-
-  function verified(): HTMLInputElement {
-    const box = dialog().querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(box, 'the identity checkbox').not.toBeNull();
-    return box!;
-  }
-
-  function fill(): void {
-    type(phoneInput(), '081-234-5678');
-    verified().checked = true;
-    verified().dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
-  function memberPosts(): Post[] {
-    return posts.filter((p) => p.action === 'member');
-  }
-
-  beforeEach(() => {
-    autoList = () => ({ rows: [customer(1, { name: 'Malee Rakdee' })] });
-    autoHistory = () => ({ rows: [tx(1)] });
-  });
-
-  it('opens ยืนยัน Member หน้าร้าน for the customer: name · id, the phone, the identity check, the reissue note, กลับ and the submit', async () => {
-    mount();
-    await until(() => bodyRows().length === 1, 'one customer');
-    await openMemberForm();
-    expect(dialogTitle()).toBe(own(T.memberTitle));
-    const d = dialog().textContent ?? '';
-    expect(d).toContain(`Malee Rakdee · ${cx(1)}`);
-    expect(d).toContain(own(T.memberPhone));
-    expect(phoneInput().required).toBe(true);
-    expect(phoneInput().maxLength).toBe(30);
-    expect(verified().required).toBe(true);
-    expect(d).toContain(own(T.memberVerified));
-    expect(d).toContain(own(T.memberReissue));
-    expect(buttonIn(dialog(), own(T.memberBack))).toBeDefined();
-    expect(buttonIn(dialog(), own(T.memberSubmit))).toBeDefined();
-
-    buttonIn(dialog(), T.memberBack).click();
-    await settle();
-    expect(dialogOpen(), 'กลับ closes the dialog').toBe(false);
-  });
-
-  it('posts member with the branch, the customer, the phone, the identity check and a fresh UUID, then shows the member card', async () => {
-    // the card shows what the server answered (`r.name`, `r.memberCode`, bookings.js:13)
-    const CODE = '0f0e0d0c-0b0a-4908-8706-050403020100';
-    autoBooking = (post) =>
-      post.action === 'member'
-        ? { body: { saved: true, name: 'Malee R. (card)', memberCode: CODE } }
-        : bookingDefault(post);
-    mount();
-    await until(() => bodyRows().length === 1, 'one customer');
-    await openMemberForm();
-    fill();
-    buttonIn(dialog(), T.memberSubmit).click();
-    await until(() => memberPosts().length === 1, 'the member post');
-    const p = memberPosts()[0]!;
-    expect(Object.keys(p.payload).sort()).toEqual(
-      ['branchId', 'customerId', 'identityConfirmed', 'memberSecret', 'phone'].sort(),
-    );
-    expect(p.payload.branchId).toBe('MAIN');
-    expect(p.payload.customerId).toBe(cx(1));
-    expect(p.payload.phone).toBe('081-234-5678');
-    expect(p.payload.identityConfirmed).toBe(true);
-    expect(String(p.payload.memberSecret), 'crypto.randomUUID()').toMatch(UUID_V4);
-
-    await until(() => dialogTitle() === 'บัตร Member · Malee R. (card)', 'the member card');
-    const d = dialog().textContent ?? '';
-    expect(d).toContain(own(T.memberHandOver));
-    expect(d).toContain(own(T.memberCode));
-    expect(d).toContain(own(T.memberCardNote));
-    const code = dialog().querySelector<HTMLInputElement>('input');
-    expect(code?.readOnly, 'the code is read-only').toBe(true);
-    expect(code?.value, 'the code the server answered').toBe(CODE);
-    buttonIn(dialog(), own(T.close)).click();
-    await settle();
-    expect(dialogOpen()).toBe(false);
-  });
-
-  it('disables the submit while waiting; on a refusal shows the sentence, enables it again, and a retry sends the same secret', async () => {
-    // every /api/v2/bookings post is answered by hand in this test
-    autoBooking = null;
-    mount();
-    await until(() => bodyRows().length === 1, 'one customer');
-    // registrations answered by hand from here on
-    await until(() => registrationPosts().length === 1, 'the registrations post');
-    registrationPosts()[0]!.respond(bookingDefault(registrationPosts()[0]!));
-    await openMemberForm();
-    fill();
-    buttonIn(dialog(), T.memberSubmit).click();
-    await until(() => memberPosts().length === 1, 'the member post');
-    expect(buttonIn(dialog(), T.memberSubmit).disabled, 'disabled while the post is waiting').toBe(true);
-
-    memberPosts()[0]!.respond({ status: 400, sentence: 'กรุณายืนยันตัวตนลูกค้าก่อน' });
-    await until(() => (dialog().textContent ?? '').includes('กรุณายืนยันตัวตนลูกค้าก่อน'), 'the refusal');
-    expect(dialogTitle(), 'the form stays').toBe(T.memberTitle);
-    expect(buttonIn(dialog(), T.memberSubmit).disabled).toBe(false);
-
-    buttonIn(dialog(), T.memberSubmit).click();
-    await until(() => memberPosts().length === 2, 'the retry');
-    expect(memberPosts()[1]!.payload.memberSecret, 'the form’s secret, made once when it opened').toBe(
-      memberPosts()[0]!.payload.memberSecret,
-    );
-    memberPosts()[1]!.respond({
-      body: { saved: true, name: 'Malee Rakdee', memberCode: memberPosts()[1]!.payload.memberSecret },
-    });
-    await until(() => dialogTitle() === 'บัตร Member · Malee Rakdee', 'the member card');
-
-    // a new form makes a new secret
-    closeDialog();
-    await settle();
-    await openMemberForm();
-    fill();
-    buttonIn(dialog(), T.memberSubmit).click();
-    await until(() => memberPosts().length === 3, 'a post from a new form');
-    expect(memberPosts()[2]!.payload.memberSecret).not.toBe(memberPosts()[0]!.payload.memberSecret);
-  });
-});
-
 // ── load-older control in history dialog (#466 controller decision) ─────────
 
 describe('V2-customers: load-older control in history dialog (#466 controller decision)', () => {
@@ -1321,117 +903,7 @@ describe('V2-customers: load-older control in history dialog (#466 controller de
     expect(sent(r, 'q')).toBe('USD');
   });
 
-  it('draws no Thai in the member card dialog in English', async () => {
-    const CODE = '0f0e0d0c-0b0a-4908-8706-050403020100';
-    autoBooking = (post) =>
-      post.action === 'member'
-        ? { body: { saved: true, name: 'Malee R. (card)', memberCode: CODE } }
-        : bookingDefault(post);
-    autoList = () => ({ rows: [customer(1, { name: 'Malee Rakdee' })] });
-    autoHistory = () => ({ rows: [tx(1)] });
-    setLang('en');
-    mount();
-    await until(() => bodyRows().length === 1, 'one customer');
-    const tr = bodyRows()[0]!;
-    const showHistoryBtn = [...tr.querySelectorAll('button')].find((b) =>
-      (b.textContent ?? '').includes('View History'),
-    )!;
-    expect(showHistoryBtn, 'View History button in English').toBeDefined();
-    showHistoryBtn.click();
-    await until(() => dialogOpen() && histories.length > 0, 'the history dialog and its read');
 
-    const memberBtn = [...dialog().querySelectorAll('button')].find((b) =>
-      (b.textContent ?? '').includes('Verify Identity / Issue Member Code'),
-    )!;
-    expect(memberBtn, 'member button in English').toBeDefined();
-    memberBtn.click();
-    await until(() => dialogTitle() === 'Verify Member at Counter', 'the member form in English');
-    const phoneInput = dialog().querySelector<HTMLInputElement>('input[type="tel"]')!;
-    expect(phoneInput, 'phone input').not.toBeNull();
-    phoneInput.value = '081-234-5678';
-    phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
-    const box = dialog().querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(box, 'checkbox').not.toBeNull();
-    box.checked = true;
-    box.dispatchEvent(new Event('change', { bubbles: true }));
-
-    const submitBtn = [...dialog().querySelectorAll('button')].find((b) =>
-      (b.textContent ?? '').includes('Confirm and Issue Member Code'),
-    )!;
-    expect(submitBtn, 'submit button in English').toBeDefined();
-    submitBtn.click();
-    await until(() => dialogTitle().includes('Member Card'), 'the member card in English');
-    expect(dialogTitle()).toBe('Member Card · Malee R. (card)');
-    expect(dialogTitle()).not.toMatch(THAI);
-    expect(dialog().textContent).not.toMatch(THAI);
-  });
-
-  it('shows member issue refusal through errorText distinguishing from err.message', async () => {
-    autoBooking = (post) =>
-      post.action === 'member'
-        ? ({ status: 403, sentence: { code: 'roleNotAllowedHere', message: 'บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้' } } as any)
-        : bookingDefault(post);
-    autoList = () => ({ rows: [customer(1, { name: 'Malee Rakdee' })] });
-    autoHistory = () => ({ rows: [tx(1)] });
-    setLang('en');
-    mount();
-    await until(() => bodyRows().length === 1, 'one customer');
-    const tr = bodyRows()[0]!;
-    const showHistoryBtn = [...tr.querySelectorAll('button')].find((b) =>
-      (b.textContent ?? '').includes('View History'),
-    )!;
-    showHistoryBtn.click();
-    await until(() => dialogOpen() && histories.length > 0, 'the history dialog');
-
-    const memberBtn = [...dialog().querySelectorAll('button')].find((b) =>
-      (b.textContent ?? '').includes('Verify Identity / Issue Member Code'),
-    )!;
-    memberBtn.click();
-    await until(() => dialogTitle() === 'Verify Member at Counter', 'the member form');
-
-    const phoneInput = dialog().querySelector<HTMLInputElement>('input[type="tel"]')!;
-    phoneInput.value = '081-234-5678';
-    phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
-    const box = dialog().querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    box.checked = true;
-    box.dispatchEvent(new Event('change', { bubbles: true }));
-
-    const submitBtn = [...dialog().querySelectorAll('button')].find((b) =>
-      (b.textContent ?? '').includes('Confirm and Issue Member Code'),
-    )!;
-    submitBtn.click();
-
-    await until(
-      () => (dialog().textContent ?? '').includes('Role not permitted for this action here'),
-      'the member refusal in English',
-    );
-    expect(dialog().querySelector('.error-banner')).not.toBeNull();
-    expect(dialog().textContent).toContain('Role not permitted for this action here');
-    expect(dialog().textContent).not.toContain('บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้');
-  });
-
-  it('shows registration load refusal through errorText distinguishing from err.message', async () => {
-    autoList = () => ({ rows: customers(1, 3) });
-    autoBooking = (post) =>
-      post.action === 'registrations'
-        ? ({ status: 403, sentence: { code: 'roleNotAllowedHere', message: 'บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้' } } as any)
-        : bookingDefault(post);
-    setLang('en');
-    mount();
-    await until(() => registrationPosts().length === 1, 'the registrations post');
-    const regTab = tabs()[1]!;
-    regTab.click();
-
-    const regPanelId = regTab.getAttribute('aria-controls')!;
-    const regPanel = document.getElementById(regPanelId)!;
-    await until(
-      () => (regPanel.textContent ?? '').includes('Role not permitted for this action here'),
-      'the registration refusal in English',
-    );
-    expect(regPanel.querySelector('.error-banner')).not.toBeNull();
-    expect(regPanel.textContent).toContain('Role not permitted for this action here');
-    expect(regPanel.textContent).not.toContain('บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้');
-  });
 
   it('hides summary sentence on full page and page 2, and shows total count vs found count during search on short page', async () => {
     const page1 = customers(1, 50);

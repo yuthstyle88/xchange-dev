@@ -76,19 +76,20 @@ async fn the_saved_row(
     .execute(pool)
     .await
     .expect("the saved row's customer");
-    // The shift's teller (`shifts.teller_id` is NOT NULL since #753).
+    // The shift's teller (`shifts.teller_id` is NOT NULL since #753, one OPEN shift per teller since M3).
     sqlx::query(
         "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, 'dev-teller', 'PENDING', 'test', 'dev-teller' FROM organizations \
+         SELECT id, 'dev-teller-' || $1, 'PENDING', 'test', 'dev-teller-' || $1 FROM organizations \
          WHERE code = 'XC' ON CONFLICT (legacy_employee_id) DO NOTHING",
     )
+    .bind(branch_id)
     .execute(pool)
     .await
     .expect("the saved row's teller");
     sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
          VALUES ('dev-shift-' || $1, $1, 'OPEN', now(), 'owner', 'dev-open-' || $1, \
-           (SELECT id FROM users WHERE legacy_employee_id = 'dev-teller')) \
+           (SELECT id FROM users WHERE legacy_employee_id = 'dev-teller-' || $1)) \
          ON CONFLICT DO NOTHING",
     )
     .bind(branch_id)
@@ -96,23 +97,16 @@ async fn the_saved_row(
     .await
     .expect("the saved row's shift");
     sqlx::query(
-        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, \
-            payload_hash, customer_id, customer_name, nationality, type, code, amount, rate, \
-            unit_size, principal, fee, bank_fee, received, paid, method, payment_ref, account, \
-            staff_id, booking_no, notes, value_date, paid_at, recorded_at, recorded_by, completed_at) \
-         VALUES ($1, $2, 'LIVE', 'dev-shift-' || $2, $3, 'hash', 'dev-customer-' || $2, \
-            'Somchai', 'THA', 'BUY', $4, $5::numeric, $6::numeric, 1, \
-            round($5::numeric * $6::numeric, 2), 0, 0, 0, round($5::numeric * $6::numeric, 2), \
-            'Cash', '', 'Cash drawer', 'owner', 'WALK-IN', '', '2026-10-06', now(), now(), \
-            'owner', now()) \
+        "INSERT INTO transactions (document_ref, branch_id, mode, shift_id, submission_id, payload_hash, customer_id, \
+            customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+            recorded_by, completed_at) \
+         VALUES ($1, $2, 'LIVE', 'dev-shift-' || $2, $3, 'hash', 'dev-customer-' || $2, 'Somchai', 'THA', \
+            'owner', 'WALK-IN', '', '2026-10-06', now(), now(), 'owner', now()) \
          ON CONFLICT (organization_id, document_ref) DO NOTHING",
     )
     .bind(document_ref)
     .bind(branch_id)
     .bind(submission_id)
-    .bind(currency)
-    .bind(amount)
-    .bind(rate)
     .execute(pool)
     .await
     .unwrap_or_else(|e| panic!("the saved row {document_ref}: {e}"));
