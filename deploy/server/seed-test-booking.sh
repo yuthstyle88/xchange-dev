@@ -119,6 +119,7 @@ if [ -n "$TELLER_SUB" ]; then
        ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
      INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
      SELECT id, 'TELLER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
+  echo "    teller created: $TELLER_PHONE  password $TELLER_PW"
 else
   TELLER_PW="(unchanged: $TELLER_PHONE was already registered)"
 fi
@@ -126,10 +127,13 @@ fi
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
 if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/app/register" \
-    -H 'Content-Type: application/json' -H "Origin: $BASE" \
+  echo "    customer Identity account created: $CUSTOMER_PHONE  password $CUSTOMER_PW"
+  resp=$(curl -sS -w '\n%{http_code}' -X POST "$BASE/api/app/register" \
+    -H 'Content-Type: application/json' -H "Origin: $BASE" -H 'X-Xchange-Request: 1' \
     --data "{\"identifier\":\"$CUSTOMER_PHONE\",\"password\":\"$CUSTOMER_PW\",\"displayName\":\"Test Customer\",\"lang\":\"th\",\"marketing\":[]}")
-  [ "$code" = 200 ] || die "POST $BASE/api/app/register answered $code"
+  code=$(tail -n 1 <<<"$resp")
+  # the answer never echoes the identifier, password or a token (customer_register.rs:14)
+  [ "$code" = 200 ] || die "POST $BASE/api/app/register answered $code: $(sed '$d' <<<"$resp" | head -c 400)"
 else
   CUSTOMER_PW="(unchanged: $CUSTOMER_PHONE was already registered)"
 fi
