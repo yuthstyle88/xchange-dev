@@ -66,6 +66,7 @@ test.describe('QA-S7 smoke: /staff cards, /staff/report, /staff/documents, /staf
       role: 'teller',
       key: '.documents-screen',
       langs: STAFF_LANGS,
+      allowConsole: ['documentsNotFound404'],
     });
   });
 

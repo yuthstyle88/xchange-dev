@@ -37,7 +37,7 @@ export interface Users {
   quantity?: string;
 }
 
-export type ConsoleAllowKey = 'anonymousMyProfile401' | 'loyaltyUnavailable503';
+export type ConsoleAllowKey = 'anonymousMyProfile401' | 'loyaltyUnavailable503' | 'documentsNotFound404';
 
 export interface ConsoleAllowEntry {
   url: RegExp;
@@ -59,6 +59,12 @@ export const CONSOLE_ALLOWLIST: Record<ConsoleAllowKey, ConsoleAllowEntry> = {
     status: 503,
     code: 'loyaltyUnavailable',
     log: 'loyalty not configured on host',
+  },
+  // No ?ref= is a refusal by design (documents.rs:125); GET answers 404 documentsNotFound.
+  documentsNotFound404: {
+    url: /\/api\/v3\/views\/(staff_)?documents(?:\?|$)/,
+    status: 404,
+    code: 'documentsNotFound',
   },
 };
 
