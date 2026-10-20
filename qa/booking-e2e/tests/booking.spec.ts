@@ -134,9 +134,19 @@ test.describe.serial('#1683 booking', () => {
     await page.goto('/#booking-slots'); // admin.html is served at / (api/src/presentation/pages.rs PAGE_SPECS)
     await expect(page.locator('input[name="capacity"]')).toBeVisible({ timeout: 15_000 });
     await shot(page, 'admin-1-booking-slots');
-    // The screen works on the session branch; the seeded rule is MAIN (XC-B).
-    const onMain = await page.getByText(/XC-B/).first().isVisible().catch(() => false);
-    test.skip(!onMain, 'the admin session branch is not XC-B (MAIN); switch branch in the shell and rerun');
+    // The screen works on the session branch; the seeded rule is MAIN (XC-B). Switch with the account
+    // bar's branch menu (web/src/shared/ui/AccountBar.tsx:143-170) and remember the branch to go back to.
+    const branchButton = page.locator('.account-bar button[aria-haspopup="menu"]');
+    const startBranch = ((await branchButton.innerText().catch(() => '')) || '').trim();
+    if (!/XC-B/.test(startBranch)) {
+      await branchButton.click();
+      await page.getByRole('menuitemradio', { name: /^XC-B$/ }).click();
+      await expect(page.locator('.account-bar button[aria-haspopup="menu"]')).toContainText('XC-B', { timeout: 20_000 });
+      await page.goto('/#booking-slots');
+      await expect(page.locator('input[name="capacity"]')).toBeVisible({ timeout: 15_000 });
+      console.log(`[admin] switched session branch from "${startBranch}" to XC-B`);
+    }
+    await shot(page, 'admin-1b-booking-slots-xcb');
 
     // Capacity: a slot two days ahead at 09:00 has no bookings from this suite.
     const day = new Date(Date.now() + 7 * 3600_000 + 2 * 24 * 3600_000).toISOString().slice(0, 10);
@@ -182,6 +192,12 @@ test.describe.serial('#1683 booking', () => {
     await expect(page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first()
       .locator('input[name="slotCapacity"]')).toHaveValue(before, { timeout: 15_000 });
     console.log(`[admin] restored: closure ${closed} removed, capacity back to ${before}`);
+    const original = startBranch.replace(/^สาขา\s*|^Branch\s*/i, '').trim();
+    if (original && !/XC-B/.test(startBranch)) {
+      await page.locator('.account-bar button[aria-haspopup="menu"]').click();
+      await page.getByRole('menuitemradio', { name: original }).click();
+      console.log(`[admin] session branch back to "${original}"`);
+    }
   });
 });
 
