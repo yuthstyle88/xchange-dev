@@ -4,7 +4,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AttachReferralInput, AttachReferralOutput } from '../../../shared/api/generated/attach_referral';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import type { MeView } from '../../../shared/api/generated/me';
 import { can } from '../../staff/parts/can';
 import * as texts from './i18n';
 import './referral.css';
@@ -36,7 +36,7 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   const t = screenT('desk.referral', texts);
   const defaultApi = new ApiClient();
   const getApi = () => props.api ?? defaultApi;
-  const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
+  const [me, setMe] = createSignal<MeView | undefined>(undefined);
   const [code, setCode] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
   const [locked, setLocked] = createSignal(false);
@@ -46,11 +46,11 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   onMount(async () => {
     const api = getApi();
     try {
-      const res = await api.view<StaffMeView>('staff_me');
+      const res = await api.view<MeView>('me');
       const meData =
         res && typeof res === 'object' && 'data' in res && res.data
           ? res.data
-          : (res as unknown as StaffMeView);
+          : (res as unknown as MeView);
       setMe(meData);
     } catch (err: unknown) {
       setMe(undefined);
