@@ -25,6 +25,9 @@ impl PricingFlag {
     /// True for the flags that keep a row out of bulk approve (V.9: `BelowCost`, `StaleSource`, `Precision`; and
     /// `NoAnchor`, whose row has no suggestion to approve, §11).
     pub fn blocking(self) -> bool {
-        todo!("PT-8: PricingFlag::blocking")
+        matches!(
+            self,
+            Self::NoAnchor | Self::StaleSource | Self::BelowCost | Self::Precision
+        )
     }
 }
