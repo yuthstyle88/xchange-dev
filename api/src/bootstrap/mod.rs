@@ -373,7 +373,7 @@ impl Drop for Application {
 
 impl Application {
     pub async fn build(settings: Settings) -> Result<Self, anyhow::Error> {
-        let pii_key_path = std::path::Path::new("/etc/xc-v3/pii.key");
+        let pii_key_path = settings.pii.key_path.as_path();
         if pii_key_path.exists() {
             let keys = xc_kernel::pii::PiiKeys::load(pii_key_path)?;
             let _ = xc_customer::install_pii_keys(std::sync::Arc::new(keys));

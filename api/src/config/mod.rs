@@ -60,6 +60,20 @@ impl Default for VerificationSettings {
     }
 }
 
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct PiiSettings {
+    pub key_path: PathBuf,
+}
+
+impl Default for PiiSettings {
+    fn default() -> Self {
+        Self {
+            key_path: PathBuf::from("/etc/xc-v3/pii.key"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct AuthSettings {
     /// Seconds between two purges of expired sessions and past sign-in
@@ -164,6 +178,8 @@ pub struct Settings {
     pub files: FilesSettings,
     #[serde(default)]
     pub verification: VerificationSettings,
+    #[serde(default)]
+    pub pii: PiiSettings,
     #[serde(default)]
     pub auth: AuthSettings,
     #[serde(default)]
