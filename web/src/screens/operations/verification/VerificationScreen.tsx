@@ -226,6 +226,7 @@ export function VerificationScreen(): JSX.Element {
         setQueueItems(answer.data);
       }
       setAuthorized(true);
+      void loadPolicy();
       setRefusalMessage(null);
       if (queueErrorActive) {
         queueErrorActive = false;
@@ -252,7 +253,11 @@ export function VerificationScreen(): JSX.Element {
     }
   }
 
+  let policyLoaded = false;
+
   async function loadPolicy(): Promise<void> {
+    if (policyLoaded) return;
+    policyLoaded = true;
     try {
       const policyAns = await api.view<VerificationPolicyData>('verification_policy');
       setBranchReviewAllowed(policyAns.data?.branchReviewAllowed === true);
@@ -262,7 +267,6 @@ export function VerificationScreen(): JSX.Element {
   }
 
   async function initScreen(): Promise<void> {
-    void loadPolicy();
     try {
       const meAns = await api.view<MeView>('me');
       const meData = meAns.data;
