@@ -5,6 +5,7 @@
 
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+use xc_kernel::money::CurrencyCode;
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
@@ -31,11 +32,15 @@ impl CurrencyTierOverrideStore {
         todo!("PT-3: CurrencyTierOverrideStore::insert")
     }
 
-    /// Copies every override row of version `from` onto version `to` (§3 "Versioned like the rest of the policy").
+    /// Copies every override row (tiers and settings) of version `from` onto version `to`, except the currencies in
+    /// `except` (§3 "Versioned like the rest of the policy"). `PolicyVersionWriter::next` inserts the replaced
+    /// currencies first, then carries the others with `except` = those currencies, so a replaced currency is never
+    /// copied and an override with no tiers, no minimum spread and no anchor removes that currency's override.
     pub async fn carry_forward(
         _tx: &mut Transaction<'_, Postgres>,
         _from: &Uuid,
         _to: &Uuid,
+        _except: &[CurrencyCode],
     ) -> Result<(), RateEngineError> {
         todo!("PT-3: CurrencyTierOverrideStore::carry_forward")
     }

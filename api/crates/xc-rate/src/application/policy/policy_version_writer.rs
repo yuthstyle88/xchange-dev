@@ -31,8 +31,10 @@ pub struct PolicyVersionChange {
     pub value_tiers: Vec<PolicyTier>,
     /// `None` keeps the current version's anchor (or `BOT` for the first version), §3.1.
     pub anchor_source: Option<AnchorSource>,
-    /// `None` carries every override of the current version forward (`CurrencyTierOverrideStore::carry_forward`);
-    /// `Some(list)` replaces the overrides of the currencies in `list` and carries the others forward (§3).
+    /// `None` carries every override of the current version forward (`CurrencyTierOverrideStore::carry_forward`
+    /// with no exception); `Some(list)` inserts `list` (`CurrencyTierOverrideStore::insert`) and carries the other
+    /// currencies forward (`carry_forward` with `except` = the currencies of `list`), §3. An entry with no tiers, no
+    /// minimum spread and no anchor therefore removes that currency's override.
     pub overrides: Option<Vec<CurrencyTierOverride>>,
     pub approved_by: String,
     pub reason: String,
