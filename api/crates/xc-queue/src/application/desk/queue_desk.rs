@@ -39,6 +39,9 @@ async fn check_counter_active(
     branch: &BranchId,
     teller_id: &str,
 ) -> AppResult<()> {
+    if uuid::Uuid::try_parse(teller_id).is_err() {
+        return Err(QueueError::NoOpenShift.into());
+    }
     let counter_status: Option<(String,)> = sqlx::query_as(
         "SELECT status FROM queue_counters WHERE branch_id = $1 AND teller_id = $2::uuid",
     )
@@ -59,6 +62,9 @@ async fn check_not_serving(
     branch: &BranchId,
     teller_id: &str,
 ) -> AppResult<()> {
+    if uuid::Uuid::try_parse(teller_id).is_err() {
+        return Ok(());
+    }
     let count: (i64,) = sqlx::query_as(
         "SELECT count(*) FROM queue_tickets \
          WHERE branch_id = $1 AND counter_teller_id = $2::uuid AND status IN ('CALLED', 'SERVING')",
