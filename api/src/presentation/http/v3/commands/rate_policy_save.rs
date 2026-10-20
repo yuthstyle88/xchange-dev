@@ -443,8 +443,9 @@ impl CommandAction for RatePolicySaveCommand {
 }
 
 /// The guards and the stale settings may change iff the caller has a valid-now EXECUTIVE row covering `branch`
-/// (#1030 §3.9; design §3.3: the old owner is EXECUTIVE + ADMIN).
-fn may_change_the_frame(who: &Actor, branch: &BranchId, now: DateTime<Utc>) -> bool {
+/// (#1030 §3.9; design §3.3: the old owner is EXECUTIVE + ADMIN). `pub(crate)` for `pricingConfigure`
+/// (pricing-tiers.md §3: override margins and the anchor are frame, under the same rule).
+pub(crate) fn may_change_the_frame(who: &Actor, branch: &BranchId, now: DateTime<Utc>) -> bool {
     who.roles.iter().any(|r| {
         r.role == Role::Executive
             && r.valid_from <= now
