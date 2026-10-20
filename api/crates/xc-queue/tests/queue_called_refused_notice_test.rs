@@ -149,7 +149,7 @@ async fn ticket_with_sequence_1000_is_called_and_one_notification_written() {
     assert_eq!(
         written(&db).await,
         vec![format!(
-            "{user} | queue.called:{}:1 | queue_called | branchName={};displayNumber=W1000",
+            "{user} | queue.called:{}:1 | queue_called | branch=MAIN;branchName={};displayNumber=W1000",
             ticket.id,
             main_name(&db).await
         )]

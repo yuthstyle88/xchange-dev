@@ -45,19 +45,8 @@ async fn seed_shift(
     .await
     .expect("insert a shift");
     for (code, opening, expected, counted, difference) in balances {
-        sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected, counted, difference) \
-             VALUES ($1, $2, $3::numeric, $4::numeric, $5::numeric, $6::numeric)",
-        )
-        .bind(id)
-        .bind(code)
-        .bind(opening)
-        .bind(expected)
-        .bind(counted)
-        .bind(difference)
-        .execute(&db.pool)
-        .await
-        .expect("insert a shift balance");
+        db.balances
+            .seed_row(id, code, opening, expected, *counted, *difference);
     }
 }
 

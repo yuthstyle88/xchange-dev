@@ -192,17 +192,6 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
                 .bind(&request)
                 .execute(&mut **tx)
                 .await?;
-                for (c, a) in [("THB", "100000"), ("USD", "10000")] {
-                    sqlx::query(
-                        "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                         VALUES ($1, $2, $3::numeric, $3::numeric)",
-                    )
-                    .bind(&id)
-                    .bind(c)
-                    .bind(a)
-                    .execute(&mut **tx)
-                    .await?;
-                }
                 Ok::<(), pos_error::AppError>(())
             })
         })

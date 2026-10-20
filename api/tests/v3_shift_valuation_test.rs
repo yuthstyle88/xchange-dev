@@ -47,9 +47,13 @@ use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::role::Role;
+use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta, fixed2, fixed6, round_cents};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, MoneyDelta, fixed2, fixed6, round_cents};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
@@ -169,7 +173,7 @@ impl TestDb {
 
     fn service(&self) -> ShiftService<PgShiftRepository> {
         ShiftService::new(
-            Arc::new(PgShiftRepository::new(self.pool.clone())),
+            Arc::new(ledger_shift_repository(self.pool.clone())),
             BranchTx::new(Transactor::new(self.pool.clone())),
         )
     }
@@ -193,7 +197,7 @@ impl TestDb {
 
     /// Opens a shift on `branch` with `opening`; answers its id.
     /// CA-10 (#626, #2955): v2's `ShiftService::open` is deleted with the core; the same OPEN shift is written
-    /// straight into the tables (setup only).
+    /// straight into the tables and the drawer is funded through `LedgerCashPostings` (setup only).
     async fn open(&self, branch: &str, opening: &[(&str, &str)]) -> String {
         let id = format!("SH-{}", uuid::Uuid::new_v4());
         sqlx::query(
@@ -209,29 +213,58 @@ impl TestDb {
         .execute(&self.pool)
         .await
         .expect("open a shift");
+        let ledger = LedgerCashPostings::new();
         for (code, amount) in opening {
-            sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected) \
-                 SELECT $1, $2, $3::numeric, $3::numeric WHERE $3::numeric <> 0",
-            )
-            .bind(&id)
-            .bind(code)
-            .bind(amount)
-            .execute(&self.pool)
-            .await
-            .expect("an opening balance");
+            let qty = d(amount);
+            if qty > Decimal::ZERO {
+                let mut tx = self.pool.begin().await.expect("begin opening");
+                ledger
+                    .post_in(
+                        &mut tx,
+                        &[PostingRequest {
+                            from: CashPlace::Bank,
+                            to: CashPlace::Drawer(id.clone()),
+                            currency: cur(code),
+                            quantity: ForeignAmount::from_decimal(qty),
+                            source: SourceRef {
+                                source_type: SourceType::Opening,
+                                source_id: rid(),
+                                source_key: (*code).to_owned(),
+                            },
+                            line: None,
+                            reverses: None,
+                        }],
+                        None,
+                    )
+                    .await
+                    .expect("an opening balance");
+                tx.commit().await.expect("commit opening");
+            }
         }
         id
     }
 
     /// One manual movement of the open shift `shift`: a moved `cash_transfers` row (LG-6.r6 #1046, ruling A — the
-    /// movement readers list `cash_transfers`; CA-10 retired v2's `move_stock`). IN = a `SAFE_TO_DRAWER` into the
-    /// shift, OUT = a `DRAWER_TO_SAFE` out of it, both `RECEIVED`, one line of the largest face value that divides
-    /// `amount` (a face of 0.01 is added for a currency the register has none for). Setup only.
+    /// movement readers list `cash_transfers`; CA-10 retired v2's `move_stock`) and its `TRANSFER` ledger posting.
+    /// IN = a `SAFE_TO_DRAWER` into the shift, OUT = a `DRAWER_TO_SAFE` out of it, both `RECEIVED`, one line of
+    /// the largest face value that divides `amount` (a face of 0.01 is added for a currency the register has none
+    /// for). Setup only.
     async fn movement(&self, branch: &str, shift: &str, code: &str, dir: Direction, amount: &str) {
-        let (kind, from_shift, to_shift, signed) = match dir {
-            Direction::In => ("SAFE_TO_DRAWER", None, Some(shift), amount.to_owned()),
-            Direction::Out => ("DRAWER_TO_SAFE", Some(shift), None, format!("-{amount}")),
+        let (kind, from_shift, to_shift, from_place, to_place) = match dir {
+            Direction::In => (
+                "SAFE_TO_DRAWER",
+                None,
+                Some(shift),
+                CashPlace::Bank,
+                CashPlace::Drawer(shift.to_owned()),
+            ),
+            Direction::Out => (
+                "DRAWER_TO_SAFE",
+                Some(shift),
+                None,
+                CashPlace::Drawer(shift.to_owned()),
+                CashPlace::Safe(BranchId::new(branch)),
+            ),
         };
         let mut tx = self.pool.begin().await.expect("begin a movement");
         let face: Option<(i64, String)> = sqlx::query_as(
@@ -297,49 +330,79 @@ impl TestDb {
         .execute(&mut *tx)
         .await
         .expect("the moved line");
+        LedgerCashPostings::new()
+            .post_in(
+                &mut tx,
+                &[PostingRequest {
+                    from: from_place,
+                    to: to_place,
+                    currency: cur(code),
+                    quantity: ForeignAmount::from_decimal(d(amount)),
+                    source: SourceRef {
+                        source_type: SourceType::Transfer,
+                        source_id: transfer,
+                        source_key: "move".to_owned(),
+                    },
+                    line: None,
+                    reverses: None,
+                }],
+                None,
+            )
+            .await
+            .expect("post the movement");
         tx.commit().await.expect("commit the movement");
-        // the row first at zero (an OUT row with a negative proposed `expected` fails the CHECK before
-        // ON CONFLICT is reached), then the move
-        sqlx::query(
-            "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, 0, 0) \
-             ON CONFLICT (shift_id, code) DO NOTHING",
-        )
-        .bind(shift)
-        .bind(code)
-        .execute(&self.pool)
-        .await
-        .expect("a balance row for the movement");
-        sqlx::query(
-            "UPDATE shift_balances SET expected = expected + $3::numeric WHERE shift_id = $1 AND code = $2",
-        )
-        .bind(shift)
-        .bind(code)
-        .bind(&signed)
-        .execute(&self.pool)
-        .await
-        .expect("move the expected figure");
     }
 
     /// A transaction's effect on the open shift's expected balance (no `stock_movements` row). `minor` is
     /// signed hundredths. CA-10: through the kept per-teller seam `apply_delta_for_teller_in` (the teller is the
-    /// shift's opener), where v2's `apply_delta_in` is deleted.
+    /// shift's opener), where v2's `apply_delta_in` is deleted, followed by the `EXCHANGE` ledger posting.
     async fn trade(&self, branch: &str, pairs: &[(&str, i128)]) {
-        let pairs: Vec<(CurrencyCode, MoneyDelta)> = pairs
+        let delta_pairs: Vec<(CurrencyCode, MoneyDelta)> = pairs
             .iter()
             .map(|(c, m)| (cur(c), MoneyDelta::from_minor(*m)))
             .collect();
-        let delta = StockDelta::of(&pairs);
+        let delta = StockDelta::of(&delta_pairs);
         let service = self.service();
         let teller = self.teller().await;
         let b = BranchId::new(branch);
         let on = b.clone();
         let branch_tx = service.branch_tx().clone();
+        let legs: Vec<(CurrencyCode, i128)> = pairs.iter().map(|(c, m)| (cur(c), *m)).collect();
         branch_tx
             .run(&on, move |tx| {
                 Box::pin(async move {
-                    service
+                    let shift = service
                         .apply_delta_for_teller_in(tx, &b, &teller, &delta)
-                        .await
+                        .await?;
+                    let source = SourceRef {
+                        source_type: SourceType::Exchange,
+                        source_id: rid(),
+                        source_key: "trade".to_owned(),
+                    };
+                    let reqs: Vec<PostingRequest> = legs
+                        .into_iter()
+                        .map(|(currency, minor)| {
+                            let (from, to) = if minor >= 0 {
+                                (CashPlace::Customer, CashPlace::Drawer(shift.clone()))
+                            } else {
+                                (CashPlace::Drawer(shift.clone()), CashPlace::Customer)
+                            };
+                            PostingRequest {
+                                from,
+                                to,
+                                currency,
+                                quantity: ForeignAmount::from_decimal(Decimal::new(
+                                    minor.abs() as i64,
+                                    2,
+                                )),
+                                source: source.clone(),
+                                line: None,
+                                reverses: None,
+                            }
+                        })
+                        .collect();
+                    LedgerCashPostings::new().post_in(tx, &reqs, None).await?;
+                    Ok(())
                 })
             })
             .await
@@ -348,12 +411,12 @@ impl TestDb {
 
     /// Closes the open shift `shift`, counting `counted` (the claimed `expected` was v2's check, which a
     /// recorded close passed). CA-10: v2's `close` is deleted; the same close is written straight in (setup only):
-    /// counted per currency, `difference = counted - expected`.
+    /// counted per currency on a verified `CLOSE` count, `difference = counted - expected`.
     async fn close(
         &self,
-        _branch: &str,
+        branch: &str,
         shift: &str,
-        _expected: Value,
+        expected: Value,
         counted: &[(&str, &str)],
         note: &str,
     ) {
@@ -368,26 +431,39 @@ impl TestDb {
         .execute(&self.pool)
         .await
         .expect("close the shift");
+        let teller = self.teller_at("XC-B01").await;
+        let verifier = self.teller_at("XC-B02").await;
+        let count_id: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO cash_counts (organization_id, branch_id, shift_id, kind, counted_by, counted_at, \
+             verified_by, verified_at, idempotency_key) \
+             SELECT organization_id, id, $2, 'CLOSE', $3::uuid, $5, $4::uuid, $5, $6 \
+             FROM branches WHERE id = $1 RETURNING id",
+        )
+        .bind(branch)
+        .bind(shift)
+        .bind(&teller)
+        .bind(&verifier)
+        .bind(at(2))
+        .bind(rid())
+        .fetch_one(&self.pool)
+        .await
+        .expect("insert close count");
         for (code, amount) in counted {
+            let exp = expected.get(*code).and_then(|v| v.as_str()).unwrap_or("0");
             sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected, counted) VALUES ($1, $2, 0, 0, $3::numeric) \
-                 ON CONFLICT (shift_id, code) DO UPDATE SET counted = $3::numeric",
+                "INSERT INTO cash_count_totals (count_id, organization_id, currency, counted, expected, difference) \
+                 SELECT $1, organization_id, $2, $3::numeric, $4::numeric, $3::numeric - $4::numeric \
+                 FROM branches WHERE id = $5",
             )
-            .bind(shift)
+            .bind(count_id)
             .bind(code)
             .bind(amount)
+            .bind(exp)
+            .bind(branch)
             .execute(&self.pool)
             .await
             .expect("a counted balance");
         }
-        sqlx::query(
-            "UPDATE shift_balances SET counted = COALESCE(counted, 0), difference = COALESCE(counted, 0) - expected \
-             WHERE shift_id = $1",
-        )
-        .bind(shift)
-        .execute(&self.pool)
-        .await
-        .expect("close the balances");
     }
 
     /// Every `branch_versions` row, in branch order.
@@ -405,13 +481,14 @@ impl TestDb {
         sqlx::query_scalar::<_, String>(
             "SELECT 's ' || id || ' ' || status || ' ' || coalesce(close_note, '') FROM shifts \
              UNION ALL \
-             SELECT 'b ' || shift_id || ' ' || code || ' ' || opening::text || ' ' || expected::text \
-                    || ' ' || coalesce(counted::text, '-') || ' ' || coalesce(difference::text, '-') \
-               FROM shift_balances \
+             SELECT 'b ' || a.shift_id || ' ' || a.currency || ' ' || e.quantity_signed::text \
+               FROM cash_accounts a JOIN ledger_entries e ON e.account_id = a.id \
+              WHERE a.kind = 'DRAWER' \
              UNION ALL \
-             SELECT 'm ' || id || ' ' || shift_id || ' ' || code || ' ' || direction || ' ' || amount::text \
-               FROM stock_movements \
-             ORDER BY 1",
+             SELECT 'm ' || t.id::text || ' ' || coalesce(t.from_shift_id, t.to_shift_id, '') || ' ' \
+                    || l.currency || ' ' || t.kind || ' ' || l.qty_sent::text \
+               FROM cash_transfers t JOIN cash_transfer_lines l ON l.transfer_id = t.id \
+              ORDER BY 1",
         )
         .fetch_all(&self.pool)
         .await

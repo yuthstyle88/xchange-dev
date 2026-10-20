@@ -796,7 +796,8 @@ async fn planner_preview_with_no_session_writes_no_rows() {
 
     let quotes_before = room.count("SELECT count(*) FROM quotes").await;
     let bookings_before = room.count("SELECT count(*) FROM bookings").await;
-    let stock_before = room.count("SELECT count(*) FROM stock_movements").await;
+    let ledger_entries_before = room.count("SELECT count(*) FROM ledger_entries").await;
+    let cash_transfers_before = room.count("SELECT count(*) FROM cash_transfers").await;
 
     let preview_body = json!({
         "branch": MAIN,
@@ -827,11 +828,19 @@ async fn planner_preview_with_no_session_writes_no_rows() {
 
     let quotes_after = room.count("SELECT count(*) FROM quotes").await;
     let bookings_after = room.count("SELECT count(*) FROM bookings").await;
-    let stock_after = room.count("SELECT count(*) FROM stock_movements").await;
+    let ledger_entries_after = room.count("SELECT count(*) FROM ledger_entries").await;
+    let cash_transfers_after = room.count("SELECT count(*) FROM cash_transfers").await;
 
     assert_eq!(quotes_before, quotes_after, "no quote rows written");
     assert_eq!(bookings_before, bookings_after, "no booking rows written");
-    assert_eq!(stock_before, stock_after, "no stock movement rows written");
+    assert_eq!(
+        ledger_entries_before, ledger_entries_after,
+        "no ledger entry rows written"
+    );
+    assert_eq!(
+        cash_transfers_before, cash_transfers_after,
+        "no cash transfer rows written"
+    );
 
     room.finish().await;
 }

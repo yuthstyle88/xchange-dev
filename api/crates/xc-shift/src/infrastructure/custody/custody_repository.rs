@@ -11,9 +11,9 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 
 use super::decode::{
-    attendance_from_row, balances_from_json, currency_from_json, cutoff_from_json,
-    entity_from_json, exception_from_row, hold_from_row, money_from_json, str_to_phase,
-    str_to_role, target_from_json, time_from_json, undecodable,
+    attendance_from_row, currency_from_json, cutoff_from_json, entity_from_json,
+    exception_from_row, hold_from_row, money_from_json, str_to_phase, str_to_role,
+    target_from_json, time_from_json, undecodable,
 };
 use crate::domain::custody::branch_day::BranchDay;
 use crate::domain::custody::entities::attendance::Attendance;
@@ -288,7 +288,7 @@ impl PgCustodyRepository {
 
 async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<CustodyState> {
     let ops_row = sqlx::query(
-        "SELECT phase, entity, target, safe, cutoff, service_opened_at \
+        "SELECT phase, entity, target, cutoff, service_opened_at \
          FROM ops_state WHERE branch_id = $1",
     )
     .bind(branch.as_str())
@@ -310,16 +310,12 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
         Some(v) if !v.is_null() => Some(target_from_json("ops_state", "target", &v)?),
         _ => None,
     };
-    let safe: Option<Balances> = match ops_row.get::<Option<Value>, _>(3) {
-        Some(v) if !v.is_null() => Some(balances_from_json("ops_state", "safe", &v)?),
-        _ => None,
-    };
-    let cutoff: Option<Cutoff> = match ops_row.get::<Option<Value>, _>(4) {
+    let cutoff: Option<Cutoff> = match ops_row.get::<Option<Value>, _>(3) {
         Some(v) if !v.is_null() => Some(cutoff_from_json("ops_state", "cutoff", &v)?),
         _ => None,
     };
     let service_opened_at: Option<CustodyTime> = ops_row
-        .get::<Option<DateTime<Utc>>, _>(5)
+        .get::<Option<DateTime<Utc>>, _>(4)
         .map(|t| CustodyTime::from_epoch_millis(t.timestamp_millis()));
 
     // attendance
@@ -439,7 +435,6 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
 
     Ok(CustodyState {
         phase,
-        safe,
         target,
         entity,
         attendance,
@@ -496,7 +491,6 @@ impl CustodyRepository for PgCustodyRepository {
             let own_values_changed = before.phase != after.phase
                 || before.entity != after.entity
                 || before.target != after.target
-                || before.safe != after.safe
                 || before.cutoff != after.cutoff
                 || before.service_opened_at != after.service_opened_at;
             if own_values_changed || *before == CustodyState::initial() {
@@ -514,13 +508,12 @@ impl CustodyRepository for PgCustodyRepository {
                     None => None,
                 };
                 sqlx::query(
-                    "INSERT INTO ops_state (branch_id, phase, entity, target, safe, cutoff, service_opened_at) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7) \
+                    "INSERT INTO ops_state (branch_id, phase, entity, target, cutoff, service_opened_at) \
+                     VALUES ($1, $2, $3, $4, $5, $6) \
                      ON CONFLICT (branch_id) DO UPDATE SET \
                        phase = EXCLUDED.phase, \
                        entity = EXCLUDED.entity, \
                        target = EXCLUDED.target, \
-                       safe = EXCLUDED.safe, \
                        cutoff = EXCLUDED.cutoff, \
                        service_opened_at = EXCLUDED.service_opened_at",
                 )
@@ -528,7 +521,6 @@ impl CustodyRepository for PgCustodyRepository {
                 .bind(after.phase.as_str())
                 .bind(after.entity.as_ref().map(entity_to_json))
                 .bind(after.target.as_ref().map(target_to_json))
-                .bind(after.safe.as_ref().map(balances_to_json))
                 .bind(after.cutoff.as_ref().map(cutoff_to_json))
                 .bind(service_opened_at)
                 .execute(&mut **tx)

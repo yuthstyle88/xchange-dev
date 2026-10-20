@@ -46,6 +46,7 @@ pub use xc_exchange::domain::exchange::entities::transaction::Transaction;
 pub use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 pub use xc_kernel::mode::Mode;
 pub use xc_shift::application::shift::service::ShiftService;
+#[allow(unused_imports)]
 pub use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 pub use xchange::application::workflows::save_transaction::{
     SaveTransactionWorkflow, SavedTransaction,
@@ -239,10 +240,11 @@ impl Shop {
 
         // few connections each: every test of this file runs at once, and a
         // PostgreSQL out of the box takes a hundred
+        let schema_options = options.options([("search_path", schema.as_str())]);
         let pool = PgPoolOptions::new()
-            .max_connections(6)
+            .max_connections(40)
             .acquire_timeout(MUST_FINISH)
-            .connect_with(options.options([("search_path", schema.as_str())]))
+            .connect_with(schema_options)
             .await
             .expect("connect to the test schema");
 
@@ -270,7 +272,11 @@ impl Shop {
         let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
         let files = FileService::new(pool.clone(), dir.clone());
         let shifts = ShiftService::new(
-            Arc::new(PgShiftRepository::new(pool.clone())),
+            Arc::new(
+                xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                    pool.clone(),
+                ),
+            ),
             branch_tx.clone(),
         );
         let customers = CustomerService::new(branch_tx.clone());
@@ -381,17 +387,6 @@ impl Shop {
         .execute(&self.pool)
         .await
         .expect("seed an OPEN shift");
-        for (c, a) in opening {
-            sqlx::query(
-                "INSERT INTO shift_balances (shift_id, code, opening, expected) VALUES ($1, $2, $3::numeric, $3::numeric)",
-            )
-            .bind(&shift)
-            .bind(c)
-            .bind(money(a).to_string())
-            .execute(&self.pool)
-            .await
-            .expect("seed an opening balance");
-        }
         fund_ledger_drawer(&self.pool, &shift, opening).await;
         shift
     }
@@ -521,7 +516,7 @@ impl Shop {
             ("receipts", "transaction_id, revision"),
             ("files", "key"),
             ("customers", "id"),
-            ("shift_balances", "shift_id, code"),
+            ("ledger_entries", "id"),
         ] {
             let rows: Vec<String> = sqlx::query_scalar(AssertSqlSafe(format!(
                 "SELECT row_to_json(t)::text FROM {table} t ORDER BY {order}"

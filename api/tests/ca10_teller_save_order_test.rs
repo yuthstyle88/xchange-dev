@@ -69,18 +69,26 @@ async fn at_the_save(fixture: &Fixture) -> Replay<'_> {
 
 /// The teller's shift closed by a CLOSE count of what it holds: custody now refuses the teller.
 async fn without_an_own_shift(replay: &Replay<'_>) {
+    use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
     let pool = &replay.desk.db.pool;
-    let held: Vec<(String, String)> = sqlx::query_as(
-        "SELECT b.code, b.expected::text FROM shift_balances b \
-         JOIN shifts s ON s.id = b.shift_id \
-         WHERE s.branch_id = 'MAIN' AND s.status = 'OPEN'",
-    )
-    .fetch_all(pool)
-    .await
-    .expect("the open shift's balances");
+    let shift_id: String =
+        sqlx::query_scalar("SELECT id FROM shifts WHERE branch_id = 'MAIN' AND status = 'OPEN'")
+            .fetch_one(pool)
+            .await
+            .expect("the open shift");
+    let held =
+        xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances::new(pool.clone())
+            .shift_balances(&shift_id)
+            .await
+            .expect("the open shift's balances");
     let counted: Map<String, Value> = held
         .into_iter()
-        .map(|(code, amount)| (code, json!(amount)))
+        .map(|b| {
+            (
+                b.currency.as_str().to_owned(),
+                json!(xc_kernel::money::fixed2(b.expected.minor())),
+            )
+        })
         .collect();
     shift_setup_common::close_shift_by_count(pool, "MAIN", Value::Object(counted), Utc::now())
         .await;

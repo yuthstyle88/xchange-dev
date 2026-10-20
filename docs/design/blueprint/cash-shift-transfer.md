@@ -517,6 +517,34 @@ move to these reads in CA-10p, before CA-10 deletes the per-branch reads (§6 Q4
   `active(branch)` move to `open_of_teller` (the teller the harness opened the shift for) in CA-10p, so that CA-10's
   deletion compiles. The list is cut in CA-10p's ticket.
 
+**`admin_cash` answers the branch's totals (CA-10q, added 2026-10-17; the BE controller's ruling, #626
+issuecomment-6234829938 item 1).** `admin_cash` (`api/src/presentation/http/v3/views/admin_cash.rs`) builds every figure from one shift that
+`SELECT … WHERE branch_id = $1 AND status = 'OPEN' LIMIT 1` picks (`:205-211` @ `827ed490`). After M3 that shift is
+arbitrary. From CA-10q on, the view answers for **every OPEN shift of the branch**:
+- [required] `AdminCashData.shift: Option<AdminCashShift>` (`dto/v3/admin_cash.rs:98`) is replaced by
+  `open_shifts: Vec<OpenShiftDto>` (`openShifts`, the shared row in `dto/v3/common.rs`), read with
+  `ShiftRepository::open_of_branch` and in its order. `AdminCashShift` is removed. An empty list means no shift is open.
+- [required] `stock`: one row per currency, each of `opening`, `net` and `expected` the **sum** over the OPEN shifts'
+  `shift_balances` of that currency (`ShiftBalances::shift_balances` per shift, `admin_cash.rs:237`). The "rated codes",
+  `all` and THB-first rules of the rows stay as they are.
+- [required] `stats` {`opening`, `incoming`, `outgoing`, `remaining`} and `reference`: the same queries as today
+  (`admin_cash.rs` around `:323-380`) with `t.shift_id = ANY($1)` over the OPEN shifts' ids instead of `= $1`. No OPEN
+  shift ⇒ `stats: null` and the zero `reference`, as today's `shift: null` path answers.
+- [required] `currencies` unchanged.
+- [required] **`lastCounted` sums each teller's newest CLOSED shift** (ruling item 1). Today it is the counted balances
+  of the branch's one newest CLOSED shift (`admin_cash.rs:153-158`, `ORDER BY seq DESC LIMIT 1`). From CA-10q on:
+  - the teller of a CLOSED shift is `shifts.teller_id` (NOT NULL since CA-1, `20261012100000_cash.sql:115`);
+  - for each teller that has at least one CLOSED shift **at this branch**, take that teller's newest one there
+    (highest `seq`); a teller with no CLOSED shift at the branch contributes nothing;
+  - `lastCounted` is the per-currency **sum** of those shifts' `counted` balances, with today's rules for the items
+    (THB always, even at zero; other currencies only when the sum is not zero; A–Z after THB);
+  - no CLOSED shift at the branch ⇒ `lastCounted: null`, as today.
+- `web/src/shared/api/generated/admin_cash.ts` is regenerated, never edited by hand. The screen
+  (`web/src/screens/admin/cash/Cash.tsx:281` reads `shift.staff`; `:291-309` show the four stats) moves to the list in an
+  FE twin, CA-10q-FE, merging in the same batch as CA-10q, as CA-10p and #2914 do.
+- **Order:** CA-10q starts after CA-10p (#2916: it uses `open_of_branch` and `OpenShiftDto`). It must merge **before
+  M3 is deployed**, and it does not block CA-10's merge.
+
 ### 4.8 The branch-day service (CA-7b)
 
 **Why it exists:**
@@ -772,7 +800,7 @@ the receiver of a hand-over, a teller's own shift).
 | v2's custody command engine: `CustodyService::command` (`xc-shift/src/application/custody/service.rs:343`), `CustodyMachine::apply` and every v2 command handler of the machine (clock, target, start service, cut-off, hold, release, begin, and the request half above). Its callers retire with it: the 13 `ops*` actions (`compat/actions/custody.rs`), and `PgEmployeeCustody::set_entity` / `enable` (`src/infrastructure/custody/employee_custody.rs:64-75`, `:143-157`, which send `opsSetEntity` / `opsEnable`) with the `entity` and `enable` actions of `POST /api/employees` (`employees.rs:167-200`) | CA-8b's commands on `BranchDayService` (§4.4, §4.8). `enable`: none (the Enable switch above). `entity`: none yet (Q5: a read-only column until an org-settings design gives it a writer). Both `/api/employees` actions then answer as an action the route does not know (#626 Q7, 2026-10-15) |
 | v2 fixture replays of the request model: `custody_machine_test.rs:1525,1545,1573`, `custody_service_test.rs:160,170`, `rpc_ops_test.rs`, the custody parts of `rpc_test.rs`, `employee_custody_test.rs`, `compat_*` custody steps; fixtures `v2_custody_cases.json`, `v2_custody_service_cases.json`, `rpc/ops_actions.json`, `snapshot/custody.json` | §9's tests (the surviving rules restated) |
 
-`v2_shift_cases.json` and `v2_stock_cases.json` survive: the `ShiftService` and the stock delta of an exchange stay. What leaves the `ShiftService` in CA-10 is v2's open path only, `open` / `open_in` (`service.rs:145`, `:208` @ `955ab5d1`), whose last production caller is the custody engine Q7 deletes (`custody/service.rs:481`), together with the per-branch reads of Q4. (Clarified 2026-10-17 on the BE controller's ruling, #626.) A case of those fixtures that drives v2's open path retires with it.
+`v2_shift_cases.json` and `v2_stock_cases.json` survive: the `ShiftService` and the stock delta of an exchange stay. What leaves the `ShiftService` in CA-10 is **v2's whole shift path** (the BE controller's ruling, #626 issuecomment-6234829938 item 2): `open` / `open_in` (`service.rs:145`, `:208` @ `955ab5d1`), `close` / `close_in` (`:187`, `:365`), `move_stock` / `move_stock_in` (`:166`, `:285`), `apply_delta_in(branch)` (`:457`) and the per-branch reads `active` / `active_in` (Q4). Each loses its last production caller in CA-10: the custody engine Q7 deletes (`custody/service.rs:481`, `:508`, `:536`), `adminMoveStock` (`compat/rpc.rs:455`), and the v2-actor save path (`save_transaction.rs:522`, Q4). What stays: `open_on_verified` / `close_on_verified`, `apply_delta_for_teller_in`, `shifts`, `movements` and CA-10p's reads. A case of those fixtures that drives v2's open, close or move retires with it; `v2_stock_cases.json` stays (the stock delta survives through `apply_delta_for_teller_in`).
 
 **What CA-10 keeps, and how** (the BE lane controller's rulings Q2–Q6 on #626, 2026-10-15):
 - *Q3, the custodian's rules.* Wherever a rule asked for "the custodian", it asks whether the actor holds an OPEN shift
@@ -919,6 +947,7 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-9b | transfer policy screen (split from CA-9 on 2026-10-11, because its save and read did not exist) | `web/src/screens/admin/cash-policy/**`, plus the one allowed edit to `web/src/screens/admin/menus.test.ts` (`'cash-policy'` in `BLUEPRINT_MENUS`, `CashTransferPolicySet` in `BLUEPRINT_NEEDS`) | CA-8c |
 | CA-9c | the policy screen shows a corrupt stored policy and the save's new field refusals (§4, "One limits parser", amended 2026-10-16 for #2116). When `valid` is false, `CashPolicy.tsx` lists every `invalidEntries` item (currency, stored `raw`, `reason`) above the form, with a line telling the admin that saving the form replaces the whole policy. `limits` then holds only the entries that parsed. A save's 400 `validationFailed` with field `currency` or `limits` is shown beside the form, not as a generic error. Reads the regenerated `web/src/shared/api/generated/cash_transfer_policy.ts`, which #2116 commits | `web/src/screens/admin/cash-policy/CashPolicy.tsx`, `web/src/screens/admin/cash-policy/i18n.ts`, one new test file in that folder | CA-9b; #2116 merged |
 | CA-10p | readers of "the branch's shift" move to per-teller reads (§4.7): `open_of_teller`, `open_of_teller_in`, `open_of_branch`, `OpenShiftRow`, `OpenShiftDto`; `admin_overview` and `admin_shift_state` answer `openShifts`; `save_common` and the xc-shift harnesses use `open_of_teller` | `xc-shift/src/domain/shift/repositories/shift_repository.rs`, `xc-shift/src/infrastructure/shift/shift_repository.rs` (the three reads only), `xc-shift/src/domain/shift/entities/open_shift_row.rs` (+ one `mod` line), `api/src/presentation/dto/v3/{common.rs,admin_overview.rs,admin_shift_state.rs}`, `api/src/presentation/http/v3/views/{admin_overview.rs,admin_shift_state.rs}`, the generated `.ts` files, the test harnesses its ticket lists | this section merged; **CA-10 starts after it** (FE twin CA-10p-FE: the overview's "opened by" line shows the list) |
+| CA-10q | `admin_cash` answers the branch's totals (§4.7): `openShifts`, summed `stock`, `stats` / `reference` over every OPEN shift, `lastCounted` summed over each teller's newest CLOSED shift | `api/src/presentation/http/v3/views/admin_cash.rs`, `api/src/presentation/dto/v3/admin_cash.rs`, `web/src/shared/api/generated/admin_cash.ts`, its tests | CA-10p; merges before M3 is deployed (FE twin CA-10q-FE in the same batch) |
 | CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261216110000_retire_custody_requests.sql` (§8 M3: drops the request tables, `ops_state.custodian_id` and `ops_state.enabled`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model; CA-7e; and the test splits CA-10a #1632, CA-10b #1633, CA-10c #1893 |
 | CA-10-FE | the admin employees screen stops sending the two `POST /api/employees` actions CA-10 retires (§6, Q7): no Enable control or dialog, no entity form, no enabled/not-enabled state line; the entity, if shown, read-only (Q5) | `web/src/screens/admin/employees/Employees.tsx`, `web/src/screens/admin/employees/i18n.ts`, `web/src/screens/admin/employees/Employees.test.tsx`, `web/src/screens/admin/employees/worded.test.tsx`, `web/src/screens/admin/employees/Employees.rework.test.tsx` (their `enable`/`entity` cases and the stale-operations checks, which now observe the read-only entity) | CA-10's design (§6 Q7, merged 08345970); **merges with or before CA-10's API change**, so the screen never posts an action the route no longer knows. FE lane (claude/e8020026) |
 
