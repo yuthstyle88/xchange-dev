@@ -140,9 +140,17 @@ test.describe.serial('#1683 booking', () => {
     const startBranch = ((await branchButton.innerText().catch(() => '')) || '').trim();
     if (!/XC-B/.test(startBranch)) {
       await branchButton.click();
+      const switched = page.waitForResponse(
+        (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/auth/session/branch',
+      );
       await page.getByRole('menuitemradio', { name: /^XC-B$/ }).click();
-      await expect(page.locator('.account-bar button[aria-haspopup="menu"]')).toContainText('XC-B', { timeout: 20_000 });
+      const res = await switched;
+      const body = (await res.text().catch(() => '')).slice(0, 300);
+      console.log(`[admin] POST /api/auth/session/branch ${res.status()} ${body}`);
+      expect(res.ok(), `branch switch answered ${res.status()}: ${body}`).toBeTruthy();
+      await page.waitForLoadState('networkidle');
       await page.goto('/#booking-slots');
+      await expect(page.locator('.account-bar button[aria-haspopup="menu"]'), 'session branch after the switch').toContainText('XC-B', { timeout: 20_000 });
       await expect(page.locator('input[name="capacity"]')).toBeVisible({ timeout: 15_000 });
       console.log(`[admin] switched session branch from "${startBranch}" to XC-B`);
     }
