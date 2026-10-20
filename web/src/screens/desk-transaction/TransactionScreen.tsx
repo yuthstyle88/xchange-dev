@@ -6,8 +6,8 @@
 // Actions go through `can()` (D8): reprint (D5) and the reversal request (D6). There is no post button.
 import { createEffect, createSignal, Match, Show, Switch, type JSX } from 'solid-js';
 import { ApiClient } from '../../shared/api/client';
+import type { MeView } from '../../shared/api/generated/me';
 import type { ReceiptDocumentViewData } from '../../shared/api/generated/receipt_document';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
 import type { TransactionDetailDto, TransactionViewData } from '../../shared/api/generated/transaction';
 import type {
   TransactionAuditEventDto,
@@ -43,7 +43,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   const branch = () => branchFromSearch(props.search);
 
   const [state, setState] = createSignal<State>('loading');
-  const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
+  const [me, setMe] = createSignal<MeView | undefined>(undefined);
   const [tx, setTx] = createSignal<TransactionDetailDto | null>(null);
   const [events, setEvents] = createSignal<TransactionAuditEventDto[]>([]);
   const [message, setMessage] = createSignal<string | null>(null);
@@ -72,7 +72,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
 
   let loadSeq = 0;
 
-  /** Reads the transaction and its audit; `staff_me` too when `withMe`. */
+  /** Reads the transaction and its audit; `me` too when `withMe`. */
   async function load(withMe: boolean, preserveOnError = false): Promise<void> {
     const seq = ++loadSeq;
     if (id === null) {
@@ -84,7 +84,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     }
     const meRead = withMe
       ? api
-          .view<StaffMeView>('staff_me')
+          .view<MeView>('me')
           .then((a) => a.data)
           .catch(() => undefined)
       : Promise.resolve(me());

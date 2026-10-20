@@ -5,9 +5,9 @@ import { setLang } from '../../shared/i18n';
 import { en as sharedEn } from '../../shared/i18n/en';
 import { th as sharedTh } from '../../shared/i18n/th';
 import {
+  makeMe,
   makeReceiptDocumentDto,
   makeReceiptDocumentViewData,
-  makeStaffMeView,
   makeTransactionAuditEventDto,
   makeTransactionAuditViewData,
   makeTransactionDetailDto,
@@ -29,13 +29,14 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-function sampleStaffMe() {
-  return makeStaffMeView({
-    userId: '00000000-0000-4000-8000-000000000001',
+function sampleMe() {
+  return makeMe({
+    id: '00000000-0000-4000-8000-000000000001',
     name: 'คุณทดสอบ',
     roles: [],
-    branchId: 'MAIN',
+    branch: 'MAIN',
     branchName: 'สาขาทดสอบ',
+    branches: [],
     permissions: ['TransactionRead', 'ReceiptReprint', 'ReversalRequest'],
   });
 }
@@ -103,7 +104,7 @@ describe('WE-31 screens/desk-transaction/ worded error (#1780)', () => {
     root = document.createElement('div');
     document.body.appendChild(root);
 
-    meHandler = async () => json(200, { version: 1, changed: true, data: sampleStaffMe() });
+    meHandler = async () => json(200, { version: 1, changed: true, data: sampleMe() });
     txHandler = async () => json(200, { version: 1, changed: true, data: makeTransactionViewData({ transaction: sampleTx() }) });
     auditHandler = async () => json(200, { version: 1, changed: true, data: sampleAudit });
     receiptHandler = async () =>
@@ -123,7 +124,7 @@ describe('WE-31 screens/desk-transaction/ worded error (#1780)', () => {
         const u = new URL(url, 'http://xc.test');
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (method === 'GET' && u.pathname === '/api/v3/views/staff_me') return meHandler();
+        if (method === 'GET' && u.pathname === '/api/v3/views/me') return meHandler();
         if (method === 'GET' && u.pathname === '/api/v3/views/transaction') return txHandler();
         if (method === 'GET' && u.pathname === '/api/v3/views/transaction_audit') return auditHandler();
         if (method === 'GET' && u.pathname === '/api/v3/views/receipt_document') return receiptHandler();
