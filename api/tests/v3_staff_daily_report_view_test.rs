@@ -55,8 +55,6 @@ use tx5_common::*;
 use xc_approval::domain::request::Outcome;
 use xc_auth::domain::access::StandingKind;
 use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_cash::application::count::count_service::{CashCountService, SubmitCount};
 use xc_cash::application::handover::handover_service::{HandoverService, StartHandover};
 use xc_cash::application::transfer::TransferFlow;
@@ -82,7 +80,8 @@ use xchange::application::workflows::exchange::reversal_request::{
 use xchange::application::workflows::save_step::SaveActor;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const VIEW: &str = "staff_daily_report";
 const AS: &str = "x-test-as";
@@ -168,47 +167,14 @@ fn spec_of(req: &HttpRequest) -> String {
         .unwrap_or_default()
 }
 
-fn sessions_of(spec: &str) -> Sessions {
-    if spec == "OWNER" {
-        return Sessions {
-            owner: Some(Actor::owner("owner")),
-            staff: None,
-        };
-    }
-    let mut parts = spec.splitn(3, '|');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(id), Some(_), Some(branch)) if branch != "*" => Sessions {
-            owner: None,
-            staff: Actor::staff(id, OldRole::Manager, BranchId::new(branch)),
-        },
-        (Some(id), Some(_), Some(_)) => Sessions {
-            owner: None,
-            staff: Actor::staff(id, OldRole::Manager, BranchId::new(MAIN)),
-        },
-        _ => Sessions {
-            owner: None,
-            staff: None,
-        },
-    }
-}
-
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { sessions_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let _s = sessions_of(&spec);
-            let user = user_of(&spec);
-            Callers {
-                user: user.clone(),
-                staff_user: user,
+            if spec == "OWNER" {
+                test_callers::callers(Some(test_callers::owner("owner")), None)
+            } else {
+                test_callers::callers(None, user_of(&spec))
             }
         })
     }
@@ -783,7 +749,7 @@ impl Day {
             .desk
             .decide(
                 &request,
-                &staff("employee-finance", OldRole::Finance, MAIN),
+                &test_callers::staff("employee-finance", &[Role::Finance], BranchId::new(MAIN)),
                 Outcome::Approved,
                 "ok",
             )
