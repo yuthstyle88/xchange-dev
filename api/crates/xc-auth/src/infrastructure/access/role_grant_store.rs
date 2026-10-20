@@ -134,6 +134,12 @@ impl RoleGrantStore for PgRoleGrantStore {
             if !has_rows {
                 let seed = RoleGrants::seed(role);
                 insert_grants(tx, code, &seed).await?;
+                sqlx::query("UPDATE roles SET seed_version = $1 WHERE code = $2")
+                    .bind(RoleGrants::SEED_VERSION)
+                    .bind(code)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
                 seeded += 1;
             }
         }
@@ -141,6 +147,55 @@ impl RoleGrantStore for PgRoleGrantStore {
             bump_version(tx).await?;
         }
         Ok(seeded)
+    }
+
+    async fn seed_additions(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<u64, RoleGrantStoreError> {
+        let mut inserted = 0u64;
+        for role in RoleGrants::BUILT_IN {
+            let code = role.as_str();
+            let current_version: Option<i32> = sqlx::query_scalar(
+                "SELECT seed_version FROM roles WHERE code = $1 AND built_in FOR UPDATE",
+            )
+            .bind(code)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db_err)?;
+            let Some(current_version) = current_version else {
+                continue;
+            };
+            if current_version >= RoleGrants::SEED_VERSION {
+                continue;
+            }
+            let seed = RoleGrants::seed(role);
+            for &(v, p) in RoleGrants::SEED_ADDITIONS {
+                if v > current_version && seed.contains(&p) {
+                    let name = perm_name(p)?;
+                    let res = sqlx::query(
+                        "INSERT INTO role_permission_grants (role_code, permission) \
+                         VALUES ($1, $2) ON CONFLICT (role_code, permission) DO NOTHING",
+                    )
+                    .bind(code)
+                    .bind(name)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
+                    inserted += res.rows_affected();
+                }
+            }
+            sqlx::query("UPDATE roles SET seed_version = $1 WHERE code = $2")
+                .bind(RoleGrants::SEED_VERSION)
+                .bind(code)
+                .execute(&mut **tx)
+                .await
+                .map_err(db_err)?;
+        }
+        if inserted > 0 {
+            bump_version(tx).await?;
+        }
+        Ok(inserted)
     }
 
     async fn save_set(
