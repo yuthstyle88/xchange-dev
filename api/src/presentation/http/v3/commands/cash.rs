@@ -15,6 +15,7 @@ use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
+use xc_cash::domain::transfer::cash_transfer::TransferError;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
@@ -140,7 +141,9 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
             } else if message == HandoverError::NotPending.to_string() {
                 V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
-            } else if message.starts_with("stockInsufficient") {
+            } else if message.starts_with("stockInsufficient")
+                || message == TransferError::StockInsufficient.to_string()
+            {
                 V3Error::new("stockInsufficient", None, message, StatusCode::CONFLICT)
             } else {
                 V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
@@ -418,6 +421,13 @@ mod stock_insufficient_mapping_tests {
         let e = from_cash_error(AppError::Domain(
             "stockInsufficient: the posting takes a drawer, a safe or a position below zero".into(),
         ));
+        assert_eq!(e.code, "stockInsufficient");
+        assert_eq!(e.status, StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn a_transfer_stock_refusal_stays_a_409_stock_insufficient() {
+        let e = from_cash_error(AppError::Domain(TransferError::StockInsufficient.to_string()));
         assert_eq!(e.code, "stockInsufficient");
         assert_eq!(e.status, StatusCode::CONFLICT);
     }
