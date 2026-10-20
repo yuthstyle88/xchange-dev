@@ -23,6 +23,19 @@ function bookingCard(page: Page, bookingNo: string) {
   return page.locator('.xc-booking-card').filter({ has: page.locator('.xc-booking-no', { hasText: exact }) });
 }
 
+// Sets one admin slot's capacity through the screen and returns the server's answer to
+// PUT /api/booking-slots/{id}/capacity (BookingSlots.tsx handleUpdateSlotCapacity).
+async function setSlotCapacity(page: Page, slot: ReturnType<Page['locator']>, value: string): Promise<string> {
+  await slot.locator('input[name="slotCapacity"]').fill(value);
+  const put = page.waitForResponse(
+    (r) => r.request().method() === 'PUT' && /\/api\/booking-slots\/[^/]+\/capacity$/.test(new URL(r.url()).pathname),
+    { timeout: 15_000 },
+  );
+  await slot.locator('.slot-capacity-control button').click();
+  const res = await put;
+  return `${res.status()} ${(await res.text().catch(() => '')).slice(0, 200)}`;
+}
+
 async function signIn(page: Page, identifier: string, password: string, next: string) {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
   await page.locator('input[autocomplete="username"]').fill(identifier);
@@ -169,16 +182,14 @@ test.describe.serial('#1683 booking', () => {
     }
     await expect(slotOn()).toBeVisible({ timeout: 15_000 });
     if ((await slotOn().locator('input[name="slotCapacity"]').inputValue()) !== SEED_CAPACITY) {
-      await slotOn().locator('input[name="slotCapacity"]').fill(SEED_CAPACITY);
-      await slotOn().locator('.slot-capacity-control button').click();
+      console.log(`[admin] reset leftover capacity on ${day} to ${SEED_CAPACITY}: PUT ${await setSlotCapacity(page, slotOn(), SEED_CAPACITY)}`);
       await page.reload();
-      console.log(`[admin] reset a leftover capacity on ${day} to ${SEED_CAPACITY}`);
+      await expect(slotOn().locator('input[name="slotCapacity"]'), 'leftover capacity reset').toHaveValue(SEED_CAPACITY, { timeout: 15_000 });
     }
 
     try {
       // Capacity: a slot two days ahead at 09:00 has no bookings from this suite.
-      await slotOn().locator('input[name="slotCapacity"]').fill('2');
-      await slotOn().locator('.slot-capacity-control button').click();
+      console.log(`[admin] set capacity 2: PUT ${await setSlotCapacity(page, slotOn(), '2')}`);
       await page.reload();
       await expect(slotOn().locator('input[name="slotCapacity"]')).toHaveValue('2', { timeout: 15_000 });
       await shot(page, 'admin-2-capacity-2');
@@ -211,12 +222,15 @@ test.describe.serial('#1683 booking', () => {
     } finally {
       // Restore always, even when a step above failed.
       for (const item of await page.locator('.closure-item', { hasText: 'e2e closure' }).all()) await item.getByRole('button').click().catch(() => {});
-      await slotOn().locator('input[name="slotCapacity"]').fill(SEED_CAPACITY).catch(() => {});
-      await slotOn().locator('.slot-capacity-control button').click().catch(() => {});
+      await expect(page.locator('.closure-item', { hasText: 'e2e closure' })).toHaveCount(0, { timeout: 15_000 }).catch(() => {});
+      const answer = await setSlotCapacity(page, slotOn(), SEED_CAPACITY).catch((e) => `no answer: ${e}`);
+      console.log(`[admin] restore capacity ${SEED_CAPACITY}: PUT ${answer}`);
       await page.reload();
       const cap = await slotOn().locator('input[name="slotCapacity"]').inputValue().catch(() => '?');
       const left = await page.locator('.closure-item', { hasText: 'e2e closure' }).count();
       console.log(`[admin] restore: capacity on ${day} = ${cap}, e2e closures left = ${left}`);
+      expect(cap, `capacity on ${day} restored to ${SEED_CAPACITY}`).toBe(SEED_CAPACITY);
+      expect(left, 'no e2e closure left').toBe(0);
       const original = startBranch.replace(/^สาขา\s*|^Branch\s*/i, '').trim();
       if (original && !/XC-B/.test(startBranch)) {
         await page.locator('.account-bar button[aria-haspopup="menu"]').click().catch(() => {});
