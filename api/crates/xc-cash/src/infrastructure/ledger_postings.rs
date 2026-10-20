@@ -297,7 +297,10 @@ impl Plan {
             let pos = self.position(tx, branch, currency).await?;
             (pos.now, pos.last_average, pos.reserved)
         };
-        if reserved > Decimal::ZERO && before.quantity - q < reserved {
+        if movement_type == MovementType::Dispose
+            && reserved > Decimal::ZERO
+            && before.quantity - q < reserved
+        {
             return Err(stock_reserved(
                 "the posting takes a position into another quote's reserved stock",
             ));
