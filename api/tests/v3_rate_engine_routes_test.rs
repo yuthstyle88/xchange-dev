@@ -307,12 +307,14 @@ impl Who {
     }
 }
 
-/// The branch the request runs on with no branch named.
+/// The branch the request runs on with no branch named: the staff member's own branch, else MAIN
+/// (what v2's `Policy::branch` answered).
 fn branch_of(path: EntryPath, spec: &str) -> String {
     let actor = actor_on(path, spec).expect("a signed-in caller");
     actor
         .branch
         .as_ref()
+        .or_else(|| actor.roles.iter().find_map(|r| r.branch.as_ref()))
         .map(|b| b.as_str().to_owned())
         .unwrap_or_else(|| "MAIN".to_owned())
 }
