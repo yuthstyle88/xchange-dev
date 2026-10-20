@@ -143,9 +143,23 @@ impl PolicyTiers {
 
     /// The same bands with `currency`'s margins (pricing-tiers.md §3 "Resolution"): the override's four margins when
     /// it has them, otherwise these (the branch's) margins. `None` returns a copy of `self`.
-    ///
-    /// SKELETON (PT-0): the body is PT-2's.
-    pub fn for_currency(&self, _o: Option<&CurrencyTierOverride>) -> PolicyTiers {
-        todo!("PT-2: PolicyTiers::for_currency")
+    pub fn for_currency(&self, o: Option<&CurrencyTierOverride>) -> PolicyTiers {
+        let Some(override_tiers) = o.and_then(|ov| ov.tiers.as_ref()) else {
+            return self.clone();
+        };
+        let tiers = self
+            .tiers
+            .iter()
+            .zip(override_tiers.iter())
+            .map(|(band, m)| {
+                PolicyTier::new(
+                    band.tier_no,
+                    band.upper_inclusive_thb,
+                    m.buy_margin_pct,
+                    m.sell_margin_pct,
+                )
+            })
+            .collect();
+        PolicyTiers { tiers }
     }
 }

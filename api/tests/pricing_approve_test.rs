@@ -8,7 +8,7 @@
 //! - Each approved tier price becomes the margin that produces it over the draft path's base (§2, §5.2):
 //!   `margin = (price ÷ base − 1) × 100 − adjust_pct`, rounded to scale 4, per side, where base is the currency's
 //!   `ReferenceBase::newest_in` line at its unit size. A currency with no base ⇒ 400 `validationFailed`.
-//! - `[proposed]` pending the BE lane controller (asked on #564): approve is **not** a frame change. Any caller with
+//! - `[decided by BE controller 2026-10-20]` (claude/a90ab16c, reading A, recorded on #3827): approve is **not** a frame change. Any caller with
 //!   `RatePolicySave` + `RatesDraft` may approve (V.9's `pricing.tiers:approve` is FULL, its `pricing.policy:write` is
 //!   owner-only), the margins are written without the save-time guard refusal, and the guard decides through the
 //!   draft: in bound ⇒ `PUBLISHED`, out of bound ⇒ `PENDING_APPROVAL` (§11's two approve rows).
