@@ -93,10 +93,10 @@ q "INSERT INTO booking_slot_rules (organization_id, branch_id, slot_minutes, cap
 say "4. open slots for the next $SEED_DAYS days"
 q "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status)
    SELECT gen_random_uuid(), b.organization_id, b.id, d.day,
-          (d.day + t) AT TIME ZONE b.timezone, (d.day + t + interval '30 minutes') AT TIME ZONE b.timezone, 4, 0, 'OPEN'
+          (d.day + s.t) AT TIME ZONE b.timezone, (d.day + s.t + interval '30 minutes') AT TIME ZONE b.timezone, 4, 0, 'OPEN'
    FROM branches b
    CROSS JOIN (SELECT ((now() AT TIME ZONE 'Asia/Bangkok')::date + g) AS day FROM generate_series(1, $SEED_DAYS) g) d
-   CROSS JOIN generate_series(time '09:00', time '16:30', interval '30 minutes') t
+   CROSS JOIN (SELECT time '09:00' + n * interval '30 minutes' AS t FROM generate_series(0, 15) n) s
    WHERE b.organization_id = '$ORG_ID' AND b.id = '$BRANCH'
      AND NOT EXISTS (SELECT 1 FROM branch_closures c WHERE c.branch_id = b.id AND c.closed_on = d.day)
    ON CONFLICT (branch_id, start_at) DO NOTHING;" >/dev/null
