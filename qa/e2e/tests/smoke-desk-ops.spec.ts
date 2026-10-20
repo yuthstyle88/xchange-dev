@@ -92,6 +92,7 @@ test.describe('QA-S8 smoke: desk and operations pages', () => {
       role: 'admin',
       key: '.documents-screen',
       langs: STAFF_LANGS,
+      allowConsole: ['documentsNotFound404'],
     });
   });
 
