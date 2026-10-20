@@ -14,7 +14,7 @@
 //! implementation the scaffold's view cache holds a placeholder that answers an error without a
 //! call, and the test fails on the rows.)
 //!
-//! Sessions are made at the real sign-in doors (`rpc_common`). Needs `TEST_DATABASE_URL`.
+//! The sessions are made at the real sign-in doors (`rpc_common`). Needs `TEST_DATABASE_URL`.
 
 mod common;
 mod compat_common;
