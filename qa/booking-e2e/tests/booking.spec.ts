@@ -36,7 +36,10 @@ async function bookOnce(page: Page, step: string, withRef: boolean): Promise<str
   await page.getByTestId('branch-select').selectOption(users.branch);
   await page.getByTestId('date-input').fill(tomorrowBangkok());
   await shot(page, `${step}-1-branch-date`);
-  const firstSlot = page.getByTestId('slot-option').first();
+  // A full slot is shown disabled (capacity reached by earlier runs); take the first one still open.
+  const firstSlot = page.locator('[data-testid="slot-option"]:not([disabled])').first();
+  const disabled = await page.locator('[data-testid="slot-option"][disabled]').count();
+  if (disabled) console.log(`[${step}] ${disabled} slot(s) shown full/disabled`);
   await expect(firstSlot).toBeAttached({ timeout: 15_000 });
   const slotValue = await firstSlot.getAttribute('value');
   await page.getByTestId('slot-select').selectOption(slotValue!);
