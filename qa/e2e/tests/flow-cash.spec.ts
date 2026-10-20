@@ -4,6 +4,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import {
   closeShift,
+  ensureShiftClosed,
   hasAccount,
   openShift,
   posted,
@@ -102,6 +103,7 @@ test.describe.serial('shift open and close', () => {
   test('teller counts the opening, the branch manager verifies it', async ({ browser }) => {
     const teller = await asRole(browser, 'teller');
     const manager = await asRole(browser, 'branchManager');
+    await ensureShiftClosed(teller, manager);
     await openShift(teller, manager);
     await teller.close();
     await manager.close();

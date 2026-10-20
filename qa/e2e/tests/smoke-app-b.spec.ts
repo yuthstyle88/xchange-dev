@@ -69,7 +69,7 @@ test.describe('QA-S3 smoke: customer app B (/app/bookings, /app/member, /app/not
     });
   });
 
-  // key: web/src/screens/customer/verification/VerificationScreen.tsx:255
+  // key: web/src/screens/customer/verification/VerificationScreen.tsx:248 (.xc-verification-blocked) or :255 (.xc-verification-screen)
   test('/app/verification', async ({ page }) => {
     await signIn(page, 'customer', '/app/verification');
     await smoke(page, {
@@ -77,8 +77,12 @@ test.describe('QA-S3 smoke: customer app B (/app/bookings, /app/member, /app/not
       screen: 'verification',
       path: '/app/verification',
       role: 'customer',
-      key: '.xc-verification-screen',
+      key: '.xc-verification-screen, .xc-verification-blocked',
       langs: CUSTOMER_LANGS,
     });
+    const shown = (await page.locator('.xc-verification-blocked').isVisible())
+      ? '.xc-verification-blocked'
+      : '.xc-verification-screen';
+    console.log(`[verification] showed ${shown}`);
   });
 });

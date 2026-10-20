@@ -1,9 +1,19 @@
 // Shared helpers for every spec (design docs/design/qa-e2e.md §2). Specs import only from here; a spec that needs a new
 // helper says so on its ticket and never edits this file.
-import { expect, test, type Page } from '@playwright/test';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 export type Role = 'customer' | 'teller' | 'branchManager' | 'finance' | 'admin';
+export const ROLES: readonly Role[] = ['customer', 'teller', 'branchManager', 'finance', 'admin'];
+
+export const ROLE_HOME: Record<Role, string> = {
+  customer: '/app',
+  teller: '/staff',
+  branchManager: '/staff',
+  finance: '/staff',
+  admin: '/',
+};
 export type Lang = 'th' | 'en' | 'zh';
 
 /** One account: staff and customers sign in with `phone`, the admin with `identifier`. */
@@ -27,6 +37,31 @@ export interface Users {
   quantity?: string;
 }
 
+export type ConsoleAllowKey = 'anonymousMyProfile401' | 'loyaltyUnavailable503';
+
+export interface ConsoleAllowEntry {
+  url: RegExp;
+  status: number;
+  code?: string;
+  log?: string;
+}
+
+/** Expected HTTP console errors in `watchConsole`; each entry is named and carries a one-line reason. */
+export const CONSOLE_ALLOWLIST: Record<ConsoleAllowKey, ConsoleAllowEntry> = {
+  // Anonymous visitors on public /app pages have no customer session, so GET /api/v3/views/my_profile answers 401.
+  anonymousMyProfile401: {
+    url: /\/api\/v3\/views\/my_profile(?:\?|$)/,
+    status: 401,
+  },
+  // The loyalty service is not configured on this host, so GET /api/v3/views/loyalty_rule_versions answers 503 loyaltyUnavailable.
+  loyaltyUnavailable503: {
+    url: /\/api\/v3\/views\/loyalty_rule_versions(?:\?|$)/,
+    status: 503,
+    code: 'loyaltyUnavailable',
+    log: 'loyalty not configured on host',
+  },
+};
+
 /** One screen for `smoke`. */
 export interface ScreenSpec {
   /** Results folder, the spec's area: `public`, `app`, `admin`, `staff`, `desk`. */
@@ -43,6 +78,10 @@ export interface ScreenSpec {
    */
   key: string;
   langs: readonly Lang[];
+  /** Optional permission from the admin menu's `menu.ts` (`needs`); `smoke` skips when `me.permissions` lacks it. */
+  needs?: string;
+  /** Expected console errors from `CONSOLE_ALLOWLIST` for this screen. */
+  allowConsole?: readonly ConsoleAllowKey[];
 }
 
 /** Languages each audience may pick (web/src/shared/i18n/languages.ts:7-8). */
@@ -70,12 +109,64 @@ export function hasAccount(role: Role): boolean {
   return !!account?.password && !account.password.startsWith('<');
 }
 
-/**
- * Signs in at /login?next=… (web/src/screens/login/LoginScreen.tsx:114, :121, :126) and waits until the page has left
- * /login and is on `next`. Skips the test when users.json has no account for the role.
- */
-export async function signIn(page: Page, role: Role, next: string): Promise<void> {
-  test.skip(!hasAccount(role), `no ${role} account in users.json: run scripts/reseed.sh`);
+/** Results subfolder where storageState sessions are saved (results/.auth/<role>.json). */
+export function authFileFor(role: Role): string {
+  return new URL(`../results/.auth/${role}.json`, import.meta.url).pathname;
+}
+
+/** Saves the browser context's cookies and storage state to `results/.auth/<role>.json` with mode 600. */
+export async function saveStorageState(page: Page, role: Role): Promise<void> {
+  const file = authFileFor(role);
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  try {
+    chmodSync(dirname(file), 0o700);
+  } catch {
+    // best-effort
+  }
+  await page.context().storageState({ path: file });
+  try {
+    chmodSync(file, 0o600);
+  } catch {
+    // best-effort
+  }
+}
+
+/** Loads the saved storage state from `results/.auth/<role>.json` into the page context. */
+export async function loadStorageState(page: Page, role: Role): Promise<boolean> {
+  const file = authFileFor(role);
+  if (!existsSync(file)) return false;
+  try {
+    const raw = readFileSync(file, 'utf8');
+    const state = JSON.parse(raw) as {
+      cookies?: Parameters<BrowserContext['addCookies']>[0];
+      origins?: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;
+    };
+    if (state.cookies && state.cookies.length > 0) {
+      await page.context().addCookies(state.cookies);
+    }
+    if (state.origins && state.origins.length > 0) {
+      await page.context().addInitScript((origins) => {
+        for (const item of origins) {
+          if (window.location.origin === item.origin) {
+            for (const entry of item.localStorage) {
+              try {
+                window.localStorage.setItem(entry.name, entry.value);
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+      }, state.origins);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drives the login form at /login?next=… directly. */
+export async function loginWithForm(page: Page, role: Role, next: string): Promise<void> {
   const account = users[role]!;
   const identifier = account.identifier ?? account.phone ?? '';
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
@@ -89,12 +180,53 @@ export async function signIn(page: Page, role: Role, next: string): Promise<void
   } catch {
     const changePw = await page.getByRole('heading', { name: /เปลี่ยนรหัสผ่าน|Change password/i }).count();
     const message = (await page.locator('#message, [role="alert"]').allInnerTexts()).join(' ').trim();
+    if (changePw) {
+      throw new Error(`${role} (${identifier}) must change its password first: do it once by hand, then update users.json`);
+    }
+    if (/ลองหลายครั้งเกินไป|กรุณารอสักครู่/i.test(message)) {
+      throw new Error(`${role} (${identifier}): ${message}`);
+    }
     throw new Error(
-      changePw
-        ? `${role} (${identifier}) must change its password first: do it once by hand, then update users.json`
-        : `${role} (${identifier}) stayed on /login: ${message || 'no message shown'}`,
+      `${role} (${identifier}) stayed on /login: ${message || 'no message shown'}`,
     );
   }
+}
+
+/**
+ * Signs in as `role` and navigates to `next`.
+ * Reuses saved session from `results/.auth/<role>.json` when available.
+ * Falls back to the login form if the state is missing or the server answers 401 (a stale session),
+ * then saves it again.
+ */
+export async function signIn(page: Page, role: Role, next: string): Promise<void> {
+  test.skip(!hasAccount(role), `no ${role} account in users.json: run scripts/reseed.sh`);
+  const loaded = await loadStorageState(page, role);
+  if (loaded) {
+    let got401 = false;
+    const onResponse = (res: { status(): number }) => {
+      if (res.status() === 401) got401 = true;
+    };
+    page.on('response', onResponse);
+    try {
+      const res = await page.goto(next);
+      if (res?.status() === 401) got401 = true;
+      await page.waitForLoadState('domcontentloaded');
+      const pathname = new URL(page.url(), users.baseUrl).pathname;
+      if (!next.split(/[?#]/)[0].startsWith('/login') && pathname.startsWith('/login')) {
+        got401 = true;
+      }
+    } catch {
+      got401 = true;
+    } finally {
+      page.off('response', onResponse);
+    }
+    if (!got401) {
+      return;
+    }
+  }
+
+  await loginWithForm(page, role, next);
+  await saveStorageState(page, role);
 }
 
 /**
@@ -113,13 +245,57 @@ export async function withLang(page: Page, lang: Lang): Promise<void> {
 
 export interface ConsoleLog {
   errors: string[];
+  pending?: Promise<void>[];
 }
 
-/** Collects console errors and uncaught page errors from now on. `smoke` fails a screen that logs any. */
-export function watchConsole(page: Page): ConsoleLog {
-  const log: ConsoleLog = { errors: [] };
+/** Reads the signed-in staff/admin user's `me.permissions` from `GET /api/v3/views/me` (`AdminShell.tsx:246`). */
+export async function mePermissions(page: Page): Promise<string[]> {
+  const res = await page.request.get('/api/v3/views/me');
+  if (!res.ok()) return [];
+  const body = (await res.json().catch(() => ({}))) as { data?: { permissions?: string[] } };
+  return Array.isArray(body.data?.permissions) ? body.data.permissions : [];
+}
+
+/** Collects console errors and uncaught page errors from now on, excluding any named `CONSOLE_ALLOWLIST` entries. */
+export function watchConsole(page: Page, allow: readonly ConsoleAllowKey[] = []): ConsoleLog {
+  const pending: Promise<void>[] = [];
+  const seen = new Set<ConsoleAllowKey>();
+  const log: ConsoleLog = { errors: [], pending };
+  const matchesStatus = (text: string, status: number) => new RegExp(`\\b${status}\\b`).test(text);
   page.on('console', (msg) => {
-    if (msg.type() === 'error') log.errors.push(msg.text());
+    if (msg.type() !== 'error') return;
+    const text = msg.text();
+    const locUrl = msg.location().url ?? '';
+    const allowed = allow.some((k) => {
+      const entry = CONSOLE_ALLOWLIST[k];
+      return (
+        matchesStatus(text, entry.status) &&
+        (entry.url.test(locUrl) || entry.url.test(text) || (seen.has(k) && !/\/api\//.test(locUrl)))
+      );
+    });
+    if (!allowed) log.errors.push(text);
+  });
+  page.on('response', (res) => {
+    for (const k of allow) {
+      const entry = CONSOLE_ALLOWLIST[k];
+      if (!entry.url.test(res.url()) || res.status() !== entry.status) continue;
+      seen.add(k);
+      const idx = log.errors.findIndex((e) => matchesStatus(e, entry.status) && /Failed to load resource/i.test(e));
+      if (idx !== -1) log.errors.splice(idx, 1);
+      if (!entry.code && !entry.log) continue;
+      pending.push(
+        res
+          .text()
+          .catch(() => '')
+          .then((body) => {
+            if (entry.code && !body.includes(entry.code)) {
+              log.errors.push(`${res.status()} ${res.url()}: ${body.slice(0, 200)}`);
+              return;
+            }
+            if (entry.log) console.log(entry.log);
+          }),
+      );
+    }
   });
   page.on('pageerror', (err) => log.errors.push(String(err)));
   return log;
@@ -137,7 +313,15 @@ export async function shot(page: Page, area: string, screen: string, lang?: Lang
  * screenshot. It never clicks anything. The caller signs `page` in as `spec.role` first (`signIn`), once per spec file.
  */
 export async function smoke(page: Page, spec: ScreenSpec): Promise<void> {
-  const log = watchConsole(page);
+  if (spec.needs) {
+    const perms = await mePermissions(page);
+    test.skip(!perms.includes(spec.needs), `${spec.path}: signed-in ${spec.role} lacks ${spec.needs}`);
+  }
+  const allow =
+    spec.role === 'anonymous'
+      ? Array.from(new Set<ConsoleAllowKey>(['anonymousMyProfile401', ...(spec.allowConsole ?? [])]))
+      : (spec.allowConsole ?? []);
+  const log = watchConsole(page, allow);
   for (const lang of spec.langs) {
     log.errors.length = 0;
     await withLang(page, lang);
@@ -149,6 +333,7 @@ export async function smoke(page: Page, spec: ScreenSpec): Promise<void> {
     // The app writes the chosen language to <html lang> (web/src/shared/i18n/languages.ts:19-23, index.ts syncHtmlLang).
     await expect(page.locator('html'), `${spec.path} shows ${lang}`).toHaveAttribute('lang', HTML_LANG[lang]);
     await shot(page, spec.area, spec.screen, lang);
+    if (log.pending?.length) await Promise.all(log.pending.splice(0));
     expect(log.errors, `${spec.path} (${lang}): console errors`).toEqual([]);
   }
 }
@@ -173,10 +358,10 @@ export async function posted(page: Page, path: RegExp, act: () => Promise<void>)
  * clock in with the floor card (FloorCard.tsx floor-clock, POST /api/attendance) when needed. `page` is on /staff.
  */
 export async function clockIn(page: Page): Promise<string> {
-  const shiftButton = page.getByTestId('shift-open-count').or(page.getByTestId('shift-close-count')).first();
-  if (await shiftButton.isVisible().catch(() => false)) return 'already clocked in';
   const clock = page.getByTestId('floor-clock');
   await expect(clock, 'the floor card clock button').toBeVisible({ timeout: 20_000 });
+  const shiftButton = page.getByTestId('shift-open-count').or(page.getByTestId('shift-close-count')).first();
+  if (await shiftButton.isVisible().catch(() => false)) return 'already clocked in';
   const res = await posted(page, /^\/api\/attendance$/, () => clock.click());
   await expect(shiftButton, `shift buttons after clock-in (POST /api/attendance ${res.text})`).toBeVisible({ timeout: 20_000 });
   return `clocked in: POST /api/attendance ${res.text}`;
@@ -201,13 +386,27 @@ export async function verifyCount(page: Page, kind: 'OPEN' | 'CLOSE'): Promise<{
   return posted(page, /^\/api\/cash-counts\/[^/]+\/verify$/, () => item.getByTestId('shift-verify').click());
 }
 
+/** If an earlier run left the teller's shift open, close and verify it first so the flow starts from a closed shift. */
+export async function ensureShiftClosed(teller: Page, manager: Page): Promise<void> {
+  console.log(`[shift] ${await clockIn(teller)}`);
+  if (await teller.getByTestId('shift-close-count').isVisible().catch(() => false)) {
+    console.log('[shift] leftover open shift found; closing it first');
+    const count = await submitCount(teller, 'close');
+    expect(count.ok, `leftover closing count accepted: ${count.text}`).toBeTruthy();
+    const verify = await verifyCount(manager, 'CLOSE');
+    expect(verify.ok, `leftover closing count verified: ${verify.text}`).toBeTruthy();
+    await teller.reload();
+    await expect(teller.getByTestId('shift-open-count'), 'the leftover shift is closed').toBeVisible({ timeout: 20_000 });
+  }
+}
+
 /**
  * Opens the teller's shift: the teller (on /staff) clocks in and counts the opening, the branch manager (on /staff)
  * verifies it; the verifier is never the counter (api/crates/xc-cash/src/domain/person_rules.rs). Needs a funded safe
  * (flow-cash's first test). Throws with the server's answer when a step is refused.
  */
 export async function openShift(teller: Page, manager: Page): Promise<void> {
-  console.log(`[shift] ${await clockIn(teller)}`);
+  await ensureShiftClosed(teller, manager);
   const count = await submitCount(teller, 'open');
   expect(count.ok, `opening count accepted: ${count.text}`).toBeTruthy();
   const verify = await verifyCount(manager, 'OPEN');

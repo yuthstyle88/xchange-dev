@@ -10,7 +10,7 @@
 // - Board.tsx:43,69-71     li[data-ticket="<id>"]      (ticket row with displayNumber and status text; board/i18n.ts:11-12,25-26)
 // - TicketActions.tsx:58-63,100-107 button[name="start"] / button[name="finish"] (POST /api/queue/tickets/{id}/start|finish, queue-commands.ts:56-62)
 import { expect, test } from '@playwright/test';
-import { closeShift, openShift, posted, shot, signIn, users } from './helpers';
+import { closeShift, ensureShiftClosed, openShift, posted, shot, signIn, users } from './helpers';
 
 interface QueueTicketAnswer {
   id: string;
@@ -31,9 +31,10 @@ test.describe.serial('QA-F2 flow: queue walk-in to finish', () => {
 
     try {
       // 1. Sign both in on /staff (skips via signIn when branchManager or teller is missing in users.json),
-      //    then open the teller's shift so the teller has an ACTIVE counter (queue-tickets.md Q7).
+      //    close any leftover open shift, then open the teller's shift so the teller has an ACTIVE counter (queue-tickets.md Q7).
       await signIn(manager, 'branchManager', '/staff');
       await signIn(teller, 'teller', '/staff');
+      await ensureShiftClosed(teller, manager);
       await openShift(teller, manager);
 
       let openedQueue = false;
