@@ -116,10 +116,11 @@ impl CommandAction for SlotRuleSet {
             .unwrap_or(chrono_tz::Asia::Bangkok);
         let today = Utc::now().with_timezone(&tz).date_naive();
 
-        let _ = services
+        services
             .slot_service
             .generate_in(tx, &branch, today, input.horizon_days as u32)
-            .await;
+            .await
+            .map_err(V3Error::from)?;
 
         Ok(BookingOkOutput { ok: true })
     }

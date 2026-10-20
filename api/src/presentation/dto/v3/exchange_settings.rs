@@ -22,3 +22,13 @@ pub struct BranchExchangeLimitDto {
     pub branch_id: String,
     pub approval_limit_thb: Option<String>,
 }
+
+/// `GET /api/v3/views/exchange_settings`: the organisation's quote lifetime and the branch's
+/// approval limit (`null` = no limit).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "exchange_settings.ts")]
+pub struct ExchangeSettingsViewData {
+    pub quote_ttl_seconds: i32,
+    pub approval_limit_thb: Option<String>,
+}

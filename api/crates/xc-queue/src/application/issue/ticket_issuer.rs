@@ -40,7 +40,16 @@ fn source_matches_ticket(source: &IssueSource, ticket: &QueueTicket) -> bool {
         IssueSource::Booking { booking_id } => {
             ticket.booking_id.as_deref() == Some(booking_id) && ticket.kiosk_request_id.is_none()
         }
-        IssueSource::Desk => ticket.kiosk_request_id.is_none() && ticket.booking_id.is_none(),
+        IssueSource::Desk => {
+            ticket.customer_id.is_none()
+                && ticket.kiosk_request_id.is_none()
+                && ticket.booking_id.is_none()
+        }
+        IssueSource::App { customer_id } => {
+            ticket.customer_id.as_deref() == Some(customer_id)
+                && ticket.kiosk_request_id.is_none()
+                && ticket.booking_id.is_none()
+        }
     }
 }
 
@@ -189,7 +198,7 @@ impl TicketIssuer {
                     return Ok(existing);
                 }
             }
-            IssueSource::Desk => {}
+            IssueSource::Desk | IssueSource::App { .. } => {}
         }
 
         // 3. A closed queue (or no status row) refuses `QueueError::QueueClosed`, consuming no number.
@@ -211,6 +220,23 @@ impl TicketIssuer {
             .map_err(|e| AppError::Internal(format!("invalid timezone {}: {e}", facts.timezone)))?;
         let service_date = now.with_timezone(&tz).date_naive();
 
+        if let IssueSource::App { customer_id } = source {
+            let existing: Option<(String,)> = sqlx::query_as(
+                "SELECT id::text FROM queue_tickets \
+                 WHERE branch_id = $1 AND service_date = $2 AND customer_id = $3 \
+                   AND service_type = 'WALK_IN' AND status IN ('WAITING', 'CALLED', 'SERVING') \
+                 LIMIT 1",
+            )
+            .bind(branch.as_str())
+            .bind(service_date)
+            .bind(customer_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+            if let Some((existing_id,)) = existing {
+                return Err(AppError::Conflict(format!("alreadyQueued:{existing_id}")));
+            }
+        }
+
         let service_type = source.service_type();
         let sequence = self
             .repo
@@ -226,10 +252,11 @@ impl TicketIssuer {
         let display_number = DisplayNumber::format(service_type, sequence);
         let ticket_id = uuid::Uuid::new_v4().to_string();
 
-        let (kiosk_request_id, booking_id) = match source {
-            IssueSource::Kiosk { request_id } => (Some(request_id.clone()), None),
-            IssueSource::Booking { booking_id } => (None, Some(booking_id.clone())),
-            IssueSource::Desk => (None, None),
+        let (customer_id, kiosk_request_id, booking_id) = match source {
+            IssueSource::Kiosk { request_id } => (None, Some(request_id.clone()), None),
+            IssueSource::Booking { booking_id } => (None, None, Some(booking_id.clone())),
+            IssueSource::Desk => (None, None, None),
+            IssueSource::App { customer_id } => (Some(customer_id.clone()), None, None),
         };
 
         let ticket = QueueTicket {
@@ -241,7 +268,7 @@ impl TicketIssuer {
             sequence,
             display_number,
             status: TicketStatus::Waiting,
-            customer_id: None,
+            customer_id,
             booking_id,
             kiosk_request_id,
             counter_teller_id: None,
@@ -253,7 +280,15 @@ impl TicketIssuer {
             idempotency_key: idempotency_key.to_owned(),
         };
 
-        self.repo.insert_in(tx, &ticket).await?;
+        if let Err(err) = self.repo.insert_in(tx, &ticket).await {
+            if err
+                .to_string()
+                .contains("queue_tickets_one_active_app_ticket")
+            {
+                return Err(AppError::Conflict("alreadyQueued".to_owned()));
+            }
+            return Err(err);
+        }
 
         let event = QueueEvent {
             id: uuid::Uuid::new_v4().to_string(),

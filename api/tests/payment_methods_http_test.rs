@@ -313,6 +313,15 @@ async fn every_recorded_step_is_answered_as_v2_answered_it() {
     let recording = recording();
     let people: Vec<Person> = recording.people.iter().map(person).collect();
     let room = Room::open(&people).await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     for step in &recording.steps {
         room.desk.clock.set(time(&step.at));
         if step.database_down {
@@ -343,7 +352,19 @@ async fn every_recorded_step_is_answered_as_v2_answered_it() {
             // naming a branch other than their own (#5, #6) is refused as out of scope
             (403, json!({ "error": OUT_OF_SCOPE }))
         } else {
-            (step.status, step.answer.clone())
+            // OR-7.m G2: rule 2 (#3700)
+            let mut expected = step.answer.clone();
+            if expected.get("updatedBy") == Some(&json!("owner")) {
+                expected["updatedBy"] = json!(owner_id);
+            }
+            if let Some(history) = expected.get_mut("history").and_then(Value::as_array_mut) {
+                for entry in history {
+                    if entry.get("actor") == Some(&json!("owner")) {
+                        entry["actor"] = json!(owner_id);
+                    }
+                }
+            }
+            (step.status, expected)
         };
         assert_eq!(answer.status, status, "{label}: {:.400}", answer.text);
         assert_eq!(answer.json(), expected, "{label}");

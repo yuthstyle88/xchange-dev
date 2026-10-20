@@ -55,10 +55,12 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, Utc};
 use quote_common::{ORG_1, TestDb};
 use serde_json::{Value, json};
-use xc_auth::domain::access::{Permission, Role};
+use xc_auth::domain::access::v3_roles::blueprint_roles;
+use xc_auth::domain::access::{Permission, Role, RoleGrants};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -505,16 +507,32 @@ async fn another_branchs_unknown_or_malformed_id_answers_null() {
     db.finish().await;
 }
 
-/// Ruling issuecomment-6107277948: a caller holding `adminSnapshot`'s permission (`CompatRead`) but
+/// Ruling issuecomment-6107277948 under §11.2: a caller holding `adminSnapshot`'s permission (`CompatRead`) but
 /// not `TransactionRead` is refused with the code main gives on `EntryPath::Rpc`
-/// (`roleNotAllowedHere`), as a client error. The owner (EXECUTIVE + ADMIN), RATES (RATE_MANAGER)
-/// and FINANCE all hold `CompatRead` and none holds `TransactionRead`.
+/// (`roleNotAllowedHere`), as a client error.
 #[tokio::test]
 async fn a_role_with_admin_snapshots_permission_but_not_transaction_read_is_refused() {
     let db = TestDb::start().await;
     let s = seed(&db).await;
-    for who in ["owner", "staff:RATES:MAIN", "staff:FINANCE:MAIN"] {
-        let (status, body) = get(&db, who, &format!("id={}", s.draft)).await;
+    let refused: Vec<V2Role> = V2Role::STAFF
+        .into_iter()
+        .filter(|&r| {
+            let roles = blueprint_roles(r);
+            roles
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::CompatRead))
+                && !roles
+                    .iter()
+                    .any(|&br| RoleGrants::seed(br).contains(&Permission::TransactionRead))
+        })
+        .collect();
+    assert!(
+        !refused.is_empty(),
+        "some staff role holds CompatRead without TransactionRead"
+    );
+    for role in refused {
+        let who = format!("staff:{}:MAIN", role.as_str());
+        let (status, body) = get(&db, &who, &format!("id={}", s.draft)).await;
         assert!(
             status.is_client_error(),
             "{who}: refused as a client error, got {status}: {body}"

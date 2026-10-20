@@ -206,9 +206,19 @@ async fn add_shows_the_code_once_and_stores_only_its_hash() {
         room.agent_text(&id, "name").await.as_deref(),
         Some("Mac เคาน์เตอร์ 1")
     );
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
+    // OR-7.m G2: rule 2 (#3700)
     assert_eq!(
         room.agent_text(&id, "created_by").await.as_deref(),
-        Some("owner")
+        Some(owner_id.as_str())
     );
     assert_eq!(
         room.agent_text(&id, "pair_code_hash").await,
@@ -378,6 +388,15 @@ async fn list_shows_each_agent_with_its_state() {
 #[actix_web::test]
 async fn revoke_fails_the_branch_s_queued_drawer_jobs() {
     let room = Room::open().await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     let id = room.add(at(0), MAIN, "Mac 1").await["agentId"]
         .as_str()
         .expect("id")
@@ -403,9 +422,10 @@ async fn revoke_fails_the_branch_s_queued_drawer_jobs() {
     room.ok(at(10), "revoke", json!({ "agentId": id })).await;
 
     assert!(room.agent_text(&id, "revoked_at").await.is_some());
+    // OR-7.m G2: rule 2 (#3700)
     assert_eq!(
         room.agent_text(&id, "revoked_by").await.as_deref(),
-        Some("owner")
+        Some(owner_id.as_str())
     );
     let jobs: Vec<(String, String, Option<String>)> =
         sqlx::query_as("SELECT id, status, outcome_reason FROM device_jobs ORDER BY id")
@@ -432,8 +452,9 @@ async fn revoke_fails_the_branch_s_queued_drawer_jobs() {
     .fetch_all(&room.desk.db.pool)
     .await
     .expect("read lines");
+    // OR-7.m G2: rule 2 (#3700)
     assert!(
-        lines.contains(&("FAILED".to_owned(), "owner".to_owned(), "q-1".to_owned())),
+        lines.contains(&("FAILED".to_owned(), owner_id, "q-1".to_owned())),
         "a FAILED line for the failed job, by the owner: {lines:?}"
     );
 

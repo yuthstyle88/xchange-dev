@@ -282,12 +282,14 @@ fn branch_is_held_as_an_arc_dyn_transfer_ends_keyed_by_its_own_kind() {
 // ── BRANCH: ends (§3.1, §4.1) ─────────────────────────────────────────────
 
 #[test]
-fn a_branch_transfer_is_created_by_a_branch_manager_or_finance_of_the_source_branch() {
+fn a_branch_transfer_is_created_by_a_branch_manager_finance_or_executive_of_the_source_branch() {
     let t = new_branch(Some("B2"), None, None);
+    // §11.2: EXECUTIVE holds FINANCE FULL, so CashManage.
     for who in [
         actor("bm", &[(Role::BranchManager, Some("B1"))]),
         actor("fin", &[(Role::Finance, Some("B1"))]),
         actor("fin-org", &[(Role::Finance, None)]),
+        actor("exec", &[(Role::Executive, None)]),
     ] {
         assert_eq!(branch().check_create(&who, &t), Ok(()), "{}", who.user_id);
     }
@@ -299,7 +301,6 @@ fn a_branch_transfer_is_not_created_by_a_teller_or_by_a_manager_of_another_branc
     for who in [
         actor("teller", &[(Role::Teller, Some("B1"))]),
         actor("bm-b2", &[(Role::BranchManager, Some("B2"))]),
-        actor("exec", &[(Role::Executive, None)]),
     ] {
         assert!(branch().check_create(&who, &t).is_err(), "{}", who.user_id);
     }

@@ -59,13 +59,17 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
-import type { StaffFloorView } from "../../../shared/api/generated/staff_floor";
-import type { StaffMeView } from "../../../shared/api/generated/staff_me";
-import type { CashCountRow } from "../../../shared/api/generated/cash_counts";
-import type { HandoverPendingRow } from "../../../shared/api/generated/handovers_pending";
-import type { DenominationRow } from "../../../shared/api/generated/denominations";
-import type { HandoverReceiverRow } from "../../../shared/api/generated/handover_receivers";
-import type { MyShift } from "../../../shared/api/generated/my_shift";
+import {
+  makeCashCountRow,
+  makeDenominationRow,
+  makeHandoverPendingRow,
+  makeHandoverReceiverRow,
+  makeMyShift,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffFloorView,
+  type StaffMeView,
+} from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { warmModules } from "../../../shared/testing/warm-modules";
 
@@ -125,19 +129,19 @@ const ME = "00000000-0000-4000-8000-0000000000a1";
 const OTHER = "00000000-0000-4000-8000-0000000000a2";
 const THIRD = "00000000-0000-4000-8000-0000000000a3";
 
-function me(permissions: string[]): StaffMeView {
-  return {
+function me(permissions: string[]) {
+  return makeStaffMeView({
     userId: ME,
     name: "Ploy",
     roles: [],
     branchId: BRANCH,
     branchName: "XC-B",
     permissions,
-  };
+  });
 }
 
-function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
-  return {
+function floor(over: Partial<StaffFloorView> = {}) {
+  return makeStaffFloorView({
     phase: "OPEN",
     hours: null,
     myClockIn: null,
@@ -146,7 +150,7 @@ function floor(over: Partial<StaffFloorView> = {}): StaffFloorView {
     target: null,
     safe: null,
     ...over,
-  };
+  });
 }
 
 const CLOCKED_IN = "2026-10-11T01:00:00Z";
@@ -155,22 +159,20 @@ const MY_SHIFT = {
   openedAt: "2026-10-11T01:05:00Z",
 };
 /** The `my_shift` view of that shift (#624 `my_shift.ts`). */
-const MY_SHIFT_VIEW: MyShift = {
+const MY_SHIFT_VIEW = makeMyShift({
   id: MY_SHIFT.id,
   status: "OPEN",
   openedAt: MY_SHIFT.openedAt,
   balances: [],
-};
-
-type Count = CashCountRow;
+});
 
 function count(
   id: string,
   kind: string,
   countedBy: string,
   verifiedBy: string | null = null,
-): Count {
-  return {
+) {
+  return makeCashCountRow({
     id,
     branchId: BRANCH,
     shiftId: "22222222-2222-4222-8222-222222222222",
@@ -181,20 +183,18 @@ function count(
     verifiedAt: verifiedBy ? "2026-10-11T02:10:00Z" : null,
     note: null,
     totals: [],
-  };
+  });
 }
 
-type Handover = HandoverPendingRow;
-
-function handover(id: string, receiverId: string): Handover {
-  return {
+function handover(id: string, receiverId: string) {
+  return makeHandoverPendingRow({
     id,
     fromShiftId: "33333333-3333-4333-8333-333333333333",
     countId: "44444444-4444-4444-8444-444444444444",
     receiverId,
     status: "PENDING",
     createdAt: "2026-10-11T03:00:00Z",
-  };
+  });
 }
 
 const C_OPEN = "c0000000-0000-4000-8000-000000000001"; // another teller's OPEN count, waiting
@@ -205,20 +205,20 @@ const C_HAND = "c0000000-0000-4000-8000-000000000005"; // a HANDOVER_OUT count, 
 const H_MINE = "d0000000-0000-4000-8000-000000000001"; // a hand-over to me
 const H_OTHER = "d0000000-0000-4000-8000-000000000002"; // a hand-over to someone else
 
-const COUNTS: Count[] = [
+const COUNTS = [
   count(C_OPEN, "OPEN", OTHER),
   count(C_CLOSE, "CLOSE", THIRD),
   count(C_MINE, "CLOSE", ME),
   count(C_DONE, "OPEN", OTHER, THIRD),
   count(C_HAND, "HANDOVER_OUT", OTHER),
 ];
-const HANDOVERS: Handover[] = [handover(H_MINE, ME), handover(H_OTHER, THIRD)];
+const HANDOVERS = [handover(H_MINE, ME), handover(H_OTHER, THIRD)];
 
 /** The denominations view's rows, as #624 orders them: currency, then faceValue nulls first, then id. */
-const DENOMS: DenominationRow[] = [
-  { id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" },
-  { id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" },
-  { id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" },
+const DENOMS = [
+  makeDenominationRow({ id: 12, currency: "THB", faceValue: "100.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 11, currency: "THB", faceValue: "1000.0000", groupCode: "NOTE" }),
+  makeDenominationRow({ id: 21, currency: "USD", faceValue: "50.0000", groupCode: "NOTE" }),
 ];
 
 type Sent = {
@@ -805,10 +805,10 @@ describe("C5 open and close counts send countSubmit with one line per typed face
 // ── C6: hand over to a teller (handover_receivers, #624 issuecomment-6107853376) ─────────────
 
 /** handover_receivers as the server orders them (name, then userId); the caller is in it only to prove it is never offered. */
-const RECEIVERS: HandoverReceiverRow[] = [
-  { userId: THIRD, name: "Aom" },
-  { userId: ME, name: "Ploy" },
-  { userId: OTHER, name: "Somchai" },
+const RECEIVERS = [
+  makeHandoverReceiverRow({ userId: THIRD, name: "Aom" }),
+  makeHandoverReceiverRow({ userId: ME, name: "Ploy" }),
+  makeHandoverReceiverRow({ userId: OTHER, name: "Somchai" }),
 ];
 
 async function openHandover(): Promise<HTMLFormElement> {

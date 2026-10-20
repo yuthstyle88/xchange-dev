@@ -253,6 +253,134 @@ impl Room {
         id
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn publish_rate_with_snapshot(
+        &self,
+        branch: &str,
+        currency: &str,
+        unit_size: Decimal,
+        buy_rate: Option<Decimal>,
+        sell_rate: Option<Decimal>,
+        denom: &str,
+        published_at: DateTime<Utc>,
+        snapshot: Value,
+    ) -> (uuid::Uuid, uuid::Uuid) {
+        let approval: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
+             proposed_payload, requested_by, requested_at, status, idempotency_key) \
+             VALUES (gen_random_uuid(), 'RATE_PUBLISH', $1, $2, 'h', 'p', '{}', 'test', now(), 'APPROVED', $2) \
+             RETURNING id",
+        )
+        .bind(branch)
+        .bind(unique("pub"))
+        .fetch_one(&self.pool)
+        .await
+        .expect("approval request");
+
+        let version: i32 = sqlx::query_scalar(
+            "SELECT coalesce(max(version), 0) + 1 FROM rate_publications WHERE branch_id = $1",
+        )
+        .bind(branch)
+        .fetch_one(&self.pool)
+        .await
+        .expect("version");
+
+        let publication: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO rate_publications (id, branch_id, version, published_at, approved_request_id, published_by) \
+             VALUES (gen_random_uuid(), $1, $2, $3, $4, 'test') RETURNING id",
+        )
+        .bind(branch)
+        .bind(version)
+        .bind(published_at)
+        .bind(approval)
+        .fetch_one(&self.pool)
+        .await
+        .expect("the publication");
+
+        let line_id: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, unit_size, buy_rate, sell_rate, \
+             source_snapshot) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7) RETURNING id",
+        )
+        .bind(publication)
+        .bind(currency)
+        .bind(denom)
+        .bind(unit_size)
+        .bind(buy_rate)
+        .bind(sell_rate)
+        .bind(snapshot)
+        .fetch_one(&self.pool)
+        .await
+        .expect("the rate line");
+
+        sqlx::query("UPDATE branches SET current_publication_id = $1 WHERE id = $2")
+            .bind(publication)
+            .bind(branch)
+            .execute(&self.pool)
+            .await
+            .expect("make it current");
+
+        (publication, line_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_alert_full(
+        &self,
+        customer_id: &str,
+        branch: &str,
+        currency: &str,
+        shop_side: &str,
+        unit_size: Decimal,
+        target: Decimal,
+        relation: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> uuid::Uuid {
+        let id = uuid::Uuid::new_v4();
+        let key = unique("key");
+        sqlx::query(
+            "INSERT INTO rate_alerts (id, organization_id, customer_id, branch_id, currency_code, shop_side, \
+             unit_size, condition, target, enabled, cooldown_seconds, relation, expires_at, idempotency_key, created_at, updated_at) \
+             VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, 'ABOVE', $8, true, 86400, $9, $10, $11, now(), now())",
+        )
+        .bind(id)
+        .bind(ORG)
+        .bind(customer_id)
+        .bind(branch)
+        .bind(currency)
+        .bind(shop_side)
+        .bind(unit_size)
+        .bind(target)
+        .bind(relation)
+        .bind(expires_at)
+        .bind(key)
+        .execute(&self.pool)
+        .await
+        .expect("insert rate alert");
+        id
+    }
+
+    async fn insert_event(
+        &self,
+        alert_id: uuid::Uuid,
+        line_id: uuid::Uuid,
+        observed_rate: Decimal,
+        trigger_at: DateTime<Utc>,
+        episode_no: i32,
+    ) {
+        sqlx::query(
+            "INSERT INTO rate_alert_events (id, organization_id, alert_id, published_rate_line_id, observed_rate, \
+             trigger_at, episode_no, created_at) VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, $6, now())",
+        )
+        .bind(ORG)
+        .bind(alert_id)
+        .bind(line_id)
+        .bind(observed_rate)
+        .bind(trigger_at)
+        .bind(episode_no)
+        .execute(&self.pool)
+        .await
+        .expect("insert rate alert event");
+    }
+
     async fn finish(self) {
         let Room { pool, schema } = self;
         sqlx::query(AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
@@ -909,6 +1037,419 @@ async fn row8_second_later_publication_becomes_current() {
     assert_eq!(
         item["unitSize"], "100.0000",
         "row 8: unitSize must be 100.0000"
+    );
+
+    room.finish().await;
+}
+
+// ------------------------------------------------------------ Ticket #3396 (C11) behaviour table tests
+
+/// C11 row 1: alert with expires_at in the past → expired: true, expiresAt set
+#[actix_web::test]
+async fn c11_row1_alert_expired_in_past() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+    let past = Utc::now() - chrono::Duration::hours(2);
+
+    let alert_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "BUY",
+            dec_str("1"),
+            dec_str("35.00000000"),
+            "UNKNOWN",
+            Some(past),
+        )
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item = alerts
+        .iter()
+        .find(|a| a["id"] == alert_id.to_string())
+        .expect("alert in response");
+
+    assert_eq!(
+        item["expired"], true,
+        "expired must be true for alert past expires_at"
+    );
+    assert_published_at_eq(&item["expiresAt"], past, "expiresAt must match past time");
+
+    room.finish().await;
+}
+
+/// C11 row 2: alert with expires_at in the future, or none → expired: false; expiresAt the time or null
+#[actix_web::test]
+async fn c11_row2_alert_expires_in_future_or_none() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+    let future = Utc::now() + chrono::Duration::hours(24);
+
+    let alert_future_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "BUY",
+            dec_str("1"),
+            dec_str("35.00000000"),
+            "UNKNOWN",
+            Some(future),
+        )
+        .await;
+
+    let alert_none_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "EUR",
+            "BUY",
+            dec_str("1"),
+            dec_str("38.00000000"),
+            "UNKNOWN",
+            None,
+        )
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item_future = alerts
+        .iter()
+        .find(|a| a["id"] == alert_future_id.to_string())
+        .expect("alert with future expiry in response");
+    assert_eq!(
+        item_future["expired"], false,
+        "expired must be false for future alert"
+    );
+    assert_published_at_eq(
+        &item_future["expiresAt"],
+        future,
+        "expiresAt must match future time",
+    );
+
+    let item_none = alerts
+        .iter()
+        .find(|a| a["id"] == alert_none_id.to_string())
+        .expect("alert without expiry in response");
+    assert_eq!(
+        item_none["expired"], false,
+        "expired must be false for alert with no expiry"
+    );
+    assert!(
+        item_none
+            .as_object()
+            .expect("alert object")
+            .contains_key("expiresAt"),
+        "expiresAt must be sent, as null, when no expiry"
+    );
+    assert!(
+        item_none["expiresAt"].is_null(),
+        "expiresAt must be null when no expiry"
+    );
+
+    room.finish().await;
+}
+
+/// C11 row 3: relation stored SATISFIED → relation: "SATISFIED"
+#[actix_web::test]
+async fn c11_row3_relation_stored_satisfied() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+
+    let alert_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "SELL",
+            dec_str("1"),
+            dec_str("36.00000000"),
+            "SATISFIED",
+            None,
+        )
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item = alerts
+        .iter()
+        .find(|a| a["id"] == alert_id.to_string())
+        .expect("alert in response");
+
+    assert_eq!(item["relation"], "SATISFIED", "relation must be SATISFIED");
+
+    room.finish().await;
+}
+
+/// C11 row 4: current line's snapshot fetched_at older than max_reference_age_hours → rateStale: true
+#[actix_web::test]
+async fn c11_row4_current_snapshot_stale() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+
+    let now = Utc::now();
+    let old_fetched_at = now - chrono::Duration::hours(5);
+    let stale_snapshot = json!({
+        "buy_mode": "AUTO",
+        "sell_mode": "AUTO",
+        "fetched_at": old_fetched_at.to_rfc3339(),
+        "max_reference_age_hours": 2
+    });
+
+    room.publish_rate_with_snapshot(
+        "B",
+        "USD",
+        dec_str("1"),
+        Some(dec_str("35.00000000")),
+        Some(dec_str("36.00000000")),
+        "ALL",
+        now,
+        stale_snapshot,
+    )
+    .await;
+
+    let alert_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "BUY",
+            dec_str("1"),
+            dec_str("35.00000000"),
+            "UNKNOWN",
+            None,
+        )
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item = alerts
+        .iter()
+        .find(|a| a["id"] == alert_id.to_string())
+        .expect("alert in response");
+
+    assert_eq!(
+        item["rateStale"], true,
+        "rateStale must be true when snapshot fetched_at is too old"
+    );
+
+    room.finish().await;
+}
+
+/// C11 row 5: fresh snapshot → rateStale: false
+#[actix_web::test]
+async fn c11_row5_fresh_snapshot() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+
+    let now = Utc::now();
+    let fresh_snapshot = json!({
+        "buy_mode": "AUTO",
+        "sell_mode": "AUTO",
+        "fetched_at": now.to_rfc3339(),
+        "max_reference_age_hours": 24
+    });
+
+    room.publish_rate_with_snapshot(
+        "B",
+        "USD",
+        dec_str("1"),
+        Some(dec_str("35.00000000")),
+        Some(dec_str("36.00000000")),
+        "ALL",
+        now,
+        fresh_snapshot,
+    )
+    .await;
+
+    let alert_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "BUY",
+            dec_str("1"),
+            dec_str("35.00000000"),
+            "UNKNOWN",
+            None,
+        )
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item = alerts
+        .iter()
+        .find(|a| a["id"] == alert_id.to_string())
+        .expect("alert in response");
+
+    assert_eq!(
+        item["rateStale"], false,
+        "rateStale must be false for fresh snapshot"
+    );
+
+    room.finish().await;
+}
+
+/// C11 row 6: no current publication (row 4's case) → currentRate: null, rateStale: null
+#[actix_web::test]
+async fn c11_row6_no_current_publication() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+
+    let alert_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "BUY",
+            dec_str("1"),
+            dec_str("35.00000000"),
+            "UNKNOWN",
+            None,
+        )
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item = alerts
+        .iter()
+        .find(|a| a["id"] == alert_id.to_string())
+        .expect("alert in response");
+
+    assert!(
+        item["currentRate"].is_null(),
+        "currentRate must be null when no publication exists"
+    );
+    assert!(
+        item.as_object()
+            .expect("alert object")
+            .contains_key("rateStale"),
+        "rateStale must be sent, as null, when currentRate is null"
+    );
+    assert!(
+        item["rateStale"].is_null(),
+        "rateStale must be null when currentRate is null"
+    );
+
+    room.finish().await;
+}
+
+/// C11 row 7: two events, episodes 1 and 2 → lastEvent is episode 2's rate and time
+#[actix_web::test]
+async fn c11_row7_two_events_episodes_1_and_2() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+
+    let now = Utc::now();
+    let time1 = now - chrono::Duration::hours(1);
+    let time2 = now;
+
+    let (_, line_id1) = room
+        .publish_rate_with_snapshot(
+            "B",
+            "USD",
+            dec_str("1"),
+            Some(dec_str("34.10000000")),
+            Some(dec_str("35.10000000")),
+            "ALL",
+            time1,
+            json!({ "buy_mode": "AUTO", "sell_mode": "AUTO" }),
+        )
+        .await;
+
+    let (_, line_id2) = room
+        .publish_rate_with_snapshot(
+            "B",
+            "USD",
+            dec_str("1"),
+            Some(dec_str("34.80000000")),
+            Some(dec_str("35.80000000")),
+            "ALL",
+            time2,
+            json!({ "buy_mode": "AUTO", "sell_mode": "AUTO" }),
+        )
+        .await;
+
+    let alert_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "BUY",
+            dec_str("1"),
+            dec_str("35.00000000"),
+            "UNKNOWN",
+            None,
+        )
+        .await;
+
+    room.insert_event(alert_id, line_id1, dec_str("34.10000000"), time1, 1)
+        .await;
+    room.insert_event(alert_id, line_id2, dec_str("34.80000000"), time2, 2)
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item = alerts
+        .iter()
+        .find(|a| a["id"] == alert_id.to_string())
+        .expect("alert in response");
+
+    assert!(!item["lastEvent"].is_null(), "lastEvent must not be null");
+    assert_eq!(
+        item["lastEvent"]["episodeNo"], 2,
+        "lastEvent episodeNo must be 2"
+    );
+    assert_eq!(
+        item["lastEvent"]["observedRate"], "34.80000000",
+        "lastEvent observedRate must match episode 2"
+    );
+    assert_published_at_eq(
+        &item["lastEvent"]["triggerAt"],
+        time2,
+        "lastEvent triggerAt must match episode 2",
+    );
+
+    room.finish().await;
+}
+
+/// C11 row 8: no event → lastEvent: null
+#[actix_web::test]
+async fn c11_row8_no_event() {
+    let room = Room::start().await;
+    room.create_branch("B").await;
+    let customer = room.customer(CX1).await;
+
+    let alert_id = room
+        .insert_alert_full(
+            CX1,
+            "B",
+            "USD",
+            "BUY",
+            dec_str("1"),
+            dec_str("35.00000000"),
+            "UNKNOWN",
+            None,
+        )
+        .await;
+
+    let alerts = my_alerts(&room, &customer).await;
+    let item = alerts
+        .iter()
+        .find(|a| a["id"] == alert_id.to_string())
+        .expect("alert in response");
+
+    assert!(
+        item.as_object()
+            .expect("alert object")
+            .contains_key("lastEvent"),
+        "lastEvent must be sent, as null, when no event exists"
+    );
+    assert!(
+        item["lastEvent"].is_null(),
+        "lastEvent must be null when no event exists"
     );
 
     room.finish().await;

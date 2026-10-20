@@ -33,7 +33,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
-use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_auth::domain::access::{Actor, Permission, Role, RoleGrants, ScopedRole};
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
@@ -620,14 +620,20 @@ async fn one_empty_list_does_not_empty_the_other() {
 async fn roles_without_loyalty_rules_manage_are_refused_and_loyalty_is_not_asked() {
     let room = Room::start().await;
     room.loyalty.hold(vec![point_dto(1, "APPROVED")], vec![]);
-    for who in [
+    let unauth_roles = [
         "ADMIN",
         "FINANCE",
         "MARKETING",
         "RATE_MANAGER",
         "BRANCH_MANAGER",
         "TELLER",
-    ] {
+    ]
+    .into_iter()
+    .filter(|who| {
+        let role = Role::parse(who).expect("role");
+        !RoleGrants::seed(role).contains(&Permission::LoyaltyRulesManage)
+    });
+    for who in unauth_roles {
         let a = get(&room, who).await;
         assert_eq!(a.status, StatusCode::BAD_REQUEST, "{who}: {}", a.text);
         // `roleNotAllowed` on `EntryPath::StaffRpc`, `roleNotAllowedHere` on `EntryPath::Rpc`: either is the

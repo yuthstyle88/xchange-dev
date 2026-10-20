@@ -259,31 +259,31 @@ async fn a3_branch_bound_request_of_named_branch_listed_for_org_a_executive() {
 }
 
 #[tokio::test]
-async fn a4_branch_manager_does_not_see_rate_publication_request() {
+async fn a4_finance_does_not_see_rate_publication_request() {
     let db = TestDb::start().await;
     setup_orgs_and_branches(&db).await;
 
     // A rate-publication request of XC-B01
     request_at(&db, "RATE_PUBLICATION", Some("XC-B01"), ORG_A, "rate-pub").await;
 
-    // BRANCH_MANAGER@XC-B01 reads approval_requests
+    // Under §11.2, FINANCE holds `ApprovalsDecide` (passes the route gate) while BRANCH_MANAGER does not.
     let rows = listed_at(
         &db,
-        "staff:MANAGER:XC-B01",
+        "staff:FINANCE:XC-B01",
         "/api/v3/views/approval_requests?branch=XC-B01",
     )
     .await;
     assert_eq!(
         rows,
         Vec::<String>::new(),
-        "BRANCH_MANAGER may not decide rate publications, per-type rule #874"
+        "FINANCE may not decide rate publications, per-type rule #874"
     );
 
-    let rows_direct = listed(&db, "staff:MANAGER:XC-B01").await;
+    let rows_direct = listed(&db, "staff:FINANCE:XC-B01").await;
     assert_eq!(
         rows_direct,
         Vec::<String>::new(),
-        "BRANCH_MANAGER direct view read also empty"
+        "FINANCE direct view read also empty"
     );
 
     db.finish().await;

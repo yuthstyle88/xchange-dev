@@ -94,24 +94,26 @@ impl SessionReader for V3Callers {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_owned();
-        Box::pin(async move {
-            if role == "OWNER" {
-                return test_callers::callers(Some(test_callers::owner("owner")), None);
-            }
-            let roles: Option<&[Role]> = match role.as_str() {
-                "FRONT" => Some(&[Role::Teller]),
-                "BACKEND" | "MANAGER" => Some(&[Role::BranchManager]),
-                "RATES" => Some(&[Role::RateManager]),
-                "FINANCE" => Some(&[Role::Finance]),
-                "SYSTEM" => Some(&[Role::Admin]),
-                "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => Some(&[Role::VerificationReviewer]),
-                _ => None,
-            };
-            let staff =
-                roles.map(|r| test_callers::staff(&caller_id(&role), r, BranchId::new("MAIN")));
-            test_callers::callers(None, staff)
-        })
+        Box::pin(async move { callers_for(&role) })
     }
+}
+
+/// The callers of v3 role `role` (the header's value), as `V3Callers` answers them.
+fn callers_for(role: &str) -> Callers {
+    if role == "OWNER" {
+        return test_callers::callers(Some(test_callers::owner("owner")), None);
+    }
+    let roles: Option<&[Role]> = match role {
+        "FRONT" => Some(&[Role::Teller]),
+        "BACKEND" | "MANAGER" => Some(&[Role::BranchManager]),
+        "RATES" => Some(&[Role::RateManager]),
+        "FINANCE" => Some(&[Role::Finance]),
+        "SYSTEM" => Some(&[Role::Admin]),
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => Some(&[Role::VerificationReviewer]),
+        _ => None,
+    };
+    let staff = roles.map(|r| test_callers::staff(&caller_id(role), r, BranchId::new("MAIN")));
+    test_callers::callers(None, staff)
 }
 
 /// A Blueprint session of `user_id`, TELLER at MAIN, made the way `AccountSessionReader::callers` makes it for a
@@ -328,23 +330,41 @@ impl Shop {
 
 #[actix_web::test]
 async fn each_v3_role_saves_or_is_refused_as_today() {
+    use xc_auth::domain::access::{Permission, RoleGrants, Standing};
+
     let shop = Shop::start().await;
     let reader: Arc<dyn SessionReader> = Arc::new(V3Callers);
+    let mut completed_count = 0;
+    let mut refused_count = 0;
     for role in V3_ROLES {
         let id = caller_id(role);
+        // OR-7.m (merge of feat/rbac-groups): the Blueprint caller `V3Callers` signs in, not a v2 actor
+        let user = callers_for(role).user.expect("a v3 role is signed in");
+        let holds = user
+            .roles
+            .iter()
+            .any(|r| RoleGrants::seed(r.role).contains(&Permission::ExchangeTransact));
+        let audit_role = Standing::of(&user, Utc::now())
+            .expect("a v3 role has standing")
+            .kind
+            .audit_text()
+            .to_owned();
+
         let before = shop.count("SELECT count(*) FROM transactions").await;
         let got = shop.save_as(reader.clone(), role, &id).await;
-        let expected = if role == "FRONT" {
+        let expected = if holds {
+            completed_count += 1;
             Saved::Completed {
                 status: "COMPLETED".to_owned(),
-                audit: (id.clone(), "FRONT".to_owned()),
+                audit: (id.clone(), audit_role),
                 recorded: (id.clone(), id.clone()),
             }
         } else {
+            refused_count += 1;
             Saved::Refused(400, "roleNotAllowedHere".to_owned())
         };
-        assert_eq!(got, expected, "{role}: the save's outcome is today's");
-        if role != "FRONT" {
+        assert_eq!(got, expected, "{role}: the save's outcome follows §11.2");
+        if !holds {
             assert_eq!(
                 shop.count("SELECT count(*) FROM transactions").await,
                 before,
@@ -360,6 +380,7 @@ async fn each_v3_role_saves_or_is_refused_as_today() {
             );
         }
     }
+    assert!(completed_count > 0 && refused_count > 0);
     shop.finish().await;
 }
 

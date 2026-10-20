@@ -39,6 +39,9 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::TestDb;
 use serde_json::{Value, json};
 use xc_auth::domain::access::Role;
+use xc_auth::domain::access::v3_roles::blueprint_roles;
+use xc_auth::domain::access::{Permission, RoleGrants};
+use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -224,7 +227,7 @@ async fn a_teller_requests_a_reversal_and_the_same_key_replays() {
 }
 
 #[actix_web::test]
-async fn the_branch_manager_may_request_and_finance_or_rates_may_not() {
+async fn the_branch_manager_may_request_and_roles_without_reversal_request_may_not() {
     let db = TestDb::start().await;
     seed(&db).await;
     let a = completed(&db, 1, "now()").await;
@@ -238,9 +241,20 @@ async fn the_branch_manager_may_request_and_finance_or_rates_may_not() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    for who in ["staff:FINANCE:MAIN", "staff:RATES:MAIN"] {
+    // Under §11.2, staff roles whose `RoleGrants::seed` lacks `ReversalRequest` are refused by the route row.
+    let refused: Vec<V2Role> = V2Role::STAFF
+        .into_iter()
+        .filter(|&r| {
+            !blueprint_roles(r)
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReversalRequest))
+        })
+        .collect();
+    assert!(!refused.is_empty(), "some staff role lacks ReversalRequest");
+    for role in refused {
+        let who = format!("staff:{}:MAIN", role.as_str());
         let (status, body) =
-            post(&db, who, &b, json!({ "reason": "x" }), &format!("k-{who}")).await;
+            post(&db, &who, &b, json!({ "reason": "x" }), &format!("k-{who}")).await;
         assert!(
             status.is_client_error(),
             "{who}: the route row (#874) refuses: {status} {body}"

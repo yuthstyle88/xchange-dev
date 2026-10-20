@@ -18,7 +18,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { Me } from '../api/generated/common';
+import { makeBranchRef, makeMe, type Me } from '../testing/fixtures';
 import { setLang } from '../i18n';
 import { en } from '../i18n/en';
 import { th } from '../i18n/th';
@@ -46,16 +46,16 @@ const TABLES: Record<string, Record<string, string>> = {
   zh: zh as unknown as Record<string, string>,
 };
 
-function me(roles: MeRole[], name: string | null = 'Nok', branch = 'B2'): Me {
-  return {
+function me(roles: MeRole[], name: string | null = 'Nok', branch = 'B2') {
+  return makeMe({
     id: 'u-7',
     name,
     roles,
     permissions: [],
     branch,
     branchName: 'สาขาสอง',
-    branches: [{ id: branch, code: 'XC-02', name: 'สาขาสอง' }],
-  } as unknown as Me;
+    branches: [makeBranchRef({ id: branch, code: 'XC-02', name: 'สาขาสอง' })],
+  });
 }
 
 let dispose: (() => void) | undefined;

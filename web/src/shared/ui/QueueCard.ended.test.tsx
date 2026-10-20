@@ -7,10 +7,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 // Nothing else changes.
 import { createSignal, type Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { Me } from '../api/generated/common';
 import type { EndReason, SessionStore } from '../session/session';
 import type { QueueError, QueueStore } from '../queue/queue-store';
-import type { QueueBoardData, QueueBoardWaiting } from '../api/generated/queue_board';
+import {
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  type Me,
+  type QueueBoardData,
+} from '../testing/fixtures';
 import { meOf } from '../../test-support/me';
 import { warmModules } from '../testing/warm-modules';
 
@@ -88,17 +92,19 @@ const NOK: Me = meOf(NOK_V3);
  * `count` WAITING tickets in call order (`queue_board`'s `waiting`); the newest one (the latest `issuedAt`) has the id
  * `latest`, so it is the card's "new request" key. The older ones keep the same ids from one answer to the next.
  */
-function waiting(count: number, latest: string | null): QueueBoardWaiting[] {
-  const list: QueueBoardWaiting[] = [];
+function waiting(count: number, latest: string | null) {
+  const list = [];
   for (let i = 1; i <= count; i += 1) {
     const newest = i === count;
-    list.push({
-      id: newest && latest !== null ? latest : `older-${i}`,
-      displayNumber: `W${String(i).padStart(3, '0')}`,
-      serviceType: 'WALK_IN',
-      sequence: i,
-      issuedAt: new Date(Date.parse('2026-10-08T02:00:00.000Z') + i * 60_000).toISOString(),
-    });
+    list.push(
+      makeQueueBoardWaiting({
+        id: newest && latest !== null ? latest : `older-${i}`,
+        displayNumber: `W${String(i).padStart(3, '0')}`,
+        serviceType: 'WALK_IN',
+        sequence: i,
+        issuedAt: new Date(Date.parse('2026-10-08T02:00:00.000Z') + i * 60_000).toISOString(),
+      }),
+    );
   }
   return list;
 }
@@ -106,13 +112,13 @@ function waiting(count: number, latest: string | null): QueueBoardWaiting[] {
 function answer(branch: string, over: Partial<QueueBoardData> = {}) {
   const s = queues().store(branch);
   s.setError(undefined);
-  const data: QueueBoardData = { waiting: [], called: [], myCounter: null, ...over };
+  const data = makeQueueBoardData({ waiting: [], called: [], myCounter: null, ...over });
   s.setState(data);
 }
 
 function pushState(branch: string, over: Partial<QueueBoardData> = {}) {
   const s = queues().store(branch);
-  const data: QueueBoardData = { waiting: waiting(1, 'kq-1'), called: [], myCounter: null, ...over };
+  const data = makeQueueBoardData({ waiting: waiting(1, 'kq-1'), called: [], myCounter: null, ...over });
   s.setState(data);
 }
 

@@ -65,11 +65,12 @@ use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::Permission;
-use xc_auth::domain::access::{Role as AccessRole, StandingKind};
+use xc_auth::domain::access::v3_roles::blueprint_roles;
+use xc_auth::domain::access::{Permission, Role as AccessRole, RoleGrants, StandingKind};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -789,22 +790,26 @@ async fn teller_and_branch_manager_reprint_it() {
     room.finish().await;
 }
 
-/// A caller without `ReceiptReprint` is refused by the seam's policy check on `Rpc`
-/// (`roleNotAllowedHere`, a client error), with no `data`. The owner (EXECUTIVE + ADMIN), RATES
-/// (RATE_MANAGER), FINANCE and MONITOR (VERIFICATION_REVIEWER) hold no `ReceiptReprint`.
+/// Under §11.2, a caller without `ReceiptReprint` is refused by the seam's policy check on `Rpc`
+/// (`roleNotAllowedHere`, a client error), with no `data`.
 #[tokio::test]
 async fn a_caller_without_receipt_reprint_is_refused_with_no_body() {
     let room = Room::open().await;
     let c = room.completed("MAIN", "refused").await;
-    for who in [
-        "owner",
-        "staff:RATES:MAIN",
-        "staff:FINANCE:MAIN",
-        "staff:MONITOR:MAIN",
-    ] {
+    let refused: Vec<V2Role> = V2Role::STAFF
+        .into_iter()
+        .filter(|&r| {
+            !blueprint_roles(r)
+                .iter()
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReceiptReprint))
+        })
+        .collect();
+    assert!(!refused.is_empty(), "some staff role lacks ReceiptReprint");
+    for role in refused {
+        let who = format!("staff:{}:MAIN", role.as_str());
         let (status, body) = room
             .get(
-                who,
+                &who,
                 &format!("/api/v3/views/receipt_document?number={}", c.number),
             )
             .await;

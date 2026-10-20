@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use save_common::*;
+use shift_holder_common::user_of;
 use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -157,10 +158,11 @@ impl KioskPorts for Counter {
     }
 }
 
-fn staff(id: &str, standing: StandingKind) -> SaveActor {
+// OR-7.m G1b (#3797): the username is the user's `users.name`, short and apart from the id
+fn staff(id: &str, name: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
-        username: format!("user-{id}"),
+        username: name.to_owned(),
         employee_id: Some(id.to_owned()),
         standing,
     }
@@ -288,7 +290,8 @@ impl Scene {
 #[tokio::test]
 async fn kiosk_completed_audit_line_carries_the_saves_time() {
     let s = Scene::start().await;
-    s.id_checked(MAIN, "q1", FRONT).await;
+    let front_id = user_of(&s.shop.pool, FRONT).await;
+    s.id_checked(MAIN, "q1", &front_id).await;
 
     let save_now = at(60);
     assert_ne!(
@@ -301,7 +304,7 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
         .save_at(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(FRONT, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&front_id, FRONT, StandingKind::Staff(AccessRole::Teller)),
             save_now,
         )
         .await
@@ -314,7 +317,8 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
     assert_eq!(completed.len(), 1);
     let (branch_recorded, who_recorded, doc_recorded, at_recorded) = &completed[0];
     assert_eq!(branch_recorded, MAIN);
-    assert_eq!(who_recorded, FRONT);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert_eq!(who_recorded, &front_id);
     assert_eq!(doc_recorded, "XC-20261006-000001");
     assert_eq!(*at_recorded, millis(save_now));
     assert_ne!(*at_recorded, save_now);
@@ -324,7 +328,7 @@ async fn kiosk_completed_audit_line_carries_the_saves_time() {
         .save_at(
             s.form("done-0001-aaaaaaaaaa"),
             &with_kiosk("q1"),
-            &staff(FRONT, StandingKind::Staff(AccessRole::Teller)),
+            &staff(&front_id, FRONT, StandingKind::Staff(AccessRole::Teller)),
             repeat_now,
         )
         .await

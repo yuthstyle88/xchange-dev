@@ -42,7 +42,7 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, Duration, Utc};
 use quote_common::*;
 use serde_json::{Value, json};
-use xc_auth::domain::access::{Actor as User, Permission, Role, RolePermissions, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
 use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
@@ -288,7 +288,7 @@ fn invalid_purpose(a: &Answer, what: &str) {
 }
 
 fn holds(role: Role, p: Permission) -> bool {
-    RolePermissions::of(role).contains(&p)
+    RoleGrants::seed(role).contains(&p)
 }
 
 // ------------------------------------------------------------ who may export (E-2)

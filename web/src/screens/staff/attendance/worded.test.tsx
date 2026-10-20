@@ -3,24 +3,23 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import { makeStaffFloorView, makeStaffMeView } from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { AttendanceCard } from './AttendanceCard';
 
-function me(): StaffMeView {
-  return {
+function me() {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000d1',
     name: 'Ploy',
     roles: [],
     branchId: 'MAIN',
     branchName: 'XC-B',
     permissions: ['AttendanceClock'],
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: null,
@@ -28,7 +27,7 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 function makeCtx(): StaffCtx {

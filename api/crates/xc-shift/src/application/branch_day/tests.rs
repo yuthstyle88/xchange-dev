@@ -775,3 +775,60 @@ async fn test_teller_of_actor_in_does_not_resolve_a_non_user_id() {
     assert_eq!(resolved, None);
     tx.rollback().await.unwrap();
 }
+
+/// #3306 (BE controller ruling, 2026-10-20): clock-in records `resolve_role(who)`, the same rule custody
+/// events use, `Other` included, so a person's attendance row and their CLOCK_IN event never disagree.
+/// Provided test (up front); the implementer must not change it.
+#[tokio::test]
+async fn test_clock_in_records_the_role_its_event_records() {
+    const RATES_ID: &str = "00000000-0000-4000-8000-000000000006";
+    let db = TestDb::start().await;
+    let branch = db.branch("BD_CLOCK_ROLE").await;
+    let service = db.service(Arc::new(TestPorts::default()));
+
+    let rows = [
+        (MANAGER_ID, "Manager", Role::BranchManager, "MANAGER"),
+        (TELLER_ID, "Teller", Role::Teller, "FRONT"),
+        (RATES_ID, "Rates", Role::RateManager, "OTHER"),
+    ];
+    for (id, name, _, _) in rows {
+        seed_test_user(&db.pool, id, name).await;
+    }
+
+    let mut tx = locked_tx(&db.pool, &branch).await;
+    for (id, _, role, want) in rows {
+        let who = actor_scoped(id, role, &branch);
+        service
+            .clock(&mut tx, &who, &branch, ClockDirection::In, now())
+            .await
+            .unwrap_or_else(|e| panic!("{role:?} clocks in: {e:?}"));
+
+        let attendance: String = sqlx::query_scalar(
+            "SELECT data->>'role' FROM attendance WHERE branch_id = $1 AND employee_id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("the attendance row");
+        let event: String = sqlx::query_scalar(
+            "SELECT role FROM ops_events WHERE branch_id = $1 AND actor = $2 AND kind = 'CLOCK_IN'",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("the CLOCK_IN event");
+
+        assert_eq!(
+            event, want,
+            "{role:?}: the CLOCK_IN event's role (resolve_role)"
+        );
+        assert_eq!(attendance, want, "{role:?}: the attendance row's role");
+        assert_eq!(
+            attendance, event,
+            "{role:?}: attendance and its event agree"
+        );
+    }
+    tx.rollback().await.unwrap();
+}

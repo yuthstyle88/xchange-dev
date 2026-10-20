@@ -42,6 +42,7 @@ struct EventSqlRow {
 impl PagedView for DeviceEventsPagedView {
     const NAME: &'static str = "device_events";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Devices, "snapshot");
+    const CURSOR_FIELD: &'static str = "seq";
     type Row = DeviceEventRow;
     type Filter = NoFilter;
 

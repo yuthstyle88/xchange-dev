@@ -4,11 +4,17 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
-import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
-import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { DenominationRow } from '../../../shared/api/generated/denominations';
-import type { TransferBranchRow } from '../../../shared/api/generated/transfer_branches';
+import {
+  makeAdminShiftRow,
+  makeCashCountRow,
+  makeCashCountTotalRow,
+  makeCashTransferLineRow,
+  makeCashTransferRow,
+  makeDenominationRow,
+  makeTransferBranchRow,
+  type AdminShiftRow,
+  type TransferBranchRow,
+} from '../../../shared/testing/fixtures';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
@@ -18,8 +24,8 @@ type Answer = { status: number; body: unknown } | 'network' | (() => Promise<Res
 
 const VIEWS = '/api/v3/views/';
 
-function count(branch: string): CashCountRow {
-  return {
+function count(branch: string) {
+  return makeCashCountRow({
     id: `cc-${branch}`,
     branchId: branch,
     shiftId: `S-${branch}`,
@@ -29,13 +35,13 @@ function count(branch: string): CashCountRow {
     verifiedBy: null,
     verifiedAt: null,
     note: null,
-    totals: [{ currency: 'THB', counted: '1000', expected: '1000', difference: '0' }],
-  };
+    totals: [makeCashCountTotalRow({ currency: 'THB', counted: '1000', expected: '1000', difference: '0' })],
+  });
 }
 
-function transfersFor(branch: string): CashTransferRow[] {
+function transfersFor(branch: string) {
   return [
-    {
+    makeCashTransferRow({
       id: `tr-disp-${branch}`,
       kind: 'EXTERNAL_IN',
       status: 'DISPATCHED',
@@ -46,13 +52,13 @@ function transfersFor(branch: string): CashTransferRow[] {
       createdBy: `EMP-${branch}`,
       createdAt: '2026-10-15T01:00:00Z',
       note: `note-${branch}`,
-      lines: [{ currency: 'THB', denominationId: 1, qtySent: '10', qtyReceived: null }],
-    },
+      lines: [makeCashTransferLineRow({ currency: 'THB', denominationId: 1, qtySent: '10', qtyReceived: null })],
+    }),
   ];
 }
 
-function shiftFor(branch: string): AdminShiftRow {
-  return {
+function shiftFor(branch: string) {
+  return makeAdminShiftRow({
     id: `S-${branch}`,
     staff: `Staff ${branch}`,
     status: 'OPEN',
@@ -60,14 +66,14 @@ function shiftFor(branch: string): AdminShiftRow {
     note: '',
     difference: null,
     balances: [],
-  };
+  });
 }
 
-const DENOMS: DenominationRow[] = [{ id: 1, currency: 'THB', faceValue: '1000', groupCode: 'NOTE' }];
+const DENOMS = [makeDenominationRow({ id: 1, currency: 'THB', faceValue: '1000', groupCode: 'NOTE' })];
 
 const DESTS: Record<string, TransferBranchRow[]> = {
-  A: [{ branchId: 'X', name: 'Branch X' }],
-  B: [{ branchId: 'Y', name: 'Branch Y' }],
+  A: [makeTransferBranchRow({ branchId: 'X', name: 'Branch X' })],
+  B: [makeTransferBranchRow({ branchId: 'Y', name: 'Branch Y' })],
 };
 
 class Server {

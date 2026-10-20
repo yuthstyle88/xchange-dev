@@ -4,10 +4,12 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
-import type {
-  ApprovalDecisionDto,
-  ApprovalRequestItemDto,
-} from '../../../shared/api/generated/approval_requests';
+import {
+  makeApprovalDecisionDto,
+  makeApprovalRequestItemDto,
+  type ApprovalDecisionDto,
+  type ApprovalRequestItemDto,
+} from '../../../shared/testing/fixtures';
 import { Approvals } from './Approvals';
 import { th as screenTh } from './i18n';
 import { Toast, toast } from '../parts/toast';
@@ -21,8 +23,8 @@ function makeRequest(
   status: 'PENDING' | 'APPROVED' | 'REJECTED',
   decision: ApprovalDecisionDto | null = null,
   branch = 'MAIN',
-): ApprovalRequestItemDto {
-  return {
+) {
+  return makeApprovalRequestItemDto({
     id,
     type: 'RATE_PUBLICATION',
     branchId: branch,
@@ -40,7 +42,7 @@ function makeRequest(
     requestedAt: '2026-10-15T09:00:00Z',
     status,
     decision,
-  };
+  });
 }
 
 interface DeferredRead {
@@ -289,12 +291,16 @@ describe('Admin Approvals filter-switch window (#2407)', () => {
     expect(root.querySelector('[data-request="req-decide-1"]')).toBeNull();
 
     pendingReads[2]!.resolveItems([
-      makeRequest('req-approved-1', 'APPROVED', {
-        approverId: 'u-1',
-        outcome: 'APPROVED',
-        reason: 'ok',
-        at: '2026-10-15T12:00:00Z',
-      }),
+      makeRequest(
+        'req-approved-1',
+        'APPROVED',
+        makeApprovalDecisionDto({
+          approverId: 'u-1',
+          outcome: 'APPROVED',
+          reason: 'ok',
+          at: '2026-10-15T12:00:00Z',
+        }),
+      ),
     ]);
     await vi.waitFor(() => {
       expect(root.querySelector('[data-request="req-approved-1"]')).not.toBeNull();

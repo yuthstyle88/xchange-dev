@@ -34,4 +34,8 @@ pub const ROWS: &[AreaRow] = &[
     row("adminUserAudit", Permission::AuditLogsRead),
     row("adminLoginHistory", Permission::AuditLogsRead),
     row("adminEmployeeRegister", Permission::UsersManage),
+    // RBAC §11 F12: who may call; the command also requires an EXECUTIVE base (§11.3).
+    row("adminGroupAdd", Permission::UsersManage),
+    row("adminGroupSave", Permission::UsersManage),
+    row("adminGroupDelete", Permission::UsersManage),
 ];
