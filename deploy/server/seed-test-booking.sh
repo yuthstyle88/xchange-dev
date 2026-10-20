@@ -55,14 +55,19 @@ ID_SECRET="$(idv IDENTITY_CLIENT_SECRET)"; ID_KEY="$(idv IDENTITY_API_KEY)"
 # A password that starts with a letter and has upper, lower and digits.
 new_password() { echo "Xc$(openssl rand -hex 6)A9"; }
 
+# One curl config line on stdout (`curl -K -` reads them from stdin). Secrets and passwords go to curl this way,
+# never as arguments, so they are not visible in `ps` / /proc/<pid>/cmdline; printf is a builtin, so neither is it.
+cfg() { local v=${2//\\/\\\\}; v=${v//\"/\\\"}; printf '%s = "%s"\n' "$1" "$v"; }
+
 # Registers <phone> with Identity (password login, no forced change). Prints the identityId,
 # or nothing when the phone is already registered (its password is then unknown here).
 identity_register() {
   local phone="$1" password="$2" out
-  out=$(curl -sS -X POST "${ID_URL%/}/auth/register" \
-    -H 'Content-Type: application/json' -H "x-client-id: $ID_CLIENT" -H "x-client-secret: $ID_SECRET" \
-    ${ID_KEY:+-H "x-api-key: $ID_KEY"} \
-    --data "{\"phone\":\"$phone\",\"password\":\"$password\",\"mustChangePassword\":false}") || die "Identity unreachable at $ID_URL"
+  out=$({ cfg url "${ID_URL%/}/auth/register"; cfg header 'Content-Type: application/json'
+           cfg header "x-client-id: $ID_CLIENT"; cfg header "x-client-secret: $ID_SECRET"
+           if [ -n "$ID_KEY" ]; then cfg header "x-api-key: $ID_KEY"; fi
+           cfg data "{\"phone\":\"$phone\",\"password\":\"$password\",\"mustChangePassword\":false}"
+         } | curl -sS -X POST -K -) || die "Identity unreachable at $ID_URL"
   case "$out" in
     *phone_taken*) return 0 ;;
     *identityId*) sed -n 's/.*"identityId":"\([^"]*\)".*/\1/p' <<<"$out" ;;
@@ -128,9 +133,10 @@ say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
 if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
   echo "    customer Identity account created: $CUSTOMER_PHONE  password $CUSTOMER_PW"
-  resp=$(curl -sS -w '\n%{http_code}' -X POST "$BASE/api/app/register" \
-    -H 'Content-Type: application/json' -H "Origin: $BASE" -H 'X-Xchange-Request: 1' \
-    --data "{\"identifier\":\"$CUSTOMER_PHONE\",\"password\":\"$CUSTOMER_PW\",\"displayName\":\"Test Customer\",\"lang\":\"th\",\"marketing\":[]}")
+  resp=$({ cfg url "$BASE/api/app/register"; cfg header 'Content-Type: application/json'
+            cfg header "Origin: $BASE"; cfg header 'X-Xchange-Request: 1'
+            cfg data "{\"identifier\":\"$CUSTOMER_PHONE\",\"password\":\"$CUSTOMER_PW\",\"displayName\":\"Test Customer\",\"lang\":\"th\",\"marketing\":[]}"
+          } | curl -sS -w '\n%{http_code}' -X POST -K -)
   code=$(tail -n 1 <<<"$resp")
   # the answer never echoes the identifier, password or a token (customer_register.rs:14)
   [ "$code" = 200 ] || die "POST $BASE/api/app/register answered $code: $(sed '$d' <<<"$resp" | head -c 400)"
