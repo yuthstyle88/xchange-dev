@@ -24,6 +24,10 @@ use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, ser
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input;
 use xc_kernel::money::{Bound, Money, RatePercent, Side, Sign};
+use xc_rate::application::policy::policy_version_writer::{
+    PolicyVersionChange, PolicyVersionWriter,
+};
+use xc_rate::domain::draft::rate_engine_error::RateEngineError;
 use xc_rate::domain::policy::policy_tiers::{PolicyTier, PolicyTiers};
 use xc_rate::domain::policy::rate_policy::RatePolicy;
 
@@ -69,7 +73,6 @@ pub struct RatePolicySaveOutput {
 #[derive(Debug, sqlx::FromRow)]
 struct CurrentPolicyRow {
     id: Uuid,
-    version: i32,
     guards: Value,
     max_reference_age_hours: Option<i32>,
     on_stale: Option<String>,
@@ -209,7 +212,7 @@ impl CommandAction for RatePolicySaveCommand {
 
         // Query current version with valid_to IS NULL
         let cur_row: Option<CurrentPolicyRow> = sqlx::query_as(
-            "SELECT id, version, guards, max_reference_age_hours, on_stale, stale_limit_thb, \
+            "SELECT id, guards, max_reference_age_hours, on_stale, stale_limit_thb, \
                     value_tiers_on, sharp_move_alert_pct \
              FROM rate_policy_versions \
              WHERE branch_id = $1 AND valid_to IS NULL \
@@ -355,89 +358,53 @@ impl CommandAction for RatePolicySaveCommand {
             }
         }
 
-        let cur_max_ver: Option<(i32,)> = sqlx::query_as(
-            "SELECT COALESCE(MAX(version), 0) FROM rate_policy_versions WHERE branch_id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|_| server_error())?;
-
-        let next_ver = cur_max_ver.map(|r| r.0).unwrap_or(0) + 1;
-        let source_ver = cur_row.as_ref().map(|r| r.version);
-        let id = Uuid::new_v4();
-
-        // Update valid_to on previous version
-        sqlx::query(
-            "UPDATE rate_policy_versions SET valid_to = now() WHERE branch_id = $1 AND valid_to IS NULL",
-        )
-        .bind(branch.as_str())
-        .execute(&mut **tx)
-        .await
-        .map_err(|_| server_error())?;
-
-        sqlx::query(
-            "INSERT INTO rate_policy_versions \
-             (id, branch_id, version, buy_adjust_pct, sell_adjust_pct, guards, \
-              max_reference_age_hours, on_stale, stale_limit_thb, valid_from, \
-              approved_by, reason, source_version, value_tiers_on, sharp_move_alert_pct) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11, $12, $13, $14)",
-        )
-        .bind(id)
-        .bind(branch.as_str())
-        .bind(next_ver)
-        .bind(buy_pct)
-        .bind(sell_pct)
-        .bind(&input.guards)
-        .bind(input.max_reference_age_hours)
-        .bind(&input.on_stale)
-        .bind(stale_limit)
-        .bind(&who.user_id)
-        .bind(&input.reason)
-        .bind(source_ver)
-        .bind(resolved_value_tiers_on)
-        .bind(resolved_sharp_move_alert_pct)
-        .execute(&mut **tx)
-        .await
-        .map_err(|_| server_error())?;
-
         for tier in &resolved_tiers {
-            let upper_dec: Option<Decimal> = match tier.upper_inclusive_thb {
-                Some(m) => Some(
-                    m.try_minor()
-                        .map(|cents| Decimal::new(cents, 2))
-                        .map_err(|_| {
-                            V3Error::new(
-                                "validationFailed",
-                                Some("valueTiers"),
-                                format!(
-                                    "tier {} upper bound exceeds maximum allowed value",
-                                    tier.tier_no
-                                ),
-                                StatusCode::BAD_REQUEST,
-                            )
-                        })?,
-                ),
-                None => None,
-            };
-            sqlx::query(
-                "INSERT INTO rate_policy_value_tiers \
-                 (policy_version_id, tier_no, upper_inclusive_thb, buy_margin_pct, sell_margin_pct) \
-                 VALUES ($1, $2, $3, $4, $5)",
-            )
-            .bind(id)
-            .bind(tier.tier_no as i16)
-            .bind(upper_dec)
-            .bind(tier.buy_margin_pct.value())
-            .bind(tier.sell_margin_pct.value())
-            .execute(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
+            if let Some(m) = tier.upper_inclusive_thb {
+                m.try_minor().map(|cents| Decimal::new(cents, 2)).map_err(|_| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("valueTiers"),
+                        format!(
+                            "tier {} upper bound exceeds maximum allowed value",
+                            tier.tier_no
+                        ),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?;
+            }
         }
 
+        let change = PolicyVersionChange {
+            buy_adjust_pct: buy_pct,
+            sell_adjust_pct: sell_pct,
+            guards: input.guards,
+            max_reference_age_hours: input.max_reference_age_hours,
+            on_stale: input.on_stale,
+            stale_limit_thb: stale_limit,
+            value_tiers_on: resolved_value_tiers_on,
+            sharp_move_alert_pct: resolved_sharp_move_alert_pct,
+            value_tiers: resolved_tiers,
+            anchor_source: None,
+            overrides: None,
+            approved_by: who.user_id.clone(),
+            reason: input.reason,
+        };
+
+        let written = PolicyVersionWriter::next(tx, branch, change)
+            .await
+            .map_err(|e| match e {
+                RateEngineError::ValidationFailed(msg) => V3Error::new(
+                    "validationFailed",
+                    Some("valueTiers"),
+                    msg,
+                    StatusCode::BAD_REQUEST,
+                ),
+                _ => server_error(),
+            })?;
+
         Ok(RatePolicySaveOutput {
-            id: id.to_string(),
-            version: next_ver,
+            id: written.id.to_string(),
+            version: written.version,
         })
     }
 }
