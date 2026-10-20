@@ -308,13 +308,13 @@ impl TestDb {
         }
     }
 
-    /// Every table the preview must leave alone: `quotes`, `quote_lines`, `bookings` and each
-    /// `stock_*` table of the schema, with its row count.
+    /// Every table the preview must leave alone: `quotes`, `quote_lines`, `bookings`,
+    /// `ledger_entries` and `cash_transfers`, with its row count.
     pub async fn untouchable_counts(&self) -> Vec<(String, i64)> {
         let mut tables: Vec<String> = sqlx::query_scalar(
             "SELECT table_name::text FROM information_schema.tables \
              WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' \
-               AND (table_name IN ('quotes', 'quote_lines', 'bookings') OR table_name LIKE 'stock\\_%') \
+               AND table_name IN ('quotes', 'quote_lines', 'bookings', 'ledger_entries', 'cash_transfers') \
              ORDER BY table_name",
         )
         .fetch_all(&self.pool)
@@ -325,8 +325,9 @@ impl TestDb {
             "the schema has `quotes` and `bookings`: {tables:?}"
         );
         assert!(
-            tables.iter().any(|t| t.starts_with("stock_")),
-            "the schema has at least one `stock_*` table: {tables:?}"
+            tables.iter().any(|t| t == "ledger_entries")
+                && tables.iter().any(|t| t == "cash_transfers"),
+            "the schema has `ledger_entries` and `cash_transfers`: {tables:?}"
         );
         let mut counts = Vec::new();
         for table in tables.drain(..) {

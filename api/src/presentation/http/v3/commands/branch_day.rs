@@ -484,7 +484,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let shifts = ShiftService::new(
-        Arc::new(PgShiftRepository::new(pool.clone())),
+        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(pool.clone())),
         branch_tx,
     );
     let repo = Arc::new(PgCustodyRepository::new(pool));

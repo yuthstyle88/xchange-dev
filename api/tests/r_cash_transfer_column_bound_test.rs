@@ -118,13 +118,12 @@ impl Room {
                 .expect("insert a branch");
             sqlx::query(
                 // No `enabled`: CA-10 (#2956) drops that column, and nothing here needs it.
-                "INSERT INTO ops_state (branch_id, phase, safe) \
-                 VALUES ($1, 'OPEN', jsonb_build_object('USD', 50000::bigint))",
+                "INSERT INTO ops_state (branch_id, phase) VALUES ($1, 'OPEN')",
             )
             .bind(branch)
             .execute(&pool)
             .await
-            .expect("the branch's safe");
+            .expect("the branch's ops_state");
             // USD 100,000,500.00 in each safe's ledger: enough to dispatch one note of the big face value.
             fund(
                 &pool,

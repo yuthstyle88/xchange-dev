@@ -12,7 +12,6 @@ use crate::domain::custody::value_objects::custody_time::CustodyTime;
 use crate::domain::custody::value_objects::cutoff::Cutoff;
 use crate::domain::custody::value_objects::entity::Entity;
 use crate::domain::custody::value_objects::phase::Phase;
-use crate::domain::shift::value_objects::balances::Balances;
 
 /// The `ops_state` columns for a branch, decoded using domain types.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,7 +19,6 @@ pub struct OpsRow {
     pub phase: Phase,
     pub entity: Option<Entity>,
     pub target: Option<CashTarget>,
-    pub safe: Option<Balances>,
     pub cutoff: Option<Cutoff>,
     pub service_opened_at: Option<CustodyTime>,
 }

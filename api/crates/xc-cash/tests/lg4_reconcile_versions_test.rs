@@ -119,14 +119,6 @@ impl Db {
             .execute(&self.pool)
             .await
             .unwrap();
-        let minor = (d(amount) * Decimal::from(100)).trunc().to_string();
-        sqlx::query(AssertSqlSafe(format!(
-            "INSERT INTO ops_state (branch_id, phase, safe) VALUES ('{id}', 'OPEN', \
-             jsonb_build_object('USD', {minor}::bigint))"
-        )))
-        .execute(&self.pool)
-        .await
-        .expect("the branch's safe (main's store)");
         let b = BranchId::new(id);
         let src = |key: &str| SourceRef {
             source_type: SourceType::Opening,
