@@ -16,7 +16,6 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use tx4_common::*;
 use xc_approval::domain::request::Outcome;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::domain::reservation::port::{ReserveLine, StockReservations};
 use xc_cash::infrastructure::stock_reservations::PgStockReservations;
 use xc_exchange::domain::quote::quote::Quote;
@@ -128,7 +127,7 @@ async fn a_rejected_approval_releases_the_quotes_hold() {
 
     desk.decide(
         &request,
-        &staff(MANAGER, Role::Manager, "MAIN"),
+        &staff_as(MANAGER, "MANAGER", "MAIN"),
         Outcome::Rejected,
         "not today",
     )

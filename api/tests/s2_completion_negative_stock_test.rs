@@ -22,7 +22,7 @@
 //!   (`xc-auth/src/domain/policy/entities/policy.rs:82-86`), so no caller over HTTP is both; LG-3's
 //!   `allows_self_decision = false` is covered in `xc-cash/tests/ledger_approvals_test.rs`.
 //!
-//! The teller is MAIN's FRONT (`TELLER`); the decider is MAIN's `MANAGER` (BRANCH_MANAGER, `access/v3_roles.rs:15`).
+//! The teller is MAIN's FRONT (`TELLER`); the decider is MAIN's `MANAGER` (BRANCH_MANAGER, `test_callers::V2_STAFF`).
 //! The exchange is a CONFIRMED LIVE cash SELL of USD 2,000 on MAIN's open shift, whose drawer opens with USD 1,000.00
 //! (`tx5_common::Counter`). Everything after the setup goes over the wire, through the real `LedgerCashPostings`.
 //!
@@ -43,14 +43,13 @@ use quote_common::*;
 use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::transaction::{ExchangeTransaction, TransactionStatus};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -61,36 +60,43 @@ const MANAGER_AS: &str = "staff:MANAGER:MAIN";
 /// Who is signed in, from `x-test-as`: `teller` (FRONT of MAIN, id `TELLER`) or `staff:<ROLE>:<branch>`.
 struct HeaderSessions;
 
-fn sessions_of(spec: &str) -> Sessions {
-    let staff = match spec {
-        "" => None,
-        "teller" => Actor::staff(TELLER, Role::Front, BranchId::new("MAIN")),
+fn callers_of(spec: &str) -> Callers {
+    match spec {
+        "" => test_callers::nobody(),
+        "teller" => test_callers::callers(
+            None,
+            Some(test_callers::staff(
+                TELLER,
+                test_callers::v2_staff_roles("FRONT").unwrap(),
+                BranchId::new("MAIN"),
+            )),
+        ),
         other => {
             let mut parts = other.splitn(3, ':');
             assert_eq!(parts.next(), Some("staff"), "staff spec {other:?}");
-            let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+            let role = parts.next().expect("a role");
+            let roles = test_callers::v2_staff_roles(role).expect("a known role");
             let branch = parts.next().expect("a branch");
-            Actor::staff(
-                format!("employee-{}", role.as_str()),
-                role,
-                BranchId::new(branch),
+            test_callers::callers(
+                None,
+                Some(test_callers::staff(
+                    &format!("employee-{role}"),
+                    roles,
+                    BranchId::new(branch),
+                )),
             )
         }
-    };
-    Sessions { owner: None, staff }
+    }
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 

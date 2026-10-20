@@ -20,8 +20,6 @@ use actix_web::{App, HttpRequest, test, web};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use xc_auth::domain::access::Role;
-use xc_auth::domain::access::v3_roles::blueprint_roles;
-use xc_auth::domain::policy::value_objects::role::Role as V2Role;
 use xc_kernel::ids::BranchId;
 use xchange::application::passport_read::{
     AiLocation, AiProvider, ImageMime, PassportImage, PassportRead, PassportReader, PassportResult,
@@ -42,7 +40,7 @@ const JPEG: &[u8] = &[
 // ── fakes ────────────────────────────────────────────────────────────────
 
 /// `owner` is the owner; `teller` is a Front at MAIN; `rates` is a Rates at MAIN; `finance` is a
-/// Finance at MAIN; any v2 `Role::STAFF` name is that role's Blueprint roles at MAIN; anything else is nobody.
+/// Finance at MAIN; any v2 `test_callers::V2_STAFF` name is that role's Blueprint roles at MAIN; anything else is nobody.
 struct FakeCallers;
 
 impl SessionReader for FakeCallers {
@@ -71,11 +69,8 @@ impl SessionReader for FakeCallers {
                 // OR-7.m (merge of feat/rbac-groups): any v2 staff name, as its Blueprint roles
                 other => test_callers::callers(
                     None,
-                    V2Role::parse(other)
-                        .filter(|r| V2Role::STAFF.contains(r))
-                        .map(|r| {
-                            test_callers::staff(&format!("u-{other}"), blueprint_roles(r), main)
-                        }),
+                    test_callers::v2_staff_roles(other)
+                        .map(|roles| test_callers::staff(&format!("u-{other}"), roles, main)),
                 ),
             }
         })
@@ -320,21 +315,21 @@ async fn p5_a_role_without_exchange_transact_is_refused_and_the_reader_is_never_
     use xc_auth::domain::access::{Permission, RoleGrants};
 
     assert!(
-        V2Role::STAFF.iter().any(|&r| {
-            !blueprint_roles(r)
+        test_callers::V2_STAFF.iter().any(|&(_, roles)| {
+            !roles
                 .iter()
                 .any(|&br| RoleGrants::seed(br).contains(&Permission::ExchangeTransact))
         }),
         "§11.2 must leave some staff role without ExchangeTransact, or this test refuses nobody"
     );
-    for role in V2Role::STAFF.into_iter().filter(|&r| {
-        !blueprint_roles(r)
+    for &(role, _) in test_callers::V2_STAFF.iter().filter(|&&(_, roles)| {
+        !roles
             .iter()
             .any(|&br| RoleGrants::seed(br).contains(&Permission::ExchangeTransact))
     }) {
         let reader = FakeReader::new(Ok(full_read()));
         let mut req = Req::teller_jpeg();
-        req.who = role.as_str();
+        req.who = role;
         let a = send(state(Some(reader.clone()), &[]), req).await;
         assert_eq!(
             a.status,
@@ -347,7 +342,7 @@ async fn p5_a_role_without_exchange_transact_is_refused_and_the_reader_is_never_
     }
 }
 
-/// The owner signs in as Executive + Admin (`v3_roles.rs:13`); under §11.2 (`RoleGrants::seed`),
+/// The owner signs in as Executive + Admin (`test_callers::owner`); under §11.2 (`RoleGrants::seed`),
 /// `Executive` holds `ExchangeTransact`, so the read follows `/api/quotes` (same row).
 #[actix_web::test]
 async fn p6_the_owner_gets_the_same_refusal_as_the_desks_quote_route() {
