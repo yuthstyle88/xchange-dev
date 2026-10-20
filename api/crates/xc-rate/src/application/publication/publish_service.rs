@@ -18,12 +18,14 @@ use crate::domain::draft::rate_draft::{DraftId, DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::RateProposal;
 use crate::domain::draft::tier_proposal::TierProposal;
+use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::publication::publication::PublicationId;
 use crate::domain::publication::published_rates::PublicationRef;
 use crate::domain::publication::sharp_move::{ComparablePrice, SharpMove};
 use crate::domain::reference::reference_batch::ReferenceLine;
+use crate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
 
 pub struct PublishService {
@@ -182,8 +184,10 @@ impl PublishService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let mut policy_tiers_cache: std::collections::HashMap<Uuid, Option<PolicyTiers>> =
-            std::collections::HashMap::new();
+        let mut policy_tiers_cache: std::collections::HashMap<
+            Uuid,
+            (Option<PolicyTiers>, Vec<CurrencyTierOverride>),
+        > = std::collections::HashMap::new();
         type CachedPolicyRow = (
             RatePolicy,
             Option<i32>,
@@ -269,13 +273,22 @@ impl PublishService {
             let pol_id: Option<Uuid> = r.get("policy_version_id");
 
             let policy_tiers = if let Some(pid) = pol_id {
-                if let Some(cached) = policy_tiers_cache.get(&pid) {
+                let (branch_tiers, overrides) = if let Some(cached) = policy_tiers_cache.get(&pid) {
                     cached.clone()
                 } else {
-                    let loaded = PolicyTiersStore::for_version(tx, &pid).await?;
+                    let loaded = if let Some(pt) = PolicyTiersStore::for_version(tx, &pid).await? {
+                        let ovs = CurrencyTierOverrideStore::for_version(tx, &pid).await?;
+                        (Some(pt), ovs)
+                    } else {
+                        (None, Vec::new())
+                    };
                     policy_tiers_cache.insert(pid, loaded.clone());
                     loaded
-                }
+                };
+                branch_tiers.map(|pt| {
+                    let ov = overrides.iter().find(|o| o.currency == c);
+                    pt.for_currency(ov)
+                })
             } else {
                 None
             };
