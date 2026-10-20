@@ -342,6 +342,7 @@ export async function smoke(page: Page, spec: ScreenSpec): Promise<void> {
     // The app writes the chosen language to <html lang> (web/src/shared/i18n/languages.ts:19-23, index.ts syncHtmlLang).
     await expect(page.locator('html'), `${spec.path} shows ${lang}`).toHaveAttribute('lang', HTML_LANG[lang]);
     await shot(page, spec.area, spec.screen, lang);
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
     if (log.pending?.length) await Promise.all(log.pending.splice(0));
     expect(log.errors, `${spec.path} (${lang}): console errors`).toEqual([]);
   }
