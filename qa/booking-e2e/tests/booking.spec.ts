@@ -29,9 +29,21 @@ async function signIn(page: Page, identifier: string, password: string, next: st
   await page.locator('input[autocomplete="current-password"]').fill(password);
   await page.locator('form button[type="submit"]').click();
   // Leave /login first: with next = '/', every path (/login included) would already match.
-  await page.waitForURL((url) => !url.pathname.startsWith('/login') && url.pathname.startsWith(next.split('?')[0]), {
-    timeout: 20_000,
-  });
+  try {
+    await page.waitForURL((url) => !url.pathname.startsWith('/login') && url.pathname.startsWith(next.split('?')[0]), {
+      timeout: 20_000,
+    });
+  } catch {
+    // Say why the sign-in stayed on /login instead of a bare timeout.
+    const changePw = await page.getByRole('heading', { name: /เปลี่ยนรหัสผ่าน|Change password/i }).count();
+    const message = (await page.locator('#message, [role="alert"]').allInnerTexts()).join(' ').trim();
+    await shot(page, `signin-failed-${identifier.replace(/[^0-9A-Za-z]/g, '')}`);
+    throw new Error(
+      changePw
+        ? `sign-in for ${identifier}: the account must change its password first (do it once by hand, then update users.json)`
+        : `sign-in for ${identifier} stayed on /login: ${message || 'no message shown'}`,
+    );
+  }
 }
 
 // Books the first open slot tomorrow; returns the booking id the success panel shows.
