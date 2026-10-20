@@ -7,13 +7,13 @@ import { meOf } from '../../../test-support/me';
 import type { AdminMenuProps } from '../menus';
 import { BookingSlots } from './BookingSlots';
 import * as table from './i18n';
-import type {
-  AdminBookingPolicyDto,
-  AdminBookingSlotsData,
-  AdminClosureDto,
-  AdminSlotDto,
-  AdminSlotRuleDto,
-} from '../../../shared/api/generated/admin_booking_slots';
+import {
+  makeAdminBookingPolicyDto,
+  makeAdminBookingSlotsData,
+  makeAdminClosureDto,
+  makeAdminSlotDto,
+  makeAdminSlotRuleDto,
+} from '../../../shared/testing/fixtures';
 
 interface SentRequest {
   method: string;
@@ -38,26 +38,26 @@ function deferred<T>(): Deferred<T> {
 const B01 = 'XC-B01';
 const B02 = 'XC-B02';
 
-const SAMPLE_POLICY: AdminBookingPolicyDto = {
+const SAMPLE_POLICY = makeAdminBookingPolicyDto({
   cancelCutoffMinutes: 45,
   noShowGraceMinutes: 20,
   confirmExpiryMinutes: 30,
-};
+});
 
-const BRANCH_A_RULE: AdminSlotRuleDto = {
+const BRANCH_A_RULE = makeAdminSlotRuleDto({
   branchId: B01,
   slotMinutes: 30,
   capacity: 8,
   horizonDays: 21,
-};
+});
 
-const BRANCH_A_CLOSURE: AdminClosureDto = {
+const BRANCH_A_CLOSURE = makeAdminClosureDto({
   branchId: B01,
   closedOn: '2026-12-25',
   reason: 'Christmas Day',
-};
+});
 
-const BRANCH_A_SLOT: AdminSlotDto = {
+const BRANCH_A_SLOT = makeAdminSlotDto({
   id: 'slot-a-1',
   branchId: B01,
   serviceDate: '2026-10-15',
@@ -66,29 +66,29 @@ const BRANCH_A_SLOT: AdminSlotDto = {
   capacity: 8,
   reserved: 2,
   status: 'OPEN',
-};
+});
 
-const BRANCH_A_DATA: AdminBookingSlotsData = {
+const BRANCH_A_DATA = makeAdminBookingSlotsData({
   rule: BRANCH_A_RULE,
   closures: [BRANCH_A_CLOSURE],
   slots: [BRANCH_A_SLOT],
   policy: SAMPLE_POLICY,
-};
+});
 
-const BRANCH_B_RULE: AdminSlotRuleDto = {
+const BRANCH_B_RULE = makeAdminSlotRuleDto({
   branchId: B02,
   slotMinutes: 60,
   capacity: 12,
   horizonDays: 14,
-};
+});
 
-const BRANCH_B_CLOSURE: AdminClosureDto = {
+const BRANCH_B_CLOSURE = makeAdminClosureDto({
   branchId: B02,
   closedOn: '2026-04-13',
   reason: 'Songkran Festival',
-};
+});
 
-const BRANCH_B_SLOT: AdminSlotDto = {
+const BRANCH_B_SLOT = makeAdminSlotDto({
   id: 'slot-b-1',
   branchId: B02,
   serviceDate: '2026-10-16',
@@ -97,21 +97,21 @@ const BRANCH_B_SLOT: AdminSlotDto = {
   capacity: 12,
   reserved: 1,
   status: 'OPEN',
-};
+});
 
-const BRANCH_B_DATA: AdminBookingSlotsData = {
+const BRANCH_B_DATA = makeAdminBookingSlotsData({
   rule: BRANCH_B_RULE,
   closures: [BRANCH_B_CLOSURE],
   slots: [BRANCH_B_SLOT],
   policy: SAMPLE_POLICY,
-};
+});
 
-const NO_RULE_DATA: AdminBookingSlotsData = {
+const NO_RULE_DATA = makeAdminBookingSlotsData({
   rule: null,
   closures: [],
   slots: [],
   policy: SAMPLE_POLICY,
-};
+});
 
 describe('BookingSlots branch switching & stale-read guard (#2183)', () => {
   let container: HTMLDivElement;

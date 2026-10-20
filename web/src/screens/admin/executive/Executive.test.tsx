@@ -28,14 +28,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import type {
-  AlertDto,
-  BranchRowDto,
-  DefinitionDto,
-  DrilldownDto,
-  ExecutiveOverviewData,
-  MetricDto,
-} from '../../../shared/api/generated/executive_overview';
+import {
+  makeAlertDto,
+  makeBranchRowDto,
+  makeDefinitionDto,
+  makeDrilldownDto,
+  makeExecutiveOverviewData,
+  makeMetricDto,
+  makeOverviewPeriod,
+  makeShiftsDto,
+  type BranchRowDto,
+  type DrilldownDto,
+  type ExecutiveOverviewData,
+  type MetricDto,
+} from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenu, AdminMenuProps } from '../menus';
@@ -72,13 +78,13 @@ const FROM = '2026-10-05';
 const TO = '2026-10-06';
 
 /** No digit in any definition, so a tile's digits can only be its figure. */
-const DEFINITIONS: DefinitionDto[] = [
-  { key: 'buy_volume_thb', th: 'มูลค่าบาทของรายการซื้อที่สำเร็จ ไม่ใช่รายได้', en: 'THB value of completed buys; not revenue' },
-  { key: 'sell_volume_thb', th: 'มูลค่าบาทของรายการขายที่สำเร็จ', en: 'THB value of completed sells' },
-  { key: 'realized_margin_thb', th: 'เงินบาทที่ได้รับลบต้นทุนที่ปันส่วน', en: 'THB received less allocated cost' },
-  { key: 'repeat_customers', th: 'ลูกค้าที่เคยมีรายการสำเร็จมาก่อน', en: 'Customers with an earlier completed transaction' },
-  { key: 'booking_conversion', th: 'การจองที่สำเร็จหารด้วยการจองที่ยืนยัน', en: 'Completed bookings over confirmed bookings' },
-  { key: 'commission_thb', th: 'ค่าคอมมิชชันของช่วงเวลา', en: 'Commission expense of the period' },
+const DEFINITIONS = [
+  makeDefinitionDto({ key: 'buy_volume_thb', th: 'มูลค่าบาทของรายการซื้อที่สำเร็จ ไม่ใช่รายได้', en: 'THB value of completed buys; not revenue' }),
+  makeDefinitionDto({ key: 'sell_volume_thb', th: 'มูลค่าบาทของรายการขายที่สำเร็จ', en: 'THB value of completed sells' }),
+  makeDefinitionDto({ key: 'realized_margin_thb', th: 'เงินบาทที่ได้รับลบต้นทุนที่ปันส่วน', en: 'THB received less allocated cost' }),
+  makeDefinitionDto({ key: 'repeat_customers', th: 'ลูกค้าที่เคยมีรายการสำเร็จมาก่อน', en: 'Customers with an earlier completed transaction' }),
+  makeDefinitionDto({ key: 'booking_conversion', th: 'การจองที่สำเร็จหารด้วยการจองที่ยืนยัน', en: 'Completed bookings over confirmed bookings' }),
+  makeDefinitionDto({ key: 'commission_thb', th: 'ค่าคอมมิชชันของช่วงเวลา', en: 'Commission expense of the period' }),
 ];
 
 /** E-1's Thai label of each KPI key (design §3). */
@@ -91,8 +97,8 @@ const LABEL: Record<string, string> = {
   commission_thb: 'ค่าคอม',
 };
 
-function drill(view: string, filter: Record<string, string>, dropped: string[] = []): DrilldownDto {
-  return { view, filter, dropped };
+function drill(view: string, filter: Record<string, string>, dropped: string[] = []) {
+  return makeDrilldownDto({ view, filter, dropped });
 }
 
 function metric(
@@ -100,66 +106,66 @@ function metric(
   value: string | null,
   unavailable: MetricDto['unavailable'] = null,
   drilldown: DrilldownDto | null = null,
-): MetricDto {
-  return { key, value, unavailable, drilldown };
+) {
+  return makeMetricDto({ key, value, unavailable, drilldown });
 }
 
-function kpis(): MetricDto[] {
+function kpis() {
   return [
     metric('buy_volume_thb', '1234567.89', null, drill('admin_transactions', { from: FROM, to: TO, type: 'BUY' }, ['currency', 'channel'])),
     metric('sell_volume_thb', '765.40', null, drill('admin_transactions', { from: FROM, to: TO, type: 'SELL' })),
     metric('realized_margin_thb', null, 'awaitsLedger'),
     metric('repeat_customers', '12', null, drill('admin_customers', {}, ['repeat', 'from', 'to'])),
-    metric('booking_conversion', null, 'noBookingsInPeriod' as unknown as MetricDto['unavailable']),
+    metric('booking_conversion', null, 'noBookingsInPeriod'),
     metric('commission_thb', null, 'awaitsBroker'),
   ];
 }
 
-function branchRow(id: string, over: Partial<BranchRowDto> = {}): BranchRowDto {
-  return {
+function branchRow(id: string, over: Partial<BranchRowDto> = {}) {
+  return makeBranchRowDto({
     branchId: id,
     name: id === 'B1' ? 'สาขาหนึ่ง' : 'สาขาสอง',
     volumeThb: id === 'B1' ? '2000.50' : '3100.25',
     availableCash: metric('available_cash', id === 'B1' ? '150000.00' : '98765.43'),
     inTransit: metric('in_transit', id === 'B1' ? '5000.00' : '4321.09'),
-    shifts: { open: 1, closedVerified: 2, closedUnverified: 3 },
+    shifts: makeShiftsDto({ open: 1, closedVerified: 2, closedUnverified: 3 }),
     asOf: id === 'B1' ? '2026-10-06T03:00:00Z' : '2026-10-06T01:00:00Z',
     pendingEvents: 0,
     drilldown: drill('admin_overview', { branch: id, from: FROM, to: TO }, ['currency', 'channel']),
     ...over,
-  };
+  });
 }
 
-function alerts(): AlertDto[] {
+function alerts() {
   return [
-    {
+    makeAlertDto({
       kind: 'ratePending',
       branchId: 'B1',
       since: '2026-10-06T02:00:00Z',
       detail: 'RQ-77',
       drilldown: drill('approval_requests', { branch: 'B1', type: 'RATE_PUBLICATION' }),
-    },
-    {
+    }),
+    makeAlertDto({
       // an exception row the reader could not decode: only its id (#1071 ruling, gap 4); a target with no menu
       kind: 'countDifference',
       branchId: 'B2',
       since: null,
       detail: 'EXC-9f3a',
       drilldown: drill('cash_counts', { branch: 'B2' }, ['difference']),
-    },
-    {
+    }),
+    makeAlertDto({
       kind: 'staleData',
       branchId: 'B2',
       since: '2026-10-06T00:30:00Z',
       detail: 'XC-2026-0009',
       drilldown: drill('admin_transactions', { branch: 'B2' }),
-    },
+    }),
   ];
 }
 
-function data(over: Partial<ExecutiveOverviewData> = {}): ExecutiveOverviewData {
-  return {
-    period: { from: FROM, to: TO },
+function data(over: Partial<ExecutiveOverviewData> = {}) {
+  return makeExecutiveOverviewData({
+    period: makeOverviewPeriod({ from: FROM, to: TO }),
     kpis: kpis(),
     branches: [branchRow('B1'), branchRow('B2')],
     alerts: alerts(),
@@ -167,7 +173,7 @@ function data(over: Partial<ExecutiveOverviewData> = {}): ExecutiveOverviewData 
     buyReversedThb: '0.00',
     sellReversedThb: '0.00',
     ...over,
-  };
+  });
 }
 
 const VERSIONS = { B1: 4, B2: 9 };
@@ -458,7 +464,7 @@ describe('EX-4 A01: the header and the six KPI tiles (§4.2, E-1, D-2)', () => {
   });
 
   it('each reason has its own fixed sentence: the same tile reads differently for each of the five', async () => {
-    const reasons: (NonNullable<MetricDto['unavailable']> | 'noBookingsInPeriod')[] = [
+    const reasons: NonNullable<MetricDto['unavailable']>[] = [
       'awaitsLedger',
       'awaitsBookingDesign',
       'awaitsBroker',
@@ -470,7 +476,7 @@ describe('EX-4 A01: the header and the six KPI tiles (§4.2, E-1, D-2)', () => {
       reply = () =>
         answered(
           VERSIONS,
-          data({ kpis: kpis().map((k) => (k.key === 'commission_thb' ? metric(k.key, null, reason as unknown as MetricDto['unavailable']) : k)) }),
+          data({ kpis: kpis().map((k) => (k.key === 'commission_thb' ? metric(k.key, null, reason) : k)) }),
         );
       const m = mount();
       await settle();
@@ -768,15 +774,18 @@ describe('EX-4 A01: polling every 60 s with the versions it holds (§4.5, D-5)',
     expect(alertsOf(m.el, 'staleData').length).toBe(1);
     const moved = { B1: 4, B2: 10 };
     reply = () =>
-      answered(moved, {
-        period: { from: FROM, to: TO },
-        kpis: kpis().map((k) => (k.key === 'buy_volume_thb' ? metric(k.key, '2000000.00', null, k.drilldown) : k)),
-        branches: [branchRow('B2', { volumeThb: '999.99' })],
-        alerts: [],
-        definitions: DEFINITIONS,
-        buyReversedThb: '0.00',
-        sellReversedThb: '0.00',
-      });
+      answered(
+        moved,
+        makeExecutiveOverviewData({
+          period: makeOverviewPeriod({ from: FROM, to: TO }),
+          kpis: kpis().map((k) => (k.key === 'buy_volume_thb' ? metric(k.key, '2000000.00', null, k.drilldown) : k)),
+          branches: [branchRow('B2', { volumeThb: '999.99' })],
+          alerts: [],
+          definitions: DEFINITIONS,
+          buyReversedThb: '0.00',
+          sellReversedThb: '0.00',
+        }),
+      );
     await vi.advanceTimersByTimeAsync(60_000);
     await settle();
     expect(row(m.el, 'B1'), "B1 did not move: the same node").toBe(b1);

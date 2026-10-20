@@ -2,8 +2,12 @@
 // write is in flight must not drop that write's Idempotency-Key, so its Retry is a replay.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import type { DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeDeskBookingItemDto,
+  makeDeskBookingsData,
+  makeStaffMeView,
+  makeStaffRoleDto,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 
@@ -26,18 +30,18 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-const STAFF_TELLER: StaffMeView = {
+const STAFF_TELLER = makeStaffMeView({
   userId: '00000000-0000-4000-8000-000000000001',
   name: 'Somchai Teller',
-  roles: [{ role: 'teller', branchId: 'XC-B01' }],
+  roles: [makeStaffRoleDto({ role: 'teller', branchId: 'XC-B01' })],
   branchId: 'XC-B01',
   branchName: 'XC-B01',
   permissions: ['BookingsDesk', 'RatesRead'],
-};
+});
 
-const DESK_BOOKINGS_DATA: DeskBookingsData = {
+const DESK_BOOKINGS_DATA = makeDeskBookingsData({
   items: [
-    {
+    makeDeskBookingItemDto({
       id: 'bk-1',
       bookingNo: 'B261015-0001',
       status: 'CONFIRMED',
@@ -48,8 +52,8 @@ const DESK_BOOKINGS_DATA: DeskBookingsData = {
       slotId: 'slot-1',
       startAt: '2026-10-15T09:00:00Z',
       endAt: '2026-10-15T09:30:00Z',
-    },
-    {
+    }),
+    makeDeskBookingItemDto({
       id: 'bk-2',
       bookingNo: 'B261015-0002',
       status: 'CONFIRMED',
@@ -60,9 +64,9 @@ const DESK_BOOKINGS_DATA: DeskBookingsData = {
       slotId: 'slot-2',
       startAt: '2026-10-15T10:00:00Z',
       endAt: '2026-10-15T10:30:00Z',
-    },
+    }),
   ],
-};
+});
 
 /** Fake server. Every booking write is held open until the test answers it. */
 function makeServer() {

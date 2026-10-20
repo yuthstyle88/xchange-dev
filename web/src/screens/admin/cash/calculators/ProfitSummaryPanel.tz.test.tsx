@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../../shared/api/client';
-import type { ProfitSummary } from '../../../../shared/api/generated/profit_summary';
+import { makeProfitSummary } from '../../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../../shared/i18n';
 import { formatMoney } from '../../../../shared/ui/MoneyText';
 import { ProfitSummaryPanel } from './ProfitSummaryPanel';
@@ -36,11 +36,11 @@ const FIELD_KEYS = [
   'cashMinimum',
 ] as const;
 
-const ANSWER: ProfitSummary = {
+const ANSWER = makeProfitSummary({
   realized: '1234567.89',
   unrealized: '-200.01',
   withdrawable: '42.00',
-};
+});
 
 interface SentCall {
   path: string;

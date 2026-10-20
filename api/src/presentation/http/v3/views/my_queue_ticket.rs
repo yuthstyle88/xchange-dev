@@ -42,6 +42,7 @@ fn refuse(code: &'static str, field: Option<&'static str>, status: StatusCode) -
         "signIn" => "กรุณาเข้าสู่ระบบ",
         "serverError" => "เซิร์ฟเวอร์ขัดข้อง",
         "outOfScope" => "ไม่มีสิทธิ์ดูคิวนี้",
+        "noTicket" => "ไม่มีคิวที่กำลังรอ",
         _ => "คำขอไม่ถูกต้อง",
     };
     V3Error::new(code, field, message, status).error_response()
@@ -64,12 +65,18 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     let Some(customer) = callers.user.and_then(|u| u.customer_id) else {
         return refuse("signIn", None, StatusCode::UNAUTHORIZED);
     };
-    let Some(ticket_id) = query.get("ticketId").and_then(|t| Uuid::parse_str(t).ok()) else {
-        return refuse(
-            "validationFailed",
-            Some("ticketId"),
-            StatusCode::BAD_REQUEST,
-        );
+    let ticket_id_param = match query.get("ticketId") {
+        None => None,
+        Some(t) => match Uuid::parse_str(t) {
+            Ok(id) => Some(id),
+            Err(_) => {
+                return refuse(
+                    "validationFailed",
+                    Some("ticketId"),
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+        },
     };
     let since = match query.get("since").map(|s| s.parse::<i64>()) {
         None => None,
@@ -77,25 +84,67 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
         Some(Err(_)) => return refuse("invalidRequest", Some("since"), StatusCode::BAD_REQUEST),
     };
 
+    let now = Utc::now();
     let pool = state.db.clone();
-    let row: Option<TicketRow> = match sqlx::query_as(
-        "SELECT display_number, service_type, status, sequence, customer_id \
-           FROM queue_tickets WHERE branch_id = $1 AND id = $2",
-    )
-    .bind(&branch)
-    .bind(ticket_id)
-    .fetch_optional(&pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+    let (ticket_id, display_number, service_type, status, sequence) = match ticket_id_param {
+        Some(ticket_id) => {
+            let row: Option<TicketRow> = match sqlx::query_as(
+                "SELECT display_number, service_type, status, sequence, customer_id \
+                   FROM queue_tickets WHERE branch_id = $1 AND id = $2",
+            )
+            .bind(&branch)
+            .bind(ticket_id)
+            .fetch_optional(&pool)
+            .await
+            {
+                Ok(r) => r,
+                Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+            };
+            let Some((display_number, service_type, status, sequence, owner)) = row else {
+                return refuse("outOfScope", None, StatusCode::FORBIDDEN);
+            };
+            if owner.as_deref() != Some(customer.as_str()) {
+                return refuse("outOfScope", None, StatusCode::FORBIDDEN);
+            }
+            (ticket_id, display_number, service_type, status, sequence)
+        }
+        None => {
+            let tz_str: Option<String> =
+                match sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
+                    .bind(&branch)
+                    .fetch_optional(&pool)
+                    .await
+                {
+                    Ok(t) => t,
+                    Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+                };
+            let Some(Ok(tz)) = tz_str.map(|s| s.parse::<chrono_tz::Tz>()) else {
+                return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR);
+            };
+            let today = now.with_timezone(&tz).date_naive();
+            let row: Option<(Uuid, String, String, String, i32)> = match sqlx::query_as(
+                "SELECT id, display_number, service_type, status, sequence \
+                   FROM queue_tickets \
+                  WHERE branch_id = $1 AND customer_id = $2 AND service_date = $3 \
+                    AND status IN ('WAITING', 'CALLED', 'SERVING') \
+                  ORDER BY created_at DESC \
+                  LIMIT 1",
+            )
+            .bind(&branch)
+            .bind(&customer)
+            .bind(today)
+            .fetch_optional(&pool)
+            .await
+            {
+                Ok(r) => r,
+                Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+            };
+            let Some(found) = row else {
+                return refuse("noTicket", None, StatusCode::NOT_FOUND);
+            };
+            found
+        }
     };
-    let Some((display_number, service_type, status, sequence, owner)) = row else {
-        return refuse("outOfScope", None, StatusCode::FORBIDDEN);
-    };
-    if owner.as_deref() != Some(customer.as_str()) {
-        return refuse("outOfScope", None, StatusCode::FORBIDDEN);
-    }
 
     let version: i64 = match sqlx::query_scalar(
         "SELECT queue_version FROM branch_service_status WHERE branch_id = $1",
@@ -111,7 +160,6 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
         return answer(json!({ "version": version, "changed": false }));
     }
 
-    let now = Utc::now();
     let branch_id = BranchId::new(&branch);
     let ticket = TicketRef {
         id: ticket_id,

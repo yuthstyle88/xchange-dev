@@ -43,6 +43,16 @@ impl Readiness {
             _ => Ok(Readiness::None),
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "NONE",
+            Self::Pending => "PENDING",
+            Self::NeedsUpdate => "NEEDS_UPDATE",
+            Self::Verified { .. } => "VERIFIED",
+            Self::Expired => "EXPIRED",
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

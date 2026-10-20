@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { MyNotificationItem } from '../../../shared/api/generated/my_notifications';
+import { type MyNotificationItem, makeMyNotificationItem } from '../../../shared/testing/fixtures';
 import { NotificationsScreen } from './Notifications';
 import * as table from './i18n';
 
@@ -33,7 +33,7 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   let container: HTMLDivElement;
   let dispose: (() => void) | null = null;
   let sentRequests: SentRequest[] = [];
-  let viewItems: MyNotificationItem[] = [];
+  let viewItems: MyNotificationItem[];
   let viewStatus = 200;
   let viewErrorCode: string | undefined = undefined;
   let markReadStatus = 200;
@@ -193,7 +193,7 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
     // Click retry after restoring viewStatus = 200
     viewStatus = 200;
     viewItems = [
-      {
+      makeMyNotificationItem({
         id: 'n1',
         seq: 1,
         locale: 'th',
@@ -201,7 +201,7 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
         body: 'Body text',
         read: true,
         createdAt: '2026-10-13T07:00:00Z',
-      },
+      }),
     ];
     retryBtn.click();
     await flushPromises();
@@ -212,9 +212,9 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   // Edge case 2: Items arriving in any order render newest first by seq.
   it('2. items arriving in any order render newest first by seq', async () => {
     viewItems = [
-      { id: 'n1', seq: 5, locale: 'th', title: 'Seq 5', body: 'B1', read: true, createdAt: '2026-10-13T01:00:00Z' },
-      { id: 'n2', seq: 50, locale: 'th', title: 'Seq 50 Newest', body: 'B2', read: false, createdAt: '2026-10-13T03:00:00Z' },
-      { id: 'n3', seq: 12, locale: 'th', title: 'Seq 12 Middle', body: 'B3', read: true, createdAt: '2026-10-13T02:00:00Z' },
+      makeMyNotificationItem({ id: 'n1', seq: 5, locale: 'th', title: 'Seq 5', body: 'B1', read: true, createdAt: '2026-10-13T01:00:00Z' }),
+      makeMyNotificationItem({ id: 'n2', seq: 50, locale: 'th', title: 'Seq 50 Newest', body: 'B2', read: false, createdAt: '2026-10-13T03:00:00Z' }),
+      makeMyNotificationItem({ id: 'n3', seq: 12, locale: 'th', title: 'Seq 12 Middle', body: 'B3', read: true, createdAt: '2026-10-13T02:00:00Z' }),
     ];
     dispose = render(() => <NotificationsScreen />, container);
     await flushPromises();
@@ -226,8 +226,8 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   // Edge case 3: Unread rows are marked, and the unread filter sends unread: true.
   it('3. unread rows are marked; unread filter sends unread: true', async () => {
     viewItems = [
-      { id: 'n1', seq: 1, locale: 'th', title: 'Notice 1', body: 'B1', read: false, createdAt: '2026-10-13T01:00:00Z' },
-      { id: 'n2', seq: 2, locale: 'th', title: 'Notice 2', body: 'B2', read: true, createdAt: '2026-10-13T02:00:00Z' },
+      makeMyNotificationItem({ id: 'n1', seq: 1, locale: 'th', title: 'Notice 1', body: 'B1', read: false, createdAt: '2026-10-13T01:00:00Z' }),
+      makeMyNotificationItem({ id: 'n2', seq: 2, locale: 'th', title: 'Notice 2', body: 'B2', read: true, createdAt: '2026-10-13T02:00:00Z' }),
     ];
     dispose = render(() => <NotificationsScreen />, container);
     await flushPromises();
@@ -253,7 +253,7 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   it('4. mark one read is optimistic: row reads as read at once with one notificationRead call', async () => {
     markReadDelay = 50; // Add delay so we can inspect optimistic state before server responds
     viewItems = [
-      { id: 'item-opt-1', seq: 1, locale: 'th', title: 'Optimistic Alert', body: 'Body', read: false, createdAt: '2026-10-13T01:00:00Z' },
+      makeMyNotificationItem({ id: 'item-opt-1', seq: 1, locale: 'th', title: 'Optimistic Alert', body: 'Body', read: false, createdAt: '2026-10-13T01:00:00Z' }),
     ];
     dispose = render(() => <NotificationsScreen />, container);
     await flushPromises();
@@ -285,7 +285,7 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   // Edge case 5: A refused mark-read rolls the row back to unread and shows a worded error through errorText or your own i18n key, never err.message raw.
   it('5. refused mark-read rolls back to unread and shows worded error, never raw err.message', async () => {
     viewItems = [
-      { id: 'item-fail', seq: 1, locale: 'th', title: 'Failing Notice', body: 'Important Content', read: false, createdAt: '2026-10-13T01:00:00Z' },
+      makeMyNotificationItem({ id: 'item-fail', seq: 1, locale: 'th', title: 'Failing Notice', body: 'Important Content', read: false, createdAt: '2026-10-13T01:00:00Z' }),
     ];
     markReadStatus = 400;
     markReadErrorCode = 'roleNotAllowed';
@@ -315,8 +315,8 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   // Edge case 6: Mark all read makes one notificationReadAll call, and every row then reads as read.
   it('6. mark all read makes one notificationReadAll call and every row reads as read', async () => {
     viewItems = [
-      { id: 'n1', seq: 1, locale: 'th', title: 'Alert 1', body: 'Text 1', read: false, createdAt: '2026-10-13T01:00:00Z' },
-      { id: 'n2', seq: 2, locale: 'th', title: 'Alert 2', body: 'Text 2', read: false, createdAt: '2026-10-13T02:00:00Z' },
+      makeMyNotificationItem({ id: 'n1', seq: 1, locale: 'th', title: 'Alert 1', body: 'Text 1', read: false, createdAt: '2026-10-13T01:00:00Z' }),
+      makeMyNotificationItem({ id: 'n2', seq: 2, locale: 'th', title: 'Alert 2', body: 'Text 2', read: false, createdAt: '2026-10-13T02:00:00Z' }),
     ];
     dispose = render(() => <NotificationsScreen />, container);
     await flushPromises();
@@ -342,7 +342,7 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   // Edge case 7: A body containing <b>x</b> renders as literal text.
   it('7. body containing <b>x</b> renders as literal text, never as HTML tags', async () => {
     viewItems = [
-      { id: 'n-html', seq: 1, locale: 'th', title: 'HTML Safety', body: 'This is <b>escaped</b> text', read: true, createdAt: '2026-10-13T01:00:00Z' },
+      makeMyNotificationItem({ id: 'n-html', seq: 1, locale: 'th', title: 'HTML Safety', body: 'This is <b>escaped</b> text', read: true, createdAt: '2026-10-13T01:00:00Z' }),
     ];
     dispose = render(() => <NotificationsScreen />, container);
     await flushPromises();
@@ -389,7 +389,7 @@ describe('APP-15: Customer NotificationsScreen (§9 specs)', () => {
   // Post-action refresh is silent: notificationRead resolves while re-read stays pending.
   it('10. notificationRead resolves while re-read stays pending: list stays rendered, row reads as read, no loading text', async () => {
     viewItems = [
-      { id: 'notif-pending-1', seq: 1, locale: 'th', title: 'Pending Notice', body: 'Body', read: false, createdAt: '2026-10-13T01:00:00Z' },
+      makeMyNotificationItem({ id: 'notif-pending-1', seq: 1, locale: 'th', title: 'Pending Notice', body: 'Body', read: false, createdAt: '2026-10-13T01:00:00Z' }),
     ];
     dispose = render(() => <NotificationsScreen />, container);
     await flushPromises();

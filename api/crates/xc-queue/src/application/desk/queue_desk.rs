@@ -243,6 +243,7 @@ impl QueueDesk {
 
         let params = NotificationParams::new()
             .display("displayNumber", display_number)
+            .text("branch", branch.as_str())
             .text("branchName", branch_name);
 
         let event_id = format!("queue.called:{}:{count}", ticket.id);
@@ -250,7 +251,10 @@ impl QueueDesk {
             user_id,
             event_id,
             "queue_called",
-            None,
+            Some(xc_kernel::notifications::NotificationObject {
+                object_type: "QUEUE_TICKET".into(),
+                object_id: ticket.id.to_string(),
+            }),
             params,
         ) {
             Ok(r) => r,

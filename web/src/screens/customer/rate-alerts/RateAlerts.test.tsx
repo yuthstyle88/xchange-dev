@@ -1,6 +1,6 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MyRateAlertItem } from '../../../shared/api/generated/my_rate_alerts';
+import { makeMyRateAlertItem, type MyRateAlertItem } from '../../../shared/testing/fixtures';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { lang, setAudience, setLang } from '../../../shared/i18n';
 import { RateAlertsScreen } from './RateAlerts';
@@ -59,6 +59,14 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
       queueOpen: false,
     },
   ],
+};
+
+const baseAlertFields: Pick<MyRateAlertItem, 'relation' | 'expiresAt' | 'expired' | 'rateStale' | 'lastEvent'> = {
+  relation: 'UNKNOWN',
+  expiresAt: null,
+  expired: false,
+  rateStale: null,
+  lastEvent: null,
 };
 
 function mockBackend(options: {
@@ -147,7 +155,7 @@ function mockBackend(options: {
         condition: string;
         target: string;
       };
-      const createdItem: MyRateAlertItem = {
+      const createdItem = makeMyRateAlertItem({
         id: 'alert-new-1',
         version: 1,
         branch: b.branch,
@@ -159,7 +167,8 @@ function mockBackend(options: {
         currentRate: null,
         ratePublishedAt: null,
         enabled: true,
-      };
+        ...baseAlertFields,
+      });
       alerts = [createdItem, ...alerts];
       return new Response(
         JSON.stringify(options.createResponse ?? { id: 'alert-new-1', version: 1 }),
@@ -311,8 +320,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
   });
 
   it('renders alerts with side, unit, branch, and current rate with published time in words; when null, shows "no current rate"', async () => {
-    const sampleAlerts: MyRateAlertItem[] = [
-      {
+    const sampleAlerts = [
+      makeMyRateAlertItem({
         id: 'alert-1',
         version: 1,
         branch: 'XC-B01',
@@ -324,8 +333,9 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '34.20',
         ratePublishedAt: '2026-10-13T10:00:00Z',
         enabled: true,
-      },
-      {
+        ...baseAlertFields,
+      }),
+      makeMyRateAlertItem({
         id: 'alert-2',
         version: 2,
         branch: 'XC-B02',
@@ -337,7 +347,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: null,
         ratePublishedAt: null,
         enabled: false,
-      },
+        ...baseAlertFields,
+      }),
     ];
 
     const { fetchFn } = mockBackend({ initialAlerts: sampleAlerts });
@@ -424,8 +435,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
   });
 
   it('pause, resume, and delete commands call backend with expectedVersion and Idempotency-Key', async () => {
-    const initial: MyRateAlertItem[] = [
-      {
+    const initial = [
+      makeMyRateAlertItem({
         id: 'alert-1',
         version: 5,
         branch: 'XC-B01',
@@ -437,7 +448,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '34.10',
         ratePublishedAt: '2026-10-13T10:00:00Z',
         enabled: true,
-      },
+        ...baseAlertFields,
+      }),
     ];
 
     const { fetchFn, calls } = mockBackend({ initialAlerts: initial });
@@ -529,7 +541,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
   it('renders error state on view failure and recovers via retry button', async () => {
     const { fetchFn } = mockBackend({
       initialAlerts: [
-        {
+        makeMyRateAlertItem({
           id: 'alert-recovered',
           version: 1,
           branch: 'XC-B01',
@@ -541,7 +553,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
           currentRate: null,
           ratePublishedAt: null,
           enabled: true,
-        },
+          ...baseAlertFields,
+        }),
       ],
       viewFailOnce: true,
     });
@@ -571,8 +584,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
     expect(thKeys).toEqual(enKeys);
     expect(thKeys).toEqual(zhKeys);
 
-    const sample: MyRateAlertItem[] = [
-      {
+    const sample = [
+      makeMyRateAlertItem({
         id: 'alert-lang-non-null',
         version: 1,
         branch: 'XC-B01',
@@ -584,8 +597,9 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '33.90',
         ratePublishedAt: '2026-10-13T10:00:00Z',
         enabled: true,
-      },
-      {
+        ...baseAlertFields,
+      }),
+      makeMyRateAlertItem({
         id: 'alert-lang-null',
         version: 1,
         branch: 'XC-B02',
@@ -597,7 +611,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: null,
         ratePublishedAt: null,
         enabled: false,
-      },
+        ...baseAlertFields,
+      }),
     ];
 
     const { fetchFn } = mockBackend({ initialAlerts: sample });
@@ -633,8 +648,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
   });
 
   it('renders a non-null currentRate with MoneyText and formatted published time, without no-rate text', async () => {
-    const alerts: MyRateAlertItem[] = [
-      {
+    const alerts = [
+      makeMyRateAlertItem({
         id: 'alert-has-rate',
         version: 1,
         branch: 'XC-B01',
@@ -646,7 +661,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: '34.75',
         ratePublishedAt: '2026-10-13T12:00:00Z',
         enabled: true,
-      },
+        ...baseAlertFields,
+      }),
     ];
 
     const { fetchFn } = mockBackend({ initialAlerts: alerts });
@@ -667,8 +683,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
   });
 
   it('renders a null currentRate showing i18n no-rate text, never 0 or an empty number', async () => {
-    const alerts: MyRateAlertItem[] = [
-      {
+    const alerts = [
+      makeMyRateAlertItem({
         id: 'alert-no-rate',
         version: 1,
         branch: 'XC-B02',
@@ -680,7 +696,8 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
         currentRate: null,
         ratePublishedAt: null,
         enabled: true,
-      },
+        ...baseAlertFields,
+      }),
     ];
 
     const { fetchFn } = mockBackend({ initialAlerts: alerts });

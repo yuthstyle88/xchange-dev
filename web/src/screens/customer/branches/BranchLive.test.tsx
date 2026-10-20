@@ -4,8 +4,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { Fetch } from '../../../shared/api/client';
-import type { BookingSlotsData } from '../../../shared/api/generated/booking_slots';
-import type { BranchServiceStatusData } from '../../../shared/api/generated/branch_service_status';
+import {
+  makeBookingSlotItemDto,
+  makeBookingSlotsData,
+  makeBranchServiceStatusData,
+  makeBranchServiceWaiting,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { BranchLive } from './BranchLive';
 
@@ -16,26 +20,26 @@ function json(status: number, body: unknown): Response {
 }
 const envelope = (data: unknown) => ({ status: 200, body: { version: 1, changed: true, data } });
 
-const STATUS: BranchServiceStatusData = {
+const STATUS = makeBranchServiceStatusData({
   branch: 'bkk-1',
   queueOpen: true,
   activeCounters: 2,
-  waiting: { walkIn: 3, booking: 2 },
+  waiting: makeBranchServiceWaiting({ walkIn: 3, booking: 2 }),
   estimateSeconds: 420,
   estimateLowSeconds: 240,
   estimateHighSeconds: 600,
   estimateAsOf: '2026-10-19T08:00:00Z',
-};
+});
 
-const SLOTS: BookingSlotsData = {
+const SLOTS = makeBookingSlotsData({
   asOf: '2026-10-19T08:00:00Z',
   slots: [
-    { id: 's-past', start: '2000-01-01T03:00:00Z', end: '2000-01-01T03:30:00Z', available: 4 },
-    { id: 's-free', start: '2099-01-01T03:00:00Z', end: '2099-01-01T03:30:00Z', available: 3 },
-    { id: 's-full', start: '2099-01-01T04:00:00Z', end: '2099-01-01T04:30:00Z', available: 0 },
-    { id: 's-free2', start: '2099-01-01T05:00:00Z', end: '2099-01-01T05:30:00Z', available: 1 },
+    makeBookingSlotItemDto({ id: 's-past', start: '2000-01-01T03:00:00Z', end: '2000-01-01T03:30:00Z', available: 4 }),
+    makeBookingSlotItemDto({ id: 's-free', start: '2099-01-01T03:00:00Z', end: '2099-01-01T03:30:00Z', available: 3 }),
+    makeBookingSlotItemDto({ id: 's-full', start: '2099-01-01T04:00:00Z', end: '2099-01-01T04:30:00Z', available: 0 }),
+    makeBookingSlotItemDto({ id: 's-free2', start: '2099-01-01T05:00:00Z', end: '2099-01-01T05:30:00Z', available: 1 }),
   ],
-};
+});
 
 function server(over: { status?: Reply; slots?: Reply } = {}) {
   const urls: URL[] = [];

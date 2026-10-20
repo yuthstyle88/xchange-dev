@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
@@ -82,6 +83,50 @@ impl CommandAction for ClosureAdd {
             .add_closure_in(tx, &branch, &closure, user_uuid)
             .await
             .map_err(V3Error::from)?;
+
+        let horizon_days: Option<i32> = sqlx::query_scalar(
+            "SELECT horizon_days FROM booking_slot_rules WHERE branch_id = $1",
+        )
+        .bind(branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+        if let Some(horizon_days) = horizon_days {
+            let tz_str: Option<String> =
+                sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
+                    .bind(branch.as_str())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        V3Error::new(
+                            "serverError",
+                            None,
+                            e.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        )
+                    })?;
+
+            let tz: Tz = tz_str
+                .as_deref()
+                .unwrap_or("Asia/Bangkok")
+                .parse()
+                .unwrap_or(chrono_tz::Asia::Bangkok);
+            let today = Utc::now().with_timezone(&tz).date_naive();
+
+            services
+                .slot_service
+                .generate_in(tx, &branch, today, horizon_days as u32)
+                .await
+                .map_err(V3Error::from)?;
+        }
 
         Ok(BookingOkOutput { ok: true })
     }

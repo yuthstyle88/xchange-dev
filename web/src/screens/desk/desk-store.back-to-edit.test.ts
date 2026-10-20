@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { ApiClient } from '../../shared/api/client';
-import type { QuoteDto } from '../../shared/api/generated/quote';
+import { makeQuoteDto, makeQuoteLineDto, makeQuotePublicationDto, type QuoteDto } from '../../shared/testing/fixtures';
 
 type Store = Record<string, any>;
 type StoreModule = { createDeskStore: (deps: { api: ApiClient; path: unknown; me: () => unknown }) => Store };
@@ -106,16 +106,16 @@ const view = (data: unknown): Answer => ({
   body: { version: 1, changed: true, data },
 });
 
-function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}): QuoteDto {
+function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}) {
   const q = over.quantity ?? '100';
-  return {
+  return makeQuoteDto({
     id: over.id ?? 'q-1',
     type: over.type ?? 'BUY',
     channel: 'DESK',
     expiresAt: over.expiresAt ?? new Date(Date.now() + 300_000).toISOString(),
-    publication: { id: 'pub-1', version: 3 },
+    publication: makeQuotePublicationDto({ id: 'pub-1', version: 3 }),
     lines: over.lines ?? [
-      {
+      makeQuoteLineDto({
         currency: 'USD',
         shopSide: 'BUY',
         quantity: q,
@@ -126,11 +126,11 @@ function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}): QuoteDt
         feeThb: '0.00',
         settleThb: '3210.00',
         publishedRateLineId: 'line-1',
-      },
+      }),
     ],
     benefits: [],
     stale: false,
-  };
+  });
 }
 
 const refusal = (status: number, code: string, message = 'refused', field?: string): Answer => ({

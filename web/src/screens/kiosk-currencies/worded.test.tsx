@@ -1,18 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import { ApiError, type ApiClient, type ViewAnswer, type ViewParams } from '../../shared/api/client';
+import { ApiError, type ApiClient, type ViewParams } from '../../shared/api/client';
 import { setLang } from '../../shared/i18n';
 import { th as sharedTh } from '../../shared/i18n/th';
 import { en as sharedEn } from '../../shared/i18n/en';
-import type { KioskCurrencies, KioskCurrency } from '../../shared/api/generated/kiosk_currencies';
+import {
+  makeKbankReference,
+  makeKioskCountry,
+  makeKioskCurrencies,
+  makeKioskCurrency,
+  makeRateFreshnessDto,
+  makeViewAnswer,
+  type KioskCurrencies,
+  type KioskCurrency,
+  type ViewAnswer,
+} from '../../shared/testing/fixtures';
 import { KioskCurrenciesScreen } from './KioskCurrenciesScreen';
 
-const USD: KioskCurrency = {
+const USD = makeKioskCurrency({
   code: 'USD',
   name: 'ดอลลาร์สหรัฐ',
   nameEn: 'US Dollar',
-  countries: [{ code: 'US', en: 'United States', th: 'สหรัฐอเมริกา' }],
+  countries: [makeKioskCountry({ code: 'US', en: 'United States', th: 'สหรัฐอเมริกา' })],
   buy: '33.2500',
   sell: '33.5000',
   unitSize: '1',
@@ -21,18 +31,20 @@ const USD: KioskCurrency = {
   partnerCost: '32.9000',
   enabled: true,
   kbank: [],
-};
+});
 
-function answer(currencies: KioskCurrency[] = [USD]): ViewAnswer<KioskCurrencies> {
-  return {
-    version: 1,
-    changed: true,
-    data: {
-      currencies,
-      kbank: { source: 'kbank', publishedAt: '2026-10-06T05:00:00Z', round: 1 },
-      freshness: { stale: false, sourceDate: null, publishedAt: null },
+function answer(currencies?: KioskCurrency[]) {
+  return makeViewAnswer(
+    makeKioskCurrencies({
+      currencies: currencies ?? [USD],
+      kbank: makeKbankReference({ source: 'kbank', publishedAt: '2026-10-06T05:00:00Z', round: 1 }),
+      freshness: makeRateFreshnessDto({ stale: false, sourceDate: null, publishedAt: null }),
+    }),
+    {
+      version: 1,
+      changed: true,
     },
-  };
+  );
 }
 
 interface FakeClient {
@@ -50,7 +62,7 @@ function createFakeClient(
   const api: Pick<ApiClient, 'view' | 'post'> = {
     view<T>(name: string, q?: ViewParams): Promise<ViewAnswer<T>> {
       views.push({ name, q: q ? { ...q } : undefined });
-      return viewHandler(name, q) as Promise<ViewAnswer<T>>;
+      return viewHandler(name, q) as any;
     },
     post<B, R>(path: string, body: B): Promise<R> {
       posts.push({ path, body });

@@ -4,8 +4,11 @@ import '../../../core/endpoint/endpoint_store.dart';
 import '../../../core/network/dio_provider.dart';
 import '../../../core/platform/device_actions.dart';
 import '../../../l10n/kiosk_l10n.dart';
+import '../domain/repository/kiosk_booking_repository.dart';
 import '../domain/repository/kiosk_repository.dart';
 import '../infrastructure/data_sources/kiosk_api.dart';
+import '../infrastructure/data_sources/kiosk_booking_api.dart';
+import '../infrastructure/repositories/kiosk_booking_repository_impl.dart';
 import '../infrastructure/repositories/kiosk_repository_impl.dart';
 import '../presentation/controllers/kiosk_controller.dart';
 
@@ -49,4 +52,15 @@ final kioskTextsProvider = Provider<KioskTexts>(
   (ref) => ref
       .watch(kioskL10nProvider)
       .of(ref.watch(kioskControllerProvider.select((s) => s.languageCode))),
+);
+
+final kioskBookingApiProvider = Provider<KioskBookingApi>(
+  (ref) => KioskBookingApi(
+    ref.watch(dioProvider),
+    branchId: ref.watch(kioskBranchProvider),
+  ),
+);
+
+final kioskBookingRepositoryProvider = Provider<KioskBookingRepository>(
+  (ref) => KioskBookingRepositoryImpl(ref.watch(kioskBookingApiProvider)),
 );

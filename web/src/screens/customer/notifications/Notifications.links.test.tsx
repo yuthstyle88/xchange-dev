@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { MyNotificationItem } from '../../../shared/api/generated/my_notifications';
+import {
+  type MyNotificationItem,
+  makeMyNotificationItem,
+  makeMyNotificationObject,
+} from '../../../shared/testing/fixtures';
 import { NotificationsScreen, objectHref } from './Notifications';
 import * as table from './i18n';
 
@@ -9,7 +13,7 @@ describe('C13: Notification object links (#3322)', () => {
   let container: HTMLDivElement;
   let dispose: (() => void) | null = null;
   let sentRequests: { method: string; path: string }[] = [];
-  let viewItems: MyNotificationItem[] = [];
+  let viewItems: MyNotificationItem[];
 
   beforeEach(() => {
     setLang('en');
@@ -80,16 +84,16 @@ describe('C13: Notification object links (#3322)', () => {
   it('rate_alert_event renders link href="/app/rate-alerts" with open text', async () => {
     setLang('en');
     viewItems = [
-      {
+      makeMyNotificationItem({
         id: 'n1',
         seq: 1,
         locale: 'en',
         title: 'Rate Alert',
         body: 'USD/THB crossed target',
-        object: { objectType: 'rate_alert_event', objectId: 'alert-1' },
+        object: makeMyNotificationObject({ objectType: 'rate_alert_event', objectId: 'alert-1' }),
         read: false,
         createdAt: '2026-10-19T08:00:00Z',
-      },
+      }),
     ];
 
     dispose = render(() => <NotificationsScreen />, container);
@@ -103,16 +107,16 @@ describe('C13: Notification object links (#3322)', () => {
 
   it('rate_publication renders link href="/rates"', async () => {
     viewItems = [
-      {
+      makeMyNotificationItem({
         id: 'n2',
         seq: 2,
         locale: 'en',
         title: 'Rates updated',
         body: 'New rates published',
-        object: { objectType: 'rate_publication', objectId: 'pub-1' },
+        object: makeMyNotificationObject({ objectType: 'rate_publication', objectId: 'pub-1' }),
         read: true,
         createdAt: '2026-10-19T08:00:00Z',
-      },
+      }),
     ];
 
     dispose = render(() => <NotificationsScreen />, container);
@@ -125,16 +129,16 @@ describe('C13: Notification object links (#3322)', () => {
 
   it('queue_ticket (unknown) renders no link', async () => {
     viewItems = [
-      {
+      makeMyNotificationItem({
         id: 'n3',
         seq: 3,
         locale: 'en',
         title: 'Queue update',
         body: 'Queue #42 ready',
-        object: { objectType: 'queue_ticket', objectId: 'ticket-42' },
+        object: makeMyNotificationObject({ objectType: 'queue_ticket', objectId: 'ticket-42' }),
         read: false,
         createdAt: '2026-10-19T08:00:00Z',
-      },
+      }),
     ];
 
     dispose = render(() => <NotificationsScreen />, container);
@@ -146,7 +150,7 @@ describe('C13: Notification object links (#3322)', () => {
 
   it('item with no object renders no link', async () => {
     viewItems = [
-      {
+      makeMyNotificationItem({
         id: 'n4',
         seq: 4,
         locale: 'en',
@@ -154,7 +158,7 @@ describe('C13: Notification object links (#3322)', () => {
         body: 'Maintenance tonight',
         read: false,
         createdAt: '2026-10-19T08:00:00Z',
-      },
+      }),
     ];
 
     dispose = render(() => <NotificationsScreen />, container);
@@ -166,16 +170,16 @@ describe('C13: Notification object links (#3322)', () => {
 
   it('clicking link on unread item does NOT trigger notificationRead call', async () => {
     viewItems = [
-      {
+      makeMyNotificationItem({
         id: 'n5',
         seq: 5,
         locale: 'en',
         title: 'Alert',
         body: 'Check alerts',
-        object: { objectType: 'rate_alert_event', objectId: 'alert-5' },
+        object: makeMyNotificationObject({ objectType: 'rate_alert_event', objectId: 'alert-5' }),
         read: false,
         createdAt: '2026-10-19T08:00:00Z',
-      },
+      }),
     ];
 
     dispose = render(() => <NotificationsScreen />, container);

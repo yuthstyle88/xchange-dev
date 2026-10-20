@@ -1,7 +1,7 @@
 // #1909: A01 executive/api.ts fetchOverview over ApiClient.view('executive_overview', { filter }).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../../shared/api/client';
-import type { ExecutiveOverviewData } from '../../../shared/api/generated/executive_overview';
+import { makeExecutiveOverviewData, makeOverviewPeriod } from '../../../shared/testing/fixtures';
 import { fetchOverview, type OverviewQuery } from './api';
 
 const ENDPOINT = '/api/v3/views/executive_overview';
@@ -14,15 +14,15 @@ const SAMPLE_QUERY: OverviewQuery = {
   currency: '',
 };
 
-const SAMPLE_DATA: ExecutiveOverviewData = {
-  period: { from: '2026-10-05', to: '2026-10-06' },
+const SAMPLE_DATA = makeExecutiveOverviewData({
+  period: makeOverviewPeriod({ from: '2026-10-05', to: '2026-10-06' }),
   kpis: [],
   branches: [],
   alerts: [],
   definitions: [],
   buyReversedThb: '0.00',
   sellReversedThb: '0.00',
-};
+});
 
 interface RecordedCall {
   url: URL;

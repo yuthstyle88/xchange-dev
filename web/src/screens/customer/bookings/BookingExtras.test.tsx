@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import type { MyBookingItemDto } from '../../../shared/api/generated/my_bookings';
+import { makeMyBookingItemDto, type MyBookingItemDto } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { BookingExtras } from './BookingExtras';
 
@@ -20,8 +20,8 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function booking(over: Partial<MyBookingItemDto> = {}): MyBookingItemDto {
-  return {
+function booking(over: Partial<MyBookingItemDto> = {}) {
+  return makeMyBookingItemDto({
     id: 'bk-1',
     bookingNo: 'B261015-0001',
     status: 'CONFIRMED',
@@ -40,7 +40,7 @@ function booking(over: Partial<MyBookingItemDto> = {}): MyBookingItemDto {
     estimateAsOf: null,
     readiness: 'unknown',
     ...over,
-  };
+  });
 }
 
 function harness(replies: { confirm?: Reply[]; qr?: Reply[] } = {}) {

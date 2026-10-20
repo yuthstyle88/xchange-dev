@@ -1,10 +1,15 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AdminBookingSlotsData } from '../../../shared/api/generated/admin_booking_slots';
-import type { Me } from '../../../shared/api/generated/common';
 import { setLang } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
+import {
+  makeAdminBookingPolicyDto,
+  makeAdminBookingSlotsData,
+  makeAdminClosureDto,
+  makeAdminSlotDto,
+  makeAdminSlotRuleDto,
+} from '../../../shared/testing/fixtures';
 import { meOf } from '../../../test-support/me';
 import type { AdminMenuProps } from '../menus';
 import { BookingSlots } from './BookingSlots';
@@ -14,11 +19,11 @@ const B01 = 'XC-B01';
 const B02 = 'XC-B02';
 const VIEW = '/api/v3/views/admin_booking_slots';
 
-const BRANCH_A_DATA: AdminBookingSlotsData = {
-  rule: { branchId: B01, slotMinutes: 30, capacity: 8, horizonDays: 21 },
-  closures: [{ branchId: B01, closedOn: '2026-12-25', reason: 'Christmas Day' }],
+const BRANCH_A_DATA = makeAdminBookingSlotsData({
+  rule: makeAdminSlotRuleDto({ branchId: B01, slotMinutes: 30, capacity: 8, horizonDays: 21 }),
+  closures: [makeAdminClosureDto({ branchId: B01, closedOn: '2026-12-25', reason: 'Christmas Day' })],
   slots: [
-    {
+    makeAdminSlotDto({
       id: 'slot-a-1',
       branchId: B01,
       serviceDate: '2026-10-15',
@@ -27,8 +32,8 @@ const BRANCH_A_DATA: AdminBookingSlotsData = {
       capacity: 8,
       reserved: 2,
       status: 'OPEN',
-    },
-    {
+    }),
+    makeAdminSlotDto({
       id: 'slot-a-2',
       branchId: B01,
       serviceDate: '2026-10-15',
@@ -37,17 +42,17 @@ const BRANCH_A_DATA: AdminBookingSlotsData = {
       capacity: 8,
       reserved: 0,
       status: 'CLOSED',
-    },
+    }),
   ],
-  policy: { cancelCutoffMinutes: 45, noShowGraceMinutes: 20, confirmExpiryMinutes: 30 },
-};
+  policy: makeAdminBookingPolicyDto({ cancelCutoffMinutes: 45, noShowGraceMinutes: 20, confirmExpiryMinutes: 30 }),
+});
 
-const BRANCH_B_DATA: AdminBookingSlotsData = {
-  rule: { branchId: B02, slotMinutes: 60, capacity: 12, horizonDays: 14 },
-  closures: [{ branchId: B02, closedOn: '2026-04-13', reason: 'Songkran Festival' }],
+const BRANCH_B_DATA = makeAdminBookingSlotsData({
+  rule: makeAdminSlotRuleDto({ branchId: B02, slotMinutes: 60, capacity: 12, horizonDays: 14 }),
+  closures: [makeAdminClosureDto({ branchId: B02, closedOn: '2026-04-13', reason: 'Songkran Festival' })],
   slots: [],
   policy: BRANCH_A_DATA.policy,
-};
+});
 
 type Reply = { status: number; body: unknown } | 'network';
 
@@ -104,7 +109,7 @@ describe('#2663: BookingSlots write answers across branch switch', () => {
     dispose?.();
     dispose = undefined;
     container.remove();
-    sharedSession().updateMe(undefined as unknown as Me);
+    sharedSession().updateMe(undefined as never);
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });

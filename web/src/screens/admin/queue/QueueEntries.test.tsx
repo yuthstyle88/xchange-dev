@@ -5,34 +5,41 @@
 // claude/5edf7bb5, Owner's Rule A). Do not edit, delete or weaken.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Me, ViewAnswer } from '../../../shared/api/generated/common';
-import type { QueueBoardData } from '../../../shared/api/generated/queue_board';
+import {
+  makeMe,
+  makeQueueBoardCalled,
+  makeQueueBoardCounter,
+  makeQueueBoardData,
+  makeQueueBoardWaiting,
+  makeStaffMeView,
+  makeViewAnswer,
+} from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
 
-const BOARD_DATA: QueueBoardData = {
+const BOARD_DATA = makeQueueBoardData({
   waiting: [
-    {
+    makeQueueBoardWaiting({
       id: 'ticket-wait-1',
       displayNumber: 'W042',
       serviceType: 'WALK_IN',
       sequence: 42,
       issuedAt: '2026-10-12T01:00:00.000Z',
-    },
+    }),
   ],
   called: [
-    {
+    makeQueueBoardCalled({
       id: 'ticket-called-1',
       displayNumber: 'W041',
       serviceType: 'WALK_IN',
       status: 'SERVING',
       tellerId: 'emp-nok',
       calledAt: '2026-10-12T01:10:00.000Z',
-    },
+    }),
   ],
-  myCounter: { status: 'ACTIVE' },
-};
+  myCounter: makeQueueBoardCounter({ status: 'ACTIVE' }),
+});
 
-const ME_DATA: Me = {
+const ME_DATA = makeMe({
   id: 'emp-nok',
   name: 'Nok',
   roles: [{ role: 'BRANCH_MANAGER', branchId: 'B1' }],
@@ -40,7 +47,7 @@ const ME_DATA: Me = {
   branch: 'B1',
   branchName: 'Silom',
   branches: [{ id: 'B1', code: 'B1', name: 'Silom' }],
-};
+});
 
 function setupMockFetch() {
   vi.stubGlobal(
@@ -49,11 +56,10 @@ function setupMockFetch() {
       const url = typeof input === 'string' ? input : (input as Request).url;
 
       if (url.includes('/api/v3/views/me')) {
-        const body: ViewAnswer<Me> = {
+        const body = makeViewAnswer(ME_DATA, {
           version: 1,
           changed: true,
-          data: ME_DATA,
-        };
+        });
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -61,29 +67,28 @@ function setupMockFetch() {
       }
 
       if (url.includes('/api/v3/views/staff_me')) {
-        return new Response(
-          JSON.stringify({
-            version: 1,
-            changed: true,
-            data: {
-              userId: 'emp-nok',
-              name: 'Nok',
-              roles: [{ role: 'BRANCH_MANAGER', branchId: 'B1' }],
-              branchId: 'B1',
-              branchName: 'Silom',
-              permissions: ['QueueOperate'],
-            },
+        const body = makeViewAnswer(
+          makeStaffMeView({
+            userId: 'emp-nok',
+            name: 'Nok',
+            roles: [{ role: 'BRANCH_MANAGER', branchId: 'B1' }],
+            branchId: 'B1',
+            branchName: 'Silom',
+            permissions: ['QueueOperate'],
           }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
+          { version: 1, changed: true },
         );
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
       }
 
       if (url.includes('/api/v3/views/queue_board')) {
-        const body: ViewAnswer<QueueBoardData> = {
+        const body = makeViewAnswer(BOARD_DATA, {
           version: 1,
           changed: true,
-          data: BOARD_DATA,
-        };
+        });
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'content-type': 'application/json' },

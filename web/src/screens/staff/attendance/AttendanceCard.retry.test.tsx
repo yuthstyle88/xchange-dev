@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../../shared/i18n';
-import type { StaffAttendanceRow } from '../../../shared/api/generated/staff_attendance';
-import type { StaffFloorView } from '../../../shared/api/generated/staff_floor';
-import type { StaffMeView } from '../../../shared/api/generated/staff_me';
+import {
+  makeStaffAttendanceRow,
+  makeStaffFloorView,
+  makeStaffMeView,
+  type StaffAttendanceRow,
+} from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import * as staffI18n from '../i18n';
 import { AttendanceCard } from './AttendanceCard';
@@ -11,24 +14,24 @@ import * as attI18n from './i18n';
 
 const BRANCH = 'MAIN';
 
-const SAMPLE_ROWS: StaffAttendanceRow[] = [
-  { id: 'att-3', name: 'Ploy', in: '2026-10-11T03:00:00Z', out: null },
-  { id: 'att-2', name: 'Somchai', in: '2026-10-11T01:00:00Z', out: '2026-10-11T02:30:00Z' },
+const SAMPLE_ROWS = [
+  makeStaffAttendanceRow({ id: 'att-3', name: 'Ploy', in: '2026-10-11T03:00:00Z', out: null }),
+  makeStaffAttendanceRow({ id: 'att-2', name: 'Somchai', in: '2026-10-11T01:00:00Z', out: '2026-10-11T02:30:00Z' }),
 ];
 
-function me(permissions = ['AttendanceClock']): StaffMeView {
-  return {
+function me(permissions = ['AttendanceClock']) {
+  return makeStaffMeView({
     userId: '00000000-0000-4000-8000-0000000000d1',
     name: 'Ploy',
     roles: [],
     branchId: BRANCH,
     branchName: 'XC-B',
     permissions,
-  };
+  });
 }
 
-function floor(): StaffFloorView {
-  return {
+function floor() {
+  return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
     myClockIn: null,
@@ -36,7 +39,7 @@ function floor(): StaffFloorView {
     cutoff: null,
     target: null,
     safe: null,
-  };
+  });
 }
 
 function makeCtx(): StaffCtx {
