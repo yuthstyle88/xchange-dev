@@ -518,7 +518,7 @@ jobs:
           if [ -n "$prev_job" ]; then
             RAW_LOG=$(mktemp)
             if gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$prev_job/logs" --allow-escape-sequences > "$RAW_LOG" 2>/dev/null; then
-              bash .github/scripts/api-failed-from-log.sh < "$RAW_LOG" | awk '{print $2}' > api/target/nextest/prev/failed-tests.txt
+              bash .github/scripts/api-failed-from-log.sh < "$RAW_LOG" > api/target/nextest/prev/failed-tests.txt
             fi
             rm -f "$RAW_LOG"
           fi
