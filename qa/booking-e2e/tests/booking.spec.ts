@@ -16,13 +16,11 @@ function tomorrowBangkok(): string {
 }
 
 
-// The card of one booking: the nearest ancestor of its number that also holds its status chip
-// (web/src/screens/customer/bookings/Bookings.tsx: .xc-booking-no, .xc-booking-status). It stays
-// the same element after a cancel, when the cancel button disappears.
+// The card of one booking: div.xc-booking-card holding .xc-booking-no with exactly this number
+// (web/src/screens/customer/bookings/Bookings.tsx:349-351). It stays the same element after a cancel.
 function bookingCard(page: Page, bookingNo: string) {
-  return page
-    .locator('.xc-booking-no', { hasText: bookingNo })
-    .locator('xpath=ancestor::*[.//*[contains(@class,"xc-booking-status")]][1]');
+  const exact = new RegExp(`^\s*${bookingNo}\s*$`);
+  return page.locator('.xc-booking-card').filter({ has: page.locator('.xc-booking-no', { hasText: exact }) });
 }
 
 async function signIn(page: Page, identifier: string, password: string, next: string) {
