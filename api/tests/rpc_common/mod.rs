@@ -11,7 +11,7 @@
 //!   recorded step is sent at its recorded `at`;
 //! - the reference-rate source (`web::Data<Arc<dyn RateSource>>`): the Bank of
 //!   Thailand "answers" what v2 recorded for the rate being saved;
-//! - nothing else. Sessions are made by the real routes of ticket T4c.
+//! - nothing else. Sign-in cookies are made by the real routes of ticket T4c.
 //!
 //! What this part of T11a does not dispatch (`saveTransaction`, `documents`,
 //! `ops*`) is not compared. So that the steps after an accepted save still see
@@ -53,15 +53,13 @@ use actix_web::{Error, test};
 use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role_grants::RoleGrants;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
@@ -74,6 +72,7 @@ use xchange::application::workflows::save_transaction::SaveTransactionWorkflow;
 use xchange::bootstrap::AppState;
 use xchange::infrastructure::files::file_service::FileService;
 use xchange::presentation::http::rpc::RpcClock;
+use xchange::presentation::test_callers;
 
 use crate::common::settings;
 use crate::compat_common::{Fixture, IdMap, Person, Step};
@@ -333,15 +332,9 @@ fn take_current_pool() -> sqlx::PgPool {
 }
 
 fn blueprint_role(v2_role: &str) -> &'static str {
-    match v2_role {
-        "FRONT" => "TELLER",
-        "BACKEND" | "MANAGER" => "BRANCH_MANAGER",
-        "RATES" => "RATE_MANAGER",
-        "FINANCE" => "FINANCE",
-        "SYSTEM" => "ADMIN",
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => "VERIFICATION_REVIEWER",
-        other => panic!("unmapped v2 staff role: {other}"),
-    }
+    test_callers::v2_staff_roles(v2_role)
+        .unwrap_or_else(|| panic!("unmapped v2 staff role: {v2_role}"))[0]
+        .as_str()
 }
 
 async fn xc_organization_id(pool: &sqlx::PgPool) -> String {
@@ -788,14 +781,14 @@ pub fn one_of_each_role() -> Vec<Person> {
         branch_id: None,
         must_change: false,
     }];
-    for (i, role) in Role::STAFF.iter().enumerate() {
+    for (i, (role, _)) in test_callers::V2_STAFF.iter().enumerate() {
         people.push(Person {
-            key: role.as_str().to_string(),
+            key: (*role).to_string(),
             kind: "staff".to_string(),
             id: format!("00000000-0000-4000-8000-0000000000{:02x}", i + 1),
             username: format!("role{i}"),
             name: format!("Somebody {i}"),
-            role: role.as_str().to_string(),
+            role: (*role).to_string(),
             branch_id: Some(MAIN.to_string()),
             must_change: false,
         });
@@ -886,16 +879,16 @@ pub fn call_of(fixture: &Fixture, step: &Step, cookies: &Cookies, payload: Optio
 pub fn actor_of(fixture: &Fixture, step: &Step) -> Option<Actor> {
     let person = fixture.sender(step)?;
     if person.is_owner() {
-        return Some(Actor::owner("owner"));
+        return Some(test_callers::owner("owner"));
     }
     if person.must_change {
         return None;
     }
-    Actor::staff(
-        person.id.clone(),
-        Role::parse(&person.role)?,
+    Some(test_callers::staff(
+        &person.id,
+        test_callers::v2_staff_roles(&person.role)?,
         BranchId::new(person.branch_id.clone()?),
-    )
+    ))
 }
 
 /// The organisation a password session's user is in (B1, design §3.3): any one name, because
@@ -904,19 +897,35 @@ pub const ORGANIZATION: &str = "XC";
 
 /// The rule a route asks once every route is on `Policy::authorize` (OR-4b, #767; design §4.2):
 /// the caller as B1 maps them (OWNER → EXECUTIVE + ADMIN organisation-wide, an employee's role on
-/// their branch), naming no branch. The custody rows (`Need::Custody`, #582) stay on
-/// `Policy::allow`.
+/// their branch), naming no branch.
 pub fn route_rule(
     actor: Option<&Actor>,
     entry: EntryPath,
     action: &str,
 ) -> Result<(), PolicyError> {
     let action = Action::new(action);
-    if Policy::need(entry, &action) == Some(Need::Custody) {
-        return Policy::allow(actor, entry, &action);
-    }
-    let user = actor.map(|a| actor_from_v3(a, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH));
-    Policy::authorize(user.as_ref(), entry, &action, None, Utc::now()).map(|_| ())
+    Policy::authorize(actor, entry, &action, None, Utc::now()).map(|_| ())
+}
+
+fn v2_policy_verdict(step: &Step, entry: EntryPath, action: &Action) -> Result<(), PolicyError> {
+    let err = match (step.status, step.error()) {
+        (Some(401), Some(SIGN_IN)) => PolicyError::SignIn,
+        (Some(401), Some(EMPLOYEE_AUTH_REQUIRED)) => PolicyError::EmployeeAuthRequired,
+        (Some(400), Some(INVALID_REQUEST)) if Policy::need(entry, action).is_none() => {
+            PolicyError::InvalidRequest
+        }
+        (Some(400), Some(ROLE_NOT_ALLOWED_STAFF)) => PolicyError::RoleNotAllowed,
+        (Some(400), Some(ROLE_NOT_ALLOWED_RPC)) => PolicyError::RoleNotAllowedHere,
+        (Some(400), Some(FRONT_ONLY)) => PolicyError::FrontOnly,
+        (Some(400), Some("บทบาทนี้ไม่มีสิทธิ์อ่านเอกสารลูกค้า")) => {
+            PolicyError::DocumentsNotReadable
+        }
+        (Some(400), Some("Owner or Rates access required.")) => PolicyError::KioskOwnerOrRates,
+        (Some(400), Some("Staff access required.")) => PolicyError::KioskStaff,
+        (Some(400), Some("Unknown kiosk action.")) => PolicyError::KioskUnknown,
+        _ => return Ok(()),
+    };
+    Err(err)
 }
 
 fn text_of(value: &Value, key: &str) -> String {
@@ -995,7 +1004,7 @@ pub enum Rule {
     /// applied: v3 saved nothing for it, so it is held to v2's answer with this
     /// `requestResolution` (`CANCELLED` where v2 said `APPLIED`).
     ResolvedAs(&'static str),
-    /// A caller v2's `Policy::allow` refused and RBAC §11.2 (`RoleGrants`, `rbac-groups.md` §11.2,
+    /// A caller v2 refused at the policy gate and RBAC §11.2 (`RoleGrants`, `rbac-groups.md` §11.2,
     /// #3659) lets through: sent through HTTP, held to not be the role refusal v2 recorded, and
     /// counted in [`Tally::widened`].
     Widened(PolicyError),
@@ -1006,7 +1015,7 @@ pub enum Rule {
     OwnerNoOpenShift(&'static str),
 }
 
-/// Recorded steps where v2's `Policy::allow` refused the caller and RBAC §11.2 (`RoleGrants`,
+/// Recorded steps where v2 refused the caller at the policy gate and RBAC §11.2 (`RoleGrants`,
 /// `rbac-groups.md` §11.2, #3659) widens the caller's role so `Policy::authorize` lets them
 /// through: `(fixture, step, permission)`.
 pub const WIDENED_BY_11_2: &[(&str, usize, Permission)] = &[
@@ -1337,7 +1346,7 @@ impl<'f> Replay<'f> {
                     sentence: EMPLOYEE_AUTH_REQUIRED,
                 };
             }
-            let v2 = Policy::allow(actor.as_ref(), entry, &Action::new(&action));
+            let v2 = v2_policy_verdict(step, entry, &Action::new(&action));
             // the staff route reads the staff session only: the owner's is nobody there
             let caller = actor.as_ref().filter(|_| {
                 !(entry == EntryPath::StaffRpc
@@ -1354,14 +1363,14 @@ impl<'f> Replay<'f> {
                         .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
                     {
                         let caller = caller.expect("a widened caller is signed in");
-                        let user = actor_from_v3(caller, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH);
                         assert!(
-                            user.roles
+                            caller
+                                .roles
                                 .iter()
                                 .any(|r| RoleGrants::of(r.role.as_str()).contains(permission)),
                             "{}: listed in WIDENED_BY_11_2 for {permission:?}, which {:?} lacks",
                             self.label(step),
-                            caller.role()
+                            caller.roles
                         );
                         return Rule::Widened(v2_refusal);
                     }
@@ -1374,9 +1383,10 @@ impl<'f> Replay<'f> {
                     // OR-7.m S-D (#3700, ruling #2, D-4): a Blueprint staff caller's named branch
                     // is authorised by their roles; v2's own-branch rule was the password
                     // session's alone.
-                    if let (Some(own), Some(named)) =
-                        (caller.and_then(Actor::branch_id), named_branch_of(step))
-                        && &named != own
+                    if let (Some(own), Some(named)) = (
+                        caller.and_then(|c| c.roles.iter().find_map(|r| r.branch.as_ref())),
+                        named_branch_of(step),
+                    ) && &named != own
                     {
                         if Policy::need(entry, &Action::new(&action)) == Some(Need::Public) {
                             let sentence = if BranchId::is_well_formed(named.as_str()) {

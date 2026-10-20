@@ -48,12 +48,12 @@ use rpc_common::{
 };
 use serde_json::{Value, json};
 use snapshot_common::time;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::application::compat::envelope::RpcRoute;
 use xchange::presentation::http::rpc::registered_actions;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 
@@ -787,14 +787,13 @@ async fn the_staff_view_lists_the_active_employees_of_the_branch_in_the_order_ma
 
 fn actor_of(person: &Person) -> Actor {
     if person.is_owner() {
-        return Actor::owner("owner");
+        return test_callers::owner("owner");
     }
-    Actor::staff(
-        person.id.clone(),
-        Role::parse(&person.role).expect("a role"),
+    test_callers::staff(
+        &person.id,
+        test_callers::v2_staff_roles(&person.role).expect("a role"),
         BranchId::new(person.branch_id.clone().expect("a branch")),
     )
-    .expect("an employee")
 }
 
 /// The refusals a route gives for who is asking, before any use case runs.
@@ -822,8 +821,8 @@ async fn ask(app: &App, cookies: &Cookies, path: &str, action: &str, who: &str) 
 /// - every recorded refusal for who is asking is answered to each role it was
 ///   said to, in status and sentence;
 /// - every other recorded refusal is the business of a file replayed above;
-/// - and for every one of the ten roles on both routes the gate is exactly
-///   `Policy::allow` with that route's entry path.
+/// - and for every one of the ten roles on both routes the gate is `route_rule`
+///   with that route's entry path.
 #[actix_web::test]
 async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
     let index = Index::load();
