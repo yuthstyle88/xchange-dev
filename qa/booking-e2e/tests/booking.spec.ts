@@ -156,55 +156,73 @@ test.describe.serial('#1683 booking', () => {
     }
     await shot(page, 'admin-1b-booking-slots-xcb');
 
-    // Capacity: a slot two days ahead at 09:00 has no bookings from this suite.
     const day = new Date(Date.now() + 7 * 3600_000 + 2 * 24 * 3600_000).toISOString().slice(0, 10);
-    const slot = page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first();
-    await expect(slot).toBeVisible({ timeout: 15_000 });
-    const capInput = slot.locator('input[name="slotCapacity"]');
-    const before = await capInput.inputValue();
-    await capInput.fill('2');
-    await slot.locator('.slot-capacity-control button').click();
-    await page.reload();
-    await expect(page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first()
-      .locator('input[name="slotCapacity"]')).toHaveValue('2', { timeout: 15_000 });
-    await shot(page, 'admin-2-capacity-2');
-    console.log(`[admin] slot ${day} 09:00 capacity ${before} -> 2`);
-
-    // Closure: a date five days ahead.
     const closed = new Date(Date.now() + 7 * 3600_000 + 5 * 24 * 3600_000).toISOString().slice(0, 10);
-    await page.locator('input[name="closedOn"]').fill(closed);
-    await page.locator('input[name="reason"]').fill('e2e closure');
-    await page.locator('.closures-form button').click();
-    await expect(page.locator('.closure-item', { hasText: closed })).toBeVisible({ timeout: 15_000 });
-    await shot(page, 'admin-3-closure-added');
+    const slotOn = () => page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first();
+    const SEED_CAPACITY = '4'; // deploy/server/seed-test-booking.sh
 
-    // C02 as the customer: the closed date should offer no slot.
-    const cust = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 430, height: 932 } });
-    await signIn(cust, users.customer.phone, users.customer.password, '/app/book');
-    await cust.getByTestId('branch-select').selectOption(users.branch);
-    await cust.getByTestId('date-input').fill(closed);
-    await cust.waitForLoadState('networkidle');
-    const open = await cust.locator('[data-testid="slot-option"]:not([disabled])').count();
-    await shot(cust, 'admin-4-c02-closed-date');
-    if (open > 0) console.log(`[admin] FINDING: C02 still offers ${open} open slot(s) on the closed date ${closed} (closureAdd does not close existing slots at da38eda4; main fixes it)`);
-    else console.log(`[admin] C02 offers no slot on the closed date ${closed}`);
-    await cust.close();
+    // Start clean: an earlier failed run may have left its closure or capacity behind.
+    if (await page.locator('.closure-item', { hasText: 'e2e closure' }).count()) {
+      for (const item of await page.locator('.closure-item', { hasText: 'e2e closure' }).all()) await item.getByRole('button').click();
+      await expect(page.locator('.closure-item', { hasText: 'e2e closure' })).toHaveCount(0, { timeout: 15_000 });
+      console.log('[admin] removed a leftover e2e closure');
+    }
+    await expect(slotOn()).toBeVisible({ timeout: 15_000 });
+    if ((await slotOn().locator('input[name="slotCapacity"]').inputValue()) !== SEED_CAPACITY) {
+      await slotOn().locator('input[name="slotCapacity"]').fill(SEED_CAPACITY);
+      await slotOn().locator('.slot-capacity-control button').click();
+      await page.reload();
+      console.log(`[admin] reset a leftover capacity on ${day} to ${SEED_CAPACITY}`);
+    }
 
-    // Restore: remove the closure, put the capacity back.
-    await page.locator('.closure-item', { hasText: closed }).getByRole('button').click();
-    await expect(page.locator('.closure-item', { hasText: closed })).toHaveCount(0, { timeout: 15_000 });
-    const again = page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first();
-    await again.locator('input[name="slotCapacity"]').fill(before);
-    await again.locator('.slot-capacity-control button').click();
-    await page.reload();
-    await expect(page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first()
-      .locator('input[name="slotCapacity"]')).toHaveValue(before, { timeout: 15_000 });
-    console.log(`[admin] restored: closure ${closed} removed, capacity back to ${before}`);
-    const original = startBranch.replace(/^สาขา\s*|^Branch\s*/i, '').trim();
-    if (original && !/XC-B/.test(startBranch)) {
-      await page.locator('.account-bar button[aria-haspopup="menu"]').click();
-      await page.getByRole('menuitemradio', { name: original }).click();
-      console.log(`[admin] session branch back to "${original}"`);
+    try {
+      // Capacity: a slot two days ahead at 09:00 has no bookings from this suite.
+      await slotOn().locator('input[name="slotCapacity"]').fill('2');
+      await slotOn().locator('.slot-capacity-control button').click();
+      await page.reload();
+      await expect(slotOn().locator('input[name="slotCapacity"]')).toHaveValue('2', { timeout: 15_000 });
+      await shot(page, 'admin-2-capacity-2');
+      console.log(`[admin] slot ${day} 09:00 capacity ${SEED_CAPACITY} -> 2`);
+
+      // Closure: a date five days ahead.
+      await page.locator('input[name="closedOn"]').fill(closed);
+      await page.locator('input[name="reason"]').fill('e2e closure');
+      await page.locator('.closures-form button').click();
+      await expect(page.locator('.closure-item', { hasText: closed })).toBeVisible({ timeout: 15_000 });
+      await shot(page, 'admin-3-closure-added');
+
+      // C02 as the customer: the closed date should offer no slot. Wait for the slots view, not for
+      // networkidle (the app keeps polling, so the network is never idle).
+      const cust = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 430, height: 932 } });
+      try {
+        await signIn(cust, users.customer.phone, users.customer.password, '/app/book');
+        await cust.getByTestId('branch-select').selectOption(users.branch);
+        const slotsLoaded = cust.waitForResponse((r) => r.url().includes('booking_slots'), { timeout: 15_000 }).catch(() => null);
+        await cust.getByTestId('date-input').fill(closed);
+        await slotsLoaded;
+        await cust.waitForTimeout(1000);
+        const open = await cust.locator('[data-testid="slot-option"]:not([disabled])').count();
+        await shot(cust, 'admin-4-c02-closed-date');
+        if (open > 0) console.log(`[admin] FINDING: C02 still offers ${open} open slot(s) on the closed date ${closed} (closureAdd does not close existing slots at da38eda4; main fixes it)`);
+        else console.log(`[admin] C02 offers no slot on the closed date ${closed}`);
+      } finally {
+        await cust.close();
+      }
+    } finally {
+      // Restore always, even when a step above failed.
+      for (const item of await page.locator('.closure-item', { hasText: 'e2e closure' }).all()) await item.getByRole('button').click().catch(() => {});
+      await slotOn().locator('input[name="slotCapacity"]').fill(SEED_CAPACITY).catch(() => {});
+      await slotOn().locator('.slot-capacity-control button').click().catch(() => {});
+      await page.reload();
+      const cap = await slotOn().locator('input[name="slotCapacity"]').inputValue().catch(() => '?');
+      const left = await page.locator('.closure-item', { hasText: 'e2e closure' }).count();
+      console.log(`[admin] restore: capacity on ${day} = ${cap}, e2e closures left = ${left}`);
+      const original = startBranch.replace(/^สาขา\s*|^Branch\s*/i, '').trim();
+      if (original && !/XC-B/.test(startBranch)) {
+        await page.locator('.account-bar button[aria-haspopup="menu"]').click().catch(() => {});
+        await page.getByRole('menuitemradio', { name: original }).click().catch(() => {});
+        console.log(`[admin] session branch back to "${original}"`);
+      }
     }
   });
 });
