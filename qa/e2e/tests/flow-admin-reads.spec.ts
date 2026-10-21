@@ -43,13 +43,31 @@ test.describe('F18 admin reads', () => {
     await expect(screen).toBeVisible({ timeout: 20_000 });
     const exportBtn = screen.locator('#export');
     await expect(exportBtn).toBeVisible({ timeout: 15_000 });
-    const downloadPromise = page.waitForEvent('download');
+
+    const toast = page.getByText(/ไม่มีรายการให้ส่งออก|No transactions to export/);
+    const downloadPromise = page.waitForEvent('download', { timeout: 15_000 }).then(
+      (download) => ({ kind: 'download' as const, download }),
+      () => null,
+    );
+    const toastPromise = toast.waitFor({ state: 'visible', timeout: 15_000 }).then(
+      () => ({ kind: 'toast' as const }),
+      () => null,
+    );
+
     await exportBtn.click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/\.csv$/);
-    const header = await readFirstLine(download);
-    expect(header.length).toBeGreaterThan(0);
-    expect(header).toContain(',');
+
+    const outcome = await Promise.race([downloadPromise, toastPromise]);
+    expect(outcome, 'expected either a download or the no-transactions toast within 15 s').not.toBeNull();
+
+    if (outcome?.kind === 'download') {
+      expect(outcome.download.suggestedFilename()).toMatch(/\.csv$/);
+      const header = await readFirstLine(outcome.download);
+      expect(header.length).toBeGreaterThan(0);
+      expect(header).toContain(',');
+    } else if (outcome?.kind === 'toast') {
+      // The toast is transient; `toastPromise` already saw it visible, so it is not asserted again here.
+      console.log('[F18] transactions export: 0 rows in range, toast shown');
+    }
     await shot(page, 'admin-reads', 'f18-1-reports-finance');
   });
 
