@@ -106,7 +106,7 @@ Recorded on PR 4249: issuecomment-6312118645 (R-1..R-3, R-9), issuecomment-63215
   - The page is opened by a per-ticket secret in the link, never by the request id. That lets a customer who has walked away cancel later, without breaking KS-1.
 - **The branch setting decides** which of the three ticket modes runs. With SMS off, the cancel after the done screen is staff-only, as today.
 
-## 3. Data (migration **approved** by the owner 2026-10-21: *"อนุมัติ migration"*)
+## 3. Data (migration **approved** by the owner: `kiosk_requests.customer_id` in issuecomment-6311349162, `kiosk_settings` in issuecomment-6322650645, *"อนุมัติ"*)
 
 > ~~superseded~~: the current data list is §4.6. Only `kiosk_requests.customer_id` and `kiosk_settings.result_seconds` remain; `idle_seconds`, `ticket_mode` and the kiosk OTP store are dropped.
 
@@ -403,7 +403,7 @@ copies its rules.
 
 **Migrations: only these two** (553782's order, owner-approved):
 - `kiosk_requests.customer_id text NULL` (no FK, as `queue_tickets.customer_id`).
-- `kiosk_settings (branch_id, result_seconds, updated_by, updated_at, version)` (D14). Covered by the §3 approval.
+- `kiosk_settings (branch_id, result_seconds, updated_by, updated_at, version)` (D14). Owner-approved: *"อนุมัติ"* (claude/553782, issuecomment-6322650645).
 
 Renumbered with `scripts/migration-slot.sh next` right before `pr_open`. No backfill.
 
