@@ -389,6 +389,7 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
           page,
           new RegExp(`^/api/campaigns/${encodeURIComponent(campaignId)}/draft$`),
           () => saveBtn.click(),
+          'PUT',
         );
         expect(badScaleRes.ok, `too-many-decimal benefit PUT /draft refused (${lang}): ${badScaleRes.text}`).toBe(false);
         const detailErr = detail.locator('.xc-campaigns-error');
@@ -520,6 +521,7 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         marketing,
         new RegExp(`^/api/campaigns/${encodeURIComponent(campaignId)}/draft$`),
         () => saveBtn.click(),
+        'PUT',
       );
       console.log(`[R9-2] PUT /api/campaigns/${campaignId}/draft -> ${saveRes.text}`);
       expect(saveRes.ok, `PUT /api/campaigns/${campaignId}/draft: ${saveRes.text}`).toBeTruthy();
