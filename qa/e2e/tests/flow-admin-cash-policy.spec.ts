@@ -37,6 +37,23 @@ async function waitCashLimitsReady(page: Page): Promise<void> {
   await expect(page.locator('input[data-action="no-limit"]')).toBeEnabled({ timeout: 20_000 });
 }
 
+async function loadCashLimits(page: Page, nav: () => Promise<unknown>): Promise<void> {
+  // Same-URL `#cash-limits` goto is a same-document hash change (helpers.ts:344-346) that skips `readLimits` (CashLimits.tsx:105).
+  if (String(nav).includes('goto') && page.url() !== 'about:blank') {
+    await page.goto('about:blank');
+  }
+  const viewLoaded = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'GET' &&
+      new URL(r.url()).pathname === '/api/v3/views/cash_limits' &&
+      r.ok(),
+    { timeout: 20_000 },
+  );
+  await nav();
+  await viewLoaded;
+  await waitCashLimitsReady(page);
+}
+
 async function waitCashPolicyReady(page: Page): Promise<void> {
   // web/src/screens/admin/cash-policy/CashPolicy.tsx:173-255
   await expect(page.locator('[data-section="cash-policy"]')).toBeVisible({ timeout: 20_000 });
@@ -72,8 +89,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
     page,
   }) => {
     await signIn(page, 'admin', adminPath('cash-limits'));
-    await page.goto(adminPath('cash-limits'));
-    await waitCashLimitsReady(page);
+    await loadCashLimits(page, () => page.goto(adminPath('cash-limits')));
 
     const noLimitCheckbox = page.locator('input[data-action="no-limit"]');
     const amountInput = page.locator('#cash-limits-amount');
@@ -95,15 +111,13 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
       expect(saved.ok, `PUT /api/cash-limits accepted: ${saved.text}`).toBeTruthy();
       await expect(currentBanner).toContainText(nextAmount, { timeout: 15_000 });
 
-      await page.reload();
-      await waitCashLimitsReady(page);
+      await loadCashLimits(page, () => page.reload());
       await expect(noLimitCheckbox).not.toBeChecked();
       expect(Number(await amountInput.inputValue())).toBe(Number(nextAmount));
       await expect(currentBanner).toContainText(nextAmount);
       await shot(page, 'admin-cash-policy', 'cash-limits-saved');
     } finally {
-      await page.goto(adminPath('cash-limits'));
-      await waitCashLimitsReady(page);
+      await loadCashLimits(page, () => page.goto(adminPath('cash-limits')));
       if (origNoLimit) {
         if (!(await noLimitCheckbox.isChecked())) {
           await noLimitCheckbox.check();
@@ -320,13 +334,11 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   }) => {
     // 1 & 2. cashLimitsSave (CashLimits.tsx:31-37, 134-137, 189): negative limit and >2 decimal places
     await signIn(page, 'admin', adminPath('cash-limits'));
-    await page.goto(adminPath('cash-limits'));
-    await waitCashLimitsReady(page);
+    await loadCashLimits(page, () => page.goto(adminPath('cash-limits')));
 
     for (const lang of ['th', 'en'] as const) {
       await withLang(page, lang);
-      await page.reload();
-      await waitCashLimitsReady(page);
+      await loadCashLimits(page, () => page.reload());
       const noLimitCheckbox = page.locator('input[data-action="no-limit"]');
       if (await noLimitCheckbox.isChecked()) {
         await noLimitCheckbox.uncheck();
