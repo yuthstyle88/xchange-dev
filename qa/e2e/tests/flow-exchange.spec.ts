@@ -116,11 +116,6 @@ test.describe.serial('F6 desk exchange', () => {
         await shot(teller, 'desk', 'exchange-3-payment');
 
         teller.once('dialog', (d) => d.accept());
-        const confirmPromise = posted(teller, /^\/api\/transactions\/[^/]+\/confirm$/, async () => {});
-        const completePromise = posted(teller, /^\/api\/transactions\/[^/]+\/complete$/, async () => {});
-        confirmPromise.catch(() => {});
-        completePromise.catch(() => {});
-
         const createRes = await posted(teller, /^\/api\/transactions$/, () =>
           teller.getByRole('button', { name: /ยืนยันและบันทึกบัญชี|Confirm and save/ }).click(),
         );
@@ -130,7 +125,11 @@ test.describe.serial('F6 desk exchange', () => {
         const txId = String(createdTx.id ?? '');
         expect(txId, `transaction id from POST /api/transactions: ${createRes.text}`).not.toBe('');
 
-        const confirmRes = await confirmPromise;
+        const confirmRes = await posted(
+          teller,
+          new RegExp(`^/api/transactions/${encodeURIComponent(txId)}/confirm$`),
+          async () => {},
+        );
         console.log(`[F6] POST /api/transactions/${txId}/confirm ${confirmRes.text}`);
         expect(confirmRes.ok, `POST /api/transactions/${txId}/confirm: ${confirmRes.text}`).toBeTruthy();
         const confirmedTx = JSON.parse(confirmRes.body) as TransactionAnswer;
@@ -139,7 +138,11 @@ test.describe.serial('F6 desk exchange', () => {
           `POST /api/transactions/${txId}/confirm status: ${confirmRes.text}`,
         ).toBe('CONFIRMED');
 
-        const completeRes = await completePromise;
+        const completeRes = await posted(
+          teller,
+          new RegExp(`^/api/transactions/${encodeURIComponent(txId)}/complete$`),
+          async () => {},
+        );
         console.log(`[F6] POST /api/transactions/${txId}/complete ${completeRes.text}`);
         expect(completeRes.ok, `POST /api/transactions/${txId}/complete: ${completeRes.text}`).toBeTruthy();
         const completedTx = JSON.parse(completeRes.body) as TransactionAnswer;
