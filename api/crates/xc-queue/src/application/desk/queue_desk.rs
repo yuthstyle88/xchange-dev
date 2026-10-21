@@ -19,6 +19,7 @@ use xc_kernel::notification_params::{DisplayValue, NotificationParams};
 use xc_kernel::notifications::{NotificationRequest, Notifications};
 
 use crate::application::status::status_service::StatusService;
+use crate::domain::counter::counter::CounterStatus;
 use crate::domain::repository::{BranchFacts, QueueRepository};
 use crate::domain::ticket::queue_error::QueueError;
 use crate::domain::ticket::queue_event::{EventKind, QueueEvent};
@@ -52,8 +53,10 @@ async fn check_counter_active(
 
     match counter_status {
         None => Err(QueueError::NoOpenShift.into()),
-        Some((s,)) if s == "PAUSED" => Err(QueueError::CounterPaused.into()),
-        _ => Ok(()),
+        Some((s,)) => match CounterStatus::parse(&s) {
+            Some(status) => status.can_call().map_err(Into::into),
+            None => Ok(()),
+        },
     }
 }
 

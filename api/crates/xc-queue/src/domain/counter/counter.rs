@@ -29,6 +29,14 @@ impl CounterStatus {
             _ => None,
         }
     }
+
+    /// A PAUSED counter cannot call (`QueueError::CounterPaused`, §4.3).
+    pub fn can_call(&self) -> Result<(), QueueError> {
+        match self {
+            Self::Active => Ok(()),
+            Self::Paused => Err(QueueError::CounterPaused),
+        }
+    }
 }
 
 /// One row of `queue_counters`.
@@ -44,9 +52,6 @@ pub struct Counter {
 impl Counter {
     /// A PAUSED counter cannot call (`QueueError::CounterPaused`, §4.3).
     pub fn can_call(&self) -> Result<(), QueueError> {
-        match self.status {
-            CounterStatus::Active => Ok(()),
-            CounterStatus::Paused => Err(QueueError::CounterPaused),
-        }
+        self.status.can_call()
     }
 }
