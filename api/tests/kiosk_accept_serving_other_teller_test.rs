@@ -344,7 +344,7 @@ async fn create_waiting_kiosk_request(db: &TestDb) -> (String, String) {
 
     let confirm_ans = call(
         db,
-        None,
+        Some(&format!("TELLER_A@{B01}")),
         Method::POST,
         "/api/kiosk",
         Some(json!({
