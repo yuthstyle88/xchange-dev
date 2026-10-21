@@ -426,6 +426,12 @@ fn not_found(ans: &Answer) {
     assert_eq!(ans.body["error"]["code"], json!("notFound"), "{}", ans.text);
 }
 
+/// `POST /api/kiosk` refusals are `{"error": "<code>"}` (`kiosk.rs` `refuse`), not the v3 shape.
+fn kiosk_not_found(ans: &Answer) {
+    assert_eq!(ans.status, StatusCode::NOT_FOUND, "{}", ans.text);
+    assert_eq!(ans.body, json!({ "error": "notFound" }), "{}", ans.text);
+}
+
 fn keys(v: &Value) -> std::collections::BTreeSet<String> {
     v.as_object().expect("an object").keys().cloned().collect()
 }
@@ -522,7 +528,7 @@ async fn c6_a_fresh_qr_replaces_the_token_and_only_for_the_owner() {
     let new = token_of(&ans.body);
     assert_ne!(new, old);
     assert!(token_matches(&db, &id, &new).await);
-    not_found(&scan(&db, &old).await);
+    kiosk_not_found(&scan(&db, &old).await);
 
     not_found(&reissue(&db, BOB, &id).await);
     not_found(&reissue(&db, ALICE, "no-such-request").await);
