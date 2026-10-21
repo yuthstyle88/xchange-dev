@@ -95,6 +95,10 @@ class FakeRepository implements KioskRepository {
     _enter('customerReceipt');
     return ReceiptModel.fromJson({..._identity, 'image': receiptImage});
   }
+
+  @override
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) =>
+      throw UnimplementedError();
 }
 
 KioskL10n l10n() => KioskL10n.fromJson({

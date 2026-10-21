@@ -80,6 +80,7 @@ class _CancelFakeRepository implements KioskRepository {
     return ReceiptModel.fromJson({..._identity(), 'image': null});
   }
 
+  @override
   Future<RequestIdentity> customerCancel(String id, String cancelToken) async {
     calls.add('customerCancel');
     lastCancelledId = id;

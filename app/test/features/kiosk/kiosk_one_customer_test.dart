@@ -101,6 +101,7 @@ class _Server implements KioskRepository {
 
   // Declared without @override so this file compiles both before and after
   // customerCancel moves onto the KioskRepository interface (#4236).
+  @override
   Future<RequestIdentity> customerCancel(String id, String cancelToken) async {
     calls.add('customerCancel');
     cancels += 1;
