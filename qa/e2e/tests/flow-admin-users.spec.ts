@@ -20,9 +20,9 @@ async function getMarketingUserId(browser: Browser): Promise<string> {
     await signIn(page, 'marketing', '/#campaigns');
     const res = await page.request.get('/api/v3/views/me');
     expect(res.ok(), `GET /api/v3/views/me returned ${res.status()}`).toBe(true);
-    const body = (await res.json()) as { data?: { userId?: string }; userId?: string };
-    const id = body.data?.userId ?? body.userId;
-    expect(id, 'marketing /api/v3/views/me must return userId').toBeTruthy();
+    const body = (await res.json()) as { data?: { id?: string } };
+    const id = body.data?.id;
+    expect(id, 'marketing /api/v3/views/me must return id').toBeTruthy();
     cachedMarketingUserId = id!;
     return id!;
   } finally {
