@@ -51,6 +51,10 @@ qa/e2e/
   tests/flow-holds.spec.ts           QA-F16 (round 7)
   tests/flow-desk-bookings.spec.ts   QA-F17 (round 7)
   tests/flow-admin-reads.spec.ts     QA-F18 (round 7)
+  tests/flow-kiosk-cancel.spec.ts    QA-F19 (round 8)
+  tests/flow-desk-kiosk-cancel.spec.ts  QA-F20 (round 8)
+  tests/flow-booking-reschedule.spec.ts  QA-F21 (round 8)
+  tests/flow-desk-check-in.spec.ts   QA-F22 (round 8)
 ```
 
 `playwright.config.ts` keeps PR 3838's settings (one worker, no retries, phone viewport 430×932 for `/app`, desktop
@@ -202,6 +206,10 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 | F16 customer hold | `cash-shift-transfer.md:87-88`, `:296`; `xchange-v3-wave3-staff.md:53` (S11), `:167` (B9), `:188-189` (C10, C11) | first release any OPEN hold of the test customer whose reason carries the spec's marker (an OPEN hold blocks every save for that customer, `xc-shift/src/application/custody/service.rs:162-168`). The customer's id comes from its own `my_profile.customerId`. The teller on `/staff` › holds: `holds-key` = the id, `holds-find`, the row `[data-customer-id]`, `holds-reason` = marker + run id, `holds-place` (POST `/api/customer-holds`); the row `[data-hold-id]` shows OPEN. The branch manager (release needs VerificationReview, `HoldsCard.tsx:150`) presses `holds-release`, gives a reason in `dialog.xc-dialog`, and the hold shows RELEASED. Release again in `finally` if the test failed between place and release | one RELEASED hold of the test customer |
 | F17 desk bookings | `blueprint/booking-slots.md:73` (B7), `:89`, `:227`, `:240`, `:583` (BK-3: *"the old token finds nothing"*) | the customer books MAIN for **tomorrow** (as F1; seed step 4 makes slots from tomorrow on) and reads its `[data-qr-token]` on `/app/bookings`. The teller on `/desk/bookings`: `input[name=qrToken]`, `lookup-qr` → exactly that booking; `reissue-qr`; looking up the **old** token finds nothing; `cancel` with a reason (`input[name=reason]`, `confirm-cancel`); the customer's `/app/bookings` shows it CANCELLED. Selectors: `web/src/screens/desk/bookings/DeskBookingsScreen.tsx:622-787` | one CANCELLED booking of the test customer; its place is released |
 | F18 admin reads | `blueprint/executive-finance.md:84` (D-8), `:519` (EX-9); `customer-identity-consent.md:35`, `:164` | read-only. (1) Finance on `/#reports`: `#export` → `page.waitForEvent('download')`, a `.csv` with a header row. The same for the employee CSV (`web/src/screens/admin/reports/Reports.tsx:364-372`, `:540-547`). The branch manager sees no export button, or is refused `outOfScope` (`:247`). (2) Admin on `/#customers`: search the test customer's id (`input[type=search]`, `web/src/screens/admin/customers/Customers.tsx:424-430`), one row in `.customers-table`; open its history (`:496-523`) | one EXPORT audit row per download; nothing else |
+| F19 kiosk cancel | `blueprint/kiosk-cancel.md` §2, §3.4–3.5 (owner KC-2, KC-2a; *"การยกเลิก ไม่จำกัดจำนวนดิ"*) | **create the request through the kiosk API**, not a page: `POST /api/kiosk` `quote` then `confirm` on MAIN, both Public, with the payload the kiosk app sends (`app/lib/features/kiosk/infrastructure/data_sources/kiosk_api.dart`). A small foreign amount of `users.currency`. Keep the `cancelToken` from the `confirm` answer. (a) **Staff cancel:** the teller on `/kiosk-queue.html` finds the row, presses `[data-action="cancel-request"]` (`web/src/shared/ui/QueuePanel.tsx:456`), picks a reason in `CancelReasonDialog` (`select[name=reason]`, `textarea[name=note]`, `[data-action="confirm-cancel-request"]`; `OTHER` needs a note), and the row leaves the panel; `status` answers `CANCELLED`. (b) **Customer cancel:** a second request, then `customerCancel` with its token answers `CANCELLED`. The same call with a wrong token is refused with the single sentence *"ยกเลิกคิวที่ตู้ไม่ได้ กรุณาติดต่อพนักงาน"*, and the request stays `WAITING` until (a)'s path cancels it. Every request the spec creates ends `CANCELLED` in `finally` | kiosk requests on MAIN, all CANCELLED, and their tickets CANCELLED |
+| F20 desk kiosk cancel | `kiosk-cancel.md` §3.5 KC-2b | a request created as in F19. The teller accepts it on `/kiosk-queue.html`, then opens `/desk?branch=MAIN&kiosk=<id>`. The entry bar shows the banner and `[data-action="cancel-kiosk-request"]` (`web/src/screens/desk/entries/kiosk/entry.ts:54`). Confirm a reason; the desk reloads to `/desk?branch=MAIN` with no `kiosk=`, and the request answers `CANCELLED`. Opening the same `?kiosk=<id>` again shows *"คำขอนี้ถูกยกเลิกแล้ว"* | one CANCELLED kiosk request and its ticket |
+| F21 booking reschedule | `blueprint/booking-slots.md` Q-B2 (revised 2026-10-21) and #4152 | the customer books MAIN for tomorrow (as F1). On `/app/bookings` the reschedule dialog's date control (`[data-field="serviceDate"] input`, `Bookings.tsx:527-537`) defaults to the booking's date; change it to the day after, pick a slot (`input[name=rescheduleSlot]`, `[data-action=confirm-reschedule]`), and the card shows the new time. Then cancel it, and **cancel shows at any time** (Q-B2 revised). Skip and log if the day after has no OPEN slot | one CANCELLED booking of the test customer |
+| F22 desk check-in | `booking-slots.md:74` (B8), `:208-209` | **precondition:** a MAIN slot **today, later than now**. Seed step 4 makes slots from tomorrow on, so read `booking_slots` for today first and skip-and-log when none is later than now. Then the leftover pre-check of F8 (fail on WAITING tickets). Open the queue only if it is closed. The customer books that slot; the teller on `/desk/bookings` presses `[data-action=check-in]` (`DeskBookingsScreen.tsx:697`), and a BOOKING ticket appears on the board. In `finally`: cancel that ticket with a reason (`TicketActions.tsx:113-140`), and close the queue only if this spec opened it | one CHECKED_IN booking; its BOOKING ticket CANCELLED |
 
 ## 5. Order and data
 
@@ -231,19 +239,14 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 
 ## 6. What the suite cannot do (by hand, with screenshots)
 
-- **The kiosk journey (F13)** on `main` as of round 5: a desk cannot finish a kiosk request. The desk saves with its own
+- **The kiosk journey (F13), completing a request at the desk:** cancel is now testable (F19/F20, round 8), but completing still waits on #4113, which drops G7 so a kiosk request is priced at the current rate. As of round 5: a desk cannot finish a kiosk request. The desk saves with its own
   quote, which G7 refuses (`api/src/application/workflows/exchange/create.rs:227-243`) (the owner ruled 2026-10-21 that
   a kiosk request, like a booking, reserves only a queue place and is priced at the current rate; the G7 change is
   #4113). The customer side is a
   Flutter app on another host, and a kiosk request has no cancel, so its rows cannot be cleaned up. F13 is cut once
   those are fixed.
 - **Round-7 survey, measured on `main` `45fc0b5c`: what stays out, and why.**
-  - **Booking reschedule** (`/app/bookings`): the reschedule dialog asks `booking_slots` with no date
-    (`web/src/screens/customer/bookings/Bookings.tsx:222-224`), and the view then answers only today's slots
-    (`api/src/presentation/http/v3/views/booking_slots.rs:37-58`). A customer can therefore move a booking only to today,
-    and the seed makes no today slots. This is a product gap, ticketed separately; the flow is cut after that fix.
-  - **Desk check-in:** it needs a slot today, later than now (same gap), and an open queue, and it issues a BOOKING
-    ticket that must be cancelled. Cut after the reschedule fix, with the same leftover pre-check as F8.
+  - Booking reschedule and desk check-in are now F21 and F22 (round 8), since #4152 gave the dialog a date.
   - **Admin notices:** they come only from a rate publish, and mark-read can't be undone.
   - **Consent policy:** a text publish is a permanent new version of shared text, and `retentionSet` arms the purge job.
   - **Members segments:** append-only, with no delete, so every run adds a version.
@@ -294,6 +297,11 @@ clean, with no run against a host (E-3).
 | QA-F17 | `flow-desk-bookings.spec.ts` (new file) | logic | Argon |
 | QA-F18 | `flow-admin-reads.spec.ts` (new file) | mechanical | Flash |
 | QA-S7 note | `smoke-staff.spec.ts:46-48`: a teller is **refused** `/staff/report`, as the design says (`staff_report.rs:1-4`: ShiftCloseCertify, FinanceReconcile or OverviewRead, which is EXECUTIVE only). Assert the refusal, not just a comment. On `main` `45fc0b5c` a teller still passes, because `RoleGrants::seed` gives TELLER `(Dashboard, V)`, which expands to OverviewRead (`role_grants.rs:167`, `permission_module.rs:84`). That is #4155, so QA-S7 (#4162) is released after #4155 merges | mechanical | Flash |
+| QA-F19 | `flow-kiosk-cancel.spec.ts` (new file) | logic | Argon |
+| QA-F20 | `flow-desk-kiosk-cancel.spec.ts` (new file) | logic | Argon |
+| QA-F21 | `flow-booking-reschedule.spec.ts` (new file) | logic | Argon |
+| QA-F22 | `flow-desk-check-in.spec.ts` (new file) | logic | Argon |
+| QA-F14c lang | `flow-xapp-profile.spec.ts`: the language select lists exactly `my_profile.offeredLanguages` (#4165, #4216) | mechanical | Flash |
 
 The skeleton (Claude, STEP 2): the `git mv`, `tsconfig.json`, the config's two projects, `helpers.ts` complete, and the
 13 spec files as empty `test.describe` blocks with their area named.
