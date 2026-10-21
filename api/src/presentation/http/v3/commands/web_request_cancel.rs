@@ -7,8 +7,10 @@
 
 use std::path::Path;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
+use pos_error::AppError;
 use serde::{Deserialize, Serialize};
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -19,7 +21,9 @@ use super::web_request_qr::WebRequestRef;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::kiosk::web_request_wiring::web_request_service;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, out_of_scope, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +34,18 @@ pub struct WebRequestCancelled {
 }
 
 pub struct WebRequestCancel(pub WebRequestService);
+
+fn refusal(err: AppError) -> V3Error {
+    match err {
+        AppError::NotFound { .. } => {
+            V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
+        }
+        AppError::Domain(sentence) => {
+            V3Error::new("notCancellable", None, sentence, StatusCode::CONFLICT)
+        }
+        _ => server_error(),
+    }
+}
 
 impl CommandAction for WebRequestCancel {
     const NAME: &'static str = "webRequestCancel";
@@ -45,10 +61,17 @@ impl CommandAction for WebRequestCancel {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        key: IdempotencyKey,
+        _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input, key, &self.0);
-        todo!("KWQ-C7: WebRequestService::cancel")
+        let customer = who.customer_id.as_deref().ok_or_else(out_of_scope)?;
+        self.0
+            .cancel_in(tx, branch, customer, &input.id, Utc::now())
+            .await
+            .map_err(refusal)?;
+        Ok(WebRequestCancelled {
+            request_id: input.id,
+            status: "CANCELLED".to_owned(),
+        })
     }
 }
 
