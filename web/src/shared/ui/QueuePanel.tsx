@@ -12,10 +12,12 @@ import {
   type PageParams,
   type ViewParams,
 } from '../api/client';
+import { cancelKioskRequest } from '../api/kiosk-cancel';
 import { fill, locale, t } from '../i18n';
 import { wordedError } from '../i18n/worded-error';
 import { useQueueStore } from '../queue/queue-store';
 import type { KioskQueueRow } from '../queue/wire';
+import { CancelReasonDialog, type StaffCancelReason } from './CancelReasonDialog';
 import { MoneyText } from './MoneyText';
 import './queue-panel.css';
 
@@ -39,6 +41,8 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
   const [readError, setReadError] = createSignal<(() => string) | string | null>(null);
   const [refusalMessage, setRefusalMessage] = createSignal<(() => string) | string | null>(null);
   const [claiming, setClaiming] = createSignal(false);
+  const [cancelTargetId, setCancelTargetId] = createSignal<string | null>(null);
+  const [rowRefusals, setRowRefusals] = createSignal<Record<string, () => string>>({});
   const [nowTick, setNowTick] = createSignal(0);
 
   let cursorStack: Array<string | undefined> = [];
@@ -148,6 +152,8 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
       lastQueueVersion = undefined;
       setReadError(null);
       setRefusalMessage(null);
+      setCancelTargetId(null);
+      setRowRefusals({});
       if (isShown) {
         prevShown = true;
         void readQueue({ forced: true });
@@ -186,6 +192,8 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
     setActiveTab(tab);
     setReadError(null);
     setRefusalMessage(null);
+    setCancelTargetId(null);
+    setRowRefusals({});
     cursorStack = [];
     currentBefore = undefined;
     setPage(1);
@@ -251,6 +259,36 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
       await readQueue({ forced: false });
     } finally {
       setClaiming(false);
+    }
+  };
+
+  const confirmCancel = async (choice: { reason: StaffCancelReason; note?: string }) => {
+    const rowId = cancelTargetId();
+    setCancelTargetId(null);
+    if (!rowId) return;
+    const branchAtStart = props.branch;
+    const tabAtStart = activeTab();
+    setRowRefusals((prev) => {
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
+
+    try {
+      await cancelKioskRequest(api, {
+        id: rowId,
+        branchId: branchAtStart,
+        reason: choice.reason,
+        ...(choice.note !== undefined ? { note: choice.note } : {}),
+      });
+      if (props.branch === branchAtStart && activeTab() === tabAtStart) {
+        setRows((prev) => prev.filter((r) => r.id !== rowId));
+        await readQueue({ forced: false });
+      }
+      await store().refresh();
+    } catch (err: unknown) {
+      if (props.branch !== branchAtStart || activeTab() !== tabAtStart) return;
+      setRowRefusals((prev) => ({ ...prev, [rowId]: () => wordedError(err) }));
     }
   };
 
@@ -412,7 +450,20 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
                       {fill(t('queue.row.workingBy'), { staff: row.staff })}
                     </p>
                   </Show>
+                  <Show when={row.status !== 'COMPLETED'}>
+                    <button
+                      type="button"
+                      data-action="cancel-request"
+                      disabled={readError() !== null || claiming()}
+                      onClick={() => setCancelTargetId(row.id)}
+                    >
+                      {t('kioskCancel.action')}
+                    </button>
+                  </Show>
                 </div>
+                <Show when={rowRefusals()[row.id]}>
+                  {(refusal) => <p role="alert">{refusal()()}</p>}
+                </Show>
               </article>
             )}
           </For>
@@ -436,6 +487,11 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
           {t('queue.pager.next')}
         </button>
       </nav>
+      <CancelReasonDialog
+        open={cancelTargetId() !== null}
+        onConfirm={(choice) => void confirmCancel(choice)}
+        onCancel={() => setCancelTargetId(null)}
+      />
     </div>
   );
 }
