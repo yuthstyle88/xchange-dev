@@ -142,6 +142,17 @@ async fn the_closing_is_part_of_the_transaction_until_it_commits() {
         .await
         .expect("disable inside the transaction");
 
+    let inside: (String, i32) =
+        sqlx::query_as("SELECT status, version FROM users WHERE id = $1::uuid")
+            .bind(&id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("read inside the transaction");
+    assert_eq!(
+        inside,
+        ("DISABLED".to_owned(), 2),
+        "closed inside the transaction"
+    );
     assert_eq!(row(&db, &id).await, ("ACTIVE".to_owned(), 1));
     assert_eq!(audit(&db, &id).await, vec![]);
 
