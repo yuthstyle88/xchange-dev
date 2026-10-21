@@ -12,6 +12,7 @@ import type {
 import type { MeView } from '../../../shared/api/generated/me';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { parseRequestQr } from '../../../shared/queue/request-qr';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { en, th } from './i18n';
 import './desk-bookings.css';
@@ -222,7 +223,31 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   async function handleQrLookup() {
-    const q = qrInput().trim();
+    const raw = qrInput();
+    const requestToken = parseRequestQr(raw);
+    if (requestToken !== null) {
+      readErrorActive = false;
+      setErrorMessage(null);
+      setRetryAction(null);
+      const branch = branchId().trim();
+      try {
+        const res = await api.post<
+          { action: 'findByToken'; payload: { branchId: string; token: string } },
+          { requestId: string }
+        >('/api/kiosk', {
+          action: 'findByToken',
+          payload: { branchId: branch, token: requestToken },
+        });
+        window.location.assign(
+          `/desk?branch=${encodeURIComponent(branch)}&kiosk=${encodeURIComponent(res.requestId)}`,
+        );
+      } catch (err) {
+        readErrorActive = false;
+        setErrorMessage(deskBookingError(err));
+      }
+      return;
+    }
+    const q = raw.trim();
     if (q !== loadedQr) {
       setVersion(undefined);
     }
