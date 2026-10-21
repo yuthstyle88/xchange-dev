@@ -123,6 +123,8 @@ mod k2063_admin_shifts_overflow_test;
 mod kiosk_accept_serving_other_teller_test;
 #[path = "kiosk_cancel_route_test.rs"]
 mod kiosk_cancel_route_test;
+#[path = "kiosk_day_close_wiring_test.rs"]
+mod kiosk_day_close_wiring_test;
 #[path = "kiosk_quote_overflow_test.rs"]
 mod kiosk_quote_overflow_test;
 #[path = "kiosk_role_home_test.rs"]
