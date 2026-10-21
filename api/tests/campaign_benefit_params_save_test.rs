@@ -397,3 +397,67 @@ async fn save_without_rules_keeps_the_stored_rules() {
 
     room.finish().await;
 }
+
+// ── #4139 row 6: eligibility may not carry `requiresCoupon` ──
+//
+// Written before the implementation by the BE-R6 sub-controller (claude/studio-claude-8). Do not edit, delete or
+// weaken. The rule's own `requiresCoupon` (the column) is the only source; an eligibility JSON naming it is refused,
+// not silently dropped (#2121), and nothing is written.
+
+#[actix_web::test]
+async fn an_eligibility_carrying_requires_coupon_is_refused_naming_the_field() {
+    for flag in [true, false] {
+        let room = TestDb::start().await;
+        let (campaign_id, version_id) = seed_draft(&room.pool).await;
+        let mut r = rule("RATE_IMPROVEMENT", json!({ "delta": "0.10" }));
+        r["eligibility"]["requiresCoupon"] = json!(flag);
+
+        let ans = save(&room, campaign_id, &body_with(Some(vec![r]))).await;
+
+        assert_eq!(
+            ans.status,
+            StatusCode::BAD_REQUEST,
+            "flag {flag}: {}",
+            ans.text
+        );
+        assert_eq!(ans.code(), "validationFailed", "{}", ans.text);
+        assert_eq!(
+            ans.field(),
+            "rules.eligibility.requiresCoupon",
+            "{}",
+            ans.text
+        );
+        assert_eq!(
+            stored_rules(&room.pool, version_id).await,
+            vec![(
+                "RATE_IMPROVEMENT".to_owned(),
+                "PRICE".to_owned(),
+                serde_json::from_str::<Value>(SEEDED_CALC).expect("seed calc"),
+                1
+            )],
+            "a refused save must not replace or add rules"
+        );
+        room.finish().await;
+    }
+}
+
+#[actix_web::test]
+async fn the_rules_own_requires_coupon_still_saves_into_the_column() {
+    let room = TestDb::start().await;
+    let (campaign_id, version_id) = seed_draft(&room.pool).await;
+    let mut r = rule("RATE_IMPROVEMENT", json!({ "delta": "0.10" }));
+    r["requiresCoupon"] = json!(true);
+
+    let ans = save(&room, campaign_id, &body_with(Some(vec![r]))).await;
+
+    assert_eq!(ans.status, StatusCode::OK, "{}", ans.text);
+    let column: bool = sqlx::query_scalar(
+        "SELECT requires_coupon FROM benefit_rules WHERE campaign_version_id = $1 AND rule_no = 1",
+    )
+    .bind(version_id)
+    .fetch_one(&room.pool)
+    .await
+    .expect("the saved rule");
+    assert!(column, "the rule's requiresCoupon is stored in the column");
+    room.finish().await;
+}

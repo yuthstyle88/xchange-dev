@@ -595,12 +595,12 @@ pub fn line_conditions(eligibility: &Eligibility) -> LineConditions;
 pub fn summary(rule: &BenefitRule, registry: &CalculatorRegistry) -> Result<BenefitSummary, ParamError>;
 ```
 
-- **`shown_on_app`** calls `rule.eligibility.check` on a copy whose line conditions (`branches`, `currencies`, `shop_side`, `min_thb`) are cleared. The `EligibilityContext` (`eligibility.rs:43`) has `channel = "APP"`, the customer's id and tier, `in_segment` = the version's snapshot is in `segment_memberships`, `marketing_consent`, `is_referred`, and `has_coupon = false`. `Ok` ⇒ shown. So:
+- **`shown_on_app`** calls `rule.eligibility.check` on a copy whose line conditions (`branches`, `currencies`, `shop_side`, `min_thb`) are cleared. The `EligibilityContext` (`eligibility.rs:43`) has `channel = "APP"`, the customer's id and tier, `in_segment` = the version's snapshot is in `segment_memberships`, `marketing_consent`, and `is_referred`. `Ok` ⇒ shown. So:
   - `channels` absent, or containing `APP`;
   - `tiers` set ⇒ the customer's tier is in it (no tier ⇒ hidden);
   - `segment` ⇒ in the version's snapshot **and** MARKETING consent granted (D-13);
   - `referred` ⇒ the customer is referred (D-12);
-  - `requires_coupon` (either `eligibility.requiresCoupon` or the `benefit_rules.requires_coupon` column) ⇒ hidden: such a rule is usable only with a code, and a personal one is listed under (a).
+  - `requires_coupon` (the `benefit_rules.requires_coupon` column is the only source; #4139) ⇒ hidden: such a rule is usable only with a code, and a personal one is listed under (a).
 - **`line_conditions`** copies `min_thb`, `currencies` and `shop_side`. The screen words them; the view evaluates none of them.
 - **`summary`**: an unknown `benefit_type` is `ParamError { field: "benefitType" }`. It then calls that calculator's `validate_params` (D-6a) and reads `delta`, `percent`, `amount` and `fixed` with `decimal_param` (`calculator.rs:31`). The same parse the quote uses, so a rule the desk refuses is never described.
 

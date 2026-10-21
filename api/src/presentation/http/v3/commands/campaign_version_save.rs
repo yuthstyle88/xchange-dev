@@ -244,6 +244,20 @@ impl CommandAction for CampaignVersionSaveCommand {
             let registry = CalculatorRegistry::new();
             let mut checked = Vec::with_capacity(rules.len());
             for (idx, rule) in rules.iter().enumerate() {
+                if rule
+                    .eligibility
+                    .as_object()
+                    .is_some_and(|obj| obj.contains_key("requiresCoupon"))
+                {
+                    return Err(V3Error::new(
+                        "validationFailed",
+                        Some("rules.eligibility.requiresCoupon"),
+                        format!(
+                            "rules[{idx}]: requiresCoupon must be set on the rule, not in eligibility"
+                        ),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
                 let Some(calc) = registry.get(&rule.benefit_type) else {
                     return Err(V3Error::new(
                         "validationFailed",

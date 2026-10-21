@@ -90,14 +90,16 @@ fn row_6_tier_check() {
 
 #[test]
 fn row_7_coupon_referred_segment_flags() {
+    // Restated for #4139 by the BE-R6 sub-controller (claude/studio-claude-8): "requires a coupon" is the rule's
+    // `requires_coupon` column, checked by the engine (`benefit_engine_test.rs`
+    // `without_a_coupon_the_column_alone_decides`), not an `Eligibility` field; this row keeps the referred and
+    // segment flags.
     let rule = Eligibility {
-        requires_coupon: true,
         referred: true,
         segment: true,
         ..Default::default()
     };
     let ctx_ok = EligibilityContext {
-        has_coupon: true,
         is_referred: true,
         customer_id: Some("C123"),
         in_segment: true,
@@ -105,12 +107,6 @@ fn row_7_coupon_referred_segment_flags() {
         ..Default::default()
     };
     assert_eq!(rule.check(&ctx_ok), Ok(()));
-
-    let ctx_no_coupon = EligibilityContext {
-        has_coupon: false,
-        ..ctx_ok.clone()
-    };
-    assert_eq!(rule.check(&ctx_no_coupon), Err(SkipReason::CouponInvalid));
 
     let ctx_not_referred = EligibilityContext {
         is_referred: false,
