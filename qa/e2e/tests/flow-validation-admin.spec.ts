@@ -128,6 +128,22 @@ function futureDateBangkok(daysAhead: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Waits for one PUT whose path matches while `act` runs; mirrors `posted` (`helpers.ts:365-371`) for PUT commands. */
+async function putted(
+  page: Page,
+  path: RegExp,
+  act: () => Promise<void>,
+): Promise<{ ok: boolean; text: string; body: string }> {
+  const res = page.waitForResponse(
+    (r) => r.request().method() === 'PUT' && path.test(new URL(r.url()).pathname),
+    { timeout: 15_000 },
+  );
+  await act();
+  const r = await res;
+  const body = await r.text().catch(() => '');
+  return { ok: r.ok(), text: `${r.status()} ${body.slice(0, 300)}`, body };
+}
+
 /**
  * Sets an arbitrary (including empty or unrecognized) value on `select[name="reasonCode"]`
  * in `VerificationScreen.tsx:960` and dispatches `change` so both DOM ref (`reasonSelectRef.value`)
@@ -371,6 +387,33 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
 
     for (const lang of STAFF_LANG_LIST) {
       await withLang(page, lang);
+      await page.goto('about:blank');
+
+      const initPublishedRes = page.waitForResponse(
+        (r) => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/v3/views/published_rates',
+        { timeout: 20_000 },
+      );
+      let initSawDraftsList = false;
+      const initDraftsRes = page.waitForResponse(
+        (r) => {
+          if (r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/v3/views/rate_drafts') {
+            initSawDraftsList = true;
+            return true;
+          }
+          return false;
+        },
+        { timeout: 20_000 },
+      );
+      const initDraftDetailRes = page
+        .waitForResponse(
+          (r) =>
+            initSawDraftsList &&
+            r.request().method() === 'GET' &&
+            new URL(r.url()).pathname === '/api/v3/views/rate_draft',
+          { timeout: 15_000 },
+        )
+        .catch(() => null);
+
       await page.goto('/#rates');
 
       // Screen root `.admin-rates-screen` (web/src/screens/admin/rates/Rates.tsx:313).
@@ -385,24 +428,79 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
       const draftCard = screen.locator('.rates-section').filter({ has: page.locator('button.btn-new-draft') });
       await expect(draftCard).toBeVisible({ timeout: 20_000 });
 
+      // Wait for initial `readPublished` and `readDrafts` (plus follow-up `rate_draft` if an open draft exists,
+      // Rates.tsx:122-160, :224-230) before checking `saveLinesBtn` or clicking `btn-new-draft`.
+      const [, draftsResp] = await Promise.all([initPublishedRes, initDraftsRes]);
+      const draftsJson = (await draftsResp.json().catch(() => null)) as {
+        data?: { drafts?: Array<{ id: string; status: string }> };
+      } | null;
+      const openDraft = draftsJson?.data?.drafts?.find((d) =>
+        ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'].includes(d.status),
+      );
+      if (openDraft) {
+        await initDraftDetailRes;
+      }
+      await expect(draftCard.locator('button.btn-new-draft')).toBeEnabled({ timeout: 15_000 });
+
       // Ensure an editable DRAFT is open so `rateDraftEdit` (`button.btn-save-lines`, RatesDraftCard.tsx:382) is rendered.
       // If none is editable yet, create one via `button.btn-new-draft` (`POST /api/rate-drafts`, RatesDraftCard.tsx:157)
       // and tag its first AUTO line reason with `runTag` via `PUT /api/rate-drafts/{id}` (RatesDraftCard.tsx:278).
       const saveLinesBtn = draftCard.locator('button.btn-save-lines');
+      if (openDraft?.status === 'DRAFT') {
+        await expect(saveLinesBtn).toBeVisible({ timeout: 15_000 });
+        await expect(saveLinesBtn).toBeEnabled({ timeout: 15_000 });
+      }
       if (!(await saveLinesBtn.isVisible().catch(() => false))) {
         allowDraftSetupWrites = true;
         try {
+          // `handleNewDraft` (`RatesDraftCard.tsx:139-176`) calls `POST /api/rate-references/fetch`,
+          // `POST /api/rate-drafts`, `GET /api/v3/views/rate_draft` (:160), then `readDrafts` (`Rates.tsx:137-160`)
+          // which calls `GET /api/v3/views/rate_drafts` (:139) and `GET /api/v3/views/rate_draft` a second time (:149)
+          // before `guarded` clears `busy()` (`Rates.tsx:89-96`). Wait until all views answer and `btn-save-lines`
+          // is enabled before touching the draft lines (#4334).
+          let sawNewDraftsList = false;
+          const newDraftDetailFirst = page.waitForResponse(
+            (r) =>
+              !sawNewDraftsList &&
+              r.request().method() === 'GET' &&
+              new URL(r.url()).pathname === '/api/v3/views/rate_draft',
+            { timeout: 15_000 },
+          );
+          const newDraftsList = page.waitForResponse(
+            (r) => {
+              if (r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/v3/views/rate_drafts') {
+                sawNewDraftsList = true;
+                return true;
+              }
+              return false;
+            },
+            { timeout: 15_000 },
+          );
+          const newDraftDetailSecond = page.waitForResponse(
+            (r) =>
+              sawNewDraftsList &&
+              r.request().method() === 'GET' &&
+              new URL(r.url()).pathname === '/api/v3/views/rate_draft',
+            { timeout: 15_000 },
+          );
+
           const created = await posted(page, /^\/api\/rate-drafts$/, () =>
             draftCard.locator('button.btn-new-draft').click(),
           );
           expect(created.ok, `POST /api/rate-drafts (${lang}): ${created.text}`).toBeTruthy();
+          await Promise.all([newDraftDetailFirst, newDraftsList, newDraftDetailSecond]);
           await expect(saveLinesBtn).toBeVisible({ timeout: 15_000 });
+          await expect(saveLinesBtn).toBeEnabled({ timeout: 15_000 });
 
           const firstLine = draftCard.locator('tr[data-draft-line]').first();
           await expect(firstLine).toBeVisible({ timeout: 15_000 });
-          await firstLine.locator('input[name="reason"]').fill(runTag);
-          const tagged = await posted(page, /^\/api\/rate-drafts\/[^/]+$/, () => saveLinesBtn.click());
+          const setupReasonInput = firstLine.locator('input[name="reason"]');
+          await setupReasonInput.fill(runTag);
+          await expect(setupReasonInput).toHaveValue(runTag);
+          await expect(saveLinesBtn).toBeEnabled({ timeout: 15_000 });
+          const tagged = await putted(page, /^\/api\/rate-drafts\/[^/]+$/, () => saveLinesBtn.click());
           expect(tagged.ok, `PUT /api/rate-drafts/{id} marker (${lang}): ${tagged.text}`).toBeTruthy();
+          await expect(saveLinesBtn).toBeEnabled({ timeout: 15_000 });
         } finally {
           allowDraftSetupWrites = false;
         }
@@ -421,6 +519,9 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
       for (const badRate of ['', '0', '-5', '32.123456789']) {
         await manualBuyInput.fill(badRate);
         await reasonInput.fill(runTag);
+        await expect(manualBuyInput).toHaveValue(badRate);
+        await expect(reasonInput).toHaveValue(runTag);
+        await expect(saveLinesBtn).toBeEnabled();
         await saveLinesBtn.click();
 
         const rateErr = firstRow.locator('[data-field-error="manualBuy"]');
@@ -435,6 +536,9 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
       // Invalid case 5 on `rateDraftEdit`: valid manualBuy ('32.50') with empty reason ('')
       await manualBuyInput.fill('32.50');
       await reasonInput.fill('');
+      await expect(manualBuyInput).toHaveValue('32.50');
+      await expect(reasonInput).toHaveValue('');
+      await expect(saveLinesBtn).toBeEnabled();
       await saveLinesBtn.click();
       const reasonErr = firstRow.locator('[data-field-error="reason"]');
       await expect(reasonErr, `rateDraftEdit empty reason error (${lang})`).toHaveText(draftMsg.reasonRequired);
