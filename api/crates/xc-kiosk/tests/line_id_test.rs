@@ -57,14 +57,33 @@ fn row5_parse_uuid_rejects_non_hex_and_empty() {
     assert_eq!(LineId::parse_uuid(""), None);
 }
 
-/// Row 6: a 32-digit value with a leading `+` -> `None`
-/// (`u128::from_str_radix` accepts a leading `+`, so a 32-char string starting with `+`
-/// and 31 hex digits passes `hex.len() == 32` and parses as `Some`).
+/// Row 6: a 32-digit value with a leading `+` -> `None`.
 #[test]
-#[ignore = "bug: + accepted"]
 fn row6_parse_uuid_rejects_leading_plus() {
     assert_eq!(
         LineId::parse_uuid("+0000000-0000-0000-0000-000000000001"),
         None
     );
+}
+
+/// Row 7: dashes in the wrong places -> `None`.
+#[test]
+fn row7_parse_uuid_rejects_dashes_in_wrong_places() {
+    for bad in [
+        "0000000-00000-0000-0000-000000000001", // dash at 7
+        "000000000-000-0000-0000-000000000001", // dash at 9
+        "00000000--00-0000-0000-000000000001",  // double dash
+        "00000000-00000000-00000000-00000000",  // 36 chars with wrong groups
+        "-00000000000-0000-0000-000000000001",  // leading dash
+        "00000000-0000-0000-0000-00000000001-", // trailing dash
+    ] {
+        assert_eq!(LineId::parse_uuid(bad), None, "{bad}");
+    }
+}
+
+/// Row 8: plain 32 hex digits without dashes -> `None` (callers use Postgres uuid::text format).
+#[test]
+fn row8_parse_uuid_rejects_plain_32_hex_digits() {
+    assert_eq!(LineId::parse_uuid("00000000000000000000000000000001"), None);
+    assert_eq!(LineId::parse_uuid("0123456789abcdef0123456789abcdef"), None);
 }

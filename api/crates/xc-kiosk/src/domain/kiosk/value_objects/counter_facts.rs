@@ -8,11 +8,24 @@ pub struct LineId(pub u128);
 
 impl LineId {
     pub fn parse_uuid(s: &str) -> Option<Self> {
-        let hex: String = s.chars().filter(|c| *c != '-').collect();
-        if hex.len() != 32 {
+        let b = s.as_bytes();
+        if b.len() != 36 || b[8] != b'-' || b[13] != b'-' || b[18] != b'-' || b[23] != b'-' {
             return None;
         }
-        u128::from_str_radix(&hex, 16).ok().map(LineId)
+        let mut val = 0u128;
+        for (i, &byte) in b.iter().enumerate() {
+            if i == 8 || i == 13 || i == 18 || i == 23 {
+                continue;
+            }
+            let digit = match byte {
+                b'0'..=b'9' => (byte - b'0') as u128,
+                b'a'..=b'f' => (byte - b'a' + 10) as u128,
+                b'A'..=b'F' => (byte - b'A' + 10) as u128,
+                _ => return None,
+            };
+            val = (val << 4) | digit;
+        }
+        Some(LineId(val))
     }
 }
 
