@@ -11,7 +11,7 @@ use sqlx::{Postgres, Transaction};
 use xc_auth::domain::access::Actor;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::queue_tickets::{IssuedTicket, QueueTicketSource, QueueTickets};
+use xc_kernel::queue_tickets::{IssuedTicket, KioskTicketOutcome, QueueTicketSource, QueueTickets};
 
 use crate::application::desk::queue_desk::{QueueDesk, check_ticket_owner};
 use crate::application::status::status_service::StatusService;
@@ -354,6 +354,83 @@ impl TicketIssuer {
 
         Ok(true)
     }
+
+    /// Ends any active (WAITING, CALLED or SERVING) ticket for kiosk `request_id` inside `tx`.
+    pub async fn cancel_active_for_kiosk_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        request_id: &str,
+        outcome: &KioskTicketOutcome,
+        now: DateTime<Utc>,
+    ) -> AppResult<bool> {
+        let Some(ticket) = self
+            .repo
+            .find_by_kiosk_request_in(tx, branch, request_id)
+            .await?
+        else {
+            return Ok(false);
+        };
+
+        let (sql, new_status, event_kind, ended_reason) = match (&ticket.status, outcome) {
+            (TicketStatus::Waiting | TicketStatus::Called, KioskTicketOutcome::NoShow) => (
+                "UPDATE queue_tickets SET status = 'NO_SHOW', ended_reason = $2 WHERE id = $1::uuid AND status IN ('WAITING', 'CALLED')",
+                TicketStatus::NoShow,
+                EventKind::Skip,
+                "kioskCancelled:CUSTOMER_LEFT".to_owned(),
+            ),
+            (
+                TicketStatus::Waiting | TicketStatus::Called,
+                KioskTicketOutcome::Cancelled { reason },
+            ) => (
+                "UPDATE queue_tickets SET status = 'CANCELLED', ended_reason = $2 WHERE id = $1::uuid AND status IN ('WAITING', 'CALLED')",
+                TicketStatus::Cancelled,
+                EventKind::Cancel,
+                format!("kioskCancelled:{reason}"),
+            ),
+            (TicketStatus::Serving, KioskTicketOutcome::NoShow) => (
+                "UPDATE queue_tickets SET status = 'CANCELLED', ended_reason = $2 WHERE id = $1::uuid AND status = 'SERVING'",
+                TicketStatus::Cancelled,
+                EventKind::Cancel,
+                "kioskCancelled:CUSTOMER_LEFT".to_owned(),
+            ),
+            (TicketStatus::Serving, KioskTicketOutcome::Cancelled { reason }) => (
+                "UPDATE queue_tickets SET status = 'CANCELLED', ended_reason = $2 WHERE id = $1::uuid AND status = 'SERVING'",
+                TicketStatus::Cancelled,
+                EventKind::Cancel,
+                format!("kioskCancelled:{reason}"),
+            ),
+            (TicketStatus::Completed | TicketStatus::Cancelled | TicketStatus::NoShow, _) => {
+                return Ok(false);
+            }
+        };
+
+        let rows = sqlx::query(sql)
+            .bind(&ticket.id)
+            .bind(&ended_reason)
+            .execute(&mut **tx)
+            .await?;
+
+        if rows.rows_affected() == 0 {
+            return Ok(false);
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: new_status,
+            kind: event_kind,
+            actor_id: self.actor.as_ref().map(|a| a.user_id.clone()),
+            at: now,
+            reason: Some(ended_reason),
+        };
+
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(true)
+    }
 }
 
 impl QueueTickets for TicketIssuer {
@@ -399,6 +476,20 @@ impl QueueTickets for TicketIssuer {
     ) -> BoxFuture<'a, AppResult<bool>> {
         Box::pin(async move {
             self.cancel_active_for_booking_in(tx, branch, booking_id, now)
+                .await
+        })
+    }
+
+    fn cancel_active_for_kiosk_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        request_id: &'a str,
+        outcome: &'a KioskTicketOutcome,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        Box::pin(async move {
+            self.cancel_active_for_kiosk_in(tx, branch, request_id, outcome, now)
                 .await
         })
     }
