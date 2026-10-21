@@ -589,11 +589,10 @@ jobs:
           while read -r pkg bin; do
             case "$pkg" in ''|'#'*) continue ;; esac
             case " ${pkgs[*]:-} " in *" -p $pkg "*) ;; *) pkgs+=("-p" "$pkg") ;; esac
-            clause="(binary_id(=${pkg}::all) & test(/^${bin}::/))"
             if [ -z "$expr" ]; then
-              expr="$clause"
+              expr="binary($bin)"
             else
-              expr="$expr | $clause"
+              expr="$expr | binary($bin)"
             fi
           done < ../.github/scripts/api-guard-tests.txt
           echo "Running guard tests: ${pkgs[*]} -E '$expr'"
