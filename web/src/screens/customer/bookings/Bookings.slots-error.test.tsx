@@ -81,6 +81,25 @@ describe('APP-17: booking_slots error handling in reschedule dialog', () => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
 
+        if (u.pathname === '/api/public/host') {
+          return json(200, { org: 'XC' });
+        }
+        if (u.pathname === '/api/public/orgs/XC/branches') {
+          return json(200, {
+            branches: [
+              {
+                code: BRANCH_ID,
+                name: BRANCH_ID,
+                address: null,
+                openingHours: null,
+                timezone: 'Asia/Bangkok',
+                bookingEnabled: true,
+                queueOpen: true,
+              },
+            ],
+          });
+        }
+
         if (u.pathname === '/api/v3/views/my_profile') {
           return viewEnvelope({ customerId: 'cust-alice', displayName: 'Alice' });
         }

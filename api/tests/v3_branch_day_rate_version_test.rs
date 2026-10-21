@@ -138,6 +138,16 @@ impl TestDb {
         .await;
     }
 
+    async fn open_around_now(&self, branch: &str) {
+        self.exec(&format!(
+            "UPDATE branches b SET opening_hours = (SELECT jsonb_object_agg(d, jsonb_build_array(jsonb_build_object( \
+               'open', to_char((now() AT TIME ZONE b.timezone) - interval '1 hour', 'HH24:MI'), \
+               'close', to_char((now() AT TIME ZONE b.timezone) + interval '2 hours', 'HH24:MI')))) \
+             FROM unnest(ARRAY['mon','tue','wed','thu','fri','sat','sun']) d) WHERE b.id = '{branch}'"
+        ))
+        .await;
+    }
+
     async fn rates_published(&self, branch: &str, instant: &str) {
         rates_re4c_common::set_counter_rate(&self.pool, branch, "USD", "35.0", "36.0").await;
         self.exec(&format!(
@@ -283,6 +293,7 @@ async fn post(db: &TestDb, who: &str, uri: &str, body: Value) -> Answer {
 #[actix_web::test]
 async fn test_rate_version_verbatim_from_view_succeeds() {
     let db = TestDb::start().await;
+    db.open_around_now(B01).await;
     db.rates_published(B01, RATE_INSTANT).await;
     db.phase_is(B01, "READY").await;
 
@@ -339,6 +350,7 @@ async fn test_rate_version_verbatim_from_view_succeeds() {
 #[actix_web::test]
 async fn test_rate_version_same_instant_millis_and_z_succeeds() {
     let db = TestDb::start().await;
+    db.open_around_now(B01).await;
     db.rates_published(B01, RATE_INSTANT).await;
     db.phase_is(B01, "READY").await;
 
@@ -458,6 +470,7 @@ async fn test_rate_version_garbage_gives_validation_failed_naming_rate_version()
 #[actix_web::test]
 async fn test_rate_version_all_four_ruling_cases_in_sequence() {
     let db = TestDb::start().await;
+    db.open_around_now(B01).await;
     db.rates_published(B01, RATE_INSTANT).await;
 
     // (a) Read through real view, send verbatim (+00:00): success

@@ -96,6 +96,24 @@ describe('Bookings.tsx — reschedule dialog date picker (#4152)', () => {
   async function mountAndOpenReschedule(): Promise<HTMLInputElement> {
     const fetchFn = vi.fn(async (input: string) => {
       const u = new URL(input, 'http://localhost');
+      if (u.pathname === '/api/public/host') {
+        return jsonResponse(200, { org: 'XC' });
+      }
+      if (u.pathname === '/api/public/orgs/XC/branches') {
+        return jsonResponse(200, {
+          branches: [
+            {
+              code: BRANCH_ID,
+              name: BRANCH_ID,
+              address: null,
+              openingHours: null,
+              timezone: 'Asia/Bangkok',
+              bookingEnabled: true,
+              queueOpen: true,
+            },
+          ],
+        });
+      }
       if (u.pathname === '/api/v3/views/my_bookings') {
         return viewEnvelope(makeMyBookingsData({ bookings: [makeBookingFor20261025()] }));
       }

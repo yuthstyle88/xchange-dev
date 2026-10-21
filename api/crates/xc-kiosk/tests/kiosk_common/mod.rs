@@ -246,13 +246,16 @@ pub fn status(text: &str) -> KioskStatus {
         .unwrap_or_else(|| panic!("status {text:?}"))
 }
 
-pub const ALL_STATUSES: [KioskStatus; 6] = [
+/// Amended by the author of KC-D (claude/studio-claude-10, `kiosk-cancel.md` §3.1): `CANCELLED`
+/// is a stored status.
+pub const ALL_STATUSES: [KioskStatus; 7] = [
     KioskStatus::Quoted,
     KioskStatus::Waiting,
     KioskStatus::Accepted,
     KioskStatus::IdChecked,
     KioskStatus::Completed,
     KioskStatus::Expired,
+    KioskStatus::Cancelled,
 ];
 
 pub const ALL_ACTIONS: [KioskAction; 13] = [

@@ -85,6 +85,24 @@ function makeHarness(steps: StepAnswer[]) {
     const method = (init?.method ?? 'GET').toUpperCase();
     const u = new URL(input, 'http://localhost');
 
+    if (method === 'GET' && u.pathname === '/api/public/host') {
+      return jsonResponse(200, { org: 'XC' });
+    }
+    if (method === 'GET' && u.pathname === '/api/public/orgs/XC/branches') {
+      return jsonResponse(200, {
+        branches: [
+          {
+            code: 'bkk-1',
+            name: 'bkk-1',
+            address: null,
+            openingHours: null,
+            timezone: 'Asia/Bangkok',
+            bookingEnabled: true,
+            queueOpen: true,
+          },
+        ],
+      });
+    }
     if (method === 'GET' && u.pathname === '/api/v3/views/my_bookings') {
       return jsonResponse(200, { version: 1, changed: true, data: BOOKINGS_DATA });
     }
@@ -114,6 +132,8 @@ function makeHarness(steps: StepAnswer[]) {
 
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
   });
+
+  vi.stubGlobal('fetch', fetchFn);
 
   return {
     api: new ApiClient(fetchFn),

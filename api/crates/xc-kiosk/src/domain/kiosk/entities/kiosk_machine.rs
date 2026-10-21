@@ -4,11 +4,13 @@ use xc_kernel::money::{CurrencyUnits, ExchangeArithmetic, ForeignAmount, Money, 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::quote_input::QuoteInput;
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
+use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use crate::domain::kiosk::value_objects::counter_facts::CounterFacts;
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::kiosk_event_kind::KioskEventKind;
 use crate::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
+use crate::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
 use crate::domain::kiosk::value_objects::payment_method::PaymentMethod;
@@ -281,12 +283,65 @@ impl KioskMachine {
         })
     }
 
+    pub fn cancel(
+        request: Option<&KioskRequest>,
+        actor: &KioskActor,
+        reason: &CancelReason,
+    ) -> Result<Option<KioskRequest>, KioskError> {
+        let req = request.ok_or(KioskError::RequestNotFound)?;
+        let cancelled = || KioskRequest {
+            status: KioskStatus::Cancelled,
+            ..req.clone()
+        };
+        match req.status {
+            KioskStatus::Cancelled => Ok(None),
+            KioskStatus::Quoted | KioskStatus::Expired | KioskStatus::Completed => {
+                Err(KioskError::NotCancellable)
+            }
+            KioskStatus::Waiting => match actor {
+                KioskActor::Staff { .. } => {
+                    if matches!(reason, CancelReason::CustomerCancelled) {
+                        Err(KioskError::NotCancellable)
+                    } else {
+                        Ok(Some(cancelled()))
+                    }
+                }
+                KioskActor::Customer => {
+                    if matches!(reason, CancelReason::CustomerCancelled) {
+                        Ok(Some(cancelled()))
+                    } else {
+                        Err(KioskError::NotCancellable)
+                    }
+                }
+            },
+            KioskStatus::Accepted | KioskStatus::IdChecked => {
+                let KioskActor::Staff { username, role } = actor else {
+                    return Err(KioskError::NotCancellable);
+                };
+                if matches!(
+                    reason,
+                    CancelReason::CustomerCancelled | CancelReason::DayClosed
+                ) {
+                    return Err(KioskError::NotCancellable);
+                }
+                if req.staff.as_deref() == Some(username.as_str()) || *role == KioskRole::Manager {
+                    Ok(Some(cancelled()))
+                } else {
+                    Err(KioskError::NotYourRequest)
+                }
+            }
+        }
+    }
+
     pub fn check_get(request: Option<&KioskRequest>, actor: &KioskActor) -> Result<(), KioskError> {
         let staff_name = match actor {
             KioskActor::Staff { username, .. } => username,
             KioskActor::Customer => return Err(KioskError::StaffRequired),
         };
         if let Some(req) = request {
+            if req.status == KioskStatus::Cancelled {
+                return Err(KioskError::KioskCancelled);
+            }
             if req.staff.as_deref() == Some(staff_name.as_str())
                 && (req.status == KioskStatus::Accepted || req.status == KioskStatus::IdChecked)
             {

@@ -45,6 +45,7 @@ export function makeMyProfileData(o: Partial<MyProfileData> = {}): MyProfileData
     displayName: 'displayName',
     preferredLanguage: 'preferredLanguage',
     status: 'status',
+    offeredLanguages: [],
     consents: [],
     ...o,
   };

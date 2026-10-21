@@ -102,16 +102,3 @@
   justify-content: flex-end;
   gap: 0.5rem;
 }
-
-.xc-count-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.xc-count-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}

@@ -3,6 +3,8 @@
 // Add a test file, then run: python3 api/scripts/gen-test-binaries.py
 #![allow(dead_code, clippy::duplicate_mod)]
 
+#[path = "kiosk_ticket_cancel_test.rs"]
+mod kiosk_ticket_cancel_test;
 #[path = "queue_called_display_value_test.rs"]
 mod queue_called_display_value_test;
 #[path = "queue_called_notify_test.rs"]

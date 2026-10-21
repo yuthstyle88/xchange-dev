@@ -246,6 +246,25 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
           body: parsedBody,
         });
 
+        if (u.pathname === '/api/public/host') {
+          return json(200, { org: 'XC' });
+        }
+        if (u.pathname === '/api/public/orgs/XC/branches') {
+          return json(200, {
+            branches: [
+              {
+                code: BRANCH_ID,
+                name: BRANCH_ID,
+                address: null,
+                openingHours: null,
+                timezone: 'Asia/Bangkok',
+                bookingEnabled: true,
+                queueOpen: true,
+              },
+            ],
+          });
+        }
+
         // 1. Customer profile view (for CustomerShell)
         if (u.pathname === '/api/v3/views/my_profile') {
           return viewEnvelope(MY_PROFILE);
@@ -450,13 +469,14 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
       expect(root.textContent).toContain(table.th.status_CANCELLED);
     });
 
-    it('hides cancel button when current time is after cancelDeadline (:475)', async () => {
-      // Advance clock past cancelDeadline (09:30 UTC > 09:00 UTC)
+    // Owner 2026-10-21 ("ยกเลิกการจอง ยกเลิกได้เลย" · "ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน"):
+    // a customer cancels at any time; reschedule keeps the cutoff (#4204).
+    it('shows cancel button even when current time is after cutoff deadline (#4204)', async () => {
+      // Advance clock past cutoff (09:30 UTC > 09:00 UTC)
       vi.setSystemTime(new Date('2026-10-14T09:30:00Z'));
 
       await boot();
 
-      // Assert the booking card is rendered before asserting cancel button absence
       const bookingCard = root.querySelector(`[data-booking-id="${BOOKING_ACTIVE_ID}"]`);
       expect(
         bookingCard ?? (root.textContent?.includes('B261014-0024') ? root : null),
@@ -466,7 +486,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
       const cancelBtn = root.querySelector(
         `[data-booking-id="${BOOKING_ACTIVE_ID}"] button[data-action="cancel"], .xc-booking-cancel-btn`,
       );
-      expect(cancelBtn, 'cancel button hidden after cutoff deadline').toBeNull();
+      expect(cancelBtn, 'cancel button remains visible after cutoff deadline').not.toBeNull();
     });
 
     it('displays worded error when server answers 400 cancelCutoffPassed', async () => {
@@ -671,6 +691,25 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
 
       expect(root.textContent).toContain('B261014-0024');
     });
+
+    it('renders load error when the branch list fails rather than guessing a timezone (#4196)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          const u = new URL(rawUrl, 'http://localhost');
+          if (u.pathname === '/api/v3/views/my_profile') return viewEnvelope(MY_PROFILE);
+          if (u.pathname === '/api/v3/views/my_bookings') {
+            return viewEnvelope(makeMyBookingsData({ bookings: viewBookings }));
+          }
+          return json(500, { error: { code: 'serverError' } });
+        }),
+      );
+      await boot();
+
+      expect(root.querySelector('.xc-bookings-error')?.textContent).toContain(table.th['error.loadFailed']);
+      expect(root.querySelector('.xc-bookings-list')).toBeNull();
+    });
   });
 
   // ── 8. Idempotency-Key Kept Across Retries ──────────────────────────────────
@@ -689,6 +728,22 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
           const method = (init?.method ?? 'GET').toUpperCase();
           const headers = new Headers(init?.headers);
 
+          if (u.pathname === '/api/public/host') return json(200, { org: 'XC' });
+          if (u.pathname === '/api/public/orgs/XC/branches') {
+            return json(200, {
+              branches: [
+                {
+                  code: BRANCH_ID,
+                  name: BRANCH_ID,
+                  address: null,
+                  openingHours: null,
+                  timezone: 'Asia/Bangkok',
+                  bookingEnabled: true,
+                  queueOpen: true,
+                },
+              ],
+            });
+          }
           if (u.pathname === '/api/v3/views/my_profile') return viewEnvelope(MY_PROFILE);
           if (u.pathname === '/api/v3/views/my_bookings') {
             return viewEnvelope(makeMyBookingsData({ bookings: INITIAL_BOOKINGS }));

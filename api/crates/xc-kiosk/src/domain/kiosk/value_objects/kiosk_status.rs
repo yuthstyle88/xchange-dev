@@ -6,6 +6,7 @@ pub enum KioskStatus {
     IdChecked,
     Completed,
     Expired,
+    Cancelled,
 }
 
 impl KioskStatus {
@@ -17,6 +18,7 @@ impl KioskStatus {
             Self::IdChecked => "ID_CHECKED",
             Self::Completed => "COMPLETED",
             Self::Expired => "EXPIRED",
+            Self::Cancelled => "CANCELLED",
         }
     }
 }

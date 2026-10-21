@@ -5,7 +5,8 @@ import { loadUsers } from './tests/helpers';
 const users = loadUsers();
 
 // Customer screens are phone-sized; staff, desk and admin screens are desktop-sized (design qa-e2e.md §1).
-const PHONE = /(smoke-public|smoke-app-[ab]|flow-booking)\.spec\.ts$/;
+// Every customer-app spec is smoke-app-*, flow-xapp-* or flow-booking.
+const PHONE = /(smoke-public|smoke-app-[ab]|flow-booking|flow-xapp-[a-z]+)\.spec\.ts$/;
 
 export default defineConfig({
   globalSetup: './tests/global-setup.ts',

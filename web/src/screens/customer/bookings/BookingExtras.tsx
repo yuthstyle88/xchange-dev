@@ -25,6 +25,7 @@ export interface BookingExtrasProps {
   api: ApiClient;
   /** Merges the fields a command changed into the screen's copy of this booking. */
   onChange: (patch: Partial<MyBookingItemDto>) => void;
+  timeZone?: string;
 }
 
 export function BookingExtras(props: BookingExtrasProps): JSX.Element {
@@ -77,9 +78,9 @@ export function BookingExtras(props: BookingExtrasProps): JSX.Element {
     const date = cutoff.toLocaleString(locale(), {
       dateStyle: 'medium',
       timeStyle: 'short',
-      timeZone: 'Asia/Bangkok',
+      timeZone: props.timeZone,
     });
-    return t('cancelDeadline', { date });
+    return t('rescheduleDeadline', { date });
   };
 
   return (

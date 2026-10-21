@@ -589,7 +589,7 @@ jobs:
           while read -r pkg bin; do
             case "$pkg" in ''|'#'*) continue ;; esac
             case " ${pkgs[*]:-} " in *" -p $pkg "*) ;; *) pkgs+=("-p" "$pkg") ;; esac
-            clause="(binary_id(=${pkg}::all) & test(/^${bin}::/))"
+            clause="(package(=${pkg}) & kind(test) & test(/^${bin}::/))"
             if [ -z "$expr" ]; then
               expr="$clause"
             else

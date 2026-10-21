@@ -103,5 +103,17 @@ path = "src/main.rs"
 opt-level = 3
 
 [[test]]
-name = "all"
-path = "tests/all.rs"
+name = "all_1"
+path = "tests/all_1.rs"
+
+[[test]]
+name = "all_2"
+path = "tests/all_2.rs"
+
+[[test]]
+name = "all_3"
+path = "tests/all_3.rs"
+
+[[test]]
+name = "all_4"
+path = "tests/all_4.rs"

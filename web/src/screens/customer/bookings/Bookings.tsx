@@ -23,24 +23,23 @@ import type {
   MyBookingItemDto,
   MyBookingsData,
 } from '../../../shared/api/generated/my_bookings';
-import { locale, screenT } from '../../../shared/i18n';
+import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
+import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
-import { getTodayInTimezone } from '../book/Book';
+import { formatSlotTime, getTodayInTimezone } from '../book/Book';
 import { BookingExtras } from './BookingExtras';
 import { BookingWait } from './BookingWait';
-import { loadBranchNames } from './branchNames';
 import * as table from './i18n';
 import './bookings.css';
 
 const t = screenT('customer.bookings', table);
-const BRANCH_TIMEZONE = 'Asia/Bangkok';
 
-function getBookingServiceDate(booking: MyBookingItemDto): string {
+function getBookingServiceDate(booking: MyBookingItemDto, timeZone?: string): string {
   const start = new Date(booking.startAt);
-  if (Number.isNaN(start.getTime())) return getTodayInTimezone(BRANCH_TIMEZONE);
+  if (Number.isNaN(start.getTime())) return getTodayInTimezone(timeZone as string);
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: BRANCH_TIMEZONE,
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -70,43 +69,13 @@ function isFinished(status: string): boolean {
 }
 
 function canCancel(booking: MyBookingItemDto): boolean {
-  if (isFinished(booking.status)) return false;
-  if (!booking.cancelCutoffAt) return true;
-  return new Date(booking.cancelCutoffAt).getTime() > Date.now();
+  return !isFinished(booking.status);
 }
 
 function canReschedule(booking: MyBookingItemDto): boolean {
   if (isFinished(booking.status)) return false;
   if (!booking.cancelCutoffAt) return true;
   return new Date(booking.cancelCutoffAt).getTime() > Date.now();
-}
-
-function formatSlotTime(startIso?: string, endIso?: string): string {
-  if (!startIso) return '';
-  try {
-    const loc = locale();
-    const start = new Date(startIso);
-    const end = endIso ? new Date(endIso) : null;
-    const dateStr = start.toLocaleDateString(loc, {
-      month: 'short',
-      day: 'numeric',
-      timeZone: 'Asia/Bangkok',
-    });
-    const startStr = start.toLocaleTimeString(loc, {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Bangkok',
-    });
-    if (!end) return `${dateStr} ${startStr}`;
-    const endStr = end.toLocaleTimeString(loc, {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Bangkok',
-    });
-    return `${dateStr} ${startStr} - ${endStr}`;
-  } catch {
-    return `${startIso} - ${endIso ?? ''}`;
-  }
 }
 
 export interface BookingsScreenProps {
@@ -147,12 +116,60 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const [selectedSlotId, setSelectedSlotId] = createSignal<string>('');
   const [rescheduleDate, setRescheduleDate] = createSignal<string>('');
 
+  const [branchNames, setBranchNames] = createSignal<Map<string, string>>(new Map());
+  const [branchTimezones, setBranchTimezones] = createSignal<Map<string, string>>(new Map());
+  const branchTimezone = (branchId: string) => branchTimezones().get(branchId)!;
+
+  const loadBranches = async (): Promise<void> => {
+    setBranchNames(new Map());
+    setBranchTimezones(new Map());
+    let data: PublicBranchesData | null = null;
+    try {
+      const hostRes = await fetchFn('/api/public/host');
+      if (!hostRes.ok) return;
+      const host = (await hostRes.json()) as { org?: string } | null;
+      if (!host || typeof host.org !== 'string' || !host.org) return;
+
+      const listRes = await fetchFn(`/api/public/orgs/${encodeURIComponent(host.org)}/branches`);
+      if (!listRes.ok) return;
+      data = (await listRes.json()) as PublicBranchesData | null;
+    } catch {
+      return;
+    }
+
+    try {
+      const names = new Map<string, string>();
+      const timezones = new Map<string, string>();
+      for (const b of data?.branches ?? []) {
+        if (!b.timezone) {
+          throw new Error('missing branch timezone');
+        }
+        getTodayInTimezone(b.timezone);
+        names.set(b.code, b.name);
+        timezones.set(b.code, b.timezone);
+      }
+      setBranchNames(names);
+      setBranchTimezones(timezones);
+    } catch {
+      setBranchNames(new Map());
+      setBranchTimezones(new Map());
+      setLoadError(t('error.loadFailed'));
+    }
+  };
+
   const fetchBookings = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api.view<MyBookingsData>('my_bookings');
-      setBookings(res.data?.bookings ?? []);
+      const [res] = await Promise.all([
+        api.view<MyBookingsData>('my_bookings'),
+        loadBranches(),
+      ]);
+      const items = res.data?.bookings ?? [];
+      setBookings(items);
+      if (items.some((b) => !branchTimezone(b.branchId))) {
+        setLoadError(t('error.loadFailed'));
+      }
     } catch (err: any) {
       setLoadError(getWordedError(err));
     } finally {
@@ -160,11 +177,8 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     }
   };
 
-  const [branchNames, setBranchNames] = createSignal<Map<string, string>>(new Map());
-
   onMount(() => {
     fetchBookings();
-    void loadBranchNames(fetchFn).then(setBranchNames);
   });
 
   const patchBooking = (id: string, patch: Partial<MyBookingItemDto>) => {
@@ -249,7 +263,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   };
 
   const handleOpenReschedule = (booking: MyBookingItemDto) => {
-    const date = getBookingServiceDate(booking);
+    const date = getBookingServiceDate(booking, branchTimezone(booking.branchId));
     commandSeq++;
     setReschedulingBooking(booking);
     setCommandLoading(false);
@@ -386,7 +400,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                     <div class="xc-booking-info">
                       <p class="xc-booking-branch">{branchNames().get(booking.branchId) ?? booking.branchId}</p>
                       <p class="xc-booking-time">
-                        {formatSlotTime(booking.startAt, booking.endAt)}
+                        {formatSlotTime(booking.startAt, booking.endAt, branchTimezone(booking.branchId))}
                       </p>
                       <Show when={booking.ticketNumber}>
                         <p class="xc-booking-ticket">{booking.ticketNumber}</p>
@@ -412,6 +426,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                   <BookingExtras
                     booking={booking}
                     api={api}
+                    timeZone={branchTimezone(booking.branchId)}
                     onChange={(patch) => patchBooking(booking.id, patch)}
                   />
 
@@ -520,7 +535,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                   class="xc-reschedule-date-input"
                   data-testid="date-input"
                   value={rescheduleDate()}
-                  min={getTodayInTimezone(BRANCH_TIMEZONE)}
+                  min={getTodayInTimezone(branchTimezone(reschedulingBooking()!.branchId))}
                   onInput={(e) => {
                     const nextDate = e.currentTarget.value;
                     if (!nextDate || nextDate === rescheduleDate()) return;
@@ -590,7 +605,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                                 setSelectedSlotId(slot.id);
                               }}
                             />
-                            <span>{formatSlotTime(slot.start, slot.end)}</span>
+                            <span>{formatSlotTime(slot.start, slot.end, branchTimezone(reschedulingBooking()!.branchId))}</span>
                           </label>
                         </div>
                       );

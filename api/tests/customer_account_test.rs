@@ -1406,3 +1406,106 @@ async fn a_customer_reading_another_customers_profile_is_out_of_scope() {
     assert_eq!(r.json()["data"]["customerId"], json!(own));
     shop.finish().await;
 }
+
+// ── #4164: my_profile answers the languages a customer screen may offer ─────────
+//
+// Up-front rows by the ticket author of #4164 (claude/studio-claude-6, on the BE lane controller's order). Design
+// `customer-identity-consent.md:141`: *"A customer screen offers a language only when every required consent text
+// exists in it"*. The text every save requires is TERMS: `ConsentService::register_in` and `profileUpdate` both refuse
+// `consentTextMissing` when `current_version_in(.., Purpose::Terms, lang)` is `None`; MARKETING is required only when
+// channels are chosen, so it does not decide the offer.
+// [required] `MyProfileData.offeredLanguages: string[]` (`offered_languages: Vec<String>`): the languages among
+// `th`, `en`, `zh`, in that order, in which the customer's organisation has a TERMS text.
+
+/// The `offeredLanguages` of `token`'s `my_profile`, as text.
+async fn offered(shop: &Shop, token: &str) -> Vec<String> {
+    let r = shop
+        .send(call(Method::GET, "/api/v3/views/my_profile", None).by(token))
+        .await;
+    assert_eq!(r.status, 200, "{}", r.text);
+    r.json()["data"]["offeredLanguages"]
+        .as_array()
+        .unwrap_or_else(|| panic!("#4164: my_profile carries offeredLanguages: {}", r.text))
+        .iter()
+        .map(|l| {
+            l.as_str()
+                .unwrap_or_else(|| panic!("a language is text: {l}"))
+                .to_owned()
+        })
+        .collect()
+}
+
+/// #4164 row 1: TERMS published in th and en (MARKETING in th) ⇒ `offeredLanguages = ["th", "en"]`.
+#[actix_web::test]
+async fn k4164_row1_my_profile_offers_the_languages_with_a_terms_text() {
+    let shop = Shop::start().await;
+    shop.publish(Purpose::Terms, "en").await;
+    let (_, token) = shop.registered().await;
+    assert_eq!(offered(&shop, &token).await, ["th", "en"]);
+    shop.finish().await;
+}
+
+/// #4164 row 2: en has only a MARKETING text (no TERMS), zh has none ⇒ en and zh drop out. A newer TERMS version in
+/// th keeps th once, not twice.
+#[actix_web::test]
+async fn k4164_row2_a_language_without_a_terms_text_is_not_offered() {
+    let shop = Shop::start().await;
+    shop.publish(Purpose::Marketing, "en").await;
+    shop.publish(Purpose::Terms, "th").await;
+    let (_, token) = shop.registered().await;
+    assert_eq!(offered(&shop, &token).await, ["th"]);
+    shop.finish().await;
+}
+
+/// #4164 row 3: the offer and the saves agree. For each of th, en, zh, `profileUpdate` to that language succeeds
+/// exactly when it is offered, and otherwise answers 409 `consentTextMissing`; the offer read after the saves is
+/// unchanged by them.
+#[actix_web::test]
+async fn k4164_row3_profile_update_accepts_exactly_the_offered_languages() {
+    let shop = Shop::start().await;
+    shop.publish(Purpose::Terms, "zh").await;
+    let (_, token) = shop.registered().await;
+    let offer = offered(&shop, &token).await;
+    assert_eq!(offer, ["th", "zh"], "setup: TERMS in th and zh");
+    for (n, lang) in ["th", "en", "zh"].into_iter().enumerate() {
+        let r = shop
+            .send(
+                profile(json!({ "preferredLanguage": lang }))
+                    .by(&token)
+                    .key(&format!("k4164-{n}")),
+            )
+            .await;
+        if offer.iter().any(|l| l == lang) {
+            assert_eq!(r.status, 200, "{lang} is offered, so it saves: {}", r.text);
+        } else {
+            assert_eq!(r.status, 409, "{lang} is not offered: {}", r.text);
+            assert_eq!(
+                r.refusal(),
+                (
+                    "consentTextMissing".to_owned(),
+                    Some("preferredLanguage".to_owned())
+                )
+            );
+        }
+    }
+    assert_eq!(offered(&shop, &token).await, offer);
+    shop.finish().await;
+}
+
+/// #4164: the field reaches the web through the committed ts-rs file (`v3_types_test` keeps the file fresh).
+#[actix_web::test]
+async fn k4164_the_generated_my_profile_type_carries_offered_languages() {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../web/src/shared/api/generated/my_profile.ts");
+    let ts = std::fs::read_to_string(&file)
+        .unwrap_or_else(|e| panic!("web/src/shared/api/generated/my_profile.ts: {e}"));
+    let data = ts
+        .split("export type MyProfileData = {")
+        .nth(1)
+        .and_then(|rest| rest.split("};").next())
+        .unwrap_or_else(|| panic!("MyProfileData in my_profile.ts:\n{ts}"));
+    assert!(
+        data.contains("offeredLanguages: Array<string>"),
+        "MyProfileData has offeredLanguages: Array<string>:\n{data}"
+    );
+}

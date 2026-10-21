@@ -9,6 +9,12 @@ mod counter_view_test;
 mod k2063_customer_overflow_test;
 #[path = "k2063_kiosk_repository_overflow_test.rs"]
 mod k2063_kiosk_repository_overflow_test;
+#[path = "kiosk_cancel_machine_test.rs"]
+mod kiosk_cancel_machine_test;
+#[path = "kiosk_cancel_migration_test.rs"]
+mod kiosk_cancel_migration_test;
+#[path = "kiosk_cancel_repository_test.rs"]
+mod kiosk_cancel_repository_test;
 #[path = "kiosk_cap_wide_amount_test.rs"]
 mod kiosk_cap_wide_amount_test;
 #[path = "kiosk_configure_publication_test.rs"]

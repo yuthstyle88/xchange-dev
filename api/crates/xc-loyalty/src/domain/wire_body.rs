@@ -1,11 +1,20 @@
 //! `LoyaltyWireBody` (design §4.5 `[required]`): the JSON delivered to Loyalty. Pure, no I/O.
 
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde_json::{Value, json};
 use uuid::Uuid;
 use xc_kernel::money::Side;
 
 use crate::domain::customer_ref::LoyaltyCustomerRef;
 use crate::domain::facts::{CompletedFacts, ReversedFacts};
+
+fn fixed(d: Decimal, dp: u32) -> String {
+    format!(
+        "{:.*}",
+        dp as usize,
+        d.round_dp_with_strategy(dp, RoundingStrategy::MidpointAwayFromZero)
+    )
+}
 
 pub struct LoyaltyWireBody;
 
@@ -31,14 +40,14 @@ impl LoyaltyWireBody {
                     Side::Buy => "BUY",
                     Side::Sell => "SELL",
                 };
-                let realized_margin_thb = l.realized_margin_thb.map(|m| format!("{:.2}", m));
+                let realized_margin_thb = l.realized_margin_thb.map(|m| fixed(m, 2));
                 json!({
                     "currency": l.currency,
                     "shopSide": shop_side,
-                    "quantity": format!("{:.4}", l.quantity),
-                    "unitSize": format!("{:.4}", l.unit_size),
-                    "thbAmount": format!("{:.2}", l.thb_amount),
-                    "settleThb": format!("{:.2}", l.settle_thb),
+                    "quantity": fixed(l.quantity, 4),
+                    "unitSize": fixed(l.unit_size, 4),
+                    "thbAmount": fixed(l.thb_amount, 2),
+                    "settleThb": fixed(l.settle_thb, 2),
                     "realizedMarginThb": realized_margin_thb,
                 })
             })
@@ -73,7 +82,7 @@ impl LoyaltyWireBody {
             "id": event_id.to_string(),
             "type": "xchange.exchange_reversed.v1",
             "data": {
-                "amountThb": format!("{:.2}", facts.amount_thb),
+                "amountThb": fixed(facts.amount_thb, 2),
                 "customerRef": customer_ref.to_string(),
                 "full": facts.full,
                 "phone": phone,

@@ -32,6 +32,13 @@ pub struct IssuedTicket {
     pub display_number: String,
 }
 
+/// How a kiosk cancel ends its linked walk-in ticket (design `kiosk-cancel.md` §3.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KioskTicketOutcome {
+    NoShow,
+    Cancelled { reason: String },
+}
+
 pub trait QueueTickets: Send + Sync {
     /// Issues one ticket for `source` inside `tx`; the same key, or the same source, returns the
     /// same ticket. A closed queue refuses with `AppError::Validation("queueClosed")`.
@@ -63,6 +70,17 @@ pub trait QueueTickets: Send + Sync {
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
         booking_id: &'a str,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<bool>>;
+
+    /// Ends any active (WAITING, CALLED or SERVING) ticket for kiosk `request_id` inside `tx`.
+    /// Returns `Ok(true)` if an active ticket moved, `Ok(false)` otherwise.
+    fn cancel_active_for_kiosk_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        request_id: &'a str,
+        outcome: &'a KioskTicketOutcome,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>>;
 }

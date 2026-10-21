@@ -16,6 +16,8 @@ pub struct MyProfileData {
     /// `th`, `en` or `zh`.
     pub preferred_language: String,
     pub status: String,
+    /// The languages among `th`, `en`, `zh`, in that order, in which the customer's organisation has a TERMS text (#4164).
+    pub offered_languages: Vec<String>,
     /// The newest row per (purpose, channel), ordered by purpose, then channel.
     pub consents: Vec<MyConsent>,
 }

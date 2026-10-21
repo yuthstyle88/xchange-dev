@@ -184,6 +184,23 @@ impl ConsentService {
         .map_err(AppError::Database)
     }
 
+    /// The languages among `th`, `en`, `zh`, in that order, in which `org` has a TERMS text (#4164).
+    pub async fn offered_languages_in(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        org: &str,
+    ) -> AppResult<Vec<String>> {
+        let mut out = Vec::new();
+        for lang in ["th", "en", "zh"] {
+            if Self::current_version_in(tx, org, Purpose::Terms, lang)
+                .await?
+                .is_some()
+            {
+                out.push(lang.to_owned());
+            }
+        }
+        Ok(out)
+    }
+
     /// [`Self::register`] in the caller's transaction (#654 CI-7: customer register writes the user, its role and
     /// the customer in one transaction). The TERMS text (and MARKETING's, when channels are chosen) must exist in
     /// `reg.lang`; otherwise `ConsentError::TextMissing` and nothing is written.

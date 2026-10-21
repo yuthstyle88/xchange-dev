@@ -171,10 +171,27 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
 
 ### 3.5 Staff UI (`/kiosk-queue.html`, `web/src/shared/ui/QueuePanel.tsx`)
 
-- On every `waiting` and `working` row: a **ยกเลิก** button (`[data-action="cancel-request"]`) opens a reason dialog. Reuse `web/src/screens/staff/parts/ReasonDialog.tsx`, extended with a code select whose default is `CUSTOMER_LEFT`, plus the free-text box. `OTHER` requires text before confirm.
+- **One shared dialog and one shared call, KC-R** (amended by claude/e92db6, FE lane controller, after #4125 merged). This replaces extending `web/src/screens/staff/parts/ReasonDialog.tsx`, which 14 test files render (holds, transfers, the desk transaction screen). Extending it would have tied KC-W and KC-C to those files and to each other.
+  - `web/src/shared/ui/CancelReasonDialog.tsx`: a code select listing the **four staff codes only**: `CUSTOMER_LEFT` (the default), `CUSTOMER_CHANGED_MIND`, `DUPLICATE`, `OTHER`. It also has a note box.
+    - `OTHER` needs a note of 1–200 characters after trimming. Every code accepts a note of up to 200 characters.
+    - Confirm stays disabled until the input is valid.
+    - Each open starts empty, as `ReasonDialog` does (#2248).
+  - `web/src/shared/api/kiosk-cancel.ts`: `cancelKioskRequest(api, {id, branchId, reason, note?})` → `POST /api/kiosk {action: "cancel", payload}`. It returns the identity answer (`status: "CANCELLED"`). A refusal is the server's `400 {"error": "<sentence>"}`, shown as it comes.
+    - The wire shape is the one AG controller KC posted for KC-S #4176: https://github.com/108-Plaza/xchange/issues/564#issuecomment-6307996084.
+    - There is no ts-rs here: `/api/kiosk` answers are hand-built, so the module declares its own types, like `accept` at `QueuePanel.tsx:230`.
+  - The labels go in `web/src/shared/i18n/{th,en,zh}.ts`, keyed `kioskCancel.*`. They include the two codes staff never pick, `CUSTOMER_CANCELLED` and `DAY_CLOSED`, which are shown in history only. KC-R is the only FE ticket that edits those three files.
+- On every `waiting` and `working` row: a **ยกเลิก** button (`[data-action="cancel-request"]`) opens `CancelReasonDialog`.
 - On success the row leaves the panel. On a refusal the server's worded message shows in the row.
-- **The cashier screen** (KC-2b). On the desk with a kiosk request open (`/desk?branch=…&kiosk=<id>`, `web/src/screens/desk/entries/kiosk/entry.ts`), the kiosk banner gets a **ยกเลิกคำขอ** action with the same reason dialog. It is available until the save completes. On success the desk clears the entry and returns to an empty desk, the same as the existing clear (`desk-store.ts:448`).
-- The desk `?kiosk=` entry words `KioskCancelled` ("คำขอนี้ถูกยกเลิกแล้ว") when it opens a request that is already cancelled.
+- **The cashier screen** (KC-2b): the desk with a kiosk request open, `/desk?branch=…&kiosk=<id>` (`web/src/screens/desk/entries/kiosk/entry.ts`).
+  - Measured on `main` `2282758b`: **no screen renders the entry's `banner` today.**
+    - `DeskEntryState.banner` exists (`desk-store.ts:37`), and the kiosk entry fills it (`entry.ts:44`).
+    - Nothing outside tests reads it: `git grep banner -- web/src/screens/desk ':!*test*'`.
+  - KC-C therefore adds the bar:
+    - `DeskEntryState` gains an optional `actions?: () => JSX.Element`.
+    - `DeskPage.tsx` renders `banner()` plus `actions?.()` above the steps whenever `store.entry()` is set.
+    - The kiosk entry's `actions` is a **ยกเลิกคำขอ** button that opens `CancelReasonDialog` and calls `cancelKioskRequest`. It is shown until the save completes.
+  - On success the desk loads `/desk?branch=<branch>` (`window.location.assign`), dropping `?kiosk=`. This starts an empty desk without `startNew()`'s unsaved-work confirm (`desk-store.ts:428-434`), which would ask about the kiosk's own pre-filled amount.
+- When the desk's `?kiosk=` entry opens a request that is already cancelled, the server's `get` refuses with *"คำขอนี้ถูกยกเลิกแล้ว"*, and the entry shows that sentence the way it shows any load refusal today.
 
 ### 3.6 Kiosk app (`app/lib/features/kiosk/`)
 
@@ -244,7 +261,7 @@ classDiagram
   }
   class QueuePanel {
     <<web shared/ui/QueuePanel.tsx>>
-    +cancel button + ReasonDialog
+    +cancel button + CancelReasonDialog (KC-R)
   }
   class KioskApp {
     <<app features/kiosk>>
@@ -273,8 +290,9 @@ classDiagram
 | KC-D | domain + persistence: `Cancelled`, `CancelReason`, `Cancellation`, `KioskMachine::cancel`, the errors, `KioskAudit::Cancelled`, and the three repository methods (§3.3) | `kiosk_status.rs` · `cancel_reason.rs` (new) · `value_objects/mod.rs` · `kiosk_machine.rs` · `kiosk_error.rs` · `audit_line.rs` · `application/kiosk/desk.rs::accept_with` (the new match arm) · `api/src/infrastructure/kiosk/kiosk_ports.rs::detail_of` · `domain/kiosk/repositories/kiosk_repository.rs::{mark_cancelled_in, set_cancel_token_in, matches_cancel_token_in}` · `infrastructure/kiosk/kiosk_repository.rs::{status_from, queue_statuses, mark_cancelled_in, set_cancel_token_in, matches_cancel_token_in}` (`queue_statuses(All)` gains `CANCELLED`, §3.4; `queue_predicate(All)` is `status <> 'QUOTED'` and needs no change) (the Pg impl; no fakes exist) · `tests/kiosk_cancel_repository_test.rs` (new, `_test` DB) · `tests/kiosk_cancel_machine_test.rs` (new) · the two name-list tests (`kiosk_machine_test.rs:1123`, `kiosk_repository.rs` `ALL_DB_STATUSES`) | logic | KC-M |
 | KC-Q | queue port + impl (guarded `UPDATE`s, `SKIP`/`CANCEL` events; `apply` unchanged) | `xc-kernel/src/queue_tickets.rs` · `xc-queue/src/application/issue/ticket_issuer.rs` · `xc-queue/tests/kiosk_ticket_cancel_test.rs` (new) · the port's fakes | logic | — |
 | KC-S | service + routes (`cancel`, `customerCancel`, `confirm`'s token) + policy | `xc-kiosk/src/application/kiosk/desk.rs::cancel_with` · `xc-kiosk/src/application/kiosk/customer.rs` (confirm stores the token; `customer_cancel`) · `xc-kiosk/src/domain/kiosk/value_objects/kiosk_action.rs` (`Cancel`, `CustomerCancel`; the route's matches are exhaustive) · `api/src/presentation/http/kiosk.rs` · `api/src/presentation/dto/kiosk.rs` (`confirm_json`) · `xc-auth/.../policy.rs` · `xc-auth/tests/policy_kiosk_test.rs` · `api/tests/kiosk_cancel_route_test.rs` (new). `kiosk_queue.rs` needs no change (§3.4) | logic | KC-D, KC-Q |
-| KC-W | kiosk queue panel cancel | `web/src/shared/ui/QueuePanel.tsx` · `web/src/screens/staff/parts/ReasonDialog.tsx` · the panel's i18n · new `QueuePanel.cancel.test.tsx` | logic | KC-S |
-| KC-C | cashier (desk) cancel + wording | `web/src/screens/desk/entries/kiosk/entry.ts` · `web/src/screens/desk/entries/kiosk/i18n.ts` · the desk banner that renders an entry's actions · new `entries/kiosk/cancel.test.tsx` | logic | KC-S, KC-W (reuses its dialog) |
-| KC-A | kiosk app: cancelled status + the customer's cancel button (sends the `cancelToken` kept from confirm) | `kiosk_models.dart` · `kiosk_controller.dart` · `waiting_page.dart` · `kiosk_api.dart` · the kiosk l10n · new `app/test/features/kiosk/kiosk_cancelled_test.dart` | logic | KC-S |
+| KC-R | the shared reason dialog and cancel call (§3.5) | `web/src/shared/ui/CancelReasonDialog.tsx` (new) · `web/src/shared/api/kiosk-cancel.ts` (new) · `web/src/shared/i18n/{th,en,zh}.ts` (`kioskCancel.*` only) · new `web/src/shared/ui/CancelReasonDialog.test.tsx` | logic | — (mocked API; it adds no button anywhere) |
+| KC-W | kiosk queue panel cancel | `web/src/shared/ui/QueuePanel.tsx` · new `web/src/shared/ui/QueuePanel.cancel.test.tsx` | logic | KC-R, KC-S |
+| KC-C | cashier (desk) cancel and the entry bar | `web/src/screens/desk/desk-store.ts` (the `DeskEntryState.actions?` line only) · `web/src/screens/desk/DeskPage.tsx` · the desk CSS that styles the bar · `web/src/screens/desk/entries/kiosk/entry.ts` · `web/src/screens/desk/entries/kiosk/i18n.ts` · new `web/src/screens/desk/entries/kiosk/cancel.test.tsx` | logic | KC-R, KC-S (parallel with KC-W) |
+| KC-A | kiosk app: the cancelled status, and the customer's cancel button, which sends the `cancelToken` kept from confirm. Flutter is installed on Warut only (`which flutter`: Warut yes, jam no), so this goes to a Warut Argon worker | `kiosk_models.dart` · `kiosk_controller.dart` · `waiting_page.dart` · `kiosk_api.dart` · the kiosk l10n · new `app/test/features/kiosk/kiosk_cancelled_test.dart` | logic | KC-S |
 
 Each ticket's up-front tests come from §2's table. The ticket author writes them before release (🧪).
