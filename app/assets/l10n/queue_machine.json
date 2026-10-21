@@ -9,7 +9,22 @@
     "printer_test_ok": "Test print sent",
     "printer_error_no_device": "No printer attached",
     "printer_error_permission": "USB permission refused",
-    "printer_error_write": "Print failed, please try again"
+    "printer_error_write": "Print failed, please try again",
+    "sign_in_title": "Staff sign in",
+    "sign_in_identifier": "Username",
+    "sign_in_password": "Password",
+    "sign_in_submit": "Sign in",
+    "sign_in_error": "Sign-in failed, please check your credentials",
+    "sign_out": "Sign out",
+    "scanner_title": "Scan customer request QR",
+    "scanner_input_label": "Request QR URL",
+    "scanner_submit": "Issue queue number",
+    "scanner_error_not_found": "Request not found or expired",
+    "scanner_error_invalid_qr": "Invalid request QR code",
+    "issued_title": "Queue number",
+    "issued_printed": "Printed",
+    "issued_print_failed": "Print failed — scan again",
+    "issued_no_printer": "No printer — note the number"
   },
   "th": {
     "queue_machine": "เครื่องกดคิว",
@@ -21,6 +36,21 @@
     "printer_test_ok": "ส่งคำสั่งพิมพ์ทดสอบแล้ว",
     "printer_error_no_device": "ไม่พบเครื่องพิมพ์",
     "printer_error_permission": "ไม่ได้รับอนุญาตให้ใช้เครื่องพิมพ์",
-    "printer_error_write": "พิมพ์ไม่สำเร็จ กรุณาลองใหม่"
+    "printer_error_write": "พิมพ์ไม่สำเร็จ กรุณาลองใหม่",
+    "sign_in_title": "เข้าสู่ระบบพนักงาน",
+    "sign_in_identifier": "ชื่อผู้ใช้",
+    "sign_in_password": "รหัสผ่าน",
+    "sign_in_submit": "เข้าสู่ระบบ",
+    "sign_in_error": "เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูล",
+    "sign_out": "ออกจากระบบ",
+    "scanner_title": "สแกนคิวอาร์โค้ดคำขอของลูกค้า",
+    "scanner_input_label": "ลิงก์คิวอาร์โค้ดคำขอ",
+    "scanner_submit": "ออกบัตรคิว",
+    "scanner_error_not_found": "ไม่พบคำขอหรือคำขอหมดอายุแล้ว",
+    "scanner_error_invalid_qr": "คิวอาร์โค้ดไม่ถูกต้อง",
+    "issued_title": "หมายเลขคิว",
+    "issued_printed": "พิมพ์บัตรคิวแล้ว",
+    "issued_print_failed": "พิมพ์ไม่สำเร็จ — กรุณาสแกนอีกครั้ง",
+    "issued_no_printer": "ไม่พบเครื่องพิมพ์ — กรุณาจดหมายเลขคิว"
   }
 }
