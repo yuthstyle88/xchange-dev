@@ -19,8 +19,8 @@ dependencies:
   url_launcher: ^6.3.2
   share_plus: ^13.0.0
   mobile_scanner: ^7.4.2
-  dio_cookie_manager: any
-  cookie_jar: any
+  dio_cookie_manager: ^3.5.0
+  cookie_jar: ^4.0.9
   flutter_thermal_printer: ^2.3.0
 
 dev_dependencies:

@@ -66,13 +66,12 @@ class SetupController extends Notifier<SetupState> {
       state = SetupState(tested: endpoint, branchName: endpoint.branchId);
     } on DioException catch (e) {
       if (run != _run) return;
-      final serverMessage = e.response?.data is Map
-          ? (e.response?.data['message'] ?? e.response?.data['error'])
-                ?.toString()
-          : (e.response?.data is String &&
-                    (e.response!.data as String).isNotEmpty
-                ? e.response!.data as String
-                : e.message);
+      // Only the server's own answer counts as a refusal; dio's `message`
+      // describes a missing answer and stays off the screen.
+      final data = e.response?.data;
+      final serverMessage = data is Map
+          ? (data['message'] ?? data['error'])?.toString()
+          : null;
       state = serverMessage != null && serverMessage.isNotEmpty
           ? SetupState(serverMessage: serverMessage)
           : const SetupState(errorKey: 'unreachable');

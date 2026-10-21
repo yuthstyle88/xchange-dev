@@ -18,17 +18,22 @@ SetupL10n _loadTexts() => SetupL10n.fromJson(
       as Map<String, dynamic>,
 );
 
-DioException _dioError(String message) => DioException(
-  requestOptions: RequestOptions(path: '/health/ready'),
-  response: message.isEmpty
-      ? null
-      : Response(
+// No server message = no answer at all: a real connection error, which
+// carries dio's own text in `message`. That text must never reach the screen.
+DioException _dioError(String message) => message.isEmpty
+    ? DioException.connectionError(
+        requestOptions: RequestOptions(path: '/health/ready'),
+        reason: 'Connection refused',
+      )
+    : DioException(
+        requestOptions: RequestOptions(path: '/health/ready'),
+        response: Response(
           requestOptions: RequestOptions(path: '/health/ready'),
           statusCode: 400,
           data: {'message': message},
         ),
-  message: message,
-);
+        message: message,
+      );
 
 void main() {
   late ProviderContainer container;
