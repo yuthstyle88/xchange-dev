@@ -318,10 +318,7 @@ impl KioskMachine {
                 let KioskActor::Staff { username, role } = actor else {
                     return Err(KioskError::NotCancellable);
                 };
-                if matches!(
-                    reason,
-                    CancelReason::CustomerCancelled | CancelReason::DayClosed
-                ) {
+                if matches!(reason, CancelReason::CustomerCancelled) {
                     return Err(KioskError::NotCancellable);
                 }
                 if req.staff.as_deref() == Some(username.as_str()) || *role == KioskRole::Manager {

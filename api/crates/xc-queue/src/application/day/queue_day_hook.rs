@@ -20,6 +20,9 @@ pub struct QueueDayHook {
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
     booking_events: Option<Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>>,
+    /// The kiosk's day-close step (#4147, design `queue-day-close.md` §7), run before this hook's
+    /// own `dayClosed` sweep.
+    kiosk: Option<Arc<dyn xc_kernel::kiosk_day_close::KioskDayClose>>,
 }
 
 impl QueueDayHook {
@@ -28,6 +31,7 @@ impl QueueDayHook {
             repo,
             status,
             booking_events: None,
+            kiosk: None,
         }
     }
 
@@ -39,6 +43,15 @@ impl QueueDayHook {
         self
     }
 
+    /// The same hook, running the kiosk's day-close step first (#4147).
+    pub fn with_kiosk_day_close(
+        mut self,
+        kiosk: Arc<dyn xc_kernel::kiosk_day_close::KioskDayClose>,
+    ) -> Self {
+        self.kiosk = Some(kiosk);
+        self
+    }
+
     /// Cancels the branch's WAITING and CALLED tickets (`dayClosed`), one CANCEL event each, and
     /// refreshes the status, inside the caller's transaction. Answers the tickets it cancelled.
     pub async fn on_day_closed(
@@ -47,6 +60,10 @@ impl QueueDayHook {
         branch: &BranchId,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<QueueTicket>> {
+        if let Some(kiosk) = &self.kiosk {
+            kiosk.close_day_in(tx, branch, now).await?;
+        }
+
         let rows = sqlx::query(
             r#"
             SELECT
