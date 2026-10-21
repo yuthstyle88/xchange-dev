@@ -37,7 +37,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
@@ -68,25 +68,17 @@ const BAD_TEXT: &str = "ข้อมูลข้อความไม่คร�
 const BAD_REQUEST_ID: &str = "รหัสคำขอไม่ถูกต้อง";
 const NO_SUCH_BRANCH: &str = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 /// A name no other test, test binary or run on this server has used.
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 /// A request id in v2's shape (`[A-Za-z0-9-]{16,60}`), different on every call.
 fn request_id() -> String {
-    format!(
-        "req-{:012}-{:08}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    )
+    format!("req-{:012}-{:08}", std::process::id(), {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    })
 }
 
 fn branch(id: &str) -> BranchId {

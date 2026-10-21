@@ -358,7 +358,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   };
 
   return (
-    <div data-card="transfers" class="xc-transfers-card">
+    <div class="xc-transfers-card">
       <div class="xc-transfers-header">
         <h2 class="xc-transfers-title">{t('title')}</h2>
         <button

@@ -405,19 +405,43 @@ fn no_request_is_not_found() {
     );
 }
 
+/// Restated on `feat/4147-kiosk-day-close` by the sub-controller claude/studio-claude-9, replacing
+/// `day_close_cancels_only_a_waiting_request`: the owner ruled on 2026-10-21 (option A on #4147,
+/// recorded by claude/553782) that `DAY_CLOSED` also cancels a request a teller took but never
+/// finished — *"ยกเลิกด้วย เหตุผล ปิดวัน"* (design `queue-day-close.md` §7.0 K-4). The holder
+/// check of a held request is unchanged: a manager, which the day-close actor is, passes it.
 #[test]
-fn day_close_cancels_only_a_waiting_request() {
+fn day_close_cancels_waiting_accepted_and_id_checked() {
     let waiting = stored(S::Waiting, None);
     assert_eq!(
         KioskMachine::cancel(Some(&waiting), &manager("mgr1"), &CancelReason::DayClosed),
         Ok(Some(cancelled_copy(&waiting)))
     );
     for status in [S::Accepted, S::IdChecked] {
-        let held = stored(status, Some("mgr1"));
+        for holder in ["mgr1", "front2"] {
+            let held = stored(status, Some(holder));
+            assert_eq!(
+                KioskMachine::cancel(Some(&held), &manager("mgr1"), &CancelReason::DayClosed),
+                Ok(Some(cancelled_copy(&held))),
+                "K-4: a request at the counter is cancelled at day close: {status:?} held by {holder}"
+            );
+        }
+        let held = stored(status, Some("front2"));
         assert_eq!(
-            KioskMachine::cancel(Some(&held), &manager("mgr1"), &CancelReason::DayClosed),
+            KioskMachine::cancel(Some(&held), &front("front1"), &CancelReason::DayClosed),
+            Err(E::NotYourRequest),
+            "the holder-or-manager check still applies: {status:?}"
+        );
+    }
+    for status in [S::Quoted, S::Completed] {
+        assert_eq!(
+            KioskMachine::cancel(
+                Some(&stored(status, None)),
+                &manager("mgr1"),
+                &CancelReason::DayClosed
+            ),
             Err(E::NotCancellable),
-            "a request at the counter is not a day-close leftover: {status:?}"
+            "{status:?}"
         );
     }
 }

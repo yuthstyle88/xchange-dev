@@ -309,3 +309,201 @@ The skeleton (Claude, STEP 2): the `git mv`, `tsconfig.json`, the config's two p
 ## 8. Data migration
 
 None: the suite reads and writes only through the app, on the seeded test branch.
+
+## 9. Round 9: every activity, every form, every validation
+
+**Owner, 2026-10-21 ~15:20Z, relayed by the FE lane controller claude/e92db6:** *"คุณเตรียม ตัวเทส ทุกแง่มุมแล้วหรือไม่"* · *"หน้าจอ ui"* · *"การ validation"* · *"การinput ดาต้า"* · *"การทำกิจกรรม ทุกประเภท"* · *"เริ่มงานได้"*.
+
+Rounds 1–8 open every screen (smoke) and walk about 15 forms end to end. They never systematically try bad input, and most admin configuration forms are only opened. Round 9 closes both gaps. The rounds 1–8 suite measured on `main` `7e9de9ca`: 34 spec files, 126 `test(` calls.
+
+### 9.1 The rule for each activity
+
+Every mutating command reached from a screen gets three checks in its area's spec:
+- **(a) Happy path:** submit through the screen's own controls, then **reload the page** and read the change back. The value persisted, or the row's state moved.
+- **(b) Invalid input, 3–5 cases**, chosen from what the form accepts:
+  - empty required field;
+  - negative or zero;
+  - too many decimals;
+  - over the limit the server enforces;
+  - wrong format;
+  - duplicate name.
+
+  Each case must be refused, and a worded refusal must show on the page. It can be the form's own message or the server's refusal, but never a silent no-op or a raw code. Check the refusal once in **th** and once in **en** (`withLang`). The form must keep what was typed.
+- **(c) Permission:** sign in as a role without the permission. Either the action is not offered, or it is refused (`outOfScope` / `roleNotAllowed`). Where `smoke-rbac-matrix.spec.ts` already proves the screen is closed to that role, cite the row and skip (c).
+
+Commands with no screen (the API-level rows) get (a)–(c) through `page.request` with the right role's session, in `flow-api-commands.spec.ts`.
+
+### 9.2 Data
+
+- Writes go to the seeded host, and a re-seed (`scripts/reseed.sh`) resets them.
+- Each spec creates its own rows with a unique run marker (`qa-r9-<area>-<Date.now()>`), so specs pass in any order and on re-runs.
+- A spec reads back only rows it made. It never edits a seeded row it did not create, except where the row *is* the setting (a branch's cash limit, a policy). Then it records the old value and restores it in `finally` (E-4).
+- **Permanent or armed writes are validation-only:** (b) and (c), never (a).
+  - `retentionSet` arms the purge job (round 7 survey, §6).
+  - `consentTextPublish` publishes a new version of shared legal text.
+  - A spec that sees its own save succeed on these has broken E-4.
+
+### 9.3 Exclusions
+
+- No kiosk-device path: F19, F20, `/kiosk-queue.html`, or the customer-kiosk screens in `app/` (owner ruling, PR 4249 issuecomment-6312118645).
+- `kioskBookingCheckIn` is out.
+- The three v3 *actions* `passport_read`, `profit_summary` and `shift_valuation` write nothing and are out of round 9.
+
+### 9.4 Matrix
+
+Built on `main` `7e9de9ca` by reading every `const NAME` / `const ROUTE` / `const METHOD` under `api/src/presentation/http/v3/commands/` and `actions/`, then searching non-test files under `web/src` for the route's static parts, and `qa/e2e/tests/*.ts` for the route or the name. That gives 123 entries:
+- 11 have no caller in `web/src`. One of them, `planner_preview`, is reached by `flow-xapp-plan.spec.ts`.
+- 4 more have only a generated type as their caller, so no screen calls them. These go to R9-13 with the 10 no-caller writes.
+- 48 with a screen are already reached by a spec.
+- 60 with a screen are reached by no spec. "Covered by" means a spec reaches the route at least once. It does not mean (b) or (c) are covered.
+
+| # | Command | Route | Called from (`web/src/`) | Covered by (round ≤8) | Round 9 |
+|---|---|---|---|---|---|
+| 1 | `passport_read` | (action) | — | — | read-type action, no write: out of round 9 |
+| 2 | `planner_preview` | (action) | — | flow-xapp-plan.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 3 | `profit_summary` | (action) | — | — | read-type action, no write: out of round 9 |
+| 4 | `shift_valuation` | (action) | — | — | read-type action, no write: out of round 9 |
+| 5 | `adminGroupAdd` | `POST /api/admin/groups/add` | screens/admin/users/PermissionMatrix.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 6 | `adminGroupSave` | `POST /api/admin/groups/save` | screens/admin/users/PermissionMatrix.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 7 | `adminGroupDelete` | `POST /api/admin/groups/delete` | screens/admin/users/PermissionMatrix.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 8 | `appSettingsSave` | `PUT /api/app-settings` | shared/api/generated/app_settings_save.ts | — | **R9-13** `flow-api-commands.spec.ts` |
+| 9 | `approvalDecide` | `POST /api/approvals/{id}/decide` | screens/admin/parts/decide.ts | flow-approvals.spec.ts<br>flow-exchange.spec.ts<br>flow-transfer-escalation.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 10 | `assistantAsk` | `POST /api/app/assistant/messages` | screens/customer/assistant/AssistantScreen.tsx | — | **R9-10** `flow-customer-extras.spec.ts` |
+| 11 | `attachReferral` | `POST /api/transactions/{id}/referral` | screens/desk/referral/ReferralCodeField.tsx<br>shared/api/generated/attach_referral.ts | — | **R9-9** `flow-desk-extras.spec.ts` |
+| 12 | `bookingCancel` | `POST /api/bookings/{id}/cancel` | screens/customer/bookings/Bookings.tsx<br>screens/desk/bookings/DeskBookingsScreen.tsx | flow-booking-reschedule.spec.ts<br>flow-desk-bookings.spec.ts<br>flow-desk-check-in.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 13 | `bookingCheckIn` | `POST /api/bookings/{id}/check-in` | screens/desk/bookings/DeskBookingsScreen.tsx | flow-desk-check-in.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 14 | `closureAdd` | `POST /api/branches/{id}/closures` | screens/admin/booking-slots/BookingSlots.tsx | flow-booking.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 15 | `closureRemove` | `POST /api/branches/{id}/closures/{date}/remove` | screens/admin/booking-slots/BookingSlots.tsx | — | **R9-4** `flow-admin-booking-slots.spec.ts` |
+| 16 | `bookingConfirm` | `POST /api/bookings/{id}/confirm` | screens/customer/bookings/BookingExtras.tsx | — | **R9-10** `flow-customer-extras.spec.ts` |
+| 17 | `bookingCreate` | `POST /api/bookings` | screens/customer/book/Book.tsx<br>screens/customer/bookings/BookingExtras.tsx<br>screens/customer/bookings/Bookings.tsx<br>screens/desk/bookings/DeskBookingsScreen.tsx | flow-booking-reschedule.spec.ts<br>flow-booking.spec.ts<br>flow-desk-bookings.spec.ts<br>flow-desk-check-in.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 18 | `kioskBookingCheckIn` | (action) | — | — | excluded (kiosk path) |
+| 19 | `bookingPolicySet` | `PUT /api/booking-policy` | screens/admin/booking-slots/BookingSlots.tsx | — | **R9-4** `flow-admin-booking-slots.spec.ts` |
+| 20 | `bookingQrReissue` | `POST /api/bookings/{id}/qr` | screens/customer/bookings/BookingExtras.tsx<br>screens/desk/bookings/DeskBookingsScreen.tsx | flow-desk-bookings.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 21 | `bookingReschedule` | `POST /api/bookings/{id}/reschedule` | screens/customer/bookings/Bookings.tsx<br>screens/desk/bookings/DeskBookingsScreen.tsx | flow-booking-reschedule.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 22 | `slotCapacitySet` | `PUT /api/booking-slots/{id}/capacity` | screens/admin/booking-slots/BookingSlots.tsx | flow-booking.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 23 | `slotClose` | `POST /api/booking-slots/{id}/close` | screens/admin/booking-slots/BookingSlots.tsx | — | **R9-4** `flow-admin-booking-slots.spec.ts` |
+| 24 | `slotOpen` | `POST /api/booking-slots/{id}/open` | screens/admin/booking-slots/BookingSlots.tsx | — | **R9-4** `flow-admin-booking-slots.spec.ts` |
+| 25 | `slotRuleSet` | `PUT /api/branches/{id}/booking-slot-rule` | screens/admin/booking-slots/BookingSlots.tsx | — | **R9-4** `flow-admin-booking-slots.spec.ts` |
+| 26 | `branchAlertSettingsSave` | `POST /api/v3/commands/branch_alert_settings_save` | screens/admin/alert-settings/AlertSettings.tsx | — | **R9-6** `flow-admin-pricing-rates.spec.ts` |
+| 27 | `dayStartService` | `POST /api/branch-day/start` | screens/staff/floor/FloorCard.tsx | flow-floor.spec.ts<br>helpers.ts | validation in R9-11 / R9-12 where it has a form |
+| 28 | `dayCutoff` | `POST /api/branch-day/cutoff` | screens/staff/floor/FloorCard.tsx | flow-floor.spec.ts<br>helpers.ts | validation in R9-11 / R9-12 where it has a form |
+| 29 | `dayTarget` | `POST /api/branch-day/target` | screens/staff/floor/FloorCard.tsx | flow-floor.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 30 | `clock` | `POST /api/attendance` | screens/staff/floor/FloorCard.tsx | flow-count-difference.spec.ts<br>flow-floor.spec.ts<br>helpers.ts | validation in R9-11 / R9-12 where it has a form |
+| 31 | `holdCreate` | `POST /api/customer-holds` | screens/staff/holds/HoldsCard.tsx | flow-holds.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 32 | `holdRelease` | `POST /api/customer-holds/{id}/release` | screens/staff/holds/HoldsCard.tsx | flow-holds.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 33 | `draftBegin` | `POST /api/tx-drafts` | screens/desk/steps/customer/step.tsx | — | **R9-9** `flow-desk-extras.spec.ts` |
+| 34 | `branchPriceSourceSet` | `POST /api/branches/price-source` | — | — | **R9-13** `flow-api-commands.spec.ts` |
+| 35 | `branchSave` | `PUT /api/branches/profile` | screens/admin/branches/BranchesScreen.tsx | — | **R9-7** `flow-admin-org-consent.spec.ts` |
+| 36 | `campaignCreate` | `POST /api/campaigns` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 37 | `campaignPause` | `POST /api/campaigns/{id}/pause` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 38 | `campaignResume` | `POST /api/campaigns/{id}/resume` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 39 | `campaignSimulate` | `POST /api/campaigns/{id}/simulate` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 40 | `campaignSubmit` | `POST /api/campaigns/{id}/submit` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 41 | `campaignVersionNew` | `POST /api/campaigns/{id}/versions` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 42 | `campaignVersionSave` | `PUT /api/campaigns/{id}/draft` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 43 | `countSubmit` | `POST /api/cash-counts` | screens/admin/cash/CashFlows.tsx<br>screens/staff/shift/ShiftCard.tsx<br>shared/api/generated/cash.ts | helpers.ts | validation in R9-11 / R9-12 where it has a form |
+| 44 | `countVerify` | `POST /api/cash-counts/{id}/verify` | screens/admin/cash/CashFlows.tsx<br>screens/staff/shift/ShiftCard.tsx | helpers.ts | validation in R9-11 / R9-12 where it has a form |
+| 45 | `transferPolicySave` | `PUT /api/cash-transfer-policy` | screens/admin/cash-policy/CashPolicy.tsx<br>shared/api/generated/cash_transfer_policy.ts | — | **R9-5** `flow-admin-cash-policy.spec.ts` |
+| 46 | `handoverStart` | `POST /api/handovers` | screens/staff/shift/ShiftCard.tsx<br>shared/api/generated/cash.ts | — | **R9-8** `flow-staff-handover-verification.spec.ts` |
+| 47 | `handoverAccept` | `POST /api/handovers/{id}/accept` | screens/staff/shift/ShiftCard.tsx | — | **R9-8** `flow-staff-handover-verification.spec.ts` |
+| 48 | `handoverReject` | `POST /api/handovers/{id}/reject` | screens/staff/shift/ShiftCard.tsx | — | **R9-8** `flow-staff-handover-verification.spec.ts` |
+| 49 | `transferCreate` | `POST /api/cash-transfers` | screens/admin/cash/CashFlows.tsx<br>screens/staff/transfers/TransfersCard.tsx<br>shared/api/generated/cash.ts | flow-cash.spec.ts<br>flow-transfer-branch.spec.ts<br>flow-transfer-escalation.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 50 | `transferSubmit` | `POST /api/cash-transfers/{id}/submit` | screens/staff/transfers/TransfersCard.tsx | flow-cash.spec.ts<br>flow-transfer-branch.spec.ts<br>flow-transfer-escalation.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 51 | `transferDispatch` | `POST /api/cash-transfers/{id}/dispatch` | screens/staff/transfers/TransfersCard.tsx | flow-cash.spec.ts<br>flow-transfer-branch.spec.ts<br>flow-transfer-escalation.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 52 | `transferReceive` | `POST /api/cash-transfers/{id}/receive` | screens/admin/cash/CashFlows.tsx<br>screens/staff/transfers/TransfersCard.tsx<br>shared/api/generated/cash.ts | flow-cash.spec.ts<br>flow-transfer-branch.spec.ts<br>flow-transfer-escalation.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 53 | `transferReconcile` | `POST /api/cash-transfers/{id}/reconcile` | screens/admin/cash/CashFlows.tsx<br>screens/staff/transfers/TransfersCard.tsx<br>shared/api/generated/cash.ts | — | **R9-5** `flow-admin-cash-policy.spec.ts` |
+| 54 | `cashExceptionRaise` | `POST /api/v3/commands/cash_exception_raise` | — | — | **R9-13** `flow-api-commands.spec.ts` |
+| 55 | `cashExceptionReview` | `POST /api/v3/commands/cash_exception_review` | — | — | **R9-13** `flow-api-commands.spec.ts` |
+| 56 | `cashLimitsSave` | `PUT /api/cash-limits` | screens/admin/cash-limits/CashLimits.tsx<br>shared/api/generated/cash_limits_save.ts | — | **R9-5** `flow-admin-cash-policy.spec.ts` |
+| 57 | `transactionComplete` | `POST /api/transactions/{id}/complete` | screens/desk/save.ts | flow-exchange.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 58 | `consentRecord` | `POST /api/app/consents` | screens/customer/profile/Profile.tsx | flow-xapp-profile.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 59 | `consentTextPublish` | `POST /api/consent-texts` | screens/admin/consent/Consent.tsx | — | **R9-7** `flow-admin-org-consent.spec.ts` |
+| 60 | `couponIssue` | `POST /api/campaigns/{id}/coupons` | screens/admin/campaigns/Campaigns.tsx | — | **R9-2** `flow-admin-campaigns.spec.ts` |
+| 61 | `customerContactVerify` | `POST /api/v3/commands/customer_contact_verify` | — | — | **R9-13** `flow-api-commands.spec.ts` |
+| 62 | `customerPhoneConfirm` | `POST /api/customers/{id}/phone-verifications/{challengeId}/confirm` | screens/desk/loyalty/phone/PhoneVerify.tsx | — | **R9-9** `flow-desk-extras.spec.ts` |
+| 63 | `customerPhoneStart` | `POST /api/customers/{id}/phone-verifications` | screens/desk/loyalty/phone/PhoneVerify.tsx | — | **R9-9** `flow-desk-extras.spec.ts` |
+| 64 | `denominationGroupCreate` | `POST /api/denomination-groups` | screens/admin/denomination-groups/DenominationGroups.tsx | — | **R9-5** `flow-admin-cash-policy.spec.ts` |
+| 65 | `denominationGroupMap` | `POST /api/denomination-groups/map` | screens/admin/denomination-groups/DenominationGroups.tsx | — | **R9-5** `flow-admin-cash-policy.spec.ts` |
+| 66 | `denominationGroupRemove` | `POST /api/denomination-groups/remove` | screens/admin/denomination-groups/DenominationGroups.tsx | — | **R9-5** `flow-admin-cash-policy.spec.ts` |
+| 67 | `exchangeSettingsSave` | `PUT /api/exchange-settings` | shared/api/generated/exchange_settings.ts | — | **R9-13** `flow-api-commands.spec.ts` |
+| 68 | `branchExchangeLimitSave` | `PUT /api/branches/{id}/exchange-limit` | shared/api/generated/exchange_settings.ts | — | **R9-13** `flow-api-commands.spec.ts` |
+| 69 | `loyaltyRuleDraft` | `POST /api/v3/commands/loyalty_rule_draft` | screens/admin/loyalty/Loyalty.tsx | — | **R9-3** `flow-admin-loyalty-segments.spec.ts` |
+| 70 | `loyaltyRuleSubmit` | `POST /api/v3/commands/loyalty_rule_submit` | screens/admin/loyalty/Loyalty.tsx | — | **R9-3** `flow-admin-loyalty-segments.spec.ts` |
+| 71 | `marginGuardSet` | `PUT /api/margin-guard` | — | — | **R9-13** `flow-api-commands.spec.ts` |
+| 72 | `notificationRead` | `POST /api/app/notifications/{id}/read` | shared/notifications/notifications.ts | — | **R9-10** `flow-customer-extras.spec.ts` |
+| 73 | `notificationReadAll` | `POST /api/app/notifications/read-all` | shared/notifications/notifications.ts | — | **R9-10** `flow-customer-extras.spec.ts` |
+| 74 | `orgStartingPriceSave` | `POST /api/v3/commands/org_starting_price_save` | screens/admin/starting-prices/StartingPrices.tsx<br>shared/api/generated/org_starting_price_save.ts | — | **R9-6** `flow-admin-pricing-rates.spec.ts` |
+| 75 | `plannerDraftDelete` | `POST /api/app/planner-drafts/{id}/delete` | screens/customer/journey/PlanDelete.tsx<br>shared/api/generated/planner_draft_delete.ts | flow-xapp-plan.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 76 | `plannerDraftSave` | `POST /api/app/planner-drafts` | screens/customer/assistant/AnswerPreview.tsx<br>screens/customer/home/HomeScreen.tsx<br>screens/customer/journey/PlanDelete.tsx<br>shared/api/generated/planner_draft_delete.ts<br>shared/api/generated/planner_draft_save.ts | flow-xapp-plan.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 77 | `plannerDraftSave` | `PUT /api/app/planner-drafts/{id}` | screens/customer/assistant/AnswerPreview.tsx<br>screens/customer/home/HomeScreen.tsx<br>screens/customer/journey/PlanDelete.tsx<br>shared/api/generated/planner_draft_delete.ts<br>shared/api/generated/planner_draft_save.ts | flow-xapp-plan.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 78 | `pricingApprove` | `POST /api/pricing/approve` | screens/admin/pricing/pricing-labels.ts | — | **R9-6** `flow-admin-pricing-rates.spec.ts` |
+| 79 | `pricingConfigure` | `POST /api/pricing/configure` | screens/admin/pricing/pricing-labels.ts | — | **R9-6** `flow-admin-pricing-rates.spec.ts` |
+| 80 | `profileUpdate` | `PUT /api/app/profile` | screens/customer/profile/Profile.tsx | flow-xapp-profile.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 81 | `ticketIssueWalkIn` | `POST /api/queue/tickets` | screens/desk/queue/queue-commands.ts | flow-desk-check-in.spec.ts<br>flow-queue-many.spec.ts<br>flow-queue.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 82 | `ticketCallNext` | `POST /api/queue/call-next` | screens/desk/queue/queue-commands.ts | flow-queue-many.spec.ts<br>flow-queue.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 83 | `ticketCancel` | `POST /api/queue/tickets/{id}/cancel` | screens/desk/queue/queue-commands.ts | flow-desk-check-in.spec.ts<br>flow-queue-many.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 84 | `counterPause` | `POST /api/queue/counter/pause` | screens/desk/queue/queue-commands.ts | — | **R9-9** `flow-desk-extras.spec.ts` |
+| 85 | `counterResume` | `POST /api/queue/counter/resume` | screens/desk/queue/queue-commands.ts | — | **R9-9** `flow-desk-extras.spec.ts` |
+| 86 | `queueOpen` | `POST /api/queue/open` | screens/desk/queue/queue-commands.ts | flow-desk-check-in.spec.ts<br>flow-desk-kiosk-cancel.spec.ts<br>flow-queue-many.spec.ts<br>flow-queue.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 87 | `queueClose` | `POST /api/queue/close` | screens/desk/queue/queue-commands.ts | flow-desk-check-in.spec.ts<br>flow-desk-kiosk-cancel.spec.ts<br>flow-queue-many.spec.ts<br>flow-queue.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 88 | `queueTicketTake` | `POST /api/app/queue/tickets` | screens/customer/branches/TakeNumber.tsx | — | **R9-10** `flow-customer-extras.spec.ts` |
+| 89 | `quoteCreate` | `POST /api/quotes` | screens/desk/desk-path.ts<br>screens/desk/desk-store.ts | flow-exchange.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 90 | `rateAlertCreate` | `POST /api/app/rate-alerts` | screens/customer/rate-alerts/RateAlerts.tsx | flow-xapp-alerts.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 91 | `rateAlertPause` | `POST /api/app/rate-alerts/{id}/pause` | screens/customer/rate-alerts/RateAlerts.tsx | — | **R9-10** `flow-customer-extras.spec.ts` |
+| 92 | `rateAlertResume` | `POST /api/app/rate-alerts/{id}/resume` | screens/customer/rate-alerts/RateAlerts.tsx | — | **R9-10** `flow-customer-extras.spec.ts` |
+| 93 | `rateAlertDelete` | `POST /api/app/rate-alerts/{id}/delete` | screens/customer/rate-alerts/RateAlerts.tsx | flow-xapp-alerts.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 94 | `rateAlertSettingsSave` | `PUT /api/rate-alert-settings` | screens/admin/rate-alert-settings/RateAlertSettings.tsx | — | **R9-6** `flow-admin-pricing-rates.spec.ts` |
+| 95 | `rateDraftPublish` | `POST /api/rate-drafts/{id}/publish` | screens/admin/rates/RatesDraftCard.tsx | flow-rates.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 96 | `rateDraftCreate` | `POST /api/rate-drafts` | screens/admin/rates/RatesDraftCard.tsx | flow-rates.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 97 | `rateDraftEdit` | `PUT /api/rate-drafts/{id}` | screens/admin/rates/RatesDraftCard.tsx | flow-rates.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 98 | `rateDraftSimulate` | `POST /api/rate-drafts/{id}/simulate` | screens/admin/rates/RatesDraftCard.tsx | flow-rates.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 99 | `rateDraftSubmit` | `POST /api/rate-drafts/{id}/submit` | screens/admin/rates/RatesDraftCard.tsx | flow-rates.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 100 | `ratePolicySave` | `POST /api/rate-policies` | screens/admin/rates/Rates.tsx<br>screens/admin/rates/RatesDraftCard.tsx | flow-rates.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 101 | `rateReferenceFetch` | `POST /api/rate-references/fetch` | screens/admin/pricing/pricing-labels.ts<br>screens/admin/rates/RatesDraftCard.tsx | flow-rates.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 102 | `reconciliationCertify` | `POST /api/v3/commands/reconciliation_certify` | screens/admin/reconciliation/Reconciliation.tsx | — | **R9-5** `flow-admin-cash-policy.spec.ts` |
+| 103 | `retentionSet` | `PUT /api/retention-policies/{dataType}` | screens/admin/consent/Consent.tsx | — | **R9-7** `flow-admin-org-consent.spec.ts` |
+| 104 | `reversalPost` | `POST /api/reversals/{id}/post` | screens/desk/steps/refunds/post.ts | flow-exchange.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 105 | `reversalRequest` | `POST /api/transactions/{id}/reversal-requests` | screens/desk-transaction/TransactionScreen.tsx | flow-exchange.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 106 | `segmentDefine` | `POST /api/segments` | screens/admin/members/Members.tsx | — | **R9-3** `flow-admin-loyalty-segments.spec.ts` |
+| 107 | `segmentSnapshot` | `POST /api/segments/{id}/snapshots` | screens/admin/members/Members.tsx | — | **R9-3** `flow-admin-loyalty-segments.spec.ts` |
+| 108 | `supersedeReferral` | `POST /api/referral-attributions/{id}/supersede` | shared/api/generated/supersede_referral.ts | — | **R9-13** `flow-api-commands.spec.ts` |
+| 109 | `transactionCreate` | `POST /api/transactions` | screens/desk-transaction/TransactionScreen.tsx<br>screens/desk/desk-path.ts<br>screens/desk/referral/ReferralCodeField.tsx<br>screens/desk/save.ts<br>shared/api/generated/attach_referral.ts | flow-exchange.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 110 | `transactionConfirm` | `POST /api/transactions/{id}/confirm` | screens/desk/save.ts | flow-exchange.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 111 | `transactionCancel` | `POST /api/transactions/{id}/cancel` | — | — | **R9-13** `flow-api-commands.spec.ts` |
+| 112 | `userDisable` | `POST /api/users/disable` | screens/admin/users/UsersScreen.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 113 | `userEnable` | `POST /api/users/enable` | screens/admin/users/UsersScreen.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 114 | `userGrant` | `POST /api/users/grant` | screens/admin/users/UsersScreen.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 115 | `userProfileSave` | `POST /api/users/profile` | screens/admin/users/UsersScreen.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 116 | `userResume` | `POST /api/users/resume` | screens/admin/users/UsersScreen.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 117 | `userRevoke` | `POST /api/users/revoke` | screens/admin/users/UsersScreen.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 118 | `userSuspend` | `POST /api/users/suspend` | screens/admin/users/UsersScreen.tsx | — | **R9-1** `flow-admin-users.spec.ts` |
+| 119 | `verificationCaseApprove` | `POST /api/operations/verification/cases/{id}/approve` | screens/operations/verification/VerificationScreen.tsx | — | **R9-8** `flow-staff-handover-verification.spec.ts` |
+| 120 | `verificationCaseReject` | `POST /api/operations/verification/cases/{id}/reject` | screens/operations/verification/VerificationScreen.tsx | flow-verification.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 121 | `verificationCaseRequestUpdate` | `POST /api/operations/verification/cases/{id}/request-update` | screens/operations/verification/VerificationScreen.tsx | flow-verification.spec.ts | validation in R9-11 / R9-12 where it has a form |
+| 122 | `verificationCaseRevoke` | `POST /api/operations/verification/cases/{id}/revoke` | screens/operations/verification/VerificationScreen.tsx | — | **R9-8** `flow-staff-handover-verification.spec.ts` |
+| 123 | `verificationCaseStartReview` | `POST /api/operations/verification/cases/{id}/start-review` | screens/operations/verification/VerificationScreen.tsx | flow-verification.spec.ts | validation in R9-11 / R9-12 where it has a form |
+
+### 9.5 Tickets (cut after this section merges)
+
+Each ticket writes **one new spec file**. File scopes are disjoint, so the team runs together.
+- **Helpers:** imports come from `./helpers` only. A missing helper is a comment on the ticket, never a change to `helpers.ts`.
+- **Done:** `cd qa/e2e && npx playwright test --list` lists the new tests, and `npx tsc --noEmit -p .` is clean. Nobody runs the suite against a host (E-3). The deploy session runs round 9 once it merges.
+
+| Ticket | New file | Commands (matrix) | Plus | Class |
+|---|---|---|---|---|
+| R9-1 | `flow-admin-users.spec.ts` | `user*` (7), `adminGroup*` (3) | | logic |
+| R9-2 | `flow-admin-campaigns.spec.ts` | `campaign*` (7), `couponIssue` | | logic |
+| R9-3 | `flow-admin-loyalty-segments.spec.ts` | `loyaltyRuleDraft/Submit`, `segmentDefine/Snapshot` | | logic |
+| R9-4 | `flow-admin-booking-slots.spec.ts` | `bookingPolicySet`, `slotRuleSet`, `slotOpen/Close`, `closureRemove` | | logic |
+| R9-5 | `flow-admin-cash-policy.spec.ts` | `cashLimitsSave`, `transferPolicySave`, `transferReconcile`, `denominationGroup*` (3), `reconciliationCertify` | | logic |
+| R9-6 | `flow-admin-pricing-rates.spec.ts` | `pricingConfigure/Approve`, `orgStartingPriceSave`, `rateAlertSettingsSave`, `branchAlertSettingsSave` | | logic |
+| R9-7 | `flow-admin-org-consent.spec.ts` | `branchSave` (a–c); `consentTextPublish`, `retentionSet` (b–c only, §9.2) | | mechanical |
+| R9-8 | `flow-staff-handover-verification.spec.ts` | `handoverStart/Accept/Reject`, `verificationCaseApprove/Revoke` | | logic |
+| R9-9 | `flow-desk-extras.spec.ts` | `draftBegin`, `attachReferral`, `counterPause/Resume`, `customerPhoneStart/Confirm` | | logic |
+| R9-10 | `flow-customer-extras.spec.ts` | `assistantAsk`, `bookingConfirm`, `queueTicketTake`, `rateAlertPause/Resume`, `notificationRead/ReadAll` | | mechanical |
+| R9-11 | `flow-validation-customer.spec.ts` | (b) only, for the customer forms the earlier rounds walk: `/app/book` (`bookingCreate`), `/app/bookings` (`bookingCancel`, `bookingReschedule`), `/app/profile` (`profileUpdate`, `consentRecord`), `/app/rate-alerts` (`rateAlertCreate`), `/app/journey` (`plannerDraftSave`), `/app/sign-up` | | mechanical |
+| R9-12 | `flow-validation-staff-desk.spec.ts` | (b) only, for the staff and desk forms: the desk amount/rate step (`quoteCreate`, `transactionCreate`, `transactionConfirm`), refunds (`reversalRequest`, `reversalPost`), shift counts (`countSubmit`, `countVerify`), holds (`holdCreate`), cash transfers (`transferCreate`), the floor day target (`dayTarget`), the walk-in ticket (`ticketIssueWalkIn`), and the desk booking cancel and reschedule reason (`bookingCancel`, `bookingReschedule`) | | logic |
+| R9-14 | `flow-validation-admin.spec.ts` | (b) only, for the admin forms the earlier rounds walk: rate drafts and policy (`rateDraftCreate`, `rateDraftEdit`, `ratePolicySave`), the approval reason (`approvalDecide`), the verification reject and request-update reason (`verificationCaseReject`, `verificationCaseRequestUpdate`), slot capacity (`slotCapacitySet`) and closure add (`closureAdd`). Never submit or publish a rate draft (F4, E-4) | | logic |
+| R9-13 | `flow-api-commands.spec.ts` | the 10 API-level commands with no screen (matrix rows marked R9-13), through `page.request` | | logic |
+
+The round is done when every matrix row is assigned to a merged spec, or is excluded with its reason in §9.3. A row marked "validation in R9-11 / R9-12" counts only once its command is **named** in the R9-11, R9-12 or R9-14 row above. A row with a form that none of them names is a gap, and gets a ticket before the round closes.

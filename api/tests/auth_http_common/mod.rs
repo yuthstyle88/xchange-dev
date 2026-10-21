@@ -9,9 +9,8 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
@@ -36,15 +35,8 @@ pub const AUTH_REQUIRED: &str = "EMPLOYEE_AUTH_REQUIRED";
 pub const EMPLOYEE_DATA: &str = "ข้อมูลพนักงานไม่ครบหรือไม่ถูกต้อง";
 pub const SERVER_ERROR: &str = "เซิร์ฟเวอร์ขัดข้อง";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 // ── the custody port, faked ──────────────────────────────────────────────

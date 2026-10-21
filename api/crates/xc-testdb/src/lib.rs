@@ -208,3 +208,14 @@ fn unique_copy_name(prefix: &str) -> String {
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
     format!("{clean}_{}_{nanos}_{seq}_test", std::process::id())
 }
+
+/// A name unique in the whole test process and across processes, for a test schema or row id:
+/// `{prefix}_{uuid}` with `Uuid::new_v4().simple()` (32 hex), the prefix cut to its first 30 bytes,
+/// so the result is at most 63 bytes (Postgres's identifier limit). #4281.
+pub fn unique_schema_name(prefix: &str) -> String {
+    let end = (0..=prefix.len().min(30))
+        .rev()
+        .find(|&i| prefix.is_char_boundary(i))
+        .unwrap_or(0);
+    format!("{}_{}", &prefix[..end], uuid::Uuid::new_v4().simple())
+}

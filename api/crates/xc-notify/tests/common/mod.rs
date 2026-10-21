@@ -13,8 +13,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use sqlx::migrate::Migrator;
@@ -43,15 +42,8 @@ pub const TRANSACTIONAL: &str = "test_transactional";
 pub const TRANSACTIONAL_VERSION: i32 = 3;
 pub const MARKETING: &str = "test_marketing";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 pub fn at(seconds: i64) -> DateTime<Utc> {

@@ -627,6 +627,7 @@ describe("the real /staff page mounts the holds card through main.tsx and cards.
     await vi.waitFor(() =>
       expect(app.querySelector('[data-card="holds"]')).not.toBeNull(),
     );
+    expect(app.querySelectorAll('[data-card="holds"]').length).toBe(1);
     expect(
       app.querySelector(`[data-card="holds"] ${tid("holds-form")}`),
     ).not.toBeNull();

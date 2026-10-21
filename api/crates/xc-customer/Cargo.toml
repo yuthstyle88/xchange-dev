@@ -26,6 +26,9 @@ uuid = { version = "1", features = ["v4"] }
 rand = "0.8"
 futures = "0.3"
 
+[dev-dependencies]
+xc-testdb = { workspace = true }
+
 [build-dependencies]
 xc-testlist = { path = "../xc-testlist" }
 

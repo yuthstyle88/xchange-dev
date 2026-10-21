@@ -9,9 +9,9 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use base64::Engine;
 use futures::future::BoxFuture;
@@ -48,16 +48,10 @@ const MARKER: &[u8] = b"VF12-SECRET-BYTES-9d4f";
 const STORE_KEY_ID: &str = "test-vault-key-1";
 const MUST_FINISH: Duration = Duration::from_secs(60);
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
 static STARTING: Semaphore = Semaphore::const_new(4);
 
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 // ── test file payloads ──────────────────────────────────────────────────────
