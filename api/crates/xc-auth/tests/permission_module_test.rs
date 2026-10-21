@@ -97,29 +97,22 @@ fn expected(role: Role) -> BTreeMap<Module, Level> {
             (SystemSettings, Full),
             (AuditLogs, View),
         ],
+        // #4155 W/A1: no built-in group but EXECUTIVE holds a DASHBOARD cell.
         Role::Admin => &[
-            (Dashboard, View),
             (Reports, View),
             (UserManagement, Full),
             (SystemSettings, Full),
             (AuditLogs, View),
         ],
         Role::RateManager => &[
-            (Dashboard, Full),
             (Customers, Full),
             (Documents, View),
             (RatesStock, Full),
             (Reports, Full),
         ],
-        Role::BranchManager => &[
-            (Dashboard, Full),
-            (Customers, Full),
-            (Documents, Full),
-            (Reports, View),
-        ],
-        Role::Teller => &[(Dashboard, View), (Customers, Create), (Documents, View)],
+        Role::BranchManager => &[(Customers, Full), (Documents, Full), (Reports, View)],
+        Role::Teller => &[(Customers, Create), (Documents, View)],
         Role::Finance => &[
-            (Dashboard, Full),
             (Customers, View),
             (Documents, View),
             (RatesStock, View),
@@ -128,7 +121,6 @@ fn expected(role: Role) -> BTreeMap<Module, Level> {
         ],
         Role::Marketing => &[(Customers, Full), (Reports, View)],
         Role::VerificationReviewer => &[
-            (Dashboard, Full),
             (Customers, View),
             (Documents, Full),
             (RatesStock, View),
@@ -253,6 +245,7 @@ fn c2_no_role_goes_above_view_on_audit_logs_and_risk_is_empty() {
 fn c2_role_permission_seed_counts_per_section_11_2() {
     // §11.2 ("Branch cash basics"): BRANCH_MANAGER gains CashManage and ApprovalsDecide (31 -> 33).
     // PT-14 (#3968): EXECUTIVE and RATE_MANAGER gain MarketRatesRefresh (47 -> 48, 30 -> 31).
+    // #4155 W/A1: only EXECUTIVE keeps DASHBOARD (OverviewRead, AlertSettingsSave).
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
@@ -262,13 +255,13 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
         counts,
         vec![
             ("EXECUTIVE", 48),
-            ("ADMIN", 10),
-            ("RATE_MANAGER", 31),
-            ("BRANCH_MANAGER", 33),
-            ("TELLER", 21),
-            ("FINANCE", 22),
+            ("ADMIN", 9),           // #4155 W/A1: -OverviewRead
+            ("RATE_MANAGER", 29),   // #4155 W/A1: -OverviewRead, -AlertSettingsSave
+            ("BRANCH_MANAGER", 31), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
+            ("TELLER", 20),         // #4155 W/A1: -OverviewRead
+            ("FINANCE", 20),        // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("MARKETING", 5),
-            ("VERIFICATION_REVIEWER", 17),
+            ("VERIFICATION_REVIEWER", 15), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("CUSTOMER", 2),
         ]
     );

@@ -99,8 +99,8 @@ const SEED: [(Role, &[Permission]); 9] = [
     ),
     (
         Role::Admin,
+        // #4155 W/A1: OverviewRead is EXECUTIVE only; ADMIN holds no DASHBOARD cell here.
         &[
-            P::OverviewRead,
             P::BranchesManage,
             P::UsersManage,
             P::SystemSettings,
@@ -114,8 +114,8 @@ const SEED: [(Role, &[Permission]); 9] = [
     ),
     (
         Role::RateManager,
+        // #4155 W/A1: OverviewRead and AlertSettingsSave are EXECUTIVE only.
         &[
-            P::OverviewRead,
             P::RatesDraft,
             P::RatesHistoryRead,
             P::RatePolicySave,
@@ -141,7 +141,6 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ReferralSupersede,
             P::ReferralRead,
             P::ReportsExport,
-            P::AlertSettingsSave,
             P::RateAlertSettingsSave,
             P::OrgStartingPricesManage,
             P::MarketRatesRefresh,
@@ -151,8 +150,8 @@ const SEED: [(Role, &[Permission]); 9] = [
     (
         Role::BranchManager,
         // §11.2 "Branch cash basics": BRANCH_MANAGER holds ApprovalsDecide and CashManage as no-module basics.
+        // #4155 W/A1: OverviewRead and AlertSettingsSave are EXECUTIVE only.
         &[
-            P::OverviewRead,
             P::ApprovalsDecide,
             P::ShiftOperate,
             P::ShiftCloseCertify,
@@ -183,14 +182,13 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ReferralAttach,
             P::ReferralSupersede,
             P::ReferralRead,
-            P::AlertSettingsSave,
             P::LoyaltyRulesManage,
         ],
     ),
     (
         Role::Teller,
+        // #4155 W/A1: OverviewRead is EXECUTIVE only.
         &[
-            P::OverviewRead,
             P::ShiftOperate,
             P::BookingsDesk,
             P::ExchangeTransact,
@@ -215,8 +213,8 @@ const SEED: [(Role, &[Permission]); 9] = [
     ),
     (
         Role::Finance,
+        // #4155 W/A1: OverviewRead and AlertSettingsSave are EXECUTIVE only.
         &[
-            P::OverviewRead,
             P::RatesHistoryRead,
             P::ApprovalsDecide,
             P::TransactionRead,
@@ -236,7 +234,6 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ReferralRead,
             P::CashLimitsManage,
             P::ReportsExport,
-            P::AlertSettingsSave,
             P::CashTransferPolicySet,
         ],
     ),
@@ -253,8 +250,8 @@ const SEED: [(Role, &[Permission]); 9] = [
     (Role::Customer, &[P::CustomerSelf, P::SignedIn]),
     (
         Role::VerificationReviewer,
+        // #4155 W/A1: OverviewRead and AlertSettingsSave are EXECUTIVE only.
         &[
-            P::OverviewRead,
             P::RatesHistoryRead,
             P::TransactionRead,
             P::ReceiptReprint,
@@ -269,7 +266,6 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ReferenceRatesRead,
             P::ReferralRead,
             P::ReportsExport,
-            P::AlertSettingsSave,
             P::AuditLogsRead,
         ],
     ),
@@ -407,8 +403,8 @@ fn the_matrix_of_each_built_in_group_is_the_owners_table() {
         ),
         (
             "ADMIN",
+            // #4155 W/A1: no DASHBOARD cell outside EXECUTIVE.
             &[
-                (Dashboard, V),
                 (Reports, V),
                 (UserManagement, F),
                 (SystemSettings, F),
@@ -417,8 +413,8 @@ fn the_matrix_of_each_built_in_group_is_the_owners_table() {
         ),
         (
             "RATE_MANAGER",
+            // #4155 W/A1: no DASHBOARD cell outside EXECUTIVE.
             &[
-                (Dashboard, F),
                 (Customers, F),
                 (Documents, V),
                 (RatesStock, F),
@@ -427,13 +423,15 @@ fn the_matrix_of_each_built_in_group_is_the_owners_table() {
         ),
         (
             "BRANCH_MANAGER",
-            &[(Dashboard, F), (Customers, F), (Documents, F), (Reports, V)],
+            // #4155 W/A1: no DASHBOARD cell outside EXECUTIVE.
+            &[(Customers, F), (Documents, F), (Reports, V)],
         ),
-        ("TELLER", &[(Dashboard, V), (Customers, C), (Documents, V)]),
+        // #4155 W/A1: no DASHBOARD cell outside EXECUTIVE.
+        ("TELLER", &[(Customers, C), (Documents, V)]),
         (
             "FINANCE",
+            // #4155 W/A1: no DASHBOARD cell outside EXECUTIVE.
             &[
-                (Dashboard, F),
                 (Customers, V),
                 (Documents, V),
                 (RatesStock, V),
@@ -444,8 +442,8 @@ fn the_matrix_of_each_built_in_group_is_the_owners_table() {
         ("MARKETING", &[(Customers, F), (Reports, V)]),
         (
             "VERIFICATION_REVIEWER",
+            // #4155 W/A1: no DASHBOARD cell outside EXECUTIVE.
             &[
-                (Dashboard, F),
                 (Customers, V),
                 (Documents, F),
                 (RatesStock, V),

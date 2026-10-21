@@ -41,6 +41,10 @@ mod policy_route_table_test;
 mod policy_test;
 #[path = "pt14_market_rates_refresh_test.rs"]
 mod pt14_market_rates_refresh_test;
+#[path = "rbac_4155_dashboard_seed_test.rs"]
+mod rbac_4155_dashboard_seed_test;
+#[path = "rbac_4155_seed_removals_test.rs"]
+mod rbac_4155_seed_removals_test;
 #[path = "rbac_c1a_grant_guard_test.rs"]
 mod rbac_c1a_grant_guard_test;
 #[path = "rbac_c1a_user_service_test.rs"]

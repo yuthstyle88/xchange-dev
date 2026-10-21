@@ -108,17 +108,11 @@ fn reports_export_holders_per_section_11_2() {
 
 #[test]
 fn alert_settings_save_holders_per_section_11_2() {
-    // §11.2: AlertSettingsSave (DASHBOARD FULL) is held by EXECUTIVE, RATE_MANAGER, BRANCH_MANAGER, FINANCE, VERIFICATION_REVIEWER
+    // #4155 W/A1: AlertSettingsSave (DASHBOARD FULL) is held by EXECUTIVE only in the seed.
     assert_eq!(
         holders(Permission::AlertSettingsSave),
-        vec![
-            Role::Executive,
-            Role::RateManager,
-            Role::BranchManager,
-            Role::Finance,
-            Role::VerificationReviewer,
-        ],
-        "// §11.2: DASHBOARD FULL holders"
+        vec![Role::Executive],
+        "// #4155 W/A1: DASHBOARD FULL holders"
     );
 }
 
@@ -226,8 +220,11 @@ fn only_rows_holding_the_permission_count() {
 
 #[test]
 fn an_organisation_wide_row_wins_over_branch_rows() {
-    // §11.2: ADMIN holds DASHBOARD VIEW (OverviewRead), not DASHBOARD FULL (AlertSettingsSave)
-    let actor = user(vec![held(Role::Admin, None), held(Role::Admin, Some(B2))]);
+    // #4155 W/A1: EXECUTIVE is the only built-in holder of OverviewRead.
+    let actor = user(vec![
+        held(Role::Executive, None),
+        held(Role::Executive, Some(B2)),
+    ]);
     assert_eq!(
         BranchScope::of(&actor, Permission::OverviewRead, now()),
         BranchScope::All

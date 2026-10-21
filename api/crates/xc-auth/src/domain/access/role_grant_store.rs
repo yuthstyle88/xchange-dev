@@ -44,6 +44,15 @@ pub trait RoleGrantStore: Send + Sync + 'static {
         tx: &mut Transaction<'_, Postgres>,
     ) -> impl Future<Output = Result<u64, RoleGrantStoreError>> + Send;
 
+    /// #4155: for each built-in group with `seed_version < RoleGrants::SEED_VERSION`, delete every `(v, p)` of
+    /// `RoleGrants::SEED_REMOVALS` with `v > seed_version` and `p ∉ RoleGrants::seed(role)`. Does not update
+    /// `seed_version` (`seed_additions` raises it afterwards). Bump `role_grant_version` once if anything was deleted.
+    /// Answers how many grants it deleted.
+    fn seed_removals(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> impl Future<Output = Result<u64, RoleGrantStoreError>> + Send;
+
     /// #3976: for each built-in group with `seed_version < RoleGrants::SEED_VERSION`, insert every `(v, p)` of
     /// `RoleGrants::SEED_ADDITIONS` with `v > seed_version` and `p ∈ RoleGrants::seed(role)`, then set its
     /// `seed_version = RoleGrants::SEED_VERSION`. Bump `role_grant_version` once if anything was inserted. Answers how
