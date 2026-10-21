@@ -141,7 +141,7 @@
 | # | Decision | Why |
 |---|---|---|
 | D1 | **One request core, unchanged in shape.** The web request is a `kiosk_requests` row made by the same `quote` path. `POST /api/kiosk` and its anonymous `quote`/`confirm` stay as they are; the queue machine may reuse them, so nothing there is removed. | owner 553782: *"do NOT plan their removal"*; ♻️ |
-| D2 | **Web submit = a request with no number.** <br>• A new `CustomerSelf` command `webRequestCreate` runs the core's `quote` with `customer_id` = the member's. <br>• It mints the **request token** (UUID v4; only its SHA-256 is stored, in `cancel_token_hash`; no second column). <br>• It answers `{requestId, requestQrUrl, expiresAt}`. The request stays `QUOTED`: **no `confirm`, no ticket, no number.** | owner: the number is issued at the staff scan |
+| D2 | **Web submit = a request with no number.** <br>• A new command `webRequestCreate` runs the core's `quote`. From a phone it needs a customer session, and `customer_id` = the member's. From a branch tablet it needs the tablet credential, and `customer_id` is NULL (D16, D17). <br>• It mints the **request token** (UUID v4; only its SHA-256 is stored, in `cancel_token_hash`; no second column). <br>• It answers `{requestId, requestQrUrl, expiresAt}`. The request stays `QUOTED`: **no `confirm`, no ticket, no number.** | owner: the number is issued at the staff scan |
 | D3 | **The request QR** encodes `<origin>/q#<token>` (the fragment keeps it out of request lines, logs and referrers). The member re-shows it by `webRequestQrReissue` (`CustomerSelf`, own request), which mints a new token and replaces the hash, as `bookingQrReissue` does. | the booking QR pattern |
 | D4 | **A web request waits 60 minutes for its scan**, not the kiosk's 10. `is_purgeable` keeps 600 s for a request with no customer and uses 3 600 s for one with a customer. The phone shows `expiresAt`. After that, the member fills the request again. | the 10-minute purge (`kiosk_machine.rs:443-446`) would drop a request while its owner waits in line at the queue machine |
 | D5 | **The staff scan issues the number: `issueByToken`.** <br>• A new staff action on `POST /api/kiosk`, needing `QueueOperate`. <br>• It finds the request by token **in the staff session's branch**, runs the core's `confirm` (QUOTED → WAITING, the ticket, `IssueSource::Kiosk {request_id}`), and sets `queue_tickets.customer_id` from the request. <br>• It answers `{displayNumber, ticketId, printed}`. <br>• Scanning twice answers the same ticket (repeat-safe), never a second number. <br>• A token of another branch, an unknown or expired one ⇒ `404 notFound`, one answer for all. | owner: *"สแกน เพื่อรับ คิว"*; the scan at the branch proves where the customer is, so no board token is needed |
@@ -155,6 +155,10 @@
 | D13 | **At the desk save** (owner Q2): passport customer A ≠ the request's member B ⇒ save on A, keep B on the request and quote, and write one `KIOSK_CUSTOMER_DIFFERS` audit row. | owner Q2 |
 | D14 | **KS-3 settings** shrink to what the queue machine needs: `kiosk_settings.result_seconds` (how long the issued number stays on the machine, default 10) with a public read on the poll seam and a `RatesDraft` write. | KS-3 |
 | D15 | `queueTicketTake` and `/app/book` stay unchanged (owner Q4). | owner Q4 |
+| D16 | **The branch tablet is a borrowed phone on the same page** (owner: *"ก็เหมือน มือถือ ลูกค้าปกติ"* · *"แค่ ยืมที่สาขาใช้งานชั่วคราว"*). It runs the same `webRequestCreate`, with two differences only. <br>• **No login:** the request is made without a customer session, and `customer_id` stays NULL until the desk save attaches the passport's customer (D18). <br>• **It starts over:** after showing the request QR it resets for the next person. That is FE behaviour, as #4243 does for one customer at a time, idle reset and one-press cancel. <br>No new source, app or route. | owner: *"ลูกค้าไม่มี มือถือ ที่ สาขา มี tablat ให้ ใช้ทำรายการ"* |
+| D17 | **Abuse guard for the no-login request (proposed; Q11).** A `webRequestCreate` without a customer session is accepted only from a **branch tablet**. <br>• **Credential:** a staff member with `QueueOperate` at the branch opens the page on the tablet and pairs it (`branchTabletPair`). The server mints a random token bound to that branch and stores only its SHA-256 in `branch_tablets` (revocable). The tablet keeps it in an `HttpOnly; Secure; SameSite=Strict` cookie. No credential, a revoked one, or another branch ⇒ `401 tabletRequired`. The branch comes from the credential, never from the body. <br>• **One open request per tablet:** a new request from a tablet cancels that tablet's earlier unscanned `QUOTED` request. A half-done request never waits for the next person, and one tablet can never hold more than one place. <br>• **Short life:** a tablet request is purged after 10 minutes unscanned (today's 600 s rule; a phone request has 60, D4). <br>• **Rate:** today's `QuoteLimit` (20 per 60 s), keyed by the tablet instead of the address. <br>• **Nothing to steal:** a tablet request carries no customer, and a number exists only after a staff scan (D5), so a forged request costs one queue slot that staff never issue. | a no-login path needs something other than a login to stop strangers |
+| D18 | **The desk attaches the passport's customer.** At the save of an exchange opened from a request with `customer_id` NULL (a tablet request), the save hook writes the passport's customer onto `kiosk_requests.customer_id`, `quotes.customer_id` and `queue_tickets.customer_id`, in the save's transaction. From then on, the request traces to one customer. | owner: the passport at the desk identifies the customer |
+| D19 | **The kiosk's public `confirm` should stop issuing numbers on its own (proposed; Q12).** `confirm` is `Need::Public` today (`policy.rs:123-126`), so anyone who can call `/api/kiosk` can get a queue number without a staff scan. That breaks the owner's rule that the number is issued at the scan. Proposed: `confirm` needs `QueueOperate`, so the queue machine can still call it, and nothing is removed. `quote`/`status`/`customerReceipt`/`customerCancel` stay public. | owner: the number is issued when staff scan |
 
 ### 4.3 Class diagram
 
@@ -215,20 +219,21 @@ copies its rules.
 | `TicketPrinterPort`, `TicketPrintJob`, `PgAgentTicketPrinter` | `…/domain/kiosk/repositories/ticket_printer_port.rs`, `…/domain/kiosk/value_objects/ticket_print_job.rs`, `api/src/infrastructure/kiosk/pg_agent_ticket_printer.rs` | new |
 | the agent claim + job kind | `api/src/infrastructure/device_agents/pg_agent_repository.rs` (`:296,315,342,449` serve both kinds), `api/src/infrastructure/devices/device_job.rs` | changed; the agent binary unchanged |
 | `KioskRepository::find_by_token_in`, `replace_token_in` | `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs` | new |
-| web commands `webRequestCreate`, `webRequestQrReissue`, `webRequestCancel`; view `myWebRequest` | `api/src/presentation/http/v3/commands/web_request/{create.rs,qr.rs,cancel.rs}`, `api/src/presentation/http/v3/views/my_web_request.rs` | new, `CustomerSelf` |
+| web commands `webRequestCreate`, `webRequestQrReissue`, `webRequestCancel`; view `myWebRequest` | `api/src/presentation/http/v3/commands/web_request/{create.rs,qr.rs,cancel.rs}`, `api/src/presentation/http/v3/views/my_web_request.rs` | new; `CustomerSelf`, except `webRequestCreate`, which also takes the tablet credential (D17) |
 | `issueByToken`, `findByToken`, `settings`, `configureSettings` on `POST /api/kiosk` | `api/src/presentation/http/kiosk.rs`, `policy.rs:123-133` | changed (`QueueOperate`; `settings` public; `configureSettings` `RatesDraft`) |
 | `CustomerBinder`, `CustomerOtpSignIn` | `api/src/application/customer_binder.rs`, `api/src/application/customer_otp_sign_in.rs`; `customer_signup.rs` calls the binder | new / changed |
 | `IdentityClient::otp_verify(…, register_if_absent)` | `api/crates/xc-auth/src/domain/identity/identity_client.rs:138`, `…/infrastructure/identity/http_identity_client.rs:289-301` | changed |
 | `QueueDisplayView` | `api/src/presentation/http/public/queue_display.rs` | new |
 | `KioskSettings` (+ repository, Pg) | `…/domain/kiosk/entities/kiosk_settings.rs`, `…/repositories/kiosk_settings_repository.rs`, `api/src/infrastructure/kiosk/pg_kiosk_settings_repository.rs` | new |
-| the save's audit (D13) | `api/crates/xc-kiosk/src/application/kiosk/save_hooks.rs` | changed |
+| the save's audit (D13) and customer attach (D18) | `api/crates/xc-kiosk/src/application/kiosk/save_hooks.rs` | changed |
+| `BranchTablet` + `BranchTabletRepository` (+ Pg), command `branchTabletPair` / `branchTabletRevoke` | `api/crates/xc-kiosk/src/domain/kiosk/entities/branch_tablet.rs`, `…/repositories/branch_tablet_repository.rs`, `api/src/infrastructure/kiosk/pg_branch_tablet_repository.rs`, `api/src/presentation/http/v3/commands/branch_tablet.rs` | new (D17) |
 
 ### 4.4 Behaviour
 
 | # | Given | Answer |
 |---|---|---|
 | B1 | today's kiosk `quote` / `confirm` / `customerCancel` | unchanged; today's kiosk tests stay green as they are |
-| B2 | `webRequestCreate` without a customer session | `401 signIn` |
+| B2 | `webRequestCreate` with neither a customer session nor a tablet credential | `401 signIn` |
 | B3 | `webRequestCreate`, signed in | a `QUOTED` request with `customer_id`; `{requestId, requestQrUrl, expiresAt}`; **no ticket, no number** |
 | B4 | `webRequestCreate` with an open `QUOTED`/`WAITING` request at the branch | `409 alreadyQueued` + its id |
 | B5 | a web request 59 min old / 61 min old at the next purge | kept / purged; a kiosk request still purged after 10 min |
@@ -245,6 +250,11 @@ copies its rules.
 | B16 | desk save, passport customer ≠ the request's member | saved on the passport's customer; one `KIOSK_CUSTOMER_DIFFERS` audit row |
 | B17 | `queue-display` unchanged / changed | `{changed: false}` / called numbers + labels; no name, phone, amount or teller |
 | B18 | `settings` / `configureSettings` out of range | the row or defaults / `400 validationFailed` naming the field |
+| B19 | `webRequestCreate`, no session, a valid tablet credential | a `QUOTED` request with `customer_id` NULL and the tablet's id; the QR; the tablet's earlier unscanned request cancelled |
+| B20 | `webRequestCreate`, no session, a revoked or other-branch tablet credential | `401 tabletRequired` |
+| B21 | a tablet request unscanned for 11 min | purged (600 s); a phone request kept until 60 min |
+| B22 | desk save of a request with `customer_id` NULL | the passport's customer is written on the request, its quote and its ticket in the save's transaction |
+| B23 | `/api/kiosk confirm` without `QueueOperate` (after Q12) | `403`; the queue machine's call answers as today |
 
 ### 4.5 Rules the tests pin first (up-front, `class:logic`)
 
@@ -256,6 +266,7 @@ copies its rules.
   exactly as before.
 - B16 on the save hook; B17 with a guard that the view's JSON has no field outside D10's list; B18.
 - `TicketPrintJob`: the slip carries the number and the request QR, and nothing else from the request.
+- B19–B23 on the web source, the tablet repository and the save hook.
 - Guard: only `customer.rs` issues `IssueSource::Kiosk`.
 
 ### 4.6 Data (one migration)
@@ -264,6 +275,8 @@ copies its rules.
 - `kiosk_settings (branch_id, result_seconds, updated_by, updated_at, version)`. Covered by the §3 approval.
 - `device_jobs.kind` CHECK + `PRINT_QUEUE_TICKET`, and a partial index for queued ticket jobs (D9). **Q7.**
 - `queue_counters.label` (D10). **Q8.**
+- `branch_tablets (id, branch_id, token_hash UNIQUE, paired_by, paired_at, revoked_at, revoked_by)` and
+  `kiosk_requests.tablet_id uuid NULL` (D17). **Q11.**
 - No backfill. Renumbered with `scripts/migration-slot.sh next` right before `pr_open`.
 
 ### 4.7 Open owner questions (batched by claude/e92db6)
@@ -285,6 +298,13 @@ copies its rules.
   - Proposed: offer e-mail OTP on the web; the binder then writes an EMAIL identity as well as PHONE (today PHONE only,
     `customer_signup.rs:161-208`).
   - A walk-in without a phone at all: e92db6's open assumption, entered at the desk.
+- **Q11 (D17), the abuse guard for the tablet's no-login request.** Proposed: a staff-paired branch tablet credential
+  (a hash in `branch_tablets`, revocable). Each tablet holds at most one unscanned request, which lives 10 minutes,
+  under today's quote rate keyed by tablet. The other option is a signed cookie with no table: no migration, but a
+  tablet can be cut off only by rotating the key for every tablet. Proposed: the table, because a lost tablet must be
+  revocable on its own.
+- **Q12 (D19).** The kiosk's public `confirm` can issue a number with no staff scan. Proposed: it needs `QueueOperate`
+  from now on (the queue machine keeps it; nothing is removed).
 - Q9 (board token) no longer applies: the staff scan at the branch proves where the customer is.
 
 ### 4.8 Release order
@@ -294,7 +314,8 @@ copies its rules.
    - (a) the request core changes + `RequestIssueService` + desk `findByToken`;
    - (b) printing (after Q7);
    - (c) display + settings (label after Q8);
-   - (d) the web source + sign-in (`WebRequestService`, `CustomerBinder`, `CustomerOtpSignIn`).
+   - (d) the web source + sign-in (`WebRequestService`, `CustomerBinder`, `CustomerOtpSignIn`);
+   - (e) the branch tablet credential (after Q11) and the desk's customer attach (D18).
 3. **The web path ships only after the owner's setup in §4.9** (Identity → Notify, a test code to the owner's phone, a
    TERMS text in th/en/zh). Slices (a)–(c) need none of it.
 4. The FE half: the Flutter app becomes the staff queue machine (staff sign-in, a cookie jar for the native build, the
