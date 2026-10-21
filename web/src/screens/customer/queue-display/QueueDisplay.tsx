@@ -5,7 +5,7 @@ import { FullscreenButton } from '../../customer/rate-display/FullscreenButton';
 import { branchFromSearch } from '../../customer/rate-display/location';
 import { en, th, zh } from './i18n';
 
-const tr = screenT('public.queue-display', { th, en, zh });
+const tr = screenT('customer.queue-display', { th, en, zh });
 
 export interface QueueDisplayProps {
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
