@@ -15,6 +15,8 @@ mod count_difference_gate_unvalued_test;
 mod count_verify_gate_test;
 #[path = "count_verify_twice_test.rs"]
 mod count_verify_twice_test;
+#[path = "day_close_on_close_verify_test.rs"]
+mod day_close_on_close_verify_test;
 #[path = "face_value_read_refuses_test.rs"]
 mod face_value_read_refuses_test;
 #[path = "handover_races_test.rs"]
