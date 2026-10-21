@@ -17,7 +17,10 @@ impl ShiftLifecycleHook for QueueDayHook {
         branch: &'a BranchId,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<()>> {
-        let _ = (tx, branch, now);
-        todo!("Q1 #4136")
+        Box::pin(async move {
+            QueueDayHook::on_day_closed(self, tx, branch, now)
+                .await
+                .map(|_| ())
+        })
     }
 }
