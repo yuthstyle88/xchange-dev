@@ -14,7 +14,8 @@
 //! `action2` (`server.mjs:7941-8058`):
 //! - `manage`, `configure` — OWNER and RATES; anybody else, nobody included, "Owner or Rates
 //!   access required." (`:7944-7945`);
-//! - `rates`, `quote`, `confirm`, `status`, `customerReceipt` — nobody's role is asked;
+//! - `rates`, `quote`, `status`, `customerReceipt` — nobody's role is asked; `confirm` was too in
+//!   v2, and since R-8 (owner Q12, design `kiosk-shared-phone.md` §4.2 D19) it is the desk's, as `accept`;
 //! - `notifications` — anybody signed in (`:8011-8012`);
 //! - `list` — anybody signed in (`:8026`). **The 10-06 change**: the 10-05 bundle let only the
 //!   desk list (`server.mjs:8012` and `:8036` there);
@@ -96,7 +97,8 @@ fn table() -> Vec<(&'static str, [Said; 11])> {
     let mut rows = vec![
         ("rates", open),
         ("quote", open),
-        ("confirm", open),
+        // R-8 (owner Q12, kiosk-shared-phone.md §4.2 D19): only staff issue numbers.
+        ("confirm", desk),
         ("status", open),
         ("customerReceipt", open),
         ("notifications", signed_in),

@@ -23,7 +23,12 @@
 //! - moved to #582: `:310`, `:523`, `:720`, `:744`, `:762`, and the custody lines of `:417`,
 //!   `:437`, `:481`.
 //!
-//! A changed answer in an assertion below names its rule (C1–C9 of §4.2, S11 of §11.2, or D-4).
+//! A changed answer in an assertion below names its rule (C1–C9 of §4.2, S11 of §11.2, R8, or D-4).
+//!
+//! Re-expected for D19 by the slice controller (claude/mbp-xc-ks): owner rule R-8 (Q12, design
+//! `docs/design/blueprint/kiosk-shared-phone.md` §4.2 D19) makes the kiosk `confirm` QueueOperate.
+//! `api/tools/policy-map.mjs` gains rule R8 (each caller's confirm answers as their accept), which
+//! moves the 11 Kiosk `confirm` cases; `v2_policy_cases.json` still records v2.
 //!
 //! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
 //! (`docs/design/blueprint/rates.md` §9 row "`xc-auth/tests/policy_test.rs:386,705` |
@@ -148,6 +153,11 @@ fn rule_of(c: &Case) -> Option<&'static str> {
     if is_custody(p, a) {
         return None;
     }
+    // R8 (design kiosk-shared-phone.md §4.2 D19, owner R-8 / Q12): the kiosk confirm is
+    // QueueOperate; each caller hears what they hear for accept.
+    if p == "Kiosk" && a == "confirm" {
+        return Some("R8");
+    }
     if (p == "Rpc"
         && matches!(a, "reserveCustomer" | "saveTransaction")
         && matches!(who, "OWNER" | "BACKEND" | "MANAGER" | "RATES"))
@@ -260,7 +270,7 @@ fn the_mapped_fixture_is_whole() {
     );
     assert_eq!(
         m.rules.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["C1", "C2", "C3", "C4", "C5", "C7", "C8", "S11", "D4"]
+        ["C1", "C2", "C3", "C4", "C5", "C7", "C8", "S11", "R8", "D4"]
     );
     assert!(m.rules.iter().all(|r| !r.says.is_empty()));
     assert_eq!(m.no_case, ["C6", "C9"]);
@@ -370,13 +380,33 @@ fn the_mapping_changes_exactly_c1_to_c9_and_s11() {
                     .find(|s| s.path == v.path && s.action == v.action && s.actor == "SYSTEM")
                     .expect("SYSTEM asked every name");
                 assert!(
-                    differs || rule == "S11",
+                    // S11 and R8 name every row of their name; some answers stay as v2 had them.
+                    differs || rule == "S11" || rule == "R8",
                     "{label}: {rule} names it but nothing changed"
                 );
                 assert_eq!(c.change.as_deref(), Some(rule), "{label}");
-                assert_eq!(recorded_mapped(c), becomes(rule, v, system), "{label}");
-                // a rule of §4.2 / §11.2 moves no branch: a changed row carries no recorded branch
-                assert_eq!(c.branch, None, "{label}");
+                let mut accept_branch = None;
+                let expected = if rule == "R8" {
+                    let accept = m
+                        .cases
+                        .iter()
+                        .find(|a| {
+                            a.path == c.path
+                                && a.action == "accept"
+                                && a.actor == c.actor
+                                && a.own == c.own
+                                && a.named == c.named
+                        })
+                        .expect("R8: the same caller's accept case");
+                    accept_branch = accept.branch.clone();
+                    recorded_mapped(accept)
+                } else {
+                    becomes(rule, v, system)
+                };
+                assert_eq!(recorded_mapped(c), expected, "{label}");
+                // a rule of §4.2 / §11.2 moves no branch: a changed row carries no recorded branch;
+                // an R8 row carries exactly what the same caller's accept carries
+                assert_eq!(c.branch, accept_branch, "{label}");
                 *per_rule.entry(rule).or_default() += 1;
             }
             None => {
@@ -393,10 +423,11 @@ fn the_mapping_changes_exactly_c1_to_c9_and_s11() {
             ("C4", 8),
             ("C5", 1),
             ("C7", 4),
+            ("R8", 11),
             ("S11", 44),
         ])
     );
-    assert_eq!(m.counts.changed, 72);
+    assert_eq!(m.counts.changed, 83);
 
     // D-4 on the branch cases: an employee naming a branch not theirs is refused, except on the
     // public kiosk, where nobody's scope is asked and the call runs on the branch named
@@ -642,7 +673,9 @@ fn every_call_runs_on_the_branch_named_in_scope() {
             refused += 1;
         }
     }
-    assert_eq!((ran, refused), (456, 76));
+    // 456 before R8: the 8 Kiosk confirm rows R8 refuses or answers without a branch (OWNER and
+    // RATES hear accept's answer, which records none) no longer run on a named branch.
+    assert_eq!((ran, refused), (448, 76));
 }
 
 #[test]
@@ -1333,7 +1366,7 @@ fn device_actions_have_their_own_role_lists() {
 
 #[test]
 fn the_customer_kiosk_needs_nobody_signed_in() {
-    for name in ["rates", "quote", "confirm", "status", "customerReceipt"] {
+    for name in ["rates", "quote", "status", "customerReceipt"] {
         for who in everyone() {
             assert_eq!(ask(who.as_ref(), EntryPath::Kiosk, name), Ok(()), "{name}");
         }

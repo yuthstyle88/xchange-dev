@@ -7,7 +7,7 @@
 //
 // What it does, and nothing else:
 // - every caller becomes the B1-mapped user (§3.3; OWNER is one user holding EXECUTIVE + ADMIN, B3);
-// - every answer stays v2's, except where a rule below (C1–C9 of §4.2, D4 of §2) names the case;
+// - every answer stays v2's, except where a rule below (C1–C9 of §4.2, S11, R8, D4 of §2) names the case;
 // - the case count stays 1,425 (and 285 branch cases), in v2's order, so case i here is case i there;
 // - the custody rows (path Custody, the staff bridge's `ops…` names on StaffRpc, and adminOpenShift /
 //   adminCloseShift on both RPC paths) are #582's:
@@ -127,6 +127,20 @@ export const RULES = [
         c.route === 'POST /api/reference-rates' &&
         ['RATES', 'MONITOR', 'FINANCE', 'DOCUMENTS', 'DOCUMENT_REVIEW'].includes(c.actor)),
     to: (c) => (c.path === 'Kiosk' && c.action === 'nope' ? refused('Unknown kiosk action.', 400) : allowed()),
+  },
+  {
+    id: 'R8',
+    says: "kiosk-shared-phone.md §4.2 D19 (owner R-8, Q12: only staff issue numbers): the kiosk confirm is QueueOperate, so each caller hears exactly what they hear for accept",
+    selects: (c) => c.path === 'Kiosk' && c.action === 'confirm',
+    to: (c, v2) => {
+      const acc = v2.cases.find(
+        (a) => a.path === 'Kiosk' && a.action === 'accept' && a.actor === c.actor && a.own === c.own && a.named === c.named,
+      );
+      const mapped = mapCase(acc, v2, RULES.filter((r) => r.id !== 'R8'), false);
+      const o = { allowed: mapped.allowed };
+      for (const k of ['branch', 'error', 'status', 'redirect', 'behind']) if (mapped[k] !== undefined) o[k] = mapped[k];
+      return o;
+    },
   },
 ];
 

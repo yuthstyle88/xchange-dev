@@ -587,7 +587,7 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
         Some(Need::Permission(Permission::QueueOperate)),
     ), // KC-S #4176, kiosk-cancel.md §3.4
     (EntryPath::Kiosk, "configure", Some(Need::Permission(Permission::RatesDraft))),
-    (EntryPath::Kiosk, "confirm", Some(Need::Public)),
+    (EntryPath::Kiosk, "confirm", Some(Need::Permission(Permission::QueueOperate))),
     (EntryPath::Kiosk, "consentPolicy", None),
     (EntryPath::Kiosk, "create", None),
     (EntryPath::Kiosk, "customerCancel", Some(Need::Public)), // KC-S #4176, kiosk-cancel.md §3.4

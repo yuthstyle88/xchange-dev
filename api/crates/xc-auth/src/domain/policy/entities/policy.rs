@@ -121,12 +121,14 @@ impl Policy {
                 _ => Some(Need::Permission(Permission::SignedIn)),
             },
             EntryPath::Kiosk => match act {
-                "rates" | "quote" | "confirm" | "status" | "customerReceipt" | "customerCancel" => {
+                // R-8 (owner Q12, design kiosk-shared-phone.md §4.2 D19): only staff issue numbers, so the
+                // kiosk `confirm` needs `QueueOperate`.
+                "rates" | "quote" | "status" | "customerReceipt" | "customerCancel" => {
                     Some(Need::Public)
                 }
                 "manage" | "configure" => Some(Need::Permission(Permission::RatesDraft)),
                 "notifications" | "list" => Some(Need::Permission(Permission::SignedIn)),
-                "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel"
+                "confirm" | "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel"
                 | "issueByToken" | "findByToken" => {
                     Some(Need::Permission(Permission::QueueOperate))
                 }
