@@ -20,7 +20,9 @@ use xc_rate::infrastructure::currency::denomination_groups::PgDenominationGroups
 use super::commands::map_rate_engine_error;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{role_not_allowed_here, CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, role_not_allowed_here,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -75,7 +77,12 @@ impl CommandAction for DenominationGroupCreateCommand {
             )
         })?;
         let group = GroupCode::new(&input.group).map_err(|e| {
-            V3Error::new("validationFailed", Some("group"), e, StatusCode::BAD_REQUEST)
+            V3Error::new(
+                "validationFailed",
+                Some("group"),
+                e,
+                StatusCode::BAD_REQUEST,
+            )
         })?;
 
         self.service
@@ -146,7 +153,12 @@ impl CommandAction for DenominationGroupMapCommand {
             )
         })?;
         let group = GroupCode::new(&input.group).map_err(|e| {
-            V3Error::new("validationFailed", Some("group"), e, StatusCode::BAD_REQUEST)
+            V3Error::new(
+                "validationFailed",
+                Some("group"),
+                e,
+                StatusCode::BAD_REQUEST,
+            )
         })?;
 
         self.service
@@ -222,7 +234,12 @@ impl CommandAction for DenominationGroupRemoveCommand {
             )
         })?;
         let group = GroupCode::new(&input.group).map_err(|e| {
-            V3Error::new("validationFailed", Some("group"), e, StatusCode::BAD_REQUEST)
+            V3Error::new(
+                "validationFailed",
+                Some("group"),
+                e,
+                StatusCode::BAD_REQUEST,
+            )
         })?;
 
         self.service

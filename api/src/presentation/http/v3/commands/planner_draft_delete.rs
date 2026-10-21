@@ -19,10 +19,8 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::planner::{PlannerDraftDeleteInput, PlannerDraftDeleteOutput};
 use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{AppSessionUse, CommandAction, CommandEndpoint};
-use crate::presentation::http::v3::planner_draft_save::{
-    customer_app_error, draft_owner, sign_in,
-};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::planner_draft_save::{customer_app_error, draft_owner, sign_in};
 
 pub struct PlannerDraftDeleteCommand {
     service: PlannerService,

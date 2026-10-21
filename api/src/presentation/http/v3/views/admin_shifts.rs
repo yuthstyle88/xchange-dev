@@ -88,14 +88,13 @@ impl PagedView for AdminShiftsPagedView {
 
         async move {
             let shifts: Vec<ShiftSqlRow> = if let Some(before_id) = before {
-                let before_seq: Option<i64> = sqlx::query_scalar(
-                    "SELECT seq FROM shifts WHERE id = $1 AND branch_id = $2",
-                )
-                .bind(&before_id)
-                .bind(&branch_id)
-                .fetch_optional(&pool)
-                .await
-                .map_err(AppError::Database)?;
+                let before_seq: Option<i64> =
+                    sqlx::query_scalar("SELECT seq FROM shifts WHERE id = $1 AND branch_id = $2")
+                        .bind(&before_id)
+                        .bind(&branch_id)
+                        .fetch_optional(&pool)
+                        .await
+                        .map_err(AppError::Database)?;
 
                 let Some(before_seq) = before_seq else {
                     return Ok(vec![]);
@@ -170,7 +169,8 @@ impl PagedView for AdminShiftsPagedView {
                     for (code, b) in &b_map {
                         let c_non_zero = b.counted.is_some_and(|c| !c.is_zero());
                         let d_non_zero = b.difference.is_some_and(|d| !d.is_zero());
-                        if !b.opening.is_zero() || !b.expected.is_zero() || c_non_zero || d_non_zero {
+                        if !b.opening.is_zero() || !b.expected.is_zero() || c_non_zero || d_non_zero
+                        {
                             bal_codes.insert(code.clone());
                         }
                     }

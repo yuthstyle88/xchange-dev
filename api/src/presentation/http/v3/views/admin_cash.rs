@@ -47,16 +47,19 @@ pub fn compute_reference_exchange(
     is_buy: bool,
 ) -> AppResult<(Decimal, Decimal)> {
     // Keep amount.checked_mul(ref_rate) as an overflow guard before arithmetic.
-    amount
-        .checked_mul(ref_rate)
-        .ok_or_else(|| AppError::Internal("amount overflow in reference rate calculation".into()))?;
+    amount.checked_mul(ref_rate).ok_or_else(|| {
+        AppError::Internal("amount overflow in reference rate calculation".into())
+    })?;
     let foreign = ForeignAmount::from_decimal(amount);
     let ref_rate_parsed = Rate::parse(&ref_rate.normalize().to_string())
         .map_err(|e| AppError::Internal(format!("invalid reference rate: {e}")))?;
     let unit_val = UnitSize::from_decimal(unit_size.normalize())
         .map_err(|e| AppError::Internal(format!("invalid unit size: {e}")))?;
-    let ref_thb = ExchangeArithmetic::try_thb(foreign, ref_rate_parsed, unit_val)
-        .map_err(|e| AppError::Internal(format!("amount overflow in reference rate calculation: {e}")))?;
+    let ref_thb = ExchangeArithmetic::try_thb(foreign, ref_rate_parsed, unit_val).map_err(|e| {
+        AppError::Internal(format!(
+            "amount overflow in reference rate calculation: {e}"
+        ))
+    })?;
     let ref_principal = Decimal::from_i128_with_scale(ref_thb.minor_i128(), 2);
     let spread = if is_buy {
         ref_principal - principal
@@ -71,8 +74,10 @@ pub fn compute_reference_percent(spread: Decimal, total_ref_value: Decimal) -> A
     if total_ref_value.is_zero() {
         return Ok("0.00".to_string());
     }
-    let pct_cents = round_cents(spread * Decimal::from(100) / total_ref_value)
-        .ok_or_else(|| AppError::Internal("reference percent overflow in reference rate calculation".into()))?;
+    let pct_cents =
+        round_cents(spread * Decimal::from(100) / total_ref_value).ok_or_else(|| {
+            AppError::Internal("reference percent overflow in reference rate calculation".into())
+        })?;
     Ok(fixed2(pct_cents))
 }
 
@@ -212,7 +217,10 @@ impl BranchView for AdminCashBranchView {
             };
 
             // 2. Open shifts check
-            let open_rows = xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(pool.clone())
+            let open_rows =
+                xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                    pool.clone(),
+                )
                 .open_of_branch(&branch)
                 .await?;
 
@@ -244,10 +252,9 @@ impl BranchView for AdminCashBranchView {
                     let code = b.currency.as_str().to_string();
                     if let Some(acc) = balance_map.get_mut(&code) {
                         acc.opening = checked_add_money(acc.opening, b.opening)?;
-                        acc.expected = acc
-                            .expected
-                            .checked_add(b.expected)
-                            .map_err(|_| AppError::Internal("expected balance sum overflow".into()))?;
+                        acc.expected = acc.expected.checked_add(b.expected).map_err(|_| {
+                            AppError::Internal("expected balance sum overflow".into())
+                        })?;
                         acc.moved_in = checked_add_money(acc.moved_in, b.moved_in)?;
                         acc.moved_out = checked_add_money(acc.moved_out, b.moved_out)?;
                     } else {
@@ -259,14 +266,13 @@ impl BranchView for AdminCashBranchView {
             // RE-7 #604 (ruling Q1 → B): the "rated" codes are the branch's current
             // publication's lines; while the branch has no publication, the currency
             // register, so the default list never empties before the first publication
-            let current_publication: Option<uuid::Uuid> = sqlx::query_scalar(
-                "SELECT current_publication_id FROM branches WHERE id = $1",
-            )
-            .bind(&branch_id)
-            .fetch_optional(&pool)
-            .await
-            .map_err(AppError::Database)?
-            .flatten();
+            let current_publication: Option<uuid::Uuid> =
+                sqlx::query_scalar("SELECT current_publication_id FROM branches WHERE id = $1")
+                    .bind(&branch_id)
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(AppError::Database)?
+                    .flatten();
             let rated_codes: Vec<String> = match current_publication {
                 Some(publication) => sqlx::query_scalar(
                     "SELECT DISTINCT trim(currency_code) FROM published_rate_lines \
@@ -311,13 +317,13 @@ impl BranchView for AdminCashBranchView {
                             .expected
                             .checked_minus(b.opening)
                             .map_err(|_| AppError::Internal("net balance overflow".into()))?;
-                        (b.opening.to_string(), net.to_string(), b.expected.to_string())
+                        (
+                            b.opening.to_string(),
+                            net.to_string(),
+                            b.expected.to_string(),
+                        )
                     }
-                    None => (
-                        "0.00".to_string(),
-                        "0.00".to_string(),
-                        "0.00".to_string(),
-                    ),
+                    None => ("0.00".to_string(), "0.00".to_string(), "0.00".to_string()),
                 };
                 stock.push(AdminCashStockRow {
                     code,
@@ -419,8 +425,9 @@ impl BranchView for AdminCashBranchView {
             }
 
             let percent = compute_reference_percent(total_spread, total_ref_value)?;
-            let spread_cents = round_cents(total_spread)
-                .ok_or_else(|| AppError::Internal("spread overflow in reference rate calculation".into()))?;
+            let spread_cents = round_cents(total_spread).ok_or_else(|| {
+                AppError::Internal("spread overflow in reference rate calculation".into())
+            })?;
             let reference = AdminCashReference {
                 with_reference,
                 without_reference,

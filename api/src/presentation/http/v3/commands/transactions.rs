@@ -62,8 +62,7 @@ use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::v3::transaction::TransactionDto;
 use crate::presentation::http::v3::command::{
-    role_not_allowed_here,
-    CommandAction, CommandEndpoint, out_of_scope, server_error,
+    CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 
@@ -239,7 +238,11 @@ pub(crate) fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
     let pool = &state.db;
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let shifts = ShiftService::new(
-        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(pool.clone())),
+        Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                pool.clone(),
+            ),
+        ),
         branch_tx.clone(),
     );
     let custody = pg_custody_service(pool, &shifts, &branch_tx);

@@ -59,9 +59,10 @@ impl BranchView for DeskRefundsView {
                 if summary.status != "APPROVED" {
                     continue;
                 }
-                let original_id = Uuid::from_str(&summary.original_transaction_id).map_err(|e| {
-                    AppError::Internal(format!("invalid original_transaction_id: {e}"))
-                })?;
+                let original_id =
+                    Uuid::from_str(&summary.original_transaction_id).map_err(|e| {
+                        AppError::Internal(format!("invalid original_transaction_id: {e}"))
+                    })?;
                 original_ids.push(original_id);
                 summaries.push((original_id, summary));
             }
@@ -125,9 +126,15 @@ impl BranchView for DeskRefundsView {
             for (original_id, summary) in summaries {
                 rows.push(DeskRefundRow {
                     reversal: summary,
-                    receipt_number: receipts_by_tx.get(&original_id).cloned().unwrap_or_default(),
+                    receipt_number: receipts_by_tx
+                        .get(&original_id)
+                        .cloned()
+                        .unwrap_or_default(),
                     lines: lines_by_tx.get(&original_id).cloned().unwrap_or_default(),
-                    payments: payments_by_tx.get(&original_id).cloned().unwrap_or_default(),
+                    payments: payments_by_tx
+                        .get(&original_id)
+                        .cloned()
+                        .unwrap_or_default(),
                 });
             }
 
@@ -138,7 +145,12 @@ impl BranchView for DeskRefundsView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(cfg, Arc::new(DeskRefundsView { pool: state.db.clone() }));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(DeskRefundsView {
+            pool: state.db.clone(),
+        }),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

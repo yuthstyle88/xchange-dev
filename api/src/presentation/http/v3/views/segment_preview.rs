@@ -192,12 +192,14 @@ impl BranchView for SegmentPreviewView {
                 "not found",
                 StatusCode::NOT_FOUND,
             )),
-            AppError::Validation(v) if v == "invalidRequest" || v == "idRequired" => Some(V3Error::new(
-                "invalidRequest",
-                Some("id"),
-                "invalid request",
-                StatusCode::BAD_REQUEST,
-            )),
+            AppError::Validation(v) if v == "invalidRequest" || v == "idRequired" => {
+                Some(V3Error::new(
+                    "invalidRequest",
+                    Some("id"),
+                    "invalid request",
+                    StatusCode::BAD_REQUEST,
+                ))
+            }
             _ => None,
         }
     }
@@ -207,12 +209,7 @@ async fn handle_segment_preview(req: &HttpRequest, view: &SegmentPreviewView) ->
     let query = web::Query::<Vec<(String, String)>>::from_query(req.query_string())
         .map(|q| q.into_inner())
         .unwrap_or_default();
-    let first = |key: &str| {
-        query
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
+    let first = |key: &str| query.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
     let named = match parse_branch(first("branch").as_deref()) {
         Ok(named) => named,
         Err(()) => {
@@ -333,4 +330,3 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     crate::presentation::dto::v3::segment_preview::export_types(dir)
 }
-

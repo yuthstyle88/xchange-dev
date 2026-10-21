@@ -92,4 +92,3 @@ impl ReconcileCheck for MarginCheck {
 pub fn check() -> std::sync::Arc<dyn super::ReconcileCheck> {
     std::sync::Arc::new(MarginCheck)
 }
-

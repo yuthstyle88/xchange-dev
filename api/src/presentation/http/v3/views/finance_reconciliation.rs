@@ -21,10 +21,9 @@ use xc_kernel::ids::BranchId;
 use crate::application::finance::reconciliation::{ReconciliationService, business_date};
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::finance_reconciliation::{
-    CertificationRow, CountLine, CountRow, ExceptionRow, FinanceReconciliationFilter,
-    FinanceSheet, InTransitRow, IntegrityRow, MethodTotals, Part, ReconciliationCertifyInput,
-    ReversalPendingRow, ShortReceiptRow, TransactionTotals, TransferStatusCount,
-    TransferSummary,
+    CertificationRow, CountLine, CountRow, ExceptionRow, FinanceReconciliationFilter, FinanceSheet,
+    InTransitRow, IntegrityRow, MethodTotals, Part, ReconciliationCertifyInput, ReversalPendingRow,
+    ShortReceiptRow, TransactionTotals, TransferStatusCount, TransferSummary,
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint, ViewFilter};

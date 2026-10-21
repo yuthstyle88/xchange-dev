@@ -20,7 +20,9 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::rate_alerts::{
     RateAlertSettingsData, SaveRateAlertSettingsInput,
 };
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, role_not_allowed_here};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, role_not_allowed_here,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct RateAlertSettingsSaveCommand {

@@ -22,11 +22,10 @@ pub const PUBLIC_ROUTE: &str = "/api/v3/views/customer_tier";
 async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     // A named branch first, for every caller, as the core checks it: an unknown one is `noSuchBranch` (#500). A
     // customer names none.
-    let named = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    )
-    .ok()
-    .and_then(|q| q.into_inner().remove("branch"));
+    let named =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .ok()
+            .and_then(|q| q.into_inner().remove("branch"));
     match parse_branch(named.as_deref()) {
         Ok(Some(branch)) => {
             if let Err(e) = require_branch(&req, &branch).await {

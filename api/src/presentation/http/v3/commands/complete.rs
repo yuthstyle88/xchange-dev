@@ -93,11 +93,12 @@ async fn this_branchs(
             StatusCode::BAD_REQUEST,
         )
     })?;
-    let owner: Option<String> = sqlx::query_scalar("SELECT branch_id FROM transactions WHERE id = $1")
-        .bind(id.0)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|_| server_error())?;
+    let owner: Option<String> =
+        sqlx::query_scalar("SELECT branch_id FROM transactions WHERE id = $1")
+            .bind(id.0)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|_| server_error())?;
     match owner {
         None => Err(V3Error::new(
             "notFound",
@@ -123,7 +124,8 @@ impl TransactionCompleteCommand {
         steps: Vec<Arc<dyn SaveStep>>,
         effects: ExchangeEffects,
     ) -> Self {
-        let approvals = crate::presentation::http::v3::commands::make_approval_service(pool.clone());
+        let approvals =
+            crate::presentation::http::v3::commands::make_approval_service(pool.clone());
         Self {
             pool: pool.clone(),
             approvals,

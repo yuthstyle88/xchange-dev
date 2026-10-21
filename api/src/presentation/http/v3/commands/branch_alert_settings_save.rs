@@ -85,13 +85,12 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
 
         if !input.floors.is_empty() {
             let codes: Vec<&str> = input.floors.iter().map(|f| f.currency.as_str()).collect();
-            let existing: Vec<String> = sqlx::query_scalar(
-                "SELECT code FROM currencies WHERE code = ANY($1)",
-            )
-            .bind(&codes)
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
+            let existing: Vec<String> =
+                sqlx::query_scalar("SELECT code FROM currencies WHERE code = ANY($1)")
+                    .bind(&codes)
+                    .fetch_all(&mut **tx)
+                    .await
+                    .map_err(|_| server_error())?;
 
             for code in &codes {
                 if !existing.iter().any(|c| c.trim() == *code) {
@@ -106,13 +105,11 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
         }
 
         // Step 2: Org & User ID
-        let org_id: Uuid = sqlx::query_scalar(
-            "SELECT organization_id FROM branches WHERE id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|_| server_error())?;
+        let org_id: Uuid = sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+            .bind(branch.as_str())
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|_| server_error())?;
 
         let user_id = Uuid::parse_str(&who.user_id).map_err(|_| server_error())?;
 

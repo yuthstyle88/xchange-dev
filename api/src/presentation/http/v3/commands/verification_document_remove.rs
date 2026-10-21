@@ -63,12 +63,9 @@ fn map_case_error(err: CaseError) -> V3Error {
             "no verification policy",
             StatusCode::BAD_REQUEST,
         ),
-        CaseError::CaseLocked => V3Error::new(
-            "caseLocked",
-            None,
-            "case locked",
-            StatusCode::BAD_REQUEST,
-        ),
+        CaseError::CaseLocked => {
+            V3Error::new("caseLocked", None, "case locked", StatusCode::BAD_REQUEST)
+        }
         CaseError::DocumentTypeNotAccepted => V3Error::new(
             "documentTypeNotAccepted",
             Some("documentType"),
@@ -88,18 +85,10 @@ fn map_case_error(err: CaseError) -> V3Error {
             "idempotency conflict",
             StatusCode::CONFLICT,
         ),
-        CaseError::File(msg) => V3Error::new(
-            "validationFailed",
-            None,
-            msg,
-            StatusCode::BAD_REQUEST,
-        ),
-        CaseError::NotFound => V3Error::new(
-            "notFound",
-            None,
-            "not found",
-            StatusCode::NOT_FOUND,
-        ),
+        CaseError::File(msg) => {
+            V3Error::new("validationFailed", None, msg, StatusCode::BAD_REQUEST)
+        }
+        CaseError::NotFound => V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND),
         CaseError::Store(_) | CaseError::Documents(_) => server_error(),
     }
 }

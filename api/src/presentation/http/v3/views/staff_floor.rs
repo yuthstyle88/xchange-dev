@@ -43,9 +43,7 @@ impl BranchView for StaffFloorBranchView {
         let branch = branch.clone();
         let who = who.clone();
 
-        async move {
-            reader.floor(&who, &branch).await
-        }
+        async move { reader.floor(&who, &branch).await }
     }
 }
 

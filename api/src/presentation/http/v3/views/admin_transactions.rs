@@ -19,7 +19,7 @@ use crate::presentation::dto::v3::admin_transactions::{
     AdminTransactionStatus, AdminTransactionType, AdminTransactionsFilter,
 };
 use crate::presentation::dto::v3::transaction_row::{
-    TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
+    ROW_COLUMNS, ROW_FROM, TransactionRow, TxSqlRow,
 };
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
@@ -66,7 +66,9 @@ impl PagedView for AdminTransactionsPagedView {
 
         async move {
             let before_cursor: Option<(DateTime<Utc>, i64)> = if let Some(before_id) = before {
-                let cursor: Option<(DateTime<Utc>, i64)> = if let Ok(uuid) = uuid::Uuid::parse_str(&before_id) {
+                let cursor: Option<(DateTime<Utc>, i64)> = if let Ok(uuid) =
+                    uuid::Uuid::parse_str(&before_id)
+                {
                     sqlx::query_as(
                         "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND (document_ref = $2 OR id = $3)",
                     )

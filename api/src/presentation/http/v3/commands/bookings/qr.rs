@@ -68,20 +68,19 @@ impl CommandAction for BookingQrReissue {
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
 
-        let row: Option<(String, String, String)> = sqlx::query_as(
-            "SELECT customer_id, branch_id, status FROM bookings WHERE id = $1",
-        )
-        .bind(&input.id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| {
-            V3Error::new(
-                "serverError",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+        let row: Option<(String, String, String)> =
+            sqlx::query_as("SELECT customer_id, branch_id, status FROM bookings WHERE id = $1")
+                .bind(&input.id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    V3Error::new(
+                        "serverError",
+                        None,
+                        e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                })?;
 
         let (booking_cust_id, branch_id, status) = match row {
             Some(r) => r,
@@ -126,12 +125,9 @@ impl CommandAction for BookingQrReissue {
             .reissue_qr_in(tx, &input.id, &who.user_id, now)
             .await
             .map_err(|err| match err {
-                BookingError::StaleVersion => V3Error::new(
-                    "staleVersion",
-                    None,
-                    "STALE_VERSION",
-                    StatusCode::CONFLICT,
-                ),
+                BookingError::StaleVersion => {
+                    V3Error::new("staleVersion", None, "STALE_VERSION", StatusCode::CONFLICT)
+                }
                 BookingError::NotFound => {
                     V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
                 }
@@ -145,4 +141,3 @@ impl CommandAction for BookingQrReissue {
         })
     }
 }
-

@@ -103,16 +103,17 @@ impl CommandAction for SlotOpen {
             )
         })?;
 
-        let updated = services
-            .slot_service
-            .open_in(tx, input.id)
-            .await
-            .map_err(|err| match err {
-                SlotError::NotFound => {
-                    V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
-                }
-                other => V3Error::from(other),
-            })?;
+        let updated =
+            services
+                .slot_service
+                .open_in(tx, input.id)
+                .await
+                .map_err(|err| match err {
+                    SlotError::NotFound => {
+                        V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
+                    }
+                    other => V3Error::from(other),
+                })?;
 
         Ok(SlotOpenOutput {
             id: updated.id,
@@ -120,4 +121,3 @@ impl CommandAction for SlotOpen {
         })
     }
 }
-

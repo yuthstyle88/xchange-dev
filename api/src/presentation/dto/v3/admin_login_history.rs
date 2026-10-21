@@ -12,6 +12,8 @@ pub struct AdminLoginHistoryRow {
     pub user_id: Option<String>,
     pub user_name: Option<String>,
     pub ip: Option<String>,
-    #[ts(type = "'OK' | 'BAD_PASSWORD' | 'UNKNOWN_USER' | 'NOT_ACTIVE' | 'TEMP_EXPIRED' | 'RATE_LIMITED' | 'UNAVAILABLE'")]
+    #[ts(
+        type = "'OK' | 'BAD_PASSWORD' | 'UNKNOWN_USER' | 'NOT_ACTIVE' | 'TEMP_EXPIRED' | 'RATE_LIMITED' | 'UNAVAILABLE'"
+    )]
     pub result: String,
 }

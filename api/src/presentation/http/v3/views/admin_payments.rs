@@ -57,8 +57,7 @@ impl BranchView for AdminPaymentsBranchView {
                 .map(|e| {
                     let before_methods =
                         serde_json::from_value(e.before_methods).unwrap_or_default();
-                    let after_methods =
-                        serde_json::from_value(e.after_methods).unwrap_or_default();
+                    let after_methods = serde_json::from_value(e.after_methods).unwrap_or_default();
                     PaymentHistoryItem {
                         version: e.version,
                         actor: e.actor,

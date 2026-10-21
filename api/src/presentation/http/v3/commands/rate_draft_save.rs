@@ -186,7 +186,10 @@ impl CommandAction for EditDraftCommand {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let approval_service = make_approval_service(state.db.clone());
     let draft_service = Arc::new(RateDraftService::new(state.db.clone(), approval_service));
-    CommandEndpoint::register(cfg, Arc::new(CreateDraftCommand::new(draft_service.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(CreateDraftCommand::new(draft_service.clone())),
+    );
     CommandEndpoint::register(cfg, Arc::new(EditDraftCommand::new(draft_service)));
 }
 

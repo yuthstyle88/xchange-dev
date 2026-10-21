@@ -394,4 +394,3 @@ async fn record_audit_and_reload(
     RoleGrants::install(snapshot);
     Ok(AdminGroupOutput { code, version })
 }
-
