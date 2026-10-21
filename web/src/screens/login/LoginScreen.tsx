@@ -7,7 +7,7 @@ import { useForm } from '../../shared/ui/form';
 import { screenT } from '../../shared/i18n';
 import type { AuthApi, PasswordApi } from './auth-api';
 import { ChangePassword } from './ChangePassword';
-import { homeOf, safeNext } from './home';
+import { targetOf } from './home';
 import * as loginI18n from './i18n';
 
 const t = screenT('login', loginI18n);
@@ -44,7 +44,7 @@ export function LoginScreen(props: {
           setMustChange(true);
           return;
         }
-        const target = safeNext(props.next) ?? homeOf(res.user);
+        const target = targetOf(res.user, props.next);
         props.navigate(target);
       }
     } catch (err) {
@@ -72,7 +72,7 @@ export function LoginScreen(props: {
         setMustChange(true);
         return;
       }
-      const target = safeNext(props.next) ?? homeOf(res.user);
+      const target = targetOf(res.user, props.next);
       props.navigate(target);
     } catch (err) {
       setErrorKey(toErrorKey(err));
