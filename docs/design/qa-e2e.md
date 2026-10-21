@@ -44,6 +44,9 @@ qa/e2e/
   tests/smoke-rbac-matrix.spec.ts    QA-F11 (round 3; "F11" is also the name of the api password tests, unrelated)
   tests/flow-transfer-escalation.spec.ts  QA-F12 (round 3)
   tests/flow-transfer-branch.spec.ts  QA-F12b (round 4; needs the seeded second branch)
+  tests/flow-xapp-alerts.spec.ts     QA-F14a (round 5)
+  tests/flow-xapp-plan.spec.ts       QA-F14b (round 5)
+  tests/flow-xapp-profile.spec.ts    QA-F14c (round 5)
 ```
 
 `playwright.config.ts` keeps PR 3838's settings (one worker, no retries, phone viewport 430×932 for `/app`, desktop
@@ -181,6 +184,9 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 | F11 RBAC matrix | `xc-auth` role grants; `web/src/screens/admin/*/menu.ts` | read-only. For each staff account: sign in, read `me.permissions` (`mePermissions`), and expect each admin menu link `a[href="#<id>"]` to exist exactly when its `needs` is `all` or in the permissions; a refused `#id` keeps the hash and shows the lowest-order allowed menu (no 403 view); `/staff` cards follow their `visible` rule; `/operations/verification` shows `[data-refused]` without `VerificationReview`. The customer is redirected to `/login` from `/`, `/staff`, `/desk`, `/operations/verification`. The menu → `needs` table is copied into the spec with its `menu.ts` citations; the role → permission matrix is **not** hard-coded, so the spec does not go stale when grants change | none |
 | F12 transfer escalation | `blueprint/cash-shift-transfer.md`; `xc-cash/src/application/approval/transfer.rs` | read `cash_transfer_policy`; finance records an EXTERNAL_IN above the limit (with no policy row every amount is above it); the branch manager's approval is refused (`ABOVE_LIMIT`), admin (EXECUTIVE) approves; finance dispatches and receives; then an EXTERNAL_OUT with the same lines, approved by admin, dispatched and received, so the safe ends where it started. A branch-to-branch transfer is F12b | two transfers and their approvals on MAIN; the safe nets to zero |
 | F12b branch transfer | `blueprint/cash-shift-transfer.md` §3.1, A5 | needs the seeded second branch `TEST2` and its two accounts (`branchManager2`, `finance2`). Leg 1, MAIN → TEST2, within the limit: finance creates and submits, the MAIN branch manager approves (never the creator), finance dispatches, `branchManager2` receives **from a TEST2 session** (the destination branch receives). Leg 2, TEST2 → MAIN, the same lines: `finance2` creates and submits, `branchManager2` approves, `finance2` dispatches, the MAIN branch manager receives. Both safes end where they started | two BRANCH transfers and their approvals |
+| F14a rate alert | customer app, `/app/rate-alerts` | customer: delete its own leftover alerts carrying the spec's marker target; create MAIN / `users.currency` / ABOVE / the marker (a target far above any rate, so it never fires: alerts are checked only after a rate publish); the new `article[data-alert-id]` card shows; delete it; after a reload it is gone. Needs the seed's `rate_alert_settings` (else `alertSettingsMissing`: skip and log) | one soft-deleted alert of the test customer |
+| F14b journey plan | customer app, `/app` and `/app/journey` | customer: on `/app` calculate a BUY of `users.currency` with a quantity unique to the run, save (`POST /api/app/planner-drafts`); on `/app/journey` the card with that amount shows; delete it (`[data-action=delete-plan]`); after a reload it is gone. Needs a published rate on MAIN (seed) | none (the delete is a hard delete) |
+| F14c profile and consent | customer app, `/app/profile` | customer: read the name and language; save a run-unique name and another seeded language (the save is a `PUT`, so the spec waits on it itself, not with `posted`); the values hold after a reload; restore both in `finally`. Then toggle `data-consent=EMAIL` and toggle it back in `finally` (needs the seed's MARKETING text, else 409 `consentTextMissing`: skip and log). While granted, the test customer is marketing-eligible; nothing is sent outside | two consent history rows; profile back to what it was |
 
 ## 5. Order and data
 
@@ -203,6 +209,15 @@ The key element is a `data-testid` or role the screen already renders; a screen 
   on a freshly reseeded host F3 fails at that approval. Seeding the policy is the owner's call (a seed change).
 
 ## 6. What the suite cannot do (by hand, with screenshots)
+
+- **The kiosk journey (F13)** on `main` as of round 5: a desk cannot finish a kiosk request. The desk saves with its own
+  quote, which G7 refuses (`api/src/application/workflows/exchange/create.rs:227-243`) (the owner ruled 2026-10-21 that
+  a kiosk request, like a booking, reserves only a queue place and is priced at the current rate; the G7 change is
+  #4113). The customer side is a
+  Flutter app on another host, and a kiosk request has no cancel, so its rows cannot be cleaned up. F13 is cut once
+  those are fixed.
+- **Notification mark-read and the assistant send:** neither can be undone (no mark-unread; a conversation is not
+  deleted) and no safe way exists to create a notification for the test customer; both stay smoke-only.
 
 - **OCR** (E-5): the desk's passport reader and the verification document reading.
 - **OTP sign-in** at `/app/sign-in`: the test host's Identity sends no OTP (`noop` delivery, PR 3837); customers sign in at
@@ -236,6 +251,7 @@ clean, with no run against a host (E-3).
 | QA-F12 | `flow-transfer-escalation.spec.ts` (new file) | logic | Argon |
 | QA-H2 | `helpers.ts`: `Users`/`Role` gain `branch2`, `branchManager2`, `finance2` (after QA-H1) | mechanical | Flash |
 | QA-F12b | `flow-transfer-branch.spec.ts` (new file; after the seed and QA-H2) | logic | Argon |
+| QA-F14a … QA-F14c | `flow-xapp-alerts`, `flow-xapp-plan`, `flow-xapp-profile` (new files) | mechanical | Flash |
 
 The skeleton (Claude, STEP 2): the `git mv`, `tsconfig.json`, the config's two projects, `helpers.ts` complete, and the
 13 spec files as empty `test.describe` blocks with their area named.
