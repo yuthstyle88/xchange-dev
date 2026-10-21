@@ -9,10 +9,13 @@
 
 use std::path::Path;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
+use pos_error::AppError;
 use serde::Deserialize;
 use serde_json::Value;
+use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
@@ -22,7 +25,9 @@ use super::web_request_create::WebRequestAnswer;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::kiosk::web_request_wiring::web_request_service;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, out_of_scope, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,10 +59,28 @@ impl CommandAction for WebRequestQrReissue {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        key: IdempotencyKey,
+        _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input, key, &self.0);
-        todo!("KWQ-C6: mint a new token, WebRequestService::reissue_qr")
+        let customer_id = who.customer_id.as_deref().ok_or_else(out_of_scope)?;
+        let token = Uuid::new_v4().to_string();
+        let expires_at = self
+            .0
+            .reissue_qr_in(tx, branch, customer_id, &input.id, &token, Utc::now())
+            .await
+            .map_err(|err| match err {
+                AppError::NotFound { .. } => {
+                    V3Error::new("notFound", None, "notFound", StatusCode::NOT_FOUND)
+                }
+                other => {
+                    tracing::error!(error = %other, "webRequestQrReissue failed");
+                    server_error()
+                }
+            })?;
+        Ok(WebRequestAnswer {
+            request_id: input.id,
+            request_qr_url: Some(format!("/q#{token}")),
+            expires_at: expires_at.to_rfc3339(),
+        })
     }
 }
 
