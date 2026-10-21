@@ -2284,3 +2284,11 @@
     transition: none;
   }
 }
+
+/* #4302 ruling A: while the floating queue card shows (queue-card.css), the admin content makes room for it. */
+@media (min-width: 1024px) {
+  .xc-admin:has(.queue-card) .xc-content .admin-main { padding-right: 335px; }
+}
+@media (max-width: 1023px) {
+  .xc-admin:has(.queue-card) .xc-content .admin-main { padding-bottom: 260px; }
+}
