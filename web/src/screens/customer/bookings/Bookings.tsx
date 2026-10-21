@@ -69,9 +69,7 @@ function isFinished(status: string): boolean {
 }
 
 function canCancel(booking: MyBookingItemDto): boolean {
-  if (isFinished(booking.status)) return false;
-  if (!booking.cancelCutoffAt) return true;
-  return new Date(booking.cancelCutoffAt).getTime() > Date.now();
+  return !isFinished(booking.status);
 }
 
 function canReschedule(booking: MyBookingItemDto): boolean {

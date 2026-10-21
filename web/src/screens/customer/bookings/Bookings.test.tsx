@@ -469,13 +469,14 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
       expect(root.textContent).toContain(table.th.status_CANCELLED);
     });
 
-    it('hides cancel button when current time is after cancelDeadline (:475)', async () => {
-      // Advance clock past cancelDeadline (09:30 UTC > 09:00 UTC)
+    // Owner 2026-10-21 ("ยกเลิกการจอง ยกเลิกได้เลย" · "ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน"):
+    // a customer cancels at any time; reschedule keeps the cutoff (#4204).
+    it('shows cancel button even when current time is after cutoff deadline (#4204)', async () => {
+      // Advance clock past cutoff (09:30 UTC > 09:00 UTC)
       vi.setSystemTime(new Date('2026-10-14T09:30:00Z'));
 
       await boot();
 
-      // Assert the booking card is rendered before asserting cancel button absence
       const bookingCard = root.querySelector(`[data-booking-id="${BOOKING_ACTIVE_ID}"]`);
       expect(
         bookingCard ?? (root.textContent?.includes('B261014-0024') ? root : null),
@@ -485,7 +486,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
       const cancelBtn = root.querySelector(
         `[data-booking-id="${BOOKING_ACTIVE_ID}"] button[data-action="cancel"], .xc-booking-cancel-btn`,
       );
-      expect(cancelBtn, 'cancel button hidden after cutoff deadline').toBeNull();
+      expect(cancelBtn, 'cancel button remains visible after cutoff deadline').not.toBeNull();
     });
 
     it('displays worded error when server answers 400 cancelCutoffPassed', async () => {

@@ -80,7 +80,7 @@ export function BookingExtras(props: BookingExtrasProps): JSX.Element {
       timeStyle: 'short',
       timeZone: props.timeZone,
     });
-    return t('cancelDeadline', { date });
+    return t('rescheduleDeadline', { date });
   };
 
   return (

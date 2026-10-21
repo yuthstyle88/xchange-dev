@@ -153,13 +153,16 @@ describe('BookingExtras (C03)', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('shows the cancel deadline while it is in the future and the booking is open', () => {
+  // Owner 2026-10-21 ("ยกเลิกการจอง ยกเลิกได้เลย" · "ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน"):
+  // a customer cancels at any time; the cutoff deadline line now words the reschedule deadline only.
+  it('shows the reschedule deadline while it is in the future and the booking is open', () => {
     mount(booking(), harness().api);
     expect(deadline()?.textContent?.trim()).toBeTruthy();
+    expect(deadline()?.textContent).toContain('Reschedule by');
     expect(deadline()?.textContent).toContain('2099');
   });
 
-  it('shows no cancel deadline when there is none, when it has passed, or when the booking is finished', () => {
+  it('shows no reschedule deadline when there is none, when it has passed, or when the booking is finished', () => {
     for (const b of [
       booking({ cancelCutoffAt: null }),
       booking({ cancelCutoffAt: '2000-01-01T00:00:00Z' }),
