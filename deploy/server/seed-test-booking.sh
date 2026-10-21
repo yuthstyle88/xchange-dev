@@ -6,8 +6,8 @@
 #
 # What it does. Every step is idempotent; a second run changes nothing it already did.
 #   1. organization_hosts row for the host, so /api/public/host finds org XC (rate-display.md §7 item 2).
-#   2. Branch MAIN: booking enabled, Asia/Bangkok, open 09:00–17:00 every day.
-#   2b. Branch TEST2 ("Test branch 2"): booking off, Asia/Bangkok, open 09:00–17:00 every day.
+#   2. Branch MAIN: booking enabled, Asia/Bangkok, open 00:00–23:59 every day.
+#   2b. Branch TEST2 ("Test branch 2"): booking off, Asia/Bangkok, open 00:00–23:59 every day.
 #   3. Booking slot rule for MAIN (30 min, capacity 4, horizon 14 days), owned by the active owner.
 #   4. Open slots for the next SEED_DAYS days (default 7), the same SQL shape as SlotService::generate_in.
 #   5. A published TERMS consent text in th, en and zh, so /app sign-up does not answer consentTextMissing.
@@ -116,12 +116,13 @@ OWNER_ID="$(q "SELECT u.id FROM users u
   ORDER BY u.created_at LIMIT 1;")"
 [ -n "$OWNER_ID" ] || die "no ACTIVE owner. Create one first: $BIN create-owner --name <name> --phone <phone> (password on stdin)"
 
-say "2. branch $BRANCH: booking on, Asia/Bangkok, 09:00–17:00 daily"
-HOURS='{"mon":[{"open":"09:00","close":"17:00"}],"tue":[{"open":"09:00","close":"17:00"}],"wed":[{"open":"09:00","close":"17:00"}],"thu":[{"open":"09:00","close":"17:00"}],"fri":[{"open":"09:00","close":"17:00"}],"sat":[{"open":"09:00","close":"17:00"}],"sun":[{"open":"09:00","close":"17:00"}]}'
+say "2. branch $BRANCH: booking on, Asia/Bangkok, 00:00–23:59 daily"
+# All-day test hours so e2e can run at any hour (#4315, owner 2026-10-21: "ปรับ เวลา ทำการใหม่ได้ นะ" · "เพื่อให้มันเทสได้").
+HOURS='{"mon":[{"open":"00:00","close":"23:59"}],"tue":[{"open":"00:00","close":"23:59"}],"wed":[{"open":"00:00","close":"23:59"}],"thu":[{"open":"00:00","close":"23:59"}],"fri":[{"open":"00:00","close":"23:59"}],"sat":[{"open":"00:00","close":"23:59"}],"sun":[{"open":"00:00","close":"23:59"}]}'
 q "UPDATE branches SET booking_enabled = true, timezone = 'Asia/Bangkok', opening_hours = '$HOURS'::jsonb
    WHERE organization_id = '$ORG_ID' AND id = '$BRANCH';" >/dev/null
 
-say "2b. branch $BRANCH2: booking off, Asia/Bangkok, 09:00–17:00 daily"
+say "2b. branch $BRANCH2: booking off, Asia/Bangkok, 00:00–23:59 daily"
 q "INSERT INTO branches (id, organization_id, name, created_at, created_by, request_id, code, timezone, opening_hours, booking_enabled)
    VALUES ('$BRANCH2', '$ORG_ID', 'Test branch 2', now(), '$OWNER_ID', 'seed_test_branch_$BRANCH2', '$BRANCH2', 'Asia/Bangkok', '$HOURS'::jsonb, false)
    ON CONFLICT (id) DO UPDATE SET
