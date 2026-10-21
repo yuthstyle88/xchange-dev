@@ -1,6 +1,6 @@
 // DeskStore: the state every desk step shares (design xchange-v3-wave3-desk.md §5.3, D-4, D-5).
 // Money is held as strings, exactly as typed or as the server answered; the store does no arithmetic (W7).
-import { createSignal, onCleanup, type Accessor } from 'solid-js';
+import { createSignal, onCleanup, type Accessor, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../shared/api/client';
 import type { Me } from '../../shared/api/generated/common';
 import type { DeskConfig } from '../../shared/api/generated/desk_config';
@@ -35,6 +35,7 @@ export interface DeskEntryState {
   kind: 'kiosk';
   id: string;
   banner: Accessor<string>;
+  actions?: () => JSX.Element;
   locked: boolean;
   identityLabel?: string;
   identityConfirmed: Accessor<boolean>;

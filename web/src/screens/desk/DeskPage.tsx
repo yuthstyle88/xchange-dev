@@ -23,9 +23,20 @@ export function DeskPage<S extends FrameStore>(props: {
   const t = screenT('desk', screenI18n);
   const current = () => props.steps.find((s) => s.index === props.store.step());
   const task = taskMod?.createTask?.({ store: props.store });
+  const withEntry = props.store as S & {
+    entry?: () => { banner: () => string; actions?: () => JSX.Element } | undefined;
+  };
 
   return (
     <div class="desk-page">
+      <Show when={withEntry.entry?.()}>
+        {(entry) => (
+          <div class="desk-entry-bar" data-desk-entry-bar="">
+            <span>{entry().banner()}</span>
+            {entry().actions?.()}
+          </div>
+        )}
+      </Show>
       <nav class="desk-nav">
         <ol class="steps" aria-label={t('stepsLabel')}>
           <For each={props.steps}>
