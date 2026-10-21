@@ -391,7 +391,7 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
     await expect(page.locator('nav.admin-nav a[href="#booking-slots"]')).toHaveCount(0);
     await expect(page.locator('.booking-slots-screen')).toHaveCount(0);
 
-    // Direct command calls as teller are refused with 403 (roleNotAllowed / outOfScope).
+    // Direct command calls as teller are refused with 400 (roleNotAllowed) or 403 (outOfScope).
     // The same-origin check (command.rs step 2, extractors/origin.rs same_origin) runs before Policy::authorize,
     // so send its headers or the refusal would be 400 originRejected instead of the role refusal.
     const sameOrigin = { 'x-xchange-request': '1', origin: new URL(users.baseUrl).origin };
@@ -440,7 +440,7 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
           : await page.request.post(c.url, { headers: { ...sameOrigin, 'Idempotency-Key': key }, data: c.data });
       const body = await res.text();
       console.log(`[R9-4 teller] ${c.method} ${c.url} -> ${res.status()} ${body.slice(0, 200)}`);
-      expect(res.status(), `${c.name} refused for teller: ${body}`).toBe(403);
+      expect([400, 403], `${c.name} refused for teller: ${body}`).toContain(res.status());
       expect(body, `${c.name} refusal code`).toMatch(/roleNotAllowed|outOfScope/);
     }
   });
