@@ -260,7 +260,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
     setSessionBranch(branchFromMe);
 
-    if (branchFromMe) {
+    if (branchFromMe && permissions().includes('CompatRead')) {
       await fetchBranches(branchFromMe);
     }
   };
@@ -322,7 +322,9 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       await loadMeAndBranches();
       return;
     }
-    await fetchBranches(currentBranch());
+    if (permissions().includes('CompatRead')) {
+      await fetchBranches(currentBranch());
+    }
   };
 
   // Add branch dialog
@@ -350,7 +352,9 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           'adminCreateBranch',
           { name: trimmed },
           async () => {
-            await fetchBranches(currentBranch());
+            if (permissions().includes('CompatRead')) {
+              await fetchBranches(currentBranch());
+            }
           },
         );
       };
