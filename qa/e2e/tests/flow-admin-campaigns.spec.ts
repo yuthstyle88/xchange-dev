@@ -250,7 +250,7 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
     await expect(page.locator('nav.admin-nav a[href="#campaigns"]')).toHaveCount(0);
     await expect(page.locator('.xc-campaigns-screen')).toHaveCount(0);
 
-    // Direct command call as teller is refused with 403 (outOfScope / roleNotAllowed).
+    // Direct command call as teller is refused with 400 (roleNotAllowed) or 403 (outOfScope).
     const res = await page.request.post('/api/campaigns', {
       headers: {
         'content-type': 'application/json',
@@ -268,7 +268,12 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         branches: [users.branch],
       },
     });
-    expect(res.status(), 'teller POST /api/campaigns refused with 403').toBe(403);
+    const body = await res.text();
+    console.log(`[R9-2 teller] POST /api/campaigns -> ${res.status()} ${body.slice(0, 200)}`);
+    // Contract (policy_error.rs:104-113): a role refusal is 400 roleNotAllowed(Here); only outOfScope is 403.
+    const code = /"code":"(\w+)"/.exec(body)?.[1] ?? '';
+    const ok = (res.status() === 400 && /^roleNotAllowed(Here)?$/.test(code)) || (res.status() === 403 && code === 'outOfScope');
+    expect(ok, `teller POST /api/campaigns refused: ${res.status()} ${body}`).toBe(true);
   });
 
   // (b.1) Invalid input: end before start (endsAt < startsAt) on .xc-campaign-create in th and en.
