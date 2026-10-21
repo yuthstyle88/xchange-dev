@@ -12,17 +12,6 @@ pub enum PhoneVerificationStatus {
     Superseded,
 }
 
-impl PhoneVerificationStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pending => "PENDING",
-            Self::Verified => "VERIFIED",
-            Self::Locked => "LOCKED",
-            Self::Superseded => "SUPERSEDED",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PhoneVerification {
     pub id: Uuid,

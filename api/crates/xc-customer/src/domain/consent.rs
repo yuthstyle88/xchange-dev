@@ -85,15 +85,6 @@ pub enum ConsentError {
     InvalidPeriod,
 }
 
-impl ConsentError {
-    pub fn code(&self) -> &'static str {
-        match self {
-            ConsentError::TextMissing => "consentTextMissing",
-            ConsentError::InvalidPeriod => "invalidPeriod",
-        }
-    }
-}
-
 impl From<ConsentError> for AppError {
     fn from(e: ConsentError) -> Self {
         AppError::Domain(e.to_string())
