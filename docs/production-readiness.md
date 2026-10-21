@@ -2,6 +2,7 @@
 
 > written-by: claude/c5ca141a · owner's order 2026-10-17 ~05:0xZ, in that session: *"วางแผน ปิดงาน และจ่ายงาน เพื่อให้เอเย่นเป็นแนวทางในการออก production"* (plan the close-out and the dispatch, so that the agents have a guideline for going to production).
 > Corrected 2026-10-17 ~05:5xZ after the merger's review (PR 2834 PASS+follow-up): #1413 is not in tq. Measured 2026-10-17T05:0xZ–05:1xZ: `origin/main` `abc46caf`, tq `GET /v1/snapshot` at 05:06:34Z, `gh issue list` / `gh pr list` on `108-Plaza/xchange`, `curl https://xc-v3.spacing.cloud/health/ready`, `ssh Dell-server uptime` at 05:13Z.
+> §1–§5 rewritten 2026-10-21 by claude/studio-xc-ready on the BE lane controller claude/553782's order (#564 issuecomment-6323756336), to the state measured 2026-10-21T18:43Z–18:50Z at `main` `1fd766ec`. The owner's goal for that round, verbatim: *"ทำให้พร้อม แล้วคุณสั่งเอง"* (make it ready, then you give the order).
 
 **Who this is for.** Every agent working on `108-Plaza/xchange`: the BE controller, the FE controller, the merge lane, the reviewers, and the Gemini implementers. **Lanes are named by role here, never by session id**: the owner's account moves and sessions change, so the current holder of each lane is whoever last announced it on #564 (the lane's notice board), and a new holder announces itself there before acting. It does not add rules. It says, in one place, what has to be true before the owner can give the order to push `release/prod`, which open ticket belongs to which of those conditions, and in what order the lanes release them.
 
@@ -13,187 +14,164 @@
 
 ## 1. Where v3 stands (measured)
 
+Measured 2026-10-21T18:43Z–18:50Z by claude/studio-xc-ready. Re-measure a row before acting on it.
+
 | Item | Value | How measured |
 |---|---|---|
-| `main` head | `abc46caf` (05:04Z) | `gh api repos/108-Plaza/xchange/actions/runs?branch=main` |
-| Build on the host `xc-v3.spacing.cloud` | **`2d5ecfde`**, built 2026-10-17T11:24:53Z, `version 1.0.0`, `channel staging` — deployed by hand on the owner's order at 11:31Z, migrations 42 → 55, encrypted backup first, smoke green (#564, claude/56a74fcd). Was `a84962f5` (10-11) | `curl -s https://xc-v3.spacing.cloud/health/ready` |
-| How far the host is behind `main` | caught up at 11:31Z on 10-17 (was 1,266 commits / 13 migrations behind). Batch A's drop migrations are **not** on it: each needs its own deploy order | `gh api repos/108-Plaza/xchange/compare/2d5ecfde...main` |
-| Deploy lanes | **not used:** releases are by hand on the host (owner, 10-17 ~14:1xZ; #422 closed). `release.yml` stays on `main` unused | #422 |
-| Every deploy so far | by hand, from Dell, with cherry-picks; the last seven are recorded on #422 (2026-10-09 → 10-10) | #422 comments |
-| Open issues | **43** (54 open items minus 11 PRs); label counts: `class:guarded` 16 · `class:logic` 9 · `class:mechanical` 5 · `bug` 11 · `question` 4 · `umbrella` 2 · `documentation` 3 | `gh issue list --state open` |
-| Open PRs | **11**: 9 Gemini bug-fix PRs opened 10-16/17, PR 2050 (LY-6 BE, released by the owner 02:0xZ, branch updated 04:44Z), PR 1507 (draft, 2026-10-12) | `gh pr list --state open` |
-| Queue (xchange rows) | ready 5 (3 unpinned, each blocked or colliding) · leased 1 · pr_open 0 · in_review 8 · rework 1 · blocked 0 | `/v1/snapshot` 05:06Z |
-| Verdicts on the 9 Gemini PRs | FAIL on 2743, 2789, 2829 (rework); none yet on 2823, 2825, 2826, 2827, 2828, 2830 | `issues/<pr>/comments`, lines starting `Verdict:` |
-| CI policy | tests run only on the push to `main` (PR 2786, merged 01:19Z); PR runs do fmt, clippy, build, deny; main's `api` run is the deciding run and a red main is reverted | #2785 closing note |
-| Main's deciding run | `abc46caf` `api` pending at 05:04Z; `cd0e6dba` cancelled (superseded); first full-suite run under 2786 (`567787d`) green, `test` job 57 min on `dell-org-ci-1` | `actions/runs?branch=main` |
-| Dell (Linux CI + 6 Gemini + 6 Claude sessions) | load 76 / 106 / 128 on 64 threads at 05:13Z | `ssh Dell-server uptime` |
-| Identity service `xc-id.spacing.cloud` | `/health` answers `build: unknown`, `built_at: unknown`, `channel: unknown` | `curl -s https://xc-id.spacing.cloud/health` |
-| Velocity | ≥300 PRs merged and ≥500 issues closed in the last 7 days (both hit the query limit) | `gh pr list --state merged --limit 300`, `gh issue list --state closed --limit 500` |
+| `main` head | `1fd766ec`; its `api`, `web`, `app` and `branch-hygiene` push runs are all `success` (created 18:29Z) | `gh api 'repos/108-Plaza/xchange/actions/runs?branch=main'` |
+| Build on the host `xc-v3.spacing.cloud` | `7e9de9ca`, builtAt 2026-10-21T15:17:48Z, `version 1.0.0`, `channel staging`, `database true`, `ui built`: deploy round 10 (#564 issuecomment-6320509987) | `curl -s https://xc-v3.spacing.cloud/health/ready` |
+| How far the host is behind `main` | 143 commits, 55 files. **No migration** differs (the host has 69 applied, max `20261219210000`, which is also the newest file in `api/migrations/` on `main`) | `gh api repos/108-Plaza/xchange/compare/7e9de9ca...1fd766ec`; `git diff --name-only 7e9de9ca 1fd766ec`; `select count(*), max(version) from _sqlx_migrations where success` on the host |
+| Release path | by hand on the host, on the owner's order each time (G2) | #422 closed `not planned` 2026-10-17 |
+| Identity `xc-id.spacing.cloud` | `/health`: `version 1.0.0`, `build unknown`, `built_at unknown`, `channel unknown` (G6) | `curl -s https://xc-id.spacing.cloud/health` |
+| Backups | timer active, last run 2026-10-21T17:00:01Z `success`; 7 encrypted sets on the host; no off-host copy (G2) | read-only `ssh` checks, #564 issuecomment-6323812080 |
+| Open issues | 35: the umbrella #564, 9 `bug` (including #4324 and #4395), 14 kiosk-web-queue tickets, 11 XC-PRICING tickets; each is listed in §3 | `gh issue list --state open` |
+| Open PRs | 10: 7 into `main` (FE bug fixes, an FE batch, a pricing design doc), 3 into `feat/kwq-a` | `gh pr list --state open` |
+| Queue (xchange rows) | ready 1 · leased 4 · pr_open 7 · in_review 0 · rework 0 · blocked 0 | `GET /v1/snapshot` 18:47:10Z |
+| e2e on the host | the round-10 deploy run: 96 passed, 11 failed, 4 skipped (89.7 %); every failure has a ticket (#4300–#4305) | #564 issuecomment-6320509987, issuecomment-6322752218 |
 
-**Reading.** The code moves far faster than the host. Nothing merged in the last six days has run anywhere but CI. The thing that stops a release order today is not the backlog of 43 tickets; it is that **the release path has never been exercised** (§2 G2) and that **the duplicate old models are still in the schema** (§2 G3). Both are already decided by the owner; both have owners; neither needs a new design.
+**Reading.** The code side is close: the drop migrations of the old schema (former G3) are written, merged and running on the host, the tracking tickets of former G4 are closed, and `main` is green. What still stands between the owner and a safe release order is mostly **not code**:
+- a backup nobody has ever restored;
+- three host secrets or settings only the owner can provide (the loyalty token, the OTP sender, the backup key's whereabouts);
+- a person's desk day on the host;
+- one host recipe (G6).
+
+The code work still open is the pricing Approve path (#4324, XC-PRICING) and the round-9/10 e2e bugs.
 
 ---
 
 ## 2. The gates: what must be true before the release order
 
-Each gate names the tickets that close it. A ticket number is the *source* of a statement, not its status: re-check the ticket before acting on a line here.
+Each gate is **open** or **closed**, with the evidence that says so. A ticket number is the *source* of a statement, not its status: read the ticket before acting on a line.
 
-### G1 — `main` is green and stays green
-
-| Condition | Where it stands | Ticket |
+| Gate | State | One-line reason |
 |---|---|---|
-| The full suite is green on the head to be released, on the `main` push run | holds for `567787d`; every later head is decided by its own push run | — |
-| A PASSed PR cannot stay red from a CI timeout | fixed by PR 2786 + the runner-pool decision A; the opener should close the ticket as fixed | #2569 (close) |
-| The `api` test run does not leave Postgres dirs on the runner | fix on `main` (PR 2806); a second, unwired reaper also landed (PR 2822) and the two are blind to each other | #2832 (owner picks one; §5 item 2) |
-| The `api` tests do not leave `/tmp/xc-test-docs-*` dirs | PR 2829 in rework (FAIL) | #2797 |
-| `user_create_phone_test` does not fail under runner load | PR 2743 in rework (FAIL) | #2563 |
-| `cargo fmt --check` covers the `include!`-generated modules | `ready`, `assign:none`; its scope reserves ten whole directories, so it collides with every BE ticket in flight | #1474 (last code ticket before the freeze, see §4 wave 5) |
+| G1 `main` is green | **closed** | every push run at `1fd766ec` is `success` |
+| G2 release path and a rehearsed restore | **open** | no restore has ever been rehearsed; backups have no off-host copy; the loyalty token is missing on the host |
+| G3 one model in the schema | **closed** | batch A merged and deployed (round 10) |
+| G4 rulings that change code | **open** | pricing Approve cannot be reached (#4324) |
+| G5 a person has used it on the host | **open** | nobody has run `docs/uat/desk-day-v1.md`; round-9/10 e2e bugs are open |
+| G6 every running thing says what it is | **open** | xc-id reports `build unknown` |
+| G7 data and secrets the host needs | **open** | OTP sender is `noop`; retention periods unset (owner) |
 
-### G2 — the release path is a hand deploy on the host (owner, 10-17)
+### G1 — `main` is green and stays green · **closed**
 
-The owner decided on 2026-10-17 ~14:1xZ (*"เรารันที่ host เลย"* → "Deploy on the host"; #422 closed as not planned with the record): **releases are done by hand on the host**, with no git-push deploy lane and no staging secrets. The proven procedure is the BE controller's deploy of 10-17 11:31Z (#564):
+- Evidence: the `api`, `web`, `app` and `branch-hygiene` push runs on `1fd766ec` all concluded `success` (created 2026-10-21T18:29Z).
+- Keeping it closed is the merge lane's job, and the rule is unchanged: tests run on the push to `main`, and a red `main` is reverted (§6).
+- The former G1 rows (#2569 CI timeout, #2797 tmp dirs, #2563 phone test flake, #2832 two reapers, #1474 fmt gate) were all closed by 2026-10-20.
 
-1. Build on Dell from a clean checkout of the `main` commit, with `BUILD_SHA` / `BUILT_AT` (`deploy/server/build.md`).
-2. Copy the stage and verify `SHA256SUMS` on both ends.
-3. On the host, `deploy/server/update.sh`: rehearse migrations on a scratch copy → **encrypted backup** → keep `xchange.prev` → migrate → local smoke.
-4. Public smoke `deploy/server/smoke.sh https://xc-v3.spacing.cloud <sha>`; `/health/ready` must name the commit.
-5. Record each deploy on #564: the sha, the migration count, the backup path, the smoke result.
+### G2 — the release path is a hand deploy on the host · **open**
 
-Still open under G2: **one rehearsed restore** from such a backup with `deploy/server/restore.sh` (a scratch database, never the live one), recorded on #564. Rollback after a schema change needs that restore, because `xchange.prev` does not start on a newer schema. Every deploy happens only on the owner's order.
+The owner decided on 2026-10-17 (*"เรารันที่ host เลย"*, "deploy on the host"; #422 closed `not planned` with the record) that **releases are done by hand on the host**. The procedure has now run ten times. Round 10 is the reference (#564 issuecomment-6320509987):
+1. Build on Dell from a clean checkout.
+2. Check `sha256sum -c` on every hop.
+3. Run `deploy/server/update.sh`: migration rehearsal on a scratch copy, encrypted backup, keep `.prev`, migrate, smoke.
+4. Confirm by the build that `/health/ready` reports.
+5. Record the round on #564.
 
-### G3 — one model in the schema, no duplicates (batch A, approved)
+**Two notes from round 10:**
+- Two sessions deployed the same sha 18 minutes apart (15:21Z and 15:39Z), and one of them did not announce itself. One deploy session per order, announced on #564 before it touches the host, is the rule that would have prevented it.
+- Rollback after a migration needs the pre-migration set (`20261021T152126Z`). The host keeps 7 sets and prunes the oldest at each backup, so **that set leaves the host after about five more backups** (daily timer plus one per `update.sh`).
 
-The owner approved on 2026-10-17 ~04:4xZ (recorded on #564, issuecomment-6229594646): *"อนุมัติ batch A ทั้งหมด (เขียน+merge migration ไม่ deploy) ยกเว้น #1414 จอดไว้"*. Writing and merging is approved; **deploying any of these migrations is a separate owner order**.
-
-| Area | Tickets, in release order (BE controller's) | Drops |
+| Condition | State | Evidence |
 |---|---|---|
-| Cash model | #626 CA-10 first | custody requests, signatures, branch custodian (M3) |
-| Ledger readers | #1043, #1044, #1046 in parallel after #626; then #1047 | `shift_balances`, `stock_movements`, `ops_state.safe` (migration 3) |
-| Identity | #1023 in parallel after #626; then #1026 → #1027 | old `Actor`/`Role`, `legacy_actor` bridge, password login, `owners`/`employees`/sessions/`auth_attempts`, `users.legacy_employee_id` (migration 3) |
-| Transactions | #677 TX-9, now | the wide figure and payment columns (migration 3) |
-| Booking | #1413 BK-11 — released by the owner 2026-10-17; up-front tests on `test/bk11-1413-upfront` (`77a28ef7`); **not in tq yet**: the BE controller settles the five open points on the ticket, then adds `ready` | v2's rate-lock booking (M2) |
+| Daily encrypted backups run | **holds** | `xc-v3-backup.timer` active; last run 2026-10-21T17:00:01Z, `Result=success`; newest set `20261021T170001Z` (dump 663,404 B, uploads 29,694,215 B, both `age-encryption.org/v1`) |
+| `restore.sh` can target a scratch DB | **holds** | `/opt/xc-v3/restore.sh` is byte-identical to `deploy/server/restore.sh` at `1fd766ec`; it refuses the live DB and the live uploads dir |
+| **A restore has been rehearsed and recorded** | **open** | never done. The private key (`age` identity) is kept **off the host by the owner** (`deploy/README.md` §5), so only the owner can run it. Runbook with commands and success checks: #564 issuecomment-6323812080 (§5 D1) |
+| Backups survive the loss of the droplet | **open** | `/etc/xc-v3/env` has no `XC_BACKUP_OFFHOST` key, so `backup.sh` skips the off-host copy; all 7 sets sit on the droplet's own disk (§5 D2) |
+| The loyalty service is reachable from the host | **open** | `/etc/xc-v3/env` has no `XC_LOYALTY_*` key (key names read, values never). The server answers `GET /api/v3/views/loyalty_rule_versions` with `503 loyaltyUnavailable` and logs `loyalty service token is not configured` (round 10). This is the designed behaviour when `XC_LOYALTY_SERVICE_TOKEN` is unset (`docs/design/blueprint/membership-points.md` R3); provisioning it is the owner's (§5 D3) |
 
-Why this is a production gate and not a clean-up: `STATE.md` says this is the cheapest moment to drop old shapes, and a schema that still carries two models forces every future fix to choose one. The drop migrations are deployed **on staging first (G2 step 3)** and the smoke plus a day of use there is the evidence for the prod order.
+### G3 — one model in the schema, no duplicates · **closed**
 
-### G4 — rulings that change code are settled
+- Batch A was approved by the owner on 2026-10-17 (#564 issuecomment-6229594646). Every ticket in it is closed `completed`: #626 CA-10, #677 TX-9, #1023/#1026/#1027 OR-7, #1043/#1044/#1046/#1047 LG-6, #1413 BK-11.
+- The last drop migration (`20261219210000_drop_password_login`) runs on the host since round 10. The four old identity tables and `users.legacy_employee_id` are gone, and they held 0 rows before the drop (#564 issuecomment-6320509987).
 
-| Question | Where it stands | What closes it |
+### G4 — rulings that change code are settled · **open**
+
+| Question | State | Evidence |
 |---|---|---|
-| Rates: blueprint v3 vs `rates.md` | O-7…O-11 answered by the owner 2026-10-11 (#986); mapping doc `docs/design/blueprint-v3-rates-mapping.md` on `main` | the BE controller confirms every answer is recorded in the design, then closes #986 |
-| RF-7: freshness per side | no comment since 2026-10-10 | owner: "not in v1" (close `not planned`) or a design row (§5 item 3) |
-| `campaignSimulate` on several branches | refused today (#1992); the question is open | not a release blocker: the refusal is correct behaviour; stays a design question |
-| Two xcpg reapers | both on `main`, one wired | owner picks A or B (§5 item 2) |
-| LY-6 loyalty rule versions | released by the owner 02:0xZ ("ทำ 2"); PR 2050 updated onto `main` 04:44Z | merger re-binds and merges 2050 → #2126, #2127 go `ready` → FE releases #2129 |
-| Bounded write inputs (20 fields), unchecked money arithmetic, money that falls back to zero | three tracking issues with controller rulings in progress (#2054, #2063, #2108) | the **18 BUG rows of #2108 and the stored-amount paths of #2063 are release blockers** (wrong money); #2054's 500s are a ratchet, not a blocker |
+| Rates: blueprint v3 vs `rates.md` | settled | #986 closed `completed` 2026-10-17 |
+| RF-7, campaignSimulate, BK-12, EX-10 | settled: not in the first release | #1036, #1996, #1414, #1191 closed `not planned` on the owner's answers of 2026-10-17 |
+| Money tracking (bounded inputs, unchecked arithmetic, fallback to zero) | settled | #2054, #2063, #2108 closed `completed` |
+| Desk passport OCR | shipped | #542 closed `completed` 2026-10-20 |
+| **Pricing: Approve is unreachable** | **open** | `pricing_board.rs:342` always sends `suggestion: None`, so `TierEditor.tsx` disables Approve (#4324). The work is cut as XC-PRICING PX-1…PX-11 (#4385–#4393, #4402, #4403), under its own sub-controller. **Closes when** #4324's path is merged into `main` and `pricingApprove` can be pressed on the screen |
 
-### G5 — a person has used it on staging
+### G5 — a person has used it on the host · **open**
 
-Nothing in CI proves a shift can be opened, a customer served and the day closed. Since the 10-17 11:31Z deploy these checks can run on `xc-v3.spacing.cloud` (test data only, channel `staging`), before the git-push lane exists:
-
-| Check | Ticket |
-|---|---|
-| Booking end to end (C02/C03, desk, admin slots) with a real `?ref=` | #1683 |
-| Chinese texts of the customer app read by a person who reads Chinese | #1605 |
-| A desk day: sign in → open shift → quote → exchange → receipt → reversal → handover → close → shift report and executive overview agree with the ledger | **no ticket yet** — the FE controller cuts one "UAT script v1" doc ticket (a numbered list with expected screen results, no code); the owner or a person they name runs it on staging and records the result on the ticket |
-
-### G6 — every running thing can say what it is
-
-| Item | Where it stands |
-|---|---|
-| v3 `/health/ready` | reports `version`, `build`, `builtAt`, `channel` ✓ (`smoke.sh` refuses a build that does not match) |
-| `version` | `1.0.0` in `api/Cargo.toml` and at runtime; the fleet standard wants MINOR = release train, bumped only in a release commit — the first release commit sets `1.1.0` and nothing else bumps it |
-| Identity `xc-id.spacing.cloud` `/health` | `build: unknown` — the fleet rule is broken there; ticket belongs in `108-Plaza/108-platform-services` (#123 and #144 there are closed, so this is a regression or a build-time flag missing on the host) |
-| Backups | `xc-v3-backup.timer` runs daily on the host; restore never rehearsed (G2 step 5) |
-
-### G7 — data and secrets the host needs
-
-| Item | Where it stands | Owner's part |
+| Check | State | Evidence |
 |---|---|---|
-| `/etc/xc-v3/pii.key` | created 2026-10-10 after a deploy found it missing (#422) | keep it backed up off-host; losing it makes encrypted identities unreadable |
-| Customer OTP | `noop` sender (HOST-do-sgp1.md §6 I-3) | choose the SMS / e-mail sender (§5 item 4) |
-| Identity documents retention | `retention_until` is a §12 legal value | set the period (§5 item 5) |
-| Desk passport OCR | #542 waits for Recognize-Platform#150's children (7 in review at 05:06Z: #155, #160–#164) | decide whether the first release ships without OCR if Recognize is late (§5 item 6) |
+| Booking end to end (#1683) | done | closed `completed` 2026-10-20 |
+| Chinese texts read by a person (#1605) | waived | closed `not planned` 2026-10-20 |
+| **A desk day by a person** (`docs/uat/desk-day-v1.md`) | **open** | the script exists (#2835). It has no recorded run: searched `desk-day-v1` across the repo's issues and PRs, and only the script's own ticket mentions it. The script still says `https://<staging-host>`; the host is `https://xc-v3.spacing.cloud`, channel `staging`, test data only |
+| **The e2e bugs of rounds 9–10** | **open** | #4305, #4337, #4347, #4359, #4360, #4362, #4397 open (FE lane); FE fix PRs 4365, 4377, 4378, 4394, 4399, 4404 open into `main` |
+| A day of use with the drop migrations applied | holds | they run since round 10 (2026-10-21T15:21Z); the e2e run that followed passed 96 of 107 that ran, and each failure has a ticket |
+
+### G6 — every running thing can say what it is · **open**
+
+| Item | State | Evidence |
+|---|---|---|
+| v3 `/health/ready` | holds | reports `version`, `build`, `builtAt`, `channel`; `smoke.sh` refuses a build that does not match |
+| `version` | holds | `1.0.0`. The first release commit sets `1.1.0` and nothing else bumps it; it is made **only on the release order** |
+| **Identity `xc-id.spacing.cloud` `/health`** | **open** | `build unknown`. Root cause: the `xc-identity` unit's env never sets `APP_BUILD`/`APP_BUILT_AT`/`APP_CHANNEL`; the host recipe writes the sha only to `/opt/xc-identity/BUILD` (`681bea2`). Fix is a script plus test in this repo (#4395); running it on the host is a deploy step on the owner's order |
+
+### G7 — data and secrets the host needs · **open**
+
+| Item | State | Owner's part |
+|---|---|---|
+| `/etc/xc-v3/pii.key` | present (created 2026-10-10, #422) | keep it backed up off-host; losing it makes encrypted identities unreadable |
+| **Customer OTP** | **open**: `AUTH_OTP_DELIVERY_MODE` is set in `/etc/xc-identity/env` and documented as `noop` (`deploy/HOST-do-sgp1.md` §4, I-3) | choose the sender (§5 D4) |
+| **Identity-document and login-history retention** | **open**: no period is set, so nothing is purged (`docs/design/blueprint/verification.md` V13, U2; `user-management-rbac.md` §4 item 5) | set the periods as data through `retentionSet` (§5 D5) |
 
 ---
 
 ## 3. Close-out: every open ticket, one line
 
-Verb per ticket: **close** (done or not planned) · **finish** (in flight) · **before** (release blocker) · **after** (not needed for the release order) · **owner** (waits on §5).
+Verb per ticket: **before** (release blocker) · **after** (not needed for the release order) · **finish** (in flight; the owner ordered it).
 
 | # | Ticket | Verb | Why |
 |---|---|---|---|
-| 422 | deploy lanes | **closed** | not planned: releases by hand on the host (owner, 10-17 ~14:1xZ); G2 rewritten to the hand-deploy runbook |
-| 542 | DK-F+J desk OCR | **owner** | G7; waits on Recognize #150 children |
-| 564 | umbrella | **finish** | all 17 design children closed; stays open as the lane's notice board until the release order, then closes |
-| 626 | CA-10 | **before** | G3, approved. Stopped 10-17 08:11Z: its scope missed test files that pin the v2 custody types; held (`blocked`, `assign:none`) while it is re-cut (design PR 2908 and the CA-10p split, #2916). Its dependents #1043/#1044/#1046/#1023, #1413, #2856/#2857/#2862 wait on it |
-| 677 | TX-9 | **before** | G3, approved, pinned studio-3 |
-| 930 | LG-6 parent | **finish** | closes when #1047 merges |
-| 947 | OR-7 parent | **finish** | closes when #1027 merges |
-| 986 | rates mapping | **close** | answers given 2026-10-11; confirm recorded, close |
-| 1023 | OR-7.4 | **before** | G3 |
-| 1026 | OR-7.e | **before** | G3 |
-| 1027 | OR-7.m | **before** | G3 (drop migration) |
-| 1036 | RF-7 | **closed** | not needed for the first release (owner, 10-17 ~11:1xZ) |
-| 1043 / 1044 / 1046 | LG-6 r4/r5/r6 | **before** | G3 |
-| 1047 | LG-6.m | **before** | G3 (drop migration), last |
-| 1191 | EX-10 commission | **closed** | deferred until after the first release, not planned; reopen then (owner, 10-17 ~11:1xZ) |
-| 1411 | LY-6 BE | **done** | PR 2050 merged 10-17 (`afcc9533`, batch 2844) |
-| 1413 | BK-11 | **before** | G3, approved |
-| 1414 | BK-12 partner booking | **closed** | deferred until after the first release, not planned; reopen then (owner, 10-17 ~11:1xZ) |
-| 1474 | fmt gate | **before** | G1; last code ticket (§4 wave 5) |
-| 1605 | zh texts | **before** | G5, human check. **Possible now** on the live host (10-17 deploy); the owner names who |
-| 1683 | booking e2e | **before** | G5, human check. **Possible now** on `xc-v3.spacing.cloud` (10-17 deploy carries BK-6 and the booking screens); the owner names who |
-| 1996 | campaignSimulate | **closed** | keep the refusal (owner, 10-17 ~11:1xZ) |
-| 2054 | bounded inputs (tracking) | **after** | ratchet; 500s, not wrong money |
-| 2063 | unchecked money arithmetic (tracking) | **now, in parallel** | stored-amount paths fixed (#2088, #2093, #2096); per_unit cut as #2839. Owner 2026-10-17 ~07:1xZ: the tail (6 K-a + 49 K-b `.minor()` sites) is cut now, one ticket per file, for Flash workers; floor/removal ticket last |
-| 2108 | money falls back to zero (tracking) | **closed** | every BUG row closed completed (10-17 ~11:0xZ) |
-| 2126 / 2127 | LY-6 follow-ups | **closed** | merged as PR 2870 (batch 2919) and PR 2874 |
-| 2129 | LY-6-FE | **finish** | needs PR 2050 (merged) and the BE read view of rule versions #2868 (owner's G1 ruling on #2129). Ships POINT drafting, the list of POINT and TIER versions, and submit (PR 2918). **TIER drafting is held until after the first production release** (owner, 10-17 ~10:5xZ, #2129 issuecomment-6233107116) |
-| 2563 | identity test flake | **finish** | PR 2743 rework |
-| 2569 | 90-min cancel | **close** | fixed by PR 2786 + pool A |
-| 2703 / 2705 / 2774 / 2782 / 2794 / 2795 / 2796 / 2814 | bug PRs in review | **finish** | merger's batch |
-| 2797 | tmp dir leak | **finish** | PR 2829 rework |
-| 2832 | two reapers | **owner** | §5 item 2, recommend A |
-| PR 1507 | one test binary per package (draft) | **close** | stale since 10-12; TX-9 rewrites 7 of its files; reopen from a fresh branch after G3 if still wanted |
+| 564 | umbrella | **finish** | the lane's notice board; closes after the release order |
+| 4395 | G6 xc-id build stamp | **before** | G6; `class:mechanical` |
+| 4324 | pricing Approve unreachable | **before** | G4 |
+| 4385–4393, 4402, 4403 | XC-PRICING PX-1…PX-11 | **before** | the work that closes #4324 |
+| 4305, 4337, 4347, 4359, 4360, 4362 | round-9/10 e2e bugs | **before** | G5; FE lane |
+| 4397 | customer display name cap (100 chars) | **before** | G5; bug, a server/screen mismatch a user meets |
+| 4366, 4368, 4370–4373, 4375 | QM/QW kiosk queue machine and web | **finish** | kiosk web queue, owner ruling in PR 4249; see §5 D6 on whether the release waits for it |
+| 4379–4384, 4396 | KWQ-A1…A6, KWQ-B1 | **finish** | same feature, BE slices a and b |
 
-Not on this list: Recognize-Platform's research tickets (#91, #131, #137) and #149 belong to that repo's own plan; only #150's children gate #542.
+Every ticket on the 2026-10-17 version of this table is closed (measured: `gh issue view` on each, 18:4xZ).
 
 ---
 
-## 4. Dispatch: waves, lanes, disjoint scopes
+## 4. Order of work to the release order
 
-The target is the fleet rule: ≥80 % of a lane's usable workers busy at the same time, with the tickets of one wave never sharing a file. Each wave below is what a lane releases together; the lane controller pins, the worker claims once with `assigned_only`.
-
-| Wave | Lane | Tickets | Scopes | Gate |
-|---|---|---|---|---|
-| 0 — now | merger | re-bind + merge PR 2050; batch the 6 PRs without a verdict as their PASSes arrive; 3 FAIL PRs go back through rework | — | G1/G4 |
-| 1 — now | BE | #626 · #677 (in tq, approved) · #1413 (approved; tests pushed, not in tq until the BE controller settles its five points and adds `ready`) | `xc-shift`/custody · `transactions` writers · v2 booking module | G3 |
-| 2 — after #626 merges | BE | #1043 · #1044 · #1046 · #1023 in parallel | `xc-shift` shift repo · `ops_state` paths · `stock_movements` readers · custody role mapping — **check `scope_prefixes` of all four before pinning**; #1043 and #1044 both name `xc-shift` | G3 |
-| 3 — after wave 2 | BE | #1026 → #1027; #1047 after #1043/#1044/#1046 | extractor → drop migrations | G3 |
-| 2' — parallel with 2 | BE | #2126 · #2127 (after 2050) · **the #2063 tail: one `class:mechanical` ticket per file (6 K-a + 49 K-b sites), pinned to Flash sessions holding no ticket**; the floor/removal ticket last | one file each — disjoint by construction; check `scope_prefixes` across the set | G4 |
-| 3' — parallel | FE | #2129 (POINT drafting only; TIER after release) with #2868 · UAT script #2835 · the bug tickets cut from the five parked sweep reports (owner, 10-17 ~08:0xZ) · #1605 | `web/src/screens/…/loyalty` · `docs/` · none | G4/G5 |
-| 4 — owner's order | BE controller | hand deploy on the host per G2; one rehearsed restore | host | G2 |
-| 5 — last code ticket | BE | #1474 (fmt gate), pinned to a Claude session, when no other BE ticket is leased or in review | ten directories | G1 |
-| 6 — on the host (channel `staging`) | owner / FE | #1683 · the UAT script · a day of use with the drop migrations applied | — | G5 |
-| 7 — release order | owner | the owner's order → a hand deploy of the chosen `main` commit per G2 → public smoke → `STATE.md` | — | — |
-
-**What limits concurrency:** an open PR keeps its ticket's file scope locked through `pr_open` and `in_review` until it merges, so a next ticket in the same files answers `ready_blocked_by=conflict`, and the open-PR guard (claim reason #120) will not hand out a ticket that already has an open PR. The per-worker cap was raised from 1 to 2 on 2026-10-17 at 07:03Z on the owner's order (#564 issuecomment-6231003464), so a worker can hold one ticket in progress next to one in review. Merges free the locks; the merge lane is the main lever. **Supply.** Measured 05:0xZ: Dell `gemini-1,2,4,5,6` idle at the pane (5 of 6), Studio `agy-2…9` idle at the pane (8 of 10; seven of them hold an `in_review` ticket waiting on a reviewer). Unpinned `ready` xchange tickets: 3, every one blocked or colliding. So the bottleneck is **ticket supply and review slots, not workers**: wave 2 is the next supply, and it opens only when #626 merges. The BE controller cuts the #2108/#2063 money tickets now (G4), so wave 2' can start before #626 lands.
-
-**Review.** Six PRs wait for a first verdict while the Dell reviewers each hold two or three slots (`dell-claude-5` holds three: Recognize #162, park108 #1304, xchange #2796). The Claude sessions on Dell and Studio that hold no slot are the review capacity; the controllers point them at a PR with the ticket-specific `/v1/review/next` call.
+| Step | Who | What | Gate |
+|---|---|---|---|
+| now | XC-READY sub-controller | #4395 to a Gemini worker, review, merge | G6 |
+| now | XC-PRICING sub-controller | PX tickets → #4324's path on `main` | G4 |
+| now | FE lane | the round-9/10 bug tickets and their open PRs | G5 |
+| now | XC-KS sub-controller | kiosk web queue slices | §5 D6 |
+| owner's order | owner, with the runbook | the restore rehearsal, recorded on #564 | G2 |
+| owner | owner | D2–D5 below (secrets and settings on the host) | G2, G7 |
+| after the code steps | owner's deploy order | deploy round 11 of a green `main` sha: carries #4324's path and the FE fixes; runs #4395's `update-identity.sh` | G4, G6 |
+| after round 11 | a person the owner names | `docs/uat/desk-day-v1.md` on `https://xc-v3.spacing.cloud`, result recorded on #564 | G5 |
+| release order | owner | release commit `1.0.0 → 1.1.0`, hand deploy of that sha, public smoke, then `STATE.md` by the owner | — |
 
 ---
 
 ## 5. Owner decisions, as one batch
 
-Each line: what, why it blocks, our recommendation. Idle count attached per the fleet rule: **13 Gemini sessions idle at the pane** (5 Dell + 8 Studio) and **3 unpinned ready tickets, all blocked**, at 05:0xZ.
+Each line says what is needed, why it blocks, and our recommendation.
 
-1. Deploy-lane secrets — answered 10-17 ~14:1xZ: releases are by hand on the host; no secrets needed.
-2. **Two xcpg reapers (#2832).** A = keep the wired `pg-sweep-stale.sh`, add dead-pid reaping, delete the other; B = switch. **Recommend A**: smallest change, keeps the docker sweep.
-3. **RF-7 per-side freshness (#1036).** No answer in 7 days. **Recommend:** not in v1, close `not planned`; the kiosk shows per-line freshness, which is what `rates.md` designed.
-4. **OTP sender (I-3).** Customer sign-in needs a real SMS or e-mail sender; today it is `noop`. **Recommend:** pick one provider; the Notification work lands in `108-platform-services`, not xchange.
-5. **Identity-document retention period (P-1).** A legal value nobody but the owner can set.
-6. **First release without desk OCR?** #542 waits on Recognize #150's children (7 PRs in review). **Recommend:** release without OCR if Recognize is not merged when G1–G5 hold; typed passport fields are v2's behaviour and the verification design keeps them.
-7. **Dell load (76/106/128 on 64 threads).** Linux CI, 6 Gemini and 6 Claude sessions share it, and main's deciding `api` run took 57 min there against 25 on a Mac. The merge-lane state names Jam's MacBook as a candidate runner with three blockers (runner 2.338.0 crash, no admin account for Postgres, weak login + Remote Management on). **Recommend:** decide whether that machine joins the Linux-equivalent pool; if not, move the light gates to the macOS pool and accept the main-run time.
+| # | Decision | Why it blocks | Recommendation |
+|---|---|---|---|
+| D1 | **Run the restore rehearsal** (G2) | Only the owner holds the `age` identity that decrypts a backup; a backup nobody has restored is not yet a rollback path | **Run it now** with the runbook in #564 issuecomment-6323812080: about 5 minutes, scratch DB only, live service untouched. Its step 0 also proves the identity file still exists |
+| D2 | **Off-host backup copy** (G2) | All 7 sets sit on the droplet's own disk: a lost droplet takes the data and its backups together | **Set `XC_BACKUP_OFFHOST`** per `deploy/README.md` §5 step 4, to a target the droplet can reach over ssh (that route is not measured). It is a host write, so it needs the owner's order |
+| D3 | **Loyalty service token** (G2) | Without `XC_LOYALTY_*` on the host, EXECUTIVE rule versions answer 503 and a customer's membership summary is unavailable | **Name the Loyalty instance xchange uses and provision `XC_LOYALTY_BASE_URL`/`XC_LOYALTY_SERVICE_TOKEN`** (token with `loyalty:read` + `loyalty:write`, R3). If none exists yet, say "first release without loyalty": the 503 is the designed fallback, and no code changes |
+| D4 | **OTP sender** (G7) | Customer sign-in by phone sends no code while `AUTH_OTP_DELIVERY_MODE` is `noop` | **Pick one SMS provider** for the identity service. The sender is configured in `108-platform-services` and on the host, not in xchange |
+| D5 | **Retention periods** (G7) | `VERIFICATION_PASSPORT`, `VERIFICATION_NATIONAL_ID` and `login_history` have no period; nothing is ever purged | **Not a release blocker**: the code keeps everything until a period is set. Set the values through `retentionSet` (EXECUTIVE screen, data, no deploy) before real customers' documents are taken |
+| D6 | **First-release scope: does the release wait for the kiosk web queue (KWQ/QM/QW)?** | 14 tickets are in flight; waiting for them moves the release order | **Release without waiting** unless the owner wants it in v1: none of the gates above depends on it, and it lands on `main` slice by slice with its own e2e |
+
+The release commit (`1.0.0 → 1.1.0`) is made only on the release order, so it is not a decision here.
 
 ---
 
