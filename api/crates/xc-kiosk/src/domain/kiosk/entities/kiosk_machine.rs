@@ -446,13 +446,17 @@ impl KioskMachine {
     /// (`web`, a web request) lives `WEB_REQUEST_LIFE_MS`, one without `KIOSK_QUOTE_LIFE_MS`.
     /// Only a `QUOTED` request is ever purgeable; the boundary is "older than", as today.
     pub fn is_purgeable_for(request: &KioskRequest, web: bool, now: KioskTime) -> bool {
-        let _ = (request, web, now);
-        todo!("KWQ-C1: the two purge windows")
+        let life = if web {
+            Self::WEB_REQUEST_LIFE_MS
+        } else {
+            Self::KIOSK_QUOTE_LIFE_MS
+        };
+        let age = now.epoch_millis() - request.created.epoch_millis();
+        request.status == KioskStatus::Quoted && age > life
     }
 
     pub fn is_purgeable(request: &KioskRequest, now: KioskTime) -> bool {
-        let age = now.epoch_millis() - request.created.epoch_millis();
-        request.status == KioskStatus::Quoted && age > 600_000
+        Self::is_purgeable_for(request, false, now)
     }
 
     pub fn receipt_readable(published: KioskTime, now: KioskTime) -> bool {
