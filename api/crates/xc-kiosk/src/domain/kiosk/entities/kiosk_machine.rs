@@ -437,6 +437,19 @@ impl KioskMachine {
         }
     }
 
+    /// How long a kiosk quote nobody confirmed lives (§4.1: 10 minutes).
+    pub const KIOSK_QUOTE_LIFE_MS: i64 = 600_000;
+    /// How long a web request waits for its staff scan (design `kiosk-shared-phone.md` §4.2 D4).
+    pub const WEB_REQUEST_LIFE_MS: i64 = 3_600_000;
+
+    /// D4: `is_purgeable` with the window of the request's source: a request with a member
+    /// (`web`, a web request) lives `WEB_REQUEST_LIFE_MS`, one without `KIOSK_QUOTE_LIFE_MS`.
+    /// Only a `QUOTED` request is ever purgeable; the boundary is "older than", as today.
+    pub fn is_purgeable_for(request: &KioskRequest, web: bool, now: KioskTime) -> bool {
+        let _ = (request, web, now);
+        todo!("KWQ-C1: the two purge windows")
+    }
+
     pub fn is_purgeable(request: &KioskRequest, now: KioskTime) -> bool {
         let age = now.epoch_millis() - request.created.epoch_millis();
         request.status == KioskStatus::Quoted && age > 600_000

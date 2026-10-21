@@ -713,6 +713,16 @@ impl KioskRepository for PgKioskRepository {
         Ok(customer_id)
     }
 
+    async fn open_web_request_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        customer_id: &str,
+    ) -> AppResult<Option<String>> {
+        let _ = (tx, branch, customer_id);
+        todo!("KWQ-C2: the member's QUOTED/WAITING request in this branch")
+    }
+
     async fn branch_timezone_in(
         &self,
         tx: Tx<'_, '_>,

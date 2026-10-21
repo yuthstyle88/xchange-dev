@@ -190,6 +190,15 @@ pub trait KioskRepository: Send + Sync {
         id: &str,
     ) -> impl Future<Output = AppResult<Option<String>>> + Send;
 
+    /// The id of `customer_id`'s open web request in this branch (`QUOTED` or `WAITING`), if any
+    /// (design §4.2 D12: one open web request per member per branch).
+    fn open_web_request_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        customer_id: &str,
+    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
+
     /// The branch's IANA timezone (`branches.timezone`), for the time on the printed ticket
     /// (§4.2 D9); `None` when there is no such branch.
     fn branch_timezone_in(
