@@ -328,7 +328,7 @@ Every mutating command reached from a screen gets three checks in its area's spe
   - wrong format;
   - duplicate name.
 
-  Each case must be refused, and the server's worded refusal must show on the page. Check the refusal once in **th** and once in **en** (`withLang`). The form must keep what was typed.
+  Each case must be refused, and a worded refusal must show on the page. It can be the form's own message or the server's refusal, but never a silent no-op or a raw code. Check the refusal once in **th** and once in **en** (`withLang`). The form must keep what was typed.
 - **(c) Permission:** sign in as a role without the permission. Either the action is not offered, or it is refused (`outOfScope` / `roleNotAllowed`). Where `smoke-rbac-matrix.spec.ts` already proves the screen is closed to that role, cite the row and skip (c).
 
 Commands with no screen (the API-level rows) get (a)–(c) through `page.request` with the right role's session, in `flow-api-commands.spec.ts`.
@@ -501,8 +501,9 @@ Each ticket writes **one new spec file**. File scopes are disjoint, so the team 
 | R9-8 | `flow-staff-handover-verification.spec.ts` | `handoverStart/Accept/Reject`, `verificationCaseApprove/Revoke` | | logic |
 | R9-9 | `flow-desk-extras.spec.ts` | `draftBegin`, `attachReferral`, `counterPause/Resume`, `customerPhoneStart/Confirm` | | logic |
 | R9-10 | `flow-customer-extras.spec.ts` | `assistantAsk`, `bookingConfirm`, `queueTicketTake`, `rateAlertPause/Resume`, `notificationRead/ReadAll` | | mechanical |
-| R9-11 | `flow-validation-customer.spec.ts` | (b) only, for forms the earlier rounds walk: `/app/book`, `/app/profile`, `/app/rate-alerts`, `/app/sign-up` | | mechanical |
-| R9-12 | `flow-validation-staff-desk.spec.ts` | (b) only: desk amount/rate step, shift counts, holds, cash transfers, booking cancel/reschedule reason | | logic |
+| R9-11 | `flow-validation-customer.spec.ts` | (b) only, for the customer forms the earlier rounds walk: `/app/book` (`bookingCreate`), `/app/bookings` (`bookingCancel`, `bookingReschedule`), `/app/profile` (`profileUpdate`, `consentRecord`), `/app/rate-alerts` (`rateAlertCreate`), `/app/journey` (`plannerDraftSave`), `/app/sign-up` | | mechanical |
+| R9-12 | `flow-validation-staff-desk.spec.ts` | (b) only, for the staff and desk forms: the desk amount/rate step (`quoteCreate`, `transactionCreate`, `transactionConfirm`), refunds (`reversalRequest`, `reversalPost`), shift counts (`countSubmit`, `countVerify`), holds (`holdCreate`), cash transfers (`transferCreate`), the floor day target (`dayTarget`), the walk-in ticket (`ticketIssueWalkIn`), and the desk booking cancel and reschedule reason (`bookingCancel`, `bookingReschedule`) | | logic |
+| R9-14 | `flow-validation-admin.spec.ts` | (b) only, for the admin forms the earlier rounds walk: rate drafts and policy (`rateDraftCreate`, `rateDraftEdit`, `ratePolicySave`), the approval reason (`approvalDecide`), the verification reject and request-update reason (`verificationCaseReject`, `verificationCaseRequestUpdate`), slot capacity (`slotCapacitySet`) and closure add (`closureAdd`). Never submit or publish a rate draft (F4, E-4) | | logic |
 | R9-13 | `flow-api-commands.spec.ts` | the 10 API-level commands with no screen (matrix rows marked R9-13), through `page.request` | | logic |
 
-The round is done when every matrix row is assigned to a merged spec, or is excluded with its reason in §9.3.
+The round is done when every matrix row is assigned to a merged spec, or is excluded with its reason in §9.3. A row marked "validation in R9-11 / R9-12" counts only once its command is **named** in the R9-11, R9-12 or R9-14 row above. A row with a form that none of them names is a gap, and gets a ticket before the round closes.
