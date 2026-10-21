@@ -424,4 +424,6 @@ fn main() {
     for (name, _) in &subject_files {
         println!("cargo:rerun-if-changed=src/bootstrap/approval_subjects/{name}");
     }
+
+    xc_testlist::emit(4);
 }
