@@ -578,9 +578,10 @@ classDiagram
     <<interface>>
     write(bytes)
   }
-  class LanTicketPrinter
-  class BluetoothTicketPrinter
   class UsbTicketPrinter
+  class LanTicketPrinter:::later
+  class BluetoothTicketPrinter:::later
+  classDef later stroke-dasharray: 5 5
   class StaffSession {
     signIn(...)
     signOut()
@@ -614,9 +615,9 @@ classDiagram
 
 | Unit | File | New / changed |
 |---|---|---|
-| `QueueMachineController`, pages | `app/lib/features/queue_machine/presentation/{controllers/queue_machine_controller.dart, pages/{sign_in,scanner,issued,printer}_page.dart}` | new |
+| `QueueMachineController`, pages | `app/lib/features/queue_machine/presentation/{controllers/queue_machine_controller.dart, pages/{sign_in,scanner,issued}_page.dart}` (QM-2) and `pages/printer_page.dart` (QM-3, with the printing code)` | new |
 | `QueueMachineApi`, `StaffSession` | `app/lib/features/queue_machine/infrastructure/{queue_machine_api.dart, staff_session.dart}` | new (dio + cookie jar) |
-| `TicketPrinter` + the first implementation | `app/lib/features/queue_machine/printing/{ticket_printer.dart, lan_ticket_printer_io.dart, …}` | new; the LAN one is a `*_io.dart` seam |
+| `TicketPrinter` + `UsbTicketPrinter` | `app/lib/features/queue_machine/printing/{ticket_printer.dart, usb_ticket_printer.dart}` | new (QM-3); LAN (`lan_ticket_printer_io.dart`, a `*_io.dart` seam) and Bluetooth are **later**, not built now (F5) |
 | customer kiosk flow | `app/lib/features/kiosk/**`, `app/test/features/kiosk/**` | removed (F1) |
 | `RequestQrToken.parse` | `web/src/shared/queue/request-qr.ts` | new: the one place that reads `/q#<token>` (♻️: queue page, desk, `/q`) |
 | `/app/queue` | `web/pages/app-queue.html`, `web/src/screens/customer/queue/{main.tsx, QueueRequest.tsx, i18n.ts, queue.css}` | new |
@@ -629,6 +630,8 @@ classDiagram
 
 ### 5r.3 Behaviour (up-front rows; `class:logic` tickets get them as failing tests first)
 
+Row ids: A = the app, **U = the web UI** (not §4.3a's wire contract W1–W12), D = the desk, P = the public pages, R = the parser.
+
 | # | Given | Expected |
 |---|---|---|
 | A1 | the machine, no staff session | the sign-in screen; nothing else is reachable |
@@ -640,15 +643,15 @@ classDiagram
 | A7 | a scan of anything not `/q#…` | refused on the device, with nothing sent |
 | A8 | no USB printer attached, or the Android permission refused | the issued number shows large, with the no-printer text; no write is attempted; the scanner comes back after `result_seconds` |
 | A9 | the USB permission granted once | kept: the next issue writes without asking again |
-| W1 | `/app/queue`, signed out | the sign-in link (as `/app/bookings`) |
-| W2 | submit | `webRequestCreate` with the form; the QR of `requestQrUrl`; no number shown |
-| W3 | `myWebRequest` moves `QUOTED` → `WAITING` | the number and place in line appear; one `ViewPoller` with `since` |
-| W4 | ยกเลิกคิว | one `webRequestCancel`, no dialog; status `CANCELLED` |
-| W5 | `me.emailCopy.available` false / true | no e-mail button / a button that posts `copyByEmail` once |
-| W6 | `?shared=1` and เสร็จ | `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1` |
-| W7 | `?shared=1`, no input for `TABLET_IDLE_MS` | as W6 (fake time) |
-| W8 | no `shared` and เสร็จ | no sign-out |
-| W9 | `409 alreadyQueued` | opens the existing request's status |
+| U1 | `/app/queue`, signed out | the sign-in link (as `/app/bookings`) |
+| U2 | submit | `webRequestCreate` with the form; the QR of `requestQrUrl`; no number shown |
+| U3 | `myWebRequest` moves `QUOTED` → `WAITING` | the number and place in line appear; one `ViewPoller` with `since` |
+| U4 | ยกเลิกคิว | one `webRequestCancel`, no dialog; status `CANCELLED` |
+| U5 | `me.emailCopy.available` false / true | no e-mail button / a button that posts `copyByEmail` once |
+| U6 | `?shared=1` and เสร็จ | `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1` |
+| U7 | `?shared=1`, no input for `TABLET_IDLE_MS` | as U6 (fake time) |
+| U8 | no `shared` and เสร็จ | no sign-out |
+| U9 | `409 alreadyQueued` | opens the existing request's status |
 | D1 | desk `qrToken` = `…/q#tok` | `findByToken`, then `location.assign('/desk?branch=B&kiosk=<id>')` |
 | D2 | desk `qrToken` = a booking token | today's booking lookup, unchanged (today's tests stay green) |
 | P1 | `/queue-display` unchanged poll | no re-render (`PublicPoller` 304) |
@@ -677,12 +680,12 @@ It runs the **whole** app suite: `test/l10n/` covers `kiosk_l10n_matches_v2`, an
 
 | Ticket | Scope | Class | Needs |
 |---|---|---|---|
-| QM-1 | `app/`: remove the customer kiosk flow and its tests and texts (F1), and make the setup probe `/health/ready` | mechanical | — |
+| QM-1 | `app/`: remove the customer kiosk flow and its tests and texts (F1), make the setup probe `/health/ready`, **and add every new dependency and Android permission up front**: `mobile_scanner`, `dio_cookie_manager`, `cookie_jar`, `flutter_thermal_printer` in `pubspec.yaml`/`pubspec.lock`, and CAMERA + USB host in `android/app/src/main/AndroidManifest.xml`. QM-2 and QM-3 then touch neither file, so their scopes stay disjoint | mechanical | — |
 | QM-2 | `app/`: `features/queue_machine` controller + sign-in + scanner + issued pages, `QueueMachineApi`, `StaffSession` (cookie jar) (F2–F4, F6; A1, A2, A5–A7) | logic | QM-1 merged; BE `issueByToken` (§4.8 slice a) |
 | QM-3 | `app/`: the `TicketPrinter` interface + `UsbTicketPrinter` (`flutter_thermal_printer`, Android OTG) + the printer settings page (pick the USB device) (F5; A3, A4, A8, A9) | logic | QM-1 |
 | QW-1 | web: `shared/queue/request-qr.ts` (R1) + desk scan (F13; D1, D2) | logic | BE `findByToken` (§4.8 a) |
-| QW-2 | web: `/app/queue` request + status + cancel + e-mail button (F7, F8; rows W1–W5, W9 of 5r.3) | logic | QW-1 (`request-qr.ts`); BE web source (§4.8 c), e-mail copy (§4.8 d) |
-| QW-3 | web: `TabletSession` + idle + sign-out (F9; rows W6–W8 of 5r.3) | logic | none (W12 is today's route) |
+| QW-2 | web: `/app/queue` request + status + cancel + e-mail button (F7, F8; rows U1–U5, U9 of 5r.3) | logic | QW-1 (`request-qr.ts`); BE web source (§4.8 c), e-mail copy (§4.8 d) |
+| QW-3 | web: `TabletSession` + idle + sign-out (F9; rows U6–U8 of 5r.3) | logic | none (W12 is today's route) |
 | QW-4 | web: `/queue-display` (F14; P1, P2) | logic | BE display (§4.8 b) |
 | QW-5 | web: `/q` and `/c` pages (F11, F12; P3, P4) | mechanical | QW-1 |
 | QW-6 | web: board QR target (F10) + admin `result_seconds` (F15) | mechanical | §4 D14 |
