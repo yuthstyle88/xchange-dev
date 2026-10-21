@@ -147,7 +147,7 @@ What V.9 does (`V9:market`), and what v3 keeps:
 | User agent `XCHANGE-rate-monitor/1.0 (+https://xc-th.work)`; `Accept` JSON for TT, HTML for SR | `V9:market:11,78` | `[proposed]` same header text |
 | TT's update-time call may fail without failing TT | `V9:market:84` | `[required]` |
 | A source refreshes when its last attempt is older than 5 min; a source is **stale** when it has no good snapshot or its newest good one is older than 30 min | `V9:market:10,133,147-148` | `[required]` both numbers; stale ⇒ flag `StaleSource` |
-| Failures are stored and the page shows the last error while still serving the last good data | `V9:market:99-113,124-137`, `V9:test:61-69` | `[required]` last good data still served; the error is kept **in memory** (`MarketFeedHealth`), not in a table, because `rate_reference_batches` has no ok/error column (`api/migrations/20261010120000_rate_engine.sql:3-11`). After a restart, until the first attempt the board shows no error, and staleness still comes from the stored `fetched_at`. A stored error would need a migration and is **not** built |
+| Failures are stored and the page shows the last error while still serving the last good data | `V9:market:99-113,124-137`, `V9:test:61-69` | `[required]` last good data still served; each source's last attempt and error are stored in `market_feed_status` (§12.1), one row per source, because `rate_reference_batches` has no ok/error column (`api/migrations/20261010120000_rate_engine.sql:3-11`) and a failed fetch writes no batch. The error survives a restart, as in V.9 |
 | Retention: every row for 2 days, one per source per hour for 90 days | `V9:market:114-119` | **not built here**: v3 keeps reference batches like BoT's. The 5-minute writes dedupe on `raw_checksum` (`reference_batch_writer.rs:58-72`), so only a changed answer writes a batch. Retention is a follow-up if the table grows |
 | TT row: name `USD(L)`/`USD(M)`/`USD(S)`/`JPY` (code + optional band), `current_buy_rate`, `current_sell_rate`, `decimals`, `description` (denominations); a row with neither price, or a name that is not a code, is skipped; no rows ⇒ error `TT: no rates`; a non-array ⇒ `TT: unexpected response` | `V9:market:15-28`, `V9:test:33-40,48-51,57-58` | `[required]` |
 | SR: the `self.__next_f.push([1,"…"])` chunks are decoded and concatenated; the object after `"exchangeList":` is cut out by brace depth (quotes and escapes respected); `date` is `"date":"YYYY-MM-DD"`; one row per (code, list index) with `denomRem`, `buyText`, `sellText`; codes match `^[A-Z]{3,4}$`; zero prices dropped; errors `SR: exchangeList not found`, `SR: exchangeList is cut off`, `SR: no rates` | `V9:market:32-63`, `V9:test:41-46,52-56` | `[required]` |
@@ -179,8 +179,9 @@ What V.9 does (`V9:market`), and what v3 keeps:
   version of this section planned: with one core, the per-source difference is only `parse`.
 - `[required]` **`MarketRefresh`** (`application/market/market_refresh.rs`) runs every 5 min (V.9 `REFRESH_AFTER_MS`),
   on its own loop next to the BoT feed loop: for each feed, a `ReferenceBatchWriter::new(Arc::new(MarketRateSource::new(feed)), store).with_provider(Arc::new(MarketProvider::new(source, known)))`
-  in its own transaction, then records the attempt in `MarketFeedHealth` (`application/market/market_feed_health.rs`:
-  per source `last_attempt_at`, `last_error: Option<String>` (≤ 200 chars, V.9 `V9:market:110`)). One source failing
+  in its own transaction, then records the attempt with `MarketFeedStatusStore::record`
+  (`infrastructure/market/market_feed_status_store.rs`, an upsert into `market_feed_status`: `last_attempt_at`,
+  `last_error` ≤ 200 chars, V.9 `V9:market:110`; `NULL` after a success). One source failing
   never stops the other (`V9:market:104-113`). `[required]` The loop is spawned in `bootstrap/mod.rs` next to
   `RateFeedLoop` (`:459-476`) **only when `MARKET_FEED_ENABLED=true`**; unset or anything else ⇒ not spawned. The api
   tests build the whole `Application` (e.g. `api/tests/f10b_rate_feed_loop_test.rs`), so a default-on loop would reach
@@ -189,7 +190,8 @@ What V.9 does (`V9:market`), and what v3 keeps:
   reads `'BOT'` unless a branch or currency chose a market anchor (§3.1), and that path reprices on the BoT tick as today.
 - `[required]` **Staleness** is computed where it is read: `MarketStaleness::is_stale(fetched_at: Option<DateTime>, now) -> bool`
   in `domain/pricing/market_snapshot.rs` (`None` or older than 30 min ⇒ stale). The board sets `PricingSourceDto.stale`,
-  `PricingQuoteDto.stale` and `MarketQuote.stale` from it, and `PricingSourceDto.error` from `MarketFeedHealth`.
+  `PricingQuoteDto.stale` and `MarketQuote.stale` from it, and `PricingSourceDto.error` from
+  `MarketFeedStatusStore::all`.
 - On demand: `rateReferenceFetch` + `provider` (`TT`/`SR`) runs the same writer once (PT-13, unchanged plan).
 - `[required]` **Never read by the draft path** except through the §3.1 anchor; a test pins that a fresh MARKET batch
   changes no AUTO price for a `BOT`-anchored branch.
@@ -211,6 +213,7 @@ What V.9 does (`V9:market`), and what v3 keeps:
 | `Recommendation`, `RecommendationInput`, `RecommendationCode`, `Severity` | `domain/pricing/recommendation.rs` | severity (`High`·`Warn`·`Medium`·`Low`), `RecommendationCode` (§5.2 table), currency, side, `gap_pct`, `value`; `list(&RecommendationInput) -> Vec<Recommendation>` |
 | `MarketFeed`, `MarketRequest`, `MarketBody`, `MarketFeedError` | `domain/pricing/market_feed.rs` | the per-source trait (§4) |
 | `MarketSnapshot`, `MarketRow`, `MarketStaleness` | `domain/pricing/market_snapshot.rs` | a parsed answer, `headline()`, `is_stale(fetched_at, now)` (§4) |
+| `SuggestionSettings` | `domain/pricing/suggestion_settings.rs` | a branch's `better` rows (`'*'` and per currency); `better_for(currency) -> [Decimal; 4]`; `validate(&[Decimal]) -> Result<(), String>` (§5.2) |
 
 All are pure: no I/O, no clock (the caller passes `now`), decimals as `rust_decimal`, never `f64` (V.9 uses floats;
 we don't copy that, `rate-display.md` B7).
@@ -224,8 +227,14 @@ Quotes are **per one unit** (V.9's numbers). The engine works per unit, then mul
 **Constants** (`SuggestionConfig::V9_DEFAULT`, `[required]` values, `V9:engine:13`): `better = [0.10, 0.14, 0.20, 0.30]`
 (% better for the customer than the anchor, per tier), `min_spread_pct = 0.3`, `far_from_anchor_pct = 1`,
 `large_move_pct = 1`. `min_spread_pct` is the currency's `rate_policy_currency_settings.min_spread_pct` when set (§3),
-otherwise 0.3. V.9 lets each currency set `better` too (`V9:store:10-11`, `V9:pricing:204-211`); v3 has no column for it,
-so `better` stays V.9's default. Making it configurable needs a migration and is **not** built (§14 Q-P4).
+otherwise 0.3. **`better` is configurable, as in V.9** (owner approved the migration 2026-10-22, #564
+issuecomment-6323680134): the effective value for (branch, currency) is the currency's row in
+`pricing_suggestion_settings`, else the branch's `'*'` row, else V.9's default (`V9:pricing:51`
+`{...DEFAULT_CONFIG, ...config['*'], ...config[code]}`). It is **not** part of the policy version: it shapes the
+suggestion only, never a price, like V.9's unversioned `pricing_config` (`V9:store:10-11`).
+`pricingSuggestionSettingsSave` writes it (§6), with V.9's checks (`V9:pricing:204-206`): exactly 4 values, each in
+[−2, 2] %, each ≥ the one before; a frame change (EXECUTIVE only, `may_change_the_frame`), as V.9's is owner-only
+(`V9:pricing:201`).
 
 **Anchor** (`V9:engine:30-36`), `[required]`: TT's headline if `buy > 0` and `sell > buy`, else SR's under the same test
 (flag `NoTtQuote`), else none (flag `NoAnchor`, no tiers). A stale anchor adds `StaleSource` (`V9:engine:45`).
@@ -256,8 +265,9 @@ so `better` stays V.9's default. Making it configurable needs a migration and is
 **Margins** (v3, §2): with the draft path's base per side at the currency's unit size (`base_buy`, `base_sell`;
 `reference_base.rs:27,44`) and the policy's `adjust_pct`:
 `margin_n = (price_n ÷ base − 1) × 100 − adjust_pct`, rescaled to 4. Reproduce
-`base × (1 + (adjust_pct + margin_n)/100) ÷ unit_size` at `d` decimals (buy floor, sell ceil); a difference from the
-per-unit tier price ⇒ `Precision`. No base on a side ⇒ `margins: None` for the row and `NoAnchor`.
+`base × (1 + (adjust_pct + margin_n)/100) ÷ unit_size` rounded **half-up** at `d` decimals; a difference from the
+per-unit tier price ⇒ `Precision`. Half-up, not floor/ceil: the 4-place margin is itself rounded, so e.g. a sell of
+33.80 over a base of 34 gives margin −0.5882 and 33.800012, which must read as 33.80 (ceil would give 33.81). No base on a side ⇒ `margins: None` for the row and `NoAnchor`.
 
 **Approval check** `TierCheck::validate(tiers, anchor) -> Vec<TierError>` (`V9:engine:68-84`), `[required]`:
 exactly 4 tiers; each `buy > 0` and `sell > 0`; `sell > buy`; tier `n` buy ≥ tier `n−1` buy and sell ≤ tier `n−1` sell
@@ -295,7 +305,9 @@ V.9 uses `|amount × rate|` of non-cancelled orders, `V9:engine:159-163`).
 **Row status:** `RowStatus::of` stays as PT-8 wrote it. V.9's status labels live in its page script (`public/pricing.js`),
 which is not in the supplied tree, so there is no further rule to port.
 
-**Contract (FE):** no DTO shape changes. `PricingRowDto.suggestion` carries the 4 tier prices at the currency's unit size;
+**Contract (FE):** two additive DTO changes: `PricingRowDto` gains `betterPct: string[]` (the 4 effective values) and
+`betterPctFrom: "currency" | "branch" | "default"`; a new command `pricingSuggestionSettingsSave` (§6). Otherwise no shape
+changes. `PricingRowDto.suggestion` carries the 4 tier prices at the currency's unit size;
 `PricingRecommendationDto.code` takes exactly the values in the table above (posted on #4324 for the FE lane).
 `gap_pct`/`value` stay inside the domain type and are not sent.
 
@@ -307,6 +319,7 @@ which is not in the supplied tree, so there is no further rule to port.
 | `pricingConfigure` | `api/src/presentation/http/v3/commands/pricing_configure.rs` | `RatePolicySave` | save one currency's override margins and `min_spread_pct` as a new policy version, no draft |
 | `pricingApprove` | `api/src/presentation/http/v3/commands/pricing_approve.rs` | `RatePolicySave` + `RatesDraft` | for 1..n currencies (bulk): one new policy version with their margins, then one draft with one AUTO line per currency, submitted. In-bound ⇒ published by policy; out-of-bound ⇒ waits in A06 for EXECUTIVE. Returns the draft id and its state |
 | `rateReferenceFetch` + `provider` | `commands/rate_reference_fetch.rs` | as today (inherits `rateDraft`) | `"TT"` / `"SR"` / `"BOT"` (default) |
+| `pricingSuggestionSettingsSave` | `api/src/presentation/http/v3/commands/pricing_suggestion_settings_save.rs` | `RatePolicySave` + the EXECUTIVE frame check | `{currency: "*" \| "<code>", betterPct: [4 decimal strings] \| null}`: upsert the branch's row, or delete it on `null` (back to the branch default / V.9's); `validationFailed` on V.9's checks. Answers `{saved: true}`. No policy version, no draft (§5.2) |
 
 - **One writer of policy versions.** `ratePolicySave` builds and inserts the version inline (`rate_policy_save.rs:359-436`: next number, close the current version, insert it, insert its tiers).
   The first BE ticket moves that into `api/crates/xc-rate/src/application/policy/policy_version_writer.rs`
@@ -407,10 +420,19 @@ classDiagram
     +tick(now) MarketTickReport
     +run(stop)
   }
-  class MarketFeedHealth {
-    +record(source, at, error)
-    +get(source) Option~MarketAttempt~
+  class MarketFeedStatusStore {
+    +record(pool, source, at, error)
+    +all(tx) HashMap~MarketSource, MarketAttempt~
   }
+  class SuggestionSettings {
+    +better_for(currency) [Decimal;4]
+    +validate(&[Decimal]) Result
+  }
+  class PricingSuggestionSettingsStore {
+    +for_branch(tx, branch) SuggestionSettings
+    +save(tx, branch, scope, better, by, at)
+  }
+  class PricingSuggestionSettingsSaveCommand
   class ReferenceBatchWriter
   class TierCheck {
     +validate(&[TierPrice], Option~&MarketQuote~, &SuggestionConfig) Vec~TierError~
@@ -442,8 +464,11 @@ classDiagram
   MarketRefresh ..> ReferenceBatchWriter
   MarketRefresh ..> MarketRateSource
   MarketRefresh ..> MarketProvider
-  MarketRefresh ..> MarketFeedHealth
-  PricingBoardView ..> MarketFeedHealth
+  MarketRefresh ..> MarketFeedStatusStore
+  PricingBoardView ..> MarketFeedStatusStore
+  PricingBoardView ..> PricingSuggestionSettingsStore
+  PricingSuggestionSettingsStore ..> SuggestionSettings
+  PricingSuggestionSettingsSaveCommand ..> PricingSuggestionSettingsStore
   PricingBoardView ..> MarketStaleness
   PricingBoardView ..> Recommendation
   PricingApproveCommand ..> TierCheck
@@ -475,10 +500,14 @@ classDiagram
 | `MarketRateSource` | `infrastructure/market/market_rate_source.rs` |
 | `MarketProvider` | `infrastructure/market/market_provider.rs` |
 | `MarketRefresh`, `MarketTickReport` | `application/market/market_refresh.rs` |
-| `MarketFeedHealth`, `MarketAttempt` | `application/market/market_feed_health.rs` |
+| `MarketFeedStatusStore`, `MarketAttempt` | `infrastructure/market/market_feed_status_store.rs` |
+| `SuggestionSettings` | `domain/pricing/suggestion_settings.rs` |
+| `PricingSuggestionSettingsStore` | `infrastructure/pricing/suggestion_settings_store.rs` |
+| `PricingSuggestionSettingsSaveCommand` | `api/src/presentation/http/v3/commands/pricing_suggestion_settings_save.rs` |
+| the §12.1 migration | `api/migrations/<slot>_pricing_suggestion_settings.sql` (skeleton) |
 | `TierCheck`, `TierError` | `domain/pricing/tier_check.rs` |
 | `SuggestionConfig`, `SuggestionInput` | `domain/pricing/pricing_suggestion.rs` (with `PricingSuggestion`) |
-| the 5-minute loop's spawn and `AppState.market_health` | `api/src/bootstrap/mod.rs` (skeleton only: `MarketRefresh::run` is spawned next to `RateFeedLoop`, `bootstrap/mod.rs:461-476`) |
+| the 5-minute loop's spawn | `api/src/bootstrap/mod.rs` (skeleton only: `MarketRefresh::run` is spawned next to `RateFeedLoop`, `bootstrap/mod.rs:461-476`) |
 | `MarketQuote`, `MarketSource` | `domain/pricing/market_quote.rs` |
 | `PricingFlag` | `domain/pricing/pricing_flag.rs` |
 | `PricingSuggestion` | `domain/pricing/pricing_suggestion.rs` |
@@ -503,7 +532,8 @@ the migration, and the admin menu entry, so the function tickets touch only thei
 | MARKET reference lines | `PricingBoardView`, `PublishService` (§7) — never the draft path |
 | `MarketFeed` impls (`TtFeed`, `SuperRichFeed`) | `MarketRateSource` only |
 | `MarketRateSource`, `MarketProvider` | `MarketRefresh`, and `rateReferenceFetch` + `provider` (PT-13) |
-| `MarketFeedHealth` | written by `MarketRefresh`; read by `PricingBoardView` |
+| `MarketFeedStatusStore` | written by `MarketRefresh`; read by `PricingBoardView` |
+| `PricingSuggestionSettingsStore` | read by `PricingBoardView`; written by `pricingSuggestionSettingsSave` |
 | `MarketStaleness` | `PricingBoardView` (sources, quotes, `MarketQuote.stale`) |
 | `TierCheck` | `pricingApprove` |
 | `Recommendation` | `PricingBoardView` |
@@ -559,6 +589,12 @@ the migration, and the admin menu entry, so the function tickets touch only thei
 | recommendations, the `V9:test:110-127` fixture | `SellAboveMarket` USD 1.47 %, `BuyBelowMarket` USD 1.20 %, `SellBelowMarket` EUR, `BelowPartnerCost` JPY, `MarketMovedSinceUpdate` USD; first row `High`; USD volume 3400 (7 days only); JPY before every `Medium`; TT stale ⇒ first row `TtStale` |
 | a currency in both TT and SR, not sold at the branch | one `NotOffered` row for it |
 | a currency with an anchor and a BoT base | the board row's `suggestion` holds the 4 tier prices at the unit size; `margins` and flags from §5.2 |
+| a currency with its own `better` row | its suggestion uses it; the row's `betterPct` shows it with `betterPctFrom: "currency"` |
+| only the branch `'*'` row / no row | the `'*'` values (`"branch"`) / V.9's default (`"default"`) |
+| `betterPct` with 3 values · a value above 2 · a value below the previous one | `validationFailed`, nothing written (`V9:pricing:204-206`) |
+| a RATE_MANAGER saves `betterPct` | `roleNotAllowedHere`, nothing written |
+| `betterPct: null` | the row is deleted; the currency follows the branch / default |
+| a source fails, then the api restarts | the board still shows the source's last error (`market_feed_status`) |
 
 ## 12. Data migration
 
@@ -577,6 +613,36 @@ right before `pr_open`), creating §3's two tables and adding §3.1's two `ancho
    survive and price from BoT again.
 
 **Approved by the owner 2026-10-20 (P-5): it may merge.** Deploy is still a separate owner order.
+
+### 12.1 Data migration for #4324 (XC-PRICING)
+
+One migration, `api/migrations/<slot>_pricing_suggestion_settings.sql` (slot from `scripts/migration-slot.sh next`;
+renumbered with `renumber` right before the feat → main PR), **additive only**. Approved by the owner 2026-10-22
+(*"อนุมัติ migration"*, scope *"ทุกตัวที่งานคืนนี้ต้องใช้"*, recorded on #564 issuecomment-6323680134); no deploy.
+
+```sql
+CREATE TABLE pricing_suggestion_settings (
+    branch_id  text           NOT NULL REFERENCES branches(id),
+    scope      text           NOT NULL CHECK (scope = '*' OR scope ~ '^[A-Z]{3}$'),
+    better_pct numeric(9,4)[] NOT NULL CHECK (array_length(better_pct, 1) = 4),
+    updated_by text           NOT NULL,
+    updated_at timestamptz    NOT NULL,
+    PRIMARY KEY (branch_id, scope)
+);
+
+CREATE TABLE market_feed_status (
+    source          text        PRIMARY KEY CHECK (source IN ('TT', 'SR')),
+    last_attempt_at timestamptz NOT NULL,
+    last_error      text        NULL
+);
+```
+
+1. **Existing rows after the migration:** none change; both tables start empty. Every currency's suggestion uses V.9's
+   default `better` (as with no row), and the board shows no source error until the first attempt.
+2. **Backfill:** none. Empty is the correct state.
+3. **Deploy order:** migration before the new binary (embedded, runs at boot). The old binary never reads either table.
+4. **What `down` loses:** saved `better` settings (suggestions fall back to V.9's default) and the last fetch errors.
+   No price changes, since neither table feeds the draft path.
 
 ## 13. Tickets (to cut after this document merges)
 
@@ -601,9 +667,10 @@ BE (sub-controller under the BE lane controller claude/a90ab16c), base `feat/pri
 
 **XC-PRICING (#4324), 2026-10-22, replaces the PT-9…PT-12 rows above.** Sub-controller claude/mbp-xc-pricing, base
 `feat/4324-pricing-suggestion`. PX-0 is the skeleton (Claude): every new file and type with its final signature,
-`todo!()` bodies, every `mod` line, the `SuggestionInput` change, `AppState.market_health`, the 5-minute loop spawned in
-`bootstrap/mod.rs` with a body that does nothing until PX-4 lands, and up-front failing tests ported from `V9:test`.
-Then PX-1…PX-9 are released together, one file set each, no shared file:
+`todo!()` bodies, every `mod` line, the `SuggestionInput` change, the §12.1 migration, the new DTO fields and command
+types (generated TS committed), the 5-minute loop spawned in `bootstrap/mod.rs` with a body that does nothing until
+PX-5 lands, and up-front failing tests ported from `V9:test`. Then PX-1…PX-11 are released together, one file set
+each, no shared file:
 
 | # | Ticket | Files (`api/crates/xc-rate/src/` unless noted) | Class |
 |---|---|---|---|
@@ -611,11 +678,13 @@ Then PX-1…PX-9 are released together, one file set each, no shared file:
 | PX-2 | `TtFeed` (`parseTT`) | `infrastructure/market/tt_feed.rs` | logic |
 | PX-3 | `SuperRichFeed` (`parseSuperRich`) | `infrastructure/market/superrich_feed.rs` | logic |
 | PX-4 | `MarketRateSource` (HTTP core, timeout) + `MarketProvider` | `infrastructure/market/market_rate_source.rs`, `infrastructure/market/market_provider.rs` | logic |
-| PX-5 | `MarketRefresh::tick`/`run` + `MarketFeedHealth` | `application/market/market_refresh.rs`, `application/market/market_feed_health.rs` | logic |
+| PX-5 | `MarketRefresh::tick`/`run` + `MarketFeedStatusStore` | `application/market/market_refresh.rs`, `infrastructure/market/market_feed_status_store.rs` | logic |
 | PX-6 | `PricingSuggestion::of` + `MarketQuote::anchor_for`'s valid-quote test | `domain/pricing/pricing_suggestion.rs`, `domain/pricing/market_quote.rs` | logic |
 | PX-7 | `TierCheck::validate` + its call in `pricingApprove` | `domain/pricing/tier_check.rs`, `api/src/presentation/http/v3/commands/pricing_approve.rs` | logic |
 | PX-8 | `Recommendation::list` | `domain/pricing/recommendation.rs` | logic |
-| PX-9 | `pricing_board` wiring: suggestion (`pricing_board.rs:342`), staleness, errors, recommendations, 7-day volume | `api/src/presentation/http/v3/views/pricing_board.rs` | logic |
+| PX-9 | `pricing_board` wiring: suggestion (`pricing_board.rs:342`), staleness, errors, recommendations, 7-day volume, `betterPct` | `api/src/presentation/http/v3/views/pricing_board.rs` | logic |
+| PX-10 | `SuggestionSettings` (`better_for`, `validate`) + `PricingSuggestionSettingsStore` | `domain/pricing/suggestion_settings.rs`, `infrastructure/pricing/suggestion_settings_store.rs` | logic |
+| PX-11 | `pricingSuggestionSettingsSave` | `api/src/presentation/http/v3/commands/pricing_suggestion_settings_save.rs` | logic |
 
 Every ticket's tests are the up-front tests in its own test file, named in the ticket. PX-9's tests call the domain
 functions through the view, so they go green only once PX-1, PX-6 and PX-8 are on the branch; it is released with the
@@ -633,5 +702,5 @@ fetch; `feat/fe-pricing-board` merges to main only after the BE view and command
 | # | Question | Default until answered |
 |---|---|---|
 | Q-P3 | V.9's `runtime/pricing.mjs`, `market-rates.mjs`, `pricing-store.mjs` (P-2) | **Answered 2026-10-22:** the owner supplied the V.9 source (§0 P-2); §4 and §5.2 are written from it |
-| Q-P4 | Per-currency `better` % (V.9 `configure`, `V9:pricing:204-211`) | Not built: every currency uses V.9's default `[0.10, 0.14, 0.20, 0.30]`. A column for it is a migration, so it waits for the owner |
-| Q-P5 | Keep a fetch error after a restart (V.9 stores failed fetches, `V9:market:110`) | Kept in memory only (§4). Storing it is a migration, so it waits for the owner |
+| Q-P4 | Per-currency `better` % (V.9 `configure`, `V9:pricing:204-211`) | **Answered 2026-10-22:** migration approved (#564 issuecomment-6323680134); built per §5.2 and §12.1 |
+| Q-P5 | Keep a fetch error after a restart (V.9 stores failed fetches, `V9:market:110`) | **Answered 2026-10-22:** same approval; `market_feed_status` (§4, §12.1) |
