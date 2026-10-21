@@ -128,4 +128,17 @@ describe('prepareImage', () => {
       kind: 'imageInvalid',
     });
   });
+
+  it('row 7: when every quality is over 8 MB, rejects with imageTooLarge', async () => {
+    const bigBlob = { size: 8 * 1024 * 1024 + 1, type: 'image/jpeg' } as Blob;
+    toBlobImpl = (cb) => {
+      cb(bigBlob);
+    };
+
+    const file = new Blob([new Uint8Array([10])], { type: 'image/jpeg' });
+    await expect(prepareImage(file, 90)).rejects.toMatchObject({
+      name: 'PassportReadError',
+      kind: 'imageTooLarge',
+    });
+  });
 });

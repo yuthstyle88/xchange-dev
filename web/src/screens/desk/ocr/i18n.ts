@@ -16,6 +16,7 @@ export const th = {
   cancelled: 'ยกเลิกการอ่านแล้ว สามารถกรอกข้อมูลเองหรืออ่านใหม่ได้',
   timeout: 'อ่านเกินเวลาที่กำหนด ลองใช้ภาพเล็กลงหรือกรอกข้อมูลเอง',
   failed: 'อ่านเอกสารไม่สำเร็จ ตรวจการเชื่อมต่ออินเทอร์เน็ตและลองใหม่ หรือกรอกข้อมูลเอง',
+  imageTooLarge: 'ภาพใหญ่เกินไป กรุณาถ่ายใหม่ให้ใกล้ขึ้นหรือลดความละเอียด',
   pdfNotSupported: 'การอ่านอัตโนมัติรองรับเฉพาะไฟล์รูปภาพ (JPG, PNG, WebP) กรุณาใช้รูปถ่ายพาสปอร์ตหรือกรอกข้อมูลเอง',
 } as const;
 
@@ -36,5 +37,6 @@ export const en: Record<keyof typeof th, string> = {
   cancelled: 'Reading cancelled. You can type the details yourself or read again',
   timeout: 'Reading timed out. Try a smaller image or type the details yourself',
   failed: 'Could not read the document. Check the internet connection and try again, or type the details yourself',
+  imageTooLarge: 'The photo is too large. Please take it again closer, or at a lower resolution.',
   pdfNotSupported: 'Automatic reading supports image files (JPG, PNG, WebP) only. Please use a passport photo or type the details yourself',
 };
