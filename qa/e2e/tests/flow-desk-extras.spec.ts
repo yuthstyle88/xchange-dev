@@ -104,15 +104,12 @@ interface DraftItem {
 }
 
 interface AdminSnapshotRpcAnswer {
-  ok?: boolean;
-  data?: {
-    operations?: {
-      drafts?: DraftItem[];
-    };
+  operations?: {
+    drafts?: DraftItem[];
   };
 }
 
-/** Reads `operations.drafts` from `POST /api/staff/rpc` (`adminSnapshot`, api/src/application/compat/v2_json.rs:509,654-677). */
+/** Reads `operations.drafts` from `POST /api/staff/rpc` (`adminSnapshot`, api/src/presentation/http/rpc.rs:113-116, api/src/application/compat/snapshot.rs:85-87, v2_json.rs:509). */
 async function readStaffDrafts(page: Page): Promise<DraftItem[]> {
   const res = await page.request.post('/api/staff/rpc', {
     headers: {
@@ -123,7 +120,8 @@ async function readStaffDrafts(page: Page): Promise<DraftItem[]> {
   });
   expect(res.ok(), `POST /api/staff/rpc adminSnapshot status ${res.status()}`).toBeTruthy();
   const body = (await res.json()) as AdminSnapshotRpcAnswer;
-  return body.data?.operations?.drafts ?? [];
+  expect(typeof body.operations, 'adminSnapshot answer has operations').toBe('object');
+  return body.operations?.drafts ?? [];
 }
 
 /** Reverses a completed Cash exchange so the teller's drawer nets back to opening figures before closeShift (flow-exchange.spec.ts:233-309). */
