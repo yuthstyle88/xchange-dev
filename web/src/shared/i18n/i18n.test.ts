@@ -67,7 +67,7 @@ const ENGLISH_ON_SERVER: Record<string, string> = {
 };
 
 const THAI_SCRIPT = /[\u0E00-\u0E7F]/;
-const SHARED_PREFIXES = ['field', 'form', 'shell', 'error', 'queue', 'rate'];
+const SHARED_PREFIXES = ['field', 'form', 'shell', 'error', 'queue', 'rate', 'kioskCancel'];
 
 /** A screen module as `import.meta.glob(..., { eager: true })` hands it over. */
 function screen(th: Record<string, string>, en: Record<string, string>) {

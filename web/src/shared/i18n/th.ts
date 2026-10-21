@@ -117,6 +117,17 @@ export const th = {
   'rate.sourceDate': 'อ้างอิงวันที่ {date}',
   'rate.noSourceDate': 'ไม่มีเรทอ้างอิง',
   'rate.publishedAt': 'ประกาศเมื่อ {at}',
+  'kioskCancel.action': 'ยกเลิก',
+  'kioskCancel.title': 'ยกเลิกคำขอ',
+  'kioskCancel.note': 'หมายเหตุ',
+  'kioskCancel.confirm': 'ยืนยัน',
+  'kioskCancel.dismiss': 'ปิด',
+  'kioskCancel.reason.customerLeft': 'ลูกค้าไม่อยู่ / เดินออกไปแล้ว',
+  'kioskCancel.reason.customerCancelled': 'ลูกค้ายกเลิกเองที่ตู้',
+  'kioskCancel.reason.dayClosed': 'ปิดวันทำการ',
+  'kioskCancel.reason.customerChangedMind': 'ลูกค้าเปลี่ยนใจ',
+  'kioskCancel.reason.duplicate': 'คำขอซ้ำ',
+  'kioskCancel.reason.other': 'อื่น ๆ',
 } as const;
 
 export type Key = keyof typeof th;
