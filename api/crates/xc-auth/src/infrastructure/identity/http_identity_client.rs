@@ -302,6 +302,19 @@ impl IdentityClient for HttpIdentityClient {
         })
     }
 
+    fn otp_verify_registering<'a>(
+        &'a self,
+        challenge_id: &'a str,
+        code: &'a str,
+        register_if_absent: bool,
+        client_ip: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<IdentityOtpVerifyResponse, IdentityError>> {
+        let _ = (challenge_id, code, register_if_absent, client_ip);
+        Box::pin(async move {
+            todo!("KWQ-C2-1: POST /auth/otp/verify with registerIfAbsent = the flag")
+        })
+    }
+
     fn register<'a>(
         &'a self,
         request: &'a IdentityRegisterRequest<'a>,
