@@ -41,4 +41,6 @@ fn main() {
     for (name, _) in &files {
         println!("cargo:rerun-if-changed=src/application/reconcile/checks/{name}");
     }
+
+    xc_testlist::emit(1);
 }

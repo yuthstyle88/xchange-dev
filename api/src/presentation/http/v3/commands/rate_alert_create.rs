@@ -11,8 +11,8 @@ use ts_rs::TS;
 use xc_alert::application::rate_alert_service::{
     CreateRateAlert, RateAlertError, RateAlertService,
 };
-use xc_alert::domain::condition::AlertCondition;
 use xc_alert::domain::CustomerSide;
+use xc_alert::domain::condition::AlertCondition;
 use xc_alert::infrastructure::repository::PgRateAlertRepository;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -25,7 +25,9 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::rate_alerts::{CreateRateAlertInput, RateAlertOutput};
 use crate::presentation::http::v3;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, role_not_allowed_here};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, role_not_allowed_here,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 pub(crate) fn make_rate_alert_service(pool: PgPool) -> RateAlertService {
@@ -82,10 +84,16 @@ impl CommandAction for RateAlertCreateCommand {
         input: Self::Input,
         key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
+        let customer_id = who
+            .customer_id
+            .as_deref()
+            .ok_or_else(role_not_allowed_here)?;
 
-        let target =
-            v3::input::decimal("target", &input.target, Bound::numeric(20, 8, Sign::Positive))?;
+        let target = v3::input::decimal(
+            "target",
+            &input.target,
+            Bound::numeric(20, 8, Sign::Positive),
+        )?;
 
         let currency = CurrencyCode::parse(&input.currency).map_err(|_| {
             V3Error::new(
@@ -140,7 +148,13 @@ impl CommandAction for RateAlertCreateCommand {
 
         let service = make_rate_alert_service(self.pool.clone());
         let alert = service
-            .create(tx, customer_id, &create_cmd, key.as_str(), chrono::Utc::now())
+            .create(
+                tx,
+                customer_id,
+                &create_cmd,
+                key.as_str(),
+                chrono::Utc::now(),
+            )
             .await
             .map_err(map_alert_error)?;
 

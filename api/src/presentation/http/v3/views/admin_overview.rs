@@ -24,7 +24,7 @@ use crate::presentation::dto::v3::admin_overview::{
 };
 use crate::presentation::dto::v3::common::{OpenShiftDto, Period};
 use crate::presentation::dto::v3::transaction_row::{
-    TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
+    ROW_COLUMNS, ROW_FROM, TransactionRow, TxSqlRow,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -72,10 +72,7 @@ impl BranchView for AdminOverviewBranchView {
                 .collect();
             let shift_open = !open_shifts.is_empty();
 
-            let has_currency_or_channel = filter
-                .currency
-                .as_ref()
-                .is_some_and(|c| !c.is_empty())
+            let has_currency_or_channel = filter.currency.as_ref().is_some_and(|c| !c.is_empty())
                 || filter
                     .channel
                     .as_ref()
@@ -240,8 +237,8 @@ impl BranchView for AdminOverviewBranchView {
                     .fee
                     .parse::<Decimal>()
                     .map_err(|e| AppError::Internal(format!("invalid fee: {e}")))?;
-                let fee_cents = round_cents(fee)
-                    .ok_or_else(|| AppError::Internal("fee overflow".into()))?;
+                let fee_cents =
+                    round_cents(fee).ok_or_else(|| AppError::Internal("fee overflow".into()))?;
                 let settlement = sql_row
                     .settlement
                     .parse::<Decimal>()
@@ -326,7 +323,11 @@ impl BranchView for AdminOverviewBranchView {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(pos_infra::transactions::Transactor::new(state.db.clone()));
     let shifts = ShiftService::new(
-        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(state.db.clone())),
+        Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                state.db.clone(),
+            ),
+        ),
         branch_tx,
     );
     ViewEndpoint::register(

@@ -51,9 +51,7 @@ impl CashExceptionRaiseCommand {
     }
 }
 
-fn parse_differences(
-    items: &[CashExceptionDifferenceInput],
-) -> Result<StockDelta, V3Error> {
+fn parse_differences(items: &[CashExceptionDifferenceInput]) -> Result<StockDelta, V3Error> {
     if items.is_empty() {
         return Err(V3Error::new(
             "validationFailed",
@@ -230,7 +228,10 @@ impl CommandAction for CashExceptionRaiseCommand {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    CommandEndpoint::register(cfg, Arc::new(CashExceptionRaiseCommand::new(state.db.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(CashExceptionRaiseCommand::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

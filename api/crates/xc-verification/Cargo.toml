@@ -26,9 +26,13 @@ sha2 = "0.10"
 tracing = "0.1"
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 base64 = "0.22"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "uuid", "json", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[build-dependencies]
+xc-testlist = { path = "../xc-testlist" }
 
 [[test]]
 name = "all"

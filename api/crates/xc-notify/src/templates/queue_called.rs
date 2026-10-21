@@ -24,7 +24,10 @@ impl NotificationTemplate for Template {
     }
 
     fn render(&self, locale: Locale, params: &BTreeMap<String, String>) -> Rendered {
-        let display_number = params.get("displayNumber").map(|s| s.as_str()).unwrap_or("");
+        let display_number = params
+            .get("displayNumber")
+            .map(|s| s.as_str())
+            .unwrap_or("");
         let branch_name = params.get("branchName").map(|s| s.as_str()).unwrap_or("");
         match locale {
             Locale::Th => Rendered {

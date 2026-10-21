@@ -964,6 +964,7 @@ describe("the real /staff page mounts the transfers card through main.tsx and ca
     await vi.waitFor(() =>
       expect(app.querySelector('[data-card="transfers"]')).not.toBeNull(),
     );
+    expect(app.querySelectorAll('[data-card="transfers"]').length).toBe(1);
     expect(
       app.querySelector(`[data-card="transfers"] ${tid("transfer-new")}`),
     ).not.toBeNull();

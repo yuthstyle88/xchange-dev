@@ -107,4 +107,3 @@ impl CommandAction for BookingPolicySet {
         Ok(BookingOkOutput { ok: true })
     }
 }
-

@@ -84,20 +84,19 @@ impl CommandAction for ClosureAdd {
             .await
             .map_err(V3Error::from)?;
 
-        let horizon_days: Option<i32> = sqlx::query_scalar(
-            "SELECT horizon_days FROM booking_slot_rules WHERE branch_id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| {
-            V3Error::new(
-                "serverError",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+        let horizon_days: Option<i32> =
+            sqlx::query_scalar("SELECT horizon_days FROM booking_slot_rules WHERE branch_id = $1")
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    V3Error::new(
+                        "serverError",
+                        None,
+                        e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                })?;
 
         if let Some(horizon_days) = horizon_days {
             let tz_str: Option<String> =
@@ -131,4 +130,3 @@ impl CommandAction for ClosureAdd {
         Ok(BookingOkOutput { ok: true })
     }
 }
-

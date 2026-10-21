@@ -38,12 +38,16 @@
 //!   `staleVersion` (choice: the quote is not ACTIVE), `validationFailed` (choice: the quote names
 //!   another customer); today's sentences, unchanged, for the shift and the files (§4.4 steps 2–3
 //!   *"as today"*, `save_transaction.rs`).
-//! - G7 (moved here from TX-7 #675, which merged as `895f151`, migration
-//!   `20261031100000_kiosk_quote_id.sql`): with `kioskRequestId`, create reads the request's
-//!   `kiosk_requests.quote_id` at the request's branch. **The check lives in create** (ticket author's
-//!   choice, the ticket left it open): a body `quoteId` that differs from a non-NULL `quote_id` is
-//!   refused with code `validationFailed` and nothing is written. A request with `quote_id NULL`
-//!   (quoted before TX-7) is not checked at create; the kiosk step's existing rule applies at confirm.
+//! - G7, restated by the ticket author of #4113 (claude/studio-claude-6) on the owner's ruling of
+//!   2026-10-21: *"ใบเสนอ ราคา ใข้ ใบเก่า ราคา มันจะไม่ ได้ นะ เพราะ ราคา มันวิ่ง ตลอด"* · *"ต้องใช้ ราคา
+//!   ปัจจุบัน"* · *"การจอง มันแค่ได้ คิว"* (design `quote-transaction.md` §4.6.1 A3, amended by #4113).
+//!   A kiosk request books a queue place, never a rate: with `kioskRequestId`, the body's own current
+//!   quote prices the save, and `kiosk_requests.quote_id` is a record only (set, NULL or expired, it
+//!   changes nothing). Create reads the request at the request's branch and refuses code
+//!   `validationFailed`, naming the field (`side`, `currency` or `amount`), when the quote's line
+//!   differs from the request on side, currency or foreign amount; nothing is written. Before #4113,
+//!   G7 refused any body `quoteId` other than the request's `quote_id`
+//!   (`a_kiosk_request_whose_quote_is_another_refuses_create_and_writes_nothing`, removed by #4113).
 //! - #672 Q2/Q3 (lane controller, issuecomment-6094343896): create stores the body's passport key as
 //!   `passport_file_key` and its `kioskRequestId`, `staffDraftId` and `countConfirmed` on the exchange.
 //! - The stored payment's `amount_thb` is the line's `settle_thb` (the THB that changes hands, as
@@ -67,14 +71,18 @@ use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
-use xc_exchange::domain::quote::quote::Quote;
+use xc_exchange::domain::quote::quote::{Quote, QuoteChannel};
 use xc_exchange::domain::transaction::transaction::{ExchangeTransaction, TransactionStatus};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::Side;
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xchange::application::workflows::exchange::create::{
     CreatePayment, CreateRequest, CreateTransaction,
+};
+use xchange::application::workflows::exchange::quote::{
+    QuoteRequest, QuoteRequestLine, QuoteService,
 };
 use xchange::application::workflows::save_step::SaveActor;
 use xchange::infrastructure::files::file_service::FileService;
@@ -656,25 +664,171 @@ async fn kiosk_request(c: &Counter, q: &Quote, quote_id: Option<Uuid>) -> String
     id
 }
 
+/// #4113: an ACTIVE desk quote of `quantity` `currency` at MAIN, asked at `now` (as `Desk::quote`,
+/// for any currency MAIN publishes).
+async fn desk_quote(
+    c: &Counter,
+    currency: &str,
+    side: Side,
+    quantity: &str,
+    now: DateTime<Utc>,
+) -> Quote {
+    let mut tx = c.desk.db.pool.begin().await.unwrap();
+    let q = QuoteService::new(c.desk.db.pool.clone())
+        .quote_in(
+            &mut tx,
+            QuoteRequest {
+                branch_id: BranchId::new("MAIN"),
+                customer_id: None,
+                channel: QuoteChannel::Desk,
+                lines: vec![QuoteRequestLine {
+                    currency: CurrencyCode::parse(currency).unwrap(),
+                    shop_side: side,
+                    quantity: ForeignAmount::from_decimal(quantity.parse::<Decimal>().unwrap()),
+                    fee_thb: None,
+                    denomination_group: GroupCode::all(),
+                }],
+            },
+            &teller(),
+            now,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("quote_in: {e}"));
+    tx.commit().await.unwrap();
+    q
+}
+
+/// #4113 row 1 (restates `a_kiosk_request_whose_quote_is_another_refuses_create_and_writes_nothing`
+/// on the owner's ruling of 2026-10-21, see the header). A kiosk request for BUY 100 USD, quoted by the
+/// kiosk at 32.10; the rate is then republished, and the desk saves it with its own fresh quote for
+/// BUY 100 USD. The save succeeds at the desk quote's rate, never the kiosk's.
 #[tokio::test]
-async fn a_kiosk_request_whose_quote_is_another_refuses_create_and_writes_nothing() {
+async fn k4113_row1_a_kiosk_request_is_saved_at_the_desks_current_quote() {
     let c = Counter::start().await;
     let now = whole_second_now();
     let customer = c.customer("MAIN", "AA1234567", "DEMO").await;
     let passport = c.upload("MAIN", "image/jpeg", JPEG).await;
     let the_kiosks = c.desk.quote("MAIN", Side::Buy, "100", None, now).await;
-    let another = c.desk.quote("MAIN", Side::Buy, "100", None, now).await;
     let request = kiosk_request(&c, &the_kiosks, Some(the_kiosks.id)).await;
-
-    let mut req = c.request("MAIN", &another, &customer, &passport);
-    req.kiosk_request_id = Some(request);
-    assert_eq!(
-        code(c.create(req, later(now, 5)).await),
-        "validationFailed",
-        "G7: the body's quoteId must be the kiosk request's quote_id"
+    c.desk
+        .db
+        .publish("MAIN", &[Line::manual("USD", "1", "33.00", "33.40")])
+        .await;
+    let current = c
+        .desk
+        .quote("MAIN", Side::Buy, "100", None, later(now, 60))
+        .await;
+    assert_ne!(
+        current.lines[0].final_rate, the_kiosks.lines[0].final_rate,
+        "setup: the rate has moved since the kiosk quoted"
     );
-    assert_eq!(c.transactions().await, 0);
-    assert_eq!(c.desk.quote_row(&another).await, "ACTIVE|");
+
+    let mut req = c.request("MAIN", &current, &customer, &passport);
+    req.kiosk_request_id = Some(request.clone());
+    let made = c
+        .create(req, later(now, 65))
+        .await
+        .expect("#4113 row 1: a kiosk request is priced at the current line");
+    let stored = c.desk.stored(made.id).await;
+    assert_eq!(
+        stored.quote_id,
+        Some(current.id),
+        "the desk's quote prices the save"
+    );
+    assert_eq!(
+        stored.lines[0].rate_snapshot, current.lines[0].final_rate,
+        "the stored rate is the desk quote's"
+    );
+    assert_eq!(stored.kiosk_request_id.as_deref(), Some(request.as_str()));
+    assert_eq!(
+        c.desk.quote_row(&the_kiosks).await,
+        "ACTIVE|",
+        "the kiosk's quote is not used"
+    );
+    c.finish().await;
+}
+
+/// #4113 row 2: the same, with the kiosk's own quote expired (asked 400 s before the save, past the
+/// default 300 s TTL). That quote is not used, so its expiry changes nothing.
+#[tokio::test]
+async fn k4113_row2_a_kiosk_request_whose_own_quote_expired_is_saved_at_the_current_quote() {
+    let c = Counter::start().await;
+    let now = whole_second_now();
+    let customer = c.customer("MAIN", "AA1234567", "DEMO").await;
+    let passport = c.upload("MAIN", "image/jpeg", JPEG).await;
+    let the_kiosks = c.desk.quote("MAIN", Side::Buy, "100", None, now).await;
+    let request = kiosk_request(&c, &the_kiosks, Some(the_kiosks.id)).await;
+    let current = c
+        .desk
+        .quote("MAIN", Side::Buy, "100", None, later(now, 400))
+        .await;
+    assert!(
+        the_kiosks.expires_at <= later(now, 405),
+        "setup: the kiosk's quote has expired by the save"
+    );
+
+    let mut req = c.request("MAIN", &current, &customer, &passport);
+    req.kiosk_request_id = Some(request.clone());
+    let made = c
+        .create(req, later(now, 405))
+        .await
+        .expect("#4113 row 2: the kiosk's expired quote is not used");
+    let stored = c.desk.stored(made.id).await;
+    assert_eq!(stored.quote_id, Some(current.id));
+    assert_eq!(stored.lines[0].rate_snapshot, current.lines[0].final_rate);
+    assert_eq!(stored.kiosk_request_id.as_deref(), Some(request.as_str()));
+    c.finish().await;
+}
+
+/// #4113 row 3: a desk quote that differs from the request (BUY 100 USD) on side, currency or foreign
+/// amount is refused `validationFailed`, and the sentence names the field. The check holds whether the
+/// request carries a `quote_id` or not, and nothing is written.
+#[tokio::test]
+async fn k4113_row3_a_quote_that_differs_from_the_kiosk_request_is_refused_naming_the_field() {
+    let c = Counter::start().await;
+    let now = whole_second_now();
+    let customer = c.customer("MAIN", "AA1234567", "DEMO").await;
+    let passport = c.upload("MAIN", "image/jpeg", JPEG).await;
+    c.desk
+        .db
+        .publish("MAIN", &[USD, Line::manual("EUR", "1", "36.00", "36.50")])
+        .await;
+    let the_kiosks = c.desk.quote("MAIN", Side::Buy, "100", None, now).await;
+
+    let cases = [
+        ("side", desk_quote(&c, "USD", Side::Sell, "100", now).await),
+        (
+            "currency",
+            desk_quote(&c, "EUR", Side::Buy, "100", now).await,
+        ),
+        ("amount", desk_quote(&c, "USD", Side::Buy, "90", now).await),
+    ];
+    for (field, q) in &cases {
+        for kiosk_quote in [Some(the_kiosks.id), None] {
+            let request = kiosk_request(&c, &the_kiosks, kiosk_quote).await;
+            let mut req = c.request("MAIN", q, &customer, &passport);
+            req.kiosk_request_id = Some(request);
+            let got = sentence(c.create(req, later(now, 5)).await);
+            assert!(
+                got.starts_with("validationFailed"),
+                "#4113 row 3 ({field}, kiosk quote_id {kiosk_quote:?}): refused validationFailed, got {got:?}"
+            );
+            assert!(
+                got.contains(field),
+                "#4113 row 3: the sentence names the field `{field}`, got {got:?}"
+            );
+            assert_eq!(
+                c.transactions().await,
+                0,
+                "#4113 row 3 ({field}): nothing is written"
+            );
+            assert_eq!(
+                c.desk.quote_row(q).await,
+                "ACTIVE|",
+                "#4113 row 3 ({field}): the quote is untouched"
+            );
+        }
+    }
     c.finish().await;
 }
 

@@ -4,8 +4,6 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
 use pos_infra::transactions::Transactor;
@@ -22,15 +20,8 @@ use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher, PiiKeys};
 const ORG_ID_STR: &str = "00000000-0000-0000-0000-000000000001";
 const TEST_KEYS: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 fn url() -> String {

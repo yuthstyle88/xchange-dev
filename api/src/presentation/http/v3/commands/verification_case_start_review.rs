@@ -117,24 +117,16 @@ fn reviewer_actor(who: &Actor) -> Result<ReviewerActor, V3Error> {
 fn map_review_error(e: ReviewError) -> V3Error {
     match e {
         ReviewError::OutOfScope => out_of_scope(),
-        ReviewError::StaleVersion => V3Error::new(
-            "staleVersion",
-            None,
-            "stale version",
-            StatusCode::CONFLICT,
-        ),
+        ReviewError::StaleVersion => {
+            V3Error::new("staleVersion", None, "stale version", StatusCode::CONFLICT)
+        }
         ReviewError::ValidationFailed => V3Error::new(
             "validationFailed",
             None,
             "validation failed",
             StatusCode::BAD_REQUEST,
         ),
-        ReviewError::NotFound => V3Error::new(
-            "notFound",
-            None,
-            "not found",
-            StatusCode::NOT_FOUND,
-        ),
+        ReviewError::NotFound => V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND),
         ReviewError::Store(_) => server_error(),
     }
 }

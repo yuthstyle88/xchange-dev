@@ -13,8 +13,7 @@
 
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use serde_json::json;
@@ -47,16 +46,10 @@ pub const MAIN: &str = "MAIN";
 /// APP-1's seed: 7 days (owner C4).
 pub const SEVEN_DAYS: i64 = 604_800;
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
 static STARTING: Semaphore = Semaphore::const_new(4);
 
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 pub fn org() -> Uuid {

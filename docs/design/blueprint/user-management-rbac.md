@@ -450,7 +450,9 @@ The expected shape, given the current table:
 | MARKETING | — | FULL | — | — | — | — | VIEW | — | — | — |
 | VERIFICATION_REVIEWER | — | VIEW | FULL | VIEW | — | — | FULL | — | — | VIEW |
 
-> **#4155 (rulings W + A1):** No built-in group but `EXECUTIVE` holds a `DASHBOARD` cell (`OverviewRead` and `AlertSettingsSave` are `EXECUTIVE` only in the seed; `ADMIN` E-6 `AlertSettingsSave` waits for #4168).
+> **#4155 (rulings W + A1):** No built-in group but `EXECUTIVE` holds a `DASHBOARD` cell (`OverviewRead` and `AlertSettingsSave` are `EXECUTIVE` only in the seed). `ADMIN` holds no `DASHBOARD` permission, as §11.2's ship-day list already says ("ADMIN loses FINANCE and DASHBOARD FULL").
+
+> **Superseded (#4168):** the list below is C2's comparison with V.9, written before §11 (owner, 2026-10-18), which replaced Q2 A. The seed follows the owner's V.9 matrix through §11.2, not these lines; the table above is the seed as it stands. The list is kept as history and decides nothing.
 
 C2 lists the differences from V.9's matrix in this section, one line each, for the owner's review:
 
@@ -594,13 +596,15 @@ This replaces Q2 A.
 | Group | DASHBOARD | CUSTOMERS | DOCUMENTS | RATES_STOCK | FINANCE | RISK | REPORTS | USER_MANAGEMENT | SYSTEM_SETTINGS | AUDIT_LOGS |
 |---|---|---|---|---|---|---|---|---|---|---|
 | EXECUTIVE | FULL | FULL | FULL | FULL | FULL | FULL | FULL | FULL | FULL | VIEW |
-| ADMIN | VIEW | — | — | — | — | — | VIEW | FULL | FULL | VIEW |
-| RATE_MANAGER | FULL | FULL | VIEW | FULL | VIEW | VIEW | FULL | — | — | — |
-| BRANCH_MANAGER | FULL | FULL | FULL | — | — | — | VIEW | — | — | — |
-| TELLER | VIEW | CREATE | VIEW | — | — | — | — | — | — | — |
-| FINANCE | FULL | VIEW | VIEW | VIEW | FULL | VIEW | FULL | — | — | — |
-| VERIFICATION_REVIEWER | FULL | VIEW | FULL | VIEW | VIEW | FULL | FULL | — | — | VIEW |
+| ADMIN | — | — | — | — | — | — | VIEW | FULL | FULL | VIEW |
+| RATE_MANAGER | — | FULL | VIEW | FULL | VIEW | VIEW | FULL | — | — | — |
+| BRANCH_MANAGER | — | FULL | FULL | — | — | — | VIEW | — | — | — |
+| TELLER | — | CREATE | VIEW | — | — | — | — | — | — | — |
+| FINANCE | — | VIEW | VIEW | VIEW | FULL | VIEW | FULL | — | — | — |
+| VERIFICATION_REVIEWER | — | VIEW | FULL | VIEW | VIEW | FULL | FULL | — | — | VIEW |
 | MARKETING | today's set (§5) | | | | | | | | | |
+
+**DASHBOARD is EXECUTIVE only (#4155, rulings W + A1; the owner chose `SEED_REMOVALS` for hosts already seeded).** V.9 gave the other groups a DASHBOARD level, but `OverviewRead` is EXECUTIVE only (`executive-finance.md:286`, `areas/executive.rs:2`) and `AlertSettingsSave` is not ADMIN's here (ship-day list below), so those cells are `—`. A group can still be given either permission on screen (§11.3).
 
 **The desk basics stay with every desk group.** Opening and closing a shift, the branch day and the closing count (`ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`), plus the five desk device and document permissions (`DeviceQueue`, `DeviceProcess`, `DevicePrinterOnline` from SYSTEM_SETTINGS VIEW, and `DrawerPassport`, `ProofUpload` from DOCUMENTS CREATE), move to "no module" (`None`), beside `SignedIn` and `AttendanceClock`. They stay seeded as today, and they are not edited in the matrix.
 - **Why:** V.9 gives FRONT, BACKEND and MANAGER no FINANCE at all, yet they run the shift and the cash handover (V.9 :38, :125), and it gives FRONT and BACKEND/MANAGER no SYSTEM_SETTINGS VIEW or DOCUMENTS CREATE (for FRONT), yet they gate every desk upload and the device queue (`policy.rs:500-537`). Read literally, the table would leave no teller able to open a shift, upload a proof/passport or use the device queue.

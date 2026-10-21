@@ -9,9 +9,9 @@ use chrono::Utc;
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -66,13 +66,7 @@ impl PagedView for KioskQueuePagedView {
 
             let now = Utc::now();
             let items = kiosk
-                .queue_before(
-                    &branch,
-                    queue_filter,
-                    before.as_deref(),
-                    limit as i64,
-                    now,
-                )
+                .queue_before(&branch, queue_filter, before.as_deref(), limit as i64, now)
                 .await?;
 
             let can_claim = Policy::authorize(
@@ -86,7 +80,9 @@ impl PagedView for KioskQueuePagedView {
 
             let names = usernames(
                 &db,
-                items.iter().filter_map(|item| item.request.staff.as_deref()),
+                items
+                    .iter()
+                    .filter_map(|item| item.request.staff.as_deref()),
             )
             .await;
 
@@ -142,8 +138,9 @@ impl PagedView for KioskQueuePagedView {
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
-    let audit: Arc<dyn KioskAuditLog> =
-        Arc::new(PgKioskAuditLog::new(PgDeviceRepository::new(state.db.clone())));
+    let audit: Arc<dyn KioskAuditLog> = Arc::new(PgKioskAuditLog::new(PgDeviceRepository::new(
+        state.db.clone(),
+    )));
     let source: Arc<dyn RateSource> = Arc::new(BotRateSource::bot());
     let ports = Arc::new(PgKioskPorts::new(state.db.clone(), audit, source));
     let kiosk = KioskService::new(branch_tx, ports);

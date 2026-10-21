@@ -86,21 +86,20 @@ impl CommandAction for CampaignVersionNewCommand {
             )
         })?;
 
-        let campaign_exists: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM campaigns WHERE organization_id = $1 AND id = $2",
-        )
-        .bind(org_id)
-        .bind(campaign_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| {
-            V3Error::new(
-                "database",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+        let campaign_exists: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM campaigns WHERE organization_id = $1 AND id = $2")
+                .bind(org_id)
+                .bind(campaign_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    V3Error::new(
+                        "database",
+                        None,
+                        e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                })?;
 
         if campaign_exists.is_none() {
             return Err(V3Error::new(

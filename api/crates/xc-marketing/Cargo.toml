@@ -26,7 +26,11 @@ xc-auth = { workspace = true }
 pos-error = { workspace = true }
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[build-dependencies]
+xc-testlist = { path = "../xc-testlist" }
 
 [[test]]
 name = "all"

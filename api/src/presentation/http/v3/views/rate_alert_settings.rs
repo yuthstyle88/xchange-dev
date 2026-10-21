@@ -57,12 +57,14 @@ impl BranchView for RateAlertSettingsView {
             .await
             .map_err(AppError::Database)?;
 
-            Ok(row.map(|(cooldown, max_active, lifetime, policy)| RateAlertSettingsData {
-                default_cooldown_seconds: cooldown,
-                max_active_per_customer: max_active,
-                default_lifetime_days: lifetime,
-                observe_policy: policy,
-            }))
+            Ok(row.map(
+                |(cooldown, max_active, lifetime, policy)| RateAlertSettingsData {
+                    default_cooldown_seconds: cooldown,
+                    max_active_per_customer: max_active,
+                    default_lifetime_days: lifetime,
+                    observe_policy: policy,
+                },
+            ))
         }
     }
 }

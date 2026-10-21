@@ -128,4 +128,3 @@ impl CommandAction for BookingConfirm {
         })
     }
 }
-

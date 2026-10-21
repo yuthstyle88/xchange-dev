@@ -44,7 +44,6 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
@@ -102,16 +101,9 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 /// Unique per process and per call: nextest runs every test in a process of its own.
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 fn xc_org() -> Uuid {
@@ -350,7 +342,10 @@ impl Db {
     /// A Blueprint booking of `customer_id` at MAIN, COMPLETED by `transaction_id`.
     async fn seed_completed_booking(&self, customer_id: &str, transaction_id: Uuid) {
         let slot = Uuid::new_v4();
-        let n = NEXT.fetch_add(1, Ordering::Relaxed) as i64;
+        let n = {
+            static SEQ: AtomicU64 = AtomicU64::new(0);
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        } as i64;
         let start = at(86_400 + n * 3600);
         sqlx::query(
             "INSERT INTO booking_slots (id, organization_id, branch_id, service_date, start_at, end_at, \

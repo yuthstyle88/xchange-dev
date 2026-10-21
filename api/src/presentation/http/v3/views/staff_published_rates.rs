@@ -55,4 +55,3 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     super::published_rates::export_types(dir)
 }
-

@@ -76,7 +76,10 @@ impl CommandAction for BookingCheckIn {
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
 
-        let has_qr = input.qr_token.as_ref().is_some_and(|s| !s.trim().is_empty());
+        let has_qr = input
+            .qr_token
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty());
         let has_id = input.identity_checked == Some(true);
 
         if (has_qr && has_id) || (!has_qr && !has_id) {
@@ -108,18 +111,25 @@ impl CommandAction for BookingCheckIn {
             )
         })?;
 
-        let (branch_id, _status, qr_token_hash, service_date, start_at, no_show_grace, timezone_str) =
-            match row {
-                Some(r) => r,
-                None => {
-                    return Err(V3Error::new(
-                        "notFound",
-                        None,
-                        "NOT_FOUND",
-                        StatusCode::NOT_FOUND,
-                    ));
-                }
-            };
+        let (
+            branch_id,
+            _status,
+            qr_token_hash,
+            service_date,
+            start_at,
+            no_show_grace,
+            timezone_str,
+        ) = match row {
+            Some(r) => r,
+            None => {
+                return Err(V3Error::new(
+                    "notFound",
+                    None,
+                    "NOT_FOUND",
+                    StatusCode::NOT_FOUND,
+                ));
+            }
+        };
 
         if branch_id != branch.as_str() {
             return Err(out_of_scope());
@@ -159,24 +169,18 @@ impl CommandAction for BookingCheckIn {
             .check_in_in(tx, branch, &input.id, check_in_by, &who.user_id, now)
             .await
             .map_err(|err| match err {
-                CheckInError::QrMismatch => V3Error::new(
-                    "qrMismatch",
-                    None,
-                    "QR_MISMATCH",
-                    StatusCode::BAD_REQUEST,
-                ),
+                CheckInError::QrMismatch => {
+                    V3Error::new("qrMismatch", None, "QR_MISMATCH", StatusCode::BAD_REQUEST)
+                }
                 CheckInError::CheckInWindow => V3Error::new(
                     "checkInWindow",
                     None,
                     "CHECK_IN_WINDOW",
                     StatusCode::BAD_REQUEST,
                 ),
-                CheckInError::QueueClosed => V3Error::new(
-                    "queueClosed",
-                    None,
-                    "QUEUE_CLOSED",
-                    StatusCode::BAD_REQUEST,
-                ),
+                CheckInError::QueueClosed => {
+                    V3Error::new("queueClosed", None, "QUEUE_CLOSED", StatusCode::BAD_REQUEST)
+                }
                 CheckInError::NotFound => {
                     V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
                 }
@@ -191,4 +195,3 @@ impl CommandAction for BookingCheckIn {
         })
     }
 }
-

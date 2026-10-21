@@ -27,7 +27,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use futures::future::BoxFuture;
@@ -85,25 +85,17 @@ pub const TOO_MANY_BRANCHES: &str = "รองรับสูงสุด 20 ส
 /// What the reference-rate source of v2 says when it cannot answer.
 pub const SOURCE_DOWN: &str = "ไม่สามารถดึงเรทล่าสุดจาก ธปท. ได้ กรุณาลองใหม่ก่อนบันทึกเรท";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 /// A name no other test, test binary or run on this server has used.
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 /// A request id in v2's shape (`[A-Za-z0-9-]{16,60}`), different on every call.
 pub fn request_id() -> String {
-    format!(
-        "req-{:012}-{:08}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    )
+    format!("req-{:012}-{:08}", std::process::id(), {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    })
 }
 
 pub fn branch(id: &str) -> BranchId {

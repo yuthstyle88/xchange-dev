@@ -7,8 +7,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use ts_rs::TS;
 use pos_error::{AppError, AppResult};
+use ts_rs::TS;
 use xc_app::application::planner::planner_service::PlannerService;
 use xc_app::domain::app_error::CustomerAppError;
 use xc_auth::domain::access::Actor;
@@ -62,17 +62,14 @@ impl BranchView for MyPlannerDraftsView {
         async move {
             let drafts = match owner {
                 None => Vec::new(),
-                Some(owner) => service
-                    .list(&owner)
-                    .await
-                    .map_err(|e| {
-                        // `CustomerAppError` has no `Display`; log its message or code, never `Debug`.
-                        let why = match e {
-                            CustomerAppError::Server(why) => why,
-                            other => other.code().to_owned(),
-                        };
-                        AppError::Internal(format!("my_planner_drafts: {why}"))
-                    })?,
+                Some(owner) => service.list(&owner).await.map_err(|e| {
+                    // `CustomerAppError` has no `Display`; log its message or code, never `Debug`.
+                    let why = match e {
+                        CustomerAppError::Server(why) => why,
+                        other => other.code().to_owned(),
+                    };
+                    AppError::Internal(format!("my_planner_drafts: {why}"))
+                })?,
             };
             Ok(MyPlannerDraftsData {
                 drafts: drafts.iter().map(PlannerDraftDto::of).collect(),

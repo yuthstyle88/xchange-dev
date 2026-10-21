@@ -21,9 +21,13 @@ uuid = { version = "1", features = ["v4"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json"] }
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 xc-auth = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate", "macros", "json"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[build-dependencies]
+xc-testlist = { path = "../xc-testlist" }
 
 [[test]]
 name = "all"

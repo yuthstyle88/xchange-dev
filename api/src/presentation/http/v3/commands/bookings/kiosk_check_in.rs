@@ -99,24 +99,18 @@ impl KioskBookingCheckIn {
             )
             .await
             .map_err(|err| match err {
-                CheckInError::QrMismatch => V3Error::new(
-                    "qrMismatch",
-                    None,
-                    "QR_MISMATCH",
-                    StatusCode::BAD_REQUEST,
-                ),
+                CheckInError::QrMismatch => {
+                    V3Error::new("qrMismatch", None, "QR_MISMATCH", StatusCode::BAD_REQUEST)
+                }
                 CheckInError::CheckInWindow => V3Error::new(
                     "checkInWindow",
                     None,
                     "CHECK_IN_WINDOW",
                     StatusCode::BAD_REQUEST,
                 ),
-                CheckInError::QueueClosed => V3Error::new(
-                    "queueClosed",
-                    None,
-                    "QUEUE_CLOSED",
-                    StatusCode::BAD_REQUEST,
-                ),
+                CheckInError::QueueClosed => {
+                    V3Error::new("queueClosed", None, "QUEUE_CLOSED", StatusCode::BAD_REQUEST)
+                }
                 CheckInError::NotFound => {
                     V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
                 }
@@ -190,4 +184,3 @@ impl CommandAction for KioskBookingCheckIn {
         self.check_in(tx, branch, input).await
     }
 }
-

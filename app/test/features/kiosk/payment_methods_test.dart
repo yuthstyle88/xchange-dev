@@ -106,6 +106,10 @@ class PaymentServer implements KioskRepository {
   @override
   Future<ReceiptModel> customerReceipt(String id) async =>
       throw UnimplementedError('not asked here');
+
+  @override
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) async =>
+      throw UnimplementedError('not asked here');
 }
 
 KioskL10n texts() => KioskL10n.fromJson({

@@ -150,7 +150,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
   const mayRelease = () => can(props.ctx.me, 'VerificationReview');
 
   return (
-    <div data-card="holds">
+    <div>
       <Show when={notice()}>
         <div data-testid="holds-notice">{notice()}</div>
       </Show>

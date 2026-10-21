@@ -42,7 +42,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -71,16 +71,10 @@ const ORG: &str = "00000000-0000-0000-0000-000000000001";
 const POLICY_ROUTE: &str = "/api/cash-transfer-policy";
 const POLICY_VIEW: &str = "cash_transfer_policy";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
 static FUND: AtomicU64 = AtomicU64::new(0);
 
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 /// Stored `limits` values no reader may read as a policy (L1, L2), each with why.

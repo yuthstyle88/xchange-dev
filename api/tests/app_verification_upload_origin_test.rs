@@ -17,7 +17,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -44,15 +44,8 @@ const FOREIGN_ORIGIN: &str = "https://evil.example";
 const ORG_1: &str = "00000000-0000-0000-0000-000000000001";
 const USER_CUST_1: &str = "55555555-5555-5555-5555-555555555555";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 fn valid_png_bytes() -> Vec<u8> {

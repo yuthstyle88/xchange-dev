@@ -1,8 +1,6 @@
 /// Wire models for `POST /api/kiosk`. Field names follow the server's JSON.
 library;
 
-export '../repository/kiosk_repository.dart' show KioskCustomerCancel;
-
 enum ExchangeType {
   buy('BUY'),
   sell('SELL');

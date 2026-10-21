@@ -345,12 +345,11 @@ impl BranchView for AdminReportsBranchView {
                 if let Some(ref_rate) = r.reference_rate {
                     referenced += r.line_count;
                     let foreign = ForeignAmount::from_decimal(r.quantity);
-                    let per_line_thb =
-                        ExchangeArithmetic::try_thb(foreign, ref_rate, r.unit_size).map_err(
-                            |e| AppError::Internal(format!("reference rate calculation overflow: {e}")),
-                        )?;
-                    let per_line_val =
-                        Decimal::from_i128_with_scale(per_line_thb.minor_i128(), 2);
+                    let per_line_thb = ExchangeArithmetic::try_thb(foreign, ref_rate, r.unit_size)
+                        .map_err(|e| {
+                            AppError::Internal(format!("reference rate calculation overflow: {e}"))
+                        })?;
+                    let per_line_val = Decimal::from_i128_with_scale(per_line_thb.minor_i128(), 2);
                     let val = per_line_val * Decimal::from(r.line_count);
                     let spread = if r.shop_side == "BUY" {
                         val - r.principal
@@ -457,13 +456,15 @@ impl BranchView for AdminReportsBranchView {
 
                 let currencies = ordered_currencies
                     .into_iter()
-                    .map(|(c, _, c_received, c_paid)| -> Result<ReportEmployeeCurrency, AppError> {
-                        Ok(ReportEmployeeCurrency {
-                            currency: c,
-                            received: format_money(c_received)?,
-                            paid: format_money(c_paid)?,
-                        })
-                    })
+                    .map(
+                        |(c, _, c_received, c_paid)| -> Result<ReportEmployeeCurrency, AppError> {
+                            Ok(ReportEmployeeCurrency {
+                                currency: c,
+                                received: format_money(c_received)?,
+                                paid: format_money(c_paid)?,
+                            })
+                        },
+                    )
                     .collect::<Result<Vec<_>, _>>()?;
 
                 by_employee.push(ReportEmployeeGroup {
@@ -540,10 +541,7 @@ impl BranchView for AdminReportsBranchView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(
-        cfg,
-        Arc::new(AdminReportsBranchView::new(state.db.clone())),
-    );
+    ViewEndpoint::register(cfg, Arc::new(AdminReportsBranchView::new(state.db.clone())));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
@@ -564,8 +562,8 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::http::StatusCode;
     use crate::presentation::http::v3::view::ViewFilter;
+    use actix_web::http::StatusCode;
 
     #[test]
     fn staff_q_longer_than_100_characters_is_refused_naming_staff_q() {

@@ -42,7 +42,7 @@ export function AttendanceCard(_props: AttendanceCardProps): JSX.Element {
   });
 
   return (
-    <div data-card="attendance">
+    <div data-testid="attendance-card">
       <Show when={error() !== null}>
         <div>
           <div data-testid="attendance-error">{wordedError(error())}</div>

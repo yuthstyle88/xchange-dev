@@ -16,7 +16,7 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_slips::{AdminSlipStatus, AdminSlipsFilter};
 use crate::presentation::dto::v3::transaction_row::{
-    TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
+    ROW_COLUMNS, ROW_FROM, TransactionRow, TxSqlRow,
 };
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint, push_literal_contains};
 
@@ -57,7 +57,9 @@ impl PagedView for AdminSlipsPagedView {
             }
 
             let before_cursor: Option<(DateTime<Utc>, i64)> = if let Some(before_id) = before {
-                let cursor: Option<(DateTime<Utc>, i64)> = if let Ok(uuid) = uuid::Uuid::parse_str(&before_id) {
+                let cursor: Option<(DateTime<Utc>, i64)> = if let Ok(uuid) =
+                    uuid::Uuid::parse_str(&before_id)
+                {
                     sqlx::query_as(
                         "SELECT recorded_at, seq FROM transactions WHERE branch_id = $1 AND mode = 'LIVE' AND (document_ref = $2 OR id = $3)",
                     )
@@ -90,7 +92,9 @@ impl PagedView for AdminSlipsPagedView {
                 "SELECT {ROW_COLUMNS} FROM {ROW_FROM} WHERE t.branch_id = "
             ));
             builder.push_bind(branch.as_str());
-            builder.push(" AND t.mode = 'LIVE' AND t.status = 'COMPLETED' AND p.slip_file_key IS NOT NULL");
+            builder.push(
+                " AND t.mode = 'LIVE' AND t.status = 'COMPLETED' AND p.slip_file_key IS NOT NULL",
+            );
 
             if let Some((before_recorded_at, before_seq)) = before_cursor {
                 builder.push(" AND (t.recorded_at < ");

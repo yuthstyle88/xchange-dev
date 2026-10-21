@@ -1270,17 +1270,16 @@ async fn test_unmet_conditions_yield_skip_reasons() {
         ..Default::default()
     });
 
-    // 5. Coupon required but missing
-    let r_coup = make_active_rule(ActiveRuleSpec {
+    // 5. Coupon required but missing — restated for #4139 by the BE-R6 sub-controller (claude/studio-claude-8):
+    // the rule's `requires_coupon` column is the only source, so the rule needs the coupon through its column
+    // (`eligibility.requiresCoupon` no longer exists).
+    let mut r_coup = make_active_rule(ActiveRuleSpec {
         version_id: v_id,
         stack_group: "g",
         priority: 1,
-        eligibility: Eligibility {
-            requires_coupon: true,
-            ..Default::default()
-        },
         ..Default::default()
     });
+    r_coup.rule.requires_coupon = true;
 
     // 6. Branch mismatch
     let r_branch = make_active_rule(ActiveRuleSpec {
@@ -2118,4 +2117,104 @@ async fn test_pg_campaign_repository_active_for_different_branch() {
         "querying a non-existent branch against populated DB must return empty, got {}",
         rules_none.len()
     );
+}
+
+// ---------------------------------------------------------------------------
+// #4139: the rule's `requires_coupon` column is the only "requires a coupon" source
+// ---------------------------------------------------------------------------
+//
+// Written before the implementation by the BE-R6 sub-controller (claude/studio-claude-8). Do not edit, delete or
+// weaken; add tests of your own after them. The eligibility is read from JSON the way it is stored, so an old
+// `requiresCoupon` key is what a stored row would carry.
+
+/// A rule with `requires_coupon` column `column` and eligibility JSON `{"requiresCoupon": json}`.
+fn rule_with_flags(column: bool, json: bool) -> ActiveRule {
+    let eligibility: Eligibility =
+        serde_json::from_value(json!({ "requiresCoupon": json })).expect("eligibility parses");
+    let mut r = make_active_rule(ActiveRuleSpec {
+        stack_group: "g",
+        priority: 1,
+        eligibility,
+        ..Default::default()
+    });
+    r.rule.requires_coupon = column;
+    r
+}
+
+/// (applied, skip reason) of one rule evaluated with `coupon_code`, inside the test's one transaction (the shared
+/// pool has 24 connections for the whole file, so each test takes one).
+async fn applied_with(
+    tx: &mut Transaction<'static, Postgres>,
+    rule: ActiveRule,
+    coupon_code: Option<&str>,
+) -> (bool, Option<String>) {
+    let id = rule.rule.id;
+    let engine = BenefitEngine::new(
+        Arc::new(MockActiveRules { rules: vec![rule] }),
+        Arc::new(CalculatorRegistry::new()),
+        Arc::new(MockTierSource::default()),
+        Arc::new(MockConsentGate::default()),
+        Arc::new(MockReferralSource::default()),
+    );
+    let ctx = make_context(None, coupon_code, None, vec![]);
+    let lines = vec![make_line(
+        Side::Buy,
+        "35.00",
+        "35.00",
+        "36.00",
+        "100",
+        "0.00",
+    )];
+    let evaluation = engine.evaluate(tx, &ctx, &lines).await.unwrap();
+    let applied = evaluation
+        .lines
+        .iter()
+        .any(|l| l.applied.iter().any(|a| a.rule_id == id));
+    let reason = evaluation
+        .snapshot
+        .skipped
+        .into_iter()
+        .find(|s| s.rule_id == id)
+        .map(|s| s.reason);
+    (applied, reason)
+}
+
+/// #4139 rows 1–4 (engine): without a coupon code, a rule is applied exactly when its column is false, whatever
+/// the eligibility JSON says; a column-true rule is skipped `couponInvalid`.
+#[tokio::test]
+async fn without_a_coupon_the_column_alone_decides() {
+    let mut tx = test_tx().await;
+    for (column, json) in [(false, false), (false, true), (true, false), (true, true)] {
+        let (applied, reason) = applied_with(&mut tx, rule_with_flags(column, json), None).await;
+        assert_eq!(applied, !column, "column {column}, json {json}: applied");
+        if column {
+            assert_eq!(
+                reason.as_deref(),
+                Some("couponInvalid"),
+                "column {column}, json {json}"
+            );
+        } else {
+            assert_eq!(reason, None, "column {column}, json {json}: not skipped");
+        }
+    }
+    tx.rollback().await.expect("roll back");
+}
+
+/// #4139 row 5 (engine): a column-false rule is applied the same with or without an unrelated coupon code — the
+/// code does not open it, and its absence does not close it.
+#[tokio::test]
+async fn a_coupon_code_does_not_decide_a_column_false_rule() {
+    let mut tx = test_tx().await;
+    for json in [false, true] {
+        let without = applied_with(&mut tx, rule_with_flags(false, json), None).await;
+        let with = applied_with(
+            &mut tx,
+            rule_with_flags(false, json),
+            Some("UNRELATED-CODE"),
+        )
+        .await;
+        assert_eq!(without, (true, None), "json {json}, no code");
+        assert_eq!(with, (true, None), "json {json}, an unrelated code");
+    }
+    tx.rollback().await.expect("roll back");
 }

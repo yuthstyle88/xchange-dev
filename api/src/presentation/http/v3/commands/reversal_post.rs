@@ -231,6 +231,9 @@ mod tests {
         .filter(|k| ts.contains(&format!("{k}: string")))
         .collect();
         named.sort_unstable();
-        assert_eq!(keys, named, "ReversalDto's keys, each named in the TS: {ts}");
+        assert_eq!(
+            keys, named,
+            "ReversalDto's keys, each named in the TS: {ts}"
+        );
     }
 }

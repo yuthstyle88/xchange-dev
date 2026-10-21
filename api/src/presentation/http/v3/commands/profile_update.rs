@@ -87,13 +87,12 @@ impl CommandAction for ProfileUpdateCommand {
                     "ภาษาต้องเป็น th, en หรือ zh",
                 ));
             }
-            let org: String = sqlx::query_scalar(
-                "SELECT organization_id::text FROM customers WHERE id = $1",
-            )
-            .bind(customer)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
+            let org: String =
+                sqlx::query_scalar("SELECT organization_id::text FROM customers WHERE id = $1")
+                    .bind(customer)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|_| server_error())?;
             let terms = ConsentService::current_version_in(tx, &org, Purpose::Terms, lang)
                 .await
                 .map_err(|_| server_error())?;

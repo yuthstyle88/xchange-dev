@@ -79,7 +79,8 @@ impl BranchView for TransactionDocumentsBranchView {
                                     ending(&link.mime)
                                 )),
                             });
-                        } else if link.label == "ภาพรายละเอียดใบเสร็จ" {
+                        } else if link.label == "ภาพรายละเอียดใบเสร็จ"
+                        {
                             result.push(TransactionDocumentFile {
                                 kind: TransactionDocumentKind::ReceiptImage,
                                 path: link.url,
@@ -115,10 +116,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         BranchService::new(branch_tx()),
         FileService::new(state.db.clone(), state.settings.files.dir.clone()),
     );
-    ViewEndpoint::register(
-        cfg,
-        Arc::new(TransactionDocumentsBranchView::new(lookup)),
-    );
+    ViewEndpoint::register(cfg, Arc::new(TransactionDocumentsBranchView::new(lookup)));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

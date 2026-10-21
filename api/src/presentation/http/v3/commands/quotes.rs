@@ -26,7 +26,9 @@ use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::quote::QuoteDto;
-use crate::presentation::http::v3::command::{role_not_allowed_here, CommandAction, CommandEndpoint, Locks};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, Locks, role_not_allowed_here,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]

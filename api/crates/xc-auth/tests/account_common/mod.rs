@@ -8,8 +8,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::AppError;
@@ -31,16 +30,9 @@ pub const MUST_CHANGE: &str = "กรุณาเปลี่ยนรหัส�
 /// What v2 throws when there is no usable staff session; in v3 it is `AppError::Unauthenticated`.
 pub const AUTH_REQUIRED: &str = "EMPLOYEE_AUTH_REQUIRED";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 /// A name no other test, test binary or run on this server has used.
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 /// Await `fut`, failing the test when it takes longer than [`MUST_FINISH`].

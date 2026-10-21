@@ -112,22 +112,23 @@ impl CommandAction for SlotClose {
             )
         })?;
 
-        let updated = services
-            .slot_service
-            .close_in(tx, input.id)
-            .await
-            .map_err(|err| match err {
-                SlotError::SlotHasBookings => V3Error::new(
-                    "slotHasBookings",
-                    None,
-                    "SLOT_HAS_BOOKINGS",
-                    StatusCode::BAD_REQUEST,
-                ),
-                SlotError::NotFound => {
-                    V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
-                }
-                other => V3Error::from(other),
-            })?;
+        let updated =
+            services
+                .slot_service
+                .close_in(tx, input.id)
+                .await
+                .map_err(|err| match err {
+                    SlotError::SlotHasBookings => V3Error::new(
+                        "slotHasBookings",
+                        None,
+                        "SLOT_HAS_BOOKINGS",
+                        StatusCode::BAD_REQUEST,
+                    ),
+                    SlotError::NotFound => {
+                        V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
+                    }
+                    other => V3Error::from(other),
+                })?;
 
         Ok(SlotCloseOutput {
             id: updated.id,
@@ -135,4 +136,3 @@ impl CommandAction for SlotClose {
         })
     }
 }
-

@@ -23,8 +23,12 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json", "migrate", "macros"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[build-dependencies]
+xc-testlist = { path = "../xc-testlist" }
 
 [[test]]
 name = "all"

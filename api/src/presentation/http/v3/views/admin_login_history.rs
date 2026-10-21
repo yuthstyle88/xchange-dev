@@ -82,7 +82,10 @@ impl PagedView for AdminLoginHistoryPagedView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register_paged(cfg, Arc::new(AdminLoginHistoryPagedView::new(state.db.clone())));
+    ViewEndpoint::register_paged(
+        cfg,
+        Arc::new(AdminLoginHistoryPagedView::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

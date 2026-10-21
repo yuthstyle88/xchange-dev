@@ -418,7 +418,12 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                     {/* Check-in QR code */}
                     <Show when={booking.qrToken && !isFinished(booking.status)}>
                       <div class="xc-booking-qr" data-qr-token={booking.qrToken!}>
-                        <QrCode value={booking.qrToken!} label={t('qrCode')} />
+                        <QrCode
+                          value={booking.qrToken!}
+                          label={t('qrCode')}
+                          downloadName={`booking-${booking.bookingNo || booking.id}`}
+                          downloadLabel={t('downloadQr')}
+                        />
                       </div>
                     </Show>
                   </div>

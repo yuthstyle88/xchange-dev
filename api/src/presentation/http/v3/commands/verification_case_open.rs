@@ -96,12 +96,9 @@ fn map_case_error(err: CaseError) -> V3Error {
             "no verification policy",
             StatusCode::BAD_REQUEST,
         ),
-        CaseError::CaseLocked => V3Error::new(
-            "caseLocked",
-            None,
-            "case locked",
-            StatusCode::BAD_REQUEST,
-        ),
+        CaseError::CaseLocked => {
+            V3Error::new("caseLocked", None, "case locked", StatusCode::BAD_REQUEST)
+        }
         CaseError::DocumentTypeNotAccepted => V3Error::new(
             "documentTypeNotAccepted",
             Some("documentType"),
@@ -121,18 +118,10 @@ fn map_case_error(err: CaseError) -> V3Error {
             "idempotency conflict",
             StatusCode::CONFLICT,
         ),
-        CaseError::File(msg) => V3Error::new(
-            "validationFailed",
-            None,
-            msg,
-            StatusCode::BAD_REQUEST,
-        ),
-        CaseError::NotFound => V3Error::new(
-            "notFound",
-            None,
-            "not found",
-            StatusCode::NOT_FOUND,
-        ),
+        CaseError::File(msg) => {
+            V3Error::new("validationFailed", None, msg, StatusCode::BAD_REQUEST)
+        }
+        CaseError::NotFound => V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND),
         CaseError::Store(_) | CaseError::Documents(_) => server_error(),
     }
 }
@@ -168,7 +157,10 @@ impl CommandAction for VerificationCaseOpenCommand {
         let audit = Arc::new(PgAuditLog::new(self.pool.clone()));
         let service = CaseService::new(self.pool.clone(), cases, self.doc_store.clone(), audit);
 
-        let case = service.open(&actor, customer_id).await.map_err(map_case_error)?;
+        let case = service
+            .open(&actor, customer_id)
+            .await
+            .map_err(map_case_error)?;
         Ok(case.into())
     }
 }

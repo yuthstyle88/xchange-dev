@@ -44,3 +44,16 @@ export function safeNext(raw: string | null | undefined): string | null {
   }
   return v;
 }
+
+export function targetOf(
+  user: { roles: ReadonlyArray<SessionUserRole> },
+  next?: string | null,
+): string {
+  const safe = safeNext(next);
+  if (user.roles.some((r) => r.role !== 'CUSTOMER')) {
+    return safe ?? homeOf(user);
+  }
+  return safe && (safe === '/app' || safe.startsWith('/app/') || safe.startsWith('/app?'))
+    ? safe
+    : '/app';
+}

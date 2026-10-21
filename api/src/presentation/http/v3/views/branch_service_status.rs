@@ -47,11 +47,10 @@ fn server_error() -> HttpResponse {
 }
 
 async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    let query = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    )
-    .map(|q| q.into_inner())
-    .unwrap_or_default();
+    let query =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .map(|q| q.into_inner())
+            .unwrap_or_default();
     // An unknown or missing branch is the core's refusal, `noSuchBranch` with `no-store`, as every
     // view answers it (`view::require_branch`; the lane controller's ruling 1 on PR 1336 round 2).
     let branch = query.get("branch").cloned().unwrap_or_default();

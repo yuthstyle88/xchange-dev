@@ -30,9 +30,8 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
@@ -99,16 +98,9 @@ pub const WRITE_ACTIONS: [&str; 6] = [
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 /// A name no other test, test binary or run on this server has used.
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 pub fn branch(id: &str) -> BranchId {
@@ -281,6 +273,8 @@ pub async fn publish_rate_per_one(
 /// - RF-5 (#877, `docs/design/blueprint/rates.md` §4.10): the kiosk `rates` answer
 ///   appends `freshness`.
 /// - #3473: the kiosk `get` answer appends `quoteId`.
+/// - KC-S (#4176, `docs/design/blueprint/kiosk-cancel.md` §3.4): the kiosk `confirm`
+///   answer appends `cancelToken` on the confirm that moves the request to WAITING.
 pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
     (
         "/api/kiosk",
@@ -289,6 +283,7 @@ pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
         &["publishedAt", "sourceDate", "stale"],
     ),
     ("/api/kiosk", "get", "quoteId", &[]),
+    ("/api/kiosk", "confirm", "cancelToken", &[]),
 ];
 
 /// `actual` without the keys [`V3_ADDED_KEYS`] allows on this route and action,

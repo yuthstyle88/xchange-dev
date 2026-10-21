@@ -19,6 +19,8 @@ use crate::domain::shift::value_objects::shift_error::ShiftError;
 use crate::domain::shift::value_objects::stock_delta::{StockDelta, StockError};
 use crate::infrastructure::shift::shift_repository::PgShiftRepository;
 
+mod day_close;
+
 pub struct ShiftService<R: ShiftRepository = PgShiftRepository> {
     repo: Arc<R>,
     branch_tx: BranchTx,

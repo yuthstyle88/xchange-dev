@@ -40,6 +40,10 @@ class _FakeRepository implements KioskRepository {
   @override
   Future<ReceiptModel> customerReceipt(String id) async =>
       throw UnimplementedError();
+
+  @override
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) async =>
+      throw UnimplementedError();
 }
 
 File _findFile(String relativePath) {

@@ -18,7 +18,7 @@ use super::referral_source::ReferralSource;
 use super::snapshot::{AppliedBenefit, BenefitSnapshot, SkippedRule};
 use super::stacking::Stacking;
 use super::tier_source::TierSource;
-use crate::domain::benefit::eligibility::EligibilityContext;
+use crate::domain::benefit::eligibility::{EligibilityContext, SkipReason};
 use crate::domain::benefit::registry::CalculatorRegistry;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -148,10 +148,21 @@ impl BenefitEngine {
                     in_segment,
                     marketing_consent,
                     is_referred,
-                    has_coupon: ctx.coupon_code.is_some(),
                 };
 
-                match active_rule.rule.eligibility.check(&elig_ctx) {
+                let check = active_rule
+                    .rule
+                    .eligibility
+                    .check(&elig_ctx)
+                    .and_then(|()| {
+                        if active_rule.rule.requires_coupon && ctx.coupon_code.is_none() {
+                            Err(SkipReason::CouponInvalid)
+                        } else {
+                            Ok(())
+                        }
+                    });
+
+                match check {
                     Ok(()) => {
                         eligible_rules.push(active_rule.clone());
                     }

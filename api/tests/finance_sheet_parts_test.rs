@@ -14,8 +14,7 @@
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use rust_decimal::Decimal;
@@ -42,15 +41,8 @@ const VERIFIER: &str = "FINANCE@XC-B01#2";
 const COUNTER: &str = "TELLER@XC-B01#4";
 const CALLERS: [&str; 4] = [CERTIFIER, VERIFIER, COUNTER, "TELLER@XC-B02#5"];
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 fn date(s: &str) -> NaiveDate {

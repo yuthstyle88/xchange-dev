@@ -67,7 +67,6 @@ pub fn shown_on_app(
         in_segment,
         marketing_consent: facts.marketing_consent,
         is_referred: facts.is_referred,
-        has_coupon: false,
         ..EligibilityContext::default()
     };
     elig.check(&ctx).is_ok()

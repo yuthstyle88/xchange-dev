@@ -112,6 +112,10 @@ class GateRepository implements KioskRepository {
     receiptGates.add(gate);
     return gate.future;
   }
+
+  @override
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) =>
+      throw UnimplementedError();
 }
 
 KioskL10n l10n() => KioskL10n.fromJson({

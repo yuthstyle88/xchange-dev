@@ -16,24 +16,27 @@ use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
-use xc_cash::domain::transfer::cash_transfer::TransferError;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_cash::application::count::count_service::CountVerified;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
+use xc_cash::domain::transfer::cash_transfer::TransferError;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, NumberError};
-use xc_kernel::shift_hook::ShiftLifecycleHook;
+use xc_kernel::shift_hook::{ShiftLifecycleHook, ShiftLifecycleHooks};
 use xc_queue::application::counter::counter_service::CounterService;
+use xc_queue::application::day::queue_day_hook::QueueDayHook;
 use xc_queue::application::status::status_service::StatusService;
+use xc_queue::domain::repository::QueueRepository;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
@@ -189,10 +192,46 @@ pub(crate) fn count_lines(lines: &[CashLineInput]) -> Result<Vec<CountLine>, V3E
 }
 
 pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+    use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
+    use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
+    use xc_kiosk::application::kiosk::day_close::KioskDayCloser;
+    use xc_kiosk::infrastructure::kiosk::kiosk_repository::PgKioskRepository;
+    use xc_queue::application::issue::ticket_issuer::TicketIssuer;
+    use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
+
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
-    let queue = Arc::new(PgQueueRepository::new(pool.clone()));
+    let queue: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
     let status = StatusService::new(branch_tx.clone(), queue.clone());
-    Arc::new(CounterService::new(branch_tx, queue, status))
+    let counters: Arc<dyn ShiftLifecycleHook> = Arc::new(CounterService::new(
+        branch_tx,
+        queue.clone(),
+        status.clone(),
+    ));
+    let booking = pg_booking_lifecycle(pool.clone());
+    let audit = Arc::new(PgKioskAuditLog::new(PgDeviceRepository::new(pool.clone())));
+    let ports = Arc::new(PgKioskPorts::new(
+        pool.clone(),
+        audit,
+        Arc::new(BotRateSource::bot()),
+    ));
+    let kiosk_queue = Arc::new(
+        TicketIssuer::new(
+            BranchTx::new(Transactor::new(pool.clone())),
+            Arc::new(PgQueueRepository::new(pool.clone())),
+        )
+        .with_booking_events(booking.clone()),
+    );
+    let kiosk = Arc::new(KioskDayCloser::new(
+        PgKioskRepository::new(pool.clone()),
+        ports,
+        kiosk_queue,
+    ));
+    let day: Arc<dyn ShiftLifecycleHook> = Arc::new(
+        QueueDayHook::new(queue, status)
+            .with_booking_events(booking)
+            .with_kiosk_day_close(kiosk),
+    );
+    Arc::new(ShiftLifecycleHooks::new(vec![counters, day]))
 }
 
 pub struct CountSubmit {
@@ -403,9 +442,15 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverReject::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferCreate::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferSubmit::new(pool.clone())));
-    CommandEndpoint::register(cfg, Arc::new(transfers::TransferDispatch::new(pool.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(transfers::TransferDispatch::new(pool.clone())),
+    );
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferReceive::new(pool.clone())));
-    CommandEndpoint::register(cfg, Arc::new(transfers::TransferReconcile::new(pool.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(transfers::TransferReconcile::new(pool.clone())),
+    );
     CommandEndpoint::register(cfg, Arc::new(TransferPolicySave::new(pool)));
 }
 
@@ -442,9 +487,10 @@ mod stock_insufficient_mapping_tests {
 
     #[test]
     fn a_transfer_stock_refusal_stays_a_409_stock_insufficient() {
-        let e = from_cash_error(AppError::Domain(TransferError::StockInsufficient.to_string()));
+        let e = from_cash_error(AppError::Domain(
+            TransferError::StockInsufficient.to_string(),
+        ));
         assert_eq!(e.code, "stockInsufficient");
         assert_eq!(e.status, StatusCode::CONFLICT);
     }
 }
-

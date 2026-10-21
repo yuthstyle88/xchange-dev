@@ -2,10 +2,8 @@ import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { ApiError } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
-import { can } from '../../staff/parts/can';
 import * as table from './i18n';
 import {
-  fetchMyProfile,
   fetchMyVerification,
   newIdempotencyKey,
   openVerificationCase,
@@ -96,33 +94,23 @@ export function VerificationScreen(): JSX.Element {
     setCurrentCase(ans.case ?? null);
   };
 
-  const loadVerification = async () => {
-    setLoading(true);
-    setErrorMsg(null);
-    try {
-      await refreshVerification();
-    } catch (err) {
-      setErrorMsg(formatRefusalError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   onMount(() => {
     void (async () => {
       setCheckingAuth(true);
+      setLoading(true);
+      setErrorMsg(null);
       try {
-        const profile = await fetchMyProfile();
-        if (!can(profile, 'CustomerSelf')) {
-          setPermitted(false);
-          return;
-        }
+        await refreshVerification();
         setPermitted(true);
-        await loadVerification();
       } catch (err) {
-        setPermitted(false);
-        setErrorMsg(formatRefusalError(err));
+        if (err instanceof ApiError && err.code === 'outOfScope') {
+          setPermitted(false);
+        } else {
+          setPermitted(true);
+          setErrorMsg(formatRefusalError(err));
+        }
       } finally {
+        setLoading(false);
         setCheckingAuth(false);
       }
     })();

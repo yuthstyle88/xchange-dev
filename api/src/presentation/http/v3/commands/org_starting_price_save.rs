@@ -48,7 +48,12 @@ impl OrgStartingPriceSaveCommand {
 }
 
 fn validation_failed(field: &'static str, msg: &'static str) -> V3Error {
-    V3Error::new("validationFailed", Some(field), msg, StatusCode::BAD_REQUEST)
+    V3Error::new(
+        "validationFailed",
+        Some(field),
+        msg,
+        StatusCode::BAD_REQUEST,
+    )
 }
 
 impl CommandAction for OrgStartingPriceSaveCommand {
@@ -120,7 +125,10 @@ impl CommandAction for OrgStartingPriceSaveCommand {
             };
 
             if buy.is_none() && sell.is_none() {
-                return Err(validation_failed("prices", "buy and sell cannot both be null"));
+                return Err(validation_failed(
+                    "prices",
+                    "buy and sell cannot both be null",
+                ));
             }
             if buy.is_some_and(|b| b <= Decimal::ZERO) {
                 return Err(validation_failed("buy", "buy rate must be positive"));
@@ -137,13 +145,12 @@ impl CommandAction for OrgStartingPriceSaveCommand {
                 ));
             }
 
-            let unit_size_row: Option<(Decimal,)> = sqlx::query_as(
-                "SELECT unit_size FROM currencies WHERE code = $1",
-            )
-            .bind(&currency)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|_| server_error())?;
+            let unit_size_row: Option<(Decimal,)> =
+                sqlx::query_as("SELECT unit_size FROM currencies WHERE code = $1")
+                    .bind(&currency)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|_| server_error())?;
 
             let unit_size = match unit_size_row {
                 Some((u,)) => u,
@@ -310,7 +317,10 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let publish_service = Arc::new(PublishService::new(state.db.clone()));
     CommandEndpoint::register(
         cfg,
-        Arc::new(OrgStartingPriceSaveCommand::new(draft_service, publish_service)),
+        Arc::new(OrgStartingPriceSaveCommand::new(
+            draft_service,
+            publish_service,
+        )),
     );
 }
 

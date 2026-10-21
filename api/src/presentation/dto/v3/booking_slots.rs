@@ -33,18 +33,26 @@ pub struct BookingSlotsFilter {
     pub date: Option<String>,
 }
 
+impl BookingSlotsFilter {
+    pub fn service_date(&self) -> Result<Option<NaiveDate>, V3Error> {
+        match &self.date {
+            None => Ok(None),
+            Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .map(Some)
+                .map_err(|_| {
+                    V3Error::new(
+                        "invalidRequest",
+                        Some("date"),
+                        "คำขอไม่ถูกต้อง",
+                        StatusCode::BAD_REQUEST,
+                    )
+                }),
+        }
+    }
+}
+
 impl ViewFilter for BookingSlotsFilter {
     fn check(&self) -> Result<(), V3Error> {
-        if let Some(ref d) = self.date
-            && NaiveDate::parse_from_str(d, "%Y-%m-%d").is_err()
-        {
-            return Err(V3Error::new(
-                "invalidRequest",
-                Some("date"),
-                "คำขอไม่ถูกต้อง",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
-        Ok(())
+        self.service_date().map(|_| ())
     }
 }

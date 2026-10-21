@@ -61,9 +61,12 @@ fn map_segment_error(e: SegmentError) -> V3Error {
         SegmentError::OutOfScope => {
             V3Error::new("outOfScope", None, "out of scope", StatusCode::BAD_REQUEST)
         }
-        SegmentError::Database(err) => {
-            V3Error::new("database", None, err.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        SegmentError::Database(err) => V3Error::new(
+            "database",
+            None,
+            err.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
         SegmentError::IdempotencyConflict => V3Error::new(
             "idempotencyConflict",
             None,
@@ -118,7 +121,14 @@ impl CommandAction for SegmentSnapshotCommand {
 
         let candidates = PgCustomerMetrics::load_candidate_metrics_in(tx, org_id, lookback, as_of)
             .await
-            .map_err(|e| V3Error::new("database", None, e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+            .map_err(|e| {
+                V3Error::new(
+                    "database",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
 
         let matching_ids: Vec<String> = candidates
             .iter()
@@ -149,7 +159,9 @@ impl CommandAction for SegmentSnapshotCommand {
             })
             .collect();
 
-        let consent_gate = PrefetchedConsentGate { allowed: allowed_map };
+        let consent_gate = PrefetchedConsentGate {
+            allowed: allowed_map,
+        };
 
         let (snap_id, member_count) = SegmentSnapshotService::snapshot_in(
             tx,

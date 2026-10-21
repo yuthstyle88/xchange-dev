@@ -9,8 +9,7 @@
 
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde_json::Value;
 use sqlx::migrate::Migrator;
@@ -23,15 +22,8 @@ pub const MUST_FINISH: Duration = Duration::from_secs(30);
 /// The organisation every v3 database has (`20261011100000_organizations.sql`).
 pub const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 /// One row of `outbox_events`, read back by the tests.

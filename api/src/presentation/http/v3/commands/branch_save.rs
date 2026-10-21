@@ -8,15 +8,15 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use pos_error::AppError;
+use pos_infra::transactions::Transactor;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use pos_error::AppError;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use pos_infra::transactions::Transactor;
 use xc_rate::application::branch::service::{BranchProfile, BranchService};
 use xc_rate::domain::branch::contact_channel::{BranchStatus, ContactChannel};
 
@@ -136,12 +136,9 @@ impl CommandAction for BranchSaveCommand {
             .save_profile_with_contact_in(tx, branch, profile, contact_channels, status)
             .await
             .map_err(|e| match e {
-                AppError::Validation(message) | AppError::Domain(message) => V3Error::new(
-                    "validationFailed",
-                    None,
-                    message,
-                    StatusCode::BAD_REQUEST,
-                ),
+                AppError::Validation(message) | AppError::Domain(message) => {
+                    V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
+                }
                 AppError::Conflict(message) => {
                     V3Error::new("conflict", Some("code"), message, StatusCode::CONFLICT)
                 }

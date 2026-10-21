@@ -62,6 +62,10 @@ class _RateServer implements KioskRepository {
   @override
   Future<ReceiptModel> customerReceipt(String id) async =>
       ReceiptModel.fromJson({..._identity, 'image': null});
+
+  @override
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) =>
+      throw UnimplementedError();
 }
 
 void main() {

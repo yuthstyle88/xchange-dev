@@ -16,15 +16,15 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::user::UserRepository;
 use xc_kernel::ids::BranchId;
 
+use super::user_grant::{
+    changed, custody_holds, from_app_error, from_change_error, user_in_organisation, users,
+};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, request_ip,
 };
 use crate::presentation::http::v3::error::V3Error;
-use super::user_grant::{
-    changed, custody_holds, from_app_error, from_change_error, user_in_organisation, users,
-};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -75,7 +75,13 @@ impl CommandAction for UserDisableCommand {
             return Err(out_of_scope());
         }
         users()
-            .disable(tx, who, request_ip().as_deref(), &user_id, custody_holds().as_ref())
+            .disable(
+                tx,
+                who,
+                request_ip().as_deref(),
+                &user_id,
+                custody_holds().as_ref(),
+            )
             .await
             .map_err(from_change_error)?;
         let out = changed(tx, &user_id).await?;

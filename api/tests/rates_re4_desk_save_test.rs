@@ -1157,14 +1157,14 @@ async fn checked_request(
     .expect("insert a checked kiosk request");
 }
 
-/// Re-pinned for TX-6 by the test-writer, A3 (kiosk) (design quote-transaction.md §4.6.1 A3 and D-5; lane
-/// controller's ruling on the republish, #674), replacing R7 (§9 RE-4c, ruling of 2026-10-10): a kiosk save uses
-/// the request's own quote, and a quote is valid only while its publication is the branch's current one. The
-/// customer was quoted version 1's JPY 23.1 per 100 at the kiosk (through the quote service, channel KIOSK, as
-/// TX-7 asks); version 2 says 23.3 since. The save at the request's per-1 rate 0.231 is refused `quoteExpired`,
-/// writes nothing, and the request stays `ID_CHECKED`.
+/// Re-pinned for #4113 (design `quote-transaction.md` §4.6.1 A3; owner ruling of 2026-10-21:
+/// "ใบเสนอ ราคา ใข้ ใบเก่า ราคา มันจะไม่ ได้ นะ เพราะ ราคา มันวิ่ง ตลอด" · "ต้องใช้ ราคา ปัจจุบัน"):
+/// a kiosk save is priced at the current published line, and `kiosk_requests.quote_id` is a record
+/// only. After the republish (version 1 JPY 23.1 per 100 → version 2 JPY 23.3 per 100), the kiosk
+/// save at the current per-1 rate 0.233 succeeds, stores the current line (`current.id`, rate 23.3,
+/// unit 100), and marks the request `COMPLETED`.
 #[tokio::test]
-async fn a_kiosk_save_after_a_republish_is_quote_expired() {
+async fn a_kiosk_save_after_a_republish_is_saved_at_the_current_line() {
     let shop = Shop::start().await;
     shop.open_shift(MAIN, &[("THB", "100000")]).await;
     shift_holder_common::open_shift_for(&shop.pool, MAIN, FRONT, &[("THB", "100000")]).await;
@@ -1207,8 +1207,7 @@ async fn a_kiosk_save_after_a_republish_is_quote_expired() {
         kiosk_request_id: Some("q-re4c-1".to_owned()),
         ..SaveExtras::default()
     };
-    let before = shop.everything().await;
-    let refused = tokio::time::timeout(
+    let saved = tokio::time::timeout(
         MUST_FINISH,
         kiosk_flow(&shop).save_as(
             &branch(MAIN),
@@ -1219,7 +1218,7 @@ async fn a_kiosk_save_after_a_republish_is_quote_expired() {
                 "BUY",
                 "JPY",
                 "10000",
-                "0.231",
+                "0.233",
             ),
             &extras,
             &front,
@@ -1227,37 +1226,33 @@ async fn a_kiosk_save_after_a_republish_is_quote_expired() {
         ),
     )
     .await
-    .expect("a save finishes");
-    let sentence = refusal(refused);
-    assert!(
-        sentence.starts_with("quoteExpired"),
-        "decision A3 (kiosk) with D-5: {sentence}"
-    );
+    .expect("a save finishes")
+    .expect("decision A3 (kiosk, #4113): the save at the current line's per-1 rate succeeds");
+    let stored = row(&shop, &saved.document_ref).await;
+    assert_eq!(stored.line_id, Some(current.id));
     assert_eq!(
-        shop.everything().await,
-        before,
-        "the refused save wrote nothing"
+        (stored.rate, stored.unit_size),
+        (Decimal::new(233, 1), Decimal::from(100))
     );
-    let (status, document): (String, Option<String>) = sqlx::query_as(
-        "SELECT status, document_ref FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
-    )
-    .bind(MAIN)
-    .bind("q-re4c-1")
-    .fetch_one(&shop.pool)
-    .await
-    .expect("read the request");
-    assert_eq!((status.as_str(), document.as_deref()), ("ID_CHECKED", None));
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM kiosk_requests WHERE branch_id = $1 AND id = $2")
+            .bind(MAIN)
+            .bind("q-re4c-1")
+            .fetch_one(&shop.pool)
+            .await
+            .expect("read the request");
+    assert_eq!(status, "COMPLETED");
     shop.finish().await;
 }
 
-/// Ruling of 2026-10-10 (R7): a save completing a kiosk request at a per-1 rate that is not
-/// the request's `per_one` is `RATE_MISMATCH` and writes nothing — even at the current
-/// publication's rate (0.233 per 1 where the request was quoted 0.231). The request stays
-/// checked.
+/// After the republish, the current line is 0.233 per 1, so a save at the kiosk's old 0.231 is
+/// another rate and is refused `RATE_MISMATCH`, writing nothing and leaving the request
+/// `ID_CHECKED` (#4113).
 #[tokio::test]
 async fn a_kiosk_vouched_save_at_another_rate_is_refused() {
     let shop = Shop::start().await;
     shop.open_shift(MAIN, &[("THB", "100000")]).await;
+    shift_holder_common::open_shift_for(&shop.pool, MAIN, FRONT, &[("THB", "100000")]).await;
     let customer = shop.reserve(MAIN, person()).await;
     let passport = shop.upload(MAIN, FRONT, "image/jpeg", JPEG).await;
     publish(&shop.pool, MAIN, &[("JPY", "23.1", "23.5")]).await;
@@ -1297,7 +1292,7 @@ async fn a_kiosk_vouched_save_at_another_rate_is_refused() {
                 "BUY",
                 "JPY",
                 "10000",
-                "0.233",
+                "0.231",
             ),
             &extras,
             &front,

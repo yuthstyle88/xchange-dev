@@ -581,11 +581,16 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::Kiosk, "approvalDecide", None),
     (EntryPath::Kiosk, "approvalRead", None),
     (EntryPath::Kiosk, "approveRegistration", None),
-    (EntryPath::Kiosk, "cancel", None),
+    (
+        EntryPath::Kiosk,
+        "cancel",
+        Some(Need::Permission(Permission::QueueOperate)),
+    ), // KC-S #4176, kiosk-cancel.md §3.4
     (EntryPath::Kiosk, "configure", Some(Need::Permission(Permission::RatesDraft))),
     (EntryPath::Kiosk, "confirm", Some(Need::Public)),
     (EntryPath::Kiosk, "consentPolicy", None),
     (EntryPath::Kiosk, "create", None),
+    (EntryPath::Kiosk, "customerCancel", Some(Need::Public)), // KC-S #4176, kiosk-cancel.md §3.4
     (EntryPath::Kiosk, "customerReceipt", Some(Need::Public)),
     (EntryPath::Kiosk, "documents", None),
     (EntryPath::Kiosk, "drawerObservation", None),

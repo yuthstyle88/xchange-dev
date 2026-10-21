@@ -31,12 +31,16 @@ tracing = "0.1"
 chrono-tz = { version = "0.10" }
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 chrono-tz = { version = "0.10" }
 pos-infra = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "uuid", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 xc-approval = { workspace = true }
+
+[build-dependencies]
+xc-testlist = { path = "../xc-testlist" }
 
 [[test]]
 name = "all"

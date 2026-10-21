@@ -110,19 +110,21 @@ impl CommandAction for CampaignResumeCommand {
         })?;
 
         let now = Utc::now();
-        sqlx::query("UPDATE campaign_versions SET status = 'APPROVED', edited_at = $1 WHERE id = $2")
-            .bind(now)
-            .bind(version_id)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| {
-                V3Error::new(
-                    "database",
-                    None,
-                    e.to_string(),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                )
-            })?;
+        sqlx::query(
+            "UPDATE campaign_versions SET status = 'APPROVED', edited_at = $1 WHERE id = $2",
+        )
+        .bind(now)
+        .bind(version_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| {
+            V3Error::new(
+                "database",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
         Ok(CampaignResumeOutput {
             campaign_id: campaign_id.to_string(),
