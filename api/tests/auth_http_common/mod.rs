@@ -137,14 +137,6 @@ impl Desk {
         AppState::new(Arc::new(settings(&[])), self.pool.clone())
     }
 
-    pub async fn employee_id(&self, username: &str) -> String {
-        sqlx::query_scalar("SELECT id::text FROM employees WHERE username = $1")
-            .bind(username)
-            .fetch_one(&self.pool)
-            .await
-            .unwrap_or_else(|e| panic!("the employee {username}: {e}"))
-    }
-
     pub async fn owner_session(&self, name: &str) -> String {
         let mut conn = self.pool.acquire().await.expect("a connection");
         let valid_from = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;

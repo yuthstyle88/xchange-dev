@@ -348,7 +348,7 @@ async fn xc_organization_id(pool: &sqlx::PgPool) -> String {
 async fn owner_user_id(pool: &sqlx::PgPool, org_id: &str) -> String {
     sqlx::query_scalar(
         "SELECT u.id::text FROM users u \
-         WHERE u.organization_id = $1::uuid AND u.legacy_employee_id IS NULL \
+         WHERE u.organization_id = $1::uuid \
            AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id \
                        AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
          ORDER BY u.created_at LIMIT 1",
