@@ -9,8 +9,10 @@
 
 use std::time::Duration;
 
-use pos_error::AppResult;
-use xc_customer::domain::email_sender::{EmailMessage, EmailOutcome, EmailSender};
+use pos_error::{AppError, AppResult};
+use xc_customer::domain::email_sender::{
+    EMAIL_UNAVAILABLE, EmailMessage, EmailOutcome, EmailSender,
+};
 use xc_customer::domain::sms_sender::BoxFuture;
 
 #[derive(Clone, Debug)]
@@ -44,21 +46,54 @@ impl NotifyEmailSender {
     /// The JSON body Notify receives for `message`: exactly `channel` (`"email"`),
     /// `recipient.address`, `subject`, `body` (the text), `html_body` and `idempotency_key`.
     pub fn payload(message: &EmailMessage) -> serde_json::Value {
-        let _ = message;
-        todo!("KWQ-D1: Notify's CreateNotificationRequest field names")
+        serde_json::json!({
+            "channel": "email",
+            "recipient": { "address": message.to },
+            "subject": message.subject,
+            "body": message.text,
+            "html_body": message.html,
+            "idempotency_key": message.idempotency_key,
+        })
     }
 }
 
 impl EmailSender for NotifyEmailSender {
     fn is_configured(&self) -> bool {
-        let _ = (&self.base_url, &self.api_key, &self.client);
-        todo!("KWQ-D1: both NOTIFY_BASE_URL and NOTIFY_API_KEY set and non-empty")
+        self.base_url
+            .as_deref()
+            .is_some_and(|u| !u.trim().is_empty())
+            && self
+                .api_key
+                .as_deref()
+                .is_some_and(|k| !k.trim().is_empty())
     }
 
     fn send<'a>(&'a self, message: &'a EmailMessage) -> BoxFuture<'a, AppResult<EmailOutcome>> {
-        let _ = message;
-        Box::pin(
-            async move { todo!("KWQ-D1: POST /api/v1/notifications; 201 Sent, 200 AlreadySent") },
-        )
+        Box::pin(async move {
+            if !self.is_configured() {
+                return Err(AppError::Domain(EMAIL_UNAVAILABLE.to_owned()));
+            }
+            let base_url = self
+                .base_url
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .trim_end_matches('/');
+            let api_key = self.api_key.as_deref().unwrap_or_default().trim();
+            let endpoint = format!("{base_url}/api/v1/notifications");
+            let resp = self
+                .client
+                .post(&endpoint)
+                .header("x-api-key", api_key)
+                .json(&Self::payload(message))
+                .send()
+                .await
+                .map_err(|_| AppError::Domain(EMAIL_UNAVAILABLE.to_owned()))?;
+            match resp.status().as_u16() {
+                201 => Ok(EmailOutcome::Sent),
+                200 => Ok(EmailOutcome::AlreadySent),
+                _ => Err(AppError::Domain(EMAIL_UNAVAILABLE.to_owned())),
+            }
+        })
     }
 }
