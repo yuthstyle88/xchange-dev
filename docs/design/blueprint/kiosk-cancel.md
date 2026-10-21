@@ -143,7 +143,7 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
     - hash mismatch;
     - a request that is not `WAITING`.
   - **The IP check stays as a second guard:** the caller's IP must equal the stored `client_ip`, the address that quoted.
-  - It is rate-limited like `quote`.
+  - It has **no rate limit** (owner, 2026-10-21, relayed on #4176: *"การยกเลิก ไม่จำกัดจำนวนดิ"*). The token, the `WAITING` check, the quoted-address check and the single refused answer are the guard.
   - The reason is `CUSTOMER_CANCELLED`, and the linked ticket becomes `CANCELLED`, not `NO_SHOW`, because the customer is present.
 - **Wire shape** (FE tickets cite these). `/api/kiosk` answers are hand-built `V2Json` in `api/src/presentation/dto/kiosk.rs`. They are **not** ts-rs types, so nothing is generated under `web/src/shared/api/generated/`.
   - `cancel` and `customerCancel` answer `dto_kiosk::identity_json` (`dto/kiosk.rs:203-216`): `{"id", "queue", "orderNo", "transactionNo", "status": "CANCELLED"}`. A repeat answers the same.
