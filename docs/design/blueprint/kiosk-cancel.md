@@ -1,6 +1,7 @@
 # Kiosk request cancel: staff (or the customer) cancel a kiosk queue booking
 
 > designed-by: claude/e92db6 (FE lane controller) · measured on `main` `8fb176eb`; revised after review on `main` `b26fd986` (every file:line below)
+> amended by claude/studio-claude-10 (AG controller KC) on `main` `f22f02f4`: the owner's day-close ruling (KC-5, `DAY_CLOSED`), and the server shapes and file lists measured while cutting KC-M/D/Q/S (§3.3, §3.4, §5)
 
 ## 0. Decided (owner, 2026-10-21)
 
@@ -12,6 +13,7 @@
 | KC-2b | The **cashier (desk) screen** must have a cancel too, not only the kiosk queue panel. | *"แต่ หน้า แคชเชียร์ ต้องมี ที่ยกเลิก ด้วย"* |
 | KC-3 | The case to serve: a customer keys in a queue at the kiosk and walks away without doing the exchange. | *"เพราะ บางที ลูกค้า อาจไม่ ทำรายการเดินหนีไป"* |
 | KC-4 | The migration this needs is approved. | *"อนุมัติ migration ทำเลย"* |
+| KC-5 | A kiosk-linked ticket still waiting at **day close** is a cancellation **with a reason**, recorded like a staff cancel (`CANCELLED`, stored reason, `KIOSK_CANCELLED` line), never `NO_SHOW`/`CUSTOMER_LEFT`. Relayed by claude/553782 on #4136, owner 2026-10-21 ~03:52Z. | *"เป็นรายการ ยกเลิก พร้อม เหตุผลไง"* |
 
 ## 1. What is missing today (measured)
 
@@ -38,11 +40,12 @@
 |---|---|---|
 | `CUSTOMER_LEFT` | ลูกค้าไม่อยู่ / เดินออกไปแล้ว | optional |
 | `CUSTOMER_CANCELLED` | ลูกค้ายกเลิกเองที่ตู้ | — (set only by the kiosk's own cancel; not offered to staff) |
+| `DAY_CLOSED` | ปิดวันทำการ | — (set only by the day-close path, §3.7; not offered to staff) |
 | `CUSTOMER_CHANGED_MIND` | ลูกค้าเปลี่ยนใจ | optional |
 | `DUPLICATE` | คำขอซ้ำ | optional |
 | `OTHER` | อื่น ๆ | **required**, 1–200 chars |
 
-The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown code, or `OTHER` with no text is refused `validationFailed` naming the field.
+The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown code (`CUSTOMER_CANCELLED` and `DAY_CLOSED` count as unknown when staff send them), or `OTHER` with no text is refused, and the refusal names the field (§3.4 lists the sentences).
 
 ## 3. Design
 
@@ -60,7 +63,7 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
      - New nullable columns:
        - `cancelled_at timestamptz`;
        - `cancelled_by text`;
-       - `cancel_reason text`, with the named CHECK `kiosk_requests_cancel_reason_check`: `cancel_reason IN ('CUSTOMER_LEFT','CUSTOMER_CANCELLED','CUSTOMER_CHANGED_MIND','DUPLICATE','OTHER')`;
+       - `cancel_reason text`, with the named CHECK `kiosk_requests_cancel_reason_check`: `cancel_reason IN ('CUSTOMER_LEFT','CUSTOMER_CANCELLED','CUSTOMER_CHANGED_MIND','DUPLICATE','OTHER','DAY_CLOSED')`;
        - `cancel_note text`;
        - `cancel_token_hash text`, the customer's cancel token (§3.4). It is the hex SHA-256 of the token, written at confirm, and never read back to any client.
      - `kiosk_requests_cancelled_check`: `(status = 'CANCELLED') = (cancelled_at IS NOT NULL AND cancelled_by IS NOT NULL AND cancel_reason IS NOT NULL)`.
@@ -75,7 +78,7 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
      - it refuses (`RAISE EXCEPTION`) while any row is `CANCELLED`, because no older state means "cancelled". Such rows are settled by hand first, an owner decision at that time;
      - it then drops the five columns and the three new CHECKs, and restores the two original CHECKs under their old names;
      - it loses every cancel record (when, who, reason, note) and every cancel token. A customer waiting at the kiosk then can't cancel there.
-- `CancelReason` value object in `xc-kiosk` (the five codes; `parse`/`as_str`; `OTHER` requires a note; `CUSTOMER_CANCELLED` is refused when a staff member sends it). `cancelled_by` is the username, or `CUSTOMER-KIOSK` (the actor the kiosk's audit lines already use, `audit_line.rs:7`).
+- `CancelReason` value object in `xc-kiosk` (the six codes; `parse`/`as_str`; `OTHER` requires a note; `CUSTOMER_CANCELLED` and `DAY_CLOSED` are refused when a staff member sends them, and only their own paths build them). `cancelled_by` is the username, or `CUSTOMER-KIOSK` (the actor the kiosk's audit lines already use, `audit_line.rs:7`).
 
 ### 3.2 Queue ticket
 
@@ -98,23 +101,27 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
 
 ### 3.3 Domain transition and service
 
-- `KioskMachine::cancel(&self, who: &Actor, reason: CancelReason, now) -> Result<Transition, KioskError>` follows §2's table:
-  - `NotCancellable` for `QUOTED` and `COMPLETED`;
-  - `NotYourRequest` for an `ACCEPTED`/`ID_CHECKED` request held by another teller when the caller is not a branch manager;
-  - an unchanged state with no event for `CANCELLED`.
-- `KioskEventKind::Cancelled` ⇒ audit kind `KIOSK_CANCELLED`, detail `{from, reason, note}`, written by `line_for` (`application/kiosk/service.rs:63-89`) like every other transition.
+- `KioskMachine::cancel(request: Option<&KioskRequest>, actor: &KioskActor, reason: &CancelReason) -> Result<Option<KioskRequest>, KioskError>` follows §2's table. `KioskMachine` is a unit struct of associated functions (`kiosk_machine.rs:20-21`), like `next`.
+  - `Some(request)` is the request moved to `CANCELLED`. `staff` is unchanged.
+  - `None` means it was already `CANCELLED`: a repeat, nothing to write.
+  - `RequestNotFound` when there is no request.
+  - `NotCancellable` for `QUOTED`, `EXPIRED` and `COMPLETED`; for the customer outside `WAITING`; for a staff actor sending `CUSTOMER_CANCELLED`; for the customer sending any reason but `CUSTOMER_CANCELLED`; and for `DAY_CLOSED` outside `WAITING`.
+  - `NotYourRequest` for an `ACCEPTED`/`ID_CHECKED` request held by another teller when the caller's `KioskRole` is not `Manager`.
+- **The audit line** is `AuditLine { actor, subject: id, what: KioskAudit::Cancelled { from, reason } }`, built in `cancel_with`. Its `kind()` is `"KIOSK_CANCELLED"`, and `detail_of` (`api/src/infrastructure/kiosk/kiosk_ports.rs:75-91`) writes `{from, reason, note}`.
+  - It does not go through `line_for` (`service.rs:63-89`). `line_for` builds a line from `(event, request)`, but a cancel's line needs the status it left and the reason, which `KioskRequest` does not hold. That is also why `cancel` answers an `Option`, not a `Transition`, and why `KioskEventKind` gains no variant.
+  - `KioskAudit::CurrencyConfigured` already works this way: it has no `KioskEventKind` and is built directly (`currencies.rs:49`, `audit_line.rs:40`).
 - **Persistence** is a new `KioskRepository` method (`domain/kiosk/repositories/kiosk_repository.rs`, beside `mark_started_in`/`mark_completed_in`) with its Pg impl (`infrastructure/kiosk/kiosk_repository.rs`):
-  - `mark_cancelled_in(tx, branch, id, from: KioskStatus, cancel: &Cancellation)`, where `Cancellation { at, by, reason: CancelReason }` lives in `cancel_reason.rs`;
+  - `mark_cancelled_in(tx, branch, id, from: KioskStatus, cancel: &Cancellation) -> AppResult<bool>`, where `Cancellation { at: DateTime<Utc>, by: String, reason: CancelReason }` lives in `cancel_reason.rs`;
   - one `UPDATE kiosk_requests SET status = 'CANCELLED', cancelled_at, cancelled_by, cancel_reason, cancel_note WHERE branch_id = $1 AND id = $2 AND status = $from`;
-  - `0` rows ⇒ `StaleVersion`.
+  - `0` rows ⇒ `Ok(false)`, and `cancel_with` refuses `KioskError::StaleVersion` (the kiosk has no stale-version error today).
   - `update_in` is untouched.
   - **`KioskRequest` gains no fields**: nothing in this design reads the cancel columns back (views answer `identity`, which is the status), so struct literals across the five test files stay as they are.
   - There are **no repository fakes** to update: `git grep 'impl .*KioskRepository' -- api` finds only `PgKioskRepository`.
 - `set_cancel_token_in(tx, branch, id, token: &str)` on the same trait stores `encode(sha256(convert_to($token, 'UTF8')), 'hex')` (not `$token::bytea`, which reads backslash escapes and would error on a client-sent token with a `\`, a 500 instead of the same refused answer), and `matches_cancel_token_in(tx, branch, id, token) -> bool` compares that hash in SQL. Both are KC-D's.
-- `cancel_with` in `application/kiosk/desk.rs`, in **one** transaction:
-  - load the request `FOR UPDATE` → `KioskMachine::cancel` → `mark_cancelled_in` → `cancel_active_for_kiosk_in` → the audit line;
+- `cancel_with` in `application/kiosk/desk.rs`, in **one** transaction. The desk's methods are `impl KioskService` blocks (`desk.rs:1-2`); "KioskDesk" in §4 names that file, not a type.
+  - load the request with `find_in` → `KioskMachine::cancel` → `mark_cancelled_in` guarded on the status it read (that guard is the lock: a second writer gets `Ok(false)`) → `cancel_active_for_kiosk_in` → the audit line;
   - it sits next to `accept_with`;
-  - `accept_with`'s exhaustive match (`desk.rs:164-207`) gains `Cancelled ⇒ AlreadyAssignedOrUnavailable`.
+  - `accept_with`'s exhaustive match (`desk.rs:164-207`) gains `Cancelled ⇒ AcceptOutcome::Unavailable`. It is KC-D's, because adding the status breaks that match.
 
 ### 3.4 API and policy
 
@@ -138,11 +145,29 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
   - **The IP check stays as a second guard:** the caller's IP must equal the stored `client_ip`, the address that quoted.
   - It is rate-limited like `quote`.
   - The reason is `CUSTOMER_CANCELLED`, and the linked ticket becomes `CANCELLED`, not `NO_SHOW`, because the customer is present.
-- Answer: the request's identity (`status: "CANCELLED"`), as `accept` answers today.
+- **Wire shape** (FE tickets cite these). `/api/kiosk` answers are hand-built `V2Json` in `api/src/presentation/dto/kiosk.rs`. They are **not** ts-rs types, so nothing is generated under `web/src/shared/api/generated/`.
+  - `cancel` and `customerCancel` answer `dto_kiosk::identity_json` (`dto/kiosk.rs:203-216`): `{"id", "queue", "orderNo", "transactionNo", "status": "CANCELLED"}`. A repeat answers the same.
+  - `confirm` answers the new `dto_kiosk::confirm_json(identity, cancel_token: Option<&str>)`: the same five keys plus `"cancelToken": "<uuid v4>"`, present **only** on the confirm that moved the request to `WAITING`. A repeated confirm has no `cancelToken` key at all, not a `null` one.
+  - Refusals are `400 {"error": "<sentence>"}` (`refuse`, `extractors/actor.rs:56-58`). The sentences are `KioskError` and `CancelReasonError`:
+
+  | Variant | Sentence | When |
+  |---|---|---|
+  | `CancelReasonError::ReasonRequired` | `กรุณาเลือกเหตุผลการยกเลิก (reason)` | `reason` missing or empty |
+  | `CancelReasonError::ReasonUnknown` | `เหตุผลการยกเลิกไม่ถูกต้อง (reason)` | not a staff code |
+  | `CancelReasonError::NoteRequired` | `กรุณาระบุรายละเอียดเหตุผล (note)` | `OTHER` with no text |
+  | `CancelReasonError::NoteTooLong` | `รายละเอียดเหตุผลต้องไม่เกิน 200 ตัวอักษร (note)` | note over 200 characters, any code |
+  | `KioskError::NotCancellable` | `คำขอนี้ยกเลิกไม่ได้` | §2's refused rows |
+  | `KioskError::NotYourRequest` | `คำขอนี้มีพนักงานคนอื่นรับเรื่องอยู่` | another teller holds it |
+  | `KioskError::StaleVersion` | `คำขอนี้เปลี่ยนสถานะแล้ว กรุณาโหลดล่าสุด` | it moved while being cancelled |
+  | `KioskError::KioskCancelled` | `คำขอนี้ถูกยกเลิกแล้ว` | the desk `get` of a cancelled request |
+  | `KioskError::CustomerCancelRefused` | `ยกเลิกคิวที่ตู้ไม่ได้ กรุณาติดต่อพนักงาน` | every `customerCancel` refusal (missing or wrong token, other address, not `WAITING`, unknown id) |
+
+  - The note is trimmed, and an empty note is none.
 - Views:
-  - `kiosk_queue` (`api/src/presentation/http/v3/views/kiosk_queue.rs:61-65`) does **not** list cancelled requests; they leave the panel;
+  - `kiosk_queue` (`api/src/presentation/http/v3/views/kiosk_queue.rs:61-65`) does **not** list cancelled requests; they leave the panel. That needs no change: it reads only the `Waiting`/`Working`/`Completed` filters, and none of them names `CANCELLED`;
+  - the v2 `list` action's `All` filter is "every status but QUOTED" (`kiosk_repository.rs:99-108`), so it lists `CANCELLED` too, and `queue_statuses(All)` gains it;
   - `status` and `customerReceipt` pass `CANCELLED` through `identity`, as they do every other status;
-  - the desk `get` on a cancelled request refuses `KioskCancelled`, which the desk words.
+  - the desk `get` on a cancelled request refuses `KioskCancelled`, which the desk words. `get` (`desk.rs:270-279`) already refuses through `KioskMachine::check_get`, so the new arm goes there (KC-D, `kiosk_machine.rs`); `get` itself is unchanged.
 
 ### 3.5 Staff UI (`/kiosk-queue.html`, `web/src/shared/ui/QueuePanel.tsx`)
 
@@ -160,7 +185,11 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
 ### 3.7 Not in this design (follow-ups, each its own ticket later)
 
 - A staff `ticketCancel` / skip on a kiosk-linked ticket should also cancel the request. Today it leaves it stuck (§1 last bullet). This needs a queue → kiosk hook, so it comes after this lands.
-- Day close cancelling leftovers. `QueueDayHook::on_day_closed` (`xc-queue/src/application/day/queue_day_hook.rs:44-146`) has no production caller, and it notifies bookings only. The day closes on the last CLOSE-count verify (`count_service.rs:1252-1261` → `ShiftService::close_on_verified`). The handover path calls the same function (`handover_service.rs:586`), so the trigger can't simply be "0 open shifts". Once that is wired, it should call this design's `KioskDesk::cancel_with` path (reason `CUSTOMER_LEFT`) for a kiosk-linked ticket.
+- Day close cancelling leftovers. `QueueDayHook::on_day_closed` (`xc-queue/src/application/day/queue_day_hook.rs:44-146`) has no production caller, and it notifies bookings only. The day closes on the last CLOSE-count verify (`count_service.rs:1252-1261` → `ShiftService::close_on_verified`). The handover path calls the same function (`handover_service.rs:586`), so the trigger can't simply be "0 open shifts". Once that is wired, it calls this design's `cancel_with` path for a kiosk-linked ticket whose request is still `WAITING`, with reason **`DAY_CLOSED`** (KC-5):
+  - the request becomes `CANCELLED` with `cancel_reason = 'DAY_CLOSED'` and a `KIOSK_CANCELLED` line, exactly as a staff cancel is recorded;
+  - its ticket becomes `CANCELLED` with `ended_reason = 'kioskCancelled:DAY_CLOSED'` and a `CANCEL` event, never `NO_SHOW` (`is_no_show` is true only for `CUSTOMER_LEFT`). This matches `queue-tickets.md` Q8, which already says `CANCELLED` at day close;
+  - `cancelled_by` and the line's actor are the user whose action closed the day;
+  - the code is in this design's migration (§3.1), so the follow-up needs no second migration. The follow-up itself is #4147's.
 - F13 (the kiosk journey in `qa/e2e`) is cut once this and #4113 merge; its cleanup step is this cancel.
 
 ## 4. Class diagram
@@ -174,17 +203,17 @@ classDiagram
   }
   class CancelReason {
     <<xc-kiosk value_objects/cancel_reason.rs · new>>
-    CustomerLeft · CustomerCancelled · CustomerChangedMind · Duplicate · Other(note)
+    CustomerLeft · CustomerCancelled · CustomerChangedMind · Duplicate · Other(note) · DayClosed
     +parse(code, note) Result~CancelReason~
     +as_str() &str
     +is_no_show() bool
   }
   class KioskMachine {
     <<xc-kiosk entities/kiosk_machine.rs>>
-    +cancel(who, reason, now) Result~Transition~  «new»
+    +cancel(request, actor, reason)$ Result  «new · Ok(Some) moved · Ok(None) repeat»
   }
   class KioskDesk {
-    <<xc-kiosk application/kiosk/desk.rs>>
+    <<xc-kiosk application/kiosk/desk.rs · impl KioskService>>
     +accept_with(...)  «match gains Cancelled»
     +cancel_with(tx, branch, id, who, reason, now) Result~Identity~  «new»
   }
@@ -199,7 +228,7 @@ classDiagram
   }
   class KioskRepository {
     <<xc-kiosk domain/kiosk/repositories/kiosk_repository.rs · Pg impl in infrastructure>>
-    +mark_cancelled_in(tx, branch, id, from, cancel)  «new · guarded UPDATE»
+    +mark_cancelled_in(tx, branch, id, from, cancel) bool  «new · guarded UPDATE»
     +set_cancel_token_in(tx, branch, id, token)  «new · stores sha256 hex»
     +matches_cancel_token_in(tx, branch, id, token) bool  «new»
   }
@@ -241,9 +270,9 @@ classDiagram
 | # | Ticket | Files | Class | After |
 |---|---|---|---|---|
 | KC-M | migration (§3.1) | `api/migrations/<slot>_kiosk_cancel.sql` | guarded | — |
-| KC-D | domain + persistence: `Cancelled`, `CancelReason`, `Cancellation`, `KioskMachine::cancel`, event kind, audit line, and the three repository methods (§3.3) | `kiosk_status.rs` · `cancel_reason.rs` (new) · `value_objects/mod.rs` · `kiosk_machine.rs` · `kiosk_error.rs` · `kiosk_event_kind.rs` · `audit_line.rs` · `domain/kiosk/repositories/kiosk_repository.rs::{mark_cancelled_in, set_cancel_token_in, matches_cancel_token_in}` · `infrastructure/kiosk/kiosk_repository.rs::{status_from, mark_cancelled_in, set_cancel_token_in, matches_cancel_token_in}` (the Pg impl; no fakes exist) · `tests/kiosk_cancel_repository_test.rs` (new, `_test` DB) · `tests/kiosk_cancel_machine_test.rs` (new) · the two name-list tests (`kiosk_machine_test.rs:1123`, `kiosk_repository.rs` `ALL_DB_STATUSES`) | logic | KC-M |
+| KC-D | domain + persistence: `Cancelled`, `CancelReason`, `Cancellation`, `KioskMachine::cancel`, the errors, `KioskAudit::Cancelled`, and the three repository methods (§3.3) | `kiosk_status.rs` · `cancel_reason.rs` (new) · `value_objects/mod.rs` · `kiosk_machine.rs` · `kiosk_error.rs` · `audit_line.rs` · `application/kiosk/desk.rs::accept_with` (the new match arm) · `api/src/infrastructure/kiosk/kiosk_ports.rs::detail_of` · `domain/kiosk/repositories/kiosk_repository.rs::{mark_cancelled_in, set_cancel_token_in, matches_cancel_token_in}` · `infrastructure/kiosk/kiosk_repository.rs::{status_from, queue_statuses, mark_cancelled_in, set_cancel_token_in, matches_cancel_token_in}` (`queue_statuses(All)` gains `CANCELLED`, §3.4; `queue_predicate(All)` is `status <> 'QUOTED'` and needs no change) (the Pg impl; no fakes exist) · `tests/kiosk_cancel_repository_test.rs` (new, `_test` DB) · `tests/kiosk_cancel_machine_test.rs` (new) · the two name-list tests (`kiosk_machine_test.rs:1123`, `kiosk_repository.rs` `ALL_DB_STATUSES`) | logic | KC-M |
 | KC-Q | queue port + impl (guarded `UPDATE`s, `SKIP`/`CANCEL` events; `apply` unchanged) | `xc-kernel/src/queue_tickets.rs` · `xc-queue/src/application/issue/ticket_issuer.rs` · `xc-queue/tests/kiosk_ticket_cancel_test.rs` (new) · the port's fakes | logic | — |
-| KC-S | service + routes (`cancel`, `customerCancel`, `confirm`'s token) + policy + views | `xc-kiosk/src/application/kiosk/desk.rs` · `xc-kiosk/src/application/kiosk/customer.rs` (confirm stores the token; `customer_cancel`) · `api/src/presentation/http/kiosk.rs` · `xc-auth/.../policy.rs` · `xc-auth/tests/policy_kiosk_test.rs` · `api/src/presentation/http/v3/views/kiosk_queue.rs` · `api/tests/kiosk_cancel_route_test.rs` (new) | logic | KC-D, KC-Q |
+| KC-S | service + routes (`cancel`, `customerCancel`, `confirm`'s token) + policy | `xc-kiosk/src/application/kiosk/desk.rs::cancel_with` · `xc-kiosk/src/application/kiosk/customer.rs` (confirm stores the token; `customer_cancel`) · `xc-kiosk/src/domain/kiosk/value_objects/kiosk_action.rs` (`Cancel`, `CustomerCancel`; the route's matches are exhaustive) · `api/src/presentation/http/kiosk.rs` · `api/src/presentation/dto/kiosk.rs` (`confirm_json`) · `xc-auth/.../policy.rs` · `xc-auth/tests/policy_kiosk_test.rs` · `api/tests/kiosk_cancel_route_test.rs` (new). `kiosk_queue.rs` needs no change (§3.4) | logic | KC-D, KC-Q |
 | KC-W | kiosk queue panel cancel | `web/src/shared/ui/QueuePanel.tsx` · `web/src/screens/staff/parts/ReasonDialog.tsx` · the panel's i18n · new `QueuePanel.cancel.test.tsx` | logic | KC-S |
 | KC-C | cashier (desk) cancel + wording | `web/src/screens/desk/entries/kiosk/entry.ts` · `web/src/screens/desk/entries/kiosk/i18n.ts` · the desk banner that renders an entry's actions · new `entries/kiosk/cancel.test.tsx` | logic | KC-S, KC-W (reuses its dialog) |
 | KC-A | kiosk app: cancelled status + the customer's cancel button (sends the `cancelToken` kept from confirm) | `kiosk_models.dart` · `kiosk_controller.dart` · `waiting_page.dart` · `kiosk_api.dart` · the kiosk l10n · new `app/test/features/kiosk/kiosk_cancelled_test.dart` | logic | KC-S |
