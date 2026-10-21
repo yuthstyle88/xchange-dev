@@ -19,8 +19,8 @@ use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
 use xchange::presentation::pages::{Callers, SessionReader};
 
-use crate::common;
-use crate::quote_common::*;
+use super::common;
+use super::quote_common::*;
 
 pub const AS: &str = "x-test-as";
 pub const HOST: &str = "xc.test";

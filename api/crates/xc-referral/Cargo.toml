@@ -1,4 +1,6 @@
 [package]
+# One test binary per package: tests/all.rs (api/scripts/gen-test-binaries.py).
+autotests = false
 name = "xc-referral"
 version = "0.1.0"
 edition = "2024"
@@ -28,3 +30,7 @@ xc-customer = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate", "macros"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net", "io-util"] }
 tracing = "0.1"
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

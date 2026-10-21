@@ -10,6 +10,7 @@
 //! - `removable` is false for `'ALL'`, for a group that face values belong to, and for a group a
 //!   current publication prices — the three refusals of `DenominationGroupService::remove_group`.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 

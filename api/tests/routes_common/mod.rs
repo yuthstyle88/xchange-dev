@@ -23,7 +23,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xchange::config::Settings;
 
-use crate::common::settings;
+use super::common::settings;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 

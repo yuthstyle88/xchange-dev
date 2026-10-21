@@ -9,6 +9,7 @@
 //!
 //! A refused phone calls Identity never and writes no `users` row (§9): every refusal test checks both.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

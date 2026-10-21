@@ -7,6 +7,7 @@
 //! fail, none skips.
 
 mod common;
+#[macro_use]
 mod file_routes_common;
 
 use std::sync::Arc;

@@ -1,6 +1,7 @@
 //! W2-T2 (#4015, parent #1027): pins the four `cookie()` rules (`api/src/presentation/extractors/actor.rs:25`)
 //! on `__Host-xc_session` through `POST /api/auth/session`.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 

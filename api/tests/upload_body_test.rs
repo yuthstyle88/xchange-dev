@@ -15,6 +15,7 @@
 //! headers). The served caller's case, last, needs `TEST_DATABASE_URL` like every file route test.
 
 mod common;
+#[macro_use]
 mod file_routes_common;
 
 use std::io::{Read, Write};

@@ -1,4 +1,6 @@
 [package]
+# One test binary per package: tests/all.rs (api/scripts/gen-test-binaries.py).
+autotests = false
 name = "xc-app"
 version = "0.1.0"
 edition = "2024"
@@ -28,3 +30,7 @@ xc-customer = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "rust_decimal", "uuid", "json", "migrate", "derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 serde_json = { workspace = true }
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

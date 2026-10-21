@@ -17,6 +17,7 @@
 //!
 //! Needs TEST_DATABASE_URL naming an existing PostgreSQL database ending in `_test` (never port 6381).
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

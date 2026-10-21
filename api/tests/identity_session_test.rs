@@ -7,6 +7,7 @@
 //! 3. Refresh whose new token names a different subject -> session ends and is deleted.
 //! 4. Missing IDENTITY_API_KEY is handled and logged/warned.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

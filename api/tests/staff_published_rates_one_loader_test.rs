@@ -17,6 +17,7 @@
 //! not depend on the draft flow. `TEST_DATABASE_URL` must name a database whose name ends in `_test`; each test gets
 //! its own schema.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 

@@ -28,7 +28,7 @@ use xchange::bootstrap::AppState;
 use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::test_callers;
 
-use crate::common::settings;
+use super::common::settings;
 
 pub const HOST: &str = "desk.example";
 pub const ORIGIN: &str = "https://desk.example";
@@ -304,15 +304,13 @@ impl TestApp {
 /// The server's whole route table (`bootstrap::configure`) with the fake session reader. The
 /// reader is registered **after** `configure`, so that it is the one found even once the real
 /// reader (ticket T4c) is registered inside the route table.
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! desk_app {
     ($desk:expr, $fixture:expr) => {{
         let reader: std::sync::Arc<dyn xchange::presentation::pages::SessionReader> =
-            std::sync::Arc::new($crate::file_routes_common::FakeSessions::from_fixture(
-                $fixture,
-            ));
+            std::sync::Arc::new(file_routes_common::FakeSessions::from_fixture($fixture));
         let state = $desk.state();
-        $crate::file_routes_common::TestApp::new(
+        file_routes_common::TestApp::new(
             actix_web::test::init_service(
                 actix_web::App::new()
                     .configure(move |cfg| xchange::bootstrap::configure(cfg, state))

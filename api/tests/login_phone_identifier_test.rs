@@ -16,6 +16,7 @@
 //! These tests need a real PostgreSQL (`TEST_DATABASE_URL`, a database whose name ends in `_test`). Without it they
 //! FAIL; none skips.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

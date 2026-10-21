@@ -52,8 +52,10 @@
 
 mod common;
 mod compat_common;
+#[macro_use]
 mod kiosk_http_common;
 use kiosk_http_common::rates_re4_common;
+#[macro_use]
 mod rpc_common;
 mod snapshot_common;
 

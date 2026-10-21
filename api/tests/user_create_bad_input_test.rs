@@ -7,6 +7,7 @@
 //! 4: roles:[{"role":"TELLER","branch":"MAIN"}], MAIN exists -> 200, as today (kept).
 //! 5: branch:"bad branch!" (malformed) -> 400 validationFailed field roles "สาขาไม่ถูกต้อง" (kept).
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

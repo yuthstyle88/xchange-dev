@@ -1,4 +1,6 @@
 [package]
+# One test binary per package: tests/all.rs (api/scripts/gen-test-binaries.py).
+autotests = false
 name = "xc-rate"
 version = "0.1.0"
 edition = "2024"
@@ -37,3 +39,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 [lints.clippy]
 type_complexity = "allow"
 
+[[test]]
+name = "all"
+path = "tests/all.rs"

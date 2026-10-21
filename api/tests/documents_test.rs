@@ -7,6 +7,7 @@
 //! fail, none skips.
 
 mod common;
+#[macro_use]
 mod documents_common;
 mod save_common;
 

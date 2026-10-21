@@ -34,6 +34,7 @@
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; it fails without it, it does not skip.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

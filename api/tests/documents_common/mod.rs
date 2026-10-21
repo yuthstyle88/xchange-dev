@@ -26,8 +26,8 @@ use xchange::bootstrap::AppState;
 use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::test_callers;
 
-use crate::common::settings;
-use crate::save_common::{self, Shop};
+use super::common::settings;
+use super::save_common::{self, Shop};
 
 #[allow(clippy::duplicate_mod)]
 #[path = "../shift_holder_common/mod.rs"]
@@ -359,15 +359,13 @@ pub async fn send(app: &TestApp, method: Method, path: &str, signed_in: &[&str])
 /// The server's whole route table (`bootstrap::configure`) with the fake session reader,
 /// registered **after** `configure` so that it is the one found even when a real reader is
 /// registered inside the route table.
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! world_app {
     ($world:expr, $fixture:expr) => {{
         let reader: std::sync::Arc<dyn xchange::presentation::pages::SessionReader> =
-            std::sync::Arc::new($crate::documents_common::FakeSessions::from_fixture(
-                $fixture,
-            ));
+            std::sync::Arc::new(documents_common::FakeSessions::from_fixture($fixture));
         let state = $world.state();
-        $crate::documents_common::TestApp::new(
+        documents_common::TestApp::new(
             actix_web::test::init_service(
                 actix_web::App::new()
                     .configure(move |cfg| xchange::bootstrap::configure(cfg, state))

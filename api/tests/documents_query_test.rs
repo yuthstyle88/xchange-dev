@@ -17,6 +17,7 @@
 //! `_test`); without it they fail, none skips.
 
 mod common;
+#[macro_use]
 mod documents_common;
 mod save_common;
 #[allow(clippy::duplicate_mod)]

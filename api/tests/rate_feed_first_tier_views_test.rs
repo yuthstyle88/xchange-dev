@@ -12,6 +12,7 @@
 //!   allow-list of readers that work per line or pick the tier themselves. A new list reader
 //!   cannot forget R-10.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 

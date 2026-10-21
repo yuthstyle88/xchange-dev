@@ -34,6 +34,7 @@
 //! `TEST_DATABASE_URL` (a database whose name ends in `_test`); nothing skips.
 
 mod common;
+#[macro_use]
 mod documents_common;
 mod save_common;
 #[allow(clippy::duplicate_mod)]

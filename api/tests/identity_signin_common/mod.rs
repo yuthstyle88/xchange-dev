@@ -266,7 +266,7 @@ pub fn identity_env(base_url: &str) -> Vec<(&'static str, String)> {
 /// The server's state with exactly this environment (on top of the committed YAML).
 pub fn state_with(pool: &PgPool, env: &[(&str, String)]) -> AppState {
     let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    AppState::new(Arc::new(crate::common::settings(&pairs)), pool.clone())
+    AppState::new(Arc::new(super::common::settings(&pairs)), pool.clone())
 }
 
 // ── the database ──────────────────────────────────────────────────────────

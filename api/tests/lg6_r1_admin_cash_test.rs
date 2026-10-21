@@ -12,6 +12,7 @@ mod common;
 mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
+#[macro_use]
 mod rpc_common;
 mod snapshot_common;
 
@@ -133,7 +134,7 @@ impl Room {
     async fn open() -> Self {
         let sb = SeededShiftBalances::new();
         let desk = Desk::open().await.with_shift_balances(Arc::new(sb.clone()));
-        crate::snapshot_common::seed_opener(&desk.db.pool, "owner").await;
+        snapshot_common::seed_opener(&desk.db.pool, "owner").await;
         let app = rpc_app!(desk);
         let people = one_of_each_role();
         desk.employ(&people).await;

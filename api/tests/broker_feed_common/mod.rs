@@ -5,7 +5,7 @@
 use actix_web::http::Method;
 use serde_json::Value;
 
-use crate::rpc_common::{Answer, App, Call, Desk};
+use super::rpc_common::{Answer, App, Call, Desk};
 
 pub const PATH: &str = "/api/v3/system/broker/exchanges";
 pub const HOST: &str = "desk.test";

@@ -1,5 +1,6 @@
 //! RBAC F11b (#3206) tests for `POST /api/auth/password`.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

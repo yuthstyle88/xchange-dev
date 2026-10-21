@@ -3,6 +3,7 @@
 //! `MarketingCampaigns`, `MarketingMembers`, `MarketingPerformance`), `TELLER` and `owner` still answer 200, and a
 //! `CUSTOMER` session (`403 roleNotAllowedHere`) or no session (`401 signIn`) stays refused as today.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

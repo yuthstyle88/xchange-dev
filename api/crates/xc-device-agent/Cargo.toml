@@ -1,4 +1,6 @@
 [package]
+# One test binary per package: tests/all.rs (api/scripts/gen-test-binaries.py).
+autotests = false
 name = "xc-device-agent"
 version = "1.0.0"
 edition = "2024"
@@ -23,3 +25,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "proce
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util", "process", "io-util", "fs"] }
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

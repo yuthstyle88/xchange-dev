@@ -11,6 +11,7 @@
 
 mod common;
 mod compat_common;
+#[macro_use]
 mod rpc_common;
 mod snapshot_common;
 

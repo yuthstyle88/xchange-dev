@@ -39,7 +39,7 @@ pub use xchange::infrastructure::devices::device_service::{DeviceOverview, Devic
 pub use xchange::infrastructure::devices::job_ids::{JobIds, UuidJobIds};
 pub use xchange::infrastructure::devices::saved_exchanges::{ExchangeState, SavedExchanges};
 
-use crate::routes_common::ScratchDatabase;
+use super::routes_common::ScratchDatabase;
 
 /// The boxed future a port answers with, spelled out so the tests need no
 /// crate for it.

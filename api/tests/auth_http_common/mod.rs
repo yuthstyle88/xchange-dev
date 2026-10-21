@@ -23,7 +23,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xchange::bootstrap::AppState;
 
-use crate::common::settings;
+use super::common::settings;
 
 pub const HOST: &str = "desk.example";
 pub const ORIGIN: &str = "https://desk.example";
@@ -218,11 +218,11 @@ impl Desk {
 }
 
 /// The server's whole route table (`bootstrap::configure`).
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! desk_app {
     ($desk:expr) => {{
         let state = $desk.state();
-        $crate::auth_http_common::TestApp::new(
+        auth_http_common::TestApp::new(
             actix_web::test::init_service(
                 actix_web::App::new()
                     .configure(move |cfg| xchange::bootstrap::configure(cfg, state)),
@@ -234,11 +234,11 @@ macro_rules! desk_app {
 }
 
 /// The same without any custody port: what the server is until ticket T11a registers one.
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! desk_app_without_custody {
     ($desk:expr) => {{
         let state = $desk.state();
-        $crate::auth_http_common::TestApp::new(
+        auth_http_common::TestApp::new(
             actix_web::test::init_service(
                 actix_web::App::new()
                     .configure(move |cfg| xchange::bootstrap::configure(cfg, state)),

@@ -2,6 +2,7 @@
 //! answer 503 `identityUnavailable`, keep the `__Host-xc_session` cookie, and leave the
 //! `user_sessions` row intact instead of reporting `{"saved": true}` and clearing the cookie.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

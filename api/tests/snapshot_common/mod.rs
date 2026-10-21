@@ -79,7 +79,7 @@ use xchange::application::compat::snapshot_sources::{
 };
 use xchange::application::compat::v2_json::People;
 
-use crate::compat_common::{Fixture, IdMap, Step};
+use super::compat_common::{Fixture, IdMap, Step};
 
 /// Upper bound for anything that must finish.
 pub const MUST_FINISH: Duration = Duration::from_secs(30);
@@ -1112,7 +1112,7 @@ impl<'f> Replay<'f> {
         let actual =
             json!({"customerId": reservation.customer_id, "existing": reservation.existing});
         // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
-        if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
+        if let Some(same) = super::compat_common::same_customer_as(&self.fixture.name, step.n) {
             let label = format!("{} ({})", self.label(step), same.reason);
             let earlier = self
                 .reserved
@@ -1120,7 +1120,7 @@ impl<'f> Replay<'f> {
                 .unwrap_or_else(|| panic!("{label}: step {} was not replayed", same.same_as))
                 .clone();
             let expected =
-                crate::compat_common::same_customer_answer(step.json(), &earlier, &label);
+                super::compat_common::same_customer_answer(step.json(), &earlier, &label);
             assert_same(&expected, &actual, &label);
             self.ids
                 .alias_customer(&text_of(step.json(), "customerId"), &earlier);
@@ -1176,14 +1176,14 @@ impl<'f> Replay<'f> {
 
     /// CI-4 (#651): a recorded answer whose `customers` v3 answers company-wide (compat_common::COMPANY_CUSTOMERS).
     fn decided_customers(&self, step: &Step, recorded: Value) -> Value {
-        match crate::compat_common::company_customers(self.fixture, step.n) {
-            Some(list) => crate::compat_common::with_customers_of(
+        match super::compat_common::company_customers(self.fixture, step.n) {
+            Some(list) => super::compat_common::with_customers_of(
                 &recorded,
                 &json!({ "customers": list }),
                 &format!(
                     "{} ({})",
                     self.label(step),
-                    crate::compat_common::COMPANY_CUSTOMERS_REASON
+                    super::compat_common::COMPANY_CUSTOMERS_REASON
                 ),
             ),
             None => recorded,

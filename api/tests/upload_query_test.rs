@@ -7,6 +7,7 @@
 //! Needs `TEST_DATABASE_URL` like every file route test.
 
 mod common;
+#[macro_use]
 mod file_routes_common;
 
 use file_routes_common::*;
