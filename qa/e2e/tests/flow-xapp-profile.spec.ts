@@ -30,6 +30,20 @@ test.describe('QA-F14c flow: customer profile and consent edit and restore', () 
     const origName = await nameInput.inputValue();
     const origLang = await langSelect.inputValue();
 
+    const profileRes = await page.request.get('/api/v3/views/my_profile');
+    expect(profileRes.ok(), `GET /api/v3/views/my_profile: ${profileRes.status()}`).toBe(true);
+    const profileJson = (await profileRes.json()) as {
+      data?: { offeredLanguages?: string[]; preferredLanguage?: string };
+      offeredLanguages?: string[];
+      preferredLanguage?: string;
+    };
+    const offeredLanguages = profileJson?.data?.offeredLanguages ?? profileJson?.offeredLanguages ?? [];
+    const currentPreferred = profileJson?.data?.preferredLanguage ?? profileJson?.preferredLanguage ?? origLang;
+    const optionValues = await langSelect
+      .locator('option')
+      .evaluateAll((opts) => opts.map((o) => (o as HTMLOptionElement).value));
+    expect(new Set(optionValues)).toEqual(new Set([...offeredLanguages, currentPreferred]));
+
     const targetLang = origLang === 'en' ? 'th' : 'en';
     const testName = `E2E-${Date.now()}`;
 
