@@ -316,6 +316,7 @@ describe("the real /staff page mounts the attendance card through main.tsx and c
     await vi.waitFor(() =>
       expect(app.querySelector('[data-card="attendance"]')).not.toBeNull(),
     );
+    expect(app.querySelectorAll('[data-card="attendance"]').length).toBe(1);
     await vi.waitFor(() =>
       expect(
         app.querySelectorAll('[data-card="attendance"] [data-attendance-id]'),
