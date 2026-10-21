@@ -355,7 +355,7 @@ async fn create_quote(db: &TestDb, branch: &str, currency: &str, amount: i64) ->
 async fn confirm_quote(db: &TestDb, branch: &str, req_id: &str) {
     let ans = call(
         db,
-        None,
+        Some(&format!("TELLER@{branch}")),
         Method::POST,
         "/api/kiosk",
         Some(json!({
