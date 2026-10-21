@@ -10,8 +10,7 @@
 
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::http::StatusCode;
 use rust_decimal::Decimal;
@@ -138,8 +137,6 @@ fn integer_accepts_both_ends_and_refuses_one_past_each() {
 
 // ---------------------------------------------------------------- must_exist
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 async fn migrated_pool() -> (PgPool, String) {
     let url = std::env::var("TEST_DATABASE_URL").expect(
         "TEST_DATABASE_URL is not set; must_exist needs a real PostgreSQL and does not skip",
@@ -149,15 +146,7 @@ async fn migrated_pool() -> (PgPool, String) {
         options.get_database().unwrap_or("").ends_with("_test"),
         "the database name must end in `_test`"
     );
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after 1970")
-        .as_nanos();
-    let schema = format!(
-        "p1_input_{}_{nanos}_{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    );
+    let schema = xc_testdb::unique_schema_name("p1_input");
     let admin = PgPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(Duration::from_secs(30))

@@ -20,8 +20,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -47,15 +46,8 @@ const ADMIN: &str = "ADMIN@*";
 // Follows §11.2 seed: EXECUTIVE holds USER_MANAGEMENT FULL (UsersManage, BranchesManage); remaining staff are refused
 const REFUSED: [&str; 3] = ["BRANCH_MANAGER@XC-B01", "TELLER@XC-B01", "FINANCE@XC-B01"];
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 // ------------------------------------------------------------ database

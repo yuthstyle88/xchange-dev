@@ -71,15 +71,8 @@ const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const VALUATION_RATE: &str = "กรอกเรทให้ครบทุกสกุลที่มียอด";
 const NOT_FOUND: &str = "Not found";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 /// A request id `read_request_id` accepts: 16–60 ASCII letters, digits or `-`.
@@ -88,7 +81,10 @@ fn rid() -> String {
         .duration_since(UNIX_EPOCH)
         .expect("clock is after 1970")
         .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let n = {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    };
     format!("rq-{}-{nanos}-{n}", std::process::id())
 }
 

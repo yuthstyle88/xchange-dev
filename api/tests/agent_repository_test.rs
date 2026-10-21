@@ -17,8 +17,6 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use sqlx::migrate::Migrator;
@@ -63,15 +61,8 @@ const OLD_SELECT: &str = "SELECT id, request_id, request_hash, branch_id, ref, k
 const OLD_UPDATE: &str =
     "UPDATE device_jobs SET status = $1, updated_at = $2 WHERE branch_id = $3 AND id = $4";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 /// 2026-10-08 03:00:00 UTC plus `seconds`, whole milliseconds.

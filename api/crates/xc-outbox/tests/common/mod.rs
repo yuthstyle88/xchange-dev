@@ -14,9 +14,9 @@ use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
@@ -67,15 +67,8 @@ pub static ORPHAN: EventKind = EventKind {
     aggregate_type: "transaction",
 };
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 pub fn key() -> String {

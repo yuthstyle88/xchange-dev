@@ -30,8 +30,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
+use std::time::Duration as StdDuration;
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -51,15 +50,8 @@ const MAIN: &str = "MAIN";
 /// The publication's time; microseconds on purpose, so a format that drops them still names the same second.
 const PUBLISHED_AT: &str = "2026-10-10T03:15:00.123456Z";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 fn time(text: &str) -> DateTime<Utc> {

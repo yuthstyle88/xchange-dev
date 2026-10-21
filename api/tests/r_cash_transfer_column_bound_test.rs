@@ -18,7 +18,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -51,16 +51,10 @@ const FIRST_PAST_COLUMN_QTY: &str = "100000000";
 /// Half of the column, rounded up to a note: two such lines each fit, their USD sum (10^16 units) does not.
 const HALF_COLUMN_QTY: &str = "50000000";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
 static FUND: AtomicU64 = AtomicU64::new(0);
 
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 // ------------------------------------------------------------ database

@@ -25,6 +25,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tracing = "0.1"
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "json", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 

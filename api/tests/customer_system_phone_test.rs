@@ -24,7 +24,6 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_infra::transactions::Transactor;
@@ -43,15 +42,8 @@ const XC_ORG: &str = "00000000-0000-0000-0000-000000000001";
 const ACTION: &str = "identity.system_read";
 const SYSTEM: &str = "SYSTEM";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 fn at(seconds: i64) -> DateTime<Utc> {
@@ -158,7 +150,10 @@ impl Db {
 
     /// A LIVE customer of `org` with an ACTIVE passport and no phone.
     async fn customer(&self, org: Uuid) -> String {
-        let id = format!("CX-{:08}", NEXT.fetch_add(1, Ordering::Relaxed));
+        let id = format!("CX-{:08}", {
+            static SEQ: AtomicU64 = AtomicU64::new(0);
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        });
         sqlx::query(
             "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
              VALUES ($1, $2, $1, 'Somchai Jaidee', 'LIVE', $3)",

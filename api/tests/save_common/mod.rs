@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
@@ -80,16 +80,9 @@ pub const JPEG: &[u8] = &[
 ];
 pub const PDF: &[u8] = b"%PDF-1.7 a slip\n";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 /// A name no other test, test binary or run on this server has used.
 pub fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 pub fn branch(id: &str) -> BranchId {

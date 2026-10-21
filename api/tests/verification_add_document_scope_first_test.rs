@@ -15,8 +15,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::http::header::HeaderMap;
 use actix_web::http::{Method, StatusCode, header};
@@ -54,15 +53,8 @@ const DIFFERENT_DOC_BYTES: &[u8] =
     b"\x89PNG\r\n\x1a\nDIFFERENT_CUSTOMER_PASSPORT_RAW_BYTES_FOR_C10";
 const SECRET_IDENTITY_FULL: &str = "BB9876543";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 #[derive(Clone, Debug)]

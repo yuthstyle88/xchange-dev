@@ -56,7 +56,6 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -84,15 +83,8 @@ const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
 const SAME_ORIGIN: &str = "http://xc.test";
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 fn at(seconds: i64) -> DateTime<Utc> {
@@ -204,7 +196,10 @@ impl Db {
 
     /// A walk-in customer of the organisation, written directly.
     async fn customer(&self) -> String {
-        let id = format!("TEST-CX-{:08}", NEXT.fetch_add(1, Ordering::Relaxed));
+        let id = format!("TEST-CX-{:08}", {
+            static SEQ: AtomicU64 = AtomicU64::new(0);
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        });
         sqlx::query(
             "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
              SELECT $1, organization_id, $1, 'Somchai Jaidee', 'LIVE', $2 FROM branches WHERE id = 'MAIN'",

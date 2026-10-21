@@ -26,6 +26,7 @@ uuid = { version = "1", features = ["v4"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "rust_decimal", "uuid", "json"] }
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 xc-customer = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "rust_decimal", "uuid", "json", "migrate", "derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

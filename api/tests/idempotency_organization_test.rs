@@ -29,8 +29,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -60,8 +59,6 @@ const XC: &str = "00000000-0000-0000-0000-000000000001";
 /// CM-3's migration; the migration test stops just before it.
 const CM3_MIGRATION: i64 = 20261030160000;
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
 async fn migrate(pool: &PgPool, last: Option<i64>) {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
     let mut migrator = Migrator::new(dir.as_path())
@@ -83,12 +80,7 @@ async fn migrate(pool: &PgPool, last: Option<i64>) {
 }
 
 fn unique(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock is after 1970")
-        .as_nanos();
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}_{}_{nanos}_{n}", std::process::id())
+    xc_testdb::unique_schema_name(prefix)
 }
 
 // ------------------------------------------------------------ database

@@ -26,6 +26,7 @@ xc-kernel = { workspace = true }
 xc-customer = { workspace = true }
 
 [dev-dependencies]
+xc-testdb = { workspace = true }
 # BK-10 #1412 up-front tests: seal PHONE identities and install the PII key the member keys open.
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "migrate", "macros"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net", "io-util"] }
