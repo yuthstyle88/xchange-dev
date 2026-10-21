@@ -87,7 +87,7 @@ fn map_loyalty_error(err: LoyaltyRuleError) -> V3Error {
 
 impl CommandAction for LoyaltyRuleSubmitCommand {
     const NAME: &'static str = "loyaltyRuleSubmit";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::StaffRpc, "loyaltyRuleSubmit");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "loyaltyRuleSubmit");
     type Input = LoyaltyRuleSubmitInput;
     type Output = LoyaltyRuleSubmitOutput;
     const ROUTE: &'static str = "/api/v3/commands/loyalty_rule_submit";
