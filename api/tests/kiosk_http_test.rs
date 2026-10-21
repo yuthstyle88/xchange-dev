@@ -648,8 +648,32 @@ async fn the_answers_keep_v2s_key_order() {
     counter.desk.clock.set(counter.now() + Duration::seconds(4));
     let id = "00000000-0000-4000-8000-0000000c0001";
     let confirmed = counter.ask(None, "confirm", json!({ "id": id })).await;
+    // KC-S (#4176): v3 appends `cancelToken` after v2's last key (snapshot_common::V3_ADDED_KEYS)
+    let (v2_part, added) = confirmed
+        .text
+        .split_once(",\"cancelToken\":")
+        .unwrap_or_else(|| {
+            panic!(
+                "`cancelToken` comes after v2's last key: {}",
+                confirmed.text
+            )
+        });
+    assert!(
+        added.ends_with('}') && !added[..added.len() - 1].contains(','),
+        "`cancelToken` is the last key: {}",
+        confirmed.text
+    );
+    let token_json = &added[..added.len() - 1];
+    assert!(
+        token_json.starts_with('"')
+            && token_json.ends_with('"')
+            && token_json.len() == 38
+            && uuid::Uuid::parse_str(&token_json[1..token_json.len() - 1]).is_ok(),
+        "`cancelToken` is a 36-char UUID string: {}",
+        confirmed.text
+    );
     assert_eq!(
-        confirmed.text,
+        format!("{v2_part}}}"),
         "{\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"K-00000000\",\
          \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
          \"status\":\"WAITING\"}"
