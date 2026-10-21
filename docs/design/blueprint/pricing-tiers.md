@@ -181,7 +181,11 @@ What V.9 does (`V9:market`), and what v3 keeps:
   on its own loop next to the BoT feed loop: for each feed, a `ReferenceBatchWriter::new(Arc::new(MarketRateSource::new(feed)), store).with_provider(Arc::new(MarketProvider::new(source, known)))`
   in its own transaction, then records the attempt in `MarketFeedHealth` (`application/market/market_feed_health.rs`:
   per source `last_attempt_at`, `last_error: Option<String>` (≤ 200 chars, V.9 `V9:market:110`)). One source failing
-  never stops the other (`V9:market:104-113`). It **never** triggers a branch refresh or a draft: `reference_base.rs`
+  never stops the other (`V9:market:104-113`). `[required]` The loop is spawned in `bootstrap/mod.rs` next to
+  `RateFeedLoop` (`:459-476`) **only when `MARKET_FEED_ENABLED=true`**; unset or anything else ⇒ not spawned. The api
+  tests build the whole `Application` (e.g. `api/tests/f10b_rate_feed_loop_test.rs`), so a default-on loop would reach
+  TT and Super Rich from CI. Setting the variable in an environment is a deploy setting, so it is the owner's call.
+  Interval `MARKET_FEED_INTERVAL_SECS`, default 300. It **never** triggers a branch refresh or a draft: `reference_base.rs`
   reads `'BOT'` unless a branch or currency chose a market anchor (§3.1), and that path reprices on the BoT tick as today.
 - `[required]` **Staleness** is computed where it is read: `MarketStaleness::is_stale(fetched_at: Option<DateTime>, now) -> bool`
   in `domain/pricing/market_snapshot.rs` (`None` or older than 30 min ⇒ stale). The board sets `PricingSourceDto.stale`,
