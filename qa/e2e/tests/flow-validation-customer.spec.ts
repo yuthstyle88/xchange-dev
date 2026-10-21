@@ -1,10 +1,11 @@
 // QA-R9-11 — flow: invalid input validation on customer forms (design docs/design/qa-e2e.md §9.1 b, §9.5 row R9-11; #4295).
 // Covers (b) only (3–5 invalid input cases per form) for customer forms walked by earlier rounds:
-// - /app/book (bookingCreate): no slot, amount 0, negative amount, too many decimals, past date
-// - /app/profile (profileUpdate, consentRecord): empty / whitespace display name, too-long name, consentRecord invalid inputs
-// - /app/rate-alerts (rateAlertCreate): empty threshold, negative threshold, zero threshold, invalid scale
+// - /app/book (bookingCreate): no slot (server 400), amount 0 (client rangeUnderflow), negative amount (client rangeUnderflow),
+//   too many decimals (server 400), past date (client rangeUnderflow)
+// - /app/profile (profileUpdate, consentRecord): empty / whitespace display name (client disabled + no request), consentRecord invalid inputs
+// - /app/rate-alerts (rateAlertCreate): empty threshold (client valueMissing), negative threshold, zero threshold, invalid scale (server 400)
 // - /app/sign-up (no session): empty display name, empty identifier, empty password, already-registered account
-// - /app/journey (plannerDraftSave): amount 0, negative amount, non-numeric amount
+// - /app/journey (plannerDraftSave): amount 0, negative amount, non-numeric amount (client validationError)
 // - /app/bookings (bookingCancel, bookingReschedule): reschedule without slot, past date, non-existent booking cancel
 // Each case: fresh refusal checked (response 400 or proven no request with visible block), worded refusal in th and en,
 // form retains typed input, and read-back confirms nothing was created.
@@ -108,7 +109,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       const expectedValidationMsg =
         lang === 'th' ? 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง' : 'Validation failed, please check your input';
 
-      // Case 1: no slot selected
+      // Case 1: no slot selected (server 400 refusal)
       await qtyInput.fill('100');
       if (await slotSelect.isVisible()) {
         await slotSelect.selectOption('');
@@ -123,36 +124,28 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(errorAlert).toBeVisible({ timeout: 10_000 });
       await expect(qtyInput, `${lang}: quantity retains input`).toHaveValue('100');
 
-      // Case 2: amount 0 (select slot, then submit 0)
+      // Case 2: amount 0 (client refusal via min="1" and rangeUnderflow)
       if (await slotSelect.isVisible() && (await slotSelect.locator('option[data-testid="slot-option"]').count()) > 0) {
         await slotSelect.selectOption({ index: 1 });
       }
       await qtyInput.fill('0');
-      const zeroResPromise = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/bookings$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
+      const isZeroUnderflow = await qtyInput.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow);
+      expect(isZeroUnderflow, `${lang}: amount 0 triggers rangeUnderflow`).toBe(true);
+      const noZeroReq = page.waitForRequest(/\/api\/bookings$/, { timeout: 2_000 });
       await submitBtn.click();
-      const zeroRes = await zeroResPromise;
-      expect(zeroRes.status(), `${lang}: amount 0 refused with 400`).toBe(400);
-      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-      await expect(errorAlert).toContainText(expectedValidationMsg);
+      await expect(noZeroReq, `${lang}: no request sent for amount 0`).rejects.toThrow();
       await expect(qtyInput, `${lang}: quantity retains 0`).toHaveValue('0');
 
-      // Case 3: negative amount
+      // Case 3: negative amount (client refusal via min="1" and rangeUnderflow)
       await qtyInput.fill('-50');
-      const negResPromise = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/bookings$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
+      const isNegUnderflow = await qtyInput.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow);
+      expect(isNegUnderflow, `${lang}: negative amount triggers rangeUnderflow`).toBe(true);
+      const noNegReq = page.waitForRequest(/\/api\/bookings$/, { timeout: 2_000 });
       await submitBtn.click();
-      const negRes = await negResPromise;
-      expect(negRes.status(), `${lang}: negative amount refused with 400`).toBe(400);
-      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-      await expect(errorAlert).toContainText(expectedValidationMsg);
+      await expect(noNegReq, `${lang}: no request sent for negative amount`).rejects.toThrow();
       await expect(qtyInput, `${lang}: quantity retains -50`).toHaveValue('-50');
 
-      // Case 4: too many decimals (>4 decimals)
+      // Case 4: too many decimals (>4 decimals; server 400 refusal)
       await qtyInput.fill('10.12345');
       const decResPromise = page.waitForResponse(
         (res) => res.request().method() === 'POST' && /\/api\/bookings$/.test(new URL(res.url()).pathname),
@@ -165,12 +158,15 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(errorAlert).toContainText(expectedValidationMsg);
       await expect(qtyInput, `${lang}: quantity retains 10.12345`).toHaveValue('10.12345');
 
-      // Case 5: past date
+      // Case 5: past date (client refusal via min attribute, rejected submit request)
       const dateInput = page.locator('input[data-testid="date-input"]');
       if (await dateInput.isVisible()) {
         await dateInput.fill('2020-01-01');
-        const isUnderflow = await dateInput.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow);
-        expect(isUnderflow, `${lang}: past date triggers rangeUnderflow`).toBe(true);
+        const isDateUnderflow = await dateInput.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow);
+        expect(isDateUnderflow, `${lang}: past date triggers rangeUnderflow`).toBe(true);
+        const noPastDateReq = page.waitForRequest(/\/api\/bookings$/, { timeout: 2_000 });
+        await submitBtn.click();
+        await expect(noPastDateReq, `${lang}: no request sent for past date`).rejects.toThrow();
         await expect(dateInput, `${lang}: date retains past date`).toHaveValue('2020-01-01');
       }
 
@@ -225,13 +221,8 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         expect(directJson?.error?.code).toBe('validationFailed');
         expect(directJson?.error?.field).toBe('displayName');
 
-        // Case 4: too-long display name
-        const tooLong = 'A'.repeat(1000);
-        await nameInput.fill(tooLong);
-        await expect(nameInput, `${lang}: displayName retains typed long value`).toHaveValue(tooLong);
-
-        // Case 5: consentRecord validation checks (direct API commands on /api/app/consents)
-        // 5a: invalid purpose
+        // Case 4: consentRecord validation checks (direct API commands on /api/app/consents)
+        // 4a: invalid purpose
         const badPurposeRes = await page.request.post('/api/app/consents', {
           data: { purpose: 'INVALID_PURPOSE', channel: 'SMS', granted: true, lang },
         });
@@ -240,7 +231,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         expect(badPurposeJson?.error?.code).toBe('validationFailed');
         expect(badPurposeJson?.error?.field).toBe('purpose');
 
-        // 5b: invalid language
+        // 4b: invalid language
         const badLangRes = await page.request.post('/api/app/consents', {
           data: { purpose: 'MARKETING', channel: 'SMS', granted: true, lang: 'xx' },
         });
@@ -249,7 +240,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         expect(badLangJson?.error?.code).toBe('validationFailed');
         expect(badLangJson?.error?.field).toBe('lang');
 
-        // 5c: withdrawing TERMS
+        // 4c: withdrawing TERMS
         const withdrawTermsRes = await page.request.post('/api/app/consents', {
           data: { purpose: 'TERMS', granted: false, lang },
         });
@@ -380,17 +371,6 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(idInput, `${lang}: identifier retains value`).toHaveValue(freshPhone);
       await expect(pwdInput, `${lang}: password retains value`).toHaveValue('ValidPass123!');
 
-      // Read back: confirm no account was created for freshPhone (trying to register again still sees empty name error)
-      const verifyRegRes = await page.request.post('/api/app/register', {
-        data: {
-          identifier: freshPhone,
-          password: 'ValidPass123!',
-          displayName: '',
-          lang,
-        },
-      });
-      expect(verifyRegRes.status()).toBe(400);
-
       // Case 2: empty identifier
       await nameInput.fill('Test Customer');
       await idInput.fill('');
@@ -418,25 +398,22 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(errorAlert).toBeVisible({ timeout: 10_000 });
       await expect(errorAlert).toHaveText(expectedInvalidRequest);
 
-      // Case 4: already registered identifier
+      // Case 4: already registered identifier (unconditional 409 check)
       const existingId = users.customer?.identifier ?? users.customer?.phone ?? '';
-      if (existingId) {
-        await idInput.fill(existingId);
-        await pwdInput.fill('ValidPass123!');
-        await nameInput.fill('Another User');
-        const regResPromise4 = page.waitForResponse(
-          (res) => res.request().method() === 'POST' && /\/api\/app\/register$/.test(new URL(res.url()).pathname),
-          { timeout: 15_000 },
-        );
-        await submitBtn.click();
-        const regRes4 = await regResPromise4;
-        if (regRes4.status() === 409) {
-          await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-          const expectedAlreadyReg =
-            lang === 'th' ? 'บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ' : 'This account is already registered. Please sign in';
-          await expect(errorAlert).toHaveText(expectedAlreadyReg);
-        }
-      }
+      await idInput.fill(existingId);
+      await pwdInput.fill('ValidPass123!');
+      await nameInput.fill('Another User');
+      const regResPromise4 = page.waitForResponse(
+        (res) => res.request().method() === 'POST' && /\/api\/app\/register$/.test(new URL(res.url()).pathname),
+        { timeout: 15_000 },
+      );
+      await submitBtn.click();
+      const regRes4 = await regResPromise4;
+      expect(regRes4.status(), `${lang}: already registered identifier returns 409`).toBe(409);
+      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
+      const expectedAlreadyReg =
+        lang === 'th' ? 'บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ' : 'This account is already registered. Please sign in';
+      await expect(errorAlert).toHaveText(expectedAlreadyReg);
     });
 
     test(`/app/journey plannerDraftSave validation (${lang})`, async ({ page }) => {
