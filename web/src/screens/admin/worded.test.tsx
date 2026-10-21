@@ -37,7 +37,7 @@ function makeApi(branchErrorToThrow: unknown): ApiClient {
           data: {
             id: 'e-1',
             branch: 'MAIN',
-            permissions: [],
+            permissions: ['CompatRead'],
             roles: [],
           } as unknown as T,
         };
