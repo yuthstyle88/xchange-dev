@@ -20,6 +20,9 @@ pub struct QueueDayHook {
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
     booking_events: Option<Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>>,
+    /// The kiosk's day-close step (#4147, design `queue-day-close.md` §7), run before this hook's
+    /// own `dayClosed` sweep.
+    kiosk: Option<Arc<dyn xc_kernel::kiosk_day_close::KioskDayClose>>,
 }
 
 impl QueueDayHook {
@@ -28,6 +31,7 @@ impl QueueDayHook {
             repo,
             status,
             booking_events: None,
+            kiosk: None,
         }
     }
 
@@ -36,6 +40,15 @@ impl QueueDayHook {
         booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>,
     ) -> Self {
         self.booking_events = Some(booking_events);
+        self
+    }
+
+    /// The same hook, running the kiosk's day-close step first (#4147).
+    pub fn with_kiosk_day_close(
+        mut self,
+        kiosk: Arc<dyn xc_kernel::kiosk_day_close::KioskDayClose>,
+    ) -> Self {
+        self.kiosk = Some(kiosk);
         self
     }
 
