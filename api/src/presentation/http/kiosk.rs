@@ -26,6 +26,8 @@ use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
+use xc_kiosk::domain::kiosk::entities::kiosk_settings::KioskSettings;
+use xc_kiosk::domain::kiosk::repositories::kiosk_settings_repository::KioskSettingsRepository;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
 use xc_kiosk::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
@@ -47,6 +49,7 @@ use crate::application::compat::v2_json::V2Json;
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
+use crate::infrastructure::kiosk::pg_kiosk_settings_repository::PgKioskSettingsRepository;
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::dto::v3::common::RateFreshnessDto;
 use crate::presentation::extractors::actor::{
@@ -358,6 +361,8 @@ async fn handle_kiosk(
         "customerCancel" => KioskAction::CustomerCancel,
         "issueByToken" => KioskAction::IssueByToken,
         "findByToken" => KioskAction::FindByToken,
+        "settings" => KioskAction::Settings,
+        "configureSettings" => KioskAction::ConfigureSettings,
         _ => return kiosk_server_error(),
     };
 
@@ -820,6 +825,71 @@ async fn handle_kiosk(
                 Err(AppError::NotFound { .. }) => refuse(404, "notFound"),
                 Err(err) => handle_service_error(err),
             }
+        }
+        KioskAction::Settings => {
+            let repo = PgKioskSettingsRepository::new(pool.clone());
+            let settings = match repo.get(&branch).await {
+                Ok(Some(s)) => s,
+                Ok(None) => KioskSettings::defaults(branch),
+                Err(err) => return handle_service_error(err),
+            };
+            answer(
+                200,
+                json!({
+                    "resultSeconds": settings.result_seconds,
+                    "version": settings.version,
+                }),
+                true,
+            )
+        }
+        KioskAction::ConfigureSettings => {
+            let raw = match payload.get("resultSeconds").and_then(Value::as_i64) {
+                Some(n) => n,
+                None => {
+                    return answer(
+                        400,
+                        json!({ "error": "validationFailed", "field": "resultSeconds" }),
+                        true,
+                    );
+                }
+            };
+            let result_seconds = match KioskSettings::validate_result_seconds(raw) {
+                Ok(v) => v,
+                Err(inv) => {
+                    return answer(
+                        400,
+                        json!({ "error": "validationFailed", "field": inv.field }),
+                        true,
+                    );
+                }
+            };
+            let by = match &kiosk_actor {
+                KioskActor::Staff { username, .. } => username.as_str(),
+                KioskActor::Customer => "",
+            };
+            let mut tx = match pool.begin().await {
+                Ok(tx) => tx,
+                Err(err) => return handle_service_error(AppError::Database(err)),
+            };
+            let repo = PgKioskSettingsRepository::new(pool.clone());
+            let saved = match repo
+                .upsert_in(&mut tx, &branch, result_seconds, by, now)
+                .await
+            {
+                Ok(s) => s,
+                Err(err) => return handle_service_error(err),
+            };
+            if let Err(err) = tx.commit().await {
+                return handle_service_error(AppError::Database(err));
+            }
+            answer(
+                200,
+                json!({
+                    "resultSeconds": saved.result_seconds,
+                    "version": saved.version,
+                }),
+                true,
+            )
         }
     }
 }
