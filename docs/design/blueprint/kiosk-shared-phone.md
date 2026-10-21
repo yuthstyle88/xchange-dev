@@ -78,7 +78,7 @@
 ## 4. Server half (BE lane)
 
 > designed-by: claude/c4be83 for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` and
-> `108-Plaza/Identity-Platform` `ffe908d` · §4.7 holds the questions that go to the owner through claude/553782
+> `108-Plaza/Identity-Platform` `ffe908d` · §4.7 holds the owner questions, batched by claude/e92db6; §4.8 the release order
 
 ### 4.1 What the server does today (measured)
 
@@ -146,7 +146,7 @@
 | S5 | **Only customers sign in at the kiosk.** A subject bound to a staff or owner user (no CUSTOMER role) gets `403 notACustomer` on a kiosk verify, and no session is made. | a staff session on a shared device would carry `QueueOperate` to the next person |
 | S6 | **A kiosk session is short.** A verify that carries `device: "kiosk"` makes the same `user_sessions` row with `expires = now + 15 min`, and a cookie `Max-Age` to match. The kiosk's reset calls `/api/auth/logout`, as today's sign-out does, and that also revokes the Identity refresh token. The 15 minutes only covers a reset that never runs (power cut, crash). | KS-1, KS-4c; the 12-hour web session is wrong for a shared screen |
 | S7 | **The request and its quote carry the signed-in customer.** `quote` writes `kiosk_requests.customer_id` and `quotes.customer_id` from `Actor.customer_id`. `confirm`, `status`, `customerReceipt` and `customerCancel` on a request with a customer need **that** customer's session, else `403 notThisCustomer` (the booking rule, `xc-booking/src/application/lifecycle.rs:84-88`). | KS-4c reason: every order can be told apart by its customer |
-| S8 | **No anonymous entry.** `quote` and `confirm` need `CustomerSelf` (`policy.rs:123-126` moves them out of `Need::Public`). Without a customer session the answer is `401 signIn`. `rates` and `settings` stay public. `status`/`customerReceipt`/`customerCancel` stay reachable for rows from before the migration (no customer), as S7 allows. **No branch switch is built on the server:** "off" would be an anonymous path. So the queue cannot be taken until the Notify key is set (§6.2). **Owner question Q5** (it replaces KS-4a's switch). | KS-7 (*"มันต้องต้อง แยก แยะ ใครเป็นใครได้นะ"*): every queue entry belongs to one signed-in customer |
+| S8 | **No anonymous entry.** `quote` and `confirm` need `CustomerSelf` (`policy.rs:123-126` moves them out of `Need::Public`). Without a customer session the answer is `401 signIn`. `rates` and `settings` stay public. `status`/`customerReceipt`/`customerCancel` stay reachable for rows from before the migration (no customer), as S7 allows. There is **no switch and no off state**: the server has no path that takes a queue without a signed-in customer. So the queue ships only after the owner's setup in §4.8. | KS-7 (*"มันต้องต้อง แยก แยะ ใครเป็นใครได้นะ"*); KS-4a, owner 2026-10-21 (*"มันต้อง ผ่าน login ก่อน มาหน้านี้"*) |
 | S9 | **Consent at the kiosk is the register's own rule.** A new customer's TERMS consent is recorded with `evidence_ref = "kiosk:<branchId>"` in the kiosk's language. If no TERMS text exists in that language, the answer is `409 consentTextMissing` (`field: lang`, no fallback, §4.3 of `customer-identity-consent.md`). The kiosk then offers the languages `consent_texts` lists. An existing customer's consents are not touched. | `customer-identity-consent.md` K5 and §4.3; the kiosk has 16 languages, register accepts th/en/zh (`customer_register.rs:37`) |
 | S10 | **One entry core, two channels** (♻️). The kiosk's `quote` → `confirm` (currency, amount, quote, request, walk-in ticket; `xc-kiosk/src/application/kiosk/customer.rs`) is **the** queue entry core, for the kiosk device and for a customer's phone (KS-7). The core holds every safety rule: the customer (S7), the rate and quote, the per-customer limit (S12), the ticket issue and the cancel token. A channel is one small `EntryChannel` implementation holding only what differs (§4.3). | KS-7 *"the same flow as the kiosk"*; the global ♻️ rule |
 | S11 | **What differs per channel, and nothing else.** <br>• **Branch proof:** the kiosk device names its branch (as today); the phone presents the board's join token (S13). <br>• **Session:** kiosk 15 min, and the reset signs out (S6); phone = the normal web session (KS-7: it need not end at once). <br>• **Ticket delivery:** kiosk = the branch's `ticket_mode` (KS-6); phone = SMS + the ticket page, never print. <br>• **Address limit:** kiosk keeps today's per-address quote limit (`customer.rs:149-153`, `QuoteLimit`); phone has none (a phone's address says nothing). <br>• **Request channel:** `kiosk_requests.channel` = `KIOSK` / `PHONE`, and `quotes.channel` = `KIOSK` / `APP` (already allowed, `quotes.sql:10`). | KS-7 names device binding, reset/sign-out and print |
@@ -324,7 +324,7 @@ desk can then pick the same customer at the save. The save's own customer rule i
 
 Neither changes S1–S9.
 
-### 4.7 Questions for the owner (sent through claude/553782)
+### 4.7 Questions for the owner (batched by claude/e92db6)
 
 - **Q1 (S4).** A verified phone matches a desk-made customer that has no app account. Should the sign-in **join that
   customer**, or make a new one? Proposed: join. The OTP proves the number, and a second customer would split the same
@@ -341,9 +341,27 @@ Neither changes S1–S9.
   customer, but with no currency, amount or quote, and with any branch named in the body. KS-7's phone entry does the
   same job through the entry core. Two ways in for one thing break the ♻️ rule. Proposed: retire `queueTicketTake`
   once the phone channel lands; its FE caller moves to the phone flow. Keeping it would also keep an unproven branch.
-- ✅ **Q5 answered by the owner, 2026-10-21:** *"มันต้อง ผ่าน login ก่อน มาหน้านี้"*. Build no switch, as proposed (KS-4a). **Q5 (KS-4a's branch switch, S8).** KS-7 says no anonymous path. KS-4a's switch, "off" until the Notify key is set,
-  *is* an anonymous path. Proposed: build no switch. Until the owner sets Identity's Notify key (§6.2), no queue can
-  be taken at the kiosk or by phone; the desk still serves walk-ins. The key is the owner's action in any case.
+- ✅ **Q5 answered by the owner, 2026-10-21:** *"มันต้อง ผ่าน login ก่อน มาหน้านี้"*. No switch and no off state (S8,
+  KS-4a). The release waits for the owner's setup (§4.8).
+
+### 4.8 Release order: the owner's setup first, then the release
+
+Login comes first and nothing bypasses it (KS-4a). So **until steps 1–4 are done, no queue can be taken at the kiosk
+or by phone.** The desk serves walk-ins as today (`IssueSource::Desk`). Merging the code before then is fine; turning it
+on for customers is not.
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| 1 | Identity's OTP delivery goes to Notify: `AUTH_OTP_DELIVERY_MODE=http`, `AUTH_OTP_HTTP_ENDPOINT` (Notify `/api/v1/otp`), `AUTH_OTP_HTTP_API_KEY`, on the Identity instance xc-v3 uses (§6.2) | **owner** (the key is a secret) | the instance no longer runs `noop` |
+| 2 | A test OTP reaches the owner's phone through `/api/auth/otp/request` on the test host | owner, with the BE lane watching the log | the code arrives and `/verify` signs in |
+| 3 | A TERMS consent text is published in every language the kiosk and phone offer for sign-up. Without one, a new customer gets `consentTextMissing` (S9) and cannot register (`customer-identity-consent.md` O-4). **Not measured here** whether one exists on the test host | EXECUTIVE (`consentTextPublish`); the owner decides the text | `consent_texts` lists TERMS in th/en/zh |
+| 4 | `XC_BOARD_JOIN_KEY` is set on xc-v3, for the phone channel only (S13). Without it the board shows no QR and phone entry answers `503` | **owner** (a secret) | the board poll answers `joinToken` |
+| 5 | The server tickets merge: S2/S3 sign-in core, the entry core + channels, `kiosk_settings`, and the §3 migration (approved). Merging needs none of steps 1–4 | BE lane | merged on `main` |
+| 6 | Deploy the server to the test host | **owner's order** (deploy is never implied) | `/health/ready` reports the merged sha |
+| 7 | Release the kiosk app and the `/app/queue` page | FE lane, after step 6, on the owner's order | the kiosk shows the phone step |
+
+Steps 1–4 can run in parallel with 5. Step 7 must wait for 1–3 (and 4 for the phone), or every kiosk customer is
+stopped at the phone step.
 
 ## 5. Front ends (this lane)
 
