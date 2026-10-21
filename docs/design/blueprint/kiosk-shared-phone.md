@@ -159,6 +159,7 @@
 | D17 | **Abuse guard for the no-login request (proposed; Q11).** A `webRequestCreate` without a customer session is accepted only from a **branch tablet**. <br>• **Credential:** a staff member with `QueueOperate` at the branch opens the page on the tablet and pairs it (`branchTabletPair`). The server mints a random token bound to that branch and stores only its SHA-256 in `branch_tablets` (revocable). The tablet keeps it in an `HttpOnly; Secure; SameSite=Strict` cookie. No credential, a revoked one, or another branch ⇒ `401 tabletRequired`. The branch comes from the credential, never from the body. <br>• **One open request per tablet:** a new request from a tablet cancels that tablet's earlier unscanned `QUOTED` request. A half-done request never waits for the next person, and one tablet can never hold more than one place. <br>• **Short life:** a tablet request is purged after 10 minutes unscanned (today's 600 s rule; a phone request has 60, D4). <br>• **Rate:** today's `QuoteLimit` (20 per 60 s), keyed by the tablet instead of the address. <br>• **Nothing to steal:** a tablet request carries no customer, and a number exists only after a staff scan (D5), so a forged request costs one queue slot that staff never issue. | a no-login path needs something other than a login to stop strangers |
 | D18 | **The desk attaches the passport's customer.** At the save of an exchange opened from a request with `customer_id` NULL (a tablet request), the save hook writes the passport's customer onto `kiosk_requests.customer_id`, `quotes.customer_id` and `queue_tickets.customer_id`, in the save's transaction. From then on, the request traces to one customer. | owner: the passport at the desk identifies the customer |
 | D19 | **The kiosk's public `confirm` should stop issuing numbers on its own (proposed; Q12).** `confirm` is `Need::Public` today (`policy.rs:123-126`), so anyone who can call `/api/kiosk` can get a queue number without a staff scan. That breaks the owner's rule that the number is issued at the scan. Proposed: `confirm` needs `QueueOperate`, so the queue machine can still call it, and nothing is removed. `quote`/`status`/`customerReceipt`/`customerCancel` stay public. | owner: the number is issued when staff scan |
+| D20 | **The desk's passport skip stays, and nothing here gets in front of it** (owner: *"ตรวจ พาสปอร์ท ให้ กดข้ามได้"*). <br>• Measured on `main` `7834507`: `onSkip` (`web/src/screens/desk/steps/customer/step.tsx:159-177`, #539) sends a placeholder passport image with `WALK-IN` / `WALKIN` / `XXX`, then runs the normal `reserve`. The server's passport step only requires a passport file (`api/crates/xc-exchange/src/domain/exchange/value_objects/transaction_form.rs:246-249`). So a skipped save lands on the one placeholder customer that `reserve` finds or creates for `WALKIN`/`XXX`. <br>• A request opened from the QR (`findByToken` → `?kiosk=<id>`), or issued by the queue machine, adds **no** passport check and **no** "customer required" rule to the desk save. `issueByToken` checks nothing about the customer. <br>• **The skip placeholder is never attached.** D18 (attach the passport's customer) and D13 (the `KIOSK_CUSTOMER_DIFFERS` audit) both skip a save whose passport is the placeholder. It is recognised in one place, `WalkInPlaceholder::is(passport_no, nationality)`, with the desk's values (`WALKIN`, `XXX`). <br>• So a tablet request stays a walk-in with no customer, and a phone request keeps its member, with no audit row. | owner; #539 |
 
 ### 4.3 Class diagram
 
@@ -226,6 +227,7 @@ copies its rules.
 | `QueueDisplayView` | `api/src/presentation/http/public/queue_display.rs` | new |
 | `KioskSettings` (+ repository, Pg) | `…/domain/kiosk/entities/kiosk_settings.rs`, `…/repositories/kiosk_settings_repository.rs`, `api/src/infrastructure/kiosk/pg_kiosk_settings_repository.rs` | new |
 | the save's audit (D13) and customer attach (D18) | `api/crates/xc-kiosk/src/application/kiosk/save_hooks.rs` | changed |
+| `WalkInPlaceholder` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/walk_in_placeholder.rs` | new: the one place that knows the desk's skip values (D20) |
 | `BranchTablet` + `BranchTabletRepository` (+ Pg), command `branchTabletPair` / `branchTabletRevoke` | `api/crates/xc-kiosk/src/domain/kiosk/entities/branch_tablet.rs`, `…/repositories/branch_tablet_repository.rs`, `api/src/infrastructure/kiosk/pg_branch_tablet_repository.rs`, `api/src/presentation/http/v3/commands/branch_tablet.rs` | new (D17) |
 
 ### 4.4 Behaviour
@@ -255,6 +257,9 @@ copies its rules.
 | B21 | a tablet request unscanned for 11 min | purged (600 s); a phone request kept until 60 min |
 | B22 | desk save of a request with `customer_id` NULL | the passport's customer is written on the request, its quote and its ticket in the save's transaction |
 | B23 | `/api/kiosk confirm` without `QueueOperate` (after Q12) | `403`; the queue machine's call answers as today |
+| B24 | desk save of a tablet request (`customer_id` NULL), passport **skipped** | saved as today on the placeholder; the request, its quote and its ticket keep `customer_id` NULL; no audit row |
+| B25 | desk save of a phone request (member B), passport **skipped** | saved as today; the request keeps B; no `KIOSK_CUSTOMER_DIFFERS` row |
+| B26 | a request opened from the QR or issued by the queue machine, desk save with the skip | accepted exactly as a save with no request: no new refusal, no `customer_id`-required rule |
 
 ### 4.5 Rules the tests pin first (up-front, `class:logic`)
 
@@ -267,6 +272,9 @@ copies its rules.
 - B16 on the save hook; B17 with a guard that the view's JSON has no field outside D10's list; B18.
 - `TicketPrintJob`: the slip carries the number and the request QR, and nothing else from the request.
 - B19–B23 on the web source, the tablet repository and the save hook.
+- **B24–B26 up front, through the save with the desk's real skip values** (`WALKIN`, `XXX`, the placeholder image): a
+  tablet request stays without a customer, a phone request keeps its member, no audit row, and the save answers as a
+  save with no request. These tests fail if anyone adds a passport or `customer_id` requirement to the request path.
 - Guard: only `customer.rs` issues `IssueSource::Kiosk`.
 
 ### 4.6 Data (one migration)
