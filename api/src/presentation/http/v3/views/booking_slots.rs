@@ -4,9 +4,10 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
+use actix_web::http::StatusCode;
 use actix_web::web;
 use chrono::{DateTime, NaiveDate, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
@@ -18,6 +19,7 @@ use crate::presentation::dto::v3::booking_slots::{
     BookingSlotItemDto, BookingSlotsData, BookingSlotsFilter,
 };
 use crate::presentation::http::v3::caller::Caller;
+use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct BookingSlotsView {
@@ -32,21 +34,20 @@ impl BookingSlotsView {
     async fn load_slots(
         pool: &PgPool,
         branch: &BranchId,
-        filter: &BookingSlotsFilter,
+        date: Option<NaiveDate>,
     ) -> AppResult<BookingSlotsData> {
-        let date = match &filter.date {
-            Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d")
-                .map_err(|e| pos_error::AppError::Internal(format!("invalid date {d}: {e}")))?,
+        let date = match date {
+            Some(d) => d,
             None => {
                 let tz_str: String =
                     sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
                         .bind(branch.as_str())
                         .fetch_one(pool)
                         .await
-                        .map_err(pos_error::AppError::Database)?;
-                let tz: chrono_tz::Tz = tz_str.parse().map_err(|e| {
-                    pos_error::AppError::Internal(format!("invalid timezone {tz_str}: {e}"))
-                })?;
+                        .map_err(AppError::Database)?;
+                let tz: chrono_tz::Tz = tz_str
+                    .parse()
+                    .map_err(|e| AppError::Internal(format!("invalid timezone {tz_str}: {e}")))?;
                 Utc::now().with_timezone(&tz).date_naive()
             }
         };
@@ -62,16 +63,18 @@ impl BookingSlotsView {
         .bind(date)
         .fetch_all(pool)
         .await
-        .map_err(pos_error::AppError::Database)?;
+        .map_err(AppError::Database)?;
 
         let slots = rows
             .into_iter()
-            .map(|(id, start_at, end_at, capacity, reserved)| BookingSlotItemDto {
-                id: id.to_string(),
-                start: start_at.to_rfc3339(),
-                end: end_at.to_rfc3339(),
-                available: (capacity - reserved).max(0),
-            })
+            .map(
+                |(id, start_at, end_at, capacity, reserved)| BookingSlotItemDto {
+                    id: id.to_string(),
+                    start: start_at.to_rfc3339(),
+                    end: end_at.to_rfc3339(),
+                    available: (capacity - reserved).max(0),
+                },
+            )
             .collect();
 
         Ok(BookingSlotsData {
@@ -97,7 +100,12 @@ impl BranchView for BookingSlotsView {
         let pool = self.pool.clone();
         let branch = branch.clone();
         let filter = filter.clone();
-        async move { Self::load_slots(&pool, &branch, &filter).await }
+        async move {
+            let date = filter
+                .service_date()
+                .map_err(|e| AppError::Validation(e.code.to_string()))?;
+            Self::load_slots(&pool, &branch, date).await
+        }
     }
 
     fn load_as(
@@ -109,7 +117,24 @@ impl BranchView for BookingSlotsView {
         let pool = self.pool.clone();
         let branch = branch.clone();
         let filter = filter.clone();
-        async move { Self::load_slots(&pool, &branch, &filter).await }
+        async move {
+            let date = filter
+                .service_date()
+                .map_err(|e| AppError::Validation(e.code.to_string()))?;
+            Self::load_slots(&pool, &branch, date).await
+        }
+    }
+
+    fn refusal(&self, err: &AppError) -> Option<V3Error> {
+        match err {
+            AppError::Validation(code) if code == "invalidRequest" => Some(V3Error::new(
+                "invalidRequest",
+                Some("date"),
+                "คำขอไม่ถูกต้อง",
+                StatusCode::BAD_REQUEST,
+            )),
+            _ => None,
+        }
     }
 }
 

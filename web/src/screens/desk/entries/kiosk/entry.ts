@@ -3,8 +3,11 @@
 // publish half waits on O-1 (`xchange-v3-wave3-desk.md:809`), and completing the request needs its own quote (G7,
 // api/src/application/workflows/exchange/create.rs:228-244), which `/api/kiosk get` does not return yet. Filled by its
 // own ticket.
-import { createSignal } from 'solid-js';
+import { createComponent, createEffect, createSignal, type JSX } from 'solid-js';
+import { cancelKioskRequest } from '../../../../shared/api/kiosk-cancel';
 import { screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
+import { CancelReasonDialog } from '../../../../shared/ui/CancelReasonDialog';
 import type { DeskType } from '../../desk-store';
 import type { DeskEntry } from '../../entries';
 import { en, th } from './i18n';
@@ -42,6 +45,55 @@ export const entry: DeskEntry = {
       id,
       locked: true,
       banner: () => t('banner', { queue: answer.queue }),
+      actions: () => {
+        const [dialogOpen, setDialogOpen] = createSignal(false);
+        const [error, setError] = createSignal<string | undefined>();
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.action = 'cancel-kiosk-request';
+        createEffect(() => {
+          btn.textContent = t('cancelRequest');
+        });
+        btn.addEventListener('click', () => {
+          setError(undefined);
+          setDialogOpen(true);
+        });
+
+        return [
+          (() => (store.outcome() !== 'saved' ? btn : null)) as unknown as JSX.Element,
+          (() => {
+            const msg = error();
+            if (!msg) return null;
+            const alertEl = document.createElement('p');
+            alertEl.setAttribute('role', 'alert');
+            alertEl.className = 'desk-error';
+            alertEl.textContent = msg;
+            return alertEl;
+          }) as unknown as JSX.Element,
+          createComponent(CancelReasonDialog, {
+            get open() {
+              return dialogOpen();
+            },
+            onCancel: () => setDialogOpen(false),
+            onConfirm: async ({ reason, note }) => {
+              setDialogOpen(false);
+              setError(undefined);
+              try {
+                await cancelKioskRequest(api, {
+                  id,
+                  branchId: store.branch(),
+                  reason,
+                  ...(note !== undefined ? { note } : {}),
+                });
+                window.location.assign(`/desk?branch=${store.branch()}`);
+              } catch (err) {
+                setError(wordedError(err));
+              }
+            },
+          }),
+        ];
+      },
       identityLabel: t('identityLabel'),
       identityConfirmed,
       setIdentityConfirmed,

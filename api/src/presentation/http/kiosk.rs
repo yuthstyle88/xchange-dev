@@ -25,6 +25,7 @@ use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
+use xc_kiosk::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
@@ -340,6 +341,8 @@ async fn handle_kiosk(
         "publishReceipt" => KioskAction::PublishReceipt,
         "manage" => KioskAction::Manage,
         "configure" => KioskAction::Configure,
+        "cancel" => KioskAction::Cancel,
+        "customerCancel" => KioskAction::CustomerCancel,
         _ => return kiosk_server_error(),
     };
 
@@ -453,8 +456,15 @@ async fn handle_kiosk(
                 )
                 .with_booking_events(booking_events),
             );
-            match service.confirm_with_queue(&branch, id, now, queue).await {
-                Ok(identity) => json_response(dto_kiosk::identity_json(&identity)),
+            let token = uuid::Uuid::new_v4().to_string();
+            match service
+                .confirm_with_token(&branch, id, now, queue, &token)
+                .await
+            {
+                Ok((identity, minted)) => json_response(dto_kiosk::confirm_json(
+                    &identity,
+                    minted.then_some(token.as_str()),
+                )),
                 Err(err) => handle_service_error(err),
             }
         }
@@ -716,6 +726,49 @@ async fn handle_kiosk(
 
             match service.configure(&branch, &kiosk_actor, cmd, now).await {
                 Ok(()) => saved_response(),
+                Err(err) => handle_service_error(err),
+            }
+        }
+        KioskAction::Cancel => {
+            let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
+            let reason_str = payload.get("reason").and_then(Value::as_str).unwrap_or("");
+            let note = payload.get("note").and_then(Value::as_str);
+            let reason = match CancelReason::parse(reason_str, note) {
+                Ok(r) => r,
+                Err(err) => return refuse(400, &err.to_string()),
+            };
+            let issuer = TicketIssuer::new(
+                BranchTx::new(Transactor::new(pool.clone())),
+                Arc::new(PgQueueRepository::new(pool.clone())),
+            );
+            let queue: Arc<dyn QueueTickets> = Arc::new(match callers.user.clone() {
+                Some(user) => issuer.acting_as(user),
+                None => issuer,
+            });
+            match service
+                .cancel_with(&branch, &kiosk_actor, id, reason, now, queue)
+                .await
+            {
+                Ok(identity) => json_response(dto_kiosk::identity_json(&identity)),
+                Err(err) => handle_service_error(err),
+            }
+        }
+        KioskAction::CustomerCancel => {
+            let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
+            let cancel_token = payload
+                .get("cancelToken")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let client_ip = client_address(&req).to_string();
+            let queue: Arc<dyn QueueTickets> = Arc::new(TicketIssuer::new(
+                BranchTx::new(Transactor::new(pool.clone())),
+                Arc::new(PgQueueRepository::new(pool.clone())),
+            ));
+            match service
+                .customer_cancel(&branch, id, cancel_token, &client_ip, now, queue)
+                .await
+            {
+                Ok(identity) => json_response(dto_kiosk::identity_json(&identity)),
                 Err(err) => handle_service_error(err),
             }
         }

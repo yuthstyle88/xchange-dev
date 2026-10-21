@@ -56,9 +56,9 @@ const B01: &str = "XC-B01";
 const B09: &str = "XC-B09";
 const SAVE: &str = "/api/v3/commands/branch_alert_settings_save";
 const EXECUTIVE: &str = "EXECUTIVE@*";
-// §11.2: AlertSettingsSave (DASHBOARD FULL) is held by EXECUTIVE, RATE_MANAGER,
-// BRANCH_MANAGER, FINANCE and VERIFICATION_REVIEWER, not ADMIN.
-const FINANCE: &str = "FINANCE@*";
+// #4155 W/A1: AlertSettingsSave (DASHBOARD FULL) is held by EXECUTIVE only in the seed;
+// second saver is a second EXECUTIVE user (with branch scope XC-B01).
+const SECOND_EXECUTIVE: &str = "EXECUTIVE@XC-B01";
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -176,7 +176,7 @@ struct HeaderUsers {
 fn user_id(spec: &str) -> String {
     let n = match spec {
         EXECUTIVE => 1,
-        FINANCE => 2,
+        SECOND_EXECUTIVE => 2, // #4155 W/A1: second EXECUTIVE user id
         "ADMIN@XC-B01" => 3,
         "FINANCE@XC-B01" => 4,
         "TELLER@XC-B01" => 5,
@@ -385,9 +385,8 @@ async fn a_branch_with_no_row_reads_empty_with_no_version() {
     db.finish().await;
 }
 
-/// §9 (E-6) / §11.2: EXECUTIVE saves, FINANCE saves after it (under §11.2 FINANCE holds
-/// `AlertSettingsSave` via `DASHBOARD` `FULL`, while ADMIN has `DASHBOARD` `VIEW`); each reads
-/// back the same set and its version.
+/// §9 (E-6) / #4155 W/A1: EXECUTIVE saves, a second EXECUTIVE user saves after it (only EXECUTIVE holds
+/// `AlertSettingsSave` in the seed); each reads back the same set and its version.
 #[actix_web::test]
 async fn executive_and_finance_both_save_and_read_back_the_same_set() {
     let db = TestDb::start().await;
@@ -419,21 +418,22 @@ async fn executive_and_finance_both_save_and_read_back_the_same_set() {
         Some(1),
     );
 
+    // #4155 W/A1: second saver is a second EXECUTIVE user.
     let second = save(
         &db,
-        FINANCE,
+        SECOND_EXECUTIVE,
         body(B01, Some(45), &[("USD", "800.1234")], Some(1)),
     )
     .await;
     assert_eq!(
         second.status,
         StatusCode::OK,
-        "FINANCE saves: {}",
+        "SECOND_EXECUTIVE saves: {}",
         second.text
     );
     assert_set(&second.body, B01, Some(45), &[("USD", "800.1234")], Some(2));
     assert_set(
-        &current(&db, FINANCE, B01).await,
+        &current(&db, SECOND_EXECUTIVE, B01).await,
         B01,
         Some(45),
         &[("USD", "800.1234")],
@@ -446,9 +446,15 @@ async fn executive_and_finance_both_save_and_read_back_the_same_set() {
 #[actix_web::test]
 async fn the_saver_is_recorded_as_updated_by() {
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, body(B01, Some(30), &[("USD", "10")], None)).await;
+    // #4155 W/A1: second EXECUTIVE user id recorded as updated_by.
+    let a = save(
+        &db,
+        SECOND_EXECUTIVE,
+        body(B01, Some(30), &[("USD", "10")], None),
+    )
+    .await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
-    let want = user_id(FINANCE);
+    let want = user_id(SECOND_EXECUTIVE);
     assert_eq!(
         db.count(&format!(
             "SELECT count(*) FROM branch_alert_settings WHERE branch_id = '{B01}' AND updated_by = '{want}'::uuid"
@@ -545,22 +551,22 @@ async fn other_roles_are_refused_and_nothing_is_written() {
     db.finish().await;
 }
 
-/// §8 / §11.2: a branch outside the caller's scope is refused `outOfScope`: a FINANCE of XC-B01
-/// (holder of `AlertSettingsSave` under §11.2) naming XC-B09.
+/// §8 / #4155 W/A1: a branch outside the caller's scope is refused `outOfScope`: a branch-scoped EXECUTIVE of XC-B01
+/// (holder of `AlertSettingsSave` under #4155 W/A1) naming XC-B09.
 #[actix_web::test]
 async fn a_branch_outside_the_callers_scope_is_refused() {
     let db = TestDb::start().await;
-    let own = save(&db, "FINANCE@XC-B01", body(B01, Some(30), &[], None)).await;
+    let own = save(&db, SECOND_EXECUTIVE, body(B01, Some(30), &[], None)).await;
     assert_eq!(own.status, StatusCode::OK, "its own branch: {}", own.text);
 
-    let other = save(&db, "FINANCE@XC-B01", body(B09, Some(30), &[], None)).await;
+    let other = save(&db, SECOND_EXECUTIVE, body(B09, Some(30), &[], None)).await;
     assert_refused(
         &other,
         StatusCode::FORBIDDEN,
         "outOfScope",
         "another branch's save",
     );
-    let r = read(&db, "FINANCE@XC-B01", B09).await;
+    let r = read(&db, SECOND_EXECUTIVE, B09).await;
     assert_refused(
         &r,
         StatusCode::FORBIDDEN,
@@ -611,7 +617,13 @@ async fn a_stale_expected_version_is_refused_and_writes_nothing() {
         (Some(7), "a wrong version"),
         (None, "null once the row exists"),
     ] {
-        let a = save(&db, FINANCE, body(B01, Some(99), &[("EUR", "5")], expected)).await;
+        // #4155 W/A1: second saver is SECOND_EXECUTIVE.
+        let a = save(
+            &db,
+            SECOND_EXECUTIVE,
+            body(B01, Some(99), &[("EUR", "5")], expected),
+        )
+        .await;
         assert_refused(&a, StatusCode::CONFLICT, "staleVersion", what);
     }
     assert_set(
@@ -630,9 +642,14 @@ async fn a_stale_expected_version_is_refused_and_writes_nothing() {
 #[actix_web::test]
 async fn two_first_saves_at_once_give_one_row_and_one_stale_refusal() {
     let db = TestDb::start().await;
+    // #4155 W/A1: second saver is SECOND_EXECUTIVE.
     let (a, b) = tokio::join!(
         save(&db, EXECUTIVE, body(B01, Some(30), &[("USD", "1")], None)),
-        save(&db, FINANCE, body(B01, Some(60), &[("EUR", "2")], None)),
+        save(
+            &db,
+            SECOND_EXECUTIVE,
+            body(B01, Some(60), &[("EUR", "2")], None)
+        ),
     );
     let mut codes = vec![
         if a.status == StatusCode::OK {
@@ -716,7 +733,13 @@ async fn each_save_writes_one_audit_row_with_the_sets() {
     .await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(db.audits().await, 1);
-    let b = save(&db, FINANCE, body(B01, Some(45), &[("EUR", "5")], Some(1))).await;
+    // #4155 W/A1: second saver is SECOND_EXECUTIVE.
+    let b = save(
+        &db,
+        SECOND_EXECUTIVE,
+        body(B01, Some(45), &[("EUR", "5")], Some(1)),
+    )
+    .await;
     assert_eq!(b.status, StatusCode::OK, "{}", b.text);
     assert_eq!(db.audits().await, 2);
 

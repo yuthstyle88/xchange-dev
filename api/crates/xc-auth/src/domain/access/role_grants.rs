@@ -107,11 +107,17 @@ impl RoleGrants {
         Role::VerificationReviewer,
     ];
 
-    /// Current seed version (#3976).
-    pub const SEED_VERSION: i32 = 2;
+    /// Current seed version (#3976, #4155).
+    pub const SEED_VERSION: i32 = 3;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
     pub const SEED_ADDITIONS: &[(i32, Permission)] = &[(2, Permission::MarketRatesRefresh)];
+
+    /// Permissions removed from [`Self::seed`] after version 1, with the seed version in which they left (#4155).
+    pub const SEED_REMOVALS: &[(i32, Permission)] = &[
+        (3, Permission::OverviewRead),
+        (3, Permission::AlertSettingsSave),
+    ];
 
     /// §11.2: the seed of the built-in group `role`, in [`Permission::ALL`] order, no duplicates.
     /// - A module level grants every permission of that module at or below it (`PermissionModule::module`).
@@ -148,14 +154,12 @@ impl RoleGrants {
                 (AuditLogs, V),
             ],
             Role::Admin => &[
-                (Dashboard, V),
                 (Reports, V),
                 (UserManagement, F),
                 (SystemSettings, F),
                 (AuditLogs, V),
             ],
             Role::RateManager => &[
-                (Dashboard, F),
                 (Customers, F),
                 (Documents, V),
                 (RatesStock, F),
@@ -163,10 +167,9 @@ impl RoleGrants {
                 (Risk, V),
                 (Reports, F),
             ],
-            Role::BranchManager => &[(Dashboard, F), (Customers, F), (Documents, F), (Reports, V)],
-            Role::Teller => &[(Dashboard, V), (Customers, C), (Documents, V)],
+            Role::BranchManager => &[(Customers, F), (Documents, F), (Reports, V)],
+            Role::Teller => &[(Customers, C), (Documents, V)],
             Role::Finance => &[
-                (Dashboard, F),
                 (Customers, V),
                 (Documents, V),
                 (RatesStock, V),
@@ -175,7 +178,6 @@ impl RoleGrants {
                 (Reports, F),
             ],
             Role::VerificationReviewer => &[
-                (Dashboard, F),
                 (Customers, V),
                 (Documents, F),
                 (RatesStock, V),

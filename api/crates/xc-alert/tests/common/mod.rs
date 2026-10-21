@@ -307,8 +307,8 @@ impl TestDb {
     pub async fn publish(&self, branch: &str, version: i32, lines: Vec<Line>) -> Uuid {
         let approval: Uuid = sqlx::query_scalar(
             "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
-             proposed_payload, requested_by, requested_at, status, idempotency_key) \
-             VALUES (gen_random_uuid(), 'RATE_PUBLISH', $1, $2, 'h', 'p', '{}', 'test', now(), 'APPROVED', $2) \
+             proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
+             VALUES (gen_random_uuid(), 'RATE_PUBLISH', $1, $2, 'h', 'p', '{}', 'test', now(), 'APPROVED', $2, '00000000-0000-0000-0000-000000000001') \
              RETURNING id",
         )
         .bind(branch)

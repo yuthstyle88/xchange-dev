@@ -1,6 +1,6 @@
 // QA-S7 — smoke: /staff cards, /staff/report, /staff/documents, /staff-guide (design docs/design/qa-e2e.md §3, §4). Written by ticket QA-S7; this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { STAFF_LANGS, signIn, smoke } from './helpers';
 
 test.describe('QA-S7 smoke: /staff cards, /staff/report, /staff/documents, /staff-guide', () => {
@@ -43,9 +43,9 @@ test.describe('QA-S7 smoke: /staff cards, /staff/report, /staff/documents, /staf
     });
   });
 
-  // key: web/src/screens/staff-report/StaffReport.tsx:178. Smoked as the branch manager: the view refuses a teller with
-  // 400 roleNotAllowed by design (`staff_daily_report` needs ShiftCloseCertify / FinanceReconcile / OverviewRead;
-  // docs/design/xchange-v3-known-differences.md, "Staff report").
+  // key: web/src/screens/staff-report/StaffReport.tsx:178. Smoked as the branch manager: `staff_daily_report` admits only
+  // ShiftCloseCertify, FinanceReconcile, or OverviewRead (`api/crates/xc-auth/src/domain/policy/areas/staff_report.rs:13-17`;
+  // #4155 removed TELLER's OverviewRead grant, so a teller is refused 400 roleNotAllowed).
   test('/staff/report', async ({ page }) => {
     await signIn(page, 'branchManager', '/staff/report');
     await smoke(page, {
@@ -56,6 +56,31 @@ test.describe('QA-S7 smoke: /staff cards, /staff/report, /staff/documents, /staf
       key: '.staff-report',
       langs: STAFF_LANGS,
     });
+  });
+
+  // key: web/src/screens/staff-report/StaffReport.tsx:166-170,201-206 (`staff_report.rs:13-17`, #4155, #4162)
+  test('/staff/report (teller is refused)', async ({ page }) => {
+    await signIn(page, 'teller', '/staff');
+    const reportResPromise = page.waitForResponse(
+      (r) => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/v3/views/staff_daily_report',
+      { timeout: 20_000 },
+    );
+    await page.goto('/staff/report');
+    const reportRes = await reportResPromise;
+    const reportBody = await reportRes.text().catch(() => '');
+    expect(reportRes.status(), `teller GET /api/v3/views/staff_daily_report status: ${reportBody}`).toBe(400);
+    expect(reportBody, 'teller GET /api/v3/views/staff_daily_report code').toContain('roleNotAllowed');
+    const refusal = page.locator('.staff-report-refusal');
+    await expect(refusal, 'teller on /staff/report sees refusal state (StaffReport.tsx:202)').toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(refusal, 'refusal words roleNotAllowed (i18n.ts:10,52)').toContainText(
+      /บทบาทนี้ไม่มีสิทธิ์อ่านรายงานเงิน|This role may not read the money report/,
+    );
+    await expect(
+      page.locator('.staff-report-sheet, .staff-report-table, .staff-report table tbody tr'),
+      'teller on /staff/report must not see sheet rows (StaffReport.tsx:75,103)',
+    ).toHaveCount(0);
   });
 
   // key: web/src/screens/documents/DocumentsScreen.tsx:47

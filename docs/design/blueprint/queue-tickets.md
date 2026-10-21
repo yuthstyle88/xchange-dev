@@ -139,7 +139,7 @@ branch queue:   closed --open (start service or BRANCH_MANAGER)--> open --close 
 | a teller serves one ticket at a time: no call while they hold a CALLED or SERVING ticket (`alreadyServing`) | `QueueDesk::call_next` |
 | every transition checks the expected status; a lost race answers `STALE_VERSION` | `QueueTicket::apply` |
 | every transition writes a `queue_events` row, raises the branch version and recomputes the estimate in the same transaction (§09) | `QueueDesk`, `StatusService::refresh_in` |
-| when the branch day closes, WAITING and CALLED tickets are cancelled (`dayClosed`) | `QueueDayHook::on_day_closed` (called by PR 590's `BranchDay`) |
+| when the branch day closes, WAITING and CALLED tickets are cancelled (`dayClosed`) | `QueueDayHook::on_day_closed`, called through `ShiftLifecycleHook::on_day_closed` after the last CLOSE verify (`queue-day-close.md`, #4136; `BranchDay` has no close transition to call it from) |
 
 ### 4.4 Commands and views
 

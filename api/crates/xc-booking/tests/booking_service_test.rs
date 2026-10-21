@@ -303,8 +303,11 @@ async fn customer_cancel_exactly_at_cutoff_boundary_succeeds() {
     db.finish().await;
 }
 
+/// #4203, restated by the ticket author (claude/studio-claude-6) on the owner's ruling of 2026-10-21: "ยกเลิกการจอง ยกเลิกได้เลย" · "ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน".
+/// A customer cancel inside the cutoff now succeeds and releases the place. Before #4203 this test asserted
+/// `CancelCutoffPassed`.
 #[tokio::test]
-async fn customer_cancel_after_cutoff_is_cancel_cutoff_passed() {
+async fn customer_cancel_after_cutoff_makes_cancelled_and_releases_place() {
     let db = TestDb::start().await;
     let service = db.service();
     let branch = db.add_branch("Asia/Bangkok", None, true).await;
@@ -323,16 +326,16 @@ async fn customer_cancel_after_cutoff_is_cancel_cutoff_passed() {
         .await
         .expect("create");
 
-    let late_time = base_time - Duration::minutes(59); // 59 min before (after 60m cutoff)
-    let err = service
+    let late_time = base_time - Duration::minutes(59); // 59 min before (inside the 60m cutoff)
+    let cancelled = service
         .cancel(&created.booking.id, &customer_id, false, None, late_time)
         .await
-        .expect_err("cancel after cutoff must fail");
+        .expect("#4203: a customer may cancel at any time");
 
-    assert!(matches!(err, BookingError::CancelCutoffPassed));
+    assert_eq!(cancelled.status, BookingStatus::Cancelled);
 
     let (_, reserved, _) = db.slot_row(slot).await;
-    assert_eq!(reserved, 1, "place not released");
+    assert_eq!(reserved, 0, "place released on cancel");
 
     db.finish().await;
 }

@@ -442,13 +442,15 @@ The expected shape, given the current table:
 | Role | DASHBOARD | CUSTOMERS | DOCUMENTS | RATES_STOCK | FINANCE | RISK | REPORTS | USER_MANAGEMENT | SYSTEM_SETTINGS | AUDIT_LOGS |
 |---|---|---|---|---|---|---|---|---|---|---|
 | EXECUTIVE | FULL | FULL | FULL | FULL | FULL | — | FULL | FULL | FULL | VIEW |
-| ADMIN | VIEW | — | — | — | — | — | VIEW | FULL | FULL | VIEW |
-| RATE_MANAGER | FULL | FULL | VIEW | FULL | — | — | FULL | — | — | — |
-| BRANCH_MANAGER | FULL | FULL | FULL | — | — | — | VIEW | — | — | — |
-| TELLER | VIEW | CREATE | VIEW | — | — | — | — | — | — | — |
-| FINANCE | FULL | VIEW | VIEW | VIEW | FULL | — | FULL | — | — | — |
+| ADMIN | — | — | — | — | — | — | VIEW | FULL | FULL | VIEW |
+| RATE_MANAGER | — | FULL | VIEW | FULL | — | — | FULL | — | — | — |
+| BRANCH_MANAGER | — | FULL | FULL | — | — | — | VIEW | — | — | — |
+| TELLER | — | CREATE | VIEW | — | — | — | — | — | — | — |
+| FINANCE | — | VIEW | VIEW | VIEW | FULL | — | FULL | — | — | — |
 | MARKETING | — | FULL | — | — | — | — | VIEW | — | — | — |
-| VERIFICATION_REVIEWER | FULL | VIEW | FULL | VIEW | — | — | FULL | — | — | VIEW |
+| VERIFICATION_REVIEWER | — | VIEW | FULL | VIEW | — | — | FULL | — | — | VIEW |
+
+> **#4155 (rulings W + A1):** No built-in group but `EXECUTIVE` holds a `DASHBOARD` cell (`OverviewRead` and `AlertSettingsSave` are `EXECUTIVE` only in the seed; `ADMIN` E-6 `AlertSettingsSave` waits for #4168).
 
 C2 lists the differences from V.9's matrix in this section, one line each, for the owner's review:
 
@@ -705,6 +707,7 @@ classDiagram
    - On boot, before serving, `RoleGrants::seed_missing(tx)` inserts §11.2's set for every built-in group that has **no** rows in `role_permission_grants`, and bumps `role_grant_version` once.
    - It never touches a group that already has rows, so an edited group is never overwritten, and a restart changes nothing.
    - The seed lives in code (`RoleGrants::seed`, pinned by its test), so it is reviewed like code.
+   - `RoleGrants::SEED_REMOVALS` (#4155) mirrors `SEED_ADDITIONS` (#3976): at boot, before `seed_additions` raises `seed_version`, `RoleGrantStore::seed_removals(tx)` deletes any `(v, p)` with `v > seed_version` and `p ∉ RoleGrants::seed(role)` for built-in groups with `seed_version < SEED_VERSION`.
    - Measure before deploy: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;`, i.e. who the seed's changes reach (§11.2).
 3. **Deploy order:** the migration runs before the new binary. The old binary ignores the new columns and table, but it keeps authorising from its static table. So the seed takes effect only with the new binary, and the two must ship together.
 4. **What `down` loses:** every custom group (its `user_roles` rows must be moved to a built-in group first; the reversal refuses while any exist), every edited set, and the version.

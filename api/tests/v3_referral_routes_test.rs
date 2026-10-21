@@ -592,3 +592,47 @@ async fn the_view_is_the_tellers_and_the_owners_only() {
     }
     db.finish().await;
 }
+
+// ------------------------------------------------------------ #4132: the supersede audit names the actor's role
+//
+// #4132 (owner 2026-10-21, "ทำตามที่แนะนำทั้ง 5 ข้อ", recommendation 4): a referral supersede records the role the
+// policy admitted the actor with, not a constant "OWNER" (`capture_service.rs` `supersede_in`).
+//
+// Written before the implementation by the BE-R6 sub-controller (claude/studio-claude-8). Do not edit, delete or
+// weaken; add tests of your own after them.
+
+/// `actor_role` of the one `supersedeReferral` audit row of `actor`.
+async fn supersede_audit_role(db: &TestDb, actor: &str) -> String {
+    sqlx::query_scalar(
+        "SELECT actor_role FROM audit_events WHERE action = 'supersedeReferral' AND actor_id = $1",
+    )
+    .bind(user_id(actor))
+    .fetch_one(&db.pool)
+    .await
+    .expect("one supersedeReferral audit row of the actor")
+}
+
+/// Row 1: an EXECUTIVE supersedes; the audit row's role is EXECUTIVE.
+#[actix_web::test]
+async fn an_executives_supersede_is_audited_as_executive() {
+    let db = TestDb::start().await;
+    let tx = db.exchange(B01, "C-1").await;
+    let old = capture_id(&attach(&db, TELLER, B01, &tx, "AB12CD").await);
+    let a = supersede(&db, EXECUTIVE, B01, &old, "ZZ99YY", "corrected").await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(supersede_audit_role(&db, EXECUTIVE).await, "EXECUTIVE");
+    db.finish().await;
+}
+
+/// Row 2: a BRANCH_MANAGER (the policy admits one, RBAC §11.2) supersedes; the audit row's role is BRANCH_MANAGER.
+#[actix_web::test]
+async fn a_branch_managers_supersede_is_audited_as_branch_manager() {
+    const MANAGER: &str = "BRANCH_MANAGER@XC-B01";
+    let db = TestDb::start().await;
+    let tx = db.exchange(B01, "C-1").await;
+    let old = capture_id(&attach(&db, TELLER, B01, &tx, "AB12CD").await);
+    let a = supersede(&db, MANAGER, B01, &old, "ZZ99YY", "corrected").await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(supersede_audit_role(&db, MANAGER).await, "BRANCH_MANAGER");
+    db.finish().await;
+}

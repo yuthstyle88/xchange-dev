@@ -16,6 +16,7 @@ use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
 use crate::domain::kiosk::entities::payment_gate::PaymentGate;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use crate::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK;
+use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use crate::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
 use crate::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
@@ -28,6 +29,7 @@ use crate::domain::kiosk::value_objects::public_rates::PublicRates;
 use crate::domain::kiosk::value_objects::quote_limit::QuoteLimit;
 use crate::domain::kiosk::value_objects::request_identity::RequestIdentity;
 
+use super::desk::cancel_in;
 use super::service::{
     KioskService, NO_COUNTER, cut_to_millis, line_for, no_such_branch, refuse, time,
 };
@@ -193,7 +195,7 @@ impl KioskService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<RequestIdentity> {
-        self.confirm_with(branch, id, now, None).await
+        Ok(self.confirm_with(branch, id, now, None, None).await?.0)
     }
 
     /// `confirm` that also issues the request's walk-in ticket through the queue's port, in the
@@ -206,7 +208,24 @@ impl KioskService {
         now: DateTime<Utc>,
         queue: Arc<dyn QueueTickets>,
     ) -> AppResult<RequestIdentity> {
-        self.confirm_with(branch, id, now, Some(queue)).await
+        Ok(self
+            .confirm_with(branch, id, now, Some(queue), None)
+            .await?
+            .0)
+    }
+
+    /// `confirm` that also stores the hash of `cancel_token` on the move to `WAITING` and returns
+    /// `(identity, true)` on that first confirm, or `(identity, false)` on a repeat (`kiosk-cancel.md` §3.4).
+    pub async fn confirm_with_token(
+        &self,
+        branch: &BranchId,
+        id: &str,
+        now: DateTime<Utc>,
+        queue: Arc<dyn QueueTickets>,
+        cancel_token: &str,
+    ) -> AppResult<(RequestIdentity, bool)> {
+        self.confirm_with(branch, id, now, Some(queue), Some(cancel_token))
+            .await
     }
 
     async fn confirm_with(
@@ -215,15 +234,17 @@ impl KioskService {
         id: &str,
         now: DateTime<Utc>,
         queue: Option<Arc<dyn QueueTickets>>,
-    ) -> AppResult<RequestIdentity> {
+        cancel_token: Option<&str>,
+    ) -> AppResult<(RequestIdentity, bool)> {
         self.branch_name(branch).await?;
         let at = cut_to_millis(now);
         let now = time(now);
-        let (repo, ports, b, id) = (
+        let (repo, ports, b, id, cancel_token) = (
             self.repo.clone(),
             self.ports.clone(),
             branch.clone(),
             id.to_owned(),
+            cancel_token.map(str::to_owned),
         );
         self.branch_tx
             .run(branch, move |tx| {
@@ -273,23 +294,97 @@ impl KioskService {
                     let rules = ports.payment_rules_in(tx, &b).await?;
                     let moved =
                         PaymentGate::confirm(machine, stored.as_ref(), &rules).map_err(refuse)?;
+                    let mut minted = false;
                     if let Some(event) = moved.event {
                         repo.update_in(tx, &b, &moved.request).await?;
                         let line = line_for(event, &moved.request, CUSTOMER_KIOSK);
                         ports.record_in(tx, &b, &line, at).await?;
-                        if let Some(queue) = &queue
-                            && moved.request.status == KioskStatus::Waiting
-                        {
-                            let source = QueueTicketSource::Kiosk {
-                                request_id: id.clone(),
-                            };
-                            queue
-                                .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
-                                .await
-                                .map_err(queue_refusal)?;
+                        if moved.request.status == KioskStatus::Waiting {
+                            if let Some(token) = &cancel_token {
+                                repo.set_cancel_token_in(tx, &b, &id, token).await?;
+                                minted = true;
+                            }
+                            if let Some(queue) = &queue {
+                                let source = QueueTicketSource::Kiosk {
+                                    request_id: id.clone(),
+                                };
+                                queue
+                                    .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
+                                    .await
+                                    .map_err(queue_refusal)?;
+                            }
                         }
                     }
-                    KioskMachine::identity(Some(&moved.request), now).map_err(refuse)
+                    let identity =
+                        KioskMachine::identity(Some(&moved.request), now).map_err(refuse)?;
+                    Ok((identity, minted))
+                })
+            })
+            .await
+    }
+
+    /// `customerCancel`: the customer cancels their own `WAITING` request at the kiosk using its
+    /// `cancel_token` from the same `client_ip` (`kiosk-cancel.md` §3.4).
+    pub async fn customer_cancel(
+        &self,
+        branch: &BranchId,
+        id: &str,
+        cancel_token: &str,
+        client_ip: &str,
+        now: DateTime<Utc>,
+        queue: Arc<dyn QueueTickets>,
+    ) -> AppResult<RequestIdentity> {
+        self.branch_name(branch).await?;
+        if cancel_token.is_empty() {
+            return Err(refuse(KioskError::CustomerCancelRefused));
+        }
+        let at = cut_to_millis(now);
+        let now_kiosk = time(now);
+        let (repo, ports, b, id, cancel_token, client_ip) = (
+            self.repo.clone(),
+            self.ports.clone(),
+            branch.clone(),
+            id.to_owned(),
+            cancel_token.to_owned(),
+            client_ip.to_owned(),
+        );
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    let stored = repo.find_in(tx, &b, &id).await?;
+                    let Some(req) = &stored else {
+                        return Err(refuse(KioskError::CustomerCancelRefused));
+                    };
+                    if req.status != KioskStatus::Waiting {
+                        return Err(refuse(KioskError::CustomerCancelRefused));
+                    }
+                    let stored_ip = repo.client_ip_in(tx, &b, &id).await?;
+                    if stored_ip.as_deref() != Some(client_ip.as_str()) {
+                        return Err(refuse(KioskError::CustomerCancelRefused));
+                    }
+                    if !repo
+                        .matches_cancel_token_in(tx, &b, &id, &cancel_token)
+                        .await?
+                    {
+                        return Err(refuse(KioskError::CustomerCancelRefused));
+                    }
+                    cancel_in(
+                        tx,
+                        &repo,
+                        &*ports,
+                        &*queue,
+                        &b,
+                        stored,
+                        &KioskActor::Customer,
+                        CancelReason::CustomerCancelled,
+                        at,
+                        now_kiosk,
+                    )
+                    .await
+                    .map_err(|err| match err {
+                        AppError::Domain(_) => refuse(KioskError::CustomerCancelRefused),
+                        other => other,
+                    })
                 })
             })
             .await

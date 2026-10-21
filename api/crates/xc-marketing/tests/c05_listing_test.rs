@@ -149,9 +149,11 @@ fn a_rule_that_needs_a_coupon_is_never_shown_as_an_open_benefit() {
     let by_flag = rule(json!({}), json!({ "delta": "0.05" }), true);
     let by_eligibility = open_rule(json!({ "requiresCoupon": true }));
     let everyone = facts(Some("GOLD"), &[], true, true);
+    // Restated for #4139 by the BE-R6 sub-controller (claude/studio-claude-8): the column is the only source, so an
+    // old `eligibility.requiresCoupon` key on a column-false rule no longer hides it.
     assert!(
-        !shown_on_app(&by_eligibility, None, &everyone),
-        "eligibility.requiresCoupon"
+        shown_on_app(&by_eligibility, None, &everyone),
+        "eligibility.requiresCoupon is not a source (#4139)"
     );
     assert!(
         !shown_on_app(&by_flag, None, &everyone),
@@ -234,4 +236,24 @@ fn summary_refuses_an_unknown_type_and_params_the_desk_refuses() {
         summary(&none, &registry).is_err(),
         "params with none of the kind's keys are refused"
     );
+}
+
+/// #4139 rows 1–4 (app listing): a rule is hidden exactly when its column is true, whatever the eligibility JSON
+/// says. Written before the implementation by the BE-R6 sub-controller (claude/studio-claude-8); do not edit,
+/// delete or weaken.
+#[test]
+fn the_column_alone_decides_whether_a_rule_is_listed() {
+    let everyone = facts(Some("GOLD"), &[], true, true);
+    for (column, json) in [(false, false), (false, true), (true, false), (true, true)] {
+        let r = rule(
+            json!({ "requiresCoupon": json }),
+            json!({ "delta": "0.05" }),
+            column,
+        );
+        assert_eq!(
+            shown_on_app(&r, None, &everyone),
+            !column,
+            "column {column}, json {json}"
+        );
+    }
 }

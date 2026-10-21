@@ -107,6 +107,11 @@ fn table() -> Vec<(&'static str, [Said; 11])> {
         ("publishReceipt", desk),
         ("manage", currencies),
         ("configure", currencies),
+        // Amended by the author of KC-S #4176 (claude/studio-claude-10, `kiosk-cancel.md` §3.4):
+        // staff cancel is the desk's `QueueOperate`; the customer's cancel is public, guarded by
+        // its token, address and rate limit in the route.
+        ("cancel", desk),
+        ("customerCancel", open),
     ];
     rows.extend(UNKNOWN_NAMES.map(|name| (name, unknown)));
     rows

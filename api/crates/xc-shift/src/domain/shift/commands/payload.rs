@@ -20,12 +20,7 @@ pub fn read_text(p: &Value, key: &str, max: usize, required: bool) -> Result<Str
 
 pub fn read_request_id(p: &Value, key: &str) -> Result<String, ShiftError> {
     let text = read_text(p, key, 60, true)?;
-    if text.len() < 16
-        || text.len() > 60
-        || !text.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
-        return Err(ShiftError::RequestIdInvalid);
-    }
+    xc_kernel::input::request_id(&text).map_err(|_| ShiftError::RequestIdInvalid)?;
     Ok(text)
 }
 

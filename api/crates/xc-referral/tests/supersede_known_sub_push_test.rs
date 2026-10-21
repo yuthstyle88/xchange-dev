@@ -64,7 +64,15 @@ async fn capture(db: &TestDb, input: CaptureInput) -> CaptureId {
 async fn supersede(db: &TestDb, id: &CaptureId, text: &str) -> Result<CaptureId, CaptureError> {
     let mut tx = db.begin().await;
     let out = service(db)
-        .supersede_in(&mut tx, id, code(text), "corrected", "owner-1", at(60))
+        .supersede_in(
+            &mut tx,
+            id,
+            code(text),
+            "corrected",
+            "owner-1",
+            "EXECUTIVE",
+            at(60),
+        )
         .await;
     if out.is_ok() {
         tx.commit().await.expect("commit");
@@ -159,7 +167,15 @@ async fn a_refused_supersede_writes_no_outbox_row() {
 
     let mut tx = db.begin().await;
     let out = service(&db)
-        .supersede_in(&mut tx, &old, code("ZZ99YY"), "  ", "owner-1", at(60))
+        .supersede_in(
+            &mut tx,
+            &old,
+            code("ZZ99YY"),
+            "  ",
+            "owner-1",
+            "EXECUTIVE",
+            at(60),
+        )
         .await;
     assert!(matches!(out, Err(CaptureError::EmptyReason)), "{out:?}");
     tx.rollback().await.expect("rollback");

@@ -258,7 +258,9 @@ pub const ALL_STATUSES: [KioskStatus; 7] = [
     KioskStatus::Cancelled,
 ];
 
-pub const ALL_ACTIONS: [KioskAction; 13] = [
+/// Amended by the author of KC-S #4176 (claude/studio-claude-10, `kiosk-cancel.md` §3.4):
+/// `cancel` and `customerCancel`.
+pub const ALL_ACTIONS: [KioskAction; 15] = [
     KioskAction::Rates,
     KioskAction::Quote,
     KioskAction::Confirm,
@@ -272,6 +274,8 @@ pub const ALL_ACTIONS: [KioskAction; 13] = [
     KioskAction::PublishReceipt,
     KioskAction::Manage,
     KioskAction::Configure,
+    KioskAction::Cancel,
+    KioskAction::CustomerCancel,
 ];
 
 pub const ALL_METHODS: [PaymentMethod; 5] = [

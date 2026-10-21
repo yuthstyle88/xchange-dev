@@ -149,6 +149,48 @@ impl RoleGrantStore for PgRoleGrantStore {
         Ok(seeded)
     }
 
+    async fn seed_removals(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<u64, RoleGrantStoreError> {
+        let mut deleted = 0u64;
+        for role in RoleGrants::BUILT_IN {
+            let code = role.as_str();
+            let current_version: Option<i32> = sqlx::query_scalar(
+                "SELECT seed_version FROM roles WHERE code = $1 AND built_in FOR UPDATE",
+            )
+            .bind(code)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db_err)?;
+            let Some(current_version) = current_version else {
+                continue;
+            };
+            if current_version >= RoleGrants::SEED_VERSION {
+                continue;
+            }
+            let seed = RoleGrants::seed(role);
+            for &(v, p) in RoleGrants::SEED_REMOVALS {
+                if v > current_version && !seed.contains(&p) {
+                    let name = perm_name(p)?;
+                    let res = sqlx::query(
+                        "DELETE FROM role_permission_grants WHERE role_code = $1 AND permission = $2",
+                    )
+                    .bind(code)
+                    .bind(name)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
+                    deleted += res.rows_affected();
+                }
+            }
+        }
+        if deleted > 0 {
+            bump_version(tx).await?;
+        }
+        Ok(deleted)
+    }
+
     async fn seed_additions(
         &self,
         tx: &mut Transaction<'_, Postgres>,

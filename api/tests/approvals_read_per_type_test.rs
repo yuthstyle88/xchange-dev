@@ -106,9 +106,9 @@ async fn listed(db: &TestDb, who: &str) -> Vec<String> {
 async fn request(db: &TestDb, type_name: &str) {
     db.exec(&format!(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, \
-            policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
+            policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
          VALUES (gen_random_uuid(), '{type_name}', 'MAIN', 'obj-{type_name}', 'h', '1', '{{}}', \
-            'someone', now(), 'PENDING', 'k-{type_name}')"
+            'someone', now(), 'PENDING', 'k-{type_name}', '00000000-0000-0000-0000-000000000001')"
     ))
     .await;
 }

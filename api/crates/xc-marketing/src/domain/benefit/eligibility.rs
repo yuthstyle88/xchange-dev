@@ -51,7 +51,6 @@ pub struct EligibilityContext<'a> {
     pub in_segment: bool,
     pub marketing_consent: bool,
     pub is_referred: bool,
-    pub has_coupon: bool,
 }
 
 mod option_side_serde {
@@ -106,8 +105,6 @@ pub struct Eligibility {
     pub segment: bool,
     #[serde(default)]
     pub referred: bool,
-    #[serde(default)]
-    pub requires_coupon: bool,
 }
 
 impl Eligibility {
@@ -150,11 +147,6 @@ impl Eligibility {
                 Some(amount) if amount >= min => {}
                 _ => return Err(SkipReason::MinThbNotMet),
             }
-        }
-
-        // 6. Requires coupon
-        if self.requires_coupon && !ctx.has_coupon {
-            return Err(SkipReason::CouponInvalid);
         }
 
         // 7. Tiers

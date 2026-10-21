@@ -439,13 +439,15 @@ fn every_permission_is_in_the_version_1_baseline_or_in_seed_additions() {
             RoleGrants::SEED_VERSION
         );
     }
+    // #4155 W/A1: SEED_VERSION is the newest of SEED_ADDITIONS and SEED_REMOVALS.
     assert_eq!(
         RoleGrants::SEED_ADDITIONS
             .iter()
+            .chain(RoleGrants::SEED_REMOVALS.iter())
             .map(|&(v, _)| v)
             .max()
             .unwrap_or(1),
         RoleGrants::SEED_VERSION,
-        "SEED_VERSION is the version of the newest addition"
+        "SEED_VERSION is the newest of SEED_ADDITIONS and SEED_REMOVALS"
     );
 }

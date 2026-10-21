@@ -13,6 +13,8 @@ pub enum KioskAction {
     PublishReceipt,
     Manage,
     Configure,
+    Cancel,
+    CustomerCancel,
 }
 
 impl KioskAction {
@@ -31,6 +33,8 @@ impl KioskAction {
             Self::PublishReceipt => "publishReceipt",
             Self::Manage => "manage",
             Self::Configure => "configure",
+            Self::Cancel => "cancel",
+            Self::CustomerCancel => "customerCancel",
         }
     }
 }

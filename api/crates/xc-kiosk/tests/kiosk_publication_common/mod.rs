@@ -83,9 +83,9 @@ pub async fn publish(pool: &PgPool, branch: &str, at: DateTime<Utc>, lines: &[Li
     let mut tx = pool.begin().await.expect("begin the seeded publication");
     let request: String = sqlx::query_scalar(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, \
-         policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
+         policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
          VALUES (gen_random_uuid(), 'RATE_PUBLICATION', $1, 'seeded', 'seeded', '1', '{}'::jsonb, \
-         'test', $2, 'APPROVED', gen_random_uuid()::text) RETURNING id::text",
+         'test', $2, 'APPROVED', gen_random_uuid()::text, '00000000-0000-0000-0000-000000000001') RETURNING id::text",
     )
     .bind(branch)
     .bind(at)

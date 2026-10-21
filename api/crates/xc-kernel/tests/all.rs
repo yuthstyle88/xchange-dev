@@ -59,6 +59,8 @@ mod quote_test;
 mod rate_units_test;
 #[path = "rate_value_test.rs"]
 mod rate_value_test;
+#[path = "request_id_test.rs"]
+mod request_id_test;
 #[path = "text_redactor_forms_test.rs"]
 mod text_redactor_forms_test;
 #[path = "text_redactor_test.rs"]

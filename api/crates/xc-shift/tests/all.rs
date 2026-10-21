@@ -23,6 +23,8 @@ mod k2063_shift_repository_overflow_test;
 mod money_ceiling_test;
 #[path = "open_of_teller_test.rs"]
 mod open_of_teller_test;
+#[path = "request_id_rule_test.rs"]
+mod request_id_rule_test;
 #[path = "service_not_ready_message_test.rs"]
 mod service_not_ready_message_test;
 #[path = "service_window_test.rs"]

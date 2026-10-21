@@ -70,9 +70,9 @@ async fn seed_newer_decoy(db: &TestDb, writer: &FakeWriter) -> String {
     let decoy = Uuid::new_v4().to_string();
     db.exec(&format!(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, \
-         policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
+         policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
          VALUES ('{decoy}', '{SUBJECT}', NULL, '{object}', 'decoy-hash', '1', '{{}}'::jsonb, \
-         'user-DECOY', now() + interval '1 hour', 'REJECTED', 'decoy-{decoy}')",
+         'user-DECOY', now() + interval '1 hour', 'REJECTED', 'decoy-{decoy}', '00000000-0000-0000-0000-000000000001')",
         object = writer.object_id(),
     ))
     .await;

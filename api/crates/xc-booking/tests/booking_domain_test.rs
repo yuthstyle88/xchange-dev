@@ -205,10 +205,13 @@ fn customer_cancel_exactly_at_cutoff_boundary_succeeds() {
     assert_eq!(result.unwrap(), BookingStatus::Cancelled);
 }
 
+/// #4203 row 1, restated by the ticket author (claude/studio-claude-6) on the owner's ruling of 2026-10-21:
+/// "ยกเลิกการจอง ยกเลิกได้เลย" · "ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน". A customer may cancel at any time; the cutoff limits reschedule only (design `booking-slots.md` Q-B2,
+/// revised). Before #4203 this test asserted `CancelCutoffPassed`.
 #[test]
-fn customer_cancel_after_cutoff_is_refused_with_cancel_cutoff_passed() {
+fn customer_cancel_after_cutoff_succeeds() {
     let slot_start = Utc.with_ymd_and_hms(2030, 1, 7, 10, 0, 0).unwrap();
-    let now = Utc.with_ymd_and_hms(2030, 1, 7, 9, 1, 0).unwrap(); // 59 min before slot start
+    let now = Utc.with_ymd_and_hms(2030, 1, 7, 9, 50, 0).unwrap(); // 10 min before slot start, cutoff is 60 min
     let slot = dummy_slot(slot_start);
     let booking = dummy_booking(BookingStatus::Confirmed, None);
     let policy = BookingPolicy {
@@ -219,7 +222,44 @@ fn customer_cancel_after_cutoff_is_refused_with_cancel_cutoff_passed() {
 
     let result =
         BookingMachine::cancel(&booking, "customer:CX-1", false, None, now, &policy, &slot);
-    assert!(matches!(result, Err(BookingError::CancelCutoffPassed)));
+    assert_eq!(result.unwrap(), BookingStatus::Cancelled);
+}
+
+/// #4203 row 2 (owner, 2026-10-21): a CONFIRMED booking not yet checked in can be cancelled by its customer even
+/// after its slot has started.
+#[test]
+fn customer_cancel_after_the_slot_started_succeeds() {
+    let slot_start = Utc.with_ymd_and_hms(2030, 1, 7, 10, 0, 0).unwrap();
+    let now = Utc.with_ymd_and_hms(2030, 1, 7, 10, 10, 0).unwrap(); // 10 min after slot start
+    let slot = dummy_slot(slot_start);
+    let booking = dummy_booking(BookingStatus::Confirmed, None);
+    let policy = BookingPolicy {
+        cancel_cutoff_minutes: 60,
+        no_show_grace_minutes: 15,
+        confirm_expiry_minutes: 60,
+    };
+
+    let result =
+        BookingMachine::cancel(&booking, "customer:CX-1", false, None, now, &policy, &slot);
+    assert_eq!(result.unwrap(), BookingStatus::Cancelled);
+}
+
+/// #4203 row 3 (unchanged rule): a customer still cannot cancel a CHECKED_IN booking; only staff can, with a reason.
+#[test]
+fn customer_cancel_of_a_checked_in_booking_is_refused_stale_version() {
+    let slot_start = Utc.with_ymd_and_hms(2030, 1, 7, 10, 0, 0).unwrap();
+    let now = Utc.with_ymd_and_hms(2030, 1, 7, 8, 0, 0).unwrap();
+    let slot = dummy_slot(slot_start);
+    let booking = dummy_booking(BookingStatus::CheckedIn, None);
+    let policy = BookingPolicy {
+        cancel_cutoff_minutes: 60,
+        no_show_grace_minutes: 15,
+        confirm_expiry_minutes: 60,
+    };
+
+    let result =
+        BookingMachine::cancel(&booking, "customer:CX-1", false, None, now, &policy, &slot);
+    assert!(matches!(result, Err(BookingError::StaleVersion)));
 }
 
 #[test]

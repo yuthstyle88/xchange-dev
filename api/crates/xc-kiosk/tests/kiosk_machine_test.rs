@@ -1180,7 +1180,10 @@ fn names_are_the_ones_the_screens_and_the_audit_log_use() {
             "identityChecked",
             "publishReceipt",
             "manage",
-            "configure"
+            "configure",
+            // Amended by the author of KC-S #4176 (claude/studio-claude-10).
+            "cancel",
+            "customerCancel"
         ]
     );
 }

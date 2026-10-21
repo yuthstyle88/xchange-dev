@@ -17,3 +17,9 @@ abstract class KioskRepository {
   Future<RequestIdentity> status(String id);
   Future<ReceiptModel> customerReceipt(String id);
 }
+
+extension KioskCustomerCancel on KioskRepository {
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) =>
+      (this as dynamic).customerCancel(id, cancelToken)
+          as Future<RequestIdentity>;
+}

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
-use chrono::{DateTime, Duration, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -62,11 +62,9 @@ impl CommandAction for BookingCancel {
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
 
-        let row: Option<(String, String, DateTime<Utc>, Option<i32>)> = sqlx::query_as(
-            "SELECT b.customer_id, b.branch_id, s.start_at, p.cancel_cutoff_minutes \
+        let row: Option<(String, String)> = sqlx::query_as(
+            "SELECT b.customer_id, b.branch_id \
              FROM bookings b \
-             JOIN booking_slots s ON s.id = b.slot_id \
-             LEFT JOIN booking_policies p ON p.organization_id = b.organization_id \
              WHERE b.id = $1",
         )
         .bind(&input.id)
@@ -81,7 +79,7 @@ impl CommandAction for BookingCancel {
             )
         })?;
 
-        let (booking_cust_id, branch_id, start_at, cancel_cutoff) = match row {
+        let (booking_cust_id, branch_id) = match row {
             Some(r) => r,
             None => {
                 return Err(V3Error::new(
@@ -118,15 +116,6 @@ impl CommandAction for BookingCancel {
             if who.customer_id.as_deref() != Some(booking_cust_id.as_str()) {
                 return Err(out_of_scope());
             }
-            let cutoff_minutes = cancel_cutoff.unwrap_or(60);
-            if now > start_at - Duration::minutes(cutoff_minutes as i64) {
-                return Err(V3Error::new(
-                    "cancelCutoffPassed",
-                    None,
-                    "CANCEL_CUTOFF_PASSED",
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
             input.reason.as_deref().unwrap_or("customerCancelled")
         };
 
@@ -154,4 +143,3 @@ impl CommandAction for BookingCancel {
         })
     }
 }
-

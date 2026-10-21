@@ -391,7 +391,15 @@ async fn supersede(
 ) -> Result<CaptureId, CaptureError> {
     let mut tx = db.begin().await;
     let out = service(db)
-        .supersede_in(&mut tx, id, code(text), reason, "owner-1", at(60))
+        .supersede_in(
+            &mut tx,
+            id,
+            code(text),
+            reason,
+            "owner-1",
+            "EXECUTIVE",
+            at(60),
+        )
         .await;
     if out.is_ok() {
         tx.commit().await.expect("commit");
@@ -637,4 +645,19 @@ async fn linking_a_booking_with_no_capture_is_a_no_op() {
         0
     );
     db.finish().await;
+}
+
+// ---------------------------------------------------------------- #4132 row 3
+//
+// Written before the implementation by the BE-R6 sub-controller (claude/studio-claude-8). Do not edit, delete or
+// weaken.
+
+/// #4132 row 3: the supersede audit's role comes from the caller; no `"OWNER"` literal is left in the service.
+#[test]
+fn the_capture_service_writes_no_constant_owner_role() {
+    let source = include_str!("../src/application/capture_service.rs");
+    assert!(
+        !source.contains("\"OWNER\""),
+        "capture_service.rs still names a constant \"OWNER\" role"
+    );
 }

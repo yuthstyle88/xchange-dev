@@ -23,6 +23,8 @@ mod app_my_receipt_test;
 mod app_public_reads_test;
 #[path = "approval_requests_decision_test.rs"]
 mod approval_requests_decision_test;
+#[path = "approval_requests_org_required_test.rs"]
+mod approval_requests_org_required_test;
 #[path = "approvals_read_per_type_test.rs"]
 mod approvals_read_per_type_test;
 #[path = "auth_logout_failure_test.rs"]
@@ -119,6 +121,8 @@ mod identity_session_test;
 mod k2063_admin_shifts_overflow_test;
 #[path = "kiosk_accept_serving_other_teller_test.rs"]
 mod kiosk_accept_serving_other_teller_test;
+#[path = "kiosk_cancel_route_test.rs"]
+mod kiosk_cancel_route_test;
 #[path = "kiosk_quote_overflow_test.rs"]
 mod kiosk_quote_overflow_test;
 #[path = "kiosk_role_home_test.rs"]

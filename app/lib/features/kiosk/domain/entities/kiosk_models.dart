@@ -1,6 +1,8 @@
 /// Wire models for `POST /api/kiosk`. Field names follow the server's JSON.
 library;
 
+export '../repository/kiosk_repository.dart' show KioskCustomerCancel;
+
 enum ExchangeType {
   buy('BUY'),
   sell('SELL');
@@ -20,6 +22,7 @@ enum KioskStatus {
   accepted('ACCEPTED'),
   idChecked('ID_CHECKED'),
   completed('COMPLETED'),
+  cancelled('CANCELLED'),
   expired('EXPIRED'),
   unknown('');
 
@@ -169,10 +172,12 @@ class RequestIdentity {
     required this.transactionNo,
     required this.status,
     required this.rawStatus,
+    this.cancelToken,
   });
   final String id, queue, orderNo, rawStatus;
   final String? transactionNo;
   final KioskStatus status;
+  final String? cancelToken;
 
   factory RequestIdentity.fromJson(Map<String, dynamic> j) => RequestIdentity(
     id: '${j['id']}',
@@ -181,6 +186,7 @@ class RequestIdentity {
     transactionNo: j['transactionNo'] as String?,
     status: KioskStatus.parse(j['status']),
     rawStatus: '${j['status'] ?? ''}',
+    cancelToken: j['cancelToken'] as String?,
   );
 }
 

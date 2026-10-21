@@ -163,6 +163,13 @@ pub trait KioskRepository: Send + Sync {
         token: &str,
     ) -> impl Future<Output = AppResult<bool>> + Send;
 
+    fn client_ip_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
+
     /// Reads started_at and completed_at for a request inside a transaction.
     fn times_in(
         &self,
