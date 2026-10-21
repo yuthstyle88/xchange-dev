@@ -182,7 +182,7 @@ async fn every_token_that_leads_nowhere_answers_the_same_not_found() {
     // a cancelled request
     sqlx::query(
         "UPDATE kiosk_requests SET status = 'CANCELLED', cancelled_at = now(), \
-         cancelled_by = 'test', cancel_reason = 'OTHER' WHERE id = 'web-old'",
+         cancelled_by = 'test', cancel_reason = 'CUSTOMER_LEFT' WHERE id = 'web-old'",
     )
     .execute(&db.pool)
     .await

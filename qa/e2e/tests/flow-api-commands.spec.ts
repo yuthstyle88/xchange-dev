@@ -86,17 +86,30 @@ async function expectWorded400(res: APIResponse, label: string): Promise<void> {
   expect(message, `${label}: error.message is worded, not raw code`).not.toBe(code);
 }
 
-/** Asserts (c): 401/403 refusal with a permission/scope refusal code (error.rs:80-115, command.rs:133-156). */
+const PERMISSION_REFUSAL_STATUS: Record<string, number> = {
+  signIn: 401,
+  employeeAuthRequired: 401,
+  outOfScope: 403,
+  ownerOnly: 403,
+  roleNotAllowed: 400,
+  roleNotAllowedHere: 400,
+  employeeAccount: 400,
+};
+
+/** Asserts (c): permission/scope refusal code and its contract HTTP status (policy_error.rs:103-124, error.rs:80-115, command.rs:133-156). */
 async function expectPermissionRefused(res: APIResponse, label: string): Promise<void> {
   const text = await res.text().catch(() => '');
-  expect([401, 403], `${label}: expected 401/403, got ${res.status()} ${text}`).toContain(res.status());
   const parsed = JSON.parse(text) as V3ErrorEnvelope;
   const code = (parsed.error?.code ?? '').trim();
   const message = (parsed.error?.message ?? '').trim();
+  const expectedStatus = PERMISSION_REFUSAL_STATUS[code];
   expect(
-    ['outOfScope', 'roleNotAllowed', 'roleNotAllowedHere', 'ownerOnly', 'employeeAuthRequired', 'employeeAccount', 'signIn'],
-    `${label}: refusal code (${code})`,
+    Object.keys(PERMISSION_REFUSAL_STATUS),
+    `${label}: refusal code (${code}) in ${res.status()} ${text}`,
   ).toContain(code);
+  expect(res.status(), `${label}: expected ${expectedStatus} for ${code}, got ${res.status()} ${text}`).toBe(
+    expectedStatus,
+  );
   expect(message, `${label}: refusal error.message non-empty`).not.toBe('');
 }
 
@@ -474,9 +487,23 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
       const openSheetRes = await page.request.get(reconUrl);
       expect(openSheetRes.ok(), `GET ${reconUrl} after raise`).toBeTruthy();
       const openSheet = (await openSheetRes.json()) as {
-        data?: { exceptions?: { rows?: Array<{ id: string; summary: string }> } };
+        data?: {
+          exceptions?: {
+            available?: boolean;
+            reason?: string | null;
+            data?: Array<{ id: string; position: number; reviewed: boolean; summary: string }>;
+          };
+        };
       };
-      const openRows = openSheet.data?.exceptions?.rows ?? [];
+      expect(
+        openSheet.data?.exceptions?.available,
+        'finance_reconciliation exceptions.available after raise',
+      ).toBe(true);
+      expect(
+        Array.isArray(openSheet.data?.exceptions?.data),
+        'finance_reconciliation exceptions.data is an array after raise',
+      ).toBe(true);
+      const openRows = openSheet.data!.exceptions!.data!;
       expect(
         openRows.some((r) => r.id === raisedId && r.summary.includes(marker)),
         `finance_reconciliation open exceptions includes ${raisedId}`,
@@ -506,9 +533,23 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
       const closedSheetRes = await page.request.get(reconUrl);
       expect(closedSheetRes.ok(), `GET ${reconUrl} after review`).toBeTruthy();
       const closedSheet = (await closedSheetRes.json()) as {
-        data?: { exceptions?: { rows?: Array<{ id: string }> } };
+        data?: {
+          exceptions?: {
+            available?: boolean;
+            reason?: string | null;
+            data?: Array<{ id: string; position: number; reviewed: boolean; summary: string }>;
+          };
+        };
       };
-      const remainingRows = closedSheet.data?.exceptions?.rows ?? [];
+      expect(
+        closedSheet.data?.exceptions?.available,
+        'finance_reconciliation exceptions.available after review',
+      ).toBe(true);
+      expect(
+        Array.isArray(closedSheet.data?.exceptions?.data),
+        'finance_reconciliation exceptions.data is an array after review',
+      ).toBe(true);
+      const remainingRows = closedSheet.data!.exceptions!.data!;
       expect(
         remainingRows.some((r) => r.id === raisedId),
         `finance_reconciliation open exceptions no longer includes reviewed ${raisedId}`,

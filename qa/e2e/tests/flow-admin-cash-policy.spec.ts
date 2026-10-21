@@ -91,7 +91,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
       await expect(amountInput).toBeEnabled();
       await amountInput.fill(nextAmount);
 
-      const saved = await posted(page, /^\/api\/cash-limits$/, () => saveBtn.click());
+      const saved = await posted(page, /^\/api\/cash-limits$/, () => saveBtn.click(), 'PUT');
       expect(saved.ok, `PUT /api/cash-limits accepted: ${saved.text}`).toBeTruthy();
       await expect(currentBanner).toContainText(nextAmount, { timeout: 15_000 });
 
@@ -114,7 +114,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
         }
         await amountInput.fill(origAmount || '0');
       }
-      const restored = await posted(page, /^\/api\/cash-limits$/, () => saveBtn.click());
+      const restored = await posted(page, /^\/api\/cash-limits$/, () => saveBtn.click(), 'PUT');
       expect(restored.ok, `PUT /api/cash-limits restored in finally: ${restored.text}`).toBeTruthy();
     }
   });
@@ -147,7 +147,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
 
     try {
       await targetInput.fill(nextVal);
-      const saved = await posted(page, /^\/api\/cash-transfer-policy$/, () => saveBtn.click());
+      const saved = await posted(page, /^\/api\/cash-transfer-policy$/, () => saveBtn.click(), 'PUT');
       expect(saved.ok, `PUT /api/cash-transfer-policy accepted: ${saved.text}`).toBeTruthy();
 
       await page.reload();
@@ -162,7 +162,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
       for (const [code, val] of origLimits.entries()) {
         await page.locator(`input[data-currency="${code}"]`).fill(val);
       }
-      const restored = await posted(page, /^\/api\/cash-transfer-policy$/, () => saveBtn.click());
+      const restored = await posted(page, /^\/api\/cash-transfer-policy$/, () => saveBtn.click(), 'PUT');
       expect(restored.ok, `PUT /api/cash-transfer-policy restored in finally: ${restored.text}`).toBeTruthy();
     }
   });
