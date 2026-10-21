@@ -10,7 +10,7 @@ import type {
   ProfileUpdateOutput,
 } from '../../../shared/api/generated/my_profile';
 import { lang, screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import * as table from './i18n';
 import './profile.css';
 
@@ -18,6 +18,7 @@ const t = screenT('customer.profile', table);
 
 const CHANNELS = ['SMS', 'EMAIL', 'PUSH'] as const;
 type Channel = (typeof CHANNELS)[number];
+const LANGUAGES = ['th', 'en', 'zh'] as const;
 
 export interface ProfileScreenProps {
   /** Injected so tests mock at the fetch level; defaults to `new ApiClient()`. */
@@ -118,6 +119,11 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
     return displayName() !== origName() || preferredLanguage() !== origLang();
   };
 
+  const saveError = (err: unknown) =>
+    err instanceof ApiError && !isServerFailure(err) && err.code === 'consentTextMissing'
+      ? t('consentTextMissing')
+      : wordedError(err);
+
   const handleSave = async (e: Event) => {
     e.preventDefault();
     if (!canSave()) return;
@@ -137,7 +143,7 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
       setPreferredLanguage(out.preferredLanguage);
       setSaved(true);
     } catch (err) {
-      setError(wordedError(err));
+      setError(saveError(err));
     } finally {
       setSaving(false);
     }
@@ -160,7 +166,7 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
     } catch (err) {
       setConsents((c) => ({ ...c, [channel]: prev }));
       el.checked = prev;
-      setError(wordedError(err));
+      setError(saveError(err));
     } finally {
       setConsentBusy((b) => ({ ...b, [channel]: false }));
     }
@@ -170,6 +176,19 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
     if (channel === 'SMS') return t('channelSMS');
     if (channel === 'EMAIL') return t('channelEMAIL');
     return t('channelPUSH');
+  };
+
+  const langLabel = (code: string) => {
+    if (code === 'th') return t('langTh');
+    if (code === 'en') return t('langEn');
+    if (code === 'zh') return t('langZh');
+    return code;
+  };
+
+  const selectableLanguages = (offered: string[]) => {
+    const base = offered.length > 0 ? offered : [...LANGUAGES];
+    const cur = origLang();
+    return base.includes(cur) ? base : [cur, ...base];
   };
 
   return (
@@ -244,9 +263,13 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
                     setSaved(false);
                   }}
                 >
-                  <option value="th">{t('langTh')}</option>
-                  <option value="en">{t('langEn')}</option>
-                  <option value="zh">{t('langZh')}</option>
+                  <For each={selectableLanguages(p().offeredLanguages)}>
+                    {(code) => (
+                      <option value={code} selected={code === preferredLanguage()}>
+                        {langLabel(code)}
+                      </option>
+                    )}
+                  </For>
                 </select>
               </label>
 

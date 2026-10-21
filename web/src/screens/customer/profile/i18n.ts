@@ -22,6 +22,7 @@ export const th = {
   channelEMAIL: 'อีเมล',
   channelPUSH: 'การแจ้งเตือนในแอป',
   termsAccepted: 'ยอมรับข้อกำหนดฉบับที่ {version}',
+  consentTextMissing: 'ยังไม่มีข้อกำหนดการใช้บริการในภาษานี้ กรุณาเลือกภาษาอื่น',
 };
 
 export const en = {
@@ -45,6 +46,7 @@ export const en = {
   channelEMAIL: 'Email',
   channelPUSH: 'App notifications',
   termsAccepted: 'Terms accepted, version {version}',
+  consentTextMissing: 'The terms of service are not available in this language yet. Please choose another language',
 };
 
 export const zh = {
@@ -68,4 +70,5 @@ export const zh = {
   channelEMAIL: '电子邮件',
   channelPUSH: '应用通知',
   termsAccepted: '已接受条款，第 {version} 版',
+  consentTextMissing: '此语言暂无服务条款，请选择其他语言',
 };
