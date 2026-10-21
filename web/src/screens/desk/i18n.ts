@@ -4,6 +4,8 @@ export const th = {
   empty: 'ยังไม่มีขั้นตอนทำรายการ',
   // the summary aside (dh:112, §3.6b "Summary and status")
   summary: 'สรุปรายการ',
+  customerSells: 'ลูกค้าขาย {currency}',
+  customerBuys: 'ลูกค้าซื้อ {currency}',
   shopReceives: 'ร้านรับเงิน THB จากลูกค้า',
   shopPays: 'ร้านจ่ายเงิน THB ให้ลูกค้า',
   bookedRate: 'เรทที่จอง',
@@ -35,6 +37,8 @@ export const en: Record<keyof typeof th, string> = {
   stepsLabel: 'Transaction steps',
   empty: 'No steps available',
   summary: 'Summary',
+  customerSells: 'Customer sells {currency}',
+  customerBuys: 'Customer buys {currency}',
   shopReceives: 'Shop receives THB from the customer',
   shopPays: 'Shop pays THB to the customer',
   bookedRate: 'Booked rate',
