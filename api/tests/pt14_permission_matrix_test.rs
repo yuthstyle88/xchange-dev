@@ -37,7 +37,7 @@ use xc_auth::domain::access::{
 use xc_auth::infrastructure::access::PgRoleGrantStore;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SEEDED_XC_ORG_ID, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SEEDED_XC_ORG_ID, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -173,19 +173,6 @@ fn user_of(spec: &str) -> Option<User> {
 }
 
 impl SessionReader for HeaderUsers {
-    /// No old cookie: the matrix view reads `callers` only.
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()

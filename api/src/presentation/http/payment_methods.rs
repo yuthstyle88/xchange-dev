@@ -16,7 +16,7 @@ use crate::application::settings::payment_input::{parse_methods, parse_version};
 use crate::application::settings::payment_settings::{PaymentSaveError, PaymentSettingsService};
 use crate::bootstrap::AppState;
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
-use crate::presentation::extractors::actor::{accounts, authorize, callers, same_origin};
+use crate::presentation::extractors::actor::{authorize, callers, same_origin};
 use crate::presentation::http::rpc::RpcClock;
 
 const MAX_BODY_BYTES: usize = 256 * 1024;
@@ -57,10 +57,6 @@ async fn handle(
     body: Result<web::Bytes, actix_web::Error>,
     service: web::Data<PaymentSettingsService>,
 ) -> HttpResponse {
-    let Some(_accounts) = accounts(&req) else {
-        return refuse(500, DB_ERROR);
-    };
-
     let callers = callers(&req).await;
     if callers.user.is_none() {
         return refuse(401, "กรุณาเข้าสู่ระบบ");

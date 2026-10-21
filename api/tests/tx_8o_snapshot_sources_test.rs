@@ -22,9 +22,6 @@ use save_common::{
     MAIN, Mode, OWNER, PDF, Shop, TransactionService, at, branch, form, millis, money,
 };
 use uuid::Uuid;
-use xc_auth::application::account::service::AccountService;
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -45,16 +42,10 @@ fn branch_tx(shop: &Shop) -> BranchTx {
 }
 
 fn sources(shop: &Shop) -> ServiceSnapshotSources {
-    ServiceSnapshotSources::new(
-        TransactionService::new(
-            Arc::new(PgTransactionRepository::new(shop.pool.clone())),
-            branch_tx(shop),
-        ),
-        AccountService::new(
-            Arc::new(PgAccountRepository::new(shop.pool.clone())),
-            PasswordHasher::with_cost(8, 1, 1),
-        ),
-    )
+    ServiceSnapshotSources::new(TransactionService::new(
+        Arc::new(PgTransactionRepository::new(shop.pool.clone())),
+        branch_tx(shop),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]

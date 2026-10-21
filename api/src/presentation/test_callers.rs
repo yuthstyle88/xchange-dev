@@ -61,8 +61,8 @@ pub fn nobody() -> Callers {
 
 /// OR-7.m T-last (#1027): the v2 staff role names tests still use in their specs, each with the
 /// Blueprint roles it maps to (the table above). One shared table, so no test keeps its own copy
-/// or reaches for the v2 `Role` / `v3_roles` that T-last deletes. Pinned against
-/// `old_cookie_callers` by the bridge test below while that bridge exists.
+/// or reaches for the v2 `Role` / `v3_roles` that T-last deletes. It was pinned against
+/// `old_cookie_callers` by a bridge test until OR-7.m w2 (#1027) deleted both.
 pub const V2_STAFF: [(&str, &[Role]); 9] = [
     ("FRONT", &[Role::Teller]),
     ("BACKEND", &[Role::BranchManager]),
@@ -81,59 +81,4 @@ pub fn v2_staff_roles(name: &str) -> Option<&'static [Role]> {
         .iter()
         .find(|(n, _)| *n == name)
         .map(|(_, roles)| *roles)
-}
-
-#[cfg(test)]
-mod tests {
-    //! Bridge test: deleted with `old_cookie_callers` (OR-7.m's last ticket).
-    use xc_auth::domain::policy::value_objects::actor::Actor as V3Actor;
-    use xc_auth::domain::policy::value_objects::role::Role as V3Role;
-
-    use super::*;
-    use crate::presentation::pages::{Sessions, old_cookie_callers};
-
-    fn same(left: &Callers, right: &Callers) {
-        assert_eq!(left.user, right.user);
-        assert_eq!(left.staff_user, right.staff_user);
-    }
-
-    #[test]
-    fn every_v2_actor_builds_the_same_callers_as_the_old_cookies() {
-        let branch = BranchId::new("B1");
-        // OR-7.m T-last: the shared table, by name, is what the old cookies built
-        for (name, roles) in V2_STAFF {
-            let v3 = V3Role::parse(name).expect("a v2 staff role name");
-            let old = V3Actor::staff("e1", v3, branch.clone()).expect("a staff role");
-            for with_owner in [false, true] {
-                let expected = old_cookie_callers(
-                    Sessions {
-                        owner: with_owner.then(|| V3Actor::owner("owner")),
-                        staff: Some(old.clone()),
-                    },
-                    SEEDED_XC_ORG_ID,
-                );
-                let built = callers(
-                    with_owner.then(|| owner("owner")),
-                    Some(staff("e1", roles, branch.clone())),
-                );
-                same(&built, &expected);
-            }
-        }
-        let owner_only = old_cookie_callers(
-            Sessions {
-                owner: Some(V3Actor::owner("owner")),
-                staff: None,
-            },
-            SEEDED_XC_ORG_ID,
-        );
-        same(&callers(Some(owner("owner")), None), &owner_only);
-        let none = old_cookie_callers(
-            Sessions {
-                owner: None,
-                staff: None,
-            },
-            SEEDED_XC_ORG_ID,
-        );
-        same(&nobody(), &none);
-    }
 }

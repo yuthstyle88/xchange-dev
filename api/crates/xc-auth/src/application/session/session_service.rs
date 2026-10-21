@@ -27,8 +27,6 @@ use super::refresh_token::{decrypt_refresh_token, encrypt_refresh_token};
 
 pub const SESSION_SECONDS: i64 = 43_200;
 pub const SESSION_COOKIE: &str = "__Host-xc_session";
-pub const OWNER_COOKIE: &str = "__Host-xc_owner";
-pub const STAFF_COOKIE: &str = "__Host-xc_staff";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionUserRole {

@@ -5,13 +5,14 @@
 //! `CF-Connecting-IP` and `X-Forwarded-For` reach the server as the client wrote them unless
 //! the proxy clears them, so the server never reads either (ticket #130).
 //!
-//! This is the one place that reads the address. Both sign-in doors use it, and so does every
-//! later limit per address; none reads the request's headers itself
-//! (`tests/client_address_test.rs` holds the sources to that).
+//! This is the one place that reads the address. The kiosk quote limit uses it, and so does every
+//! per-address limit; none reads the request's headers itself
+//! (`tests/client_address_fn_test.rs` holds the sources to that and pins the function itself;
+//! `tests/or7m_w2_client_address_test.rs` pins the address rules on the kiosk quote limit).
 //!
 //! Known difference from v2: v2's staff door read `CF-Connecting-IP` first and `X-Real-IP`
-//! only without it (the `addresses` story of `tests/fixtures/auth/v2_auth_http_cases.json`
-//! records it). v3 reads `X-Real-IP` at every door.
+//! only without it (the `addresses` story of v2's auth fixture, deleted in OR-7.m w2 #1027).
+//! v3 reads `X-Real-IP` wherever it reads an address.
 
 use actix_web::HttpRequest;
 
