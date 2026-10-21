@@ -685,12 +685,14 @@ async fn a_kiosk_save_at_a_rate_that_is_not_its_quotes_is_refused() {
     s.shop.finish().await;
 }
 
-/// A3 (kiosk) (design quote-transaction.md §4.6.1: "A request with no `quote_id` is refused `RATE_MISMATCH`";
-/// lane controller's ruling R2 (a), #674): a checked request that carries no quote (one made before TX-7, or
-/// whose quote the port did not return), saved at its own per-1 rate, is refused `RATE_MISMATCH`. No quote is
-/// made for it, its `quote_id` stays NULL, it stays `ID_CHECKED`, and nothing else is written.
+/// #4113 row 5, restated by the ticket author (claude/studio-claude-6) on the owner's ruling of 2026-10-21:
+/// *"ใบเสนอ ราคา ใข้ ใบเก่า ราคา มันจะไม่ ได้ นะ เพราะ ราคา มันวิ่ง ตลอด"* · *"ต้องใช้ ราคา ปัจจุบัน"* ·
+/// *"การจอง มันแค่ได้ คิว"* (design `quote-transaction.md` §4.6.1 A3, amended by #4113). A kiosk request books a
+/// queue place, never a rate, so a checked request that carries no quote (one made before TX-7, or whose quote the
+/// port did not return) is saved like a walk-in, at the current published line (MAIN's 32.1 per 1). Before #4113
+/// this test was `a_kiosk_request_with_no_quote_is_refused_and_given_none` and asserted `RATE_MISMATCH`.
 #[tokio::test]
-async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
+async fn a_kiosk_request_with_no_quote_is_saved_at_the_current_line() {
     let s = Scene::start().await;
     sqlx::query(
         "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, currency, \
@@ -704,39 +706,66 @@ async fn a_kiosk_request_with_no_quote_is_refused_and_given_none() {
     .await
     .expect("insert a checked request with no quote");
     let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
-    let quotes = || async {
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM quotes")
-            .fetch_one(&s.shop.pool)
-            .await
-            .expect("count the quotes")
-    };
-    let quote_count = quotes().await;
-    let before = (s.shop.everything().await, s.requests().await);
 
-    // the form is the request's: 100 USD bought in cash at 32.1 per 1
-    let got = s
-        .save(
-            s.form("noq-0001-aaaaaaaaaaa"),
-            &with_kiosk("no-quote"),
-            &front,
-        )
-        .await;
-    assert_eq!(refusal(got), RATE_MISMATCH, "decision A3 (kiosk)");
-    assert_eq!(
-        quotes().await,
-        quote_count,
-        "no quote is made for the request"
-    );
-    let (status, quote_id): (String, Option<String>) = sqlx::query_as(
-        "SELECT status, quote_id::text FROM kiosk_requests WHERE branch_id = $1 AND id = 'no-quote'",
+    // the form is the request's: 100 USD bought in cash at the current 32.1 per 1
+    s.save(
+        s.form("noq-0001-aaaaaaaaaaa"),
+        &with_kiosk("no-quote"),
+        &front,
+    )
+    .await
+    .expect("#4113: a request with no quote is saved at the current line");
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM kiosk_requests WHERE branch_id = $1 AND id = 'no-quote'",
     )
     .bind(MAIN)
     .fetch_one(&s.shop.pool)
     .await
     .expect("read the request");
-    assert_eq!((status.as_str(), quote_id), ("ID_CHECKED", None));
+    assert_eq!(status, "COMPLETED");
+    s.shop.finish().await;
+}
+
+/// #4113 row 6 (owner, 2026-10-21, as above): the rate moves after the kiosk quoted the request (32.1 → 33.0 per 1).
+/// The save goes through at the current line, 33.0. A client rate equal to the kiosk's old quote, 32.1, is now the
+/// mismatch: refused `RATE_MISMATCH`, nothing written, the request still ready.
+#[tokio::test]
+async fn a_kiosk_save_is_priced_at_the_current_line_after_the_rate_moved() {
+    let s = Scene::start().await;
+    s.id_checked(MAIN, "q1", &s.front_id).await;
+    let front = staff(&s.front_id, FRONT, StandingKind::Staff(AccessRole::Teller));
+    // the rate moves on the current publication; the kiosk's stored quote keeps its 32.1
+    sqlx::query(
+        "UPDATE published_rate_lines SET buy_rate = 33, sell_rate = 34 \
+         WHERE currency_code = 'USD' \
+           AND publication_id = (SELECT current_publication_id FROM branches WHERE id = $1)",
+    )
+    .bind(MAIN)
+    .execute(&s.shop.pool)
+    .await
+    .expect("move the current USD line to 33 / 34");
+    let before = (s.shop.everything().await, s.requests().await);
+
+    let got = s
+        .save(s.form("move-0001-aaaaaaaaaa"), &with_kiosk("q1"), &front)
+        .await;
+    assert_eq!(
+        refusal(got),
+        RATE_MISMATCH,
+        "#4113: the kiosk's old 32.1 is not the current line"
+    );
     assert_eq!((s.shop.everything().await, s.requests().await), before);
     assert!(s.counter.completed().is_empty());
+
+    let mut current = s.form("move-0001-aaaaaaaaaa");
+    current.rate = "33".to_owned();
+    s.save(current, &with_kiosk("q1"), &front)
+        .await
+        .expect("#4113: saved at the current line");
+    assert_eq!(
+        s.requests().await,
+        ["MAIN/q1 COMPLETED|move-0001-aaaaaaaaaa|XC-20261006-000001"]
+    );
     s.shop.finish().await;
 }
 

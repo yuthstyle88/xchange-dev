@@ -17,9 +17,7 @@ use xc_exchange::domain::exchange::value_objects::transaction_form::{
     FILE_MISSING, TransactionForm,
 };
 use xc_exchange::domain::quote::quote::QuoteChannel;
-use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
-use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
@@ -385,117 +383,89 @@ impl SaveTransactionWorkflow {
 
                     // Step 1: Quote
                     let extras = stepped.as_ref().map(|(e, _, _)| e);
-                    let kiosk_req_id = extras
+                    let is_kiosk = extras
                         .and_then(|e| e.kiosk_request_id.as_deref())
-                        .filter(|s| !s.is_empty());
+                        .is_some_and(|s| !s.is_empty());
 
-                    let (quote_id, quote_unit_size) = if let Some(req_id) = kiosk_req_id {
-                        // A kiosk save first passes KioskSaveStep's currency/amount check.
-                        if let Some((extras, booking, actor)) = &stepped {
-                            let ctx = SaveContext {
-                                branch: &branch,
-                                form: &form,
-                                extras,
-                                booking: booking.as_ref(),
-                                actor,
-                                teller: teller.as_ref(),
-                                now,
-                                prior: None,
-                            };
-                            for step in &this.steps {
-                                step.before_in(tx, &ctx).await?;
-                            }
-                        }
-
-                        // Then compares form.client_rate with the request's own quote.
-                        // A kiosk request with no quote is refused with RATE_MISMATCH. Never synthesize a quote (D-1).
-                        let row: Option<(Option<Uuid>,)> = sqlx::query_as(
-                            "SELECT quote_id FROM kiosk_requests WHERE branch_id = $1 AND id = $2"
-                        )
-                        .bind(branch.as_str())
-                        .bind(req_id)
-                        .fetch_optional(&mut **tx)
-                        .await
-                        .map_err(AppError::Database)?;
-
-                        let Some((Some(qid),)) = row else {
-                            return refuse(RATE_MISMATCH);
+                    // A kiosk save first passes KioskSaveStep's currency/amount check before rate checks.
+                    if is_kiosk
+                        && let Some((extras, booking, actor)) = &stepped
+                    {
+                        let ctx = SaveContext {
+                            branch: &branch,
+                            form: &form,
+                            extras,
+                            booking: booking.as_ref(),
+                            actor,
+                            teller: teller.as_ref(),
+                            now,
+                            prior: None,
                         };
+                        for step in &this.steps {
+                            step.before_in(tx, &ctx).await?;
+                        }
+                    }
 
-                        let quote_repo = PgQuoteRepository::new(this.branch_tx.pool().clone());
-                        let Some(quote) = quote_repo.find_in(tx, qid).await? else {
-                            return refuse(RATE_MISMATCH);
-                        };
-                        let line = quote.lines.first().ok_or_else(|| {
-                            AppError::Internal(format!("quote {qid} has no line"))
-                        })?;
-                        let per_one = CompatRate::per_one(line.final_rate, line.unit_size)
-                            .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                        if form.client_rate != per_one {
-                            return refuse(RATE_MISMATCH);
-                        }
-                        (qid, line.unit_size)
-                    } else {
-                        // Non-kiosk save (desk / booking): quote first.
-                        let Ok(code) = CurrencyCode::parse(&form.currency) else {
-                            return refuse(RATE_MISMATCH);
-                        };
-                        if code.is_thb() {
-                            return refuse(RATE_MISMATCH);
-                        }
-                        let quote_req = QuoteRequest {
-                            branch_id: branch.clone(),
-                            customer_id: None,
-                            channel: QuoteChannel::Desk,
-                            lines: vec![QuoteRequestLine {
-                                currency: code,
-                                shop_side: form.side,
-                                quantity: ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
-                                    form.amount.minor_i128(),
-                                    2,
-                                )),
-                                fee_thb: Some(form.fee),
-                                denomination_group: GroupCode::all(),
-                            }],
-                        };
-                        let quote_service = QuoteService::new(this.branch_tx.pool().clone());
-                        let quote = match quote_service.quote_in(tx, quote_req, &save_actor, now).await {
-                            Ok(q) => q,
-                            Err(AppError::Domain(msg))
-                                if mode == Mode::Live && msg.starts_with("rateUnavailable") =>
-                            {
-                                return refuse(RATE_MISMATCH);
-                            }
-                            Err(e) => return Err(e),
-                        };
-                        let line = quote.lines.first().ok_or_else(|| {
-                            AppError::Internal(format!("quote {} has no line", quote.id))
-                        })?;
-                        let per_one = CompatRate::per_one(line.final_rate, line.unit_size)
-                            .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
-                        if form.client_rate != per_one {
-                            return refuse(RATE_MISMATCH);
-                        }
-
-                        // Then run steps.before_in
-                        if let Some((extras, booking, actor)) = &stepped {
-                            let ctx = SaveContext {
-                                branch: &branch,
-                                form: &form,
-                                extras,
-                                booking: booking.as_ref(),
-                                actor,
-                                teller: teller.as_ref(),
-                                now,
-                                prior: None,
-                            };
-                            for step in &this.steps {
-                                step.before_in(tx, &ctx).await?;
-                            }
-                        }
-
-                        (quote.id, line.unit_size)
+                    // Price at the current published line (walk-in, booking, and kiosk per #4113).
+                    let Ok(code) = CurrencyCode::parse(&form.currency) else {
+                        return refuse(RATE_MISMATCH);
                     };
+                    if code.is_thb() {
+                        return refuse(RATE_MISMATCH);
+                    }
+                    let quote_req = QuoteRequest {
+                        branch_id: branch.clone(),
+                        customer_id: None,
+                        channel: QuoteChannel::Desk,
+                        lines: vec![QuoteRequestLine {
+                            currency: code,
+                            shop_side: form.side,
+                            quantity: ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
+                                form.amount.minor_i128(),
+                                2,
+                            )),
+                            fee_thb: Some(form.fee),
+                            denomination_group: GroupCode::all(),
+                        }],
+                    };
+                    let quote_service = QuoteService::new(this.branch_tx.pool().clone());
+                    let quote = match quote_service.quote_in(tx, quote_req, &save_actor, now).await {
+                        Ok(q) => q,
+                        Err(AppError::Domain(msg))
+                            if mode == Mode::Live && msg.starts_with("rateUnavailable") =>
+                        {
+                            return refuse(RATE_MISMATCH);
+                        }
+                        Err(e) => return Err(e),
+                    };
+                    let line = quote.lines.first().ok_or_else(|| {
+                        AppError::Internal(format!("quote {} has no line", quote.id))
+                    })?;
+                    let per_one = CompatRate::per_one(line.final_rate, line.unit_size)
+                        .map_err(|_| AppError::Domain(RATE_MISMATCH.to_owned()))?;
+                    if form.client_rate != per_one {
+                        return refuse(RATE_MISMATCH);
+                    }
+
+                    if !is_kiosk
+                        && let Some((extras, booking, actor)) = &stepped
+                    {
+                        let ctx = SaveContext {
+                            branch: &branch,
+                            form: &form,
+                            extras,
+                            booking: booking.as_ref(),
+                            actor,
+                            teller: teller.as_ref(),
+                            now,
+                            prior: None,
+                        };
+                        for step in &this.steps {
+                            step.before_in(tx, &ctx).await?;
+                        }
+                    }
+
+                    let (quote_id, quote_unit_size) = (quote.id, line.unit_size);
 
                     CustomerService::confirm_in(tx, &branch, &form.customer_id, &form.customer)
                         .await?;
