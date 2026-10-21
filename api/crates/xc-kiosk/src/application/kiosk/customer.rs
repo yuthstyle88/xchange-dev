@@ -242,7 +242,11 @@ impl KioskService {
                 Box::pin(async move {
                     let req = find_live_by_token_in(tx, &repo, &b, &token, now).await?;
                     if req.status == KioskStatus::Quoted {
-                        confirm_in(tx, &repo, &*ports, &b, Some(&req), at, now).await?;
+                        let moved = confirm_in(tx, &repo, &*ports, &b, Some(&req), at, now).await?;
+                        // As `confirm_with`: a ticket only for a request that is now WAITING.
+                        if moved.request.status != KioskStatus::Waiting {
+                            return Err(token_not_found());
+                        }
                     }
                     let id = req.id;
                     let source = QueueTicketSource::Kiosk {
