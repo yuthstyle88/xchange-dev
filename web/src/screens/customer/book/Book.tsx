@@ -12,6 +12,7 @@ import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error'
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { MoneyText } from '../../../shared/ui/MoneyText';
+import { QrCode } from '../../../shared/ui/QrCode';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { BookingCreateInput, BookingCreateOutput } from '../../../shared/api/generated/bookings';
 import { th, en, zh } from './i18n';
@@ -407,6 +408,20 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         <div class="xc-book-success alert-success" role="status">
           <p>{t('bookingSuccess')}</p>
           <p>{fill(t('bookingNo'), { no: successData()!.bookingNo || successData()!.id })}</p>
+          <Show when={successData()!.qrToken}>
+            <div class="xc-booking-qr" data-qr-token={successData()!.qrToken!}>
+              <QrCode
+                value={successData()!.qrToken!}
+                label={t('qrCode')}
+                downloadName={`booking-${successData()!.bookingNo || successData()!.id}`}
+                downloadLabel={t('downloadQr')}
+              />
+            </div>
+            <p class="xc-book-qr-hint">{t('qrShowAtDesk')}</p>
+          </Show>
+          <a class="xc-book-bookings-link" href="/app/bookings">
+            {t('viewMyBookings')}
+          </a>
         </div>
       </Show>
 
