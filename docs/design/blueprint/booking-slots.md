@@ -23,7 +23,7 @@ and answered *"ใช้คำแนะนำทั้งหมด"* (use every 
 | Question | Decided |
 |---|---|
 | Q-B1 slot length, capacity, horizon | per-branch data ADMIN sets in A04; a branch with no rule offers no slots (option A) |
-| Q-B2 cancellation cutoff | 60 minutes before the slot, a company setting ADMIN can edit; staff can always cancel with a reason (option A) |
+| Q-B2 cancellation cutoff | **Revised 2026-10-21:** a customer may **cancel at any time**, with no cutoff and no approval, because a booking holds no money (the owner, 2026-10-21: *"ยกเลิกการจอง ยกเลิกได้เลย"* · *"ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน"*). The 60-minute company setting ADMIN can edit now limits **reschedule only**. Staff can always cancel with a reason |
 | Q-B3 no-show grace | slot start + 15 minutes, editable (option A) |
 | Q-B4 partner confirmation expiry | 60 minutes after the booking is made, never later than the cutoff, editable (option A) |
 | Q-B5 teller-made booking | starts `CONFIRMED` (option A) |
@@ -84,7 +84,7 @@ Already decided elsewhere, not asked again:
 
 | Step | Permission | Notes |
 |---|---|---|
-| Book for myself (C02), cancel, reschedule, confirm a partner booking, see my bookings and QR (C03) | `CustomerSelf` | own customer only (#550 owner check); cancel and reschedule before the cutoff (Q-B2: 60 min, editable) |
+| Book for myself (C02), cancel, reschedule, confirm a partner booking, see my bookings and QR (C03) | `CustomerSelf` | own customer only (#550 owner check); cancel at any time; reschedule before the cutoff (Q-B2 revised 2026-10-21: 60 min, editable) |
 | Book for a customer at the desk or on the phone (B02 *"รับจอง"*) | `BookingsDesk` (TELLER) | PR 589 C9: BRANCH_MANAGER is refused, as today |
 | Check in, mark a hand-off, cancel with a reason, reschedule, re-issue a QR, look up by QR (B02) | `BookingsDesk` | no cutoff for staff; a reason is required to cancel |
 | Check in by QR at the kiosk | the kiosk device's path (`EntryPath::Kiosk`) | QR only |
@@ -185,7 +185,7 @@ booking_events(id uuid PK, organization_id, booking_id text NOT NULL REFERENCES 
      EXPIRED                                            │ start + grace passes (sweeper)        │ ticket → SERVING
                                                         ▼                                       ▼
                                                      NO_SHOW                               IN_SERVICE ──transaction COMPLETED──▶ COMPLETED
-  cancel:  PENDING | CONFIRMED  ──customer (before cutoff) or teller (reason)──▶ CANCELLED
+  cancel:  PENDING | CONFIRMED  ──customer (any time) or teller (reason)──▶ CANCELLED
            CHECKED_IN | IN_SERVICE ──teller (reason)──▶ CANCELLED   (CHECKED_IN also cancels its active ticket)
            CHECKED_IN | IN_SERVICE ──ticket cancelled dayClosed──▶ CANCELLED (dayClosed)
            CHECKED_IN, no active ticket, after its service date (sweeper) ──▶ CANCELLED (dayEnded)
@@ -203,7 +203,7 @@ booking_events(id uuid PK, organization_id, booking_id text NOT NULL REFERENCES 
 | a given `quoteId` is the branch's, channel `BOOKING`, same side, currency and quantity, not `CANCELLED` | `BookingService::create` | `VALIDATION_FAILED` (field `quoteId`) |
 | PARTNER needs `referralCode`; the capture runs in the same transaction | `BookingService::create` | `VALIDATION_FAILED` (field `referralCode`), the capture's own errors |
 | DESK/APP: an optional `referralCode` is captured on the booking in the same transaction (`capture_in`, `CaptureTarget::Booking`); a bad code refuses the whole create and writes nothing | `BookingService::create` | `VALIDATION_FAILED` (field `referralCode`), the capture's own errors |
-| customer cancel/reschedule only before `slot.start_at − cutoff` (Q-B2) | `BookingMachine::cancel`, `reschedule` | `cancelCutoffPassed` |
+| customer **reschedule** only before `slot.start_at − cutoff` (Q-B2 revised 2026-10-21; a customer cancel has no cutoff) | `BookingMachine::reschedule` | `cancelCutoffPassed` |
 | confirm only from `PENDING_CUSTOMER_CONFIRMATION`, by the owner, before `confirm_expires_at` (Q-B4) | `BookingMachine::confirm` | `STALE_VERSION`, `bookingExpired` |
 | check-in: `CONFIRMED` (or `CHECKED_IN` with no active ticket), the slot's service date is today at the branch, now ≤ `start_at + grace` (Q-B3), the owner proven (QR or the teller's identity tick) | `CheckInService::check_in` | `checkInWindow`, `qrMismatch`, `STALE_VERSION` |
 | check-in and the ticket issue commit together; `queueClosed` rolls both back | `CheckInService::check_in` | the queue's `queueClosed` |
@@ -607,7 +607,7 @@ Every question below is decided with the proposed option; the options are kept a
 owner already chose this pattern for hours (B4: *a branch with no hours does not open*). Each branch's numbers are
 entered by ADMIN in A04 when that branch opens bookings; no number is seeded.
 
-**Q-B2. Cancellation cutoff** (§12; used by §4.3 and `booking_policies.cancel_cutoff_minutes`). Staff can always cancel with a reason. **Decided: A, 60 minutes, editable.**
+**Q-B2. Cancellation cutoff** (§12; used by §4.3 and `booking_policies.cancel_cutoff_minutes`). Staff can always cancel with a reason. **Decided: A, 60 minutes, editable.** **Revised 2026-10-21** (the owner, 2026-10-21: *"ยกเลิกการจอง ยกเลิกได้เลย"* · *"ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน"*): the cutoff no longer applies to a customer's **cancel**, only to a **reschedule**. The column keeps its name; renaming it is not worth a migration. Q-B4's cap (*"never later than the cutoff"*) still reads the same number.
 - A. Minutes before the slot starts, a company setting with a suggested default ADMIN can change (for example 60). Cost: none beyond one setting.
 - B. No cutoff: the customer can cancel or move until the slot starts. Cost: places freed too late to refill.
 - C. Per-branch cutoff. Cost: one more A04 field, and different rules per branch for customers.
