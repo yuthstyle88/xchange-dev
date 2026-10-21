@@ -100,7 +100,7 @@ async fn every_failure_is_one_link_expired() {
         &view(&db, &s.sign(CopySubjectKind::Booking, "BK-NOPE", "alice-qr", Utc::now() + Duration::hours(1))).await,
         "no such booking",
     );
-    sqlx::query("UPDATE bookings SET qr_token_hash = $2, qr_version = 2 WHERE id = 'BK-ALICE'")
+    sqlx::query("UPDATE bookings SET qr_token_hash = $1, qr_version = 2 WHERE id = 'BK-ALICE'")
         .bind(&sha("alice-qr-2")[..])
         .execute(&db.pool)
         .await
