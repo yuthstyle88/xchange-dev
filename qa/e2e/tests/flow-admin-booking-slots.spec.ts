@@ -236,13 +236,14 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
       );
       console.log(`[R9-4] POST /api/booking-slots/${closedSlotId}/open ${openRes.text}`);
       expect(openRes.ok, `slotOpen accepted: ${openRes.text}`).toBeTruthy();
+      const reopenedId = closedSlotId;
       closedSlotId = '';
 
       await page.reload();
       await expect(
-        page.locator(`.slots-list .slot-item .slot-status`).first(),
-        'slots list loaded after reopen',
-      ).toBeVisible({ timeout: 15_000 });
+        page.locator(`.slots-list .slot-item[data-slot-id="${reopenedId}"] .slot-status`),
+        'slot status persisted as OPEN after reload',
+      ).toHaveText('OPEN', { timeout: 15_000 });
       await shot(page, 'admin-booking-slots', 'r9-4-4-slot-reopened');
 
       // 4. closureAdd & closureRemove (BookingSlots.tsx:201-257,438-478):
@@ -391,6 +392,9 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
     await expect(page.locator('.booking-slots-screen')).toHaveCount(0);
 
     // Direct command calls as teller are refused with 403 (roleNotAllowed / outOfScope).
+    // The same-origin check (command.rs step 2, extractors/origin.rs same_origin) runs before Policy::authorize,
+    // so send its headers or the refusal would be 400 originRejected instead of the role refusal.
+    const sameOrigin = { 'x-xchange-request': '1', origin: new URL(users.baseUrl).origin };
     const branch = encodeURIComponent(users.branch);
     const dummySlot = '00000000-0000-0000-0000-000000000001';
     const closureDate = bangkokDate(21);
@@ -432,8 +436,8 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
       const key = `qa-r9-4-teller-${c.name}-${Date.now()}`;
       const res =
         c.method === 'PUT'
-          ? await page.request.put(c.url, { headers: { 'Idempotency-Key': key }, data: c.data })
-          : await page.request.post(c.url, { headers: { 'Idempotency-Key': key }, data: c.data });
+          ? await page.request.put(c.url, { headers: { ...sameOrigin, 'Idempotency-Key': key }, data: c.data })
+          : await page.request.post(c.url, { headers: { ...sameOrigin, 'Idempotency-Key': key }, data: c.data });
       const body = await res.text();
       console.log(`[R9-4 teller] ${c.method} ${c.url} -> ${res.status()} ${body.slice(0, 200)}`);
       expect(res.status(), `${c.name} refused for teller: ${body}`).toBe(403);
