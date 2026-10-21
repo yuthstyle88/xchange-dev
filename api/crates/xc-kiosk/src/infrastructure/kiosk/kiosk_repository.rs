@@ -663,6 +663,46 @@ impl KioskRepository for PgKioskRepository {
         Ok(matched.unwrap_or(false))
     }
 
+    async fn find_by_token_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        token: &str,
+    ) -> AppResult<Option<KioskRequest>> {
+        let _ = (tx, branch, token);
+        todo!("KWQ-A1: the request whose cancel_token_hash is SHA-256(token), in this branch")
+    }
+
+    async fn set_customer_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        customer_id: &str,
+    ) -> AppResult<()> {
+        let _ = (tx, branch, id, customer_id);
+        todo!("KWQ-A1: UPDATE kiosk_requests SET customer_id")
+    }
+
+    async fn customer_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+    ) -> AppResult<Option<String>> {
+        let _ = (tx, branch, id);
+        todo!("KWQ-A1: SELECT customer_id")
+    }
+
+    async fn branch_timezone_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+    ) -> AppResult<Option<String>> {
+        let _ = (tx, branch);
+        todo!("KWQ-A1: SELECT timezone FROM branches")
+    }
+
     async fn client_ip_in(
         &self,
         tx: Tx<'_, '_>,

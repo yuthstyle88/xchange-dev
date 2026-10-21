@@ -17,8 +17,10 @@ use crate::domain::kiosk::entities::payment_gate::PaymentGate;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use crate::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK;
 use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
+use crate::domain::kiosk::value_objects::customer_quote::CustomerQuote;
 use crate::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
 use crate::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
+use crate::domain::kiosk::value_objects::issued_request::IssuedRequest;
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_currencies::KioskCurrencies;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
@@ -186,6 +188,52 @@ impl KioskService {
                 })
             })
             .await
+    }
+
+    /// `quote` for a web request (design `kiosk-shared-phone.md` §4.2 D1, D2): the same rules and
+    /// the same transaction as `quote`, plus, when `customer` is given, the member
+    /// (`kiosk_requests.customer_id`) and the hash of its request token (`cancel_token_hash`).
+    /// `customer: None` is exactly `quote` (B1); `quote` delegates here.
+    pub async fn quote_for(
+        &self,
+        branch: &BranchId,
+        cmd: NewQuote,
+        customer: Option<CustomerQuote>,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
+        let _ = (branch, cmd, customer, now);
+        todo!("KWQ-A2: quote's body, then set_customer_in + set_cancel_token_in for a web request")
+    }
+
+    /// `issueByToken`'s core (§4.2 D5, §4.4 B6–B8): in one transaction of `branch`, the request
+    /// whose token is `token`. A `QUOTED` one is confirmed exactly as `confirm` does (WAITING,
+    /// one `IssueSource::Kiosk` ticket through `queue`, key `kiosk-confirm:<id>`), and its member
+    /// is linked to the ticket (`QueueTickets::link_kiosk_customer_in`). A `WAITING` one answers
+    /// the same ticket again (B7), never a second number. Unknown, another branch's, past its
+    /// purge window (`KioskMachine::is_purgeable`) or in any other status ⇒ `token_not_found()`,
+    /// one answer for all (B8). The cancel token is not minted here: the request token stays the
+    /// request's only key.
+    pub async fn issue_by_token(
+        &self,
+        branch: &BranchId,
+        token: &str,
+        now: DateTime<Utc>,
+        queue: Arc<dyn QueueTickets>,
+    ) -> AppResult<IssuedRequest> {
+        let _ = (branch, token, now, queue);
+        todo!("KWQ-A2: find_by_token_in, confirm or re-issue, link the member")
+    }
+
+    /// `findByToken`'s core (§4.2 D7, B13): the id of this branch's request whose token is
+    /// `token`, under the same rule and the same single refusal as `issue_by_token`.
+    pub async fn find_by_token(
+        &self,
+        branch: &BranchId,
+        token: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<String> {
+        let _ = (branch, token, now);
+        todo!("KWQ-A2: find_by_token_in under the purge window")
     }
 
     /// `confirm`: the customer accepts the quote; the request joins the queue.
@@ -420,6 +468,15 @@ impl KioskService {
             .filter(|receipt| KioskMachine::receipt_readable(receipt.published, now))
             .map(|receipt| receipt.image);
         Ok(CustomerReceipt { identity, image })
+    }
+}
+
+/// The one answer for a request token that does not lead to a request of this branch (§4.2 D5):
+/// unknown, another branch's, expired, reissued-away. Answered as `404 notFound`.
+pub fn token_not_found() -> AppError {
+    AppError::NotFound {
+        entity: "kioskRequest",
+        id: String::new(),
     }
 }
 

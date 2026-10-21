@@ -2,7 +2,8 @@
 pub mod service;
 
 mod currencies;
-mod customer;
+pub mod customer;
 pub mod day_close;
 mod desk;
+pub mod request_issue;
 mod save_hooks;
