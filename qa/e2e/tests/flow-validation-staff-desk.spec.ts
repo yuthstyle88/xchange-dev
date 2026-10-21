@@ -156,6 +156,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(countForm, 'shift-count-form open (ShiftCard.tsx:464)').toBeVisible({ timeout: 15_000 });
 
           const denomInputs = countForm.locator('[data-denomination-row] input[data-denomination-id]');
+          await expect(denomInputs.first(), 'at least one denomination input on shift-count-form').toBeVisible({ timeout: 15_000 });
           const inputCount = await denomInputs.count();
           expect(inputCount, 'at least one denomination input on shift-count-form').toBeGreaterThan(0);
 
@@ -278,6 +279,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await noteInput.fill(runMarker);
 
           const denomInputs = transferForm.locator('[data-denomination-row] input[data-denomination-id]');
+          await expect(denomInputs.first(), 'at least one denomination input on transfer-form').toBeVisible({ timeout: 15_000 });
           const count = await denomInputs.count();
           expect(count, 'at least one denomination input on transfer-form').toBeGreaterThan(0);
           for (let i = 0; i < count; i++) {
