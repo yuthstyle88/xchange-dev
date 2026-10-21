@@ -12,6 +12,7 @@
 | KS-2 | The customer's cancel at the kiosk is **one press**. The customer never types a code. | *"ต้องมาใส่ รหัส มันไม่รู้รหัส อะดิ"* · *"มันควร กดยกเลิกได้ เลย"* |
 | KS-3 | How long the queue-number screen stays is **configurable**, on a **per-branch kiosk settings page in admin**. | *"ให้ตั้งค่าได้เอง"* · *"ควรมีหน้า คอนฟิก สำหรับ kiosk"* (chose "the admin page, per branch") |
 | KS-4 | To book a queue at the kiosk the customer **must enter a phone number**, used to tell who is who, **verified by an SMS OTP** so a mistyped number is caught. | *"ลูกค้า มาควร มีการใส่ เบอร์ โทร เพื่อ จองคิว"* · chose "required" · *"ใช้ในการแยกแยะ ว่าใครเป็นใคร"* · *"ส่ง sms เพื่อ ยืนยัน ตัว ตน"* · *"ควร มี otpเพื่อกัน การ ใส่เบอร์ ผิด"* |
+| KS-4a | **OTP is used**, always. The branch switch exists only to cover the time before the Notify key is set. It is turned on as soon as a test send to the owner's phone succeeds, and is never an optional mode for a branch. | *"ใช้ otp"* |
 | KS-5 | *"ระบบ ป็นคนเรียก คิว ที่รัน ตาม คิวการจอง"*: the system calls the queue in booking order. **Open:** what changes, if anything (§6 Q1). | — |
 
 ## 1. What exists today (measured)
