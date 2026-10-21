@@ -4157,9 +4157,11 @@ name = "xc-kiosk"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "futures",
  "pos-error",
  "pos-infra",
+ "pos-printer",
  "rust_decimal",
  "serde",
  "serde_json",

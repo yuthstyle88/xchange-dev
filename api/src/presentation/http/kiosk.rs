@@ -6,6 +6,7 @@ use std::sync::Arc;
 use actix_web::error::PayloadError;
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, web};
+use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
@@ -20,10 +21,13 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kiosk::application::kiosk::request_issue::RequestIssueService;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
+use xc_kiosk::domain::kiosk::entities::kiosk_settings::KioskSettings;
+use xc_kiosk::domain::kiosk::repositories::kiosk_settings_repository::KioskSettingsRepository;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
 use xc_kiosk::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
@@ -45,10 +49,11 @@ use crate::application::compat::v2_json::V2Json;
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
+use crate::infrastructure::kiosk::pg_kiosk_settings_repository::PgKioskSettingsRepository;
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::dto::v3::common::RateFreshnessDto;
 use crate::presentation::extractors::actor::{
-    authorize, callers, identity_session, refuse, same_origin,
+    answer, authorize, callers, identity_session, refuse, same_origin,
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::http::rpc::RpcClock;
@@ -213,6 +218,17 @@ async fn publication_freshness(
     })
 }
 
+fn confirm_queue(pool: &sqlx::PgPool) -> Arc<dyn QueueTickets> {
+    let booking_events = pg_booking_lifecycle(pool.clone());
+    Arc::new(
+        TicketIssuer::new(
+            BranchTx::new(Transactor::new(pool.clone())),
+            Arc::new(PgQueueRepository::new(pool.clone())),
+        )
+        .with_booking_events(booking_events),
+    )
+}
+
 fn handle_service_error(err: AppError) -> HttpResponse {
     match err {
         AppError::Domain(msg) => refuse(400, &msg),
@@ -343,6 +359,10 @@ async fn handle_kiosk(
         "configure" => KioskAction::Configure,
         "cancel" => KioskAction::Cancel,
         "customerCancel" => KioskAction::CustomerCancel,
+        "issueByToken" => KioskAction::IssueByToken,
+        "findByToken" => KioskAction::FindByToken,
+        "settings" => KioskAction::Settings,
+        "configureSettings" => KioskAction::ConfigureSettings,
         _ => return kiosk_server_error(),
     };
 
@@ -448,14 +468,7 @@ async fn handle_kiosk(
             let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
             // §4.5 (QU-7 #1266): the confirm issues the request's walk-in ticket in its own
             // transaction, through the queue's port.
-            let booking_events = pg_booking_lifecycle(pool.clone());
-            let queue: Arc<dyn QueueTickets> = Arc::new(
-                TicketIssuer::new(
-                    BranchTx::new(Transactor::new(pool.clone())),
-                    Arc::new(PgQueueRepository::new(pool.clone())),
-                )
-                .with_booking_events(booking_events),
-            );
+            let queue = confirm_queue(pool);
             let token = uuid::Uuid::new_v4().to_string();
             match service
                 .confirm_with_token(&branch, id, now, queue, &token)
@@ -771,6 +784,112 @@ async fn handle_kiosk(
                 Ok(identity) => json_response(dto_kiosk::identity_json(&identity)),
                 Err(err) => handle_service_error(err),
             }
+        }
+        KioskAction::IssueByToken => {
+            let token = payload.get("token").and_then(Value::as_str).unwrap_or("");
+            if token.is_empty() {
+                return refuse(404, "notFound");
+            }
+            let origin = req
+                .headers()
+                .get(header::ORIGIN)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            let issue_service = RequestIssueService::new(service, confirm_queue(pool));
+            match issue_service
+                .issue_by_token(&branch, token, origin, now)
+                .await
+            {
+                Ok(issued) => answer(
+                    200,
+                    json!({
+                        "displayNumber": issued.display_number,
+                        "ticketId": issued.ticket_id,
+                        "ticketEscpos": base64::engine::general_purpose::STANDARD
+                            .encode(&issued.ticket_escpos),
+                    }),
+                    true,
+                ),
+                Err(AppError::NotFound { .. }) => refuse(404, "notFound"),
+                Err(err) => handle_service_error(err),
+            }
+        }
+        KioskAction::FindByToken => {
+            let token = payload.get("token").and_then(Value::as_str).unwrap_or("");
+            if token.is_empty() {
+                return refuse(404, "notFound");
+            }
+            let issue_service = RequestIssueService::new(service, confirm_queue(pool));
+            match issue_service.find_by_token(&branch, token, now).await {
+                Ok(request_id) => answer(200, json!({ "requestId": request_id }), true),
+                Err(AppError::NotFound { .. }) => refuse(404, "notFound"),
+                Err(err) => handle_service_error(err),
+            }
+        }
+        KioskAction::Settings => {
+            let repo = PgKioskSettingsRepository::new(pool.clone());
+            let settings = match repo.get(&branch).await {
+                Ok(Some(s)) => s,
+                Ok(None) => KioskSettings::defaults(branch),
+                Err(err) => return handle_service_error(err),
+            };
+            answer(
+                200,
+                json!({
+                    "resultSeconds": settings.result_seconds,
+                    "version": settings.version,
+                }),
+                true,
+            )
+        }
+        KioskAction::ConfigureSettings => {
+            let raw = match payload.get("resultSeconds").and_then(Value::as_i64) {
+                Some(n) => n,
+                None => {
+                    return answer(
+                        400,
+                        json!({ "error": "validationFailed", "field": "resultSeconds" }),
+                        true,
+                    );
+                }
+            };
+            let result_seconds = match KioskSettings::validate_result_seconds(raw) {
+                Ok(v) => v,
+                Err(inv) => {
+                    return answer(
+                        400,
+                        json!({ "error": "validationFailed", "field": inv.field }),
+                        true,
+                    );
+                }
+            };
+            let by = match &kiosk_actor {
+                KioskActor::Staff { username, .. } => username.as_str(),
+                KioskActor::Customer => "",
+            };
+            let mut tx = match pool.begin().await {
+                Ok(tx) => tx,
+                Err(err) => return handle_service_error(AppError::Database(err)),
+            };
+            let repo = PgKioskSettingsRepository::new(pool.clone());
+            let saved = match repo
+                .upsert_in(&mut tx, &branch, result_seconds, by, now)
+                .await
+            {
+                Ok(s) => s,
+                Err(err) => return handle_service_error(err),
+            };
+            if let Err(err) = tx.commit().await {
+                return handle_service_error(AppError::Database(err));
+            }
+            answer(
+                200,
+                json!({
+                    "resultSeconds": saved.result_seconds,
+                    "version": saved.version,
+                }),
+                true,
+            )
         }
     }
 }

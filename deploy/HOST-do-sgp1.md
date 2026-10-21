@@ -71,7 +71,7 @@ Identity on Dell (its database, keys, Redis and clients are all its own; nothing
 | Program | `identity-api` from `108-Plaza/108-platform-services` (`crates/identity-api`), built on Dell at `681bea2`, copied to `/opt/xc-identity/identity-api` (build sha in `/opt/xc-identity/BUILD`) |
 | Runs as | system user `xc-identity`, unit `/etc/systemd/system/xc-identity.service` (`ProtectSystem=strict`, restart on failure) |
 | Listens | `127.0.0.1:8095` only; public through the `xc-id` vhost |
-| Env | `/etc/xc-identity/env` (root:xc-identity 640). All secrets were **generated on this host** and are not stored anywhere else: `AUTH_JWT_SIGNING_KEY` (new Ed25519, kid `env-d7aae4675bd2`), `AUTH_API_KEY`, `INTERNAL_SERVICE_TOKEN`, `SESSION_TOKEN_HASH_SECRET`, `AUTH_OTP_PEPPER`, `AUTH_TOTP_ENC_KEY`, `AUTH_TENANT_ID` |
+| Env | `/etc/xc-identity/env` (root:xc-identity 640). All secrets were **generated on this host** and are not stored anywhere else: `AUTH_JWT_SIGNING_KEY` (new Ed25519, kid `env-d7aae4675bd2`), `AUTH_API_KEY`, `INTERNAL_SERVICE_TOKEN`, `SESSION_TOKEN_HASH_SECRET`, `AUTH_OTP_PEPPER`, `AUTH_TOTP_ENC_KEY`, `AUTH_TENANT_ID`. Build metadata (`APP_BUILD`, `APP_BUILT_AT`, `APP_CHANNEL=staging`) is written to `/etc/systemd/system/xc-identity.service.d/build.conf` by `deploy/server/update-identity.sh`. |
 | Settings | `AUTH_FAIL_CLOSED=1` · `AUTH_ISSUER=auth-service` · `AUTH_AUDIENCE=xchange` · `AUTH_OTP_DELIVERY_MODE=noop` (no SMS/email yet) · Google sign-in off · CORS `https://xc-v3.spacing.cloud`, `https://xc-v3-customer.spacing.cloud` · passkey RP `xc-id.spacing.cloud` |
 | Database | `xc_identity` (role `xc_identity`) on the local PostgreSQL; schemas migrate at boot |
 | Redis | `redis://127.0.0.1:6379/5` (db 5 is this service's alone) |
@@ -83,8 +83,7 @@ a login sent with the xchange client returns `200`, a token with `iss=auth-servi
 whose signature verifies against `http://127.0.0.1:8095/.well-known/jwks.json`; a wrong client secret returns
 `401 invalid_client_credentials`. Registration requires a phone number (`phone_required`).
 
-**Update:** build `identity-api` on Dell at the new sha, copy over `/opt/xc-identity/identity-api`, write the sha to
-`BUILD`, `systemctl restart xc-identity`, check `/health` and the JWKS. Keys survive restarts (they are in the env).
+**Update:** build `identity-api` on Dell at the new sha, stage it with `SHA256SUMS`, and run `deploy/server/update-identity.sh <stage-dir> [sha]`. The script verifies the checksum, keeps `identity-api.prev`, copies the binary to `/opt/xc-identity/identity-api`, writes `/opt/xc-identity/BUILD`, writes `/etc/systemd/system/xc-identity.service.d/build.conf` (`APP_BUILD`, `APP_BUILT_AT`, `APP_CHANNEL=staging`), reloads systemd, restarts `xc-identity`, and polls `/health` until `build` matches the sha (rolling back to `.prev` on failure). Keys survive restarts (they are in the env).
 **Remove:** `systemctl disable --now xc-identity`, delete the unit, `/opt/xc-identity`, `/etc/xc-identity`, the vhost,
 `DROP DATABASE xc_identity` and `redis-cli -n 5 FLUSHDB` — only on the owner's order.
 

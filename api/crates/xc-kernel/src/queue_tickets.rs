@@ -30,6 +30,8 @@ pub struct IssuedTicket {
     pub sequence: i32,
     /// `W001`, `B001`, …
     pub display_number: String,
+    /// `queue_tickets.issued_at`: the same on a retry, so a reprint shows the first time.
+    pub issued_at: DateTime<Utc>,
 }
 
 /// How a kiosk cancel ends its linked walk-in ticket (design `kiosk-cancel.md` §3.2).
@@ -83,4 +85,26 @@ pub trait QueueTickets: Send + Sync {
         outcome: &'a KioskTicketOutcome,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>>;
+
+    /// Sets `customer_id` on the active (WAITING, CALLED or SERVING) ticket of kiosk request
+    /// `request_id` inside `tx` (design `kiosk-shared-phone.md` §4.2 D5: the staff scan of a web
+    /// request links the member). `Ok(true)` when that ticket now carries `customer_id`, a repeat
+    /// included; `Ok(false)` when there is no active ticket, or it carries another member, which
+    /// is left unchanged.
+    /// The default refuses, so a port that does not support it fails loudly instead of dropping
+    /// the link.
+    fn link_kiosk_customer_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+        request_id: &'a str,
+        customer_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        let _ = (tx, branch, request_id, customer_id);
+        Box::pin(async {
+            Err(pos_error::AppError::Internal(
+                "link_kiosk_customer_in is not supported by this port".to_owned(),
+            ))
+        })
+    }
 }

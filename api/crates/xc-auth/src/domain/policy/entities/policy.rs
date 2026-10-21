@@ -121,12 +121,14 @@ impl Policy {
                 _ => Some(Need::Permission(Permission::SignedIn)),
             },
             EntryPath::Kiosk => match act {
-                "rates" | "quote" | "confirm" | "status" | "customerReceipt" | "customerCancel" => {
-                    Some(Need::Public)
+                "rates" | "quote" | "confirm" | "status" | "customerReceipt" | "customerCancel"
+                | "settings" => Some(Need::Public),
+                "manage" | "configure" | "configureSettings" => {
+                    Some(Need::Permission(Permission::RatesDraft))
                 }
-                "manage" | "configure" => Some(Need::Permission(Permission::RatesDraft)),
                 "notifications" | "list" => Some(Need::Permission(Permission::SignedIn)),
-                "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel" => {
+                "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel"
+                | "issueByToken" | "findByToken" => {
                     Some(Need::Permission(Permission::QueueOperate))
                 }
                 _ => None,
@@ -206,7 +208,9 @@ impl Policy {
                 | EntryPath::StaffFile
                 | EntryPath::StaffUpload => Err(PolicyError::EmployeeAuthRequired),
                 EntryPath::Kiosk => match action.as_str() {
-                    "manage" | "configure" => Err(PolicyError::KioskOwnerOrRates),
+                    "manage" | "configure" | "configureSettings" => {
+                        Err(PolicyError::KioskOwnerOrRates)
+                    }
                     _ => Err(PolicyError::KioskStaff),
                 },
                 _ => Err(PolicyError::SignIn),
@@ -314,7 +318,9 @@ impl Policy {
                 EntryPath::OwnerRoute | EntryPath::DeviceSetup => Err(PolicyError::OwnerOnly),
                 EntryPath::Devices => Err(PolicyError::DeviceStepNotAllowed),
                 EntryPath::Kiosk => match action.as_str() {
-                    "manage" | "configure" => Err(PolicyError::KioskOwnerOrRates),
+                    "manage" | "configure" | "configureSettings" => {
+                        Err(PolicyError::KioskOwnerOrRates)
+                    }
                     _ => Err(PolicyError::KioskStaff),
                 },
                 EntryPath::PaymentMethods => match action.as_str() {
