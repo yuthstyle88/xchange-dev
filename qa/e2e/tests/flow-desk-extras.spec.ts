@@ -44,6 +44,12 @@ const EXCHANGE_AMOUNT = '1';
 /** Valid 8-character alphanumeric referral code for attachReferral (api/crates/xc-referral/src/domain/referral_code.rs). */
 const VALID_REFERRAL_CODE = 'QAR99REF';
 
+/**
+ * customerPhoneStart may send a real SMS (api/src/infrastructure/notify/notify_sms_sender.rs), so only the seeded test
+ * customer's own number is used (deploy/server/seed-test-booking.sh CUSTOMER_PHONE, default +66800000102).
+ */
+const TEST_PHONE = users.customer.phone ?? '+66800000102';
+
 /** Raw error-code camelCase / UPPER_SNAKE tokens that must never surface as user-facing error text (§9.4 (b)). */
 const RAW_CODE =
   /^(validationFailed|wrongCode|expired|locked|smsUnavailable|referralAlreadyCaptured|outOfScope|roleNotAllowedHere|noOpenShift|saveClosed|invalidRequest|serverError|notFound|ORIGIN_REJECTED)$/;
@@ -543,7 +549,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
 
       // Case 4: customerPhoneStart then customerPhoneConfirm (POST /api/customers/{id}/phone-verifications/{challengeId}/confirm)
       // with a wrong OTP code ('000000'), which must be refused (ticket #4293 §3; PhoneVerify.tsx:74,104,140,150,162; phone/i18n.ts:8,22).
-      const validPhone = '+66899990123';
+      const validPhone = TEST_PHONE;
       await phoneInput.fill(validPhone);
       const startRes = await posted(
         page,
@@ -577,6 +583,9 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
         await expect(codeInput, `[${lang}] code input must preserve wrong OTP`).toHaveValue('000000');
       } else {
         // If SMS service is unavailable on the host (503 smsUnavailable, phone/i18n.ts:11,25), assert worded alert and input preservation.
+        // Any other refusal is a failure, not a reason to skip the wrong-OTP case (phone_verification_service.rs:84).
+        expect(startRes.text, `[${lang}] customerPhoneStart refused for a reason other than smsUnavailable`).toMatch(/^503 .*smsUnavailable/s);
+        console.log(`[R9-9] [${lang}] SMS unavailable on this host: wrong-OTP confirm not reachable (${startRes.text})`);
         await expect(phoneAlert, `[${lang}] SMS refusal alert must be visible`).toBeVisible({ timeout: 10_000 });
         const smsErrText = (await phoneAlert.innerText()).trim();
         expect(smsErrText.length).toBeGreaterThan(0);
@@ -644,7 +653,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
 
     const phoneStartRes = await page.request.post('/api/customers/CX-00000001/phone-verifications', {
       headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-pstart` },
-      data: { phone: '+66899990123' },
+      data: { phone: TEST_PHONE },
     });
     expect(
       [401, 403],
