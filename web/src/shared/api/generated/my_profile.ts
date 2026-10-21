@@ -43,6 +43,10 @@ export type MyProfileData = { customerId: string, customerNo: string, displayNam
  */
 preferredLanguage: string, status: string, 
 /**
+ * The languages among `th`, `en`, `zh`, in that order, in which the customer's organisation has a TERMS text (#4164).
+ */
+offeredLanguages: Array<string>, 
+/**
  * The newest row per (purpose, channel), ordered by purpose, then channel.
  */
 consents: Array<MyConsent>, };

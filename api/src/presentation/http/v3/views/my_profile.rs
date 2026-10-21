@@ -20,6 +20,7 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_customer::application::consent_service::ConsentService;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -35,39 +36,43 @@ pub struct MyProfileView {
     db: PgPool,
 }
 
-type ProfileRow = (String, String, String, String, String);
+type ProfileRow = (String, String, String, String, String, String);
 type ConsentRow = (String, Option<String>, bool, i32, String, DateTime<Utc>);
 
 impl MyProfileView {
     /// The profile of `customer`; `NotFound` when there is none.
     async fn profile(&self, customer: &str) -> AppResult<MyProfileData> {
         let row: Option<ProfileRow> = sqlx::query_as(
-            "SELECT id, customer_no, display_name, preferred_language, status FROM customers WHERE id = $1",
+            "SELECT id, organization_id::text, customer_no, display_name, preferred_language, status FROM customers WHERE id = $1",
         )
         .bind(customer)
         .fetch_optional(&self.db)
         .await
         .map_err(AppError::Database)?;
-        let (customer_id, customer_no, display_name, preferred_language, status) =
-            row.ok_or_else(|| AppError::NotFound {
+        let (customer_id, org_id, customer_no, display_name, preferred_language, status) = row
+            .ok_or_else(|| AppError::NotFound {
                 entity: "customer",
                 id: customer.to_owned(),
             })?;
+        let mut tx = self.db.begin().await.map_err(AppError::Database)?;
+        let offered_languages = ConsentService::offered_languages_in(&mut tx, &org_id).await?;
         let consents: Vec<ConsentRow> = sqlx::query_as(
             "SELECT DISTINCT ON (purpose, channel) purpose, channel, granted, policy_version, lang, effective_at \
              FROM consents WHERE customer_id = $1 \
              ORDER BY purpose, channel, effective_at DESC, created_at DESC",
         )
         .bind(customer)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *tx)
         .await
         .map_err(AppError::Database)?;
+        tx.commit().await.map_err(AppError::Database)?;
         Ok(MyProfileData {
             customer_id,
             customer_no,
             display_name,
             preferred_language,
             status,
+            offered_languages,
             consents: consents
                 .into_iter()
                 .map(
@@ -100,10 +105,13 @@ impl BranchView for MyProfileView {
         who: &Actor,
         filter: &Self::Filter,
     ) -> AppResult<Self::Data> {
-        let own = who.customer_id.as_deref().ok_or_else(|| AppError::NotFound {
-            entity: "customer",
-            id: String::new(),
-        })?;
+        let own = who
+            .customer_id
+            .as_deref()
+            .ok_or_else(|| AppError::NotFound {
+                entity: "customer",
+                id: String::new(),
+            })?;
         if filter.customer.as_deref().is_some_and(|c| c != own) {
             return Err(AppError::NotFound {
                 entity: "customer",
@@ -117,11 +125,10 @@ impl BranchView for MyProfileView {
 async fn handle(req: HttpRequest, view: web::Data<Arc<MyProfileView>>) -> HttpResponse {
     // A named branch first, for every caller, as the core checks it: an unknown one is `noSuchBranch` (#500). A
     // customer names none.
-    let named = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    )
-    .ok()
-    .and_then(|q| q.into_inner().remove("branch"));
+    let named =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .ok()
+            .and_then(|q| q.into_inner().remove("branch"));
     match parse_branch(named.as_deref()) {
         Ok(Some(branch)) => {
             if let Err(e) = require_branch(&req, &branch).await {
