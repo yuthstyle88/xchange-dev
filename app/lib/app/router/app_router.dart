@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/endpoint/endpoint_store.dart';
-import '../../features/kiosk/presentation/pages/kiosk_page.dart';
+import '../../features/queue_machine/presentation/pages/queue_machine_home_page.dart';
 import '../../features/setup/app/setup_providers.dart';
 import '../../features/setup/presentation/pages/setup_page.dart';
 
@@ -26,12 +26,12 @@ final appRouterProvider = Provider<GoRouter>(
       GoRoute(
         path: '/',
         pageBuilder: (context, state) =>
-            const NoTransitionPage(child: KioskPage()),
+            const NoTransitionPage(child: QueueMachineHomePage()),
       ),
       GoRoute(
         path: '/kiosk',
         pageBuilder: (context, state) =>
-            const NoTransitionPage(child: KioskPage()),
+            const NoTransitionPage(child: QueueMachineHomePage()),
       ),
       GoRoute(
         path: setupPath,
@@ -39,6 +39,6 @@ final appRouterProvider = Provider<GoRouter>(
             const NoTransitionPage(child: SetupPage()),
       ),
     ],
-    errorBuilder: (context, state) => const KioskPage(),
+    errorBuilder: (context, state) => const QueueMachineHomePage(),
   ),
 );

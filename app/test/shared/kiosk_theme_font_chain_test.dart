@@ -5,46 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchange_kiosk/app/app.dart';
-import 'package:xchange_kiosk/features/kiosk/app/kiosk_providers.dart';
-import 'package:xchange_kiosk/features/kiosk/domain/entities/kiosk_models.dart';
-import 'package:xchange_kiosk/features/kiosk/domain/repository/kiosk_repository.dart';
-import 'package:xchange_kiosk/l10n/kiosk_l10n.dart';
 import 'package:xchange_kiosk/shared/theme/theme.dart';
-
-class _FakeRepository implements KioskRepository {
-  @override
-  Future<RatesModel> rates() async => RatesModel.fromJson({
-    'branchId': 'MAIN',
-    'branchName': 'XC-B',
-    'open': true,
-    'rates': [
-      {'code': 'USD', 'nameEn': 'US Dollar', 'buy': 32.1, 'sell': 32.6},
-    ],
-  });
-
-  @override
-  Future<QuoteModel> quote({
-    required ExchangeType type,
-    required String currency,
-    required String amount,
-    required String paymentMethod,
-  }) async => throw UnimplementedError();
-
-  @override
-  Future<RequestIdentity> confirm(String id) async =>
-      throw UnimplementedError();
-
-  @override
-  Future<RequestIdentity> status(String id) async => throw UnimplementedError();
-
-  @override
-  Future<ReceiptModel> customerReceipt(String id) async =>
-      throw UnimplementedError();
-
-  @override
-  Future<RequestIdentity> customerCancel(String id, String cancelToken) async =>
-      throw UnimplementedError();
-}
 
 File _findFile(String relativePath) {
   final candidates = [relativePath, 'app/$relativePath', '../$relativePath'];
@@ -162,23 +123,13 @@ void main() {
   );
 
   testWidgets(
-    'pump KioskApp with the controller at th, call setLanguage(\'ja\'), and the MaterialApp theme\'s fontFamilyFallback now starts with NotoSansJP',
+    'pump KioskApp with appLanguageProvider at th, change to \'ja\', and the MaterialApp theme\'s fontFamilyFallback now starts with NotoSansJP',
     (tester) async {
-      final file = _findFile('assets/l10n/kiosk.json');
-      final l10n = KioskL10n.fromJson(
-        jsonDecode(file.readAsStringSync()) as Map<String, dynamic>,
-      );
-
-      final container = ProviderContainer(
-        overrides: [
-          kioskL10nProvider.overrideWithValue(l10n),
-          kioskRepositoryProvider.overrideWithValue(_FakeRepository()),
-        ],
-      );
+      final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      // Explicitly set controller to 'th'
-      container.read(kioskControllerProvider.notifier).setLanguage('th');
+      // Explicitly set language to 'th'
+      container.read(appLanguageProvider.notifier).state = 'th';
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -197,7 +148,7 @@ void main() {
       );
 
       // Change language to 'ja'
-      container.read(kioskControllerProvider.notifier).setLanguage('ja');
+      container.read(appLanguageProvider.notifier).state = 'ja';
       await tester.pumpAndSettle();
 
       // Verify MaterialApp theme updated dynamically to start with NotoSansJP
