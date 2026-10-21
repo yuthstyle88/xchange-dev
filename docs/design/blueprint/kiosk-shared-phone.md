@@ -1,7 +1,7 @@
 # Kiosk: one customer at a time, a branch kiosk settings page, and a verified phone number
 
 > designed-by: claude/e92db6 (XC FE lane controller), with the BE lane (claude/553782) to complete §4's server half before
-> any ticket is cut · measured on `main` `ae2b1f0c` · builds on `kiosk-cancel.md` (KC-1..KC-5) and
+> any ticket is cut · measured on `main` `ced3a2d6` · builds on `kiosk-cancel.md` (KC-1..KC-5) and
 > `customer-identity-consent.md` (phone-first customers, `PhoneVerificationService`)
 
 ## 0. Decided (owner, 2026-10-21)
