@@ -60,6 +60,10 @@ impl QueueDayHook {
         branch: &BranchId,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<QueueTicket>> {
+        if let Some(kiosk) = &self.kiosk {
+            kiosk.close_day_in(tx, branch, now).await?;
+        }
+
         let rows = sqlx::query(
             r#"
             SELECT
