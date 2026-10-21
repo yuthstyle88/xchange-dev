@@ -27,7 +27,11 @@
   - It is **staff-initiated, for an existing customer**: `phone_verifications.customer_id` and `requested_by` (a user) are `NOT NULL` (`api/migrations/20261205141000_phone_verifications.sql`).
   - The phone is stored **encrypted**, with a lookup hash (`phone_encrypted`, `phone_lookup_hash`).
   - A kiosk customer is anonymous, with no user and maybe no customer yet, so this service cannot be called as it is.
-- **SMS on the test host:** the host's Identity sends no OTP (`noop` delivery, PR 3837; `qa-e2e.md` §6). Whether `SmsSender` on xc-v3 really delivers is **not measured**. If it doesn't, KS-4 cannot be tried on the host until a provider is set; that is the owner's call.
+- **SMS on the test host: none today.** claude/553782 measured it at ~07:25Z by grepping key names only.
+  - xc-v3's `NotifySmsSender` (`api/src/infrastructure/notify/notify_sms_sender.rs`) needs `NOTIFY_BASE_URL` and `NOTIFY_API_KEY`, and neither is in `/etc/xc-v3/env` or `/etc/xc-v3/*.env`. So every send answers `smsUnavailable`.
+  - Identity's OTP is `AUTH_OTP_DELIVERY_MODE=noop`.
+  - `deploy/HOST-do-sgp1.md` I-3 leaves the sender choice to the owner.
+  - **A required SMS OTP would therefore block every kiosk booking until a sender is set.**
 
 ## 2. Behaviour
 
@@ -66,5 +70,5 @@
 ## 6. Open questions for the owner (one batch)
 
 1. **KS-5:** *"ระบบเป็นคนเรียกคิว ที่รันตามคิวการจอง"*. Today a teller presses call-next, which picks BOOKING tickets before WALK_IN and then the lowest number (`xc-queue/src/infrastructure/repository.rs:355-364`). Does the owner mean (a) call-next is already right; (b) the **system** should call the next number by itself when a counter frees up; or (c) kiosk requests should be ordered with bookings?
-2. **SMS provider on the test host:** if xc-v3's `SmsSender` delivers nothing, the OTP step can't be completed on the host. Should the test host use a fixed test code, or a real provider?
+2. **Which SMS sender for xc-v3** (an owner prerequisite of KS-4, per I-3). The fleet already has one: the Notify platform (`108-platform-services`). It sends SMS through ThaiBulkSMS with the approved sender `108-Pos`, per the memory store's notify record of 2026-07-31; that is **not re-measured today**. Pointing xc-v3's `NOTIFY_BASE_URL` / `NOTIFY_API_KEY` at it needs no new provider. **Proposed:** use Notify. The owner sets the key (secrets are the owner's). Until then, KS-4 ships behind a branch switch that stays off, so bookings aren't blocked.
 3. **Migration approval** for §3.
