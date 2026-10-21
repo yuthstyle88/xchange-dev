@@ -198,7 +198,7 @@ impl ReferralCaptureService {
             captured_by: by.to_owned(),
             status: CaptureStatus::Active,
             supersedes_id: Some(*capture),
-            reason: Some(reason.to_owned()),
+            reason: Some(trimmed_reason.to_owned()),
             pushed_at,
             broker_outcome: None,
         };
@@ -231,7 +231,7 @@ impl ReferralCaptureService {
             })),
             after: Some(serde_json::json!({
                 "code": code.as_str(),
-                "reason": reason,
+                "reason": trimmed_reason,
             })),
         };
         self.audit
