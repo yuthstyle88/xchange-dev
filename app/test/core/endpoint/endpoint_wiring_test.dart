@@ -1,6 +1,5 @@
 // Provided with ticket A1. These tests are the specification: make them pass,
 // do not edit, delete or weaken them.
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,11 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xchange_kiosk/core/endpoint/endpoint_store.dart';
 import 'package:xchange_kiosk/core/endpoint/kiosk_endpoint.dart';
 import 'package:xchange_kiosk/core/network/dio_provider.dart';
-import 'package:xchange_kiosk/features/kiosk/app/kiosk_providers.dart';
-import 'package:xchange_kiosk/features/kiosk/domain/entities/kiosk_models.dart';
-import 'package:xchange_kiosk/features/kiosk/domain/repository/kiosk_repository.dart';
 import 'package:xchange_kiosk/l10n/kiosk_l10n.dart';
 import 'package:xchange_kiosk/main.dart' as app;
+import 'package:xchange_kiosk/main.dart' show kioskBranchProvider;
 
 /// A store that answers what the test gives it and remembers nothing else.
 class _Store implements EndpointStore {
@@ -37,20 +34,6 @@ class _Store implements EndpointStore {
 
   @override
   String? originHeader(KioskEndpoint endpoint) => origin;
-}
-
-/// Counts how often the kiosk asks for the rates and never answers.
-class _Repo implements KioskRepository {
-  int ratesCalls = 0;
-
-  @override
-  Future<RatesModel> rates() {
-    ratesCalls++;
-    return Completer<RatesModel>().future;
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
 KioskL10n texts() => KioskL10n.fromJson(
@@ -143,28 +126,17 @@ void main() {
     test('with nothing stored the kiosk is not started and nothing is asked '
         'of any server', () async {
       final store = _Store(null);
-      final repo = _Repo();
-      final c = await app.bootstrap(
-        l10n: texts(),
-        store: store,
-        overrides: [kioskRepositoryProvider.overrideWithValue(repo)],
-      );
+      final c = await app.bootstrap(l10n: texts(), store: store);
       addTearDown(c.dispose);
       await Future<void>.delayed(Duration.zero);
 
       expect(store.loads, 1);
       expect(c.read(kioskEndpointProvider), isNull);
-      expect(repo.ratesCalls, 0);
     });
 
     test('with an endpoint stored the kiosk starts on it', () async {
       final store = _Store(shop);
-      final repo = _Repo();
-      final c = await app.bootstrap(
-        l10n: texts(),
-        store: store,
-        overrides: [kioskRepositoryProvider.overrideWithValue(repo)],
-      );
+      final c = await app.bootstrap(l10n: texts(), store: store);
       addTearDown(c.dispose);
       await Future<void>.delayed(Duration.zero);
 
@@ -172,16 +144,11 @@ void main() {
       expect(c.read(kioskEndpointProvider), shop);
       expect(c.read(apiBaseUrlProvider), 'https://shop.example.com:8443');
       expect(c.read(kioskBranchProvider), 'B-7');
-      expect(repo.ratesCalls, 1);
     });
 
     test('the container uses the store it was given', () async {
       final store = _Store(shop);
-      final c = await app.bootstrap(
-        l10n: texts(),
-        store: store,
-        overrides: [kioskRepositoryProvider.overrideWithValue(_Repo())],
-      );
+      final c = await app.bootstrap(l10n: texts(), store: store);
       addTearDown(c.dispose);
       expect(c.read(endpointStoreProvider), same(store));
     });

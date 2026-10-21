@@ -1,0 +1,77 @@
+.xc-copy-link {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.xc-copy-link-card {
+  max-width: 440px;
+  width: 100%;
+  padding: 2rem;
+  text-align: center;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.xc-copy-link-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.xc-copy-link-loading {
+  font-size: 1.125rem;
+  color: #666666;
+  margin: 1.5rem 0;
+}
+
+.xc-copy-link-status {
+  display: inline-block;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1976d2;
+  background: #e3f2fd;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1.5rem;
+}
+
+.xc-copy-link-details {
+  text-align: left;
+  margin-bottom: 1.5rem;
+  border-top: 1px solid #eeeeee;
+  border-bottom: 1px solid #eeeeee;
+  padding: 0.75rem 0;
+}
+
+.xc-copy-link-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.xc-copy-link-label {
+  color: #666666;
+}
+
+.xc-copy-link-value {
+  font-weight: 500;
+  color: #111111;
+}
+
+.xc-copy-link-code {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.xc-copy-link-error {
+  color: #d32f2f;
+  font-size: 1rem;
+  margin: 1.5rem 0;
+}

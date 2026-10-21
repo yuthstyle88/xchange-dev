@@ -18,6 +18,10 @@ dependencies:
   shared_preferences: ^2.5.6
   url_launcher: ^6.3.2
   share_plus: ^13.0.0
+  mobile_scanner: ^7.4.2
+  dio_cookie_manager: ^3.5.0
+  cookie_jar: ^4.0.9
+  flutter_thermal_printer: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -31,6 +35,7 @@ flutter:
     - assets/l10n/kiosk.json
     - assets/l10n/display_names.json
     - assets/l10n/setup.json
+    - assets/l10n/queue_machine.json
     - assets/img/logo.png
     - assets/img/telegram_qr.png
 

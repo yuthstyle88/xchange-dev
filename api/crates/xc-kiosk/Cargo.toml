@@ -20,6 +20,9 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 futures = "0.3"
+# The queue ticket's ESC/POS bytes (design kiosk-shared-phone.md §4.2 D9) and its local time.
+pos-printer = { workspace = true }
+chrono-tz = { version = "0.10" }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "rust_decimal", "derive"] }
 
 [dev-dependencies]

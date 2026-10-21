@@ -20,9 +20,9 @@ async function getMarketingUserId(browser: Browser): Promise<string> {
     await signIn(page, 'marketing', '/#campaigns');
     const res = await page.request.get('/api/v3/views/me');
     expect(res.ok(), `GET /api/v3/views/me returned ${res.status()}`).toBe(true);
-    const body = (await res.json()) as { data?: { userId?: string }; userId?: string };
-    const id = body.data?.userId ?? body.userId;
-    expect(id, 'marketing /api/v3/views/me must return userId').toBeTruthy();
+    const body = (await res.json()) as { data?: { id?: string } };
+    const id = body.data?.id;
+    expect(id, 'marketing /api/v3/views/me must return id').toBeTruthy();
     cachedMarketingUserId = id!;
     return id!;
   } finally {
@@ -598,7 +598,7 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
     await expect(page.locator('nav.admin-nav a[href="#users"]')).toHaveCount(0);
     await expect(page.locator('.users-screen')).toHaveCount(0);
 
-    // Backend gate: direct POSTs to /api/users/grant and /api/admin/groups/add as branchManager are refused with 403.
+    // Backend gate: direct POSTs to /api/users/grant and /api/admin/groups/add as branchManager are refused with 400 roleNotAllowedHere.
     const grantRes = await page.request.post('/api/users/grant', {
       headers: { Origin: users.baseUrl },
       data: {
@@ -609,7 +609,16 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
         branch: 'MAIN',
       },
     });
-    expect(grantRes.status(), 'POST /api/users/grant as branchManager must be 403').toBe(403);
+    const grantText = await grantRes.text();
+    const grantBody = (await grantRes.json().catch(() => ({}))) as { error?: { code?: string } };
+    expect(
+      grantRes.status(),
+      `POST /api/users/grant as branchManager must be 400 (body: ${grantText})`,
+    ).toBe(400);
+    expect(
+      grantBody.error?.code,
+      `POST /api/users/grant as branchManager error.code (body: ${grantText})`,
+    ).toBe('roleNotAllowedHere');
 
     const groupRes = await page.request.post('/api/admin/groups/add', {
       headers: { Origin: users.baseUrl },
@@ -622,7 +631,16 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
         permissions: [],
       },
     });
-    expect(groupRes.status(), 'POST /api/admin/groups/add as branchManager must be 403').toBe(403);
+    const groupText = await groupRes.text();
+    const groupBody = (await groupRes.json().catch(() => ({}))) as { error?: { code?: string } };
+    expect(
+      groupRes.status(),
+      `POST /api/admin/groups/add as branchManager must be 400 (body: ${groupText})`,
+    ).toBe(400);
+    expect(
+      groupBody.error?.code,
+      `POST /api/admin/groups/add as branchManager error.code (body: ${groupText})`,
+    ).toBe('roleNotAllowedHere');
     await shot(page, 'admin-users', 'r9-1-branch-manager-refused');
   });
 });

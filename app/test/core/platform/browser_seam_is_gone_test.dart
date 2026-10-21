@@ -165,7 +165,8 @@ import '../x/y.dart' as y;
       }
 
       final files = libFiles();
-      expect(files.length, greaterThan(25));
+      // QM-1 (#4366): lowered from 25 to 21 after removing the customer kiosk flow (23 files remain).
+      expect(files.length, greaterThan(21));
       final hits = [
         for (final f in files)
           for (final m in gone.allMatches(f.readAsStringSync()))
@@ -177,7 +178,8 @@ import '../x/y.dart' as y;
     test('browser-only libraries are imported only by *_web.dart files, and '
         'dart:io only by *_io.dart files', () {
       final files = libFiles();
-      expect(files.length, greaterThan(25));
+      // QM-1 (#4366): lowered from 25 to 21 after removing the customer kiosk flow (23 files remain).
+      expect(files.length, greaterThan(21));
       var webFiles = 0;
       for (final f in files) {
         final uris = {
@@ -202,14 +204,14 @@ import '../x/y.dart' as y;
     test('the device build: the three *_io.dart files, no *_web.dart file, '
         'no browser library', () {
       final build = buildFor(web: false);
-      expect(build.files.length, greaterThan(25));
+      // QM-1 (#4366): lowered from 25 to 17 after removing the customer kiosk flow (19 files in build).
+      expect(build.files.length, greaterThan(17));
       expect(
         build.files,
         containsAll([
           'lib/main.dart',
-          'lib/features/kiosk/presentation/pages/select_page.dart',
-          'lib/features/kiosk/presentation/pages/receipt_page.dart',
-          'lib/features/kiosk/presentation/pages/waiting_page.dart',
+          'lib/features/queue_machine/presentation/pages/queue_machine_home_page.dart',
+          'lib/features/setup/presentation/pages/setup_page.dart',
           'lib/core/platform/display_names.dart',
           'lib/core/platform/display_names_io.dart',
           'lib/core/platform/device_actions.dart',
@@ -231,14 +233,14 @@ import '../x/y.dart' as y;
     test('the web build: the three *_web.dart files, no *_io.dart file, no '
         'dart:io, and neither plugin — it keeps using the browser itself', () {
       final build = buildFor(web: true);
-      expect(build.files.length, greaterThan(25));
+      // QM-1 (#4366): lowered from 25 to 17 after removing the customer kiosk flow (19 files in build).
+      expect(build.files.length, greaterThan(17));
       expect(
         build.files,
         containsAll([
           'lib/main.dart',
-          'lib/features/kiosk/presentation/pages/select_page.dart',
-          'lib/features/kiosk/presentation/pages/receipt_page.dart',
-          'lib/features/kiosk/presentation/pages/waiting_page.dart',
+          'lib/features/queue_machine/presentation/pages/queue_machine_home_page.dart',
+          'lib/features/setup/presentation/pages/setup_page.dart',
           'lib/core/platform/display_names.dart',
           'lib/core/platform/display_names_web.dart',
           'lib/core/platform/device_actions.dart',
