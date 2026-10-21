@@ -383,8 +383,9 @@ while `transaction_lines.quantity` is `numeric(20,4)`. A stored quantity the for
 
 - **Kiosk** (D-8): `KioskMachine::quote` asks `QuoteService` through its port (`xc-kiosk` cannot depend on the `api` crate; the port's implementation is `api/src/infrastructure/kiosk/kiosk_ports.rs`, as the kiosk reaches rates today) with `channel KIOSK` and no customer, and stores
   `kiosk_requests.quote_id`. Its 300 s and the 3 s review stay (T1's default equals today's 300). The desk completes a
-  kiosk request through `POST /api/transactions` with `kioskRequestId` and the request's `quote_id` (the kiosk step
-  checks they match).
+  kiosk request through `POST /api/transactions` with `kioskRequestId` and **its own current quote**. The request's
+  `quote_id` is a record of what the kiosk showed and does not price the save (§4.6.1 A3, owner 2026-10-21, #4113).
+  Create checks that the quote matches the request on side, currency and foreign amount.
 - **Compat `saveTransaction`** (D-1): `SaveAction::run` (`compat/actions/save.rs:81-111`) runs quote → create →
   confirm → complete **inside one `BranchTx`**, keyed by today's `submissionId`, and is **all-or-nothing**, as today's
   save is:
@@ -482,22 +483,29 @@ issuecomment-6109664380). Every `file:line` is on `main` `d9440858`.
 
 **A3. Kiosk and booking rates: neither passes a rate to `quote_in`.**
 
-- **Answer, kiosk.**
-  - A save that names a kiosk request does not ask for a new quote. It uses the request's own quote:
-    `kiosk_requests.quote_id`, which TX-7 writes when the kiosk asks `QuoteService` through its port
-    (`xc-kiosk/src/application/kiosk/customer.rs:118-135`; migration `20261031100000_kiosk_quote_id.sql`).
-  - The adapter passes that quote to create, as §4.6's kiosk bullet already has the desk do on the new route.
-  - That quote carries the kiosk's published line, rate and unit size. They are what today's save reads back from
-    `kiosk_requests` (`save_transaction.rs:316-342`), so the stored line is the same.
-  - Its life is the organisation's quote TTL, whose default equals the kiosk's 300 s (§4.6). Past it, create answers
-    `quoteExpired`, as for any quote (D-5).
-  - A request with no `quote_id` is refused `RATE_MISMATCH`, today's kiosk refusal (`:336-338`). That covers a request
-    whose port returned no quote (`customer.rs:118`, `if let Some`) and one made before TX-7.
+- **Answer, kiosk (amended 2026-10-21, #4113): a kiosk request books a queue place, never a rate.**
+  - Owner, 2026-10-21: *"ใบเสนอ ราคา ใข้ ใบเก่า ราคา มันจะไม่ ได้ นะ เพราะ ราคา มันวิ่ง ตลอด"* · *"ต้องใช้ ราคา
+    ปัจจุบัน"* · *"การจอง มันแค่ได้ คิว"*. The kiosk's quote has normally expired by the time the customer reaches
+    the counter, and the rate has moved since.
+  - A save that names a kiosk request is quoted at the **current published line**, like a walk-in or a booking.
+    - On the route, the desk sends its own current quote (`web/src/screens/desk/save.ts:238-245` re-quotes one that
+      has expired).
+    - In the compat save, the adapter asks `quote_in` as it does for a walk-in.
+  - `kiosk_requests.quote_id` (TX-7, migration `20261031100000_kiosk_quote_id.sql`) stays as the record of what the
+    kiosk showed. **It is never used to price a save.** Whether it is set, NULL or expired changes nothing.
+  - **G7 checks the request, not the quote id.** Create reads the request's `side`, `currency` and `foreign_amount`
+    at the request's branch. It refuses `validationFailed`, naming the field, when the quote's line differs on any of
+    them. These are the fields the desk pre-fills and locks (`web/src/screens/desk/entries/kiosk/entry.ts`).
+    `KioskSaveStep`'s own currency and amount check (`workflows/kiosk_save_step.rs`) stays unchanged.
+  - A request with no `quote_id` is **not** refused. The former `RATE_MISMATCH` for that case is removed with this
+    amendment.
+  - No migration, no change to stored rates or rounding: the stored line, rate and unit are the save's quote's,
+    as for any walk-in.
 - **Answer, booking.**
   - §6.4 already decides that a booking does not set the rate (desk D-13).
   - A booked save is quoted at the current published line like a walk-in. The booking's stored rate and unit
     (`save_transaction.rs:345-370`) are not used, and `BookingSaveStep` still marks the booking `USED`.
-- **For every compat save, the adapter checks the client rate (a kiosk save compares against the request's own quote, after KioskSaveStep's currency/amount check).**
+- **For every compat save, the adapter checks the client rate against the save's own current quote (a kiosk save is no exception since #4113; KioskSaveStep's currency/amount check runs too).**
   - The adapter compares `form.client_rate` with `CompatRate::per_one(quote.final_rate, quote.unit_size)` and refuses
     `RATE_MISMATCH` when they differ. That is today's walk-in check (`:454-458`), so today's answers stay the same.
   - Without it, a desk that showed one rate could save at another. The receipt now prints the stored rate

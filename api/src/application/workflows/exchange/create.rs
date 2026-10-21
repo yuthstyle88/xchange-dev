@@ -6,6 +6,7 @@ use std::sync::Arc;
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
+use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -24,7 +25,7 @@ use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::{Money, Rate};
+use xc_kernel::money::{Money, Rate, Side};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
@@ -224,27 +225,43 @@ impl CreateTransaction {
                 q.id
             )));
         }
-        // G7: a kiosk request quoted since TX-7 is completed with its own quote only
+        let Some(line) = q.lines.first() else {
+            return Err(AppError::Internal(format!("quote {} has no line", q.id)));
+        };
+        // G7 (#4113): a kiosk request reserves a queue place, never a rate; the quote must match
+        // the request on side, currency and foreign amount.
         if let Some(request) = req.kiosk_request_id.as_deref() {
-            let kiosk_quote: Option<Option<Uuid>> = sqlx::query_scalar(
-                "SELECT quote_id FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+            let kiosk_row: Option<(String, String, Decimal)> = sqlx::query_as(
+                "SELECT side, currency::text, foreign_amount \
+                 FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
             )
             .bind(req.branch_id.as_str())
             .bind(request)
             .fetch_optional(&mut **tx)
             .await
             .map_err(AppError::Database)?;
-            if let Some(Some(kiosk_quote)) = kiosk_quote
-                && kiosk_quote != q.id
-            {
-                return Err(AppError::Domain(format!(
-                    "validationFailed: kiosk request {request} was quoted as {kiosk_quote}"
-                )));
+            if let Some((side, currency, foreign_amount)) = kiosk_row {
+                let quote_side = match line.shop_side {
+                    Side::Buy => "BUY",
+                    Side::Sell => "SELL",
+                };
+                if side != quote_side {
+                    return Err(AppError::Domain(format!(
+                        "validationFailed: kiosk request {request} side differs from the quote"
+                    )));
+                }
+                if currency != line.currency.as_str() {
+                    return Err(AppError::Domain(format!(
+                        "validationFailed: kiosk request {request} currency differs from the quote"
+                    )));
+                }
+                if foreign_amount != line.quantity.value() {
+                    return Err(AppError::Domain(format!(
+                        "validationFailed: kiosk request {request} amount differs from the quote"
+                    )));
+                }
             }
         }
-        let Some(line) = q.lines.first() else {
-            return Err(AppError::Internal(format!("quote {} has no line", q.id)));
-        };
 
         // G6, Q1 = B: the customer's mode, name and nationality, read without decrypting
         let customer =
