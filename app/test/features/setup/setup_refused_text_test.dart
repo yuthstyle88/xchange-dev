@@ -1,19 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchange_kiosk/app/app.dart';
 import 'package:xchange_kiosk/core/endpoint/endpoint_store.dart';
 import 'package:xchange_kiosk/core/endpoint/kiosk_endpoint.dart';
-import 'package:xchange_kiosk/features/kiosk/app/kiosk_providers.dart';
-import 'package:xchange_kiosk/features/kiosk/domain/entities/kiosk_models.dart';
-import 'package:xchange_kiosk/features/kiosk/domain/kiosk_failure.dart';
 import 'package:xchange_kiosk/features/setup/app/setup_providers.dart';
 import 'package:xchange_kiosk/features/setup/l10n/setup_l10n.dart';
 
-import '../kiosk/kiosk_controller_test.dart' show FakeRepository, l10n;
 import 'setup_controller_test.dart' show MemoryStore;
 
 SetupL10n _loadTexts() => SetupL10n.fromJson(
@@ -21,11 +18,22 @@ SetupL10n _loadTexts() => SetupL10n.fromJson(
       as Map<String, dynamic>,
 );
 
+DioException _dioError(String message) => DioException(
+  requestOptions: RequestOptions(path: '/health/ready'),
+  response: message.isEmpty
+      ? null
+      : Response(
+          requestOptions: RequestOptions(path: '/health/ready'),
+          statusCode: 400,
+          data: {'message': message},
+        ),
+  message: message,
+);
+
 void main() {
   late ProviderContainer container;
   late MemoryStore store;
-  late FakeRepository server;
-  late Future<RatesModel> Function(KioskEndpoint) answer;
+  late Future<void> Function(KioskEndpoint) answer;
 
   Future<void> pumpSetup(
     WidgetTester tester, {
@@ -44,8 +52,6 @@ void main() {
         allowInsecureServerProvider.overrideWithValue(false),
         setupL10nProvider.overrideWith((ref) async => texts),
         setupProbeProvider.overrideWithValue((e) => answer(e)),
-        kioskRepositoryProvider.overrideWithValue(server),
-        kioskL10nProvider.overrideWithValue(l10n()),
         deviceLanguagesProvider.overrideWithValue(deviceLanguages),
       ],
     );
@@ -74,8 +80,7 @@ void main() {
   }
 
   setUp(() {
-    server = FakeRepository();
-    answer = (_) async => throw const KioskFailure('Request rejected.');
+    answer = (_) async => throw _dioError('Request rejected.');
   });
 
   testWidgets('the test is refused with Request rejected. on th shows the th '
@@ -128,7 +133,7 @@ void main() {
     'unreachable (no server message) on th shows unreachable in th with no '
     'detail line',
     (tester) async {
-      answer = (_) async => throw const KioskFailure('');
+      answer = (_) async => throw _dioError('');
       await pumpSetup(tester, deviceLanguages: const ['th']);
       await submitTest(tester);
 
@@ -142,7 +147,7 @@ void main() {
 
       // When the server answers with a refusal instead, the th serverRefused
       // headline and detail line appear.
-      answer = (_) async => throw const KioskFailure('Request rejected.');
+      answer = (_) async => throw _dioError('Request rejected.');
       await tester.tap(find.byKey(const Key('setup-test')));
       await tester.pump();
       await tester.pump();

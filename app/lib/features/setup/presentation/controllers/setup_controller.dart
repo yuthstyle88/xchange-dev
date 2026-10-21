@@ -1,11 +1,10 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/endpoint/endpoint_store.dart';
 import '../../../../core/endpoint/kiosk_endpoint.dart';
-import '../../../kiosk/app/kiosk_providers.dart';
-import '../../../kiosk/domain/kiosk_failure.dart';
 import '../../app/setup_providers.dart';
 
 class SetupState {
@@ -62,27 +61,29 @@ class SetupController extends Notifier<SetupState> {
     state = const SetupState(testing: true);
     final probe = ref.read(setupProbeProvider);
     try {
-      final rates = await probe(endpoint);
+      await probe(endpoint);
       if (run != _run) return;
-      state = SetupState(
-        tested: endpoint,
-        branchName: rates.branchName.isEmpty
-            ? endpoint.branchId
-            : rates.branchName,
-      );
-    } on KioskFailure catch (f) {
+      state = SetupState(tested: endpoint, branchName: endpoint.branchId);
+    } on DioException catch (e) {
       if (run != _run) return;
-      state = f.serverMessage.isEmpty
-          ? const SetupState(errorKey: 'unreachable')
-          : SetupState(serverMessage: f.serverMessage);
+      final serverMessage = e.response?.data is Map
+          ? (e.response?.data['message'] ?? e.response?.data['error'])
+                ?.toString()
+          : (e.response?.data is String &&
+                    (e.response!.data as String).isNotEmpty
+                ? e.response!.data as String
+                : e.message);
+      state = serverMessage != null && serverMessage.isNotEmpty
+          ? SetupState(serverMessage: serverMessage)
+          : const SetupState(errorKey: 'unreachable');
     } catch (_) {
       if (run != _run) return;
       state = const SetupState(errorKey: 'unreachable');
     }
   }
 
-  /// Stores [server] and [branch] and starts the kiosk on them — only if they
-  /// are the values the last successful test used. Returns whether it did.
+  /// Stores [server] and [branch] only if they are the values the last
+  /// successful test used. Returns whether it did.
   Future<bool> save(String server, String branch) async {
     final tested = state.tested;
     KioskEndpoint? endpoint;
@@ -101,9 +102,6 @@ class SetupController extends Notifier<SetupState> {
     }
     await ref.read(endpointStoreProvider).save(endpoint!);
     ref.read(kioskEndpointProvider.notifier).set(endpoint);
-    // The repository follows the endpoint, and the kiosk controller reads it
-    // on every request, so restarting it moves the kiosk to the new server.
-    unawaited(ref.read(kioskControllerProvider.notifier).start());
     return true;
   }
 }
