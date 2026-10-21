@@ -107,6 +107,12 @@ impl RoleGrants {
         Role::VerificationReviewer,
     ];
 
+    /// Current seed version (#3976).
+    pub const SEED_VERSION: i32 = 2;
+
+    /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
+    pub const SEED_ADDITIONS: &[(i32, Permission)] = &[(2, Permission::MarketRatesRefresh)];
+
     /// §11.2: the seed of the built-in group `role`, in [`Permission::ALL`] order, no duplicates.
     /// - A module level grants every permission of that module at or below it (`PermissionModule::module`).
     /// - The no-module permissions (`PermissionModule::module` = `None`) are what `role` holds today.
