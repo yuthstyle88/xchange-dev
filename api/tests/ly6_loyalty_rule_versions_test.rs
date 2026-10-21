@@ -905,7 +905,9 @@ async fn executive_submit_opens_one_loyalty_rule_version_request_and_moves_loyal
 
 // ================================================================ permission: LoyaltyRulesManage, EXECUTIVE only
 
-/// Every role but EXECUTIVE is refused `400 roleNotAllowed` on both commands, and Loyalty sees no write.
+/// Every role but EXECUTIVE is refused `400 roleNotAllowedHere` on both commands, and Loyalty sees no write.
+/// The code is `roleNotAllowedHere` because the commands inherit `EntryPath::Rpc` (#4333: the admin /#loyalty
+/// screen's session carries no staff actor, so `EntryPath::StaffRpc` answered the owner 401 employeeAuthRequired).
 /// Red while: the routes are missing (404); a role other than EXECUTIVE holds `LoyaltyRulesManage`; the gate
 /// answers 403 or names a role instead of the permission.
 #[actix_web::test]
@@ -933,7 +935,7 @@ async fn roles_without_loyalty_rules_manage_are_refused_400_role_not_allowed() {
             "{who} drafts: {}",
             d.text
         );
-        assert_eq!(d.code(), "roleNotAllowed", "{who} drafts: {}", d.text);
+        assert_eq!(d.code(), "roleNotAllowedHere", "{who} drafts: {}", d.text);
 
         let s = submit(&room, who, &seeded).await;
         assert_eq!(
@@ -942,7 +944,7 @@ async fn roles_without_loyalty_rules_manage_are_refused_400_role_not_allowed() {
             "{who} submits: {}",
             s.text
         );
-        assert_eq!(s.code(), "roleNotAllowed", "{who} submits: {}", s.text);
+        assert_eq!(s.code(), "roleNotAllowedHere", "{who} submits: {}", s.text);
     }
     assert!(
         room.loyalty.writes().is_empty(),
