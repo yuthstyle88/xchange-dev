@@ -51,7 +51,7 @@ impl CustomerPhoneStartCommand {
 
 impl CommandAction for CustomerPhoneStartCommand {
     const NAME: &'static str = "customerPhoneStart";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::StaffRpc, "saveTransaction");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "saveTransaction");
     type Input = CustomerPhoneStartInput;
     type Output = CustomerPhoneStartOutput;
     const ROUTE: &'static str = "/api/customers/{id}/phone-verifications";
