@@ -1,10 +1,11 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
+import { chime, soundOn, toggleSound } from '../../../shared/queue/queue-sound';
 import { FullscreenButton } from '../../customer/rate-display/FullscreenButton';
 import { branchFromSearch } from '../../customer/rate-display/location';
-import { en, th } from './i18n';
+import { en, th, zh } from './i18n';
 
-const tr = screenT('public.queue-display', { th, en });
+const tr = screenT('public.queue-display', { th, en, zh });
 
 export interface QueueDisplayProps {
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -33,7 +34,6 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
 
   let org: string | null = null;
   let sinceVersion: number | null = null;
-  let audioEl: HTMLAudioElement | undefined;
 
   const branch = () => branchFromSearch(props.search);
 
@@ -65,11 +65,7 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
         setCalled(nextCalled);
         setRecent(sanitizeEntries(body.data.recent));
         if (!isFirst && nextKey && nextKey !== prevKey) {
-          try {
-            void audioEl?.play?.()?.catch?.(() => {});
-          } catch {
-            // ignore audio playback restrictions
-          }
+          chime();
         }
       }
     } catch {
@@ -102,9 +98,17 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
   return (
     <main class="queue-display-screen" data-branch={branch() ?? ''}>
       <div class="queue-display-toolbar">
+        <Show when={!soundOn()}>
+          <button
+            type="button"
+            class="queue-display-sound-btn"
+            onClick={() => void toggleSound()}
+          >
+            {tr('soundOn')}
+          </button>
+        </Show>
         <FullscreenButton label={tr('fullscreen')} />
       </div>
-      <audio ref={audioEl} preload="auto" />
       <div class="queue-display-grid">
         <section class="queue-display-section">
           <h1 class="queue-display-heading">{tr('nowCalling')}</h1>
