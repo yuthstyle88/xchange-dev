@@ -121,10 +121,12 @@ impl Policy {
                 _ => Some(Need::Permission(Permission::SignedIn)),
             },
             EntryPath::Kiosk => match act {
-                "rates" | "quote" | "confirm" | "status" | "customerReceipt" => Some(Need::Public),
+                "rates" | "quote" | "confirm" | "status" | "customerReceipt" | "customerCancel" => {
+                    Some(Need::Public)
+                }
                 "manage" | "configure" => Some(Need::Permission(Permission::RatesDraft)),
                 "notifications" | "list" => Some(Need::Permission(Permission::SignedIn)),
-                "identityChecked" | "publishReceipt" | "get" | "accept" => {
+                "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel" => {
                     Some(Need::Permission(Permission::QueueOperate))
                 }
                 _ => None,

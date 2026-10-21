@@ -663,6 +663,22 @@ impl KioskRepository for PgKioskRepository {
         Ok(matched.unwrap_or(false))
     }
 
+    async fn client_ip_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+    ) -> AppResult<Option<String>> {
+        let ip: Option<String> = sqlx::query_scalar(
+            "SELECT client_ip FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        Ok(ip)
+    }
+
     async fn times_in(&self, tx: Tx<'_, '_>, branch: &BranchId, id: &str) -> AppResult<WorkTimes> {
         #[derive(sqlx::FromRow)]
         struct TimesRow {

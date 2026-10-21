@@ -6,23 +6,28 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use xc_kernel::ids::BranchId;
-use xc_kernel::queue_tickets::QueueTickets;
+use xc_kernel::queue_tickets::{KioskTicketOutcome, QueueTickets};
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
+use crate::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use crate::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
+use crate::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
+use crate::domain::kiosk::value_objects::cancel_reason::{CancelReason, Cancellation};
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::kiosk_service_error::KioskServiceError;
 use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
+use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
 use crate::domain::kiosk::value_objects::notifications::Notifications;
 use crate::domain::kiosk::value_objects::queue_filter::QueueFilter;
 use crate::domain::kiosk::value_objects::queue_page::{QueueItem, QueuePage};
 use crate::domain::kiosk::value_objects::receipt_image::ReceiptImage;
 use crate::domain::kiosk::value_objects::request_identity::RequestIdentity;
 use crate::domain::kiosk::value_objects::work_times::WorkTimes;
+use crate::infrastructure::kiosk::kiosk_repository::PgKioskRepository;
 
 use super::service::{KioskService, NO_COUNTER, cut_to_millis, line_for, refuse, time, username};
 
@@ -211,6 +216,40 @@ impl KioskService {
             .await
     }
 
+    /// `cancel`: staff cancel a waiting or held request with a reason, ending its walk-in ticket
+    /// and recording `KIOSK_CANCELLED` in one transaction (`kiosk-cancel.md` §3.3).
+    pub async fn cancel_with(
+        &self,
+        branch: &BranchId,
+        actor: &KioskActor,
+        id: &str,
+        reason: CancelReason,
+        now: DateTime<Utc>,
+        queue: Arc<dyn QueueTickets>,
+    ) -> AppResult<RequestIdentity> {
+        self.branch_name(branch).await?;
+        let at = cut_to_millis(now);
+        let now_kiosk = time(now);
+        let (repo, ports, b, id, actor) = (
+            self.repo.clone(),
+            self.ports.clone(),
+            branch.clone(),
+            id.to_owned(),
+            actor.clone(),
+        );
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    let stored = repo.find_in(tx, &b, &id).await?;
+                    cancel_in(
+                        tx, &repo, &*ports, &*queue, &b, stored, &actor, reason, at, now_kiosk,
+                    )
+                    .await
+                })
+            })
+            .await
+    }
+
     /// `identityChecked`: the employee holding the request confirms the passport check.
     pub async fn identity_checked(
         &self,
@@ -320,4 +359,54 @@ fn queue_refusal(err: AppError) -> AppError {
         AppError::Forbidden => AppError::Domain("outOfScope".to_owned()),
         other => other,
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn cancel_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    repo: &PgKioskRepository,
+    ports: &dyn KioskPorts,
+    queue: &dyn QueueTickets,
+    branch: &BranchId,
+    stored: Option<KioskRequest>,
+    actor: &KioskActor,
+    reason: CancelReason,
+    at: DateTime<Utc>,
+    now_kiosk: KioskTime,
+) -> AppResult<RequestIdentity> {
+    let moved = match KioskMachine::cancel(stored.as_ref(), actor, &reason).map_err(refuse)? {
+        Some(moved) => moved,
+        None => return KioskMachine::identity(stored.as_ref(), now_kiosk).map_err(refuse),
+    };
+    let from = stored.as_ref().expect("stored when Some").status;
+    let who = username(actor).to_owned();
+    let cancel = Cancellation {
+        at,
+        by: who.clone(),
+        reason: reason.clone(),
+    };
+    if !repo
+        .mark_cancelled_in(tx, branch, &moved.id, from, &cancel)
+        .await?
+    {
+        return Err(refuse(KioskError::StaleVersion));
+    }
+    let outcome = if reason.is_no_show() {
+        KioskTicketOutcome::NoShow
+    } else {
+        KioskTicketOutcome::Cancelled {
+            reason: reason.as_str().to_owned(),
+        }
+    };
+    queue
+        .cancel_active_for_kiosk_in(tx, branch, &moved.id, &outcome, at)
+        .await
+        .map_err(queue_refusal)?;
+    let line = AuditLine {
+        actor: who,
+        subject: moved.id.clone(),
+        what: KioskAudit::Cancelled { from, reason },
+    };
+    ports.record_in(tx, branch, &line, at).await?;
+    KioskMachine::identity(Some(&moved), now_kiosk).map_err(refuse)
 }

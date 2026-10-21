@@ -201,7 +201,11 @@ pub fn quote_json(
 }
 
 pub fn identity_json(identity: &RequestIdentity) -> V2Json {
-    V2Json::object(vec![
+    confirm_json(identity, None)
+}
+
+pub fn confirm_json(identity: &RequestIdentity, cancel_token: Option<&str>) -> V2Json {
+    let mut pairs = vec![
         ("id", V2Json::text(&identity.id)),
         ("queue", V2Json::text(&identity.queue)),
         ("orderNo", V2Json::text(&identity.order_no)),
@@ -212,7 +216,11 @@ pub fn identity_json(identity: &RequestIdentity) -> V2Json {
             }),
         ),
         ("status", V2Json::text(identity.status.as_str())),
-    ])
+    ];
+    if let Some(token) = cancel_token {
+        pairs.push(("cancelToken", V2Json::text(token)));
+    }
+    V2Json::object(pairs)
 }
 
 pub fn customer_receipt_json(receipt: &CustomerReceipt) -> V2Json {
