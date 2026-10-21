@@ -501,6 +501,200 @@ tenant, so its rate limit, audit and SMS text are separate from other users of N
 - **Kiosk app:** the phone and OTP steps; `resultSeconds` and `idleSeconds` from the settings read, replacing #4243's constant; all 16 kiosk languages for the new texts (`app/assets/l10n/kiosk.json`).
 - **Queue panel and desk:** show the kiosk request's customer.
 
+## 5r. Front ends, revised (AG FE queue)
+
+> designed-by: claude/36d9dc6a (AG FE queue) for the FE lane controller claude/e92db6. Measured on xchange `main` `de6d1b69` (2026-10-21). Written to §0a and §4. Every contract point cites §4.3a's wire contract (W1–W12, answered by claude-11 / claude/c4be83 at PR 4249 `6e801f13`). The only point still open on the server side is a device sign-in for the machine (W7).
+
+### 5r.0 What exists today (measured)
+
+**Flutter `app/`**
+- **Platforms:** only `android/` and `web/` exist.
+- **Network:** dio with `X-Xchange-Request: 1` and `Origin` (`core/network/dio_provider.dart:18-32`).
+- **Auth:** no sign-in, no cookie jar and no session; grep for `auth|login|cookie|session` finds none.
+- **Plugins:** none for a camera, QR or printer (`pubspec.yaml:9-26`, `pubspec.lock` searched).
+- **`dart:io` in `lib/`:** none. `browser_seam_is_gone_test.dart:177-198` allows `dart:io` only in `*_io.dart` and requires exactly 3 `*_web.dart` files.
+- **The customer kiosk flow:**
+  - `kiosk_controller.dart` (758 lines, `KioskScreen {select, quote, waiting, receipt}` `:16`);
+  - the pages `select`, `quote`, `waiting`, `receipt` and `kiosk_page`;
+  - `kiosk_widgets`, `idle_timer`, `status_poller`;
+  - the booking check-in pieces (`kiosk_booking_*`, `kiosk_providers.dart:57-66`).
+- **Setup and endpoint:**
+  - `core/endpoint/*`;
+  - `features/setup/*`, whose probe calls the kiosk `rates` action (`setup_providers.dart:35-47`);
+  - `main.dart:15-45`; the router `app/router/app_router.dart:14-43`.
+- **Texts:** `assets/l10n/kiosk.json` holds 16 languages. `kiosk_l10n_matches_v2_test` requires every key change in the fixture as well. `bundled_fonts_cover_the_texts_test` requires the CJK subset to cover the texts (`tool/subset_fonts.py`).
+- **🔴 App CI runs `flutter test` only on pushes to `main`, never on a PR** (`.github/workflows/app.yml:139-141`; a PR runs format, analyze and the web build). KC-A turned `main` red twice this way (#4250, #4254).
+
+**Web**
+- **Pages:** one `web/pages/<name>.html` per route, declaring `xc-path` and `xc-gate` (`app-bookings.html:7-8`, read by `api/build_support/screens.rs:52-81`).
+- **Customer pages** gate `anyone` and enforce sign-in on the client: `my_profile` 401 ⇒ link to `/app/sign-in` (`customer/_shell/Shell.tsx:57-63,79`). `CustomerRoute` is a union at `Shell.tsx:15-26`.
+- **QR:** the shared `web/src/shared/ui/QrCode.tsx` (`qrcode-generator` 2.0.4, PNG download). The board QR targets `/app/book?branch=` (`customer/rate-display/BookingQr.tsx:16`).
+- **Polls:**
+  - `ViewPoller(client, name, {params, intervalMs})` (`shared/live/view-poller.ts:4-80`);
+  - `PublicPoller(url, …)` with ETag/304 (`shared/live/public-poller.ts:15-35`).
+- **Sign-in:** `SignIn.tsx:36-69` calls `/api/auth/otp/request {destination, channel:'sms'}` then `/otp/verify`.
+- **Sign-out:** **no customer sign-out exists**. `POST /api/auth/logout` is called only from the staff session (`shared/session/session.ts:157-158`). No idle timer exists in `web/src`.
+- **Desk:** the QR is a typed or keyboard-wedge `input[name=qrToken][data-action=scan-qr]` with `lookup-qr` (`desk/bookings/DeskBookingsScreen.tsx:620-637`); **there is no camera**. `?kiosk=<id>` opens the kiosk entry (`desk/entries.ts:36-52`, `entries/kiosk/entry.ts:24-38`).
+- **TV page template:** `web/pages/rates.html` → `customer/rate-display/main.tsx`, using `/api/public/host`, then `PublicPoller` on `/api/public/orgs/{org}/branches/{code}/…` (`RateDisplay.tsx:94-112`).
+- **i18n:** customer screens need th/en/zh, staff screens th/en (`shared/i18n/languages.ts:1-9`). `SHARED_PREFIXES` is `index.ts:19` (and `i18n.test.ts:70`).
+- **Guards:** `no-inline-dto.guard`, `fixtures.guard` (types are ts-rs output; new DTO ⇒ regenerate + `npm run gen:fixtures`), and `screen-look` (every static class has a rule).
+
+### 5r.1 Decisions (FE)
+
+| # | Decision | Why |
+|---|---|---|
+| F1 | **`app/` keeps** setup, endpoint, router, theme, l10n machinery and `core/platform`. **It removes** the whole customer kiosk flow listed in 5r.0, its 33 `test/features/kiosk` tests, and every kiosk text that is no longer used (from `kiosk.json` **and** the v2 fixture). The setup probe stops calling `rates` and probes `GET /health/ready`. | R-1, R-2 |
+| F2 | **New `features/queue_machine/`, four screens:** staff sign-in → scanner → issued number (*N* s, then the scanner) → printer settings. One `QueueMachineController` (Riverpod `Notifier`). | R-2, §4 D5/D6 |
+| F3 | **Staff sign-in on the machine = today's desk sign-in (W6, W7).** <br>• A staff member types their own identifier and password at the start of the shift: `POST /api/auth/login {identifier, password}`. <br>• The `__Host-xc_session` cookie (12 h) is kept in a persisted cookie jar (`dio_cookie_manager` + `cookie_jar`) and renewed with `POST /api/auth/refresh`. Every call sends `Origin` and `X-Xchange-Request: 1`. <br>• A device credential does not exist and is not designed (W7, open). <br>• The machine signs out from its own menu (`POST /api/auth/logout`), not on idle: it is a staff device. | §4 D6, W6, W7 |
+| F4 | **Scanner:** `mobile_scanner` 7.4.2 (pub.dev, measured: 160/160 points, Android/iOS/macOS/web). It reads `<origin>/q#<token>`, keeps only the token, and calls `POST /api/kiosk {action:"issueByToken", payload:{branchId, token}}`; the branch is the machine's endpoint branch (W8). | §4 D3, D5, W8 |
+| F5 | **Printing: the server's bytes, unchanged.** <br>• `TicketPrinter` interface: `write(Uint8List bytes)`. One implementation per connection (♻️): `LanTicketPrinter` (`dart:io` `Socket` to `host:9100`, in a new `*_io.dart` seam file), `BluetoothTicketPrinter` (`print_bluetooth_thermal` 1.2.5, `writeBytes`; measured 160/160, Android/iOS/Windows/macOS), `UsbTicketPrinter` (`flutter_thermal_printer` 2.3.0; measured 150/160, the one plugin that also does Android USB). <br>• The app decodes `ticketEscpos` (base64) and writes it. It has no ESC/POS writer of its own (§4 D9: one renderer). <br>• **Only the connection the owner's printer uses is built first**; the other two stay as the interface's later implementations. Which connection is an owner fact (5r.6 Q-F1). <br>• A failed write shows "print failed — scan again"; a repeat scan answers the same bytes (§4 D5, D9). The web build has no printer and shows the number only. | R-4, §4 D9 |
+| F6 | **Issued screen:** the number, large, for `result_seconds` (the `kiosk_settings` read, §4 D14; default 10), then the scanner again. | §4 D14 |
+| F7 | **Web request page `/app/queue?branch=<code>`** (customer, th/en/zh), behind sign-in like `/app/bookings`. <br>• It reads the branch's currencies and rates from the public `queue-rates` view (`GET /api/public/orgs/{org}/branches/{code}/queue-rates`, today's kiosk `rates` JSON, W2; `{org}` from `/api/public/host`). It then sends `{branch, type, currency, amount, paymentMethod?}` to `webRequestCreate` (W1). <br>• `409 alreadyQueued` opens that request instead (§4 D12). | R-3, §4 D2 |
+| F8 | **Status on the same page, after submit.** <br>• `ViewPoller` on `myWebRequest {id}` (W4). It shows the request QR (`QrCode` of `requestQrUrl`, with its download, R-10), the expiry, and then the number, place in line and status (W5: `QUOTED`, `WAITING`, `CALLED`, `SERVING`, `COMPLETED`, `CANCELLED`, `NO_SHOW`). <br>• **The token is held in memory only** (W3). After a reload the page calls `webRequestQrReissue {id}` and draws the new QR. <br>• **Expired:** `404 notFound` after `expiresAt` shows *expired, please fill the request again* (W5: there is no `EXPIRED` status). <br>• **ยกเลิกคิว** is one press, `webRequestCancel` (R-11). **ส่งเข้าอีเมล** shows only when `my_profile.emailCopy.available`, with the masked `to` (W11). It posts `copyByEmail {subject:"webRequest", id, qr}`, where `qr` is the in-memory token (W3). **เสร็จ** leaves the page. | §4 D8, D21, W3–W5, W11 |
+| F9 | **The borrowed tablet (R-5):** the page signs out on **เสร็จ** and after an idle timeout, but only on a tablet. The tablet is told apart by a **`?shared=1` on its home URL**, stored in `sessionStorage` for that tab; there is no server flag. Sign-out is today's `POST /api/auth/logout`, which revokes the customer's session too (W12; the customer app has no sign-out call today, so this is its first), then `location.assign('/app/queue?branch=<code>&shared=1')`. The idle timeout is 120 s, one constant `TABLET_IDLE_MS`, in a new `shared/session/idle.ts`. On a personal phone nothing signs out. | R-5, §4 D16 |
+| F10 | **The board QR** (`BookingQr.tsx:16`) targets `/app/queue?branch=<code>` instead of `/app/book` (R-3; §0a KS-7). `/app/book` itself stays (§4 D15). | R-3 |
+| F11 | **`/q` page:** the request QR's URL must open something on a phone. It is a signed-out page that says *"show this QR to staff"* and never sends the fragment anywhere. | §4 D3 |
+| F12 | **`/c` page** (§4 D22): signed-out. It posts the fragment to `copyLinkView` and shows the details and the live status, drawing the QR from the fragment with `QrCode`. It is read-only. | §4 D22 |
+| F13 | **Desk scan (c):** the existing `qrToken` input on `/desk/bookings` (keyboard wedge; no camera exists) learns one more shape. Input of the form `…/q#<token>` calls `findByToken` (`POST /api/kiosk {action:"findByToken", payload:{branchId, token}}` → `{requestId}`, W8) and then `location.assign('/desk?branch=<b>&kiosk=<id>')`. Anything else is a booking QR, as today. `404 notFound` shows the worded refusal. | §4 D7 |
+| F14 | **Calling display (d) `/queue-display?branch=<code>`** (signed-out, TV), from `rates.html`'s template. `/api/public/host` for `{org}` (W10), then `PublicPoller` on `/api/public/orgs/{org}/branches/{code}/queue-display` (W9: `called[{displayNumber, status, calledAt}]`, `recent[…]` = the last 5). It shows the number(s) being called and the last 5, **numbers only** (R-7), with a chime on a new call (an `<audio>` element). It never shows a name, phone, amount, teller or counter. | R-7, §4 D10 |
+| F15 | **Admin:** one field, `result_seconds`, on `/kiosk-currencies.html`, written by `configureSettings` (`RatesDraft`, §4 D14). | §4 D14 |
+
+### 5r.2 Class diagram (FE)
+
+```mermaid
+classDiagram
+  direction LR
+  class QueueMachineController {
+    signIn(user, secret)
+    onScan(raw)
+    onIssued(issued)
+    reset()
+  }
+  class QueueMachineApi {
+    issueByToken(token) Issued
+    settings() KioskSettings
+  }
+  class TicketPrinter {
+    <<interface>>
+    write(bytes)
+  }
+  class LanTicketPrinter
+  class BluetoothTicketPrinter
+  class UsbTicketPrinter
+  class StaffSession {
+    signIn(...)
+    signOut()
+  }
+  QueueMachineController --> QueueMachineApi
+  QueueMachineController --> TicketPrinter
+  QueueMachineController --> StaffSession
+  TicketPrinter <|.. LanTicketPrinter
+  TicketPrinter <|.. BluetoothTicketPrinter
+  TicketPrinter <|.. UsbTicketPrinter
+  class QueueRequestScreen {
+    form
+    status(ViewPoller myWebRequest)
+  }
+  class TabletSession {
+    isShared()
+    armIdle(ms, onIdle)
+    signOutAndRestart(branch)
+  }
+  class RequestQrToken {
+    parse(raw) token?
+  }
+  QueueRequestScreen --> TabletSession
+  QueueRequestScreen --> RequestQrToken
+  class DeskBookingsScreen
+  DeskBookingsScreen --> RequestQrToken
+  class QueueDisplay {
+    PublicPoller display
+  }
+```
+
+| Unit | File | New / changed |
+|---|---|---|
+| `QueueMachineController`, pages | `app/lib/features/queue_machine/presentation/{controllers/queue_machine_controller.dart, pages/{sign_in,scanner,issued,printer}_page.dart}` | new |
+| `QueueMachineApi`, `StaffSession` | `app/lib/features/queue_machine/infrastructure/{queue_machine_api.dart, staff_session.dart}` | new (dio + cookie jar) |
+| `TicketPrinter` + the first implementation | `app/lib/features/queue_machine/printing/{ticket_printer.dart, lan_ticket_printer_io.dart, …}` | new; the LAN one is a `*_io.dart` seam |
+| customer kiosk flow | `app/lib/features/kiosk/**`, `app/test/features/kiosk/**` | removed (F1) |
+| `RequestQrToken.parse` | `web/src/shared/queue/request-qr.ts` | new: the one place that reads `/q#<token>` (♻️: queue page, desk, `/q`) |
+| `/app/queue` | `web/pages/app-queue.html`, `web/src/screens/customer/queue/{main.tsx, QueueRequest.tsx, i18n.ts, queue.css}` | new |
+| `TabletSession` | `web/src/shared/session/tablet.ts` (+ `idle.ts`) | new |
+| `/q`, `/c` | `web/pages/{q,c}.html`, `web/src/screens/public/{request-qr,copy-link}/…` | new |
+| `/queue-display` | `web/pages/queue-display.html`, `web/src/screens/public/queue-display/{main.tsx, QueueDisplay.tsx, i18n.ts, queue-display.css}` | new |
+| desk scan | `web/src/screens/desk/bookings/DeskBookingsScreen.tsx` (`handleQrLookup`) | changed |
+| board QR | `web/src/screens/customer/rate-display/BookingQr.tsx:16` | changed |
+| admin `result_seconds` | the `/kiosk-currencies.html` screen | changed |
+
+### 5r.3 Behaviour (up-front rows; `class:logic` tickets get them as failing tests first)
+
+| # | Given | Expected |
+|---|---|---|
+| A1 | the machine, no staff session | the sign-in screen; nothing else is reachable |
+| A2 | scan `https://h/q#tok` | `issueByToken {token:"tok"}` sent once; the issued screen shows `displayNumber` |
+| A3 | the answer carries `ticketEscpos` | the decoded bytes go to `TicketPrinter.write` unchanged (byte-equal) |
+| A4 | the printer throws | "print failed" shown; a re-scan sends the same call and writes the same bytes |
+| A5 | `404 notFound` | one worded refusal; back to the scanner |
+| A6 | issued screen | back to the scanner after `result_seconds` (fake time) |
+| A7 | a scan of anything not `/q#…` | refused on the device, with nothing sent |
+| W1 | `/app/queue`, signed out | the sign-in link (as `/app/bookings`) |
+| W2 | submit | `webRequestCreate` with the form; the QR of `requestQrUrl`; no number shown |
+| W3 | `myWebRequest` moves `QUOTED` → `WAITING` | the number and place in line appear; one `ViewPoller` with `since` |
+| W4 | ยกเลิกคิว | one `webRequestCancel`, no dialog; status `CANCELLED` |
+| W5 | `me.emailCopy.available` false / true | no e-mail button / a button that posts `copyByEmail` once |
+| W6 | `?shared=1` and เสร็จ | `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1` |
+| W7 | `?shared=1`, no input for `TABLET_IDLE_MS` | as W6 (fake time) |
+| W8 | no `shared` and เสร็จ | no sign-out |
+| W9 | `409 alreadyQueued` | opens the existing request's status |
+| D1 | desk `qrToken` = `…/q#tok` | `findByToken`, then `location.assign('/desk?branch=B&kiosk=<id>')` |
+| D2 | desk `qrToken` = a booking token | today's booking lookup, unchanged (today's tests stay green) |
+| P1 | `/queue-display` unchanged poll | no re-render (`PublicPoller` 304) |
+| P2 | the view's JSON | only numbers rendered; a guard row fails if any name, phone or amount field is rendered |
+| P3 | `/q#tok` | the "show this to staff" text; **no request sent** |
+| P4 | `/c#link` expired | the worded `linkExpired` text |
+| R1 | `RequestQrToken.parse` | `…/q#tok` → `tok`; a missing or empty fragment, another path, or a booking token → `null` |
+
+### 5r.4 Tickets (cut only after §4 merges; released together)
+
+The File scopes are disjoint, so the tickets run in parallel.
+
+**Every web done line** names its tests, plus the three guards:
+```
+cd web && npx vitest run <the ticket's tests> src/shared/testing/fixtures/no-inline-dto.guard.test.ts src/shared/testing/fixtures/fixtures.guard.test.ts src/shared/ui/screen-look.test.ts
+npx tsc --noEmit
+```
+
+**Every app done line**, because app PR CI does not run `flutter test`:
+```
+cd app && flutter test
+dart format --set-exit-if-changed lib test
+flutter analyze
+```
+It runs the **whole** app suite: `test/l10n/` covers `kiosk_l10n_matches_v2`, and `test/shared/` covers `bundled_fonts_cover_the_texts`. A changed `kiosk.json` also changes the v2 fixture, and re-runs `tool/subset_fonts.py` when a CJK text changes.
+
+| Ticket | Scope | Class | Needs |
+|---|---|---|---|
+| QM-1 | `app/`: remove the customer kiosk flow and its tests and texts (F1), and make the setup probe `/health/ready` | mechanical | — |
+| QM-2 | `app/`: `features/queue_machine` controller + sign-in + scanner + issued pages, `QueueMachineApi`, `StaffSession` (cookie jar) (F2–F4, F6; A1, A2, A5–A7) | logic | QM-1 merged; BE `issueByToken` (§4.8 slice a) |
+| QM-3 | `app/`: `TicketPrinter` + the first implementation (Q-F1) + printer settings page (F5; A3, A4) | logic | QM-1; Q-F1 |
+| QW-1 | web: `shared/queue/request-qr.ts` (R1) + desk scan (F13; D1, D2) | logic | BE `findByToken` (§4.8 a) |
+| QW-2 | web: `/app/queue` request + status + cancel + e-mail button (F7, F8; rows W1–W5, W9 of 5r.3) | logic | QW-1 (`request-qr.ts`); BE web source (§4.8 c), e-mail copy (§4.8 d) |
+| QW-3 | web: `TabletSession` + idle + sign-out (F9; rows W6–W8 of 5r.3) | logic | none (W12 is today's route) |
+| QW-4 | web: `/queue-display` (F14; P1, P2) | logic | BE display (§4.8 b) |
+| QW-5 | web: `/q` and `/c` pages (F11, F12; P3, P4) | mechanical | QW-1 |
+| QW-6 | web: board QR target (F10) + admin `result_seconds` (F15) | mechanical | §4 D14 |
+
+QW-2 and QW-3 both touch the `/app/queue` screen, so QW-3 owns only `shared/session/tablet.ts`, `idle.ts` and their tests. QW-2 wires it in with one call that QW-3's test pins.
+
+### 5r.5 Data
+
+None on the FE side. New DTO types arrive with the BE tickets (ts-rs), and each FE ticket that reads one runs `npm run gen:fixtures`.
+
+### 5r.6 Owner fact needed (one)
+
+- **Q-F1: how the printer is attached to the queue machine.** LAN (port 9100), Bluetooth or USB, and on which Android device. QM-3 builds only that one (F5). Until the owner answers, QM-1, QM-2 and every web ticket can run; QM-3 waits.
+
 ## 6. Open questions for the owner (one batch)
 
 > ~~superseded~~: every open question is answered. See §0a and §4.7.
