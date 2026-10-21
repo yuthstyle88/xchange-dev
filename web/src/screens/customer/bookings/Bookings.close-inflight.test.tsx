@@ -88,6 +88,22 @@ function makeDeferredHarness() {
     const method = (init?.method ?? 'GET').toUpperCase();
     const u = new URL(input, 'http://localhost');
 
+    if (method === 'GET' && u.pathname === '/api/public/host') {
+      return jsonResponse(200, { org: 'XC' });
+    }
+    if (method === 'GET' && u.pathname === '/api/public/orgs/XC/branches') {
+      return jsonResponse(200, {
+        branches: [BRANCH_A, BRANCH_B].map((code) => ({
+          code,
+          name: code,
+          address: null,
+          openingHours: null,
+          timezone: 'Asia/Bangkok',
+          bookingEnabled: true,
+          queueOpen: true,
+        })),
+      });
+    }
     if (method === 'GET' && u.pathname === '/api/v3/views/my_bookings') {
       const body = makeMyBookingsData({ bookings: currentBookings.map((b) => ({ ...b })) });
       return jsonResponse(200, { version: 1, changed: true, data: body });
@@ -138,6 +154,8 @@ function makeDeferredHarness() {
 
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
   });
+
+  vi.stubGlobal('fetch', fetchFn);
 
   return {
     api: new ApiClient(fetchFn),

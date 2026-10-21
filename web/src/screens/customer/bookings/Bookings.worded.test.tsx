@@ -114,6 +114,24 @@ describe('Customer My Bookings (C03): wordedError handling (#2194)', () => {
       const u = new URL(input, 'http://localhost');
       const method = (init?.method ?? 'GET').toUpperCase();
 
+      if (u.pathname === '/api/public/host') {
+        return json(200, { org: 'XC' });
+      }
+      if (u.pathname === '/api/public/orgs/XC/branches') {
+        return json(200, {
+          branches: [
+            {
+              code: BRANCH_ID,
+              name: BRANCH_ID,
+              address: null,
+              openingHours: null,
+              timezone: 'Asia/Bangkok',
+              bookingEnabled: true,
+              queueOpen: true,
+            },
+          ],
+        });
+      }
       if (u.pathname === '/api/v3/views/my_bookings') {
         return listResponder();
       }

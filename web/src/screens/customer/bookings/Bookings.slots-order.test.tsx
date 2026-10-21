@@ -135,6 +135,22 @@ describe('xchange#2418: reschedule dialog lists only the open booking’s slots'
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
 
+        if (u.pathname === '/api/public/host') {
+          return json(200, { org: 'XC' });
+        }
+        if (u.pathname === '/api/public/orgs/XC/branches') {
+          return json(200, {
+            branches: [BRANCH_A, BRANCH_B].map((code) => ({
+              code,
+              name: code,
+              address: null,
+              openingHours: null,
+              timezone: 'Asia/Bangkok',
+              bookingEnabled: true,
+              queueOpen: true,
+            })),
+          });
+        }
         if (u.pathname === '/api/v3/views/my_profile') {
           return viewEnvelope({ customerId: 'cust-alice', displayName: 'Alice' });
         }

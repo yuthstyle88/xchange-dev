@@ -120,10 +120,11 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
 
   const [branchNames, setBranchNames] = createSignal<Map<string, string>>(new Map());
   const [branchTimezones, setBranchTimezones] = createSignal<Map<string, string>>(new Map());
-  // shortcut: legacy unit tests outside #4172 file scope return 404 on /api/public/host under TZ=UTC, remove fallback once those test mocks include /api/public/host
-  const branchTimezone = (branchId: string) => branchTimezones().get(branchId) ?? 'Asia/Bangkok';
+  const branchTimezone = (branchId: string) => branchTimezones().get(branchId)!;
 
   const loadBranches = async (): Promise<void> => {
+    setBranchNames(new Map());
+    setBranchTimezones(new Map());
     let data: PublicBranchesData | null = null;
     try {
       const hostRes = await fetchFn('/api/public/host');
@@ -166,7 +167,11 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
         api.view<MyBookingsData>('my_bookings'),
         loadBranches(),
       ]);
-      setBookings(res.data?.bookings ?? []);
+      const items = res.data?.bookings ?? [];
+      setBookings(items);
+      if (items.some((b) => !branchTimezone(b.branchId))) {
+        setLoadError(t('error.loadFailed'));
+      }
     } catch (err: any) {
       setLoadError(getWordedError(err));
     } finally {
@@ -423,6 +428,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                   <BookingExtras
                     booking={booking}
                     api={api}
+                    timeZone={branchTimezone(booking.branchId)}
                     onChange={(patch) => patchBooking(booking.id, patch)}
                   />
 
