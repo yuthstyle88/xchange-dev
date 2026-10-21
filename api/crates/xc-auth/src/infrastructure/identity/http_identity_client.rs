@@ -292,14 +292,7 @@ impl IdentityClient for HttpIdentityClient {
         code: &'a str,
         client_ip: Option<&'a str>,
     ) -> BoxFuture<'a, Result<IdentityOtpVerifyResponse, IdentityError>> {
-        Box::pin(async move {
-            let body = serde_json::json!({
-                "challengeId": challenge_id,
-                "code": code,
-                "registerIfAbsent": false,
-            });
-            self.send_request("/auth/otp/verify", body, client_ip).await
-        })
+        self.otp_verify_registering(challenge_id, code, false, client_ip)
     }
 
     fn otp_verify_registering<'a>(
@@ -309,9 +302,13 @@ impl IdentityClient for HttpIdentityClient {
         register_if_absent: bool,
         client_ip: Option<&'a str>,
     ) -> BoxFuture<'a, Result<IdentityOtpVerifyResponse, IdentityError>> {
-        let _ = (challenge_id, code, register_if_absent, client_ip);
         Box::pin(async move {
-            todo!("KWQ-C2-1: POST /auth/otp/verify with registerIfAbsent = the flag")
+            let body = serde_json::json!({
+                "challengeId": challenge_id,
+                "code": code,
+                "registerIfAbsent": register_if_absent,
+            });
+            self.send_request("/auth/otp/verify", body, client_ip).await
         })
     }
 
