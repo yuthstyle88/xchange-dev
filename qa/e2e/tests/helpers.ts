@@ -436,5 +436,18 @@ export async function closeShift(teller: Page, manager: Page): Promise<void> {
   expect(verify.ok, `closing count verified: ${verify.text}`).toBeTruthy();
   await teller.reload();
   await expect(teller.getByTestId('shift-open-count'), 'the shift is closed').toBeVisible({ timeout: 20_000 });
-  await teller.getByTestId('floor-clock').click().catch(() => {});
+  const reqPromise = teller.waitForRequest(
+    (req) => req.method() === 'POST' && /^\/api\/attendance$/.test(new URL(req.url()).pathname),
+    { timeout: 15_000 },
+  );
+  const res = await posted(teller, /^\/api\/attendance$/, () => teller.getByTestId('floor-clock').click());
+  expect(res.ok, `clock-out: ${res.text}`).toBeTruthy();
+  const reqBody = ((await reqPromise).postDataJSON?.() ?? {}) as { direction?: string };
+  expect(reqBody.direction, 'clock-out request direction').toBe('OUT');
+  await expect(teller.getByTestId('shift-open-count'), 'shift-open-count hidden after clock-out').toBeHidden({
+    timeout: 20_000,
+  });
+  await expect(teller.getByTestId('shift-close-count'), 'shift-close-count hidden after clock-out').toBeHidden({
+    timeout: 20_000,
+  });
 }
