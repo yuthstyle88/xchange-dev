@@ -8,9 +8,12 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use chrono_tz::Tz;
+use pos_error::{AppError, AppResult};
 use xc_kernel::ids::BranchId;
 use xc_kernel::queue_tickets::QueueTickets;
+
+use crate::domain::kiosk::value_objects::ticket_print_job::TicketPrintJob;
 
 use super::service::KioskService;
 
@@ -45,8 +48,25 @@ impl RequestIssueService {
         origin: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Issued> {
-        let _ = (branch, token, origin, now, &self.kiosk, &self.queue);
-        todo!("KWQ-A4: core issue_by_token + TicketPrintJob")
+        let issued = self
+            .kiosk
+            .issue_by_token(branch, token, now, self.queue.clone())
+            .await?;
+        let tz: Tz = issued.timezone.parse().map_err(|_| {
+            AppError::Internal(format!("invalid branch timezone: {}", issued.timezone))
+        })?;
+        let ticket_escpos = TicketPrintJob {
+            display_number: issued.ticket.display_number.clone(),
+            branch_name: issued.branch_name,
+            issued_at: issued.ticket.issued_at.with_timezone(&tz).fixed_offset(),
+            qr_url: format!("{origin}/q#{token}"),
+        }
+        .render();
+        Ok(Issued {
+            display_number: issued.ticket.display_number,
+            ticket_id: issued.ticket.id,
+            ticket_escpos,
+        })
     }
 
     /// `findByToken` (D7, B13): the request id for the desk's `?kiosk=<id>` entry.
@@ -56,7 +76,6 @@ impl RequestIssueService {
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<String> {
-        let _ = (branch, token, now);
-        todo!("KWQ-A4: core find_by_token")
+        self.kiosk.find_by_token(branch, token, now).await
     }
 }
