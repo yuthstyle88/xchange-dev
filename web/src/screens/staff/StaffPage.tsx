@@ -43,10 +43,7 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
       meData = meRes.data;
     } catch (err: unknown) {
       if (mine !== seq) return;
-      if (
-        (typeof err === 'object' && err !== null && 'status' in err && (err as { status: number }).status === 401) ||
-        (err instanceof ApiError && err.status === 401)
-      ) {
+      if (err instanceof ApiError && err.status === 401 && err.code === 'signIn') {
         props.navigate('/login?next=%2Fstaff');
         return;
       }
