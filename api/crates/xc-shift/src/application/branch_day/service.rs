@@ -270,6 +270,8 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
         )
         .await?;
 
+        self.shifts.close_day_if_last_in(tx, branch, now).await?;
+
         Ok(new_phase)
     }
 
