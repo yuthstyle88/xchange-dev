@@ -1788,7 +1788,8 @@ async fn test_routes_customer_phone_start_and_confirm_with_permissions() {
         "phone": "0812345678"
     });
 
-    // Caller without ExchangeTransact (Role::Finance) is refused with roleNotAllowed (400)
+    // Caller without ExchangeTransact (Role::Finance) is refused with roleNotAllowedHere (400): the command inherits
+    // `EntryPath::Rpc`, because the owner's /desk reaches it too and has no staff actor (#4333).
     let req_refused = atest::TestRequest::post()
         .uri(&start_uri)
         .insert_header((header::HOST, HOST))
@@ -1801,8 +1802,8 @@ async fn test_routes_customer_phone_start_and_confirm_with_permissions() {
     assert_eq!(resp_refused.status(), StatusCode::BAD_REQUEST);
     let body_refused: Value = atest::read_body_json(resp_refused).await;
     assert_eq!(
-        body_refused["error"]["code"], "roleNotAllowed",
-        "expected camelCase roleNotAllowed wire code"
+        body_refused["error"]["code"], "roleNotAllowedHere",
+        "expected camelCase roleNotAllowedHere wire code"
     );
 
     // Caller with ExchangeTransact (Role::Teller) is authorized
@@ -1835,7 +1836,8 @@ async fn test_routes_customer_phone_start_and_confirm_with_permissions() {
         "code": "123456"
     });
 
-    // Caller without ExchangeTransact (Role::Finance) is refused with roleNotAllowed (400)
+    // Caller without ExchangeTransact (Role::Finance) is refused with roleNotAllowedHere (400): the command inherits
+    // `EntryPath::Rpc`, because the owner's /desk reaches it too and has no staff actor (#4333).
     let req_conf_refused = atest::TestRequest::post()
         .uri(&confirm_uri)
         .insert_header((header::HOST, HOST))
@@ -1848,8 +1850,8 @@ async fn test_routes_customer_phone_start_and_confirm_with_permissions() {
     assert_eq!(resp_conf_refused.status(), StatusCode::BAD_REQUEST);
     let body_conf_refused: Value = atest::read_body_json(resp_conf_refused).await;
     assert_eq!(
-        body_conf_refused["error"]["code"], "roleNotAllowed",
-        "expected camelCase roleNotAllowed wire code"
+        body_conf_refused["error"]["code"], "roleNotAllowedHere",
+        "expected camelCase roleNotAllowedHere wire code"
     );
 
     // Caller with ExchangeTransact (Role::Teller) is authorized
