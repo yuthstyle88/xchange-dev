@@ -47,6 +47,10 @@ qa/e2e/
   tests/flow-xapp-alerts.spec.ts     QA-F14a (round 5)
   tests/flow-xapp-plan.spec.ts       QA-F14b (round 5)
   tests/flow-xapp-profile.spec.ts    QA-F14c (round 5)
+  tests/flow-floor.spec.ts           QA-F15 (round 7)
+  tests/flow-holds.spec.ts           QA-F16 (round 7)
+  tests/flow-desk-bookings.spec.ts   QA-F17 (round 7)
+  tests/flow-admin-reads.spec.ts     QA-F18 (round 7)
 ```
 
 `playwright.config.ts` keeps PR 3838's settings (one worker, no retries, phone viewport 430×932 for `/app`, desktop
@@ -94,6 +98,13 @@ classDiagram
 | `watchConsole(page)` | Collects `console` errors and `pageerror`s; `smoke` fails the test if any appear |
 | `shot(page, area, screen, lang)` | `results/<area>/<screen>-<lang>.png`, full page |
 | `smoke(page, spec)` | For each `lang` of `spec.langs`: `withLang`, `goto(spec.path)`, expect `spec.key` visible, no console error, `shot` |
+
+Round 7 adds two helpers (QA-H3, the one round-7 ticket that edits `helpers.ts`):
+
+| Function | Contract |
+|---|---|
+| `startService(manager)` | On `/staff`, reads `floor-phase`. If `floor-start` shows (the phase is READY), it clicks it, confirms the ConfirmDialog, and waits for `POST /api/branch-day/start` with `posted`. Returns `'started'`. If the day is already OPEN, returns `'alreadyOpen'` and writes nothing. Otherwise it fails with the worded refusal: `floor-error`, or the phase it found. The card sends `rateVersion` itself, from MAIN's current publication (seed 5b); `api/src/presentation/http/v3/commands/branch_day.rs:127-146`. Once #4130 lands, a start outside MAIN's hours (09:00–17:00 branch time) is refused. The helper then calls `test.skip` with the worded reason, so a run outside hours skips instead of failing |
+| `cutOff(manager)` | Clicks `floor-cutoff` when it shows (the phase is OPEN) and waits for the POST. Specs call it **only when their own `startService` returned `'started'`**, and always before `closeShift`, so the day reads CLOSED again after the last shift closes (`xc-shift/src/domain/custody/branch_day.rs:58-63`) |
 
 Specs import only from `helpers.ts`. A spec that needs a new helper comments on its ticket; it never edits `helpers.ts`.
 
@@ -172,7 +183,7 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 
 | Flow | Journey (design) | Steps | Writes, and where |
 |---|---|---|---|
-| F1 booking | `blueprint/booking-slots.md` §4.2–4.4, #1683 | PR 3838's: book from `?ref=`, book again, C03 lists both and cancels one, the desk shows the kept one, admin booking-slots opens | bookings on MAIN for the test customer |
+| F1 booking | `blueprint/booking-slots.md` §4.2–4.4, #1683 | PR 3838's: book from `?ref=`, book again, C03 lists both and cancels one, the desk shows the kept one; admin booking-slots changes a slot's capacity and adds a closure, then restores both (`flow-booking.spec.ts:115-211`) | bookings on MAIN for the test customer |
 | F2 queue | `blueprint/queue-tickets.md` §3, §4.3–4.4 | teller: issue a walk-in, call next, start, finish; the board shows each state | queue tickets on MAIN. A counter is a teller with an OPEN shift (Q7), so F2 opens and closes the teller's shift with `helpers.ts` `openShift` / `closeShift` (the same steps as F3, which funds the safe first). Issuing needs an open queue (`queueOpen`, `BranchDayOperate`: the branch manager) |
 | F3 cash | `blueprint/cash-shift-transfer.md` §3.1, A5; `ledger-inventory.md` §4.4 | (1) fund the safe: finance records an EXTERNAL_IN on `/staff` › transfers, the branch manager approves it on `/#approvals` (A5: never the creator), finance dispatches and receives it; (2) the teller clocks in and counts the opening, the branch manager verifies it (`person_rules.rs` `verifier_is_not_counter`); (3) the same for the close, with the same figures. Since LG-4 (#929) the opening count leaves the safe, so (1) must come first. Needs #3858 (CASH_TRANSFER in the approval registry) on the host | one EXTERNAL_IN transfer and the teller's own shift on MAIN |
 | F4 rates | `blueprint/rates.md` §4.4 | admin: open A02, create a draft, simulate. **Never submit**: a publish changes the shared counter prices (E-4). The test deletes its draft at the end | one draft, removed |
@@ -187,6 +198,10 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 | F14a rate alert | customer app, `/app/rate-alerts` | customer: delete its own leftover alerts carrying the spec's marker target; create MAIN / `users.currency` / ABOVE / the marker (a target far above any rate, so it never fires: alerts are checked only after a rate publish); the new `article[data-alert-id]` card shows; delete it; after a reload it is gone. Needs the seed's `rate_alert_settings` (else `alertSettingsMissing`: skip and log) | one soft-deleted alert of the test customer |
 | F14b journey plan | customer app, `/app` and `/app/journey` | customer: on `/app` calculate a BUY of `users.currency` with a quantity unique to the run, save (`POST /api/app/planner-drafts`); on `/app/journey` the card with that amount shows; delete it (`[data-action=delete-plan]`); after a reload it is gone. Needs a published rate on MAIN (seed) | none (the delete is a hard delete) |
 | F14c profile and consent | customer app, `/app/profile` | customer: read the name and language; save a run-unique name and another seeded language (the save is a `PUT`, so the spec waits on it itself, not with `posted`); the values hold after a reload; restore both in `finally`. Then toggle `data-consent=EMAIL` and toggle it back in `finally` (needs the seed's MARKETING text, else 409 `consentTextMissing`: skip and log). While granted, the test customer is marketing-eligible; nothing is sent outside | two consent history rows; profile back to what it was |
+| F15 floor | `blueprint/cash-shift-transfer.md:86-90`, `:250-251`, `:294-295`; `xchange-v3-wave3-staff.md:162-163` (B4, B5), `:168` (B10), `:178-181` | inside the teller's own shift (`openShift` … `closeShift`). (1) The branch manager on `/staff`: `floor-phase` reads READY; `floor-start` → ConfirmDialog → OPEN. Skip and log if the phase was not READY (someone else's day is running). (2) Finance (CashTargetSet) reads the old `floor-target` figures, saves a run-unique USD figure in `floor-target-form` (`input[data-currency]`, `floor-target-save`, `web/src/screens/staff/floor/FloorCard.tsx:295-330`), sees it after a reload, and re-saves the old figures in `finally`. An empty map is accepted (`branch_day.rs:242-264`). (3) Attendance: after `clockIn(teller)` (helpers.ts:377), the teller's clock-in row `[data-attendance-id]` shows "still in" on the attendance card (`web/src/screens/staff/attendance/AttendanceCard.tsx:56-59`). (4) The branch manager presses `floor-cutoff` → CUT_OFF, then `closeShift` → `floor-phase` reads CLOSED. Outside MAIN's hours, skip (as `startService`) | the day's phase moves and comes back to CLOSED; the cash target is back to its old figures, or to an empty target if it had none |
+| F16 customer hold | `cash-shift-transfer.md:87-88`, `:296`; `xchange-v3-wave3-staff.md:53` (S11), `:167` (B9), `:188-189` (C10, C11) | first release any OPEN hold of the test customer whose reason carries the spec's marker (an OPEN hold blocks every save for that customer, `xc-shift/src/application/custody/service.rs:162-168`). The customer's id comes from its own `my_profile.customerId`. The teller on `/staff` › holds: `holds-key` = the id, `holds-find`, the row `[data-customer-id]`, `holds-reason` = marker + run id, `holds-place` (POST `/api/customer-holds`); the row `[data-hold-id]` shows OPEN. The branch manager (release needs VerificationReview, `HoldsCard.tsx:150`) presses `holds-release`, gives a reason in `dialog.xc-dialog`, and the hold shows RELEASED. Release again in `finally` if the test failed between place and release | one RELEASED hold of the test customer |
+| F17 desk bookings | `blueprint/booking-slots.md:73` (B7), `:89`, `:227`, `:240`, `:583` (BK-3: *"the old token finds nothing"*) | the customer books MAIN for **tomorrow** (as F1; seed step 4 makes slots from tomorrow on) and reads its `[data-qr-token]` on `/app/bookings`. The teller on `/desk/bookings`: `input[name=qrToken]`, `lookup-qr` → exactly that booking; `reissue-qr`; looking up the **old** token finds nothing; `cancel` with a reason (`input[name=reason]`, `confirm-cancel`); the customer's `/app/bookings` shows it CANCELLED. Selectors: `web/src/screens/desk/bookings/DeskBookingsScreen.tsx:622-787` | one CANCELLED booking of the test customer; its place is released |
+| F18 admin reads | `blueprint/executive-finance.md:84` (D-8), `:519` (EX-9); `customer-identity-consent.md:35`, `:164` | read-only. (1) Finance on `/#reports`: `#export` → `page.waitForEvent('download')`, a `.csv` with a header row. The same for the employee CSV (`web/src/screens/admin/reports/Reports.tsx:364-372`, `:540-547`). The branch manager sees no export button, or is refused `outOfScope` (`:247`). (2) Admin on `/#customers`: search the test customer's id (`input[type=search]`, `web/src/screens/admin/customers/Customers.tsx:424-430`), one row in `.customers-table`; open its history (`:496-523`) | one EXPORT audit row per download; nothing else |
 
 ## 5. Order and data
 
@@ -201,12 +216,18 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 - F8 (`flow-queue-many.spec.ts`) sorts **before** `flow-queue`: `-` (0x2d) sorts before `.` (0x2e), so `--list` puts it
   right after `flow-exchange`. Both start by failing on WAITING leftovers rather than calling someone else's ticket, so the
   order does not matter once F2's pre-check (QA-F2 fix) is in.
-- 🔴 **F3 depends on a value set by hand on the host.** Its branch manager approves an EXTERNAL_IN of 168,875 THB
-  (`FUND_QTY = '100'` of each of the 11 THB notes, `flow-cash.spec.ts:23`; one of each is 1,688.75,
-  `api/migrations/20261012100000_cash.sql:228-238`), which is within the limit only if a cash-transfer policy row allows it.
-  The seed writes none (`cash_transfer_policy_versions`), and with no row `within_limit` is false (`transfer_flow.rs:547-556`),
-  so only EXECUTIVE may decide and the branch manager is refused `ABOVE_LIMIT` (`xc-cash/src/application/approval/transfer.rs:130-143`):
-  on a freshly reseeded host F3 fails at that approval. Seeding the policy is the owner's call (a seed change).
+- F3's branch manager approves an EXTERNAL_IN of 168,875 THB (`FUND_QTY = '100'` of each of the 11 THB notes,
+  `flow-cash.spec.ts:23`). That is within the limit because seed step 5c writes a THB 200,000 cash-transfer policy
+  (`deploy/server/seed-test-booking.sh:192-200`, #4048). Without that row only EXECUTIVE may decide
+  (`xc-cash/src/application/approval/transfer.rs:130-143`).
+- 🔴 **The branch day.** A save needs the day OPEN or CUT_OFF (`xc-shift/src/domain/custody/branch_day.rs:99-101`). A
+  verified opening count only moves CLOSED to READY (`:68-73`). The stored phase persists, so a run that starts service
+  and never cuts off leaves the day OPEN for every later run.
+  - Rule: a spec starts service only through `startService`, and calls `cutOff` before `closeShift` only when it
+    started the service itself.
+  - F6 never started service before round 7 (`git grep floor-start -- qa/e2e` finds nothing on `main` `45fc0b5c`), so on a
+    freshly seeded host its save was refused `SaveClosed`. QA-F6c fixes that.
+  - Start service is refused outside MAIN's hours once #4130 lands, so F6 and F15 skip outside 09:00–17:00 branch time.
 
 ## 6. What the suite cannot do (by hand, with screenshots)
 
@@ -216,6 +237,20 @@ The key element is a `data-testid` or role the screen already renders; a screen 
   #4113). The customer side is a
   Flutter app on another host, and a kiosk request has no cancel, so its rows cannot be cleaned up. F13 is cut once
   those are fixed.
+- **Round-7 survey, measured on `main` `45fc0b5c`: what stays out, and why.**
+  - **Booking reschedule** (`/app/bookings`): the reschedule dialog asks `booking_slots` with no date
+    (`web/src/screens/customer/bookings/Bookings.tsx:222-224`), and the view then answers only today's slots
+    (`api/src/presentation/http/v3/views/booking_slots.rs:37-58`). A customer can therefore move a booking only to today,
+    and the seed makes no today slots. This is a product gap, ticketed separately; the flow is cut after that fix.
+  - **Desk check-in:** it needs a slot today, later than now (same gap), and an open queue, and it issues a BOOKING
+    ticket that must be cancelled. Cut after the reschedule fix, with the same leftover pre-check as F8.
+  - **Admin notices:** they come only from a rate publish, and mark-read can't be undone.
+  - **Consent policy:** a text publish is a permanent new version of shared text, and `retentionSet` arms the purge job.
+  - **Members segments:** append-only, with no delete, so every run adds a version.
+  - **Loyalty:** the external service answers `loyaltyUnavailable` on the host.
+  - **Device pairing:** there is no pairing screen on `main`; the API needs the agent binary.
+  - **Drawer↔safe moves and hand-over:** they need a second MAIN branch manager or teller, and the seed has neither.
+  - **Slips:** no slip exists on a seeded host. That needs an F6 variant that attaches one; not measured yet.
 - **Notification mark-read and the assistant send:** neither can be undone (no mark-unread; a conversation is not
   deleted) and no safe way exists to create a notification for the test customer; both stay smoke-only.
 
@@ -252,6 +287,13 @@ clean, with no run against a host (E-3).
 | QA-H2 | `helpers.ts`: `Users`/`Role` gain `branch2`, `branchManager2`, `finance2` (after QA-H1) | mechanical | Flash |
 | QA-F12b | `flow-transfer-branch.spec.ts` (new file; after the seed and QA-H2) | logic | Argon |
 | QA-F14a … QA-F14c | `flow-xapp-alerts`, `flow-xapp-plan`, `flow-xapp-profile` (new files) | mechanical | Flash |
+| QA-H3 | `helpers.ts`: `startService`, `cutOff` (§2, round 7) | logic | Argon |
+| QA-F6c | `flow-exchange.spec.ts`, after QA-H3. (1) `startService` after `openShift`, and `cutOff` before `closeShift` when it started (§5). (2) After the receipt and again after the reversal posts: `[data-action=reprint][data-number]` on `/desk/transactions/<id>` (`web/src/screens/desk-transaction/ReceiptsSection.tsx:35-43`) answers a non-null `receipt_document`, for revision 1 and then revision 2 (`blueprint/desk-transaction-detail.md:71`, D5). (3) The branch manager's `/staff/report` for today lists the exchange and its reversal (`web/src/screens/staff-report/StaffReport.tsx:178-183`; `xchange-v3-wave3-staff-report.md:24-35`) | logic | Argon |
+| QA-F15 | `flow-floor.spec.ts` (new file; it drives the card itself, so it does not wait for QA-H3) | logic | Argon |
+| QA-F16 | `flow-holds.spec.ts` (new file) | logic | Argon |
+| QA-F17 | `flow-desk-bookings.spec.ts` (new file) | logic | Argon |
+| QA-F18 | `flow-admin-reads.spec.ts` (new file) | mechanical | Flash |
+| QA-S7 note | `smoke-staff.spec.ts:46-48`: its comment says a teller is refused `/staff/report`, but the teller holds OverviewRead, which the view admits (`api/crates/xc-auth/src/domain/policy/areas/staff_report.rs:13-17`). Fix the comment, and assert the teller's sheet loads | mechanical | Flash |
 
 The skeleton (Claude, STEP 2): the `git mv`, `tsconfig.json`, the config's two projects, `helpers.ts` complete, and the
 13 spec files as empty `test.describe` blocks with their area named.
