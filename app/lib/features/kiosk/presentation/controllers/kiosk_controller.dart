@@ -90,6 +90,7 @@ class KioskState {
     this.error = '',
     this.busy = false,
     this.quoteExpired = false,
+    this.hasCancelToken = false,
     this.secondsLeft = 0,
     this.resetGeneration = 0,
   });
@@ -109,6 +110,7 @@ class KioskState {
   final String error;
   final bool busy;
   final bool quoteExpired;
+  final bool hasCancelToken;
   final int secondsLeft;
 
   /// Bumped by every [KioskController.reset], so screen-local inputs (the
@@ -129,6 +131,7 @@ class KioskState {
     String? error,
     bool? busy,
     bool? quoteExpired,
+    bool? hasCancelToken,
     int? secondsLeft,
   }) => KioskState(
     languageCode: languageCode ?? this.languageCode,
@@ -148,6 +151,7 @@ class KioskState {
     error: error ?? this.error,
     busy: busy ?? this.busy,
     quoteExpired: quoteExpired ?? this.quoteExpired,
+    hasCancelToken: hasCancelToken ?? this.hasCancelToken,
     secondsLeft: secondsLeft ?? this.secondsLeft,
     resetGeneration: resetGeneration,
   );
@@ -220,12 +224,16 @@ class KioskState {
   bool get canConfirm =>
       !busy && quote != null && secondsLeft <= 0 && !quoteExpired;
 
+  bool get canCancel =>
+      hasCancelToken && identity?.status == KioskStatus.waiting;
+
   RequestIdentity? get identity => status ?? quote?.identity;
 }
 
 class KioskController extends Notifier<KioskState> {
   static const reviewSeconds = 3;
   static const restartAfterDone = Duration(seconds: 30);
+  static const restartAfterCancelled = Duration(seconds: 10);
   static const ratesRefresh = Duration(seconds: 30);
 
   KioskRepository get _repo => ref.read(kioskRepositoryProvider);
@@ -258,6 +266,7 @@ class KioskController extends Notifier<KioskState> {
   KioskEndpoint? _modelEndpoint;
   String? _errorKey;
   String? _errorServerMessage;
+  String? _cancelToken;
 
   KioskTexts get _t => _l10n.of(state.languageCode);
 
@@ -329,6 +338,7 @@ class KioskController extends Notifier<KioskState> {
     _receiptPoller.stop();
     _idle.touch();
     _ratesError = false;
+    _cancelToken = null;
     _noError();
     final seq = ++_ratesSeq;
     _ratesMinSeq = seq;
@@ -478,11 +488,13 @@ class KioskController extends Notifier<KioskState> {
         paymentMethod: state.paymentMethod!,
       );
       if (_disposed) return;
+      _cancelToken = null;
       _set(
         state.copyWith(
           quote: quote,
           status: null,
           quoteExpired: false,
+          hasCancelToken: false,
           screen: KioskScreen.quote,
           secondsLeft: reviewSeconds,
           busy: false,
@@ -507,11 +519,13 @@ class KioskController extends Notifier<KioskState> {
     _countdown?.cancel();
     _statusPoller.stop();
     _ratesError = false;
+    _cancelToken = null;
     _set(
       state.copyWith(
         quote: null,
         status: null,
         quoteExpired: false,
+        hasCancelToken: false,
         secondsLeft: 0,
         error: _noError(),
         screen: KioskScreen.select,
@@ -532,9 +546,20 @@ class KioskController extends Notifier<KioskState> {
         return;
       }
       _countdown?.cancel();
+      final token = status.cancelToken;
+      if (token != null && token.isNotEmpty) {
+        _cancelToken = token;
+      }
+      final next = _nextStatus(status);
+      if (next.status == KioskStatus.cancelled) {
+        _onCancelled(next);
+        return;
+      }
       _set(
         state.copyWith(
-          status: _nextStatus(status),
+          status: next,
+          hasCancelToken:
+              _cancelToken != null && next.status == KioskStatus.waiting,
           screen: state.screen == KioskScreen.receipt
               ? KioskScreen.receipt
               : KioskScreen.waiting,
@@ -555,11 +580,51 @@ class KioskController extends Notifier<KioskState> {
 
   // ---- screens 3 and 4: waiting, receipt ---------------------------------
 
+  Future<void> cancel() async {
+    final q = state.quote;
+    final token = _cancelToken;
+    if (state.busy || !state.canCancel || q == null || token == null) return;
+    _ratesError = false;
+    _set(state.copyWith(busy: true, error: _noError()));
+    try {
+      final status = await _repo.customerCancel(q.id, token);
+      if (_disposed || state.quote?.id != q.id) {
+        _set(state.copyWith(busy: false));
+        return;
+      }
+      _onCancelled(_nextStatus(status));
+    } catch (e) {
+      if (_disposed || state.quote?.id != q.id) {
+        _set(state.copyWith(busy: false));
+        return;
+      }
+      _ratesError = false;
+      _set(state.copyWith(busy: false, error: _failure(e)));
+    }
+  }
+
+  void _onCancelled(RequestIdentity next) {
+    _cancelToken = null;
+    _countdown?.cancel();
+    _statusPoller.stop();
+    _receiptPoller.stop();
+    _set(
+      state.copyWith(
+        status: next,
+        hasCancelToken: false,
+        busy: false,
+        error: _keyError('requestCancelled'),
+      ),
+    );
+    _afterStatus();
+  }
+
   static int _statusRank(KioskStatus s) => switch (s) {
     KioskStatus.waiting => 0,
     KioskStatus.accepted => 1,
     KioskStatus.idChecked => 2,
     KioskStatus.completed => 3,
+    KioskStatus.cancelled => 4,
     _ => -1,
   };
 
@@ -577,6 +642,15 @@ class KioskController extends Notifier<KioskState> {
     try {
       final s = await _repo.status(q.id);
       if (_disposed || state.quote?.id != q.id) return;
+      final next = _nextStatus(s);
+      if (next.status == KioskStatus.cancelled) {
+        _onCancelled(next);
+        return;
+      }
+      if (next.status != KioskStatus.waiting &&
+          next.status != KioskStatus.quoted) {
+        _cancelToken = null;
+      }
       final confirmed =
           state.screen == KioskScreen.quote &&
           (s.status == KioskStatus.waiting ||
@@ -587,7 +661,9 @@ class KioskController extends Notifier<KioskState> {
         _countdown?.cancel();
         _set(
           state.copyWith(
-            status: _nextStatus(s),
+            status: next,
+            hasCancelToken:
+                _cancelToken != null && next.status == KioskStatus.waiting,
             screen: KioskScreen.waiting,
             busy: false,
             error: _noError(),
@@ -602,7 +678,9 @@ class KioskController extends Notifier<KioskState> {
       if (expired) _countdown?.cancel();
       _set(
         state.copyWith(
-          status: _nextStatus(s),
+          status: next,
+          hasCancelToken:
+              _cancelToken != null && next.status == KioskStatus.waiting,
           quoteExpired: state.quoteExpired || expired,
           error: expired
               ? _keyError('quoteExpired')
@@ -625,10 +703,21 @@ class KioskController extends Notifier<KioskState> {
     try {
       final r = await _repo.customerReceipt(q.id);
       if (_disposed || state.quote?.id != q.id) return;
+      final next = _nextStatus(r.identity);
+      if (next.status == KioskStatus.cancelled) {
+        _onCancelled(next);
+        return;
+      }
+      if (next.status != KioskStatus.waiting &&
+          next.status != KioskStatus.quoted) {
+        _cancelToken = null;
+      }
       _set(
         state.copyWith(
           receiptImage: r.image,
-          status: _nextStatus(r.identity),
+          status: next,
+          hasCancelToken:
+              _cancelToken != null && next.status == KioskStatus.waiting,
           screen: r.image == null ? KioskScreen.waiting : KioskScreen.receipt,
         ),
       );
@@ -639,9 +728,14 @@ class KioskController extends Notifier<KioskState> {
   }
 
   void _afterStatus() {
-    if (state.status?.status == KioskStatus.completed && _restart == null) {
+    final s = state.status?.status;
+    if ((s == KioskStatus.completed || s == KioskStatus.cancelled) &&
+        _restart == null) {
       final id = state.quote?.id;
-      _restart = Timer(restartAfterDone, () {
+      final delay = s == KioskStatus.cancelled
+          ? restartAfterCancelled
+          : restartAfterDone;
+      _restart = Timer(delay, () {
         if (state.quote?.id == id) reset();
       });
     }

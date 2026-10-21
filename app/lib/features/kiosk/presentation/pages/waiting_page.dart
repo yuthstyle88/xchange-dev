@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/platform/device_actions.dart';
 import '../../../../shared/theme/colors.dart';
 import '../../app/kiosk_providers.dart';
+import '../../domain/entities/kiosk_models.dart';
 import '../widgets/kiosk_widgets.dart';
 
 /// Screen 3 — the request is with staff: queue number and where it stands.
@@ -117,6 +118,29 @@ class WaitingPage extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
           OrderProgress(l10n: l, status: id.status),
+          if (id.status == KioskStatus.cancelled) ...[
+            const SizedBox(height: 16),
+            Text(
+              l.text('requestCancelled'),
+              key: const Key('cancelled-message'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF870031),
+              ),
+            ),
+          ],
+          if (s.canCancel) ...[
+            const SizedBox(height: 20),
+            SecondaryButton(
+              key: const Key('cancel-queue'),
+              label: l.text('cancelQueue'),
+              onPressed: s.busy
+                  ? null
+                  : ref.read(kioskControllerProvider.notifier).cancel,
+            ),
+          ],
           const SizedBox(height: 24),
           Text(
             l.text('summaryTitle'),
