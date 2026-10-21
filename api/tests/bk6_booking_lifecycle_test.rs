@@ -357,8 +357,10 @@ async fn customer_cancel_before_cutoff_releases_place() {
     db.finish().await;
 }
 
+/// #4203, restated by the ticket author (claude/studio-claude-6) on the owner's ruling of 2026-10-21: "ยกเลิกการจอง ยกเลิกได้เลย" · "ไม่ต้อง มี การอนุมัติ เพราะไม่มีอะไรเกี่ยวกับเงิน".
+/// Before #4203 this test was `customer_cancel_after_cutoff_refuses_cancel_cutoff_passed`.
 #[actix_web::test]
-async fn customer_cancel_after_cutoff_refuses_cancel_cutoff_passed() {
+async fn customer_cancel_after_cutoff_succeeds() {
     let db = TestDb::start().await;
     let slot_id = Uuid::new_v4();
     let now = Utc::now();
@@ -402,7 +404,105 @@ async fn customer_cancel_after_cutoff_refuses_cancel_cutoff_passed() {
     )
     .await;
 
-    refused_with(&res, "cancelCutoffPassed", "customer cancel after cutoff");
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "#4203: a customer cancel after the cutoff succeeds 200; got {} {}",
+        res.status,
+        res.text
+    );
+    let status = res.body["status"]
+        .as_str()
+        .or_else(|| res.body["data"]["status"].as_str());
+    assert_eq!(status, Some("CANCELLED"));
+
+    let (reserved,): (i32,) = sqlx::query_as("SELECT reserved FROM booking_slots WHERE id = $1")
+        .bind(slot_id)
+        .fetch_one(&db.pool)
+        .await
+        .expect("read slot reserved count");
+    assert_eq!(reserved, 0, "the place is released");
+
+    db.finish().await;
+}
+
+/// #4203 row 4: the cutoff still limits a customer's **reschedule** (design `booking-slots.md` Q-B2 revised
+/// 2026-10-21). Inside the cutoff it is refused `cancelCutoffPassed`, and the booking stays on its slot.
+#[actix_web::test]
+async fn customer_reschedule_after_cutoff_refuses_cancel_cutoff_passed() {
+    let db = TestDb::start().await;
+    let now = Utc::now();
+    let slot1_id = Uuid::new_v4();
+    let slot2_id = Uuid::new_v4();
+    // The booked slot starts 30 minutes from now (cutoff is 60 minutes); the target slot has room.
+    seed_slot(
+        &db.pool,
+        slot1_id,
+        B01,
+        bangkok_today(),
+        now + Duration::minutes(30),
+        now + Duration::minutes(60),
+        5,
+        1,
+        "OPEN",
+    )
+    .await;
+    seed_slot(
+        &db.pool,
+        slot2_id,
+        B01,
+        bangkok_today(),
+        now + Duration::hours(4),
+        now + Duration::hours(5),
+        5,
+        0,
+        "OPEN",
+    )
+    .await;
+
+    let booking_id = "BK-test-cust-resched-late";
+    let qr_hash = Sha256::digest(b"dummy-qr-resched-late");
+    seed_booking(
+        &db.pool,
+        booking_id,
+        "B261014-0031",
+        CUSTOMER_ALICE_CUST_ID,
+        B01,
+        slot1_id,
+        "APP",
+        "CONFIRMED",
+        &qr_hash,
+    )
+    .await;
+
+    let uri = format!("/api/bookings/{booking_id}/reschedule");
+    let res = call(
+        &db,
+        Some("CUSTOMER@customer-alice"),
+        Method::POST,
+        &uri,
+        Some(json!({ "branch": B01, "slotId": slot2_id })),
+        Some("k-r-late"),
+    )
+    .await;
+
+    refused_with(
+        &res,
+        "cancelCutoffPassed",
+        "customer reschedule after cutoff",
+    );
+
+    let (slot, status): (Uuid, String) =
+        sqlx::query_as("SELECT slot_id, status FROM bookings WHERE id = $1")
+            .bind(booking_id)
+            .fetch_one(&db.pool)
+            .await
+            .expect("read the booking");
+    assert_eq!(
+        (slot, status.as_str()),
+        (slot1_id, "CONFIRMED"),
+        "nothing moves"
+    );
 
     db.finish().await;
 }

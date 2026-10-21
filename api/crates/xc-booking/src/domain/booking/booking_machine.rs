@@ -34,9 +34,9 @@ impl BookingMachine {
         _actor: &str,
         is_staff: bool,
         reason: Option<&str>,
-        now: DateTime<Utc>,
-        policy: &BookingPolicy,
-        slot: &BookingSlot,
+        _now: DateTime<Utc>,
+        _policy: &BookingPolicy,
+        _slot: &BookingSlot,
     ) -> Result<BookingStatus, BookingError> {
         match booking.status {
             BookingStatus::PendingCustomerConfirmation
@@ -50,15 +50,10 @@ impl BookingMachine {
             if reason.is_none_or(|r| r.trim().is_empty()) {
                 return Err(BookingError::TellerCancelReasonRequired);
             }
-        } else {
-            if booking.status != BookingStatus::PendingCustomerConfirmation
-                && booking.status != BookingStatus::Confirmed
-            {
-                return Err(BookingError::StaleVersion);
-            }
-            if now > policy.cutoff_at(slot) {
-                return Err(BookingError::CancelCutoffPassed);
-            }
+        } else if booking.status != BookingStatus::PendingCustomerConfirmation
+            && booking.status != BookingStatus::Confirmed
+        {
+            return Err(BookingError::StaleVersion);
         }
 
         Ok(BookingStatus::Cancelled)
