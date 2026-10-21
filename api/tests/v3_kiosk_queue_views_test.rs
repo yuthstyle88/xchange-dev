@@ -1443,7 +1443,10 @@ async fn walk_to(last: Writer) {
                 )
                 .await
             }
-            Writer::Confirm => c.ask(None, "confirm", json!({ "id": WALKED })).await,
+            Writer::Confirm => {
+                c.ask(Some("FRONT"), "confirm", json!({ "id": WALKED }))
+                    .await
+            }
             Writer::Accept => {
                 c.ask(Some("FRONT"), "accept", json!({ "id": WALKED }))
                     .await
