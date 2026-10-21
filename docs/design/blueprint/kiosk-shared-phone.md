@@ -210,6 +210,14 @@ payload with both is `400 invalidRequest`.
   number. With no login on the queue path, the board QR does not use it. Proposed: leave it for now, and decide its
   future with the customer app's next round. Q1–Q3 and Q5 were about the login and no longer apply.
 
+
+**Owner's answers in claude/e92db6's session, 2026-10-21, verbatim choices:**
+- Q1: "ผูกกับลูกค้าเดิม": join the existing customer.
+- Q2: "บันทึกที่ A ตามพาสปอร์ต": save on A.
+- Q3: *"ลูกค้า มี 2 ประเภท คือแบบ สมาชิก กับ walk in"*.
+- Q4: "เก็บไว้ทั้งสอง": keep both.
+- Asked how the kiosk and the QR offer the two types: "ให้เลือกที่หน้าแรก". The first screen offers **สมาชิก** (phone + OTP) or **walk-in** (a queue number, no login).
+
 ### 4.8 Release order
 
 1. This design merges, doc-only.
