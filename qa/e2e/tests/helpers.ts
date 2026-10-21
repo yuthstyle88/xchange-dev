@@ -456,3 +456,101 @@ export async function closeShift(teller: Page, manager: Page): Promise<void> {
     timeout: 20_000,
   });
 }
+
+/**
+ * Starts branch-day service on `/staff` when the branch day is `READY` (`web/src/screens/staff/floor/FloorCard.tsx:67-71,152-191,246-278,356-366`;
+ * `web/src/screens/staff/parts/ConfirmDialog.tsx:20-33`; `web/src/screens/staff/floor/i18n.ts:5-6,28-29`).
+ *
+ * Returns `'started'` when this call transitioned the branch day from `READY` to `OPEN`, or `'alreadyOpen'` when the
+ * branch day was already `OPEN` (writing nothing). If `POST /api/branch-day/start` is refused because the branch is
+ * outside opening hours (#4130: the worded hours refusal of `CustodyError::ServiceNotReady` / `OutsideServiceHours`, `value_objects/custody_error.rs:57-58,69-71`; any other refusal fails), calls
+ * `test.skip(true, reason)` instead of failing. Otherwise fails with the text of `floor-error`.
+ *
+ * Specs must call `cutOff(manager)` in `finally` **only when their own `startService(manager)` returned `'started'`**,
+ * and always before `closeShift(teller, manager)` (`api/crates/xc-shift/src/domain/custody/branch_day.rs:43-64,99`).
+ */
+export async function startService(manager: Page): Promise<'started' | 'alreadyOpen'> {
+  if (!new URL(manager.url(), users.baseUrl).pathname.startsWith('/staff')) {
+    await manager.goto('/staff');
+  } else {
+    await manager.reload();
+  }
+  const phaseEl = manager.getByTestId('floor-phase');
+  await expect(phaseEl, 'floor-phase on /staff (FloorCard.tsx:250)').toBeVisible({ timeout: 20_000 });
+  await expect(phaseEl, 'floor-phase text loaded').not.toHaveText(/^\s*$/, { timeout: 20_000 });
+
+  const startBtn = manager.getByTestId('floor-start');
+  if (await startBtn.isVisible().catch(() => false)) {
+    await startBtn.click();
+    const dialog = manager.locator('dialog.xc-dialog');
+    await expect(dialog, 'ConfirmDialog for startService (FloorCard.tsx:356)').toBeVisible({ timeout: 10_000 });
+    let res: { ok: boolean; text: string; body: string };
+    try {
+      res = await posted(manager, /^\/api\/branch-day\/start$/, () =>
+        dialog.getByRole('button', { name: /^(ยืนยัน|Confirm)$/ }).click(),
+      );
+    } catch (e) {
+      const errText = (await manager.getByTestId('floor-error').innerText().catch(() => '')).trim();
+      throw new Error(errText || (e instanceof Error ? e.message : String(e)));
+    }
+    if (!res.ok) {
+      const errText =
+        (await manager.getByTestId('floor-error').innerText({ timeout: 5_000 }).catch(() => '')).trim() || res.text;
+      if (
+        /เวลาทำการ|วันนี้สาขาปิด|เปิดบริการได้หลังเตรียมกะเสร็จ|ปิดรับรายการใหม่แล้ว|outside.*hours|service.*hours/i.test(
+          `${errText} ${res.body}`,
+        )
+      ) {
+        test.skip(true, errText);
+      }
+      throw new Error(errText);
+    }
+    await expect(manager.getByTestId('floor-cutoff'), 'floor-cutoff visible after startService').toBeVisible({
+      timeout: 20_000,
+    });
+    return 'started';
+  }
+
+  const phaseText = (await phaseEl.innerText()).trim();
+  if (
+    (await manager.getByTestId('floor-cutoff').isVisible().catch(() => false)) ||
+    /^(เปิดรับรายการ|Open)$/i.test(phaseText)
+  ) {
+    return 'alreadyOpen';
+  }
+
+  const errText = (await manager.getByTestId('floor-error').innerText().catch(() => '')).trim();
+  throw new Error(errText || `startService: expected phase READY or OPEN on /staff, got "${phaseText}"`);
+}
+
+/**
+ * Cuts off branch-day service on `/staff` (`POST /api/branch-day/cutoff`, `FloorCard.tsx:72-76,193-209,279-289`).
+ *
+ * Specs must call `cutOff(manager)` **only when their own `startService(manager)` returned `'started'`**, and always
+ * before `closeShift(teller, manager)` so closing the last shift returns the branch day from `CUT_OFF` to `CLOSED`
+ * (`branch_day.rs:58-64`).
+ */
+export async function cutOff(manager: Page): Promise<void> {
+  if (!new URL(manager.url(), users.baseUrl).pathname.startsWith('/staff')) {
+    await manager.goto('/staff');
+  } else {
+    await manager.reload();
+  }
+  const phaseEl = manager.getByTestId('floor-phase');
+  await expect(phaseEl, 'floor-phase on /staff (FloorCard.tsx:250)').toBeVisible({ timeout: 20_000 });
+  await expect(phaseEl, 'floor-phase text loaded').not.toHaveText(/^\s*$/, { timeout: 20_000 });
+
+  const cutoffBtn = manager.getByTestId('floor-cutoff');
+  if (!(await cutoffBtn.isVisible().catch(() => false))) return;
+
+  const res = await posted(manager, /^\/api\/branch-day\/cutoff$/, async () => {
+    await cutoffBtn.click();
+    const dialog = manager.locator('dialog.xc-dialog');
+    if (await dialog.isVisible().catch(() => false)) {
+      await dialog.getByRole('button', { name: /^(ยืนยัน|Confirm)$/ }).click();
+    }
+  });
+  const errText = !res.ok ? (await manager.getByTestId('floor-error').innerText().catch(() => '')).trim() : '';
+  expect(res.ok, `cutOff accepted: ${errText || res.text}`).toBeTruthy();
+}
+
