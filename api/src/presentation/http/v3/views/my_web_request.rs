@@ -19,17 +19,218 @@
 //!   `404 notFound` **whatever `since` says**. Unknown branch ⇒ `require_branch`'s answer.
 //!   `Cache-Control: no-store`.
 
+use std::fmt::Write;
 use std::path::Path;
+use std::sync::Arc;
 
-use actix_web::{HttpRequest, HttpResponse, web};
+use actix_web::http::{StatusCode, header};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
+use chrono::{DateTime, Duration, Utc};
+use pos_infra::transactions::Transactor;
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+use xc_kernel::branch_tx::BranchTx;
+use xc_kernel::ids::BranchId;
+use xc_kiosk::domain::kiosk::entities::kiosk_machine::KioskMachine;
+use xc_queue::application::status::status_service::{StatusService, TicketRef};
+use xc_queue::domain::repository::QueueRepository;
+use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
+use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::view::require_branch;
+use crate::presentation::pages;
 
 pub const PUBLIC_ROUTE: &str = "/api/v3/views/my_web_request";
 
+#[derive(sqlx::FromRow)]
+struct WebRequestRow {
+    id: String,
+    status: String,
+    side: String,
+    currency: String,
+    foreign_amount: String,
+    created_at: DateTime<Utc>,
+    cancel_token_hash: Option<String>,
+    cancelled_at: Option<DateTime<Utc>>,
+    branch_code: String,
+    branch_name: String,
+    queue_version: i64,
+    ticket_id: Option<Uuid>,
+    display_number: Option<String>,
+    service_type: Option<String>,
+    sequence: Option<i32>,
+    ticket_status: Option<String>,
+}
+
+fn refuse(code: &'static str, field: Option<&'static str>, status: StatusCode) -> HttpResponse {
+    let message = match code {
+        "signIn" => "กรุณาเข้าสู่ระบบ",
+        "serverError" => "เซิร์ฟเวอร์ขัดข้อง",
+        "notFound" => "ไม่พบรายการ",
+        _ => "คำขอไม่ถูกต้อง",
+    };
+    V3Error::new(code, field, message, status).error_response()
+}
+
+fn version_of(row: &WebRequestRow) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(row.status.as_bytes());
+    hasher.update(b"|");
+    if let Some(h) = row.cancel_token_hash.as_deref() {
+        hasher.update(h.as_bytes());
+    }
+    hasher.update(b"|");
+    if let Some(c) = row.cancelled_at {
+        hasher.update(c.to_rfc3339().as_bytes());
+    }
+    let digest = hasher.finalize();
+    let mut f = String::with_capacity(16);
+    for b in &digest[..8] {
+        let _ = write!(&mut f, "{b:02x}");
+    }
+    format!("{}.{f}", row.queue_version)
+}
+
+fn derive_status(req_status: &str, ticket_status: Option<&str>) -> &'static str {
+    if req_status == "CANCELLED" || ticket_status == Some("CANCELLED") {
+        "CANCELLED"
+    } else if ticket_status == Some("NO_SHOW") {
+        "NO_SHOW"
+    } else if req_status == "COMPLETED" || ticket_status == Some("COMPLETED") {
+        "COMPLETED"
+    } else if matches!(req_status, "ACCEPTED" | "ID_CHECKED") || ticket_status == Some("SERVING") {
+        "SERVING"
+    } else if ticket_status == Some("CALLED") {
+        "CALLED"
+    } else if ticket_status == Some("WAITING") || req_status == "WAITING" {
+        "WAITING"
+    } else {
+        "QUOTED"
+    }
+}
+
 async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    let _ = (req, state);
-    todo!("KWQ-C8: the member's own web request (W4, W4a, W5)")
+    let query =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .map(|q| q.into_inner())
+            .unwrap_or_default();
+    let branch = query.get("branch").cloned().unwrap_or_default();
+    if let Err(e) = require_branch(&req, &BranchId::new(branch.as_str())).await {
+        return e.error_response();
+    }
+
+    let callers = pages::get_callers(&req).await;
+    let Some(customer) = callers.user.and_then(|u| u.customer_id) else {
+        return refuse("signIn", None, StatusCode::UNAUTHORIZED);
+    };
+    let id = query.get("id").cloned().unwrap_or_default();
+    let since = query.get("since").map(String::as_str);
+
+    let pool = state.db.clone();
+    let row: Option<WebRequestRow> = match sqlx::query_as(
+        "SELECT r.id, r.status, r.side, btrim(r.currency::text) AS currency, \
+                r.foreign_amount::text AS foreign_amount, r.created_at, \
+                r.cancel_token_hash, r.cancelled_at, \
+                COALESCE(b.code, b.id) AS branch_code, b.name AS branch_name, \
+                COALESCE(s.queue_version, 0) AS queue_version, \
+                t.id AS ticket_id, t.display_number, t.service_type, t.sequence, \
+                t.status AS ticket_status \
+           FROM kiosk_requests r \
+           JOIN branches b ON b.id = r.branch_id \
+           LEFT JOIN branch_service_status s ON s.branch_id = r.branch_id \
+           LEFT JOIN queue_tickets t ON t.branch_id = r.branch_id AND t.kiosk_request_id = r.id \
+          WHERE r.branch_id = $1 AND r.id = $2 AND r.customer_id = $3",
+    )
+    .bind(&branch)
+    .bind(&id)
+    .bind(&customer)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+    };
+    let Some(row) = row else {
+        return refuse("notFound", None, StatusCode::NOT_FOUND);
+    };
+
+    let version = version_of(&row);
+    if since == Some(version.as_str()) {
+        return answer(json!({ "version": version, "changed": false }));
+    }
+
+    let status = derive_status(&row.status, row.ticket_status.as_deref());
+    let expires_at = (status == "QUOTED").then(|| {
+        (row.created_at + Duration::milliseconds(KioskMachine::WEB_REQUEST_LIFE_MS)).to_rfc3339()
+    });
+
+    let branch_id = BranchId::new(&branch);
+    let tickets_ahead = match (
+        status == "WAITING",
+        row.ticket_id,
+        row.service_type.as_deref(),
+        row.sequence,
+        row.ticket_status.as_deref(),
+    ) {
+        (true, Some(ticket_id), Some(service_type), Some(sequence), Some(ticket_status)) => {
+            let ticket = TicketRef {
+                id: ticket_id,
+                branch: &branch_id,
+                service_type,
+                sequence,
+                status: ticket_status,
+            };
+            match ticket_wait(&pool, ticket, Utc::now()).await {
+                Ok((ahead, _)) => Some(ahead),
+                Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+            }
+        }
+        _ => None,
+    };
+
+    answer(json!({
+        "version": version,
+        "changed": true,
+        "data": {
+            "requestId": row.id,
+            "status": status,
+            "expiresAt": expires_at,
+            "branch": {
+                "code": row.branch_code,
+                "name": row.branch_name,
+            },
+            "type": row.side,
+            "currency": row.currency,
+            "amount": row.foreign_amount,
+            "displayNumber": row.display_number,
+            "ticketsAhead": tickets_ahead,
+        }
+    }))
+}
+
+async fn ticket_wait(
+    pool: &sqlx::PgPool,
+    ticket: TicketRef<'_>,
+    now: DateTime<Utc>,
+) -> pos_error::AppResult<(
+    i32,
+    Option<xc_queue::domain::status::wait_estimator::WaitEstimate>,
+)> {
+    let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
+    let status = StatusService::new(BranchTx::new(Transactor::new(pool.clone())), repo);
+    let mut tx = pool.begin().await?;
+    let wait = status.ticket_wait_in(&mut tx, ticket, now).await?;
+    tx.rollback().await?;
+    Ok(wait)
+}
+
+fn answer(body: serde_json::Value) -> HttpResponse {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(body)
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, _state: &AppState) {
