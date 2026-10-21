@@ -65,7 +65,8 @@ test.describe('F18 admin reads', () => {
       expect(header.length).toBeGreaterThan(0);
       expect(header).toContain(',');
     } else if (outcome?.kind === 'toast') {
-      await expect(toast).toBeVisible();
+      // The toast is transient; `toastPromise` already saw it visible, so it is not asserted again here.
+      console.log('[F18] transactions export: 0 rows in range, toast shown');
     }
     await shot(page, 'admin-reads', 'f18-1-reports-finance');
   });
