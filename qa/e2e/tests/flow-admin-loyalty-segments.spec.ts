@@ -39,7 +39,7 @@
 // - screens/admin/AdminShell.tsx:279-301 (smoke-rbac-matrix.spec.ts:61-64,141-169)
 //   nav.admin-nav a[href="#loyalty"], nav.admin-nav a[href="#members"]
 import { expect, test } from '@playwright/test';
-import { hasAccount, mePermissions, posted, shot, signIn, STAFF_LANGS, withLang } from './helpers';
+import { hasAccount, mePermissions, posted, shot, signIn, STAFF_LANGS, users, withLang } from './helpers';
 
 // Validation refusal text on /#members (web/src/screens/admin/members/i18n.ts:33,69).
 const MEMBERS_VALIDATION_ERR: Record<'th' | 'en', string> = {
@@ -184,7 +184,12 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
       await expect(alert, 'loyaltyUnavailable alert visible (Loyalty.tsx:154)').toBeVisible({ timeout: 10_000 });
       await expect(alert).not.toContainText('loyaltyUnavailable');
       const submitProbe = await page.request.post('/api/v3/commands/loyalty_rule_submit', {
-        headers: { 'Idempotency-Key': `${marker}-submit` },
+        // v3 commands apply the same-origin rule after the policy gate (command.rs:256, extractors/origin.rs).
+        headers: {
+          'Idempotency-Key': `${marker}-submit`,
+          'x-xchange-request': '1',
+          origin: new URL(users.baseUrl).origin,
+        },
         data: { versionId: '00000000-0000-0000-0000-000000000001' },
       });
       console.log(`[R9-3] POST /api/v3/commands/loyalty_rule_submit ${submitProbe.status()}`);
@@ -319,10 +324,15 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
             LOYALTY_UNAVAILABLE_ERR[langKey],
           );
         } else {
+          // Worded in the page language: Thai script in th, no Thai script in en (§9.1 b).
           await expect(loyaltyAlert, `case 5b refusal is worded, not raw code (${lang})`).not.toContainText(
             'validationFailed',
           );
-          await expect(loyaltyAlert).not.toHaveText(/^\s*$/);
+          if (lang === 'th') {
+            await expect(loyaltyAlert, 'case 5b refusal worded in Thai').toHaveText(/[\u0E00-\u0E7F]/);
+          } else {
+            await expect(loyaltyAlert, 'case 5b refusal worded in English').toHaveText(/^[^\u0E00-\u0E7F]*[A-Za-z][^\u0E00-\u0E7F]*$/);
+          }
         }
         await expect(ratioInput, 'case 5b keeps typed pointsRatio').toHaveValue('-0.12345');
         await expect(minInput, 'case 5b keeps typed minimumBasisAmount').toHaveValue('-50');
