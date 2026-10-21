@@ -24,6 +24,12 @@ interface BranchServiceStatusEnvelope {
   };
 }
 
+interface QueueBoardEnvelope {
+  data?: {
+    waiting?: Array<{ id: string; displayNumber: string }>;
+  };
+}
+
 test.describe.serial('QA-F2 flow: queue walk-in to finish', () => {
   test('teller serves a walk-in from issue to finish', async ({ browser }) => {
     const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
@@ -75,6 +81,20 @@ test.describe.serial('QA-F2 flow: queue walk-in to finish', () => {
         });
         await shot(teller, 'desk', 'queue-1-initial');
 
+        const boardRes = await teller.request.get(
+          `/api/v3/views/queue_board?branch=${encodeURIComponent(users.branch)}`,
+        );
+        expect(
+          boardRes.ok(),
+          `GET /api/v3/views/queue_board: ${boardRes.status()} ${await boardRes.text().catch(() => '')}`,
+        ).toBeTruthy();
+        const boardBody = (await boardRes.json()) as QueueBoardEnvelope;
+        const waitingLeftovers = (boardBody.data?.waiting ?? []).map((t) => t.displayNumber);
+        expect(
+          waitingLeftovers,
+          `leftover WAITING tickets on branch ${users.branch}: ${waitingLeftovers.join(', ')}`,
+        ).toEqual([]);
+
         const issued = await posted(teller, /^\/api\/queue\/tickets$/, () => issueBtn.click());
         console.log(`[queue] POST /api/queue/tickets ${issued.text}`);
         expect(issued.ok, `issue walk-in accepted: ${issued.text}`).toBeTruthy();
@@ -93,14 +113,22 @@ test.describe.serial('QA-F2 flow: queue walk-in to finish', () => {
         );
         expect(calledTicket.id, 'called ticket id').toBeTruthy();
         expect(calledTicket.displayNumber, 'called ticket displayNumber').toBeTruthy();
-
-        // Board row for the ticket returned by call-next (Board.tsx:69-71; board/i18n.ts:11,25).
-        const row = teller.locator(`li[data-ticket="${calledTicket.id}"]`);
-        await expect(row, `called ticket ${calledTicket.displayNumber} row on board`).toBeVisible({ timeout: 20_000 });
-        await expect(row, `board shows ticket number ${calledTicket.displayNumber}`).toContainText(
+        expect(
+          calledTicket.id,
+          `called ticket (${calledTicket.displayNumber}) must match issued ticket (${issuedTicket.displayNumber})`,
+        ).toBe(issuedTicket.id);
+        expect(
           calledTicket.displayNumber,
+          `called ticket (${calledTicket.displayNumber}) must match issued ticket (${issuedTicket.displayNumber})`,
+        ).toBe(issuedTicket.displayNumber);
+
+        // Board row for the issued ticket (Board.tsx:69-71; board/i18n.ts:11,25).
+        const row = teller.locator(`li[data-ticket="${issuedTicket.id}"]`);
+        await expect(row, `issued ticket ${issuedTicket.displayNumber} row on board`).toBeVisible({ timeout: 20_000 });
+        await expect(row, `board shows ticket number ${issuedTicket.displayNumber}`).toContainText(
+          issuedTicket.displayNumber,
         );
-        await expect(row, `board shows ${calledTicket.displayNumber} as CALLED`).toContainText('CALLED', {
+        await expect(row, `board shows ${issuedTicket.displayNumber} as CALLED`).toContainText('CALLED', {
           timeout: 20_000,
         });
         await shot(teller, 'desk', 'queue-3-called');
@@ -110,12 +138,12 @@ test.describe.serial('QA-F2 flow: queue walk-in to finish', () => {
         await expect(startBtn, 'start button on CALLED ticket').toBeVisible({ timeout: 20_000 });
         const started = await posted(
           teller,
-          new RegExp(`^/api/queue/tickets/${encodeURIComponent(calledTicket.id)}/start$`),
+          new RegExp(`^/api/queue/tickets/${encodeURIComponent(issuedTicket.id)}/start$`),
           () => startBtn.click(),
         );
-        console.log(`[queue] POST /api/queue/tickets/${calledTicket.id}/start ${started.text}`);
+        console.log(`[queue] POST /api/queue/tickets/${issuedTicket.id}/start ${started.text}`);
         expect(started.ok, `start ticket accepted: ${started.text}`).toBeTruthy();
-        await expect(row, `board shows ${calledTicket.displayNumber} as SERVING`).toContainText(/SERVING|Serving/, {
+        await expect(row, `board shows ${issuedTicket.displayNumber} as SERVING`).toContainText(/SERVING|Serving/, {
           timeout: 20_000,
         });
         await shot(teller, 'desk', 'queue-4-serving');
@@ -125,12 +153,12 @@ test.describe.serial('QA-F2 flow: queue walk-in to finish', () => {
         await expect(finishBtn, 'finish button on SERVING ticket').toBeVisible({ timeout: 20_000 });
         const finished = await posted(
           teller,
-          new RegExp(`^/api/queue/tickets/${encodeURIComponent(calledTicket.id)}/finish$`),
+          new RegExp(`^/api/queue/tickets/${encodeURIComponent(issuedTicket.id)}/finish$`),
           () => finishBtn.click(),
         );
-        console.log(`[queue] POST /api/queue/tickets/${calledTicket.id}/finish ${finished.text}`);
+        console.log(`[queue] POST /api/queue/tickets/${issuedTicket.id}/finish ${finished.text}`);
         expect(finished.ok, `finish ticket accepted: ${finished.text}`).toBeTruthy();
-        await expect(row, `finished ticket ${calledTicket.displayNumber} leaves the board`).toHaveCount(0, {
+        await expect(row, `finished ticket ${issuedTicket.displayNumber} leaves the board`).toHaveCount(0, {
           timeout: 20_000,
         });
         await shot(teller, 'desk', 'queue-5-finished');
