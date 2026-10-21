@@ -41,6 +41,11 @@ impl ReferenceProvider for MarketProvider {
         }
     }
 
+    /// A repeated TT / Super Rich answer confirms its batch (pricing-tiers.md §4).
+    fn confirms_on_repeat(&self) -> bool {
+        true
+    }
+
     /// The row's `code`.
     fn row_key(&self, row: &Value) -> String {
         let _ = row;

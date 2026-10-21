@@ -57,6 +57,18 @@ impl PgReferenceBatchStore {
         Ok(row.map(|r| r.0))
     }
 
+    /// Sets the batch's `fetched_at` to `fetched_at`: a repeated answer confirms it (pricing-tiers.md §4, XC-PRICING
+    /// PX-12). SKELETON (PX-0): the body and the writer's call are PX-12's.
+    pub async fn confirm(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        batch_id: Uuid,
+        fetched_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), RateEngineError> {
+        let _ = (tx, batch_id, fetched_at);
+        todo!("PX-12: PgReferenceBatchStore::confirm")
+    }
+
     pub async fn insert_batch(
         &self,
         tx: &mut Transaction<'_, Postgres>,
