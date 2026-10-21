@@ -1129,7 +1129,9 @@ fn names_are_the_ones_the_screens_and_the_audit_log_use() {
             "ACCEPTED",
             "ID_CHECKED",
             "COMPLETED",
-            "EXPIRED"
+            "EXPIRED",
+            // Amended by the author of KC-D (claude/studio-claude-10, `kiosk-cancel.md` §3.1).
+            "CANCELLED"
         ]
     );
     assert_eq!(

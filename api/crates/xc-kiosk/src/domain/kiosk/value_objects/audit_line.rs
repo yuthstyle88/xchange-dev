@@ -1,7 +1,9 @@
 //! An audit line the kiosk asks to have written.
 
+use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use crate::domain::kiosk::value_objects::kiosk_event_kind::KioskEventKind;
 use crate::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
+use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 
 /// Who an audit line names when the customer confirmed at the kiosk.
 pub const CUSTOMER_KIOSK: &str = "CUSTOMER-KIOSK";
@@ -25,6 +27,10 @@ pub enum KioskAudit {
         buy: String,
         sell: String,
     },
+    Cancelled {
+        from: KioskStatus,
+        reason: CancelReason,
+    },
 }
 
 impl KioskAudit {
@@ -36,6 +42,7 @@ impl KioskAudit {
             Self::IdChecked => KioskEventKind::IdChecked.as_str(),
             Self::Completed { .. } => KioskEventKind::Completed.as_str(),
             Self::CurrencyConfigured { .. } => "KIOSK_CURRENCY_CONFIGURED",
+            Self::Cancelled { .. } => "KIOSK_CANCELLED",
         }
     }
 }

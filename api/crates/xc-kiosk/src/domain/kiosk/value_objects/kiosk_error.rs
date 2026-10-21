@@ -40,4 +40,14 @@ pub enum KioskError {
     SaveDiffersFromQueue,
     #[error("ช่องทางต้องตรงกับที่ลูกค้าเลือก")]
     SaveMethodDiffers,
+    #[error("คำขอนี้ยกเลิกไม่ได้")]
+    NotCancellable,
+    #[error("คำขอนี้มีพนักงานคนอื่นรับเรื่องอยู่")]
+    NotYourRequest,
+    #[error("คำขอนี้เปลี่ยนสถานะแล้ว กรุณาโหลดล่าสุด")]
+    StaleVersion,
+    #[error("คำขอนี้ถูกยกเลิกแล้ว")]
+    KioskCancelled,
+    #[error("ยกเลิกคิวที่ตู้ไม่ได้ กรุณาติดต่อพนักงาน")]
+    CustomerCancelRefused,
 }

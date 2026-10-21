@@ -88,6 +88,11 @@ fn detail_of(what: &KioskAudit) -> Value {
         KioskAudit::CurrencyConfigured { enabled, buy, sell } => {
             json!({ "enabled": enabled, "buy": buy, "sell": sell })
         }
+        KioskAudit::Cancelled { from, reason } => json!({
+            "from": from.as_str(),
+            "reason": reason.as_str(),
+            "note": reason.note(),
+        }),
     }
 }
 

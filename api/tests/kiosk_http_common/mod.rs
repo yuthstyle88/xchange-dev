@@ -185,6 +185,13 @@ fn detail_of(what: &KioskAudit) -> Value {
         KioskAudit::CurrencyConfigured { enabled, buy, sell } => {
             json!({ "enabled": enabled, "buy": buy, "sell": sell })
         }
+        // Amended by the author of KC-D #4174 (claude/studio-claude-10, `kiosk-cancel.md` §3.3):
+        // the cancel's line, as `detail_of` in `kiosk_ports.rs` writes it.
+        KioskAudit::Cancelled { from, reason } => json!({
+            "from": from.as_str(),
+            "reason": reason.as_str(),
+            "note": reason.note(),
+        }),
     }
 }
 
@@ -208,6 +215,8 @@ impl KioskAuditLog for TestAudit {
                 KioskAudit::Request { .. } => Some("WAITING"),
                 KioskAudit::Accepted => Some("ACCEPTED"),
                 KioskAudit::IdChecked => Some("ID_CHECKED"),
+                // Amended by the author of KC-D #4174: a cancel stores the move, then writes its line.
+                KioskAudit::Cancelled { .. } => Some("CANCELLED"),
                 KioskAudit::Completed { .. } | KioskAudit::CurrencyConfigured { .. } => None,
             };
             if let Some(expected) = moved_to {

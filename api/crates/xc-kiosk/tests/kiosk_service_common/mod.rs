@@ -464,6 +464,13 @@ impl KioskPorts for FakePorts {
                 KioskAudit::CurrencyConfigured { enabled, buy, sell } => {
                     json!({ "enabled": enabled, "buy": buy, "sell": sell })
                 }
+                // Amended by the author of KC-D (claude/studio-claude-10, `kiosk-cancel.md` §3.3):
+                // the cancel's line, `{from, reason, note}` as `detail_of` writes it.
+                KioskAudit::Cancelled { from, reason } => json!({
+                    "from": from.as_str(),
+                    "reason": reason.as_str(),
+                    "note": reason.note(),
+                }),
             };
             sqlx::query(
                 "INSERT INTO test_audit (branch_id, actor, kind, subject, detail, at) \

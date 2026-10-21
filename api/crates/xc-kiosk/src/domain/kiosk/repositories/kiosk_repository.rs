@@ -11,7 +11,9 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
+use crate::domain::kiosk::value_objects::cancel_reason::Cancellation;
 use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
+use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
 use crate::domain::kiosk::value_objects::notifications::WorkingRequest;
 use crate::domain::kiosk::value_objects::queue_filter::QueueFilter;
@@ -135,6 +137,31 @@ pub trait KioskRepository: Send + Sync {
         id: &str,
         at: DateTime<Utc>,
     ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn mark_cancelled_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        from: KioskStatus,
+        cancel: &Cancellation,
+    ) -> impl Future<Output = AppResult<bool>> + Send;
+
+    fn set_cancel_token_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        token: &str,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn matches_cancel_token_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        token: &str,
+    ) -> impl Future<Output = AppResult<bool>> + Send;
 
     /// Reads started_at and completed_at for a request inside a transaction.
     fn times_in(

@@ -162,7 +162,7 @@ impl KioskService {
                     };
 
                     match req.status {
-                        KioskStatus::Quoted | KioskStatus::Expired => {
+                        KioskStatus::Quoted | KioskStatus::Expired | KioskStatus::Cancelled => {
                             Ok(AcceptOutcome::Unavailable)
                         }
                         KioskStatus::Completed => {

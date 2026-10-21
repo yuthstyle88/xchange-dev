@@ -1,5 +1,6 @@
 pub mod accept_outcome;
 pub mod audit_line;
+pub mod cancel_reason;
 pub mod counter_facts;
 pub mod counter_view;
 pub mod currency_switch;

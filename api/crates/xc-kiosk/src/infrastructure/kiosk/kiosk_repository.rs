@@ -9,6 +9,7 @@ use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::repositories::kiosk_repository::{KioskRepository, StoredReceipt};
+use crate::domain::kiosk::value_objects::cancel_reason::Cancellation;
 use crate::domain::kiosk::value_objects::counter_facts::LineId;
 use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 use crate::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
@@ -100,7 +101,13 @@ queue_queries!(
 /// 20261007170000_kiosk.sql allows exactly these five).
 pub fn queue_statuses(filter: QueueFilter) -> &'static [&'static str] {
     match filter {
-        QueueFilter::All => &["WAITING", "ACCEPTED", "ID_CHECKED", "COMPLETED"],
+        QueueFilter::All => &[
+            "WAITING",
+            "ACCEPTED",
+            "ID_CHECKED",
+            "COMPLETED",
+            "CANCELLED",
+        ],
         QueueFilter::Waiting => &["WAITING"],
         QueueFilter::Working => &["ACCEPTED", "ID_CHECKED"],
         QueueFilter::Completed => &["COMPLETED"],
@@ -149,6 +156,7 @@ fn status_from(text: &str) -> AppResult<KioskStatus> {
         KioskStatus::Accepted,
         KioskStatus::IdChecked,
         KioskStatus::Completed,
+        KioskStatus::Cancelled,
     ]
     .into_iter()
     .find(|status| status.as_str() == text)
@@ -590,6 +598,71 @@ impl KioskRepository for PgKioskRepository {
         Ok(())
     }
 
+    async fn mark_cancelled_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        from: KioskStatus,
+        cancel: &Cancellation,
+    ) -> AppResult<bool> {
+        let done = sqlx::query(
+            "UPDATE kiosk_requests \
+             SET status = 'CANCELLED', cancelled_at = $4, cancelled_by = $5, cancel_reason = $6, cancel_note = $7 \
+             WHERE branch_id = $1 AND id = $2 AND status = $3",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .bind(from.as_str())
+        .bind(cancel.at)
+        .bind(&cancel.by)
+        .bind(cancel.reason.as_str())
+        .bind(cancel.reason.note())
+        .execute(&mut **tx)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    async fn set_cancel_token_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        token: &str,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE kiosk_requests \
+             SET cancel_token_hash = encode(sha256(convert_to($3, 'UTF8')), 'hex') \
+             WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .bind(token)
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn matches_cancel_token_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        token: &str,
+    ) -> AppResult<bool> {
+        let matched: Option<bool> = sqlx::query_scalar(
+            "SELECT cancel_token_hash = encode(sha256(convert_to($3, 'UTF8')), 'hex') \
+             FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .bind(token)
+        .fetch_optional(&mut **tx)
+        .await?
+        .flatten();
+        Ok(matched.unwrap_or(false))
+    }
+
     async fn times_in(&self, tx: Tx<'_, '_>, branch: &BranchId, id: &str) -> AppResult<WorkTimes> {
         #[derive(sqlx::FromRow)]
         struct TimesRow {
@@ -744,7 +817,14 @@ impl KioskRepository for PgKioskRepository {
 mod tests {
     use super::*;
 
-    const ALL_DB_STATUSES: &[&str] = &["QUOTED", "WAITING", "ACCEPTED", "ID_CHECKED", "COMPLETED"];
+    const ALL_DB_STATUSES: &[&str] = &[
+        "QUOTED",
+        "WAITING",
+        "ACCEPTED",
+        "ID_CHECKED",
+        "COMPLETED",
+        "CANCELLED",
+    ];
 
     #[test]
     fn each_const_predicate_matches_queue_statuses() {
