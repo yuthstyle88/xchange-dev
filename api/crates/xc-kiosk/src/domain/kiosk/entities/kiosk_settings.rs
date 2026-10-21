@@ -30,14 +30,25 @@ pub struct InvalidSetting {
 impl KioskSettings {
     /// The settings of a branch with no stored row: `DEFAULT_RESULT_SECONDS`, no author, version 0.
     pub fn defaults(branch_id: BranchId) -> Self {
-        let _ = branch_id;
-        todo!("KWQ-E1: the defaults")
+        Self {
+            branch_id,
+            result_seconds: DEFAULT_RESULT_SECONDS,
+            updated_by: None,
+            updated_at: None,
+            version: 0,
+        }
     }
 
     /// `Ok(result_seconds)` inside `MIN_RESULT_SECONDS..=MAX_RESULT_SECONDS`, otherwise
     /// `Err(InvalidSetting { field: "resultSeconds" })`.
     pub fn validate_result_seconds(result_seconds: i64) -> Result<i32, InvalidSetting> {
-        let _ = result_seconds;
-        todo!("KWQ-E1: the range check")
+        if (i64::from(MIN_RESULT_SECONDS)..=i64::from(MAX_RESULT_SECONDS)).contains(&result_seconds)
+        {
+            Ok(result_seconds as i32)
+        } else {
+            Err(InvalidSetting {
+                field: "resultSeconds",
+            })
+        }
     }
 }
