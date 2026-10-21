@@ -126,7 +126,8 @@ impl Policy {
                 }
                 "manage" | "configure" => Some(Need::Permission(Permission::RatesDraft)),
                 "notifications" | "list" => Some(Need::Permission(Permission::SignedIn)),
-                "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel" => {
+                "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel"
+                | "issueByToken" | "findByToken" => {
                     Some(Need::Permission(Permission::QueueOperate))
                 }
                 _ => None,

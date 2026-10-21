@@ -37,6 +37,8 @@ macro_rules! select_requests {
 }
 
 const SELECT_ONE: &str = select_requests!("id = $2");
+const SELECT_BY_TOKEN: &str =
+    select_requests!("cancel_token_hash = encode(sha256(convert_to($2, 'UTF8')), 'hex')");
 const SELECT_QUOTED: &str = select_requests!("status = $2");
 const SELECT_QUEUE: &str =
     select_requests!("status <> $2 ORDER BY created_at DESC, id DESC LIMIT $3");
@@ -661,6 +663,67 @@ impl KioskRepository for PgKioskRepository {
         .await?
         .flatten();
         Ok(matched.unwrap_or(false))
+    }
+
+    async fn find_by_token_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        token: &str,
+    ) -> AppResult<Option<KioskRequest>> {
+        sqlx::query_as::<_, RequestRow>(SELECT_BY_TOKEN)
+            .bind(branch.as_str())
+            .bind(token)
+            .fetch_optional(&mut **tx)
+            .await?
+            .map(RequestRow::into_request)
+            .transpose()
+    }
+
+    async fn set_customer_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        customer_id: &str,
+    ) -> AppResult<()> {
+        sqlx::query("UPDATE kiosk_requests SET customer_id = $3 WHERE branch_id = $1 AND id = $2")
+            .bind(branch.as_str())
+            .bind(id)
+            .bind(customer_id)
+            .execute(&mut **tx)
+            .await?;
+        Ok(())
+    }
+
+    async fn customer_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+    ) -> AppResult<Option<String>> {
+        let customer_id: Option<String> = sqlx::query_scalar(
+            "SELECT customer_id FROM kiosk_requests WHERE branch_id = $1 AND id = $2",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .flatten();
+        Ok(customer_id)
+    }
+
+    async fn branch_timezone_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+    ) -> AppResult<Option<String>> {
+        let timezone: Option<String> =
+            sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await?;
+        Ok(timezone)
     }
 
     async fn client_ip_in(

@@ -453,6 +453,7 @@ impl QueueTickets for TicketIssuer {
                 service_type: ticket.service_type.as_str().to_owned(),
                 sequence: ticket.sequence,
                 display_number: ticket.display_number,
+                issued_at: ticket.issued_at,
             })
         })
     }
@@ -491,6 +492,30 @@ impl QueueTickets for TicketIssuer {
         Box::pin(async move {
             self.cancel_active_for_kiosk_in(tx, branch, request_id, outcome, now)
                 .await
+        })
+    }
+
+    fn link_kiosk_customer_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        request_id: &'a str,
+        customer_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        // KWQ-A6: one guarded UPDATE of the request's active ticket (design kiosk-shared-phone.md §4.2 D5).
+        Box::pin(async move {
+            let rows = sqlx::query(
+                "UPDATE queue_tickets SET customer_id = $3 \
+                 WHERE branch_id = $1 AND kiosk_request_id = $2 \
+                   AND status IN ('WAITING', 'CALLED', 'SERVING') \
+                   AND (customer_id IS NULL OR customer_id = $3)",
+            )
+            .bind(branch.as_str())
+            .bind(request_id)
+            .bind(customer_id)
+            .execute(&mut **tx)
+            .await?;
+            Ok(rows.rows_affected() == 1)
         })
     }
 }
