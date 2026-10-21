@@ -341,7 +341,7 @@ Neither changes S1–S9.
   customer, but with no currency, amount or quote, and with any branch named in the body. KS-7's phone entry does the
   same job through the entry core. Two ways in for one thing break the ♻️ rule. Proposed: retire `queueTicketTake`
   once the phone channel lands; its FE caller moves to the phone flow. Keeping it would also keep an unproven branch.
-- **Q5 (KS-4a's branch switch, S8).** KS-7 says no anonymous path. KS-4a's switch, "off" until the Notify key is set,
+- ✅ **Q5 answered by the owner, 2026-10-21:** *"มันต้อง ผ่าน login ก่อน มาหน้านี้"*. Build no switch, as proposed (KS-4a). **Q5 (KS-4a's branch switch, S8).** KS-7 says no anonymous path. KS-4a's switch, "off" until the Notify key is set,
   *is* an anonymous path. Proposed: build no switch. Until the owner sets Identity's Notify key (§6.2), no queue can
   be taken at the kiosk or by phone; the desk still serves walk-ins. The key is the owner's action in any case.
 
