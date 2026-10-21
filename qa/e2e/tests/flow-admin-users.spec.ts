@@ -6,7 +6,9 @@ import { hasAccount, shot, signIn, STAFF_LANGS, users, withLang } from './helper
 
 // Raw error-code camelCase / UPPER_SNAKE tokens that must never surface as user-facing error text (§9.4 (b)).
 const RAW_CODE =
-  /^(validationFailed|codeTaken|employeeCodeTaken|outOfScope|roleNotAllowed|userNotActive|statusNotAllowed|selfChange|lastOwner|holdsCash|notBound|invalidRequest|serverError|notFound|guardrail:[123]|ORIGIN_REJECTED)$/;
+  /^(validationFailed|codeTaken|employeeCodeTaken|outOfScope|roleNotAllowed|userNotActive|statusNotAllowed|selfChange|lastOwner|holdsCash|notBound|invalidRequest|serverError|notFound|builtIn|inUse|guardrail:[1-5]|ORIGIN_REJECTED)$/;
+
+const REVIEWER_ROLE_CODE = 'VERIFICATION_REVIEWER';
 
 let cachedMarketingUserId: string | undefined;
 
@@ -28,20 +30,31 @@ async function getMarketingUserId(browser: Browser): Promise<string> {
   }
 }
 
-// Locate the target user's <tr> in .users-table tbody tr by .users-cell-id (UsersScreen.tsx:601,615-618).
-function userRowById(screen: Locator, userId: string): Locator {
-  return screen
-    .locator('.users-table tbody tr')
-    .filter({ has: screen.page().locator('.users-cell-id', { hasText: userId }) });
+// Locate tr[data-user-id="<id>"] (UsersScreen.tsx:624), paging with button[data-action="more"] (UsersScreen.tsx:762) if needed.
+async function ensureUserRow(screen: Locator, userId: string): Promise<Locator> {
+  await expect(screen.locator('table.users-table')).toBeVisible({ timeout: 20_000 }); // UsersScreen.tsx:604
+  const row = screen.locator(`tr[data-user-id="${userId}"]`); // UsersScreen.tsx:624
+  while ((await row.count()) === 0) {
+    const moreBtn = screen.locator('button[data-action="more"]'); // UsersScreen.tsx:762
+    if (!(await moreBtn.isVisible().catch(() => false))) break;
+    await moreBtn.click();
+    await expect(moreBtn)
+      .toBeEnabled({ timeout: 15_000 })
+      .catch(() => {});
+  }
+  await expect(
+    row,
+    `seeded marketing user row tr[data-user-id="${userId}"] must be present on /#users`,
+  ).toHaveCount(1, { timeout: 15_000 });
+  return row;
 }
 
-// Active (non-ended) role tags on a user row (UsersScreen.tsx:636-644).
-function activeRoleTag(row: Locator, roleText: RegExp): Locator {
-  return row.locator('.users-role-tag:not(.users-role-ended)').filter({ hasText: roleText });
+// Active (non-ended) role tags on a user row: .users-role-tag:not([data-role-ended]) with .users-role-name (UsersScreen.tsx:637-641).
+function activeRoleTag(row: Locator, roleCode: string): Locator {
+  return row.locator('.users-role-tag:not([data-role-ended])').filter({
+    has: row.page().locator('.users-role-name', { hasText: new RegExp(`^${roleCode}$`) }),
+  });
 }
-
-// Role label for VERIFICATION_REVIEWER in th ("ผู้ตรวจเอกสาร") or en ("Document reviewer") (UsersScreen.tsx:52, i18n.ts:75,242).
-const REVIEWER_ROLE_LABEL = /ผู้ตรวจเอกสาร|Document reviewer/;
 
 async function restoreMarketingUser(
   page: Page,
@@ -55,66 +68,78 @@ async function restoreMarketingUser(
 ): Promise<void> {
   try {
     await page.goto('/#users');
-    const screen = page.locator('.users-screen'); // UsersScreen.tsx:522
+    const screen = page.locator('.users-screen'); // UsersScreen.tsx:532
     await expect(screen).toBeVisible({ timeout: 20_000 });
-    const row = userRowById(screen, targetUserId);
-    if ((await row.count()) === 0) return;
+    await screen.locator('button[data-users-tab="users"]').click(); // UsersScreen.tsx:543
+    const row = await ensureUserRow(screen, targetUserId);
 
     // Restore suspended → resume (UsersScreen.tsx:729) or disabled → enable (UsersScreen.tsx:741).
-    const resumeBtn = row.locator('button[data-users-action="resume"]');
+    const resumeBtn = row.locator('button[data-users-action="resume"]'); // UsersScreen.tsx:729
     if (await resumeBtn.isVisible().catch(() => false)) {
       await resumeBtn.click();
-      await expect(row.locator('.users-status-badge.users-status-active')).toBeVisible({ timeout: 15_000 });
+      await expect(
+        row.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
+      ).toBeVisible({ timeout: 15_000 });
     }
-    const enableBtn = row.locator('button[data-users-action="enable"]');
+    const enableBtn = row.locator('button[data-users-action="enable"]'); // UsersScreen.tsx:741
     if (await enableBtn.isVisible().catch(() => false)) {
       await enableBtn.click();
-      await expect(row.locator('.users-status-badge.users-status-active')).toBeVisible({ timeout: 15_000 });
+      await expect(
+        row.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
+      ).toBeVisible({ timeout: 15_000 });
     }
 
     // Restore granted role → revoke (UsersScreen.tsx:655).
-    const reviewerTag = activeRoleTag(row, REVIEWER_ROLE_LABEL);
+    const reviewerTag = activeRoleTag(row, REVIEWER_ROLE_CODE);
     if ((await reviewerTag.count()) > 0) {
-      await reviewerTag.first().locator('button.users-btn-revoke').click();
+      await reviewerTag.first().locator('button.users-btn-revoke').click(); // UsersScreen.tsx:655
       await expect(reviewerTag).toHaveCount(0, { timeout: 15_000 });
     }
 
-    // Restore employee profile fields if captured (UsersScreen.tsx:690,1033-1083).
+    // Restore employee profile fields if captured (UsersScreen.tsx:690,1022,1031-1083).
     if (originalProfile) {
-      const profileBtn = row.locator('button[data-users-action="profile"]');
+      const profileBtn = row.locator('button[data-users-action="profile"]'); // UsersScreen.tsx:690
       if (await profileBtn.isVisible().catch(() => false)) {
         await profileBtn.click();
-        const modal = screen.locator('.users-modal[role="dialog"]'); // UsersScreen.tsx:1016
-        await expect(modal).toBeVisible({ timeout: 10_000 });
-        await modal.locator('input#profile-emp-code[name="employeeCode"]').fill(originalProfile.employeeCode);
-        await modal.locator('input#profile-dept[name="department"]').fill(originalProfile.department);
-        await modal.locator('input#profile-pos[name="position"]').fill(originalProfile.position);
-        await modal.locator('input#profile-tell[name="tellCode"]').fill(originalProfile.tellCode);
-        await modal.locator('button[data-users-action="profile-save"]').click();
-        await expect(modal).toHaveCount(0, { timeout: 15_000 });
+        const dialog = screen.locator('.users-dialog[role="dialog"]'); // UsersScreen.tsx:1022
+        await expect(dialog).toBeVisible({ timeout: 10_000 });
+        await dialog
+          .locator('input#profile-employee-code[name="employeeCode"]') // UsersScreen.tsx:1031-1032
+          .fill(originalProfile.employeeCode);
+        await dialog
+          .locator('input#profile-department[name="department"]') // UsersScreen.tsx:1042-1043
+          .fill(originalProfile.department);
+        await dialog
+          .locator('input#profile-position[name="position"]') // UsersScreen.tsx:1053-1054
+          .fill(originalProfile.position);
+        await dialog
+          .locator('input#profile-tell-code[name="tellCode"]') // UsersScreen.tsx:1064-1065
+          .fill(originalProfile.tellCode);
+        await dialog.locator('button[data-users-action="profile-save"]').click(); // UsersScreen.tsx:1083
+        await expect(dialog).toHaveCount(0, { timeout: 15_000 });
       }
     }
-  } catch {
-    // Best-effort cleanup in finally.
+  } catch (e) {
+    console.log('[r9-1 cleanup] restoreMarketingUser failed:', e);
   }
 }
 
 async function cleanupMatrixGroup(page: Page, groupCode: string): Promise<void> {
   try {
     await page.goto('/#users');
-    const screen = page.locator('.users-screen'); // UsersScreen.tsx:522
+    const screen = page.locator('.users-screen'); // UsersScreen.tsx:532
     await expect(screen).toBeVisible({ timeout: 20_000 });
     await screen.locator('button[data-users-tab="matrix"]').click(); // UsersScreen.tsx:543
-    const panel = screen.locator('.matrix-panel'); // PermissionMatrix.tsx:221
-    await expect(panel).toBeVisible({ timeout: 15_000 });
-    const groupRow = panel.locator(`tr[data-matrix-group="${groupCode}"]`); // PermissionMatrix.tsx:267
+    const matrixPanel = screen.locator('[data-users-panel="matrix"] .users-card'); // UsersScreen.tsx:1102, PermissionMatrix.tsx:213
+    await expect(matrixPanel).toBeVisible({ timeout: 15_000 });
+    const groupRow = matrixPanel.locator(`tr[data-matrix-group="${groupCode}"]`); // PermissionMatrix.tsx:267
     if ((await groupRow.count()) > 0) {
       page.once('dialog', (d) => d.accept()); // PermissionMatrix.tsx:199
       await groupRow.locator(`button[data-matrix-delete="${groupCode}"]`).click(); // PermissionMatrix.tsx:303
       await expect(groupRow).toHaveCount(0, { timeout: 15_000 });
     }
-  } catch {
-    // Best-effort cleanup in finally.
+  } catch (e) {
+    console.log('[r9-1 cleanup] cleanupMatrixGroup failed:', e);
   }
 }
 
@@ -140,23 +165,20 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
 
     try {
       await signIn(page, 'admin', '/#users');
-      const screen = page.locator('.users-screen'); // UsersScreen.tsx:522
+      const screen = page.locator('.users-screen'); // UsersScreen.tsx:532
       await expect(screen).toBeVisible({ timeout: 20_000 });
 
-      const row = userRowById(screen, targetUserId);
-      await expect(row, 'seeded marketing user row must be visible on /#users').toHaveCount(1, {
-        timeout: 20_000,
-      });
+      const row = await ensureUserRow(screen, targetUserId);
 
-      // 1. userProfileSave (POST /api/users/profile, UsersScreen.tsx:90,414,690,1016-1086)
+      // 1. userProfileSave (POST /api/users/profile, UsersScreen.tsx:90,414,690,1022-1089)
       await row.locator('button[data-users-action="profile"]').click(); // UsersScreen.tsx:690
-      const profileModal = screen.locator('.users-modal[role="dialog"]'); // UsersScreen.tsx:1016
-      await expect(profileModal).toBeVisible({ timeout: 10_000 });
+      const profileDialog = screen.locator('.users-dialog[role="dialog"]'); // UsersScreen.tsx:1022
+      await expect(profileDialog).toBeVisible({ timeout: 10_000 });
 
-      const empInput = profileModal.locator('input#profile-emp-code[name="employeeCode"]'); // UsersScreen.tsx:1033-1035
-      const deptInput = profileModal.locator('input#profile-dept[name="department"]'); // UsersScreen.tsx:1043-1045
-      const posInput = profileModal.locator('input#profile-pos[name="position"]'); // UsersScreen.tsx:1053-1055
-      const tellInput = profileModal.locator('input#profile-tell[name="tellCode"]'); // UsersScreen.tsx:1063-1065
+      const empInput = profileDialog.locator('input#profile-employee-code[name="employeeCode"]'); // UsersScreen.tsx:1031-1032
+      const deptInput = profileDialog.locator('input#profile-department[name="department"]'); // UsersScreen.tsx:1042-1043
+      const posInput = profileDialog.locator('input#profile-position[name="position"]'); // UsersScreen.tsx:1053-1054
+      const tellInput = profileDialog.locator('input#profile-tell-code[name="tellCode"]'); // UsersScreen.tsx:1064-1065
 
       originalProfile = {
         employeeCode: await empInput.inputValue(),
@@ -169,64 +191,76 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       await deptInput.fill(dept);
       await posInput.fill(pos);
       await tellInput.fill(tellCode);
-      await profileModal.locator('button[data-users-action="profile-save"]').click(); // UsersScreen.tsx:1083
-      await expect(profileModal).toHaveCount(0, { timeout: 15_000 });
+      await profileDialog.locator('button[data-users-action="profile-save"]').click(); // UsersScreen.tsx:1083
+      await expect(profileDialog).toHaveCount(0, { timeout: 15_000 });
 
-      // Reload and read back profile fields from the table row and modal (UsersScreen.tsx:620-625).
+      // Reload and read back employeeCode from column 0 (UsersScreen.tsx:625) and all 4 fields from the reopened profile dialog (UsersScreen.tsx:1031-1065).
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
-      const rowAfterProfile = userRowById(screen, targetUserId);
-      await expect(rowAfterProfile).toHaveCount(1, { timeout: 20_000 });
-      await expect(rowAfterProfile.locator('td').nth(1)).toHaveText(empCode);
-      await expect(rowAfterProfile.locator('td').nth(2)).toHaveText(`${dept} · ${pos}`);
-      await expect(rowAfterProfile.locator('td').nth(3)).toHaveText(tellCode);
+      const rowAfterProfile = await ensureUserRow(screen, targetUserId);
+      await expect(rowAfterProfile.locator('td.users-td').nth(0)).toHaveText(empCode); // UsersScreen.tsx:625
 
-      // 2. userGrant (POST /api/users/grant, UsersScreen.tsx:84,371,701,924-1010)
+      await rowAfterProfile.locator('button[data-users-action="profile"]').click(); // UsersScreen.tsx:690
+      await expect(profileDialog).toBeVisible({ timeout: 10_000 });
+      await expect(
+        profileDialog.locator('input#profile-employee-code[name="employeeCode"]'),
+      ).toHaveValue(empCode);
+      await expect(profileDialog.locator('input#profile-department[name="department"]')).toHaveValue(
+        dept,
+      );
+      await expect(profileDialog.locator('input#profile-position[name="position"]')).toHaveValue(pos);
+      await expect(profileDialog.locator('input#profile-tell-code[name="tellCode"]')).toHaveValue(
+        tellCode,
+      );
+      await profileDialog.locator('button[type="button"].users-btn-secondary').click(); // UsersScreen.tsx:1075
+      await expect(profileDialog).toHaveCount(0, { timeout: 10_000 });
+
+      // 2. userGrant (POST /api/users/grant, UsersScreen.tsx:84,371,701,931-1012)
       await rowAfterProfile.locator('button.users-btn-grant').click(); // UsersScreen.tsx:701
-      const grantModal = screen.locator('.users-modal[role="dialog"]'); // UsersScreen.tsx:924
-      await expect(grantModal).toBeVisible({ timeout: 10_000 });
-      await grantModal.locator('select#grant-role').selectOption('VERIFICATION_REVIEWER'); // UsersScreen.tsx:940
-      const branchSelect = grantModal.locator('select#grant-branch'); // UsersScreen.tsx:959
+      const grantDialog = screen.locator('.users-dialog[role="dialog"]'); // UsersScreen.tsx:931
+      await expect(grantDialog).toBeVisible({ timeout: 10_000 });
+      await grantDialog.locator('select#grant-role').selectOption(REVIEWER_ROLE_CODE); // UsersScreen.tsx:940
+      const branchSelect = grantDialog.locator('select#grant-branch'); // UsersScreen.tsx:959
       await expect(branchSelect).toBeVisible();
-      await grantModal.locator('button[type="submit"].users-btn-primary').click(); // UsersScreen.tsx:1005
-      await expect(grantModal).toHaveCount(0, { timeout: 15_000 });
+      await grantDialog.locator('button[type="submit"].users-btn-primary').click(); // UsersScreen.tsx:1005-1006
+      await expect(grantDialog).toHaveCount(0, { timeout: 15_000 });
 
-      // Reload and read back the granted role tag (UsersScreen.tsx:636-644).
+      // Reload and read back the granted role tag (UsersScreen.tsx:637-641).
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
-      const rowAfterGrant = userRowById(screen, targetUserId);
-      await expect(activeRoleTag(rowAfterGrant, REVIEWER_ROLE_LABEL)).toHaveCount(1, {
+      const rowAfterGrant = await ensureUserRow(screen, targetUserId);
+      await expect(activeRoleTag(rowAfterGrant, REVIEWER_ROLE_CODE)).toHaveCount(1, {
         timeout: 15_000,
       });
       await shot(page, 'admin-users', 'r9-1-user-profile-and-grant');
 
       // 3. userRevoke (POST /api/users/revoke, UsersScreen.tsx:85,438,655)
-      await activeRoleTag(rowAfterGrant, REVIEWER_ROLE_LABEL)
+      await activeRoleTag(rowAfterGrant, REVIEWER_ROLE_CODE)
         .first()
         .locator('button.users-btn-revoke') // UsersScreen.tsx:655
         .click();
-      await expect(activeRoleTag(rowAfterGrant, REVIEWER_ROLE_LABEL)).toHaveCount(0, {
+      await expect(activeRoleTag(rowAfterGrant, REVIEWER_ROLE_CODE)).toHaveCount(0, {
         timeout: 15_000,
       });
 
       // Reload and confirm the active role tag remains revoked.
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
-      const rowAfterRevoke = userRowById(screen, targetUserId);
-      await expect(activeRoleTag(rowAfterRevoke, REVIEWER_ROLE_LABEL)).toHaveCount(0, {
+      const rowAfterRevoke = await ensureUserRow(screen, targetUserId);
+      await expect(activeRoleTag(rowAfterRevoke, REVIEWER_ROLE_CODE)).toHaveCount(0, {
         timeout: 15_000,
       });
 
       // 4. userSuspend (POST /api/users/suspend, UsersScreen.tsx:87,484,709)
       await rowAfterRevoke.locator('button[data-users-action="suspend"]').click(); // UsersScreen.tsx:709
       await expect(
-        rowAfterRevoke.locator('.users-status-badge.users-status-suspended'), // UsersScreen.tsx:499,670
+        rowAfterRevoke.locator('.users-status-badge.users-status-suspended'), // UsersScreen.tsx:500,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify SUSPENDED persists.
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
-      const rowAfterSuspend = userRowById(screen, targetUserId);
+      const rowAfterSuspend = await ensureUserRow(screen, targetUserId);
       await expect(
         rowAfterSuspend.locator('.users-status-badge.users-status-suspended'),
       ).toBeVisible({ timeout: 15_000 });
@@ -234,13 +268,13 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       // 5. userResume (POST /api/users/resume, UsersScreen.tsx:88,486,729)
       await rowAfterSuspend.locator('button[data-users-action="resume"]').click(); // UsersScreen.tsx:729
       await expect(
-        rowAfterSuspend.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:495,670
+        rowAfterSuspend.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify ACTIVE persists after resume.
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
-      const rowAfterResume = userRowById(screen, targetUserId);
+      const rowAfterResume = await ensureUserRow(screen, targetUserId);
       await expect(
         rowAfterResume.locator('.users-status-badge.users-status-active'),
       ).toBeVisible({ timeout: 15_000 });
@@ -248,13 +282,13 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       // 6. userDisable (POST /api/users/disable, UsersScreen.tsx:86,482,717)
       await rowAfterResume.locator('button.users-btn-disable').click(); // UsersScreen.tsx:717
       await expect(
-        rowAfterResume.locator('.users-status-badge.users-status-disabled'), // UsersScreen.tsx:501,670
+        rowAfterResume.locator('.users-status-badge.users-status-disabled'), // UsersScreen.tsx:502,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify DISABLED persists.
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
-      const rowAfterDisable = userRowById(screen, targetUserId);
+      const rowAfterDisable = await ensureUserRow(screen, targetUserId);
       await expect(
         rowAfterDisable.locator('.users-status-badge.users-status-disabled'),
       ).toBeVisible({ timeout: 15_000 });
@@ -262,13 +296,13 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       // 7. userEnable (POST /api/users/enable, UsersScreen.tsx:89,488,741)
       await rowAfterDisable.locator('button[data-users-action="enable"]').click(); // UsersScreen.tsx:741
       await expect(
-        rowAfterDisable.locator('.users-status-badge.users-status-active'),
+        rowAfterDisable.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify ACTIVE persists after enable.
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
-      const rowAfterEnable = userRowById(screen, targetUserId);
+      const rowAfterEnable = await ensureUserRow(screen, targetUserId);
       await expect(
         rowAfterEnable.locator('.users-status-badge.users-status-active'),
       ).toBeVisible({ timeout: 15_000 });
@@ -289,25 +323,25 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
 
     try {
       await signIn(page, 'admin', '/#users');
-      const screen = page.locator('.users-screen'); // UsersScreen.tsx:522
+      const screen = page.locator('.users-screen'); // UsersScreen.tsx:532
       await expect(screen).toBeVisible({ timeout: 20_000 });
 
       await screen.locator('button[data-users-tab="matrix"]').click(); // UsersScreen.tsx:543
-      const panel = screen.locator('.matrix-panel'); // PermissionMatrix.tsx:221
-      await expect(panel).toBeVisible({ timeout: 15_000 });
+      const matrixPanel = screen.locator('[data-users-panel="matrix"] .users-card'); // UsersScreen.tsx:1102, PermissionMatrix.tsx:213
+      await expect(matrixPanel).toBeVisible({ timeout: 15_000 });
 
-      // 1. adminGroupAdd (POST /api/admin/groups/add, PermissionMatrix.tsx:30,185,228,364-441)
-      await panel.locator('button[data-matrix-add-open]').click(); // PermissionMatrix.tsx:228
-      const addModal = panel.locator('.users-modal[role="dialog"][data-matrix-add-modal]'); // PermissionMatrix.tsx:364
-      await expect(addModal).toBeVisible({ timeout: 10_000 });
+      // 1. adminGroupAdd (POST /api/admin/groups/add, PermissionMatrix.tsx:30,185,228,365-440)
+      await matrixPanel.locator('button[data-matrix-add-open]').click(); // PermissionMatrix.tsx:228
+      const addForm = matrixPanel.locator('.users-matrix-panel[data-matrix-add-form]'); // PermissionMatrix.tsx:365
+      await expect(addForm).toBeVisible({ timeout: 10_000 });
 
-      await addModal.locator('input#matrix-group-code[data-matrix-add-code]').fill(groupCode); // PermissionMatrix.tsx:371-373
-      await addModal.locator('input#matrix-group-name[data-matrix-add-name]').fill(groupName); // PermissionMatrix.tsx:381-383
-      await addModal.locator('select#matrix-group-base[data-matrix-add-base]').selectOption('TELLER'); // PermissionMatrix.tsx:390-392
-      await addModal.locator('button[type="submit"][data-matrix-add-submit]').click(); // PermissionMatrix.tsx:433
-      await expect(addModal).toHaveCount(0, { timeout: 15_000 });
+      await addForm.locator('input[data-matrix-add-code]').fill(groupCode); // PermissionMatrix.tsx:373
+      await addForm.locator('input[data-matrix-add-name]').fill(groupName); // PermissionMatrix.tsx:383
+      await addForm.locator('select[data-matrix-add-base]').selectOption('TELLER'); // PermissionMatrix.tsx:392
+      await addForm.locator('button[data-matrix-add-submit]').click(); // PermissionMatrix.tsx:433
+      await expect(addForm).toHaveCount(0, { timeout: 15_000 });
 
-      const groupRow = panel.locator(`tr[data-matrix-group="${groupCode}"]`); // PermissionMatrix.tsx:267
+      const groupRow = matrixPanel.locator(`tr[data-matrix-group="${groupCode}"]`); // PermissionMatrix.tsx:267
       await expect(groupRow).toBeVisible({ timeout: 15_000 });
       await expect(groupRow).toContainText(groupName);
 
@@ -318,9 +352,9 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       await expect(groupRow).toBeVisible({ timeout: 15_000 });
       await expect(groupRow).toContainText(groupName);
 
-      // 2. adminGroupSave (POST /api/admin/groups/save, PermissionMatrix.tsx:31,171,293,315-360)
+      // 2. adminGroupSave (POST /api/admin/groups/save, PermissionMatrix.tsx:31,171,293,321-361)
       await groupRow.locator(`button[data-matrix-edit="${groupCode}"]`).click(); // PermissionMatrix.tsx:293
-      const editor = panel.locator(`.matrix-editor[data-matrix-editor="${groupCode}"]`); // PermissionMatrix.tsx:315-318
+      const editor = matrixPanel.locator('.users-matrix-panel:not([data-matrix-add-form])'); // PermissionMatrix.tsx:321
       await expect(editor).toBeVisible({ timeout: 10_000 });
 
       const reportsPerm = editor.locator('input[type="checkbox"][data-matrix-perm="MarketingPerformance"]'); // PermissionMatrix.tsx:332
@@ -329,18 +363,18 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       await editor.locator('button[data-matrix-save]').click(); // PermissionMatrix.tsx:354
       await expect(editor).toHaveCount(0, { timeout: 15_000 });
 
-      // Reload and verify the saved permission level (REPORTS = VIEW) and checkbox state persist (PermissionMatrix.tsx:280).
+      // Reload and verify the saved permission level (REPORTS = VIEW -> "ดูข้อมูล" / "View") and checkbox state persist (PermissionMatrix.tsx:120-121,280, i18n.ts:96,263).
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
       await screen.locator('button[data-users-tab="matrix"]').click(); // UsersScreen.tsx:543
       await expect(groupRow).toBeVisible({ timeout: 15_000 });
       const reportsCell = groupRow.locator(`td[data-matrix-level="${groupCode}:REPORTS"]`); // PermissionMatrix.tsx:280
-      await expect(reportsCell).toContainText(/ดูอย่างเดียว|View only/); // PermissionMatrix.tsx:38-45, i18n.ts:95,262
+      await expect(reportsCell).toContainText(/ดูข้อมูล|View/); // i18n.ts:96,263
 
       await groupRow.locator(`button[data-matrix-edit="${groupCode}"]`).click(); // PermissionMatrix.tsx:293
       await expect(editor).toBeVisible({ timeout: 10_000 });
       await expect(
-        editor.locator('input[type="checkbox"][data-matrix-perm="MarketingPerformance"]'),
+        editor.locator('input[type="checkbox"][data-matrix-perm="MarketingPerformance"]'), // PermissionMatrix.tsx:332
       ).toBeChecked();
       await shot(page, 'admin-users', 'r9-1-matrix-group-saved');
 
@@ -353,7 +387,7 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
       await screen.locator('button[data-users-tab="matrix"]').click(); // UsersScreen.tsx:543
-      await expect(panel).toBeVisible({ timeout: 15_000 });
+      await expect(matrixPanel).toBeVisible({ timeout: 15_000 });
       await expect(groupRow).toHaveCount(0);
     } finally {
       await cleanupMatrixGroup(page, groupCode);
@@ -372,115 +406,169 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
     const markerName = `qa-r9-1-inv-${ts}`;
     const validCode = `QA_R9_1_INV_${ts}`;
 
-    await signIn(page, 'admin', '/#users');
-    const screen = page.locator('.users-screen'); // UsersScreen.tsx:522
-    await expect(screen).toBeVisible({ timeout: 20_000 });
-
-    for (const lang of STAFF_LANGS) {
-      await withLang(page, lang);
-      await page.goto('/#users');
+    try {
+      await signIn(page, 'admin', '/#users');
+      const screen = page.locator('.users-screen'); // UsersScreen.tsx:532
       await expect(screen).toBeVisible({ timeout: 20_000 });
 
-      // Case 1: userGrant with validTo earlier than validFrom (user_grant.rs:79-84, UsersScreen.tsx:934,975,988).
-      const row = userRowById(screen, targetUserId);
-      await expect(row).toHaveCount(1, { timeout: 20_000 });
-      await row.locator('button.users-btn-grant').click(); // UsersScreen.tsx:701
-      const grantModal = screen.locator('.users-modal[role="dialog"]'); // UsersScreen.tsx:924
-      await expect(grantModal).toBeVisible({ timeout: 10_000 });
+      for (const lang of STAFF_LANGS) {
+        await withLang(page, lang);
+        await page.goto('/#users');
+        await expect(screen).toBeVisible({ timeout: 20_000 });
 
-      const fromInput = grantModal.locator('input#grant-from[type="date"]'); // UsersScreen.tsx:975
-      const toInput = grantModal.locator('input#grant-to[type="date"]'); // UsersScreen.tsx:988
-      await fromInput.fill('2026-12-10');
-      await toInput.fill('2026-12-01');
-      await grantModal.locator('button[type="submit"].users-btn-primary').click(); // UsersScreen.tsx:1005
+        // Case 1: userGrant on a non-active user returns 409 userNotActive -> worded in th ('บัญชีนี้ไม่ได้ใช้งานอยู่', th.ts:60) and en ('This account is not active', en.ts:62) while keeping #grant-valid-from and #grant-valid-to (UsersScreen.tsx:931,934,975,987).
+        const row = await ensureUserRow(screen, targetUserId);
+        await row.locator('button.users-btn-grant').click(); // UsersScreen.tsx:701
+        const grantDialog = screen.locator('.users-dialog[role="dialog"]'); // UsersScreen.tsx:931
+        await expect(grantDialog).toBeVisible({ timeout: 10_000 });
 
-      const grantErr = grantModal.locator('[role="alert"].users-form-error'); // UsersScreen.tsx:934
-      await expect(grantErr, `[${lang}] invalid grant date range must show alert`).toBeVisible({
-        timeout: 15_000,
-      });
-      const grantErrText = (await grantErr.innerText()).trim();
-      expect(grantErrText.length).toBeGreaterThan(0);
-      expect(grantErrText).not.toMatch(RAW_CODE);
-      await expect(fromInput).toHaveValue('2026-12-10');
-      await expect(toInput).toHaveValue('2026-12-01');
-      await grantModal.locator('button[type="button"].users-btn-cancel').click(); // UsersScreen.tsx:998
-      await expect(grantModal).toHaveCount(0, { timeout: 10_000 });
+        const fromInput = grantDialog.locator('input#grant-valid-from[name="grantValidFrom"]'); // UsersScreen.tsx:975-976
+        const toInput = grantDialog.locator('input#grant-valid-to[name="grantValidTo"]'); // UsersScreen.tsx:987-988
+        await fromInput.fill('2026-12-01');
+        await toInput.fill('2026-12-31');
 
-      // Switch to Permission Matrix tab for Cases 2–4 (UsersScreen.tsx:543, PermissionMatrix.tsx:221).
-      await screen.locator('button[data-users-tab="matrix"]').click(); // UsersScreen.tsx:543
-      const panel = screen.locator('.matrix-panel'); // PermissionMatrix.tsx:221
-      await expect(panel).toBeVisible({ timeout: 15_000 });
+        const suspendRes = await page.request.post('/api/users/suspend', {
+          headers: { Origin: users.baseUrl },
+          data: {
+            idempotencyKey: `qa-r9-1-inv-susp-${lang}-${Date.now()}`,
+            userId: targetUserId,
+          },
+        });
+        expect(suspendRes.ok(), `POST /api/users/suspend returned ${suspendRes.status()}`).toBe(true);
 
-      await panel.locator('button[data-matrix-add-open]').click(); // PermissionMatrix.tsx:228
-      const addModal = panel.locator('.users-modal[role="dialog"][data-matrix-add-modal]'); // PermissionMatrix.tsx:364
-      await expect(addModal).toBeVisible({ timeout: 10_000 });
+        try {
+          await grantDialog.locator('button[type="submit"].users-btn-primary').click(); // UsersScreen.tsx:1005-1006
 
-      const codeInput = addModal.locator('input#matrix-group-code[data-matrix-add-code]'); // PermissionMatrix.tsx:371-373
-      const nameInput = addModal.locator('input#matrix-group-name[data-matrix-add-name]'); // PermissionMatrix.tsx:381-383
-      const baseSelect = addModal.locator('select#matrix-group-base[data-matrix-add-base]'); // PermissionMatrix.tsx:390-392
-      const submitBtn = addModal.locator('button[type="submit"][data-matrix-add-submit]'); // PermissionMatrix.tsx:433
-      const matrixErr = panel.locator('div[role="alert"][data-matrix-error]'); // PermissionMatrix.tsx:238
+          const grantErr = grantDialog.locator('[role="alert"].users-form-error'); // UsersScreen.tsx:934
+          await expect(grantErr, `[${lang}] userGrant on suspended user must show alert`).toBeVisible({
+            timeout: 15_000,
+          });
+          const grantErrText = (await grantErr.innerText()).trim();
+          expect(grantErrText).not.toMatch(RAW_CODE);
+          if (lang === 'th') {
+            expect(grantErrText).toMatch(/[\u0E00-\u0E7F]/);
+            expect(grantErrText).toContain('บัญชีนี้ไม่ได้ใช้งานอยู่');
+          } else {
+            expect(grantErrText).toContain('This account is not active');
+          }
+          await expect(fromInput).toHaveValue('2026-12-01');
+          await expect(toInput).toHaveValue('2026-12-31');
+        } finally {
+          await page.request.post('/api/users/resume', {
+            headers: { Origin: users.baseUrl },
+            data: {
+              idempotencyKey: `qa-r9-1-inv-res-${lang}-${Date.now()}`,
+              userId: targetUserId,
+            },
+          });
+        }
+        await grantDialog.locator('button[type="button"].users-btn-secondary').click(); // UsersScreen.tsx:999
+        await expect(grantDialog).toHaveCount(0, { timeout: 10_000 });
 
-      // Case 2: Guardrail 1 breach — non-admin base (TELLER) with UsersManage (PermissionMatrix.tsx:53-55,179, i18n.ts:124,291).
-      await codeInput.fill(validCode);
-      await nameInput.fill(markerName);
-      await baseSelect.selectOption('TELLER');
-      const usersManageCb = addModal.locator('input[type="checkbox"][data-matrix-add-perm="UsersManage"]'); // PermissionMatrix.tsx:412
-      await usersManageCb.check();
-      await submitBtn.click();
+        // Switch to Permission Matrix tab for Cases 2–4 (UsersScreen.tsx:543,1102, PermissionMatrix.tsx:213).
+        await screen.locator('button[data-users-tab="matrix"]').click(); // UsersScreen.tsx:543
+        const matrixPanel = screen.locator('[data-users-panel="matrix"] .users-card'); // UsersScreen.tsx:1102, PermissionMatrix.tsx:213
+        await expect(matrixPanel).toBeVisible({ timeout: 15_000 });
 
-      await expect(matrixErr, `[${lang}] Guardrail 1 refusal must show alert`).toBeVisible({
-        timeout: 10_000,
-      });
-      const g1Text = (await matrixErr.innerText()).trim();
-      expect(g1Text).not.toMatch(RAW_CODE);
-      if (lang === 'th') {
-        expect(g1Text).toMatch(/[\u0E00-\u0E7F]/);
-      } else {
-        expect(g1Text).toContain('Non-admin groups cannot hold Create or Full');
+        await matrixPanel.locator('button[data-matrix-add-open]').click(); // PermissionMatrix.tsx:228
+        const addForm = matrixPanel.locator('.users-matrix-panel[data-matrix-add-form]'); // PermissionMatrix.tsx:365
+        await expect(addForm).toBeVisible({ timeout: 10_000 });
+
+        const codeInput = addForm.locator('input[data-matrix-add-code]'); // PermissionMatrix.tsx:373
+        const nameInput = addForm.locator('input[data-matrix-add-name]'); // PermissionMatrix.tsx:383
+        const baseSelect = addForm.locator('select[data-matrix-add-base]'); // PermissionMatrix.tsx:392
+        const submitBtn = addForm.locator('button[data-matrix-add-submit]'); // PermissionMatrix.tsx:433
+        const matrixErr = matrixPanel.locator('div[role="alert"][data-matrix-error]'); // PermissionMatrix.tsx:238
+
+        // Case 2: Guardrail 2 breach on adminGroupAdd — non-admin base (TELLER) with UsersManage -> 409 guardrail:2 -> matrixGuardrail_2 (PermissionMatrix.tsx:55-56, i18n.ts:125,292).
+        await codeInput.fill(validCode);
+        await nameInput.fill(markerName);
+        await baseSelect.selectOption('TELLER');
+        const usersManageCb = addForm.locator('input[type="checkbox"][data-matrix-perm="UsersManage"]'); // PermissionMatrix.tsx:410
+        await usersManageCb.check();
+        await submitBtn.click();
+
+        await expect(matrixErr, `[${lang}] Guardrail 2 refusal must show alert`).toBeVisible({
+          timeout: 15_000,
+        });
+        const g2Text = (await matrixErr.innerText()).trim();
+        expect(g2Text).not.toMatch(RAW_CODE);
+        if (lang === 'th') {
+          expect(g2Text).toMatch(/[\u0E00-\u0E7F]/);
+          expect(g2Text).toContain('การจัดการผู้ใช้งานและตั้งค่าระบบ');
+        } else {
+          expect(g2Text).toContain(
+            'User Management and System Settings above View are allowed only for groups with base EXECUTIVE or ADMIN.',
+          );
+        }
+        await expect(codeInput).toHaveValue(validCode);
+        await expect(nameInput).toHaveValue(markerName);
+        await expect(baseSelect).toHaveValue('TELLER');
+        await expect(usersManageCb).toBeChecked();
+
+        // Case 3: Guardrail 3 breach on adminGroupAdd — ADMIN base with ReportsExport (Full outside USER_MANAGEMENT/SYSTEM_SETTINGS) -> 409 guardrail:3 -> matrixGuardrail_3 (PermissionMatrix.tsx:57-58, i18n.ts:126,293).
+        await usersManageCb.uncheck();
+        await baseSelect.selectOption('ADMIN');
+        const reportsExportCb = addForm.locator('input[type="checkbox"][data-matrix-perm="ReportsExport"]'); // PermissionMatrix.tsx:410
+        await reportsExportCb.check();
+        await submitBtn.click();
+
+        await expect(matrixErr, `[${lang}] Guardrail 3 refusal must show alert`).toBeVisible({
+          timeout: 15_000,
+        });
+        const g3Text = (await matrixErr.innerText()).trim();
+        expect(g3Text).not.toMatch(RAW_CODE);
+        if (lang === 'th') {
+          expect(g3Text).toMatch(/[\u0E00-\u0E7F]/);
+          expect(g3Text).toContain('กลุ่มที่มีฐานเป็น ADMIN');
+        } else {
+          expect(g3Text).toContain(
+            'Groups with base ADMIN may hold at most View level outside User Management and System Settings.',
+          );
+        }
+        await expect(codeInput).toHaveValue(validCode);
+        await expect(nameInput).toHaveValue(markerName);
+        await expect(baseSelect).toHaveValue('ADMIN');
+        await expect(reportsExportCb).toBeChecked();
+
+        await addForm.locator('button[type="button"].users-btn-secondary').click(); // PermissionMatrix.tsx:425
+        await expect(addForm).toHaveCount(0, { timeout: 10_000 });
+
+        // Case 4: Guardrail 2 breach on adminGroupSave — editing built-in TELLER group to add SystemSettings -> 409 guardrail:2 -> matrixGuardrail_2 (PermissionMatrix.tsx:55-56,293,321,332,354, i18n.ts:125,292).
+        const tellerRow = matrixPanel.locator('tr[data-matrix-group="TELLER"]'); // PermissionMatrix.tsx:267
+        await expect(tellerRow).toBeVisible({ timeout: 15_000 });
+        await tellerRow.locator('button[data-matrix-edit="TELLER"]').click(); // PermissionMatrix.tsx:293
+        const editor = matrixPanel.locator('.users-matrix-panel:not([data-matrix-add-form])'); // PermissionMatrix.tsx:321
+        await expect(editor).toBeVisible({ timeout: 10_000 });
+
+        const sysSettingsEditCb = editor.locator('input[type="checkbox"][data-matrix-perm="SystemSettings"]'); // PermissionMatrix.tsx:332
+        await sysSettingsEditCb.check();
+        await editor.locator('button[data-matrix-save]').click(); // PermissionMatrix.tsx:354
+
+        await expect(matrixErr, `[${lang}] adminGroupSave Guardrail 2 refusal must show alert`).toBeVisible({
+          timeout: 15_000,
+        });
+        const saveErrText = (await matrixErr.innerText()).trim();
+        expect(saveErrText).not.toMatch(RAW_CODE);
+        if (lang === 'th') {
+          expect(saveErrText).toMatch(/[\u0E00-\u0E7F]/);
+          expect(saveErrText).toContain('การจัดการผู้ใช้งานและตั้งค่าระบบ');
+        } else {
+          expect(saveErrText).toContain(
+            'User Management and System Settings above View are allowed only for groups with base EXECUTIVE or ADMIN.',
+          );
+        }
+        await expect(editor).toBeVisible();
+        await expect(sysSettingsEditCb).toBeChecked();
+
+        await editor.locator('button[type="button"].users-btn-secondary').click(); // PermissionMatrix.tsx:346
+        await expect(editor).toHaveCount(0, { timeout: 10_000 });
       }
-      await expect(codeInput).toHaveValue(validCode);
-      await expect(nameInput).toHaveValue(markerName);
-      await expect(usersManageCb).toBeChecked();
-
-      // Case 3: Guardrail 3 breach — non-admin/exec base (TELLER) with SystemSettings (PermissionMatrix.tsx:58-60, i18n.ts:128,295).
-      await usersManageCb.uncheck();
-      const sysSettingsCb = addModal.locator('input[type="checkbox"][data-matrix-add-perm="SystemSettings"]'); // PermissionMatrix.tsx:412
-      await sysSettingsCb.check();
-      await submitBtn.click();
-
-      await expect(matrixErr, `[${lang}] Guardrail 3 refusal must show alert`).toBeVisible({
-        timeout: 10_000,
-      });
-      const g3Text = (await matrixErr.innerText()).trim();
-      expect(g3Text).not.toMatch(RAW_CODE);
-      if (lang === 'th') {
-        expect(g3Text).toMatch(/[\u0E00-\u0E7F]/);
-      } else {
-        expect(g3Text).toContain('Only Executive or Admin groups can hold System Settings');
-      }
-      await expect(codeInput).toHaveValue(validCode);
-      await expect(nameInput).toHaveValue(markerName);
-      await expect(sysSettingsCb).toBeChecked();
-
-      // Case 4: Invalid group code ('A-1' contains '-') refused by backend validate_code (admin_groups.rs:253-262).
-      await sysSettingsCb.uncheck();
-      await codeInput.fill('A-1');
-      await submitBtn.click();
-
-      await expect(matrixErr, `[${lang}] invalid group code must show alert`).toBeVisible({
-        timeout: 15_000,
-      });
-      const codeErrText = (await matrixErr.innerText()).trim();
-      expect(codeErrText.length).toBeGreaterThan(0);
-      expect(codeErrText).not.toMatch(RAW_CODE);
-      await expect(codeInput).toHaveValue('A-1');
-      await expect(nameInput).toHaveValue(markerName);
-
-      await addModal.locator('button[type="button"].users-btn-cancel').click(); // PermissionMatrix.tsx:425
-      await expect(addModal).toHaveCount(0, { timeout: 10_000 });
+      await shot(page, 'admin-users', 'r9-1-invalid-inputs');
+    } finally {
+      await cleanupMatrixGroup(page, validCode);
+      await restoreMarketingUser(page, targetUserId);
     }
-    await shot(page, 'admin-users', 'r9-1-invalid-inputs');
   });
 
   test('(c) permission: branchManager cannot access /#users or execute user/group write commands', async ({
@@ -496,7 +584,7 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
     const targetUserId = await getMarketingUserId(browser);
     await signIn(page, 'branchManager', '/#users');
 
-    // UI gate: nav link a[href="#users"] requires UsersManage (menu.ts:10-12) and .users-screen (UsersScreen.tsx:522) is not rendered.
+    // UI gate: nav link a[href="#users"] requires UsersManage (menu.ts:9-12, AdminShell.tsx:504) and .users-screen (UsersScreen.tsx:532) is not rendered.
     await expect(page.locator('nav.admin-nav')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('nav.admin-nav a[href="#users"]')).toHaveCount(0);
     await expect(page.locator('.users-screen')).toHaveCount(0);
