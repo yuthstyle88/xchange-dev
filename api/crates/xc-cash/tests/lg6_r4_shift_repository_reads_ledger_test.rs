@@ -733,6 +733,7 @@ async fn approved_negative_stock(
     let request = repo
         .insert_request(
             &mut tx,
+            ORG,
             "NEGATIVE_STOCK",
             Some(branch.as_str().to_string()),
             object_id,

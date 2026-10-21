@@ -53,6 +53,7 @@ use xc_rate::application::approval::rate_publication::RatePublicationPolicy;
 fn request() -> ApprovalRequest {
     ApprovalRequest {
         id: RequestId::new("00000000-0000-0000-0000-000000000099"),
+        organization_id: ORG.to_owned(),
         type_name: "RATE_PUBLICATION".to_owned(),
         branch_id: Some("MAIN".to_owned()),
         object_id: "draft-1".to_owned(),

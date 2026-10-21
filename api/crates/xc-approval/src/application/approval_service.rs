@@ -206,6 +206,7 @@ impl ApprovalService {
             .repository
             .insert_request(
                 tx,
+                &by.organization_id,
                 type_name,
                 branch_id,
                 object_id,
@@ -264,20 +265,11 @@ impl ApprovalService {
             )));
         }
 
-        if let Some(ref branch_id) = request.branch_id {
-            let branch_org: Option<String> =
-                sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
-                    .bind(branch_id)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|e| ApprovalError::Database(e.to_string()))?;
-
-            if branch_org.as_deref() != Some(who.organization_id.as_str()) {
-                return Err(ApprovalError::OutOfScope(format!(
-                    "actor {} is outside the organisation of branch {branch_id}",
-                    who.user_id
-                )));
-            }
+        if request.organization_id != who.organization_id {
+            return Err(ApprovalError::OutOfScope(format!(
+                "actor {} is outside the organisation of request {request_id}",
+                who.user_id
+            )));
         }
 
         let (subject, policy) = self.registry.get(&request.type_name).ok_or_else(|| {

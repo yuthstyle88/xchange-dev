@@ -30,6 +30,7 @@ pub trait ApprovalRepository: Send + Sync {
     fn insert_request<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
+        organization_id: &'a str,
         type_name: &'a str,
         branch_id: Option<String>,
         object_id: &'a str,

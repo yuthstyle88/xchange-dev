@@ -100,6 +100,7 @@ fn owner(id: &str) -> Actor {
 fn request(type_name: &str, branch: &str, requested_by: &str) -> ApprovalRequest {
     ApprovalRequest {
         id: RequestId::new("00000000-0000-0000-0000-0000000000aa"),
+        organization_id: ORG.to_string(),
         type_name: type_name.to_string(),
         branch_id: Some(branch.to_string()),
         object_id: "object-1".to_string(),

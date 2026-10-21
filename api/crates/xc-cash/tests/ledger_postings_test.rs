@@ -2186,6 +2186,7 @@ async fn approval(
     let req = repo
         .insert_request(
             &mut tx,
+            ORG,
             type_name,
             Some(branch.as_str().to_string()),
             object_id,

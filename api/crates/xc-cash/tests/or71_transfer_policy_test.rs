@@ -48,6 +48,7 @@ fn user(id: &str, roles: &[(Role, Option<&str>)]) -> Actor {
 fn request(payload: serde_json::Value) -> ApprovalRequest {
     ApprovalRequest {
         id: RequestId::new("00000000-0000-0000-0000-0000000000bb"),
+        organization_id: ORG.to_owned(),
         type_name: "CASH_TRANSFER".to_owned(),
         branch_id: Some("B1".to_owned()),
         object_id: "transfer-1".to_owned(),

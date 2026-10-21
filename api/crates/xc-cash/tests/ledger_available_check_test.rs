@@ -417,6 +417,7 @@ impl Lot {
         let req = repo
             .insert_request(
                 &mut tx,
+                ORG,
                 "NEGATIVE_STOCK",
                 Some(self.branch.as_str().to_string()),
                 tx_id,
