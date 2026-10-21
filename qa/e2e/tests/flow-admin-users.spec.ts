@@ -405,6 +405,13 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
     const ts = Date.now();
     const markerName = `qa-r9-1-inv-${ts}`;
     const validCode = `QA_R9_1_INV_${ts}`;
+    const ownCodes: string[] = [];
+    // v3 commands need the same-origin headers and an Idempotency-Key header (command.rs:256-268).
+    const writeHeaders = (key: string) => ({
+      'x-xchange-request': '1',
+      origin: new URL(users.baseUrl).origin,
+      'Idempotency-Key': key,
+    });
 
     try {
       await signIn(page, 'admin', '/#users');
@@ -428,11 +435,8 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
         await toInput.fill('2026-12-31');
 
         const suspendRes = await page.request.post('/api/users/suspend', {
-          headers: { Origin: users.baseUrl },
-          data: {
-            idempotencyKey: `qa-r9-1-inv-susp-${lang}-${Date.now()}`,
-            userId: targetUserId,
-          },
+          headers: writeHeaders(`qa-r9-1-inv-susp-${lang}-${Date.now()}`),
+          data: { userId: targetUserId },
         });
         expect(suspendRes.ok(), `POST /api/users/suspend returned ${suspendRes.status()}`).toBe(true);
 
@@ -455,11 +459,8 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
           await expect(toInput).toHaveValue('2026-12-31');
         } finally {
           await page.request.post('/api/users/resume', {
-            headers: { Origin: users.baseUrl },
-            data: {
-              idempotencyKey: `qa-r9-1-inv-res-${lang}-${Date.now()}`,
-              userId: targetUserId,
-            },
+            headers: writeHeaders(`qa-r9-1-inv-res-${lang}-${Date.now()}`),
+            data: { userId: targetUserId },
           });
         }
         await grantDialog.locator('button[type="button"].users-btn-secondary').click(); // UsersScreen.tsx:999
@@ -531,13 +532,20 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
         await expect(baseSelect).toHaveValue('ADMIN');
         await expect(reportsExportCb).toBeChecked();
 
-        await addForm.locator('button[type="button"].users-btn-secondary').click(); // PermissionMatrix.tsx:425
-        await expect(addForm).toHaveCount(0, { timeout: 10_000 });
+        // Case 4 setup: save a valid group of this run's own, so case 4 never edits a seeded group (§9.2, E-4).
+        const ownCode = `${validCode}_${lang.toUpperCase()}`;
+        ownCodes.push(ownCode);
+        await reportsExportCb.uncheck();
+        await baseSelect.selectOption('TELLER');
+        await codeInput.fill(ownCode);
+        await nameInput.fill(`${markerName}-${lang}`);
+        await submitBtn.click();
+        await expect(addForm).toHaveCount(0, { timeout: 15_000 });
 
-        // Case 4: Guardrail 2 breach on adminGroupSave — editing built-in TELLER group to add SystemSettings -> 409 guardrail:2 -> matrixGuardrail_2 (PermissionMatrix.tsx:55-56,293,321,332,354, i18n.ts:125,292).
-        const tellerRow = matrixPanel.locator('tr[data-matrix-group="TELLER"]'); // PermissionMatrix.tsx:267
-        await expect(tellerRow).toBeVisible({ timeout: 15_000 });
-        await tellerRow.locator('button[data-matrix-edit="TELLER"]').click(); // PermissionMatrix.tsx:293
+        // Case 4: Guardrail 2 breach on adminGroupSave — this run's TELLER-based group gains SystemSettings -> 409 guardrail:2 -> matrixGuardrail_2 (PermissionMatrix.tsx:55-56,293,321,332,354, i18n.ts:125,292).
+        const ownRow = matrixPanel.locator(`tr[data-matrix-group="${ownCode}"]`); // PermissionMatrix.tsx:267
+        await expect(ownRow).toBeVisible({ timeout: 15_000 });
+        await ownRow.locator(`button[data-matrix-edit="${ownCode}"]`).click(); // PermissionMatrix.tsx:293
         const editor = matrixPanel.locator('.users-matrix-panel:not([data-matrix-add-form])'); // PermissionMatrix.tsx:321
         await expect(editor).toBeVisible({ timeout: 10_000 });
 
@@ -567,6 +575,7 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       await shot(page, 'admin-users', 'r9-1-invalid-inputs');
     } finally {
       await cleanupMatrixGroup(page, validCode);
+      for (const code of ownCodes) await cleanupMatrixGroup(page, code);
       await restoreMarketingUser(page, targetUserId);
     }
   });
