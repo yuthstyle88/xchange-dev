@@ -270,8 +270,10 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
     });
     const body = await res.text();
     console.log(`[R9-2 teller] POST /api/campaigns -> ${res.status()} ${body.slice(0, 200)}`);
-    expect([400, 403], `teller POST /api/campaigns refused: ${body}`).toContain(res.status());
-    expect(body, 'teller POST /api/campaigns refusal code').toMatch(/roleNotAllowed|outOfScope/);
+    // Contract (policy_error.rs:104-113): a role refusal is 400 roleNotAllowed(Here); only outOfScope is 403.
+    const code = /"code":"(\w+)"/.exec(body)?.[1] ?? '';
+    const ok = (res.status() === 400 && /^roleNotAllowed(Here)?$/.test(code)) || (res.status() === 403 && code === 'outOfScope');
+    expect(ok, `teller POST /api/campaigns refused: ${res.status()} ${body}`).toBe(true);
   });
 
   // (b.1) Invalid input: end before start (endsAt < startsAt) on .xc-campaign-create in th and en.
