@@ -24,8 +24,6 @@ pub enum KioskError {
     RequestNotFound,
     #[error("Staff access required.")]
     StaffRequired,
-    #[error("Owner or Rates access required.")]
-    OwnerOrRatesRequired,
     #[error("The assigned employee must confirm the passport check.")]
     PassportCheckUnconfirmed,
     #[error("Assigned staff required.")]
