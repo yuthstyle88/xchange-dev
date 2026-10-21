@@ -4,7 +4,39 @@
 > any ticket is cut · measured on `main` `ced3a2d6` · builds on `kiosk-cancel.md` (KC-1..KC-5) and
 > `customer-identity-consent.md` (phone-first customers, `PhoneVerificationService`)
 
+> 🔴 **Superseded in part (claude/e92db6, 2026-10-21).** The owner's later rulings changed the kiosk model. **§4 is the
+> current design for the server, and §0a below is the current set of rules.** §0–§3, §5 and §6 are kept as history. Where
+> they differ from §0a or §4, they are superseded and must not be built. Every changed row is marked ~~superseded~~ inline.
+
+## 0a. Current rules (owner, 2026-10-21; supersede §0–§3, §5, §6 where they differ)
+
+Recorded on PR 4249 (issuecomment-6312118645, issuecomment-6321559434 and the Q8/Q12 comment after it).
+
+| # | Current rule | Owner's words |
+|---|---|---|
+| R-1 | **There is no customer kiosk at the branch.** Customers order through the web. | *"kiosk ที่ สาชา ไม่มีแล้ว"* · *"สั่ง ผ่าน เว็บ"* · *"ไม่มี ระบบ kiosk ที่สาขา"* · *"เพราะมันซ้ำซ้อนกกัน"* |
+| R-2 | **The Flutter app becomes the staff queue machine.** Staff scan the customer's request QR, and the scan issues the queue number and prints the ticket. | *"flutter ยกเลิกได้ไม่หมดเพราะ ยกต้องมี ระบบ พิมพ์ คิว"* · *"จาก kiosk เป็นเครือง พิพม์ คิว แทน"* · *"ให้ พนักงาน สแกน qr code ทีลูกค้า ทำรายการ ไว้แล้ว"* · *"เครื่อง เพิ่ม คิว ยังต้องใช้"* · *"พอได้ qr code ลูกค้่าต้องเอา มาให้ พนักงาน สแกน เพื่อรับ คิว"* |
+| R-3 | **Web flow:** scan the board QR, sign in, fill the request, and get a **request QR with no number**. Staff scan it at the queue machine, which issues the number and prints. The customer waits for the call, and the desk opens the request. | as R-2 |
+| R-4 | **The printer is attached to the queue machine** (Q7 B), so the queue machine is a Flutter native build. | *"เครื่องพิมพ์ต่อกับเครื่องเพิ่มคิว"* |
+| R-5 | **A customer without a phone borrows a branch tablet**, which signs in exactly like the customer's own phone (Q11). The session ends when the request is done. | *"ลูกค้าไม่มี มือถือ ที่ สาขา มี tablat ให้ ใช้ทำรายการ"* · *"ก็เหมือน มือถือ ลูกค้าปกติ"* · *"แค่ ยืมที่สาขาใช้งานชั่วคราว"* · *"ก็ทำเหมือน ที่ลูกค้า ใช้ เครื่องตัว เอง ไง"* |
+| R-6 | **Sign-in by SMS OTP, or e-mail OTP for customers without a Thai SIM** (Q10). | chose *"เพิ่ม OTP ทางอีเมล (แนะนำ)"* |
+| R-7 | **The calling display shows the queue number only**, with no counter label (Q8). | chose *"แสดงแค่เลขคิว"* |
+| R-8 | **Only staff issue numbers.** The public `confirm` needs `QueueOperate` (Q12). | chose *"เฉพาะพนักงาน (แนะนำ)"* |
+| R-9 | **The desk passport check stays skippable.** | *"ตรวจ พาสปอร์ท ให้ กดข้ามได้"* |
+| R-10 | **The booking QR can be downloaded.** On request, the customer can also have it e-mailed, with a link valid 1 day. | *"มันควรให้ ดาวน์โหลดได้ด้วยเดียวมันหาย"* · *"ให้ ส่งเมล์ได้ เป็น option"* · *"ข้อมูล จะได้ไปเก็บที่เมล์ ด้วย ถ้า ลูกค้า ต้องการ"* |
+| R-11 | **Cancels stay one press and need no approval.** | KS-2; `cancels-need-no-approval-or-limit` |
+
+**Superseded rows from §0:**
+- KS-1 and KS-2 now apply to the borrowed tablet's web session, not to a kiosk.
+- KS-3: there is no kiosk settings page. §4 D14 keeps only what the queue machine needs.
+- KS-4/4a/4b/4c: sign-in is the customer web sign-in (R-5, R-6). There is no kiosk sign-in.
+- KS-6: the ticket prints at the queue machine (R-4). The SMS ticket and its ticket-mode setting are dropped.
+- KS-7: the board QR opens the web request flow (R-3). The number comes at the staff scan, not on submit.
+- KS-5 stands, but shows the number only (R-7).
+
 ## 0. Decided (owner, 2026-10-21)
+
+> ~~superseded~~ in part: see §0a for each row's current rule.
 
 | # | Rule | Owner's words |
 |---|---|---|
@@ -40,6 +72,8 @@
 
 ## 2. Behaviour
 
+> ~~superseded~~: the kiosk flow, kiosk OTP, kiosk settings and SMS ticket below are replaced by §0a R-1..R-8 and §4. The calling display stands, but shows the number only (R-7).
+
 **Kiosk flow (KS-1, KS-2, KS-4):** start → currency and amount → **phone** → **OTP** → review → confirm → **queue number + ยกเลิกคิว + เสร็จ** for *N* seconds → start.
 
 | Step | Rule |
@@ -73,6 +107,8 @@
 - **The branch setting decides** which of the three ticket modes runs. With SMS off, the cancel after the done screen is staff-only, as today.
 
 ## 3. Data (migration **approved** by the owner 2026-10-21: *"อนุมัติ migration"*)
+
+> ~~superseded~~: the current data list is §4.6. Only `kiosk_requests.customer_id` and `kiosk_settings.result_seconds` remain; `idle_seconds`, `ticket_mode` and the kiosk OTP store are dropped.
 
 - `kiosk_settings` per branch: `result_seconds`, `idle_seconds`, `ticket_mode` (`PRINT_SMS` | `PRINT` | `SMS`, default `SMS`), CHECKed ranges, `updated_by`, `updated_at`, and a version for the poll seam. Or columns on an existing per-branch table: the BE lane chooses.
 - `kiosk_requests.customer_id` (nullable for rows before the migration; required for new ones by the service, not by the schema, so old rows stay valid).
@@ -438,11 +474,15 @@ tenant, so its rate limit, audit and SMS text are separate from other users of N
 
 ## 5. Front ends (this lane)
 
+> ~~superseded~~: the FE half is re-designed as the queue machine (Flutter), the web request and status pages, the desk scan and the calling display, by AG FE queue (claude/36d9dc6a) in a §5 revision. The bullets below are history.
+
 - **Admin:** `/kiosk-currencies.html` becomes **ตั้งค่าตู้**: the currency switches plus `resultSeconds` and `idleSeconds`.
 - **Kiosk app:** the phone and OTP steps; `resultSeconds` and `idleSeconds` from the settings read, replacing #4243's constant; all 16 kiosk languages for the new texts (`app/assets/l10n/kiosk.json`).
 - **Queue panel and desk:** show the kiosk request's customer.
 
 ## 6. Open questions for the owner (one batch)
+
+> ~~superseded~~: every open question is answered. See §0a and §4.7.
 
 1. ✅ **KS-5 answered:** a calling display like a bank's (§2). Still open: whether to add a spoken announcement. Earlier wording of this question: Today a teller presses call-next, which picks BOOKING tickets before WALK_IN and then the lowest number (`xc-queue/src/infrastructure/repository.rs:355-364`). Does the owner mean (a) call-next is already right; (b) the **system** should call the next number by itself when a counter frees up; or (c) kiosk requests should be ordered with bookings?
 2. ✅ **Decided 2026-10-21: the 108 Plaza Notify platform** (*"ใช่ Notify ชอง 108 plaza"*). With KS-4b the setting lives on **Identity**, not on xc-v3: set Identity's `AUTH_OTP_DELIVERY_MODE=http`, plus `AUTH_OTP_HTTP_ENDPOINT` (Notify's `/api/v1/otp`) and `AUTH_OTP_HTTP_API_KEY`, the same as 108heros's Identity. Today the instance xc-v3 uses runs `noop`. **The owner creates and sets the key**, because secrets are the owner's. Background: which SMS sender xc-v3 uses was an owner prerequisite of KS-4, per I-3. The fleet already has one: the Notify platform (`108-platform-services`). It sends SMS through ThaiBulkSMS with the approved sender `108-Pos`, per the memory store's notify record of 2026-07-31; that is **not re-measured today**. Pointing xc-v3's `NOTIFY_BASE_URL` / `NOTIFY_API_KEY` at it needs no new provider. **Proposed:** use Notify. The owner sets the key (secrets are the owner's). There is no bridge: KS-4a requires login first, so this setup must be done before the feature ships.
