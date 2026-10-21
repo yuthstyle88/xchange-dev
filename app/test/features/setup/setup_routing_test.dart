@@ -1,13 +1,5 @@
 // #174 (A3): which screen the app opens on, the ten-second hold on the logo,
 // and a whole first-run setup through the screen. Written before the code.
-//
-// Mutations that must turn this red:
-// - no redirect to /setup when nothing is stored   -> Android, nothing stored
-// - a /setup route on the web build                -> the web never shows setup
-// - a hold shorter than ten seconds                -> 9.9 s is not enough
-// - the hold working on the web                    -> the hold does nothing
-// - setup not prefilled                            -> … prefilled
-// - save enabled before a successful test          -> the save button
 import 'dart:convert';
 import 'dart:io';
 
@@ -17,14 +9,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xchange_kiosk/app/app.dart';
 import 'package:xchange_kiosk/core/endpoint/endpoint_store.dart';
 import 'package:xchange_kiosk/core/endpoint/kiosk_endpoint.dart';
-import 'package:xchange_kiosk/features/kiosk/app/kiosk_providers.dart';
-import 'package:xchange_kiosk/features/kiosk/domain/entities/kiosk_models.dart';
-import 'package:xchange_kiosk/features/kiosk/presentation/pages/kiosk_page.dart';
+import 'package:xchange_kiosk/features/queue_machine/presentation/pages/queue_machine_home_page.dart';
 import 'package:xchange_kiosk/features/setup/app/setup_providers.dart';
 import 'package:xchange_kiosk/features/setup/l10n/setup_l10n.dart';
 import 'package:xchange_kiosk/features/setup/presentation/pages/setup_page.dart';
 
-import '../kiosk/kiosk_controller_test.dart' show FakeRepository, l10n;
 import 'setup_controller_test.dart' show MemoryStore;
 
 final _texts = SetupL10n.fromJson(
@@ -35,7 +24,6 @@ final _texts = SetupL10n.fromJson(
 void main() {
   late ProviderContainer container;
   late MemoryStore store;
-  late FakeRepository server;
   late List<KioskEndpoint> probed;
 
   Future<void> pumpApp(
@@ -56,15 +44,7 @@ void main() {
         setupL10nProvider.overrideWith((ref) async => _texts),
         setupProbeProvider.overrideWithValue((e) async {
           probed.add(e);
-          return RatesModel.fromJson({
-            'branchId': e.branchId,
-            'branchName': 'Siam Square',
-            'open': true,
-            'rates': <Object>[],
-          });
         }),
-        kioskRepositoryProvider.overrideWithValue(server),
-        kioskL10nProvider.overrideWithValue(l10n()),
         deviceLanguagesProvider.overrideWithValue(const ['en']),
       ],
     );
@@ -94,27 +74,25 @@ void main() {
   String fieldText(String key) => controllerTextOf(find.byKey(Key(key)));
 
   setUp(() {
-    server = FakeRepository();
     probed = [];
   });
 
-  testWidgets('Android, nothing stored: the setup screen, not the kiosk', (
+  testWidgets('Android, nothing stored: the setup screen, not the home page', (
     tester,
   ) async {
     await pumpApp(tester, device: true);
     expect(find.byType(SetupPage), findsOneWidget);
-    expect(find.byType(KioskPage), findsNothing);
-    expect(server.calls, isEmpty);
+    expect(find.byType(QueueMachineHomePage), findsNothing);
     await finish(tester);
   });
 
-  testWidgets('Android, endpoint stored: the kiosk', (tester) async {
+  testWidgets('Android, endpoint stored: the home page', (tester) async {
     await pumpApp(
       tester,
       device: true,
       stored: KioskEndpoint.parse('https://shop.example.com', 'MAIN'),
     );
-    expect(find.byType(KioskPage), findsOneWidget);
+    expect(find.byType(QueueMachineHomePage), findsOneWidget);
     expect(find.byType(SetupPage), findsNothing);
     await finish(tester);
   });
@@ -123,7 +101,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester, device: false);
-    expect(find.byType(KioskPage), findsOneWidget);
+    expect(find.byType(QueueMachineHomePage), findsOneWidget);
     expect(find.byType(SetupPage), findsNothing);
     await finish(tester);
   });
@@ -143,7 +121,7 @@ void main() {
     await tester.tap(find.byKey(const Key('setup-back')));
     await tester.pump();
     await tester.pump();
-    expect(find.byType(KioskPage), findsOneWidget);
+    expect(find.byType(QueueMachineHomePage), findsOneWidget);
     expect(store.saves, 0);
     await finish(tester);
   });
@@ -156,7 +134,7 @@ void main() {
     );
     await holdLogo(tester, const Duration(milliseconds: 9900));
     await tester.pump(const Duration(seconds: 5));
-    expect(find.byType(KioskPage), findsOneWidget);
+    expect(find.byType(QueueMachineHomePage), findsOneWidget);
     expect(find.byType(SetupPage), findsNothing);
     await finish(tester);
   });
@@ -168,13 +146,13 @@ void main() {
       stored: KioskEndpoint.parse('https://shop.example.com', 'MAIN'),
     );
     await holdLogo(tester, const Duration(seconds: 12));
-    expect(find.byType(KioskPage), findsOneWidget);
+    expect(find.byType(QueueMachineHomePage), findsOneWidget);
     expect(find.byType(SetupPage), findsNothing);
     await finish(tester);
   });
 
   testWidgets(
-    'first run: type, test, see the branch, save, land on the kiosk',
+    'first run: type, test, see the branch, save, land on the home page',
     (tester) async {
       await pumpApp(tester, device: true);
       expect(find.byKey(const Key('setup-back')), findsNothing);
@@ -197,18 +175,20 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(probed.single.origin, 'https://shop.example.com');
-      expect(find.textContaining('Siam Square'), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('setup-result'))).data,
+        contains('MAIN'),
+      );
 
       await tester.tap(find.byKey(const Key('setup-save')));
       await tester.pump();
       await tester.pump();
       await tester.pump();
-      expect(find.byType(KioskPage), findsOneWidget);
+      expect(find.byType(QueueMachineHomePage), findsOneWidget);
       expect(
         store.stored,
         KioskEndpoint.parse('https://shop.example.com', 'MAIN'),
       );
-      expect(server.calls, contains('rates'));
       await finish(tester);
     },
   );
