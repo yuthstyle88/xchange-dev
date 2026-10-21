@@ -73,7 +73,44 @@ use crate::domain::approval_repository::ApprovalRepository;
 use crate::domain::audit_log::{AuditEvent, AuditLog};
 use crate::domain::redactor::Redactor;
 use crate::domain::request::{ApprovalRequest, Outcome, RequestId};
-use crate::domain::subject::SubjectError;
+use crate::domain::subject::{ApprovalSubject, SubjectError};
+
+async fn fetch_version_hash(
+    subject: &dyn ApprovalSubject,
+    tx: &mut Transaction<'_, Postgres>,
+    object_id: &str,
+) -> Result<String, ApprovalError> {
+    subject
+        .version_hash_or_unavailable(tx, object_id)
+        .await
+        .map_err(|e| match e {
+            SubjectError::DependencyUnavailable { code, message } => {
+                ApprovalError::DependencyUnavailable { code, message }
+            }
+            SubjectError::Failed(err) => {
+                ApprovalError::Internal(format!("failed to fetch version hash: {err}"))
+            }
+        })
+}
+
+async fn notify_decided(
+    subject: &dyn ApprovalSubject,
+    tx: &mut Transaction<'_, Postgres>,
+    request: &ApprovalRequest,
+    outcome: Outcome,
+) -> Result<(), ApprovalError> {
+    subject
+        .on_decided_or_unavailable(tx, request, outcome)
+        .await
+        .map_err(|e| match e {
+            SubjectError::DependencyUnavailable { code, message } => {
+                ApprovalError::DependencyUnavailable { code, message }
+            }
+            SubjectError::Failed(err) => {
+                ApprovalError::Internal(format!("on_decided failed: {err}"))
+            }
+        })
+}
 
 /// Errors produced by the approval core.
 #[derive(Debug, thiserror::Error)]
@@ -185,17 +222,7 @@ impl ApprovalService {
             ApprovalError::UnknownType(format!("unknown approval type: {type_name}"))
         })?;
 
-        let version_hash = subject
-            .version_hash_or_unavailable(tx, object_id)
-            .await
-            .map_err(|e| match e {
-                SubjectError::DependencyUnavailable { code, message } => {
-                    ApprovalError::DependencyUnavailable { code, message }
-                }
-                SubjectError::Failed(err) => {
-                    ApprovalError::Internal(format!("failed to fetch version hash: {err}"))
-                }
-            })?;
+        let version_hash = fetch_version_hash(subject.as_ref(), tx, object_id).await?;
 
         let policy_version = policy.policy_version();
         let proposed_payload = Redactor::redact(payload);
@@ -283,17 +310,7 @@ impl ApprovalService {
                 message: refusal.message().to_string(),
             })?;
 
-        let current_hash = subject
-            .version_hash_or_unavailable(tx, &request.object_id)
-            .await
-            .map_err(|e| match e {
-                SubjectError::DependencyUnavailable { code, message } => {
-                    ApprovalError::DependencyUnavailable { code, message }
-                }
-                SubjectError::Failed(err) => {
-                    ApprovalError::Internal(format!("failed to fetch version hash: {err}"))
-                }
-            })?;
+        let current_hash = fetch_version_hash(subject.as_ref(), tx, &request.object_id).await?;
         if current_hash != request.object_version_hash {
             return Err(ApprovalError::StaleVersion(format!(
                 "object version hash moved from {} to {current_hash}",
@@ -318,17 +335,7 @@ impl ApprovalService {
             .await
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
-        subject
-            .on_decided_or_unavailable(tx, &request, outcome)
-            .await
-            .map_err(|e| match e {
-                SubjectError::DependencyUnavailable { code, message } => {
-                    ApprovalError::DependencyUnavailable { code, message }
-                }
-                SubjectError::Failed(err) => {
-                    ApprovalError::Internal(format!("on_decided failed: {err}"))
-                }
-            })?;
+        notify_decided(subject.as_ref(), tx, &request, outcome).await?;
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
@@ -378,10 +385,7 @@ impl ApprovalService {
             ApprovalError::UnknownType(format!("unknown approval type: {}", request.type_name))
         })?;
 
-        let current_hash = subject
-            .version_hash(tx, &request.object_id)
-            .await
-            .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
+        let current_hash = fetch_version_hash(subject.as_ref(), tx, &request.object_id).await?;
         if current_hash != request.object_version_hash {
             return Err(ApprovalError::StaleVersion(format!(
                 "object version hash moved from {} to {current_hash}",
@@ -404,10 +408,7 @@ impl ApprovalService {
             .await
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
-        subject
-            .on_decided(tx, &request.object_id, outcome)
-            .await
-            .map_err(|e| ApprovalError::Internal(format!("on_decided failed: {e}")))?;
+        notify_decided(subject.as_ref(), tx, &request, outcome).await?;
 
         let event = AuditEvent {
             actor_id: approver_id,
@@ -469,10 +470,7 @@ impl ApprovalService {
             ));
         }
 
-        let current_hash = subject
-            .version_hash(tx, &request.object_id)
-            .await
-            .map_err(|e| ApprovalError::Internal(format!("failed to fetch version hash: {e}")))?;
+        let current_hash = fetch_version_hash(subject.as_ref(), tx, &request.object_id).await?;
         if current_hash != request.object_version_hash {
             return Err(ApprovalError::StaleVersion(format!(
                 "object version hash moved from {} to {current_hash}",
@@ -499,10 +497,7 @@ impl ApprovalService {
             .await
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
-        subject
-            .on_decided(tx, &request.object_id, outcome)
-            .await
-            .map_err(|e| ApprovalError::Internal(format!("on_decided failed: {e}")))?;
+        notify_decided(subject.as_ref(), tx, &request, outcome).await?;
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),

@@ -11,6 +11,8 @@ mod approval_request_organisation_test;
 mod approval_rules_test;
 #[path = "approval_subject_tx_test.rs"]
 mod approval_subject_tx_test;
+#[path = "approval_unavailable_paths_test.rs"]
+mod approval_unavailable_paths_test;
 #[path = "or71_stored_actor_test.rs"]
 mod or71_stored_actor_test;
 #[path = "redactor_non_string_test.rs"]
