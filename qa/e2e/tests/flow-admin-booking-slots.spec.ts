@@ -440,8 +440,10 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
           : await page.request.post(c.url, { headers: { ...sameOrigin, 'Idempotency-Key': key }, data: c.data });
       const body = await res.text();
       console.log(`[R9-4 teller] ${c.method} ${c.url} -> ${res.status()} ${body.slice(0, 200)}`);
-      expect([400, 403], `${c.name} refused for teller: ${body}`).toContain(res.status());
-      expect(body, `${c.name} refusal code`).toMatch(/roleNotAllowed|outOfScope/);
+      // Contract (policy_error.rs:104-113): a role refusal is 400 roleNotAllowed(Here); only outOfScope is 403.
+      const code = /"code":"(\w+)"/.exec(body)?.[1] ?? '';
+      const ok = (res.status() === 400 && /^roleNotAllowed(Here)?$/.test(code)) || (res.status() === 403 && code === 'outOfScope');
+      expect(ok, `${c.name} refused for teller: ${res.status()} ${body}`).toBe(true);
     }
   });
 });
