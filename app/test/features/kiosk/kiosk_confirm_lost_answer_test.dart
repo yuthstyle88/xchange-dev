@@ -214,8 +214,10 @@ void main() {
     });
   });
 
+  // #4243 ("แต่ มันใช้ ร่วมกัน" · "ถ้าอีกคนทำค้างไว้" · "มัน ควรทำที่ละคน ในเครื่อง นั้น"):
+  // 2 idle minutes resets the waiting screen to select.
   test('row 3: Confirm throws, poll answers WAITING, then 2 idle minutes '
-      'keeps screen at waiting', () {
+      'resets screen to select', () {
     fakeAsync((async) {
       c = make();
       quoteUsd(async);
@@ -231,8 +233,8 @@ void main() {
 
       async.elapse(const Duration(minutes: 2));
       async.flushMicrotasks();
-      expect(st().screen, KioskScreen.waiting);
-      expect(st().quote, isNotNull);
+      expect(st().screen, KioskScreen.select);
+      expect(st().quote, isNull);
       container.dispose();
     });
   });

@@ -224,8 +224,10 @@ void main() {
     },
   );
 
+  // #4243 ("มันควร กดยกเลิกได้ เลย" · "ให้ตั้งค่าได้เอง"):
+  // the cancelled screen holds for kioskResultSecondsProvider (N = 30 s).
   test(
-    'CANCELLED from a poll ends the flow: stops polling, shows cancelled error, and restarts after 10 s',
+    'CANCELLED from a poll ends the flow: stops polling, shows cancelled error, and restarts after kioskResultSecondsProvider',
     () {
       fakeAsync((async) {
         final container = ProviderContainer(
@@ -266,7 +268,8 @@ void main() {
         final callsAtCancel = List<String>.from(
           server.calls.where((call) => call != 'rates'),
         );
-        async.elapse(const Duration(seconds: 9));
+        final n = container.read(kioskResultSecondsProvider);
+        async.elapse(Duration(seconds: n - 1));
         expect(
           server.calls.where((call) => call != 'rates').toList(),
           callsAtCancel,
@@ -276,7 +279,7 @@ void main() {
           KioskScreen.waiting,
         );
 
-        // At 10 s after CANCELLED was seen, the kiosk resets to the select screen.
+        // At N s after CANCELLED was seen, the kiosk resets to the select screen.
         async.elapse(const Duration(seconds: 1));
         async.flushMicrotasks();
         expect(

@@ -381,7 +381,9 @@ void main() {
     });
   });
 
-  test('two idle minutes reset the first two screens but never the counter '
+  // #4243 ("แต่ มันใช้ ร่วมกัน" · "ถ้าอีกคนทำค้างไว้" · "มัน ควรทำที่ละคน ในเครื่อง นั้น"):
+  // idle resets every screen, including the counter screens.
+  test('two idle minutes reset the first two screens and the counter '
       'screens', () {
     fakeAsync((async) {
       c = make();
@@ -400,8 +402,9 @@ void main() {
       async.flushMicrotasks();
       confirmAfterReview(async);
       async.elapse(const Duration(minutes: 5));
-      expect(st().screen, KioskScreen.waiting);
-      expect(st().quote, isNotNull);
+      async.flushMicrotasks();
+      expect(st().screen, KioskScreen.select);
+      expect(st().quote, isNull);
       container.dispose();
     });
   });

@@ -230,10 +230,14 @@ class KioskState {
   RequestIdentity? get identity => status ?? quote?.identity;
 }
 
+final kioskResultSecondsProvider = Provider<int>(
+  (_) => KioskController.resultSeconds,
+);
+
 class KioskController extends Notifier<KioskState> {
   static const reviewSeconds = 3;
-  static const restartAfterDone = Duration(seconds: 30);
-  static const restartAfterCancelled = Duration(seconds: 10);
+  static const resultSeconds = 30;
+  static const restartAfterDone = Duration(seconds: resultSeconds);
   static const ratesRefresh = Duration(seconds: 30);
 
   KioskRepository get _repo => ref.read(kioskRepositoryProvider);
@@ -404,10 +408,7 @@ class KioskController extends Notifier<KioskState> {
   void activity() => _idle.touch();
 
   void _onIdle() {
-    final atCounter =
-        state.screen == KioskScreen.waiting ||
-        state.screen == KioskScreen.receipt;
-    if (!state.busy && !atCounter) reset();
+    if (!state.busy) reset();
   }
 
   // ---- screen 1: select --------------------------------------------------
@@ -580,6 +581,8 @@ class KioskController extends Notifier<KioskState> {
 
   // ---- screens 3 and 4: waiting, receipt ---------------------------------
 
+  Future<void> done() => reset();
+
   Future<void> cancel() async {
     final q = state.quote;
     final token = _cancelToken;
@@ -616,7 +619,7 @@ class KioskController extends Notifier<KioskState> {
         error: _keyError('requestCancelled'),
       ),
     );
-    _afterStatus();
+    _afterStatus(restart: true);
   }
 
   static int _statusRank(KioskStatus s) => switch (s) {
@@ -642,6 +645,7 @@ class KioskController extends Notifier<KioskState> {
     try {
       final s = await _repo.status(q.id);
       if (_disposed || state.quote?.id != q.id) return;
+      final wasCompleted = state.status?.status == KioskStatus.completed;
       final next = _nextStatus(s);
       if (next.status == KioskStatus.cancelled) {
         _onCancelled(next);
@@ -689,7 +693,9 @@ class KioskController extends Notifier<KioskState> {
               : state.error,
         ),
       );
-      _afterStatus();
+      _afterStatus(
+        restart: !wasCompleted && next.status == KioskStatus.completed,
+      );
     } catch (_) {
       if (state.quote?.id == q.id) {
         _set(state.copyWith(error: _keyError('statusError')));
@@ -703,6 +709,7 @@ class KioskController extends Notifier<KioskState> {
     try {
       final r = await _repo.customerReceipt(q.id);
       if (_disposed || state.quote?.id != q.id) return;
+      final wasCompleted = state.status?.status == KioskStatus.completed;
       final next = _nextStatus(r.identity);
       if (next.status == KioskStatus.cancelled) {
         _onCancelled(next);
@@ -721,20 +728,28 @@ class KioskController extends Notifier<KioskState> {
           screen: r.image == null ? KioskScreen.waiting : KioskScreen.receipt,
         ),
       );
-      _afterStatus();
+      _afterStatus(
+        restart: !wasCompleted && next.status == KioskStatus.completed,
+      );
     } catch (_) {
       // Keep the last image through a brief connection failure.
     }
   }
 
-  void _afterStatus() {
+  void _afterStatus({bool restart = false}) {
+    if (restart) {
+      _restart?.cancel();
+      _restart = null;
+    }
     final s = state.status?.status;
-    if ((s == KioskStatus.completed || s == KioskStatus.cancelled) &&
-        _restart == null) {
+    final onResult =
+        state.screen == KioskScreen.waiting ||
+        state.screen == KioskScreen.receipt ||
+        s == KioskStatus.completed ||
+        s == KioskStatus.cancelled;
+    if (onResult && _restart == null) {
       final id = state.quote?.id;
-      final delay = s == KioskStatus.cancelled
-          ? restartAfterCancelled
-          : restartAfterDone;
+      final delay = Duration(seconds: ref.read(kioskResultSecondsProvider));
       _restart = Timer(delay, () {
         if (state.quote?.id == id) reset();
       });
