@@ -290,6 +290,31 @@ async fn the_copy_goes_to_the_stored_address_with_one_key_per_qr_for_both_subjec
     }
 }
 
+/// D3, D22: the QR in the e-mail must work at the queue machine and the desk exactly as on the
+/// phone. A web-request QR therefore encodes `<origin>/q#<qr>`, the only form the queue machine
+/// (F4, A7) and the desk (F13) read; a booking QR stays the raw token. Added by the slice
+/// controller (claude/mbp-xc-ks) after the PR 4488 review (issuecomment-6328924380, must-fix 3).
+#[tokio::test]
+async fn the_email_qr_encodes_what_the_queue_machine_and_the_desk_read() {
+    for (kind, id, qr, _, _) in table() {
+        let w = world();
+        w.service
+            .send(ALICE, kind, id, qr, now())
+            .await
+            .unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
+        let encoded = match kind {
+            CopySubjectKind::WebRequest => format!("{ORIGIN}/q#{qr}"),
+            CopySubjectKind::Booking => qr.to_owned(),
+        };
+        let b64 = base64::engine::general_purpose::STANDARD.encode(qr_png(&encoded));
+        let sent = w.sender.sent();
+        assert!(
+            sent[0].html.contains(&format!("data:image/png;base64,{b64}\"")),
+            "{kind:?}: the inline QR encodes {encoded}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn the_subject_is_asked_with_the_sha256_of_the_qr_never_the_qr() {
     let w = world();
