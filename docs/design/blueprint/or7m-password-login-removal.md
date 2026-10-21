@@ -132,6 +132,44 @@ production, about 98 are tests (`git grep` of `Sessions`, `fn sessions`, `old_co
 | 2 | P2 | the password path: `http/auth.rs` password routes, `extractors/actor.rs` (`password_session`, `actor_of`, `staff_actor`), `pages.rs` (`Sessions`, `old_cookie_callers`, `resolve_old_cookie_org_id`, `SessionReader::sessions`), `bootstrap/mod.rs` (`old_cookie_org_id`), `http/rpc.rs` password callers, `test_callers`' bridge test; with `auth_http*`, `login_redirect_next_test` and `old_cookie_org_id_test` | P1 |
 | 2 | P3 | `xc-auth`: `domain/account` and its application and infrastructure, `v3_roles.rs`, `Policy::allow`'s old half and the v2 `Actor` / `Role` value objects; with their own tests (`policy_test`, `policy_route_table_test`, `area_rows_seam_test`, `approvals_decide_manager_test`, `account_*`) | P2 |
 
+#### 4.1.1 Wave 2 scopes, re-measured (controller claude/553782, 2026-10-21, #1027 issuecomment-6304924463)
+
+The wave-2 lists above were measured before `main` was last merged into `feat/or7m`. Re-measured at `feat/or7m`
+`367a6a7d` (#1027 issuecomment-6304753464), rulings A–D amend them as follows. Where the two disagree, this
+subsection wins.
+
+- **A. `http/devices.rs` is in P1 and P2.** P1 changes only the `compat_rpc(.., accounts)` call (`:126`). P2 removes
+  `caller_of_rpc`'s `accounts` parameter with its `password_session` fallback (`http/rpc.rs:296-311`), and with them
+  the `accounts(&req)` lookups at `devices.rs:65` and `:113`. P2 is blocked by P1, so the two never hold the file at
+  once.
+- **B. `http/payment_methods.rs:60` is in P1.** `let Some(_accounts) = accounts(&req)` reads a value it never uses, so
+  P1 deletes it. The route answers as before, and its existing tests stay green.
+- **C. P2 also takes the three tests that still override `SessionReader::sessions`:**
+  - `api/tests/pricing_common/mod.rs`;
+  - `api/tests/marketing_admin_shell_test.rs`;
+  - `api/tests/pt14_permission_matrix_test.rs`.
+
+  Each override is dropped, or the reader keeps overriding only `callers` (ruling 2). No assertion is weakened.
+- **D. In P3, a test is deleted only where its behaviour is deleted.**
+  - `employees_mirror_test` is deleted. The account→`users` mirror it pins ends with `AccountService`.
+  - For each assertion of `staff_name_length_test`, `disable_employee_in_test` and `owner_session_version_test`:
+    - If a `UserService` / `users`-path test already pins the same rule, the assertion is deleted, and the ticket cites
+      the covering test by `file:line`.
+    - If not, it moves onto the user path as an up-front test.
+  - `account_common` is the exception to ruling 5. The helpers whose types are deleted go with them: `service()`,
+    `create_employee`, `list`, `working_employee`, `Replay`, `owner_of` and `employee_of`. The database helpers keep
+    their signatures. All sixteen binaries that `mod`-include it are in P3's scope.
+  - `api/src/presentation/http/users.rs:19` joins P3. It imports `TempPassword` from `xc_auth::domain::user::temp_password`,
+    not from the `domain::account` re-export.
+- **Off the lists:** `policy_test` and `area_rows_seam_test`, which use only `Policy::need` / `need_with` / `need_table` /
+  `authorize`. Those stay. `approvals_decide_manager_test.rs:61,127,184` is the last caller of `Policy::allow`, and it
+  stays in P3.
+- **P1's subject:** the `Accounts` value that is threaded through and never read. That covers `RpcServices.accounts`
+  (`application/compat/rpc.rs:160`), `ServiceSnapshotSources::new(.., _accounts)` (`infrastructure/compat/snapshot_sources.rs:124`),
+  `compat_rpc(.., accounts)` (`http/rpc.rs:427-439`, callers `:228` and `devices.rs:126`) and `payment_methods.rs:60`.
+  TA's six tests are the `ServiceSnapshotSources::new` callers in `customer_contact_verify_test`, `or7m_colleagues_test`,
+  `rates_re4_snapshot_transactions_test`, `snapshot_members_test`, `snapshot_sources_test` and `tx_8o_snapshot_sources_test`.
+
 ## 5. Migration 3 (data migration)
 
 1. **Existing rows:** `owners`, `owner_sessions`, `employees`, `employee_sessions` and their rows go; `users` loses
