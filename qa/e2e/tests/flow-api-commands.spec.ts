@@ -487,9 +487,23 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
       const openSheetRes = await page.request.get(reconUrl);
       expect(openSheetRes.ok(), `GET ${reconUrl} after raise`).toBeTruthy();
       const openSheet = (await openSheetRes.json()) as {
-        data?: { exceptions?: { rows?: Array<{ id: string; summary: string }> } };
+        data?: {
+          exceptions?: {
+            available?: boolean;
+            reason?: string | null;
+            data?: Array<{ id: string; position: number; reviewed: boolean; summary: string }>;
+          };
+        };
       };
-      const openRows = openSheet.data?.exceptions?.rows ?? [];
+      expect(
+        openSheet.data?.exceptions?.available,
+        'finance_reconciliation exceptions.available after raise',
+      ).toBe(true);
+      expect(
+        Array.isArray(openSheet.data?.exceptions?.data),
+        'finance_reconciliation exceptions.data is an array after raise',
+      ).toBe(true);
+      const openRows = openSheet.data!.exceptions!.data!;
       expect(
         openRows.some((r) => r.id === raisedId && r.summary.includes(marker)),
         `finance_reconciliation open exceptions includes ${raisedId}`,
@@ -519,9 +533,23 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
       const closedSheetRes = await page.request.get(reconUrl);
       expect(closedSheetRes.ok(), `GET ${reconUrl} after review`).toBeTruthy();
       const closedSheet = (await closedSheetRes.json()) as {
-        data?: { exceptions?: { rows?: Array<{ id: string }> } };
+        data?: {
+          exceptions?: {
+            available?: boolean;
+            reason?: string | null;
+            data?: Array<{ id: string; position: number; reviewed: boolean; summary: string }>;
+          };
+        };
       };
-      const remainingRows = closedSheet.data?.exceptions?.rows ?? [];
+      expect(
+        closedSheet.data?.exceptions?.available,
+        'finance_reconciliation exceptions.available after review',
+      ).toBe(true);
+      expect(
+        Array.isArray(closedSheet.data?.exceptions?.data),
+        'finance_reconciliation exceptions.data is an array after review',
+      ).toBe(true);
+      const remainingRows = closedSheet.data!.exceptions!.data!;
       expect(
         remainingRows.some((r) => r.id === raisedId),
         `finance_reconciliation open exceptions no longer includes reviewed ${raisedId}`,

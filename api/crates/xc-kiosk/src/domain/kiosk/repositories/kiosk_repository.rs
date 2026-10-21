@@ -163,6 +163,41 @@ pub trait KioskRepository: Send + Sync {
         token: &str,
     ) -> impl Future<Output = AppResult<bool>> + Send;
 
+    /// The request of this branch whose stored token hash (`cancel_token_hash`) is
+    /// `SHA-256(token)`; `None` for an unknown token or one of another branch
+    /// (design `kiosk-shared-phone.md` §4.2 D2, D5).
+    fn find_by_token_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        token: &str,
+    ) -> impl Future<Output = AppResult<Option<KioskRequest>>> + Send;
+
+    /// Stores the member of a web request (`kiosk_requests.customer_id`, §4.6).
+    fn set_customer_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        customer_id: &str,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    /// The member of a request; `None` for a kiosk request or an unknown id.
+    fn customer_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
+
+    /// The branch's IANA timezone (`branches.timezone`), for the time on the printed ticket
+    /// (§4.2 D9); `None` when there is no such branch.
+    fn branch_timezone_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
+
     fn client_ip_in(
         &self,
         tx: Tx<'_, '_>,

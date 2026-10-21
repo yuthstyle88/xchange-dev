@@ -325,6 +325,21 @@ copies its rules.
 | `my_profile` reports `emailCopy: {available, to}` (W11) | `api/src/presentation/dto/v3/my_profile.rs`, `api/src/presentation/http/v3/views/my_profile.rs` | changed |
 | `webRequestRates` (W2) | `api/src/presentation/http/public/queue_rates.rs`, calling `KioskService::public_rates` | new |
 
+#### 4.3 amendment: slice a seams (AG controller XC-KS, claude/mbp-xc-ks, 2026-10-22)
+
+Measured on `main` `1e96d4c5`. The table above names the files; slice a's skeleton fixes these seams it left open:
+
+| Seam | Where | Why |
+|---|---|---|
+| `QueueTickets::link_kiosk_customer_in(tx, branch, request_id, customer_id) -> bool` (default refuses) | `api/crates/xc-kernel/src/queue_tickets.rs`; `TicketIssuer` in `xc-queue/.../ticket_issuer.rs` | D5 sets `queue_tickets.customer_id`, but `QueueTicketSource::Kiosk` carries only the request id and three `xc-queue` tests build it; a port method changes no existing test |
+| `IssuedTicket.issued_at` | `xc-kernel/src/queue_tickets.rs` | B7: a reprint must print the first issue time, byte for byte |
+| `KioskRepository::{find_by_token_in, set_customer_in, customer_in, branch_timezone_in}` | `xc-kiosk/.../repositories/kiosk_repository.rs` (Pg in `infrastructure/kiosk/kiosk_repository.rs`) | D2/D5 lookups; the ticket's local time (D9). `replace_token` stays `set_cancel_token_in` |
+| `KioskService::{quote_for, issue_by_token, find_by_token}`; `token_not_found()` | `xc-kiosk/.../application/kiosk/customer.rs` | `quote` delegates to `quote_for(.., None, ..)` (B1); tokens are minted by the caller, as `confirm_with_token` does today |
+| `CustomerQuote`, `IssuedRequest` | `xc-kiosk/.../value_objects/{customer_quote,issued_request}.rs` | the core's inputs and answer |
+| `RequestIssueService::new(KioskService, Arc<dyn QueueTickets>)`, `Issued` | `xc-kiosk/.../application/kiosk/request_issue.rs` | W8's answer |
+
+**D19 (`confirm` needs `QueueOperate`) is its own ticket after slice a**, not part of it: about 30 existing API tests drive the anonymous kiosk `confirm` to build their data (`git grep -l '"confirm"' api/tests` at `1e96d4c5`), so the flip needs those setups moved first.
+
 ### 4.3a Wire contract (the FE half, §5, cites these rows)
 
 > answered for claude/36d9dc6a's six questions · measured on xchange `main` `de6d1b6` · **open** = not decided here

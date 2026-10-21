@@ -11,6 +11,41 @@ const RUN_TAG = `qa-r9-10-${Date.now()}`;
 const RAW_ERROR_CODE =
   /^(validationFailed|notFound|outOfScope|roleNotAllowed|staleVersion|idempotencyConflict|serverError|rateAlertLimitReached|bookingsClosed|capacityFull|slotUnavailable|queueClosed|noOpenShift)$/;
 
+// Tomorrow in Asia/Bangkok, as the date input wants it (yyyy-mm-dd) (flow-booking.spec.ts:7-10).
+function tomorrowBangkok(): string {
+  const now = new Date(Date.now() + 7 * 3600_000 + 24 * 3600_000);
+  return now.toISOString().slice(0, 10);
+}
+
+// Contract status mapping for permission/scope refusals (api/crates/xc-auth/src/domain/policy/value_objects/policy_error.rs:103-124).
+const POLICY_REFUSAL_STATUS: Record<string, number> = {
+  signIn: 401,
+  employeeAuthRequired: 401,
+  outOfScope: 403,
+  ownerOnly: 403,
+  roleNotAllowed: 400,
+  roleNotAllowedHere: 400,
+  employeeAccount: 400,
+};
+
+function expectPermissionRefused(
+  resp: { status: number; body: Record<string, unknown> },
+  label: string,
+): void {
+  const errObj = (resp.body.error ?? {}) as { code?: string; message?: string };
+  const code = (errObj.code ?? '').trim();
+  const message = (errObj.message ?? '').trim();
+  expect(
+    Object.keys(POLICY_REFUSAL_STATUS),
+    `${label}: refusal code (${code}) body=${JSON.stringify(resp.body)}`,
+  ).toContain(code);
+  expect(
+    resp.status,
+    `${label}: expected status ${POLICY_REFUSAL_STATUS[code]} for ${code}, got ${resp.status} body=${JSON.stringify(resp.body)}`,
+  ).toBe(POLICY_REFUSAL_STATUS[code]);
+  expect(message, `${label}: refusal error.message non-empty`).not.toBe('');
+}
+
 async function postJson(
   page: Page,
   path: string,
@@ -28,6 +63,7 @@ async function postJson(
         headers: {
           'Content-Type': 'application/json',
           'Idempotency-Key': key,
+          'x-xchange-request': '1',
         },
         body: JSON.stringify(payload),
       });
@@ -119,7 +155,8 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
     });
 
     // (b) Invalid input: empty / whitespace-only assistant message in th and en
-    for (const lang of CUSTOMER_LANGS) {
+    for (const lang of ['th', 'en'] as const) {
+      console.log(`[customer-extras] assistantAsk (b) lang=${lang} value="   "`);
       await withLang(page, lang);
       await page.goto('/app/assistant');
       // input.assistant-input: web/src/screens/customer/assistant/AssistantScreen.tsx:342
@@ -138,9 +175,18 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
         branch: users.branch,
         text: '   ',
       });
-      expect(emptyResp.status, `(${lang}) whitespace assistantAsk refused with 400`).toBe(400);
+      console.log(
+        `[customer-extras] assistantAsk (b) lang=${lang} status=${emptyResp.status} body=${JSON.stringify(emptyResp.body)}`,
+      );
+      expect(
+        emptyResp.status,
+        `(${lang}) whitespace assistantAsk refused with 400 (body=${JSON.stringify(emptyResp.body)})`,
+      ).toBe(400);
       const errObj = (emptyResp.body.error ?? {}) as { code?: string; message?: string };
-      expect(errObj.code, `(${lang}) refusal code is validationFailed`).toBe('validationFailed');
+      expect(
+        errObj.code,
+        `(${lang}) refusal code is validationFailed (body=${JSON.stringify(emptyResp.body)})`,
+      ).toBe('validationFailed');
     }
 
     // (a) Happy path: submit through AssistantScreen controls, reload, and read the conversation back
@@ -157,6 +203,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
     // POST /api/app/assistant/messages: web/src/screens/customer/assistant/AssistantScreen.tsx:103,174
     const askRespPromise = page.waitForResponse(
       (r) => r.url().includes('/api/app/assistant/messages') && r.request().method() === 'POST',
+      { timeout: 15_000 },
     );
     await sendBtn.click();
     const askResp = await askRespPromise;
@@ -195,10 +242,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           branch: users.branch,
           text: `${RUN_TAG} teller check`,
         });
-        expect(
-          [401, 403],
-          `teller assistantAsk refused (got ${tellerResp.status})`,
-        ).toContain(tellerResp.status);
+        expectPermissionRefused(tellerResp, 'teller assistantAsk');
       } finally {
         await tellerCtx.close();
       }
@@ -232,9 +276,10 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
         { value: '34.123456789', hitsServer: true },
         { value: '   ', hitsServer: false },
       ];
-      for (const lang of CUSTOMER_LANGS) {
+      for (const lang of ['th', 'en'] as const) {
         await withLang(page, lang);
         for (const { value: badValue, hitsServer } of invalidThresholds) {
+          console.log(`[customer-extras] rateAlert (b) lang=${lang} value=${JSON.stringify(badValue)}`);
           await page.goto('/app/rate-alerts');
           // #alert-target: web/src/screens/customer/rate-alerts/RateAlerts.tsx:464
           const targetInput = page.locator('#alert-target');
@@ -253,6 +298,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           if (hitsServer) {
             const badRespPromise = page.waitForResponse(
               (r) => r.url().includes('/api/app/rate-alerts') && r.request().method() === 'POST',
+              { timeout: 15_000 },
             );
             await submitBtn.click();
             const badResp = await badRespPromise;
@@ -329,6 +375,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       // POST /api/app/rate-alerts: web/src/screens/customer/rate-alerts/RateAlerts.tsx:71,398,494
       const createRespPromise = page.waitForResponse(
         (r) => r.url().includes('/api/app/rate-alerts') && r.request().method() === 'POST',
+        { timeout: 15_000 },
       );
       await page.locator('.xc-create-alert-form button[type="submit"]').click();
       const createResp = await createRespPromise;
@@ -356,6 +403,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
         (r) =>
           r.url().includes(`/api/app/rate-alerts/${createdAlertId}/pause`) &&
           r.request().method() === 'POST',
+        { timeout: 15_000 },
       );
       await card.locator('button.xc-btn-pause').click();
       const pauseResp = await pauseRespPromise;
@@ -383,6 +431,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
         (r) =>
           r.url().includes(`/api/app/rate-alerts/${createdAlertId}/resume`) &&
           r.request().method() === 'POST',
+        { timeout: 15_000 },
       );
       await cardAfterPauseReload.locator('button.xc-btn-resume').click();
       const resumeResp = await resumeRespPromise;
@@ -415,20 +464,14 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
             `/api/app/rate-alerts/${encodeURIComponent(createdAlertId)}/pause`,
             { branch: users.branch },
           );
-          expect(
-            [401, 403],
-            `teller rateAlertPause refused (got ${pauseAsTeller.status})`,
-          ).toContain(pauseAsTeller.status);
+          expectPermissionRefused(pauseAsTeller, 'teller rateAlertPause');
 
           const resumeAsTeller = await postJson(
             tellerPage,
             `/api/app/rate-alerts/${encodeURIComponent(createdAlertId)}/resume`,
             { branch: users.branch },
           );
-          expect(
-            [401, 403],
-            `teller rateAlertResume refused (got ${resumeAsTeller.status})`,
-          ).toContain(resumeAsTeller.status);
+          expectPermissionRefused(resumeAsTeller, 'teller rateAlertResume');
         } finally {
           await tellerCtx.close();
         }
@@ -456,10 +499,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           const tellerTake = await postJson(tellerPage, '/api/app/queue/tickets', {
             branch: users.branch,
           });
-          expect(
-            [401, 403],
-            `teller queueTicketTake refused (got ${tellerTake.status})`,
-          ).toContain(tellerTake.status);
+          expectPermissionRefused(tellerTake, 'teller queueTicketTake');
         } finally {
           await tellerCtx.close();
         }
@@ -494,6 +534,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       // POST /api/app/queue/tickets: web/src/screens/customer/branches/TakeNumber.tsx:30
       const takeRespPromise = page.waitForResponse(
         (r) => r.url().includes('/api/app/queue/tickets') && r.request().method() === 'POST',
+        { timeout: 15_000 },
       );
       await takeBtn.click();
       const takeResp = await takeRespPromise;
@@ -570,46 +611,50 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
         langs: CUSTOMER_LANGS,
       });
 
-      // Create the spec's own booking via /app/book (web/src/screens/customer/book/Book.tsx:317-507)
+      // Create the spec's own booking via /app/book (flow-booking.spec.ts:34-56; web/src/screens/customer/book/Book.tsx:395-708)
       await withLang(page, 'en');
       await page.goto('/app/book');
-      // #book-branch: web/src/screens/customer/book/Book.tsx:321
-      const branchSelect = page.locator('#book-branch');
-      await expect(branchSelect, '#book-branch visible').toBeVisible({ timeout: 15_000 });
-      if ((await branchSelect.locator(`option[value="${users.branch}"]`).count()) > 0) {
-        await branchSelect.selectOption(users.branch);
-      }
-      // .xc-slot-item:not(:disabled): web/src/screens/customer/book/Book.tsx:414
-      const openSlot = page.locator('.xc-slot-item:not(:disabled)').first();
-      if ((await openSlot.count()) === 0) {
+      // [data-testid="book-screen"]: web/src/screens/customer/book/Book.tsx:395
+      await expect(page.getByTestId('book-screen')).toBeVisible({ timeout: 15_000 });
+      // [data-testid="branch-select"]: web/src/screens/customer/book/Book.tsx:459
+      await page.getByTestId('branch-select').selectOption(users.branch);
+      // [data-testid="date-input"]: web/src/screens/customer/book/Book.tsx:511
+      await page.getByTestId('date-input').fill(tomorrowBangkok());
+      // [data-testid="slot-option"]:not([disabled]): web/src/screens/customer/book/Book.tsx:588-590
+      const firstSlot = page.locator('[data-testid="slot-option"]:not([disabled])').first();
+      await firstSlot.waitFor({ state: 'attached', timeout: 15_000 }).catch(() => {});
+      if ((await firstSlot.count()) === 0) {
         console.log(`[customer-extras] no open booking slots on ${users.branch}; skipping bookingConfirm`);
         test.skip(true, `no open booking slots on ${users.branch}`);
         return;
       }
-      await openSlot.click();
-      // #book-currency: web/src/screens/customer/book/Book.tsx:445
-      const currencySelect = page.locator('#book-currency');
-      if ((await currencySelect.locator('option[value="USD"]').count()) > 0) {
-        await currencySelect.selectOption('USD');
-      }
-      // #book-side: web/src/screens/customer/book/Book.tsx:457
-      await page.locator('#book-side').selectOption('BUY');
-      // #book-quantity: web/src/screens/customer/book/Book.tsx:469
-      await page.locator('#book-quantity').fill('100');
+      const slotValue = await firstSlot.getAttribute('value');
+      // [data-testid="slot-select"]: web/src/screens/customer/book/Book.tsx:575
+      await page.getByTestId('slot-select').selectOption(slotValue!);
+      // [data-testid="currency-select"]: web/src/screens/customer/book/Book.tsx:627
+      await page.getByTestId('currency-select').selectOption(users.currency ?? 'USD');
+      // [data-testid="quantity-input"]: web/src/screens/customer/book/Book.tsx:650
+      await page.getByTestId('quantity-input').fill(users.quantity ?? '100');
 
-      // .xc-book-form button[type="submit"]: web/src/screens/customer/book/Book.tsx:317,507
+      // [data-testid="book-submit"]: web/src/screens/customer/book/Book.tsx:702
       const createRespPromise = page.waitForResponse(
-        (r) => r.url().includes('/api/bookings') && r.request().method() === 'POST',
+        (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/bookings',
+        { timeout: 15_000 },
       );
-      await page.locator('.xc-book-form button[type="submit"]').click();
+      await page.getByTestId('book-submit').click();
       const createResp = await createRespPromise;
       if (createResp.status() !== 200) {
         console.log(`[customer-extras] bookingCreate returned ${createResp.status()}; skipping bookingConfirm`);
         test.skip(true, `bookingCreate returned ${createResp.status()}`);
         return;
       }
-      const created = (await createResp.json()) as { id: string; status: string };
-      createdBookingId = created.id;
+      const createBody = (await createResp.json()) as {
+        id?: string;
+        status?: string;
+        data?: { id?: string; status?: string };
+      };
+      const created = createBody.data ?? createBody;
+      createdBookingId = created.id!;
       expect(created.status, 'APP-created booking starts CONFIRMED').toBe('CONFIRMED');
 
       // Verify on /app/bookings that the CONFIRMED card does not offer button[data-action="confirm"] (BookingExtras.tsx:104)
@@ -626,7 +671,8 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       ).toHaveCount(0);
 
       // (b) Confirming the already-CONFIRMED booking is refused with 409 (confirm.rs:107-122, booking_error_map.rs:25-27)
-      //POST /api/bookings/{id}/confirm: web/src/screens/customer/bookings/BookingExtras.tsx:38
+      // POST /api/bookings/{id}/confirm: web/src/screens/customer/bookings/BookingExtras.tsx:38
+      console.log(`[customer-extras] bookingConfirm (b) lang=en value=${createdBookingId}`);
       const confirmRefusal = await postJson(
         page,
         `/api/bookings/${encodeURIComponent(createdBookingId)}/confirm`,
@@ -657,10 +703,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
             `/api/bookings/${encodeURIComponent(createdBookingId)}/confirm`,
             { branch: users.branch },
           );
-          expect(
-            [401, 403],
-            `teller bookingConfirm refused (got ${tellerConfirm.status})`,
-          ).toContain(tellerConfirm.status);
+          expectPermissionRefused(tellerConfirm, 'teller bookingConfirm');
         } finally {
           await tellerCtx.close();
         }
@@ -720,6 +763,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           r.url().includes('/api/app/notifications/') &&
           r.url().endsWith('/read') &&
           r.request().method() === 'POST',
+        { timeout: 15_000 },
       );
       await unreadItems.first().locator('button.xc-notifications-mark-btn').click();
       const readOneResp = await readOnePromise;
@@ -771,6 +815,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       const readAllPromise = page.waitForResponse(
         (r) =>
           r.url().includes('/api/app/notifications/read-all') && r.request().method() === 'POST',
+        { timeout: 15_000 },
       );
       await markAllBtn.click();
       const readAllResp = await readAllPromise;
