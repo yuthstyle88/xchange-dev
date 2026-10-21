@@ -75,6 +75,7 @@ import { expect, test } from '@playwright/test';
 import { type Lang, signIn, users, withLang } from './helpers';
 
 const LANGS: readonly Lang[] = ['th', 'en'];
+const sameOrigin = { 'x-xchange-request': '1', origin: new URL(users.baseUrl).origin };
 
 test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
   for (const lang of LANGS) {
@@ -99,7 +100,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       const branchSelect = page.locator('select[data-testid="branch-select"]');
       await expect(branchSelect).toBeVisible({ timeout: 15_000 });
       if ((await branchSelect.locator('option').count()) > 1) {
-        await branchSelect.selectOption({ index: 1 });
+        await branchSelect.selectOption({ index: 1 }, { timeout: 10_000 });
       }
 
       const qtyInput = page.locator('input[data-testid="quantity-input"]');
@@ -110,48 +111,52 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         lang === 'th' ? 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง' : 'Validation failed, please check your input';
 
       // Case 1: no slot selected (server 400 refusal)
-      await qtyInput.fill('100');
+      console.log(`[r9-11] book ${lang} case 1`);
+      await qtyInput.fill('100', { timeout: 10_000 });
       if (await slotSelect.isVisible()) {
-        await slotSelect.selectOption('');
+        await slotSelect.selectOption('', { timeout: 10_000 });
       }
       const noSlotResPromise = page.waitForResponse(
         (res) => res.request().method() === 'POST' && /\/api\/bookings$/.test(new URL(res.url()).pathname),
         { timeout: 15_000 },
       );
-      await submitBtn.click();
+      await submitBtn.click({ timeout: 10_000 });
       const noSlotRes = await noSlotResPromise;
       expect(noSlotRes.status(), `${lang}: no slot selected refused with 400`).toBe(400);
       await expect(errorAlert).toBeVisible({ timeout: 10_000 });
       await expect(qtyInput, `${lang}: quantity retains input`).toHaveValue('100');
 
       // Case 2: amount 0 (client refusal via min="1" and rangeUnderflow)
+      console.log(`[r9-11] book ${lang} case 2`);
       if (await slotSelect.isVisible() && (await slotSelect.locator('option[data-testid="slot-option"]').count()) > 0) {
-        await slotSelect.selectOption({ index: 1 });
+        await slotSelect.selectOption({ index: 1 }, { timeout: 10_000 });
       }
-      await qtyInput.fill('0');
+      await qtyInput.fill('0', { timeout: 10_000 });
       const isZeroUnderflow = await qtyInput.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow);
       expect(isZeroUnderflow, `${lang}: amount 0 triggers rangeUnderflow`).toBe(true);
       const noZeroReq = page.waitForRequest(/\/api\/bookings$/, { timeout: 2_000 });
-      await submitBtn.click();
+      await submitBtn.click({ timeout: 10_000 });
       await expect(noZeroReq, `${lang}: no request sent for amount 0`).rejects.toThrow();
       await expect(qtyInput, `${lang}: quantity retains 0`).toHaveValue('0');
 
       // Case 3: negative amount (client refusal via min="1" and rangeUnderflow)
-      await qtyInput.fill('-50');
+      console.log(`[r9-11] book ${lang} case 3`);
+      await qtyInput.fill('-50', { timeout: 10_000 });
       const isNegUnderflow = await qtyInput.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow);
       expect(isNegUnderflow, `${lang}: negative amount triggers rangeUnderflow`).toBe(true);
       const noNegReq = page.waitForRequest(/\/api\/bookings$/, { timeout: 2_000 });
-      await submitBtn.click();
+      await submitBtn.click({ timeout: 10_000 });
       await expect(noNegReq, `${lang}: no request sent for negative amount`).rejects.toThrow();
       await expect(qtyInput, `${lang}: quantity retains -50`).toHaveValue('-50');
 
       // Case 4: too many decimals (>4 decimals; server 400 refusal)
-      await qtyInput.fill('10.12345');
+      console.log(`[r9-11] book ${lang} case 4`);
+      await qtyInput.fill('10.12345', { timeout: 10_000 });
       const decResPromise = page.waitForResponse(
         (res) => res.request().method() === 'POST' && /\/api\/bookings$/.test(new URL(res.url()).pathname),
         { timeout: 15_000 },
       );
-      await submitBtn.click();
+      await submitBtn.click({ timeout: 10_000 });
       const decRes = await decResPromise;
       expect(decRes.status(), `${lang}: too many decimals refused with 400`).toBe(400);
       await expect(errorAlert).toBeVisible({ timeout: 10_000 });
@@ -159,13 +164,14 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(qtyInput, `${lang}: quantity retains 10.12345`).toHaveValue('10.12345');
 
       // Case 5: past date (client refusal via min attribute, rejected submit request)
+      console.log(`[r9-11] book ${lang} case 5`);
       const dateInput = page.locator('input[data-testid="date-input"]');
       if (await dateInput.isVisible()) {
-        await dateInput.fill('2020-01-01');
+        await dateInput.fill('2020-01-01', { timeout: 10_000 });
         const isDateUnderflow = await dateInput.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow);
         expect(isDateUnderflow, `${lang}: past date triggers rangeUnderflow`).toBe(true);
         const noPastDateReq = page.waitForRequest(/\/api\/bookings$/, { timeout: 2_000 });
-        await submitBtn.click();
+        await submitBtn.click({ timeout: 10_000 });
         await expect(noPastDateReq, `${lang}: no request sent for past date`).rejects.toThrow();
         await expect(dateInput, `${lang}: date retains past date`).toHaveValue('2020-01-01');
       }
@@ -214,6 +220,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
         // Case 3: server-level refusal on blank display name via direct command
         const directRes = await page.request.put('/api/app/profile', {
+          headers: sameOrigin,
           data: { displayName: '   ' },
         });
         expect(directRes.status(), `${lang}: direct blank displayName returns 400`).toBe(400);
@@ -224,6 +231,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         // Case 4: consentRecord validation checks (direct API commands on /api/app/consents)
         // 4a: invalid purpose
         const badPurposeRes = await page.request.post('/api/app/consents', {
+          headers: sameOrigin,
           data: { purpose: 'INVALID_PURPOSE', channel: 'SMS', granted: true, lang },
         });
         expect(badPurposeRes.status(), `${lang}: invalid consent purpose returns 400`).toBe(400);
@@ -233,6 +241,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
         // 4b: invalid language
         const badLangRes = await page.request.post('/api/app/consents', {
+          headers: sameOrigin,
           data: { purpose: 'MARKETING', channel: 'SMS', granted: true, lang: 'xx' },
         });
         expect(badLangRes.status(), `${lang}: invalid consent lang returns 400`).toBe(400);
@@ -242,6 +251,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
         // 4c: withdrawing TERMS
         const withdrawTermsRes = await page.request.post('/api/app/consents', {
+          headers: sameOrigin,
           data: { purpose: 'TERMS', granted: false, lang },
         });
         expect(withdrawTermsRes.status(), `${lang}: withdrawing TERMS returns 400`).toBe(400);
@@ -401,7 +411,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       // Case 4: already registered identifier (unconditional 409 check)
       const existingId = users.customer?.identifier ?? users.customer?.phone ?? '';
       await idInput.fill(existingId);
-      await pwdInput.fill('ValidPass123!');
+      await pwdInput.fill(users.customer.password);
       await nameInput.fill('Another User');
       const regResPromise4 = page.waitForResponse(
         (res) => res.request().method() === 'POST' && /\/api\/app\/register$/.test(new URL(res.url()).pathname),
@@ -431,17 +441,22 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       const expectedCalcError = lang === 'th' ? 'กรุณาระบุจำนวนเงินที่ถูกต้อง' : 'Please enter a valid amount';
 
       // Case 1: amount 0
+      console.log(`[r9-11] journey ${lang} case 1`);
       await amtInput.fill('0');
       await expect(calcError).not.toBeVisible();
       const noReq1 = page.waitForRequest(/\/api\/v3\/compute\/planner_preview$/, { timeout: 2_000 });
       await calcBtn.click();
       await expect(noReq1, `${lang}: no request sent for 0 amount`).rejects.toThrow();
+      console.log(
+        `[r9-11] journey ${lang} case 1 state: calcBtn.count=${await calcBtn.count()} calcBtn.enabled=${await calcBtn.isEnabled()} url=${page.url()}`,
+      );
       await expect(calcError).toBeVisible({ timeout: 10_000 });
       await expect(calcError).toHaveText(expectedCalcError);
       await expect(estimateCard).not.toBeVisible();
       await expect(amtInput, `${lang}: amount retains 0`).toHaveValue('0');
 
       // Case 2: negative amount
+      console.log(`[r9-11] journey ${lang} case 2`);
       await amtInput.fill('-200');
       await expect(calcError, `${lang}: error cleared on input`).not.toBeVisible();
       const noReq2 = page.waitForRequest(/\/api\/v3\/compute\/planner_preview$/, { timeout: 2_000 });
@@ -453,6 +468,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(amtInput, `${lang}: amount retains -200`).toHaveValue('-200');
 
       // Case 3: non-numeric amount
+      console.log(`[r9-11] journey ${lang} case 3`);
       await amtInput.fill('xyz');
       await expect(calcError, `${lang}: error cleared on input`).not.toBeVisible();
       const noReq3 = page.waitForRequest(/\/api\/v3\/compute\/planner_preview$/, { timeout: 2_000 });
@@ -511,7 +527,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       // Check 2: bookingCancel validation
       // 2a: Direct command for cancelling a non-existent booking ID
       const badCancelRes = await page.request.post('/api/bookings/00000000-0000-0000-0000-000000000000/cancel', {
-        headers: { 'x-xchange-request': '1' },
+        headers: sameOrigin,
         data: { reason: 'test' },
       });
       expect(badCancelRes.status(), `${lang}: cancelling non-existent booking returns 404`).toBe(404);
