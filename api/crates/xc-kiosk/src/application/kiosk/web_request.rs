@@ -3,6 +3,9 @@
 //! tablet, D16), reached later only by its request token. It calls the request core in
 //! `customer.rs` and copies none of its rules.
 //!
+//! Every method runs on the caller's transaction (`tx`), which holds the branch's lock: the v3
+//! command seam opens it, so these never open a second branch transaction.
+//!
 //! Every method is for the member's **own** request: an id that is not the member's, or does not
 //! exist in `branch`, answers `token_not_found()` (`404 notFound`), one answer for both (no oracle).
 //! The request token is minted by the caller (as the kiosk route mints the cancel token) and
@@ -40,33 +43,35 @@ impl WebRequestService {
 
     /// `webRequestCreate` (D2, D12; B3, B4): the member's open web request at this branch
     /// (`KioskRepository::open_web_request_in`) ⇒ `AppError::Conflict("alreadyQueued:<its id>")`;
-    /// otherwise `KioskService::quote_for(branch, cmd, Some(CustomerQuote{customer_id, token}), now)`.
+    /// otherwise `KioskService::quote_for_in(tx, branch, cmd, Some(CustomerQuote{customer_id, token}), now)`.
     /// No ticket, no number.
-    pub async fn create(
+    pub async fn create_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
         customer_id: &str,
         cmd: NewQuote,
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<WebRequestCreated> {
-        let _ = (branch, customer_id, cmd, token, now, &self.kiosk);
-        todo!("KWQ-C4: D12 then quote_for")
+        let _ = (tx, branch, customer_id, cmd, token, now, &self.kiosk);
+        todo!("KWQ-C4: D12 then quote_for_in")
     }
 
     /// `webRequestQrReissue` (D3; B12): replaces the stored token hash of the member's own
     /// `QUOTED` or `WAITING` request with `token`'s (`set_cancel_token_in`); the old token then
     /// leads nowhere. Answers the request's `expires_at` (unchanged by a reissue). Any other
     /// status ⇒ `token_not_found()`.
-    pub async fn reissue_qr(
+    pub async fn reissue_qr_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
         customer_id: &str,
         id: &str,
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<DateTime<Utc>> {
-        let _ = (branch, customer_id, id, token, now);
+        let _ = (tx, branch, customer_id, id, token, now);
         todo!("KWQ-C4: replace the member's token")
     }
 
@@ -76,14 +81,15 @@ impl WebRequestService {
     /// `self.queue`). `QUOTED` (no ticket yet) ⇒ the same stored outcome: `CANCELLED`, reason
     /// `CUSTOMER_CANCELLED`, one `KIOSK_CANCELLED` audit line. Any other status ⇒
     /// `AppError::Domain` with `KioskError::CustomerCancelRefused`'s sentence.
-    pub async fn cancel(
+    pub async fn cancel_in(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
         customer_id: &str,
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        let _ = (branch, customer_id, id, now, &self.queue);
+        let _ = (tx, branch, customer_id, id, now, &self.queue);
         todo!("KWQ-C4: the member's one-press cancel")
     }
 }

@@ -213,6 +213,22 @@ impl KioskService {
             .await
     }
 
+    /// `quote_for` on the caller's transaction, which already holds `branch`'s lock (the v3
+    /// command seam's, design `kiosk-shared-phone.md` §4.3 slice c): the same rules, the same
+    /// statements, the same answer. `quote_for` becomes `branch_tx.run(|tx| quote_for_in(tx, …))`,
+    /// so the two can never drift (B1).
+    pub async fn quote_for_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        cmd: NewQuote,
+        customer: Option<CustomerQuote>,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
+        let _ = (tx, branch, cmd, customer, now);
+        todo!("KWQ-C3: quote_for's transaction body, on the caller's tx")
+    }
+
     /// `issueByToken`'s core (§4.2 D5, §4.4 B6–B8): in one transaction of `branch`, the request
     /// whose token is `token`. A `QUOTED` one is confirmed exactly as `confirm` does (WAITING,
     /// one `IssueSource::Kiosk` ticket through `queue`, key `kiosk-confirm:<id>`), and its member
