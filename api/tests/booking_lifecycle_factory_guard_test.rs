@@ -9,7 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const FACTORY_SUFFIX: &str = "xc-booking/src/infrastructure/lifecycle_factory.rs";
-const EXPECTED_FACTORY_CALL_SITES: usize = 5;
+/// The 6th production call site is `api/src/presentation/http/v3/commands/cash.rs` (#4136
+/// `queue-day-close.md` §3.5), where the routes' day-close hook tells bookings `dayClosed`.
+const EXPECTED_FACTORY_CALL_SITES: usize = 6;
 
 fn api_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
