@@ -23,9 +23,8 @@ use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use crate::bootstrap::AppState;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::presentation::dto::kiosk as dto_kiosk;
-use crate::presentation::dto::v3::common::RateFreshnessDto;
+use crate::presentation::http::kiosk::publication_freshness;
 use crate::presentation::http::public::not_found_response;
-use crate::presentation::http::v3::published_rates::published_rates_data;
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     cfg.app_data(web::Data::new(state.db.clone())).route(
@@ -85,17 +84,12 @@ async fn handle(
         }
     };
 
-    let pub_data = match published_rates_data(pool_ref, &branch_id).await {
-        Ok(d) => d,
+    let freshness = match publication_freshness(pool_ref, &branch_id).await {
+        Ok(f) => f,
         Err(e) => {
             tracing::error!("failed to read publication freshness for queue-rates: {e}");
             return HttpResponse::InternalServerError().finish();
         }
-    };
-    let freshness = RateFreshnessDto {
-        stale: pub_data.stale,
-        source_date: pub_data.source_date,
-        published_at: pub_data.publication.map(|p| p.published_at),
     };
 
     let json = match dto_kiosk::rates_json(&rates, &freshness) {
