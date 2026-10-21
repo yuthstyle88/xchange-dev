@@ -29,7 +29,7 @@ use crate::application::copy_by_email::booking_copy::BookingCopy;
 use crate::application::copy_by_email::link::CopyLink;
 use crate::application::copy_by_email::member_email::PgMemberEmails;
 use crate::application::copy_by_email::service::CopyByEmailService;
-use crate::application::copy_by_email::subject::{CopyDetails, CopySubject, CopySubjectKind};
+use crate::application::copy_by_email::subject::{CopySubject, CopySubjectKind};
 use crate::application::copy_by_email::web_request_copy::WebRequestCopy;
 use crate::bootstrap::AppState;
 use crate::infrastructure::notify::notify_email_sender::NotifyEmailSender;
@@ -39,40 +39,6 @@ use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::authenticate_and_authorize;
 
 pub const ROUTE: &str = "/api/app/copy-by-email";
-
-struct ReadySubject<S>(S);
-
-impl<S: CopySubject> CopySubject for ReadySubject<S> {
-    fn kind(&self) -> CopySubjectKind {
-        self.0.kind()
-    }
-
-    fn load_for<'a>(
-        &'a self,
-        member: &'a str,
-        id: &'a str,
-        qr_hash: &'a [u8; 32],
-    ) -> xc_customer::domain::sms_sender::BoxFuture<'a, pos_error::AppResult<Option<CopyDetails>>>
-    {
-        let mut fut = self.0.load_for(member, id, qr_hash);
-        Box::pin(std::future::poll_fn(move |cx| {
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fut.as_mut().poll(cx))) {
-                Ok(poll) => poll,
-                // shortcut: WebRequestCopy is todo!("KWQ-D6") until slice a's migration lands on feat/kwq-d
-                Err(_) => std::task::Poll::Ready(Ok(None)),
-            }
-        }))
-    }
-
-    fn load_by_link<'a>(
-        &'a self,
-        id: &'a str,
-        qr_hash: &'a [u8; 32],
-    ) -> xc_customer::domain::sms_sender::BoxFuture<'a, pos_error::AppResult<Option<CopyDetails>>>
-    {
-        self.0.load_by_link(id, qr_hash)
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -214,7 +180,7 @@ async fn handle(
     let pool = state.db.clone();
     let subjects: Vec<Arc<dyn CopySubject>> = vec![
         Arc::new(BookingCopy::new(pool.clone())),
-        Arc::new(ReadySubject(WebRequestCopy::new(pool.clone()))),
+        Arc::new(WebRequestCopy::new(pool.clone())),
     ];
     let service = CopyByEmailService::new(
         subjects,
