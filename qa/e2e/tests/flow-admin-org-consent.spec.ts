@@ -10,12 +10,12 @@ const BRANCH_TEXTS = {
   th: {
     timezoneRequired: 'กรุณากรอกเขตเวลา', // web/src/screens/admin/branches/i18n.ts:28
     codeConflict: 'รหัสสาขาซ้ำกับสาขาอื่น', // web/src/screens/admin/branches/i18n.ts:29
-    saved: 'บันทึกข้อมูลสาขาสำเร็จ', // web/src/screens/admin/branches/i18n.ts:30
+    saved: 'บันทึกข้อมูลสาขาเรียบร้อยแล้ว', // web/src/screens/admin/branches/i18n.ts
   },
   en: {
     timezoneRequired: 'Timezone is required', // web/src/screens/admin/branches/i18n.ts:75
     codeConflict: 'Branch code is already used by another branch', // web/src/screens/admin/branches/i18n.ts:76
-    saved: 'Branch profile saved', // web/src/screens/admin/branches/i18n.ts:77
+    saved: 'Branch profile saved successfully', // web/src/screens/admin/branches/i18n.ts
   },
 } as const;
 
@@ -228,6 +228,8 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     } finally {
       try {
         await withLang(page, 'th');
+        // Reload so the check reads what the server holds, not the edited form.
+        await openBranchesAsAdmin(page);
         const check = await readBranchForm(page).catch(() => null);
         if (
           !check ||
@@ -366,14 +368,16 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     await expect(page.locator('h2.title')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('.admin-consent-screen')).toHaveCount(0);
 
-    // Direct API command calls as `teller` are refused with 403 (`branch_save.rs:67-68`, `consent_text_publish.rs:48-49`, `retention_set.rs:48-49`).
+    // Direct API command calls as `teller` are refused with 403: the policy check runs before the input is parsed
+    // (`api/src/presentation/http/v3/command.rs:367` before `:383`). Every payload is also invalid, so a broken
+    // permission check gets a 400 and still writes nothing: no branch change, no published text, no armed purge (§9.2).
     const branchRes = await page.request.put('/api/branches/profile', {
       headers: { 'idempotency-key': `qa-r9-7-branch-${Date.now()}` },
       data: {
         branch: users.branch,
         code: users.branch,
         address: 'teller-refused',
-        timezone: 'Asia/Bangkok',
+        timezone: 'Not/A_Zone_qa_r9_7',
         openingHours: {},
         bookingEnabled: false,
       },
@@ -386,7 +390,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         branch: users.branch,
         purpose: 'TERMS',
         lang: 'th',
-        body: 'teller-refused',
+        body: '',
       },
     });
     expect(consentRes.status(), 'teller POST /api/consent-texts refused with 403').toBe(403);
@@ -396,7 +400,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
       data: {
         branch: users.branch,
         dataType: 'IDENTITY_VALUE',
-        periodDays: 365,
+        periodDays: -1,
       },
     });
     expect(retentionRes.status(), 'teller PUT /api/retention-policies/IDENTITY_VALUE refused with 403').toBe(403);
