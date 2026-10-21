@@ -68,7 +68,7 @@ const TINY_PNG = Buffer.from(
 
 interface MeViewAnswer {
   data?: {
-    userId?: string;
+    id?: string;
     permissions?: string[];
   };
 }
@@ -126,13 +126,13 @@ function expectWordedRefusal(text: string, context: string): void {
   ).not.toMatch(/^(validationFailed|invalidInput|forbidden|unauthorized|notFound|conflict|internalError|[a-z]+_[a-z_]+)$/);
 }
 
-/** Reads the signed-in user's userId from GET /api/v3/views/me. */
+/** Reads the signed-in user's id from GET /api/v3/views/me (api/src/presentation/dto/v3/common.rs:59-61). */
 async function meUserId(page: Page): Promise<string> {
   const res = await page.request.get('/api/v3/views/me');
   expect(res.ok(), `GET /api/v3/views/me status ${res.status()}`).toBeTruthy();
   const body = (await res.json().catch(() => ({}))) as MeViewAnswer;
-  const uid = String(body.data?.userId ?? '');
-  expect(uid, 'me.data.userId from /api/v3/views/me').not.toBe('');
+  const uid = String(body.data?.id ?? '');
+  expect(uid, 'me.data.id from /api/v3/views/me').not.toBe('');
   return uid;
 }
 
@@ -200,6 +200,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
     const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
     const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
+    let shiftOpened = false;
 
     try {
       // ---- (c) Permission check on /staff shift card ----
@@ -244,6 +245,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
       // Open teller's shift with SHIFT_QTY ('10') on the first THB denomination row.
       await openShift(teller, manager);
+      shiftOpened = true;
       await expect(
         teller.getByTestId('shift-handover'),
         'shift-handover button visible when shift is OPEN (ShiftCard.tsx:422)',
@@ -479,9 +481,13 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       await manager.reload();
       await clockOutIfClockedIn(manager);
     } finally {
-      await closeShift(teller, manager).catch((e) =>
-        console.log(`[R9-8] cleanup closeShift warning: ${e instanceof Error ? e.message : String(e)}`),
-      );
+      if (shiftOpened) {
+        await closeShift(teller, manager).catch((e) =>
+          console.log(`[R9-8] cleanup closeShift warning: ${e instanceof Error ? e.message : String(e)}`),
+        );
+      } else {
+        console.log('[R9-8] cleanup: no shift opened by this test, skipping closeShift');
+      }
       await teller.close();
       await manager.close();
     }
