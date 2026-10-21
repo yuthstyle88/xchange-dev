@@ -4,8 +4,11 @@
 //! subject, id, exp and qr (`[proposed]`: each part separated so no two links share a MAC input;
 //! base64url, no padding). No table and no env secret.
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Utc};
-use xc_kernel::pii::PiiKeys;
+use subtle::ConstantTimeEq as _;
+use xc_kernel::pii::{PiiKeys, hmac_sha256};
 
 use super::subject::CopySubjectKind;
 
@@ -42,6 +45,24 @@ impl CopyLink {
         Self::new(xc_kernel::pii::derive_subkey(keys, b"xc-copy-link-v1"))
     }
 
+    fn mac_b64(&self, kind: CopySubjectKind, id: &str, exp_str: &str, qr: &str) -> String {
+        let mac = hmac_sha256(
+            &self.key,
+            &[
+                b"v1",
+                b".",
+                kind.as_str().as_bytes(),
+                b".",
+                id.as_bytes(),
+                b".",
+                exp_str.as_bytes(),
+                b".",
+                qr.as_bytes(),
+            ],
+        );
+        URL_SAFE_NO_PAD.encode(mac)
+    }
+
     /// The link for `kind`/`id`/`qr`, valid until `expires_at` (whole seconds).
     pub fn sign(
         &self,
@@ -50,14 +71,40 @@ impl CopyLink {
         qr: &str,
         expires_at: DateTime<Utc>,
     ) -> String {
-        let _ = (&self.key, kind, id, qr, expires_at);
-        todo!("KWQ-D2: v1.<subject>.<id>.<exp>.<qr>.<mac>")
+        let exp_str = expires_at.timestamp().to_string();
+        let mac = self.mac_b64(kind, id, &exp_str, qr);
+        format!("v1.{}.{id}.{exp_str}.{qr}.{mac}", kind.as_str())
     }
 
     /// Checks, in order: the shape, the MAC (constant time), then `expires_at > now`.
     pub fn verify(&self, link: &str, now: DateTime<Utc>) -> Result<LinkParts, LinkRejected> {
-        let _ = (&self.key, link, now);
-        todo!("KWQ-D2: parse, constant-time MAC, expiry")
+        let [version, subject_str, id, exp_str, qr, mac_str]: [&str; 6] = link
+            .split('.')
+            .collect::<Vec<_>>()
+            .try_into()
+            .map_err(|_| LinkRejected)?;
+        if version != "v1" || id.is_empty() || qr.is_empty() {
+            return Err(LinkRejected);
+        }
+        let kind = CopySubjectKind::parse(subject_str).ok_or(LinkRejected)?;
+        let exp_secs: i64 = exp_str.parse().map_err(|_| LinkRejected)?;
+        let expires_at = DateTime::from_timestamp(exp_secs, 0).ok_or(LinkRejected)?;
+
+        let expected_mac = self.mac_b64(kind, id, exp_str, qr);
+        if !bool::from(mac_str.as_bytes().ct_eq(expected_mac.as_bytes())) {
+            return Err(LinkRejected);
+        }
+
+        if expires_at <= now {
+            return Err(LinkRejected);
+        }
+
+        Ok(LinkParts {
+            kind,
+            id: id.to_owned(),
+            qr: qr.to_owned(),
+            expires_at,
+        })
     }
 
     /// `<origin>/c#<link>`.
