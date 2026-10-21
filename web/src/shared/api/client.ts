@@ -254,7 +254,13 @@ export class ApiClient {
   }
 
   /** A raw upload (#539): the Blob is the body and `contentType` its type; sent and refused like `command`. */
-  postBytes<R>(path: string, body: Blob, contentType: string, idempotencyKey: string): Promise<R> {
+  postBytes<R>(
+    path: string,
+    body: Blob,
+    contentType: string,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ): Promise<R> {
     if (!idempotencyKey || idempotencyKey.trim() === '') {
       throw new Error('Idempotency key must not be empty');
     }
@@ -268,6 +274,7 @@ export class ApiClient {
           'content-type': contentType,
         },
         body,
+        ...(signal ? { signal } : {}),
       });
 
       if (!res.ok) {
