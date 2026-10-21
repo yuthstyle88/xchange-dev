@@ -176,30 +176,47 @@ test.describe.serial('F12 cash transfer escalation above limit', () => {
         .first();
       // `.empty` renders while the queue is still loading (Approvals.tsx:369), so wait for the card itself;
       // the raw fetch below is only for a manager whose queue never lists it.
-      const refused = (await mgrCard.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false))
-        ? await posted(manager, /^\/api\/approvals\/[^/]+\/decide$/, () =>
-            mgrCard.getByRole('button', { name: /^(อนุมัติ|Approve)$/ }).click(),
-          )
-        : await posted(manager, /^\/api\/approvals\/[^/]+\/decide$/, () =>
-            manager.evaluate(
-              async ({ id, branch }) => {
-                await fetch(`/api/approvals/${id}/decide`, {
-                  method: 'POST',
-                  credentials: 'same-origin',
-                  headers: {
-                    'x-xchange-request': '1',
-                    'idempotency-key': crypto.randomUUID(),
-                    'content-type': 'application/json',
-                  },
-                  body: JSON.stringify({ id, outcome: 'APPROVED', reason: '', branch }),
-                });
+      if (await mgrCard.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false)) {
+        const refused = await posted(manager, /^\/api\/approvals\/[^/]+\/decide$/, () =>
+          mgrCard.getByRole('button', { name: /^(อนุมัติ|Approve)$/ }).click(),
+        );
+        const errAlert = manager.locator('.admin-approvals-screen [role="alert"].error').first();
+        await errAlert.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+        const errText = ((await errAlert.textContent().catch(() => '')) ?? '').trim();
+        console.log(`[f12:manager] branch=ui decide ${inReqId} -> ${refused.text} error=${errText}`);
+        expect(refused.ok, `branch manager must be refused on above-limit transfer: ${refused.text}`).toBeFalsy();
+        expect(refused.text).toMatch(/^403\b/);
+        await expect(errAlert).toBeVisible();
+        expect(errText).not.toBe('');
+        if (refused.body) {
+          expect(refused.body).toMatch(/ABOVE_LIMIT|only executive may approve transfers above limit/i);
+        } else {
+          console.log('[f12:manager] ui branch: body unavailable');
+        }
+      } else {
+        const refused = await manager.evaluate(
+          async ({ id, branch }) => {
+            const res = await fetch(`/api/approvals/${id}/decide`, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'x-xchange-request': '1',
+                'idempotency-key': crypto.randomUUID(),
+                'content-type': 'application/json',
               },
-              { id: inReqId, branch: users.branch },
-            ),
-          );
-      console.log(`[f12:manager] decide ${inReqId} -> ${refused.text}`);
-      expect(refused.ok, `branch manager must be refused on above-limit transfer: ${refused.text}`).toBeFalsy();
-      expect(refused.text).toMatch(/ABOVE_LIMIT|only executive may approve transfers above limit/i);
+              body: JSON.stringify({ id, outcome: 'APPROVED', reason: '', branch }),
+            });
+            return { status: res.status, body: await res.text() };
+          },
+          { id: inReqId, branch: users.branch },
+        );
+        console.log(`[f12:manager] branch=raw decide ${inReqId} -> ${refused.status} ${refused.body}`);
+        expect(
+          refused.status,
+          `branch manager must be refused on above-limit transfer: ${refused.status} ${refused.body}`,
+        ).toBe(403);
+        expect(refused.body).toMatch(/ABOVE_LIMIT|only executive may approve transfers above limit/i);
+      }
       await shot(manager, 'cash', 'escalation-2-manager-refused');
 
       // Still PENDING in approval_requests and still DRAFT on finance's transfer row.
