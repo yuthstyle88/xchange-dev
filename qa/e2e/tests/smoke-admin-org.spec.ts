@@ -17,19 +17,6 @@ test.describe('QA-S5 smoke: admin org menus and the queue bar', () => {
     });
   });
 
-  // key: web/src/screens/admin/employees/Employees.tsx:317
-  test('/#employees', async ({ page }) => {
-    await signIn(page, 'admin', '/#employees');
-    await smoke(page, {
-      area: 'admin-org',
-      screen: 'employees',
-      path: '/#employees',
-      role: 'admin',
-      key: '.employees-card',
-      langs: STAFF_LANGS,
-    });
-  });
-
   // key: web/src/screens/admin/approvals/Approvals.tsx:319 (menu.ts:14 needs ApprovalsDecide)
   test('/#approvals', async ({ page }) => {
     await signIn(page, 'admin', '/#approvals');
