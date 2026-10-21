@@ -106,7 +106,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
       expect(errEl?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
     });
 
-    const retryBtn = host.querySelector<HTMLButtonElement>('[data-card="attendance"] button');
+    const retryBtn = host.querySelector<HTMLButtonElement>('[data-testid="attendance-card"] button');
     expect(retryBtn, 'retry button must be rendered when attendance read fails').not.toBeNull();
     expect(retryBtn?.textContent).toBe(staffI18n.th.refresh);
     expect(reads).toBe(1);
@@ -133,7 +133,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
       expect(host.querySelector('[data-testid="attendance-error"]')).not.toBeNull();
     });
 
-    const retryBtn = host.querySelector<HTMLButtonElement>('[data-card="attendance"] button');
+    const retryBtn = host.querySelector<HTMLButtonElement>('[data-testid="attendance-card"] button');
     expect(retryBtn).not.toBeNull();
     retryBtn!.click();
 
@@ -143,7 +143,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
 
     expect(reads).toBe(2);
     expect(host.querySelector('[data-testid="attendance-error"]')).toBeNull();
-    expect(host.querySelector('[data-card="attendance"] button')).toBeNull();
+    expect(host.querySelector('[data-testid="attendance-card"] button')).toBeNull();
     expect(host.querySelector('[data-attendance-id="att-3"]')?.textContent).toContain('Ploy');
     expect(host.querySelector('[data-attendance-id="att-3"]')?.textContent).toContain(attI18n.th.stillIn);
     expect(host.querySelector('[data-attendance-id="att-2"]')?.textContent).toContain('Somchai');
@@ -173,7 +173,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
       expect(host.querySelector('[data-testid="attendance-error"]')).not.toBeNull();
     });
 
-    const retryBtn = host.querySelector<HTMLButtonElement>('[data-card="attendance"] button');
+    const retryBtn = host.querySelector<HTMLButtonElement>('[data-testid="attendance-card"] button');
     expect(retryBtn).not.toBeNull();
     retryBtn!.click();
 
@@ -187,7 +187,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
     const errEl = host.querySelector('[data-testid="attendance-error"]');
     expect(errEl).not.toBeNull();
     expect(errEl?.textContent).toBe(errorText('serverError', 'เซิร์ฟเวอร์ขัดข้อง'));
-    const retryBtnAfter = host.querySelector<HTMLButtonElement>('[data-card="attendance"] button');
+    const retryBtnAfter = host.querySelector<HTMLButtonElement>('[data-testid="attendance-card"] button');
     expect(retryBtnAfter).not.toBeNull();
     expect(retryBtnAfter?.textContent).toBe(staffI18n.th.refresh);
   });
@@ -216,7 +216,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
       expect(host.querySelector('[data-testid="attendance-error"]')).not.toBeNull();
     });
 
-    const retryBtn = host.querySelector<HTMLButtonElement>('[data-card="attendance"] button');
+    const retryBtn = host.querySelector<HTMLButtonElement>('[data-testid="attendance-card"] button');
     expect(retryBtn).not.toBeNull();
 
     // Double click retry while the retry read is in flight
@@ -252,7 +252,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
       expect(host.querySelector('[data-testid="attendance-error"]')?.textContent).toBe('เซิร์ฟเวอร์ขัดข้อง');
     });
 
-    const retryBtn = host.querySelector<HTMLButtonElement>('[data-card="attendance"] button');
+    const retryBtn = host.querySelector<HTMLButtonElement>('[data-testid="attendance-card"] button');
     expect(retryBtn).not.toBeNull();
     expect(retryBtn?.textContent).toBe(staffI18n.th.refresh);
 
@@ -260,7 +260,7 @@ describe('AttendanceCard retry on failed read (#2355)', () => {
 
     await vi.waitFor(() => {
       expect(host.querySelector('[data-testid="attendance-error"]')?.textContent).toBe('Server error');
-      expect(host.querySelector<HTMLButtonElement>('[data-card="attendance"] button')?.textContent).toBe(
+      expect(host.querySelector<HTMLButtonElement>('[data-testid="attendance-card"] button')?.textContent).toBe(
         staffI18n.en.refresh,
       );
     });
