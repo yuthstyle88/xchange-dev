@@ -195,9 +195,12 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
 
 ### 3.6 Kiosk app (`app/lib/features/kiosk/`)
 
-- `KioskStatus.parse` learns `CANCELLED` (`domain/entities/kiosk_models.dart:17-30`). It gets the highest `_statusRank`, so `_nextStatus` accepts it (`presentation/controllers/kiosk_controller.dart:558-572`).
-- The waiting page shows *"คำขอของคุณถูกยกเลิก กรุณาติดต่อพนักงาน"*. The kiosk then returns to the start screen after 10 s, like COMPLETED's restart (`:641-648`). Poll and idle timers stop on it.
-- **A cancel button on the waiting page** (KC-2a): **ยกเลิกคิว**, with one confirm ("ยืนยันยกเลิกคิวนี้?"). It calls `customerCancel` and then shows the same cancelled message. It shows only while the request is `WAITING`; once staff accept it, the button goes.
+- **One shared kiosk, one customer at a time** (owner, 2026-10-21, #4243: *"ระบบ kiosk มัน จะเริ่มใหม่ เมื่อ ทำจบ"* · *"แต่ มันใช้ ร่วมกัน"* · *"ถ้าอีกคนทำค้างไว้"* · *"ต้องมาใส่ รหัส มันไม่รู้รหัส อะดิ"* · *"มันควร กดยกเลิกได้ เลย"* · *"กรณี ใข้ รวมกัน หลาย คน"* · *"มัน ควรทำที่ละคน ในเครื่อง นั้น"* · *"ให้ตั้งค่าได้เอง"*):
+  - `KioskStatus.parse` learns `CANCELLED` (`domain/entities/kiosk_models.dart`). It gets the highest `_statusRank`, so `_nextStatus` accepts it (`presentation/controllers/kiosk_controller.dart`).
+  - After `confirm` succeeds, `WaitingPage` shows the queue number with **`ยกเลิกคิว`** (`Key('cancel-queue')`, shown while `canCancel` is true — one press calls `KioskController.cancel()` directly with no confirmation dialog and no code input) and **`เสร็จ` / `Done`** (`Key('done')`, calling `KioskController.done()` → `reset()` so a customer who has read their queue number can clear the screen at once).
+  - The result screen is held for **N seconds** (`KioskController.resultSeconds = 30`, read from `kioskResultSecondsProvider`; the owner chose a per-branch admin setting, *"ควรมีหน้า คอนฟิก สำหรับ kiosk"*, designed in `docs/design/blueprint/kiosk-shared-phone.md`, and until that ticket lands N is this constant), then `reset()` returns to `select` for the next customer.
+  - If the customer taps `ยกเลิกคิว` (or a poll sees `CANCELLED`), `WaitingPage` shows *"คำขอของคุณถูกยกเลิก กรุณาติดต่อพนักงาน"*, stops polling, and restarts the N-second window from `kioskResultSecondsProvider` before resetting.
+  - The 2-minute idle timeout (`_onIdle`) resets **every** screen (no `atCounter` exemption), so an abandoned screen never stays on a previous customer's request.
 
 ### 3.7 Not in this design (follow-ups, each its own ticket later)
 

@@ -19,6 +19,8 @@ mod branch_scope_test;
 mod cash_transfer_policy_permission_test;
 #[path = "identity_change_password_test.rs"]
 mod identity_change_password_test;
+#[path = "or7m_migration3_test.rs"]
+mod or7m_migration3_test;
 #[path = "or7m_seams_test.rs"]
 mod or7m_seams_test;
 #[path = "or7m_seed_session_test.rs"]

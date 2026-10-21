@@ -54,6 +54,7 @@ class KioskRepositoryImpl implements KioskRepository {
   Future<ReceiptModel> customerReceipt(String id) =>
       _run('customerReceipt', {'id': id}, ReceiptModel.fromJson);
 
+  @override
   Future<RequestIdentity> customerCancel(String id, String cancelToken) => _run(
     'customerCancel',
     {'id': id, 'cancelToken': cancelToken},

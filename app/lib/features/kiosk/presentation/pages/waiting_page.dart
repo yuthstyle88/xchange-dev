@@ -20,7 +20,9 @@ class WaitingPage extends ConsumerWidget {
     final small = width <= 600;
     final s = ref.watch(kioskControllerProvider);
     final l = ref.watch(kioskTextsProvider);
-    final id = s.identity!;
+    final id = s.identity;
+    final quote = s.quote;
+    if (id == null || quote == null) return const SizedBox.shrink();
     final qrImage = Image.asset(
       'assets/img/telegram_qr.png',
       width: 120,
@@ -141,6 +143,14 @@ class WaitingPage extends ConsumerWidget {
                   : ref.read(kioskControllerProvider.notifier).cancel,
             ),
           ],
+          const SizedBox(height: 12),
+          SecondaryButton(
+            key: const Key('done'),
+            label: l.text('done'),
+            onPressed: s.busy
+                ? null
+                : ref.read(kioskControllerProvider.notifier).done,
+          ),
           const SizedBox(height: 24),
           Text(
             l.text('summaryTitle'),
@@ -148,7 +158,7 @@ class WaitingPage extends ConsumerWidget {
             style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
-          QuoteSummary(l10n: l, quote: s.quote!),
+          QuoteSummary(l10n: l, quote: quote),
           const SizedBox(height: 8),
           Text(
             l.text('summaryNote'),

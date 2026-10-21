@@ -113,6 +113,10 @@ class CounterServer implements KioskRepository {
     calls.add('customerReceipt');
     return ReceiptModel.fromJson({..._identity, 'image': receiptImage});
   }
+
+  @override
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) =>
+      throw UnimplementedError();
 }
 
 KioskL10n _l10n() => KioskL10n.fromJson({
@@ -308,9 +312,22 @@ void main() {
     });
   });
 
+  // #4243 ("ระบบ kiosk มัน จะเริ่มใหม่ เมื่อ ทำจบ" · "ให้ตั้งค่าได้เอง"):
+  // hold the result window past the 60 s checks so we stay on waiting/receipt.
   test('no refresh on the waiting and receipt screens', () {
     fakeAsync((async) {
-      startAt0(async);
+      container = ProviderContainer(
+        overrides: [
+          kioskRepositoryProvider.overrideWithValue(server),
+          kioskL10nProvider.overrideWithValue(_l10n()),
+          deviceLanguagesProvider.overrideWithValue(const ['en']),
+          kioskResultSecondsProvider.overrideWithValue(600),
+        ],
+      );
+      container.listen(kioskControllerProvider, (_, _) {});
+      c = container.read(kioskControllerProvider.notifier);
+      c.start();
+      async.flushMicrotasks();
       async.elapse(const Duration(seconds: 30));
       async.flushMicrotasks();
       expect(server.ratesReads, 2, reason: 'refreshed once on select');
@@ -331,6 +348,7 @@ void main() {
         ..receiptImage = 'data:image/png;base64,AAAA';
       async.elapse(const Duration(seconds: 3));
       expect(st().screen, KioskScreen.receipt);
+      c.activity();
       async.elapse(const Duration(seconds: 60));
       expect(server.ratesReads, 2, reason: 'none on the receipt screen');
       container.dispose();

@@ -36,6 +36,10 @@ class _RatesRepo implements KioskRepository {
 
   @override
   Future<ReceiptModel> customerReceipt(String id) => throw UnimplementedError();
+
+  @override
+  Future<RequestIdentity> customerCancel(String id, String cancelToken) =>
+      throw UnimplementedError();
 }
 
 KioskL10n _l10n() => KioskL10n.fromJson({

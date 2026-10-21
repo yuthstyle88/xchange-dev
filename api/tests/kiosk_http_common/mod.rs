@@ -479,19 +479,6 @@ impl<'f> KioskReplay<'f> {
         .execute(&desk.db.pool)
         .await
         .expect("open MAIN's queue");
-        // the recorded shop's owner is called "Owner" (the generator wrote the row);
-        // `create-owner` names a new owner after the username
-        let owner = fixture
-            .people
-            .iter()
-            .find(|p| p.is_owner())
-            .expect("a recorded file has an owner");
-        sqlx::query("UPDATE owners SET name = $1 WHERE username = $2")
-            .bind(&owner.name)
-            .bind(&owner.username)
-            .execute(&desk.db.pool)
-            .await
-            .expect("name the owner as recorded");
         let hands = Hands::default();
         let app: App = kiosk_app!(desk, hands);
 

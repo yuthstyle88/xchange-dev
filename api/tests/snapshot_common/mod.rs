@@ -281,6 +281,8 @@ pub async fn publish_rate_per_one(
 /// - RF-5 (#877, `docs/design/blueprint/rates.md` §4.10): the kiosk `rates` answer
 ///   appends `freshness`.
 /// - #3473: the kiosk `get` answer appends `quoteId`.
+/// - KC-S (#4176, `docs/design/blueprint/kiosk-cancel.md` §3.4): the kiosk `confirm`
+///   answer appends `cancelToken` on the confirm that moves the request to WAITING.
 pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
     (
         "/api/kiosk",
@@ -289,6 +291,7 @@ pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
         &["publishedAt", "sourceDate", "stale"],
     ),
     ("/api/kiosk", "get", "quoteId", &[]),
+    ("/api/kiosk", "confirm", "cancelToken", &[]),
 ];
 
 /// `actual` without the keys [`V3_ADDED_KEYS`] allows on this route and action,
