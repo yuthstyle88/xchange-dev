@@ -16,10 +16,15 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use xc_auth::application::session::{SessionError, SessionService, SignInTail};
 use xc_auth::domain::identity::identity_client::IdentityLoginResponse;
+use xc_auth::domain::user::UserRepository;
+use xc_auth::infrastructure::user::PgUserRepository;
+use xc_customer::application::customer_link::customer_of_user;
 use xc_customer::domain::consent::Channel;
+use xc_kernel::pii::{IdentityType, normalize};
 
-use crate::application::customer_binder::{BindError, ProvenContact};
-use crate::application::otp_challenge_seal::OtpChallengeSeal;
+use crate::application::customer_binder::{BindError, BindInput, CustomerBinder, ProvenContact};
+use crate::application::customer_signup::signup_organization;
+use crate::application::otp_challenge_seal::{OtpChallengeSeal, OtpChannel};
 
 /// `register: {displayName, lang, marketing}` on the verify body, already checked for shape.
 #[derive(Debug, Clone)]
@@ -72,17 +77,80 @@ impl<'a> CustomerOtpSignIn<'a> {
         client_ip: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<OtpSignedIn, OtpSignInError> {
-        let _ = (
-            challenge_id,
-            code,
-            seal,
-            register,
-            client_ip,
+        let Some(verified_otp) = self
+            .session
+            .otp_verified_login(challenge_id, code, register.is_some(), client_ip)
+            .await?
+        else {
+            return Err(OtpSignInError::NotRegistered);
+        };
+
+        let users = PgUserRepository::new();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| OtpSignInError::Session(SessionError::Database(e.to_string())))?;
+
+        if users
+            .find_by_auth_subject(&mut tx, &verified_otp.verified.subject)
+            .await
+            .map_err(|e| OtpSignInError::Session(SessionError::Database(e.to_string())))?
+            .is_some()
+        {
+            drop(tx);
+            let tail = self
+                .session
+                .sign_in_with_login(verified_otp.login, now)
+                .await?;
+            let customer_id = customer_of_user(self.pool, &tail.user.id)
+                .await
+                .map_err(|e| OtpSignInError::Session(SessionError::Database(e.to_string())))?;
+            return Ok(OtpSignedIn {
+                tail,
+                customer_id,
+                registered: false,
+            });
+        }
+
+        let Some(register) = register else {
+            return Err(OtpSignInError::NotRegistered);
+        };
+
+        let org = signup_organization(self.pool)
+            .await
+            .map_err(|e| OtpSignInError::Bind(BindError::Internal(e.to_string())))?;
+        let proven = proven_contacts(&verified_otp.login, seal, challenge_id);
+        let bound = CustomerBinder::bind_in(
+            &mut tx,
+            &org,
+            &verified_otp.verified.subject,
+            &proven,
+            BindInput {
+                display_name: register.display_name,
+                lang: register.lang,
+                marketing: register.marketing,
+                evidence_ref: "web:otp".to_owned(),
+                created_by: "customer-register".to_owned(),
+            },
             now,
-            self.session,
-            self.pool,
-        );
-        todo!("KWQ-C2-5: the customer OTP door")
+        )
+        .await
+        .map_err(OtpSignInError::Bind)?;
+
+        tx.commit()
+            .await
+            .map_err(|e| OtpSignInError::Bind(BindError::Internal(e.to_string())))?;
+
+        let tail = self
+            .session
+            .sign_in_with_login(verified_otp.login, now)
+            .await?;
+        Ok(OtpSignedIn {
+            tail,
+            customer_id: Some(bound.customer_id),
+            registered: true,
+        })
     }
 }
 
@@ -94,6 +162,18 @@ pub fn proven_contacts(
     seal: Option<&OtpChallengeSeal>,
     challenge_id: &str,
 ) -> Vec<ProvenContact> {
-    let _ = (login, seal, challenge_id);
-    todo!("KWQ-C2-5: the proven contacts")
+    let mut proven = Vec::new();
+    if let (Some(phone), Some(true)) = (login.phone.as_deref(), login.phone_verified)
+        && let Ok(e164) = normalize(IdentityType::Phone, phone, None)
+    {
+        proven.push(ProvenContact::Phone(e164));
+    }
+    if let Some(seal) = seal
+        && seal.challenge_id == challenge_id
+        && seal.channel == OtpChannel::Email
+        && let Ok(email) = normalize(IdentityType::Email, &seal.destination, None)
+    {
+        proven.push(ProvenContact::Email(email));
+    }
+    proven
 }
