@@ -15,10 +15,8 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use std::collections::HashMap;
-use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::standing::STAFF_PRIORITY;
 use xc_auth::domain::access::{Role, StandingKind};
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::ids::BranchId;
@@ -119,10 +117,7 @@ pub struct ServiceSnapshotSources {
 }
 
 impl ServiceSnapshotSources {
-    pub fn new(
-        transactions: TransactionService,
-        _accounts: AccountService<PgAccountRepository>,
-    ) -> Self {
+    pub fn new(transactions: TransactionService) -> Self {
         let branch_tx = transactions.branch_tx().clone();
         let pool = branch_tx.pool().clone();
         let store = BranchSettingStore::new(pool.clone());

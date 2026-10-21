@@ -25,7 +25,6 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
-use xc_auth::domain::account::entities::session::SignedIn;
 use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::application::exchange::service::TransactionService;
@@ -49,9 +48,7 @@ use crate::application::compat::actions::save::SaveAction;
 use crate::application::compat::envelope::{
     MAX_BODY_UTF16_UNITS, RpcRefusal, RpcRequest, RpcResponse, RpcRoute,
 };
-use crate::application::compat::rpc::{
-    CompatRpc, RpcCaller, RpcFailure, RpcServices, v3_stored_role,
-};
+use crate::application::compat::rpc::{CompatRpc, RpcCaller, RpcFailure, RpcServices};
 use crate::application::compat::snapshot::SnapshotBuilder;
 use crate::application::compat::v2_json::V2Json;
 use crate::application::settings::PaymentSettingsService;
@@ -69,11 +66,10 @@ use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::extractors::actor::{
-    Accounts, OWNER_ID, accounts, identity_session, identity_session_actor, password_session,
-    same_origin, server_error, staff_password_session,
+    identity_session, identity_session_actor, same_origin, server_error,
 };
 use crate::presentation::pages;
-use xc_auth::domain::access::{Standing, StandingKind};
+use xc_auth::domain::access::Standing;
 
 /// The most bytes a body of 120,000 UTF-16 units can be: three per unit, and a
 /// byte-order mark that is not counted. Anything longer is over v2's limit
@@ -144,7 +140,6 @@ async fn answer(
     body: Result<web::Bytes, actix_web::Error>,
     route: RpcRoute,
 ) -> Result<V2Json, RpcFailure> {
-    let accounts = accounts(req).ok_or_else(|| not_wired("the account service"))?;
     let state = req
         .app_data::<web::Data<AppState>>()
         .ok_or_else(|| not_wired("the application state"))?;
@@ -154,7 +149,7 @@ async fn answer(
 
     let (request, caller) = match route {
         RpcRoute::Rpc => {
-            let caller = caller_of_rpc(accounts, req, now)
+            let caller = caller_of_rpc(req, now)
                 .await?
                 .ok_or_else(|| RpcRefusal::not_signed_in(route))?;
             let staff = caller.standing.branch.is_some();
@@ -175,7 +170,7 @@ async fn answer(
             }
             let text = body_text(body, route)?;
             let request = RpcRequest::parse(route, &text, true)?;
-            (request, caller_of_staff_rpc(accounts, req, now).await?)
+            (request, caller_of_staff_rpc(req, now).await?)
         }
     };
 
@@ -225,7 +220,7 @@ async fn answer(
     let actions = req
         .app_data::<web::Data<RpcActions>>()
         .ok_or_else(|| not_wired("the rpc actions"))?;
-    compat_rpc(&state.db, source, accounts.get_ref().clone())
+    compat_rpc(&state.db, source)
         .with_actions(actions.get_ref().clone())
         .dispatch(
             route,
@@ -262,90 +257,40 @@ pub(crate) fn rate_source(req: &HttpRequest) -> Arc<dyn RateSource> {
         )
 }
 
-pub(crate) fn caller_of(who: &SignedIn) -> Option<RpcCaller> {
-    match who {
-        SignedIn::Owner(owner) => Some(RpcCaller {
-            standing: Standing {
-                user_id: OWNER_ID.to_string(),
-                kind: StandingKind::Owner,
-                branch: None,
-            },
-            username: owner.username.clone(),
-            name: owner.name.clone(),
-        }),
-        SignedIn::Employee(employee) => {
-            if employee.must_change {
-                return None;
-            }
-            let role = v3_stored_role(&employee.role)?;
-            Some(RpcCaller {
-                standing: Standing {
-                    user_id: employee.id.clone(),
-                    kind: StandingKind::Staff(role),
-                    branch: Some(xc_kernel::ids::BranchId::new(&employee.branch_id)),
-                },
-                username: employee.username.clone(),
-                name: employee.name.clone(),
-            })
-        }
-    }
-}
-
-/// Who `/api/rpc` is answering: the Blueprint session first, else the owner
-/// session, else the staff session. An employee whose first password is
-/// unchanged is nobody here.
+/// Who `/api/rpc` is answering: the Blueprint session, or nobody. OR-7.m w2 (#1027): the v2
+/// password cookies no longer sign anyone in.
 pub(crate) async fn caller_of_rpc(
-    accounts: &Accounts,
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> AppResult<Option<RpcCaller>> {
-    if let Some((user, access_actor)) = identity_session_actor(req, now).await {
-        return Ok(Standing::of(&access_actor, now).map(|standing| RpcCaller {
-            standing,
-            username: user.name.clone(),
-            name: user.name,
-        }));
-    }
-    let who = password_session(accounts, req, now).await?;
-    Ok(who.as_ref().and_then(caller_of))
+    let Some((user, access_actor)) = identity_session_actor(req, now).await else {
+        return Ok(None);
+    };
+    Ok(Standing::of(&access_actor, now).map(|standing| RpcCaller {
+        standing,
+        username: user.name.clone(),
+        name: user.name,
+    }))
 }
 
-/// Who `/api/staff/rpc` is answering: the staff session only — an owner
-/// session counts for nothing — and only once the first password is changed.
+/// Who `/api/staff/rpc` is answering: a Blueprint session whose standing is not the owner's.
+/// Anyone else is not signed in.
 async fn caller_of_staff_rpc(
-    accounts: &Accounts,
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> Result<RpcCaller, RpcFailure> {
     let route = RpcRoute::StaffRpc;
-    if let Some((user, access_actor)) = identity_session_actor(req, now).await {
-        return match Standing::of(&access_actor, now) {
-            Some(standing) if !standing.is_owner() => Ok(RpcCaller {
-                standing,
-                username: user.name.clone(),
-                name: user.name,
-            }),
-            _ => Err(RpcRefusal::not_signed_in(route).into()),
-        };
-    }
-    let employee = match staff_password_session(accounts, req, true, now).await {
-        Ok(employee) => employee,
-        Err(AppError::Unauthenticated) => return Err(RpcRefusal::not_signed_in(route).into()),
-        Err(other) => return Err(other.into()),
+    let Some((user, access_actor)) = identity_session_actor(req, now).await else {
+        return Err(RpcRefusal::not_signed_in(route).into());
     };
-    if employee.must_change {
-        return Err(RpcRefusal::first_password_unchanged(route).into());
+    match Standing::of(&access_actor, now) {
+        Some(standing) if !standing.is_owner() => Ok(RpcCaller {
+            standing,
+            username: user.name.clone(),
+            name: user.name,
+        }),
+        _ => Err(RpcRefusal::not_signed_in(route).into()),
     }
-    let role = v3_stored_role(&employee.role).ok_or_else(|| RpcRefusal::not_signed_in(route))?;
-    Ok(RpcCaller {
-        standing: Standing {
-            user_id: employee.id,
-            kind: StandingKind::Staff(role),
-            branch: Some(xc_kernel::ids::BranchId::new(employee.branch_id)),
-        },
-        username: employee.username,
-        name: employee.name,
-    })
 }
 
 /// The shift service of the shift-open/close routes, with the queue's `CounterService` as its
@@ -424,11 +369,7 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
 }
 
 /// The dispatcher over the services of every context it calls.
-pub(crate) fn compat_rpc(
-    pool: &PgPool,
-    source: Arc<dyn RateSource>,
-    accounts: Accounts,
-) -> CompatRpc {
+pub(crate) fn compat_rpc(pool: &PgPool, source: Arc<dyn RateSource>) -> CompatRpc {
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let branches = BranchService::new(branch_tx.clone());
     let rates = RateService::new(branch_tx.clone(), source);
@@ -436,7 +377,7 @@ pub(crate) fn compat_rpc(
     let shifts = shift_service(pool, &branch_tx);
     let custody = pg_custody_service(pool, &shifts, &branch_tx);
     let transactions = transaction_service(pool, &branch_tx);
-    let sources = Arc::new(ServiceSnapshotSources::new(transactions, accounts.clone()));
+    let sources = Arc::new(ServiceSnapshotSources::new(transactions));
     let snapshots = SnapshotBuilder::new(
         branches.clone(),
         rates,
@@ -450,7 +391,6 @@ pub(crate) fn compat_rpc(
             branches,
             customers,
             abandon: AbandonRequest::new(branch_tx),
-            accounts,
         },
         snapshots,
     )

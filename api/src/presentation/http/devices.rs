@@ -22,7 +22,7 @@ use crate::infrastructure::devices::printer_models::PrinterModels;
 use crate::infrastructure::devices::printer_settings::{DEFAULT_PORT, PrinterKind};
 use crate::presentation::dto::device::{job_json, overview_json};
 use crate::presentation::extractors::actor::{
-    BAD_REQUEST, accounts, answer, authorize, failure, payload_of, read, refuse, server_error,
+    BAD_REQUEST, answer, authorize, failure, payload_of, read, refuse, server_error,
 };
 use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::http::rpc::{RpcClock, caller_of_rpc, compat_rpc, rate_source};
@@ -60,9 +60,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
 
 async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
     let Some(devices) = req.app_data::<web::Data<DeviceService>>() else {
-        return server_error();
-    };
-    let Some(accounts) = accounts(&req) else {
         return server_error();
     };
 
@@ -110,7 +107,7 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
             let Some(state) = req.app_data::<web::Data<AppState>>() else {
                 return server_error();
             };
-            let caller = match caller_of_rpc(accounts.get_ref(), &req, now).await {
+            let caller = match caller_of_rpc(&req, now).await {
                 Ok(Some(caller)) => caller,
                 Ok(None) => return server_error(),
                 Err(e) => return failure(e),
@@ -123,7 +120,7 @@ async fn devices_handler(req: HttpRequest, bytes: web::Bytes) -> HttpResponse {
                 Ok(drawer) => drawer,
                 Err(e) => return failure(e),
             };
-            let rpc = compat_rpc(&state.db, rate_source(&req), accounts.get_ref().clone());
+            let rpc = compat_rpc(&state.db, rate_source(&req));
             let model = match rpc
                 .snapshots()
                 .admin_snapshot(&branch, &caller.username, now)

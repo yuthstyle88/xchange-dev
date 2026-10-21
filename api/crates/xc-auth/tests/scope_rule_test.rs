@@ -11,7 +11,7 @@
 //! - `xc_auth::domain::access::role::Role`, an enum with `Clone + Copy + Debug + PartialEq + Eq`, variants
 //!   `Executive`, `Admin`, `RateManager`, `BranchManager`, `Teller`, `Finance`, `Marketing`, `Customer`,
 //!   `VerificationReviewer`; `Role::as_str(self) -> &'static str` (the §3.1 "v3 wire" spelling) and
-//!   `Role::parse(&str) -> Option<Role>`, as the old `policy::value_objects::role::Role` has them.
+//!   `Role::parse(&str) -> Option<Role>` (the old v2 `Role` had them too; it is gone since OR-7.m w2).
 //! - `xc_auth::domain::access::scoped_role::ScopedRole::new(role: Role, branch: Option<BranchId>,
 //!   valid_from: DateTime<Utc>, valid_to: Option<DateTime<Utc>>) -> ScopedRole`; `branch: None` is the whole
 //!   organisation (D-2).

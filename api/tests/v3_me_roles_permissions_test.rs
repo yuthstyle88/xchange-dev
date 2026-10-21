@@ -38,7 +38,7 @@ mod identity_signin_common;
 use std::collections::BTreeSet;
 
 use actix_web::http::Method;
-use auth_http_common::{Call, Desk, TestApp, owner_signs_in, send};
+use auth_http_common::{Call, Desk, TestApp, send};
 use chrono::{TimeZone, Utc};
 use identity_signin_common::*;
 use serde_json::{Value, json};
@@ -490,44 +490,6 @@ async fn granting_or_revoking_a_role_moves_the_me_version() {
         revoked["changed"],
         json!(true),
         "a revocation moves the version: {revoked}"
-    );
-    drop(reader);
-    desk.drop_schema().await;
-}
-
-/// The old password cookies still reach `me` until OR-7.e: the owner's actor (`test_callers::owner`, EXECUTIVE + ADMIN,
-/// id `"owner"`) has no `users` row, so `name` is `null`, and the read is a 200, not a failed id lookup.
-#[actix_web::test]
-async fn an_old_owner_cookie_still_reads_me_with_no_name() {
-    let (desk, _identity, _app, reader) = setup().await;
-    let owner = owner_signs_in(&reader).await;
-
-    let answer = send(
-        &reader,
-        Call {
-            method: Some(Method::GET),
-            path: "/api/v3/views/me".to_owned(),
-            proto: Some("https".to_owned()),
-            ..Call::default()
-        }
-        .owner(&owner),
-    )
-    .await;
-    assert_eq!(
-        answer.status, 200,
-        "me with the owner cookie: {}",
-        answer.text
-    );
-    let data = answer.json()["data"].clone();
-    assert_eq!(keys(&data), me_keys(), "{data}");
-    assert_eq!(data["id"], json!("owner"));
-    assert_eq!(data["name"], Value::Null);
-    assert_eq!(
-        data["roles"],
-        json!([
-            { "role": "ADMIN", "branchId": null },
-            { "role": "EXECUTIVE", "branchId": null },
-        ])
     );
     drop(reader);
     desk.drop_schema().await;

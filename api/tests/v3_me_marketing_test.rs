@@ -144,11 +144,17 @@ async fn teller_and_owner_still_read_me_200_and_customer_or_none_stays_refused()
         none.text
     );
 
-    // 2. Owner -> 200
-    let owner = owner_signs_in(&reader).await;
-    let owner_ans = send(&reader, get_me().owner(&owner)).await;
+    // 2. Owner -> 200. OR-7.m w2 (#1027): the owner signs in through Identity (EXECUTIVE + ADMIN),
+    // no longer with the v2 owner cookie, so `id` is the owner's `users.id`, not v2's "owner".
+    let owner = desk.owner_session("Owner Somchai").await;
+    let owner_id: String = sqlx::query_scalar("SELECT id::text FROM users WHERE name = $1")
+        .bind("Owner Somchai")
+        .fetch_one(&desk.pool)
+        .await
+        .expect("the owner's users row");
+    let owner_ans = send(&reader, get_me().session(&owner)).await;
     assert_eq!(owner_ans.status, 200, "owner reads me: {}", owner_ans.text);
-    assert_eq!(owner_ans.json()["data"]["id"], json!("owner"));
+    assert_eq!(owner_ans.json()["data"]["id"], json!(owner_id));
 
     // 3. TELLER -> 200
     let teller_id = bound_user(

@@ -2,7 +2,8 @@
 //!
 //! `ServiceSnapshotSources`: the real `SnapshotSources`, against rows written
 //! by the real services — exchanges saved through `SaveTransactionWorkflow`,
-//! accounts made through `AccountService`.
+//! people as `users` + `user_roles` rows (OR-7.m w2, #1027: they were made through the deleted
+//! `AccountService`, whose mirror wrote the same rows).
 //!
 //! Needs `TEST_DATABASE_URL` (see `save_common/mod.rs`); nothing here skips.
 
@@ -20,9 +21,6 @@ use save_common::{
 };
 use serde_json::json;
 use snapshot_common::{NoPorts, RecordedSource};
-use xc_auth::application::account::service::{AccountService, EmployeesAnswer};
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::money::{Rate, Side, UnitSize};
@@ -37,15 +35,6 @@ use xchange::infrastructure::compat::snapshot_sources::ServiceSnapshotSources;
 
 const OTHER: &str = "XC-B01";
 
-type Accounts = AccountService<PgAccountRepository>;
-
-fn accounts(shop: &Shop) -> Accounts {
-    AccountService::new(
-        Arc::new(PgAccountRepository::new(shop.pool.clone())),
-        PasswordHasher::with_cost(8, 1, 1),
-    )
-}
-
 fn branch_tx(shop: &Shop) -> BranchTx {
     BranchTx::new(pos_infra::transactions::Transactor::new(shop.pool.clone()))
 }
@@ -53,45 +42,29 @@ fn branch_tx(shop: &Shop) -> BranchTx {
 /// The sources as the routes build them: over the two services, on the shop's
 /// own database.
 fn sources(shop: &Shop) -> ServiceSnapshotSources {
-    ServiceSnapshotSources::new(
-        TransactionService::new(
-            Arc::new(PgTransactionRepository::new(shop.pool.clone())),
-            branch_tx(shop),
-        ),
-        accounts(shop),
-    )
+    ServiceSnapshotSources::new(TransactionService::new(
+        Arc::new(PgTransactionRepository::new(shop.pool.clone())),
+        branch_tx(shop),
+    ))
 }
 
-async fn employ(
-    accounts: &Accounts,
-    username: &str,
-    name: &str,
-    role: &str,
-    branch_id: &str,
-) -> String {
-    let made = accounts
-        .employees(
-            "create",
-            &json!({ "username": username, "name": name, "role": role,
-                     "branchId": branch_id, "password": "first-password-1" }),
-            OWNER,
-            at(0),
-        )
-        .await
-        .expect("create an employee");
-    assert_eq!(made, EmployeesAnswer::Saved);
-    let EmployeesAnswer::List(everyone) = accounts
-        .employees("list", &json!({}), OWNER, at(0))
-        .await
-        .expect("list the employees")
-    else {
-        panic!("a list");
-    };
-    everyone
-        .into_iter()
-        .find(|e| e.username == username)
-        .expect("the employee just made")
-        .id
+/// One person of `branch_id` named `name`, holding the Blueprint role `role_code` there, as a
+/// `users` + `user_roles` row: what the account mirror wrote for a v2 employee before OR-7.m w2.
+async fn employ(shop: &Shop, name: &str, role_code: &str, branch_id: &str) -> String {
+    let mut conn = shop.pool.acquire().await.expect("a connection");
+    xc_testdb::people::seed_person(
+        &mut conn,
+        xchange::presentation::pages::SEEDED_XC_ORG_ID,
+        name,
+        &[xc_testdb::people::RoleRow {
+            role_code,
+            branch_id: Some(branch_id),
+            valid_from: at(0),
+            valid_to: None,
+        }],
+    )
+    .await
+    .unwrap_or_else(|e| panic!("seed {name}: {e}"))
 }
 
 /// The LIVE exchanges of the branch asked for, in the order they were saved,
@@ -247,15 +220,17 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
 #[tokio::test]
 async fn the_people_are_everybody_of_the_branch_closed_accounts_included() {
     let shop = Shop::start().await;
-    let accounts = accounts(&shop);
-    employ(&accounts, "fr1", "FR1 Front", "FRONT", MAIN).await;
-    employ(&accounts, "rv1", "RV1 Review", "DOCUMENT_REVIEW", MAIN).await;
-    let gone_employee = employ(&accounts, "be1", "BE1 Backend", "BACKEND", MAIN).await;
+    // v2's FRONT, DOCUMENT_REVIEW and BACKEND, as the mirror mapped them (TELLER,
+    // VERIFICATION_REVIEWER, BRANCH_MANAGER)
+    employ(&shop, "FR1 Front", "TELLER", MAIN).await;
+    employ(&shop, "RV1 Review", "VERIFICATION_REVIEWER", MAIN).await;
+    let gone_employee = employ(&shop, "BE1 Backend", "BRANCH_MANAGER", MAIN).await;
     // OR-2: an employee's branch must name a `branches` row (design #550 follow-up, PR 636).
     shop.seed_branch(OTHER, "Second").await;
-    employ(&accounts, "fr2", "FR2 Front", "FRONT", OTHER).await;
-    accounts
-        .employees("disable", &json!({ "id": gone_employee }), OWNER, at(5))
+    employ(&shop, "FR2 Front", "TELLER", OTHER).await;
+    sqlx::query("UPDATE users SET status = 'DISABLED', version = version + 1 WHERE id::text = $1")
+        .bind(&gone_employee)
+        .execute(&shop.pool)
         .await
         .expect("close an account");
 

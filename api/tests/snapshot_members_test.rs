@@ -34,10 +34,7 @@ use chrono::{DateTime, Utc};
 use save_common::{MAIN, Shop, TransactionService, at, branch, person};
 use serde_json::{Value, json};
 use snapshot_common::{NoPorts, RecordedSource};
-use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_customer::application::customer::contact_verify::{ContactSummary, ContactVerify};
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
@@ -60,16 +57,10 @@ fn branch_tx(shop: &Shop) -> BranchTx {
 /// The sources as the routes build them (`presentation/http/rpc.rs`): over the
 /// two services, on the shop's own database. Nothing else is handed in.
 fn sources(shop: &Shop) -> ServiceSnapshotSources {
-    ServiceSnapshotSources::new(
-        TransactionService::new(
-            Arc::new(PgTransactionRepository::new(shop.pool.clone())),
-            branch_tx(shop),
-        ),
-        AccountService::new(
-            Arc::new(PgAccountRepository::new(shop.pool.clone())),
-            PasswordHasher::with_cost(8, 1, 1),
-        ),
-    )
+    ServiceSnapshotSources::new(TransactionService::new(
+        Arc::new(PgTransactionRepository::new(shop.pool.clone())),
+        branch_tx(shop),
+    ))
 }
 
 /// The snapshot builder over the real sources, as `snapshot_sources_test.rs`

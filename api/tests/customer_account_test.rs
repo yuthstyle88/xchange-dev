@@ -374,11 +374,13 @@ async fn a_verified_identity_user_registers_once_and_becomes_customer_with_terms
         reply.text
     );
     let _ = reply.session();
+    // OR-7.m w2 F-b (#1027 issuecomment-6305469252): the claim's sign-in no longer clears the v2
+    // cookies; it sends no `__Host-xc_owner` / `__Host-xc_staff` header at all.
     for old in ["__Host-xc_owner", "__Host-xc_staff"] {
         assert_eq!(
             reply.cookies.get(old).map(|(_, a)| *a),
-            Some(0),
-            "{old} is cleared"
+            None,
+            "{old} is not sent"
         );
     }
 

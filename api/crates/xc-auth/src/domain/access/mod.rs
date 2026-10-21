@@ -13,7 +13,6 @@ pub mod scoped_role;
 pub mod session_branch;
 pub mod standing;
 pub mod target_user;
-pub mod v3_roles;
 
 pub use actor::Actor;
 pub use authorizer::{Authorizer, Grant, Refusal, Target};
