@@ -13,14 +13,24 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use chrono::{DateTime, TimeZone, Utc};
+use pos_error::{AppError, AppResult};
 use xc_kernel::ids::BranchId;
 use xc_kernel::queue_tickets::QueueTickets;
 
 use crate::domain::kiosk::commands::new_quote::NewQuote;
+use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
+use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
+use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
+use crate::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIOSK, KioskAudit};
+use crate::domain::kiosk::value_objects::cancel_reason::{CancelReason, Cancellation};
+use crate::domain::kiosk::value_objects::customer_quote::CustomerQuote;
+use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
+use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
+use crate::domain::kiosk::value_objects::kiosk_status::KioskStatus;
 
-use super::service::KioskService;
+use super::customer::token_not_found;
+use super::service::{KioskService, cut_to_millis, refuse, time};
 
 /// What `webRequestCreate` answers besides the token (§4.3a W3).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,8 +64,32 @@ impl WebRequestService {
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<WebRequestCreated> {
-        let _ = (tx, branch, customer_id, cmd, token, now, &self.kiosk);
-        todo!("KWQ-C4: D12 then quote_for_in")
+        if let Some(open_id) = self
+            .kiosk
+            .repo
+            .open_web_request_in(tx, branch, customer_id)
+            .await?
+        {
+            return Err(AppError::Conflict(format!("alreadyQueued:{open_id}")));
+        }
+        let identified = self
+            .kiosk
+            .quote_for_in(
+                tx,
+                branch,
+                cmd,
+                Some(CustomerQuote {
+                    customer_id: customer_id.to_owned(),
+                    token: token.to_owned(),
+                }),
+                now,
+            )
+            .await?;
+        let expires_at = expires_at_of(&identified.request)?;
+        Ok(WebRequestCreated {
+            request_id: identified.request.id,
+            expires_at,
+        })
     }
 
     /// `webRequestQrReissue` (D3; B12): replaces the stored token hash of the member's own
@@ -71,8 +105,16 @@ impl WebRequestService {
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<DateTime<Utc>> {
-        let _ = (tx, branch, customer_id, id, token, now);
-        todo!("KWQ-C4: replace the member's token")
+        let _ = now;
+        let req = self.own_request_in(tx, branch, customer_id, id).await?;
+        if !matches!(req.status, KioskStatus::Quoted | KioskStatus::Waiting) {
+            return Err(token_not_found());
+        }
+        self.kiosk
+            .repo
+            .set_cancel_token_in(tx, branch, id, token)
+            .await?;
+        expires_at_of(&req)
     }
 
     /// `webRequestCancel` (D8; B11a): the member cancels their own request, one press, no approval
@@ -89,7 +131,80 @@ impl WebRequestService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        let _ = (tx, branch, customer_id, id, now, &self.queue);
-        todo!("KWQ-C4: the member's one-press cancel")
+        let req = self.own_request_in(tx, branch, customer_id, id).await?;
+        let at = cut_to_millis(now);
+        let now_kiosk = time(now);
+        match req.status {
+            KioskStatus::Waiting => {
+                super::desk::cancel_in(
+                    tx,
+                    &self.kiosk.repo,
+                    &*self.kiosk.ports,
+                    &*self.queue,
+                    branch,
+                    Some(req),
+                    &KioskActor::Customer,
+                    CancelReason::CustomerCancelled,
+                    at,
+                    now_kiosk,
+                )
+                .await?;
+                Ok(())
+            }
+            KioskStatus::Quoted => {
+                let reason = CancelReason::CustomerCancelled;
+                let cancel = Cancellation {
+                    at,
+                    by: CUSTOMER_KIOSK.to_owned(),
+                    reason: reason.clone(),
+                };
+                if !self
+                    .kiosk
+                    .repo
+                    .mark_cancelled_in(tx, branch, &req.id, KioskStatus::Quoted, &cancel)
+                    .await?
+                {
+                    return Err(refuse(KioskError::StaleVersion));
+                }
+                let line = AuditLine {
+                    actor: CUSTOMER_KIOSK.to_owned(),
+                    subject: req.id,
+                    what: KioskAudit::Cancelled {
+                        from: KioskStatus::Quoted,
+                        reason,
+                    },
+                };
+                self.kiosk.ports.record_in(tx, branch, &line, at).await?;
+                Ok(())
+            }
+            _ => Err(refuse(KioskError::CustomerCancelRefused)),
+        }
     }
+
+    async fn own_request_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        customer_id: &str,
+        id: &str,
+    ) -> AppResult<KioskRequest> {
+        let req = self
+            .kiosk
+            .repo
+            .find_in(tx, branch, id)
+            .await?
+            .ok_or_else(token_not_found)?;
+        let owner = self.kiosk.repo.customer_in(tx, branch, id).await?;
+        if owner.as_deref() != Some(customer_id) {
+            return Err(token_not_found());
+        }
+        Ok(req)
+    }
+}
+
+fn expires_at_of(req: &KioskRequest) -> AppResult<DateTime<Utc>> {
+    let expires_ms = req.created.epoch_millis() + KioskMachine::WEB_REQUEST_LIFE_MS;
+    Utc.timestamp_millis_opt(expires_ms)
+        .single()
+        .ok_or_else(|| AppError::Internal(format!("invalid expires_at millis: {expires_ms}")))
 }
