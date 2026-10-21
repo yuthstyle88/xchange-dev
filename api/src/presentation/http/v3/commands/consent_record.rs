@@ -92,10 +92,9 @@ impl CommandAction for ConsentRecordCommand {
             .parse()
             .map_err(|_| invalid("purpose", "ประเภทความยินยอมไม่ถูกต้อง"))?;
         let channel: Option<Channel> = match (purpose, input.channel.as_deref()) {
-            (Purpose::Marketing, Some(c)) => Some(
-                c.parse()
-                    .map_err(|_| invalid("channel", "ช่องทางไม่ถูกต้อง"))?,
-            ),
+            (Purpose::Marketing, Some(c)) => {
+                Some(c.parse().map_err(|_| invalid("channel", "ช่องทางไม่ถูกต้อง"))?)
+            }
             (Purpose::Marketing, None) => {
                 return Err(invalid("channel", "ความยินยอมการตลาดต้องระบุช่องทาง"));
             }

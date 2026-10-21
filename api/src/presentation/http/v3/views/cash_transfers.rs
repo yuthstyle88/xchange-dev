@@ -17,7 +17,9 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::cash::{CashTransferLineRow, CashTransferRow, CashTransfersFilter};
+use crate::presentation::dto::v3::cash::{
+    CashTransferLineRow, CashTransferRow, CashTransfersFilter,
+};
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
 struct CashTransfersView {
@@ -98,12 +100,15 @@ impl PagedView for CashTransfersView {
             .map_err(AppError::Database)?;
             let mut by_transfer: BTreeMap<String, Vec<CashTransferLineRow>> = BTreeMap::new();
             for l in lines {
-                by_transfer.entry(l.transfer_id).or_default().push(CashTransferLineRow {
-                    currency: l.currency.trim().to_owned(),
-                    denomination_id: l.denomination_id,
-                    qty_sent: l.qty_sent.to_string(),
-                    qty_received: l.qty_received.map(|q| q.to_string()),
-                });
+                by_transfer
+                    .entry(l.transfer_id)
+                    .or_default()
+                    .push(CashTransferLineRow {
+                        currency: l.currency.trim().to_owned(),
+                        denomination_id: l.denomination_id,
+                        qty_sent: l.qty_sent.to_string(),
+                        qty_received: l.qty_received.map(|q| q.to_string()),
+                    });
             }
 
             Ok(rows

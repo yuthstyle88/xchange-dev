@@ -44,12 +44,7 @@ fn refusal(err: AppError) -> V3Error {
             );
         }
         if msg == "alreadyQueued" {
-            return V3Error::new(
-                "alreadyQueued",
-                None,
-                "alreadyQueued",
-                StatusCode::CONFLICT,
-            );
+            return V3Error::new("alreadyQueued", None, "alreadyQueued", StatusCode::CONFLICT);
         }
     }
     super::queue::refusal(err)

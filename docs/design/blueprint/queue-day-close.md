@@ -185,3 +185,119 @@ The questions as asked (kept for the record; question 1's `CUSTOMER_LEFT`/`NO_SH
    - `kiosk-cancel.md` §3.7 wants day close to go through `KioskDesk::cancel_with` with reason `CUSTOMER_LEFT`. Its §2 table makes such a ticket `NO_SHOW`, not `CANCELLED`/`dayClosed`.
    - The two documents give opposite results for the same ticket, and `cancel_with` does not exist yet (KC-S of PR 4125 §5).
 2. **Q8's queue open at start service and close at cut-off** (`queue-tickets.md:47,127`) is not wired either: `branch_day.rs` and `xc-shift/src` have no queue reference. It is not in this design.
+
+## 7. Kiosk-linked requests at day close (#4147)
+
+> designed-by: claude/studio-claude-9 · measured on `main` `da48acf2` (§1–§6 above are on main through PR 4266)
+
+### 7.0 Decided
+
+| # | Rule | Source |
+|---|---|---|
+| K-1 | A kiosk-linked ticket still open at day close is a **cancellation with a stored reason**, never `NO_SHOW`. | owner 2026-10-21 (§0) |
+| K-2 | The reason code is `DAY_CLOSED`: the request becomes `CANCELLED` with `cancel_reason = 'DAY_CLOSED'` and a `KIOSK_CANCELLED` line, and its ticket becomes `CANCELLED` with `ended_reason = 'kioskCancelled:DAY_CLOSED'` and one `CANCEL` event. | `kiosk-cancel.md` §3.7 (KC, PR 4154) |
+| K-3 | There is no branch kiosk. Web requests and the Flutter staff queue machine share the `kiosk_requests` core, so this applies to **every** request, whichever client created it. | owner 2026-10-21 via claude/553782; measured on #4147 |
+| K-4 | **`DAY_CLOSED` also cancels `ACCEPTED` and `ID_CHECKED`** (a request a teller took but never finished), with the same stored reason and the same `KIOSK_CANCELLED` line. One rule covers every unfinished request. Owner: *"ยกเลิกด้วย เหตุผล ปิดวัน"* | owner 2026-10-21, option A, recorded on #4147 by claude/553782 |
+
+### 7.1 What is missing (measured on `da48acf2`)
+
+- `QueueDayHook::on_day_closed` (`xc-queue/src/application/day/queue_day_hook.rs`) cancels every WAITING/CALLED ticket with `dayClosed`, kiosk-linked ones included, and never tells the request. The request keeps its status forever.
+- **A request a teller accepted has a SERVING ticket.** `KioskDesk::accept_with_queue` calls `QueueTickets::start_for_kiosk_in` (`xc-kiosk/src/application/kiosk/desk.rs`). Day close's select (WAITING/CALLED) never sees such a ticket, so a per-ticket kiosk step could not reach `ACCEPTED`/`ID_CHECKED` requests. The kiosk step must therefore sweep the branch's **requests**, not the queue's tickets.
+- The kiosk side already has the move: `cancel_in` (`desk.rs`, `pub(super)`), the body of `KioskDesk::cancel_with`. In the caller's transaction it:
+  1. runs `KioskMachine::cancel`;
+  2. calls `mark_cancelled_in`;
+  3. calls `QueueTickets::cancel_active_for_kiosk_in` (`ticket_issuer.rs`), which ends a WAITING, CALLED **or SERVING** ticket as `CANCELLED kioskCancelled:<code>` with one `CANCEL` event, and answers `Ok(false)` for a ticket that has already ended;
+  4. records the audit line.
+- `KioskMachine::cancel` (`xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs`) refuses `DAY_CLOSED` in its `Accepted | IdChecked` arm. K-4 removes that refusal. The arm's holder-or-manager check stays.
+- KC's provided test `day_close_cancels_only_a_waiting_request` (`xc-kiosk/tests/kiosk_cancel_machine_test.rs`) pins the old rule. The sub-controller restates it on the feature branch (K-4, owner's words), as the lane playbook says for a provided test written before an owner decision.
+
+### 7.2 Behaviour
+
+| # | Given (at day close, §2 row 1 or 11) | Expected | Test |
+|---|---|---|---|
+| D1 | a request `WAITING` (ticket WAITING/CALLED) | request `CANCELLED`, `cancel_reason DAY_CLOSED`, one `KIOSK_CANCELLED` line; ticket `CANCELLED kioskCancelled:DAY_CLOSED`, exactly **one** `CANCEL` event | KX, KW |
+| D2 | a request `ACCEPTED` or `ID_CHECKED` (ticket SERVING), held by any teller | the same as D1: request `CANCELLED DAY_CLOSED` + `KIOSK_CANCELLED`; ticket SERVING → `CANCELLED kioskCancelled:DAY_CLOSED`, one `CANCEL` event (K-4) | KM, KX, KW |
+| D3 | a request `QUOTED`, `COMPLETED` or `CANCELLED` | untouched; its ticket, if any, follows §2 | KX |
+| D4 | a ticket with no `kiosk_request_id` (desk walk-in, booking) | unchanged from §2: `dayClosed`, booking told | KQ |
+| D5 | the kiosk step fails | the error is answered, and the whole day close rolls back (§2 row 5) | KQ |
+| D6 | no kiosk step is installed (`QueueDayHook::new` without it) | §2 behaviour exactly; the existing `queue_day_hook_test` stays green | KQ |
+| D7 | the kiosk step runs before the queue's own sweep | a kiosk-linked ticket the step ended is not touched again: no second event, no `dayClosed` overwrite | KQ |
+| D8 | another branch's requests | untouched | KX |
+
+### 7.3 Design
+
+- **Port** (new file `xc-kernel/src/kiosk_day_close.rs`), so `xc-queue` never names `xc-kiosk`, like `BookingQueueEvents`:
+  `trait KioskDayClose: Send + Sync { fn close_day_in(&self, tx, branch: &BranchId, now) -> BoxFuture<AppResult<Vec<String>>>; }`
+  It answers the ids of the requests it cancelled.
+- **Kiosk machine** (K-4): the `Accepted | IdChecked` arm stops refusing `CancelReason::DayClosed`. It still refuses `CustomerCancelled`, and still requires the holder or a manager. The day-close actor is a manager (below), so the holder check passes.
+- **Kiosk side** (new file `xc-kiosk/src/application/kiosk/day_close.rs`, a child of `application::kiosk`, so it can reach `pub(super) cancel_in`):
+  - `KioskDayCloser { repo: PgKioskRepository, ports: Arc<dyn KioskPorts>, queue: Arc<dyn QueueTickets> }` implements `KioskDayClose`.
+  - `close_day_in` selects `id FROM kiosk_requests WHERE branch_id = $1 AND status IN ('WAITING','ACCEPTED','ID_CHECKED') ORDER BY created_at FOR UPDATE`. For each id it loads the request (`repo.find_in`) and asks `KioskMachine::cancel(stored, &actor, &CancelReason::DayClosed)`, where actor is `KioskActor::Staff { username: DAY_CLOSE_ACTOR, role: KioskRole::Manager }` and `DAY_CLOSE_ACTOR = "SYSTEM-DAY-CLOSE"` is the audit line's actor.
+  - `Ok(Some(_))` ⇒ `cancel_in(..)` with the same actor and reason, then push the id. `Err(_)` or `Ok(None)` ⇒ skip it, write nothing. The machine stays the single place the rule lives; this also avoids matching on `refuse()`'s converted error.
+- **Queue side** (`QueueDayHook`):
+  - a setter `with_kiosk_day_close(Arc<dyn KioskDayClose>)`;
+  - `on_day_closed` calls `kiosk.close_day_in(tx, branch, now)` **first**, then its own WAITING/CALLED select and `dayClosed` `UPDATE` exactly as today.
+  - Tickets the kiosk path ended are already `CANCELLED`, so the select does not return them (D7).
+  - The returned list stays "the tickets this hook cancelled with `dayClosed`". The kiosk ids are not added.
+- **Wiring:** `cash.rs::shift_lifecycle_hook` builds the `QueueDayHook` with `.with_kiosk_day_close(KioskDayCloser::pg(pool, queue))`. The `queue` is a `TicketIssuer` (with booking events), as `kiosk.rs`'s `confirm` builds one.
+- **Docs:**
+  - `queue-tickets.md` Q8 says unfinished kiosk requests are cancelled `DAY_CLOSED` first (§7);
+  - `kiosk-cancel.md` §3.3 and §3.7 drop "only `WAITING`" for `DAY_CLOSED` (K-4).
+
+### 7.4 Class diagram
+
+```mermaid
+classDiagram
+    class KioskDayClose {
+        <<trait, xc-kernel/src/kiosk_day_close.rs, NEW>>
+        +close_day_in(tx, branch, now) AppResult~Vec~String~~
+    }
+    class KioskDayCloser {
+        <<xc-kiosk/src/application/kiosk/day_close.rs, NEW>>
+        -repo: PgKioskRepository
+        -ports: Arc~dyn KioskPorts~
+        -queue: Arc~dyn QueueTickets~
+        +pg(pool, queue) Self
+    }
+    class KioskMachine {
+        <<xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs>>
+        +cancel(stored, actor, reason)  Accepted|IdChecked accepts DayClosed (K-4)
+    }
+    class QueueDayHook {
+        <<xc-queue/src/application/day/queue_day_hook.rs>>
+        -kiosk: Option~Arc~dyn KioskDayClose~~  NEW
+        +with_kiosk_day_close(step) Self  NEW
+        +on_day_closed(tx, branch, now)  kiosk step first, then dayClosed sweep
+    }
+    class cancel_in {
+        <<fn, xc-kiosk/src/application/kiosk/desk.rs, pub(super), unchanged>>
+    }
+    class TicketIssuer {
+        <<xc-queue, implements QueueTickets, unchanged>>
+        +cancel_active_for_kiosk_in(..)  ends WAITING/CALLED/SERVING
+    }
+    KioskDayCloser ..|> KioskDayClose
+    QueueDayHook --> KioskDayClose : first
+    KioskDayCloser --> KioskMachine : cancel(DayClosed)
+    KioskDayCloser --> cancel_in : DAY_CLOSED, SYSTEM-DAY-CLOSE
+    cancel_in --> TicketIssuer : cancel_active_for_kiosk_in
+```
+
+### 7.5 Tickets → files (one feature branch `feat/4147-kiosk-day-close`; Argon; `class:guarded`)
+
+| # | Ticket | File scope | Rows | After |
+|---|---|---|---|---|
+| KM | the machine accepts `DAY_CLOSED` on `ACCEPTED`/`ID_CHECKED` (K-4) | `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs::cancel`. Provided test: `day_close_cancels_waiting_accepted_and_id_checked` in `kiosk_cancel_machine_test.rs`, restated by the sub-controller | D2 | skeleton |
+| KX | `KioskDayCloser` | `api/crates/xc-kiosk/src/application/kiosk/day_close.rs` (new). Provided test: `api/crates/xc-kiosk/tests/kiosk_day_close_test.rs` | D1–D3, D8 | KM (its D2 rows pass only with KM) |
+| KQ | `QueueDayHook` runs the step first | `api/crates/xc-queue/src/application/day/queue_day_hook.rs::on_day_closed`. Provided test: `api/crates/xc-queue/tests/queue_day_kiosk_test.rs` (a fake `KioskDayClose`) | D4–D7 | skeleton |
+| KW | wiring | `api/src/presentation/http/v3/commands/cash.rs::shift_lifecycle_hook`. Provided test: `api/tests/kiosk_day_close_wiring_test.rs` (confirm one request and confirm + accept another over `/api/kiosk`, then close the day over HTTP) | D1, D2 | KM, KX, KQ |
+
+- **KM and KQ go out together;** KX follows KM, and KW follows all three.
+- **Skeleton (sub-controller):**
+  - the trait in full (no body);
+  - the `KioskDayCloser` struct and `pg`, with a `todo!()` impl;
+  - the `QueueDayHook` field and setter;
+  - the `mod` / `pub mod` lines;
+  - the restated machine test (D2) and every other up-front test.
+- `cash.rs` is `include!`d. W1 left it formatted, so `fmt-included` passes on it (#4265 covers the rest).
+- **No migration:** `cancel_reason` already allows `DAY_CLOSED` (KC-M), and no status changes.

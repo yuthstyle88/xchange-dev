@@ -290,16 +290,14 @@ impl CommandAction for CallNext {
 }
 
 fn ticket_id(raw: &str) -> Result<String, V3Error> {
-    Uuid::parse_str(raw)
-        .map(|id| id.to_string())
-        .map_err(|_| {
-            V3Error::new(
-                "validationFailed",
-                Some("id"),
-                "invalid ticket id",
-                StatusCode::BAD_REQUEST,
-            )
-        })
+    Uuid::parse_str(raw).map(|id| id.to_string()).map_err(|_| {
+        V3Error::new(
+            "validationFailed",
+            Some("id"),
+            "invalid ticket id",
+            StatusCode::BAD_REQUEST,
+        )
+    })
 }
 
 /// A desk command on one ticket, `POST /api/queue/tickets/{id}/<verb>`.

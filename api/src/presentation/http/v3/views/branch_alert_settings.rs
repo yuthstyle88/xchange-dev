@@ -18,9 +18,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::executive::alert_settings_repository::PgAlertSettingsRepository;
-use crate::presentation::dto::v3::branch_alert_settings::{
-    BranchAlertSettingsData, StockFloorDto,
-};
+use crate::presentation::dto::v3::branch_alert_settings::{BranchAlertSettingsData, StockFloorDto};
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -52,13 +50,12 @@ impl BranchView for BranchAlertSettingsView {
         let pool = self.pool.clone();
         let branch = branch.clone();
         async move {
-            let org_id: Uuid = sqlx::query_scalar(
-                "SELECT organization_id FROM branches WHERE id = $1",
-            )
-            .bind(branch.as_str())
-            .fetch_one(&pool)
-            .await
-            .map_err(AppError::Database)?;
+            let org_id: Uuid =
+                sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+                    .bind(branch.as_str())
+                    .fetch_one(&pool)
+                    .await
+                    .map_err(AppError::Database)?;
 
             self.repo.read(org_id, &branch).await
         }
@@ -66,7 +63,10 @@ impl BranchView for BranchAlertSettingsView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(cfg, Arc::new(BranchAlertSettingsView::new(state.db.clone())));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(BranchAlertSettingsView::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

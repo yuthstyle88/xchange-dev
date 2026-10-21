@@ -25,7 +25,9 @@ use xc_referral::infrastructure::capture_repository::PgCaptureRepository;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::dto::v3::referral_attributions::{AttachReferralInput, AttachReferralOutput};
+use crate::presentation::dto::v3::referral_attributions::{
+    AttachReferralInput, AttachReferralOutput,
+};
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, server_error,
 };

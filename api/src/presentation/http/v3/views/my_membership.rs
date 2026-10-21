@@ -30,11 +30,10 @@ pub const PUBLIC_ROUTE: &str = "/api/v3/views/my_membership";
 async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     // A named branch first, for every caller, as the core checks it: an unknown one is `noSuchBranch` (#500). A
     // customer names none.
-    let named = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    )
-    .ok()
-    .and_then(|q| q.into_inner().remove("branch"));
+    let named =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .ok()
+            .and_then(|q| q.into_inner().remove("branch"));
     match parse_branch(named.as_deref()) {
         Ok(Some(branch)) => {
             if let Err(e) = require_branch(&req, &branch).await {
@@ -62,9 +61,9 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
         return out_of_scope().error_response();
     };
 
-    if let Ok(query) = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    ) && let Some(target) = query.get("customer")
+    if let Ok(query) =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+        && let Some(target) = query.get("customer")
         && target != own_customer_id
     {
         return out_of_scope().error_response();
@@ -76,25 +75,24 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     };
 
     // Owner check: customer row must belong to caller's session organisation
-    let customer_org: Option<Uuid> = match sqlx::query_scalar(
-        "SELECT organization_id FROM customers WHERE id = $1",
-    )
-    .bind(own_customer_id)
-    .fetch_optional(&state.db)
-    .await
-    {
-        Ok(opt) => opt,
-        Err(e) => {
-            tracing::error!(error = %e, "database error querying customer organisation");
-            return V3Error::new(
-                "serverError",
-                None,
-                "เกิดข้อผิดพลาดภายในระบบ",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-            .error_response();
-        }
-    };
+    let customer_org: Option<Uuid> =
+        match sqlx::query_scalar("SELECT organization_id FROM customers WHERE id = $1")
+            .bind(own_customer_id)
+            .fetch_optional(&state.db)
+            .await
+        {
+            Ok(opt) => opt,
+            Err(e) => {
+                tracing::error!(error = %e, "database error querying customer organisation");
+                return V3Error::new(
+                    "serverError",
+                    None,
+                    "เกิดข้อผิดพลาดภายในระบบ",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .error_response();
+            }
+        };
 
     match customer_org {
         Some(co) if co == org_id => {}
@@ -105,7 +103,12 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let customer_service = CustomerService::new(branch_tx);
     let phone_opt = match customer_service
-        .verified_phone_for_system(org_id, own_customer_id, SystemReadPurpose::Loyalty, Utc::now())
+        .verified_phone_for_system(
+            org_id,
+            own_customer_id,
+            SystemReadPurpose::Loyalty,
+            Utc::now(),
+        )
         .await
     {
         Ok(opt) => opt,
@@ -190,11 +193,14 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
                 points: ne.points,
                 at: ne.at,
             });
-            let progress = summary.tier.and_then(|t| t.progress).map(|p| TierProgressDto {
-                basis: p.basis,
-                current: p.current,
-                next: p.next,
-            });
+            let progress = summary
+                .tier
+                .and_then(|t| t.progress)
+                .map(|p| TierProgressDto {
+                    basis: p.basis,
+                    current: p.current,
+                    next: p.next,
+                });
             (points, false, next_expiry, progress)
         }
         Ok(Err(e)) => {

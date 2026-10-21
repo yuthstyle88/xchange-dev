@@ -135,10 +135,9 @@ impl BranchView for MyRateAlertsView {
                     };
                     let (current_rate, rate_published_at) =
                         match (row.current_rate, row.published_at) {
-                            (Some(rate), Some(pub_at)) => (
-                                Some(format!("{:.8}", rate)),
-                                Some(pub_at.to_rfc3339()),
-                            ),
+                            (Some(rate), Some(pub_at)) => {
+                                (Some(format!("{:.8}", rate)), Some(pub_at.to_rfc3339()))
+                            }
                             _ => (None, None),
                         };
                     let rate_stale = if current_rate.is_some() {

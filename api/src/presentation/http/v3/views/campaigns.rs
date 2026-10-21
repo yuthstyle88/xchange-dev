@@ -174,7 +174,8 @@ impl BranchView for CampaignsView {
                 let mut consumed_thb: rust_decimal::Decimal = r.get("consumed_thb");
                 consumed_thb.rescale(2);
                 let used_count: i64 = r.get("used_count");
-                let mut actively_reserved_thb: rust_decimal::Decimal = r.get("actively_reserved_thb");
+                let mut actively_reserved_thb: rust_decimal::Decimal =
+                    r.get("actively_reserved_thb");
                 actively_reserved_thb.rescale(2);
                 let redemptions: i64 = r.get("redemptions");
                 let mut price_cost: rust_decimal::Decimal = r.get("price_cost");
@@ -194,15 +195,25 @@ impl BranchView for CampaignsView {
                     status,
                     starts_at: starts_at.to_rfc3339(),
                     ends_at: ends_at.to_rfc3339(),
-                    budget_thb: crate::presentation::dto::v3::common::Money(format!("{budget_thb:.2}")),
-                    budget_used_thb: crate::presentation::dto::v3::common::Money(format!("{consumed_thb:.2}")),
-                    budget_left_thb: crate::presentation::dto::v3::common::Money(format!("{budget_left:.2}")),
+                    budget_thb: crate::presentation::dto::v3::common::Money(format!(
+                        "{budget_thb:.2}"
+                    )),
+                    budget_used_thb: crate::presentation::dto::v3::common::Money(format!(
+                        "{consumed_thb:.2}"
+                    )),
+                    budget_left_thb: crate::presentation::dto::v3::common::Money(format!(
+                        "{budget_left:.2}"
+                    )),
                     uses: used_count,
                     max_uses: max_uses.map(|m| m as i64),
                     period: CampaignPeriodTotals {
                         redemptions,
-                        price_cost_thb: crate::presentation::dto::v3::common::Money(format!("{price_cost:.2}")),
-                        reward_expense_thb: crate::presentation::dto::v3::common::Money(format!("{reward_expense:.2}")),
+                        price_cost_thb: crate::presentation::dto::v3::common::Money(format!(
+                            "{price_cost:.2}"
+                        )),
+                        reward_expense_thb: crate::presentation::dto::v3::common::Money(format!(
+                            "{reward_expense:.2}"
+                        )),
                     },
                 });
             }
@@ -258,12 +269,7 @@ pub(crate) async fn serve_branch_first<V: BranchView>(req: &HttpRequest, view: &
     let query = web::Query::<Vec<(String, String)>>::from_query(req.query_string())
         .map(|q| q.into_inner())
         .unwrap_or_default();
-    let first = |key: &str| {
-        query
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
+    let first = |key: &str| query.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
     let named = match parse_branch(first("branch").as_deref()) {
         Ok(named) => named,
         Err(()) => return invalid_request(Some("branch")),

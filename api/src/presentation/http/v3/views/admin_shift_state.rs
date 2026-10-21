@@ -66,7 +66,11 @@ impl BranchView for AdminShiftStateBranchView {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let shifts = ShiftService::new(
-        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(state.db.clone())),
+        Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                state.db.clone(),
+            ),
+        ),
         branch_tx,
     );
     ViewEndpoint::register(cfg, Arc::new(AdminShiftStateBranchView::new(shifts)));

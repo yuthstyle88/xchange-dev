@@ -227,7 +227,14 @@ impl CommandAction for TransferReceive {
         let counted = input
             .lines
             .iter()
-            .map(|l| line(&l.currency, l.denomination_id, "qtyReceived", &l.qty_received))
+            .map(|l| {
+                line(
+                    &l.currency,
+                    l.denomination_id,
+                    "qtyReceived",
+                    &l.qty_received,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let now = Utc::now();
         let user = caller_in(tx, who, now).await?;

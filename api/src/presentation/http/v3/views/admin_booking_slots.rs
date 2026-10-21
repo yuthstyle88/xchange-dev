@@ -33,7 +33,16 @@ impl AdminBookingSlotsView {
 
 type RuleDbRow = (String, i32, i32, i32);
 type ClosureDbRow = (String, NaiveDate, String);
-type SlotDbRow = (Uuid, String, NaiveDate, DateTime<Utc>, DateTime<Utc>, i32, i32, String);
+type SlotDbRow = (
+    Uuid,
+    String,
+    NaiveDate,
+    DateTime<Utc>,
+    DateTime<Utc>,
+    i32,
+    i32,
+    String,
+);
 type PolicyDbRow = (i32, i32, i32);
 
 impl BranchView for AdminBookingSlotsView {
@@ -102,18 +111,29 @@ impl BranchView for AdminBookingSlotsView {
 
             let slots = slot_rows
                 .into_iter()
-                .map(|(id, branch_id, service_date, start_at, end_at, capacity, reserved, status)| {
-                    AdminSlotDto {
-                        id: id.to_string(),
+                .map(
+                    |(
+                        id,
                         branch_id,
-                        service_date: service_date.to_string(),
-                        start_at: start_at.to_rfc3339(),
-                        end_at: end_at.to_rfc3339(),
+                        service_date,
+                        start_at,
+                        end_at,
                         capacity,
                         reserved,
                         status,
-                    }
-                })
+                    )| {
+                        AdminSlotDto {
+                            id: id.to_string(),
+                            branch_id,
+                            service_date: service_date.to_string(),
+                            start_at: start_at.to_rfc3339(),
+                            end_at: end_at.to_rfc3339(),
+                            capacity,
+                            reserved,
+                            status,
+                        }
+                    },
+                )
                 .collect();
 
             let policy_row: Option<PolicyDbRow> = sqlx::query_as(
@@ -127,13 +147,15 @@ impl BranchView for AdminBookingSlotsView {
             .await
             .map_err(pos_error::AppError::Database)?;
 
-            let policy = policy_row.map(|(cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes)| {
-                AdminBookingPolicyDto {
-                    cancel_cutoff_minutes,
-                    no_show_grace_minutes,
-                    confirm_expiry_minutes,
-                }
-            });
+            let policy = policy_row.map(
+                |(cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes)| {
+                    AdminBookingPolicyDto {
+                        cancel_cutoff_minutes,
+                        no_show_grace_minutes,
+                        confirm_expiry_minutes,
+                    }
+                },
+            );
 
             Ok(AdminBookingSlotsData {
                 rule,

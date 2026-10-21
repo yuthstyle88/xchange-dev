@@ -17,14 +17,12 @@ use xc_notify::domain::error::NotifyError;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{server_error, CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 fn to_v3_error(err: NotifyError) -> V3Error {
     match err {
-        NotifyError::NotFound => {
-            V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND)
-        }
+        NotifyError::NotFound => V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND),
         NotifyError::OutOfScope => {
             V3Error::new("outOfScope", None, "out of scope", StatusCode::FORBIDDEN)
         }

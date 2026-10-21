@@ -56,10 +56,7 @@ impl BranchView for AdminRequestStatusBranchView {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let abandon = AbandonRequest::new(branch_tx);
-    ViewEndpoint::register(
-        cfg,
-        Arc::new(AdminRequestStatusBranchView::new(abandon)),
-    );
+    ViewEndpoint::register(cfg, Arc::new(AdminRequestStatusBranchView::new(abandon)));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

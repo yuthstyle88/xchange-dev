@@ -61,14 +61,33 @@ impl CommandAction for CampaignCreateCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let org_id = Uuid::parse_str(&who.organization_id).map_err(|e| {
-            V3Error::new("validationFailed", Some("organizationId"), e.to_string(), StatusCode::BAD_REQUEST)
+            V3Error::new(
+                "validationFailed",
+                Some("organizationId"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
         })?;
         let user_id = resolve_user_id(tx, who, org_id).await;
         let starts_at = chrono::DateTime::parse_from_rfc3339(&input.starts_at)
-            .map_err(|e| V3Error::new("validationFailed", Some("startsAt"), e.to_string(), StatusCode::BAD_REQUEST))?
+            .map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("startsAt"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?
             .with_timezone(&chrono::Utc);
         let ends_at = chrono::DateTime::parse_from_rfc3339(&input.ends_at)
-            .map_err(|e| V3Error::new("validationFailed", Some("endsAt"), e.to_string(), StatusCode::BAD_REQUEST))?
+            .map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("endsAt"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?
             .with_timezone(&chrono::Utc);
         let budget_thb = v3::input::decimal(
             "budgetThb",

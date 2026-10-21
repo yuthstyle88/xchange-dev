@@ -1,13 +1,13 @@
 //! The `admin_customers` view (§7.4, §12.1).
 
-use std::future::Future;
-use std::path::Path;
-use std::sync::Arc;
 use actix_web::web;
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use std::future::Future;
+use std::path::Path;
+use std::sync::Arc;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
@@ -28,7 +28,6 @@ impl AdminCustomersPagedView {
         Self { pool }
     }
 }
-
 
 #[derive(sqlx::FromRow)]
 struct CustomerSqlRow {
@@ -63,9 +62,8 @@ impl PagedView for AdminCustomersPagedView {
         let filter = filter.clone();
 
         async move {
-            let before_cursor: Option<CustomerCursor> =
-                if let Some(before_id) = before {
-                    let cursor = sqlx::query_as::<_, CustomerCursor>(
+            let before_cursor: Option<CustomerCursor> = if let Some(before_id) = before {
+                let cursor = sqlx::query_as::<_, CustomerCursor>(
                         "SELECT \
                          (SELECT MAX(t.recorded_at) FROM transactions t WHERE t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE' AND t.status = 'COMPLETED') AS last_at, \
                          c.display_name AS name, c.created_at, c.id \
@@ -79,13 +77,13 @@ impl PagedView for AdminCustomersPagedView {
                     .await
                     .map_err(AppError::Database)?;
 
-                    let Some(cursor) = cursor else {
-                        return Ok(vec![]);
-                    };
-                    Some(cursor)
-                } else {
-                    None
+                let Some(cursor) = cursor else {
+                    return Ok(vec![]);
                 };
+                Some(cursor)
+            } else {
+                None
+            };
 
             let mut builder = sqlx::QueryBuilder::new(
                 "WITH customer_stats AS ( \
@@ -192,7 +190,8 @@ impl PagedView for AdminCustomersPagedView {
                 }
             }
 
-            builder.push(" ORDER BY last_at DESC NULLS LAST, name ASC, created_at ASC, id ASC LIMIT ");
+            builder
+                .push(" ORDER BY last_at DESC NULLS LAST, name ASC, created_at ASC, id ASC LIMIT ");
             builder.push_bind(limit as i64);
 
             let query = builder.build_query_as::<CustomerSqlRow>();
@@ -240,7 +239,10 @@ pub(crate) fn format_customer_volume(raw: &str, customer_id: &str) -> Result<Str
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register_paged(cfg, Arc::new(AdminCustomersPagedView::new(state.db.clone())));
+    ViewEndpoint::register_paged(
+        cfg,
+        Arc::new(AdminCustomersPagedView::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

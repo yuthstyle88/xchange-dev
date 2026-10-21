@@ -70,8 +70,8 @@ impl BranchView for ReceiptDocumentView {
                 return none;
             };
 
-            let html = String::from_utf8(file.bytes)
-                .map_err(|e| AppError::Internal(e.to_string()))?;
+            let html =
+                String::from_utf8(file.bytes).map_err(|e| AppError::Internal(e.to_string()))?;
             let issued_at: DateTime<Utc> = row.get("issued_at");
 
             Ok(ReceiptDocumentViewData {

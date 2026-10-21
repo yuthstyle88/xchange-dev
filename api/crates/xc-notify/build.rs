@@ -41,4 +41,6 @@ fn main() {
         println!("cargo:rerun-if-changed=src/templates/{name}");
     }
     println!("cargo:rerun-if-changed=build_support/template_table.rs");
+
+    xc_testlist::emit(1);
 }

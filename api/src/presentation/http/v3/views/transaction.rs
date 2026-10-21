@@ -145,9 +145,10 @@ impl BranchView for TransactionView {
                 issued_at: x.get::<DateTime<Utc>, _>(2).to_rfc3339(),
             })
             .collect();
-            let approval = r
-                .get::<Option<Uuid>, _>(7)
-                .map(|a| TxApprovalDto { id: a.to_string(), status: r.get("a_status") });
+            let approval = r.get::<Option<Uuid>, _>(7).map(|a| TxApprovalDto {
+                id: a.to_string(),
+                status: r.get("a_status"),
+            });
             let reversal = crate::presentation::dto::v3::reversal::load_reversal_summary(
                 &pool,
                 crate::presentation::dto::v3::reversal::ReversalBy::Original(id),
@@ -191,7 +192,12 @@ impl BranchView for TransactionView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(cfg, Arc::new(TransactionView { pool: state.db.clone() }));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(TransactionView {
+            pool: state.db.clone(),
+        }),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

@@ -103,12 +103,15 @@ impl PagedView for CashCountsView {
             .map_err(AppError::Database)?;
             let mut by_count: BTreeMap<String, Vec<CashCountTotalRow>> = BTreeMap::new();
             for t in totals {
-                by_count.entry(t.count_id).or_default().push(CashCountTotalRow {
-                    currency: t.currency.trim().to_owned(),
-                    counted: t.counted.to_string(),
-                    expected: t.expected.map(|d| d.to_string()),
-                    difference: t.difference.map(|d| d.to_string()),
-                });
+                by_count
+                    .entry(t.count_id)
+                    .or_default()
+                    .push(CashCountTotalRow {
+                        currency: t.currency.trim().to_owned(),
+                        counted: t.counted.to_string(),
+                        expected: t.expected.map(|d| d.to_string()),
+                        difference: t.difference.map(|d| d.to_string()),
+                    });
             }
 
             Ok(rows

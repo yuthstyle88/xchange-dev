@@ -63,19 +63,11 @@ fn parse_bank_decimal(val: &Option<Value>) -> Option<Decimal> {
     match val {
         Some(Value::Number(n)) => {
             let d = Decimal::from_str(&n.to_string()).ok()?;
-            if d > Decimal::ZERO {
-                Some(d)
-            } else {
-                None
-            }
+            if d > Decimal::ZERO { Some(d) } else { None }
         }
         Some(Value::String(s)) => {
             let d = Decimal::from_str(s).ok()?;
-            if d > Decimal::ZERO {
-                Some(d)
-            } else {
-                None
-            }
+            if d > Decimal::ZERO { Some(d) } else { None }
         }
         _ => None,
     }
@@ -258,19 +250,28 @@ impl BranchView for KioskCurrenciesView {
                     let partner = l.source_snapshot.get("partner");
                     let (partner_name, partner_cost) = match partner {
                         Some(Value::Object(p)) => {
-                            let name =
-                                p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let cost =
-                                p.get("cost").and_then(|v| v.as_str()).map(|c| Rate(c.to_string()));
+                            let name = p
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let cost = p
+                                .get("cost")
+                                .and_then(|v| v.as_str())
+                                .map(|c| Rate(c.to_string()));
                             (name, cost)
                         }
                         _ => (String::new(), None),
                     };
 
-                    let shop_buy_dec =
-                        l.buy_rate.filter(|b| *b > Decimal::ZERO).map(|b| b / l.unit_size);
-                    let shop_sell_dec =
-                        l.sell_rate.filter(|s| *s > Decimal::ZERO).map(|s| s / l.unit_size);
+                    let shop_buy_dec = l
+                        .buy_rate
+                        .filter(|b| *b > Decimal::ZERO)
+                        .map(|b| b / l.unit_size);
+                    let shop_sell_dec = l
+                        .sell_rate
+                        .filter(|s| *s > Decimal::ZERO)
+                        .map(|s| s / l.unit_size);
 
                     (
                         buy,
@@ -283,15 +284,12 @@ impl BranchView for KioskCurrenciesView {
                         shop_sell_dec,
                     )
                 } else {
-                    let reg_unit = register_units
-                        .get(&entry.code)
-                        .copied()
-                        .ok_or_else(|| {
-                            pos_error::AppError::Internal(format!(
-                                "missing currency unit_size for {}",
-                                entry.code
-                            ))
-                        })?;
+                    let reg_unit = register_units.get(&entry.code).copied().ok_or_else(|| {
+                        pos_error::AppError::Internal(format!(
+                            "missing currency unit_size for {}",
+                            entry.code
+                        ))
+                    })?;
                     let unit_size = reg_unit.normalize().to_string();
                     (
                         None,
@@ -338,10 +336,11 @@ impl BranchView for KioskCurrenciesView {
                                     let (buy_difference, bank_buy) =
                                         match (parse_bank_decimal(&note.buy), shop_buy_dec) {
                                             (Some(bank_d), Some(shop_d)) => {
-                                                let diff = (shop_d - bank_d).round_dp_with_strategy(
-                                                    5,
-                                                    RoundingStrategy::MidpointAwayFromZero,
-                                                );
+                                                let diff = (shop_d - bank_d)
+                                                    .round_dp_with_strategy(
+                                                        5,
+                                                        RoundingStrategy::MidpointAwayFromZero,
+                                                    );
                                                 (
                                                     Some(format!("{diff:.5}")),
                                                     Some(format!("{bank_d:.5}")),
@@ -356,10 +355,11 @@ impl BranchView for KioskCurrenciesView {
                                     let (sell_difference, bank_sell) =
                                         match (parse_bank_decimal(&note.sell), shop_sell_dec) {
                                             (Some(bank_d), Some(shop_d)) => {
-                                                let diff = (shop_d - bank_d).round_dp_with_strategy(
-                                                    5,
-                                                    RoundingStrategy::MidpointAwayFromZero,
-                                                );
+                                                let diff = (shop_d - bank_d)
+                                                    .round_dp_with_strategy(
+                                                        5,
+                                                        RoundingStrategy::MidpointAwayFromZero,
+                                                    );
                                                 (
                                                     Some(format!("{diff:.5}")),
                                                     Some(format!("{bank_d:.5}")),
@@ -421,10 +421,7 @@ impl BranchView for KioskCurrenciesView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(
-        cfg,
-        Arc::new(KioskCurrenciesView::new(state.db.clone())),
-    );
+    ViewEndpoint::register(cfg, Arc::new(KioskCurrenciesView::new(state.db.clone())));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

@@ -75,7 +75,14 @@ impl CommandAction for SegmentDefineCommand {
         .bind(&input.name)
         .fetch_one(&mut **tx)
         .await
-        .map_err(|e| V3Error::new("database", None, e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            V3Error::new(
+                "database",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
         let id = Uuid::new_v4();
         let rule_json = serde_json::to_value(&input.rule).map_err(|e| {

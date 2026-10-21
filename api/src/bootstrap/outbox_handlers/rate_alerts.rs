@@ -63,7 +63,11 @@ impl OutboxHandler for RateAlertsHandler {
             };
 
             let branch = BranchId::new(branch_id);
-            match self.evaluator.evaluate_publication(&branch, publication_id).await {
+            match self
+                .evaluator
+                .evaluate_publication(&branch, publication_id)
+                .await
+            {
                 Ok(()) => DeliveryResult::Final(FinalOutcome::Delivered { http_status: 200 }),
                 Err(e) => DeliveryResult::Retry {
                     http_status: None,
@@ -79,20 +83,22 @@ impl OutboxHandler for RateAlertsHandler {
         _event: &'a OutboxEvent,
         _outcome: &'a FinalOutcome,
     ) -> BoxFuture<'a, AppResult<()>> {
-        Box::pin(async move {
-            Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
 }
 
 pub fn handler(state: &AppState) -> Option<Arc<dyn OutboxHandler>> {
     let registry =
         Arc::new(xc_notify::application::template_registry::TemplateRegistry::generated());
-    let notifications =
-        Arc::new(xc_notify::application::notification_service::NotificationService::new(
+    let notifications = Arc::new(
+        xc_notify::application::notification_service::NotificationService::new(
             state.db.clone(),
             registry,
-        ));
-    let evaluator = Arc::new(RateAlertEvaluator::with_pool(state.db.clone(), notifications));
+        ),
+    );
+    let evaluator = Arc::new(RateAlertEvaluator::with_pool(
+        state.db.clone(),
+        notifications,
+    ));
     Some(Arc::new(RateAlertsHandler::new(evaluator)))
 }

@@ -124,20 +124,12 @@ impl CommandAction for ExchangeSettingsSaveCommand {
         }
         let standing = Standing::of(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let org = organization_of(tx, branch).await?;
-        let before = self
-            .settings
-            .get_ttl_in(tx, org)
-            .await
-            .map_err(refusal)?;
+        let before = self.settings.get_ttl_in(tx, org).await.map_err(refusal)?;
         self.settings
             .set_ttl_in(tx, org, input.quote_ttl_seconds, &who.user_id, Utc::now())
             .await
             .map_err(refusal)?;
-        let after = self
-            .settings
-            .get_ttl_in(tx, org)
-            .await
-            .map_err(refusal)?;
+        let after = self.settings.get_ttl_in(tx, org).await.map_err(refusal)?;
         audit(
             &self.audit,
             tx,

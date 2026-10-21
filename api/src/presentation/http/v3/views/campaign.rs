@@ -19,8 +19,8 @@ use crate::presentation::dto::v3::campaign::{
     CampaignApprovalDetail, CampaignData, CampaignDetail, CampaignFilter, CampaignRuleDetail,
     CampaignSimulationDetail, CampaignVersionDetail,
 };
-use crate::presentation::http::v3::view::{BranchView, ViewFilter};
 use crate::presentation::http::v3::campaigns::serve_branch_first;
+use crate::presentation::http::v3::view::{BranchView, ViewFilter};
 
 impl ViewFilter for CampaignFilter {}
 
@@ -88,8 +88,7 @@ impl BranchView for CampaignView {
             .fetch_all(&pool)
             .await?;
 
-            let version_ids: Vec<uuid::Uuid> =
-                version_rows.iter().map(|v| v.get("id")).collect();
+            let version_ids: Vec<uuid::Uuid> = version_rows.iter().map(|v| v.get("id")).collect();
             let approval_ids: Vec<uuid::Uuid> = version_rows
                 .iter()
                 .filter_map(|v| v.get("approval_id"))
@@ -194,10 +193,8 @@ impl BranchView for CampaignView {
                     .fetch_all(&pool)
                     .await?;
 
-            let mut approvals_by_id: std::collections::HashMap<
-                uuid::Uuid,
-                CampaignApprovalDetail,
-            > = std::collections::HashMap::with_capacity(ar_rows.len());
+            let mut approvals_by_id: std::collections::HashMap<uuid::Uuid, CampaignApprovalDetail> =
+                std::collections::HashMap::with_capacity(ar_rows.len());
             for r in ar_rows {
                 let aid: uuid::Uuid = r.get("id");
                 let ar_status: String = r.get("status");
@@ -244,7 +241,9 @@ impl BranchView for CampaignView {
                     status,
                     starts_at: starts_at.to_rfc3339(),
                     ends_at: ends_at.to_rfc3339(),
-                    budget_thb: crate::presentation::dto::v3::common::Money(format!("{budget_thb:.2}")),
+                    budget_thb: crate::presentation::dto::v3::common::Money(format!(
+                        "{budget_thb:.2}"
+                    )),
                     max_uses: max_uses.map(|m| m as i64),
                     stack_group,
                     priority: priority as i64,

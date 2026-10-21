@@ -25,8 +25,8 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
 use xc_shift::domain::custody::entities::cash_exception::ExceptionStatus;
+use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
 
 use crate::bootstrap::AppState;
@@ -80,7 +80,10 @@ fn midnight(tz: Tz, day: NaiveDate) -> AppResult<DateTime<Utc>> {
         .ok_or_else(|| AppError::Internal("a midnight".into()))?;
     tz.from_local_datetime(&naive)
         .earliest()
-        .or_else(|| tz.from_local_datetime(&(naive + Duration::hours(1))).earliest())
+        .or_else(|| {
+            tz.from_local_datetime(&(naive + Duration::hours(1)))
+                .earliest()
+        })
         .map(|t| t.with_timezone(&Utc))
         .ok_or_else(|| AppError::Internal(format!("no local midnight on {day} in {tz}")))
 }
@@ -261,18 +264,17 @@ impl StaffDailyReportView {
         };
 
         // B.1 row 18, D-B5: every verified CLOSE count's counter and verifier, names from `users`.
-        let names: Vec<(Uuid, String)> = sqlx::query_as(
-            "SELECT id, name FROM users WHERE id = ANY($1)",
-        )
-        .bind(
-            close_counts
-                .iter()
-                .flat_map(|c| [c.1, c.2])
-                .collect::<Vec<Uuid>>(),
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(db)?;
+        let names: Vec<(Uuid, String)> =
+            sqlx::query_as("SELECT id, name FROM users WHERE id = ANY($1)")
+                .bind(
+                    close_counts
+                        .iter()
+                        .flat_map(|c| [c.1, c.2])
+                        .collect::<Vec<Uuid>>(),
+                )
+                .fetch_all(&self.pool)
+                .await
+                .map_err(db)?;
         let name_of = |id: Uuid| {
             names
                 .iter()
