@@ -122,9 +122,7 @@ impl CommandAction for BookingCreate {
             if let Some(cid) = input.customer_id {
                 (SourceChannel::Desk, Some(cid), None)
             } else if let Some(phone) = input.phone {
-                let display_name = input
-                    .display_name
-                    .unwrap_or_else(|| "Customer".to_string());
+                let display_name = input.display_name.unwrap_or_else(|| "Customer".to_string());
                 (
                     SourceChannel::Desk,
                     None,
@@ -166,14 +164,16 @@ impl CommandAction for BookingCreate {
         let qty = input::decimal("quantity", &qty_text, Bound::numeric(20, 4, Sign::Positive))?;
         input::must_exist(tx, "currency", RowRef::Currency, &input.currency).await?;
 
-        BranchTx::lock_also(tx, &input.branch_id).await.map_err(|e| {
-            V3Error::new(
-                "serverError",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+        BranchTx::lock_also(tx, &input.branch_id)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "serverError",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
 
         let now = Utc::now();
         let org_uuid = Uuid::parse_str(&who.organization_id).unwrap_or_else(|_| Uuid::new_v4());
@@ -247,4 +247,3 @@ impl CommandAction for BookingCreate {
         })
     }
 }
-

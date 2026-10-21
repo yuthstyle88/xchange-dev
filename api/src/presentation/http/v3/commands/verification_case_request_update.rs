@@ -123,24 +123,16 @@ fn map_review_error(err: ReviewError) -> V3Error {
             "stale version",
             StatusCode::CONFLICT,
         ),
-        ReviewError::OutOfScope => V3Error::new(
-            "outOfScope",
-            None,
-            "out of scope",
-            StatusCode::FORBIDDEN,
-        ),
+        ReviewError::OutOfScope => {
+            V3Error::new("outOfScope", None, "out of scope", StatusCode::FORBIDDEN)
+        }
         ReviewError::ValidationFailed => V3Error::new(
             "validationFailed",
             None,
             "validation failed",
             StatusCode::BAD_REQUEST,
         ),
-        ReviewError::NotFound => V3Error::new(
-            "notFound",
-            None,
-            "not found",
-            StatusCode::NOT_FOUND,
-        ),
+        ReviewError::NotFound => V3Error::new("notFound", None, "not found", StatusCode::NOT_FOUND),
         ReviewError::Store(_) => server_error(),
     }
 }
@@ -200,9 +192,7 @@ impl CommandAction for VerificationCaseRequestUpdateCommand {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(
         cfg,
-        Arc::new(VerificationCaseRequestUpdateCommand::new(
-            state.db.clone(),
-        )),
+        Arc::new(VerificationCaseRequestUpdateCommand::new(state.db.clone())),
     );
 }
 

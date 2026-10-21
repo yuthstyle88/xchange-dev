@@ -156,7 +156,10 @@ impl CommandAction for CashExceptionReviewCommand {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    CommandEndpoint::register(cfg, Arc::new(CashExceptionReviewCommand::new(state.db.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(CashExceptionReviewCommand::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

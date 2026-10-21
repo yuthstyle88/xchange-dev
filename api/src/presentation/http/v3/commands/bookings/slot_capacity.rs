@@ -140,4 +140,3 @@ impl CommandAction for SlotCapacitySet {
         })
     }
 }
-

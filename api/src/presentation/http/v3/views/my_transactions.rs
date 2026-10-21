@@ -140,10 +140,13 @@ impl BranchView for MyTransactionsView {
         who: &Actor,
         _filter: &Self::Filter,
     ) -> AppResult<Self::Data> {
-        let own = who.customer_id.as_deref().ok_or_else(|| AppError::NotFound {
-            entity: "customer",
-            id: String::new(),
-        })?;
+        let own = who
+            .customer_id
+            .as_deref()
+            .ok_or_else(|| AppError::NotFound {
+                entity: "customer",
+                id: String::new(),
+            })?;
         let transactions = self
             .fetch_transactions(own)
             .await
@@ -163,11 +166,10 @@ fn server_error_refusal() -> HttpResponse {
 }
 
 async fn handle(req: HttpRequest, view: web::Data<Arc<MyTransactionsView>>) -> HttpResponse {
-    let named = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    )
-    .ok()
-    .and_then(|q| q.into_inner().remove("branch"));
+    let named =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .ok()
+            .and_then(|q| q.into_inner().remove("branch"));
     match parse_branch(named.as_deref()) {
         Ok(Some(branch)) => {
             if let Err(e) = require_branch(&req, &branch).await {

@@ -208,11 +208,10 @@ impl BranchView for MyVerificationView {
 }
 
 async fn handle(req: HttpRequest, view: web::Data<Arc<MyVerificationView>>) -> HttpResponse {
-    let named = web::Query::<std::collections::HashMap<String, String>>::from_query(
-        req.query_string(),
-    )
-    .ok()
-    .and_then(|q| q.into_inner().remove("branch"));
+    let named =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .ok()
+            .and_then(|q| q.into_inner().remove("branch"));
     match parse_branch(named.as_deref()) {
         Ok(Some(branch)) => {
             if let Err(e) = require_branch(&req, &branch).await {
@@ -236,13 +235,8 @@ async fn handle(req: HttpRequest, view: web::Data<Arc<MyVerificationView>>) -> H
     };
 
     let Some(_own_customer_id) = who.customer_id.as_deref() else {
-        return V3Error::new(
-            "outOfScope",
-            None,
-            "out of scope",
-            StatusCode::FORBIDDEN,
-        )
-        .error_response();
+        return V3Error::new("outOfScope", None, "out of scope", StatusCode::FORBIDDEN)
+            .error_response();
     };
 
     let filter = match web::Query::<MyVerificationFilter>::from_query(req.query_string()) {

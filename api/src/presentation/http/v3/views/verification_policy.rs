@@ -135,10 +135,7 @@ pub struct VerificationPolicyData {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(
-        cfg,
-        Arc::new(VerificationPolicyView::new(state.db.clone())),
-    );
+    ViewEndpoint::register(cfg, Arc::new(VerificationPolicyView::new(state.db.clone())));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

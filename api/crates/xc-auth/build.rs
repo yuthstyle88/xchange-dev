@@ -40,4 +40,6 @@ fn main() {
     for (name, _) in &files {
         println!("cargo:rerun-if-changed=src/domain/policy/areas/{name}");
     }
+
+    xc_testlist::emit(1);
 }

@@ -97,7 +97,8 @@ impl PagedView for AdminEmployeeRegisterPagedView {
 
             let mut out = Vec::new();
             for (user_id, employee_code, name, position, department, tell_code, status) in users {
-                let user_roles: Vec<&RoleSqlRow> = roles.iter().filter(|r| r.0 == user_id).collect();
+                let user_roles: Vec<&RoleSqlRow> =
+                    roles.iter().filter(|r| r.0 == user_id).collect();
                 if user_roles.is_empty() {
                     out.push(AdminEmployeeRegisterRow {
                         user_id,

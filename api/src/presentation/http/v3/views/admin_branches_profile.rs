@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 use actix_web::web;
 use pos_error::AppResult;
+use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use pos_infra::transactions::Transactor;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
@@ -76,7 +76,10 @@ impl BranchView for AdminBranchesProfileBranchView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(cfg, Arc::new(AdminBranchesProfileBranchView::new(state.db.clone())));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(AdminBranchesProfileBranchView::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

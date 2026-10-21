@@ -259,29 +259,20 @@ impl CommandAction for CampaignSimulateCommand {
         let user_id = resolve_user_id(tx, who, org_id).await;
         let now = Utc::now();
 
-        let sim_result = CampaignSimulator::simulate_in(
-            tx,
-            org_id,
-            version_id,
-            scenarios,
-            user_id,
-            now,
-        )
-        .await
-        .map_err(|e| match e {
-            SimulationError::RateUnavailable => V3Error::new(
-                "rateUnavailable",
-                None,
-                e.to_string(),
-                StatusCode::CONFLICT,
-            ),
-            other => V3Error::new(
-                "simulationFailed",
-                None,
-                other.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
-        })?;
+        let sim_result =
+            CampaignSimulator::simulate_in(tx, org_id, version_id, scenarios, user_id, now)
+                .await
+                .map_err(|e| match e {
+                    SimulationError::RateUnavailable => {
+                        V3Error::new("rateUnavailable", None, e.to_string(), StatusCode::CONFLICT)
+                    }
+                    other => V3Error::new(
+                        "simulationFailed",
+                        None,
+                        other.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ),
+                })?;
 
         Ok(CampaignSimulateOutput {
             simulation_id: sim_result.simulation_id.to_string(),

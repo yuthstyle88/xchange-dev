@@ -22,4 +22,3 @@ pub const ROWS: &[AreaRow] = &[
         need: Need::Permission(Permission::MarketingMembers),
     },
 ];
-

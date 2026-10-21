@@ -17,8 +17,8 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::planner::{AppSettingsSaveInput, AppSettingsSaveOutput};
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
-use crate::presentation::http::v3::planner_draft_save::customer_app_error;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::planner_draft_save::customer_app_error;
 
 pub struct AppSettingsSaveCommand {
     service: AppSettingsService,
@@ -46,9 +46,7 @@ impl CommandAction for AppSettingsSaveCommand {
             .await
             .map_err(customer_app_error)?;
         Ok(AppSettingsSaveOutput {
-            planner_draft_ttl_seconds: saved
-                .planner_draft_ttl_seconds
-                .map_or(0, |ttl| ttl.get()),
+            planner_draft_ttl_seconds: saved.planner_draft_ttl_seconds.map_or(0, |ttl| ttl.get()),
         })
     }
 }

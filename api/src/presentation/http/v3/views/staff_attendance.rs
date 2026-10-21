@@ -45,7 +45,9 @@ impl PagedView for StaffAttendancePagedView {
         let who = who.clone();
 
         async move {
-            reader.attendance(&who, &branch, before.as_deref(), limit).await
+            reader
+                .attendance(&who, &branch, before.as_deref(), limit)
+                .await
         }
     }
 }

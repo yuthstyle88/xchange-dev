@@ -74,7 +74,13 @@ impl CommandAction for PublishDraftCommand {
 
         let pub_ref = self
             .service
-            .publish(tx, branch, who, &DraftId::new(draft_id), input.expected_version)
+            .publish(
+                tx,
+                branch,
+                who,
+                &DraftId::new(draft_id),
+                input.expected_version,
+            )
             .await
             .map_err(map_rate_engine_error)?;
 

@@ -17,9 +17,7 @@ use xc_shift::application::shift::service::ShiftService;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::custody_service::pg_custody_service;
-use crate::presentation::dto::v3::admin_operations::{
-    AdminOperationsData, AdminOperationsEntity,
-};
+use crate::presentation::dto::v3::admin_operations::{AdminOperationsData, AdminOperationsEntity};
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -62,7 +60,11 @@ impl BranchView for AdminOperationsBranchView {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let branch_tx = BranchTx::new(Transactor::new(state.db.clone()));
     let shifts = ShiftService::new(
-        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(state.db.clone())),
+        Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                state.db.clone(),
+            ),
+        ),
         branch_tx.clone(),
     );
     let custody = pg_custody_service(&state.db, &shifts, &branch_tx);
@@ -75,4 +77,3 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     AdminOperationsData::export_all(&cfg)?;
     Ok(())
 }
-

@@ -104,16 +104,15 @@ impl PagedView for AdminUsersPagedView {
                 .map_err(AppError::Database)?;
 
             let ids: Vec<String> = users.iter().map(|u| u.0.clone()).collect();
-            let roles: Vec<RoleRow> =
-                sqlx::query_as(
-                    "SELECT user_id::text, role_code, branch_id, valid_from, valid_to \
+            let roles: Vec<RoleRow> = sqlx::query_as(
+                "SELECT user_id::text, role_code, branch_id, valid_from, valid_to \
                      FROM user_roles WHERE user_id::text = ANY($1) \
                      ORDER BY valid_from, id",
-                )
-                .bind(&ids)
-                .fetch_all(&pool)
-                .await
-                .map_err(AppError::Database)?;
+            )
+            .bind(&ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(AppError::Database)?;
 
             let at = |t: DateTime<Utc>| t.to_rfc3339_opts(SecondsFormat::Millis, true);
             Ok(users

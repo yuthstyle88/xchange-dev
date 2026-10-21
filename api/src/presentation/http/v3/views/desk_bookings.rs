@@ -72,7 +72,9 @@ impl BranchView for DeskBookingsView {
         let qr_filter = filter.qr.clone();
 
         async move {
-            let qr_hash = qr_filter.as_ref().map(|q| Sha256::digest(q.as_bytes()).to_vec());
+            let qr_hash = qr_filter
+                .as_ref()
+                .map(|q| Sha256::digest(q.as_bytes()).to_vec());
 
             let pii_keys = xc_customer::get_pii_keys().ok();
             let cipher = pii_keys.map(xc_kernel::pii::PiiCipher::new);

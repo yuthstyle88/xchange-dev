@@ -1,0 +1,12 @@
+[package]
+name = "xc-testlist"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["108Heros Engineering"]
+description = "Build-script emitter for per-package integration test module lists (#4194)"
+license = "Proprietary"
+publish = false
+
+[lib]
+path = "src/lib.rs"

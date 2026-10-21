@@ -32,36 +32,25 @@ use crate::presentation::http::v3::error::V3Error;
 pub(crate) fn customer_app_error(err: CustomerAppError) -> V3Error {
     let code = err.code();
     match err {
-        CustomerAppError::AppSettingsMissing => V3Error::new(
-            code,
-            None,
-            "ยังไม่ได้ตั้งค่าอายุแผน",
-            StatusCode::BAD_REQUEST,
-        ),
+        CustomerAppError::AppSettingsMissing => {
+            V3Error::new(code, None, "ยังไม่ได้ตั้งค่าอายุแผน", StatusCode::BAD_REQUEST)
+        }
         CustomerAppError::StaleVersion => V3Error::new(
             code,
             None,
             "ข้อมูลถูกแก้ไขแล้ว กรุณาโหลดใหม่",
             StatusCode::CONFLICT,
         ),
-        CustomerAppError::OutOfScope => V3Error::new(
-            code,
-            None,
-            "ไม่มีสิทธิ์ทำรายการนี้",
-            StatusCode::FORBIDDEN,
-        ),
-        CustomerAppError::NotFound => {
-            V3Error::new(code, None, "ไม่พบรายการ", StatusCode::NOT_FOUND)
+        CustomerAppError::OutOfScope => {
+            V3Error::new(code, None, "ไม่มีสิทธิ์ทำรายการนี้", StatusCode::FORBIDDEN)
         }
+        CustomerAppError::NotFound => V3Error::new(code, None, "ไม่พบรายการ", StatusCode::NOT_FOUND),
         CustomerAppError::RateUnavailable(why) => {
             V3Error::new(code, None, why, StatusCode::CONFLICT)
         }
-        CustomerAppError::ValidationFailed { field } => V3Error::new(
-            code,
-            Some(field),
-            "ข้อมูลไม่ถูกต้อง",
-            StatusCode::BAD_REQUEST,
-        ),
+        CustomerAppError::ValidationFailed { field } => {
+            V3Error::new(code, Some(field), "ข้อมูลไม่ถูกต้อง", StatusCode::BAD_REQUEST)
+        }
         CustomerAppError::Server(why) => {
             tracing::error!(error = %why, "customer app service error");
             server_error()
@@ -109,9 +98,9 @@ async fn save(
     let owner = draft_owner(caller).ok_or_else(sign_in)?;
     let id = match input.id.as_deref() {
         None => None,
-        Some(raw) => Some(Uuid::parse_str(raw).map_err(|_| {
-            customer_app_error(CustomerAppError::NotFound)
-        })?),
+        Some(raw) => {
+            Some(Uuid::parse_str(raw).map_err(|_| customer_app_error(CustomerAppError::NotFound))?)
+        }
     };
     let save = DraftSave {
         id,

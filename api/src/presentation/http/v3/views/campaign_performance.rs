@@ -20,9 +20,9 @@ use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::campaign_performance::{
     CampaignPerformanceData, CampaignPerformanceFilter, PerformanceFigure, VersionPerformanceRow,
 };
-use actix_web::http::StatusCode;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint, ViewFilter};
+use actix_web::http::StatusCode;
 
 impl ViewFilter for CampaignPerformanceFilter {
     fn check(&self) -> Result<(), V3Error> {
@@ -89,10 +89,14 @@ impl BranchView for CampaignPerformanceView {
             let to = chrono::NaiveDate::parse_from_str(&filter.to, "%Y-%m-%d")
                 .map_err(|_| pos_error::AppError::Validation("invalid to date".into()))?;
 
-            let scope = xc_marketing::domain::performance::period::PerformanceScope::new(vec![branch]);
-            let period = xc_marketing::domain::performance::period::PerformancePeriod::new(from, to);
+            let scope =
+                xc_marketing::domain::performance::period::PerformanceScope::new(vec![branch]);
+            let period =
+                xc_marketing::domain::performance::period::PerformancePeriod::new(from, to);
 
-            let reader = xc_marketing::infrastructure::pg_performance::PerformanceReader::new(pool, commission);
+            let reader = xc_marketing::infrastructure::pg_performance::PerformanceReader::new(
+                pool, commission,
+            );
             let perf_rows = reader.by_version(&scope, &period).await?;
 
             let versions = perf_rows
@@ -103,12 +107,20 @@ impl BranchView for CampaignPerformanceView {
                     version_id: r.version_id.to_string(),
                     version: r.version as i64,
                     redemptions: r.redemptions,
-                    price_cost_thb: crate::presentation::dto::v3::common::Money(r.price_cost.to_string()),
-                    reward_expense_thb: crate::presentation::dto::v3::common::Money(r.reward_expense.to_string()),
-                    volume_thb: crate::presentation::dto::v3::common::Money(r.volume_thb.to_string()),
+                    price_cost_thb: crate::presentation::dto::v3::common::Money(
+                        r.price_cost.to_string(),
+                    ),
+                    reward_expense_thb: crate::presentation::dto::v3::common::Money(
+                        r.reward_expense.to_string(),
+                    ),
+                    volume_thb: crate::presentation::dto::v3::common::Money(
+                        r.volume_thb.to_string(),
+                    ),
                     realized_margin_thb: match r.realized_margin {
                         Ok(margin) => PerformanceFigure {
-                            value: Some(crate::presentation::dto::v3::common::Money(margin.to_string())),
+                            value: Some(crate::presentation::dto::v3::common::Money(
+                                margin.to_string(),
+                            )),
                             unavailable: None,
                         },
                         Err(u) => PerformanceFigure {
@@ -118,7 +130,9 @@ impl BranchView for CampaignPerformanceView {
                     },
                     attributed_contribution_thb: match r.contribution {
                         Ok(contrib) => PerformanceFigure {
-                            value: Some(crate::presentation::dto::v3::common::Money(contrib.to_string())),
+                            value: Some(crate::presentation::dto::v3::common::Money(
+                                contrib.to_string(),
+                            )),
                             unavailable: None,
                         },
                         Err(u) => PerformanceFigure {

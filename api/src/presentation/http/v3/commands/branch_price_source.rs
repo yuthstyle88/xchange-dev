@@ -97,13 +97,7 @@ impl CommandAction for BranchPriceSourceCommand {
                 let draft_id = DraftId::new(draft_uuid);
                 let pub_ref = self
                     .sources
-                    .switch_back(
-                        tx,
-                        who,
-                        branch,
-                        &draft_id,
-                        input.expected_version,
-                    )
+                    .switch_back(tx, who, branch, &draft_id, input.expected_version)
                     .await
                     .map_err(map_rate_engine_error)?;
 

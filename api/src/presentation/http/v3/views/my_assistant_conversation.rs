@@ -92,7 +92,9 @@ impl BranchView for MyAssistantConversationView {
                             CustomerAppError::Server(why) => why,
                             other => other.code().to_owned(),
                         };
-                        Err(AppError::Internal(format!("my_assistant_conversation: {why}")))
+                        Err(AppError::Internal(format!(
+                            "my_assistant_conversation: {why}"
+                        )))
                     }
                 }
             } else {

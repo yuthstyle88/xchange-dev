@@ -26,12 +26,12 @@ use crate::application::finance::reconciliation::{
 };
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::me::me_roles;
 use crate::presentation::dto::v3::finance_reconciliation::{
     CertificationRow, ReconciliationCertifyInput,
 };
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::me::me_roles;
 
 pub const AUDIT_ACTION: &str = "RECONCILIATION_CERTIFY";
 

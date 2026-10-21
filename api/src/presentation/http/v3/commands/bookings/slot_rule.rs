@@ -125,4 +125,3 @@ impl CommandAction for SlotRuleSet {
         Ok(BookingOkOutput { ok: true })
     }
 }
-

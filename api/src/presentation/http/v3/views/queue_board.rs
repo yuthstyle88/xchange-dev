@@ -54,11 +54,13 @@ impl BranchView for QueueBoardView {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
         async move {
-            sqlx::query_scalar("SELECT queue_version FROM branch_service_status WHERE branch_id = $1")
-                .bind(&branch)
-                .fetch_optional(&pool)
-                .await
-                .map_err(AppError::Database)
+            sqlx::query_scalar(
+                "SELECT queue_version FROM branch_service_status WHERE branch_id = $1",
+            )
+            .bind(&branch)
+            .fetch_optional(&pool)
+            .await
+            .map_err(AppError::Database)
         }
     }
 
@@ -102,15 +104,15 @@ impl BranchView for QueueBoardView {
             Ok(QueueBoardData {
                 waiting: waiting
                     .into_iter()
-                    .map(
-                        |(id, display_number, service_type, sequence, issued_at)| QueueBoardWaiting {
+                    .map(|(id, display_number, service_type, sequence, issued_at)| {
+                        QueueBoardWaiting {
                             id,
                             display_number,
                             service_type,
                             sequence,
                             issued_at: issued_at.to_rfc3339(),
-                        },
-                    )
+                        }
+                    })
                     .collect(),
                 called: called
                     .into_iter()

@@ -44,9 +44,7 @@ impl PagedView for StaffHoldsPagedView {
         let branch = branch.clone();
         let who = who.clone();
 
-        async move {
-            reader.holds(&who, &branch, before.as_deref(), limit).await
-        }
+        async move { reader.holds(&who, &branch, before.as_deref(), limit).await }
     }
 }
 

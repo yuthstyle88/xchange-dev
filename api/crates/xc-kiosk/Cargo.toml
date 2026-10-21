@@ -26,6 +26,9 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "rust_decimal", "derive", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 
+[build-dependencies]
+xc-testlist = { path = "../xc-testlist" }
+
 [[test]]
 name = "all"
 path = "tests/all.rs"

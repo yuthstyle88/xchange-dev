@@ -44,94 +44,94 @@ impl ComputeAction for ProfitSummaryAction {
         request: Self::Request,
     ) -> Result<Self::Answer, V3Error> {
         let fields: [(&'static str, Option<&str>); 8] = [
-                ("realized", request.realized.as_deref()),
-                ("foreignValue", request.foreign_value.as_deref()),
-                ("foreignCost", request.foreign_cost.as_deref()),
-                ("netAssets", request.net_assets.as_deref()),
-                ("capital", request.capital.as_deref()),
-                ("reserve", request.reserve.as_deref()),
-                ("cash", request.cash.as_deref()),
-                ("cashMinimum", request.cash_minimum.as_deref()),
-            ];
+            ("realized", request.realized.as_deref()),
+            ("foreignValue", request.foreign_value.as_deref()),
+            ("foreignCost", request.foreign_cost.as_deref()),
+            ("netAssets", request.net_assets.as_deref()),
+            ("capital", request.capital.as_deref()),
+            ("reserve", request.reserve.as_deref()),
+            ("cash", request.cash.as_deref()),
+            ("cashMinimum", request.cash_minimum.as_deref()),
+        ];
 
-            // Step 1: completeness & exact typed decimal & cents fit
-            let mut incomplete_keys = Vec::new();
-            let mut parsed = Vec::with_capacity(8);
+        // Step 1: completeness & exact typed decimal & cents fit
+        let mut incomplete_keys = Vec::new();
+        let mut parsed = Vec::with_capacity(8);
 
-            for (key, opt_str) in fields {
-                match opt_str {
-                    Some(s) if !s.trim().is_empty() => match typed_decimal(s) {
-                        Some(d) => match round_cents(d) {
-                            Some(c) => parsed.push((key, d, c)),
-                            None => incomplete_keys.push(key),
-                        },
+        for (key, opt_str) in fields {
+            match opt_str {
+                Some(s) if !s.trim().is_empty() => match typed_decimal(s) {
+                    Some(d) => match round_cents(d) {
+                        Some(c) => parsed.push((key, d, c)),
                         None => incomplete_keys.push(key),
                     },
-                    _ => incomplete_keys.push(key),
-                }
+                    None => incomplete_keys.push(key),
+                },
+                _ => incomplete_keys.push(key),
             }
+        }
 
-            if !incomplete_keys.is_empty() {
-                let field = if incomplete_keys.len() == 1 {
-                    Some(incomplete_keys[0])
-                } else {
-                    None
-                };
-                return Err(V3Error::new(
-                    "profitIncomplete",
-                    field,
-                    INCOMPLETE,
-                    StatusCode::BAD_REQUEST,
-                ));
+        if !incomplete_keys.is_empty() {
+            let field = if incomplete_keys.len() == 1 {
+                Some(incomplete_keys[0])
+            } else {
+                None
+            };
+            return Err(V3Error::new(
+                "profitIncomplete",
+                field,
+                INCOMPLETE,
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        // Step 2: non-negativity of the six
+        let mut negative_keys = Vec::new();
+        for &(key, d, _c) in &parsed {
+            if NON_NEGATIVE_KEYS.contains(&key) && d < rust_decimal::Decimal::ZERO {
+                negative_keys.push(key);
             }
+        }
 
-            // Step 2: non-negativity of the six
-            let mut negative_keys = Vec::new();
-            for &(key, d, _c) in &parsed {
-                if NON_NEGATIVE_KEYS.contains(&key) && d < rust_decimal::Decimal::ZERO {
-                    negative_keys.push(key);
-                }
-            }
+        if !negative_keys.is_empty() {
+            let field = if negative_keys.len() == 1 {
+                Some(negative_keys[0])
+            } else {
+                None
+            };
+            return Err(V3Error::new(
+                "profitNegative",
+                field,
+                NEGATIVE,
+                StatusCode::BAD_REQUEST,
+            ));
+        }
 
-            if !negative_keys.is_empty() {
-                let field = if negative_keys.len() == 1 {
-                    Some(negative_keys[0])
-                } else {
-                    None
-                };
-                return Err(V3Error::new(
-                    "profitNegative",
-                    field,
-                    NEGATIVE,
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
+        // Step 3: compute
+        let mut cents_map = [0i128; 8];
+        for (i, &(key, _d, c)) in parsed.iter().enumerate() {
+            debug_assert_eq!(fields[i].0, key);
+            cents_map[i] = c;
+        }
 
-            // Step 3: compute
-            let mut cents_map = [0i128; 8];
-            for (i, &(key, _d, c)) in parsed.iter().enumerate() {
-                debug_assert_eq!(fields[i].0, key);
-                cents_map[i] = c;
-            }
+        let c_realized = cents_map[0];
+        let c_foreign_value = cents_map[1];
+        let c_foreign_cost = cents_map[2];
+        let c_net_assets = cents_map[3];
+        let c_capital = cents_map[4];
+        let c_reserve = cents_map[5];
+        let c_cash = cents_map[6];
+        let c_cash_minimum = cents_map[7];
 
-            let c_realized = cents_map[0];
-            let c_foreign_value = cents_map[1];
-            let c_foreign_cost = cents_map[2];
-            let c_net_assets = cents_map[3];
-            let c_capital = cents_map[4];
-            let c_reserve = cents_map[5];
-            let c_cash = cents_map[6];
-            let c_cash_minimum = cents_map[7];
+        let realized = fixed2(c_realized);
+        let unrealized = fixed2(c_foreign_value.saturating_sub(c_foreign_cost));
 
-            let realized = fixed2(c_realized);
-            let unrealized = fixed2(c_foreign_value.saturating_sub(c_foreign_cost));
-
-            let term2 = c_net_assets
-                .saturating_sub(c_capital)
-                .saturating_sub(c_reserve);
-            let term3 = c_cash.saturating_sub(c_cash_minimum);
-            let withdrawable_cents = 0.max(c_realized.min(term2).min(term3));
-            let withdrawable = fixed2(withdrawable_cents);
+        let term2 = c_net_assets
+            .saturating_sub(c_capital)
+            .saturating_sub(c_reserve);
+        let term3 = c_cash.saturating_sub(c_cash_minimum);
+        let withdrawable_cents = 0.max(c_realized.min(term2).min(term3));
+        let withdrawable = fixed2(withdrawable_cents);
 
         Ok(ProfitSummary {
             realized: Money(realized),

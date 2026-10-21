@@ -116,7 +116,9 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
                     .await
                 {
                     Ok(t) => t,
-                    Err(_) => return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR),
+                    Err(_) => {
+                        return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR);
+                    }
                 };
             let Some(Ok(tz)) = tz_str.map(|s| s.parse::<chrono_tz::Tz>()) else {
                 return refuse("serverError", None, StatusCode::INTERNAL_SERVER_ERROR);

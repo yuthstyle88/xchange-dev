@@ -156,9 +156,6 @@ async fn resolve_user_id(
 
 fn is_executive_now(who: &Actor, now: DateTime<Utc>) -> bool {
     who.roles.iter().any(|r| {
-        r.role == Role::Executive
-            && r.valid_from <= now
-            && r.valid_to.is_none_or(|to| now < to)
+        r.role == Role::Executive && r.valid_from <= now && r.valid_to.is_none_or(|to| now < to)
     })
 }
-

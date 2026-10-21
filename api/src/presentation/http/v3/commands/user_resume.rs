@@ -18,9 +18,7 @@ use super::user_disable::UserChangeOutput;
 use super::user_grant::{changed, from_change_error, user_in_organisation, users};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, request_ip,
-};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, request_ip};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]

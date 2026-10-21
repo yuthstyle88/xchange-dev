@@ -21,7 +21,7 @@ use xc_queue::application::issue::ticket_issuer::TicketIssuer;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
-use crate::presentation::http::v3::command::{server_error, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 #[path = "bookings/cancel.rs"]
@@ -146,26 +146,17 @@ impl BookingServices {
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let services = Arc::new(BookingServices::new(state.db.clone()));
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(create::BookingCreate::new(services.clone())),
-    );
+    CommandEndpoint::register(cfg, Arc::new(create::BookingCreate::new(services.clone())));
     CommandEndpoint::register(
         cfg,
         Arc::new(confirm::BookingConfirm::new(services.clone())),
     );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(cancel::BookingCancel::new(services.clone())),
-    );
+    CommandEndpoint::register(cfg, Arc::new(cancel::BookingCancel::new(services.clone())));
     CommandEndpoint::register(
         cfg,
         Arc::new(reschedule::BookingReschedule::new(services.clone())),
     );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(qr::BookingQrReissue::new(services.clone())),
-    );
+    CommandEndpoint::register(cfg, Arc::new(qr::BookingQrReissue::new(services.clone())));
     CommandEndpoint::register(
         cfg,
         Arc::new(check_in::BookingCheckIn::new(services.clone())),
@@ -174,10 +165,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         cfg,
         Arc::new(kiosk_check_in::KioskBookingCheckIn::new(services.clone())),
     );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(slot_rule::SlotRuleSet::new(services.clone())),
-    );
+    CommandEndpoint::register(cfg, Arc::new(slot_rule::SlotRuleSet::new(services.clone())));
     CommandEndpoint::register(
         cfg,
         Arc::new(closure_add::ClosureAdd::new(services.clone())),
@@ -190,18 +178,9 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         cfg,
         Arc::new(slot_capacity::SlotCapacitySet::new(services.clone())),
     );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(slot_close::SlotClose::new(services.clone())),
-    );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(slot_open::SlotOpen::new(services.clone())),
-    );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(policy::BookingPolicySet::new(services)),
-    );
+    CommandEndpoint::register(cfg, Arc::new(slot_close::SlotClose::new(services.clone())));
+    CommandEndpoint::register(cfg, Arc::new(slot_open::SlotOpen::new(services.clone())));
+    CommandEndpoint::register(cfg, Arc::new(policy::BookingPolicySet::new(services)));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

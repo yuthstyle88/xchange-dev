@@ -3950,6 +3950,7 @@ dependencies = [
  "uuid",
  "xc-kernel",
  "xc-rate",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -3971,6 +3972,7 @@ dependencies = [
  "xc-customer",
  "xc-kernel",
  "xc-rate",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -3987,6 +3989,7 @@ dependencies = [
  "tokio",
  "xc-auth",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4009,6 +4012,7 @@ dependencies = [
  "tokio",
  "xc-kernel",
  "xc-testdb",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4036,6 +4040,7 @@ dependencies = [
  "xc-kernel",
  "xc-rate",
  "xc-referral",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4058,6 +4063,7 @@ dependencies = [
  "xc-kernel",
  "xc-shift",
  "xc-testdb",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4078,6 +4084,7 @@ dependencies = [
  "xc-approval",
  "xc-auth",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4090,6 +4097,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4111,6 +4119,7 @@ dependencies = [
  "uuid",
  "xc-customer",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4133,6 +4142,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4150,6 +4160,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4169,6 +4180,7 @@ dependencies = [
  "uuid",
  "xc-kernel",
  "xc-outbox",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4189,6 +4201,7 @@ dependencies = [
  "xc-approval",
  "xc-auth",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4205,6 +4218,7 @@ dependencies = [
  "uuid",
  "xc-auth",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4221,6 +4235,7 @@ dependencies = [
  "tracing",
  "uuid",
  "xc-approval",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4239,6 +4254,7 @@ dependencies = [
  "uuid",
  "xc-auth",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4265,6 +4281,7 @@ dependencies = [
  "xc-kernel",
  "xc-notify",
  "xc-outbox",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4285,6 +4302,7 @@ dependencies = [
  "xc-customer",
  "xc-kernel",
  "xc-outbox",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4306,6 +4324,7 @@ dependencies = [
  "xc-auth",
  "xc-kernel",
  "xc-testdb",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4317,7 +4336,12 @@ dependencies = [
  "sha2 0.10.9",
  "sqlx",
  "tokio",
+ "xc-testlist",
 ]
+
+[[package]]
+name = "xc-testlist"
+version = "0.1.0"
 
 [[package]]
 name = "xc-verification"
@@ -4338,6 +4362,7 @@ dependencies = [
  "xc-auth",
  "xc-customer",
  "xc-kernel",
+ "xc-testlist",
 ]
 
 [[package]]
@@ -4388,6 +4413,7 @@ dependencies = [
  "xc-referral",
  "xc-shift",
  "xc-testdb",
+ "xc-testlist",
  "xc-verification",
 ]
 

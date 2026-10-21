@@ -17,7 +17,9 @@ use super::rate_alert_create::{make_rate_alert_service, map_alert_error};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::rate_alerts::{RateAlertLifecycleInput, RateAlertOutput};
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, role_not_allowed_here};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, role_not_allowed_here,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 fn parse_alert_id(id_opt: Option<&str>) -> Result<RateAlertId, V3Error> {
@@ -49,14 +51,9 @@ fn parse_expected_version(v: i64) -> Result<i32, V3Error> {
             "expectedVersion must be non-negative",
         ));
     }
-    i32::try_from(v).map_err(|_| {
-        validation_failed(
-            "expectedVersion",
-            "expectedVersion out of range",
-        )
-    })
+    i32::try_from(v)
+        .map_err(|_| validation_failed("expectedVersion", "expectedVersion out of range"))
 }
-
 
 pub struct RateAlertPauseCommand {
     pool: PgPool,
@@ -84,13 +81,22 @@ impl CommandAction for RateAlertPauseCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
+        let customer_id = who
+            .customer_id
+            .as_deref()
+            .ok_or_else(role_not_allowed_here)?;
         let alert_id = parse_alert_id(input.id.as_deref())?;
         let expected_version = parse_expected_version(input.expected_version)?;
 
         let service = make_rate_alert_service(self.pool.clone());
         let alert = service
-            .pause(tx, customer_id, alert_id, expected_version, chrono::Utc::now())
+            .pause(
+                tx,
+                customer_id,
+                alert_id,
+                expected_version,
+                chrono::Utc::now(),
+            )
             .await
             .map_err(map_alert_error)?;
 
@@ -127,13 +133,22 @@ impl CommandAction for RateAlertResumeCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
+        let customer_id = who
+            .customer_id
+            .as_deref()
+            .ok_or_else(role_not_allowed_here)?;
         let alert_id = parse_alert_id(input.id.as_deref())?;
         let expected_version = parse_expected_version(input.expected_version)?;
 
         let service = make_rate_alert_service(self.pool.clone());
         let alert = service
-            .resume(tx, customer_id, alert_id, expected_version, chrono::Utc::now())
+            .resume(
+                tx,
+                customer_id,
+                alert_id,
+                expected_version,
+                chrono::Utc::now(),
+            )
             .await
             .map_err(map_alert_error)?;
 
@@ -170,13 +185,22 @@ impl CommandAction for RateAlertDeleteCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let customer_id = who.customer_id.as_deref().ok_or_else(role_not_allowed_here)?;
+        let customer_id = who
+            .customer_id
+            .as_deref()
+            .ok_or_else(role_not_allowed_here)?;
         let alert_id = parse_alert_id(input.id.as_deref())?;
         let expected_version = parse_expected_version(input.expected_version)?;
 
         let service = make_rate_alert_service(self.pool.clone());
         let alert = service
-            .delete(tx, customer_id, alert_id, expected_version, chrono::Utc::now())
+            .delete(
+                tx,
+                customer_id,
+                alert_id,
+                expected_version,
+                chrono::Utc::now(),
+            )
             .await
             .map_err(map_alert_error)?;
 
@@ -188,18 +212,9 @@ impl CommandAction for RateAlertDeleteCommand {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(RateAlertPauseCommand::new(state.db.clone())),
-    );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(RateAlertResumeCommand::new(state.db.clone())),
-    );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(RateAlertDeleteCommand::new(state.db.clone())),
-    );
+    CommandEndpoint::register(cfg, Arc::new(RateAlertPauseCommand::new(state.db.clone())));
+    CommandEndpoint::register(cfg, Arc::new(RateAlertResumeCommand::new(state.db.clone())));
+    CommandEndpoint::register(cfg, Arc::new(RateAlertDeleteCommand::new(state.db.clone())));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

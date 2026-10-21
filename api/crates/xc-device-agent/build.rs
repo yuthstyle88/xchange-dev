@@ -87,4 +87,6 @@ fn main() {
 
     println!("cargo:rustc-env=XC_AGENT_BUILD={build}");
     println!("cargo:rustc-env=XC_AGENT_BUILT_AT={built_at}");
+
+    xc_testlist::emit(1);
 }

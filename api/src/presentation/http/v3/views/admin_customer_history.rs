@@ -15,7 +15,7 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::admin_customer_history::AdminCustomerHistoryFilter;
 use crate::presentation::dto::v3::transaction_row::{
-    TransactionRow, TxSqlRow, ROW_COLUMNS, ROW_FROM,
+    ROW_COLUMNS, ROW_FROM, TransactionRow, TxSqlRow,
 };
 use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
