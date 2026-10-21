@@ -98,11 +98,7 @@ fn map_error(err: AppError) -> HttpResponse {
     }
 }
 
-async fn handle(
-    req: HttpRequest,
-    state: web::Data<AppState>,
-    body: web::Bytes,
-) -> HttpResponse {
+async fn handle(req: HttpRequest, state: web::Data<AppState>, body: web::Bytes) -> HttpResponse {
     if !same_origin(&req) {
         return V3Error::new(
             "originRejected",
