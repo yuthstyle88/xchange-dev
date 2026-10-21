@@ -13,12 +13,30 @@
 //! the recipient is never the caller's choice.
 
 use std::path::Path;
+use std::sync::Arc;
 
-use actix_web::{HttpRequest, HttpResponse, web};
+use actix_web::http::{StatusCode, header};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
+use chrono::Utc;
+use pos_error::AppError;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ts_rs::TS;
+use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_customer::domain::email_sender::EMAIL_UNAVAILABLE;
 
+use crate::application::copy_by_email::booking_copy::BookingCopy;
+use crate::application::copy_by_email::link::CopyLink;
+use crate::application::copy_by_email::member_email::PgMemberEmails;
+use crate::application::copy_by_email::service::CopyByEmailService;
+use crate::application::copy_by_email::subject::{CopySubject, CopySubjectKind};
+use crate::application::copy_by_email::web_request_copy::WebRequestCopy;
 use crate::bootstrap::AppState;
+use crate::infrastructure::notify::notify_email_sender::NotifyEmailSender;
+use crate::presentation::extractors::origin::same_origin;
+use crate::presentation::http::v3::command::{role_not_allowed_here, server_error};
+use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::view::authenticate_and_authorize;
 
 pub const ROUTE: &str = "/api/app/copy-by-email";
 
@@ -47,13 +65,141 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         .route(ROUTE, web::post().to(handle));
 }
 
+fn validation_failed(field: &'static str) -> HttpResponse {
+    V3Error::new(
+        "validationFailed",
+        Some(field),
+        "ข้อมูลไม่ถูกต้อง",
+        StatusCode::BAD_REQUEST,
+    )
+    .error_response()
+}
+
+fn map_error(err: AppError) -> HttpResponse {
+    match err {
+        AppError::NotFound { .. } => {
+            V3Error::new("notFound", None, "ไม่พบรายการ", StatusCode::NOT_FOUND).error_response()
+        }
+        AppError::Conflict(ref code) if code == "noVerifiedEmail" => V3Error::new(
+            "noVerifiedEmail",
+            None,
+            "ยังไม่มีอีเมลที่ยืนยันแล้ว",
+            StatusCode::CONFLICT,
+        )
+        .error_response(),
+        AppError::Domain(ref code) if code == EMAIL_UNAVAILABLE => V3Error::new(
+            "emailUnavailable",
+            None,
+            EMAIL_UNAVAILABLE,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+        .error_response(),
+        _ => server_error().error_response(),
+    }
+}
+
 async fn handle(
     req: HttpRequest,
     state: web::Data<AppState>,
     body: web::Bytes,
 ) -> HttpResponse {
-    let _ = (req, state, body);
-    todo!("KWQ-D7: same_origin, authorize copyByEmail, CopyByEmailService::send")
+    if !same_origin(&req) {
+        return V3Error::new(
+            "originRejected",
+            None,
+            "ORIGIN_REJECTED",
+            StatusCode::BAD_REQUEST,
+        )
+        .error_response();
+    }
+
+    let who = match authenticate_and_authorize(&req, (EntryPath::Rpc, "copyByEmail")).await {
+        Ok(who) => who,
+        Err(resp) => return resp,
+    };
+    let Some(customer_id) = who.customer_id.as_deref() else {
+        return role_not_allowed_here().error_response();
+    };
+
+    let value: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            return V3Error::new(
+                "invalidRequest",
+                None,
+                "คำขอไม่ถูกต้อง",
+                StatusCode::BAD_REQUEST,
+            )
+            .error_response();
+        }
+    };
+    let Some(obj) = value.as_object() else {
+        return V3Error::new(
+            "invalidRequest",
+            None,
+            "คำขอไม่ถูกต้อง",
+            StatusCode::BAD_REQUEST,
+        )
+        .error_response();
+    };
+
+    let Some(kind) = obj
+        .get("subject")
+        .and_then(Value::as_str)
+        .and_then(CopySubjectKind::parse)
+    else {
+        return validation_failed("subject");
+    };
+    let Some(id) = obj
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return validation_failed("id");
+    };
+    let Some(qr) = obj
+        .get("qr")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return validation_failed("qr");
+    };
+
+    let Ok(keys) = xc_customer::get_pii_keys() else {
+        return server_error().error_response();
+    };
+    let origin = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+
+    let pool = state.db.clone();
+    let subjects: Vec<Arc<dyn CopySubject>> = vec![
+        Arc::new(BookingCopy::new(pool.clone())),
+        Arc::new(WebRequestCopy::new(pool.clone())),
+    ];
+    let service = CopyByEmailService::new(
+        subjects,
+        Arc::new(PgMemberEmails::new(pool, keys.clone())),
+        Arc::new(NotifyEmailSender::from_env()),
+        CopyLink::from_pii(&keys),
+        origin,
+    );
+
+    match service.send(customer_id, kind, id, qr, Utc::now()).await {
+        Ok(sent) => HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(CopyByEmailOutput {
+                sent: true,
+                again: sent.again.then_some(true),
+            }),
+        Err(err) => map_error(err),
+    }
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
