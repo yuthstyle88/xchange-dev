@@ -243,7 +243,12 @@ export function DeskBookingsScreen(): JSX.Element {
         );
       } catch (err) {
         readErrorActive = false;
-        setErrorMessage(deskBookingError(err));
+        // QW-1 (§4.3a W8): one 404 for another branch, an unknown and an expired token.
+        setErrorMessage(
+          err instanceof ApiError && err.code === 'notFound'
+            ? t('requestQrNotFound')
+            : deskBookingError(err),
+        );
       }
       return;
     }
