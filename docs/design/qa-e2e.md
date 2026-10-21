@@ -39,6 +39,10 @@ qa/e2e/
   tests/flow-exchange.spec.ts        QA-F6 (added after #542; not in the skeleton)
   tests/flow-count-difference.spec.ts  QA-F7 (round 2)
   tests/smoke-admin-pricing.spec.ts  QA-F10 (round 2: the `pricing` menu, added after the inventory)
+  tests/flow-queue-many.spec.ts      QA-F8 (round 3)
+  tests/flow-verification.spec.ts    QA-F9 (round 3)
+  tests/smoke-rbac-matrix.spec.ts    QA-F11 (round 3; "F11" is also the name of the api password tests, unrelated)
+  tests/flow-transfer-escalation.spec.ts  QA-F12 (round 3)
 ```
 
 `playwright.config.ts` keeps PR 3838's settings (one worker, no retries, phone viewport 430×932 for `/app`, desktop
@@ -171,6 +175,10 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 | F5 approvals | `blueprint/rates.md` §5, A06 | admin: the list loads with its filters; if a PENDING request exists, open it (read only) | none |
 | F6 desk exchange | `blueprint/quote-transaction.md`; reversal V-2 | teller, inside its own shift (`openShift` … `closeShift`): `/desk?branch=MAIN`, rate step BUY `users.currency` × a small amount, skip customer details (WALK-IN), confirm the booking, pay cash (accept the count `window.confirm`), the receipt shows `XC-YYYYMMDD-NNNNNN`. Cleanup in the same test: the teller requests a reversal on `/desk/transactions/<id>`, finance approves it (admin › `reconciliation`; never the requester), the teller posts it from the desk's refunds task. The reversal must post the same business day (`xc-exchange/src/domain/reversal/window.rs`) and before the close, so the drawer nets back to the opening figures | one COMPLETED exchange, its reversal and receipt revision 2 on MAIN. They stay: a completed exchange is never changed or deleted (V-2), so the test leaves the stock where it found it, not the rows |
 | F7 count difference | `ledger-inventory.md` §4.4; `xc-cash/src/application/ledger_approval/count_difference.rs` | inside the teller's own shift: the teller counts the close one THB note short (its own locators + `posted`, since `submitCount` always fills `SHIFT_QTY`); the branch manager's verify answers 200 `AWAITING_FINANCE` and the shift stays open; admin `/#cash` › `counts-waiting` shows the difference; finance approves the `COUNT_DIFFERENCE` request on `/#approvals`; the branch manager verifies again ⇒ `VERIFIED`, the shift closes; the teller clocks out. Approval is reached because the seed writes no `cash_limits` row, so any non-zero difference is over the limit | one decided `COUNT_DIFFERENCE` request, one open cash exception, VARIANCE one note larger; the safe is not touched, so the next opening still works |
+| F8 queue, several tickets | `blueprint/queue-tickets.md` §3, §4.3–4.4 | inside the teller's own shift, queue opened if closed (and closed again only if this test opened it): first read `queue_board` and fail listing any WAITING leftovers, because call-next is branch-wide and takes BOOKING before WALK_IN, then the lowest sequence, from any day (`xc-queue/src/infrastructure/repository.rs:355-364`; nothing cancels leftovers at day close, `queue_day_hook.rs:1-3` is not wired); issue walk-ins A, B, C; call-next ⇒ A, skip it (skip **is** no-show: NO_SHOW, it leaves the board); call-next ⇒ B, start, finish; call-next ⇒ C, a second staff page on `/desk/queue` shows it called, then cancel C with a reason. There is **no public board of called numbers** on `main`: `/kiosk-queue.html` is signed-in and lists kiosk requests; called numbers show only to staff (`queue_board` needs `QueueOperate`) | three queue tickets on MAIN (NO_SHOW, COMPLETED, CANCELLED); numbers are per branch-local day and never reused, so never assert a literal like `W001` |
+| F9 customer verification | `blueprint/verification.md` | customer on `/app/verification`: start (or `update-and-resubmit` after an earlier run's REJECTED), upload a tiny real PNG as PASSPORT, submit; admin on `/operations/verification`: start-review, request-update (`DOCUMENT_UNREADABLE`); customer sees the reason and resubmits; admin start-review, reject (`OTHER`); customer sees REJECTED with its reason and the resubmit button. **No OCR runs** (the only provider is `STAFF`), so E-5 does not block it. The reviewer is `admin` (EXECUTIVE): the seed creates no VERIFICATION_REVIEWER, and a branch manager cannot see customer-opened cases (`branch_id` NULL). Ending REJECTED keeps the loop repeatable; approving is not part of the flow (once VERIFIED the customer UI offers no new case) | one REJECTED case and its document for the seeded customer |
+| F11 RBAC matrix | `xc-auth` role grants; `web/src/screens/admin/*/menu.ts` | read-only. For each staff account: sign in, read `me.permissions` (`mePermissions`), and expect each admin menu link `a[href="#<id>"]` to exist exactly when its `needs` is `all` or in the permissions; a refused `#id` keeps the hash and shows the lowest-order allowed menu (no 403 view); `/staff` cards follow their `visible` rule; `/operations/verification` shows `[data-refused]` without `VerificationReview`. The customer is redirected to `/login` from `/`, `/staff`, `/desk`, `/operations/verification`. The menu → `needs` table is copied into the spec with its `menu.ts` citations; the role → permission matrix is **not** hard-coded, so the spec does not go stale when grants change | none |
+| F12 transfer escalation | `blueprint/cash-shift-transfer.md`; `xc-cash/src/application/approval/transfer.rs` | read `cash_transfer_policy`; finance records an EXTERNAL_IN above the limit (with no policy row every amount is above it); the branch manager's approval is refused (`ABOVE_LIMIT`), admin (EXECUTIVE) approves; finance dispatches and receives; then an EXTERNAL_OUT with the same lines, approved by admin, dispatched and received, so the safe ends where it started. A branch-to-branch transfer is **not** testable: the seed has only MAIN | two transfers and their approvals on MAIN; the safe nets to zero |
 
 ## 5. Order and data
 
@@ -182,6 +190,14 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 - F6 (`flow-exchange.spec.ts`) runs after `flow-cash` and before `flow-queue`, and opens and closes its own shift, so it
   starts and ends with the teller's shift closed like the others. F7 (`flow-count-difference.spec.ts`) does the same and
   sorts between `flow-cash` and `flow-exchange`.
+- F8 (`flow-queue-many.spec.ts`) sorts after `flow-queue`; both start by failing on WAITING leftovers rather than calling
+  someone else's ticket.
+- 🔴 **F3 depends on a value set by hand on the host.** Its branch manager approves an EXTERNAL_IN of 168,875 THB
+  (`FUND_QTY = '100'` of each of the 11 THB notes, `flow-cash.spec.ts:23`; one of each is 1,688.75,
+  `api/migrations/20261012100000_cash.sql:228-238`), which is within the limit only if a cash-transfer policy row allows it.
+  The seed writes none (`cash_transfer_policy_versions`), and with no row `within_limit` is false (`transfer_flow.rs:547-556`),
+  so only EXECUTIVE may decide and the branch manager is refused `ABOVE_LIMIT` (`xc-cash/src/application/approval/transfer.rs:130-143`):
+  on a freshly reseeded host F3 fails at that approval. Seeding the policy is the owner's call (a seed change).
 
 ## 6. What the suite cannot do (by hand, with screenshots)
 
@@ -192,6 +208,7 @@ The key element is a `data-testid` or role the screen already renders; a screen 
   out-of-bound rate, and a count difference **under** the branch limit (which closes without approval): the seed writes no
   `cash_limits` row (`count_difference_limit_thb`), so every non-zero difference goes to finance approval (F7), and
   setting a limit is a shared-settings change (`PUT /api/cash-limits`).
+- **A transfer between two branches:** the seed has only `MAIN`; a second branch is a permanent shared change.
 - **Anything that changes shared settings without a restore:** a rate publish, campaign approval, policy saves.
 
 ## 7. Tickets (cut after this document merges)
@@ -209,6 +226,12 @@ clean, with no run against a host (E-3).
 | QA-F7 | `flow-count-difference.spec.ts` (new file) | logic | Argon |
 | QA-F10 | `smoke-admin-pricing.spec.ts` (new file) | mechanical | Flash |
 | QA-S5 fix | `smoke-admin-org.spec.ts`: drop `/#employees` | mechanical | Flash |
+| QA-F8 | `flow-queue-many.spec.ts` (new file) | logic | Argon |
+| QA-F2 fix | `flow-queue.spec.ts`: leftover pre-check + called-is-issued assertions | mechanical | Flash |
+| QA-H1 | `helpers.ts` `closeShift`: assert the clock-out (the one ticket that edits `helpers.ts`) | mechanical | Flash |
+| QA-F9 | `flow-verification.spec.ts` (new file) | logic | Argon |
+| QA-F11 | `smoke-rbac-matrix.spec.ts` (new file) | logic | Argon |
+| QA-F12 | `flow-transfer-escalation.spec.ts` (new file) | logic | Argon |
 
 The skeleton (Claude, STEP 2): the `git mv`, `tsconfig.json`, the config's two projects, `helpers.ts` complete, and the
 13 spec files as empty `test.describe` blocks with their area named.
