@@ -29,7 +29,7 @@ use sqlx::{AssertSqlSafe, PgPool};
 use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSessionId};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const MAIN: &str = "MAIN";
@@ -133,18 +133,6 @@ impl Room {
 struct AnonCallers;
 
 impl SessionReader for AnonCallers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             Callers {

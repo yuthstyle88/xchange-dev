@@ -43,14 +43,14 @@ use chrono::{DateTime, Duration, Utc};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const RPC: &str = "/api/rpc";
@@ -360,10 +360,22 @@ impl Room {
     }
 }
 
+const STAFF: [(&str, &[Role]); 9] = [
+    ("FRONT", &[Role::Teller]),
+    ("BACKEND", &[Role::BranchManager]),
+    ("MANAGER", &[Role::BranchManager]),
+    ("RATES", &[Role::RateManager]),
+    ("MONITOR", &[Role::VerificationReviewer]),
+    ("FINANCE", &[Role::Finance]),
+    ("SYSTEM", &[Role::Admin]),
+    ("DOCUMENTS", &[Role::VerificationReviewer]),
+    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
+];
+
 /// Every caller key of [`Room`] and the actor `Policy` sees for it on `path`: on `StaffRpc` the
 /// staff session only, elsewhere the owner first (`rpc.rs`, `view.rs:339-341`).
 fn callers(path: EntryPath) -> Vec<(String, Option<Actor>)> {
-    let owner = || Some(Actor::owner("owner"));
+    let owner = || Some(test_callers::owner("owner"));
     let mut out: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
         (
@@ -375,17 +387,9 @@ fn callers(path: EntryPath) -> Vec<(String, Option<Actor>)> {
             },
         ),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        out.push((role.as_str().to_string(), staff.clone()));
-        out.push((
-            format!("OWNER+{}", role.as_str()),
-            if path == EntryPath::StaffRpc {
-                staff
-            } else {
-                owner()
-            },
-        ));
+    for (name, roles) in STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        out.push((name.to_string(), staff));
     }
     out
 }
@@ -413,11 +417,10 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
     );
 }
 
-/// DK-A §10: each view refuses_exactly whom `Policy::authorize` / `RoleGrants::seed` refuses for
+/// DK-A §10: each view refuses exactly whom `Policy::authorize` / `RoleGrants::seed` refuses for
 /// its pair, caller by caller, with the policy's status and sentence.
 #[actix_web::test]
 async fn each_view_answers_exactly_whom_its_pair_allows() {
-    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
     use xc_auth::domain::access::{Permission, RoleGrants};
     use xc_auth::domain::policy::entities::policy::Need;
 
@@ -435,19 +438,13 @@ async fn each_view_answers_exactly_whom_its_pair_allows() {
         for (who, actor) in callers(path) {
             let answer = room.get(&who, &view_path(view, "")).await;
             let what = format!("{view} as {who:?}");
+            // OR-7.m (merge of feat/rbac-groups): the caller is already a Blueprint actor
             let holds = actor.as_ref().is_some_and(|ac| {
-                blueprint_roles(ac.role())
+                ac.roles
                     .iter()
-                    .any(|&r| RoleGrants::seed(r).contains(&perm))
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
             });
-            let user = actor.as_ref().map(|ac| {
-                actor_from_v3(
-                    ac,
-                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
-                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-                )
-            });
-            let auth = Policy::authorize(user.as_ref(), path, &act, None, chrono::Utc::now());
+            let auth = Policy::authorize(actor.as_ref(), path, &act, None, Utc::now());
             assert_eq!(
                 auth.is_ok(),
                 holds,
@@ -469,18 +466,18 @@ async fn each_view_answers_exactly_whom_its_pair_allows() {
             }
         }
         if view == STAFF_VIEW {
-            let expected_staff = Role::STAFF
+            // OR-7.m G2: rule 4 (#3700, #3717): one session per request, so each staff role once
+            let expected_staff = STAFF
                 .iter()
-                .filter(|&&r| {
-                    blueprint_roles(r)
+                .filter(|(_, roles)| {
+                    roles
                         .iter()
-                        .any(|&br| RoleGrants::seed(br).contains(&Permission::ExchangeTransact))
+                        .any(|&r| RoleGrants::seed(r).contains(&Permission::ExchangeTransact))
                 })
                 .count();
             assert_eq!(
-                allowed,
-                2 * expected_staff,
-                "{view}: staff roles with ExchangeTransact, alone and beside the owner"
+                allowed, expected_staff,
+                "{view}: staff roles with ExchangeTransact, alone"
             );
             assert!(
                 refused > 2,

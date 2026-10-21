@@ -173,7 +173,8 @@ impl TestDb {
         )
     }
 
-    /// A branch that exists: a row in `branches` (the table of ticket T5).
+    /// A branch that exists: a row in `branches` (the table of ticket T5), with `TELLER` roles at the branch for the
+    /// non-owner [`OPENERS`].
     pub async fn branch(&self, label: &str) -> BranchId {
         let id = unique(label);
         sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $2)")
@@ -182,6 +183,15 @@ impl TestDb {
             .execute(&self.pool)
             .await
             .expect("insert a test branch into `branches`");
+        sqlx::query(
+            "INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+             SELECT u.id, 'TELLER', u.organization_id, $1 FROM users u \
+             WHERE u.created_by = 'test' AND u.name <> 'owner'",
+        )
+        .bind(&id)
+        .execute(&self.pool)
+        .await
+        .expect("grant TELLER role at the test branch to seeded openers");
         BranchId::new(id)
     }
 
@@ -231,11 +241,24 @@ impl TestDb {
 
     /// The `users.id` an opener id of [`OPENERS`] was seeded as.
     pub async fn teller(&self, opener: &str) -> String {
-        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
-            .bind(opener)
+        if opener == "owner" {
+            return sqlx::query_scalar(
+                "SELECT u.id::text FROM users u \
+                 WHERE EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+                   AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'ADMIN' AND r.branch_id IS NULL) \
+                 ORDER BY u.created_at, u.id LIMIT 1",
+            )
             .fetch_one(&self.pool)
             .await
-            .unwrap_or_else(|e| panic!("the user seeded for opener {opener}: {e}"))
+            .unwrap_or_else(|e| panic!("the user seeded for opener {opener}: {e}"));
+        }
+        sqlx::query_scalar(
+            "SELECT id::text FROM users WHERE name = $1 AND created_by = 'test' ORDER BY created_at, id LIMIT 1",
+        )
+        .bind(opener)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or_else(|e| panic!("the user seeded for opener {opener}: {e}"))
     }
 
     /// CA-10 (#626, #2955): an OPEN shift written straight into `shifts` and the `ShiftBalances` double, the way a
@@ -258,7 +281,7 @@ impl TestDb {
         .bind(&id)
         .bind(branch.as_str())
         .bind(opened_at)
-        .bind(opener)
+        .bind(&teller)
         .bind(open_request_id)
         .bind(&teller)
         .execute(&self.pool)
@@ -500,14 +523,15 @@ pub fn resolved(payload: &Value, shift_ids: &[String]) -> Value {
 }
 
 /// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3). The user an
-/// opener id resolves to: `users.legacy_employee_id = id`, or, for `"owner"`, the organisation-wide EXECUTIVE +
-/// ADMIN user. Seeded once per id; no test's expectation depends on it. Added by the ticket author in CA-1's
-/// up-front commit.
+/// opener id resolves to: a user with `name = id` (with a TELLER role at each test branch), or, for `"owner"`, the
+/// organisation-wide EXECUTIVE + ADMIN user. Seeded once per id; no test's expectation depends on it.
 pub async fn seed_opener(pool: &PgPool, id: &str) {
     if id == "owner" {
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
-             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL))",
+            "SELECT EXISTS (SELECT 1 FROM users u WHERE EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+             AND EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'ADMIN' AND r.branch_id IS NULL))",
         )
         .fetch_one(pool)
         .await
@@ -526,13 +550,26 @@ pub async fn seed_opener(pool: &PgPool, id: &str) {
         }
         return;
     }
-    sqlx::query(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
-         ON CONFLICT (legacy_employee_id) DO NOTHING",
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE name = $1 AND created_by = 'test')",
     )
     .bind(id)
-    .execute(pool)
+    .fetch_one(pool)
     .await
-    .expect("seed an opener's user");
+    .expect("look for an opener's user");
+    if !exists {
+        sqlx::query(
+            "WITH u AS ( \
+                 INSERT INTO users (organization_id, name, status, created_by) \
+                 SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+                 RETURNING id, organization_id \
+             ) \
+             INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+             SELECT u.id, 'TELLER', u.organization_id, b.id FROM u CROSS JOIN branches b",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("seed an opener's user");
+    }
 }

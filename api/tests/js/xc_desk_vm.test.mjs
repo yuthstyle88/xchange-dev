@@ -482,12 +482,12 @@ test('gasCall clears saveTransaction observation when a new attempt starts', asy
     step: 4,
     s: { type: 'SELL', currency: 'USD', amount: '100' },
     fetchHandler: async (url, init) => {
-      if (url === '/api/auth') {
+      if (url === '/api/auth/session') {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ user: { username: 'pwtest-front' } }),
-          text: async () => JSON.stringify({ user: { username: 'pwtest-front' } }),
+          json: async () => ({ user: { name: 'pwtest-front' } }),
+          text: async () => JSON.stringify({ user: { name: 'pwtest-front' } }),
           clone() {
             return this;
           },

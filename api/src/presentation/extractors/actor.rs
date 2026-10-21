@@ -230,17 +230,18 @@ pub async fn staff_password_session(
 pub async fn identity_session(
     req: &HttpRequest,
     now: DateTime<Utc>,
-) -> Option<(xc_auth::domain::user::User, Vec<ScopedRole>)> {
+) -> pos_error::AppResult<Option<(xc_auth::domain::user::User, Vec<ScopedRole>)>> {
     let token = cookie(req, SESSION_COOKIE);
     if token.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let sessions = req.app_data::<web::Data<SessionService>>()?;
+    let Some(sessions) = req.app_data::<web::Data<SessionService>>() else {
+        return Ok(None);
+    };
     sessions
         .active_user_and_roles(&token, now)
         .await
-        .ok()
-        .flatten()
+        .map_err(|e| AppError::Internal(e.refusal().2))
 }
 
 /// The `sha256_hex` of the Blueprint session (`__Host-xc_session`) a request carries when that
@@ -275,7 +276,7 @@ pub async fn identity_session_actor(
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> Option<(xc_auth::domain::user::User, xc_auth::domain::access::Actor)> {
-    let (user, roles) = identity_session(req, now).await?;
+    let (user, roles) = identity_session(req, now).await.ok().flatten()?;
     let sessions = req.app_data::<web::Data<SessionService>>()?;
     let actor = actor_of_user(sessions.pool(), &user, roles).await?;
     Some((user, actor))

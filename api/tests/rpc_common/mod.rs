@@ -11,7 +11,7 @@
 //!   recorded step is sent at its recorded `at`;
 //! - the reference-rate source (`web::Data<Arc<dyn RateSource>>`): the Bank of
 //!   Thailand "answers" what v2 recorded for the rate being saved;
-//! - nothing else. Sessions are made by the real routes of ticket T4c.
+//! - nothing else. Sign-in cookies are made by the real routes of ticket T4c.
 //!
 //! What this part of T11a does not dispatch (`saveTransaction`, `documents`,
 //! `ops*`) is not compared. So that the steps after an accepted save still see
@@ -53,18 +53,13 @@ use actix_web::{Error, test};
 use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Value, json};
-use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::role_grants::RoleGrants;
-use xc_auth::domain::access::v3_roles::actor_from_v3;
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::domain::policy::value_objects::role::Role;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
@@ -77,6 +72,7 @@ use xchange::application::workflows::save_transaction::SaveTransactionWorkflow;
 use xchange::bootstrap::AppState;
 use xchange::infrastructure::files::file_service::FileService;
 use xchange::presentation::http::rpc::RpcClock;
+use xchange::presentation::test_callers;
 
 use crate::common::settings;
 use crate::compat_common::{Fixture, IdMap, Person, Step};
@@ -86,8 +82,6 @@ use crate::snapshot_common::{
 };
 
 pub const MAIN: &str = "MAIN";
-pub const OWNER_PASSWORD: &str = "owner-password-01";
-pub const STAFF_PASSWORD: &str = "staff-password-02";
 
 pub const RPC: &str = "/api/rpc";
 pub const STAFF_RPC: &str = "/api/staff/rpc";
@@ -320,6 +314,52 @@ pub struct Desk {
     scratch: PathBuf,
 }
 
+thread_local! {
+    static CURRENT_POOL: std::cell::RefCell<Option<sqlx::PgPool>> = const { std::cell::RefCell::new(None) };
+}
+static LAST_POOL: Mutex<Option<sqlx::PgPool>> = Mutex::new(None);
+
+fn set_current_pool(pool: &sqlx::PgPool) {
+    CURRENT_POOL.with(|p| *p.borrow_mut() = Some(pool.clone()));
+    *LAST_POOL.lock().expect("last pool") = Some(pool.clone());
+}
+
+fn take_current_pool() -> sqlx::PgPool {
+    CURRENT_POOL
+        .with(|p| p.borrow().clone())
+        .or_else(|| LAST_POOL.lock().expect("last pool").clone())
+        .expect("a Desk has been opened before App::new")
+}
+
+fn blueprint_role(v2_role: &str) -> &'static str {
+    test_callers::v2_staff_roles(v2_role)
+        .unwrap_or_else(|| panic!("unmapped v2 staff role: {v2_role}"))[0]
+        .as_str()
+}
+
+async fn xc_organization_id(pool: &sqlx::PgPool) -> String {
+    sqlx::query_scalar("SELECT id::text FROM organizations WHERE code = $1")
+        .bind(ORGANIZATION)
+        .fetch_one(pool)
+        .await
+        .expect("the XC organization")
+}
+
+async fn owner_user_id(pool: &sqlx::PgPool, org_id: &str) -> String {
+    sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE u.organization_id = $1::uuid AND u.legacy_employee_id IS NULL \
+           AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id \
+                       AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at LIMIT 1",
+    )
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .expect("look for the owner's user")
+    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
 impl Desk {
     /// A fresh schema with `api/migrations/` applied (so `MAIN` exists) and the
     /// owner `owner`, as after `xchange create-owner --username owner`.
@@ -335,13 +375,48 @@ impl Desk {
     /// currency from the register, which a funded SAFE's accounts would hold on to.
     pub async fn open_without_cash() -> Desk {
         let db = TestDb::start().await;
-        AccountService::new(
-            Arc::new(PgAccountRepository::new(db.pool.clone())),
-            PasswordHasher::with_cost(8, 1, 1),
+        set_current_pool(&db.pool);
+        let org_id = xc_organization_id(&db.pool).await;
+        let owner_id = owner_user_id(&db.pool, &org_id).await;
+        sqlx::query(
+            "INSERT INTO users (id, organization_id, name, status, created_by) \
+             VALUES ($1::uuid, $2::uuid, 'owner', 'ACTIVE', 'test') \
+             ON CONFLICT (id) DO UPDATE SET name = 'owner', status = 'ACTIVE'",
         )
-        .create_owner("owner", OWNER_PASSWORD, SystemTime::now().into())
+        .bind(&owner_id)
+        .bind(&org_id)
+        .execute(&db.pool)
         .await
         .expect("create the owner");
+        sqlx::query("DELETE FROM user_roles WHERE user_id = $1::uuid")
+            .bind(&owner_id)
+            .execute(&db.pool)
+            .await
+            .expect("clear owner roles");
+        {
+            let mut conn = db.pool.acquire().await.expect("acquire connection");
+            xc_testdb::people::seed_roles(
+                &mut conn,
+                &owner_id,
+                &org_id,
+                &[
+                    xc_testdb::people::RoleRow {
+                        role_code: "EXECUTIVE",
+                        branch_id: None,
+                        valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                        valid_to: None,
+                    },
+                    xc_testdb::people::RoleRow {
+                        role_code: "ADMIN",
+                        branch_id: None,
+                        valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                        valid_to: None,
+                    },
+                ],
+            )
+            .await
+            .expect("seed owner roles");
+        }
 
         let scratch = std::env::temp_dir().join(unique("xc-t11a"));
         let _ = std::fs::remove_dir_all(&scratch);
@@ -375,6 +450,7 @@ impl Desk {
     /// files in: a save through the routes finds the files uploaded behind
     /// them (P2-S).
     pub fn state(&self) -> AppState {
+        set_current_pool(&self.db.pool);
         let uploads = self.scratch.join("uploads");
         let uploads = uploads.to_str().expect("a scratch path in UTF-8");
         let mut state = AppState::new(
@@ -387,33 +463,55 @@ impl Desk {
         state
     }
 
-    /// The employees of a recorded file, with the ids v2 gave them (a staff
-    /// answer prints them), in the order recorded (the order they were made
-    /// in), each with the password [`STAFF_PASSWORD`]. Somebody recorded with
-    /// `mustChange` has not changed the first password.
+    /// The people of a recorded file, with the ids v2 gave them, in the order
+    /// recorded (the order they were made in), seeded as Blueprint `users` and
+    /// `user_roles`.
     pub async fn employ(&self, people: &[Person]) {
-        let hash = PasswordHasher::with_cost(8, 1, 1)
-            .hash(STAFF_PASSWORD)
-            .expect("hash the staff password");
+        set_current_pool(&self.db.pool);
+        let org_id = xc_organization_id(&self.db.pool).await;
         let first = time("2026-10-01T00:00:00.000Z");
+        let mut conn = self.db.pool.acquire().await.expect("acquire connection");
         for (i, person) in people.iter().filter(|p| !p.is_owner()).enumerate() {
+            let branch = person.branch_id.as_deref().expect("an employee's branch");
+            let role = blueprint_role(&person.role);
+            let status = if person.must_change {
+                "PENDING"
+            } else {
+                "ACTIVE"
+            };
             sqlx::query(
-                "INSERT INTO employees (id, username, name, role, branch_id, password_hash, \
-                 active, must_change, version, created_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, true, $7, 1, $8)",
+                "INSERT INTO users (id, organization_id, name, status, created_by, created_at) \
+                 VALUES ($1::uuid, $2::uuid, $3, $4, 'test', $5)",
             )
             .bind(&person.id)
+            .bind(&org_id)
             .bind(&person.username)
-            .bind(&person.name)
-            .bind(&person.role)
-            .bind(person.branch_id.as_deref().expect("an employee's branch"))
-            .bind(&hash)
-            .bind(person.must_change)
+            .bind(status)
             .bind(first + Duration::seconds(i as i64))
-            .execute(&self.db.pool)
+            .execute(&mut *conn)
             .await
             .unwrap_or_else(|e| panic!("employ {}: {e}", person.key));
-            crate::snapshot_common::seed_opener(&self.db.pool, &person.id).await;
+            let branch_exists: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM branches WHERE id = $1)")
+                    .bind(branch)
+                    .fetch_one(&mut *conn)
+                    .await
+                    .expect("check whether branch exists");
+            if branch_exists {
+                xc_testdb::people::seed_roles(
+                    &mut conn,
+                    &person.id,
+                    &org_id,
+                    &[xc_testdb::people::RoleRow {
+                        role_code: role,
+                        branch_id: Some(branch),
+                        valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                        valid_to: None,
+                    }],
+                )
+                .await
+                .unwrap_or_else(|e| panic!("seed role for {}: {e}", person.key));
+            }
         }
     }
 
@@ -565,6 +663,7 @@ type CallFn = dyn Fn(Call) -> Pin<Box<dyn Future<Output = Answer>>>;
 /// The app under test with its request type hidden.
 pub struct App {
     call: Box<CallFn>,
+    pool: sqlx::PgPool,
 }
 
 impl App {
@@ -577,11 +676,13 @@ impl App {
         B: MessageBody + 'static,
     {
         let service = std::rc::Rc::new(service);
+        let pool = take_current_pool();
         Self {
             call: Box::new(move |call| {
                 let service = service.clone();
                 Box::pin(async move { exchange(&*service, to_request, call).await })
             }),
+            pool,
         }
     }
 
@@ -625,57 +726,44 @@ where
     }
 }
 
-// ── sessions, through the real doors of T4c ──────────────────────────────────
+// ── sessions, through `user_sessions` (OR-7.m S-D) ───────────────────────────
 
 /// Person key → the `Cookie` header that person's browser sends.
 pub type Cookies = BTreeMap<String, String>;
 
-fn session_cookie(answer: &Answer, name: &str, who: &str) -> String {
-    assert_eq!(answer.status, 200, "{who} signs in: {}", answer.text);
-    answer
-        .cookies
-        .iter()
-        .filter_map(|line| line.split(';').next())
-        .find(|pair| pair.starts_with(name) && pair.len() > name.len() + 1)
-        .unwrap_or_else(|| panic!("{who}: no {name} cookie in {:?}", answer.cookies))
-        .to_string()
-}
-
-/// Signs everybody of `people` in — the owner at `/api/auth`, an employee at
-/// `/api/staff/login` — and gives back each one's cookie.
-pub async fn sign_in(app: &App, origin: &str, people: &[Person]) -> Cookies {
+/// Signs everybody of `people` in through `user_sessions` and gives back each
+/// one's `__Host-xc_session` cookie.
+pub async fn sign_in(app: &App, _origin: &str, people: &[Person]) -> Cookies {
     let mut cookies = Cookies::new();
+    let org_id = xc_organization_id(&app.pool).await;
+    let owner_id = owner_user_id(&app.pool, &org_id).await;
+    let mut conn = app.pool.acquire().await.expect("acquire connection");
     for person in people {
-        let cookie = if person.is_owner() {
-            let answer = app
-                .send(
-                    Call::post(
-                        origin,
-                        "/api/auth",
-                        json!({ "action": "login", "payload": {
-                            "username": person.username, "password": OWNER_PASSWORD } })
-                        .to_string(),
-                    )
-                    .header("x-real-ip", &unique("owner-address")),
-                )
-                .await;
-            session_cookie(&answer, "__Host-xc_owner", &person.key)
+        let (user_id, branch) = if person.is_owner() {
+            (owner_id.as_str(), Some(MAIN))
         } else {
-            let answer = app
-                .send(
-                    Call::post(
-                        origin,
-                        "/api/staff/login",
-                        json!({ "payload": {
-                            "username": person.username, "password": STAFF_PASSWORD } })
-                        .to_string(),
-                    )
-                    .header("x-real-ip", &unique("staff-address")),
-                )
-                .await;
-            session_cookie(&answer, "__Host-xc_staff", &person.key)
+            let b = person.branch_id.as_deref();
+            let exists = match b {
+                Some(id) => {
+                    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM branches WHERE id = $1)")
+                        .bind(id)
+                        .fetch_one(&mut *conn)
+                        .await
+                        .expect("check whether branch exists")
+                }
+                None => false,
+            };
+            (person.id.as_str(), b.filter(|_| exists))
         };
-        cookies.insert(person.key.clone(), cookie);
+        let token = xc_testdb::sessions::seed_session(
+            &mut conn,
+            user_id,
+            branch,
+            Utc::now() + Duration::hours(1),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("sign in {}: {e}", person.key));
+        cookies.insert(person.key.clone(), xc_testdb::sessions::cookie(&token));
     }
     cookies
 }
@@ -693,14 +781,14 @@ pub fn one_of_each_role() -> Vec<Person> {
         branch_id: None,
         must_change: false,
     }];
-    for (i, role) in Role::STAFF.iter().enumerate() {
+    for (i, (role, _)) in test_callers::V2_STAFF.iter().enumerate() {
         people.push(Person {
-            key: role.as_str().to_string(),
+            key: (*role).to_string(),
             kind: "staff".to_string(),
             id: format!("00000000-0000-4000-8000-0000000000{:02x}", i + 1),
             username: format!("role{i}"),
             name: format!("Somebody {i}"),
-            role: role.as_str().to_string(),
+            role: (*role).to_string(),
             branch_id: Some(MAIN.to_string()),
             must_change: false,
         });
@@ -791,16 +879,16 @@ pub fn call_of(fixture: &Fixture, step: &Step, cookies: &Cookies, payload: Optio
 pub fn actor_of(fixture: &Fixture, step: &Step) -> Option<Actor> {
     let person = fixture.sender(step)?;
     if person.is_owner() {
-        return Some(Actor::owner("owner"));
+        return Some(test_callers::owner("owner"));
     }
     if person.must_change {
         return None;
     }
-    Actor::staff(
-        person.id.clone(),
-        Role::parse(&person.role)?,
+    Some(test_callers::staff(
+        &person.id,
+        test_callers::v2_staff_roles(&person.role)?,
         BranchId::new(person.branch_id.clone()?),
-    )
+    ))
 }
 
 /// The organisation a password session's user is in (B1, design §3.3): any one name, because
@@ -809,19 +897,35 @@ pub const ORGANIZATION: &str = "XC";
 
 /// The rule a route asks once every route is on `Policy::authorize` (OR-4b, #767; design §4.2):
 /// the caller as B1 maps them (OWNER → EXECUTIVE + ADMIN organisation-wide, an employee's role on
-/// their branch), naming no branch. The custody rows (`Need::Custody`, #582) stay on
-/// `Policy::allow`.
+/// their branch), naming no branch.
 pub fn route_rule(
     actor: Option<&Actor>,
     entry: EntryPath,
     action: &str,
 ) -> Result<(), PolicyError> {
     let action = Action::new(action);
-    if Policy::need(entry, &action) == Some(Need::Custody) {
-        return Policy::allow(actor, entry, &action);
-    }
-    let user = actor.map(|a| actor_from_v3(a, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH));
-    Policy::authorize(user.as_ref(), entry, &action, None, Utc::now()).map(|_| ())
+    Policy::authorize(actor, entry, &action, None, Utc::now()).map(|_| ())
+}
+
+fn v2_policy_verdict(step: &Step, entry: EntryPath, action: &Action) -> Result<(), PolicyError> {
+    let err = match (step.status, step.error()) {
+        (Some(401), Some(SIGN_IN)) => PolicyError::SignIn,
+        (Some(401), Some(EMPLOYEE_AUTH_REQUIRED)) => PolicyError::EmployeeAuthRequired,
+        (Some(400), Some(INVALID_REQUEST)) if Policy::need(entry, action).is_none() => {
+            PolicyError::InvalidRequest
+        }
+        (Some(400), Some(ROLE_NOT_ALLOWED_STAFF)) => PolicyError::RoleNotAllowed,
+        (Some(400), Some(ROLE_NOT_ALLOWED_RPC)) => PolicyError::RoleNotAllowedHere,
+        (Some(400), Some(FRONT_ONLY)) => PolicyError::FrontOnly,
+        (Some(400), Some("บทบาทนี้ไม่มีสิทธิ์อ่านเอกสารลูกค้า")) => {
+            PolicyError::DocumentsNotReadable
+        }
+        (Some(400), Some("Owner or Rates access required.")) => PolicyError::KioskOwnerOrRates,
+        (Some(400), Some("Staff access required.")) => PolicyError::KioskStaff,
+        (Some(400), Some("Unknown kiosk action.")) => PolicyError::KioskUnknown,
+        _ => return Ok(()),
+    };
+    Err(err)
 }
 
 fn text_of(value: &Value, key: &str) -> String {
@@ -830,6 +934,26 @@ fn text_of(value: &Value, key: &str) -> String {
         Some(Value::Number(number)) => number.to_string(),
         None | Some(Value::Null) => String::new(),
         Some(other) => panic!("`{key}` is {other}"),
+    }
+}
+
+fn named_branch_of(step: &Step) -> Option<BranchId> {
+    let owned;
+    let payload = if let Some(p) = &step.payload {
+        p
+    } else {
+        let raw = step.raw.as_deref()?;
+        let body: Value = serde_json::from_str(raw).ok()?;
+        owned = body.as_object()?.get("payload")?.clone();
+        &owned
+    };
+    let obj = payload.as_object()?;
+    match obj.get("branchId") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) if s.is_empty() => None,
+        Some(Value::String(s)) => Some(BranchId::new(s.clone())),
+        Some(Value::Number(n)) if n.as_i64() == Some(0) => None,
+        _ => Some(BranchId::new(String::new())),
     }
 }
 
@@ -880,7 +1004,7 @@ pub enum Rule {
     /// applied: v3 saved nothing for it, so it is held to v2's answer with this
     /// `requestResolution` (`CANCELLED` where v2 said `APPLIED`).
     ResolvedAs(&'static str),
-    /// A caller v2's `Policy::allow` refused and RBAC §11.2 (`RoleGrants`, `rbac-groups.md` §11.2,
+    /// A caller v2 refused at the policy gate and RBAC §11.2 (`RoleGrants`, `rbac-groups.md` §11.2,
     /// #3659) lets through: sent through HTTP, held to not be the role refusal v2 recorded, and
     /// counted in [`Tally::widened`].
     Widened(PolicyError),
@@ -891,7 +1015,7 @@ pub enum Rule {
     OwnerNoOpenShift(&'static str),
 }
 
-/// Recorded steps where v2's `Policy::allow` refused the caller and RBAC §11.2 (`RoleGrants`,
+/// Recorded steps where v2 refused the caller at the policy gate and RBAC §11.2 (`RoleGrants`,
 /// `rbac-groups.md` §11.2, #3659) widens the caller's role so `Policy::authorize` lets them
 /// through: `(fixture, step, permission)`.
 pub const WIDENED_BY_11_2: &[(&str, usize, Permission)] = &[
@@ -1183,7 +1307,7 @@ impl<'f> Replay<'f> {
 
     /// The rule of a step: the test's own where it gave one, else by what the
     /// step is.
-    fn rule_of(&self, step: &Step) -> Rule {
+    pub fn rule_of(&self, step: &Step) -> Rule {
         if let Some(rule) = self.rules.get(&step.n) {
             return rule.clone();
         }
@@ -1214,7 +1338,15 @@ impl<'f> Replay<'f> {
         // OR-4b (#767, §4.2 C2, C3, C8): the Blueprint refuses this caller where v2 let them
         // through, or refuses them in other words
         if judged_by_name {
-            let v2 = Policy::allow(actor.as_ref(), entry, &Action::new(&action));
+            if entry == EntryPath::StaffRpc
+                && self.fixture.sender(step).is_some_and(|p| p.must_change)
+            {
+                return Rule::Differs {
+                    status: 401,
+                    sentence: EMPLOYEE_AUTH_REQUIRED,
+                };
+            }
+            let v2 = v2_policy_verdict(step, entry, &Action::new(&action));
             // the staff route reads the staff session only: the owner's is nobody there
             let caller = actor.as_ref().filter(|_| {
                 !(entry == EntryPath::StaffRpc
@@ -1231,14 +1363,14 @@ impl<'f> Replay<'f> {
                         .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
                     {
                         let caller = caller.expect("a widened caller is signed in");
-                        let user = actor_from_v3(caller, ORGANIZATION, DateTime::<Utc>::UNIX_EPOCH);
                         assert!(
-                            user.roles
+                            caller
+                                .roles
                                 .iter()
                                 .any(|r| RoleGrants::of(r.role.as_str()).contains(permission)),
                             "{}: listed in WIDENED_BY_11_2 for {permission:?}, which {:?} lacks",
                             self.label(step),
-                            caller.role()
+                            caller.roles
                         );
                         return Rule::Widened(v2_refusal);
                     }
@@ -1246,6 +1378,32 @@ impl<'f> Replay<'f> {
                         "{}: the Blueprint lets through a caller v2 refused; no recorded step does",
                         self.label(step)
                     );
+                }
+                Ok(()) => {
+                    // OR-7.m S-D (#3700, ruling #2, D-4): a Blueprint staff caller's named branch
+                    // is authorised by their roles; v2's own-branch rule was the password
+                    // session's alone.
+                    if let (Some(own), Some(named)) = (
+                        caller.and_then(|c| c.roles.iter().find_map(|r| r.branch.as_ref())),
+                        named_branch_of(step),
+                    ) && &named != own
+                    {
+                        if Policy::need(entry, &Action::new(&action)) == Some(Need::Public) {
+                            let sentence = if BranchId::is_well_formed(named.as_str()) {
+                                NO_SUCH_BRANCH
+                            } else {
+                                "Invalid branch."
+                            };
+                            return Rule::Differs {
+                                status: 400,
+                                sentence,
+                            };
+                        }
+                        return Rule::Differs {
+                            status: PolicyError::OutOfScope.status(),
+                            sentence: "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+                        };
+                    }
                 }
                 _ => {}
             }
@@ -1435,8 +1593,12 @@ impl<'f> Replay<'f> {
 
         match rule {
             Rule::Replay => {
-                self.hold_to_recorded(step, &answer).await;
-                self.tally.replayed.push(step.n);
+                let differed = self.hold_to_recorded(step, &answer).await;
+                if differed {
+                    self.tally.differences.push(step.n);
+                } else {
+                    self.tally.replayed.push(step.n);
+                }
             }
             Rule::Differs { status, sentence } => {
                 assert_ne!(
@@ -1637,6 +1799,59 @@ impl<'f> Replay<'f> {
             }
             Rule::Excluded(_) => unreachable!("handled above"),
         }
+        // OR-7.m S-D (#3700, ruling #6): staff whose branch is created during the replay get their
+        // `user_roles` and session branch once the branch row exists.
+        if action_of(step).as_deref() == Some("adminCreateBranch")
+            && step.status == Some(200)
+            && let (Some(recorded), Some(actual)) = (
+                step.json()["branchId"].as_str(),
+                answer.json()["branchId"].as_str(),
+            )
+        {
+            let org_id = xc_organization_id(&self.desk.db.pool).await;
+            let mut conn = self
+                .desk
+                .db
+                .pool
+                .acquire()
+                .await
+                .expect("acquire connection");
+            for person in self
+                .fixture
+                .people
+                .iter()
+                .filter(|p| !p.is_owner() && p.branch_id.as_deref() == Some(recorded))
+            {
+                let user_exists: bool =
+                    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE id = $1::uuid)")
+                        .bind(&person.id)
+                        .fetch_one(&mut *conn)
+                        .await
+                        .expect("check whether user exists");
+                if !user_exists {
+                    continue;
+                }
+                xc_testdb::people::seed_roles(
+                    &mut conn,
+                    &person.id,
+                    &org_id,
+                    &[xc_testdb::people::RoleRow {
+                        role_code: blueprint_role(&person.role),
+                        branch_id: Some(actual),
+                        valid_from: DateTime::<Utc>::UNIX_EPOCH,
+                        valid_to: None,
+                    }],
+                )
+                .await
+                .unwrap_or_else(|e| panic!("seed late role for {}: {e}", person.key));
+                sqlx::query("UPDATE user_sessions SET branch_id = $1 WHERE user_id = $2::uuid")
+                    .bind(actual)
+                    .bind(&person.id)
+                    .execute(&mut *conn)
+                    .await
+                    .unwrap_or_else(|e| panic!("update session branch for {}: {e}", person.key));
+            }
+        }
         self.answers.insert(step.n, answer);
     }
 
@@ -1732,7 +1947,7 @@ impl<'f> Replay<'f> {
     // bank any more (`Rule::Retired`).
 
     /// Status, headers and body against what v2 answered.
-    pub async fn hold_to_recorded(&mut self, step: &Step, answer: &Answer) {
+    pub async fn hold_to_recorded(&mut self, step: &Step, answer: &Answer) -> bool {
         let label = self.label(step);
         assert_eq!(
             Some(answer.status),
@@ -1759,19 +1974,19 @@ impl<'f> Replay<'f> {
 
         if let Some(text) = &step.text {
             assert_eq!(&answer.text, text, "{label}");
-            return;
+            return false;
         }
         if let Some(sentence) = step.error() {
             answer.assert_refused(step.status.unwrap_or(400), sentence, &label);
-            return;
+            return false;
         }
-        self.hold_json_to(step, answer, step.json()).await;
+        self.hold_json_to(step, answer, step.json()).await
     }
 
     /// The JSON of an accepted answer against `recorded` (v2's, or v2's re-expected): ids paired,
     /// the keys v3 leaves out dropped. (Split out of `hold_to_recorded` for RE-7 #604's
     /// `Rule::ResolvedAs` by the ticket author; what it holds is unchanged.)
-    async fn hold_json_to(&mut self, step: &Step, answer: &Answer, recorded: &Value) {
+    async fn hold_json_to(&mut self, step: &Step, answer: &Answer, recorded: &Value) -> bool {
         let label = self.label(step);
         // RF-5 (#877): a key v3 adds by decision (snapshot_common::V3_ADDED_KEYS), shape-checked, then left out.
         // The action is the one the route read, whatever form the body took (a byte-order mark, a body too
@@ -1912,8 +2127,12 @@ impl<'f> Replay<'f> {
         {
             expected["operations"]["safe"] = actual["operations"]["safe"].clone();
         }
+        // OR-7.m S-D6 (#3730, #3734): one name per user (`users.name`) and v2 roles merged into
+        // one Blueprint role (`test_callers.rs:9-16`) on `$.employee` and `$.employees[]`.
+        let one_name_or_merged_role = restate_employee_name_and_role(self.fixture, &mut expected);
         self.ids.learn(&expected, &actual);
         assert_same(&self.ids.to_actual(&expected), &actual, &label);
+        one_name_or_merged_role
     }
 
     /// CA-10 #626: whether `branch` has a verified OPEN count, i.e. a shift opened the Blueprint way
@@ -2035,6 +2254,12 @@ impl<'f> Replay<'f> {
     /// key v3 made is paired with the one v2 answered.
     async fn upload_behind(&mut self, step: &Step) {
         let sender = self.fixture.sender(step).expect("somebody uploaded it");
+        let owner_id = if sender.is_owner() {
+            let org_id = xc_organization_id(&self.desk.db.pool).await;
+            owner_user_id(&self.desk.db.pool, &org_id).await
+        } else {
+            sender.id.clone()
+        };
         let (mime, bytes) = match step.upload.as_deref() {
             Some("png") => ("image/png", PNG),
             Some("pdf") => ("application/pdf", PDF),
@@ -2045,7 +2270,7 @@ impl<'f> Replay<'f> {
             .files
             .upload(
                 &self.branch_of(step),
-                &sender.id,
+                &owner_id,
                 mime,
                 bytes,
                 time(&step.at),
@@ -2404,9 +2629,15 @@ impl<'f> Replay<'f> {
             .save(&branch, command, &saver, time(&step.at))
             .await
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
+        let sender_id = if sender.is_owner() {
+            let org_id = xc_organization_id(&self.desk.db.pool).await;
+            owner_user_id(&self.desk.db.pool, &org_id).await
+        } else {
+            sender.id.clone()
+        };
         for key in [&passport, &slip].into_iter().flatten() {
             sqlx::query("UPDATE files SET owner_id = $1 WHERE key = $2")
-                .bind(&sender.id)
+                .bind(&sender_id)
                 .bind(key)
                 .execute(&self.desk.db.pool)
                 .await
@@ -2516,4 +2747,59 @@ pub async fn sweep_safe(pool: &sqlx::PgPool, branch: &BranchId) {
         )
         .await;
     }
+}
+
+fn merged_v2_role(role: &str) -> Option<&'static str> {
+    match role {
+        "BACKEND" => Some("MANAGER"),
+        "MONITOR" | "DOCUMENTS" => Some("DOCUMENT_REVIEW"),
+        _ => None,
+    }
+}
+
+fn restate_one_employee(fixture: &Fixture, emp: &mut Value) -> bool {
+    if !emp.is_object() || emp.get("id") == Some(&json!("owner")) {
+        return false;
+    }
+    let mut changed = false;
+    let username = emp
+        .get("username")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            let id = emp.get("id")?.as_str()?;
+            fixture
+                .people
+                .iter()
+                .find(|p| p.id == id)
+                .map(|p| p.username.clone())
+        });
+    if let Some(username) = username
+        && emp.get("name").and_then(Value::as_str) != Some(username.as_str())
+    {
+        emp["name"] = json!(username);
+        changed = true;
+    }
+    if let Some(merged) = emp
+        .get("role")
+        .and_then(Value::as_str)
+        .and_then(merged_v2_role)
+    {
+        emp["role"] = json!(merged);
+        changed = true;
+    }
+    changed
+}
+
+fn restate_employee_name_and_role(fixture: &Fixture, expected: &mut Value) -> bool {
+    let mut changed = false;
+    if let Some(emp) = expected.get_mut("employee") {
+        changed |= restate_one_employee(fixture, emp);
+    }
+    if let Some(rows) = expected.get_mut("employees").and_then(Value::as_array_mut) {
+        for row in rows {
+            changed |= restate_one_employee(fixture, row);
+        }
+    }
+    changed
 }

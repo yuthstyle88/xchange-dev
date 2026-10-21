@@ -44,8 +44,7 @@ use quote_common::*;
 use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
@@ -53,7 +52,8 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -68,22 +68,23 @@ static PII: Once = Once::new();
 
 // ------------------------------------------------------------ callers
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let signed_in = req.headers().get(AS).is_some();
         Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: if signed_in {
-                    Actor::staff(TELLER, Role::Front, BranchId::new("MAIN"))
-                } else {
-                    None
-                },
+            if signed_in {
+                test_callers::callers(
+                    None,
+                    Some(test_callers::staff(
+                        TELLER,
+                        &[Role::Teller],
+                        BranchId::new("MAIN"),
+                    )),
+                )
+            } else {
+                test_callers::nobody()
             }
         })
     }
@@ -108,7 +109,7 @@ async fn post(pool: &sqlx::PgPool, files_dir: Option<&Path>, uri: &str, body: &V
         None => common::settings(&[]),
     };
     let state = AppState::new(Arc::new(settings), pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))

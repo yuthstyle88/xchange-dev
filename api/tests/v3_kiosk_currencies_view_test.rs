@@ -4,7 +4,7 @@
 //! controller. Do not edit, delete or weaken; add tests in a file of your own.
 //!
 //! - `GET /api/v3/views/kiosk_currencies` — a `BranchView` inheriting `(EntryPath::Kiosk,
-//!   "manage")`: it answers exactly whom `Policy::allow` lets call `manage`, on the branch
+//!   "manage")`: it answers exactly whom `Policy::authorize` lets call `manage`, on the branch
 //!   `Policy::branch` gives (ticket §7.1, §8, V1).
 //! - `data` is `{currencies, kbank}`: the 152 currencies of the table in the table's order,
 //!   each `{code, name, nameEn, countries, buy, sell, updated, partnerName, partnerCost,
@@ -53,13 +53,12 @@ use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use xc_auth::domain::policy::entities::policy::Policy;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const KIOSK: &str = "/api/kiosk";
@@ -448,22 +447,31 @@ impl Room {
     }
 }
 
+const STAFF: [(&str, &[Role]); 9] = [
+    ("FRONT", &[Role::Teller]),
+    ("BACKEND", &[Role::BranchManager]),
+    ("MANAGER", &[Role::BranchManager]),
+    ("RATES", &[Role::RateManager]),
+    ("MONITOR", &[Role::VerificationReviewer]),
+    ("FINANCE", &[Role::Finance]),
+    ("SYSTEM", &[Role::Admin]),
+    ("DOCUMENTS", &[Role::VerificationReviewer]),
+    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
+];
+
 /// The actor `Policy` sees for each caller key of [`Room`] on the path `Kiosk`.
 fn callers() -> Vec<(String, Option<Actor>)> {
     let mut callers: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
         // a session whose first password is unchanged is nobody (`kiosk.rs:182-186`)
         (RATES_MUST_CHANGE.to_string(), None),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        callers.push((role.as_str().to_string(), staff));
+    for (name, roles) in STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        callers.push((name.to_string(), staff));
         // the owner and an employee in one browser: a view not on StaffRpc answers the owner
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+        callers.push((format!("OWNER+{name}"), Some(test_callers::owner("owner"))));
     }
     callers
 }
@@ -485,32 +493,23 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
 /// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
 /// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
 fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    actor: Option<&Actor>,
+    path: EntryPath,
     action: &str,
     named: Option<&str>,
-) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+) -> Result<
+    xc_auth::domain::access::Grant,
+    xc_auth::domain::policy::value_objects::policy_error::PolicyError,
+> {
+    use xc_auth::domain::policy::entities::policy::Policy;
     let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
     Policy::authorize(
-        user.as_ref(),
+        actor,
         path,
         &act,
         named.map(xc_kernel::ids::BranchId::new).as_ref(),
         chrono::Utc::now(),
     )
-    .map(|_| ())
 }
 
 /// §8: nobody signed in gets the `manage` row's refusal, as a v3 refusal.
@@ -534,10 +533,10 @@ async fn nobody_signed_in_gets_the_kiosk_manage_refusal() {
 #[actix_web::test]
 async fn other_staff_roles_and_a_must_change_employee_get_the_same_refusal() {
     let room = Room::open().await;
-    let mut who: Vec<String> = Role::STAFF
+    let mut who: Vec<String> = STAFF
         .iter()
-        .filter(|r| **r != Role::Rates)
-        .map(|r| r.as_str().to_string())
+        .filter(|(name, _)| *name != "RATES")
+        .map(|(name, _)| (*name).to_string())
         .collect();
     who.push(RATES_MUST_CHANGE.to_string());
     assert_eq!(who.len(), 9, "eight roles and the must-change employee");
@@ -553,13 +552,12 @@ async fn other_staff_roles_and_a_must_change_employee_get_the_same_refusal() {
     room.finish().await;
 }
 
-/// V1: the view answers exactly whom `Policy::allow(_, Kiosk, "manage")` answers, for every
+/// V1: the view answers exactly whom `Policy::authorize(_, Kiosk, "manage", ..)` answers, for every
 /// caller kind, and on the branch `Policy::branch` gives (the two branches' USD rates differ,
 /// so the answer says which branch was read).
 #[actix_web::test]
 async fn the_view_answers_exactly_whom_the_kiosk_manage_row_allows() {
     let room = Room::open().await;
-    let named = BranchId::new(B9);
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
@@ -568,12 +566,12 @@ async fn the_view_answers_exactly_whom_the_kiosk_manage_row_allows() {
         let answer = room.get(&who, &path("branch=B9")).await;
         let what = format!("as {who:?}");
         match &policy {
-            Ok(()) => {
+            Ok(grant) => {
                 allowed += 1;
                 assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                 let body = answer.json();
                 assert_eq!(body["changed"], json!(true), "{what}: {body}");
-                let branch = Policy::branch(actor.as_ref(), Some(&named));
+                let branch = &grant.branch;
                 let usd = currency(&body["data"], "USD");
                 let expected = if branch.as_str() == B9 {
                     "31.50000000"

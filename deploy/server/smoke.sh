@@ -93,15 +93,15 @@ if [ -n "$EXPECTED" ]; then
 fi
 
 # 3. sign-in status: needs the same-origin headers the kept pages send
-code="$(request -X POST "$BASE/api/auth" \
+code="$(request -X POST "$BASE/api/auth/session" \
   -H 'Content-Type: application/json' \
   -H 'X-XChange-Request: 1' \
   -H "Origin: $BASE" \
-  -d '{"action":"status"}')"
+  -d '{}')"
 if [ "$code" = 200 ]; then
-  ok "POST /api/auth status 200"
+  ok "POST /api/auth/session 200"
 else
-  bad "POST /api/auth status answered $code, want 200 (when refused: Origin, Host and X-Forwarded-Proto must agree)"
+  bad "POST /api/auth/session answered $code, want 200 (when refused: Origin, Host and X-Forwarded-Proto must agree)"
 fi
 
 # 4. the sign-in page is served (the pages were extracted into APP_WEB__DIR)

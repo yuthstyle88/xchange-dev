@@ -649,14 +649,24 @@ async fn row_12_a_first_ask_queues_one_passport_job_and_answers_what_the_agent_r
         "answered {took:?} after asking, not inside the {LONG_WINDOW:?} window"
     );
 
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     let jobs = room.jobs().await;
+    // OR-7.m G2: rule 2 (#3700)
     assert_eq!(
         jobs,
         vec![(
             id.clone(),
             "DRAWER_REQUEST".to_string(),
             "DRAWER_OPENED".to_string(),
-            "owner".to_string(),
+            owner_id,
             String::new(),
         )],
         "one passport job, queued by the caller"

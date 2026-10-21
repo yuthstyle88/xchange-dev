@@ -185,7 +185,7 @@ async fn answer(
         RpcRoute::StaffRpc => callers.staff_user.as_ref(),
     };
 
-    let session = identity_session(req, now).await;
+    let session = identity_session(req, now).await.ok().flatten();
     let blueprint_session = session.is_some();
     // The Blueprint session's `users.id` (#1128): a shift opened or closed with one staffs or
     // releases the shift teller's queue counter. A password session has none.
@@ -302,7 +302,7 @@ pub(crate) async fn caller_of_rpc(
     if let Some((user, access_actor)) = identity_session_actor(req, now).await {
         return Ok(Standing::of(&access_actor, now).map(|standing| RpcCaller {
             standing,
-            username: user.id,
+            username: user.name.clone(),
             name: user.name,
         }));
     }
@@ -322,7 +322,7 @@ async fn caller_of_staff_rpc(
         return match Standing::of(&access_actor, now) {
             Some(standing) if !standing.is_owner() => Ok(RpcCaller {
                 standing,
-                username: user.id,
+                username: user.name.clone(),
                 name: user.name,
             }),
             _ => Err(RpcRefusal::not_signed_in(route).into()),

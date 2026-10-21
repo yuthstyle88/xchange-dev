@@ -37,10 +37,9 @@ mod snapshot_common;
 use chrono::Duration;
 use compat_common::{Fixture, fixtures_dir};
 use kiosk_http_common::{
-    ACCEPT_FIRST, Counter, INVALID_REQUEST, KIOSK, KioskReplay, SERVER_ERROR, TOO_MANY_QUOTES,
-    person,
+    Counter, INVALID_REQUEST, KIOSK, KioskReplay, SERVER_ERROR, TOO_MANY_QUOTES, person,
 };
-use rpc_common::{Call, Rule};
+use rpc_common::Rule;
 use serde_json::{Value, json};
 
 /// Amended for QU-6 #1354 (ruling issuecomment-6117792804), setup only: `accept` starts the
@@ -523,181 +522,6 @@ async fn quotes_are_limited_per_client_address() {
     counter.finish().await;
 }
 
-/// The holder of a request is stored as the employee's id — a name can be
-/// given to somebody else, an id cannot — and every later check compares ids.
-/// Where v2 prints the holder (`staff` of `list`) v3 prints the username of
-/// that id, also after the account was disabled; an audit line names the
-/// username as v2's did.
-#[actix_web::test]
-async fn the_holder_is_stored_by_id_and_printed_by_username() {
-    let fr1 = person("FR1", "FRONT", 0x11);
-    let fr2 = person("FR2", "FRONT", 0x12);
-    let counter = Counter::open(&[fr1.clone(), fr2.clone()]).await;
-    open_counters(&counter.desk.db.pool, &[&fr1.id]).await;
-    let id = counter
-        .waiting_request("00000000-0000-4000-8000-0000000c0001")
-        .await;
-
-    let accepted = counter
-        .ask(Some("FR1"), "accept", json!({ "id": id }))
-        .await;
-    assert_eq!(accepted.status, 200, "{}", accepted.text);
-    // the 10-06 bundle: the first claim answers its start (queue-work.mjs:9)
-    assert_eq!(accepted.json()["saved"], json!(true), "{}", accepted.text);
-    assert_eq!(accepted.json()["claimed"], json!(true), "{}", accepted.text);
-
-    let stored: (Option<String>,) =
-        sqlx::query_as("SELECT staff FROM kiosk_requests WHERE id = $1")
-            .bind(&id)
-            .fetch_one(&counter.desk.db.pool)
-            .await
-            .expect("read the request");
-    assert_eq!(stored.0.as_deref(), Some(fr1.id.as_str()), "stored by id");
-
-    let (lines, _) = kiosk_http_common::audit_since(&counter.desk, 0).await;
-    let accepted_line = lines
-        .iter()
-        .find(|line| line.kind == "KIOSK_ACCEPTED")
-        .expect("an audit line for the accept");
-    assert_eq!(
-        accepted_line.actor, "fr1",
-        "the audit line names the username"
-    );
-    assert_eq!(lines[0].actor, "CUSTOMER-KIOSK");
-
-    let list = counter.ask(Some("FR2"), "list", json!({})).await;
-    assert_eq!(list.json()["requests"][0]["staff"], "fr1", "{}", list.text);
-
-    // somebody else, and the owner, do not hold it
-    counter
-        .ask(Some("FR2"), "get", json!({ "id": id }))
-        .await
-        .assert_refused(400, ACCEPT_FIRST, "another employee");
-    // RBAC §11.2 (#3659): the owner holds QueueOperate again (via EXECUTIVE (Customers Full)), so
-    // is refused for not holding the request, not for role
-    counter
-        .ask(Some("owner"), "get", json!({ "id": id }))
-        .await
-        .assert_refused(400, ACCEPT_FIRST, "the owner");
-    counter
-        .ask(Some("FR2"), "accept", json!({ "id": id }))
-        .await
-        .assert_refused(
-            400,
-            "ออเดอร์นี้มี fr1 กำลังทำรายการแล้ว",
-            "accepting what is held: the holder's username (queue-work.mjs:12)",
-        );
-
-    // the account is disabled: the queue still prints who holds the request
-    // CA-10 (#626, batch PR 3108), setup only: disabling is refused while the employee holds an OPEN shift (CA-4),
-    // and fr1 holds MAIN's, which `Counter::open` opened by a count; it is closed by a count first, the same way.
-    kiosk_http_common::shift_setup_common::close_shift_by_count(
-        &counter.desk.db.pool,
-        rpc_common::MAIN,
-        json!({ "THB": 100000, "USD": 2000 }),
-        chrono::Utc::now(),
-    )
-    .await;
-    let call = Call::action(
-        &counter.origin,
-        "/api/employees",
-        "disable",
-        json!({ "id": fr1.id }),
-    );
-    let disabled = counter
-        .app
-        .send(kiosk_http_common::as_who(call, &counter.cookies, "owner"))
-        .await;
-    assert_eq!(disabled.status, 200, "disable: {}", disabled.text);
-    let list = counter.ask(Some("FR2"), "list", json!({})).await;
-    assert_eq!(list.json()["requests"][0]["staff"], "fr1", "{}", list.text);
-    // and MAIN's counter opens again by a count, as `Counter::open` opened it, for the rest of the test
-    kiosk_http_common::shift_setup_common::open_shift_by_count(
-        &counter.desk.db.pool,
-        rpc_common::MAIN,
-        json!({ "THB": 100000, "USD": 2000 }),
-        chrono::Utc::now(),
-    )
-    .await;
-
-    // the owner holds a request under the owner's username
-    let second = counter
-        .waiting_request("00000000-0000-4000-8000-0000000c0002")
-        .await;
-    // RBAC §11.2 (#3659): the owner holds QueueOperate again (via EXECUTIVE (Customers Full)),
-    // so reaches the queue desk and is refused with noOpenShift (#3810); a request the owner holds
-    // (as v2 let the owner take one) is taken behind the routes, by the kiosk service as v2's
-    // owner
-    counter
-        .ask(Some("owner"), "accept", json!({ "id": second }))
-        .await
-        .assert_refused(400, "noOpenShift", "the owner accepts");
-    let audit: std::sync::Arc<dyn xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog> =
-        counter.hands.audit.clone();
-    let source: std::sync::Arc<dyn xc_rate::domain::rate::entities::rate_source::RateSource> =
-        counter.desk.bank.clone();
-    let service = xc_kiosk::application::kiosk::service::KioskService::new(
-        counter.desk.db.branch_tx(),
-        std::sync::Arc::new(
-            xchange::infrastructure::kiosk::kiosk_ports::PgKioskPorts::new(
-                counter.desk.db.pool.clone(),
-                audit,
-                source,
-            ),
-        ),
-    );
-    let owner = xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor::Staff {
-        username: "owner".to_string(),
-        role: xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole::Owner,
-    };
-    service
-        .accept(
-            &xc_kernel::ids::BranchId::new("MAIN"),
-            &owner,
-            &second,
-            chrono::Utc::now(),
-        )
-        .await
-        .expect("the owner takes the request behind the routes");
-    let list = counter.ask(Some("FR2"), "list", json!({})).await;
-    assert_eq!(
-        list.json()["requests"][0]["staff"],
-        "owner",
-        "{}",
-        list.text
-    );
-    let stored: (Option<String>,) =
-        sqlx::query_as("SELECT staff FROM kiosk_requests WHERE id = $1")
-            .bind(&second)
-            .fetch_one(&counter.desk.db.pool)
-            .await
-            .expect("read the request");
-    assert_eq!(stored.0.as_deref(), Some("owner"), "the owner's actor id");
-
-    // it is the owner's username that is printed, not the constant id
-    sqlx::query("UPDATE owners SET username = 'boss'")
-        .execute(&counter.desk.db.pool)
-        .await
-        .expect("rename the owner");
-    let list = counter.ask(Some("FR2"), "list", json!({})).await;
-    assert_eq!(list.json()["requests"][0]["staff"], "boss", "{}", list.text);
-
-    // an id nobody has (an account removed by hand) is printed as it is
-    sqlx::query("UPDATE kiosk_requests SET staff = 'gone-0001' WHERE id = $1")
-        .bind(&id)
-        .execute(&counter.desk.db.pool)
-        .await
-        .expect("orphan the first request");
-    let list = counter.ask(Some("FR2"), "list", json!({})).await;
-    assert_eq!(
-        list.json()["requests"][1]["staff"],
-        "gone-0001",
-        "{}",
-        list.text
-    );
-    counter.finish().await;
-}
-
 /// The audit line is part of the step: when it cannot be written, the answer is
 /// the server-error sentence with status 500 and the request did not move.
 #[actix_web::test]
@@ -829,13 +653,14 @@ async fn the_answers_keep_v2s_key_order() {
          \"status\":\"WAITING\"}"
     );
     let notifications = counter.ask(Some("FR1"), "notifications", json!({})).await;
+    // OR-7.m S-D2: one name per user (known difference; rulings on #3730)
     assert_eq!(
         notifications.text,
         format!(
             "{{\"serverNow\":\"2026-10-06T05:00:04.000Z\",\"workingCount\":0,\"working\":[],\
              \"branchId\":\"MAIN\",\"branchName\":\"XC-B\",\"count\":1,\
              \"latest\":\"{id}\",\"employee\":{{\"id\":\"{}\",\"username\":\"fr1\",\
-             \"name\":\"FR1 of the test\",\"role\":\"FRONT\"}}}}",
+             \"name\":\"fr1\",\"role\":\"FRONT\"}}}}",
             fr1.id
         )
     );

@@ -23,8 +23,6 @@ use uuid::Uuid;
 use xc_approval::application::approval_service::{ApprovalError, ApprovalService};
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_auth::domain::access::{Role as AccessRole, StandingKind};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel};
 use xc_exchange::domain::transaction::line::TransactionLine;
@@ -46,6 +44,7 @@ use xchange::application::workflows::save_step::{
     SaveActor, SaveContext, SaveExtras, SaveStep, StepFuture,
 };
 use xchange::presentation::http::v3::commands::make_approval_service;
+use xchange::presentation::test_callers;
 
 use crate::quote_common::*;
 
@@ -91,24 +90,29 @@ pub fn teller() -> SaveActor {
     }
 }
 
-/// A staff member as the approval core is told who decides: OR-7.1 #1020 (design `org-roles-branches.md` §3.3,
-/// §4.3), by #1020's ticket author, the B1-mapped `access::Actor` of the v3 employee `role` on `branch`.
-pub fn staff(id: &str, role: Role, branch: &str) -> xc_auth::domain::access::Actor {
-    let v3 = Actor::staff(id, role, BranchId::new(branch)).expect("a staff actor");
-    xc_auth::domain::access::v3_roles::actor_from_v3(
-        &v3,
-        "00000000-0000-0000-0000-000000000001",
-        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-    )
+pub fn staff<R: std::fmt::Debug>(
+    id: &str,
+    role: R,
+    branch: &str,
+) -> xc_auth::domain::access::Actor {
+    let raw = format!("{role:?}").trim_matches('"').to_ascii_uppercase();
+    let v2 = if raw == "DOCUMENTREVIEW" {
+        "DOCUMENT_REVIEW"
+    } else {
+        raw.as_str()
+    };
+    staff_as(id, v2, branch)
+}
+
+pub fn staff_as(id: &str, v2_role: &str, branch: &str) -> xc_auth::domain::access::Actor {
+    let roles = test_callers::v2_staff_roles(v2_role)
+        .unwrap_or_else(|| panic!("unknown v2 staff role: {v2_role}"));
+    test_callers::staff(id, roles, BranchId::new(branch))
 }
 
 /// The v3 owner's B1-mapped user (OR-7.1 #1020): EXECUTIVE and ADMIN, organisation-wide.
 pub fn owner(id: &str) -> xc_auth::domain::access::Actor {
-    xc_auth::domain::access::v3_roles::actor_from_v3(
-        &Actor::owner(id),
-        "00000000-0000-0000-0000-000000000001",
-        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-    )
+    test_callers::owner(id)
 }
 
 /// A recorded call of a step's `before_in` / `after_in`.

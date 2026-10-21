@@ -426,10 +426,20 @@ async fn a_report_records_drawer_opened_with_the_audit_line() {
     assert_eq!(opened.len(), 1, "{lines:?}");
     let (_, actor, _, detail) = opened[0];
     assert_eq!(actor, &format!("agent:{AGENT}"));
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&shop.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     for (key, expected) in [
         ("job", json!(job)),
         ("reason", json!("ทอนเงินลูกค้า")),
-        ("queuedBy", json!("owner")),
+        // OR-7.m G2: rule 2 (#3700)
+        ("queuedBy", json!(owner_id)),
         ("agent", json!(AGENT)),
         ("agentName", json!(AGENT_NAME)),
         ("agentVersion", json!("1.0.1")),

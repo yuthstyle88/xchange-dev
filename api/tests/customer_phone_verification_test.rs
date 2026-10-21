@@ -39,8 +39,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor as LegacyActor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_customer::application::customer::phone_verification_service::{
     PhoneVerificationError, PhoneVerificationService,
 };
@@ -53,7 +51,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher, PiiKeys, Sealed};
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::notify::NotifySmsSender;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const TEST_KEYS: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
@@ -1737,49 +1735,7 @@ fn user_of(spec: &str) -> Option<User> {
     ))
 }
 
-fn legacy_of(spec: &str) -> Sessions {
-    let spec = spec.split_once('|').map(|(_, r)| r).unwrap_or(spec);
-    let (uid, branch_str) = match spec {
-        s if s == TELLER_USER_ID => (TELLER_USER_ID.to_string(), "MAIN"),
-        s if s == FINANCE_USER_ID => (FINANCE_USER_ID.to_string(), "MAIN"),
-        _ => match spec.split_once('@') {
-            None => {
-                return Sessions {
-                    owner: None,
-                    staff: None,
-                };
-            }
-            Some((_, branch)) => (user_id(spec), branch),
-        },
-    };
-
-    if branch_str == "*" {
-        Sessions {
-            owner: Some(LegacyActor::owner(uid)),
-            staff: None,
-        }
-    } else {
-        Sessions {
-            owner: None,
-            staff: LegacyActor::staff(uid, OldRole::Finance, BranchId::new(branch_str)),
-        }
-    }
-}
-
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = req
-            .headers()
-            .get(AS)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()

@@ -109,12 +109,16 @@ fn item_from(item: &serde_json::Value) -> AppResult<MembershipChange> {
             .map_err(|_| AppError::Internal("loyalty feed: tierRuleId invalid uuid".into()))?
     };
 
-    let tier_rule_version = item
-        .get("tierRuleVersion")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| {
-            AppError::Internal("loyalty feed: tierRuleVersion missing or not an integer".into())
-        })? as i32;
+    let tier_rule_version = {
+        let v = item
+            .get("tierRuleVersion")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| {
+                AppError::Internal("loyalty feed: tierRuleVersion missing or not an integer".into())
+            })?;
+        i32::try_from(v)
+            .map_err(|_| AppError::Internal("loyalty feed: tierRuleVersion out of range".into()))?
+    };
 
     let effective_at = {
         let s = item
@@ -331,5 +335,35 @@ mod tests {
         assert!(!page.changed);
         assert_eq!(page.next, 42);
         assert!(page.items.is_empty());
+    }
+
+    #[test]
+    fn f8_tier_rule_version_at_i32_max_succeeds() {
+        let mut item = sample_item();
+        item["tierRuleVersion"] = json!(2147483647i64);
+        let val = json!({
+            "changed": true,
+            "next": 42,
+            "items": [item]
+        });
+        let page = page_from(&val).expect("2147483647 must succeed");
+        assert_eq!(page.items[0].tier_rule_version, 2147483647);
+    }
+
+    #[test]
+    fn f9_tier_rule_version_overflow_returns_err() {
+        let mut item = sample_item();
+        item["tierRuleVersion"] = json!(2147483648i64);
+        let val = json!({
+            "changed": true,
+            "next": 42,
+            "items": [item]
+        });
+        let err = page_from(&val).expect_err("2147483648 must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("tierRuleVersion out of range"),
+            "error message should name 'tierRuleVersion out of range': {msg}"
+        );
     }
 }

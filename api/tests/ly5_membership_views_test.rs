@@ -39,7 +39,7 @@ use xc_loyalty::domain::summary_source::{
     LoyaltyMemberSummary, LoyaltySummarySource, NextExpiry, SummaryTier, TierProgress,
 };
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const AS_HEADER: &str = "x-test-as";
 
@@ -215,11 +215,11 @@ impl LoyaltySummarySource for FakeLoyaltySummarySource {
 
 // ── Test Session Reader ─────────────────────────────────────────────────────
 
-struct TestSessions {
+struct TestCallers {
     org_id: String,
 }
 
-impl TestSessions {
+impl TestCallers {
     fn callers_of(&self, spec: &str) -> Callers {
         if spec.is_empty() {
             return Callers {
@@ -328,19 +328,7 @@ impl TestSessions {
     }
 }
 
-impl SessionReader for TestSessions {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
+impl SessionReader for TestCallers {
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let callers = self.get_callers_from_req(req);
         Box::pin(async move { callers })
@@ -364,7 +352,7 @@ async fn get(db: &TestDb, fake: Arc<FakeLoyaltySummarySource>, who: &str, uri: &
 
     let state =
         AppState::new(Arc::new(common::settings(&[])), db.pool.clone()).with_loyalty_summary(fake);
-    let reader: Arc<dyn SessionReader> = Arc::new(TestSessions {
+    let reader: Arc<dyn SessionReader> = Arc::new(TestCallers {
         org_id: quote_common::ORG_1.to_string(),
     });
     let app = atest::init_service(

@@ -87,6 +87,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xc_kernel::queue_tickets::QueueTickets;
 use xc_kiosk::application::kiosk::service::KioskService;
+use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
@@ -684,6 +685,69 @@ impl<'f> KioskReplay<'f> {
         self.replay.tally.applied_behind.push(step.n);
     }
 
+    /// OR-7.m S-D (#3700, ruling #2, D-4): an accepted `configure` where a Blueprint staff caller
+    /// named another branch is refused on HTTP (`Rule::Differs`); apply its currency switch and
+    /// audit line behind the routes on the sender's own branch, as v2 recorded.
+    async fn configure_differs_behind(&mut self, step: &Step) {
+        let label = self.replay.label(step);
+        let payload = self
+            .replay
+            .ids
+            .to_actual(step.payload.as_ref().expect("a configure has a payload"));
+        let branch = BranchId::new(self.branch_of_step(step, &payload));
+        let person = self
+            .replay
+            .fixture
+            .sender(step)
+            .unwrap_or_else(|| panic!("{label}: a configure has a sender"));
+        let role = match person.role.as_str() {
+            "FRONT" => KioskRole::Front,
+            "BACKEND" => KioskRole::Backend,
+            "MANAGER" => KioskRole::Manager,
+            "RATES" => KioskRole::Rates,
+            _ => KioskRole::Other,
+        };
+        let actor = KioskActor::Staff {
+            username: person.id.clone(),
+            role,
+        };
+        let wire = |key: &str| match payload.get(key) {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Number(n)) => n.to_string(),
+            _ => String::new(),
+        };
+        let cmd = ConfigureCurrency {
+            code: wire("code"),
+            enabled: payload
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .expect("a configure has enabled"),
+            buy: wire("buy"),
+            sell: wire("sell"),
+            previous_updated: wire("previousUpdated"),
+            partner_name: wire("partnerName"),
+            partner_cost: match payload.get("partnerCost") {
+                Some(Value::String(s)) => Some(s.clone()),
+                Some(Value::Number(n)) => Some(n.to_string()),
+                _ => None,
+            },
+            request_id: uuid::Uuid::new_v4().to_string(),
+        };
+        let pool = self.replay.desk.db.pool.clone();
+        let audit: Arc<dyn KioskAuditLog> = self.hands.audit.clone();
+        let source: Arc<dyn RateSource> = self.replay.desk.bank.clone();
+        let service = KioskService::new(
+            self.replay.desk.db.branch_tx(),
+            Arc::new(PgKioskPorts::new(pool, audit, source)),
+        );
+        let now = crate::snapshot_common::time(&step.at);
+        service
+            .configure(&branch, &actor, cmd, now)
+            .await
+            .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+        self.replay.tally.applied_behind.push(step.n);
+    }
+
     /// #603: step `n` is a `configure` v2 refused and v3 accepts; the audit line it writes is the
     /// step's own (its code and switch, `buy` and `sell` `""`).
     pub fn v3_accepts(mut self, n: usize) -> Self {
@@ -725,13 +789,24 @@ impl<'f> KioskReplay<'f> {
         let behind = self.behind.get(&step.n.to_string()).cloned();
         let action = step.action.as_deref();
         let accepted = step.status == Some(200);
+        let rule = self.replay.rule_of(step);
+        let replayed = matches!(rule, crate::rpc_common::Rule::Replay);
+        // OR-7.m S-D5 (#3734, ruling on #3730): a staff employee's `employee.name` is `users.name`
+        // (`employee.username`), where v2 recorded a separate display name.
+        let one_name = Self::is_kiosk(step) && accepted && replayed && is_one_name_step(step);
+        if one_name {
+            self.replay.rules.insert(
+                step.n,
+                crate::rpc_common::Rule::RecordedWith(one_name_employee),
+            );
+        }
 
         let saves = matches!(action, Some("adminSaveRate") | Some("configure"));
         let mut saved_before = self.saved.clone();
 
         if Self::is_kiosk(step) {
             // the id v2 gave the quote is the id every later step names
-            if action == Some("quote") && accepted {
+            if action == Some("quote") && accepted && replayed {
                 let id = step.json()["id"].as_str().expect("a quote has an id");
                 self.hands.ids.push(id);
             }
@@ -756,6 +831,11 @@ impl<'f> KioskReplay<'f> {
         }
 
         self.replay.step(step).await;
+        if one_name {
+            let popped = self.replay.tally.blueprint.pop();
+            assert_eq!(popped, Some(step.n));
+            self.replay.tally.differences.push(step.n);
+        }
         // OR-4b (#767, §4.2 C8): the owner's queue work v2 accepted is refused by role; what it
         // changed is applied behind the routes, by the owner as v2 recorded
         if Self::is_kiosk(step)
@@ -764,6 +844,15 @@ impl<'f> KioskReplay<'f> {
             && step.action.as_deref() != Some("list")
         {
             self.kiosk_behind(step).await;
+        }
+        // OR-7.m S-D (#3700, ruling #2, D-4): a staff `configure` naming another branch is
+        // refused by scope; what it changed on the sender's branch is applied behind the routes
+        if Self::is_kiosk(step)
+            && accepted
+            && action == Some("configure")
+            && matches!(rule, crate::rpc_common::Rule::Differs { .. })
+        {
+            self.configure_differs_behind(step).await;
         }
         // QU-6 #1354: a claim the queue refuses, applied behind the routes as v2 recorded it
         if Self::is_kiosk(step)
@@ -802,7 +891,7 @@ impl<'f> KioskReplay<'f> {
         }
 
         // a quote that v3 refused where v2 accepted must not leave its id behind
-        if Self::is_kiosk(step) && action == Some("quote") && accepted {
+        if Self::is_kiosk(step) && action == Some("quote") && accepted && replayed {
             assert_eq!(
                 self.hands.ids.waiting(),
                 0,
@@ -1056,6 +1145,39 @@ fn text(value: &Value, key: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or_else(|| panic!("no text `{key}` in {value}"))
         .to_string()
+}
+
+fn merged_v2_role(role: &str) -> Option<&'static str> {
+    match role {
+        "BACKEND" => Some("MANAGER"),
+        "MONITOR" | "DOCUMENTS" => Some("DOCUMENT_REVIEW"),
+        _ => None,
+    }
+}
+
+fn is_one_name_step(step: &Step) -> bool {
+    let Some(emp) = step.body.as_ref().and_then(|b| b.get("employee")) else {
+        return false;
+    };
+    emp.get("id") != Some(&json!("owner"))
+        && (emp.get("name") != emp.get("username")
+            || emp
+                .get("role")
+                .and_then(Value::as_str)
+                .and_then(merged_v2_role)
+                .is_some())
+}
+
+fn one_name_employee(expected: &mut Value) {
+    if let Some(username) = expected["employee"]["username"].as_str().map(str::to_owned) {
+        expected["employee"]["name"] = json!(username);
+    }
+    if let Some(merged) = expected["employee"]["role"]
+        .as_str()
+        .and_then(merged_v2_role)
+    {
+        expected["employee"]["role"] = json!(merged);
+    }
 }
 
 // ── a counter set up by hand, for the tests that are not a replay ────────────

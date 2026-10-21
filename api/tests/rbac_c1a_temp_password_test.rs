@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use xc_auth::domain::account::temp_password::TempPassword;
+use xc_auth::domain::user::TempPassword;
 
 /// Characters a person misreads for another: zero/O/o, one/l/I.
 const LOOK_ALIKES: &[char] = &['0', 'O', 'o', '1', 'l', 'I'];

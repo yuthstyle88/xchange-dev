@@ -22,12 +22,12 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test, web};
 use common::{FakeDatabase, settings, state_with};
 use serde_json::Value;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState, BuildInfo};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::test_callers;
 
 const WHO: &str = "x-test-sessions";
 const HOST: &str = "xc.test";
@@ -37,15 +37,24 @@ fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pages")
 }
 
+fn roles_of(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown v2 role: {other}"),
+    }
+}
+
 /// Same shape as the reader in pages_test.rs: `none` | `owner` | `staff:ROLE:BRANCH`.
 #[derive(Default)]
-struct FakeSessions;
+struct FakeCallers;
 
-impl SessionReader for FakeSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for FakeCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let who = req
             .headers()
             .get(WHO)
@@ -55,14 +64,15 @@ impl SessionReader for FakeSessions {
         Box::pin(async move {
             let staff = who.find("staff:").map(|at| {
                 let mut parts = who[at..].split(':').skip(1);
-                let role = Role::parse(parts.next().expect("a role")).expect("a role v2 knows");
+                let roles = roles_of(parts.next().expect("a role"));
                 let branch = BranchId::new(parts.next().expect("a branch"));
-                Actor::staff("employee-7", role, branch).expect("a staff role")
+                test_callers::staff("employee-7", roles, branch)
             });
-            Sessions {
-                owner: who.starts_with("owner").then(|| Actor::owner("owner-1")),
+            test_callers::callers(
+                who.starts_with("owner")
+                    .then(|| test_callers::owner("owner-1")),
                 staff,
-            }
+            )
         })
     }
 }
@@ -102,7 +112,7 @@ fn state_on(web_dir: &Path, channel: &str, build: Option<BuildInfo>) -> AppState
 
 macro_rules! app {
     ($web_dir:expr, $build:expr) => {{
-        let reader: Arc<dyn SessionReader> = Arc::new(FakeSessions);
+        let reader: Arc<dyn SessionReader> = Arc::new(FakeCallers);
         let state = state($web_dir, $build);
         test::init_service(
             App::new()
@@ -112,7 +122,7 @@ macro_rules! app {
         .await
     }};
     ($web_dir:expr, $build:expr, $channel:expr) => {{
-        let reader: Arc<dyn SessionReader> = Arc::new(FakeSessions);
+        let reader: Arc<dyn SessionReader> = Arc::new(FakeCallers);
         let state = state_on($web_dir, $channel, $build);
         test::init_service(
             App::new()
@@ -195,7 +205,7 @@ async fn plain_page_shows_the_build_and_it_matches_health_ready() {
 
 #[actix_web::test]
 async fn desk_variant_page_shows_the_build_and_it_matches_health_ready() {
-    let reader: Arc<dyn SessionReader> = Arc::new(FakeSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(FakeCallers);
     let state = state(&fixtures().join("web"), None);
     let screens = ScreenTable::from_dist(&fixtures()).expect("empty screen table");
     let app = test::init_service(

@@ -125,10 +125,16 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                 let here = format!("{here} '{}'", save.note);
                 let branch_id = branches[&label].clone();
                 let exists = label != "GONE";
-                let saver = if exists && branch_id != MAIN {
-                    shop.teller_of(&branch_id)
-                        .await
-                        .unwrap_or_else(|| panic!("{here}: the opener of {branch_id}"))
+                // OR-7.m G1a: rule 1 (#3796)
+                let saver = if exists {
+                    if let Some(id) = shop.teller_of(&branch_id).await {
+                        id
+                    } else {
+                        save_common::seed_opener(&shop.pool, &fx.actor).await;
+                        shop.teller_of(&branch_id)
+                            .await
+                            .unwrap_or_else(|| panic!("{here}: the opener of {branch_id}"))
+                    }
                 } else {
                     fx.actor.clone()
                 };
@@ -368,6 +374,7 @@ async fn every_scenario_ends_as_v2_ended() {
 async fn a_saved_exchange_can_be_read_back_whole() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
     let slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
     let shift = shop.open_shift_id(MAIN).await;
 
@@ -438,7 +445,8 @@ async fn a_saved_exchange_can_be_read_back_whole() {
             receipt_key: receipt_key.clone(),
             // the time the save was given, cut to milliseconds; who saved
             recorded_at: millis(at(0)),
-            recorded_by: OWNER.to_owned(),
+            // OR-7.m G1a: rule 2 (#3796)
+            recorded_by: owner_id.clone(),
         }
     );
     // found in its own branch only
@@ -473,9 +481,10 @@ async fn a_saved_exchange_can_be_read_back_whole() {
     );
 
     // the receipt is a file of whoever saved, in that branch, named by its own hash
+    // OR-7.m G1a: rule 2 (#3796)
     let receipt = shop
         .files
-        .open_owned(&receipt_key, OWNER)
+        .open_owned(&receipt_key, &owner_id)
         .await
         .unwrap()
         .expect("the receipt is a stored file");
@@ -505,16 +514,18 @@ async fn a_saved_exchange_can_be_read_back_whole() {
 async fn whoever_saves_is_recorded_and_must_own_the_files() {
     let shop = Shop::start().await;
     let (customer, owners_passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let staff = "employee-7";
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
+    // OR-7.m G1a: rule 1 (#3796)
+    let staff = shift_holder_common::user_of(&shop.pool, "employee-7").await;
     let shift = shift_holder_common::open_shift_for(
         &shop.pool,
         MAIN,
-        staff,
+        &staff,
         &[("THB", "100000"), ("USD", "1000")],
     )
     .await;
     fund_ledger_drawer(&shop.pool, &shift, &[("THB", "100000"), ("USD", "1000")]).await;
-    let staff_passport = shop.upload(MAIN, staff, "image/jpeg", JPEG).await;
+    let staff_passport = shop.upload(MAIN, &staff, "image/jpeg", JPEG).await;
 
     // a file somebody else uploaded is not this saver's attachment
     let got = shop
@@ -522,7 +533,7 @@ async fn whoever_saves_is_recorded_and_must_own_the_files() {
         .save(
             &branch(MAIN),
             form("staff-0001-aaaaaaaaaa", &customer, &owners_passport),
-            staff,
+            &staff,
             at(0),
         )
         .await;
@@ -533,7 +544,7 @@ async fn whoever_saves_is_recorded_and_must_own_the_files() {
         .save(
             &branch(MAIN),
             form("staff-0001-aaaaaaaaaa", &customer, &staff_passport),
-            staff,
+            &staff,
             at(1),
         )
         .await
@@ -544,18 +555,21 @@ async fn whoever_saves_is_recorded_and_must_own_the_files() {
         .await
         .unwrap()
         .unwrap();
+    // OR-7.m G1a: rule 2 (#3796)
     assert_eq!(stored.recorded_by, staff);
     let receipt_key = saved.receipt_url.strip_prefix("/files/").unwrap();
+    // OR-7.m G1a: rule 2 (#3796)
     assert!(
         shop.files
-            .open_owned(receipt_key, staff)
+            .open_owned(receipt_key, &staff)
             .await
             .unwrap()
             .is_some()
     );
+    // OR-7.m G1a: rule 2 (#3796)
     assert!(
         shop.files
-            .open_owned(receipt_key, OWNER)
+            .open_owned(receipt_key, &owner_id)
             .await
             .unwrap()
             .is_none()
@@ -563,12 +577,13 @@ async fn whoever_saves_is_recorded_and_must_own_the_files() {
 
     // the owner sends the same submission with the same passport bytes of the
     // owner's own: it is the same exchange, and the first answer comes back
+    // OR-7.m G1a: rule 1 (#3796)
     let again = shop
         .workflow
         .save(
             &branch(MAIN),
             form("staff-0001-aaaaaaaaaa", &customer, &owners_passport),
-            OWNER,
+            &owner_id,
             at(2),
         )
         .await
@@ -855,12 +870,15 @@ async fn a_refused_save_leaves_nothing_behind() {
 async fn one_submission_sent_many_times_at_once_is_one_exchange() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
     let mut tasks = Vec::new();
     for i in 0..12 {
         let workflow = shop.workflow.clone();
+        let owner_id = owner_id.clone();
         let cmd = form("at-once-0001-aaaaaaaa", &customer, &passport);
         tasks.push(tokio::spawn(async move {
-            workflow.save(&branch(MAIN), cmd, OWNER, at(i)).await
+            // OR-7.m G1a: rule 1 (#3796)
+            workflow.save(&branch(MAIN), cmd, &owner_id, at(i)).await
         }));
     }
     let mut answers = Vec::new();
@@ -891,15 +909,18 @@ async fn one_submission_sent_many_times_at_once_is_one_exchange() {
 async fn saves_at_once_never_sell_more_than_the_shift_holds() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "0"), ("USD", "50")]).await;
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
     let mut tasks = Vec::new();
     for i in 0..12 {
         let workflow = shop.workflow.clone();
+        let owner_id = owner_id.clone();
         let mut cmd = form(&format!("stock-{i:04}-aaaaaaaaaa"), &customer, &passport);
         cmd.side = "SELL".to_owned();
         cmd.rate = "33".to_owned();
         cmd.amount = "10".to_owned();
         tasks.push(tokio::spawn(async move {
-            workflow.save(&branch(MAIN), cmd, OWNER, at(i)).await
+            // OR-7.m G1a: rule 1 (#3796)
+            workflow.save(&branch(MAIN), cmd, &owner_id, at(i)).await
         }));
     }
     let mut refs = BTreeSet::new();
@@ -943,6 +964,7 @@ async fn two_branches_saving_at_once_share_one_run_of_numbers() {
     // own lock: the counter itself has to keep two branches apart
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
     shop.seed_branch("XC-B01", "Second").await;
     shop.set_rate("XC-B01", "USD", "32.1", "33").await;
     shop.open_shift("XC-B01", &[("THB", "100000"), ("USD", "1000")])
@@ -953,8 +975,9 @@ async fn two_branches_saving_at_once_share_one_run_of_numbers() {
 
     let mut tasks = Vec::new();
     for i in 0..16 {
+        // OR-7.m G1a: rule 1 (#3796)
         for (branch_id, customer, passport, saver) in [
-            (MAIN, &customer, &passport, OWNER),
+            (MAIN, &customer, &passport, owner_id.as_str()),
             ("XC-B01", &customer_b, &passport_b, saver_b.as_str()),
         ] {
             let workflow = shop.workflow.clone();

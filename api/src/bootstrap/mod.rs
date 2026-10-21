@@ -15,10 +15,7 @@ use pos_error::AppResult;
 use sqlx::PgPool;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use xc_auth::application::account::service::AccountService;
-use xc_auth::domain::account::repositories::account_repository::Purged;
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_auth::infrastructure::attempts::PgAttemptCounter;
 
 use xc_booking::application::sweeper::BookingSweeper;
 use xc_kernel::document_store::{DocumentStore, DocumentStoreError};
@@ -333,6 +330,13 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, anyhow::Error> {
     Ok(pool)
 }
 
+/// The 15-minute window start for attempt rate-limiting.
+fn window_start(now: DateTime<Utc>) -> DateTime<Utc> {
+    let millis = now.timestamp_millis();
+    let window_millis = millis.div_euclid(15 * 60 * 1000) * (15 * 60 * 1000);
+    DateTime::from_timestamp_millis(window_millis).unwrap_or(now)
+}
+
 /// Runs `purge` once at start and then once every `every`, for ever, giving it
 /// the time `clock` shows at each round.
 ///
@@ -344,22 +348,17 @@ pub async fn purge_on_a_timer<C, F, Fut>(every: Duration, clock: C, mut purge: F
 where
     C: Fn() -> DateTime<Utc>,
     F: FnMut(DateTime<Utc>) -> Fut,
-    Fut: Future<Output = AppResult<Purged>>,
+    Fut: Future<Output = AppResult<u64>>,
 {
     let mut rounds = tokio::time::interval(every);
     rounds.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         rounds.tick().await; // the first tick is at once
         match purge(clock()).await {
-            Ok(purged) => tracing::info!(
-                owner_sessions = purged.owner_sessions,
-                employee_sessions = purged.employee_sessions,
-                attempt_windows = purged.attempt_windows,
-                "purged expired sessions and past sign-in windows"
-            ),
+            Ok(attempt_windows) => tracing::info!(attempt_windows, "purged past sign-in windows"),
             Err(error) => tracing::error!(
                 error = %error,
-                "the purge of expired sessions failed; the next round will try again"
+                "the purge of past sign-in windows failed; the next round will try again"
             ),
         }
     }
@@ -415,16 +414,13 @@ impl Application {
         let workers = settings.application.workers;
         let shutdown_timeout = settings.application.shutdown_timeout_secs;
 
-        let accounts = AccountService::new(
-            Arc::new(PgAccountRepository::new(pool.clone())),
-            PasswordHasher::new(),
-        );
+        let attempts = PgAttemptCounter::new(pool.clone());
         let purge = tokio::spawn(purge_on_a_timer(
             Duration::from_secs(settings.auth.purge_interval_secs),
             || SystemTime::now().into(),
             move |now| {
-                let accounts = accounts.clone();
-                async move { accounts.purge_expired(now).await }
+                let attempts = attempts.clone();
+                async move { attempts.purge_before(window_start(now)).await }
             },
         ));
 

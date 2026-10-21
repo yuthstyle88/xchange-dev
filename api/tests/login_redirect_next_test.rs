@@ -29,12 +29,12 @@ use std::sync::Arc;
 use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test, web};
 use common::{FakeDatabase, settings, state_with};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::test_callers;
 
 const HOST: &str = "xc.test";
 
@@ -48,15 +48,11 @@ struct FixedSessions {
 }
 
 impl SessionReader for FixedSessions {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let staff = self
             .signed_in
-            .then(|| Actor::staff("employee-7", Role::Front, BranchId::new("MAIN")))
-            .flatten();
-        Box::pin(async move { Sessions { owner: None, staff } })
+            .then(|| test_callers::staff("employee-7", &[Role::Teller], BranchId::new("MAIN")));
+        Box::pin(async move { test_callers::callers(None, staff) })
     }
 }
 

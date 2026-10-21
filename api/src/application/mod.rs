@@ -3,7 +3,6 @@ pub mod app_session_claim;
 pub mod compat;
 
 pub mod custody;
-pub mod custody_role;
 pub mod customer_signup;
 pub mod executive;
 pub mod finance;

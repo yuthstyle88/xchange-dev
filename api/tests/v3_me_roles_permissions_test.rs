@@ -495,7 +495,7 @@ async fn granting_or_revoking_a_role_moves_the_me_version() {
     desk.drop_schema().await;
 }
 
-/// The old password cookies still reach `me` until OR-7.e: the owner's actor (`actor_from_v3`, EXECUTIVE + ADMIN,
+/// The old password cookies still reach `me` until OR-7.e: the owner's actor (`test_callers::owner`, EXECUTIVE + ADMIN,
 /// id `"owner"`) has no `users` row, so `name` is `null`, and the read is a 200, not a failed id lookup.
 #[actix_web::test]
 async fn an_old_owner_cookie_still_reads_me_with_no_name() {

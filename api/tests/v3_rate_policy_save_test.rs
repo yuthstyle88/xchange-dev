@@ -60,13 +60,13 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::Role;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -212,40 +212,47 @@ impl TestDb {
 // ------------------------------------------------------------ callers
 
 /// Who is signed in, from the request header `x-test-as`: `owner` or `staff:<ROLE>:<branch>`.
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
-    if spec == OWNER {
-        return Sessions {
-            owner: Some(Actor::owner(OWNER_ID)),
-            staff: None,
-        };
-    }
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
-            BranchId::new(branch),
-        ),
+fn roles_of(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown role {other}"),
     }
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+fn callers_of(spec: &str) -> Callers {
+    if spec == OWNER {
+        return test_callers::callers(Some(test_callers::owner(OWNER_ID)), None);
+    }
+    let mut parts = spec.splitn(3, ':');
+    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
+    let role = parts.next().expect("a role");
+    let roles = roles_of(role);
+    let branch = parts.next().expect("a branch");
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role}"),
+            roles,
+            BranchId::new(branch),
+        )),
+    )
+}
+
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -259,7 +266,7 @@ struct Answer {
 
 async fn call(db: &TestDb, who: &str, method: Method, uri: &str, body: Option<Value>) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))

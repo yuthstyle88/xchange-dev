@@ -33,16 +33,22 @@ async fn the_files_of_an_exchange_an_employee_saved_are_found_by_branch() {
     let fixture = fixture();
     let world = World::start(&fixture).await;
     let shop = &world.shop;
-    let employee = "employee-front";
+    // OR-7.m G1a: rule 1 (#3796)
+    let employee = shift_holder_common::user_of(&shop.pool, "employee-front").await;
     // MAIN is ready (rate, open shift) from the fixture's exchanges
     let customer = shop.reserve(save_common::MAIN, save_common::person()).await;
     let passport = shop
-        .upload(save_common::MAIN, employee, "image/jpeg", save_common::JPEG)
+        .upload(
+            save_common::MAIN,
+            &employee,
+            "image/jpeg",
+            save_common::JPEG,
+        )
         .await;
     let slip = shop
         .upload(
             save_common::MAIN,
-            employee,
+            &employee,
             "application/pdf",
             save_common::PDF,
         )
@@ -54,7 +60,7 @@ async fn the_files_of_an_exchange_an_employee_saved_are_found_by_branch() {
     shift_holder_common::open_shift_for(
         &shop.pool,
         save_common::MAIN,
-        employee,
+        &employee,
         &[("THB", "1000000"), ("USD", "1000")],
     )
     .await;
@@ -63,7 +69,7 @@ async fn the_files_of_an_exchange_an_employee_saved_are_found_by_branch() {
         .save(
             &save_common::branch(save_common::MAIN),
             form,
-            employee,
+            &employee,
             save_common::at(100),
         )
         .await

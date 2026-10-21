@@ -48,14 +48,14 @@ use common::{FakeDatabase, settings, state_with};
 use pos_error::{AppError, AppResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::{Actor, Permission, RoleGrants};
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xchange::bootstrap;
 use xchange::presentation::http as routes;
 use xchange::presentation::http::reference_rates;
-use xchange::presentation::pages::{self, SessionReader, Sessions};
+use xchange::presentation::pages::{self, Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const PATH: &str = "/api/reference-rates";
 const SIGN_IN: &str = "กรุณาเข้าสู่ระบบ";
@@ -65,6 +65,26 @@ const BANK_DOWN: &str = "ไม่สามารถดึงเรทล่า�
 const SERVER_ERROR: &str = "เซิร์ฟเวอร์ขัดข้อง";
 /// Text no answer may carry: what an internal failure said.
 const SECRET: &str = "pool timed out at 10.0.0.7:5432";
+const STAFF_ROLES: [&str; 9] = [
+    "FRONT",
+    "BACKEND",
+    "RATES",
+    "FINANCE",
+    "MANAGER",
+    "SYSTEM",
+    "MONITOR",
+    "DOCUMENTS",
+    "DOCUMENT_REVIEW",
+];
+
+/// RBAC §11.2: whether v2 staff role `role` holds `ReferenceRatesRead` once mapped to its Blueprint
+/// roles (OR-7.m merge of feat/rbac-groups: the staff roles here are v2 names, as `staff` maps them).
+fn holds_reference_rates(role: &str) -> bool {
+    test_callers::v2_staff_roles(role)
+        .expect("a v2 staff role")
+        .iter()
+        .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
+}
 
 // ----------------------------------------------------------------- the fixture
 
@@ -200,32 +220,35 @@ enum Who {
     Nobody,
     Owner,
     /// A staff session with this role.
-    Staff(Role),
+    Staff(&'static str),
     /// An owner session and a staff session in the same browser.
-    OwnerAndStaff(Role),
+    OwnerAndStaff(&'static str),
     /// Whoever the request's `Cookie: who=…` names; nobody without it.
     FromCookie,
 }
 
 fn owner() -> Option<Actor> {
-    Some(Actor::owner("owner"))
+    Some(test_callers::owner("owner"))
 }
 
-fn staff(role: Role) -> Option<Actor> {
-    Some(
-        Actor::staff(format!("E-{}", role.as_str()), role, BranchId::new("B2"))
-            .expect("a staff role"),
-    )
+fn staff(role: &str) -> Option<Actor> {
+    let roles =
+        test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown staff role {role:?}"));
+    Some(test_callers::staff(
+        &format!("E-{role}"),
+        roles,
+        BranchId::new("B2"),
+    ))
 }
 
-struct FakeSessions {
+struct FakeCallers {
     who: Who,
     calls: AtomicUsize,
 }
 
-impl FakeSessions {
-    fn new(who: Who) -> Arc<FakeSessions> {
-        Arc::new(FakeSessions {
+impl FakeCallers {
+    fn new(who: Who) -> Arc<FakeCallers> {
+        Arc::new(FakeCallers {
             who,
             calls: AtomicUsize::new(0),
         })
@@ -236,11 +259,8 @@ impl FakeSessions {
     }
 }
 
-impl SessionReader for FakeSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for FakeCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
             let (owner, staff) = match self.who {
@@ -256,12 +276,13 @@ impl SessionReader for FakeSessions {
                         .unwrap_or("");
                     match cookie {
                         "who=owner" => (owner(), None),
-                        "who=staff" => (None, staff(Role::Front)),
+                        // RBAC §11.2: RATES holds ReferenceRatesRead now; FRONT is still refused
+                        "who=staff" => (None, staff("FRONT")),
                         _ => (None, None),
                     }
                 }
             };
-            Sessions { owner, staff }
+            test_callers::callers(owner, staff)
         })
     }
 }
@@ -271,7 +292,7 @@ fn as_rates(fake: &Arc<FakeRates>) -> web::Data<Arc<dyn RateSource>> {
     web::Data::new(port)
 }
 
-fn as_sessions(fake: &Arc<FakeSessions>) -> web::Data<dyn SessionReader> {
+fn as_sessions(fake: &Arc<FakeCallers>) -> web::Data<dyn SessionReader> {
     let reader: Arc<dyn SessionReader> = fake.clone();
     web::Data::from(reader)
 }
@@ -472,7 +493,7 @@ async fn another_method_is_the_plain_404_even_without_the_applications_fallback(
     // instead of actix's own 405 (or its empty 404).
     let state = state_with(settings(&[]), FakeDatabase::Up);
     let rates = FakeRates::new(Rates::Answer(standard()));
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state.clone()))
@@ -519,9 +540,6 @@ async fn another_method_is_the_plain_404_even_without_the_applications_fallback(
 /// Every recorded case through the whole application.
 #[actix_web::test]
 async fn every_recorded_case_is_answered_as_v2_answered_it() {
-    use xc_auth::domain::access::v3_roles::blueprint_roles;
-    use xc_auth::domain::access::{Permission, RoleGrants};
-
     let fixture = fixture();
     let standard = with_numbers(&fixture.answer);
     let mut wrong = Vec::new();
@@ -533,16 +551,18 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
             "fails" => Rates::Refuse(BANK_DOWN),
             other => panic!("{}: unknown upstream {other}", case.name),
         });
-        let staff_role = if case.caller == "staff" {
+        let staff_role: Option<&'static str> = if case.caller == "staff" {
             Some(
-                Role::parse(case.role.as_deref().expect("a role"))
-                    .filter(|role| Role::STAFF.contains(role))
+                STAFF_ROLES
+                    .iter()
+                    .copied()
+                    .find(|&r| Some(r) == case.role.as_deref())
                     .expect("one of the nine staff roles"),
             )
         } else {
             None
         };
-        let sessions = FakeSessions::new(match case.caller.as_str() {
+        let sessions = FakeCallers::new(match case.caller.as_str() {
             "anonymous" => Who::Nobody,
             "owner" => Who::Owner,
             "staff" => Who::Staff(staff_role.expect("staff role")),
@@ -572,11 +592,7 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
 
         // Under §11.2 (rule S11), staff roles holding ReferenceRatesRead in RoleGrants::seed
         // are admitted where v2 refused all staff with 403.
-        let s11_admitted = staff_role.is_some_and(|r| {
-            blueprint_roles(r)
-                .iter()
-                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
-        }) && case.v2.status == 403;
+        let s11_admitted = staff_role.is_some_and(holds_reference_rates) && case.v2.status == 403;
         let expected_status = if s11_admitted {
             if case.upstream == "answers" { 200 } else { 400 }
         } else {
@@ -678,7 +694,7 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
 #[actix_web::test]
 async fn the_owner_gets_the_sources_answer_as_json_numbers() {
     let rates = FakeRates::new(Rates::Answer(standard()));
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
 
     let answer = send!(&app, post());
@@ -759,7 +775,7 @@ async fn the_answer_is_the_sources_whatever_it_holds() {
         ],
     });
     let rates = FakeRates::new(Rates::Answer(odd.clone()));
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
 
     let answer = send!(&app, post());
@@ -777,7 +793,7 @@ async fn the_answer_is_the_sources_whatever_it_holds() {
 #[actix_web::test]
 async fn every_request_asks_the_source_again() {
     let rates = FakeRates::new(Rates::Count);
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
 
     for n in 1..=3 {
@@ -799,7 +815,7 @@ async fn every_request_asks_the_source_again() {
 async fn a_refusal_of_the_source_is_a_400_with_its_sentence() {
     for sentence in [BANK_DOWN, "ธนาคารอื่นไม่ตอบ"] {
         let rates = FakeRates::new(Rates::Refuse(sentence));
-        let sessions = FakeSessions::new(Who::Owner);
+        let sessions = FakeCallers::new(Who::Owner);
         let app = application!(&rates, &sessions);
 
         let answer = send!(&app, post());
@@ -814,7 +830,7 @@ async fn a_refusal_of_the_source_is_a_400_with_its_sentence() {
 #[actix_web::test]
 async fn a_source_that_breaks_is_a_500_that_says_nothing() {
     let rates = FakeRates::new(Rates::Break);
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
 
     let answer = send!(&app, post());
@@ -828,7 +844,7 @@ async fn a_source_that_breaks_is_a_500_that_says_nothing() {
 #[actix_web::test]
 async fn nobody_signed_in_is_a_401_before_anything_else() {
     let rates = FakeRates::new(Rates::Answer(standard()));
-    let sessions = FakeSessions::new(Who::Nobody);
+    let sessions = FakeCallers::new(Who::Nobody);
     let app = application!(&rates, &sessions);
 
     for request in [
@@ -849,24 +865,16 @@ async fn nobody_signed_in_is_a_401_before_anything_else() {
 
 #[actix_web::test]
 async fn staff_are_a_403_before_the_headers_are_looked_at() {
-    use xc_auth::domain::access::v3_roles::blueprint_roles;
-    use xc_auth::domain::access::{Permission, RoleGrants};
-
     assert!(
-        Role::STAFF.iter().any(|&role| {
-            !blueprint_roles(role)
-                .iter()
-                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
-        }),
+        STAFF_ROLES.iter().any(|&role| !holds_reference_rates(role)),
         "§11.2 must leave some staff role without ReferenceRatesRead, or this test refuses nobody"
     );
-    for role in Role::STAFF.into_iter().filter(|&role| {
-        !blueprint_roles(role)
-            .iter()
-            .any(|&br| RoleGrants::seed(br).contains(&Permission::ReferenceRatesRead))
-    }) {
+    for role in STAFF_ROLES
+        .into_iter()
+        .filter(|&role| !holds_reference_rates(role))
+    {
         let rates = FakeRates::new(Rates::Answer(standard()));
-        let sessions = FakeSessions::new(Who::Staff(role));
+        let sessions = FakeCallers::new(Who::Staff(role));
         let app = application!(&rates, &sessions);
 
         for request in [
@@ -887,9 +895,9 @@ async fn staff_are_a_403_before_the_headers_are_looked_at() {
 #[actix_web::test]
 async fn an_owner_session_beside_a_staff_session_is_the_owner() {
     // v2 looks for the owner's session first and stops there
-    for role in [Role::Front, Role::Rates, Role::Manager] {
+    for role in ["FRONT", "RATES", "MANAGER"] {
         let rates = FakeRates::new(Rates::Answer(standard()));
-        let sessions = FakeSessions::new(Who::OwnerAndStaff(role));
+        let sessions = FakeCallers::new(Who::OwnerAndStaff(role));
         let app = application!(&rates, &sessions);
         let answer = send!(&app, post());
         assert_eq!(answer.status, StatusCode::OK, "{role:?}: {}", answer.body);
@@ -900,7 +908,7 @@ async fn an_owner_session_beside_a_staff_session_is_the_owner() {
 #[actix_web::test]
 async fn the_owner_needs_the_same_origin_and_the_marker() {
     let rates = FakeRates::new(Rates::Answer(standard()));
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
     let bare = || {
         test::TestRequest::post()
@@ -959,7 +967,7 @@ async fn the_owner_needs_the_same_origin_and_the_marker() {
 #[actix_web::test]
 async fn the_session_reader_is_given_the_request_itself() {
     let rates = FakeRates::new(Rates::Answer(standard()));
-    let sessions = FakeSessions::new(Who::FromCookie);
+    let sessions = FakeCallers::new(Who::FromCookie);
     let app = application!(&rates, &sessions);
 
     for (cookie, status) in [
@@ -981,7 +989,7 @@ async fn the_session_reader_is_given_the_request_itself() {
 #[actix_web::test]
 async fn the_body_is_never_read() {
     let rates = FakeRates::new(Rates::Answer(standard()));
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
 
     // what is sent: a name, the bytes, the Content-Type
@@ -1041,7 +1049,7 @@ async fn a_refusal_sentence_that_needs_escaping_is_still_json() {
         r"ends with a backslash \",
     ] {
         let rates = FakeRates::new(Rates::Refuse(sentence));
-        let sessions = FakeSessions::new(Who::Owner);
+        let sessions = FakeCallers::new(Who::Owner);
         let app = application!(&rates, &sessions);
 
         let answer = send!(&app, post());
@@ -1061,7 +1069,7 @@ async fn a_refusal_sentence_that_needs_escaping_is_still_json() {
 #[actix_web::test]
 async fn the_default_port_of_the_other_scheme_is_not_dropped() {
     let rates = FakeRates::new(Rates::Answer(standard()));
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
 
     let request = |host: &'static str, origin: &'static str, https: bool| {
@@ -1118,7 +1126,7 @@ async fn a_source_that_breaks_answers_with_v2s_500_headers() {
     );
 
     let rates = FakeRates::new(Rates::Break);
-    let sessions = FakeSessions::new(Who::Owner);
+    let sessions = FakeCallers::new(Who::Owner);
     let app = application!(&rates, &sessions);
 
     let answer = send!(&app, post());
@@ -1154,10 +1162,10 @@ async fn the_401_and_the_403_carry_no_cache_control() {
     );
     for (who, status) in [
         (Who::Nobody, StatusCode::UNAUTHORIZED),
-        (Who::Staff(Role::Front), StatusCode::FORBIDDEN),
+        (Who::Staff("FRONT"), StatusCode::FORBIDDEN),
     ] {
         let rates = FakeRates::new(Rates::Answer(standard()));
-        let sessions = FakeSessions::new(who);
+        let sessions = FakeCallers::new(who);
         let app = application!(&rates, &sessions);
 
         let answer = send!(&app, post());

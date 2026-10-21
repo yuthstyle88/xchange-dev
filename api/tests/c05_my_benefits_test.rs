@@ -36,7 +36,7 @@ use xc_kernel::pii::{IdentityType, LookupHasher, PiiKeys};
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::VIEWS;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const AS_HEADER: &str = "x-test-as";
 const ROUTE: &str = "/api/v3/views/my_benefits";
@@ -44,7 +44,7 @@ const ORG_2: &str = "00000000-0000-0000-0000-000000000002";
 const BRANCH: &str = "XC-C05-B1";
 const TEST_KEY: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
-// ── Sessions ────────────────────────────────────────────────────────────────
+// ── Callers ─────────────────────────────────────────────────────────────────
 
 fn customer_actor(org: &str, customer: &str) -> xc_auth::domain::access::Actor {
     xc_auth::domain::access::Actor::new(
@@ -98,18 +98,6 @@ fn callers_of(spec: &str) -> Callers {
 struct TestSessions;
 
 impl SessionReader for TestSessions {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()

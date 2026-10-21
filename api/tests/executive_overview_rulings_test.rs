@@ -32,7 +32,6 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -47,7 +46,7 @@ use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side, UnitSize}
 use xchange::application::executive::ports::ExchangeFacts;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::executive::wide_transaction_facts::WideTransactionFacts;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const HOST: &str = "xc.test";
@@ -157,18 +156,6 @@ impl Room {
 struct Executive;
 
 impl SessionReader for Executive {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: Some(Actor::owner(EXECUTIVE)),
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();

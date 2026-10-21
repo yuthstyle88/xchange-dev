@@ -110,15 +110,15 @@ exists.
 ```bash
 read -rs -p 'Owner password: ' XC_OWNER_PW; echo
 printf '%s\n' "$XC_OWNER_PW" | sudo -u xc-v3 bash -c \
-  'set -a; . /etc/xc-v3/env; set +a; cd /opt/xc-v3 && exec ./xchange create-owner --username "$1"' \
-  _ <name>
+  'set -a; . /etc/xc-v3/env; set +a; cd /opt/xc-v3 && exec ./xchange create-owner --name "$1" --phone "$2"' \
+  _ <name> <phone>
 unset XC_OWNER_PW
 ```
 
 - `read -rs` does not echo the password, and `printf` is a shell builtin, so the
   password is never on a command line (`ps`) or in the shell history.
 - It runs as the service user with the same env file the service uses, so it
-  reaches the same database. Expected output: `Owner <name> created`.
+  reaches the same database. Expected output: `Owner <name> created (user <id>); sign in on /login with the phone`.
 - Changing an owner's password later is not designed yet
   (`docs/design/xchange-v3.md`, "First owner").
 

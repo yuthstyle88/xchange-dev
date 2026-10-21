@@ -41,7 +41,7 @@
 //! (`quote-transaction.md` §4.7). A revision-2 receipt is a second `receipts` row with its own number
 //! and its own stored file (ticket §9); since RV-1 (V-4) a revision above 1 is `kind = 'REVERSAL'`.
 //!
-//! Needs `TEST_DATABASE_URL`; nothing here skips. Sessions come from the `x-test-as` header
+//! Needs `TEST_DATABASE_URL`; nothing here skips. Callers come from the `x-test-as` header
 //! (`owner`, `staff:<ROLE>:<branch>`), as in `v3_transaction_view_test.rs`.
 
 mod common;
@@ -65,13 +65,10 @@ use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::domain::request::{Outcome, RequestId};
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::v3_roles::blueprint_roles;
 use xc_auth::domain::access::{Permission, Role as AccessRole, RoleGrants, StandingKind};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -91,7 +88,8 @@ use xchange::application::workflows::exchange::reversal_request::{
 use xchange::application::workflows::save_step::SaveActor;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::files::file_service::FileService;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const FRONT: &str = "staff:FRONT:MAIN";
@@ -112,46 +110,42 @@ const STAFF_ROLES: [&str; 9] = [
 
 // ── sessions ─────────────────────────────────────────────────────────────────
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn roles_of(role: &str) -> &'static [AccessRole] {
+    test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown role {role}"))
+}
+
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role = parts.next().expect("a role");
+    let roles = roles_of(role);
     let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role}"),
+            roles,
             BranchId::new(branch),
-        ),
-    }
+        )),
+    )
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -180,17 +174,11 @@ fn money(text: &str) -> Money {
 /// OR-7.1 #1020 (design `org-roles-branches.md` §3.3, §4.3), by #1020's ticket author: the approval core takes
 /// `access::Actor`, so this is the B1-mapped user of the v3 employee `role` on `branch` (FINANCE stays FINANCE,
 /// so the stored `actor_role` `"FINANCE"` below is unchanged, ruling 5 on #1020).
-fn staff(role: Role, branch: &str) -> xc_auth::domain::access::Actor {
-    let v3 = Actor::staff(
-        format!("employee-{}", role.as_str()),
-        role,
+fn staff(role: &str, branch: &str) -> xc_auth::domain::access::Actor {
+    test_callers::staff(
+        &format!("employee-{role}"),
+        roles_of(role),
         BranchId::new(branch),
-    )
-    .expect("a staff actor");
-    xc_auth::domain::access::v3_roles::actor_from_v3(
-        &v3,
-        "00000000-0000-0000-0000-000000000001",
-        chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
     )
 }
 
@@ -489,7 +477,7 @@ impl Room {
                 exchange_approval::EXCHANGE_TRANSACTION,
                 &t.id.0.to_string(),
                 &json!({ "reason": "over the limit" }),
-                &staff(Role::Front, branch),
+                &staff("FRONT", branch),
                 &format!("over-{}", t.id.0),
             )
             .await
@@ -503,7 +491,7 @@ impl Room {
             Some(request_id),
         )
         .await;
-        self.decide(request_id, &staff(Role::Manager, branch)).await;
+        self.decide(request_id, &staff("MANAGER", branch)).await;
         t.id
     }
 
@@ -543,7 +531,7 @@ impl Room {
             .await
             .unwrap_or_else(|e| panic!("request the reversal: {e:?}"));
         tx.commit().await.unwrap();
-        self.decide(reversal.approval_request_id, &staff(Role::Finance, branch))
+        self.decide(reversal.approval_request_id, &staff("FINANCE", branch))
             .await;
         reversal.id.0
     }
@@ -598,7 +586,7 @@ impl Room {
             )])),
             self.db.pool.clone(),
         );
-        let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+        let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
         let app = atest::init_service(
             App::new()
                 .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -798,17 +786,18 @@ async fn teller_and_branch_manager_reprint_it() {
 async fn a_caller_without_receipt_reprint_is_refused_with_no_body() {
     let room = Room::open().await;
     let c = room.completed("MAIN", "refused").await;
-    let refused: Vec<Role> = Role::STAFF
+    let refused: Vec<&str> = test_callers::V2_STAFF
         .into_iter()
-        .filter(|&r| {
-            !blueprint_roles(r)
+        .filter_map(|(name, roles)| {
+            (!roles
                 .iter()
-                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReceiptReprint))
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReceiptReprint)))
+            .then_some(name)
         })
         .collect();
     assert!(!refused.is_empty(), "some staff role lacks ReceiptReprint");
     for role in refused {
-        let who = format!("staff:{}:MAIN", role.as_str());
+        let who = format!("staff:{role}:MAIN");
         let (status, body) = room
             .get(
                 &who,

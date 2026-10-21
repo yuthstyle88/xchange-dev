@@ -21,7 +21,7 @@
 //!
 //! Rows are seeded with SQL in RV-1's and TX-2's schema, as `v3_reversal_view_test.rs` does. The window is the
 //! branch's timezone (Asia/Bangkok): a reversal whose `business_date` is Bangkok's today is inside it, one of
-//! Bangkok's yesterday is past it. Sessions come from the `x-test-as` header (`owner`, `staff:<ROLE>:<branch>`).
+//! Bangkok's yesterday is past it. Callers come from the `x-test-as` header (`owner`, `staff:<ROLE>:<branch>`).
 //! The content tests read as MAIN's FRONT (TELLER: holds `ReversalRequest`).
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips.
@@ -40,15 +40,13 @@ use chrono::{DateTime, Utc};
 use quote_common::TestDb;
 use serde_json::{Value, json};
 use xc_auth::domain::access::RoleGrants;
-use xc_auth::domain::access::v3_roles::blueprint_roles;
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 /// Who reads in the content tests: MAIN's FRONT (TELLER, holds `ReversalRequest`).
@@ -74,53 +72,46 @@ const SECRETS: [&str; 5] = [
     "CU-SECRET",
 ];
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role_name = parts.next().expect("a role");
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role_name}"),
+            roles,
             BranchId::new(branch),
-        ),
-    }
+        )),
+    )
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
 /// `GET desk_refunds?branch=<branch>` as `who`: (status, body, the raw text).
 async fn get(db: &TestDb, who: &str, branch: &str) -> (StatusCode, Value, String) {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -508,17 +499,15 @@ async fn no_reversal_is_an_empty_list() {
 /// Every caller this file compares: signed out, the owner, and each staff role of MAIN.
 fn callers() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_owned()];
-    for role in Role::STAFF {
-        out.push(format!("staff:{}:MAIN", role.as_str()));
+    for (role, _) in test_callers::V2_STAFF {
+        out.push(format!("staff:{role}:MAIN"));
     }
     out
 }
 
-/// RF-6: the view admits exactly whom `Policy::allow` admits for `(Rpc, "reversalRequest")` — the post
-/// command's own row — compared caller by caller; a refused caller gets a 4xx refusal with an error code and no
-/// data. A signed-out caller is refused. The refusal's code and sentence are the v3 seam's, which reads the
-/// caller as an `access::Actor` and so need not word it as `Policy::allow` on the legacy actor does (measured: the
-/// owner is `roleNotAllowedHere` here); only who is admitted is pinned.
+/// RF-6: the view admits exactly whom `RoleGrants::seed` and `Policy::authorize` admit for `(Rpc, "reversalRequest")`
+/// — the post command's own row — compared caller by caller; a refused caller gets a 4xx refusal with an error code
+/// and no data. A signed-out caller is refused.
 #[tokio::test]
 async fn callers_are_admitted_exactly_as_the_reversal_request_row_admits() {
     let db = TestDb::start().await;
@@ -530,16 +519,17 @@ async fn callers_are_admitted_exactly_as_the_reversal_request_row_admits() {
     };
     let mut admitted = Vec::new();
     for who in callers() {
-        let s = sessions_of(&who);
-        let actor = s.owner.or(s.staff);
+        let actor = callers_of(&who).user;
         let (status, body, text) = get(&db, &who, "MAIN").await;
         let what = format!("as {who:?}");
         // Under §11.2, admission follows `RoleGrants::seed(role)` for the row's permission.
-        let holds = actor.is_some_and(|a| {
-            blueprint_roles(a.role())
+        let holds = actor.as_ref().is_some_and(|a| {
+            a.roles
                 .iter()
-                .any(|&r| RoleGrants::seed(r).contains(&perm))
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
         });
+        let auth = Policy::authorize(actor.as_ref(), EntryPath::Rpc, &action, None, Utc::now());
+        assert_eq!(auth.is_ok(), holds, "{what}");
         if holds {
             admitted.push(who.clone());
             assert_eq!(status, StatusCode::OK, "{what}: {text:.300}");

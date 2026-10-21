@@ -12,11 +12,12 @@
 //! No SQL here: all services keep theirs behind their own repositories.
 
 use chrono::{DateTime, Utc};
-use pos_error::AppError;
-use serde_json::json;
+use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use std::collections::HashMap;
-use xc_auth::application::account::service::{AccountService, EmployeesAnswer};
+use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::standing::STAFF_PRIORITY;
+use xc_auth::domain::access::{Role, StandingKind};
 use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
@@ -29,27 +30,98 @@ use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use crate::application::compat::snapshot_sources::{
     MemberMark, SnapshotSources, SnapshotTransaction, SourceFuture,
 };
+use crate::application::compat::staff_view::StaffMember;
 use crate::application::compat::v2_json::{People, PersonLabel};
 use crate::application::settings::payment_settings::PaymentSettingsService;
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 
-/// Who the employee list is read as. Reading writes no audit row; the name
-/// only says where the question came from.
-const READER: &str = "snapshot";
+/// Active staff of `branch`: one [`StaffMember`] per non-`DISABLED` user who holds at least one
+/// staff role valid at `now` (`STAFF_PRIORITY`) at `branch`, ordered by `(users.created_at,
+/// users.name)`.
+pub(crate) async fn branch_colleagues(
+    pool: &PgPool,
+    branch: &BranchId,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<StaffMember>> {
+    branch_staff_members(pool, branch, now, false).await
+}
+
+/// All staff of `branch`, closed (`DISABLED`) accounts included, so names on historical rows stay
+/// readable after an account is closed.
+pub(crate) async fn branch_people(
+    pool: &PgPool,
+    branch: &BranchId,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<StaffMember>> {
+    branch_staff_members(pool, branch, now, true).await
+}
+
+async fn branch_staff_members(
+    pool: &PgPool,
+    branch: &BranchId,
+    now: DateTime<Utc>,
+    include_disabled: bool,
+) -> AppResult<Vec<StaffMember>> {
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT u.id::text, u.name, ur.role_code \
+         FROM users u \
+         JOIN user_roles ur ON ur.user_id = u.id AND ur.organization_id = u.organization_id \
+         WHERE ur.branch_id = $1 \
+           AND ($3 OR u.status <> 'DISABLED') \
+           AND ur.valid_from <= $2 \
+           AND (ur.valid_to IS NULL OR ur.valid_to > $2) \
+         ORDER BY u.created_at ASC, u.name ASC, u.id ASC",
+    )
+    .bind(branch.as_str())
+    .bind(now)
+    .bind(include_disabled)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let mut members: Vec<StaffMember> = Vec::new();
+    for (user_id, name, role_code) in rows {
+        let Some(role) = Role::parse(&role_code) else {
+            continue;
+        };
+        let Some(priority) = STAFF_PRIORITY.iter().position(|r| *r == role) else {
+            continue;
+        };
+        if let Some(existing) = members.iter_mut().find(|m| m.id == user_id) {
+            let existing_priority = STAFF_PRIORITY
+                .iter()
+                .position(|r| *r == existing.role)
+                .unwrap_or(usize::MAX);
+            if priority < existing_priority {
+                existing.role = role;
+                existing.role_text = StandingKind::Staff(role).audit_text().to_string();
+            }
+        } else {
+            members.push(StaffMember {
+                id: user_id,
+                username: name.clone(),
+                name,
+                role,
+                role_text: StandingKind::Staff(role).audit_text().to_string(),
+                branch: branch.clone(),
+            });
+        }
+    }
+    Ok(members)
+}
 
 /// `SnapshotSources` over the services on main.
 #[derive(Clone)]
 pub struct ServiceSnapshotSources {
     pool: PgPool,
     transactions: TransactionService,
-    accounts: AccountService<PgAccountRepository>,
     payment_settings: PaymentSettingsService,
 }
 
 impl ServiceSnapshotSources {
     pub fn new(
         transactions: TransactionService,
-        accounts: AccountService<PgAccountRepository>,
+        _accounts: AccountService<PgAccountRepository>,
     ) -> Self {
         let branch_tx = transactions.branch_tx().clone();
         let pool = branch_tx.pool().clone();
@@ -59,7 +131,6 @@ impl ServiceSnapshotSources {
         Self {
             pool,
             transactions,
-            accounts,
             payment_settings,
         }
     }
@@ -163,27 +234,15 @@ impl SnapshotSources for ServiceSnapshotSources {
 
     fn people<'a>(&'a self, branch: &'a BranchId) -> SourceFuture<'a, People> {
         Box::pin(async move {
-            let everyone = match self
-                .accounts
-                .employees("list", &json!({}), READER, Utc::now())
-                .await?
-            {
-                EmployeesAnswer::List(everyone) => everyone,
-                EmployeesAnswer::Saved => {
-                    return Err(AppError::Internal(
-                        "the employee list answered a write".to_string(),
-                    ));
-                }
-            };
-            Ok(everyone
+            let people = branch_people(&self.pool, branch, Utc::now()).await?;
+            Ok(people
                 .into_iter()
-                .filter(|employee| employee.branch_id == branch.as_str())
-                .map(|employee| {
+                .map(|member| {
                     (
-                        employee.id,
+                        member.id,
                         PersonLabel {
-                            name: employee.name,
-                            role: employee.role,
+                            name: member.name,
+                            role: member.role_text,
                         },
                     )
                 })

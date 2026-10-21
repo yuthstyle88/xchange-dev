@@ -238,23 +238,49 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
     shop.finish().await;
 }
 
-/// Everybody of the branch by employee id, with the name and the account's
-/// role as v2 spells it — a closed account included, another branch's people
-/// left out.
+/// Everybody of the branch by `users.id`, with `users.name` and the role as
+/// v3 prints it — a closed account included, another branch's people left out.
+/// OR-7.m G3 (#1027): keyed by `users.id` (rule 2), named by `users.name` and
+/// a merged v2 role printing its Blueprint role (rule 3: BACKEND → MANAGER).
+/// A closed account stays: names on old rows stay readable after a user is
+/// disabled (`xc-auth/src/application/user/directory.rs:16`).
 #[tokio::test]
 async fn the_people_are_everybody_of_the_branch_closed_accounts_included() {
     let shop = Shop::start().await;
     let accounts = accounts(&shop);
-    let front = employ(&accounts, "fr1", "FR1 Front", "FRONT", MAIN).await;
-    let review = employ(&accounts, "rv1", "RV1 Review", "DOCUMENT_REVIEW", MAIN).await;
-    let gone = employ(&accounts, "be1", "BE1 Backend", "BACKEND", MAIN).await;
+    employ(&accounts, "fr1", "FR1 Front", "FRONT", MAIN).await;
+    employ(&accounts, "rv1", "RV1 Review", "DOCUMENT_REVIEW", MAIN).await;
+    let gone_employee = employ(&accounts, "be1", "BE1 Backend", "BACKEND", MAIN).await;
     // OR-2: an employee's branch must name a `branches` row (design #550 follow-up, PR 636).
     shop.seed_branch(OTHER, "Second").await;
-    let other = employ(&accounts, "fr2", "FR2 Front", "FRONT", OTHER).await;
+    employ(&accounts, "fr2", "FR2 Front", "FRONT", OTHER).await;
     accounts
-        .employees("disable", &json!({ "id": gone }), OWNER, at(5))
+        .employees("disable", &json!({ "id": gone_employee }), OWNER, at(5))
         .await
         .expect("close an account");
+
+    let user = |name: &'static str| {
+        let pool = shop.pool.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE name = $1")
+                .bind(name)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("the user named {name}: {e}"))
+        }
+    };
+    let (front, review, gone, other) = (
+        user("FR1 Front").await,
+        user("RV1 Review").await,
+        user("BE1 Backend").await,
+        user("FR2 Front").await,
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM users WHERE id::text = $1")
+        .bind(&gone)
+        .fetch_one(&shop.pool)
+        .await
+        .expect("the closed account's status");
+    assert_eq!(status, "DISABLED", "the account really is closed");
 
     let sources = sources(&shop);
     let people = sources
@@ -271,7 +297,7 @@ async fn the_people_are_everybody_of_the_branch_closed_accounts_included() {
         people.get(&review),
         Some(&label("RV1 Review", "DOCUMENT_REVIEW"))
     );
-    assert_eq!(people.get(&gone), Some(&label("BE1 Backend", "BACKEND")));
+    assert_eq!(people.get(&gone), Some(&label("BE1 Backend", "MANAGER")));
 
     let elsewhere = sources
         .people(&branch(OTHER))

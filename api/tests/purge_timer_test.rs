@@ -23,7 +23,6 @@ use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::account::repositories::account_repository::Purged;
 use xchange::bootstrap::{self, Application};
 use xchange::config::Settings;
 
@@ -105,7 +104,7 @@ impl Recorder {
         self.asked.lock().unwrap().clone()
     }
 
-    async fn purge(&self, now: DateTime<Utc>) -> AppResult<Purged> {
+    async fn purge(&self, now: DateTime<Utc>) -> AppResult<u64> {
         let call = {
             let mut asked = self.asked.lock().unwrap();
             asked.push(now);
@@ -116,7 +115,7 @@ impl Recorder {
                 "the database is away (call {call})"
             )))
         } else {
-            Ok(Purged::default())
+            Ok(0)
         }
     }
 }
@@ -293,35 +292,33 @@ impl Scratch {
     }
 }
 
-async fn insert_session(pool: &PgPool, hash: &str, expires: DateTime<Utc>) {
-    sqlx::query(
-        "INSERT INTO owner_sessions (hash, owner_id, version, expires) VALUES ($1, 'o1', 1, $2)",
-    )
-    .bind(hash)
-    .bind(expires)
-    .execute(pool)
-    .await
-    .expect("insert a session");
+async fn insert_window(pool: &PgPool, key: &str, window_start: DateTime<Utc>) {
+    sqlx::query("INSERT INTO auth_attempts (key, window_start, count) VALUES ($1, $2, 3)")
+        .bind(key)
+        .bind(window_start)
+        .execute(pool)
+        .await
+        .expect("insert an attempt window");
 }
 
-async fn session_hashes(pool: &PgPool) -> Vec<String> {
-    sqlx::query_scalar("SELECT hash FROM owner_sessions ORDER BY hash")
+async fn window_keys(pool: &PgPool) -> Vec<String> {
+    sqlx::query_scalar("SELECT key FROM auth_attempts ORDER BY key")
         .fetch_all(pool)
         .await
-        .expect("read owner_sessions")
+        .expect("read auth_attempts")
 }
 
 /// Asks until `wanted` is what the table holds, for at most twenty seconds.
-async fn until_sessions_are(pool: &PgPool, wanted: &[&str], what: &str) {
+async fn until_windows_are(pool: &PgPool, wanted: &[&str], what: &str) {
     let started = std::time::Instant::now();
     loop {
-        let got = session_hashes(pool).await;
+        let got = window_keys(pool).await;
         if got == wanted {
             return;
         }
         assert!(
             started.elapsed() < Duration::from_secs(20),
-            "{what}: owner_sessions holds {got:?}, expected {wanted:?}"
+            "{what}: auth_attempts holds {got:?}, expected {wanted:?}"
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -338,23 +335,8 @@ async fn a_server_purges_its_database_at_start_and_again_after_the_interval() {
         .await;
     let pool = scratch.inspect().await;
     let now: DateTime<Utc> = SystemTime::now().into();
-    sqlx::query(
-        "INSERT INTO owners (id, username, name, password_hash, created_at) VALUES ('o1', 'boss', 'boss', '-', $1)",
-    )
-    .bind(now)
-    .execute(&pool)
-    .await
-    .expect("insert an owner");
-    insert_session(&pool, "dead-1", now - chrono::Duration::hours(1)).await;
-    insert_session(&pool, "live", now + chrono::Duration::hours(1)).await;
-    sqlx::query(
-        "INSERT INTO auth_attempts (key, window_start, count) VALUES ('k', $1, 3), ('k', $2, 1)",
-    )
-    .bind(now - chrono::Duration::hours(2))
-    .bind(now + chrono::Duration::hours(2))
-    .execute(&pool)
-    .await
-    .expect("insert attempt windows");
+    insert_window(&pool, "dead-1", now - chrono::Duration::hours(2)).await;
+    insert_window(&pool, "live", now + chrono::Duration::hours(2)).await;
 
     common::install_test_pii_keys();
     let application = Application::build(scratch.settings.clone())
@@ -362,16 +344,16 @@ async fn a_server_purges_its_database_at_start_and_again_after_the_interval() {
         .expect("the server starts");
     let server = tokio::spawn(application.run_until_stopped());
 
-    until_sessions_are(&pool, &["live"], "at start").await;
+    until_windows_are(&pool, &["live"], "at start").await;
     let windows: i64 = sqlx::query_scalar("SELECT count(*) FROM auth_attempts")
         .fetch_one(&pool)
         .await
         .expect("count auth_attempts");
     assert_eq!(windows, 1, "the past window went, the one ahead stays");
 
-    // a session that has run out since: the next round takes it
-    insert_session(&pool, "dead-2", now - chrono::Duration::minutes(1)).await;
-    until_sessions_are(&pool, &["live"], "after the interval").await;
+    // a past window added since: the next round takes it
+    insert_window(&pool, "dead-2", now - chrono::Duration::hours(1)).await;
+    until_windows_are(&pool, &["live"], "after the interval").await;
 
     server.abort();
     let _ = server.await;

@@ -25,21 +25,24 @@ mod compat_common;
 mod rpc_common;
 mod snapshot_common;
 
+use chrono::Utc;
 use compat_common::{Fixture, Person};
 use rpc_common::{
     Answer, Call, Desk, EMPLOYEE_AUTH_REQUIRED, INVALID_REQUEST, MAIN, ROLE_NOT_ALLOWED_RPC, RPC,
-    Replay, SERVER_ERROR, STAFF_RPC, one_of_each_role, route_rule, sign_in, text_with_ids,
+    Replay, SERVER_ERROR, STAFF_RPC, one_of_each_role, sign_in, text_with_ids,
 };
 use serde_json::{Map, Value, json};
 use snapshot_common::time;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::application::compat::actions::RpcCall;
 use xchange::application::compat::envelope::RpcRoute;
 use xchange::application::compat::rpc::{RpcCaller, RpcFailure};
 use xchange::presentation::http::rpc::registered_actions;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const DAY: &str = "snapshot/transactions.json";
@@ -96,16 +99,27 @@ fn v2_text(replay: &Replay<'_>, n: usize) -> String {
     text_with_ids(&replay.ids, fixture.step(n).json(), &text)
 }
 
+fn roles_of(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unexpected v2 role {other:?}"),
+    }
+}
+
 fn actor_of(person: &Person) -> Actor {
     if person.is_owner() {
-        return Actor::owner("owner");
+        return test_callers::owner("owner");
     }
-    Actor::staff(
-        person.id.clone(),
-        Role::parse(&person.role).expect("a role"),
+    test_callers::staff(
+        &person.id,
+        roles_of(&person.role),
         BranchId::new(person.branch_id.clone().expect("a branch")),
     )
-    .expect("an employee")
 }
 
 fn front_of(branch: &str, n: u8) -> Person {
@@ -261,14 +275,14 @@ async fn the_role_table_of_documents_is_policys_on_both_routes() {
                 )
                 .await;
             let label = format!("documents on {path} as {}", person.key);
-            // OR-4b (#767): the route table's rule (`route_rule`); the staff route reads the staff
-            // session only, so the owner's is nobody there
+            // OR-4b (#767): the route table's rule (`Policy::authorize`); the staff route reads the
+            // staff session only, so the owner's is nobody there
             let caller = (path == RPC || person.key != "OWNER").then_some(&actor);
-            match route_rule(caller, entry, "documents") {
+            match Policy::authorize(caller, entry, &Action::new("documents"), None, Utc::now()) {
                 Err(refusal) => {
                     answer.assert_refused(refusal.status(), &refusal.to_string(), &label)
                 }
-                Ok(()) => {
+                Ok(_) => {
                     answer.assert_refused(400, NO_DOCUMENTS, &label);
                     assert_eq!(answer.header("cache-control"), Some("no-store"), "{label}");
                     let_through.push((person.key.clone(), path));
@@ -362,29 +376,43 @@ async fn an_employee_reads_only_the_exchanges_of_the_own_branch() {
     replay.desk.employ(std::slice::from_ref(&other)).await;
     let cookies = sign_in(&replay.app, ORIGIN, std::slice::from_ref(&other)).await;
 
-    for payload in [
-        json!({ "ref": CASH }),
-        json!({ "ref": CASH, "branchId": MAIN }),
-    ] {
-        replay
-            .app
-            .send(
-                Call::action(ORIGIN, STAFF_RPC, "documents", payload.clone())
-                    .cookie(&cookies[&other.key]),
-            )
-            .await
-            .assert_refused(400, NO_DOCUMENTS, &format!("a Front of BR-2: {payload}"));
-    }
-    // and a Front of MAIN is not sent elsewhere by naming another branch
-    for branch in ["BR-2", "NOWHERE", "MAIN_1", ""] {
-        let answer = documents(&replay, "FR1", json!({ "ref": CASH, "branchId": branch })).await;
-        assert_eq!(
-            answer.status, 200,
-            "branchId {branch:?}: {:.300}",
-            answer.text
+    let no_branch = json!({ "ref": CASH });
+    replay
+        .app
+        .send(
+            Call::action(ORIGIN, STAFF_RPC, "documents", no_branch.clone())
+                .cookie(&cookies[&other.key]),
+        )
+        .await
+        .assert_refused(400, NO_DOCUMENTS, &format!("a Front of BR-2: {no_branch}"));
+    let unheld_branch = json!({ "ref": CASH, "branchId": MAIN });
+    // OR-7.m S-D5: Blueprint session, design D-4 (rulings on #3700)
+    replay
+        .app
+        .send(
+            Call::action(ORIGIN, STAFF_RPC, "documents", unheld_branch.clone())
+                .cookie(&cookies[&other.key]),
+        )
+        .await
+        .assert_refused(
+            403,
+            "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+            &format!("a Front of BR-2: {unheld_branch}"),
         );
-        assert_eq!(answer.text, v2_text(&replay, 51), "branchId {branch:?}");
+    // and a Front of MAIN is refused when naming a branch they do not hold, while "" names none
+    for branch in ["BR-2", "NOWHERE", "MAIN_1"] {
+        // OR-7.m S-D5: Blueprint session, design D-4 (rulings on #3700)
+        documents(&replay, "FR1", json!({ "ref": CASH, "branchId": branch }))
+            .await
+            .assert_refused(
+                403,
+                "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
+                &format!("branchId {branch:?}"),
+            );
     }
+    let answer = documents(&replay, "FR1", json!({ "ref": CASH, "branchId": "" })).await;
+    assert_eq!(answer.status, 200, "branchId \"\": {:.300}", answer.text);
+    assert_eq!(answer.text, v2_text(&replay, 51), "branchId \"\"");
     replay.finish().await;
 }
 

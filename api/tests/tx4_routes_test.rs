@@ -58,15 +58,15 @@ use quote_common::*;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use tx4_common::*;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -110,38 +110,51 @@ async fn desk_with_customer() -> (Desk, String) {
 
 /// Who is signed in, from the header `x-test-as`: `teller` (FRONT of MAIN, id `TELLER`),
 /// `staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn staff_roles(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown staff role {other:?}"),
+    }
+}
+
+fn callers_of(spec: &str) -> Callers {
     let staff = match spec {
         "" => None,
-        "teller" => Actor::staff(TELLER, Role::Front, BranchId::new("MAIN")),
+        "teller" => Some(test_callers::staff(
+            TELLER,
+            &[Role::Teller],
+            BranchId::new("MAIN"),
+        )),
         other => {
             let mut parts = other.splitn(3, ':');
             assert_eq!(parts.next(), Some("staff"), "staff spec {other:?}");
-            let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+            let role = parts.next().expect("a role");
             let branch = parts.next().expect("a branch");
-            Actor::staff(
-                format!("employee-{}", role.as_str()),
-                role,
+            Some(test_callers::staff(
+                &format!("employee-{role}"),
+                staff_roles(role),
                 BranchId::new(branch),
-            )
+            ))
         }
     };
-    Sessions { owner: None, staff }
+    test_callers::callers(None, staff)
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -162,7 +175,7 @@ impl Answer {
 /// `POST uri` as `who` with `body`, sending `key` as the `Idempotency-Key` when given.
 async fn post(desk: &Desk, uri: &str, who: &str, body: &Value, key: Option<&str>) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), desk.db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))

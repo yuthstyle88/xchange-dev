@@ -35,7 +35,7 @@
 //! file therefore does not compile before the view exists; it is its own test target, so the rest
 //! of the suite builds.
 //!
-//! Sessions are made at the real sign-in doors (`rpc_common`). Needs `TEST_DATABASE_URL`.
+//! The sessions are made at the real sign-in doors (`rpc_common`). Needs `TEST_DATABASE_URL`.
 
 mod common;
 mod compat_common;
@@ -54,11 +54,10 @@ use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
+use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xc_rate::infrastructure::rate::bot_rate_source::Clock;
@@ -66,6 +65,7 @@ use xchange::presentation::http::rpc::RpcClock;
 use xchange::presentation::http::v3::VIEWS;
 use xchange::presentation::http::v3::rates_reference::{RatesReferenceView, ReferenceCache};
 use xchange::presentation::http::v3::view::ViewEndpoint;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const VIEW: &str = "rates_reference";
@@ -355,15 +355,12 @@ impl Room {
 fn callers() -> Vec<(String, Option<Actor>)> {
     let mut callers: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        callers.push((role.as_str().to_string(), staff));
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+    for (name, roles) in test_callers::V2_STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        callers.push((name.to_string(), staff));
+        callers.push((format!("OWNER+{name}"), Some(test_callers::owner("owner"))));
     }
     callers
 }
@@ -374,7 +371,6 @@ fn callers() -> Vec<(String, Option<Actor>)> {
 /// a refused caller never makes the BOT be asked.
 #[actix_web::test]
 async fn rates_reference_answers_exactly_whom_the_reference_rates_route_allows() {
-    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
     use xc_auth::domain::access::{Permission, RoleGrants};
 
     let room = Room::open().await;
@@ -382,24 +378,18 @@ async fn rates_reference_answers_exactly_whom_the_reference_rates_route_allows()
     let mut allowed = 0;
     let mut refused = 0;
     for (who, actor) in callers() {
+        // OR-7.m (merge of feat/rbac-groups): the caller is already a Blueprint actor
         let holds = actor.as_ref().is_some_and(|ac| {
-            blueprint_roles(ac.role())
+            ac.roles
                 .iter()
-                .any(|&r| RoleGrants::seed(r).contains(&Permission::ReferenceRatesRead))
-        });
-        let user = actor.as_ref().map(|ac| {
-            actor_from_v3(
-                ac,
-                xchange::presentation::pages::SEEDED_XC_ORG_ID,
-                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-            )
+                .any(|r| RoleGrants::seed(r.role).contains(&Permission::ReferenceRatesRead))
         });
         let policy = Policy::authorize(
-            user.as_ref(),
+            actor.as_ref(),
             EntryPath::OwnerRoute,
             &act,
             None,
-            chrono::Utc::now(),
+            Utc::now(),
         );
         assert_eq!(
             policy.is_ok(),
@@ -427,9 +417,9 @@ async fn rates_reference_answers_exactly_whom_the_reference_rates_route_allows()
         .iter()
         .filter(|(_, actor)| {
             actor.as_ref().is_some_and(|ac| {
-                blueprint_roles(ac.role())
+                ac.roles
                     .iter()
-                    .any(|&r| RoleGrants::seed(r).contains(&Permission::ReferenceRatesRead))
+                    .any(|r| RoleGrants::seed(r.role).contains(&Permission::ReferenceRatesRead))
             })
         })
         .count();

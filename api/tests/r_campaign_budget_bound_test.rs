@@ -25,7 +25,8 @@ use uuid::Uuid;
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -135,18 +136,6 @@ fn user_of(spec: &str) -> Option<Actor> {
 struct HeaderCallers;
 
 impl SessionReader for HeaderCallers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
@@ -154,8 +143,7 @@ impl SessionReader for HeaderCallers {
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default();
         let user = user_of(spec);
-        let staff_user = user.clone();
-        Box::pin(async move { Callers { user, staff_user } })
+        Box::pin(async move { test_callers::callers(None, user) })
     }
 }
 

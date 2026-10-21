@@ -111,7 +111,6 @@ pub async fn register_customer(
         version: 1,
         created_at: now,
         created_by: CREATED_BY.to_owned(),
-        legacy_employee_id: None,
         roles: vec![role.clone()],
     };
     // A concurrent register of the same subject waits on `users.auth_subject UNIQUE` and lands here (R13).

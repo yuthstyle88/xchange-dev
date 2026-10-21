@@ -112,8 +112,8 @@ async fn line_id(pool: &PgPool, publication: &str, currency: &str) -> String {
 async fn setup() -> (Desk, TestApp, String, String) {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
-    let (_, staff) = working_employee(&app, &desk, &owner, "front1", "FRONT", MAIN).await;
+    let owner = desk.owner_session("boss").await;
+    let staff = desk.staff_session("front1", "TELLER", MAIN).await;
     (desk, app, owner, staff)
 }
 
@@ -134,11 +134,11 @@ async fn view(app: &TestApp, name: &str, call: impl FnOnce(Call) -> Call) -> Val
 }
 
 async fn staff_view(app: &TestApp, staff: &str) -> Value {
-    view(app, "staff_published_rates", |c| c.staff(staff)).await
+    view(app, "staff_published_rates", |c| c.session(staff)).await
 }
 
 async fn owner_view(app: &TestApp, owner: &str) -> Value {
-    view(app, "published_rates", |c| c.owner(owner)).await
+    view(app, "published_rates", |c| c.session(owner)).await
 }
 
 /// Four lines inserted out of order; one without a sell side, one without a buy side, one per 100 units, one in a

@@ -40,7 +40,7 @@
 //!   (ruling -6107297093); the content tests read as the branch's MANAGER.
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips. Rows are seeded with SQL in TX-2's schema (#670's
-//! migration 2, child rows with explicit ids), DEMO (no shift needed). Sessions come from the `x-test-as` header (`owner`,
+//! migration 2, child rows with explicit ids), DEMO (no shift needed). Callers come from the `x-test-as` header (`owner`,
 //! `staff:<ROLE>:<branch>`), as in `v3_rate_engine_routes_test.rs`.
 
 mod common;
@@ -55,69 +55,63 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, Utc};
 use quote_common::{ORG_1, TestDb};
 use serde_json::{Value, json};
-use xc_auth::domain::access::v3_roles::blueprint_roles;
-use xc_auth::domain::access::{Permission, RoleGrants};
+use xc_auth::domain::access::{Permission, Role, RoleGrants};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 
 /// The branch's MANAGER (BRANCH_MANAGER): holds `TransactionRead` on MAIN.
 const MANAGER: &str = "staff:MANAGER:MAIN";
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn roles_of(role: &str) -> &'static [Role] {
+    test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown role {role}"))
+}
+
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role = parts.next().expect("a role");
+    let roles = roles_of(role);
     let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role}"),
+            roles,
             BranchId::new(branch),
-        ),
-    }
+        )),
+    )
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
 /// `GET /api/v3/views/transaction?<query>` as `who`: (status, body).
 async fn get(db: &TestDb, who: &str, query: &str) -> (StatusCode, Value) {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -510,16 +504,16 @@ async fn another_branchs_unknown_or_malformed_id_answers_null() {
 async fn a_role_with_admin_snapshots_permission_but_not_transaction_read_is_refused() {
     let db = TestDb::start().await;
     let s = seed(&db).await;
-    let refused: Vec<Role> = Role::STAFF
+    let refused: Vec<&str> = test_callers::V2_STAFF
         .into_iter()
-        .filter(|&r| {
-            let roles = blueprint_roles(r);
-            roles
+        .filter_map(|(name, roles)| {
+            (roles
                 .iter()
                 .any(|&br| RoleGrants::seed(br).contains(&Permission::CompatRead))
                 && !roles
                     .iter()
-                    .any(|&br| RoleGrants::seed(br).contains(&Permission::TransactionRead))
+                    .any(|&br| RoleGrants::seed(br).contains(&Permission::TransactionRead)))
+            .then_some(name)
         })
         .collect();
     assert!(
@@ -527,7 +521,7 @@ async fn a_role_with_admin_snapshots_permission_but_not_transaction_read_is_refu
         "some staff role holds CompatRead without TransactionRead"
     );
     for role in refused {
-        let who = format!("staff:{}:MAIN", role.as_str());
+        let who = format!("staff:{role}:MAIN");
         let (status, body) = get(&db, &who, &format!("id={}", s.draft)).await;
         assert!(
             status.is_client_error(),

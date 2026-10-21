@@ -42,11 +42,10 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::{Actor, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
 use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository;
@@ -60,7 +59,8 @@ use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::ACTIONS;
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const URI: &str = "/api/v3/compute/shift_valuation";
 const MUST_FINISH: Duration = Duration::from_secs(30);
@@ -181,18 +181,19 @@ impl TestDb {
     /// The `users.id` of the seeded opener `owner-1`.
     /// The `users.id` of the opener of `branch`'s shifts (`owner-2` at XC-B02, `owner-1` elsewhere).
     async fn teller_at(&self, branch: &str) -> String {
-        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
-            .bind(opener_at(branch))
-            .fetch_one(&self.pool)
-            .await
-            .expect("the opener's user")
+        sqlx::query_scalar(
+            "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+             WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test' \
+             ORDER BY u.created_at, u.id LIMIT 1",
+        )
+        .bind(opener_at(branch))
+        .fetch_one(&self.pool)
+        .await
+        .expect("the opener's user")
     }
 
     async fn teller(&self) -> String {
-        sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = 'owner-1'")
-            .fetch_one(&self.pool)
-            .await
-            .expect("the opener's user")
+        self.teller_at("XC-B01").await
     }
 
     /// Opens a shift on `branch` with `opening`; answers its id.
@@ -509,70 +510,48 @@ impl TestDb {
 
 /// Who is signed in, from the request header `x-test-as`: `owner`,
 /// `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn staff_of(spec: &str) -> Option<Actor> {
+fn staff_of(spec: &str) -> Actor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role_name = parts.next().expect("a role");
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
-    Actor::staff("employee-7", role, BranchId::new(branch))
+    test_callers::staff("employee-7", roles, BranchId::new(branch))
 }
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), Some(staff_of(staff)));
     }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
+    test_callers::callers(None, Some(staff_of(spec)))
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(
         &'a self,
         req: &'a HttpRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Sessions> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
-const STAFF_ROLES: [&str; 9] = [
-    "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
-    "MONITOR",
-    "FINANCE",
-    "SYSTEM",
-    "DOCUMENTS",
-    "DOCUMENT_REVIEW",
-];
-
 fn every_caller() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_string()];
-    for role in STAFF_ROLES {
+    for (role, _) in test_callers::V2_STAFF {
         out.push(format!("staff:{role}:XC-B01"));
         out.push(format!("owner+staff:{role}:XC-B01"));
     }
@@ -593,7 +572,7 @@ struct Answer {
 /// the whole application (`bootstrap::configure` — the generated `ACTIONS`).
 async fn post(db: &TestDb, who: &str, body: Value) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -1419,24 +1398,36 @@ async fn a_call_never_moves_a_branch_version_or_any_shift_row() {
 // ------------------------------------------------------------ who may call
 
 /// CA4: `INHERITS = (Rpc, "adminSnapshot")` — the endpoint refuses exactly whom
-/// `Policy::allow` refuses for that pair, and answers everyone else on their
-/// own branch.
+/// `RoleGrants::seed` and `Policy::authorize` refuse for that pair, and answers
+/// everyone else on their own branch.
 #[actix_web::test]
 async fn the_action_answers_exactly_whom_the_policy_allows_for_admin_snapshot() {
     let db = TestDb::start().await;
     let shift = worked_example(&db).await;
+    let act = Action::new("adminSnapshot");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &act) else {
+        panic!("adminSnapshot needs a permission");
+    };
     let mut allowed = 0;
     let mut refused = 0;
     for who in every_caller() {
         let a = post(&db, &who, json!({ "shiftId": shift, "branch": "XC-B01" })).await;
-        let s = sessions_of(&who);
-        let actor = s.owner.or(s.staff);
-        match Policy::allow(
+        let actor = callers_of(&who).user;
+        let holds = actor.as_ref().is_some_and(|u| {
+            u.roles
+                .iter()
+                .any(|r| RoleGrants::seed(r.role).contains(&perm))
+        });
+        let policy = Policy::authorize(
             actor.as_ref(),
             EntryPath::Rpc,
-            &Action::new("adminSnapshot"),
-        ) {
-            Ok(()) => {
+            &act,
+            None,
+            chrono::Utc::now(),
+        );
+        assert_eq!(policy.is_ok(), holds, "{who:?}");
+        match policy {
+            Ok(_) => {
                 allowed += 1;
                 is_answer(
                     &a,
@@ -1569,13 +1560,12 @@ async fn a_thb_rate_in_rates_is_ignored_and_fixed_at_one() {
 }
 
 /// CA-1 (#617): a shift's opener must name a user (`shifts.teller_id`, design #582 §8 M1 item 3). The user an
-/// opener id resolves to: `users.legacy_employee_id = id`, or, for `"owner"`, the organisation-wide EXECUTIVE +
-/// ADMIN user. Seeded once per id; no test's expectation depends on it. Added by the ticket author in CA-1's
-/// up-front commit.
+/// opener id resolves to: a user with `name = id` and `created_by = 'test'`, or, for `"owner"`, the
+/// organisation-wide EXECUTIVE + ADMIN user. Seeded once per id; no test's expectation depends on it.
 async fn seed_opener(pool: &PgPool, id: &str) {
     if id == "owner" {
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
+            "SELECT EXISTS (SELECT 1 FROM users u WHERE EXISTS \
              (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL))",
         )
         .fetch_one(pool)
@@ -1595,15 +1585,24 @@ async fn seed_opener(pool: &PgPool, id: &str) {
         }
         return;
     }
-    sqlx::query(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
-         ON CONFLICT (legacy_employee_id) DO NOTHING",
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test')",
     )
     .bind(id)
-    .execute(pool)
+    .fetch_one(pool)
     .await
-    .expect("seed an opener's user");
+    .expect("look for an opener's user");
+    if !exists {
+        sqlx::query(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC'",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("seed an opener's user");
+    }
 }
 
 /// CA-10 (#626): one OPEN shift per teller after M3, so each branch's shifts have an opener of their own.

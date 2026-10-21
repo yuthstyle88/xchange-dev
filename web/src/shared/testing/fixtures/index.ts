@@ -10,7 +10,6 @@ export * from './admin_customer_history';
 export * from './admin_customers';
 export * from './admin_denomination_groups';
 export * from './admin_employee_register';
-export * from './admin_employees';
 export * from './admin_groups';
 export * from './admin_login_history';
 export * from './admin_operations';

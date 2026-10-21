@@ -25,7 +25,6 @@ const ORIGIN: &str = "http://desk.test";
 const ROLE_NOT_ALLOWED_HERE: &str = "บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้";
 const KIOSK_STAFF: &str = "Staff access required.";
 const DEVICE_STEP_NOT_ALLOWED: &str = "บทบาทนี้ไม่มีสิทธิ์ทำขั้นตอนนี้";
-const OWNER_ONLY: &str = "เฉพาะเจ้าของระบบเท่านั้น";
 const PAYMENT_OWNER_ONLY: &str = "เฉพาะเจ้าของระบบเท่านั้นที่ตั้งค่าวิธีชำระเงินได้";
 /// §10 `outOfScope` (OR-4a's one new sentence).
 const OUT_OF_SCOPE: &str = "สาขานี้อยู่นอกขอบเขตของบัญชีนี้";
@@ -141,10 +140,6 @@ async fn admin_manages_users_and_system_settings() {
     // SYSTEM is ADMIN on its branch
     let room = Room::open().await;
     let a = room
-        .ask("SYSTEM", "/api/employees", "list", json!({}))
-        .await;
-    not_refused_with(&a, OWNER_ONLY, "SYSTEM employees list");
-    let a = room
         .ask("SYSTEM", "/api/payment-methods", "save", json!({}))
         .await;
     not_refused_with(&a, PAYMENT_OWNER_ONLY, "SYSTEM payment-methods save");
@@ -152,11 +147,6 @@ async fn admin_manages_users_and_system_settings() {
         .ask("SYSTEM", "/api/rpc", "adminCreateBranch", json!({}))
         .await;
     not_refused_with(&a, ROLE_NOT_ALLOWED_HERE, "SYSTEM adminCreateBranch");
-    // everybody else but the owner's user is still refused the employees route
-    for who in ["FRONT", "BACKEND", "MANAGER", "RATES", "FINANCE", "MONITOR"] {
-        let a = room.ask(who, "/api/employees", "list", json!({})).await;
-        refused(&a, 403, OWNER_ONLY, &format!("{who} employees list"));
-    }
     room.finish().await;
 }
 

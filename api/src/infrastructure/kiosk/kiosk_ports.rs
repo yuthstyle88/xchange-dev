@@ -11,6 +11,7 @@ use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use xc_auth::application::user::directory::user_names;
 use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::branch_tx::BranchTx;
@@ -102,17 +103,10 @@ impl KioskAuditLog for PgKioskAuditLog {
             let actor: String = if line.actor == CUSTOMER_KIOSK {
                 CUSTOMER_KIOSK.to_string()
             } else {
-                let maybe_username: Option<String> = sqlx::query_scalar(
-                    "SELECT username FROM employees WHERE id = $1 \
-                     UNION ALL \
-                     SELECT username FROM owners WHERE id = $1 OR $1 = 'owner' \
-                     LIMIT 1",
-                )
-                .bind(&line.actor)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(AppError::Database)?;
-                maybe_username.unwrap_or_else(|| line.actor.clone())
+                let mut names = user_names(&mut **tx, std::slice::from_ref(&line.actor)).await?;
+                names
+                    .remove(&line.actor)
+                    .unwrap_or_else(|| line.actor.clone())
             };
 
             let detail = detail_of(&line.what);
@@ -325,17 +319,10 @@ impl KioskPorts for PgKioskPorts {
             let actor: String = if line.actor == CUSTOMER_KIOSK {
                 CUSTOMER_KIOSK.to_string()
             } else {
-                let maybe_username: Option<String> = sqlx::query_scalar(
-                    "SELECT username FROM employees WHERE id = $1 \
-                     UNION ALL \
-                     SELECT username FROM owners WHERE id = $1 OR $1 = 'owner' \
-                     LIMIT 1",
-                )
-                .bind(&line.actor)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(AppError::Database)?;
-                maybe_username.unwrap_or_else(|| line.actor.clone())
+                let mut names = user_names(&mut **tx, std::slice::from_ref(&line.actor)).await?;
+                names
+                    .remove(&line.actor)
+                    .unwrap_or_else(|| line.actor.clone())
             };
 
             let resolved = AuditLine {
