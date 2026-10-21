@@ -135,22 +135,14 @@ pub(crate) fn attach_signin_cookies(
     let session_cookie = format!(
         "__Host-xc_session={session_token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=43200"
     );
-    let owner_cookie = "__Host-xc_owner=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
-    let staff_cookie = "__Host-xc_staff=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
 
     builder.append_header((actix_web::http::header::SET_COOKIE, session_cookie));
-    builder.append_header((actix_web::http::header::SET_COOKIE, owner_cookie));
-    builder.append_header((actix_web::http::header::SET_COOKIE, staff_cookie));
 }
 
 fn attach_logout_cookies(builder: &mut actix_web::HttpResponseBuilder) {
     let session_cookie = "__Host-xc_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
-    let owner_cookie = "__Host-xc_owner=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
-    let staff_cookie = "__Host-xc_staff=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
 
     builder.append_header((actix_web::http::header::SET_COOKIE, session_cookie));
-    builder.append_header((actix_web::http::header::SET_COOKIE, owner_cookie));
-    builder.append_header((actix_web::http::header::SET_COOKIE, staff_cookie));
 }
 
 fn attach_clear_session_cookie(builder: &mut actix_web::HttpResponseBuilder) {
