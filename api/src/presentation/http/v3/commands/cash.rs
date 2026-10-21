@@ -192,6 +192,13 @@ pub(crate) fn count_lines(lines: &[CashLineInput]) -> Result<Vec<CountLine>, V3E
 }
 
 pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+    use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
+    use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
+    use xc_kiosk::application::kiosk::day_close::KioskDayCloser;
+    use xc_kiosk::infrastructure::kiosk::kiosk_repository::PgKioskRepository;
+    use xc_queue::application::issue::ticket_issuer::TicketIssuer;
+    use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
+
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let queue: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
     let status = StatusService::new(branch_tx.clone(), queue.clone());
@@ -200,8 +207,29 @@ pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook>
         queue.clone(),
         status.clone(),
     ));
+    let booking = pg_booking_lifecycle(pool.clone());
+    let audit = Arc::new(PgKioskAuditLog::new(PgDeviceRepository::new(pool.clone())));
+    let ports = Arc::new(PgKioskPorts::new(
+        pool.clone(),
+        audit,
+        Arc::new(BotRateSource::bot()),
+    ));
+    let kiosk_queue = Arc::new(
+        TicketIssuer::new(
+            BranchTx::new(Transactor::new(pool.clone())),
+            Arc::new(PgQueueRepository::new(pool.clone())),
+        )
+        .with_booking_events(booking.clone()),
+    );
+    let kiosk = Arc::new(KioskDayCloser::new(
+        PgKioskRepository::new(pool.clone()),
+        ports,
+        kiosk_queue,
+    ));
     let day: Arc<dyn ShiftLifecycleHook> = Arc::new(
-        QueueDayHook::new(queue, status).with_booking_events(pg_booking_lifecycle(pool.clone())),
+        QueueDayHook::new(queue, status)
+            .with_booking_events(booking)
+            .with_kiosk_day_close(kiosk),
     );
     Arc::new(ShiftLifecycleHooks::new(vec![counters, day]))
 }
