@@ -13,7 +13,9 @@ use xc_kernel::queue_tickets::{QueueTicketSource, QueueTickets};
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::new_quote::NewQuote;
 use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
+use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::entities::payment_gate::PaymentGate;
+use crate::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use crate::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK;
 use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
@@ -30,6 +32,7 @@ use crate::domain::kiosk::value_objects::kiosk_time::KioskTime;
 use crate::domain::kiosk::value_objects::public_rates::PublicRates;
 use crate::domain::kiosk::value_objects::quote_limit::QuoteLimit;
 use crate::domain::kiosk::value_objects::request_identity::RequestIdentity;
+use crate::domain::kiosk::value_objects::transition::Transition;
 
 use super::desk::cancel_in;
 use super::service::{
@@ -61,6 +64,20 @@ impl KioskService {
         &self,
         branch: &BranchId,
         cmd: NewQuote,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
+        self.quote_for(branch, cmd, None, now).await
+    }
+
+    /// `quote` for a web request (design `kiosk-shared-phone.md` §4.2 D1, D2): the same rules and
+    /// the same transaction as `quote`, plus, when `customer` is given, the member
+    /// (`kiosk_requests.customer_id`) and the hash of its request token (`cancel_token_hash`).
+    /// `customer: None` is exactly `quote` (B1); `quote` delegates here.
+    pub async fn quote_for(
+        &self,
+        branch: &BranchId,
+        cmd: NewQuote,
+        customer: Option<CustomerQuote>,
         now: DateTime<Utc>,
     ) -> AppResult<IdentifiedRequest> {
         self.branch_name(branch).await?;
@@ -156,6 +173,12 @@ impl KioskService {
                     }
 
                     repo.insert_in(tx, &b, &request, &cmd.client_ip).await?;
+                    if let Some(customer) = &customer {
+                        repo.set_customer_in(tx, &b, &request.id, &customer.customer_id)
+                            .await?;
+                        repo.set_cancel_token_in(tx, &b, &request.id, &customer.token)
+                            .await?;
+                    }
 
                     let quote_minor = request
                         .quote
@@ -190,21 +213,6 @@ impl KioskService {
             .await
     }
 
-    /// `quote` for a web request (design `kiosk-shared-phone.md` §4.2 D1, D2): the same rules and
-    /// the same transaction as `quote`, plus, when `customer` is given, the member
-    /// (`kiosk_requests.customer_id`) and the hash of its request token (`cancel_token_hash`).
-    /// `customer: None` is exactly `quote` (B1); `quote` delegates here.
-    pub async fn quote_for(
-        &self,
-        branch: &BranchId,
-        cmd: NewQuote,
-        customer: Option<CustomerQuote>,
-        now: DateTime<Utc>,
-    ) -> AppResult<IdentifiedRequest> {
-        let _ = (branch, cmd, customer, now);
-        todo!("KWQ-A2: quote's body, then set_customer_in + set_cancel_token_in for a web request")
-    }
-
     /// `issueByToken`'s core (§4.2 D5, §4.4 B6–B8): in one transaction of `branch`, the request
     /// whose token is `token`. A `QUOTED` one is confirmed exactly as `confirm` does (WAITING,
     /// one `IssueSource::Kiosk` ticket through `queue`, key `kiosk-confirm:<id>`), and its member
@@ -220,8 +228,52 @@ impl KioskService {
         now: DateTime<Utc>,
         queue: Arc<dyn QueueTickets>,
     ) -> AppResult<IssuedRequest> {
-        let _ = (branch, token, now, queue);
-        todo!("KWQ-A2: find_by_token_in, confirm or re-issue, link the member")
+        let branch_name = self.branch_name(branch).await?;
+        let at = cut_to_millis(now);
+        let now = time(now);
+        let (repo, ports, b, token) = (
+            self.repo.clone(),
+            self.ports.clone(),
+            branch.clone(),
+            token.to_owned(),
+        );
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    let req = find_live_by_token_in(tx, &repo, &b, &token, now).await?;
+                    if req.status == KioskStatus::Quoted {
+                        let moved = confirm_in(tx, &repo, &*ports, &b, Some(&req), at, now).await?;
+                        // As `confirm_with`: a ticket only for a request that is now WAITING.
+                        if moved.request.status != KioskStatus::Waiting {
+                            return Err(token_not_found());
+                        }
+                    }
+                    let id = req.id;
+                    let source = QueueTicketSource::Kiosk {
+                        request_id: id.clone(),
+                    };
+                    let ticket = queue
+                        .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
+                        .await
+                        .map_err(queue_refusal)?;
+                    if let Some(customer_id) = repo.customer_in(tx, &b, &id).await? {
+                        queue
+                            .link_kiosk_customer_in(tx, &b, &id, &customer_id)
+                            .await?;
+                    }
+                    let timezone = repo
+                        .branch_timezone_in(tx, &b)
+                        .await?
+                        .ok_or_else(no_such_branch)?;
+                    Ok(IssuedRequest {
+                        request_id: id,
+                        ticket,
+                        branch_name,
+                        timezone,
+                    })
+                })
+            })
+            .await
     }
 
     /// `findByToken`'s core (§4.2 D7, B13): the id of this branch's request whose token is
@@ -232,8 +284,17 @@ impl KioskService {
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<String> {
-        let _ = (branch, token, now);
-        todo!("KWQ-A2: find_by_token_in under the purge window")
+        self.branch_name(branch).await?;
+        let now = time(now);
+        let (repo, b, token) = (self.repo.clone(), branch.clone(), token.to_owned());
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    let req = find_live_by_token_in(tx, &repo, &b, &token, now).await?;
+                    Ok(req.id)
+                })
+            })
+            .await
     }
 
     /// `confirm`: the customer accepts the quote; the request joins the queue.
@@ -298,69 +359,22 @@ impl KioskService {
             .run(branch, move |tx| {
                 Box::pin(async move {
                     let stored = repo.find_in(tx, &b, &id).await?;
-                    let facts = match &stored {
-                        Some(request) => {
-                            let view =
-                                ports.counter_in(tx, &b).await?.ok_or_else(no_such_branch)?;
-                            let currencies = KioskCurrencies::new(&repo.switches_in(tx, &b).await?);
-                            let mut f =
-                                view.facts(&currencies, request.quote.currency, request.quote.side);
-                            if f.line.is_some() {
-                                let foreign_minor =
-                                    request.quote.foreign.try_minor().map_err(|_| {
-                                        AppError::Internal(format!(
-                                            "stored quote foreign amount {} overflows hundredths",
-                                            request.quote.foreign
-                                        ))
-                                    })?;
-                                let foreign =
-                                    ForeignAmount::from_decimal(Decimal::new(foreign_minor, 2));
-                                if let Some(tier_line) = ports
-                                    .tier_line_in(
-                                        tx,
-                                        &b,
-                                        request.quote.currency,
-                                        request.quote.side,
-                                        foreign,
-                                    )
-                                    .await?
-                                {
-                                    f.line = Some(tier_line);
-                                }
-                            }
-                            f
-                        }
-                        None => NO_COUNTER,
-                    };
-                    let machine = KioskMachine::next(
-                        stored.as_ref(),
-                        &KioskCommand::Confirm,
-                        &KioskActor::Customer,
-                        &facts,
-                        now,
-                    );
-                    let rules = ports.payment_rules_in(tx, &b).await?;
                     let moved =
-                        PaymentGate::confirm(machine, stored.as_ref(), &rules).map_err(refuse)?;
+                        confirm_in(tx, &repo, &*ports, &b, stored.as_ref(), at, now).await?;
                     let mut minted = false;
-                    if let Some(event) = moved.event {
-                        repo.update_in(tx, &b, &moved.request).await?;
-                        let line = line_for(event, &moved.request, CUSTOMER_KIOSK);
-                        ports.record_in(tx, &b, &line, at).await?;
-                        if moved.request.status == KioskStatus::Waiting {
-                            if let Some(token) = &cancel_token {
-                                repo.set_cancel_token_in(tx, &b, &id, token).await?;
-                                minted = true;
-                            }
-                            if let Some(queue) = &queue {
-                                let source = QueueTicketSource::Kiosk {
-                                    request_id: id.clone(),
-                                };
-                                queue
-                                    .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
-                                    .await
-                                    .map_err(queue_refusal)?;
-                            }
+                    if moved.event.is_some() && moved.request.status == KioskStatus::Waiting {
+                        if let Some(token) = &cancel_token {
+                            repo.set_cancel_token_in(tx, &b, &id, token).await?;
+                            minted = true;
+                        }
+                        if let Some(queue) = &queue {
+                            let source = QueueTicketSource::Kiosk {
+                                request_id: id.clone(),
+                            };
+                            queue
+                                .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
+                                .await
+                                .map_err(queue_refusal)?;
                         }
                     }
                     let identity =
@@ -478,6 +492,84 @@ pub fn token_not_found() -> AppError {
         entity: "kioskRequest",
         id: String::new(),
     }
+}
+
+async fn find_live_by_token_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    repo: &impl KioskRepository,
+    branch: &BranchId,
+    token: &str,
+    now: KioskTime,
+) -> AppResult<KioskRequest> {
+    let req = repo
+        .find_by_token_in(tx, branch, token)
+        .await?
+        .ok_or_else(token_not_found)?;
+    if KioskMachine::is_purgeable(&req, now)
+        || !matches!(req.status, KioskStatus::Quoted | KioskStatus::Waiting)
+    {
+        return Err(token_not_found());
+    }
+    Ok(req)
+}
+
+async fn confirm_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    repo: &impl KioskRepository,
+    ports: &dyn KioskPorts,
+    branch: &BranchId,
+    stored: Option<&KioskRequest>,
+    at: DateTime<Utc>,
+    now: KioskTime,
+) -> AppResult<Transition> {
+    let facts = match stored {
+        Some(request) => {
+            let view = ports
+                .counter_in(tx, branch)
+                .await?
+                .ok_or_else(no_such_branch)?;
+            let currencies = KioskCurrencies::new(&repo.switches_in(tx, branch).await?);
+            let mut f = view.facts(&currencies, request.quote.currency, request.quote.side);
+            if f.line.is_some() {
+                let foreign_minor = request.quote.foreign.try_minor().map_err(|_| {
+                    AppError::Internal(format!(
+                        "stored quote foreign amount {} overflows hundredths",
+                        request.quote.foreign
+                    ))
+                })?;
+                let foreign = ForeignAmount::from_decimal(Decimal::new(foreign_minor, 2));
+                if let Some(tier_line) = ports
+                    .tier_line_in(
+                        tx,
+                        branch,
+                        request.quote.currency,
+                        request.quote.side,
+                        foreign,
+                    )
+                    .await?
+                {
+                    f.line = Some(tier_line);
+                }
+            }
+            f
+        }
+        None => NO_COUNTER,
+    };
+    let machine = KioskMachine::next(
+        stored,
+        &KioskCommand::Confirm,
+        &KioskActor::Customer,
+        &facts,
+        now,
+    );
+    let rules = ports.payment_rules_in(tx, branch).await?;
+    let moved = PaymentGate::confirm(machine, stored, &rules).map_err(refuse)?;
+    if let Some(event) = moved.event {
+        repo.update_in(tx, branch, &moved.request).await?;
+        let line = line_for(event, &moved.request, CUSTOMER_KIOSK);
+        ports.record_in(tx, branch, &line, at).await?;
+    }
+    Ok(moved)
 }
 
 /// A refusal of the queue's port (`queueClosed`, `idempotencyConflict`) as the kiosk's own refusal,
