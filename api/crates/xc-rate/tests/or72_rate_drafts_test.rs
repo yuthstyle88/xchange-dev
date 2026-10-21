@@ -183,8 +183,8 @@ async fn seed_approved_draft_in_db(db: &TestDb, branch: &str, who_id: &str) -> D
 
     sqlx::query(
         "INSERT INTO approval_requests \
-         (id, type, branch_id, object_id, object_version_hash, policy_version, status, proposed_payload, requested_by, idempotency_key, requested_at) \
-         VALUES (gen_random_uuid(), 'RATE_PUBLICATION', $1, $2, $3, '1', 'APPROVED', '{}', $4, $5, now())",
+         (id, type, branch_id, object_id, object_version_hash, policy_version, status, proposed_payload, requested_by, idempotency_key, requested_at, organization_id) \
+         VALUES (gen_random_uuid(), 'RATE_PUBLICATION', $1, $2, $3, '1', 'APPROVED', '{}', $4, $5, now(), '00000000-0000-0000-0000-000000000001')",
     )
     .bind(branch)
     .bind(draft_id.to_string())

@@ -543,8 +543,8 @@ async fn insert_posted_reversal(
     .expect("seed reversal file");
 
     sqlx::query(
-        "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
-         VALUES ($1, 'REVERSAL', $2, 'obj', 'v1', 'p1', '{}'::jsonb, 'staff', now(), 'APPROVED', $3)",
+        "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
+         VALUES ($1, 'REVERSAL', $2, 'obj', 'v1', 'p1', '{}'::jsonb, 'staff', now(), 'APPROVED', $3, '00000000-0000-0000-0000-000000000001')",
     )
     .bind(app_req_id)
     .bind(branch.as_str())

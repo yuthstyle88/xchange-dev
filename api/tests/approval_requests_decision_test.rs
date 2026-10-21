@@ -75,9 +75,9 @@ async fn request(db: &TestDb, obj: &str, status: &str, at: &str) -> String {
     db
         .text(&format!(
             "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, \
-                policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
+                policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
              VALUES (gen_random_uuid(), 'RATE_PUBLICATION', 'MAIN', '{obj}', 'h', '1', '{{}}', \
-                'proposer-1', '{at}', '{status}', 'k-{obj}') RETURNING id::text"
+                'proposer-1', '{at}', '{status}', 'k-{obj}', '00000000-0000-0000-0000-000000000001') RETURNING id::text"
         ))
         .await
         .expect("a request id")

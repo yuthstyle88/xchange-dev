@@ -253,8 +253,8 @@ async fn rows_cover_published_and_quoted_currencies_enabled_first() {
     // Publish USD at the branch: it becomes enabled and comes first.
     let approval: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
-         proposed_payload, requested_by, requested_at, status, idempotency_key) \
-         VALUES (gen_random_uuid(), 'RATE_PUBLISH', $1, 'x', 'h', $2, '{}', 'test', now(), 'APPROVED', $3) RETURNING id",
+         proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
+         VALUES (gen_random_uuid(), 'RATE_PUBLISH', $1, 'x', 'h', $2, '{}', 'test', now(), 'APPROVED', $3, '00000000-0000-0000-0000-000000000001') RETURNING id",
     )
     .bind(B01)
     .bind(v1.to_string())

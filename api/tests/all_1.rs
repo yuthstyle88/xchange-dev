@@ -23,6 +23,8 @@ mod app_my_receipt_test;
 mod app_public_reads_test;
 #[path = "approval_requests_decision_test.rs"]
 mod approval_requests_decision_test;
+#[path = "approval_requests_org_required_test.rs"]
+mod approval_requests_org_required_test;
 #[path = "approvals_read_per_type_test.rs"]
 mod approvals_read_per_type_test;
 #[path = "auth_logout_failure_test.rs"]

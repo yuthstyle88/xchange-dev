@@ -49,9 +49,9 @@ async fn seed(pool: &PgPool) {
     exec(
         pool,
         "WITH r AS (INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, \
-             policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
+             policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
              VALUES (gen_random_uuid(), 'RATE_PUBLICATION', 'MAIN', 'f3w-seed', 'h', 'p', '{}'::jsonb, 'test', \
-             now(), 'APPROVED', gen_random_uuid()::text) RETURNING id), \
+             now(), 'APPROVED', gen_random_uuid()::text, '00000000-0000-0000-0000-000000000001') RETURNING id), \
          p AS (INSERT INTO rate_publications (id, branch_id, version, approved_request_id, published_by) \
              SELECT gen_random_uuid(), 'MAIN', 1, r.id, 'test' FROM r RETURNING id) \
          INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, unit_size, \

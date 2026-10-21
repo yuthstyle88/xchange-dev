@@ -171,11 +171,11 @@ impl Db {
         .await;
         self.ok(
             "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
-             proposed_payload, requested_by, requested_at, status, idempotency_key) VALUES \
+             proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) VALUES \
              ('d1000000-0000-0000-0000-000000000001', 'RATE_PUBLISH', 'MAIN', 'x', 'h', 'p', '{}', 'test', now(), \
-              'APPROVED', 'k1'), \
+              'APPROVED', 'k1', '00000000-0000-0000-0000-000000000001'), \
              ('d1000000-0000-0000-0000-000000000002', 'RATE_PUBLISH', 'MAIN', 'y', 'h', 'p', '{}', 'test', now(), \
-              'APPROVED', 'k2')",
+              'APPROVED', 'k2', '00000000-0000-0000-0000-000000000001')",
             "two approvals",
         )
         .await;

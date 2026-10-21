@@ -159,10 +159,10 @@ impl TestDb {
         sqlx::query(
             "INSERT INTO approval_requests ( \
                 id, type, branch_id, object_id, object_version_hash, policy_version, \
-                proposed_payload, requested_by, requested_at, status, idempotency_key \
+                proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id \
              ) VALUES ( \
                 $1, 'RATE_PUBLICATION', $2, $3, 'seed_hash', '1', \
-                '{}'::jsonb, 'owner', now(), 'APPROVED', $4 \
+                '{}'::jsonb, 'owner', now(), 'APPROVED', $4, '00000000-0000-0000-0000-000000000001' \
              )",
         )
         .bind(req_id)

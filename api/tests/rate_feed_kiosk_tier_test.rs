@@ -55,9 +55,9 @@ const AMOUNT_OR_CURRENCY: &str = "Please enter a valid amount and currency.";
 async fn publish_tiered_usd(pool: &PgPool) -> (String, Vec<String>) {
     let request: String = sqlx::query_scalar(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
-         proposed_payload, requested_by, requested_at, status, idempotency_key) \
+         proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
          VALUES (gen_random_uuid(), 'RATE_PUBLICATION', $1, 'f7-seed', 'h', 'p', '{}'::jsonb, 'test', now(), \
-         'APPROVED', gen_random_uuid()::text) RETURNING id::text",
+         'APPROVED', gen_random_uuid()::text, '00000000-0000-0000-0000-000000000001') RETURNING id::text",
     )
     .bind(MAIN)
     .fetch_one(pool)

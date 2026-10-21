@@ -289,8 +289,8 @@ async fn publish(
     let request = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
-         proposed_payload, requested_by, requested_at, status, idempotency_key) \
-         VALUES ($1, 'RATE_PUBLICATION', $2, $3, 'h', 'p', '{}'::jsonb, 'test', now(), 'APPROVED', $4)",
+         proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
+         VALUES ($1, 'RATE_PUBLICATION', $2, $3, 'h', 'p', '{}'::jsonb, 'test', now(), 'APPROVED', $4, '00000000-0000-0000-0000-000000000001')",
     )
     .bind(request)
     .bind(branch.as_str())
