@@ -15,6 +15,8 @@ mod quote_and_status_codes_test;
 mod receipt_template_not_live_test;
 #[path = "reversal_window_test.rs"]
 mod reversal_window_test;
+#[path = "submission_id_rule_test.rs"]
+mod submission_id_rule_test;
 #[path = "transaction_form_ceiling_test.rs"]
 mod transaction_form_ceiling_test;
 #[path = "transaction_form_from_transaction_test.rs"]

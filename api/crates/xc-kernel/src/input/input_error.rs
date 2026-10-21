@@ -4,6 +4,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputError {
     Text,
+    RequestId,
     DateFormat,
     Date,
     Number,
@@ -15,6 +16,7 @@ impl InputError {
     pub fn sentence(self) -> &'static str {
         match self {
             Self::Text => "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด",
+            Self::RequestId => "รหัสคำขอไม่ถูกต้อง",
             Self::DateFormat => "รูปแบบวันที่ไม่ถูกต้อง",
             Self::Date => "วันที่ไม่ถูกต้อง",
             Self::Number => "จำนวนเงินหรือเรทไม่ถูกต้อง",

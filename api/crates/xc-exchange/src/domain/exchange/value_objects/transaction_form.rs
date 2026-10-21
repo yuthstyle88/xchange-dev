@@ -167,13 +167,8 @@ impl TransactionForm {
         let paid_at_str = input::text(&cmd.paid_at, 30, true)?;
 
         // Step 18: Incomplete checks (submission_id, side, currency, method, paid_at, confirmations)
-        if submission_id.len() < 16
-            || !submission_id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            return Err(AppError::Domain(INCOMPLETE.to_owned()));
-        }
+        input::request_id(&cmd.submission_id)
+            .map_err(|_| AppError::Domain(INCOMPLETE.to_owned()))?;
 
         let side = match side_str {
             "BUY" => Side::Buy,

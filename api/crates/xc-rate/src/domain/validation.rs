@@ -33,16 +33,7 @@ pub fn validate_text(s: &str, max: usize, required: bool) -> Result<&str, AppErr
 }
 
 pub fn validate_request_id(s: &str) -> Result<&str, AppError> {
-    let trimmed = validate_text(s, 60, true)?;
-    if trimmed.len() < 16
-        || trimmed.len() > 60
-        || !trimmed
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
-        return Err(AppError::Domain(BAD_REQUEST_ID.to_string()));
-    }
-    Ok(trimmed)
+    Ok(xc_kernel::input::request_id(s)?)
 }
 
 pub fn map_number_error(e: NumberError) -> AppError {

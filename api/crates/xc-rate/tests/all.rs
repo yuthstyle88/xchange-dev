@@ -75,6 +75,8 @@ mod reference_base_anchor_test;
 mod reference_base_test;
 #[path = "reference_provider_test.rs"]
 mod reference_provider_test;
+#[path = "request_id_rule_test.rs"]
+mod request_id_rule_test;
 #[path = "rework_hardening_test.rs"]
 mod rework_hardening_test;
 #[path = "sharp_move_test.rs"]
