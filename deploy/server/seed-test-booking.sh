@@ -10,6 +10,8 @@
 #   3. Booking slot rule for MAIN (30 min, capacity 4, horizon 14 days), owned by the active owner.
 #   4. Open slots for the next SEED_DAYS days (default 7), the same SQL shape as SlotService::generate_in.
 #   5. A published TERMS consent text in th, en and zh, so /app sign-up does not answer consentTextMissing.
+#   5b. A published rate set for MAIN (USD and EUR, manual), only when current_publication_id is NULL.
+#   5c. A cash-transfer policy row for org XC (THB limit 200,000), only when the organisation has none.
 #   6. A test teller: an Identity account (password login) bound to an ACTIVE users row with TELLER on MAIN.
 #   7. A test customer: an Identity account, then POST /api/app/register (creates the CUSTOMER user and customer).
 #
@@ -134,6 +136,49 @@ q "INSERT INTO consent_texts (organization_id, purpose, version, lang, body, pub
    ('$ORG_ID', 'TERMS', 1, 'en', 'Terms of service (test version)', '$OWNER_ID', now()),
    ('$ORG_ID', 'TERMS', 1, 'zh', '服务条款（测试版）', '$OWNER_ID', now())
    ON CONFLICT DO NOTHING;" >/dev/null
+
+say "5b. published rate set for $BRANCH (USD, EUR)"
+CUR_PUB="$(q "SELECT current_publication_id FROM branches WHERE organization_id = '$ORG_ID' AND id = '$BRANCH';")"
+if [ -z "$CUR_PUB" ]; then
+  REQ_ID="$(q "SELECT gen_random_uuid();")"
+  PUB_ID="$(q "SELECT gen_random_uuid();")"
+  q "INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id,
+       object_version_hash, policy_version, proposed_payload, requested_by, requested_at,
+       status, idempotency_key)
+     SELECT '$REQ_ID', organization_id, 'RATE_PUBLICATION', id, '$PUB_ID', 'test',
+       '1', '{}'::jsonb, '$OWNER_ID', now(), 'APPROVED', 'seed_test_rates_$BRANCH'
+     FROM branches WHERE organization_id = '$ORG_ID' AND id = '$BRANCH';
+     INSERT INTO rate_publications (id, organization_id, branch_id, version, published_at,
+       approved_request_id, draft_id, published_by)
+     SELECT '$PUB_ID', b.organization_id, b.id,
+       COALESCE((SELECT max(version) FROM rate_publications WHERE branch_id = b.id), 0) + 1,
+       now(), '$REQ_ID', NULL, '$OWNER_ID'
+     FROM branches b WHERE b.organization_id = '$ORG_ID' AND b.id = '$BRANCH';
+     INSERT INTO published_rate_lines (id, organization_id, publication_id, currency_code,
+       denomination_group, value_tier, unit_size, buy_rate, sell_rate, source_snapshot)
+     SELECT gen_random_uuid(), p.organization_id, p.id, c.code, 'ALL', 'ALL', c.unit_size,
+       v.buy * c.unit_size, v.sell * c.unit_size,
+       jsonb_build_object('currency', v.code, 'buy_mode', 'MANUAL', 'sell_mode', 'MANUAL', 'reason', 'seeded for the qa/e2e suite')
+     FROM rate_publications p
+     CROSS JOIN (VALUES ('USD', 32.10, 32.60), ('EUR', 35.00, 35.60)) AS v(code, buy, sell)
+     JOIN currencies c ON c.code = v.code
+     WHERE p.id = '$PUB_ID';
+     UPDATE branches SET current_publication_id = '$PUB_ID'
+     WHERE organization_id = '$ORG_ID' AND id = '$BRANCH';" >/dev/null
+  echo "    published rate set $PUB_ID (USD 32.10/32.60, EUR 35.00/35.60)"
+else
+  echo "    already present ($CUR_PUB)"
+fi
+
+say "5c. cash-transfer policy for org XC"
+CUR_POLICY="$(q "SELECT version FROM cash_transfer_policy_versions WHERE organization_id = '$ORG_ID' ORDER BY created_at DESC LIMIT 1;")"
+if [ -z "$CUR_POLICY" ]; then
+  q "INSERT INTO cash_transfer_policy_versions (version, organization_id, limits, set_by)
+     VALUES ('seed-test-1', '$ORG_ID', '{\"THB\":\"200000\"}'::jsonb, '$OWNER_ID');" >/dev/null
+  echo "    cash-transfer policy created: seed-test-1 (THB limit 200000)"
+else
+  echo "    already present ($CUR_POLICY)"
+fi
 
 say "6. test teller $TELLER_PHONE (TELLER on $BRANCH)"
 TELLER_PW="$(new_password)"
