@@ -192,8 +192,9 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 - F6 (`flow-exchange.spec.ts`) runs after `flow-cash` and before `flow-queue`, and opens and closes its own shift, so it
   starts and ends with the teller's shift closed like the others. F7 (`flow-count-difference.spec.ts`) does the same and
   sorts between `flow-cash` and `flow-exchange`.
-- F8 (`flow-queue-many.spec.ts`) sorts after `flow-queue`; both start by failing on WAITING leftovers rather than calling
-  someone else's ticket.
+- F8 (`flow-queue-many.spec.ts`) sorts **before** `flow-queue`: `-` (0x2d) sorts before `.` (0x2e), so `--list` puts it
+  right after `flow-exchange`. Both start by failing on WAITING leftovers rather than calling someone else's ticket, so the
+  order does not matter once F2's pre-check (QA-F2 fix) is in.
 - 🔴 **F3 depends on a value set by hand on the host.** Its branch manager approves an EXTERNAL_IN of 168,875 THB
   (`FUND_QTY = '100'` of each of the 11 THB notes, `flow-cash.spec.ts:23`; one of each is 1,688.75,
   `api/migrations/20261012100000_cash.sql:228-238`), which is within the limit only if a cash-transfer policy row allows it.
