@@ -255,12 +255,9 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
       return;
     }
 
-    const targetRow = transfersSection
-      .locator('tr[data-transfer]')
-      .filter({ has: page.locator('button[data-action="reconcile"]') })
-      .first();
-    const transferId = (await targetRow.getAttribute('data-transfer')) ?? '';
-    expect(transferId, 'data-transfer id on RECEIVED row').toBeTruthy();
+    // The row carries no id; the reconcile button does (CashFlows.tsx:561 data-id).
+    const transferId = (await reconcileBtn.getAttribute('data-id')) ?? '';
+    expect(transferId, 'data-id on the RECEIVED row reconcile button').toBeTruthy();
 
     await reconcileBtn.click();
     // web/src/screens/admin/cash/CashFlows.tsx:342-369
@@ -276,9 +273,9 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
 
     await page.reload();
     await expect(transfersSection).toBeVisible({ timeout: 20_000 });
-    const reloadedRow = transfersSection.locator(`tr[data-transfer="${transferId}"]`);
-    await expect(reloadedRow).toBeVisible({ timeout: 20_000 });
-    await expect(reloadedRow.locator('button[data-action="reconcile"]')).toHaveCount(0);
+    await expect(transfersSection.locator('tbody tr').first()).toBeVisible({ timeout: 20_000 });
+    // Only a RECEIVED row offers reconcile (CashFlows.tsx:559), so its button gone = the state moved.
+    await expect(transfersSection.locator(`button[data-action="reconcile"][data-id="${transferId}"]`)).toHaveCount(0);
     await shot(page, 'admin-cash-policy', 'transfer-reconciled');
   });
 
@@ -328,6 +325,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
 
     for (const lang of ['th', 'en'] as const) {
       await withLang(page, lang);
+      await page.reload();
       await waitCashLimitsReady(page);
       const noLimitCheckbox = page.locator('input[data-action="no-limit"]');
       if (await noLimitCheckbox.isChecked()) {
@@ -358,6 +356,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
 
     for (const lang of ['th', 'en'] as const) {
       await withLang(page, lang);
+      await page.reload();
       await waitCashPolicyReady(page);
       const firstInput = page.locator('input[data-currency]').first();
       const saveBtn = page.locator('[data-section="cash-policy"] button[data-action="save"]');
@@ -384,6 +383,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
 
     for (const lang of ['th', 'en'] as const) {
       await withLang(page, lang);
+      await page.reload();
       await selectFirstDenomCurrency(page);
       const newGroupInput = page.locator('.add-group-form input[type="text"]');
       const addBtn = page.locator('.add-group-form button');
