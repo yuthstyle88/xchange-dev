@@ -35,42 +35,52 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::custody::custody_ports::PgCustodyPorts;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::branch_day::{
-    AttendanceClockInput, AttendanceClockOutput, CustomerHoldCreateInput,
-    CustomerHoldCreateOutput, CustomerHoldReleaseInput, CustomerHoldReleaseOutput,
-    DayCutoffInput, DayCutoffOutput, DayStartServiceInput, DayStartServiceOutput,
-    DayTargetInput, DayTargetOutput, DraftBeginInput, DraftBeginOutput,
+    AttendanceClockInput, AttendanceClockOutput, CustomerHoldCreateInput, CustomerHoldCreateOutput,
+    CustomerHoldReleaseInput, CustomerHoldReleaseOutput, DayCutoffInput, DayCutoffOutput,
+    DayStartServiceInput, DayStartServiceOutput, DayTargetInput, DayTargetOutput, DraftBeginInput,
+    DraftBeginOutput,
 };
-use crate::presentation::http::v3::command::{server_error, CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 fn map_service_error(err: pos_error::AppError) -> V3Error {
     match err {
-        pos_error::AppError::Domain(ref code) if code == "roleNotAllowed" => {
-            V3Error::new("roleNotAllowed", None, "ไม่มีสิทธิ์ทำรายการ", StatusCode::FORBIDDEN)
-        }
-        pos_error::AppError::Domain(ref code) if code == "roleNotAllowedHere" => {
-            V3Error::new(
-                "roleNotAllowedHere",
-                None,
-                "ไม่มีสิทธิ์ทำรายการสำหรับบทบาทนี้",
-                StatusCode::FORBIDDEN,
-            )
-        }
-        pos_error::AppError::Domain(ref code) if code == "outOfScope" => {
-            V3Error::new("outOfScope", None, "ไม่มีสิทธิ์ทำรายการสำหรับสาขานี้", StatusCode::FORBIDDEN)
-        }
-        pos_error::AppError::Forbidden => {
-            V3Error::new("outOfScope", None, "ไม่มีสิทธิ์ทำรายการสำหรับสาขานี้", StatusCode::FORBIDDEN)
-        }
+        pos_error::AppError::Domain(ref code) if code == "roleNotAllowed" => V3Error::new(
+            "roleNotAllowed",
+            None,
+            "ไม่มีสิทธิ์ทำรายการ",
+            StatusCode::FORBIDDEN,
+        ),
+        pos_error::AppError::Domain(ref code) if code == "roleNotAllowedHere" => V3Error::new(
+            "roleNotAllowedHere",
+            None,
+            "ไม่มีสิทธิ์ทำรายการสำหรับบทบาทนี้",
+            StatusCode::FORBIDDEN,
+        ),
+        pos_error::AppError::Domain(ref code) if code == "outOfScope" => V3Error::new(
+            "outOfScope",
+            None,
+            "ไม่มีสิทธิ์ทำรายการสำหรับสาขานี้",
+            StatusCode::FORBIDDEN,
+        ),
+        pos_error::AppError::Forbidden => V3Error::new(
+            "outOfScope",
+            None,
+            "ไม่มีสิทธิ์ทำรายการสำหรับสาขานี้",
+            StatusCode::FORBIDDEN,
+        ),
         pos_error::AppError::Domain(message) => {
             V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
         }
         pos_error::AppError::Validation(message) => {
             V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
         }
-        pos_error::AppError::NotFound { entity, id } => {
-            V3Error::new("notFound", None, format!("{entity} {id} not found"), StatusCode::NOT_FOUND)
-        }
+        pos_error::AppError::NotFound { entity, id } => V3Error::new(
+            "notFound",
+            None,
+            format!("{entity} {id} not found"),
+            StatusCode::NOT_FOUND,
+        ),
         pos_error::AppError::Conflict(message) => {
             V3Error::new("conflict", None, message, StatusCode::CONFLICT)
         }
@@ -484,9 +494,14 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let shifts = ShiftService::new(
-        Arc::new(xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(pool.clone())),
+        Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                pool.clone(),
+            ),
+        ),
         branch_tx,
-    );
+    )
+    .with_lifecycle_hook(super::cash::shift_lifecycle_hook(&pool));
     let repo = Arc::new(PgCustodyRepository::new(pool));
     let ports = Arc::new(PgCustodyPorts);
     let service = Arc::new(BranchDayService::new(repo, shifts, ports.clone()));
@@ -498,8 +513,14 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(cfg, Arc::new(DayCutoffCommand::new(service.clone())));
     CommandEndpoint::register(cfg, Arc::new(DayTargetCommand::new(service.clone())));
     CommandEndpoint::register(cfg, Arc::new(AttendanceClockCommand::new(service.clone())));
-    CommandEndpoint::register(cfg, Arc::new(CustomerHoldCreateCommand::new(service.clone())));
-    CommandEndpoint::register(cfg, Arc::new(CustomerHoldReleaseCommand::new(service.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(CustomerHoldCreateCommand::new(service.clone())),
+    );
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(CustomerHoldReleaseCommand::new(service.clone())),
+    );
     CommandEndpoint::register(cfg, Arc::new(DraftBeginCommand::new(service)));
 }
 

@@ -1259,6 +1259,9 @@ impl CashCountService {
                     now,
                 )
                 .await?;
+            self.shifts
+                .close_day_if_last_in(&mut *tx, &count.branch_id, now)
+                .await?;
 
             self.repo
                 .update_count_verified(
