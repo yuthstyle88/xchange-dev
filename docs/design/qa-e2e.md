@@ -36,6 +36,7 @@ qa/e2e/
   tests/flow-cash.spec.ts            QA-F3 (PR 3838's shift.spec.ts, moved onto the helpers)
   tests/flow-rates.spec.ts           QA-F4
   tests/flow-approvals.spec.ts       QA-F5
+  tests/flow-exchange.spec.ts        QA-F6 (added after #542; not in the skeleton)
 ```
 
 `playwright.config.ts` keeps PR 3838's settings (one worker, no retries, phone viewport 430×932 for `/app`, desktop
@@ -89,9 +90,11 @@ Specs import only from `helpers.ts`. A spec that needs a new helper comments on 
 ## 3. Inventory (measured on `main` `9170be76`)
 
 **Pages:** `web/pages/*.html`, 31 files, each with `xc-path` and `xc-gate`. A route is served from that meta at build time
-(`api/build_support/screens.rs:52`). `/desk` and `/staff/desk` are still v2's kept `desk.html`
-(`api/src/presentation/pages.rs:229`, `PageKind::DeskVariant`); v3's desk steps (`web/src/screens/desk/steps/`) are not served
-until #542.
+(`api/build_support/screens.rs:52`). Since #542 (PR 3891, merged 2026-10-20) `/desk` is v3's desk: `web/pages/desk.html:7`
+declares `xc-path=/desk`, and the screen table is registered before the old page routes (`api/src/bootstrap/mod.rs:290-291`),
+so it wins. `/staff/desk` is v3 too since #546: `web/pages/staff-desk.html:7` declares `xc-path=/staff/desk` (gate `front`),
+so v2's `PageKind::DeskVariant` entry (`api/src/presentation/pages.rs:241-243`) is shadowed. Re-measured on `main` `af61661c`,
+where `web/pages/` holds 33 files.
 
 | Route | Page | Gate | Role in the suite | Writes | Spec |
 |---|---|---|---|---|---|
@@ -141,8 +144,8 @@ Whether `attendance` writes is not measured here; S7 only smokes it.
 Totals: 31 pages; 15 customer screens, 27 admin menus, 6 staff cards, 2 v3 desk pages + the transaction detail.
 The order's counts (customer 15, desk 29, staff 19, admin 41) are entries per directory, files included; the screen
 directories are 15, 8, 7 and 29. Of admin's 29, `parts/` is shared code and `queue/` is the QueueBar that `AdminShell.tsx`
-shows on every menu (smoked with S5, not a menu). Of desk's 8, only `bookings/` and `queue/` are pages; the rest are v3
-desk steps not served yet (#542).
+shows on every menu (smoked with S5, not a menu). Of desk's 8, `bookings/` and `queue/` were the only pages when this was
+measured; since #542 `/desk` serves the v3 desk steps too (F6).
 
 ## 4. Two tiers
 
@@ -161,8 +164,7 @@ The key element is a `data-testid` or role the screen already renders; a screen 
 | F4 rates | `blueprint/rates.md` §4.4 | admin: open A02, create a draft, simulate. **Never submit**: a publish changes the shared counter prices (E-4). The test deletes its draft at the end | one draft, removed |
 | F5 approvals | `blueprint/rates.md` §5, A06 | admin: the list loads with its filters; if a PENDING request exists, open it (read only) | none |
 
-**Not a flow yet:** the transaction journey (`blueprint/quote-transaction.md`). v3's desk is not served at `/desk` until #542, so
-a flow there would test v2. It is cut when #542 merges.
+| F6 desk exchange | `blueprint/quote-transaction.md`; reversal V-2 | teller, inside its own shift (`openShift` … `closeShift`): `/desk?branch=MAIN`, rate step BUY `users.currency` × a small amount, skip customer details (WALK-IN), confirm the booking, pay cash (accept the count `window.confirm`), the receipt shows `XC-YYYYMMDD-NNNNNN`. Cleanup in the same test: the teller requests a reversal on `/desk/transactions/<id>`, finance approves it (admin › `reconciliation`; never the requester), the teller posts it from the desk's refunds task. The reversal must post the same business day (`xc-exchange/src/domain/reversal/window.rs`) and before the close, so the drawer nets back to the opening figures | one COMPLETED exchange, its reversal and receipt revision 2 on MAIN. They stay: a completed exchange is never changed or deleted (V-2), so the test leaves the stock where it found it, not the rows |
 
 ## 5. Order and data
 
@@ -171,6 +173,8 @@ a flow there would test v2. It is cut when #542 merges.
 - Every flow uses only branch `MAIN` and the seeded accounts (E-4): `customer`, `teller`, `branchManager` (seed step 6b) and
   `finance` (step 6c, PR 3837). A flow whose account is missing from `users.json` skips and logs why.
 - No flow deletes data it did not create.
+- F6 (`flow-exchange.spec.ts`) runs after `flow-cash` and before `flow-queue`, and opens and closes its own shift, so it
+  starts and ends with the teller's shift closed like the others.
 
 ## 6. What the suite cannot do (by hand, with screenshots)
 
@@ -183,14 +187,16 @@ a flow there would test v2. It is cut when #542 merges.
 
 ## 7. Tickets (cut after this document merges)
 
-Base and PR target `feat/qa-e2e`. Each ticket owns exactly one spec file. Done = its tests listed by
-`npx playwright test --list` and `npx tsc --noEmit -p qa/e2e` clean, with no run against a host (E-3).
+Base and PR target `feat/qa-e2e` (merged into `main`; a ticket cut after that, such as QA-F6, bases on `main`). Each
+ticket owns exactly one spec file. Done = its tests listed by `npx playwright test --list` and `npx tsc --noEmit -p qa/e2e`
+clean, with no run against a host (E-3).
 
 | # | Spec | Class | Model |
 |---|---|---|---|
 | QA-S1 … QA-S8 | the eight `smoke-*.spec.ts` of §1 | mechanical | Flash |
 | QA-F1 | `flow-booking.spec.ts` (PR 3838's test, moved onto the helpers) | logic | Argon |
 | QA-F2 … QA-F5 | `flow-queue`, `flow-cash`, `flow-rates`, `flow-approvals` | logic | Argon |
+| QA-F6 | `flow-exchange.spec.ts` (new file) | logic | Argon |
 
 The skeleton (Claude, STEP 2): the `git mv`, `tsconfig.json`, the config's two projects, `helpers.ts` complete, and the
 13 spec files as empty `test.describe` blocks with their area named.
