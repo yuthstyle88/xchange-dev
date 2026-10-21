@@ -339,6 +339,9 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             margins,
             overridden,
             min_spread_pct,
+            // PX-9 (XC-PRICING): the effective `better` and the suggestion. The skeleton only keeps this compiling.
+            better_pct: Vec::new(),
+            better_pct_from: "default".to_string(),
             suggestion: None,
             flags,
             selectable,

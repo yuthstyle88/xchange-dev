@@ -70,7 +70,6 @@ use xc_loyalty::domain::summary_source::{LoyaltySummarySource, UnavailableLoyalt
 use xc_loyalty::infrastructure::http_rule_writer::HttpLoyaltyRuleWriter;
 
 use crate::application::passport_read::{PassportReader, UnconfiguredReader};
-use xc_rate::application::market::market_feed_health::MarketFeedHealth;
 use xc_rate::application::market::market_refresh::{MarketRefresh, MarketRefreshConfig};
 use xc_rate::domain::pricing::market_quote::MarketSource;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
@@ -94,9 +93,6 @@ pub struct AppState {
     /// `settings.recognize` is `Ok`, else `UnconfiguredReader`.
     pub passport_reader: Arc<dyn PassportReader>,
     pub loyalty_rule_writer: Option<Arc<dyn LoyaltyRuleWriter>>,
-    /// Each market source's last attempt and error (pricing-tiers.md §4), written by the market loop and read by
-    /// the pricing board.
-    pub market_health: Arc<MarketFeedHealth>,
 }
 
 struct LazyDocumentStore {
@@ -194,7 +190,6 @@ impl AppState {
             loyalty_summary: Arc::new(UnavailableLoyaltySummary),
             passport_reader,
             loyalty_rule_writer,
-            market_health: Arc::new(MarketFeedHealth::default()),
         }
     }
 
@@ -497,8 +492,7 @@ impl Application {
                     Arc::new(MarketRateSource::new(Arc::new(SuperRichFeed::live()))),
                 ),
             ];
-            let market_refresh =
-                MarketRefresh::new(state.db.clone(), sources, state.market_health.clone());
+            let market_refresh = MarketRefresh::new(state.db.clone(), sources);
             tokio::spawn(Arc::new(market_refresh).run(market_config.interval, stop_rx.clone()));
         }
         let rate_feed = tokio::spawn(Arc::new(rate_feed_loop).run(stop_rx));

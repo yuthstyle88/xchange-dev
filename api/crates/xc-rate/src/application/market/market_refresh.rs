@@ -12,7 +12,6 @@ use sqlx::PgPool;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-use crate::application::market::market_feed_health::MarketFeedHealth;
 use crate::domain::pricing::market_quote::MarketSource;
 use crate::domain::rate::entities::rate_source::RateSource;
 use crate::infrastructure::reference::pg_reference_batch_store::PgReferenceBatchStore;
@@ -53,27 +52,21 @@ pub struct MarketRefresh {
     pub(crate) pool: PgPool,
     pub(crate) sources: Vec<(MarketSource, Arc<dyn RateSource>)>,
     pub(crate) store: Arc<PgReferenceBatchStore>,
-    pub(crate) health: Arc<MarketFeedHealth>,
 }
 
 impl MarketRefresh {
     /// `sources` are `MarketRateSource`s in production and fakes in tests.
-    pub fn new(
-        pool: PgPool,
-        sources: Vec<(MarketSource, Arc<dyn RateSource>)>,
-        health: Arc<MarketFeedHealth>,
-    ) -> Self {
+    pub fn new(pool: PgPool, sources: Vec<(MarketSource, Arc<dyn RateSource>)>) -> Self {
         Self {
             pool,
             sources,
             store: Arc::new(PgReferenceBatchStore::new()),
-            health,
         }
     }
 
     /// For each source: load the `currencies` codes, run `ReferenceBatchWriter::new(source, store)
-    /// .with_provider(MarketProvider::new(source, known))` in its own transaction, commit, and record the attempt in
-    /// `health` (`now`, the error if any). One source failing never stops the next.
+    /// .with_provider(MarketProvider::new(source, known))` in its own transaction, commit, and record the attempt with
+    /// `MarketFeedStatusStore::record` (`now`, the error if any). One source failing never stops the next.
     pub async fn tick(&self, now: DateTime<Utc>) -> MarketTickReport {
         let _ = now;
         todo!("PX-5: MarketRefresh::tick")

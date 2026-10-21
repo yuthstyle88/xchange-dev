@@ -8,4 +8,5 @@ pub mod pricing_flag;
 pub mod pricing_suggestion;
 pub mod recommendation;
 pub mod row_status;
+pub mod suggestion_settings;
 pub mod tier_check;

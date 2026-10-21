@@ -19,7 +19,7 @@ pub struct PricingBoardData {
     pub bands: Vec<PricingBandDto>,
     pub sources: Vec<PricingSourceDto>,
     pub rows: Vec<PricingRowDto>,
-    /// Empty until PT-10 (V.9's `recommend`, waits for P-2).
+    /// V.9's `recommend` (pricing-tiers.md §5.2).
     pub recommendations: Vec<PricingRecommendationDto>,
 }
 
@@ -59,7 +59,11 @@ pub struct PricingRowDto {
     pub margins: Vec<PricingTierMarginDto>,
     pub overridden: bool,
     pub min_spread_pct: Option<String>,
-    /// `null` until PT-9 (V.9's `suggestTiers`, waits for P-2).
+    /// The 4 effective `better` % values the suggestion uses (pricing-tiers.md §5.2), decimal strings.
+    pub better_pct: Vec<String>,
+    /// Where `betterPct` comes from: `currency` · `branch` · `default` (V.9's).
+    pub better_pct_from: String,
+    /// V.9's suggested tier prices at the unit size (`suggestTiers`); `null` when there is no anchor.
     pub suggestion: Option<Vec<PricingTierRateDto>>,
     /// `NoAnchor` · `NoTtQuote` · `StaleSource` · `MinSpread` · `BelowCost` · `LargeMove` · `Precision`.
     pub flags: Vec<String>,
