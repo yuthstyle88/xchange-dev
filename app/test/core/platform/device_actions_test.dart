@@ -12,7 +12,6 @@ import 'dart:ui' show Locale;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchange_kiosk/core/platform/device_actions.dart';
-import 'package:xchange_kiosk/features/kiosk/presentation/pages/waiting_page.dart';
 import 'package:xchange_kiosk/l10n/kiosk_l10n.dart';
 
 /// An implementation that only records what reached it.
@@ -74,8 +73,9 @@ void main() {
 
     test('the one link the kiosk has passes', () async {
       final d = _Recording();
-      await d.openExternal(WaitingPage.telegramUrl);
-      expect(d.opened.map((u) => '$u'), [WaitingPage.telegramUrl]);
+      const telegramUrl = 'https://t.me/XCHANGEXTK';
+      await d.openExternal(telegramUrl);
+      expect(d.opened.map((u) => '$u'), [telegramUrl]);
     });
 
     test('anything that is not an absolute https address with a host is '

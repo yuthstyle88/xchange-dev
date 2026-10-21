@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/endpoint/endpoint_store.dart';
 import '../../../../shared/theme/colors.dart';
-import '../../../kiosk/app/kiosk_providers.dart';
+import '../../app/setup_providers.dart';
 import '../../l10n/setup_l10n.dart';
 import '../controllers/setup_controller.dart';
 
