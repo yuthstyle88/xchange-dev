@@ -93,7 +93,18 @@
 > 4. The desk checks the passport.
 >
 > There is no customer self-service device at the branch. Earlier §4 versions are in git (`bf7efba8`, `1dde5b6c`,
-> `1e5e84e1`, `919f33c8`).
+> `1e5e84e1`, `919f33c8`, `514505aa`).
+>
+> **Revised for the owner's answers of 2026-10-21 ~17:05Z** (PR 4249 issuecomment-6321559434, XC FE session):
+> - Q7: *"เครื่องพิมพ์ต่อกับเครื่องเพิ่มคิว"*: the printer is attached to the queue machine (D9).
+> - Q10: *"เพิ่ม OTP ทางอีเมล"*: e-mail OTP next to SMS (D11).
+> - Q11: *"ก็ทำเหมือน ที่ลูกค้า ใช้ เครื่องตัว เอง ไง"*: the branch tablet signs the customer in like their own phone. The
+>   no-login tablet path is gone (D16).
+> - New: *"ให้ ส่งเมล์ได้ เป็น option"* · *"ข้อมูล จะได้ไปเก็บที่เมล์ ด้วย ถ้า ลูกค้า ต้องการ"* · *"หรือ ลิงค์ ชั่ว คราว
+>   1วัน"*: an optional e-mail with the details, the QR and a signed 1-day link (D21, D22).
+>
+> **Migrations (553782's order): only `kiosk_requests.customer_id` and `kiosk_settings`.** Anything else this design
+> would want goes to 553782 first (§4.6).
 
 ### 4.1 What the server does today (measured)
 
@@ -135,31 +146,54 @@
   - `pos-printer` at xchange's pin draws QR codes (`crates/pos-printer/src/escpos.rs:305,316`).
 - **Calling data.** A counter is a teller with no number or label (`queue_counters`, `api/migrations/20261101100000_queue.sql:41-47`).
   `branch_service_status.queue_version` is the poll seam (`:53`). The only board is staff-only (`queue_board`).
+- **E-mail** (measured on xchange `main` `b03a328` and `108-platform-services` `main` `d19249f`):
+  - xchange has **no e-mail sender**. Its only Notify client is `NotifySmsSender`
+    (`api/src/infrastructure/notify/notify_sms_sender.rs`), behind the `SmsSender` trait
+    (`api/crates/xc-customer/src/domain/sms_sender.rs:8`).
+  - The notification seam keeps an `EMAIL` channel (`notification_deliveries.channel`,
+    `api/migrations/20261106100000_customer_app.sql:62`), but only `IN_APP` is written (owner C3,
+    `customer-app.md:25`; `api/crates/xc-notify/src/domain/channel.rs:1`). The owner's e-mail option is the first other
+    channel.
+  - Notify's `POST /api/v1/notifications` takes `{channel, recipient: {address, display_name?}, subject?, body?,
+    html_body?, idempotency_key?, …}` with `X-API-Key` (`crates/notification-api/src/dto.rs:17-51`,
+    `middleware.rs:17-25`). It answers `201` when created and `200` when the idempotency key matched
+    (`routes/notifications.rs:46-62`). It has **no attachment field**.
+  - Fact for the BE lane, outside this design: `NotifySmsSender` posts `{"channel","phone","text"}`
+    (`notify_sms_sender.rs:57-61`). Notify's DTO has no `phone` or `text` and requires `recipient`, so that SMS call
+    cannot be accepted as written. The e-mail sender below uses the DTO's shape.
+  - A customer can already hold a verified e-mail: `customer_identities.type` allows `EMAIL`, encrypted with a lookup
+    hash (`api/migrations/20261019100000_customers_org.sql:54-70`).
+- **Signed tokens without a stored secret** already exist: the booking QR is
+  `HMAC-SHA256(derive_subkey(pii_keys, "xc-booking-qr-v1"), id ‖ version)`
+  (`api/crates/xc-booking/src/domain/booking/qr_token.rs:15-27`, `xc-kernel/src/pii/derive.rs:9`). No new env secret
+  is needed for a signed link.
 
 ### 4.2 Decisions (BE lane)
 
 | # | Decision | Why |
 |---|---|---|
 | D1 | **One request core, unchanged in shape.** The web request is a `kiosk_requests` row made by the same `quote` path. `POST /api/kiosk` and its anonymous `quote`/`confirm` stay as they are; the queue machine may reuse them, so nothing there is removed. | owner 553782: *"do NOT plan their removal"*; ♻️ |
-| D2 | **Web submit = a request with no number.** <br>• A new command `webRequestCreate` runs the core's `quote`. From a phone it needs a customer session, and `customer_id` = the member's. From a branch tablet it needs the tablet credential, and `customer_id` is NULL (D16, D17). <br>• It mints the **request token** (UUID v4; only its SHA-256 is stored, in `cancel_token_hash`; no second column). <br>• It answers `{requestId, requestQrUrl, expiresAt}`. The request stays `QUOTED`: **no `confirm`, no ticket, no number.** | owner: the number is issued at the staff scan |
+| D2 | **Web submit = a request with no number.** <br>• A new command `webRequestCreate` (`CustomerSelf`) runs the core's `quote`, with `customer_id` = the signed-in member's, on the customer's phone and on the branch tablet alike (D16). <br>• It mints the **request token** (UUID v4; only its SHA-256 is stored, in `cancel_token_hash`; no second column). <br>• It answers `{requestId, requestQrUrl, expiresAt}`. The request stays `QUOTED`: **no `confirm`, no ticket, no number.** | owner: the number is issued at the staff scan |
 | D3 | **The request QR** encodes `<origin>/q#<token>` (the fragment keeps it out of request lines, logs and referrers). The member re-shows it by `webRequestQrReissue` (`CustomerSelf`, own request), which mints a new token and replaces the hash, as `bookingQrReissue` does. | the booking QR pattern |
 | D4 | **A web request waits 60 minutes for its scan**, not the kiosk's 10. `is_purgeable` keeps 600 s for a request with no customer and uses 3 600 s for one with a customer. The phone shows `expiresAt`. After that, the member fills the request again. | the 10-minute purge (`kiosk_machine.rs:443-446`) would drop a request while its owner waits in line at the queue machine |
-| D5 | **The staff scan issues the number: `issueByToken`.** <br>• A new staff action on `POST /api/kiosk`, needing `QueueOperate`. <br>• It finds the request by token **in the staff session's branch**, runs the core's `confirm` (QUOTED → WAITING, the ticket, `IssueSource::Kiosk {request_id}`), and sets `queue_tickets.customer_id` from the request. <br>• It answers `{displayNumber, ticketId, printed}`. <br>• Scanning twice answers the same ticket (repeat-safe), never a second number. <br>• A token of another branch, an unknown or expired one ⇒ `404 notFound`, one answer for all. | owner: *"สแกน เพื่อรับ คิว"*; the scan at the branch proves where the customer is, so no board token is needed |
+| D5 | **The staff scan issues the number: `issueByToken`.** <br>• A new staff action on `POST /api/kiosk`, needing `QueueOperate`. <br>• It finds the request by token **in the staff session's branch**, runs the core's `confirm` (QUOTED → WAITING, the ticket, `IssueSource::Kiosk {request_id}`), and sets `queue_tickets.customer_id` from the request. <br>• It answers `{displayNumber, ticketId, ticketEscpos}` (D9). <br>• Scanning twice answers the same ticket (repeat-safe), never a second number. <br>• A token of another branch, an unknown or expired one ⇒ `404 notFound`, one answer for all. | owner: *"สแกน เพื่อรับ คิว"*; the scan at the branch proves where the customer is, so no board token is needed |
 | D6 | **The queue machine is a staff device.** It signs in as staff, through the same Identity sign-in as the desk, and holds `QueueOperate` at its branch. It is not a public kiosk any more. The kiosk's anonymous actions still answer, for the machine to reuse (e.g. a staff-entered walk-in, if e92db6's open assumption lands there). | owner: *"no customer self-service device"* |
 | D7 | **The desk scan reuses the same lookup.** `findByToken` (`QueueOperate`, branch-scoped) answers the request id, and the desk opens today's `?kiosk=<id>` entry. It is the same token and the same `404` rule as D5, with the scanner `DeskBookingsScreen` uses. | reuse |
 | D8 | **The customer's view.** `myWebRequest` (`CustomerSelf`, own request) answers `{status, expiresAt, displayNumber?, ticketsAhead?, counter?}` on the poll seam (`queue_version`, `since` → `{changed: false}`). Before the scan: `QUOTED` and no number. After the scan: the number, place in line, and the counter once called. Cancel: `webRequestCancel` (own session), the `customerCancel` transition. | 🔁; owner: the display and the desk follow the issued number |
-| D9 | **Printing: the counter POS80 through today's agent (proposed; Q7).** <br>• The machine is staff-operated at the counter, so the ticket can come out of the counter POS80. <br>• `requestIssue` queues one `PRINT_QUEUE_TICKET` job in its transaction. The bytes are rendered server-side with `pos-printer`: number, time, branch, and the request QR for the desk. <br>• The branch's one agent claims `DRAWER_REQUEST` **and** `PRINT_QUEUE_TICKET`. No role and no second agent. <br>• A ticket job older than 60 s is `EXPIRED`. No agent ⇒ `printed: false`, and the machine shows the number large for staff to write or read out. <br>• The other option, a printer attached to the machine, is in Q7. | one renderer, works from the Flutter and the web build, and the agent already reaches the POS80 |
-| D10 | **The calling display** (KS-5): the public, numbers-only `GET /api/public/orgs/{org}/branches/{code}/queue-display?since=` on `queue_version`. It answers today's `CALLED`/`SERVING` with counter labels (Q8), and the last 5 called. It never carries a name, phone, amount or teller. | KS-5; route style of `public/branch_rates.rs:16` |
-| D11 | **Web sign-in = the customer OTP login, with first-sight sign-up.** <br>• `/api/auth/otp/verify` takes an optional `register: {displayName, lang, marketing}`, which sends `registerIfAbsent: true`. <br>• `register_customer` splits into a login half and a shared `CustomerBinder` (♻️). <br>• A verified phone ACTIVE on a desk-made customer with `user_id IS NULL` joins that customer (owner Q1); one with a user ⇒ `409 phoneInUse`. <br>• Without `register`, "no login" ⇒ `401 notRegistered`. | KS-4c; §4.1 |
+| D9 | **Printing: a printer attached to the queue machine, with the bytes rendered once on the server** (owner Q7: *"เครื่องพิมพ์ต่อกับเครื่องเพิ่มคิว"*). <br>• `issueByToken` answers the ticket as ESC/POS bytes (`ticketEscpos`, base64), rendered by `TicketPrintJob` with `pos-printer`: number, time, branch, and the request QR for the desk. <br>• The Flutter **native** build writes those bytes unchanged to its own printer (USB, Bluetooth or LAN). The app has **no ESC/POS writer of its own**, so there is one renderer (♻️), and a browser build simply cannot print. <br>• A repeat scan (D5) answers the same bytes, so a jammed print is reprinted by scanning again. The app reports nothing back; `printed` is the app's own state. <br>• **No device job, no agent change, no `device_jobs.kind` change.** The device agent and the counter POS80 are untouched. | owner Q7; one renderer |
+| D10 | **The calling display** (KS-5): the public, numbers-only `GET /api/public/orgs/{org}/branches/{code}/queue-display?since=` on `queue_version`. It answers today's `CALLED`/`SERVING` numbers and the last 5 called. It never carries a name, phone, amount or teller. **Which counter** needs `queue_counters.label`, a migration outside 553782's list: it is sent to 553782 (§4.6, Q8), and until it is approved the display and the phone show the number only. | KS-5; route style of `public/branch_rates.rs:16` |
+| D11 | **Web sign-in = the customer OTP login, with first-sight sign-up, by SMS or e-mail** (owner Q10: *"เพิ่ม OTP ทางอีเมล"*). <br>• `/api/auth/otp/request` takes `channel: "sms" \| "email"` with a phone or an e-mail `destination`; the deployed Identity already signs in by e-mail OTP (`crates/auth/src/application/verify_otp.rs:593`). <br>• `/api/auth/otp/verify` takes an optional `register: {displayName, lang, marketing}`, which sends `registerIfAbsent: true`. <br>• `register_customer` splits into a login half and a shared `CustomerBinder` (♻️). The binder writes a verified **PHONE or EMAIL** identity, whichever was proven (today PHONE only, `customer_signup.rs:161-208`). The `EMAIL` type already exists, so no migration. <br>• A verified phone or e-mail ACTIVE on a desk-made customer with `user_id IS NULL` joins that customer (owner Q1); one with a user ⇒ `409 phoneInUse` / `409 emailInUse`. <br>• Without `register`, "no login" ⇒ `401 notRegistered`. | KS-4c; Q10; §4.1 |
 | D12 | **One open web request per member per branch** (`QUOTED` or `WAITING`) ⇒ `409 alreadyQueued` + its id. | one person, one place |
 | D13 | **At the desk save** (owner Q2): passport customer A ≠ the request's member B ⇒ save on A, keep B on the request and quote, and write one `KIOSK_CUSTOMER_DIFFERS` audit row. | owner Q2 |
 | D14 | **KS-3 settings** shrink to what the queue machine needs: `kiosk_settings.result_seconds` (how long the issued number stays on the machine, default 10) with a public read on the poll seam and a `RatesDraft` write. | KS-3 |
 | D15 | `queueTicketTake` and `/app/book` stay unchanged (owner Q4). | owner Q4 |
-| D16 | **The branch tablet is a borrowed phone on the same page** (owner: *"ก็เหมือน มือถือ ลูกค้าปกติ"* · *"แค่ ยืมที่สาขาใช้งานชั่วคราว"*). It runs the same `webRequestCreate`, with two differences only. <br>• **No login:** the request is made without a customer session, and `customer_id` stays NULL until the desk save attaches the passport's customer (D18). <br>• **It starts over:** after showing the request QR it resets for the next person. That is FE behaviour, as #4243 does for one customer at a time, idle reset and one-press cancel. <br>No new source, app or route. | owner: *"ลูกค้าไม่มี มือถือ ที่ สาขา มี tablat ให้ ใช้ทำรายการ"* |
-| D17 | **Abuse guard for the no-login request (proposed; Q11).** A `webRequestCreate` without a customer session is accepted only from a **branch tablet**. <br>• **Credential:** a staff member with `QueueOperate` at the branch opens the page on the tablet and pairs it (`branchTabletPair`). The server mints a random token bound to that branch and stores only its SHA-256 in `branch_tablets` (revocable). The tablet keeps it in an `HttpOnly; Secure; SameSite=Strict` cookie. No credential, a revoked one, or another branch ⇒ `401 tabletRequired`. The branch comes from the credential, never from the body. <br>• **One open request per tablet:** a new request from a tablet cancels that tablet's earlier unscanned `QUOTED` request. A half-done request never waits for the next person, and one tablet can never hold more than one place. <br>• **Short life:** a tablet request is purged after 10 minutes unscanned (today's 600 s rule; a phone request has 60, D4). <br>• **Rate:** today's `QuoteLimit` (20 per 60 s), keyed by the tablet instead of the address. <br>• **Nothing to steal:** a tablet request carries no customer, and a number exists only after a staff scan (D5), so a forged request costs one queue slot that staff never issue. | a no-login path needs something other than a login to stop strangers |
-| D18 | **The desk attaches the passport's customer.** At the save of an exchange opened from a request with `customer_id` NULL (a tablet request), the save hook writes the passport's customer onto `kiosk_requests.customer_id`, `quotes.customer_id` and `queue_tickets.customer_id`, in the save's transaction. From then on, the request traces to one customer. | owner: the passport at the desk identifies the customer |
+| D16 | **The branch tablet is a borrowed phone: the customer signs in on it** (owner Q11: *"ก็ทำเหมือน ที่ลูกค้า ใช้ เครื่องตัว เอง ไง"* · *"แค่ ยืมที่สาขาใช้งานชั่วคราว"*). <br>• Same page, same sign-in (D11, SMS or e-mail OTP), same `webRequestCreate`, so every request has a member. There is **no no-login path**, no tablet credential and no new table. <br>• Because the device is borrowed, the page **signs out and starts over** when the request QR has been shown and the customer presses เสร็จ, or after the idle timeout. That is FE behaviour (as #4243 does for one customer at a time). The server's part is today's sign-out, which revokes the session. | owner Q11 |
+| D17 | *(dropped by owner Q11: the no-login tablet guard, `branch_tablets`, `kiosk_requests.tablet_id`)* | |
+| D18 | *(dropped with D17: every web request now carries its member, so the desk has nothing to attach)* | |
 | D19 | **The kiosk's public `confirm` should stop issuing numbers on its own (proposed; Q12).** `confirm` is `Need::Public` today (`policy.rs:123-126`), so anyone who can call `/api/kiosk` can get a queue number without a staff scan. That breaks the owner's rule that the number is issued at the scan. Proposed: `confirm` needs `QueueOperate`, so the queue machine can still call it, and nothing is removed. `quote`/`status`/`customerReceipt`/`customerCancel` stay public. | owner: the number is issued when staff scan |
-| D20 | **The desk's passport skip stays, and nothing here gets in front of it** (owner: *"ตรวจ พาสปอร์ท ให้ กดข้ามได้"*). <br>• Measured on `main` `7834507`: `onSkip` (`web/src/screens/desk/steps/customer/step.tsx:159-177`, #539) sends a placeholder passport image with `WALK-IN` / `WALKIN` / `XXX`, then runs the normal `reserve`. The server's passport step only requires a passport file (`api/crates/xc-exchange/src/domain/exchange/value_objects/transaction_form.rs:246-249`). So a skipped save lands on the one placeholder customer that `reserve` finds or creates for `WALKIN`/`XXX`. <br>• A request opened from the QR (`findByToken` → `?kiosk=<id>`), or issued by the queue machine, adds **no** passport check and **no** "customer required" rule to the desk save. `issueByToken` checks nothing about the customer. <br>• **The skip placeholder is never attached.** D18 (attach the passport's customer) and D13 (the `KIOSK_CUSTOMER_DIFFERS` audit) both skip a save whose passport is the placeholder. It is recognised in one place, `WalkInPlaceholder::is(passport_no, nationality)`, with the desk's values (`WALKIN`, `XXX`). <br>• So a tablet request stays a walk-in with no customer, and a phone request keeps its member, with no audit row. | owner; #539 |
+| D20 | **The desk's passport skip stays, and nothing here gets in front of it** (owner: *"ตรวจ พาสปอร์ท ให้ กดข้ามได้"*). <br>• Measured on `main` `7834507`: `onSkip` (`web/src/screens/desk/steps/customer/step.tsx:159-177`, #539) sends a placeholder passport image with `WALK-IN` / `WALKIN` / `XXX`, then runs the normal `reserve`. The server's passport step only requires a passport file (`api/crates/xc-exchange/src/domain/exchange/value_objects/transaction_form.rs:246-249`). So a skipped save lands on the one placeholder customer that `reserve` finds or creates for `WALKIN`/`XXX`. <br>• A request opened from the QR (`findByToken` → `?kiosk=<id>`), or issued by the queue machine, adds **no** passport check and **no** "customer required" rule to the desk save. `issueByToken` checks nothing about the customer. <br>• **The skip placeholder never counts as a different customer.** D13 (the `KIOSK_CUSTOMER_DIFFERS` audit) skips a save whose passport is the placeholder. It is recognised in one place, `WalkInPlaceholder::is(passport_no, nationality)`, with the desk's values (`WALKIN`, `XXX`). <br>• So a skipped save keeps the request's member, with no audit row. | owner; #539 |
+| D21 | **"E-mail it to me": an optional copy of a booking or a web request** (owner: *"ให้ ส่งเมล์ได้ เป็น option"* · *"ข้อมูล จะได้ไปเก็บที่เมล์ ด้วย ถ้า ลูกค้า ต้องการ"*). <br>• **One core, two subjects (♻️).** `CopyByEmailService` holds the rules. A `CopySubject` trait has one small implementation per subject: `BookingCopy` (xc-booking) and `WebRequestCopy` (xc-kiosk). Each loads its own row for the member, checks the QR, and fills the details. A third subject later is one file. <br>• **Command:** `copyByEmail {subject: "booking" \| "webRequest", id, qr}`, `CustomerSelf`, own subject only. Another member's id or an unknown one ⇒ `404 notFound`. <br>• **Only the current QR can be sent.** `SHA-256(qr)` must equal the stored hash (`bookings.qr_token_hash`; `kiosk_requests.cancel_token_hash`, D2). After a reissue the old QR ⇒ `404 notFound`. The server never stores the QR in plain text, so it takes it from the customer's own page, which holds it. <br>• **To:** the member's verified, ACTIVE `EMAIL` identity, never a typed address. So a typo cannot send someone's amount to a stranger, for the same reason the phone is OTP-checked (KS-4). A member with none ⇒ `409 noVerifiedEmail`; the FE offers the e-mail only when `me` shows one. A member gets one by signing in by e-mail OTP (D11). <br>• **Contents:** the details (booking: number, branch, date and slot, currency, amount; web request: branch, currency, amount, rate, expiry), the QR as an inline PNG in `html_body`, and the 1-day link (D22). Text in the member's `lang` (th/en/zh). No passport, no phone, no customer number. <br>• **Send:** straight to Notify `POST /api/v1/notifications`, `channel: "email"`, through an `EmailSender` port (`NotifyEmailSender`, beside `NotifySmsSender`). `idempotency_key` = `copy:<subject>:<id>:<hex of the QR hash>`, so pressing it twice sends **one** e-mail per QR (Notify answers `200` ⇒ `{sent: true, again: true}`). Notify queues and retries; xchange keeps no outbox row, so the QR is never written to a table. <br>• **Off when unset:** without `NOTIFY_BASE_URL` / `NOTIFY_API_KEY` ⇒ `503 emailUnavailable`, and `me` reports e-mail as unavailable so the FE hides the button. <br>• **No migration, no new secret.** The FE button is the FE lane's; QR download alone is #4327. | owner; D2's hash-only token; ♻️ |
+| D22 | **The 1-day link** (owner: *"หรือ ลิงค์ ชั่ว คราว 1วัน"*). <br>• **Signed, not stored:** `<origin>/c#v1.<subject>.<id>.<exp>.<qr>.<mac>`, with `exp` = sent + 24 h and `mac` = `HMAC-SHA256(derive_subkey(pii_keys, "xc-copy-link-v1"), subject ‖ id ‖ exp ‖ qr)`, the booking QR's key pattern (§4.1). No table and no env secret. <br>• It sits in the **fragment**, so it never reaches a request line, an access log or a referrer. The page posts it to `copyLinkView` (public, `POST /api/public/copy-link`). <br>• **`copyLinkView`** checks, in order: the MAC (constant time), `exp` > now, and `SHA-256(qr)` = the subject's current hash. Any failure ⇒ `410 linkExpired`, one answer for all, so a forged, expired or reissued-away link cannot be told apart. On success it answers the same details as the e-mail plus the live status (`QUOTED` / `WAITING` with number / `DONE` / `CANCELLED` / `EXPIRED`); the page draws the QR from its own fragment. <br>• The link is a **read-only copy**: it cannot cancel, reissue or sign in. The QR inside it works at the queue machine and the desk exactly as on the phone, because it is that QR. <br>• Rate: today's `QuoteLimit` shape, keyed by address, so the public route cannot be used to guess. | owner; 🔁 not needed (opened by a person) |
 
 ### 4.3 Class diagram
 
@@ -183,11 +217,6 @@ classDiagram
     issue_by_token(staff, token, now) Issued
     find_by_token(staff, token) RequestId
   }
-  class TicketPrinterPort {
-    <<trait>>
-    enqueue_in(tx, branch, bytes, now) bool
-  }
-  class PgAgentTicketPrinter
   class TicketPrintJob {
     render(ticket, branch, qr_url) Bytes
   }
@@ -200,12 +229,37 @@ classDiagram
   class CustomerOtpSignIn {
     sign_in(challenge, code, register, ip, now)
   }
+  class CopyByEmailService {
+    send(member, subject, id, qr, now) Sent
+    view_link(link, now) CopyView
+  }
+  class CopySubject {
+    <<trait>>
+    load_for(member, id, qr_hash) CopyDetails
+    load_by_link(id, qr_hash) CopyDetails
+  }
+  class BookingCopy
+  class WebRequestCopy
+  class CopyLink {
+    sign(subject, id, qr, exp) String
+    verify(link, now) Parts
+  }
+  class EmailSender {
+    <<trait>>
+    send(to, subject, text, html, idempotency_key) Outcome
+  }
+  class NotifyEmailSender
   RequestCore <-- WebRequestService
   RequestCore <-- RequestIssueService
-  TicketPrinterPort <-- RequestIssueService
-  TicketPrinterPort <|.. PgAgentTicketPrinter
   TicketPrintJob <-- RequestIssueService
   CustomerBinder <-- CustomerOtpSignIn
+  CopySubject <-- CopyByEmailService
+  CopySubject <|.. BookingCopy
+  CopySubject <|.. WebRequestCopy
+  RequestCore <-- WebRequestCopy
+  CopyLink <-- CopyByEmailService
+  EmailSender <-- CopyByEmailService
+  EmailSender <|.. NotifyEmailSender
 ```
 
 `RequestCore` is the customer half of `KioskService` in `customer.rs`, not a new type. Both services call it; neither
@@ -217,117 +271,120 @@ copies its rules.
 | `KioskMachine::is_purgeable` | `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_machine.rs:443` | changed: 600 s / 3 600 s (D4) |
 | `WebRequestService` | `api/crates/xc-kiosk/src/application/kiosk/web_request.rs` | new |
 | `RequestIssueService` | `api/crates/xc-kiosk/src/application/kiosk/request_issue.rs` | new |
-| `TicketPrinterPort`, `TicketPrintJob`, `PgAgentTicketPrinter` | `…/domain/kiosk/repositories/ticket_printer_port.rs`, `…/domain/kiosk/value_objects/ticket_print_job.rs`, `api/src/infrastructure/kiosk/pg_agent_ticket_printer.rs` | new |
-| the agent claim + job kind | `api/src/infrastructure/device_agents/pg_agent_repository.rs` (`:296,315,342,449` serve both kinds), `api/src/infrastructure/devices/device_job.rs` | changed; the agent binary unchanged |
+| `TicketPrintJob` | `…/domain/kiosk/value_objects/ticket_print_job.rs` | new: the one ESC/POS renderer (`pos-printer`); `issueByToken` answers its bytes (D9) |
 | `KioskRepository::find_by_token_in`, `replace_token_in` | `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs` | new |
-| web commands `webRequestCreate`, `webRequestQrReissue`, `webRequestCancel`; view `myWebRequest` | `api/src/presentation/http/v3/commands/web_request/{create.rs,qr.rs,cancel.rs}`, `api/src/presentation/http/v3/views/my_web_request.rs` | new; `CustomerSelf`, except `webRequestCreate`, which also takes the tablet credential (D17) |
+| web commands `webRequestCreate`, `webRequestQrReissue`, `webRequestCancel`; view `myWebRequest` | `api/src/presentation/http/v3/commands/web_request/{create.rs,qr.rs,cancel.rs}`, `api/src/presentation/http/v3/views/my_web_request.rs` | new; `CustomerSelf` |
 | `issueByToken`, `findByToken`, `settings`, `configureSettings` on `POST /api/kiosk` | `api/src/presentation/http/kiosk.rs`, `policy.rs:123-133` | changed (`QueueOperate`; `settings` public; `configureSettings` `RatesDraft`) |
 | `CustomerBinder`, `CustomerOtpSignIn` | `api/src/application/customer_binder.rs`, `api/src/application/customer_otp_sign_in.rs`; `customer_signup.rs` calls the binder | new / changed |
 | `IdentityClient::otp_verify(…, register_if_absent)` | `api/crates/xc-auth/src/domain/identity/identity_client.rs:138`, `…/infrastructure/identity/http_identity_client.rs:289-301` | changed |
 | `QueueDisplayView` | `api/src/presentation/http/public/queue_display.rs` | new |
 | `KioskSettings` (+ repository, Pg) | `…/domain/kiosk/entities/kiosk_settings.rs`, `…/repositories/kiosk_settings_repository.rs`, `api/src/infrastructure/kiosk/pg_kiosk_settings_repository.rs` | new |
-| the save's audit (D13) and customer attach (D18) | `api/crates/xc-kiosk/src/application/kiosk/save_hooks.rs` | changed |
+| the save's audit (D13) | `api/crates/xc-kiosk/src/application/kiosk/save_hooks.rs` | changed |
 | `WalkInPlaceholder` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/walk_in_placeholder.rs` | new: the one place that knows the desk's skip values (D20) |
-| `BranchTablet` + `BranchTabletRepository` (+ Pg), command `branchTabletPair` / `branchTabletRevoke` | `api/crates/xc-kiosk/src/domain/kiosk/entities/branch_tablet.rs`, `…/repositories/branch_tablet_repository.rs`, `api/src/infrastructure/kiosk/pg_branch_tablet_repository.rs`, `api/src/presentation/http/v3/commands/branch_tablet.rs` | new (D17) |
+| `CopyByEmailService`, `CopySubject`, `CopyLink`, `CopyDetails` | `api/src/application/copy_by_email/{service.rs,subject.rs,link.rs}` | new: the shared core (D21, D22) |
+| `BookingCopy` / `WebRequestCopy` | `api/crates/xc-booking/src/application/booking_copy.rs` / `api/crates/xc-kiosk/src/application/kiosk/web_request_copy.rs` | new: one per subject; each reads its own row by member + QR hash |
+| `EmailSender` + `NotifyEmailSender` | `api/crates/xc-customer/src/domain/email_sender.rs` (beside `sms_sender.rs`), `api/src/infrastructure/notify/notify_email_sender.rs` | new; Notify's DTO shape (§4.1); off when the env is unset |
+| the e-mail's QR PNG | inside `CopyByEmailService`, one function | new; needs a QR encoder crate (e.g. `qrcode`), a dependency, not a migration. Some web mail hides inline images, so the link page draws the QR as well |
+| command `copyByEmail`; public `POST /api/public/copy-link` | `api/src/presentation/http/v3/commands/copy_by_email.rs`, `api/src/presentation/http/public/copy_link.rs` | new; `CustomerSelf` / public with the address rate limit |
+| `me` reports `emailCopy: {available, to: masked}` | the customer `me` view | changed |
 
 ### 4.4 Behaviour
 
 | # | Given | Answer |
 |---|---|---|
 | B1 | today's kiosk `quote` / `confirm` / `customerCancel` | unchanged; today's kiosk tests stay green as they are |
-| B2 | `webRequestCreate` with neither a customer session nor a tablet credential | `401 signIn` |
+| B2 | `webRequestCreate` without a customer session | `401 signIn` |
 | B3 | `webRequestCreate`, signed in | a `QUOTED` request with `customer_id`; `{requestId, requestQrUrl, expiresAt}`; **no ticket, no number** |
 | B4 | `webRequestCreate` with an open `QUOTED`/`WAITING` request at the branch | `409 alreadyQueued` + its id |
 | B5 | a web request 59 min old / 61 min old at the next purge | kept / purged; a kiosk request still purged after 10 min |
-| B6 | `issueByToken` by staff with `QueueOperate` at the request's branch | `WAITING`, one ticket with `customer_id` set, one `PRINT_QUEUE_TICKET` job when an agent is active; `{displayNumber, ticketId, printed}` |
-| B7 | `issueByToken` twice for the same request | the same ticket both times; one print job |
+| B6 | `issueByToken` by staff with `QueueOperate` at the request's branch | `WAITING`, one ticket with `customer_id` set; `{displayNumber, ticketId, ticketEscpos}` |
+| B7 | `issueByToken` twice for the same request | the same ticket and the same bytes both times |
 | B8 | `issueByToken`: another branch's token / unknown / expired / reissued-away | `404 notFound` |
 | B9 | `issueByToken` without `QueueOperate` | `403`, as the policy's other `QueueOperate` actions |
-| B10 | the agent claims; a ticket job older than 60 s | `DRAWER_REQUEST` and `PRINT_QUEUE_TICKET`; `EXPIRED`, never sent |
-| B11 | `myWebRequest` before / after the scan / after the call; `since` = the current version | no number / number + place in line / + counter; `{changed: false}` |
-| B12 | `webRequestQrReissue` | a new token; the old one answers `404` everywhere |
+| B10 | `ticketEscpos` decoded | the number, time, branch and the request QR; nothing else from the request (no amount, no name) |
+| B11 | `myWebRequest` before / after the scan / after the call; `since` = the current version | no number / number + place in line / called; `{changed: false}` |
+| B12 | `webRequestQrReissue` | a new token; the old one answers `404` everywhere, including `copyByEmail` and old links |
 | B13 | desk `findByToken` | as B8's rule; the request id for this branch |
-| B14 | `otp/verify` with `register`: known / new phone / phone on a desk customer without a user / with a user | `200` / `200 registered` / `200` joined (Q1) / `409 phoneInUse` |
-| B15 | `otp/verify` without `register`, unknown phone | `401 notRegistered` |
+| B14 | `otp/verify` with `register`, SMS or e-mail: known / new / on a desk customer without a user / with a user | `200` / `200 registered` with a verified PHONE or EMAIL identity / `200` joined (Q1) / `409 phoneInUse` or `409 emailInUse` |
+| B15 | `otp/verify` without `register`, unknown phone or e-mail | `401 notRegistered` |
 | B16 | desk save, passport customer ≠ the request's member | saved on the passport's customer; one `KIOSK_CUSTOMER_DIFFERS` audit row |
-| B17 | `queue-display` unchanged / changed | `{changed: false}` / called numbers + labels; no name, phone, amount or teller |
+| B17 | `queue-display` unchanged / changed | `{changed: false}` / called numbers; no name, phone, amount, teller or counter until Q8 |
 | B18 | `settings` / `configureSettings` out of range | the row or defaults / `400 validationFailed` naming the field |
-| B19 | `webRequestCreate`, no session, a valid tablet credential | a `QUOTED` request with `customer_id` NULL and the tablet's id; the QR; the tablet's earlier unscanned request cancelled |
-| B20 | `webRequestCreate`, no session, a revoked or other-branch tablet credential | `401 tabletRequired` |
-| B21 | a tablet request unscanned for 11 min | purged (600 s); a phone request kept until 60 min |
-| B22 | desk save of a request with `customer_id` NULL | the passport's customer is written on the request, its quote and its ticket in the save's transaction |
-| B23 | `/api/kiosk confirm` without `QueueOperate` (after Q12) | `403`; the queue machine's call answers as today |
-| B24 | desk save of a tablet request (`customer_id` NULL), passport **skipped** | saved as today on the placeholder; the request, its quote and its ticket keep `customer_id` NULL; no audit row |
-| B25 | desk save of a phone request (member B), passport **skipped** | saved as today; the request keeps B; no `KIOSK_CUSTOMER_DIFFERS` row |
-| B26 | a request opened from the QR or issued by the queue machine, desk save with the skip | accepted exactly as a save with no request: no new refusal, no `customer_id`-required rule |
+| B19 | `copyByEmail` for the member's own booking / web request with the current QR, member has a verified e-mail | one Notify e-mail call, `channel: "email"`, to that address, with the details, the QR PNG and a link; `{sent: true}` |
+| B20 | `copyByEmail` twice with the same QR | the same `idempotency_key`; `{sent: true, again: true}`; Notify sends once |
+| B21 | `copyByEmail`: another member's id / unknown id / a reissued-away QR | `404 notFound`, one answer |
+| B22 | `copyByEmail`, the member has no verified, ACTIVE e-mail | `409 noVerifiedEmail`; nothing sent |
+| B23 | `copyByEmail` with `NOTIFY_*` unset; Notify answers 5xx | `503 emailUnavailable`; nothing stored either way |
+| B24 | `copyLinkView` with a good link 23 h old | the details + live status; no phone, passport or customer number |
+| B25 | `copyLinkView`: 25 h old / one changed character / the QR reissued since | `410 linkExpired`, one answer |
+| B26 | a request opened from the QR or issued by the queue machine, desk save with the skip | accepted exactly as a save with no request: no new refusal, no `customer_id`-required rule; the member kept; no audit row |
+| B27 | `/api/kiosk confirm` without `QueueOperate` (after Q12) | `403`; the queue machine's call answers as today |
 
 ### 4.5 Rules the tests pin first (up-front, `class:logic`)
 
 - B1: today's kiosk HTTP tests unchanged and green (the core moved no rule).
 - B3–B8 and B12–B13 on the core with a real Postgres. A web submit never issues a ticket, and the scan issues exactly
   one. The token is the only key, and a wrong one cannot tell "never existed" from "another branch".
-- B5 on `is_purgeable` (both windows). B10 on the agent repository. B11 on the view and its poll seam.
-- B14–B15 on `CustomerOtpSignIn` with a fake `IdentityClient`, asserting the flag sent. `/api/app/register` answers
-  exactly as before.
+- B5 on `is_purgeable` (both windows). B10 on `TicketPrintJob`. B11 on the view and its poll seam.
+- B14–B15 on `CustomerOtpSignIn` with a fake `IdentityClient`, asserting the flag and channel sent. `/api/app/register`
+  answers exactly as before.
 - B16 on the save hook; B17 with a guard that the view's JSON has no field outside D10's list; B18.
-- `TicketPrintJob`: the slip carries the number and the request QR, and nothing else from the request.
-- B19–B23 on the web source, the tablet repository and the save hook.
-- **B24–B26 up front, through the save with the desk's real skip values** (`WALKIN`, `XXX`, the placeholder image): a
-  tablet request stays without a customer, a phone request keeps its member, no audit row, and the save answers as a
-  save with no request. These tests fail if anyone adds a passport or `customer_id` requirement to the request path.
-- Guard: only `customer.rs` issues `IssueSource::Kiosk`.
+- **B19–B23 on `CopyByEmailService` with a fake `EmailSender`**, for **both** subjects through the same test table, so a
+  rule that holds for one and not the other fails. They assert the recipient is the stored identity (never a field of
+  the command), the idempotency key, and that no table gains a row holding the QR.
+- **B24–B25 on `CopyLink`** (sign → verify round trip; each field changed by one character; the clock at 23 h and 25 h)
+  and on `copyLinkView` with a real Postgres for the reissue case.
+- **B26 up front, through the save with the desk's real skip values** (`WALKIN`, `XXX`, the placeholder image). It fails
+  if anyone adds a passport or `customer_id` requirement to the request path.
+- Guard: only `customer.rs` issues `IssueSource::Kiosk`. Guard: `NotifyEmailSender`'s JSON matches Notify's
+  `CreateNotificationRequest` field names (`recipient.address`, `body`, `html_body`, `idempotency_key`).
 
-### 4.6 Data (one migration)
+### 4.6 Data
 
-- `kiosk_requests.customer_id text NULL` (no FK, as `queue_tickets.customer_id`). **Owner-approved** (553782).
-- `kiosk_settings (branch_id, result_seconds, updated_by, updated_at, version)`. Covered by the §3 approval.
-- `device_jobs.kind` CHECK + `PRINT_QUEUE_TICKET`, and a partial index for queued ticket jobs (D9). **Q7.**
-- `queue_counters.label` (D10). **Q8.**
-- `branch_tablets (id, branch_id, token_hash UNIQUE, paired_by, paired_at, revoked_at, revoked_by)` and
-  `kiosk_requests.tablet_id uuid NULL` (D17). **Q11.**
-- No backfill. Renumbered with `scripts/migration-slot.sh next` right before `pr_open`.
+**Migrations: only these two** (553782's order, owner-approved):
+- `kiosk_requests.customer_id text NULL` (no FK, as `queue_tickets.customer_id`).
+- `kiosk_settings (branch_id, result_seconds, updated_by, updated_at, version)` (D14). Covered by the §3 approval.
 
-### 4.7 Open owner questions (batched by claude/e92db6)
+Renumbered with `scripts/migration-slot.sh next` right before `pr_open`. No backfill.
 
-- **Q7 (D9), the open design point: where the ticket prints.**
-  - **A.** The counter POS80 through the branch's existing agent. Server-rendered ESC/POS; works from the Flutter and
-    the web build. Needs one CHECK change on `device_jobs.kind` and no second agent.
-  - **B.** A printer attached to the queue machine (USB, Bluetooth or LAN), written by the app itself. No server
-    migration, but the Flutter **native** build only (a browser cannot open a raw printer socket). It needs a second
-    printer per machine and an ESC/POS writer in Dart beside `pos-printer` (two renderers).
-  - **Proposed: A**, because the machine is staff-operated at the counter, where the POS80 already is, and one renderer
-    serves every build.
-- **Q8 (D10).** Approve `queue_counters.label`, so the display and the member's phone can say which counter.
-  Proposed: yes; without it both show only the number.
-- **Q10 (foreign customers).** A tourist without a Thai SIM cannot receive the SMS code.
-  - Measured: the deployed Identity signs up and in by **e-mail** OTP (`crates/auth/src/application/verify_otp.rs:593`),
-    and staging Notify has SMTP set (names only). Non-Thai delivery on our ThaiBulkSMS account is **not** measured
-    (the vendor states 200 countries).
-  - Proposed: offer e-mail OTP on the web; the binder then writes an EMAIL identity as well as PHONE (today PHONE only,
-    `customer_signup.rs:161-208`).
-  - A walk-in without a phone at all: e92db6's open assumption, entered at the desk.
-- **Q11 (D17), the abuse guard for the tablet's no-login request.** Proposed: a staff-paired branch tablet credential
-  (a hash in `branch_tablets`, revocable). Each tablet holds at most one unscanned request, which lives 10 minutes,
-  under today's quote rate keyed by tablet. The other option is a signed cookie with no table: no migration, but a
-  tablet can be cut off only by rotating the key for every tablet. Proposed: the table, because a lost tablet must be
-  revocable on its own.
+**Needs no migration:** the request token (D2, the existing `cancel_token_hash`); printing (D9, bytes in the answer);
+e-mail OTP (D11, the existing `EMAIL` identity type); the e-mail copy and its link (D21, D22, signed, nothing stored).
+
+**Dropped with the owner's answers:** `device_jobs.kind` + `PRINT_QUEUE_TICKET` (Q7 B), `branch_tablets` and
+`kiosk_requests.tablet_id` (Q11).
+
+**Sent to 553782, not in this design's data:** `queue_counters.label` (D10, Q8). It is the only further migration this
+design would want. Until it is approved, the display shows numbers only.
+
+### 4.7 Owner questions
+
+**Answered 2026-10-21 ~17:05Z** (issuecomment-6321559434): Q7 = B (D9) · Q10 = e-mail OTP (D11) · Q11 = sign in on the
+tablet (D16). Q9 no longer applies: the staff scan at the branch proves where the customer is.
+
+**Still open** (claude/e92db6 asks them in one round):
+- **Q8 (D10).** `queue_counters.label`, so the display and the phone can say which counter. It is a migration, so it goes
+  through 553782 first. Proposed: yes; without it both show only the number.
 - **Q12 (D19).** The kiosk's public `confirm` can issue a number with no staff scan. Proposed: it needs `QueueOperate`
   from now on (the queue machine keeps it; nothing is removed).
-- Q9 (board token) no longer applies: the staff scan at the branch proves where the customer is.
+
+**Settled here, not asked:** the e-mail copy goes only to a verified e-mail (D21), because a typed address would send a
+customer's amount to whoever the typo names. A phone-only member who wants the e-mail signs in by e-mail OTP once.
 
 ### 4.8 Release order
 
-1. This design merges, doc-only. **No tickets are cut before deploy 10** (owner 553782).
-2. After deploy 10, the BE tickets in four slices that share no files:
-   - (a) the request core changes + `RequestIssueService` + desk `findByToken`;
-   - (b) printing (after Q7);
-   - (c) display + settings (label after Q8);
-   - (d) the web source + sign-in (`WebRequestService`, `CustomerBinder`, `CustomerOtpSignIn`);
-   - (e) the branch tablet credential (after Q11) and the desk's customer attach (D18).
+1. This design merges, doc-only. **No tickets are cut until 553782 says so.**
+2. Then the BE tickets in slices that share no files:
+   - (a) the request core changes + `RequestIssueService` + desk `findByToken` + `TicketPrintJob` (D9);
+   - (b) display + settings (counter label only after Q8);
+   - (c) the web source + sign-in (`WebRequestService`, `CustomerBinder`, `CustomerOtpSignIn`, SMS and e-mail);
+   - (d) the e-mail copy: `EmailSender` + `NotifyEmailSender`, the `CopyByEmailService` core with `CopyLink`, then
+     `BookingCopy` and `WebRequestCopy` as two tickets that can run together.
 3. **The web path ships only after the owner's setup in §4.9** (Identity → Notify, a test code to the owner's phone, a
-   TERMS text in th/en/zh). Slices (a)–(c) need none of it.
-4. The FE half: the Flutter app becomes the staff queue machine (staff sign-in, a cookie jar for the native build, the
-   scanner), plus the web request page and the calling display page (§5).
+   TERMS text in th/en/zh). **The e-mail copy also needs xc-v3's own `NOTIFY_*`** (§4.9, step 6). Slices (a)–(b) need
+   none of it.
+4. The FE half: the Flutter native app becomes the staff queue machine (staff sign-in, a cookie jar, the scanner, and
+   writing `ticketEscpos` to its printer), plus the web request page with sign-out on เสร็จ for the tablet, the
+   calling display page, the "e-mail it to me" button and the `/c` link page (§5).
 5. Deploy is a separate owner order.
 
 ### 4.9 Owner setup for the web path: Identity OTP → 108 Plaza Notify
@@ -364,6 +421,7 @@ tenant, so its rate limit, audit and SMS text are separate from other users of N
 | 3 | Restart and check | do-sgp1 | `systemctl restart xc-identity && systemctl is-active xc-identity && journalctl -u xc-identity -n 30 \| grep otp_delivery`. The log must say `otp_delivery="http"` |
 | 4 | Test Notify alone, to the owner's phone | do-sgp1 | `KEY=$(grep '^AUTH_OTP_HTTP_API_KEY=' /etc/xc-identity/env \| cut -d= -f2-)`, then `curl -s -w ' %{http_code}\n' -X POST https://notify.staging.108plaza.net/api/v1/otp -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"channel":"sms","to":"+66XXXXXXXXX","code":"123456","purpose":"login_phone_otp"}'`. Expect `202` and an SMS with `123456` |
 | 5 | Test the whole path, the way the kiosk will call it | anywhere | `curl -s -X POST https://xc-v3.spacing.cloud/api/auth/otp/request -H 'Origin: https://xc-v3.spacing.cloud' -H 'X-Xchange-Request: 1' -H 'Content-Type: application/json' -d '{"destination":"+66XXXXXXXXX","channel":"sms"}'`. Expect `200 {challengeId, expiresAt}` and a real code on the phone. Both headers are required (`same_origin`, `api/src/presentation/extractors/origin.rs:33-55`) |
+| 6 | **For the e-mail copy only (D21):** give xc-v3 its own Notify client settings. Measured by claude/553782 ~07:25Z (names only): neither is in `/etc/xc-v3/env` or `/etc/xc-v3/*.env` | do-sgp1, `/etc/xc-v3/env` | `NOTIFY_BASE_URL=https://notify.staging.108plaza.net` and `NOTIFY_API_KEY=<the step-1 key, or a second key of the same tenant>`, then restart xc-v3. Without them the copy answers `503 emailUnavailable` and the button stays hidden; nothing else changes |
 
 - 🔴 **Step 2 is all-or-nothing.** With `http` mode and a missing endpoint or key, Identity **refuses to boot**
   (`crates/identity-api/src/main.rs:381-394` at `681bea2`), and then **every** sign-in fails, staff included. If step 3
@@ -373,6 +431,8 @@ tenant, so its rate limit, audit and SMS text are separate from other users of N
   to the built-in SMS text (`otp.rs`, the 2026-08-12 fix), so a template is not the cause.
 - **Step 4 `401`** ⇒ wrong or inactive key. Rotate it with `POST /api/v1/admin/tenants/{id}/rotate-key`.
 - **Step 5 `503 identityUnavailable`** ⇒ step 3 failed, or xc-v3 lost its Identity drop-in (`HOST-do-sgp1.md` §2).
+- **E-mail OTP (D11) and the e-mail copy** go out through Notify's e-mail channel. Staging Notify has SMTP settings
+  (names only, measured earlier today); a real e-mail to the owner's address is the check, as step 4 is for SMS.
 - **Real production** (when the owner says so) gets its own tenant on `prod/notify`, which needs a public name like the
   staging one. No such name was found on Dell's nginx (only `notify.staging.108plaza.net` points at Notify).
 
