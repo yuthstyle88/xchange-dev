@@ -361,9 +361,14 @@ export async function smoke(page: Page, spec: ScreenSpec): Promise<void> {
 /** Ten of the first THB note at open and at close, so the shift balances. */
 export const SHIFT_QTY = '10';
 
-/** Waits for one POST whose path matches while `act` runs; returns `ok`, `<status> <body>` and the raw body. */
-export async function posted(page: Page, path: RegExp, act: () => Promise<void>): Promise<{ ok: boolean; text: string; body: string }> {
-  const res = page.waitForResponse((r) => r.request().method() === 'POST' && path.test(new URL(r.url()).pathname), { timeout: 15_000 });
+/** Waits for one response of `method` (default POST) whose path matches while `act` runs; returns `ok`, `<status> <body>` and the raw body. */
+export async function posted(
+  page: Page,
+  path: RegExp,
+  act: () => Promise<void>,
+  method: string = 'POST',
+): Promise<{ ok: boolean; text: string; body: string }> {
+  const res = page.waitForResponse((r) => r.request().method() === method && path.test(new URL(r.url()).pathname), { timeout: 15_000 });
   await act();
   const r = await res;
   const body = await r.text().catch(() => '');

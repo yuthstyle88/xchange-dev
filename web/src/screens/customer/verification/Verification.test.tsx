@@ -365,8 +365,12 @@ describe('VF-10 (#1401) Customer Verification Screen C10', () => {
     });
 
     it('blocks access when caller lacks CustomerSelf permission (gated by can() / needs)', async () => {
+      // Restated for #4301 by the ticket author claude/studio-claude-4: the server, not `my_profile`, refuses a caller
+      // with no customer id (my_verification.rs:237-240, `403 outOfScope`). The assertion is unchanged.
       setupMockFetch({
         profileData: { displayName: 'Staff User', permissions: ['Teller', 'SignedIn'] },
+        viewStatus: 403,
+        viewErrorCode: 'outOfScope',
       });
 
       dispose = mount(host);

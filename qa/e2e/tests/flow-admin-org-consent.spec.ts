@@ -167,6 +167,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     try {
       for (const lang of ['th', 'en'] as const) {
         await withLang(page, lang);
+        await page.reload();
         await openBranchesAsAdmin(page);
 
         // Case 1: whitespace-only timezone (`#branch-timezone`, `BranchesScreen.tsx:185-189, 309`).
@@ -228,6 +229,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     } finally {
       try {
         await withLang(page, 'th');
+        await page.reload();
         // Reload so the check reads what the server holds, not the edited form.
         await openBranchesAsAdmin(page);
         const check = await readBranchForm(page).catch(() => null);
@@ -283,6 +285,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     for (const lang of ['th', 'en'] as const) {
       await withLang(page, lang);
       await page.goto(`/?branch=${encodeURIComponent(users.branch)}#consent`);
+      await page.reload();
       await expect(screen).toBeVisible({ timeout: 20_000 });
       await expect(publishForm).toBeVisible({ timeout: 15_000 });
       await expect(screen.locator('.retention-section')).toBeVisible({ timeout: 15_000 });
@@ -368,11 +371,37 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     await expect(page.locator('h2.title')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('.admin-consent-screen')).toHaveCount(0);
 
-    // Direct API command calls as `teller` are refused with 403: the policy check runs before the input is parsed
+    // Direct API command calls as `teller` are refused by policy (400 roleNotAllowed/roleNotAllowedHere or
+    // 403 outOfScope, api/src/presentation/http/v3/error.rs:80-115) before the input is parsed
     // (`api/src/presentation/http/v3/command.rs:367` before `:383`). Every payload is also invalid, so a broken
-    // permission check gets a 400 and still writes nothing: no branch change, no published text, no armed purge (§9.2).
+    // permission check still writes nothing: no branch change, no published text, no armed purge (§9.2).
+    const sameOriginHeaders = {
+      'x-xchange-request': '1',
+      origin: new URL(users.baseUrl).origin,
+    };
+    const assertTellerRoleRefused = async (
+      res: { status(): number; json(): Promise<unknown> },
+      label: string,
+    ): Promise<void> => {
+      const status = res.status();
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: { code?: string };
+        code?: string;
+      };
+      const code = body.error?.code ?? body.code ?? '';
+      expect([400, 403], `${label}: status ${status} (code=${code})`).toContain(status);
+      if (status === 400) {
+        expect(['roleNotAllowed', 'roleNotAllowedHere'], `${label}: 400 error code`).toContain(code);
+      } else {
+        expect(code, `${label}: 403 error code`).toBe('outOfScope');
+      }
+    };
+
     const branchRes = await page.request.put('/api/branches/profile', {
-      headers: { 'idempotency-key': `qa-r9-7-branch-${Date.now()}` },
+      headers: {
+        'idempotency-key': `qa-r9-7-branch-${Date.now()}`,
+        ...sameOriginHeaders,
+      },
       data: {
         branch: users.branch,
         code: users.branch,
@@ -382,10 +411,13 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         bookingEnabled: false,
       },
     });
-    expect(branchRes.status(), 'teller PUT /api/branches/profile refused with 403').toBe(403);
+    await assertTellerRoleRefused(branchRes, 'teller PUT /api/branches/profile');
 
     const consentRes = await page.request.post('/api/consent-texts', {
-      headers: { 'idempotency-key': `qa-r9-7-consent-${Date.now()}` },
+      headers: {
+        'idempotency-key': `qa-r9-7-consent-${Date.now()}`,
+        ...sameOriginHeaders,
+      },
       data: {
         branch: users.branch,
         purpose: 'TERMS',
@@ -393,16 +425,19 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         body: '',
       },
     });
-    expect(consentRes.status(), 'teller POST /api/consent-texts refused with 403').toBe(403);
+    await assertTellerRoleRefused(consentRes, 'teller POST /api/consent-texts');
 
     const retentionRes = await page.request.put('/api/retention-policies/IDENTITY_VALUE', {
-      headers: { 'idempotency-key': `qa-r9-7-retention-${Date.now()}` },
+      headers: {
+        'idempotency-key': `qa-r9-7-retention-${Date.now()}`,
+        ...sameOriginHeaders,
+      },
       data: {
         branch: users.branch,
         dataType: 'IDENTITY_VALUE',
         periodDays: -1,
       },
     });
-    expect(retentionRes.status(), 'teller PUT /api/retention-policies/IDENTITY_VALUE refused with 403').toBe(403);
+    await assertTellerRoleRefused(retentionRes, 'teller PUT /api/retention-policies/IDENTITY_VALUE');
   });
 });
