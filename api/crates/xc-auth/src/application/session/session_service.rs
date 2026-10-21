@@ -918,8 +918,26 @@ impl SessionService {
         register_if_absent: bool,
         client_ip: Option<&str>,
     ) -> Result<Option<VerifiedOtp>, SessionError> {
-        let _ = (challenge_id, code, register_if_absent, client_ip);
-        todo!("KWQ-C2-2: otp_verify_registering + verifier.verify")
+        let identity = self.identity.as_ref().ok_or_else(|| {
+            IdentityError::unavailable("/api/auth/otp/verify", 503, "not_configured")
+        })?;
+        let resp = identity
+            .otp_verify_registering(challenge_id, code, register_if_absent, client_ip)
+            .await?;
+        let Some(login) = resp.login else {
+            return Ok(None);
+        };
+        let verifier = self.verifier.as_ref().ok_or_else(|| {
+            IdentityError::unavailable("/auth/login", 503, "verifier_not_configured")
+        })?;
+        let verified = verifier.verify(&login.access_token).await.map_err(|_| {
+            IdentityError::unavailable("/auth/login", 503, "token_verification_failed")
+        })?;
+        Ok(Some(VerifiedOtp {
+            login,
+            verified,
+            registered: resp.registered == Some(true),
+        }))
     }
 
     pub async fn otp_verify(
