@@ -1,23 +1,22 @@
-import { createSignal, onMount, Show, type JSX } from 'solid-js';
+import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { th, en, zh } from './i18n';
 import './copy-link.css';
 
-export interface CopyDetails {
-  subject?: string;
-  status?: string;
-  displayNumber?: string;
-  number?: string;
-  branch?: string;
-  branchName?: string;
-  currency?: string;
-  amount?: number | string;
-  rate?: number | string;
-  date?: string;
-  slot?: string;
-  expiresAt?: string;
-  [key: string]: unknown;
+export interface CopyRow {
+  field: string;
+  value: string;
+}
+
+export interface CopyView {
+  subject: string;
+  id: string;
+  branch: string;
+  rows: CopyRow[];
+  status: string;
+  qr: string;
+  expiresAt: string;
 }
 
 export interface CopyLinkProps {
@@ -48,7 +47,7 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
   const [loading, setLoading] = createSignal(true);
   const [expired, setExpired] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [data, setData] = createSignal<CopyDetails | null>(null);
+  const [data, setData] = createSignal<CopyView | null>(null);
 
   const getFragment = (): string => {
     if (props.fragment !== undefined) return props.fragment.replace(/^#/, '');
@@ -79,6 +78,27 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
   };
 
   const qrValue = () => extractQrFromFragment(getFragment(), getOrigin());
+
+  const fieldLabel = (fieldName: string): string => {
+    switch (fieldName) {
+      case 'bookingNo':
+        return t('bookingNo');
+      case 'date':
+        return t('date');
+      case 'slot':
+        return t('slot');
+      case 'currency':
+        return t('currency');
+      case 'amount':
+        return t('amount');
+      case 'rate':
+        return t('rate');
+      case 'expiresAt':
+        return t('expiresAt');
+      default:
+        return fieldName;
+    }
+  };
 
   const statusLabel = (st?: string): string => {
     if (!st) return '';
@@ -119,7 +139,7 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ fragment: frag }),
+        body: JSON.stringify({ link: frag }),
       });
 
       if (res.status === 410) {
@@ -129,29 +149,13 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
       }
 
       if (!res.ok) {
-        let body: unknown;
-        try {
-          body = await res.json();
-        } catch {
-          // ignore
-        }
-        const b = body as { error?: string | { code?: string } } | null;
-        if (b && (b.error === 'linkExpired' || (typeof b.error === 'object' && b.error?.code === 'linkExpired'))) {
-          setExpired(true);
-        } else {
-          setError('loadFailed');
-        }
+        setError('loadFailed');
         setLoading(false);
         return;
       }
 
-      const json = await res.json();
-      const details = (json.details ?? json.data ?? json) as CopyDetails;
-      if (details.status === 'EXPIRED' || (json as { error?: string }).error === 'linkExpired') {
-        setExpired(true);
-      } else {
-        setData(details);
-      }
+      const json = (await res.json()) as CopyView;
+      setData(json);
     } catch {
       setError('loadFailed');
     } finally {
@@ -186,46 +190,18 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
               </Show>
 
               <div class="xc-copy-link-details">
-                <Show when={d().displayNumber || d().number}>
-                  <div class="xc-copy-link-row">
-                    <span class="xc-copy-link-label">{t('number')}</span>
-                    <span class="xc-copy-link-value">{d().displayNumber ?? d().number}</span>
-                  </div>
-                </Show>
-
-                <Show when={d().branchName || d().branch}>
-                  <div class="xc-copy-link-row">
-                    <span class="xc-copy-link-label">{t('branch')}</span>
-                    <span class="xc-copy-link-value">{d().branchName ?? d().branch}</span>
-                  </div>
-                </Show>
-
-                <Show when={d().currency || d().amount !== undefined}>
-                  <div class="xc-copy-link-row">
-                    <span class="xc-copy-link-label">{t('amount')}</span>
-                    <span class="xc-copy-link-value">
-                      {d().currency ? `${d().currency} ` : ''}
-                      {d().amount}
-                    </span>
-                  </div>
-                </Show>
-
-                <Show when={d().rate !== undefined}>
-                  <div class="xc-copy-link-row">
-                    <span class="xc-copy-link-label">{t('rate')}</span>
-                    <span class="xc-copy-link-value">{d().rate}</span>
-                  </div>
-                </Show>
-
-                <Show when={d().date || d().slot}>
-                  <div class="xc-copy-link-row">
-                    <span class="xc-copy-link-label">{t('date')}</span>
-                    <span class="xc-copy-link-value">
-                      {d().date}
-                      {d().slot ? ` (${d().slot})` : ''}
-                    </span>
-                  </div>
-                </Show>
+                <div class="xc-copy-link-row">
+                  <span class="xc-copy-link-label">{t('branch')}</span>
+                  <span class="xc-copy-link-value">{d().branch}</span>
+                </div>
+                <For each={d().rows}>
+                  {(row) => (
+                    <div class="xc-copy-link-row">
+                      <span class="xc-copy-link-label">{fieldLabel(row.field)}</span>
+                      <span class="xc-copy-link-value">{row.value}</span>
+                    </div>
+                  )}
+                </For>
               </div>
 
               <div class="xc-copy-link-code" data-copy-qr>
