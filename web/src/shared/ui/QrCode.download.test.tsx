@@ -18,6 +18,16 @@ describe('QrCode download button (#4327)', () => {
 
   beforeEach(() => {
     document.body.innerHTML = '';
+    vi.stubGlobal(
+      'Image',
+      class {
+        onload: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        set src(_v: string) {
+          this.onload?.();
+        }
+      },
+    );
   });
 
   afterEach(() => {
@@ -26,6 +36,7 @@ describe('QrCode download button (#4327)', () => {
     document.body.innerHTML = '';
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -71,6 +82,42 @@ describe('QrCode download button (#4327)', () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(clickedDownload).toBe('booking-B261021-0001.png');
     expect(clickedHref).toBe('blob:http://xc.test/qr-png');
+  });
+
+  it('calls neither toBlob nor HTMLAnchorElement.click when Image fails to load (onerror)', () => {
+    vi.stubGlobal(
+      'Image',
+      class {
+        onload: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        set src(_v: string) {
+          this.onerror?.();
+        }
+      },
+    );
+
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      fillStyle: '',
+    } as unknown as CanvasRenderingContext2D);
+    const toBlobSpy = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob');
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
+
+    const el = mount(() => (
+      <QrCode
+        value="qr-token-123"
+        label="Check-in QR"
+        downloadName="booking-B261021-0001"
+        downloadLabel="Download QR"
+      />
+    ));
+
+    const btn = el.querySelector<HTMLButtonElement>('button')!;
+    btn.click();
+
+    expect(toBlobSpy).not.toHaveBeenCalled();
+    expect(clickSpy).not.toHaveBeenCalled();
   });
 
   it('renders no button when downloadName is omitted', () => {

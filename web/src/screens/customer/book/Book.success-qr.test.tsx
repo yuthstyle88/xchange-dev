@@ -81,6 +81,15 @@ describe('BookScreen success QR, download & bookings link (#4327)', () => {
     document.body.innerHTML = '';
     host = document.createElement('div');
     document.body.appendChild(host);
+    vi.stubGlobal(
+      'Image',
+      class {
+        onload: (() => void) | null = null;
+        set src(_v: string) {
+          this.onload?.();
+        }
+      },
+    );
   });
 
   afterEach(() => {

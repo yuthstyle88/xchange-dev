@@ -23,14 +23,23 @@ export function QrCode(props: QrCodeProps): JSX.Element {
     const name = props.downloadName;
     if (!name) return;
     const svg = imgEl?.querySelector('svg');
-    const xml = svg ? new XMLSerializer().serializeToString(svg) : svgHtml();
+    if (!svg) return;
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute('width', '512');
+    clone.setAttribute('height', '512');
+    const xml = new XMLSerializer().serializeToString(clone);
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const save = () => {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
@@ -41,24 +50,7 @@ export function QrCode(props: QrCodeProps): JSX.Element {
         setTimeout(() => URL.revokeObjectURL?.(url), 1000);
       }, 'image/png');
     };
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect?.(0, 0, canvas.width, canvas.height);
-
-    const img = new Image();
-    const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
-    if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) {
-      img.src = svgDataUrl;
-      ctx.drawImage?.(img, 0, 0, canvas.width, canvas.height);
-      save();
-      return;
-    }
-    img.onload = () => {
-      ctx.drawImage?.(img, 0, 0, canvas.width, canvas.height);
-      save();
-    };
-    img.onerror = () => save();
-    img.src = svgDataUrl;
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
   };
 
   return (
