@@ -433,22 +433,6 @@ pub async fn call(
     idempotency_key: Option<&str>,
 ) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), room.pool.clone());
-    call_with(state, who, method, uri, body, idempotency_key).await
-}
-
-/// The same as [`call`] on a state the test prepared (XC-PRICING PX-9: a `market_health` with a recorded attempt).
-pub fn state_of(room: &Room) -> AppState {
-    AppState::new(Arc::new(common::settings(&[])), room.pool.clone())
-}
-
-pub async fn call_with(
-    state: AppState,
-    who: &Who,
-    method: Method,
-    uri: &str,
-    body: Option<Value>,
-    idempotency_key: Option<&str>,
-) -> Answer {
     let reader: Arc<dyn SessionReader> = Arc::new(HeaderUsers);
     let app = atest::init_service(
         App::new()
