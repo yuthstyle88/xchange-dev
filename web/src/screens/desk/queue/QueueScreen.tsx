@@ -7,6 +7,7 @@ import { sharedApi } from '../../../shared/session/session';
 import type { StaffMeView } from '../../../shared/api/generated/staff_me';
 import { queueBranch, useQueueStore } from '../../../shared/queue/queue-store';
 import { screenT } from '../../../shared/i18n';
+import { wordedError } from '../../../shared/i18n/worded-error';
 import { Board } from './board/Board';
 import { CounterBar } from './counter/CounterBar';
 import { queueCommands } from './queue-commands';
@@ -25,19 +26,31 @@ export function QueueScreen(): JSX.Element {
   const api = sharedApi();
   const store = useQueueStore(queueBranch);
   const commands = queueCommands(api);
-  const [me] = createResource(async (): Promise<QueueMe> => {
+  const [me, { refetch }] = createResource(async (): Promise<QueueMe> => {
     const answer = await api.view<StaffMeView>('staff_me', {});
     return { userId: answer.data?.userId ?? '', permissions: answer.data?.permissions ?? [] };
   });
 
   return (
-    <Show when={me()} fallback={<p>{t('loadingMe')}</p>}>
-      {(m) => (
-        <div>
-          <CounterBar store={store()} me={m()} commands={commands} />
-          <Board store={store()} me={m()} commands={commands} />
-        </div>
-      )}
+    <Show
+      when={!me.error}
+      fallback={
+        <p role="alert">
+          {wordedError(me.error)}{' '}
+          <button type="button" onClick={() => refetch()}>
+            {t('retry')}
+          </button>
+        </p>
+      }
+    >
+      <Show when={me()} fallback={<p>{t('loadingMe')}</p>}>
+        {(m) => (
+          <div>
+            <CounterBar store={store()} me={m()} commands={commands} />
+            <Board store={store()} me={m()} commands={commands} />
+          </div>
+        )}
+      </Show>
     </Show>
   );
 }
