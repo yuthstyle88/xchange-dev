@@ -70,8 +70,12 @@ impl ShiftLifecycleHook for ShiftLifecycleHooks {
         teller_user_id: &'a str,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<()>> {
-        let _ = (&self.hooks, tx, branch, teller_user_id, now);
-        todo!("K1 #4136")
+        Box::pin(async move {
+            for h in &self.hooks {
+                h.on_opened(&mut *tx, branch, teller_user_id, now).await?;
+            }
+            Ok(())
+        })
     }
 
     fn on_closed<'a>(
@@ -81,8 +85,12 @@ impl ShiftLifecycleHook for ShiftLifecycleHooks {
         teller_user_id: &'a str,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<()>> {
-        let _ = (&self.hooks, tx, branch, teller_user_id, now);
-        todo!("K1 #4136")
+        Box::pin(async move {
+            for h in &self.hooks {
+                h.on_closed(&mut *tx, branch, teller_user_id, now).await?;
+            }
+            Ok(())
+        })
     }
 
     fn on_day_closed<'a>(
@@ -91,8 +99,12 @@ impl ShiftLifecycleHook for ShiftLifecycleHooks {
         branch: &'a BranchId,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<()>> {
-        let _ = (&self.hooks, tx, branch, now);
-        todo!("K1 #4136")
+        Box::pin(async move {
+            for h in &self.hooks {
+                h.on_day_closed(&mut *tx, branch, now).await?;
+            }
+            Ok(())
+        })
     }
 }
 
