@@ -423,7 +423,7 @@ async fn token_matches(db: &TestDb, id: &str, token: &str) -> bool {
 
 fn not_found(ans: &Answer) {
     assert_eq!(ans.status, StatusCode::NOT_FOUND, "{}", ans.text);
-    assert_eq!(ans.body["code"], json!("notFound"), "{}", ans.text);
+    assert_eq!(ans.body["error"]["code"], json!("notFound"), "{}", ans.text);
 }
 
 fn keys(v: &Value) -> std::collections::BTreeSet<String> {
@@ -478,8 +478,8 @@ async fn c5_a_second_open_request_is_409_already_queued_naming_the_first() {
     let (first, _) = alices_request(&db).await;
     let ans = create(&db, Some(ALICE), usd100(), &key()).await;
     assert_eq!(ans.status, StatusCode::CONFLICT, "{}", ans.text);
-    assert_eq!(ans.body["code"], json!("alreadyQueued"));
-    assert_eq!(ans.body["message"], json!(first));
+    assert_eq!(ans.body["error"]["code"], json!("alreadyQueued"));
+    assert_eq!(ans.body["error"]["message"], json!(first));
     // Bob is not blocked by Alice's request
     let bob = create(&db, Some(BOB), usd100(), &key()).await;
     assert_eq!(bob.status, StatusCode::OK, "{}", bob.text);
@@ -497,7 +497,7 @@ async fn c5_a_refused_quote_is_400_quote_refused_and_a_replay_keeps_no_token() {
     )
     .await;
     assert_eq!(bad.status, StatusCode::BAD_REQUEST, "{}", bad.text);
-    assert_eq!(bad.body["code"], json!("quoteRefused"));
+    assert_eq!(bad.body["error"]["code"], json!("quoteRefused"));
 
     let k = key();
     let first = create(&db, Some(ALICE), usd100(), &k).await;
@@ -544,7 +544,7 @@ async fn c7_the_owner_cancels_in_one_press_and_others_get_not_found() {
 
     let again = cancel(&db, ALICE, &id).await;
     assert_eq!(again.status, StatusCode::CONFLICT, "{}", again.text);
-    assert_eq!(again.body["code"], json!("notCancellable"));
+    assert_eq!(again.body["error"]["code"], json!("notCancellable"));
     db.finish().await;
 }
 
