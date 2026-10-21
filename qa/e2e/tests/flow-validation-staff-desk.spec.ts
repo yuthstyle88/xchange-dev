@@ -483,13 +483,18 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(payErr, `payment incomplete error visible (${lang}, steps/payment/step.tsx:224)`).toBeVisible({
             timeout: 10_000,
           });
-          expectWordedRefusal(await payErr.innerText(), `payment empty account (${lang})`);
+          const incompleteMsg = await payErr.innerText();
+          expectWordedRefusal(incompleteMsg, `payment empty account (${lang})`);
           await expect(accountField, 'account input stays empty').toHaveValue('');
 
           await accountField.fill(savedAccount || 'Cash');
           teller.once('dialog', (d) => d.dismiss());
           await teller.locator('form.desk-form button[type="submit"]').click();
-          await expect(payErr, `payment countNotConfirmed error visible (${lang})`).toBeVisible({ timeout: 10_000 });
+          // payment/step.tsx:105-110: a dismissed count confirm replaces `incomplete` with `countNotConfirmed`.
+          await expect(payErr, `payment countNotConfirmed replaces the incomplete error (${lang})`).not.toHaveText(
+            incompleteMsg,
+            { timeout: 10_000 },
+          );
           expectWordedRefusal(await payErr.innerText(), `payment count not confirmed (${lang})`);
           await expect(accountField, 'account input preserved after dismissed confirm').toHaveValue(
             savedAccount || 'Cash',
@@ -498,6 +503,9 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
 
         // Complete the exchange on the last open payment form so `/desk/transactions/{id}` mounts `request-reversal`.
         teller.once('dialog', (d) => d.accept());
+        // save.ts:113-118 sends …/confirm and …/complete right after create, so wait for them before the click.
+        const chained = (step: string) => posted(teller, new RegExp(`^/api/transactions/[^/]+/${step}$`), async () => {});
+        const [confirmWait, completeWait] = [chained('confirm'), chained('complete')];
         const createRes = await posted(teller, /^\/api\/transactions$/, () =>
           teller.locator('form.desk-form button[type="submit"]').click(),
         );
@@ -505,18 +513,10 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         const txId = String((JSON.parse(createRes.body) as TransactionAnswer).id ?? '');
         expect(txId, 'created transaction id').not.toBe('');
 
-        const confirmRes = await posted(
-          teller,
-          new RegExp(`^/api/transactions/${encodeURIComponent(txId)}/confirm$`),
-          async () => {},
-        );
+        const confirmRes = await confirmWait;
         expect(confirmRes.ok, `POST /api/transactions/${txId}/confirm`).toBeTruthy();
 
-        const completeRes = await posted(
-          teller,
-          new RegExp(`^/api/transactions/${encodeURIComponent(txId)}/complete$`),
-          async () => {},
-        );
+        const completeRes = await completeWait;
         expect(completeRes.ok, `POST /api/transactions/${txId}/complete`).toBeTruthy();
 
         // ── 2. Refunds: `reversalRequest` (`/desk/transactions/{id}`) and `reversalPost` (`/desk?branch=MAIN`) ──
