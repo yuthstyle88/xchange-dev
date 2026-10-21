@@ -168,7 +168,7 @@ impl CustomerBinder {
         let mut ordered: Vec<&ProvenContact> = proven.iter().collect();
         ordered.sort_by_key(|c| matches!(c, ProvenContact::Email(_)));
 
-        let mut joined_customer: Option<String> = None;
+        let mut joined_customer: Option<(String, IdentityType)> = None;
         let mut pending_identities: Vec<(IdentityType, &str, [u8; 32])> = Vec::new();
 
         if let Some(ref keys) = keys {
@@ -195,8 +195,8 @@ impl CustomerBinder {
                 match existing {
                     Some((_, true)) => return Err(in_use(id_type)),
                     Some((cid, false)) => match &joined_customer {
-                        None => joined_customer = Some(cid),
-                        Some(joined) if joined == &cid => {}
+                        None => joined_customer = Some((cid, id_type)),
+                        Some((joined, _)) if joined == &cid => {}
                         Some(_) => return Err(in_use(id_type)),
                     },
                     None => pending_identities.push((id_type, value, hash)),
@@ -204,8 +204,8 @@ impl CustomerBinder {
             }
         }
 
-        let (customer_id, joined) = if let Some(customer_id) = joined_customer {
-            sqlx::query(
+        let (customer_id, joined) = if let Some((customer_id, joined_by)) = joined_customer {
+            let claimed = sqlx::query(
                 "UPDATE customers SET user_id = $1::uuid \
                  WHERE id = $2 AND organization_id = $3::uuid AND user_id IS NULL",
             )
@@ -215,6 +215,10 @@ impl CustomerBinder {
             .execute(&mut **tx)
             .await
             .map_err(internal)?;
+            // Another sign-in joined this desk customer after our read: it is in use now.
+            if claimed.rows_affected() != 1 {
+                return Err(in_use(joined_by));
+            }
 
             ConsentService::record_in(
                 tx,
