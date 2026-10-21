@@ -3,6 +3,7 @@
 //! remains usable once Identity recovers. Definite refusals (e.g. 401 `refresh_token_reuse`,
 //! `invalid_refresh_token`) still delete the `user_sessions` row and clear the cookie.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

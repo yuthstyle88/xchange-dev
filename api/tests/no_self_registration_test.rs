@@ -7,6 +7,7 @@
 //! Uses the Identity sign-in harness (`identity_signin_common`): a real database schema and a
 //! fake Identity that records every call. Needs `TEST_DATABASE_URL`; nothing skips.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

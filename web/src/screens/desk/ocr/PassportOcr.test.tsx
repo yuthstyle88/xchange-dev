@@ -300,4 +300,19 @@ describe('PassportOcr', () => {
     expect(postBytes).not.toHaveBeenCalled();
     expect(getStatusText()).toBe('');
   });
+
+  // Row 11: imageTooLarge failure -> imageTooLarge text (mutation: imageTooLarge status dropped or mapped to failed)
+  it('row 11: maps imageTooLarge failure to imageTooLarge text', async () => {
+    const { store, postBytes, setPassport } = createTestStore();
+    postBytes.mockRejectedValueOnce(
+      new ApiError({ code: 'imageTooLarge', status: 413, message: 'image too large' }),
+    );
+    mount(store);
+
+    setPassport(JPEG_FILE);
+
+    await vi.waitFor(() => {
+      expect(getStatusText()).toBe(texts.th.imageTooLarge);
+    });
+  });
 });

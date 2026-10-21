@@ -97,8 +97,10 @@ use xc_rate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use xchange::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskPorts};
 use xchange::presentation::http::kiosk::KioskIds;
 
-use crate::compat_common::{Fixture, IdMap, Person, Step, fixtures_dir};
-use crate::rpc_common::{
+// `kiosk_app!` names `rpc_common::App`, and it is expanded here as well as in test files.
+use super::compat_common::{Fixture, IdMap, Person, Step, fixtures_dir};
+use super::rpc_common;
+use super::rpc_common::{
     Answer, App, BANK_DOWN, Call, Cookies, Desk, MAIN, Replay, Tally, sign_in,
 };
 
@@ -323,7 +325,7 @@ pub struct Hands {
 
 /// The server's whole route table with the test's clock, bank, ids and audit
 /// log registered after it.
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! kiosk_app {
     ($desk:expr, $hands:expr) => {{
         let state = $desk.state();
@@ -335,7 +337,7 @@ macro_rules! kiosk_app {
             $hands.ids.clone();
         let audit: std::sync::Arc<dyn xchange::infrastructure::kiosk::kiosk_ports::KioskAuditLog> =
             $hands.audit.clone();
-        $crate::rpc_common::App::new(
+        rpc_common::App::new(
             actix_web::test::init_service(
                 actix_web::App::new()
                     .configure(move |cfg| xchange::bootstrap::configure(cfg, state))
@@ -542,7 +544,7 @@ impl<'f> KioskReplay<'f> {
             role: KioskRole::Owner,
         };
         let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
-        let now = crate::snapshot_common::time(&step.at);
+        let now = super::snapshot_common::time(&step.at);
         match step.action.as_deref() {
             Some("accept") => {
                 // Blueprint: the owner cannot operate the queue (C8). The behind-the-routes accept starts the ticket as the branch's queue operator, as a teller's accept would.
@@ -618,7 +620,7 @@ impl<'f> KioskReplay<'f> {
         self.replay.tally.applied_behind.push(step.n);
     }
 
-    /// QU-6 #1354: an `accept` v2 let through and the queue refuses ([`crate::rpc_common::Rule::QueueRefuses`]),
+    /// QU-6 #1354: an `accept` v2 let through and the queue refuses ([`super::rpc_common::Rule::QueueRefuses`]),
     /// applied behind the routes through the kiosk service as the route runs it, **by the step's own
     /// sender** (the route's `KioskActor::Staff { username: <employee id>, role }`), so the `working`
     /// lines of the later steps name the claimant v2 recorded. Its audit lines go to the test's log as the
@@ -660,7 +662,7 @@ impl<'f> KioskReplay<'f> {
             Arc::new(PgKioskPorts::new(pool, audit, source)),
         );
         let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
-        let now = crate::snapshot_common::time(&step.at);
+        let now = super::snapshot_common::time(&step.at);
         assert_eq!(
             step.action.as_deref(),
             Some("accept"),
@@ -740,7 +742,7 @@ impl<'f> KioskReplay<'f> {
             self.replay.desk.db.branch_tx(),
             Arc::new(PgKioskPorts::new(pool, audit, source)),
         );
-        let now = crate::snapshot_common::time(&step.at);
+        let now = super::snapshot_common::time(&step.at);
         service
             .configure(&branch, &actor, cmd, now)
             .await
@@ -755,7 +757,7 @@ impl<'f> KioskReplay<'f> {
         self
     }
 
-    pub fn rule(mut self, n: usize, rule: crate::rpc_common::Rule) -> Self {
+    pub fn rule(mut self, n: usize, rule: super::rpc_common::Rule) -> Self {
         self.replay = self.replay.rule(n, rule);
         self
     }
@@ -790,14 +792,14 @@ impl<'f> KioskReplay<'f> {
         let action = step.action.as_deref();
         let accepted = step.status == Some(200);
         let rule = self.replay.rule_of(step);
-        let replayed = matches!(rule, crate::rpc_common::Rule::Replay);
+        let replayed = matches!(rule, super::rpc_common::Rule::Replay);
         // OR-7.m S-D5 (#3734, ruling on #3730): a staff employee's `employee.name` is `users.name`
         // (`employee.username`), where v2 recorded a separate display name.
         let one_name = Self::is_kiosk(step) && accepted && replayed && is_one_name_step(step);
         if one_name {
             self.replay.rules.insert(
                 step.n,
-                crate::rpc_common::Rule::RecordedWith(one_name_employee),
+                super::rpc_common::Rule::RecordedWith(one_name_employee),
             );
         }
 
@@ -850,7 +852,7 @@ impl<'f> KioskReplay<'f> {
         if Self::is_kiosk(step)
             && accepted
             && action == Some("configure")
-            && matches!(rule, crate::rpc_common::Rule::Differs { .. })
+            && matches!(rule, super::rpc_common::Rule::Differs { .. })
         {
             self.configure_differs_behind(step).await;
         }
@@ -859,7 +861,7 @@ impl<'f> KioskReplay<'f> {
             && accepted
             && matches!(
                 self.replay.rules.get(&step.n),
-                Some(crate::rpc_common::Rule::QueueRefuses(_))
+                Some(super::rpc_common::Rule::QueueRefuses(_))
             )
         {
             self.queue_refused_behind(step).await;
@@ -960,7 +962,7 @@ impl<'f> KioskReplay<'f> {
         for line in &written {
             assert_eq!(
                 line.at,
-                Some(crate::snapshot_common::time(&step.at)),
+                Some(super::snapshot_common::time(&step.at)),
                 "{label}: an audit line carries the instant of its request"
             );
         }
@@ -1131,7 +1133,7 @@ async fn publish_lines(
     let published = rates_re4_common::publish(pool, branch, &lines).await;
     if let Some(at) = saved_at {
         sqlx::query("UPDATE rate_publications SET published_at = $1 WHERE id = $2::uuid")
-            .bind(crate::snapshot_common::time(at))
+            .bind(super::snapshot_common::time(at))
             .bind(&published.id)
             .execute(pool)
             .await

@@ -1,5 +1,6 @@
 //! RBAC F11b (#3206) tests for `POST /api/auth/password`.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;
@@ -68,12 +69,19 @@ async fn right_current_password_and_valid_new_one_clears_cookies_and_ends_sessio
     assert_eq!(reply.status, 200, "{}", reply.text);
     assert_eq!(reply.json(), json!({ "saved": true }));
 
-    for name in [SESSION_COOKIE, OWNER_COOKIE, STAFF_COOKIE] {
-        let c = reply
-            .cookies
-            .get(name)
-            .unwrap_or_else(|| panic!("{name} is cleared: {:?}", reply.cookies));
-        assert_eq!((c.value.as_str(), c.max_age), ("", 0), "{name}");
+    // OR-7.m w2 F-b (#1027 issuecomment-6305469252): only the session cookie is cleared; the v2
+    // cookies `__Host-xc_owner` / `__Host-xc_staff` are no longer sent at all.
+    let c = reply
+        .cookies
+        .get(SESSION_COOKIE)
+        .unwrap_or_else(|| panic!("{SESSION_COOKIE} is cleared: {:?}", reply.cookies));
+    assert_eq!((c.value.as_str(), c.max_age), ("", 0), "{SESSION_COOKIE}");
+    for old in [OWNER_COOKIE, STAFF_COOKIE] {
+        assert!(
+            !reply.cookies.contains_key(old),
+            "{old} is not sent: {:?}",
+            reply.cookies
+        );
     }
 
     assert_eq!(sessions_of(&desk.pool, &user).await, 0);

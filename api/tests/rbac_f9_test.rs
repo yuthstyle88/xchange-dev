@@ -3,6 +3,7 @@
 //! sets `must_change_password: true` on Identity's register request, returns `temporaryPassword`
 //! once on success, never returns it on refusal, and never writes it to the server log.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

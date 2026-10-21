@@ -17,6 +17,7 @@
 //! (`POST /api/employees {action:"create"}` stays in this hotfix; OR-7.m #1027 removes it with the employees table —
 //! lane controller's ruling on #1157, issuecomment-6101472652.)
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

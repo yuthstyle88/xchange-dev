@@ -24,7 +24,7 @@ use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
-use crate::shift_service_common::TestDb;
+use super::shift_service_common::TestDb;
 
 pub type Custody = CustodyService<PgCustodyRepository, PgShiftRepository>;
 
@@ -103,7 +103,7 @@ impl CustodyFactsPort for FakeOutside {
         _now: CustodyTime,
     ) -> BoxFuture<'a, AppResult<(ServiceWindow, i32)>> {
         // v2's hours, in Bangkok (UTC+7)
-        Box::pin(async move { Ok((crate::custody_common::v2_hours(), 7 * 60)) })
+        Box::pin(async move { Ok((super::custody_common::v2_hours(), 7 * 60)) })
     }
 
     fn has_live_rate_in<'a>(
@@ -167,7 +167,7 @@ fn iso_opt(t: Option<CustodyTime>) -> Value {
 
 /// 2026-10-06, `hh:mm` in Bangkok.
 pub fn bangkok(hhmm: &str) -> DateTime<Utc> {
-    at_millis(crate::custody_common::bangkok(hhmm))
+    at_millis(super::custody_common::bangkok(hhmm))
 }
 
 // ── the written form of a branch ────────────────────────────────────────────

@@ -68,7 +68,13 @@ export async function readPassportOnServer(
   try {
     const path = `/api/v3/compute/passport_read?branch=${encodeURIComponent(opts.branch)}`;
     return await Promise.race([
-      api.postBytes<PassportReadAnswer>(path, image, image.type || 'image/jpeg', newKey()),
+      api.postBytes<PassportReadAnswer>(
+        path,
+        image,
+        image.type || 'image/jpeg',
+        newKey(),
+        opts.signal,
+      ),
       race,
     ]);
   } catch (err) {

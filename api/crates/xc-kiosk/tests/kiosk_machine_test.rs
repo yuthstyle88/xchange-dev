@@ -1219,7 +1219,6 @@ fn every_refusal_says_v2s_sentence() {
         ),
         (E::RequestNotFound, "Request not found."),
         (E::StaffRequired, "Staff access required."),
-        (E::OwnerOrRatesRequired, "Owner or Rates access required."),
         (
             E::PassportCheckUnconfirmed,
             "The assigned employee must confirm the passport check.",
@@ -1238,7 +1237,7 @@ fn every_refusal_says_v2s_sentence() {
         (E::SaveDiffersFromQueue, "สกุลเงินและจำนวนต้องตรงกับคิว"),
         (E::SaveMethodDiffers, "ช่องทางต้องตรงกับที่ลูกค้าเลือก"),
     ];
-    assert_eq!(sentences.len(), 21);
+    assert_eq!(sentences.len(), 20);
     for (error, sentence) in sentences {
         assert_eq!(error.to_string(), sentence, "{error:?}");
     }

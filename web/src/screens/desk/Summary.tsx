@@ -19,13 +19,17 @@ const STATE_KEYS: Record<TransactionState, 'stateDraft' | 'statePending' | 'stat
 export function Summary(props: { store: DeskStore }): JSX.Element {
   const t = screenT('desk', screenI18n);
   const line = () => props.store.quote()?.lines[0];
+  const foreignLabel = () =>
+    props.store.type() === 'BUY'
+      ? t('customerSells', { currency: props.store.currency() })
+      : t('customerBuys', { currency: props.store.currency() });
   const direction = () => (props.store.type() === 'SELL' ? t('shopReceives') : t('shopPays'));
 
   return (
     <div class="desk-summary">
       <h2>{t('summary')}</h2>
       <dl>
-        <dt>{direction()}</dt>
+        <dt>{foreignLabel()}</dt>
         <dd>
           {props.store.amount()} {props.store.currency()}
         </dd>

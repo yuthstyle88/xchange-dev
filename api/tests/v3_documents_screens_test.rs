@@ -10,6 +10,7 @@
 //! `documents_common::FakeSessions` (the fixture's people). Needs `TEST_DATABASE_URL`; nothing skips.
 
 mod common;
+#[macro_use]
 mod documents_common;
 mod save_common;
 

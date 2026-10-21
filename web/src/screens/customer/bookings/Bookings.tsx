@@ -26,6 +26,7 @@ import type {
 import { locale, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
+import { getTodayInTimezone } from '../book/Book';
 import { BookingExtras } from './BookingExtras';
 import { BookingWait } from './BookingWait';
 import { loadBranchNames } from './branchNames';
@@ -33,6 +34,18 @@ import * as table from './i18n';
 import './bookings.css';
 
 const t = screenT('customer.bookings', table);
+const BRANCH_TIMEZONE = 'Asia/Bangkok';
+
+function getBookingServiceDate(booking: MyBookingItemDto): string {
+  const start = new Date(booking.startAt);
+  if (Number.isNaN(start.getTime())) return getTodayInTimezone(BRANCH_TIMEZONE);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: BRANCH_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(start);
+}
 
 function getStatusLabel(status: string): string {
   const key = `status_${status}` as keyof typeof table.th;
@@ -132,6 +145,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const [availableSlots, setAvailableSlots] = createSignal<BookingSlotItemDto[]>([]);
   const [slotsLoading, setSlotsLoading] = createSignal(false);
   const [selectedSlotId, setSelectedSlotId] = createSignal<string>('');
+  const [rescheduleDate, setRescheduleDate] = createSignal<string>('');
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -211,16 +225,17 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   // for a dialog that is no longer the open one is dropped (#2418).
   let slotsSeq = 0;
 
-  const loadSlots = async (booking: MyBookingItemDto) => {
+  const loadSlots = async (booking: MyBookingItemDto, date: string) => {
     const seq = ++slotsSeq;
     setAvailableSlots([]);
     setSlotsLoading(true);
     setCommandError(null);
-    setLastAction(() => () => loadSlots(booking));
+    setLastAction(() => () => loadSlots(booking, date));
 
     try {
       const res = await api.view<BookingSlotsData>('booking_slots', {
         branch: booking.branchId,
+        filter: { date },
       });
       if (seq !== slotsSeq) return;
       setAvailableSlots(res.data?.slots ?? []);
@@ -234,14 +249,16 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   };
 
   const handleOpenReschedule = (booking: MyBookingItemDto) => {
+    const date = getBookingServiceDate(booking);
     commandSeq++;
     setReschedulingBooking(booking);
     setCommandLoading(false);
     setCommandError(null);
     setLastAction(null);
     setSelectedSlotId('');
+    setRescheduleDate(date);
     setAvailableSlots([]);
-    loadSlots(booking);
+    void loadSlots(booking, date);
   };
 
   const handleCloseReschedule = () => {
@@ -253,6 +270,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
     setCommandError(null);
     setLastAction(null);
     setSelectedSlotId('');
+    setRescheduleDate('');
     setAvailableSlots([]);
     setSlotsLoading(false);
   };
@@ -490,6 +508,39 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
           >
             <div class="xc-dialog-content">
               <h3 class="xc-dialog-title">{t('selectNewSlot')}</h3>
+
+              <div class="xc-reschedule-date-field" data-field="serviceDate">
+                <label class="xc-reschedule-date-label" for="rescheduleServiceDate">
+                  {t('date')}
+                </label>
+                <input
+                  id="rescheduleServiceDate"
+                  name="serviceDate"
+                  type="date"
+                  class="xc-reschedule-date-input"
+                  data-testid="date-input"
+                  value={rescheduleDate()}
+                  min={getTodayInTimezone(BRANCH_TIMEZONE)}
+                  onInput={(e) => {
+                    const nextDate = e.currentTarget.value;
+                    if (!nextDate || nextDate === rescheduleDate()) return;
+                    const booking = reschedulingBooking();
+                    if (!booking) return;
+                    setSelectedSlotId('');
+                    setRescheduleDate(nextDate);
+                    void loadSlots(booking, nextDate);
+                  }}
+                  onChange={(e) => {
+                    const nextDate = e.currentTarget.value;
+                    if (!nextDate || nextDate === rescheduleDate()) return;
+                    const booking = reschedulingBooking();
+                    if (!booking) return;
+                    setSelectedSlotId('');
+                    setRescheduleDate(nextDate);
+                    void loadSlots(booking, nextDate);
+                  }}
+                />
+              </div>
 
               <Show when={commandError()}>
                 <div class="xc-dialog-error" role="alert">

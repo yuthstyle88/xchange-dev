@@ -13,6 +13,7 @@
 //!
 //! "Thai sentence" means the message contains Thai script and no English word of 3 or more letters.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 

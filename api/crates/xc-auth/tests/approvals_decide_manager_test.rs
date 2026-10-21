@@ -27,6 +27,9 @@
 //!   - `RoleGrants::seed(BranchManager)` and `of(Finance)` hold `ApprovalsDecide`;
 //!   - `Policy::need(Rpc, "reversalRequest")` is `Permission::ReversalRequest`.
 //!
+//! OR-7.m w2 (#1027): the v3 table (`Policy::allow` over the v2 roles) is deleted, and so are its
+//! assertions here. What stays is the Blueprint table, which every route asks.
+//!
 //! Signatures: none new. The action name `reversalRequest` is [required]: RV-2's command inherits
 //! `(Rpc, "reversalRequest")` (#682).
 
@@ -34,46 +37,16 @@ mod policy_common;
 
 use policy_common::*;
 use xc_auth::domain::access::role_grants::RoleGrants;
-use xc_auth::domain::policy::value_objects::actor::Actor as V3Actor;
-use xc_auth::domain::policy::value_objects::role::Role as V3Role;
 
 const B2: &str = "B2";
 const APPROVAL: [&str; 2] = ["approvalDecide", "approvalRead"];
 const REVERSAL: &str = "reversalRequest";
-
-const V3_STAFF: [V3Role; 9] = [
-    V3Role::Front,
-    V3Role::Backend,
-    V3Role::Manager,
-    V3Role::Rates,
-    V3Role::Monitor,
-    V3Role::Finance,
-    V3Role::System,
-    V3Role::Documents,
-    V3Role::DocumentReview,
-];
-
-fn v3_staff(role: V3Role) -> V3Actor {
-    V3Actor::staff(format!("emp-{}", role.as_str()), role, BranchId::new(B2)).expect("a staff role")
-}
-
-fn v3_ask(who: &V3Actor, on: EntryPath, name: &str) -> Result<(), PolicyError> {
-    Policy::allow(Some(who), on, &action(name))
-}
 
 fn blueprint_allowed(on: EntryPath, name: &str) -> Vec<&'static str> {
     BLUEPRINT
         .into_iter()
         .filter(|r| ask(Some(&staff(*r, B2)), on, name).is_ok())
         .map(Role::as_str)
-        .collect()
-}
-
-fn v3_allowed(on: EntryPath, name: &str) -> Vec<&'static str> {
-    V3_STAFF
-        .into_iter()
-        .filter(|r| v3_ask(&v3_staff(*r), on, name).is_ok())
-        .map(V3Role::as_str)
         .collect()
 }
 
@@ -121,37 +94,6 @@ fn under_the_blueprint_table_approvals_are_reached_by_those_three_on_rpc_only() 
 }
 
 #[test]
-fn under_the_v3_table_manager_backend_and_finance_reach_approvals_on_rpc() {
-    for name in APPROVAL {
-        assert_eq!(
-            Policy::allow(
-                Some(&V3Actor::owner("owner-1")),
-                EntryPath::Rpc,
-                &action(name)
-            ),
-            Ok(()),
-            "{name}: the owner, as before"
-        );
-        assert_eq!(
-            v3_allowed(EntryPath::Rpc, name),
-            ["BACKEND", "MANAGER", "FINANCE"],
-            "{name} on Rpc"
-        );
-        for r in V3_STAFF
-            .into_iter()
-            .filter(|r| ![V3Role::Manager, V3Role::Backend, V3Role::Finance].contains(r))
-        {
-            assert_eq!(
-                v3_ask(&v3_staff(r), EntryPath::Rpc, name),
-                Err(PolicyError::RoleNotAllowedHere),
-                "{name}: {} on Rpc is refused as before",
-                r.as_str()
-            );
-        }
-    }
-}
-
-#[test]
 fn a_reversal_request_needs_the_reversal_request_permission_on_rpc() {
     assert_eq!(
         Policy::need(EntryPath::Rpc, &action(REVERSAL)),
@@ -163,30 +105,5 @@ fn a_reversal_request_needs_the_reversal_request_permission_on_rpc() {
         blueprint_allowed(EntryPath::Rpc, REVERSAL),
         ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"],
         "the roles that hold ReversalRequest (§11.2)"
-    );
-    assert_eq!(
-        v3_allowed(EntryPath::Rpc, REVERSAL),
-        ["FRONT", "BACKEND", "MANAGER"],
-        "the v3 roles that become TELLER or BRANCH_MANAGER"
-    );
-    for r in V3_STAFF
-        .into_iter()
-        .filter(|r| ![V3Role::Front, V3Role::Manager, V3Role::Backend].contains(r))
-    {
-        assert_eq!(
-            v3_ask(&v3_staff(r), EntryPath::Rpc, REVERSAL),
-            Err(PolicyError::RoleNotAllowedHere),
-            "{} may not request a reversal",
-            r.as_str()
-        );
-    }
-    assert_eq!(
-        Policy::allow(
-            Some(&V3Actor::owner("owner-1")),
-            EntryPath::Rpc,
-            &action(REVERSAL)
-        ),
-        Err(PolicyError::InvalidRequest),
-        "the owner's session holds no ReversalRequest (EXECUTIVE, ADMIN), as on every v3 row it lacks"
     );
 }

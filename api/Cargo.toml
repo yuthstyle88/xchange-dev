@@ -30,6 +30,8 @@ xc-booking = { path = "crates/xc-booking" }
 xc-testdb = { path = "crates/xc-testdb" }
 
 [package]
+# One test binary per package: tests/all.rs (api/scripts/gen-test-binaries.py).
+autotests = false
 name = "xchange"
 version = "1.0.0"
 edition = "2024"
@@ -100,4 +102,6 @@ path = "src/main.rs"
 [profile.dev.package.argon2]
 opt-level = 3
 
-
+[[test]]
+name = "all"
+path = "tests/all.rs"

@@ -1,4 +1,6 @@
 [package]
+# One test binary per package: tests/all.rs (api/scripts/gen-test-binaries.py).
+autotests = false
 name = "xc-marketing"
 version = "0.1.0"
 edition = "2024"
@@ -25,3 +27,7 @@ pos-error = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

@@ -4,6 +4,7 @@
 
 mod common;
 mod compat_common;
+#[macro_use]
 mod rpc_common;
 mod snapshot_common;
 
@@ -13,9 +14,6 @@ use chrono::{DateTime, Duration, Utc};
 use compat_common::Person;
 use rpc_common::{Call, Desk, MAIN, STAFF_RPC, sign_in};
 use serde_json::{Value, json};
-use xc_auth::application::account::service::AccountService;
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::ids::BranchId;
@@ -30,11 +28,7 @@ fn sources(desk: &Desk) -> ServiceSnapshotSources {
         Arc::new(PgTransactionRepository::new(desk.db.pool.clone())),
         desk.db.branch_tx(),
     );
-    let accounts = AccountService::new(
-        Arc::new(PgAccountRepository::new(desk.db.pool.clone())),
-        PasswordHasher::with_cost(8, 1, 1),
-    );
-    ServiceSnapshotSources::new(transactions, accounts)
+    ServiceSnapshotSources::new(transactions)
 }
 
 async fn org_id(desk: &Desk) -> String {

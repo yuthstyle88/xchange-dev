@@ -414,6 +414,7 @@ async fn approval_policy_proposer_cannot_decide() {
 
     let req = ApprovalRequest {
         id: "req-1".into(),
+        organization_id: ORG.to_string(),
         type_name: "CAMPAIGN_VERSION".to_string(),
         branch_id: None,
         object_id: Uuid::new_v4().to_string(),
@@ -449,6 +450,7 @@ async fn approval_policy_submitter_is_executive_still_cannot_decide() {
 
     let req = ApprovalRequest {
         id: "req-2".into(),
+        organization_id: ORG.to_string(),
         type_name: "CAMPAIGN_VERSION".to_string(),
         branch_id: None,
         object_id: Uuid::new_v4().to_string(),
@@ -479,6 +481,7 @@ async fn approval_policy_marketing_cannot_decide() {
 
     let req = ApprovalRequest {
         id: "req-3".into(),
+        organization_id: ORG.to_string(),
         type_name: "CAMPAIGN_VERSION".to_string(),
         branch_id: None,
         object_id: Uuid::new_v4().to_string(),
@@ -549,6 +552,7 @@ async fn approval_policy_executive_approves_moves_version_to_approved() {
     let policy = CampaignApprovalPolicy::new(db.pool.clone());
     let req = ApprovalRequest {
         id: "req-app-1".into(),
+        organization_id: ORG.to_string(),
         type_name: "CAMPAIGN_VERSION".to_string(),
         branch_id: None,
         object_id: v1_id.to_string(),

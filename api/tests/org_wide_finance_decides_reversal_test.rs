@@ -35,6 +35,7 @@ fn actor(roles: &[(Role, Option<&str>)]) -> Actor {
 fn request(branch: Option<&str>) -> ApprovalRequest {
     ApprovalRequest {
         id: RequestId::new("req-1"),
+        organization_id: ORG.to_owned(),
         type_name: "TRANSACTION_REVERSAL".to_owned(),
         branch_id: branch.map(str::to_owned),
         object_id: "rev-1".to_owned(),

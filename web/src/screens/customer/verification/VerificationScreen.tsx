@@ -141,6 +141,7 @@ export function VerificationScreen(): JSX.Element {
       case 'NEEDS_UPDATE':
       case 'REJECTED':
       case 'EXPIRED':
+      case 'REVOKED':
         return 4;
       default:
         return 1;
@@ -627,14 +628,28 @@ export function VerificationScreen(): JSX.Element {
                     </section>
                   </Show>
 
-                  {/* REJECTED or EXPIRED: show server reason & expiresAt, offer update-and-resubmit (NEW case) */}
-                  <Show when={c().status === 'REJECTED' || c().status === 'EXPIRED'}>
+                  {/* REJECTED, EXPIRED, or REVOKED: show server reason & expiresAt, offer update-and-resubmit (NEW case) */}
+                  <Show
+                    when={
+                      c().status === 'REJECTED' ||
+                      c().status === 'EXPIRED' ||
+                      c().status === 'REVOKED'
+                    }
+                  >
                     <section class="xc-verification-card" data-case-state={c().status}>
                       <h2 class="xc-verification-card-title">
-                        {c().status === 'EXPIRED' ? t('expiredTitle') : t('rejectedTitle')}
+                        {c().status === 'EXPIRED'
+                          ? t('expiredTitle')
+                          : c().status === 'REVOKED'
+                            ? t('revokedTitle')
+                            : t('rejectedTitle')}
                       </h2>
                       <p class="xc-verification-card-desc">
-                        {c().status === 'EXPIRED' ? t('expiredDesc') : t('rejectedDesc')}
+                        {c().status === 'EXPIRED'
+                          ? t('expiredDesc')
+                          : c().status === 'REVOKED'
+                            ? t('revokedDesc')
+                            : t('rejectedDesc')}
                       </p>
 
                       <Show when={c().decisionReasonCode}>

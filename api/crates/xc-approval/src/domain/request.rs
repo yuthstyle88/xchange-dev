@@ -76,6 +76,7 @@ impl From<&str> for RequestId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalRequest {
     pub id: RequestId,
+    pub organization_id: String,
     pub type_name: String,
     pub branch_id: Option<String>,
     pub object_id: String,

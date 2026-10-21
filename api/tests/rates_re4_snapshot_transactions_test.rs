@@ -36,9 +36,6 @@ use save_common::{
 };
 use serde_json::{Value, json};
 use snapshot_common::{NoPorts, RecordedSource};
-use xc_auth::application::account::service::AccountService;
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_rate::application::branch::service::BranchService;
@@ -54,16 +51,10 @@ fn branch_tx(shop: &Shop) -> BranchTx {
 
 /// The snapshot builder over the sources the routes build (`presentation/http/rpc.rs`).
 fn builder(shop: &Shop) -> SnapshotBuilder {
-    let sources = ServiceSnapshotSources::new(
-        TransactionService::new(
-            Arc::new(PgTransactionRepository::new(shop.pool.clone())),
-            branch_tx(shop),
-        ),
-        AccountService::new(
-            Arc::new(PgAccountRepository::new(shop.pool.clone())),
-            PasswordHasher::with_cost(8, 1, 1),
-        ),
-    );
+    let sources = ServiceSnapshotSources::new(TransactionService::new(
+        Arc::new(PgTransactionRepository::new(shop.pool.clone())),
+        branch_tx(shop),
+    ));
     let custody = CustodyService::new(
         Arc::new(PgCustodyRepository::new(shop.pool.clone())),
         shop.shifts.clone(),

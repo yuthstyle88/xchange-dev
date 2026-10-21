@@ -1,4 +1,6 @@
 [package]
+# One test binary per package: tests/all.rs (api/scripts/gen-test-binaries.py).
+autotests = false
 name = "xc-verification"
 version = "0.1.0"
 edition = "2024"
@@ -27,3 +29,7 @@ tracing = "0.1"
 base64 = "0.22"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "uuid", "json", "migrate"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

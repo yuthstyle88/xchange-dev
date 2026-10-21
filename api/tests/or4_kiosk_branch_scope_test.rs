@@ -5,6 +5,7 @@
 //! Every request goes through the server's whole route table (`bootstrap::configure`), and the
 //! teller is signed in only through Identity (`__Host-xc_session`); no password cookie is sent.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

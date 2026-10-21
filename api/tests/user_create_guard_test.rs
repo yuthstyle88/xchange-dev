@@ -7,6 +7,7 @@
 //!    role needs ADMIN organisation-wide; a branch role needs ADMIN organisation-wide or on that same
 //!    branch. Anything else is `outOfScope`, nothing is written and Identity is not called.
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

@@ -36,7 +36,9 @@
 
 mod common;
 mod compat_common;
+#[macro_use]
 mod kiosk_http_common;
+#[macro_use]
 mod rpc_common;
 mod snapshot_common;
 mod stale_policy_769_common;

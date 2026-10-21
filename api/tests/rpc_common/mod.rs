@@ -74,9 +74,9 @@ use xchange::infrastructure::files::file_service::FileService;
 use xchange::presentation::http::rpc::RpcClock;
 use xchange::presentation::test_callers;
 
-use crate::common::settings;
-use crate::compat_common::{Fixture, IdMap, Person, Step};
-use crate::snapshot_common::{
+use super::common::settings;
+use super::compat_common::{Fixture, IdMap, Person, Step};
+use super::snapshot_common::{
     TestDb, assert_same, publish_rate_per_one, rates_re4c_common, time, without_direct_saves,
     without_dropped_keys,
 };
@@ -367,7 +367,7 @@ impl Desk {
         let desk = Desk::open_without_cash().await;
         // LG-4 (#929, lane controller's 1:1 ruling): a shift's opening now leaves the ledger's SAFE (design §4.4),
         // which v2 never had to hold. MAIN's safe holds enough for every opening a test makes.
-        crate::snapshot_common::lg4_fund_safe(&desk.db.pool, "MAIN").await;
+        super::snapshot_common::lg4_fund_safe(&desk.db.pool, "MAIN").await;
         desk
     }
 
@@ -536,7 +536,7 @@ impl Desk {
 
 /// The server's whole route table (`bootstrap::configure`) with the test's
 /// clock and bank registered after it, so that they replace the real ones.
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! rpc_app {
     ($desk:expr) => {{
         let state = $desk.state();
@@ -544,7 +544,7 @@ macro_rules! rpc_app {
             $desk.clock.clone();
         let bank: std::sync::Arc<dyn xc_rate::domain::rate::entities::rate_source::RateSource> =
             $desk.bank.clone();
-        $crate::rpc_common::App::new(
+        rpc_common::App::new(
             actix_web::test::init_service(
                 actix_web::App::new()
                     .configure(move |cfg| xchange::bootstrap::configure(cfg, state))
@@ -1514,7 +1514,7 @@ impl<'f> Replay<'f> {
         // CI-4 (#651): a decided customer difference (compat_common::SAME_CUSTOMER_AS), checked strictly.
         #[allow(clippy::collapsible_if)]
         if matches!(rule, Rule::Replay) {
-            if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
+            if let Some(same) = super::compat_common::same_customer_as(&self.fixture.name, step.n) {
                 let earlier_answer = self
                     .answers
                     .get(&same.same_as)
@@ -1527,7 +1527,7 @@ impl<'f> Replay<'f> {
                         "customerId",
                     )
                 };
-                let expected = crate::compat_common::same_customer_answer(
+                let expected = super::compat_common::same_customer_answer(
                     step.json(),
                     &earlier_customer,
                     &label,
@@ -1578,7 +1578,7 @@ impl<'f> Replay<'f> {
                 .await
                 .expect("open the receipt")
                 .unwrap_or_else(|| panic!("{label}: the receipt {key} is not stored"));
-            let expected = crate::compat_common::same_customer_save_answer(
+            let expected = super::compat_common::same_customer_save_answer(
                 step.json(),
                 &url,
                 &stored.bytes,
@@ -1614,13 +1614,13 @@ impl<'f> Replay<'f> {
                 assert_ne!(step.status, Some(200), "{label}: v2 accepted this one");
                 let mut expected = without_dropped_keys(self.fixture.step(other).json());
                 // CI-4 (#651): the expectation of the step whose recording is used
-                if let Some(list) = crate::compat_common::company_customers(self.fixture, other) {
-                    expected = crate::compat_common::with_customers_of(
+                if let Some(list) = super::compat_common::company_customers(self.fixture, other) {
+                    expected = super::compat_common::with_customers_of(
                         &expected,
                         &json!({ "customers": list }),
                         &format!(
                             "{label} ({})",
-                            crate::compat_common::COMPANY_CUSTOMERS_REASON
+                            super::compat_common::COMPANY_CUSTOMERS_REASON
                         ),
                     );
                 }
@@ -1996,7 +1996,7 @@ impl<'f> Replay<'f> {
             let (_, rest) = sent.split_once("\"action\":\"")?;
             rest.split_once('"').map(|(action, _)| action.to_string())
         });
-        let actual = crate::snapshot_common::without_v3_added_keys(
+        let actual = super::snapshot_common::without_v3_added_keys(
             step.route.as_deref(),
             action.as_deref(),
             &answer.json(),
@@ -2007,13 +2007,13 @@ impl<'f> Replay<'f> {
             .as_published(step, &actual, &without_dropped_keys(recorded))
             .await;
         // CI-4 (#651): a recorded answer whose `customers` v3 answers company-wide (COMPANY_CUSTOMERS)
-        if let Some(list) = crate::compat_common::company_customers(self.fixture, step.n) {
-            expected = crate::compat_common::with_customers_of(
+        if let Some(list) = super::compat_common::company_customers(self.fixture, step.n) {
+            expected = super::compat_common::with_customers_of(
                 &expected,
                 &serde_json::json!({ "customers": list }),
                 &format!(
                     "{label} ({})",
-                    crate::compat_common::COMPANY_CUSTOMERS_REASON
+                    super::compat_common::COMPANY_CUSTOMERS_REASON
                 ),
             );
         }
@@ -2077,7 +2077,7 @@ impl<'f> Replay<'f> {
                 // LG-6.r6 #1046 (controller ruling): `staff` in v3 is the user id for v2's username in the replay's user map.
                 if let (Some(want_staff), Some(got_staff)) =
                     (want[i]["staff"].as_str(), mov["staff"].as_str())
-                    && crate::snapshot_common::movement_staff_matches(
+                    && super::snapshot_common::movement_staff_matches(
                         &self.desk.db.pool,
                         self.fixture,
                         got_staff,
@@ -2314,7 +2314,7 @@ impl<'f> Replay<'f> {
             .unwrap_or_else(|e| panic!("{}: applied behind the routes: {e:?}", self.label(step)));
         let actual = json!({ "customerId": reserved.customer_id, "existing": reserved.existing });
         let expected_existing =
-            if crate::compat_common::same_customer_as(&self.fixture.name, step.n).is_some() {
+            if super::compat_common::same_customer_as(&self.fixture.name, step.n).is_some() {
                 serde_json::Value::Bool(true)
             } else {
                 step.json()["existing"].clone()
@@ -2327,7 +2327,7 @@ impl<'f> Replay<'f> {
         );
         // CI-4 (#651), held strictly when the step is held to the Blueprint (OR-4b C2): the
         // reservation behind the routes is the earlier step's customer (controller ruling on #767)
-        if let Some(same) = crate::compat_common::same_customer_as(&self.fixture.name, step.n) {
+        if let Some(same) = super::compat_common::same_customer_as(&self.fixture.name, step.n) {
             let earlier = text_of(
                 &self.ids.to_actual(self.fixture.step(same.same_as).json()),
                 "customerId",
@@ -2660,7 +2660,7 @@ impl<'f> Replay<'f> {
 /// `text` with every id v2 made replaced by the one v3 made for it.
 pub fn text_with_ids(ids: &IdMap, recorded: &Value, text: &str) -> String {
     let mut out = text.to_string();
-    for id in crate::compat_common::server_ids(recorded) {
+    for id in super::compat_common::server_ids(recorded) {
         if let Some(actual) = ids.actual(&id) {
             out = out.replace(&id, actual);
         }

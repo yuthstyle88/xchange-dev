@@ -59,7 +59,8 @@ impl BranchView for ApprovalRequestsBranchView {
         async move {
             let mut sql = "SELECT r.id, r.type, r.branch_id, r.object_id, r.object_version_hash, \
                            r.policy_version, r.proposed_payload, r.requested_by, r.requested_at, r.status, \
-                           r.idempotency_key, d.approver_id, d.outcome, d.reason, d.at \
+                           r.idempotency_key, d.approver_id, d.outcome, d.reason, d.at, \
+                           r.organization_id::text \
                            FROM approval_requests r \
                            LEFT JOIN approval_decisions d ON d.request_id = r.id \
                            WHERE (r.branch_id = $1 OR r.branch_id IS NULL) \
@@ -108,9 +109,11 @@ impl BranchView for ApprovalRequestsBranchView {
                 let decision_outcome: Option<String> = r.get(12);
                 let decision_reason: Option<String> = r.get(13);
                 let decision_at: Option<DateTime<Utc>> = r.get(14);
+                let organization_id: String = r.get(15);
 
                 let request = ApprovalRequest {
                     id: RequestId::new(id.to_string()),
+                    organization_id,
                     type_name: type_name.clone(),
                     branch_id: b_id.clone(),
                     object_id: obj_id.clone(),
@@ -167,7 +170,10 @@ impl BranchView for ApprovalRequestsBranchView {
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
-    ViewEndpoint::register(cfg, Arc::new(ApprovalRequestsBranchView::new(state.db.clone())));
+    ViewEndpoint::register(
+        cfg,
+        Arc::new(ApprovalRequestsBranchView::new(state.db.clone())),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
@@ -178,4 +184,3 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     ApprovalRequestsData::export_all(&cfg)?;
     Ok(())
 }
-

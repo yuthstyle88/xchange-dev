@@ -19,6 +19,7 @@
 mod common;
 mod compat_common;
 mod rates_re4_common;
+#[macro_use]
 mod rpc_common;
 mod snapshot_common;
 

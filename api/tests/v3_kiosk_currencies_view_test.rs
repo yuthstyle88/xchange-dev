@@ -37,6 +37,7 @@
 mod common;
 mod compat_common;
 mod publication_seed;
+#[macro_use]
 mod rpc_common;
 mod snapshot_common;
 

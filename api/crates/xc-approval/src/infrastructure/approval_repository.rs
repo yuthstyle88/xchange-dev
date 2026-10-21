@@ -22,6 +22,7 @@ impl PgApprovalRepository {
 fn map_request_row(row: &sqlx::postgres::PgRow) -> ApprovalRequest {
     ApprovalRequest {
         id: RequestId::new(row.get::<String, _>("id")),
+        organization_id: row.get("organization_id"),
         type_name: row.get("type"),
         branch_id: row.get("branch_id"),
         object_id: row.get("object_id"),
@@ -44,7 +45,7 @@ impl ApprovalRepository for PgApprovalRepository {
     ) -> BoxFuture<'a, AppResult<Option<ApprovalRequest>>> {
         Box::pin(async move {
             let row = sqlx::query(
-                "SELECT id::text AS id, type, branch_id, object_id, \
+                "SELECT id::text AS id, organization_id::text AS organization_id, type, branch_id, object_id, \
                         object_version_hash, policy_version, proposed_payload, \
                         requested_by, requested_at, status, idempotency_key \
                  FROM approval_requests \
@@ -86,6 +87,7 @@ impl ApprovalRepository for PgApprovalRepository {
     fn insert_request<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
+        organization_id: &'a str,
         type_name: &'a str,
         branch_id: Option<String>,
         object_id: &'a str,
@@ -98,17 +100,18 @@ impl ApprovalRepository for PgApprovalRepository {
         Box::pin(async move {
             let row = sqlx::query(
                 "INSERT INTO approval_requests ( \
-                     id, type, branch_id, object_id, object_version_hash, \
+                     id, organization_id, type, branch_id, object_id, object_version_hash, \
                      policy_version, proposed_payload, requested_by, \
                      requested_at, status, idempotency_key \
                  ) \
                  VALUES ( \
-                     gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, now(), 'PENDING', $8 \
+                     gen_random_uuid(), $1::uuid, $2, $3, $4, $5, $6, $7, $8, now(), 'PENDING', $9 \
                  ) \
-                 RETURNING id::text AS id, type, branch_id, object_id, \
+                 RETURNING id::text AS id, organization_id::text AS organization_id, type, branch_id, object_id, \
                            object_version_hash, policy_version, proposed_payload, \
                            requested_by, requested_at, status, idempotency_key",
             )
+            .bind(organization_id)
             .bind(type_name)
             .bind(branch_id)
             .bind(object_id)
@@ -139,7 +142,7 @@ impl ApprovalRepository for PgApprovalRepository {
     ) -> BoxFuture<'a, AppResult<Option<ApprovalRequest>>> {
         Box::pin(async move {
             let row = sqlx::query(
-                "SELECT id::text AS id, type, branch_id, object_id, \
+                "SELECT id::text AS id, organization_id::text AS organization_id, type, branch_id, object_id, \
                         object_version_hash, policy_version, proposed_payload, \
                         requested_by, requested_at, status, idempotency_key \
                  FROM approval_requests \

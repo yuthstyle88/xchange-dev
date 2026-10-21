@@ -92,5 +92,8 @@ export async function prepareImage(file: Blob, angle: Angle): Promise<Blob> {
   if (!lastBlob) {
     throw new PassportReadError('failed');
   }
+  if (lastBlob.size > MAX_IMAGE_BYTES) {
+    throw new PassportReadError('imageTooLarge');
+  }
   return lastBlob;
 }

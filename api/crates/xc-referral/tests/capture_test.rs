@@ -477,6 +477,33 @@ async fn supersede_leaves_exactly_one_active_row_and_audits_the_change() {
 }
 
 #[tokio::test]
+async fn supersede_trims_the_stored_and_audited_reason() {
+    let db = TestDb::start().await;
+    let tx_id = exchange_of(&db, "C-1").await;
+    let old = capture(&db, on_transaction(tx_id, "AB12CD", None))
+        .await
+        .expect("captured");
+
+    let new = supersede(&db, &old, "zz99yy", "  moved  ")
+        .await
+        .expect("superseded");
+    let n = row(&db, &new).await;
+    assert_eq!(n["reason"], "moved", "reason is stored trimmed");
+
+    let audit_after: Value =
+        sqlx::query_scalar("SELECT after_redacted FROM audit_events ORDER BY id DESC LIMIT 1")
+            .fetch_one(&db.pool)
+            .await
+            .expect("the audit event");
+    assert_eq!(
+        audit_after["reason"], "moved",
+        "audit after stores trimmed reason"
+    );
+
+    db.finish().await;
+}
+
+#[tokio::test]
 async fn superseding_a_row_that_is_no_longer_active_is_refused() {
     let db = TestDb::start().await;
     let tx_id = exchange_of(&db, "C-1").await;

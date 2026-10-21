@@ -9,6 +9,7 @@
 //! 6. no session, a Public RPC row -> as today (no gate)
 //! 7. an expired session row with the flag -> as today for an expired session (the gate reads only live rows)
 
+#[macro_use]
 mod auth_http_common;
 mod common;
 mod identity_signin_common;

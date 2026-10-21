@@ -46,7 +46,7 @@ use xchange::application::workflows::save_step::{
 use xchange::presentation::http::v3::commands::make_approval_service;
 use xchange::presentation::test_callers;
 
-use crate::quote_common::*;
+use super::quote_common::*;
 
 /// The second branch of the first organisation.
 pub const BR2: &str = "BR2";

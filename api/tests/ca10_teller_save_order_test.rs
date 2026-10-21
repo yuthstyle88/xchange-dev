@@ -23,6 +23,7 @@
 
 mod common;
 mod compat_common;
+#[macro_use]
 mod rpc_common;
 #[allow(clippy::duplicate_mod)]
 mod shift_setup_common;

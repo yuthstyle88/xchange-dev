@@ -42,6 +42,7 @@ mod common;
 mod compat_common;
 mod rates_re4_common;
 mod rates_re4e_publish;
+#[macro_use]
 mod rpc_common;
 mod shift_holder_common;
 mod shift_setup_common;

@@ -20,12 +20,21 @@
     "phone": "<marketing phone from the seed>",
     "password": "<marketing password from the seed>"
   },
+  "branchManager2": {
+    "phone": "<branchManager2 phone from the seed>",
+    "password": "<branchManager2 password from the seed>"
+  },
+  "finance2": {
+    "phone": "<finance2 phone from the seed>",
+    "password": "<finance2 password from the seed>"
+  },
   "admin": {
     "identifier": "<the owner's sign-in>",
     "password": "<the owner's password>"
   },
   "referralCode": "TEST1234",
   "branch": "MAIN",
+  "branch2": "TEST2",
   "currency": "USD",
   "quantity": "100"
 }
