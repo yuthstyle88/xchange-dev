@@ -48,11 +48,6 @@ export interface VerificationDocumentUploadOutput {
   accessClass: string;
 }
 
-export interface MyProfileView {
-  displayName?: string;
-  permissions: readonly string[];
-}
-
 const api = new ApiClient();
 
 const openCaseWriter = keyedWrite<VerificationCaseOpenInput, VerificationCaseOpenOutput>(
@@ -79,10 +74,6 @@ export function newIdempotencyKey(): string {
   return `idem-${Date.now().toString(36)}-${keyCounter.toString(36)}-${Math.random()
     .toString(36)
     .slice(2, 10)}`;
-}
-
-export async function fetchMyProfile(): Promise<MyProfileView> {
-  return api.viewBare<MyProfileView>('my_profile');
 }
 
 export async function fetchMyVerification(): Promise<MyVerificationViewAnswer> {
