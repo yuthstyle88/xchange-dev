@@ -77,337 +77,147 @@
 
 ## 4. Server half (BE lane)
 
-> designed-by: claude/c4be83 for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` and
-> `108-Plaza/Identity-Platform` `ffe908d` · §4.7 holds the owner questions, batched by claude/e92db6; §4.8 the release order
+> designed-by: claude/c4be83 for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` ·
+> reworked 2026-10-21 for the owner's decision **"เลขคิว ไม่ต้อง login"** (a queue number, no customer login;
+> PR 4249 issuecomment-6311397809), which supersedes the login design (KS-4/4a/4c and the login half of KS-7). The
+> login design is in this file's git history (`bf7efba8`) if the owner revisits it.
 
 ### 4.1 What the server does today (measured)
 
-- **The OTP sign-in already exists, and the kiosk can call it as it is.**
-  - `POST /api/auth/otp/request` and `/api/auth/otp/verify` (`api/src/presentation/http/auth.rs:73-82`) forward to
-    Identity (`SessionService::otp_request`/`otp_verify`, `xc-auth/src/application/session/session_service.rs:886-917`).
-  - A `200` from verify sets `__Host-xc_session` (`auth.rs:131-140`, `Max-Age=43200`; `SESSION_SECONDS`,
-    `session_service.rs:28`). This is what `/app/sign-in` uses (`web/src/screens/customer/sign-in/SignIn.tsx:40,68`).
-  - Both routes check only `same_origin`. The kiosk app already sends `Origin` + `X-Xchange-Request`
-    (`app/lib/core/network/dio_provider.dart:18-31`).
-- **An unknown phone cannot sign in today.** This is the gap KS-4c hits.
-  - xchange always sends `"registerIfAbsent": false` (`xc-auth/src/infrastructure/identity/http_identity_client.rs:299`).
-  - For an unknown phone, Identity then answers `200 {verified: true}` with no `login`
-    (Identity `crates/auth/src/api/otp.rs:85-90`, test at `:325-341`).
-  - xchange turns "no `login`" into `401 invalidCode` (`session_service.rs:912-916`). The customer typed the right code
-    and is told it is wrong.
-  - A known Identity account with no `users` row gets `401 signIn` instead, *"ask the shop owner to create an account"*
-    (`UserNotBound`, `session_service.rs:451-453`, `:79-83`).
-- **Identity can register on first sight.** `registerIfAbsent: true` creates a verified, password-less account and
-  logs it in from the same code: `registered: true` plus `login` (Identity `contract/mod.rs:299-308`, test
-  `otp.rs:220-258`). xchange already parses `registered` (`identity_client.rs:36-42`) but never asks for it.
-- **The OTP limits are Identity's.**
-  - Identity limits requests per destination and verifies per challenge (Identity `otp.rs:36-39`). It does not limit
-    per address, so one shared kiosk address is not throttled.
-  - §2's OTP row ("`PhoneOtpPolicy`, per phone and per kiosk address") therefore reads as **Identity's limits**: with
-    S1 the kiosk never reaches `PhoneOtpPolicy`.
-- **The customer core exists, but only for a password login.**
-  - `register_customer` (`api/src/application/customer_signup.rs:82-158`) writes, in one transaction:
-    - the `users` row with the CUSTOMER role;
-    - the customer and its TERMS (and MARKETING) consents (`ConsentService::register_in`);
-    - one ACTIVE PHONE identity (`write_verified_phone`, `:161-208`).
-  - It takes its login only from `verified_login(identifier, password)`.
-  - It refuses with `PhoneInUse` when the verified phone is ACTIVE on **another** customer (`:180-190`), including a
-    desk-made customer with no user (K7: duplicates are never merged automatically).
-- **A kiosk request belongs to nobody.**
-  - The kiosk's `quote`/`confirm`/`status`/`customerReceipt`/`customerCancel` are `Need::Public`
-    (`xc-auth/src/domain/policy/entities/policy.rs:123-126`).
-  - A non-staff caller becomes `KioskActor::Customer`, which carries no id (`api/src/presentation/http/kiosk.rs:91-110`).
-  - The kiosk's quote is written with `customer_id: None` (`api/src/infrastructure/kiosk/kiosk_ports.rs:443`).
-- **Where the trace already runs.** `quotes.customer_id` exists (`api/migrations/20261014100000_quotes.sql:8`).
-  `kiosk_requests.quote_id` points at the quote (`20261031100000_kiosk_quote_id.sql`). The quote's
-  `accepted_by_transaction_id` points at the exchange. The exchange's `transactions.customer_id` is `NOT NULL`
-  (`20261007190000_transactions.sql:11`).
-  - So once the kiosk writes the customer on the quote and the request, the chain *kiosk request → quote → exchange*
-    already exists. Only the customer at its start is missing.
-- **The board QR and the app's queue (KS-7).**
-  - The board's QR encodes `<origin>/app/book?branch=<code>` (`web/src/screens/customer/rate-display/BookingQr.tsx:16`).
-    The branch code is public, so the QR proves nothing about where the phone is.
-  - A signed-in customer can already take a walk-in ticket: `queueTicketTake` (`POST /api/app/queue/tickets`,
-    `api/src/presentation/http/v3/commands/queue_ticket_take.rs:58-80`, `IssueSource::App`, at most one active walk-in
-    per branch and day, `xc-queue/src/domain/ticket/issue_source.rs:16-17`). It takes no currency, amount or quote.
-  - The kiosk names its branch in the payload, unproven (`kiosk.rs:291-301`). The kiosk app's setup stores only
-    server + branch (`app/lib/core/endpoint/kiosk_endpoint.dart:17-21`).
-- **The kiosk app keeps no cookie.** `buildKioskDio` has no cookie store (`dio_provider.dart:18-31`). The web build gets
-  one from the browser; the native build needs a cookie jar (§5, FE lane).
+- **The kiosk already gives a queue number with no login.**
+  - `quote`, `confirm`, `status`, `customerReceipt` and `customerCancel` are `Need::Public`
+    (`api/crates/xc-auth/src/domain/policy/entities/policy.rs:123-126`).
+  - `confirm` issues the walk-in ticket (`IssueSource::Kiosk {request_id}`, `api/src/presentation/http/kiosk.rs`, the
+    `Confirm` arm).
+  - The request is told apart by its queue number and order number.
+- **The kiosk names its branch, unproven.** `branchId` comes from the payload (`kiosk.rs:291-301`). The kiosk app's
+  setup stores only server + branch (`app/lib/core/endpoint/kiosk_endpoint.dart:17-21`).
+- **The limits are per address.**
+  - Quotes: at most `QuoteLimit::MAX` = 20 per 60 s per client address per branch
+    (`api/crates/xc-kiosk/src/domain/kiosk/value_objects/quote_limit.rs:9-10`, applied at
+    `application/kiosk/customer.rs:149-153`).
+  - The customer's cancel needs the request's cancel token **and the same client address** (`customer.rs:327-333`,
+    `kiosk-cancel.md` §3.4).
+- **The board QR points at booking, with a public branch code.** It encodes `<origin>/app/book?branch=<code>`
+  (`web/src/screens/customer/rate-display/BookingQr.tsx:16`). Anyone who knows the code can name the branch from
+  anywhere.
+- **A second, signed-in way to take a number exists:** `queueTicketTake` (`POST /api/app/queue/tickets`,
+  `api/src/presentation/http/v3/commands/queue_ticket_take.rs:58-80`). It needs `CustomerSelf`, issues
+  `IssueSource::App`, takes `{branch}` unproven, and carries no currency or amount.
+- **No public calling screen** exists (§2, KS-5).
 
-### 4.2 Decisions (BE lane, from KS-4b, KS-4c and KS-7)
+### 4.2 Decisions (BE lane)
 
 | # | Decision | Why |
 |---|---|---|
-| S1 | **No kiosk phone route.** The kiosk calls `/api/auth/otp/request` and `/api/auth/otp/verify`, the same routes as `/app/sign-in`. No `phoneStart`/`phoneConfirm`, no kiosk OTP table, and `PhoneVerificationService` is not used. | KS-4b, KS-4c (*"การ ใช้ คิว ก็เหมือนการ login ปกติ"*) |
-| S2 | **One customer sign-in core** (♻️). `register_customer` is split: the *login* part (where the Identity login comes from: a password, or an OTP) is separate from the *bind* part (`users` row + CUSTOMER role + customer + consents + PHONE identity). The password register and the OTP sign-in call the same bind. | ♻️; today's core takes a password only |
-| S3 | **Verify opts into first sight only when asked.** `otp/verify` takes an optional `register: {lang, marketing}`. With it, xchange sends `registerIfAbsent: true`, and an Identity account with no `users` row is bound as a new customer in one transaction. Without it, verify behaves as today, except that "no `login`" answers `401 notRegistered` instead of the false `invalidCode`. | the kiosk can't know in advance whether the phone is new; the Identity challenge is single-use, so a second try is impossible |
-| S4 | **A verified phone finds its customer before a new one is made.** When the phone's lookup hash is ACTIVE on a customer with `user_id IS NULL` (a desk-made customer), the new user is **linked to that customer** instead of creating a second one, and the PHONE identity gets `verified_at = now`. When that customer already has a user, the answer is `409 phoneInUse`, as today. | KS-4c *"found by phone, or created as a new customer"*; the OTP proves the person holds the number. **Owner question Q1** (it changes K7's "no automatic merge" reading) |
-| S5 | **Only customers sign in at the kiosk.** A subject bound to a staff or owner user (no CUSTOMER role) gets `403 notACustomer` on a kiosk verify, and no session is made. | a staff session on a shared device would carry `QueueOperate` to the next person |
-| S6 | **A kiosk session is short.** A verify that carries `device: "kiosk"` makes the same `user_sessions` row with `expires = now + 15 min`, and a cookie `Max-Age` to match. The kiosk's reset calls `/api/auth/logout`, as today's sign-out does, and that also revokes the Identity refresh token. The 15 minutes only covers a reset that never runs (power cut, crash). | KS-1, KS-4c; the 12-hour web session is wrong for a shared screen |
-| S7 | **The request and its quote carry the signed-in customer.** `quote` writes `kiosk_requests.customer_id` and `quotes.customer_id` from `Actor.customer_id`. `confirm`, `status`, `customerReceipt` and `customerCancel` on a request with a customer need **that** customer's session, else `403 notThisCustomer` (the booking rule, `xc-booking/src/application/lifecycle.rs:84-88`). | KS-4c reason: every order can be told apart by its customer |
-| S8 | **No anonymous entry.** `quote` and `confirm` need `CustomerSelf` (`policy.rs:123-126` moves them out of `Need::Public`). Without a customer session the answer is `401 signIn`. `rates` and `settings` stay public. `status`/`customerReceipt`/`customerCancel` stay reachable for rows from before the migration (no customer), as S7 allows. There is **no switch and no off state**: the server has no path that takes a queue without a signed-in customer. So the queue ships only after the owner's setup in §4.8. | KS-7 (*"มันต้องต้อง แยก แยะ ใครเป็นใครได้นะ"*); KS-4a, owner 2026-10-21 (*"มันต้อง ผ่าน login ก่อน มาหน้านี้"*) |
-| S9 | **Consent at the kiosk is the register's own rule.** A new customer's TERMS consent is recorded with `evidence_ref = "kiosk:<branchId>"` in the kiosk's language. If no TERMS text exists in that language, the answer is `409 consentTextMissing` (`field: lang`, no fallback, §4.3 of `customer-identity-consent.md`). The kiosk then offers the languages `consent_texts` lists. An existing customer's consents are not touched. | `customer-identity-consent.md` K5 and §4.3; the kiosk has 16 languages, register accepts th/en/zh (`customer_register.rs:37`) |
-| S10 | **One entry core, two channels** (♻️). The kiosk's `quote` → `confirm` (currency, amount, quote, request, walk-in ticket; `xc-kiosk/src/application/kiosk/customer.rs`) is **the** queue entry core, for the kiosk device and for a customer's phone (KS-7). The core holds every safety rule: the customer (S7), the rate and quote, the per-customer limit (S12), the ticket issue and the cancel token. A channel is one small `EntryChannel` implementation holding only what differs (§4.3). | KS-7 *"the same flow as the kiosk"*; the global ♻️ rule |
-| S11 | **What differs per channel, and nothing else.** <br>• **Branch proof:** the kiosk device names its branch (as today); the phone presents the board's join token (S13). <br>• **Session:** kiosk 15 min, and the reset signs out (S6); phone = the normal web session (KS-7: it need not end at once). <br>• **Ticket delivery:** kiosk = the branch's `ticket_mode` (KS-6); phone = SMS + the ticket page, never print. <br>• **Address limit:** kiosk keeps today's per-address quote limit (`customer.rs:149-153`, `QuoteLimit`); phone has none (a phone's address says nothing). <br>• **Request channel:** `kiosk_requests.channel` = `KIOSK` / `PHONE`, and `quotes.channel` = `KIOSK` / `APP` (already allowed, `quotes.sql:10`). | KS-7 names device binding, reset/sign-out and print |
-| S12 | **One open entry per customer per branch**, on both channels. A second `quote` while the customer has a QUOTED or WAITING request at that branch answers `409 alreadyQueued` with the open request's id. This is the core's rule, the same as the app ticket's (`issue_source.rs:16-17`). It bounds a shared or photographed QR. | KS-7; a remote phone could otherwise hold many places |
-| S13 | **How a phone proves its branch: a rotating board token.** <br>• The board's public poll (`/api/public/orgs/{org}/branches/{code}/rates`, `public/branch_rates.rs:16`) answers a `joinToken`. <br>• The token is `branchId ‖ window ‖ HMAC-SHA256(XC_BOARD_JOIN_KEY, branchId ‖ window)`, base64url, with a 10-minute window. <br>• The QR encodes `<origin>/app/queue?t=<joinToken>` and changes each window. <br>• The server accepts the current or the previous window, and the branch comes **from the token**, never from a parameter. <br>• No table, no state. A wrong, old or other-branch token answers `403 boardTokenInvalid`. <br>• No key set ⇒ the board shows no QR, and a phone entry answers `503 boardJoinUnavailable` (fail closed). The owner sets the key (secrets are the owner's). | the branch code in today's QR (`BookingQr.tsx:16`) is public and guessable: anyone anywhere could queue at any branch |
-| S14 | **The kiosk device's branch proof stays today's named branch** (`kiosk.rs:291-301`: `branchId` in the payload, unproven) in this pass. A device secret issued at kiosk setup is the kiosk's `EntryChannel` change and touches no core rule; it is designed with §4.6. | measured: the kiosk app's setup stores only server + branch (`app/lib/core/endpoint/kiosk_endpoint.dart:17-21`) |
+| N1 | **No customer login on the queue path.** `quote`/`confirm` stay `Need::Public`. No customer is written on the request. **No migration** (the `kiosk_requests.customer_id` one is withdrawn). No Identity or Notify prerequisite. The person is identified at the desk by the passport, when money changes hands. | owner, *"เลขคิว ไม่ต้อง login"* |
+| N2 | **One entry core, two channels** (♻️). The kiosk's existing `quote` → `confirm` (`impl KioskService` in `xc-kiosk/src/application/kiosk/customer.rs`: `quote` `:58`, `confirm_with_token` `:219`, `customer_cancel` `:328`, `status` `:394`, `customer_receipt` `:406`) is **the** queue entry, for the kiosk device and for a phone that scanned the board (KS-7). Every rule lives in the core: rates, the request, the ticket issue, the cancel token, the purge of old QUOTED rows. A channel is one small `EntryChannel` implementation. | owner 553782: *"ONE core entry for kiosk and phone stays"*; the global ♻️ rule |
+| N3 | **What differs per channel, and nothing else.** <br>• **Branch proof:** the kiosk names it (today); the phone presents the board token (N4). <br>• **Who may cancel:** the kiosk needs the cancel token + the same address (today's rule); the phone needs the cancel token only, because a phone's address changes when it moves between Wi-Fi and mobile data (a random UUID v4 minted at `confirm`, `kiosk.rs` `Confirm` arm, which only that page holds). <br>• **After the number:** the kiosk resets to the start after the result screen (KS-1); the phone keeps its ticket page. <br>• **Print** (KS-6, later): kiosk only. | owner 553782 names device binding, reset and print as the per-channel part |
+| N4 | **How a phone proves its branch: a rotating board token.** <br>• The board's public poll (`/api/public/orgs/{org}/branches/{code}/rates`, `api/src/presentation/http/public/branch_rates.rs:16`) answers a `joinToken`. <br>• The token is `branchId ‖ window ‖ HMAC-SHA256(XC_BOARD_JOIN_KEY, branchId ‖ window)`, base64url, with a 10-minute window. <br>• The QR encodes `<origin>/app/queue?t=<joinToken>` and changes each window. <br>• The server accepts the current or the previous window, and the branch comes **only from the token**. <br>• No table, no state. A wrong, old or other-branch token answers `403 boardTokenInvalid`. <br>• No key set ⇒ the board shows no QR, and a phone entry answers `503 boardJoinUnavailable` (fail closed). | today's QR names the branch with a public code (`BookingQr.tsx:16`) |
+| N5 | **Limits.** Both channels keep today's per-address quote limit (20/min/branch). The phone's real bound is the board token: it must have been read off the board in the last 20 minutes. A per-phone "one open number" limit would need a stored browser id (a migration), so it is **Q6**, not built. | no customer = nothing to key a per-person limit on without new data |
+| N6 | **Calling is by number on the calling display** (KS-5, later work). No SMS calling and no SMS ticket mode: there is no phone number. | owner 553782 |
+| N7 | **The kiosk device's branch proof stays today's named branch** in this pass. A device secret issued at kiosk setup is the kiosk channel's later change, and touches no core rule. | not needed for deploy 10 |
 
 ### 4.3 Class diagram
 
 ```mermaid
 classDiagram
   direction LR
-  class IdentityClient {
-    <<trait>>
-    otp_request(destination, channel, ip)
-    otp_verify(challenge_id, code, register_if_absent, ip)
-  }
-  class SessionService {
-    otp_request(...)
-    verified_otp_login(challenge_id, code, register_if_absent, ip) VerifiedOtpLogin
-    sign_in_with_login(login, lifetime, now) SignInTail
-  }
-  class SessionLifetime {
-    <<enum>>
-    Web
-    Kiosk
-    seconds() i64
-  }
-  class CustomerBinder {
-    bind_in(tx, login, verified, BindInput, now) BoundCustomer
-  }
-  class CustomerOtpSignIn {
-    sign_in(challenge_id, code, Option~RegisterIntent~, device, ip, now) SignInTail
-  }
-  class PasswordRegister {
-    register_customer(input, ip, now)
-  }
   class QueueEntryService {
-    quote(channel, proof, customer, cmd, now)
-    confirm(channel, id, customer, now)
-    status / receipt / cancel(id, customer)
+    quote(channel, proof, cmd, now)
+    confirm(channel, id, now)
+    status / receipt(id)
+    cancel(channel, id, token, now)
   }
   class EntryChannel {
     <<trait>>
     kind() EntryChannelKind
     branch_of(proof, now) BranchId
-    address_limit() Option~QuoteLimit~
-    delivery(settings) TicketDelivery
+    may_cancel(request, token, address) bool
   }
   class KioskDeviceChannel {
-    branch_of = named branch (S14)
-    address_limit = QuoteLimit
-    delivery = ticket_mode
+    branch_of = named branch (N7)
+    may_cancel = token + same address
   }
   class PhoneChannel {
     branch_of = BoardJoinToken
-    address_limit = none
-    delivery = SMS + page
+    may_cancel = token
   }
   class BoardJoinToken {
     issue(branch, now) String
     verify(token, now) BranchId
   }
-  class KioskSettings {
-    result_seconds
-    idle_seconds
-    ticket_mode
-    version
-  }
-  class KioskSettingsRepository {
-    <<trait>>
-    get(branch)
-    put_in(tx, branch, settings, by)
-  }
-  IdentityClient <-- SessionService
-  SessionLifetime <-- SessionService
-  SessionService <-- CustomerOtpSignIn
-  CustomerBinder <-- CustomerOtpSignIn
-  CustomerBinder <-- PasswordRegister
-  SessionService <-- PasswordRegister
   EntryChannel <-- QueueEntryService
   EntryChannel <|.. KioskDeviceChannel
   EntryChannel <|.. PhoneChannel
   BoardJoinToken <-- PhoneChannel
-  KioskSettingsRepository <-- QueueEntryService
-  KioskSettings <-- KioskSettingsRepository
 ```
+
+`QueueEntryService` is the customer half of `KioskService` (`customer.rs`), not a new type. Renaming it would touch
+every caller, so the diagram only names that half.
 
 | Class | File | New / changed | Provides | Used by |
 |---|---|---|---|---|
-| `IdentityClient::otp_verify` | `api/crates/xc-auth/src/domain/identity/identity_client.rs:138` | changed: takes `register_if_absent` | the Identity call | `SessionService` |
-| `HttpIdentityClient::otp_verify` | `…/infrastructure/identity/http_identity_client.rs:289-301` | changed: sends the flag instead of `false` | | |
-| `SessionService::verified_otp_login` | `…/application/session/session_service.rs` | new, next to `verified_login` (`:495`) | `VerifiedOtpLogin {login, verified, registered}`, or `notRegistered` | `CustomerOtpSignIn` |
-| `SessionLifetime` | `…/application/session/session_lifetime.rs` | new | `Web` = 43 200 s, `Kiosk` = 900 s | `create_session_for_user` (`:345`), `attach_signin_cookies` |
-| `CustomerBinder` | `api/src/application/customer_binder.rs` | new: the bind half of `register_customer`, moved, plus S4's link | `BoundCustomer {user_id, customer_id, created}` | both entries |
-| `PasswordRegister` | `api/src/application/customer_signup.rs` | changed: `verified_login` + `CustomerBinder` | `/api/app/register`, unchanged on the wire | `customer_register.rs` |
-| `CustomerOtpSignIn` | `api/src/application/customer_otp_sign_in.rs` | new | S3, S5, S6 | `auth.rs` `v3_otp_verify` |
-| `KioskSettings`, `KioskSettingsRepository` (+ `PgKioskSettingsRepository`) | `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_settings.rs`, `…/repositories/kiosk_settings_repository.rs`, `api/src/infrastructure/kiosk/pg_kiosk_settings_repository.rs` | new (§3 table) | the settings, with defaults when a branch has no row | `KioskService`, the settings view |
-| the entry core: `impl KioskService` in `customer.rs` (`quote` `:58`, `confirm_with_token` `:219`, `customer_cancel` `:328`, `status` `:394`, `customer_receipt` `:406`) | `api/crates/xc-kiosk/src/application/kiosk/customer.rs` | changed: each takes `&dyn EntryChannel` + the customer; S7, S8, S10, S12. No type rename (it would touch every caller); the diagram calls this half `QueueEntryService` | the one entry core | `kiosk.rs` for both channels |
-| `EntryChannel` (trait), `EntryChannelKind` (`Kiosk` / `Phone`) | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/entry_channel.rs` | new | S11's four differences, nothing else | `QueueEntryService` |
-| `KioskDeviceChannel`, `PhoneChannel` | `api/crates/xc-kiosk/src/application/kiosk/channels/kiosk_device.rs`, `…/channels/phone.rs` | new, one file each | adding a channel = one file | `kiosk.rs` picks one per request (below) |
-| `BoardJoinToken` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/board_join_token.rs` | new; HMAC through `ring` (added to `xc-kiosk/Cargo.toml` at `0.17`, the version `xc-auth/Cargo.toml:24` pins) | S13 | `PhoneChannel`; `public/branch_rates.rs` issues it |
-| `branch_rates` answer | `api/src/presentation/http/public/branch_rates.rs` | changed: `joinToken` (absent when no key) | | the board, `BookingQr.tsx` (FE) |
-| `kiosk_requests.channel` | §3 migration (one column, `KIOSK` default, CHECK `KIOSK`/`PHONE`) | new | S11 | `QueueEntryService`, the queue panel |
-| `KioskActor::Customer` | `…/value_objects/kiosk_actor.rs` | changed: `Customer { customer_id: Option<String> }` | | `kiosk_actor_from_callers` (`kiosk.rs:91-110`) |
-| `PgKioskPorts::quote_in` | `api/src/infrastructure/kiosk/kiosk_ports.rs:429-460` | changed: `customer_id` from the request instead of `None` | | |
+| the entry core (`impl KioskService` in `customer.rs`) | `api/crates/xc-kiosk/src/application/kiosk/customer.rs` | changed: `quote`/`confirm_with_token`/`customer_cancel` take `&dyn EntryChannel`; the branch comes from `branch_of`, the cancel check from `may_cancel` | the one entry | `kiosk.rs` for both channels |
+| `EntryChannel` (trait), `EntryChannelKind` (`Kiosk` / `Phone`) | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/entry_channel.rs` | new | N3's differences, nothing else | the core |
+| `KioskDeviceChannel`, `PhoneChannel` | `api/crates/xc-kiosk/src/application/kiosk/channels/kiosk_device.rs`, `…/channels/phone.rs` | new, one file each | adding a channel = one file | `kiosk.rs` picks one per request |
+| `BoardJoinToken` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/board_join_token.rs` | new; HMAC with `ring` (added to `xc-kiosk/Cargo.toml` at `0.17`, the version `xc-auth/Cargo.toml:24` pins) | N4 | `PhoneChannel`; `public/branch_rates.rs` issues it |
+| `branch_rates` answer | `api/src/presentation/http/public/branch_rates.rs` | changed: `joinToken` (absent when no key) | | the board (`BookingQr.tsx`, FE) |
+| `kiosk.rs` | `api/src/presentation/http/kiosk.rs` | changed: picks the channel from the proof (below) | | |
 
 ### 4.4 Behaviour
 
-**`POST /api/auth/otp/verify` `{challengeId, code, register?: {lang, marketing}, device?: "kiosk"}`**
-
-| # | Given | Answer | Writes |
-|---|---|---|---|
-| V1 | known phone, bound CUSTOMER user | `200 {user}` + session cookie (kiosk: `Max-Age=900`) | session row |
-| V2 | unknown phone, `register` absent | `401 notRegistered` (was `invalidCode`) | nothing |
-| V3 | unknown phone, `register` present, TERMS text in `lang` | `200 {user, customerId, registered: true}` + cookie | Identity account, user, CUSTOMER role, customer, TERMS (+MARKETING), PHONE identity verified, session |
-| V4 | as V3, phone ACTIVE on a customer with `user_id IS NULL` | `200 {…, registered: true}`; the **existing** customer id | user, CUSTOMER role, `customers.user_id` set, PHONE `verified_at`, TERMS consent if that customer has none, session |
-| V5 | as V3, phone ACTIVE on a customer that has a user | `409 phoneInUse` | nothing in xchange. Identity's account is already made; the next sign-in finds it (V1 or V6) |
-| V6 | Identity account exists, no `users` row, `register` present | as V3/V4 (the subject is bound now) | as V3/V4 |
-| V7 | subject bound to a staff/owner user, `device: "kiosk"` | `403 notACustomer` | nothing |
-| V8 | `register` present, no TERMS text in `lang` | `409 consentTextMissing` (`field: lang`) | nothing in xchange |
-| V9 | wrong code / expired / replay / rate limit | Identity's own refusal, unchanged | nothing |
-| V10 | two verifies of the same new subject at once | one binds; the other finds the bound user and signs in (`users.auth_subject UNIQUE`, as R13) | one user |
-
-**`POST /api/kiosk`**
+**The channel is picked by the proof, once, in `kiosk.rs`:** a payload with `joinToken` ⇒ `PhoneChannel`; without one
+⇒ `KioskDeviceChannel` (named `branchId`, as today). Both run the same actions on the same route, `POST /api/kiosk`. A
+payload with both is `400 invalidRequest`.
 
 | # | Given | Answer |
 |---|---|---|
-**The channel is picked by the proof, once, in `kiosk.rs`:** a payload with `joinToken` ⇒ `PhoneChannel`; otherwise
-`KioskDeviceChannel` (named `branchId`). Both run the same actions on the same route. A payload with both is
-`400 invalidRequest`.
-
-| # | Given | Answer |
-|---|---|---|
-| P1 | phone `quote`, customer session, valid `joinToken` | as K2; branch = the token's; `channel = PHONE`; no address limit |
-| P2 | phone `quote`, token from the previous window | accepted |
-| P3 | phone `quote`, older, forged or no-key token | `403 boardTokenInvalid` / `503 boardJoinUnavailable` |
-| P4 | phone `quote`, `branchId` also sent | `400 invalidRequest` (the branch comes only from the token) |
-| P5 | either channel, the customer already has a QUOTED/WAITING request at the branch | `409 alreadyQueued` + its id (S12) |
-| P6 | phone `confirm` | the ticket is issued as the kiosk's (`IssueSource::Kiosk {request_id}`, WALK_IN); delivery = SMS + page whatever `ticket_mode` says |
-| P7 | the board poll, key set / not set | `joinToken` present, rotating every 10 min / absent |
-
-| # | Given | Answer |
-|---|---|---|
-| K1 | `quote` or `confirm`, no customer session | `401 signIn` (S8) |
-| K2 | `quote` with a customer session | as today; `kiosk_requests.customer_id` and `quotes.customer_id` = the session's customer |
-| K3 | `confirm`/`status`/`customerReceipt`/`customerCancel` on a request with a customer, another customer's session or none | `403 notThisCustomer` |
-| K4 | the same on a request with no customer (rows from before the migration) | as today |
-| K5 | `settings` (Public, new) | `{resultSeconds, idleSeconds, ticketMode, version}`; defaults 30 / 120 / `SMS` when the branch has no row; `since` = version → `{changed: false}` (🔁) |
-| K6 | `configureSettings` (new, `RatesDraft`, the same permission as `configure`) | writes the row, `updated_by`, bumps `version`; ranges refused with `400 validationFailed` naming the field |
-
-The desk's queue panel and `get` gain the request's customer as `customerNo` plus the masked phone (last 4, K8). The
-desk can then pick the same customer at the save. The save's own customer rule is Q2.
+| E1 | kiosk `quote` / `confirm`, as today | unchanged (no regression: today's kiosk tests stay green as they are) |
+| E2 | phone `quote`, valid `joinToken` | as the kiosk's; branch = the token's |
+| E3 | phone `quote`, a token from the previous window | accepted |
+| E4 | phone `quote`, an older, forged or other-branch token | `403 boardTokenInvalid` |
+| E5 | phone `quote`, no key on the server | `503 boardJoinUnavailable` |
+| E6 | phone `quote` with `branchId` too | `400 invalidRequest` (the branch comes only from the token) |
+| E7 | phone `confirm` | the ticket is issued exactly as the kiosk's (`IssueSource::Kiosk {request_id}`, WALK_IN) |
+| E8 | phone `customerCancel`, right token, a different address from the quote | cancelled (N3) |
+| E9 | kiosk `customerCancel`, right token, a different address | refused, as today |
+| E10 | either channel, more than 20 quotes in 60 s from one address at a branch | refused, as today (`TooManyQuotes`) |
+| E11 | the board poll with the key set / not set | `joinToken` present and rotating every 10 min / absent |
 
 ### 4.5 Rules the tests pin first (up-front, `class:logic`)
 
-- V2, V3, V4, V5, V7, V8 and V10 on `CustomerOtpSignIn` with a fake `IdentityClient`. The test checks the flag
-  xchange sends, not only the answer.
-- `PasswordRegister` answers exactly as before (the `/api/app/register` tests stay green unchanged). This proves the
-  split moved code and changed no rule.
-- K1–K6 and P1–P7 on the entry core / the route, run **once per channel** with the same rows where they apply (a
-  table-driven test over both `EntryChannel`s), and `KioskActor::Customer` read from the session's `customer_id`.
-- `BoardJoinToken`: issue → verify round trip, the previous window accepted, two windows back refused, another
-  branch's token refused, a flipped byte refused, no key ⇒ unavailable.
-- Guard: only `channels/*.rs` implement `EntryChannel`, and no file outside the core calls the ticket issuer for
+- E2–E10 as one table-driven test over both `EntryChannel`s, with the rows that differ (E8/E9) asserted per channel.
+- E1: today's kiosk HTTP tests unchanged and green; this proves the core moved and no rule changed.
+- `BoardJoinToken`: issue → verify round trip; the previous window accepted; two windows back refused; another
+  branch's token refused; a flipped byte refused; no key ⇒ unavailable.
+- Guard: only `channels/*.rs` implement `EntryChannel`, and only the core calls the ticket issuer for
   `IssueSource::Kiosk` (one entry core).
-- `SessionLifetime::Kiosk` sets both the row's `expires` and the cookie's `Max-Age`; a `Web` sign-in is unchanged.
-- Guard: no route outside `auth.rs` calls `IdentityClient::otp_verify` (one OTP core).
 
-### 4.6 Not in this pass (designed next, on this doc)
+### 4.6 Later work (not in this pass)
 
-- **The public calling display (KS-5):** a numbers-only view, signed out, on the poll seam.
-- **The public ticket page and the ticket SMS (KS-6):** the per-ticket secret, the page, the send through
-  Identity/Notify, and whether the kiosk can reach the device agent's printer.
+- **KS-3**, the per-branch kiosk settings page: `result_seconds`, `idle_seconds`, a public read and an admin write behind
+  the currency switches' permission. It needs a table (a migration), so it waits for its own approval.
+- **KS-5**, the public calling display: a numbers-only signed-out view on the poll seam (🔁).
+- **KS-6**, the print and screen ticket modes; whether the kiosk can reach the device agent's printer.
+- **The kiosk device secret** (N7).
 
-Neither changes S1–S9.
+### 4.7 Open owner questions (batched by claude/e92db6)
 
-### 4.7 Questions for the owner (batched by claude/e92db6)
+- **Q6 (N5).** Should a phone be held to one open number at a time? Proposed: not now. Today's per-address limit plus
+  the board token are enough for deploy 10. A per-browser limit needs a stored browser id on the request (a migration).
+- **Q4 (still open, smaller).** `queueTicketTake` (signed-in, no amount, unproven branch) is a second way to take a
+  number. With no login on the queue path, the board QR does not use it. Proposed: leave it for now, and decide its
+  future with the customer app's next round. Q1–Q3 and Q5 were about the login and no longer apply.
 
-- **Q1 (S4).** A verified phone matches a desk-made customer that has no app account. Should the sign-in **join that
-  customer**, or make a new one? Proposed: join. The OTP proves the number, and a second customer would split the same
-  person's orders, against KS-4c's reason. It is not a merge of two existing customers, which stays O-1.
-- **Q2 (the save).** The desk's passport finds customer A, but the kiosk request belongs to customer B (B signed in
-  with a phone that A never recorded). Proposed: the save goes ahead on A, because the passport is the exchange's legal
-  identity. The request and its quote keep B, and the save writes one `KIOSK_CUSTOMER_DIFFERS` audit row naming both,
-  for the O-1 merge work. The desk is never blocked.
-- **Q3 (a new kiosk customer's name).** `customers.display_name` is `NOT NULL`, and `/api/app/register` asks for a
-  name. Proposed: the kiosk asks for no name. The name starts as the masked phone (`•••1234`, K8), and the desk's
-  passport fills it in at the first exchange.
-- **Q4 (the app's take-a-number, S10).** `queueTicketTake` (`POST /api/app/queue/tickets`, S7 #3410,
-  `api/src/presentation/http/v3/commands/queue_ticket_take.rs`) already issues a walk-in ticket to a signed-in
-  customer, but with no currency, amount or quote, and with any branch named in the body. KS-7's phone entry does the
-  same job through the entry core. Two ways in for one thing break the ♻️ rule. Proposed: retire `queueTicketTake`
-  once the phone channel lands; its FE caller moves to the phone flow. Keeping it would also keep an unproven branch.
-- ✅ **Q5 answered by the owner, 2026-10-21:** *"มันต้อง ผ่าน login ก่อน มาหน้านี้"*. No switch and no off state (S8,
-  KS-4a). The release waits for the owner's setup (§4.8).
+### 4.8 Release order
 
-### 4.8 Release order: the owner's setup first, then the release
-
-Login comes first and nothing bypasses it (KS-4a). So **until steps 1–4 are done, no queue can be taken at the kiosk
-or by phone.** The desk serves walk-ins as today (`IssueSource::Desk`). Merging the code before then is fine; turning it
-on for customers is not.
-
-| # | Step | Who | Done when |
-|---|---|---|---|
-| 1 | Identity's OTP delivery goes to Notify: `AUTH_OTP_DELIVERY_MODE=http`, `AUTH_OTP_HTTP_ENDPOINT` (Notify `/api/v1/otp`), `AUTH_OTP_HTTP_API_KEY`, on the Identity instance xc-v3 uses (§6.2) | **owner** (the key is a secret) | the instance no longer runs `noop` |
-| 2 | A test OTP reaches the owner's phone through `/api/auth/otp/request` on the test host | owner, with the BE lane watching the log | the code arrives and `/verify` signs in |
-| 3 | A TERMS consent text is published in every language the kiosk and phone offer for sign-up. Without one, a new customer gets `consentTextMissing` (S9) and cannot register (`customer-identity-consent.md` O-4). **Not measured here** whether one exists on the test host | EXECUTIVE (`consentTextPublish`); the owner decides the text | `consent_texts` lists TERMS in th/en/zh |
-| 4 | `XC_BOARD_JOIN_KEY` is set on xc-v3, for the phone channel only (S13). Without it the board shows no QR and phone entry answers `503` | **owner** (a secret) | the board poll answers `joinToken` |
-| 5 | The server tickets merge: S2/S3 sign-in core, the entry core + channels, `kiosk_settings`, and the §3 migration (approved). Merging needs none of steps 1–4 | BE lane | merged on `main` |
-| 6 | Deploy the server to the test host | **owner's order** (deploy is never implied) | `/health/ready` reports the merged sha |
-| 7 | Release the kiosk app and the `/app/queue` page | FE lane, after step 6, on the owner's order | the kiosk shows the phone step |
-
-Steps 1–4 can run in parallel with 5. Step 7 must wait for 1–3 (and 4 for the phone), or every kiosk customer is
-stopped at the phone step.
-
-### 4.9 Owner setup: Identity OTP → 108 Plaza Notify (steps 1–2 of §4.8)
-
-> measured 2026-10-21 by claude/c4be83 from the Mac Studio. Only names were read from env files and secrets, never
-> values. This part does not depend on the login decision: the SMS ticket (KS-6) needs the same Notify tenant.
-
-**What is there now.**
-- **xc-identity** on do-sgp1 (`152.42.247.83`):
-  - `active`, build `681bea2` (`/opt/xc-identity/BUILD`).
-  - `/etc/xc-identity/env` has `AUTH_OTP_DELIVERY_MODE=noop`, and no `AUTH_OTP_HTTP_*` lines.
-  - `681bea2` already has the HTTP sender and `registerIfAbsent` (`108-platform-services`
-    `crates/auth/src/contract/mod.rs:536`, `crates/auth/src/infrastructure/config.rs:414`). **No rebuild is needed.**
-- **Notify** runs on Dell k3s, `staging/notify`, NodePort 30710.
-  - Its secret `staging/notify-secrets` holds `ADMIN_API_KEY` and `THAIBULKSMS_API_KEY`/`_SECRET`/`_SENDER` (names
-    only; whether the SMS keys are filled was not checked).
-  - Prod (`prod/notify`, 31710) has the same names.
-- **Reach.**
-  - do-sgp1 **cannot** reach Dell's NodePorts (`http://103.27.202.40:30710` and `:31710` both time out).
-  - It **does** reach the public name `https://notify.staging.108plaza.net`: `/health` = `200`, and `POST /api/v1/otp`
-    with no key = `401`. That name is Dell's nginx vhost to NodePort 30710, with a Let's Encrypt certificate.
-- **The contract** (`108-platform-services` `crates/notification-api/src/routes/otp.rs`, `middleware.rs:84-113`):
-  - Identity POSTs `{channel, to, code, purpose}` with `Authorization: Bearer <tenant API key>`.
-  - Notify answers `202 {id}`, which means queued, not yet delivered.
-  - A tenant may define an `otp_code` template for its own SMS text; without one, the built-in text is used.
-
-**The tenant and key.** One new Notify tenant `xchange` on **staging** Notify. It is the xchange test host's own
-tenant, so its rate limit, audit and SMS text are separate from other users of Notify.
-
-| # | Step | Where | Command (the owner runs it; nothing here prints a secret) |
-|---|---|---|---|
-| 1 | Create the tenant. The answer shows the API key **once** | Dell | `ADMIN=$(kubectl -n staging get secret notify-secrets -o jsonpath='{.data.ADMIN_API_KEY}' \| base64 -d)`, then `curl -s -X POST http://127.0.0.1:30710/api/v1/admin/tenants -H "X-Admin-Key: $ADMIN" -H 'X-Admin-Actor: owner' -H 'Content-Type: application/json' -d '{"name":"xchange","rate_limit_per_minute":60}'`. Keep `api_key` from the answer and paste it only into step 2 |
-| 2 | Point Identity at Notify: **all three lines together** | do-sgp1, `/etc/xc-identity/env` (root:xc-identity 640) | `AUTH_OTP_DELIVERY_MODE=http`, `AUTH_OTP_HTTP_ENDPOINT=https://notify.staging.108plaza.net/api/v1/otp`, `AUTH_OTP_HTTP_API_KEY=<the key from step 1>` |
-| 3 | Restart and check | do-sgp1 | `systemctl restart xc-identity && systemctl is-active xc-identity && journalctl -u xc-identity -n 30 \| grep otp_delivery`. The log must say `otp_delivery="http"` |
-| 4 | Test Notify alone, to the owner's phone | do-sgp1 | `KEY=$(grep '^AUTH_OTP_HTTP_API_KEY=' /etc/xc-identity/env \| cut -d= -f2-)`, then `curl -s -w ' %{http_code}\n' -X POST https://notify.staging.108plaza.net/api/v1/otp -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"channel":"sms","to":"+66XXXXXXXXX","code":"123456","purpose":"login_phone_otp"}'`. Expect `202` and an SMS with `123456` |
-| 5 | Test the whole path, the way the kiosk will call it | anywhere | `curl -s -X POST https://xc-v3.spacing.cloud/api/auth/otp/request -H 'Origin: https://xc-v3.spacing.cloud' -H 'X-Xchange-Request: 1' -H 'Content-Type: application/json' -d '{"destination":"+66XXXXXXXXX","channel":"sms"}'`. Expect `200 {challengeId, expiresAt}` and a real code on the phone. Both headers are required (`same_origin`, `api/src/presentation/extractors/origin.rs:33-55`) |
-
-- 🔴 **Step 2 is all-or-nothing.** With `http` mode and a missing endpoint or key, Identity **refuses to boot**
-  (`crates/identity-api/src/main.rs:381-394` at `681bea2`), and then **every** sign-in fails, staff included. If step 3
-  does not show `active`, put `AUTH_OTP_DELIVERY_MODE=noop` back and restart.
-- **Step 4 `202` but no SMS** ⇒ the fault is in Notify or the provider, not Identity. Check the notification's delivery
-  attempts, and whether the `THAIBULKSMS_*` values are filled. A tenant `otp_code` template made for e-mail falls back
-  to the built-in SMS text (`otp.rs`, the 2026-08-12 fix), so a template is not the cause.
-- **Step 4 `401`** ⇒ wrong or inactive key. Rotate it with `POST /api/v1/admin/tenants/{id}/rotate-key`.
-- **Step 5 `503 identityUnavailable`** ⇒ step 3 failed, or xc-v3 lost its Identity drop-in (`HOST-do-sgp1.md` §2).
-- **Real production** (when the owner says so) gets its own tenant on `prod/notify`, which needs a public name like the
-  staging one. No such name was found on Dell's nginx (only `notify.staging.108plaza.net` points at Notify).
+1. This design merges, doc-only.
+2. **No tickets are cut before deploy 10** (owner 553782).
+3. After deploy 10, the BE tickets follow §4.3 (no migration).
+4. **The owner sets `XC_BOARD_JOIN_KEY`** on xc-v3 before the phone channel is released (a secret). The kiosk channel
+   does not need it.
+5. Deploy is a separate owner order.
 
 ## 5. Front ends (this lane)
 
