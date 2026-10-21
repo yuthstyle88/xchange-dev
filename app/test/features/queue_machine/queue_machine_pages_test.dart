@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cookie_jar/cookie_jar.dart';
@@ -15,8 +17,10 @@ import 'package:xchange_kiosk/core/network/dio_provider.dart';
 import 'package:xchange_kiosk/features/queue_machine/infrastructure/queue_machine_api.dart';
 import 'package:xchange_kiosk/features/queue_machine/infrastructure/queue_machine_api_dio.dart';
 import 'package:xchange_kiosk/features/queue_machine/infrastructure/staff_session.dart';
+import 'package:xchange_kiosk/features/queue_machine/presentation/controllers/queue_machine_controller.dart';
 import 'package:xchange_kiosk/features/queue_machine/presentation/pages/issued_page.dart';
 import 'package:xchange_kiosk/features/queue_machine/presentation/pages/printer_page.dart';
+import 'package:xchange_kiosk/features/queue_machine/presentation/pages/queue_machine_home_page.dart';
 import 'package:xchange_kiosk/features/queue_machine/presentation/pages/scanner_page.dart';
 import 'package:xchange_kiosk/features/queue_machine/presentation/pages/sign_in_page.dart';
 import 'package:xchange_kiosk/features/queue_machine/printing/printer_providers.dart';
@@ -53,8 +57,9 @@ class _FakeApi implements QueueMachineApi {
 }
 
 class _FakePrinter implements TicketPrinter {
-  _FakePrinter({this.error});
+  _FakePrinter({this.error, this.hold});
   final Object? error;
+  final Completer<void>? hold;
   final writes = <Uint8List>[];
 
   @override
@@ -62,6 +67,8 @@ class _FakePrinter implements TicketPrinter {
     final e = error;
     if (e != null) throw e;
     writes.add(Uint8List.fromList(bytes));
+    final h = hold;
+    if (h != null) await h.future;
   }
 }
 
@@ -140,12 +147,17 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
+    final l10n = QueueMachineL10n.fromJson(
+      jsonDecode(File(QueueMachineL10n.asset).readAsStringSync())
+          as Map<String, dynamic>,
+    );
     final endpoint = KioskEndpoint.parse('https://xc.example.com', 'MAIN');
     final container = ProviderContainer(
       overrides: [
         endpointStoreProvider.overrideWithValue(_MemoryEndpointStore(endpoint)),
         initialKioskEndpointProvider.overrideWithValue(endpoint),
         setupAvailableProvider.overrideWithValue(true),
+        queueMachineL10nProvider.overrideWith((ref) => l10n),
         queueMachineApiProvider.overrideWithValue(api),
         staffSessionProvider.overrideWithValue(_FakeStaffSession()),
         ticketPrinterProvider.overrideWithValue(printer),
@@ -393,6 +405,218 @@ void main() {
         Uri.parse('https://xc.example.com/api/kiosk'),
       );
       expect(cookiesAfterLogout, isEmpty);
+    },
+  );
+
+  test(
+    'second scan of the same token while the write is pending gives writes == 1',
+    () async {
+      final api = _FakeApi();
+      final hold = Completer<void>();
+      final printer = _FakePrinter(hold: hold);
+      final container = ProviderContainer(
+        overrides: [
+          queueMachineApiProvider.overrideWithValue(api),
+          staffSessionProvider.overrideWithValue(_FakeStaffSession()),
+          ticketPrinterProvider.overrideWithValue(printer),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(queueMachineControllerProvider, (_, _) {});
+
+      final ctl = container.read(queueMachineControllerProvider.notifier);
+      await ctl.signIn('teller1', 'secret');
+      expect(
+        container.read(queueMachineControllerProvider).screen,
+        QmScreen.scanner,
+      );
+
+      final first = ctl.onScan('https://h/q#tok');
+      await Future<void>.delayed(Duration.zero);
+      expect(printer.writes, hasLength(1));
+
+      // Second scan of the same token while write is pending is dropped.
+      await ctl.onScan('https://h/q#tok');
+      expect(printer.writes, hasLength(1));
+      expect(api.issued, ['tok']);
+
+      hold.complete();
+      await first;
+      expect(printer.writes, hasLength(1));
+      expect(
+        container.read(queueMachineControllerProvider).screen,
+        QmScreen.issued,
+      );
+    },
+  );
+
+  test(
+    '401 from issueByToken sends the machine to signIn, never scanner',
+    () async {
+      for (final err in const [
+        QueueMachineRefused('signIn', statusCode: 401),
+        QueueMachineRefused('EMPLOYEE_AUTH_REQUIRED', statusCode: 401),
+        QueueMachineRefused('signIn'),
+        QueueMachineRefused('EMPLOYEE_AUTH_REQUIRED'),
+      ]) {
+        final api = _FakeApi()..issueError = err;
+        final printer = _FakePrinter();
+        final container = ProviderContainer(
+          overrides: [
+            queueMachineApiProvider.overrideWithValue(api),
+            staffSessionProvider.overrideWithValue(_FakeStaffSession()),
+            ticketPrinterProvider.overrideWithValue(printer),
+          ],
+        );
+        container.listen(queueMachineControllerProvider, (_, _) {});
+
+        final ctl = container.read(queueMachineControllerProvider.notifier);
+        await ctl.signIn('teller1', 'secret');
+        expect(
+          container.read(queueMachineControllerProvider).screen,
+          QmScreen.scanner,
+        );
+
+        await ctl.onScan('https://h/q#tok');
+        expect(
+          container.read(queueMachineControllerProvider).screen,
+          QmScreen.signIn,
+        );
+        expect(container.read(queueMachineControllerProvider).error, isNull);
+        expect(printer.writes, isEmpty);
+        container.dispose();
+      }
+    },
+  );
+
+  test(
+    'on 401 DioQueueMachineApi calls refresh() once and retries; if refresh also answers 401, controller goes to signIn',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      var issueCalls = 0;
+      var refreshCalls = 0;
+      var refreshStatus = 200;
+
+      final jar = PersistCookieJar(
+        storage: const SharedPreferencesCookieStorage(),
+      );
+      final dio = buildKioskDio(
+        baseUrl: 'https://xc.example.com',
+        origin: 'https://xc.example.com',
+        cookieJar: jar,
+      );
+      dio.httpClientAdapter = _StubAdapter((options) {
+        if (options.path == '/api/auth/login') {
+          return ResponseBody.fromString(
+            jsonEncode({
+              'user': {'id': 'u-1'},
+            }),
+            200,
+            headers: {
+              Headers.contentTypeHeader: [Headers.jsonContentType],
+            },
+          );
+        }
+        if (options.path == '/api/auth/refresh') {
+          refreshCalls += 1;
+          return ResponseBody.fromString(
+            jsonEncode(
+              refreshStatus == 200
+                  ? {'ok': true}
+                  : {
+                      'error': {'code': 'EMPLOYEE_AUTH_REQUIRED'},
+                    },
+            ),
+            refreshStatus,
+            headers: {
+              Headers.contentTypeHeader: [Headers.jsonContentType],
+            },
+          );
+        }
+        if (options.path == '/api/kiosk') {
+          final body = options.data as Map<String, dynamic>;
+          if (body['action'] == 'issueByToken') {
+            issueCalls += 1;
+            if (issueCalls == 1 || refreshStatus != 200) {
+              return ResponseBody.fromString(
+                jsonEncode({
+                  'error': {'code': 'signIn'},
+                }),
+                401,
+                headers: {
+                  Headers.contentTypeHeader: [Headers.jsonContentType],
+                },
+              );
+            }
+            return ResponseBody.fromString(
+              jsonEncode({
+                'displayNumber': 'K042',
+                'ticketId': 't-42',
+                'ticketEscpos': 'G0BLMDQyCg==',
+              }),
+              200,
+              headers: {
+                Headers.contentTypeHeader: [Headers.jsonContentType],
+              },
+            );
+          }
+          if (body['action'] == 'settings') {
+            return ResponseBody.fromString(
+              jsonEncode({'resultSeconds': 10}),
+              200,
+              headers: {
+                Headers.contentTypeHeader: [Headers.jsonContentType],
+              },
+            );
+          }
+        }
+        return ResponseBody.fromString('{}', 404);
+      });
+
+      final session = StaffSession(dio, cookieJar: jar);
+      final api = DioQueueMachineApi(
+        dio: dio,
+        session: session,
+        branchId: () => 'MAIN',
+      );
+      final printer = _FakePrinter();
+      final container = ProviderContainer(
+        overrides: [
+          queueMachineApiProvider.overrideWithValue(api),
+          staffSessionProvider.overrideWithValue(session),
+          ticketPrinterProvider.overrideWithValue(printer),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(queueMachineControllerProvider, (_, _) {});
+
+      final ctl = container.read(queueMachineControllerProvider.notifier);
+      await ctl.signIn('teller1', 'pw');
+
+      // Case 1: first issueByToken returns 401 -> refresh() succeeds -> retry succeeds.
+      await ctl.onScan('https://xc.example.com/q#tok-1');
+      expect(refreshCalls, 1);
+      expect(issueCalls, 2);
+      expect(
+        container.read(queueMachineControllerProvider).screen,
+        QmScreen.issued,
+      );
+      expect(
+        container.read(queueMachineControllerProvider).displayNumber,
+        'K042',
+      );
+
+      // Case 2: issueByToken returns 401 and refresh() also returns 401 -> goes to signIn.
+      issueCalls = 0;
+      refreshCalls = 0;
+      refreshStatus = 401;
+      await ctl.onScan('https://xc.example.com/q#tok-2');
+      expect(refreshCalls, 1);
+      expect(issueCalls, 1);
+      expect(
+        container.read(queueMachineControllerProvider).screen,
+        QmScreen.signIn,
+      );
     },
   );
 }

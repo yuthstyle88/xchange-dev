@@ -61,23 +61,27 @@ void attachStaffCookieInterceptor(Dio dio, CookieJar cookieJar) {
 
 /// Maps a [DioException] from auth or kiosk routes to [QueueMachineRefused].
 QueueMachineRefused toQueueMachineRefused(DioException err) {
+  final status = err.response?.statusCode;
+  if (status == 401) {
+    return const QueueMachineRefused('unauthorized', statusCode: 401);
+  }
   final data = err.response?.data;
   if (data is Map) {
     final error = data['error'];
     if (error is String && error.isNotEmpty) {
-      return QueueMachineRefused(error);
+      return QueueMachineRefused(error, statusCode: status);
     }
     if (error is Map) {
       final code = error['code'];
       if (code is String && code.isNotEmpty) {
-        return QueueMachineRefused(code);
+        return QueueMachineRefused(code, statusCode: status);
       }
     }
   }
-  final status = err.response?.statusCode;
-  if (status == 404) return const QueueMachineRefused('notFound');
-  if (status == 401) return const QueueMachineRefused('invalidCredentials');
-  return const QueueMachineRefused('networkError');
+  if (status == 404) {
+    return const QueueMachineRefused('notFound', statusCode: 404);
+  }
+  return QueueMachineRefused('networkError', statusCode: status);
 }
 
 /// Staff session management (§4.3a W6, W12): sign-in, session refresh, and sign-out.
@@ -105,6 +109,9 @@ class StaffSession {
         data: const <String, dynamic>{},
       );
     } on DioException catch (err) {
+      if (err.response?.statusCode == 401) {
+        await cookieJar?.deleteAll();
+      }
       throw toQueueMachineRefused(err);
     }
   }

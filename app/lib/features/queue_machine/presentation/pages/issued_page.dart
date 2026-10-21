@@ -6,9 +6,7 @@ import '../controllers/queue_machine_controller.dart';
 import 'queue_machine_home_page.dart';
 
 class IssuedPage extends ConsumerStatefulWidget {
-  const IssuedPage({super.key, this.embedded = false});
-
-  final bool embedded;
+  const IssuedPage({super.key});
 
   @override
   ConsumerState<IssuedPage> createState() => _IssuedPageState();
@@ -31,12 +29,6 @@ class _IssuedPageState extends ConsumerState<IssuedPage> {
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(queueMachineControllerProvider);
-    final statusKey = switch (s.print) {
-      PrintStatus.printed => 'issued_printed',
-      PrintStatus.failed => 'issued_print_failed',
-      PrintStatus.noPrinter => 'issued_noPrinter',
-      PrintStatus.none => null,
-    };
     final statusText = switch (s.print) {
       PrintStatus.printed => queueMachineText(ref, 'issued_printed'),
       PrintStatus.failed => queueMachineText(ref, 'issued_print_failed'),
@@ -44,7 +36,7 @@ class _IssuedPageState extends ConsumerState<IssuedPage> {
       PrintStatus.none => null,
     };
 
-    final content = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
@@ -64,7 +56,7 @@ class _IssuedPageState extends ConsumerState<IssuedPage> {
             color: KioskColors.brand,
           ),
         ),
-        if (statusKey != null && statusText != null) ...[
+        if (statusText != null) ...[
           const SizedBox(height: 16),
           Text(
             statusText,
@@ -87,22 +79,6 @@ class _IssuedPageState extends ConsumerState<IssuedPage> {
           onSubmitted: _submitRescan,
         ),
       ],
-    );
-
-    if (widget.embedded) return content;
-
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: content,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

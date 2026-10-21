@@ -21,33 +21,45 @@ class DioQueueMachineApi implements QueueMachineApi {
   Future<void> signIn(String identifier, String password) =>
       session.signIn(identifier, password);
 
+  Future<IssuedTicket> _postIssue(String token) async {
+    final res = await dio.post<dynamic>(
+      '/api/kiosk',
+      data: <String, dynamic>{
+        'action': 'issueByToken',
+        'payload': <String, dynamic>{'branchId': branchId(), 'token': token},
+      },
+    );
+    final data = res.data;
+    if (data is Map) {
+      final displayNumber = data['displayNumber'];
+      final ticketId = data['ticketId'];
+      final ticketEscpos = data['ticketEscpos'];
+      if (displayNumber is String &&
+          ticketId is String &&
+          ticketEscpos is String) {
+        return IssuedTicket(
+          displayNumber: displayNumber,
+          ticketId: ticketId,
+          ticketEscpos: ticketEscpos,
+        );
+      }
+    }
+    throw const QueueMachineRefused('invalidResponse');
+  }
+
   @override
   Future<IssuedTicket> issueByToken(String token) async {
     try {
-      final res = await dio.post<dynamic>(
-        '/api/kiosk',
-        data: <String, dynamic>{
-          'action': 'issueByToken',
-          'payload': <String, dynamic>{'branchId': branchId(), 'token': token},
-        },
-      );
-      final data = res.data;
-      if (data is Map) {
-        final displayNumber = data['displayNumber'];
-        final ticketId = data['ticketId'];
-        final ticketEscpos = data['ticketEscpos'];
-        if (displayNumber is String &&
-            ticketId is String &&
-            ticketEscpos is String) {
-          return IssuedTicket(
-            displayNumber: displayNumber,
-            ticketId: ticketId,
-            ticketEscpos: ticketEscpos,
-          );
+      return await _postIssue(token);
+    } on DioException catch (err) {
+      if (err.response?.statusCode == 401) {
+        await session.refresh();
+        try {
+          return await _postIssue(token);
+        } on DioException catch (retryErr) {
+          throw toQueueMachineRefused(retryErr);
         }
       }
-      throw const QueueMachineRefused('invalidResponse');
-    } on DioException catch (err) {
       throw toQueueMachineRefused(err);
     }
   }

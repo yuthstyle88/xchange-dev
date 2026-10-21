@@ -6,9 +6,7 @@ import '../controllers/queue_machine_controller.dart';
 import 'queue_machine_home_page.dart';
 
 class ScannerPage extends ConsumerStatefulWidget {
-  const ScannerPage({super.key, this.embedded = false});
-
-  final bool embedded;
+  const ScannerPage({super.key});
 
   @override
   ConsumerState<ScannerPage> createState() => _ScannerPageState();
@@ -16,9 +14,13 @@ class ScannerPage extends ConsumerStatefulWidget {
 
 class _ScannerPageState extends ConsumerState<ScannerPage> {
   final TextEditingController _qrInput = TextEditingController();
+  final MobileScannerController _scannerController = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+  );
 
   @override
   void dispose() {
+    _scannerController.dispose();
     _qrInput.dispose();
     super.dispose();
   }
@@ -37,7 +39,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
       _ => 'scanner_error_not_found',
     };
 
-    final content = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
@@ -52,6 +54,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
             borderRadius: BorderRadius.circular(12),
             child: MobileScanner(
               key: const Key('scanner-camera'),
+              controller: _scannerController,
               placeholderBuilder: (context) =>
                   const ColoredBox(color: Colors.black12),
               errorBuilder: (context, error) =>
@@ -92,22 +95,6 @@ class _ScannerPageState extends ConsumerState<ScannerPage> {
           child: Text(queueMachineText(ref, 'scanner_submit')),
         ),
       ],
-    );
-
-    if (widget.embedded) return content;
-
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: content,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

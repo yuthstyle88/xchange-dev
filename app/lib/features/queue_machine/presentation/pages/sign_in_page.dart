@@ -5,9 +5,7 @@ import '../controllers/queue_machine_controller.dart';
 import 'queue_machine_home_page.dart';
 
 class SignInPage extends ConsumerStatefulWidget {
-  const SignInPage({super.key, this.embedded = false});
-
-  final bool embedded;
+  const SignInPage({super.key});
 
   @override
   ConsumerState<SignInPage> createState() => _SignInPageState();
@@ -33,7 +31,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(queueMachineControllerProvider);
-    final content = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
@@ -75,22 +73,6 @@ class _SignInPageState extends ConsumerState<SignInPage> {
           child: Text(queueMachineText(ref, 'sign_in_submit')),
         ),
       ],
-    );
-
-    if (widget.embedded) return content;
-
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: content,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

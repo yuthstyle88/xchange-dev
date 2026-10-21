@@ -2,18 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/endpoint/endpoint_store.dart';
-import '../../features/queue_machine/presentation/pages/issued_page.dart';
 import '../../features/queue_machine/presentation/pages/printer_page.dart';
 import '../../features/queue_machine/presentation/pages/queue_machine_home_page.dart';
-import '../../features/queue_machine/presentation/pages/scanner_page.dart';
-import '../../features/queue_machine/presentation/pages/sign_in_page.dart';
 import '../../features/setup/app/setup_providers.dart';
 import '../../features/setup/presentation/pages/setup_page.dart';
 
 const setupPath = '/setup';
-const signInPath = '/sign-in';
-const scannerPath = '/scanner';
-const issuedPath = '/issued';
 const printerPath = '/printer';
 
 /// The customer host serves the kiosk at both `/` and `/kiosk`, with the
@@ -40,21 +34,6 @@ final appRouterProvider = Provider<GoRouter>(
         path: '/kiosk',
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: QueueMachineHomePage()),
-      ),
-      GoRoute(
-        path: signInPath,
-        pageBuilder: (context, state) =>
-            const NoTransitionPage(child: SignInPage()),
-      ),
-      GoRoute(
-        path: scannerPath,
-        pageBuilder: (context, state) =>
-            const NoTransitionPage(child: ScannerPage()),
-      ),
-      GoRoute(
-        path: issuedPath,
-        pageBuilder: (context, state) =>
-            const NoTransitionPage(child: IssuedPage()),
       ),
       GoRoute(
         path: printerPath,

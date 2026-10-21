@@ -43,12 +43,14 @@ String? parseRequestQr(String raw) {
 class QueueMachineController extends Notifier<QueueMachineState> {
   Timer? _timer;
   int _scanSeq = 0;
+  String? _inFlightToken;
 
   @override
   QueueMachineState build() {
     ref.onDispose(() {
       _timer?.cancel();
       _timer = null;
+      _inFlightToken = null;
     });
     return const QueueMachineState();
   }
@@ -65,6 +67,8 @@ class QueueMachineController extends Notifier<QueueMachineState> {
     try {
       await ref.read(queueMachineApiProvider).signIn(trimmedId, pw);
       _timer?.cancel();
+      _scanSeq += 1;
+      _inFlightToken = null;
       state = const QueueMachineState(screen: QmScreen.scanner);
     } on QueueMachineRefused catch (e) {
       state = QueueMachineState(screen: QmScreen.signIn, error: e.code);
@@ -79,6 +83,7 @@ class QueueMachineController extends Notifier<QueueMachineState> {
   Future<void> signOut() async {
     _timer?.cancel();
     _scanSeq += 1;
+    _inFlightToken = null;
     state = const QueueMachineState(screen: QmScreen.signIn);
     try {
       await ref.read(staffSessionProvider).signOut();
@@ -92,6 +97,7 @@ class QueueMachineController extends Notifier<QueueMachineState> {
 
     final token = parseRequestQr(raw);
     if (token == null) {
+      if (_inFlightToken != null) return;
       _timer?.cancel();
       state = const QueueMachineState(
         screen: QmScreen.scanner,
@@ -100,64 +106,77 @@ class QueueMachineController extends Notifier<QueueMachineState> {
       return;
     }
 
+    if (_inFlightToken == token) return;
+
     _timer?.cancel();
+    _inFlightToken = token;
     final seq = ++_scanSeq;
     final api = ref.read(queueMachineApiProvider);
 
-    final IssuedTicket issued;
     try {
-      issued = await api.issueByToken(token);
-    } on QueueMachineRefused catch (e) {
-      if (_scanSeq != seq) return;
-      state = QueueMachineState(screen: QmScreen.scanner, error: e.code);
-      return;
-    } catch (_) {
-      if (_scanSeq != seq) return;
-      state = const QueueMachineState(
-        screen: QmScreen.scanner,
-        error: 'issueFailed',
-      );
-      return;
-    }
+      final IssuedTicket issued;
+      try {
+        issued = await api.issueByToken(token);
+      } on QueueMachineRefused catch (e) {
+        if (_scanSeq != seq) return;
+        if (e.isUnauthorized) {
+          state = const QueueMachineState(screen: QmScreen.signIn);
+          return;
+        }
+        state = QueueMachineState(screen: QmScreen.scanner, error: e.code);
+        return;
+      } catch (_) {
+        if (_scanSeq != seq) return;
+        state = const QueueMachineState(
+          screen: QmScreen.scanner,
+          error: 'issueFailed',
+        );
+        return;
+      }
 
-    if (_scanSeq != seq) return;
-    final bytes = Uint8List.fromList(base64Decode(issued.ticketEscpos));
-    var printStatus = PrintStatus.printed;
-    try {
-      await ref.read(ticketPrinterProvider).write(bytes);
-    } on PrinterUnavailable catch (e) {
-      if (e.reason == 'noDevice' || e.reason == 'permissionRefused') {
-        printStatus = PrintStatus.noPrinter;
-      } else {
+      if (_scanSeq != seq) return;
+      final bytes = Uint8List.fromList(base64Decode(issued.ticketEscpos));
+      var printStatus = PrintStatus.printed;
+      try {
+        await ref.read(ticketPrinterProvider).write(bytes);
+      } on PrinterUnavailable catch (e) {
+        if (e.reason == 'noDevice' || e.reason == 'permissionRefused') {
+          printStatus = PrintStatus.noPrinter;
+        } else {
+          printStatus = PrintStatus.failed;
+        }
+      } catch (_) {
         printStatus = PrintStatus.failed;
       }
-    } catch (_) {
-      printStatus = PrintStatus.failed;
-    }
 
-    if (_scanSeq != seq) return;
-    var seconds = 10;
-    try {
-      final configured = await api.resultSeconds();
-      if (configured > 0) seconds = configured;
-    } catch (_) {
-      seconds = 10;
-    }
-
-    if (_scanSeq != seq) return;
-    state = QueueMachineState(
-      screen: QmScreen.issued,
-      displayNumber: issued.displayNumber,
-      print: printStatus,
-      error: null,
-    );
-
-    _timer?.cancel();
-    _timer = Timer(Duration(seconds: seconds), () {
-      if (_scanSeq == seq && state.screen == QmScreen.issued) {
-        state = const QueueMachineState(screen: QmScreen.scanner);
+      if (_scanSeq != seq) return;
+      var seconds = 10;
+      try {
+        final configured = await api.resultSeconds();
+        if (configured > 0) seconds = configured;
+      } catch (_) {
+        seconds = 10;
       }
-    });
+
+      if (_scanSeq != seq) return;
+      state = QueueMachineState(
+        screen: QmScreen.issued,
+        displayNumber: issued.displayNumber,
+        print: printStatus,
+        error: null,
+      );
+
+      _timer?.cancel();
+      _timer = Timer(Duration(seconds: seconds), () {
+        if (_scanSeq == seq && state.screen == QmScreen.issued) {
+          state = const QueueMachineState(screen: QmScreen.scanner);
+        }
+      });
+    } finally {
+      if (_scanSeq == seq) {
+        _inFlightToken = null;
+      }
+    }
   }
 }
 

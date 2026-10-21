@@ -15,9 +15,16 @@ class IssuedTicket {
 }
 
 class QueueMachineRefused implements Exception {
-  const QueueMachineRefused(this.code);
+  const QueueMachineRefused(this.code, {this.statusCode});
 
   final String code;
+  final int? statusCode;
+
+  bool get isUnauthorized =>
+      statusCode == 401 ||
+      code == 'unauthorized' ||
+      code == 'signIn' ||
+      code == 'EMPLOYEE_AUTH_REQUIRED';
 
   @override
   String toString() => 'QueueMachineRefused($code)';
