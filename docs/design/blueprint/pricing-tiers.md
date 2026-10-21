@@ -89,7 +89,7 @@ CREATE TABLE rate_policy_currency_settings (
   `ratePolicySave` (an adjust change) keeps every override. A copied row that breaks the new version's guard ⇒
   `validationFailed`, nothing written. The skeleton writes the call; PT-3 writes the body.
 - `min_spread_pct`: V.9's per-currency minimum spread (0–5 %). A currency with no row uses `rate_policy_versions`' value
-  if §5.2 adds one, otherwise V.9's `DEFAULT_CONFIG.minSpreadPct` (value waits for P-2's files).
+  if §5.2 adds one, otherwise V.9's `DEFAULT_CONFIG.minSpreadPct`, 0.3 (`V9:engine:13`, §5.2).
 
 **Domain:** `CurrencyTierOverride` (new file) holds one currency's four `TierMargin`s; `PolicyTiers::for_currency`
 returns a `PolicyTiers` with the same bands and that currency's margins. `TierProposal::of` is **unchanged**: its three
@@ -120,7 +120,8 @@ ALTER TABLE rate_policy_currency_settings
 - `[required]` **A market anchor with no line for the currency has no AUTO base.** `newest_in` returns `None`, the
   line needs MANUAL, and the board flags `NoAnchor`. It never falls back to BoT or `START`, since that would publish a price
   nobody chose.
-- `[required]` **A stale market line is handled like a stale BoT line.** The snapshot carries that line's `fetched_at`,
+- `[required]` **A stale market line is handled like a stale BoT line.** The snapshot carries that line's `fetched_at`
+  (for a MARKET batch, the last fetch that confirmed it, §4, so an unchanged market answer does not age),
   the published side reads stale, and `StalePolicy::admits` (`stale_policy.rs:47`) decides at quote time (STOP or LIMIT).
 - `[required]` **The snapshot records what priced the line.** `"anchor_source"` in `published_rate_lines.source_snapshot`
   is the `reference_type` of the line `reference_line_id` points at, so no new lookup. It is written in
@@ -148,7 +149,7 @@ What V.9 does (`V9:market`), and what v3 keeps:
 | TT's update-time call may fail without failing TT | `V9:market:84` | `[required]` |
 | A source refreshes when its last attempt is older than 5 min; a source is **stale** when it has no good snapshot or its newest good one is older than 30 min | `V9:market:10,133,147-148` | `[required]` both numbers; stale ⇒ flag `StaleSource` |
 | Failures are stored and the page shows the last error while still serving the last good data | `V9:market:99-113,124-137`, `V9:test:61-69` | `[required]` last good data still served; each source's last attempt and error are stored in `market_feed_status` (§12.1), one row per source, because `rate_reference_batches` has no ok/error column (`api/migrations/20261010120000_rate_engine.sql:3-11`) and a failed fetch writes no batch. The error survives a restart, as in V.9 |
-| Retention: every row for 2 days, one per source per hour for 90 days | `V9:market:114-119` | **not built here**: v3 keeps reference batches like BoT's. The 5-minute writes dedupe on `raw_checksum` (`reference_batch_writer.rs:58-72`), so only a changed answer writes a batch. Retention is a follow-up if the table grows |
+| Retention: every row for 2 days, one per source per hour for 90 days | `V9:market:114-119` | **not built here**: v3 keeps reference batches like BoT's. The 5-minute writes dedupe on `raw_checksum` (`reference_batch_writer.rs:58-72`), so only an answer never seen before writes a batch; a repeat **confirms** the batch it matches (below). Retention is a follow-up if the table grows |
 | TT row: name `USD(L)`/`USD(M)`/`USD(S)`/`JPY` (code + optional band), `current_buy_rate`, `current_sell_rate`, `decimals`, `description` (denominations); a row with neither price, or a name that is not a code, is skipped; no rows ⇒ error `TT: no rates`; a non-array ⇒ `TT: unexpected response` | `V9:market:15-28`, `V9:test:33-40,48-51,57-58` | `[required]` |
 | SR: the `self.__next_f.push([1,"…"])` chunks are decoded and concatenated; the object after `"exchangeList":` is cut out by brace depth (quotes and escapes respected); `date` is `"date":"YYYY-MM-DD"`; one row per (code, list index) with `denomRem`, `buyText`, `sellText`; codes match `^[A-Z]{3,4}$`; zero prices dropped; errors `SR: exchangeList not found`, `SR: exchangeList is cut off`, `SR: no rates` | `V9:market:32-63`, `V9:test:41-46,52-56` | `[required]` |
 | A price counts only if it is a finite number > 0 | `V9:market:12` | `[required]` |
@@ -188,8 +189,28 @@ What V.9 does (`V9:market`), and what v3 keeps:
   TT and Super Rich from CI. Setting the variable in an environment is a deploy setting, so it is the owner's call.
   Interval `MARKET_FEED_INTERVAL_SECS`, default 300. It **never** triggers a branch refresh or a draft: `reference_base.rs`
   reads `'BOT'` unless a branch or currency chose a market anchor (§3.1), and that path reprices on the BoT tick as today.
+- `[required]` **A repeated answer confirms its batch** (root cause of review FAIL issuecomment-6328842369, must-fix 1).
+  `ReferenceBatchWriter` dedupes on any earlier batch of the provider with the same checksum
+  (`pg_reference_batch_store.rs:40-56`, `reference_batch_writer.rs:65-72`), so without this a batch's `fetched_at`
+  would mean "first seen": an unchanged TT answer would turn stale after 30 min although every fetch succeeds, and
+  TT going A → B → A would leave B as the newest line (`reference_base.rs` and the board read the newest line by
+  `fetched_at`). V.9 never has either problem because it writes a row per successful fetch (`V9:market:107`, read at
+  `:128,133`). The fix is at the writer:
+  - `ReferenceProvider` gains `fn confirms_on_repeat(&self) -> bool { false }` (a default method; BoT keeps `false`, so
+    BoT's behaviour is unchanged); `MarketProvider` returns `true`.
+  - On a checksum hit with `confirms_on_repeat()`, the writer calls `PgReferenceBatchStore::confirm(tx, batch_id,
+    fetched_at)`, which sets that batch's `fetched_at` to this fetch's time, and returns its id. No new row, so the
+    `(provider, source_date, raw_checksum)` unique key is never hit.
+  - For MARKET batches `fetched_at` therefore means **"last confirmed by a successful fetch"**: every reader (the board,
+    `ReferenceBase::newest_in`, `StalePolicy` through the snapshot's `fetched_at`) gets the right answer unchanged. A
+    failed fetch confirms nothing, so a source that stops answering goes stale after 30 min, as in V.9.
+  - No schema change: an existing column of MARKET batches (none exist on any database yet) is written at run time.
+  - Files: `application/reference/reference_batch_writer.rs`, `infrastructure/reference/pg_reference_batch_store.rs`
+    (PX-12); `domain/reference/reference_provider.rs` (the default method, skeleton).
 - `[required]` **Staleness** is computed where it is read: `MarketStaleness::is_stale(fetched_at: Option<DateTime>, now) -> bool`
-  in `domain/pricing/market_snapshot.rs` (`None` or older than 30 min ⇒ stale). The board sets `PricingSourceDto.stale`,
+  in `domain/pricing/market_snapshot.rs` (`None` or older than 30 min ⇒ stale), from the newest batch's `fetched_at` (= last confirmed, above) for a
+  source, and from the quote's own batch `fetched_at` for a quote (a currency missing from the current answer keeps an
+  older batch's line and goes stale with it). The board sets `PricingSourceDto.stale`,
   `PricingQuoteDto.stale` and `MarketQuote.stale` from it, and `PricingSourceDto.error` from
   `MarketFeedStatusStore::all`.
 - On demand: `rateReferenceFetch` + `provider` (`TT`/`SR`) runs the same writer once (PT-13, unchanged plan).
@@ -208,7 +229,7 @@ What V.9 does (`V9:market`), and what v3 keeps:
 | `PricingSuggestion` | `domain/pricing/pricing_suggestion.rs` | `of(&SuggestionInput) -> Suggestion { tiers: Option<[TierPrice; 4]>, margins: Option<[TierMargin; 4]>, flags: Vec<PricingFlag> }` (types already on main, `pricing_suggestion.rs:14-35`) |
 | `SuggestionInput` | `domain/pricing/pricing_suggestion.rs` | `[required]` from §5.2, replacing the `[proposed]` shape on main (`:37-54`): `currency`, `quotes: Vec<MarketQuote>` (per one unit), `unit_size`, `base_buy`/`base_sell: Option<Rate>` (unit size), `buy_adjust_pct`/`sell_adjust_pct`, `min_spread_pct: Option<RatePercent>`, `partner_cost: Option<Decimal>` (per one unit; replaces `partner_buy`), `published_tier1_buy`/`published_tier1_sell: Option<Rate>` (unit size), `config: SuggestionConfig` |
 | `SuggestionConfig` | `domain/pricing/pricing_suggestion.rs` | `better: [Decimal; 4]`, `min_spread_pct`, `far_from_anchor_pct`, `large_move_pct`; `V9_DEFAULT` (§5.2) |
-| `TierCheck`, `TierError` | `domain/pricing/tier_check.rs` | `validate(&[TierPrice], anchor: Option<&MarketQuote>, &SuggestionConfig) -> Vec<TierError>` (§5.2) |
+| `TierCheck`, `TierError` | `domain/pricing/tier_check.rs` | `validate(&[TierPrice], unit_size: Decimal, anchor: Option<&MarketQuote>, &SuggestionConfig) -> Vec<TierError>` (§5.2) |
 | `RowStatus` | `domain/pricing/row_status.rs` | `Current` · `Pending` · `Unpriced` · `Tiers` · `Review` · `Manual` · `Reference` (V.9's `STATUS`), `of(&Suggestion, approved, enabled)` |
 | `Recommendation`, `RecommendationInput`, `RecommendationCode`, `Severity` | `domain/pricing/recommendation.rs` | severity (`High`·`Warn`·`Medium`·`Low`), `RecommendationCode` (§5.2 table), currency, side, `gap_pct`, `value`; `list(&RecommendationInput) -> Vec<Recommendation>` |
 | `MarketFeed`, `MarketRequest`, `MarketBody`, `MarketFeedError` | `domain/pricing/market_feed.rs` | the per-source trait (§4) |
@@ -269,7 +290,7 @@ suggestion only, never a price, like V.9's unversioned `pricing_config` (`V9:sto
 per-unit tier price ⇒ `Precision`. Half-up, not floor/ceil: the 4-place margin is itself rounded, so e.g. a sell of
 33.80 over a base of 34 gives margin −0.5882 and 33.800012, which must read as 33.80 (ceil would give 33.81). No base on a side ⇒ `margins: None` for the row and `NoAnchor`.
 
-**Approval check** `TierCheck::validate(tiers, anchor) -> Vec<TierError>` (`V9:engine:68-84`), `[required]`:
+**Approval check** `TierCheck::validate(tiers, unit_size, anchor, config) -> Vec<TierError>` (`V9:engine:68-84`), `[required]`:
 exactly 4 tiers; each `buy > 0` and `sell > 0`; `sell > buy`; tier `n` buy ≥ tier `n−1` buy and sell ≤ tier `n−1` sell
 (equal-or-better); and, only when every check above passed and there is an anchor, tier 1 within
 `3 × far_from_anchor_pct` (= 3 %) of the anchor on both sides. `pricingApprove` calls it per row and answers
@@ -433,9 +454,15 @@ classDiagram
     +save(tx, branch, scope, better, by, at)
   }
   class PricingSuggestionSettingsSaveCommand
-  class ReferenceBatchWriter
+  class ReferenceBatchWriter {
+    +fetch_and_write(tx) Uuid
+  }
+  class PgReferenceBatchStore {
+    +find_existing_by_checksum(tx, provider, checksum) Option~Uuid~
+    +confirm(tx, batch_id, fetched_at)
+  }
   class TierCheck {
-    +validate(&[TierPrice], Option~&MarketQuote~, &SuggestionConfig) Vec~TierError~
+    +validate(&[TierPrice], Decimal, Option~&MarketQuote~, &SuggestionConfig) Vec~TierError~
   }
   class ReferenceProvider {
     <<trait>>
@@ -462,6 +489,8 @@ classDiagram
   MarketRateSource o-- MarketFeed
   MarketFeed ..> MarketSnapshot
   MarketRefresh ..> ReferenceBatchWriter
+  ReferenceBatchWriter ..> PgReferenceBatchStore
+  ReferenceBatchWriter ..> ReferenceProvider
   MarketRefresh ..> MarketRateSource
   MarketRefresh ..> MarketProvider
   MarketRefresh ..> MarketFeedStatusStore
@@ -574,7 +603,10 @@ the migration, and the admin menu entry, so the function tickets touch only thei
 | SR page without `exchangeList` · TT body not an array · TT `[]` | errors `exchangeList not found` · `unexpected` · `no rates` (`:56-58`) |
 | a source answers 503 | its attempt is recorded with `HTTP 503`; the last good batch is still served; not stale until 30 min (`:64-70`) |
 | a source does not answer within 10 s | the attempt fails with a timeout error; the other source is still written |
-| refresh needed | 7 min after the last attempt no, 12 min after yes: interval 5 min (`:71`) |
+| the loop | ticks every `MARKET_FEED_INTERVAL_SECS` (default 300, V.9 `REFRESH_AFTER_MS`, `V9:market:10`); off unless `MARKET_FEED_ENABLED=true`. V.9's on-demand `needsRefresh` (`V9:market:147-148`, test `V9:test:71`) is not ported: v3 runs a fixed loop |
+| the same answer at every fetch for 35 min | the source and its quotes are **not** stale (each fetch confirms the batch) |
+| TT answers A, then B, then A | the newest `MARKET_TT` batch is A again (A's `fetched_at` = the third fetch), and no third batch is written |
+| BoT returns the same rows twice | unchanged: the existing batch id, its `fetched_at` untouched (`confirms_on_repeat` is `false`) |
 | USD, TT 33.2 / 33.9, defaults | tiers 33.23/33.87, 33.24/33.86, 33.26/33.84, 33.29/33.80; no flags (`:81-86`) |
 | `better = [0, 0.1, 0.2, 0.3]` | 33.20/33.90, 33.23/33.87, 33.26/33.84, 33.29/33.80 (`:84`) |
 | GBP (SR only, 44.40 / 44.55) | anchor SR, `NoTtQuote`, `MinSpread`; every tier's spread ≥ 0.3 % (`:87-90`) |
@@ -664,12 +696,14 @@ BE (sub-controller under the BE lane controller claude/a90ab16c), base `feat/pri
 | PT-9 | `PricingSuggestion` | logic | P-2's files |
 | PT-10 | `Recommendation` | logic | P-2's files |
 | PT-11 / PT-12 | TT / Super Rich source + provider | logic | P-2's files |
+| PT-13 | `rateReferenceFetch` `provider` (+ the `MarketRatesRefresh` check) + feed-loop wiring | logic | PT-11, PT-12, PT-14 |
+| PT-14 | `MarketRatesRefresh` variant + its `RATES_STOCK` mapping only (`permission.rs`, `permission_module.rs`) | logic | `feat/rbac-groups` on main |
 
 **XC-PRICING (#4324), 2026-10-22, replaces the PT-9…PT-12 rows above.** Sub-controller claude/mbp-xc-pricing, base
 `feat/4324-pricing-suggestion`. PX-0 is the skeleton (Claude): every new file and type with its final signature,
 `todo!()` bodies, every `mod` line, the `SuggestionInput` change, the §12.1 migration, the new DTO fields and command
 types (generated TS committed), the 5-minute loop spawned in `bootstrap/mod.rs` with a body that does nothing until
-PX-5 lands, and up-front failing tests ported from `V9:test`. Then PX-1…PX-11 are released together, one file set
+PX-5 lands, and up-front failing tests ported from `V9:test`. Then PX-1…PX-12 are released together, one file set
 each, no shared file:
 
 | # | Ticket | Files (`api/crates/xc-rate/src/` unless noted) | Class |
@@ -685,13 +719,12 @@ each, no shared file:
 | PX-9 | `pricing_board` wiring: suggestion (`pricing_board.rs:342`), staleness, errors, recommendations, 7-day volume, `betterPct` | `api/src/presentation/http/v3/views/pricing_board.rs` | logic |
 | PX-10 | `SuggestionSettings` (`better_for`, `validate`) + `PricingSuggestionSettingsStore` | `domain/pricing/suggestion_settings.rs`, `infrastructure/pricing/suggestion_settings_store.rs` | logic |
 | PX-11 | `pricingSuggestionSettingsSave` | `api/src/presentation/http/v3/commands/pricing_suggestion_settings_save.rs` | logic |
+| PX-12 | a repeated answer confirms its batch (§4): `PgReferenceBatchStore::confirm` + the writer's call | `application/reference/reference_batch_writer.rs`, `infrastructure/reference/pg_reference_batch_store.rs` | logic (shared with BoT; BoT's tests must stay green) |
 
 Every ticket's tests are the up-front tests in its own test file, named in the ticket. PX-9's tests call the domain
 functions through the view, so they go green only once PX-1, PX-6 and PX-8 are on the branch; it is released with the
 rest and written against the skeleton signatures. `rateReferenceFetch` + `provider` (PT-13) and `MarketRatesRefresh`
 (PT-14) are unchanged and not part of #4324.
-| PT-13 | `rateReferenceFetch` `provider` (+ the `MarketRatesRefresh` check) + feed-loop wiring | logic | PT-11, PT-12, PT-14 |
-| PT-14 | `MarketRatesRefresh` variant + its `RATES_STOCK` mapping only (`permission.rs`, `permission_module.rs`) | logic | `feat/rbac-groups` on main |
 
 FE (sub-controller under claude/5edf7bb5), base `feat/fe-pricing-board` (plus one FE ticket for §3.1: `anchorSource` in `pricing-board.types.ts`, shown in `PricingRow`, chosen in `PricingPolicy`): one ticket per §9 row (9 components + labels),
 mechanical except `Pricing`, `TierEditor` and `BulkApprove` (logic). They code against the generated DTOs with a mocked
