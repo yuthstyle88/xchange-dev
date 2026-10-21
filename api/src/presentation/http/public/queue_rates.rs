@@ -8,10 +8,24 @@
 //! plus nothing. Unknown organisation or branch ⇒ `not_found_response()` (byte-identical to
 //! `/rates`). No session. `Cache-Control: no-store`.
 
-use actix_web::{HttpResponse, web};
-use sqlx::PgPool;
+use std::sync::Arc;
+
+use actix_web::http::header;
+use actix_web::{HttpRequest, HttpResponse, web};
+use pos_infra::transactions::Transactor;
+use sqlx::{PgPool, Row};
+use xc_kernel::branch_tx::BranchTx;
+use xc_kernel::ids::BranchId;
+use xc_kiosk::application::kiosk::service::KioskService;
+use xc_rate::domain::rate::entities::rate_source::RateSource;
+use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
 use crate::bootstrap::AppState;
+use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
+use crate::presentation::dto::kiosk as dto_kiosk;
+use crate::presentation::dto::v3::common::RateFreshnessDto;
+use crate::presentation::http::public::not_found_response;
+use crate::presentation::http::v3::published_rates::published_rates_data;
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     cfg.app_data(web::Data::new(state.db.clone())).route(
@@ -20,7 +34,80 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     );
 }
 
-async fn handle(pool: web::Data<PgPool>, path: web::Path<(String, String)>) -> HttpResponse {
-    let _ = (pool, path);
-    todo!("KWQ-C9: the kiosk core's rates for the web page")
+async fn handle(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<(String, String)>,
+) -> HttpResponse {
+    let (org_code, branch_code) = path.into_inner();
+    let pool_ref = pool.get_ref();
+
+    let row = sqlx::query(
+        "SELECT b.id \
+         FROM branches b \
+         JOIN organizations o ON o.id = b.organization_id \
+         WHERE o.code = $1 AND b.code = $2",
+    )
+    .bind(&org_code)
+    .bind(&branch_code)
+    .fetch_optional(pool_ref)
+    .await;
+
+    let branch_id_str: String = match row {
+        Ok(Some(r)) => r.get(0),
+        Ok(None) => return not_found_response(),
+        Err(e) => {
+            tracing::error!("failed to query branch for public queue-rates: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let branch_id = BranchId::new(branch_id_str);
+    let branch_tx = BranchTx::new(Transactor::new(pool_ref.clone()));
+    let audit: Arc<dyn KioskAuditLog> = req
+        .app_data::<web::Data<dyn KioskAuditLog>>()
+        .map(|d| d.clone().into_inner())
+        .unwrap_or_else(|| Arc::new(PgKioskAuditLog::with_pool(pool_ref.clone())));
+    let source: Arc<dyn RateSource> = req
+        .app_data::<web::Data<Arc<dyn RateSource>>>()
+        .map_or_else(
+            || Arc::new(BotRateSource::bot()) as Arc<dyn RateSource>,
+            |s| s.get_ref().clone(),
+        );
+    let ports = Arc::new(PgKioskPorts::new(pool_ref.clone(), audit, source));
+    let service = KioskService::new(branch_tx, ports);
+
+    let rates = match service.public_rates(&branch_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("failed to read kiosk public_rates for queue-rates: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let pub_data = match published_rates_data(pool_ref, &branch_id).await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::error!("failed to read publication freshness for queue-rates: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    let freshness = RateFreshnessDto {
+        stale: pub_data.stale,
+        source_date: pub_data.source_date,
+        published_at: pub_data.publication.map(|p| p.published_at),
+    };
+
+    let json = match dto_kiosk::rates_json(&rates, &freshness) {
+        Ok(j) => j,
+        Err(e) => {
+            tracing::error!("failed to format queue-rates json: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .content_type("application/json")
+        .body(json.to_text())
 }
