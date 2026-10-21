@@ -58,7 +58,7 @@ async fn quote_for_in_writes_on_the_callers_transaction() {
         .expect("quoted");
     tx.commit().await.expect("commit");
     let row: (Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT customer_id, cancel_token_hash = encode(sha256('tok-1'::bytea), 'hex')::text \
+        "SELECT customer_id, (cancel_token_hash = encode(sha256('tok-1'::bytea), 'hex'))::text \
          FROM kiosk_requests WHERE id = 'web-1'",
     )
     .fetch_one(&db.pool)
