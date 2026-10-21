@@ -124,10 +124,18 @@
   (`20261007190000_transactions.sql:11`).
   - So once the kiosk writes the customer on the quote and the request, the chain *kiosk request → quote → exchange*
     already exists. Only the customer at its start is missing.
+- **The board QR and the app's queue (KS-7).**
+  - The board's QR encodes `<origin>/app/book?branch=<code>` (`web/src/screens/customer/rate-display/BookingQr.tsx:16`).
+    The branch code is public, so the QR proves nothing about where the phone is.
+  - A signed-in customer can already take a walk-in ticket: `queueTicketTake` (`POST /api/app/queue/tickets`,
+    `api/src/presentation/http/v3/commands/queue_ticket_take.rs:58-80`, `IssueSource::App`, at most one active walk-in
+    per branch and day, `xc-queue/src/domain/ticket/issue_source.rs:16-17`). It takes no currency, amount or quote.
+  - The kiosk names its branch in the payload, unproven (`kiosk.rs:291-301`). The kiosk app's setup stores only
+    server + branch (`app/lib/core/endpoint/kiosk_endpoint.dart:17-21`).
 - **The kiosk app keeps no cookie.** `buildKioskDio` has no cookie store (`dio_provider.dart:18-31`). The web build gets
   one from the browser; the native build needs a cookie jar (§5, FE lane).
 
-### 4.2 Decisions (BE lane, from KS-4b/KS-4c)
+### 4.2 Decisions (BE lane, from KS-4b, KS-4c and KS-7)
 
 | # | Decision | Why |
 |---|---|---|
@@ -138,8 +146,13 @@
 | S5 | **Only customers sign in at the kiosk.** A subject bound to a staff or owner user (no CUSTOMER role) gets `403 notACustomer` on a kiosk verify, and no session is made. | a staff session on a shared device would carry `QueueOperate` to the next person |
 | S6 | **A kiosk session is short.** A verify that carries `device: "kiosk"` makes the same `user_sessions` row with `expires = now + 15 min`, and a cookie `Max-Age` to match. The kiosk's reset calls `/api/auth/logout`, as today's sign-out does, and that also revokes the Identity refresh token. The 15 minutes only covers a reset that never runs (power cut, crash). | KS-1, KS-4c; the 12-hour web session is wrong for a shared screen |
 | S7 | **The request and its quote carry the signed-in customer.** `quote` writes `kiosk_requests.customer_id` and `quotes.customer_id` from `Actor.customer_id`. `confirm`, `status`, `customerReceipt` and `customerCancel` on a request with a customer need **that** customer's session, else `403 notThisCustomer` (the booking rule, `xc-booking/src/application/lifecycle.rs:84-88`). | KS-4c reason: every order can be told apart by its customer |
-| S8 | **The branch switch (KS-4a).** `kiosk_settings.phone_required` (default `false`). On: `quote` without a customer session answers `401 signIn`. Off: today's anonymous flow, with `customer_id` NULL. The policy stays `Need::Public` for these actions, because "off" must keep working, and the kiosk service enforces the switch. | KS-4a: only until the Notify key is set (§6.2) |
+| S8 | **No anonymous entry.** `quote` and `confirm` need `CustomerSelf` (`policy.rs:123-126` moves them out of `Need::Public`). Without a customer session the answer is `401 signIn`. `rates` and `settings` stay public. `status`/`customerReceipt`/`customerCancel` stay reachable for rows from before the migration (no customer), as S7 allows. **No branch switch is built on the server:** "off" would be an anonymous path. So the queue cannot be taken until the Notify key is set (§6.2). **Owner question Q5** (it replaces KS-4a's switch). | KS-7 (*"มันต้องต้อง แยก แยะ ใครเป็นใครได้นะ"*): every queue entry belongs to one signed-in customer |
 | S9 | **Consent at the kiosk is the register's own rule.** A new customer's TERMS consent is recorded with `evidence_ref = "kiosk:<branchId>"` in the kiosk's language. If no TERMS text exists in that language, the answer is `409 consentTextMissing` (`field: lang`, no fallback, §4.3 of `customer-identity-consent.md`). The kiosk then offers the languages `consent_texts` lists. An existing customer's consents are not touched. | `customer-identity-consent.md` K5 and §4.3; the kiosk has 16 languages, register accepts th/en/zh (`customer_register.rs:37`) |
+| S10 | **One entry core, two channels** (♻️). The kiosk's `quote` → `confirm` (currency, amount, quote, request, walk-in ticket; `xc-kiosk/src/application/kiosk/customer.rs`) is **the** queue entry core, for the kiosk device and for a customer's phone (KS-7). The core holds every safety rule: the customer (S7), the rate and quote, the per-customer limit (S12), the ticket issue and the cancel token. A channel is one small `EntryChannel` implementation holding only what differs (§4.3). | KS-7 *"the same flow as the kiosk"*; the global ♻️ rule |
+| S11 | **What differs per channel, and nothing else.** <br>• **Branch proof:** the kiosk device names its branch (as today); the phone presents the board's join token (S13). <br>• **Session:** kiosk 15 min, and the reset signs out (S6); phone = the normal web session (KS-7: it need not end at once). <br>• **Ticket delivery:** kiosk = the branch's `ticket_mode` (KS-6); phone = SMS + the ticket page, never print. <br>• **Address limit:** kiosk keeps today's per-address quote limit (`customer.rs:149-153`, `QuoteLimit`); phone has none (a phone's address says nothing). <br>• **Request channel:** `kiosk_requests.channel` = `KIOSK` / `PHONE`, and `quotes.channel` = `KIOSK` / `APP` (already allowed, `quotes.sql:10`). | KS-7 names device binding, reset/sign-out and print |
+| S12 | **One open entry per customer per branch**, on both channels. A second `quote` while the customer has a QUOTED or WAITING request at that branch answers `409 alreadyQueued` with the open request's id. This is the core's rule, the same as the app ticket's (`issue_source.rs:16-17`). It bounds a shared or photographed QR. | KS-7; a remote phone could otherwise hold many places |
+| S13 | **How a phone proves its branch: a rotating board token.** <br>• The board's public poll (`/api/public/orgs/{org}/branches/{code}/rates`, `public/branch_rates.rs:16`) answers a `joinToken`. <br>• The token is `branchId ‖ window ‖ HMAC-SHA256(XC_BOARD_JOIN_KEY, branchId ‖ window)`, base64url, with a 10-minute window. <br>• The QR encodes `<origin>/app/queue?t=<joinToken>` and changes each window. <br>• The server accepts the current or the previous window, and the branch comes **from the token**, never from a parameter. <br>• No table, no state. A wrong, old or other-branch token answers `403 boardTokenInvalid`. <br>• No key set ⇒ the board shows no QR, and a phone entry answers `503 boardJoinUnavailable` (fail closed). The owner sets the key (secrets are the owner's). | the branch code in today's QR (`BookingQr.tsx:16`) is public and guessable: anyone anywhere could queue at any branch |
+| S14 | **The kiosk device's branch proof stays today's named branch** (`kiosk.rs:291-301`: `branchId` in the payload, unproven) in this pass. A device secret issued at kiosk setup is the kiosk's `EntryChannel` change and touches no core rule; it is designed with §4.6. | measured: the kiosk app's setup stores only server + branch (`app/lib/core/endpoint/kiosk_endpoint.dart:17-21`) |
 
 ### 4.3 Class diagram
 
@@ -171,15 +184,36 @@ classDiagram
   class PasswordRegister {
     register_customer(input, ip, now)
   }
-  class KioskService {
-    quote(branch, cmd, customer, now)
-    confirm_with_token(branch, id, customer, ...)
+  class QueueEntryService {
+    quote(channel, proof, customer, cmd, now)
+    confirm(channel, id, customer, now)
+    status / receipt / cancel(id, customer)
+  }
+  class EntryChannel {
+    <<trait>>
+    kind() EntryChannelKind
+    branch_of(proof, now) BranchId
+    address_limit() Option~QuoteLimit~
+    delivery(settings) TicketDelivery
+  }
+  class KioskDeviceChannel {
+    branch_of = named branch (S14)
+    address_limit = QuoteLimit
+    delivery = ticket_mode
+  }
+  class PhoneChannel {
+    branch_of = BoardJoinToken
+    address_limit = none
+    delivery = SMS + page
+  }
+  class BoardJoinToken {
+    issue(branch, now) String
+    verify(token, now) BranchId
   }
   class KioskSettings {
     result_seconds
     idle_seconds
     ticket_mode
-    phone_required
     version
   }
   class KioskSettingsRepository {
@@ -193,7 +227,11 @@ classDiagram
   CustomerBinder <-- CustomerOtpSignIn
   CustomerBinder <-- PasswordRegister
   SessionService <-- PasswordRegister
-  KioskSettingsRepository <-- KioskService
+  EntryChannel <-- QueueEntryService
+  EntryChannel <|.. KioskDeviceChannel
+  EntryChannel <|.. PhoneChannel
+  BoardJoinToken <-- PhoneChannel
+  KioskSettingsRepository <-- QueueEntryService
   KioskSettings <-- KioskSettingsRepository
 ```
 
@@ -207,7 +245,12 @@ classDiagram
 | `PasswordRegister` | `api/src/application/customer_signup.rs` | changed: `verified_login` + `CustomerBinder` | `/api/app/register`, unchanged on the wire | `customer_register.rs` |
 | `CustomerOtpSignIn` | `api/src/application/customer_otp_sign_in.rs` | new | S3, S5, S6 | `auth.rs` `v3_otp_verify` |
 | `KioskSettings`, `KioskSettingsRepository` (+ `PgKioskSettingsRepository`) | `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_settings.rs`, `…/repositories/kiosk_settings_repository.rs`, `api/src/infrastructure/kiosk/pg_kiosk_settings_repository.rs` | new (§3 table) | the settings, with defaults when a branch has no row | `KioskService`, the settings view |
-| `KioskService::quote` / `confirm_with_token` / `status` / `customer_receipt` / `customer_cancel` | `api/crates/xc-kiosk/src/application/kiosk/service.rs` | changed: take `Option<CustomerId>`; S7, S8 | | `kiosk.rs` |
+| the entry core: `impl KioskService` in `customer.rs` (`quote` `:58`, `confirm_with_token` `:219`, `customer_cancel` `:328`, `status` `:394`, `customer_receipt` `:406`) | `api/crates/xc-kiosk/src/application/kiosk/customer.rs` | changed: each takes `&dyn EntryChannel` + the customer; S7, S8, S10, S12. No type rename (it would touch every caller); the diagram calls this half `QueueEntryService` | the one entry core | `kiosk.rs` for both channels |
+| `EntryChannel` (trait), `EntryChannelKind` (`Kiosk` / `Phone`) | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/entry_channel.rs` | new | S11's four differences, nothing else | `QueueEntryService` |
+| `KioskDeviceChannel`, `PhoneChannel` | `api/crates/xc-kiosk/src/application/kiosk/channels/kiosk_device.rs`, `…/channels/phone.rs` | new, one file each | adding a channel = one file | `kiosk.rs` picks one per request (below) |
+| `BoardJoinToken` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/board_join_token.rs` | new; HMAC through `ring` (added to `xc-kiosk/Cargo.toml` at `0.17`, the version `xc-auth/Cargo.toml:24` pins) | S13 | `PhoneChannel`; `public/branch_rates.rs` issues it |
+| `branch_rates` answer | `api/src/presentation/http/public/branch_rates.rs` | changed: `joinToken` (absent when no key) | | the board, `BookingQr.tsx` (FE) |
+| `kiosk_requests.channel` | §3 migration (one column, `KIOSK` default, CHECK `KIOSK`/`PHONE`) | new | S11 | `QueueEntryService`, the queue panel |
 | `KioskActor::Customer` | `…/value_objects/kiosk_actor.rs` | changed: `Customer { customer_id: Option<String> }` | | `kiosk_actor_from_callers` (`kiosk.rs:91-110`) |
 | `PgKioskPorts::quote_in` | `api/src/infrastructure/kiosk/kiosk_ports.rs:429-460` | changed: `customer_id` from the request instead of `None` | | |
 
@@ -232,11 +275,27 @@ classDiagram
 
 | # | Given | Answer |
 |---|---|---|
-| K1 | `quote`, `phone_required` on, no customer session | `401 signIn` |
+**The channel is picked by the proof, once, in `kiosk.rs`:** a payload with `joinToken` ⇒ `PhoneChannel`; otherwise
+`KioskDeviceChannel` (named `branchId`). Both run the same actions on the same route. A payload with both is
+`400 invalidRequest`.
+
+| # | Given | Answer |
+|---|---|---|
+| P1 | phone `quote`, customer session, valid `joinToken` | as K2; branch = the token's; `channel = PHONE`; no address limit |
+| P2 | phone `quote`, token from the previous window | accepted |
+| P3 | phone `quote`, older, forged or no-key token | `403 boardTokenInvalid` / `503 boardJoinUnavailable` |
+| P4 | phone `quote`, `branchId` also sent | `400 invalidRequest` (the branch comes only from the token) |
+| P5 | either channel, the customer already has a QUOTED/WAITING request at the branch | `409 alreadyQueued` + its id (S12) |
+| P6 | phone `confirm` | the ticket is issued as the kiosk's (`IssueSource::Kiosk {request_id}`, WALK_IN); delivery = SMS + page whatever `ticket_mode` says |
+| P7 | the board poll, key set / not set | `joinToken` present, rotating every 10 min / absent |
+
+| # | Given | Answer |
+|---|---|---|
+| K1 | `quote` or `confirm`, no customer session | `401 signIn` (S8) |
 | K2 | `quote` with a customer session | as today; `kiosk_requests.customer_id` and `quotes.customer_id` = the session's customer |
 | K3 | `confirm`/`status`/`customerReceipt`/`customerCancel` on a request with a customer, another customer's session or none | `403 notThisCustomer` |
-| K4 | the same on a request with no customer (switch off, or rows from before the migration) | as today |
-| K5 | `settings` (Public, new) | `{resultSeconds, idleSeconds, ticketMode, phoneRequired, version}`; defaults 30 / 120 / `SMS` / `false` when the branch has no row; `since` = version → `{changed: false}` (🔁) |
+| K4 | the same on a request with no customer (rows from before the migration) | as today |
+| K5 | `settings` (Public, new) | `{resultSeconds, idleSeconds, ticketMode, version}`; defaults 30 / 120 / `SMS` when the branch has no row; `since` = version → `{changed: false}` (🔁) |
 | K6 | `configureSettings` (new, `RatesDraft`, the same permission as `configure`) | writes the row, `updated_by`, bumps `version`; ranges refused with `400 validationFailed` naming the field |
 
 The desk's queue panel and `get` gain the request's customer as `customerNo` plus the masked phone (last 4, K8). The
@@ -248,7 +307,12 @@ desk can then pick the same customer at the save. The save's own customer rule i
   xchange sends, not only the answer.
 - `PasswordRegister` answers exactly as before (the `/api/app/register` tests stay green unchanged). This proves the
   split moved code and changed no rule.
-- K1–K6 on `KioskService` / the route, and `KioskActor::Customer` read from the session's `customer_id`.
+- K1–K6 and P1–P7 on the entry core / the route, run **once per channel** with the same rows where they apply (a
+  table-driven test over both `EntryChannel`s), and `KioskActor::Customer` read from the session's `customer_id`.
+- `BoardJoinToken`: issue → verify round trip, the previous window accepted, two windows back refused, another
+  branch's token refused, a flipped byte refused, no key ⇒ unavailable.
+- Guard: only `channels/*.rs` implement `EntryChannel`, and no file outside the core calls the ticket issuer for
+  `IssueSource::Kiosk` (one entry core).
 - `SessionLifetime::Kiosk` sets both the row's `expires` and the cookie's `Max-Age`; a `Web` sign-in is unchanged.
 - Guard: no route outside `auth.rs` calls `IdentityClient::otp_verify` (one OTP core).
 
@@ -272,6 +336,14 @@ Neither changes S1–S9.
 - **Q3 (a new kiosk customer's name).** `customers.display_name` is `NOT NULL`, and `/api/app/register` asks for a
   name. Proposed: the kiosk asks for no name. The name starts as the masked phone (`•••1234`, K8), and the desk's
   passport fills it in at the first exchange.
+- **Q4 (the app's take-a-number, S10).** `queueTicketTake` (`POST /api/app/queue/tickets`, S7 #3410,
+  `api/src/presentation/http/v3/commands/queue_ticket_take.rs`) already issues a walk-in ticket to a signed-in
+  customer, but with no currency, amount or quote, and with any branch named in the body. KS-7's phone entry does the
+  same job through the entry core. Two ways in for one thing break the ♻️ rule. Proposed: retire `queueTicketTake`
+  once the phone channel lands; its FE caller moves to the phone flow. Keeping it would also keep an unproven branch.
+- **Q5 (KS-4a's branch switch, S8).** KS-7 says no anonymous path. KS-4a's switch, "off" until the Notify key is set,
+  *is* an anonymous path. Proposed: build no switch. Until the owner sets Identity's Notify key (§6.2), no queue can
+  be taken at the kiosk or by phone; the desk still serves walk-ins. The key is the owner's action in any case.
 
 ## 5. Front ends (this lane)
 
