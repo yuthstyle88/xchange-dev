@@ -1,10 +1,26 @@
 {
   "en": {
     "queue_machine": "Queue machine",
-    "title": "Queue machine"
+    "title": "Queue machine",
+    "printer_title": "Printer settings",
+    "printer_no_devices": "No USB printer attached",
+    "printer_refresh": "Refresh",
+    "printer_test_print": "Test print",
+    "printer_test_ok": "Test print sent",
+    "printer_error_no_device": "No printer attached",
+    "printer_error_permission": "USB permission refused",
+    "printer_error_write": "Print failed, please try again"
   },
   "th": {
     "queue_machine": "เครื่องกดคิว",
-    "title": "เครื่องกดคิว"
+    "title": "เครื่องกดคิว",
+    "printer_title": "ตั้งค่าเครื่องพิมพ์",
+    "printer_no_devices": "ไม่พบเครื่องพิมพ์ที่เชื่อมต่อ",
+    "printer_refresh": "ค้นหาเครื่องพิมพ์",
+    "printer_test_print": "ทดสอบพิมพ์",
+    "printer_test_ok": "ส่งคำสั่งพิมพ์ทดสอบแล้ว",
+    "printer_error_no_device": "ไม่พบเครื่องพิมพ์",
+    "printer_error_permission": "ไม่ได้รับอนุญาตให้ใช้เครื่องพิมพ์",
+    "printer_error_write": "พิมพ์ไม่สำเร็จ กรุณาลองใหม่"
   }
 }
