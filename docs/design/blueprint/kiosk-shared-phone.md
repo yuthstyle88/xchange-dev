@@ -74,12 +74,203 @@
 - A kiosk OTP challenge store: either `phone_verifications` with `customer_id`/`requested_by` made nullable plus a `source` column, or its own table. The phone is always stored encrypted like `phone_verifications`.
 - No backfill: existing requests have no phone.
 
-## 4. Server half: for the BE lane to design (class diagram before tickets)
+## 4. Server half (BE lane)
 
-- **One OTP core, the Identity one (KS-4b).** xchange already forwards OTP to Identity: `POST /api/auth/otp/request` and `/verify` (`api/src/presentation/http/auth.rs:74-81`, `v3_otp_request` calls `session.otp_request(destination, channel, ip)`). That is the path `/app/sign-in` uses. The kiosk uses the same core with a kiosk-path entry. It does **not** use the staff-initiated `PhoneVerificationService` (its `customer_id`/`requested_by` are NOT NULL), and it builds no second OTP.
-- **KS-4c: the kiosk signs the customer in.** It uses the existing customer OTP login: the same Identity OTP plus the customer session that `/app/sign-in` ends with. It does not mint a separate kiosk phone path. `quote`/`confirm` then carry the **customer session** (`CustomerSelf`), and the request is that customer's. The kiosk's reset signs out (drops the session), so a shared device never carries one customer's session to the next.
-- A Public `kiosk_settings` read for the kiosk app, and an admin read/write behind the same permission as the currency switches.
-- How the found/created customer links to consent (`consentTextMissing` rules) at the kiosk.
+> designed-by: claude/a90d906e for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` and
+> `108-Plaza/Identity-Platform` `ffe908d` · §4.7 holds the questions that go to the owner through claude/553782
+
+### 4.1 What the server does today (measured)
+
+- **The OTP sign-in already exists, and the kiosk can call it as it is.**
+  - `POST /api/auth/otp/request` and `/api/auth/otp/verify` (`api/src/presentation/http/auth.rs:73-82`) forward to
+    Identity (`SessionService::otp_request`/`otp_verify`, `xc-auth/src/application/session/session_service.rs:886-917`).
+  - A `200` from verify sets `__Host-xc_session` (`auth.rs:131-140`, `Max-Age=43200`; `SESSION_SECONDS`,
+    `session_service.rs:28`). This is what `/app/sign-in` uses (`web/src/screens/customer/sign-in/SignIn.tsx:40,68`).
+  - Both routes check only `same_origin`. The kiosk app already sends `Origin` + `X-Xchange-Request`
+    (`app/lib/core/network/dio_provider.dart:18-31`).
+- **An unknown phone cannot sign in today.** This is the gap KS-4c hits.
+  - xchange always sends `"registerIfAbsent": false` (`xc-auth/src/infrastructure/identity/http_identity_client.rs:299`).
+  - For an unknown phone, Identity then answers `200 {verified: true}` with no `login`
+    (Identity `crates/auth/src/api/otp.rs:85-90`, test at `:325-341`).
+  - xchange turns "no `login`" into `401 invalidCode` (`session_service.rs:912-916`). The customer typed the right code
+    and is told it is wrong.
+  - A known Identity account with no `users` row gets `401 signIn` instead, *"ask the shop owner to create an account"*
+    (`UserNotBound`, `session_service.rs:451-453`, `:79-83`).
+- **Identity can register on first sight.** `registerIfAbsent: true` creates a verified, password-less account and
+  logs it in from the same code: `registered: true` plus `login` (Identity `contract/mod.rs:299-308`, test
+  `otp.rs:220-258`). xchange already parses `registered` (`identity_client.rs:36-42`) but never asks for it.
+- **The OTP limits are Identity's.**
+  - Identity limits requests per destination and verifies per challenge (Identity `otp.rs:36-39`). It does not limit
+    per address, so one shared kiosk address is not throttled.
+  - §2's OTP row ("`PhoneOtpPolicy`, per phone and per kiosk address") therefore reads as **Identity's limits**: with
+    S1 the kiosk never reaches `PhoneOtpPolicy`.
+- **The customer core exists, but only for a password login.**
+  - `register_customer` (`api/src/application/customer_signup.rs:82-158`) writes, in one transaction:
+    - the `users` row with the CUSTOMER role;
+    - the customer and its TERMS (and MARKETING) consents (`ConsentService::register_in`);
+    - one ACTIVE PHONE identity (`write_verified_phone`, `:161-208`).
+  - It takes its login only from `verified_login(identifier, password)`.
+  - It refuses with `PhoneInUse` when the verified phone is ACTIVE on **another** customer (`:180-190`), including a
+    desk-made customer with no user (K7: duplicates are never merged automatically).
+- **A kiosk request belongs to nobody.**
+  - The kiosk's `quote`/`confirm`/`status`/`customerReceipt`/`customerCancel` are `Need::Public`
+    (`xc-auth/src/domain/policy/entities/policy.rs:123-126`).
+  - A non-staff caller becomes `KioskActor::Customer`, which carries no id (`api/src/presentation/http/kiosk.rs:91-110`).
+  - The kiosk's quote is written with `customer_id: None` (`api/src/infrastructure/kiosk/kiosk_ports.rs:443`).
+- **Where the trace already runs.** `quotes.customer_id` exists (`api/migrations/20261014100000_quotes.sql:8`).
+  `kiosk_requests.quote_id` points at the quote (`20261031100000_kiosk_quote_id.sql`). The quote's
+  `accepted_by_transaction_id` points at the exchange. The exchange's `transactions.customer_id` is `NOT NULL`
+  (`20261007190000_transactions.sql:11`).
+  - So once the kiosk writes the customer on the quote and the request, the chain *kiosk request → quote → exchange*
+    already exists. Only the customer at its start is missing.
+- **The kiosk app keeps no cookie.** `buildKioskDio` has no cookie store (`dio_provider.dart:18-31`). The web build gets
+  one from the browser; the native build needs a cookie jar (§5, FE lane).
+
+### 4.2 Decisions (BE lane, from KS-4b/KS-4c)
+
+| # | Decision | Why |
+|---|---|---|
+| S1 | **No kiosk phone route.** The kiosk calls `/api/auth/otp/request` and `/api/auth/otp/verify`, the same routes as `/app/sign-in`. No `phoneStart`/`phoneConfirm`, no kiosk OTP table, and `PhoneVerificationService` is not used. | KS-4b, KS-4c (*"การ ใช้ คิว ก็เหมือนการ login ปกติ"*) |
+| S2 | **One customer sign-in core** (♻️). `register_customer` is split: the *login* part (where the Identity login comes from: a password, or an OTP) is separate from the *bind* part (`users` row + CUSTOMER role + customer + consents + PHONE identity). The password register and the OTP sign-in call the same bind. | ♻️; today's core takes a password only |
+| S3 | **Verify opts into first sight only when asked.** `otp/verify` takes an optional `register: {lang, marketing}`. With it, xchange sends `registerIfAbsent: true`, and an Identity account with no `users` row is bound as a new customer in one transaction. Without it, verify behaves as today, except that "no `login`" answers `401 notRegistered` instead of the false `invalidCode`. | the kiosk can't know in advance whether the phone is new; the Identity challenge is single-use, so a second try is impossible |
+| S4 | **A verified phone finds its customer before a new one is made.** When the phone's lookup hash is ACTIVE on a customer with `user_id IS NULL` (a desk-made customer), the new user is **linked to that customer** instead of creating a second one, and the PHONE identity gets `verified_at = now`. When that customer already has a user, the answer is `409 phoneInUse`, as today. | KS-4c *"found by phone, or created as a new customer"*; the OTP proves the person holds the number. **Owner question Q1** (it changes K7's "no automatic merge" reading) |
+| S5 | **Only customers sign in at the kiosk.** A subject bound to a staff or owner user (no CUSTOMER role) gets `403 notACustomer` on a kiosk verify, and no session is made. | a staff session on a shared device would carry `QueueOperate` to the next person |
+| S6 | **A kiosk session is short.** A verify that carries `device: "kiosk"` makes the same `user_sessions` row with `expires = now + 15 min`, and a cookie `Max-Age` to match. The kiosk's reset calls `/api/auth/logout`, as today's sign-out does, and that also revokes the Identity refresh token. The 15 minutes only covers a reset that never runs (power cut, crash). | KS-1, KS-4c; the 12-hour web session is wrong for a shared screen |
+| S7 | **The request and its quote carry the signed-in customer.** `quote` writes `kiosk_requests.customer_id` and `quotes.customer_id` from `Actor.customer_id`. `confirm`, `status`, `customerReceipt` and `customerCancel` on a request with a customer need **that** customer's session, else `403 notThisCustomer` (the booking rule, `xc-booking/src/application/lifecycle.rs:84-88`). | KS-4c reason: every order can be told apart by its customer |
+| S8 | **The branch switch (KS-4a).** `kiosk_settings.phone_required` (default `false`). On: `quote` without a customer session answers `401 signIn`. Off: today's anonymous flow, with `customer_id` NULL. The policy stays `Need::Public` for these actions, because "off" must keep working, and the kiosk service enforces the switch. | KS-4a: only until the Notify key is set (§6.2) |
+| S9 | **Consent at the kiosk is the register's own rule.** A new customer's TERMS consent is recorded with `evidence_ref = "kiosk:<branchId>"` in the kiosk's language. If no TERMS text exists in that language, the answer is `409 consentTextMissing` (`field: lang`, no fallback, §4.3 of `customer-identity-consent.md`). The kiosk then offers the languages `consent_texts` lists. An existing customer's consents are not touched. | `customer-identity-consent.md` K5 and §4.3; the kiosk has 16 languages, register accepts th/en/zh (`customer_register.rs:37`) |
+
+### 4.3 Class diagram
+
+```mermaid
+classDiagram
+  direction LR
+  class IdentityClient {
+    <<trait>>
+    otp_request(destination, channel, ip)
+    otp_verify(challenge_id, code, register_if_absent, ip)
+  }
+  class SessionService {
+    otp_request(...)
+    verified_otp_login(challenge_id, code, register_if_absent, ip) VerifiedOtpLogin
+    sign_in_with_login(login, lifetime, now) SignInTail
+  }
+  class SessionLifetime {
+    <<enum>>
+    Web
+    Kiosk
+    seconds() i64
+  }
+  class CustomerBinder {
+    bind_in(tx, login, verified, BindInput, now) BoundCustomer
+  }
+  class CustomerOtpSignIn {
+    sign_in(challenge_id, code, Option~RegisterIntent~, device, ip, now) SignInTail
+  }
+  class PasswordRegister {
+    register_customer(input, ip, now)
+  }
+  class KioskService {
+    quote(branch, cmd, customer, now)
+    confirm_with_token(branch, id, customer, ...)
+  }
+  class KioskSettings {
+    result_seconds
+    idle_seconds
+    ticket_mode
+    phone_required
+    version
+  }
+  class KioskSettingsRepository {
+    <<trait>>
+    get(branch)
+    put_in(tx, branch, settings, by)
+  }
+  IdentityClient <-- SessionService
+  SessionLifetime <-- SessionService
+  SessionService <-- CustomerOtpSignIn
+  CustomerBinder <-- CustomerOtpSignIn
+  CustomerBinder <-- PasswordRegister
+  SessionService <-- PasswordRegister
+  KioskSettingsRepository <-- KioskService
+  KioskSettings <-- KioskSettingsRepository
+```
+
+| Class | File | New / changed | Provides | Used by |
+|---|---|---|---|---|
+| `IdentityClient::otp_verify` | `api/crates/xc-auth/src/domain/identity/identity_client.rs:138` | changed: takes `register_if_absent` | the Identity call | `SessionService` |
+| `HttpIdentityClient::otp_verify` | `…/infrastructure/identity/http_identity_client.rs:289-301` | changed: sends the flag instead of `false` | | |
+| `SessionService::verified_otp_login` | `…/application/session/session_service.rs` | new, next to `verified_login` (`:495`) | `VerifiedOtpLogin {login, verified, registered}`, or `notRegistered` | `CustomerOtpSignIn` |
+| `SessionLifetime` | `…/application/session/session_lifetime.rs` | new | `Web` = 43 200 s, `Kiosk` = 900 s | `create_session_for_user` (`:345`), `attach_signin_cookies` |
+| `CustomerBinder` | `api/src/application/customer_binder.rs` | new: the bind half of `register_customer`, moved, plus S4's link | `BoundCustomer {user_id, customer_id, created}` | both entries |
+| `PasswordRegister` | `api/src/application/customer_signup.rs` | changed: `verified_login` + `CustomerBinder` | `/api/app/register`, unchanged on the wire | `customer_register.rs` |
+| `CustomerOtpSignIn` | `api/src/application/customer_otp_sign_in.rs` | new | S3, S5, S6 | `auth.rs` `v3_otp_verify` |
+| `KioskSettings`, `KioskSettingsRepository` (+ `PgKioskSettingsRepository`) | `api/crates/xc-kiosk/src/domain/kiosk/entities/kiosk_settings.rs`, `…/repositories/kiosk_settings_repository.rs`, `api/src/infrastructure/kiosk/pg_kiosk_settings_repository.rs` | new (§3 table) | the settings, with defaults when a branch has no row | `KioskService`, the settings view |
+| `KioskService::quote` / `confirm_with_token` / `status` / `customer_receipt` / `customer_cancel` | `api/crates/xc-kiosk/src/application/kiosk/service.rs` | changed: take `Option<CustomerId>`; S7, S8 | | `kiosk.rs` |
+| `KioskActor::Customer` | `…/value_objects/kiosk_actor.rs` | changed: `Customer { customer_id: Option<String> }` | | `kiosk_actor_from_callers` (`kiosk.rs:91-110`) |
+| `PgKioskPorts::quote_in` | `api/src/infrastructure/kiosk/kiosk_ports.rs:429-460` | changed: `customer_id` from the request instead of `None` | | |
+
+### 4.4 Behaviour
+
+**`POST /api/auth/otp/verify` `{challengeId, code, register?: {lang, marketing}, device?: "kiosk"}`**
+
+| # | Given | Answer | Writes |
+|---|---|---|---|
+| V1 | known phone, bound CUSTOMER user | `200 {user}` + session cookie (kiosk: `Max-Age=900`) | session row |
+| V2 | unknown phone, `register` absent | `401 notRegistered` (was `invalidCode`) | nothing |
+| V3 | unknown phone, `register` present, TERMS text in `lang` | `200 {user, customerId, registered: true}` + cookie | Identity account, user, CUSTOMER role, customer, TERMS (+MARKETING), PHONE identity verified, session |
+| V4 | as V3, phone ACTIVE on a customer with `user_id IS NULL` | `200 {…, registered: true}`; the **existing** customer id | user, CUSTOMER role, `customers.user_id` set, PHONE `verified_at`, TERMS consent if that customer has none, session |
+| V5 | as V3, phone ACTIVE on a customer that has a user | `409 phoneInUse` | nothing in xchange. Identity's account is already made; the next sign-in finds it (V1 or V6) |
+| V6 | Identity account exists, no `users` row, `register` present | as V3/V4 (the subject is bound now) | as V3/V4 |
+| V7 | subject bound to a staff/owner user, `device: "kiosk"` | `403 notACustomer` | nothing |
+| V8 | `register` present, no TERMS text in `lang` | `409 consentTextMissing` (`field: lang`) | nothing in xchange |
+| V9 | wrong code / expired / replay / rate limit | Identity's own refusal, unchanged | nothing |
+| V10 | two verifies of the same new subject at once | one binds; the other finds the bound user and signs in (`users.auth_subject UNIQUE`, as R13) | one user |
+
+**`POST /api/kiosk`**
+
+| # | Given | Answer |
+|---|---|---|
+| K1 | `quote`, `phone_required` on, no customer session | `401 signIn` |
+| K2 | `quote` with a customer session | as today; `kiosk_requests.customer_id` and `quotes.customer_id` = the session's customer |
+| K3 | `confirm`/`status`/`customerReceipt`/`customerCancel` on a request with a customer, another customer's session or none | `403 notThisCustomer` |
+| K4 | the same on a request with no customer (switch off, or rows from before the migration) | as today |
+| K5 | `settings` (Public, new) | `{resultSeconds, idleSeconds, ticketMode, phoneRequired, version}`; defaults 30 / 120 / `SMS` / `false` when the branch has no row; `since` = version → `{changed: false}` (🔁) |
+| K6 | `configureSettings` (new, `RatesDraft`, the same permission as `configure`) | writes the row, `updated_by`, bumps `version`; ranges refused with `400 validationFailed` naming the field |
+
+The desk's queue panel and `get` gain the request's customer as `customerNo` plus the masked phone (last 4, K8). The
+desk can then pick the same customer at the save. The save's own customer rule is Q2.
+
+### 4.5 Rules the tests pin first (up-front, `class:logic`)
+
+- V2, V3, V4, V5, V7, V8 and V10 on `CustomerOtpSignIn` with a fake `IdentityClient`. The test checks the flag
+  xchange sends, not only the answer.
+- `PasswordRegister` answers exactly as before (the `/api/app/register` tests stay green unchanged). This proves the
+  split moved code and changed no rule.
+- K1–K6 on `KioskService` / the route, and `KioskActor::Customer` read from the session's `customer_id`.
+- `SessionLifetime::Kiosk` sets both the row's `expires` and the cookie's `Max-Age`; a `Web` sign-in is unchanged.
+- Guard: no route outside `auth.rs` calls `IdentityClient::otp_verify` (one OTP core).
+
+### 4.6 Not in this pass (designed next, on this doc)
+
+- **The public calling display (KS-5):** a numbers-only view, signed out, on the poll seam.
+- **The public ticket page and the ticket SMS (KS-6):** the per-ticket secret, the page, the send through
+  Identity/Notify, and whether the kiosk can reach the device agent's printer.
+
+Neither changes S1–S9.
+
+### 4.7 Questions for the owner (sent through claude/553782)
+
+- **Q1 (S4).** A verified phone matches a desk-made customer that has no app account. Should the sign-in **join that
+  customer**, or make a new one? Proposed: join. The OTP proves the number, and a second customer would split the same
+  person's orders, against KS-4c's reason. It is not a merge of two existing customers, which stays O-1.
+- **Q2 (the save).** The desk's passport finds customer A, but the kiosk request belongs to customer B (B signed in
+  with a phone that A never recorded). Proposed: the save goes ahead on A, because the passport is the exchange's legal
+  identity. The request and its quote keep B, and the save writes one `KIOSK_CUSTOMER_DIFFERS` audit row naming both,
+  for the O-1 merge work. The desk is never blocked.
+- **Q3 (a new kiosk customer's name).** `customers.display_name` is `NOT NULL`, and `/api/app/register` asks for a
+  name. Proposed: the kiosk asks for no name. The name starts as the masked phone (`•••1234`, K8), and the desk's
+  passport fills it in at the first exchange.
 
 ## 5. Front ends (this lane)
 
