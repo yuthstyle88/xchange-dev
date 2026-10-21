@@ -21,6 +21,8 @@ mod kiosk_cap_wide_amount_test;
 mod kiosk_configure_publication_test;
 #[path = "kiosk_currencies_test.rs"]
 mod kiosk_currencies_test;
+#[path = "kiosk_day_close_test.rs"]
+mod kiosk_day_close_test;
 #[path = "kiosk_machine_line_test.rs"]
 mod kiosk_machine_line_test;
 #[path = "kiosk_machine_test.rs"]
