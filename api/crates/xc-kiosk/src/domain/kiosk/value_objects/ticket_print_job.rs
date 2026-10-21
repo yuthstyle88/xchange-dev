@@ -3,6 +3,7 @@
 //! unchanged to its own printer and has no renderer of its own.
 
 use chrono::{DateTime, FixedOffset};
+use pos_printer::{EscposBuilder, PaperWidth, PrinterCharset, QrEcLevel, Weight};
 
 /// What the queue ticket prints. Nothing else from the request is printed (no amount, no name).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +23,18 @@ impl TicketPrintJob {
     /// the number (large), the time `YYYY-MM-DD HH:MM`, the request QR, then a cut.
     /// The same job always renders the same bytes (B7: a repeat scan reprints byte for byte).
     pub fn render(&self) -> Vec<u8> {
-        todo!("KWQ-A3: render with pos_printer::escpos::EscposBuilder")
+        let mut b = EscposBuilder::new(PrinterCharset::PASSTHROUGH, PaperWidth::Mm80);
+        b.center_line(&self.branch_name, Weight::Regular)
+            .text_size(0x11)
+            .center_line(&self.display_number, Weight::Bold)
+            .text_size(0x00)
+            .center_line(
+                &self.issued_at.format("%Y-%m-%d %H:%M").to_string(),
+                Weight::Regular,
+            )
+            .align_center()
+            .qr_native(&self.qr_url, 6, QrEcLevel::M)
+            .feed(2);
+        b.cut(false)
     }
 }
