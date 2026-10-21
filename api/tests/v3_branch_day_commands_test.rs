@@ -488,6 +488,7 @@ async fn every_route_refuses_signed_out_a_role_without_its_permission_and_anothe
 async fn start_service_then_cut_off_move_the_day_and_refuse_out_of_order() {
     let db = TestDb::start().await;
     db.phase_is(B01, "READY").await;
+    db.open_around_now(B01).await;
     db.open_shift(B01, TELLER).await;
     db.rates_published(B01).await;
 

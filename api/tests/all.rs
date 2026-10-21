@@ -841,6 +841,8 @@ mod staff_published_rates_one_loader_test;
 mod stale_policy_kiosk_test;
 #[path = "stale_policy_quote_test.rs"]
 mod stale_policy_quote_test;
+#[path = "start_service_window_test.rs"]
+mod start_service_window_test;
 #[path = "stock_consume_test.rs"]
 mod stock_consume_test;
 #[path = "stock_release_on_cancel_test.rs"]

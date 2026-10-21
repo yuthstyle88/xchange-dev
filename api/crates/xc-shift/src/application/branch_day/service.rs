@@ -186,6 +186,13 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
             BranchDay::start_service(before.phase, who, &target, now, window, utc_offset_minutes)
                 .map_err(map_custody_error)?;
 
+        if !window.allows_start(custody_now) {
+            return Err(map_custody_error(CustodyError::ServiceNotReady {
+                window,
+                utc_offset_minutes,
+            }));
+        }
+
         if !input.equipment_ready || !input.rates_verified {
             return Err(map_custody_error(CustodyError::ServiceChecksIncomplete));
         }
