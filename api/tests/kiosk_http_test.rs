@@ -647,7 +647,9 @@ async fn the_answers_keep_v2s_key_order() {
     let created = counter.now().timestamp_millis();
     counter.desk.clock.set(counter.now() + Duration::seconds(4));
     let id = "00000000-0000-4000-8000-0000000c0001";
-    let confirmed = counter.ask(None, "confirm", json!({ "id": id })).await;
+    let confirmed = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": id }))
+        .await;
     // KC-S (#4176): v3 appends `cancelToken` after v2's last key (snapshot_common::V3_ADDED_KEYS)
     let (v2_part, added) = confirmed
         .text
