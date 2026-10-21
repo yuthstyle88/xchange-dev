@@ -10,7 +10,7 @@
 
 ## 0a. Current rules (owner, 2026-10-21; supersede §0–§3, §5, §6 where they differ)
 
-Recorded on PR 4249 (issuecomment-6312118645, issuecomment-6321559434 and the Q8/Q12 comment after it).
+Recorded on PR 4249: issuecomment-6312118645 (R-1..R-3, R-9), issuecomment-6321559434 (R-4, R-6, R-10's e-mail, Q11) and **issuecomment-6322707249** (R-5's tablet quotes, R-7 Q8, R-8 Q12). R-10's download quote is on **#4327**.
 
 | # | Current rule | Owner's words |
 |---|---|---|
