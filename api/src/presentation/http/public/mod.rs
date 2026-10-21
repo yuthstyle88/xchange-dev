@@ -5,6 +5,7 @@
 pub mod branch_rates;
 pub mod branches;
 pub mod consent_texts;
+pub mod copy_link;
 pub mod host;
 
 use actix_web::http::StatusCode;
@@ -18,6 +19,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     branches::configure(cfg, state);
     branch_rates::configure(cfg, state);
     consent_texts::configure(cfg, state);
+    copy_link::configure(cfg, state);
     host::configure(cfg, state);
 }
 
