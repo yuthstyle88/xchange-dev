@@ -81,154 +81,184 @@
 
 ## 4. Server half (BE lane)
 
-> designed-by: claude/c4be83 for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` ·
-> reworked 2026-10-21 for the owner's decision **"เลขคิว ไม่ต้อง login"** (a queue number, no customer login;
-> PR 4249 issuecomment-6311397809), which supersedes the login design (KS-4/4a/4c and the login half of KS-7). The
-> login design is in this file's git history (`bf7efba8`) if the owner revisits it.
+> designed-by: claude/c4be83 for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` and
+> `108-platform-services` `8b53cee` (xchange's pinned `pos-printer`) · written for the owner's final model of
+> 2026-10-21 (PR 4249, claude/553782): **the kiosk issues queue tickets only, with no login** (*"บัตรคิวอย่างเดียว"*);
+> the rate-board QR stays the web booking page with login (*"หน้าจองทางเว็บ (login) เหมือนเดิม"*). Earlier §4 versions
+> (phone + OTP login, board-QR phone queue, Identity → Notify setup) are in this file's git history at `bf7efba8` and
+> `1dde5b6c`.
 
 ### 4.1 What the server does today (measured)
 
 - **The kiosk already gives a queue number with no login.**
   - `quote`, `confirm`, `status`, `customerReceipt` and `customerCancel` are `Need::Public`
     (`api/crates/xc-auth/src/domain/policy/entities/policy.rs:123-126`).
-  - `confirm` issues the walk-in ticket (`IssueSource::Kiosk {request_id}`, `api/src/presentation/http/kiosk.rs`, the
-    `Confirm` arm).
-  - The request is told apart by its queue number and order number.
-- **The kiosk names its branch, unproven.** `branchId` comes from the payload (`kiosk.rs:291-301`). The kiosk app's
-  setup stores only server + branch (`app/lib/core/endpoint/kiosk_endpoint.dart:17-21`).
-- **The limits are per address.**
-  - Quotes: at most `QuoteLimit::MAX` = 20 per 60 s per client address per branch
-    (`api/crates/xc-kiosk/src/domain/kiosk/value_objects/quote_limit.rs:9-10`, applied at
-    `application/kiosk/customer.rs:149-153`).
-  - The customer's cancel needs the request's cancel token **and the same client address** (`customer.rs:327-333`,
+  - `confirm` issues the walk-in ticket in its own transaction (`IssueSource::Kiosk {request_id}`,
+    `api/src/presentation/http/kiosk.rs`, the `Confirm` arm).
+  - The core is the customer half of `KioskService`: `quote` `:58`, `confirm_with_token` `:219`,
+    `customer_cancel` `:328`, `status` `:394`, `customer_receipt` `:406`, in
+    `api/crates/xc-kiosk/src/application/kiosk/customer.rs`.
+- **The cancel token is already a per-ticket secret.**
+  - `confirm` mints a UUID v4 and returns it once.
+  - Only its SHA-256 is stored, as `kiosk_requests.cancel_token_hash` (`api/migrations/20261219190000_kiosk_cancel.sql:15`;
+    written and compared in `xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs:635,654`).
+  - Today the customer cancel also needs the same client address as the quote (`customer.rs:327-333`,
     `kiosk-cancel.md` §3.4).
-- **The board QR points at booking, with a public branch code.** It encodes `<origin>/app/book?branch=<code>`
-  (`web/src/screens/customer/rate-display/BookingQr.tsx:16`). Anyone who knows the code can name the branch from
-  anywhere.
-- **A second, signed-in way to take a number exists:** `queueTicketTake` (`POST /api/app/queue/tickets`,
-  `api/src/presentation/http/v3/commands/queue_ticket_take.rs:58-80`). It needs `CustomerSelf`, issues
-  `IssueSource::App`, takes `{branch}` unproven, and carries no currency or amount.
-- **No public calling screen** exists (§2, KS-5).
+- **Printing: the device agent can print, but the server never sends it a print job.**
+  - The agent writes whatever bytes it is given to CUPS raw or TCP 9100 (`api/crates/xc-device-agent/src/runner.rs:268-301`;
+    `Claimed.bytes` is base64, `client.rs:38-44`).
+  - Every claim query serves **only `DRAWER_REQUEST`** jobs (`api/src/infrastructure/device_agents/pg_agent_repository.rs:296,315,342,449`).
+    `PRINT_RECEIPT` jobs are run by the server's own simulated driver (`api/src/infrastructure/devices/escpos_driver.rs:52-76`).
+  - `device_jobs.kind` is CHECKed to `PRINT_RECEIPT`/`DRAWER_REQUEST` (`api/migrations/20261007180000_devices.sql:7`).
+  - **One active agent per branch** (`api/migrations/20261008120000_device_agents.sql:29-31`, the unique index
+    `device_agents_one_active_per_branch_idx`). An agent has one target (`drawer_transport`/`drawer_target`, `:24`).
+  - The agent runs on macOS or Linux only (`deploy/agent/README.md` §1).
+  - `pos-printer` at xchange's pin draws QR codes on paper (`crates/pos-printer/src/escpos.rs:305` `qr_native`,
+    `:316` `qr_raster`).
+- **Calling data.**
+  - `queue_tickets` has `status` (… `CALLED`, `SERVING` …), `called_at` and `counter_teller_id`
+    (`api/migrations/20261101100000_queue.sql:14-19`).
+  - A counter is a teller (`queue_counters`, primary key `(branch_id, teller_id)`, `:41-47`); **there is no counter
+    number or label.**
+  - `branch_service_status.queue_version` rises on every queue change (`:53`; `queue_board.rs:4-6`). That is the poll
+    seam's version.
+  - The only board is staff-only (`queue_board`, `QueueOperate`).
+- **No kiosk settings row:** the idle reset is a constant (`app/lib/features/kiosk/presentation/controllers/idle_timer.dart:5`).
+- **Member booking stays as it is:** `/app/book` on the board QR (`web/src/screens/customer/rate-display/BookingQr.tsx:16`),
+  and `queueTicketTake` for a signed-in customer (`api/src/presentation/http/v3/commands/queue_ticket_take.rs`; owner
+  Q4: keep both).
 
 ### 4.2 Decisions (BE lane)
 
 | # | Decision | Why |
 |---|---|---|
-| N1 | **No customer login on the queue path.** `quote`/`confirm` stay `Need::Public`. No customer is written on the request. **No migration** (the `kiosk_requests.customer_id` one is withdrawn). No Identity or Notify prerequisite. The person is identified at the desk by the passport, when money changes hands. | owner, *"เลขคิว ไม่ต้อง login"* |
-| N2 | **One entry core, two channels** (♻️). The kiosk's existing `quote` → `confirm` (`impl KioskService` in `xc-kiosk/src/application/kiosk/customer.rs`: `quote` `:58`, `confirm_with_token` `:219`, `customer_cancel` `:328`, `status` `:394`, `customer_receipt` `:406`) is **the** queue entry, for the kiosk device and for a phone that scanned the board (KS-7). Every rule lives in the core: rates, the request, the ticket issue, the cancel token, the purge of old QUOTED rows. A channel is one small `EntryChannel` implementation. | owner 553782: *"ONE core entry for kiosk and phone stays"*; the global ♻️ rule |
-| N3 | **What differs per channel, and nothing else.** <br>• **Branch proof:** the kiosk names it (today); the phone presents the board token (N4). <br>• **Who may cancel:** the kiosk needs the cancel token + the same address (today's rule); the phone needs the cancel token only, because a phone's address changes when it moves between Wi-Fi and mobile data (a random UUID v4 minted at `confirm`, `kiosk.rs` `Confirm` arm, which only that page holds). <br>• **After the number:** the kiosk resets to the start after the result screen (KS-1); the phone keeps its ticket page. <br>• **Print** (KS-6, later): kiosk only. | owner 553782 names device binding, reset and print as the per-channel part |
-| N4 | **How a phone proves its branch: a rotating board token.** <br>• The board's public poll (`/api/public/orgs/{org}/branches/{code}/rates`, `api/src/presentation/http/public/branch_rates.rs:16`) answers a `joinToken`. <br>• The token is `branchId ‖ window ‖ HMAC-SHA256(XC_BOARD_JOIN_KEY, branchId ‖ window)`, base64url, with a 10-minute window. <br>• The QR encodes `<origin>/app/queue?t=<joinToken>` and changes each window. <br>• The server accepts the current or the previous window, and the branch comes **only from the token**. <br>• No table, no state. A wrong, old or other-branch token answers `403 boardTokenInvalid`. <br>• No key set ⇒ the board shows no QR, and a phone entry answers `503 boardJoinUnavailable` (fail closed). | today's QR names the branch with a public code (`BookingQr.tsx:16`) |
-| N5 | **Limits.** Both channels keep today's per-address quote limit (20/min/branch). The phone's real bound is the board token: it must have been read off the board in the last 20 minutes. A per-phone "one open number" limit would need a stored browser id (a migration), so it is **Q6**, not built. | no customer = nothing to key a per-person limit on without new data |
-| N6 | **Calling is by number on the calling display** (KS-5, later work). No SMS calling and no SMS ticket mode: there is no phone number. | owner 553782 |
-| N7 | **The kiosk device's branch proof stays today's named branch** in this pass. A device secret issued at kiosk setup is the kiosk channel's later change, and touches no core rule. | not needed for deploy 10 |
+| T1 | **One anonymous ticket core: the kiosk's.** No login, no customer on the request, no `CustomerSelf` on `quote`/`confirm`. The withdrawn `kiosk_requests.customer_id` and `/app/queue` are not built. The person is identified at the desk by the passport. | owner: *"บัตรคิวอย่างเดียว"* |
+| T2 | **The ticket secret is the cancel token.** No new secret and no new column. The printed QR, and the QR on the done screen, encode `<origin>/q#<token>`. The token is in the fragment, so it is never sent in a request line, a server log or a referrer. | KS-6: the per-ticket secret, never the request id |
+| T3 | **Public ticket page = two new public kiosk actions**, with the token in the body: <br>• `ticketView` → `{displayNumber, status, ticketsAhead, branchName, issuedAt}`, the wait from the queue's `ticket_wait_in`, as `queueTicketTake` reads it. <br>• `ticketCancel` → the same transition as `customerCancel` (`KIOSK_CANCELLED`, `CUSTOMER_CANCELLED`). <br>Found by `cancel_token_hash`. A wrong or unknown token answers `404 notFound`, the same for both, so it reveals nothing. | KS-6 |
+| T4 | **`ticketCancel` needs the token only.** The kiosk screen's one-press cancel keeps today's same-address rule (`customer.rs:327-333`). A printed ticket leaves the kiosk; whoever holds it can cancel from any network. | KS-2, KS-6 |
+| T5 | **The printer: a second POS80 at the kiosk, not the counter's.** <br>• The ticket must come out where the customer stands. The counter POS80 is behind the desk, also kicks the cash drawer, and prints receipts. A shared printer would put tickets in the teller's hands and interleave them with receipts. <br>• Same model (POS80, 80 mm ESC/POS, owner: *"เครื่อง พิมพ์ เหมือนเคยให้ มาแล้วนะ"*); its drawer port is unused. <br>• It is driven by **its own paired agent**: on the kiosk computer with the POS80 on USB (CUPS raw), when the kiosk runs macOS or Linux; or on any branch macOS/Linux machine, with the POS80 on the LAN (TCP 9100). | KS-6 |
+| T6 | **Agents get a role.** `device_agents.role` (`DRAWER` default, `TICKET_PRINTER`). The one-active rule becomes one active agent **per branch per role**. Claim queries serve `DRAWER_REQUEST` to `DRAWER` agents and `PRINT_QUEUE_TICKET` to `TICKET_PRINTER` agents. Pairing names the role. | today's index allows one agent per branch (`device_agents.sql:29-31`) |
+| T7 | **`confirm` queues the ticket print in the same transaction as the ticket.** <br>• The job kind is `PRINT_QUEUE_TICKET`. <br>• Its bytes are rendered server-side with `pos-printer`: branch name, the number large, date and time, currency and side, the QR (T2), and *"ยกเลิกคิวได้ที่ QR นี้"*. <br>• No active `TICKET_PRINTER` agent at the branch ⇒ no job is queued; the done screen still shows the number and the QR, which can be photographed. <br>• A ticket job older than 60 s is `EXPIRED` and never printed (a late slip would reach the next customer). The same rule shape as the drawer's 10 s. | KS-1, KS-6 |
+| T8 | **The calling display is a public, numbers-only view** on the poll seam (🔁). `GET /api/public/orgs/{org}/branches/{code}/queue-display?since=<version>` answers: <br>• `{changed: false}` while `queue_version` is unchanged (O(1)); <br>• otherwise `{version, calling: [{displayNumber, counter}], recent: [displayNumber ×5]}`, for today, `CALLED`/`SERVING` by `called_at`. <br>It never carries a name, phone, amount or teller. | KS-5; same route style as `public/branch_rates.rs:16` |
+| T9 | **A counter label for the display.** `queue_counters.label` (short text, e.g. *"ช่อง 2"*), set by the teller or manager when opening a counter. Without a label the display shows the number only. | KS-5 *"the counter it goes to"*; no counter label exists today |
+| T10 | **KS-3 kiosk settings.** <br>• `kiosk_settings` per branch: `result_seconds` (default 30, 10–300) and `idle_seconds` (default 120, 30–600), plus `updated_by`, `updated_at`, `version`. <br>• Public read: kiosk action `settings`, with defaults when the branch has no row, `since` → `{changed: false}`. <br>• Write: `configureSettings` behind `RatesDraft`, the currency switches' permission. <br>• No ticket mode: every kiosk customer gets the printed ticket. | KS-3; §3 |
 
 ### 4.3 Class diagram
 
 ```mermaid
 classDiagram
   direction LR
-  class QueueEntryService {
-    quote(channel, proof, cmd, now)
-    confirm(channel, id, now)
-    status / receipt(id)
-    cancel(channel, id, token, now)
+  class KioskService_customer {
+    quote / confirm_with_token / customer_cancel / status
+    ticket_view(token) TicketView
+    ticket_cancel(token, now)
   }
-  class EntryChannel {
+  class TicketPrintJob {
+    render(ticket, branch, url) Bytes
+  }
+  class TicketPrinterPort {
     <<trait>>
-    kind() EntryChannelKind
-    branch_of(proof, now) BranchId
-    may_cancel(request, token, address) bool
+    enqueue_in(tx, branch, bytes, now) Option~JobId~
   }
-  class KioskDeviceChannel {
-    branch_of = named branch (N7)
-    may_cancel = token + same address
+  class PgTicketPrinter
+  class AgentRole {
+    <<enum>>
+    Drawer
+    TicketPrinter
   }
-  class PhoneChannel {
-    branch_of = BoardJoinToken
-    may_cancel = token
+  class AgentRepository {
+    claim(agent) serves role kinds only
   }
-  class BoardJoinToken {
-    issue(branch, now) String
-    verify(token, now) BranchId
+  class QueueDisplayView {
+    read(branch, since) Changed | Display
   }
-  EntryChannel <-- QueueEntryService
-  EntryChannel <|.. KioskDeviceChannel
-  EntryChannel <|.. PhoneChannel
-  BoardJoinToken <-- PhoneChannel
+  class KioskSettings {
+    result_seconds
+    idle_seconds
+    version
+  }
+  class KioskSettingsRepository {
+    <<trait>>
+    get(branch) / put_in(tx, branch, settings, by)
+  }
+  TicketPrintJob <-- KioskService_customer
+  TicketPrinterPort <-- KioskService_customer
+  TicketPrinterPort <|.. PgTicketPrinter
+  AgentRole <-- AgentRepository
+  KioskSettings <-- KioskSettingsRepository
 ```
-
-`QueueEntryService` is the customer half of `KioskService` (`customer.rs`), not a new type. Renaming it would touch
-every caller, so the diagram only names that half.
 
 | Class | File | New / changed | Provides | Used by |
 |---|---|---|---|---|
-| the entry core (`impl KioskService` in `customer.rs`) | `api/crates/xc-kiosk/src/application/kiosk/customer.rs` | changed: `quote`/`confirm_with_token`/`customer_cancel` take `&dyn EntryChannel`; the branch comes from `branch_of`, the cancel check from `may_cancel` | the one entry | `kiosk.rs` for both channels |
-| `EntryChannel` (trait), `EntryChannelKind` (`Kiosk` / `Phone`) | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/entry_channel.rs` | new | N3's differences, nothing else | the core |
-| `KioskDeviceChannel`, `PhoneChannel` | `api/crates/xc-kiosk/src/application/kiosk/channels/kiosk_device.rs`, `…/channels/phone.rs` | new, one file each | adding a channel = one file | `kiosk.rs` picks one per request |
-| `BoardJoinToken` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/board_join_token.rs` | new; HMAC with `ring` (added to `xc-kiosk/Cargo.toml` at `0.17`, the version `xc-auth/Cargo.toml:24` pins) | N4 | `PhoneChannel`; `public/branch_rates.rs` issues it |
-| `branch_rates` answer | `api/src/presentation/http/public/branch_rates.rs` | changed: `joinToken` (absent when no key) | | the board (`BookingQr.tsx`, FE) |
-| `kiosk.rs` | `api/src/presentation/http/kiosk.rs` | changed: picks the channel from the proof (below) | | |
+| `KioskService` customer half | `api/crates/xc-kiosk/src/application/kiosk/customer.rs` | changed: `ticket_view`, `ticket_cancel`; `confirm_with_token` calls the printer port in its transaction | the one ticket core | `kiosk.rs` |
+| `TicketView` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/ticket_view.rs` | new | T3's answer | `kiosk.rs`, the ticket page |
+| `KioskRepository::find_by_token_in` | `api/crates/xc-kiosk/src/infrastructure/kiosk/kiosk_repository.rs` | new: by `cancel_token_hash` | | the core |
+| `TicketPrintJob` | `api/crates/xc-kiosk/src/domain/kiosk/value_objects/ticket_print_job.rs` | new: ESC/POS bytes with `pos-printer` (QR) | T7's slip | the core |
+| `TicketPrinterPort` (trait) + `PgTicketPrinter` | `…/domain/kiosk/repositories/ticket_printer_port.rs`, `api/src/infrastructure/kiosk/pg_ticket_printer.rs` | new | queues `PRINT_QUEUE_TICKET` when a `TICKET_PRINTER` agent is active; `None` otherwise | the core |
+| `JobKind::PrintQueueTicket` | `api/src/infrastructure/devices/device_job.rs` | changed | | the agent repository |
+| `AgentRole` + the claim queries | `api/src/infrastructure/device_agents/` (`agent_repository.rs`, `claim.rs`, `pg_agent_repository.rs:296,315,342,449`) | changed: role on pair; claim by the role's kinds; 60 s freshness for ticket jobs | T6 | `device_agent.rs` |
+| `QueueDisplayView` | `api/src/presentation/http/public/queue_display.rs` | new | T8 | the display page (FE) |
+| `KioskSettings`, `KioskSettingsRepository`, `PgKioskSettingsRepository` | `…/domain/kiosk/entities/kiosk_settings.rs`, `…/repositories/kiosk_settings_repository.rs`, `api/src/infrastructure/kiosk/pg_kiosk_settings_repository.rs` | new | T10 | `kiosk.rs`, the admin page |
+
+The agent binary does not change: it already sends any bytes it is given (`runner.rs:268-301`). Pairing passes the
+role: `xc-device-agent install --code … --role ticket` (one new CLI flag, in `main.rs`).
 
 ### 4.4 Behaviour
 
-**The channel is picked by the proof, once, in `kiosk.rs`:** a payload with `joinToken` ⇒ `PhoneChannel`; without one
-⇒ `KioskDeviceChannel` (named `branchId`, as today). Both run the same actions on the same route, `POST /api/kiosk`. A
-payload with both is `400 invalidRequest`.
-
 | # | Given | Answer |
 |---|---|---|
-| E1 | kiosk `quote` / `confirm`, as today | unchanged (no regression: today's kiosk tests stay green as they are) |
-| E2 | phone `quote`, valid `joinToken` | as the kiosk's; branch = the token's |
-| E3 | phone `quote`, a token from the previous window | accepted |
-| E4 | phone `quote`, an older, forged or other-branch token | `403 boardTokenInvalid` |
-| E5 | phone `quote`, no key on the server | `503 boardJoinUnavailable` |
-| E6 | phone `quote` with `branchId` too | `400 invalidRequest` (the branch comes only from the token) |
-| E7 | phone `confirm` | the ticket is issued exactly as the kiosk's (`IssueSource::Kiosk {request_id}`, WALK_IN) |
-| E8 | phone `customerCancel`, right token, a different address from the quote | cancelled (N3) |
-| E9 | kiosk `customerCancel`, right token, a different address | refused, as today |
-| E10 | either channel, more than 20 quotes in 60 s from one address at a branch | refused, as today (`TooManyQuotes`) |
-| E11 | the board poll with the key set / not set | `joinToken` present and rotating every 10 min / absent |
+| B1 | kiosk `quote` / `confirm` | as today (today's kiosk tests stay green unchanged) |
+| B2 | `confirm`, a `TICKET_PRINTER` agent is active | the ticket plus one `PRINT_QUEUE_TICKET` job in the same transaction; `confirm` answers as today plus `ticketUrl` |
+| B3 | `confirm`, no ticket agent | the ticket, no job; `ticketUrl` still answered (shown as a QR on the done screen) |
+| B4 | the ticket agent claims | gets only `PRINT_QUEUE_TICKET`; the drawer agent gets only `DRAWER_REQUEST` |
+| B5 | a ticket job older than 60 s at claim | `EXPIRED`, never sent |
+| B6 | pairing a second `TICKET_PRINTER` agent at a branch that has one | refused, as the drawer rule today |
+| B7 | `ticketView`, right token | `{displayNumber, status, ticketsAhead, branchName, issuedAt}`; never an amount or a name |
+| B8 | `ticketView` / `ticketCancel`, wrong or unknown token | `404 notFound`, the same answer |
+| B9 | `ticketCancel`, right token, from any address, ticket `WAITING` | cancelled (`KIOSK_CANCELLED`, `CUSTOMER_CANCELLED`) |
+| B10 | `ticketCancel` on `CALLED`/`SERVING`/`COMPLETED`/`CANCELLED` | as `kiosk-cancel.md` §3: not the customer's after `WAITING`; repeat-safe on `CANCELLED` |
+| B11 | the kiosk screen's `customerCancel`, another address | refused, as today |
+| B12 | `queue-display`, `since` = the current version | `{changed: false}` |
+| B13 | `queue-display`, a change | today's `CALLED`/`SERVING` with their counter labels (number only when no label) and the last 5 called; no name, phone, amount or teller |
+| B14 | `settings` with no row / with a row | defaults 30 / 120 / the row; `since` → `{changed: false}` |
+| B15 | `configureSettings` with values out of range, or without `RatesDraft` | `400 validationFailed` naming the field / `403` |
 
 ### 4.5 Rules the tests pin first (up-front, `class:logic`)
 
-- E2–E10 as one table-driven test over both `EntryChannel`s, with the rows that differ (E8/E9) asserted per channel.
-- E1: today's kiosk HTTP tests unchanged and green; this proves the core moved and no rule changed.
-- `BoardJoinToken`: issue → verify round trip; the previous window accepted; two windows back refused; another
-  branch's token refused; a flipped byte refused; no key ⇒ unavailable.
-- Guard: only `channels/*.rs` implement `EntryChannel`, and only the core calls the ticket issuer for
-  `IssueSource::Kiosk` (one entry core).
+- B2–B6 on the core and the agent repository with a real Postgres: the job and the ticket commit or roll back
+  together; the role routing; 60 s freshness.
+- B7–B11 on the core: the token is the only key; a wrong token cannot tell "never existed" from "another branch".
+- B12–B13 on the view; a guard that its JSON has no field outside the list in T8.
+- B14–B15 on the settings.
+- `TicketPrintJob`: the bytes contain the number and a QR of `ticketUrl`; the token appears nowhere else in the slip.
+- B1: today's kiosk and drawer-agent tests unchanged and green.
 
-### 4.6 Later work (not in this pass)
+### 4.6 Data (one migration; needs the owner's approval for the device and counter parts)
 
-- **KS-3**, the per-branch kiosk settings page: `result_seconds`, `idle_seconds`, a public read and an admin write behind
-  the currency switches' permission. It needs a table (a migration), so it waits for its own approval.
-- **KS-5**, the public calling display: a numbers-only signed-out view on the poll seam (🔁).
-- **KS-6**, the print and screen ticket modes; whether the kiosk can reach the device agent's printer.
-- **The kiosk device secret** (N7).
+- `kiosk_settings` (T10). Covered by the §3 approval (*"อนุมัติ migration"*).
+- `device_jobs.kind` CHECK + `PRINT_QUEUE_TICKET`. `device_agents.role` (`DRAWER` default, CHECK `DRAWER`/`TICKET_PRINTER`).
+  The one-active index becomes `(branch_id, role) WHERE revoked_at IS NULL`. A partial index for queued ticket jobs.
+  **Not in §3: owner question Q7.**
+- `queue_counters.label` (T9, nullable). **Not in §3: owner question Q8.**
+- No backfill: existing agents become `DRAWER`; existing counters have no label.
 
 ### 4.7 Open owner questions (batched by claude/e92db6)
 
-- **Q6 (N5).** Should a phone be held to one open number at a time? Proposed: not now. Today's per-address limit plus
-  the board token are enough for deploy 10. A per-browser limit needs a stored browser id on the request (a migration).
-- **Q4 (still open, smaller).** `queueTicketTake` (signed-in, no amount, unproven branch) is a second way to take a
-  number. With no login on the queue path, the board QR does not use it. Proposed: leave it for now, and decide its
-  future with the customer app's next round. Q1–Q3 and Q5 were about the login and no longer apply.
-
-
-**Owner's answers in claude/e92db6's session, 2026-10-21, verbatim choices:**
-- Q1: "ผูกกับลูกค้าเดิม": join the existing customer.
-- Q2: "บันทึกที่ A ตามพาสปอร์ต": save on A.
-- Q3: *"ลูกค้า มี 2 ประเภท คือแบบ สมาชิก กับ walk in"*.
-- Q4: "เก็บไว้ทั้งสอง": keep both.
-- Asked how the kiosk and the QR offer the two types: "ให้เลือกที่หน้าแรก". The first screen offers **สมาชิก** (phone + OTP) or **walk-in** (a queue number, no login).
+- **Q7 (T5/T6).** Approve the device migration: a role on agents and a ticket job kind, so a second POS80 at the kiosk
+  prints the queue ticket. Proposed: yes. The alternative, printing on the counter POS80, needs no migration, but the
+  ticket comes out behind the desk.
+- **Q8 (T9).** Approve `queue_counters.label`, so the calling display can say which counter. Proposed: yes. Without
+  it, the display shows only the number being called.
 
 ### 4.8 Release order
 
 1. This design merges, doc-only.
 2. **No tickets are cut before deploy 10** (owner 553782).
-3. After deploy 10, the BE tickets follow §4.3 (no migration).
-4. **The owner sets `XC_BOARD_JOIN_KEY`** on xc-v3 before the phone channel is released (a secret). The kiosk channel
-   does not need it.
+3. After deploy 10, the BE tickets follow §4.3 in three slices that share no files: the ticket core + page (T2–T4),
+   printing (T5–T7, after Q7), and display + settings (T8–T10, the label after Q8). The migration is renumbered with
+   `scripts/migration-slot.sh next` right before `pr_open`.
+4. **Hardware, by the owner:** a second POS80 at each kiosk, paired as `--role ticket`. Until one is paired, the ticket
+   QR shows on screen only (B3).
 5. Deploy is a separate owner order.
 
 ## 5. Front ends (this lane)
