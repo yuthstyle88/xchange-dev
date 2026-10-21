@@ -149,6 +149,7 @@ impl ReferralCaptureService {
     /// Replace the ACTIVE capture `capture` with `code`, for `reason` (D-2): a new ACTIVE row with
     /// `supersedes_id`, the old one `SUPERSEDED`, and one audit event (action `supersedeReferral`,
     /// object `referral_attribution:<old id>`).
+    #[allow(clippy::too_many_arguments)]
     pub async fn supersede_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -156,6 +157,7 @@ impl ReferralCaptureService {
         code: ReferralCode,
         reason: &str,
         by: &str,
+        by_role: &str,
         at: DateTime<Utc>,
     ) -> Result<CaptureId, CaptureError> {
         let trimmed_reason = reason.trim();
@@ -220,7 +222,7 @@ impl ReferralCaptureService {
 
         let event = AuditEvent {
             actor_id: by.to_owned(),
-            actor_role: "OWNER".to_owned(),
+            actor_role: by_role.to_owned(),
             scope: "referral".to_owned(),
             action: "supersedeReferral".to_owned(),
             object_ref: format!("referral_attribution:{capture}"),

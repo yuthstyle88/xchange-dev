@@ -13,6 +13,8 @@ use actix_web::web;
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::authorizer::{Authorizer, Target};
+use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_referral::application::capture_service::{CaptureError, ReferralCaptureService};
@@ -21,11 +23,13 @@ use xc_referral::domain::referral_code::ReferralCode;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::dto::v3::referral_attributions::{SupersedeReferralInput, SupersedeReferralOutput};
+use crate::presentation::dto::v3::referral_attributions::{
+    SupersedeReferralInput, SupersedeReferralOutput,
+};
+use crate::presentation::http::v3::attach_referral::{capture_refusal, capture_service};
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, server_error,
 };
-use crate::presentation::http::v3::attach_referral::{capture_refusal, capture_service};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct SupersedeReferralCommand {
@@ -68,6 +72,11 @@ impl CommandAction for SupersedeReferralCommand {
             return Err(capture_refusal(CaptureError::EmptyReason));
         }
         let code = ReferralCode::parse(&input.referral_code).map_err(capture_refusal)?;
+        let now = chrono::Utc::now();
+        let target = Target::new(&who.organization_id, Some(branch.clone()), None);
+        let grant = Authorizer::check(Some(who), Permission::ReferralSupersede, &target, now)
+            .map_err(|_| out_of_scope())?;
+        let by_role = grant.roles_used.first().ok_or_else(out_of_scope)?.as_str();
         let id = self
             .captures
             .supersede_in(
@@ -76,7 +85,8 @@ impl CommandAction for SupersedeReferralCommand {
                 code,
                 &input.reason,
                 &who.user_id,
-                chrono::Utc::now(),
+                by_role,
+                now,
             )
             .await
             .map_err(capture_refusal)?;
