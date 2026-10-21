@@ -94,7 +94,7 @@ async function expectPermissionRefused(res: APIResponse, label: string): Promise
   const code = (parsed.error?.code ?? '').trim();
   const message = (parsed.error?.message ?? '').trim();
   expect(
-    ['outOfScope', 'roleNotAllowed', 'roleNotAllowedHere', 'ownerOnly', 'employeeAuthRequired', 'signIn'],
+    ['outOfScope', 'roleNotAllowed', 'roleNotAllowedHere', 'ownerOnly', 'employeeAuthRequired', 'employeeAccount', 'signIn'],
     `${label}: refusal code (${code})`,
   ).toContain(code);
   expect(message, `${label}: refusal error.message non-empty`).not.toBe('');
@@ -113,14 +113,15 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
   test('marginGuardSet (PUT /api/margin-guard): (a) save & restore, (b) invalid bodies, (c) permission refusal', async ({
     page,
   }) => {
-    // (a) Happy path + restore in finally (margin_guard_set.rs:28-90; view margin_guard.rs:34-72).
+    // (a) Happy path + restore in finally (margin_guard_set.rs:28-90; view margin_guard.rs:34-72;
+    // column max_spread_share is numeric(5,4) in migrations/20261205101000_campaigns.sql:77).
     await signIn(page, 'admin', '/');
     const viewUrl = `/api/v3/views/margin_guard?branch=${encodeURIComponent(users.branch)}`;
     const beforeRes = await page.request.get(viewUrl);
     expect(beforeRes.ok(), `GET ${viewUrl}`).toBeTruthy();
-    const beforeBody = (await beforeRes.json()) as { data?: { maxSpreadShare?: string } };
-    const originalShare = beforeBody.data?.maxSpreadShare ?? '0.20';
-    const nextShare = originalShare === '0.25' ? '0.22' : '0.25';
+    const beforeBody = (await beforeRes.json()) as { data?: { maxSpreadShare?: string | null } };
+    const originalShare: string | null = beforeBody.data?.maxSpreadShare ?? null;
+    const nextShare = originalShare !== null && Number(originalShare) === 0.25 ? '0.2200' : '0.2500';
 
     try {
       const saveRes = await sendCommand(
@@ -132,12 +133,12 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
       );
       const saveText = await saveRes.text();
       expect(saveRes.ok(), `PUT /api/margin-guard: ${saveRes.status()} ${saveText}`).toBeTruthy();
-      const saved = JSON.parse(saveText) as { maxSpreadShare?: string };
+      const saved = JSON.parse(saveText) as { maxSpreadShare?: string | null };
       expect(saved.maxSpreadShare).toBe(nextShare);
 
       const afterRes = await page.request.get(viewUrl);
       expect(afterRes.ok(), `GET ${viewUrl} after save`).toBeTruthy();
-      const afterBody = (await afterRes.json()) as { data?: { maxSpreadShare?: string } };
+      const afterBody = (await afterRes.json()) as { data?: { maxSpreadShare?: string | null } };
       expect(afterBody.data?.maxSpreadShare).toBe(nextShare);
     } finally {
       const restoreRes = await sendCommand(
@@ -147,23 +148,19 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
         { branch: users.branch, maxSpreadShare: originalShare },
         'margin-guard-restore',
       );
-      expect(restoreRes.ok(), `restore margin_guard to ${originalShare}`).toBeTruthy();
+      expect(restoreRes.ok(), `restore margin_guard to ${String(originalShare)}`).toBeTruthy();
     }
 
-    // (b) Invalid bodies: missing field, zero (<= 0), > 1, non-decimal (margin_guard_set.rs:47-63).
-    await expectWorded400(
-      await sendCommand(page, 'PUT', '/api/margin-guard', { branch: users.branch }, 'margin-guard-b1'),
-      'marginGuardSet missing maxSpreadShare',
-    );
+    // (b) Invalid bodies: negative (< 0), > 1, non-decimal string, number instead of string (margin_guard_set.rs:70-86; command.rs:383-393).
     await expectWorded400(
       await sendCommand(
         page,
         'PUT',
         '/api/margin-guard',
-        { branch: users.branch, maxSpreadShare: '0' },
-        'margin-guard-b2',
+        { branch: users.branch, maxSpreadShare: '-0.10' },
+        'margin-guard-b1',
       ),
-      'marginGuardSet zero maxSpreadShare',
+      'marginGuardSet negative maxSpreadShare',
     );
     await expectWorded400(
       await sendCommand(
@@ -171,19 +168,39 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
         'PUT',
         '/api/margin-guard',
         { branch: users.branch, maxSpreadShare: '1.50' },
-        'margin-guard-b3',
+        'margin-guard-b2',
       ),
       'marginGuardSet maxSpreadShare > 1',
     );
+    await expectWorded400(
+      await sendCommand(
+        page,
+        'PUT',
+        '/api/margin-guard',
+        { branch: users.branch, maxSpreadShare: 'abc' },
+        'margin-guard-b3',
+      ),
+      'marginGuardSet non-decimal maxSpreadShare',
+    );
+    await expectWorded400(
+      await sendCommand(
+        page,
+        'PUT',
+        '/api/margin-guard',
+        { branch: users.branch, maxSpreadShare: 0.2 },
+        'margin-guard-b4',
+      ),
+      'marginGuardSet numeric maxSpreadShare',
+    );
 
-    // (c) Permission refusal: teller lacks RatePolicySave (margin_guard_set.rs:40).
+    // (c) Permission refusal: teller lacks RatePolicySave / Executive (margin_guard_set.rs:43,57-59).
     await signIn(page, 'teller', '/staff');
     await expectPermissionRefused(
       await sendCommand(
         page,
         'PUT',
         '/api/margin-guard',
-        { branch: users.branch, maxSpreadShare: originalShare },
+        { branch: users.branch, maxSpreadShare: '0.2000' },
         'margin-guard-c',
       ),
       'marginGuardSet as teller',
@@ -193,13 +210,15 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
   test('exchangeSettingsSave (PUT /api/exchange-settings): (a) save & restore, (b) invalid bodies, (c) permission refusal', async ({
     page,
   }) => {
-    // (a) Happy path + restore in finally (exchange_settings_save.rs:106-152; view exchange_settings.rs:33-62).
+    // (a) Happy path + restore in finally (exchange_settings_save.rs:106-152; view exchange_settings.rs:33-62;
+    // bounds 30..=3600 in api/crates/xc-exchange/src/infrastructure/settings/repository.rs:24-25,75).
     await signIn(page, 'admin', '/');
     const viewUrl = `/api/v3/views/exchange_settings?branch=${encodeURIComponent(users.branch)}`;
     const beforeRes = await page.request.get(viewUrl);
     expect(beforeRes.ok(), `GET ${viewUrl}`).toBeTruthy();
     const beforeBody = (await beforeRes.json()) as { data?: { quoteTtlSeconds?: number } };
-    const originalTtl = beforeBody.data?.quoteTtlSeconds ?? 300;
+    const originalTtl = beforeBody.data?.quoteTtlSeconds;
+    expect(typeof originalTtl, 'exchange_settings.quoteTtlSeconds is a number').toBe('number');
     const nextTtl = originalTtl === 360 ? 330 : 360;
 
     try {
@@ -224,13 +243,13 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
         page,
         'PUT',
         '/api/exchange-settings',
-        { branch: users.branch, quoteTtlSeconds: originalTtl },
+        { branch: users.branch, quoteTtlSeconds: originalTtl! },
         'exchange-settings-restore',
       );
-      expect(restoreRes.ok(), `restore quoteTtlSeconds to ${originalTtl}`).toBeTruthy();
+      expect(restoreRes.ok(), `restore quoteTtlSeconds to ${String(originalTtl)}`).toBeTruthy();
     }
 
-    // (b) Invalid bodies: missing field, < 30, > 900 (exchange_settings_save.rs:124-131).
+    // (b) Invalid bodies: missing field, < 30, > 3600 (repository.rs:24-25,75; exchange_settings_save.rs:124-131).
     await expectWorded400(
       await sendCommand(page, 'PUT', '/api/exchange-settings', { branch: users.branch }, 'exchange-settings-b1'),
       'exchangeSettingsSave missing quoteTtlSeconds',
@@ -250,10 +269,10 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
         page,
         'PUT',
         '/api/exchange-settings',
-        { branch: users.branch, quoteTtlSeconds: 901 },
+        { branch: users.branch, quoteTtlSeconds: 3601 },
         'exchange-settings-b3',
       ),
-      'exchangeSettingsSave quoteTtlSeconds > 900',
+      'exchangeSettingsSave quoteTtlSeconds > 3600',
     );
 
     // (c) Permission refusal: teller lacks RatePolicySave (exchange_settings_save.rs:116).
@@ -263,7 +282,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
         page,
         'PUT',
         '/api/exchange-settings',
-        { branch: users.branch, quoteTtlSeconds: originalTtl },
+        { branch: users.branch, quoteTtlSeconds: originalTtl! },
         'exchange-settings-c',
       ),
       'exchangeSettingsSave as teller',
@@ -357,74 +376,59 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
     );
   });
 
-  test('appSettingsSave (PUT /api/app-settings): (a) save & restore, (b) invalid bodies, (c) permission refusal', async ({
+  test('appSettingsSave (PUT /api/app-settings): (b) invalid bodies and (c) permission refusal only', async ({
     page,
   }) => {
-    // (a) Happy path + restore default 86400s in finally (app_settings_save.rs:27-52; app_settings_service.rs:13,33-62).
+    // Why (a) is skipped (docs/design/qa-e2e.md §9.2; ticket #4297 §3):
+    // customer_app_settings is seeded to planner_draft_ttl_seconds = 604800 (api/migrations/20261106100000_customer_app.sql:99-100)
+    // and no GET view exists to record the previous value before saving or to read the change back after a reload.
     await signIn(page, 'admin', '/');
-    const defaultTtl = 86_400;
-    const testTtl = 7_200;
 
-    try {
-      const saveRes = await sendCommand(
-        page,
-        'PUT',
-        '/api/app-settings',
-        { branch: users.branch, plannerDraftTtlSeconds: testTtl },
-        'app-settings-a',
-      );
-      const saveText = await saveRes.text();
-      expect(saveRes.ok(), `PUT /api/app-settings: ${saveRes.status()} ${saveText}`).toBeTruthy();
-      const saved = JSON.parse(saveText) as { plannerDraftTtlSeconds?: number };
-      expect(saved.plannerDraftTtlSeconds).toBe(testTtl);
-    } finally {
-      const restoreRes = await sendCommand(
-        page,
-        'PUT',
-        '/api/app-settings',
-        { branch: users.branch, plannerDraftTtlSeconds: defaultTtl },
-        'app-settings-restore',
-      );
-      const restoreText = await restoreRes.text();
-      expect(restoreRes.ok(), `restore plannerDraftTtlSeconds to ${defaultTtl}: ${restoreText}`).toBeTruthy();
-      const restored = JSON.parse(restoreText) as { plannerDraftTtlSeconds?: number };
-      expect(restored.plannerDraftTtlSeconds).toBe(defaultTtl);
-    }
-
-    // (b) Invalid bodies: missing field, < 300, > 2592000 (app_settings_service.rs:39-44).
+    // (b) Invalid bodies: 0 (NonZeroU32), -1 (u32), string for u32, missing field
+    // (app_settings_service.rs:48-50; app_settings_save.rs:19-24; command.rs:383-393).
     await expectWorded400(
-      await sendCommand(page, 'PUT', '/api/app-settings', { branch: users.branch }, 'app-settings-b1'),
-      'appSettingsSave missing plannerDraftTtlSeconds',
+      await sendCommand(
+        page,
+        'PUT',
+        '/api/app-settings',
+        { branch: users.branch, plannerDraftTtlSeconds: 0 },
+        'app-settings-b1',
+      ),
+      'appSettingsSave plannerDraftTtlSeconds = 0',
     );
     await expectWorded400(
       await sendCommand(
         page,
         'PUT',
         '/api/app-settings',
-        { branch: users.branch, plannerDraftTtlSeconds: 299 },
+        { branch: users.branch, plannerDraftTtlSeconds: -1 },
         'app-settings-b2',
       ),
-      'appSettingsSave plannerDraftTtlSeconds < 300',
+      'appSettingsSave negative plannerDraftTtlSeconds',
     );
     await expectWorded400(
       await sendCommand(
         page,
         'PUT',
         '/api/app-settings',
-        { branch: users.branch, plannerDraftTtlSeconds: 2_592_001 },
+        { branch: users.branch, plannerDraftTtlSeconds: 'abc' },
         'app-settings-b3',
       ),
-      'appSettingsSave plannerDraftTtlSeconds > 2592000',
+      'appSettingsSave non-numeric plannerDraftTtlSeconds',
+    );
+    await expectWorded400(
+      await sendCommand(page, 'PUT', '/api/app-settings', { branch: users.branch }, 'app-settings-b4'),
+      'appSettingsSave missing plannerDraftTtlSeconds',
     );
 
-    // (c) Permission refusal: teller lacks SystemSettings (app_settings_save.rs:36).
+    // (c) Permission refusal: teller lacks SystemSettings (app_settings_save.rs:36; app_settings_service.rs:41-47).
     await signIn(page, 'teller', '/staff');
     await expectPermissionRefused(
       await sendCommand(
         page,
         'PUT',
         '/api/app-settings',
-        { branch: users.branch, plannerDraftTtlSeconds: defaultTtl },
+        { branch: users.branch, plannerDraftTtlSeconds: 604_800 },
         'app-settings-c',
       ),
       'appSettingsSave as teller',
@@ -511,7 +515,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
       ).toBe(false);
     } finally {
       if (raisedId && !reviewed) {
-        await sendCommand(
+        const cleanupRes = await sendCommand(
           page,
           'POST',
           '/api/v3/commands/cash_exception_review',
@@ -522,6 +526,12 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
           },
           'cash-exc-review-cleanup',
         );
+        if (!cleanupRes.ok()) {
+          const cleanupText = await cleanupRes.text().catch(() => '');
+          console.warn(
+            `[R9-13] cleanup cashExceptionReview for ${raisedId} failed: ${cleanupRes.status()} ${cleanupText}`,
+          );
+        }
       }
     }
 
@@ -690,26 +700,27 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
     // identity row with no delete/undo command (contact_verify.rs:150-183), permanently altering seeded customer records.
     await signIn(page, 'admin', '/');
 
-    // (b) Invalid bodies: empty customerId, empty phone, missing phone (customer_contact_verify.rs:51-57; contact_verify.rs:47-57).
+    // (b) Invalid bodies: wrong type for customerId, wrong type for phone, missing phone
+    // (customer_contact_verify.rs:28-33; command.rs:383-393).
     await expectWorded400(
       await sendCommand(
         page,
         'POST',
         '/api/v3/commands/customer_contact_verify',
-        { branch: users.branch, customerId: '   ', phone: '0812345678' },
+        { branch: users.branch, customerId: 123, phone: '0812345678' },
         'contact-verify-b1',
       ),
-      'customerContactVerify empty customerId',
+      'customerContactVerify non-string customerId',
     );
     await expectWorded400(
       await sendCommand(
         page,
         'POST',
         '/api/v3/commands/customer_contact_verify',
-        { branch: users.branch, customerId: 'CUST-1', phone: '   ' },
+        { branch: users.branch, customerId: 'CUST-1', phone: 123 },
         'contact-verify-b2',
       ),
-      'customerContactVerify empty phone',
+      'customerContactVerify non-string phone',
     );
     await expectWorded400(
       await sendCommand(
