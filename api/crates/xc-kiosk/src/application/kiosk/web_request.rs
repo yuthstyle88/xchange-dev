@@ -64,12 +64,18 @@ impl WebRequestService {
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<WebRequestCreated> {
-        if let Some(open_id) = self
+        while let Some(open_id) = self
             .kiosk
             .repo
             .open_web_request_in(tx, branch, customer_id)
             .await?
         {
+            if let Some(open) = self.kiosk.repo.find_in(tx, branch, &open_id).await?
+                && KioskMachine::is_purgeable_for(&open, true, time(now))
+            {
+                self.kiosk.repo.delete_in(tx, branch, &open_id).await?;
+                continue;
+            }
             return Err(AppError::Conflict(format!("alreadyQueued:{open_id}")));
         }
         let identified = self
@@ -105,9 +111,10 @@ impl WebRequestService {
         token: &str,
         now: DateTime<Utc>,
     ) -> AppResult<DateTime<Utc>> {
-        let _ = now;
         let req = self.own_request_in(tx, branch, customer_id, id).await?;
-        if !matches!(req.status, KioskStatus::Quoted | KioskStatus::Waiting) {
+        if KioskMachine::is_purgeable_for(&req, true, time(now))
+            || !matches!(req.status, KioskStatus::Quoted | KioskStatus::Waiting)
+        {
             return Err(token_not_found());
         }
         self.kiosk
