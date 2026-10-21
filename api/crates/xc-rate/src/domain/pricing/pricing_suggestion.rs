@@ -3,11 +3,11 @@
 //! SKELETON (PT-0, then XC-PRICING PX-0): `PricingSuggestion::of` is PX-6's. `SuggestionInput` and
 //! `SuggestionConfig` are fixed by §5.1/§5.2 from V.9's `src/pricing/engine.mjs` (`suggestTiers`, `:40-65`).
 
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::money::{CurrencyCode, Rate, RatePercent};
 
 use crate::domain::policy::currency_tier_override::TierMargin;
-use crate::domain::pricing::market_quote::MarketQuote;
+use crate::domain::pricing::market_quote::{MarketQuote, MarketSource};
 use crate::domain::pricing::pricing_flag::PricingFlag;
 
 /// One suggested tier price (buy and sell), per the currency's unit size.
@@ -92,7 +92,162 @@ pub struct SuggestionInput {
 pub struct PricingSuggestion;
 
 impl PricingSuggestion {
-    pub fn of(_input: &SuggestionInput) -> Suggestion {
-        todo!("PX-6: PricingSuggestion::of (V.9 suggestTiers)")
+    pub fn of(input: &SuggestionInput) -> Suggestion {
+        let (Some(anchor), mut flags) = MarketQuote::anchor_for(&input.quotes) else {
+            return Suggestion {
+                tiers: None,
+                margins: None,
+                flags: vec![PricingFlag::NoAnchor],
+            };
+        };
+        let (Some(anchor_buy_rate), Some(anchor_sell_rate)) = (anchor.buy, anchor.sell) else {
+            return Suggestion {
+                tiers: None,
+                margins: None,
+                flags: vec![PricingFlag::NoAnchor],
+            };
+        };
+        let anchor_buy = anchor_buy_rate.value();
+        let anchor_sell = anchor_sell_rate.value();
+
+        let d = match (anchor.source, input.tt_decimals) {
+            (MarketSource::Tt, Some(hint)) if hint >= 2 => hint.min(4),
+            _ if anchor_buy >= Decimal::from(10) => 2,
+            _ if anchor_buy >= Decimal::ONE => 3,
+            _ => 4,
+        };
+
+        let floor_d =
+            |v: Decimal| v.round_dp_with_strategy(d, RoundingStrategy::ToNegativeInfinity);
+        let ceil_d = |v: Decimal| v.round_dp_with_strategy(d, RoundingStrategy::ToPositiveInfinity);
+        let round_d =
+            |v: Decimal| v.round_dp_with_strategy(d, RoundingStrategy::MidpointAwayFromZero);
+        let hundred = Decimal::from(100);
+        let two = Decimal::from(2);
+
+        let mid = (anchor_buy + anchor_sell) / two;
+        let min_spread = mid * input.config.min_spread_pct / hundred;
+
+        let mut unit_tiers = [(Decimal::ZERO, Decimal::ZERO); 4];
+        let mut prev: Option<(Decimal, Decimal)> = None;
+        let mut min_spread_hit = false;
+
+        for (idx, &b) in input.config.better.iter().enumerate() {
+            let mut buy = floor_d(anchor_buy * (Decimal::ONE + b / hundred));
+            let mut sell = ceil_d(anchor_sell * (Decimal::ONE - b / hundred));
+            if sell - buy < min_spread {
+                buy = floor_d(mid - min_spread / two);
+                sell = ceil_d(mid + min_spread / two);
+                min_spread_hit = true;
+            }
+            if let Some((prev_buy, prev_sell)) = prev {
+                buy = buy.max(prev_buy);
+                sell = sell.min(prev_sell);
+            }
+            prev = Some((buy, sell));
+            unit_tiers[idx] = (buy, sell);
+        }
+
+        if min_spread_hit {
+            flags.push(PricingFlag::MinSpread);
+        }
+
+        let unrounded_t1_buy = anchor_buy * (Decimal::ONE + input.config.better[0] / hundred);
+        let unrounded_t1_sell = anchor_sell * (Decimal::ONE - input.config.better[0] / hundred);
+        let pct_diff = |a: Decimal, b: Decimal| ((a - b) / b * hundred).abs();
+        let mut precision_hit = pct_diff(unit_tiers[0].0, unrounded_t1_buy) > Decimal::ONE
+            || pct_diff(unit_tiers[0].1, unrounded_t1_sell) > Decimal::ONE;
+
+        let tiers = std::array::from_fn(|idx| {
+            let (unit_buy, unit_sell) = unit_tiers[idx];
+            let buy_at_unit = unit_buy * input.unit_size;
+            let sell_at_unit = unit_sell * input.unit_size;
+            TierPrice {
+                tier_no: (idx + 1) as u8,
+                buy: Rate::parse(&buy_at_unit.to_string()).ok(),
+                sell: Rate::parse(&sell_at_unit.to_string()).ok(),
+            }
+        });
+
+        let margins = if let (Some(base_buy), Some(base_sell)) = (input.base_buy, input.base_sell) {
+            let base_buy_val = base_buy.value();
+            let base_sell_val = base_sell.value();
+            let buy_adj = input.buy_adjust_pct.value();
+            let sell_adj = input.sell_adjust_pct.value();
+
+            let arr = std::array::from_fn(|idx| {
+                let (unit_buy, unit_sell) = unit_tiers[idx];
+                let price_buy = unit_buy * input.unit_size;
+                let price_sell = unit_sell * input.unit_size;
+
+                let raw_buy_margin = ((price_buy / base_buy_val - Decimal::ONE) * hundred
+                    - buy_adj)
+                    .round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero);
+                let raw_sell_margin = ((price_sell / base_sell_val - Decimal::ONE) * hundred
+                    - sell_adj)
+                    .round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero);
+
+                let buy_margin_pct =
+                    RatePercent::parse(&raw_buy_margin.to_string()).unwrap_or(RatePercent::ZERO);
+                let sell_margin_pct =
+                    RatePercent::parse(&raw_sell_margin.to_string()).unwrap_or(RatePercent::ZERO);
+
+                let repro_buy = round_d(
+                    base_buy_val * (Decimal::ONE + (buy_adj + buy_margin_pct.value()) / hundred)
+                        / input.unit_size,
+                );
+                let repro_sell = round_d(
+                    base_sell_val * (Decimal::ONE + (sell_adj + sell_margin_pct.value()) / hundred)
+                        / input.unit_size,
+                );
+                if repro_buy != unit_buy || repro_sell != unit_sell {
+                    precision_hit = true;
+                }
+
+                TierMargin {
+                    tier_no: (idx + 1) as u8,
+                    buy_margin_pct,
+                    sell_margin_pct,
+                }
+            });
+            Some(arr)
+        } else {
+            None
+        };
+
+        if precision_hit {
+            flags.push(PricingFlag::Precision);
+        }
+
+        if let Some(cost) = input.partner_cost
+            && cost > Decimal::ZERO
+            && unit_tiers
+                .iter()
+                .any(|&(buy, sell)| sell < cost || buy > cost)
+        {
+            flags.push(PricingFlag::BelowCost);
+        }
+
+        if let Some(published) = input.published_tier1_buy {
+            let pub_val = published.value();
+            if pub_val > Decimal::ZERO {
+                let tier1_buy_at_unit = unit_tiers[0].0 * input.unit_size;
+                if ((tier1_buy_at_unit / pub_val - Decimal::ONE) * hundred).abs()
+                    > input.config.large_move_pct
+                {
+                    flags.push(PricingFlag::LargeMove);
+                }
+            }
+        }
+
+        if margins.is_none() && !flags.contains(&PricingFlag::NoAnchor) {
+            flags.push(PricingFlag::NoAnchor);
+        }
+
+        Suggestion {
+            tiers: Some(tiers),
+            margins,
+            flags,
+        }
     }
 }
