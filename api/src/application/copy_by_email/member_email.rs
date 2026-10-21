@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use xc_customer::domain::sms_sender::BoxFuture;
-use xc_kernel::pii::PiiKeys;
+use xc_kernel::pii::{PiiCipher, PiiKeys, Sealed};
 
 /// A member's verified e-mail and the language its copy is written in.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +45,37 @@ impl MemberEmails for PgMemberEmails {
         &'a self,
         customer_id: &'a str,
     ) -> BoxFuture<'a, AppResult<Option<VerifiedEmail>>> {
-        let _ = (&self.pool, &self.keys, customer_id);
-        Box::pin(async move { todo!("KWQ-D4: the verified ACTIVE EMAIL identity, decrypted") })
+        Box::pin(async move {
+            let row: Option<(Vec<u8>, String, String)> = sqlx::query_as(
+                "SELECT ci.encrypted_value, ci.key_id, c.preferred_language \
+                 FROM customer_identities ci \
+                 JOIN customers c ON c.id = ci.customer_id \
+                 WHERE ci.customer_id = $1 \
+                   AND ci.type = 'EMAIL' \
+                   AND ci.status = 'ACTIVE' \
+                   AND ci.verified_at IS NOT NULL \
+                 ORDER BY ci.verified_at DESC \
+                 LIMIT 1",
+            )
+            .bind(customer_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            let Some((bytes, key_id, lang)) = row else {
+                return Ok(None);
+            };
+
+            let plain = PiiCipher::new(self.keys.clone())
+                .decrypt(
+                    format!("{customer_id}EMAIL").as_bytes(),
+                    &Sealed { key_id, bytes },
+                )
+                .map_err(|_| AppError::Internal("failed to decrypt verified email".to_owned()))?;
+            let address = String::from_utf8(plain)
+                .map_err(|_| AppError::Internal("verified email is not valid UTF-8".to_owned()))?;
+
+            Ok(Some(VerifiedEmail { address, lang }))
+        })
     }
 }
