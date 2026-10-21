@@ -16,19 +16,27 @@
 
 use std::path::Path;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
+use pos_error::AppError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{CurrencyCode, Money, Side};
 use xc_kiosk::application::kiosk::web_request::WebRequestService;
+use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
+use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::kiosk::web_request_wiring::web_request_service;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, out_of_scope, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +60,53 @@ pub struct WebRequestAnswer {
 
 pub struct WebRequestCreate(pub WebRequestService);
 
+pub(crate) fn parse_quote_input(
+    side: Option<&str>,
+    currency: Option<&str>,
+    amount: Option<&Value>,
+    payment_method: Option<&Value>,
+) -> QuoteInput {
+    let side = match side {
+        Some("BUY") => Some(Side::Buy),
+        Some("SELL") => Some(Side::Sell),
+        _ => None,
+    };
+    let currency = currency.and_then(|s| CurrencyCode::parse(s).ok());
+    let amount = match amount {
+        Some(Value::Number(n)) => Money::parse(&n.to_string()).ok(),
+        Some(Value::String(s)) => Money::parse(s).ok(),
+        _ => None,
+    };
+    let payment_method = match payment_method {
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(Value::Null) | None => None,
+        Some(_) => Some("invalid".to_owned()),
+    };
+    QuoteInput {
+        side,
+        currency,
+        amount,
+        payment_method,
+    }
+}
+
+fn refusal(err: AppError) -> V3Error {
+    if let AppError::Conflict(ref msg) = err {
+        if let Some(id) = msg.strip_prefix("alreadyQueued:") {
+            return V3Error::new("alreadyQueued", None, id.to_owned(), StatusCode::CONFLICT);
+        }
+        if msg == "alreadyQueued" {
+            return V3Error::new("alreadyQueued", None, "alreadyQueued", StatusCode::CONFLICT);
+        }
+    }
+    match err {
+        AppError::Domain(sentence) => {
+            V3Error::new("quoteRefused", None, sentence, StatusCode::BAD_REQUEST)
+        }
+        _ => server_error(),
+    }
+}
+
 impl CommandAction for WebRequestCreate {
     const NAME: &'static str = "webRequestCreate";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "webRequestCreate");
@@ -72,10 +127,31 @@ impl CommandAction for WebRequestCreate {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        key: IdempotencyKey,
+        _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input, key, &self.0);
-        todo!("KWQ-C5: parse as the kiosk quote, mint the token, WebRequestService::create")
+        let customer = who.customer_id.as_deref().ok_or_else(out_of_scope)?;
+        let quote_input = parse_quote_input(
+            input.side.as_deref(),
+            input.currency.as_deref(),
+            input.amount.as_ref(),
+            input.payment_method.as_ref(),
+        );
+        let cmd = NewQuote {
+            input: quote_input,
+            new_id: Uuid::new_v4().to_string(),
+            client_ip: format!("web:{customer}"),
+        };
+        let token = Uuid::new_v4().to_string();
+        let created = self
+            .0
+            .create_in(tx, branch, customer, cmd, &token, Utc::now())
+            .await
+            .map_err(refusal)?;
+        Ok(WebRequestAnswer {
+            request_id: created.request_id,
+            request_qr_url: Some(format!("/q#{token}")),
+            expires_at: created.expires_at.to_rfc3339(),
+        })
     }
 }
 
