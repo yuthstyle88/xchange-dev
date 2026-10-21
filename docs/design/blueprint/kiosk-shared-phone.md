@@ -62,7 +62,11 @@
 
 **Queue ticket (KS-6).**
 - **Print:** a small slip from a printer at the kiosk.
-  - Not measured yet: whether the kiosk device has a printer, and how the Flutter app (and the web build) would reach it. The desk prints receipts through the device agent (`/devices`, `DeviceQueue`). The BE lane checks whether a kiosk can use the same agent.
+  - **The printer is the one already given** (owner, 2026-10-21: *"เครื่อง พิมพ์ เหมือนเคยให้ มาแล้วนะ"* · *"กับลิ้นชัก"*): the **POS80** 80 mm ESC/POS receipt printer, with the cash drawer on it.
+    - In v2 it sat on the counter Mac's USB as CUPS queue `POS80_` (`docs/design/xchange-v3-known-differences.md:52`).
+    - v3 reaches it through the **device agent** (`deploy/agent/README.md` §A CUPS raw / §B TCP 9100), which already drives the drawer kick.
+    - So the kiosk ticket is a print job the server builds as ESC/POS and the branch's device agent sends. The kiosk app does not print by itself, and it works from both the Flutter and the web build.
+    - Open for the BE lane: whether the kiosk's printer is the counter POS80 or a second POS80 at the kiosk. The owner names the target when the agent is paired.
 - **SMS:** sent through Identity/Notify like the OTP (KS-4b), to the verified phone.
   - It carries a link to a **public, signed-out ticket page**: the number, the status, and **ยกเลิกคิว**.
   - The page is opened by a per-ticket secret in the link, never by the request id. That lets a customer who has walked away cancel later, without breaking KS-1.
