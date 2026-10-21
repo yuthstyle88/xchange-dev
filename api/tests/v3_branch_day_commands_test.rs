@@ -30,8 +30,7 @@
 //! changed. Every effect is read back through CA-7b's tables with `PgCustodyRepository::load_state`.
 //!
 //! Callers: `x-test-as: <ROLE>@<branch>`. Each is a Blueprint `access::Actor` of the seeded
-//! organisation with that one role, plus the legacy actor whose v3 role maps to the same Blueprint
-//! role (`v3_roles.rs`), so the routes hold before and after #1030 hands commands the Blueprint actor.
+//! organisation with that one role.
 //!
 //! Needs `TEST_DATABASE_URL`; nothing skips.
 
@@ -57,9 +56,7 @@ use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Side};
 use xc_shift::domain::custody::entities::customer_hold::HoldStatus;
@@ -68,7 +65,7 @@ use xc_shift::domain::custody::state::CustodyState;
 use xc_shift::domain::custody::value_objects::phase::Phase;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -269,29 +266,6 @@ fn user_of(spec: &str) -> Option<User> {
     ))
 }
 
-/// The legacy actor whose v3 role maps to the spec's Blueprint role (`v3_roles.rs`); none for a
-/// customer.
-fn legacy_of(spec: &str) -> Sessions {
-    let none = Sessions {
-        owner: None,
-        staff: None,
-    };
-    let Some((role, branch)) = spec.split_once('@') else {
-        return none;
-    };
-    let old = match role {
-        "BRANCH_MANAGER" => OldRole::Manager,
-        "TELLER" | "TELLER2" => OldRole::Front,
-        "FINANCE" => OldRole::Finance,
-        "VERIFICATION_REVIEWER" => OldRole::Monitor,
-        _ => return none,
-    };
-    Sessions {
-        owner: None,
-        staff: Actor::staff(user_id(spec).to_owned(), old, BranchId::new(branch)),
-    }
-}
-
 fn spec_of(req: &HttpRequest) -> String {
     req.headers()
         .get(AS)
@@ -300,18 +274,9 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         Box::pin(async move {
-            let _s = legacy_of(&spec);
             let user = user_of(&spec);
             Callers {
                 user: user.clone(),

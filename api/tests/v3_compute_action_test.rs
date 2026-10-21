@@ -8,7 +8,7 @@
 //! - `presentation::http::v3::action::{ComputeAction, ComputeEndpoint}`:
 //!   `ComputeEndpoint::register(cfg, Arc<A>)` serves only
 //!   `POST /api/v3/compute/{A::NAME}` and runs, in this order: sign-in and
-//!   `Policy::allow(INHERITS)`; `same_origin` (`400 originRejected`); the body
+//!   `Policy::authorize(INHERITS)`; `same_origin` (`400 originRejected`); the body
 //!   (at most 16,384 bytes, a JSON object; else `400 invalidRequest`, no
 //!   field); the reserved key `branch` (`400 invalidRequest`, `field: "branch"`);
 //!   `Policy::branch` then `require_branch` (`400 noSuchBranch`); the body as
@@ -46,12 +46,10 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
-use xc_auth::domain::access::Actor as AccessActor;
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::{Actor, Actor as AccessActor, RoleGrants};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
@@ -60,7 +58,8 @@ use xc_rate::domain::validation::NO_SUCH_BRANCH;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::action::{ComputeAction, ComputeEndpoint};
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -187,72 +186,50 @@ impl TestDb {
 
 /// Who is signed in, from the request header `x-test-as`: `owner`,
 /// `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn staff_of(spec: &str) -> Option<Actor> {
+fn staff_caller_of(spec: &str) -> Actor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role_name = parts.next().expect("a role");
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
-    Actor::staff("employee-7", role, BranchId::new(branch))
+    test_callers::staff("employee-7", roles, BranchId::new(branch))
 }
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
+        return test_callers::callers(
+            Some(test_callers::owner("owner-1")),
+            Some(staff_caller_of(staff)),
+        );
     }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
+    test_callers::callers(None, Some(staff_caller_of(spec)))
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
-
-const STAFF_ROLES: [&str; 9] = [
-    "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
-    "MONITOR",
-    "FINANCE",
-    "SYSTEM",
-    "DOCUMENTS",
-    "DOCUMENT_REVIEW",
-];
 
 /// Every caller kind: nobody, the owner, each staff role, and the owner and a
 /// staff member in one browser.
 fn every_caller() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_string()];
-    for role in STAFF_ROLES {
+    for (role, _) in test_callers::V2_STAFF {
         out.push(format!("staff:{role}:XC-B01"));
         out.push(format!("owner+staff:{role}:XC-B01"));
     }
@@ -261,10 +238,10 @@ fn every_caller() -> Vec<String> {
 
 /// The actor the policy is asked about on `path`, by the rule of `rpc.rs`.
 fn actor_on(path: EntryPath, spec: &str) -> Option<Actor> {
-    let s = sessions_of(spec);
+    let c = callers_of(spec);
     match path {
-        EntryPath::StaffRpc => s.staff,
-        _ => s.owner.or(s.staff),
+        EntryPath::StaffRpc => c.staff_user,
+        _ => c.user,
     }
 }
 
@@ -492,7 +469,7 @@ struct Answer {
 async fn send(db: &TestDb, actions: &Actions, call: Call) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
     let calls = actions.calls.clone();
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| {
@@ -734,10 +711,6 @@ async fn a_call_never_moves_any_branch_version() {
 /// callers `Policy::authorize` / `RoleGrants::seed` refuses for that pair, with the policy's refusal.
 #[actix_web::test]
 async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pair() {
-    use xc_auth::domain::access::RoleGrants;
-    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
-    use xc_auth::domain::policy::entities::policy::Need;
-
     let db = TestDb::start().await;
     let actions = Actions::new();
     let mut allowed = 0;
@@ -761,31 +734,23 @@ async fn the_endpoint_refuses_exactly_whom_the_policy_refuses_for_the_actions_pa
             let what = format!("{uri} as {who:?}");
             let actor = actor_on(path, &who);
             let holds = actor.as_ref().is_some_and(|ac| {
-                blueprint_roles(ac.role())
+                ac.roles
                     .iter()
-                    .any(|&r| RoleGrants::seed(r).contains(&perm))
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
             });
-            let user = actor.as_ref().map(|ac| {
-                actor_from_v3(
-                    ac,
-                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
-                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-                )
-            });
-            let auth = Policy::authorize(user.as_ref(), path, &act, None, chrono::Utc::now());
+            let auth = Policy::authorize(actor.as_ref(), path, &act, None, chrono::Utc::now());
             assert_eq!(
                 auth.is_ok(),
                 holds,
                 "{what}: RoleGrants::seed matches Policy::authorize"
             );
             match auth {
-                Ok(_) => {
+                Ok(grant) => {
                     allowed += 1;
                     let actor = actor.expect("allowed means signed in");
-                    let branch = Policy::branch(Some(&actor), None);
                     is_answer(
                         &a,
-                        echo(branch.as_str(), actor.id(), "7"),
+                        echo(grant.branch.as_str(), actor.user_id.as_str(), "7"),
                         &format!("{what}: answered for the actor of its entry path"),
                     );
                 }
@@ -1213,13 +1178,7 @@ async fn the_checks_run_in_the_designs_order() {
             .contains(&xc_auth::domain::access::Permission::ExchangeTransact),
         "§11.2: FINANCE does not hold ExchangeTransact"
     );
-    let finance = actor_on(EntryPath::StaffRpc, "staff:FINANCE:XC-B01").map(|ac| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            &ac,
-            xchange::presentation::pages::SEEDED_XC_ORG_ID,
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
+    let finance = actor_on(EntryPath::StaffRpc, "staff:FINANCE:XC-B01");
     let refusal = Policy::authorize(
         finance.as_ref(),
         EntryPath::StaffRpc,

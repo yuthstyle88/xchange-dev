@@ -39,16 +39,15 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
-use xc_auth::domain::access::Actor as AccessActor;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor as AccessActor, Role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::idempotency::store::IdempotencyKey;
 use xchange::presentation::http::v3::command::{CommandAction, CommandEndpoint, Locks};
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -176,13 +175,22 @@ impl TestDb {
 // ------------------------------------------------------------ callers
 
 /// `x-test-as: staff:<ROLE>:<branch>`: one staff session at that branch.
-struct HeaderSessions;
+struct HeaderCallers;
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+fn roles_of(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown role {other}"),
+    }
+}
+
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
@@ -191,12 +199,16 @@ impl SessionReader for HeaderSessions {
         Box::pin(async move {
             let mut parts = spec.splitn(3, ':');
             assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-            let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+            let roles = roles_of(parts.next().expect("a role"));
             let branch = parts.next().expect("a branch");
-            Sessions {
-                owner: None,
-                staff: Actor::staff("employee-7", role, BranchId::new(branch)),
-            }
+            test_callers::callers(
+                None,
+                Some(test_callers::staff(
+                    "employee-7",
+                    roles,
+                    BranchId::new(branch),
+                )),
+            )
         })
     }
 }
@@ -302,7 +314,7 @@ struct Answer {
 
 async fn post(db: &TestDb, who: &str, route: &str, body: Value, key: &str) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| {

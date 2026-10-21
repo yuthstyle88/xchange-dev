@@ -31,12 +31,12 @@ use actix_web::dev::{Service, ServiceResponse};
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test, web};
 use common::{FakeDatabase, settings, state_with};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::test_callers;
 
 const WHO: &str = "x-test-sessions";
 const HOST: &str = "xc.test";
@@ -56,18 +56,27 @@ fn committed_script() -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
+fn roles_of(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown v2 role: {other}"),
+    }
+}
+
 /// Same shape as the reader in pages_test.rs: `none` | `owner` | `staff:ROLE:BRANCH`,
 /// counting how often it is asked.
 #[derive(Default)]
-struct FakeSessions {
+struct FakeCallers {
     asked: AtomicUsize,
 }
 
-impl SessionReader for FakeSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for FakeCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         self.asked.fetch_add(1, Ordering::SeqCst);
         let who = req
             .headers()
@@ -78,14 +87,15 @@ impl SessionReader for FakeSessions {
         Box::pin(async move {
             let staff = who.find("staff:").map(|at| {
                 let mut parts = who[at..].split(':').skip(1);
-                let role = Role::parse(parts.next().expect("a role")).expect("a role v2 knows");
+                let roles = roles_of(parts.next().expect("a role"));
                 let branch = BranchId::new(parts.next().expect("a branch"));
-                Actor::staff("employee-7", role, branch).expect("a staff role")
+                test_callers::staff("employee-7", roles, branch)
             });
-            Sessions {
-                owner: who.starts_with("owner").then(|| Actor::owner("owner-1")),
+            test_callers::callers(
+                who.starts_with("owner")
+                    .then(|| test_callers::owner("owner-1")),
                 staff,
-            }
+            )
         })
     }
 }
@@ -112,7 +122,7 @@ macro_rules! app_with {
 
 macro_rules! app {
     ($web_dir:expr) => {
-        app_with!($web_dir, Arc::new(FakeSessions::default()))
+        app_with!($web_dir, Arc::new(FakeCallers::default()))
     };
 }
 
@@ -369,7 +379,7 @@ async fn only_get_reaches_the_script() {
 #[actix_web::test]
 async fn the_script_needs_no_session() {
     // `/login` loads it before anyone is signed in
-    let reader = Arc::new(FakeSessions::default());
+    let reader = Arc::new(FakeCallers::default());
     let app = app_with!(&fixtures().join("web"), reader.clone());
     let answer = get!(&app, SCRIPT_PATH, "none");
     assert_eq!(answer.status, StatusCode::OK);

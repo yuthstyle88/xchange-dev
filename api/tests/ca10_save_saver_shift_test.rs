@@ -17,7 +17,7 @@ mod save_common;
 use std::collections::BTreeMap;
 
 use pos_error::AppError;
-use save_common::{JPEG, MAIN, Shop, at, branch, form, fund_ledger_drawer, seed_opener, unique};
+use save_common::{JPEG, MAIN, Shop, at, branch, form, fund_ledger_drawer, unique};
 use sqlx::PgPool;
 use xc_auth::domain::access::{Role as AccessRole, StandingKind};
 use xchange::application::workflows::save_step::{SaveActor, SaveExtras};
@@ -27,20 +27,62 @@ const NO_OPEN_SHIFT: &str = "กรุณาเปิดกะจากหน้
 
 const OPENING: &[(&str, &str)] = &[("THB", "100000"), ("USD", "1000")];
 
-/// The `users.id` of an opener id seeded by `seed_opener` (`"owner"` = the organisation-wide owner user).
+/// The `users.id` of an opener or saver key `id` (`"owner"` = the organisation-wide owner user).
 async fn user_of(pool: &PgPool, id: &str) -> String {
-    let sql = if id == "owner" {
-        "SELECT u.id::text FROM users u WHERE u.legacy_employee_id IS NULL AND EXISTS \
-         (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
-         ORDER BY u.created_at LIMIT 1"
-    } else {
-        "SELECT id::text FROM users WHERE legacy_employee_id = $1"
-    };
-    sqlx::query_scalar(sql)
-        .bind(id)
+    if let Some(u) =
+        sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .expect("look up user by id")
+    {
+        return u;
+    }
+    if id == "owner" {
+        if let Some(u) = sqlx::query_scalar::<_, String>(
+            "SELECT u.id::text FROM users u WHERE EXISTS \
+             (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+             ORDER BY u.created_at, u.id LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await
+        .expect("look for the owner's user")
+        {
+            return u;
+        }
+        return sqlx::query_scalar(
+            "WITH o AS (SELECT id FROM organizations WHERE code = 'XC'), \
+             u AS (INSERT INTO users (organization_id, name, status, created_by) \
+                   SELECT id, 'owner', 'PENDING', 'test' FROM o RETURNING id, organization_id), \
+             r AS (INSERT INTO user_roles (user_id, role_code, organization_id, branch_id) \
+                   SELECT u.id, v.code, u.organization_id, NULL FROM u, (VALUES ('EXECUTIVE'), ('ADMIN')) AS v(code)) \
+             SELECT id::text FROM u",
+        )
         .fetch_one(pool)
         .await
-        .unwrap_or_else(|e| panic!("the user of {id}: {e}"))
+        .expect("seed the owner's user");
+    }
+    if let Some(u) = sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test' \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .expect("look for an opener's user")
+    {
+        return u;
+    }
+    sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the user of {id}: {e}"))
 }
 
 /// An OPEN shift of `teller` at `branch_id`, written straight into the tables, its drawer funded through the
@@ -141,7 +183,7 @@ impl Desk {
         let shop = Shop::start().await;
         shop.set_rate(MAIN, "USD", "32.1", "33").await;
         for id in ["E-SAVER", "E-OTHER", "E-NOSHIFT", "owner"] {
-            seed_opener(&shop.pool, id).await;
+            let _ = user_of(&shop.pool, id).await;
         }
         let other = user_of(&shop.pool, "E-OTHER").await;
         let others = seed_shift(&shop.pool, MAIN, &other, false).await;
@@ -151,7 +193,12 @@ impl Desk {
     /// `form()` saved through `save_as` by `who`; the passport is uploaded by `who` (an attachment is its owner's).
     async fn save(&self, who: &SaveActor) -> Result<String, AppError> {
         let customer = self.shop.reserve(MAIN, save_common::person()).await;
-        let passport = self.shop.upload(MAIN, &who.id, "image/jpeg", JPEG).await;
+        let passport = self
+            .shop
+            .files
+            .upload(&branch(MAIN), &who.id, "image/jpeg", JPEG, at(-10))
+            .await
+            .expect("upload a file");
         let cmd = form(
             &unique("ca10-save-submission").replace('_', "-"),
             &customer,
@@ -169,19 +216,14 @@ impl Desk {
     }
 }
 
-/// Row 1: a staff saver (a v2 employee id, `users.legacy_employee_id`) with an OPEN shift of their own.
+/// Row 1: a staff saver (a user id) with an OPEN shift of their own.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_staff_savers_own_open_shift_takes_the_stock() {
     let desk = Desk::open().await;
-    let mine = seed_shift(
-        &desk.shop.pool,
-        MAIN,
-        &user_of(&desk.shop.pool, "E-SAVER").await,
-        true,
-    )
-    .await;
+    let user = user_of(&desk.shop.pool, "E-SAVER").await;
+    let mine = seed_shift(&desk.shop.pool, MAIN, &user, true).await;
 
-    desk.save(&saver("E-SAVER", StandingKind::Staff(AccessRole::Teller)))
+    desk.save(&saver(&user, StandingKind::Staff(AccessRole::Teller)))
         .await
         .expect("the saver's own shift takes the save");
 
@@ -206,7 +248,10 @@ async fn a_saver_with_no_open_shift_is_refused_and_nothing_is_written() {
     let before = desk.transactions().await;
 
     let refused = desk
-        .save(&saver("E-NOSHIFT", StandingKind::Staff(AccessRole::Teller)))
+        .save(&saver(
+            &user_of(&desk.shop.pool, "E-NOSHIFT").await,
+            StandingKind::Staff(AccessRole::Teller),
+        ))
         .await;
 
     assert!(
@@ -226,15 +271,12 @@ async fn a_saver_with_no_open_shift_is_refused_and_nothing_is_written() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_owner_saves_on_the_owners_own_shift() {
     let desk = Desk::open().await;
-    let owners = seed_shift(
-        &desk.shop.pool,
-        MAIN,
-        &user_of(&desk.shop.pool, "owner").await,
-        true,
-    )
-    .await;
+    let owner = user_of(&desk.shop.pool, "owner").await;
+    let owners = seed_shift(&desk.shop.pool, MAIN, &owner, true).await;
 
-    desk.save(&saver("owner", StandingKind::Owner))
+    // OR-7.m (reviewer fix on #3746): an owner's actor id is the owner's `users.id`; the v2 string
+    // `"owner"` no longer resolves to a teller since #3741.
+    desk.save(&saver(&owner, StandingKind::Owner))
         .await
         .expect("the owner's own shift takes the save");
 

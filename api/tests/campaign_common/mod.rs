@@ -14,12 +14,10 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor as PolicyActor;
-use xc_auth::domain::policy::value_objects::role::Role as PolicyRole;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 use crate::common;
 use crate::quote_common::*;
@@ -36,20 +34,19 @@ pub const SEEDED_CALC: &str = r#"{"delta":"0.11"}"#;
 pub struct FrontDesk;
 
 impl SessionReader for FrontDesk {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let signed_in = req.headers().get(AS).is_some();
         Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: if signed_in {
-                    PolicyActor::staff("employee-FRONT", PolicyRole::Front, BranchId::new(BRANCH))
-                } else {
-                    None
-                },
-            }
+            let staff = if signed_in {
+                Some(xchange::presentation::test_callers::staff(
+                    "employee-FRONT",
+                    &[AccessRole::Teller],
+                    BranchId::new(BRANCH),
+                ))
+            } else {
+                None
+            };
+            xchange::presentation::test_callers::callers(None, staff)
         })
     }
 }
@@ -71,18 +68,6 @@ pub fn marketing() -> AccessActor {
 pub struct MarketingCallers;
 
 impl SessionReader for MarketingCallers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let is_marketing = req
             .headers()

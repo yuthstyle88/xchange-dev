@@ -62,7 +62,7 @@ test('rpcAction is null for anything else', () => {
   assert.equal(D().rpcAction('/api/rpc', undefined), null, 'no init: a GET');
   assert.equal(D().rpcAction('/api/rpc', { method: 'GET' }), null);
   assert.equal(D().rpcAction('/api/upload?branch=XC-B01', post('saveTransaction')), null);
-  assert.equal(D().rpcAction('/api/auth', post('status')), null);
+  assert.equal(D().rpcAction('/api/auth/session', post('status')), null);
   assert.equal(D().rpcAction('/api/kiosk', post('notifications')), null);
   assert.equal(D().rpcAction('/api/rpcx', post('saveTransaction')), null);
   assert.equal(D().rpcAction('/api/rpc', { method: 'POST', body: 'not json' }), null);
@@ -143,14 +143,14 @@ test('offline, the browser counter keeps v2 sentence', () => {
 // ------------------------------------------------------------------ fillsStaff
 
 test('the staff code is filled on /staff/desk only, from a real username', () => {
-  assert.equal(D().fillsStaff('/staff/desk', { username: 'pwtest-front', role: 'FRONT' }), true);
-  assert.equal(D().fillsStaff('/desk', { username: 'boss', role: 'OWNER' }), false, 'account-bar.js does /desk');
-  assert.equal(D().fillsStaff('/staff/desk', { username: '' }), false);
+  assert.equal(D().fillsStaff('/staff/desk', { name: 'pwtest-front', role: 'FRONT' }), true);
+  assert.equal(D().fillsStaff('/desk', { name: 'boss', role: 'OWNER' }), false, 'account-bar.js does /desk');
+  assert.equal(D().fillsStaff('/staff/desk', { name: '' }), false);
   assert.equal(D().fillsStaff('/staff/desk', {}), false);
   assert.equal(D().fillsStaff('/staff/desk', null), false);
   assert.equal(D().fillsStaff('/staff/desk', undefined), false);
-  assert.equal(D().fillsStaff('/staff/desk', { username: 7 }), false);
-  assert.equal(D().fillsStaff('/staff/desk/', { username: 'pwtest-front' }), false);
+  assert.equal(D().fillsStaff('/staff/desk', { name: 7 }), false);
+  assert.equal(D().fillsStaff('/staff/desk/', { name: 'pwtest-front' }), false);
 });
 
 // ------------------------------------------------------------------ backToEdit

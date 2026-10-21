@@ -988,7 +988,6 @@ impl SessionService {
             version: u_version,
             created_at: now,
             created_by: "session".to_string(),
-            legacy_employee_id: None,
             roles: roles.clone(),
         };
 
@@ -1130,8 +1129,7 @@ impl SessionService {
         let owners: Vec<(String, String, String)> = sqlx::query_as(
             "SELECT u.id::text, u.status, u.organization_id::text \
              FROM users u \
-             WHERE u.legacy_employee_id IS NULL \
-               AND EXISTS ( \
+             WHERE EXISTS ( \
                    SELECT 1 FROM user_roles r \
                    WHERE r.user_id = u.id \
                      AND r.role_code = 'EXECUTIVE' \

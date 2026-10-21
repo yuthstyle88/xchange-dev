@@ -126,7 +126,7 @@ async fn screen(app: &TestApp, owner: &str) -> Value {
             proto: Some("https".to_owned()),
             ..Call::default()
         }
-        .owner(owner),
+        .session(owner),
     )
     .await;
     assert_eq!(answer.status, 200, "published_rates: {}", answer.text);
@@ -153,7 +153,7 @@ async fn quote_path(pool: &PgPool, currency: &str, side: Side) -> bool {
 async fn setup() -> (Desk, TestApp, String) {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     (desk, app, owner)
 }
 

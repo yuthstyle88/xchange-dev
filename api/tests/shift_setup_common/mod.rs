@@ -102,6 +102,40 @@ async fn lines_from_values(pool: &PgPool, amounts: &Value) -> Vec<CountLine> {
     lines
 }
 
+async fn create_synthetic_user_with_role(
+    pool: &PgPool,
+    org_id: Uuid,
+    branch: &str,
+    name: &str,
+    role: AuthRole,
+) -> Uuid {
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO users (id, organization_id, name, status, created_by) \
+         VALUES (gen_random_uuid(), $1, $2, 'ACTIVE', 'test') \
+         RETURNING id",
+    )
+    .bind(org_id)
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .expect("create synthetic user");
+    let mut conn = pool.acquire().await.expect("acquire connection");
+    xc_testdb::people::seed_roles(
+        &mut conn,
+        &id.to_string(),
+        &org_id.to_string(),
+        &[xc_testdb::people::RoleRow {
+            role_code: role.as_str(),
+            branch_id: Some(branch),
+            valid_from: DateTime::<Utc>::UNIX_EPOCH,
+            valid_to: None,
+        }],
+    )
+    .await
+    .expect("seed synthetic user role");
+    id
+}
+
 /// Resolves or provisions a teller user and a verifier user (who must be distinct)
 /// for `branch`, and returns their respective AuthActors and the branch's organization_id.
 async fn setup_actors(
@@ -120,56 +154,64 @@ async fn setup_actors(
     } else {
         match sqlx::query_scalar(
             "SELECT u.id FROM users u \
-             LEFT JOIN employees e ON e.id = u.legacy_employee_id \
-             WHERE (e.role IN ('FRONT', 'TELLER') OR u.legacy_employee_id IS NOT NULL) \
+             JOIN user_roles ur ON ur.user_id = u.id AND ur.organization_id = u.organization_id \
+             WHERE u.status <> 'DISABLED' \
+               AND ur.role_code = $2 \
+               AND ur.valid_from <= now() \
+               AND (ur.valid_to IS NULL OR ur.valid_to > now()) \
                AND NOT EXISTS (SELECT 1 FROM shifts s WHERE s.teller_id = u.id AND s.status = 'OPEN') \
-             ORDER BY (e.branch_id = $1) DESC NULLS LAST, (e.role IN ('FRONT', 'TELLER')) DESC NULLS LAST \
+             ORDER BY (ur.branch_id = $1) DESC NULLS LAST, u.created_at ASC, u.id ASC \
              LIMIT 1",
         )
         .bind(branch)
+        .bind(AuthRole::Teller.as_str())
         .fetch_optional(pool)
         .await
         .expect("query teller user")
         {
             Some(id) => id,
             None => {
-                sqlx::query_scalar(
-                    "INSERT INTO users (id, organization_id, name, status, created_by) \
-                     VALUES (gen_random_uuid(), $1, 'shift_setup_teller', 'ACTIVE', 'test') \
-                     RETURNING id",
+                create_synthetic_user_with_role(
+                    pool,
+                    org_id,
+                    branch,
+                    "shift_setup_teller",
+                    AuthRole::Teller,
                 )
-                .bind(org_id)
-                .fetch_one(pool)
                 .await
-                .expect("create teller user")
             }
         }
     };
 
     let verifier_user_id: Uuid = match sqlx::query_scalar(
         "SELECT u.id FROM users u \
-         LEFT JOIN employees e ON e.id = u.legacy_employee_id \
+         JOIN user_roles ur ON ur.user_id = u.id AND ur.organization_id = u.organization_id \
          WHERE u.id != $1 \
-           AND (e.role = 'MANAGER' OR e.id IS NOT NULL) \
-         ORDER BY (e.role = 'MANAGER') DESC, (e.branch_id = $2) DESC \
+           AND u.status <> 'DISABLED' \
+           AND ur.role_code = $3 \
+           AND ur.valid_from <= now() \
+           AND (ur.valid_to IS NULL OR ur.valid_to > now()) \
+         ORDER BY (ur.branch_id = $2) DESC NULLS LAST, u.created_at ASC, u.id ASC \
          LIMIT 1",
     )
     .bind(teller_user_id)
     .bind(branch)
+    .bind(AuthRole::BranchManager.as_str())
     .fetch_optional(pool)
     .await
     .expect("query verifier user")
     {
         Some(id) => id,
-        None => sqlx::query_scalar(
-            "INSERT INTO users (id, organization_id, name, status, created_by) \
-                 VALUES (gen_random_uuid(), $1, 'shift_setup_verifier', 'ACTIVE', 'test') \
-                 RETURNING id",
-        )
-        .bind(org_id)
-        .fetch_one(pool)
-        .await
-        .expect("create verifier user"),
+        None => {
+            create_synthetic_user_with_role(
+                pool,
+                org_id,
+                branch,
+                "shift_setup_verifier",
+                AuthRole::BranchManager,
+            )
+            .await
+        }
     };
 
     let teller_actor = AuthActor::new(

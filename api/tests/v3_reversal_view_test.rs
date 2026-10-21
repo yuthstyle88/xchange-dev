@@ -24,7 +24,7 @@
 //! Rows are seeded with SQL in RV-1's and TX-2's schema; a POSTED reversal is seeded as RV-3 will
 //! write it (posting and document), because posting is RV-3's. Exchanges are DEMO (no shift). The
 //! window is MAIN's timezone, Asia/Bangkok: a reversal whose `business_date` is Bangkok's today is
-//! inside it, one of 2026-10-06 is past it. Sessions come from the `x-test-as` header (`owner`,
+//! inside it, one of 2026-10-06 is past it. Callers come from the `x-test-as` header (`owner`,
 //! `staff:<ROLE>:<branch>`), as in `v3_transaction_view_test.rs`. The content tests read as MAIN's MANAGER
 //! (`ME`), as #678's do under ruling A.
 //!
@@ -42,63 +42,59 @@ use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, Utc};
 use quote_common::TestDb;
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 /// Who reads in the content tests: MAIN's MANAGER (BRANCH_MANAGER, holds `TransactionRead`; #678 ruling A).
 const ME: &str = "staff:MANAGER:MAIN";
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn roles_of(role: &str) -> &'static [Role] {
+    test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown role {role}"))
+}
+
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role = parts.next().expect("a role");
+    let roles = roles_of(role);
     let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role}"),
+            roles,
             BranchId::new(branch),
-        ),
-    }
+        )),
+    )
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
 /// `GET <path>?<query>` as `who`: (status, body).
 async fn get(db: &TestDb, who: &str, path: &str, query: &str) -> (StatusCode, Value) {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))

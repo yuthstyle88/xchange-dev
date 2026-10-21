@@ -19,8 +19,7 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test, web};
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::application::passport_read::{
     AiLocation, AiProvider, ImageMime, PassportImage, PassportRead, PassportReader, PassportResult,
@@ -28,7 +27,8 @@ use xchange::application::passport_read::{
 };
 use xchange::bootstrap::AppState;
 use xchange::presentation::http::v3::passport_read::{MAX_IMAGE_BYTES, PATH, register};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const HOST: &str = "desk.example";
 const ORIGIN: &str = "http://desk.example";
@@ -40,14 +40,11 @@ const JPEG: &[u8] = &[
 // ── fakes ────────────────────────────────────────────────────────────────
 
 /// `owner` is the owner; `teller` is a Front at MAIN; `rates` is a Rates at MAIN; `finance` is a
-/// Finance at MAIN; any `Role::STAFF` name is that role at MAIN; anything else is nobody.
-struct FakeSessions;
+/// Finance at MAIN; any v2 `test_callers::V2_STAFF` name is that role's Blueprint roles at MAIN; anything else is nobody.
+struct FakeCallers;
 
-impl SessionReader for FakeSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for FakeCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let who = req
                 .headers()
@@ -56,28 +53,25 @@ impl SessionReader for FakeSessions {
                 .unwrap_or("");
             let main = BranchId::new("MAIN");
             match who {
-                "owner" => Sessions {
-                    owner: Some(Actor::owner("owner")),
-                    staff: None,
-                },
-                "teller" => Sessions {
-                    owner: None,
-                    staff: Actor::staff("u-teller", Role::Front, main),
-                },
-                "rates" => Sessions {
-                    owner: None,
-                    staff: Actor::staff("u-rates", Role::Rates, main),
-                },
-                "finance" => Sessions {
-                    owner: None,
-                    staff: Actor::staff("u-finance", Role::Finance, main),
-                },
-                other => Sessions {
-                    owner: None,
-                    staff: Role::parse(other)
-                        .filter(|r| Role::STAFF.contains(r))
-                        .and_then(|r| Actor::staff(format!("u-{other}"), r, main)),
-                },
+                "owner" => test_callers::callers(Some(test_callers::owner("owner")), None),
+                "teller" => test_callers::callers(
+                    None,
+                    Some(test_callers::staff("u-teller", &[Role::Teller], main)),
+                ),
+                "rates" => test_callers::callers(
+                    None,
+                    Some(test_callers::staff("u-rates", &[Role::RateManager], main)),
+                ),
+                "finance" => test_callers::callers(
+                    None,
+                    Some(test_callers::staff("u-finance", &[Role::Finance], main)),
+                ),
+                // OR-7.m (merge of feat/rbac-groups): any v2 staff name, as its Blueprint roles
+                other => test_callers::callers(
+                    None,
+                    test_callers::v2_staff_roles(other)
+                        .map(|roles| test_callers::staff(&format!("u-{other}"), roles, main)),
+                ),
             }
         })
     }
@@ -181,7 +175,7 @@ impl<'a> Req<'a> {
 }
 
 async fn send(state: AppState, req: Req<'_>) -> Answer {
-    let sessions: Arc<dyn SessionReader> = Arc::new(FakeSessions);
+    let sessions: Arc<dyn SessionReader> = Arc::new(FakeCallers);
     let for_register = state.clone();
     let app = test::init_service(
         App::new()
@@ -318,25 +312,24 @@ async fn p4_nobody_signed_in_is_401_sign_in_and_the_reader_is_never_called() {
 
 #[actix_web::test]
 async fn p5_a_role_without_exchange_transact_is_refused_and_the_reader_is_never_called() {
-    use xc_auth::domain::access::v3_roles::blueprint_roles;
     use xc_auth::domain::access::{Permission, RoleGrants};
 
     assert!(
-        Role::STAFF.iter().any(|&r| {
-            !blueprint_roles(r)
+        test_callers::V2_STAFF.iter().any(|&(_, roles)| {
+            !roles
                 .iter()
                 .any(|&br| RoleGrants::seed(br).contains(&Permission::ExchangeTransact))
         }),
         "§11.2 must leave some staff role without ExchangeTransact, or this test refuses nobody"
     );
-    for role in Role::STAFF.into_iter().filter(|&r| {
-        !blueprint_roles(r)
+    for &(role, _) in test_callers::V2_STAFF.iter().filter(|&&(_, roles)| {
+        !roles
             .iter()
             .any(|&br| RoleGrants::seed(br).contains(&Permission::ExchangeTransact))
     }) {
         let reader = FakeReader::new(Ok(full_read()));
         let mut req = Req::teller_jpeg();
-        req.who = role.as_str();
+        req.who = role;
         let a = send(state(Some(reader.clone()), &[]), req).await;
         assert_eq!(
             a.status,
@@ -349,7 +342,7 @@ async fn p5_a_role_without_exchange_transact_is_refused_and_the_reader_is_never_
     }
 }
 
-/// The owner signs in as Executive + Admin (`v3_roles.rs:13`); under §11.2 (`RoleGrants::seed`),
+/// The owner signs in as Executive + Admin (`test_callers::owner`); under §11.2 (`RoleGrants::seed`),
 /// `Executive` holds `ExchangeTransact`, so the read follows `/api/quotes` (same row).
 #[actix_web::test]
 async fn p6_the_owner_gets_the_same_refusal_as_the_desks_quote_route() {

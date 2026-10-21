@@ -129,7 +129,7 @@ async fn screen(app: &TestApp, owner: &str) -> Value {
             proto: Some("https".to_owned()),
             ..Call::default()
         }
-        .owner(owner),
+        .session(owner),
     )
     .await;
     assert_eq!(answer.status, 200, "published_rates: {}", answer.text);
@@ -140,7 +140,7 @@ async fn screen(app: &TestApp, owner: &str) -> Value {
 async fn the_rates_screen_lists_a_tiered_currency_once_at_its_first_tier() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
-    let owner = owner_signs_in(&app).await;
+    let owner = desk.owner_session("boss").await;
     let usd = publish_tiered(&desk.pool).await;
 
     let data = screen(&app, &owner).await;

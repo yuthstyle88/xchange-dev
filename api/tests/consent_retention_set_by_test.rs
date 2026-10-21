@@ -16,9 +16,9 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const HOST: &str = "xc.test";
 const SAME_ORIGIN: &str = "http://xc.test";
@@ -106,17 +106,12 @@ impl Db {
 async fn a_retention_period_set_over_http_records_the_owners_users_id_in_set_by() {
     struct CustomOwner(String);
     impl SessionReader for CustomOwner {
-        fn sessions<'a>(
+        fn callers<'a>(
             &'a self,
             _req: &'a HttpRequest,
-        ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
             let id = self.0.clone();
-            Box::pin(async move {
-                Sessions {
-                    owner: Some(Actor::owner(id)),
-                    staff: None,
-                }
-            })
+            Box::pin(async move { test_callers::callers(Some(test_callers::owner(&id)), None) })
         }
     }
 

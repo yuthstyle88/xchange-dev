@@ -22,11 +22,8 @@ use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
 use xc_rate::domain::validation::format_iso;
 use xc_shift::application::custody::service::CustodyFactsPort;
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
-
-use crate::application::custody_role::employee_custody_role;
 
 /// The trait's future: `futures::future::BoxFuture` spelled out.
 type Answer<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
@@ -145,26 +142,6 @@ impl CustodyPorts for PgCustodyPorts {
             .fetch_one(&mut **tx)
             .await
             .map_err(AppError::Database)
-        })
-    }
-
-    /// The role of an active employee of this branch; `None` for anyone else.
-    fn employee_role<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        branch: &'a BranchId,
-        employee_id: &'a str,
-    ) -> Answer<'a, Option<CustodyRole>> {
-        Box::pin(async move {
-            let stored: Option<String> = sqlx::query_scalar(
-                "SELECT role FROM employees WHERE id = $1 AND branch_id = $2 AND active",
-            )
-            .bind(employee_id)
-            .bind(branch.as_str())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(AppError::Database)?;
-            Ok(stored.as_deref().map(employee_custody_role))
         })
     }
 

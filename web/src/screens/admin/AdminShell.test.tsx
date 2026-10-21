@@ -114,7 +114,6 @@ const ROWS: Row[] = [
   { id: 'reports', group: 'money', order: 7, label: 'รายงาน', icon: '▥', dated: true, eyebrow: 'DAILY REPORT', title: 'รายงาน', subtitle: 'แยกดูช่องทางชำระเงิน สกุลเงิน และยอดของพนักงาน' },
   { id: 'customers', group: 'data', order: 8, label: 'ลูกค้าและสมาชิก', icon: '♙', dated: false, eyebrow: 'CUSTOMERS', title: 'ลูกค้าและสมาชิก', subtitle: 'ประวัติลูกค้าและคำขอลงทะเบียน แยกเป็นหมวดเพื่อค้นหาได้เร็ว' },
   { id: 'slips', group: 'data', order: 9, label: 'สลิปและหลักฐาน', icon: '▧', dated: false, eyebrow: 'PAYMENT SLIPS', title: 'สลิปและหลักฐาน', subtitle: 'ค้นหาหลักฐานรับ–จ่ายจากรายการแลกเงิน' },
-  { id: 'employees', group: 'data', order: 10, label: 'พนักงานและสิทธิ์', icon: '♙', dated: false, eyebrow: 'TEAM & OPERATIONS', title: 'พนักงานและสิทธิ์', subtitle: 'บัญชีพนักงานและการตั้งค่าขั้นตอนรับ–ส่งเงิน' },
 ];
 
 // group headings admin-workspace.js:12-15; the shell's own links :32-35, :55 and admin-devices.js:3
@@ -592,7 +591,7 @@ describe('V2-shell: the sidebar follows the served 10-06 nav (#460 §7; design �
     expect(navSequence(known)).toEqual([
       GROUP.desk, 'ภาพรวม', 'รายการแลกเงิน', 'การจอง', QUEUE,
       GROUP.money, 'เงินสดและกะ', 'เรทและสกุลเงิน', 'วิธีชำระเงิน', 'รายงาน',
-      GROUP.data, 'ลูกค้าและสมาชิก', 'สลิปและหลักฐาน', 'พนักงานและสิทธิ์',
+      GROUP.data, 'ลูกค้าและสมาชิก', 'สลิปและหลักฐาน',
       GROUP.tools, KIOSK, DEVICES,
       GUIDE,
     ]);
@@ -745,11 +744,11 @@ describe('V2-shell: the menu search (#460 §9)', () => {
 
 describe('V2-shell: hash routing (#460 S3)', () => {
   it('shows the menu the hash names, with its heading, and marks its link aria-current="page"', async () => {
-    await mount(allMenus(), '/ui/admin/#employees');
-    expect(mounted()).toEqual(['employees']);
-    expect(text()).toContain('TEAM & OPERATIONS');
-    expect(byText('พนักงานและสิทธิ์', container).some(visible), 'the title').toBe(true);
-    expect(link('พนักงานและสิทธิ์').getAttribute('aria-current')).toBe('page');
+    await mount(allMenus(), '/ui/admin/#slips');
+    expect(mounted()).toEqual(['slips']);
+    expect(text()).toContain('PAYMENT SLIPS');
+    expect(byText('สลิปและหลักฐาน', container).some(visible), 'the title').toBe(true);
+    expect(link('สลิปและหลักฐาน').getAttribute('aria-current')).toBe('page');
     expect(link('ภาพรวม').getAttribute('aria-current')).not.toBe('page');
   });
 
@@ -790,11 +789,9 @@ describe('V2-shell: hash routing (#460 S3)', () => {
     }
   });
 
-  it('follows /#employees and /#payments, the links v2 already uses (ticket §7 routing)', async () => {
+  it('follows /#payments, the link v2 already uses (ticket §7 routing)', async () => {
     await mount(allMenus(), '/ui/admin/#payments');
     expect(mounted()).toEqual(['payments']);
-    await go('#employees');
-    expect(mounted()).toEqual(['employees']);
   });
 });
 

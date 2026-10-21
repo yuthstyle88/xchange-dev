@@ -77,12 +77,10 @@ use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use serde_json::{Value, json};
-use xc_auth::domain::access::{Actor as AuthActor, Role as AuthRole, ScopedRole};
-use xc_auth::domain::policy::entities::policy::Policy;
+use xc_auth::domain::access::{Actor as AuthActor, Role as AuthRole, RoleGrants, ScopedRole};
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
@@ -95,6 +93,7 @@ use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const RPC: &str = "/api/rpc";
@@ -568,8 +567,9 @@ impl Room {
 
         let (verifier_user_id, _): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
             "SELECT u.id, u.organization_id FROM users u \
-             JOIN employees e ON e.id = u.legacy_employee_id \
-             WHERE e.role = 'MANAGER' AND e.branch_id = $1",
+             JOIN user_roles r ON r.user_id = u.id \
+             WHERE r.role_code = 'BRANCH_MANAGER' AND r.branch_id = $1 \
+             ORDER BY u.created_at, u.id LIMIT 1",
         )
         .bind(branch)
         .fetch_one(&self.desk.db.pool)
@@ -768,18 +768,15 @@ impl Room {
 }
 
 /// The actor `Policy` sees for each caller key of [`Room`] on a path that is not `StaffRpc`.
-fn callers() -> Vec<(String, Option<Actor>)> {
-    let mut callers: Vec<(String, Option<Actor>)> = vec![
+fn callers() -> Vec<(String, Option<AuthActor>)> {
+    let mut callers: Vec<(String, Option<AuthActor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for role in Role::STAFF {
-        let staff = Actor::staff("employee", role, BranchId::new(MAIN));
-        callers.push((role.as_str().to_string(), staff));
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+    for (role, roles) in test_callers::V2_STAFF {
+        let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
+        callers.push(((*role).to_string(), staff));
+        callers.push((format!("OWNER+{role}"), Some(test_callers::owner("owner"))));
     }
     callers
 }
@@ -880,19 +877,25 @@ async fn seed_b9_transfer(pool: &sqlx::PgPool) -> String {
 async fn the_cash_views_answer_exactly_whom_the_snapshot_row_allows_and_the_writes_keep_their_rows()
 {
     let room = Room::open().await;
+    let act = Action::new("adminSnapshot");
+    let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &act) else {
+        panic!("adminSnapshot needs a permission");
+    };
     for view in VIEW_NAMES {
         let mut allowed = 0;
         let mut refused = 0;
         for (who, actor) in callers() {
-            let policy = Policy::allow(
-                actor.as_ref(),
-                EntryPath::Rpc,
-                &Action::new("adminSnapshot"),
-            );
+            let holds = actor.as_ref().is_some_and(|a| {
+                a.roles
+                    .iter()
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
+            });
+            let policy = Policy::authorize(actor.as_ref(), EntryPath::Rpc, &act, None, Utc::now());
             let answer = room.get(&who, &view_path(view, "")).await;
             let what = format!("{view} as {who:?}");
+            assert_eq!(policy.is_ok(), holds, "{what}");
             match &policy {
-                Ok(()) => {
+                Ok(_) => {
                     allowed += 1;
                     assert_eq!(answer.status, 200, "{what}: {:.300}", answer.text);
                     let body = answer.json();

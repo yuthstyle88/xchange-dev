@@ -24,7 +24,7 @@
 //! The command runs on the server clock, so the originals are completed `now()` (inside the window)
 //! or two days ago (outside it). MAIN's timezone is OR-1's default, Asia/Bangkok.
 //!
-//! Needs `TEST_DATABASE_URL`; nothing here skips. Sessions come from the `x-test-as` header
+//! Needs `TEST_DATABASE_URL`; nothing here skips. Callers come from the `x-test-as` header
 //! (`owner`, `staff:<ROLE>:<branch>`), as in `v3_rate_engine_routes_test.rs`.
 
 mod common;
@@ -38,57 +38,50 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
 use quote_common::TestDb;
 use serde_json::{Value, json};
-use xc_auth::domain::access::v3_roles::blueprint_roles;
 use xc_auth::domain::access::{Permission, RoleGrants};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role = parts.next().expect("a role");
+    let roles = test_callers::v2_staff_roles(role).unwrap_or_else(|| panic!("unknown role {role}"));
     let branch = parts.next().expect("a branch");
-    Sessions {
-        owner: None,
-        staff: Actor::staff(
-            format!("employee-{}", role.as_str()),
-            role,
+    test_callers::callers(
+        None,
+        Some(test_callers::staff(
+            &format!("employee-{role}"),
+            roles,
             BranchId::new(branch),
-        ),
-    }
+        )),
+    )
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
 /// `POST /api/transactions/{id}/reversal-requests` as `who` with `key`: (status, body).
 async fn post(db: &TestDb, who: &str, id: &str, body: Value, key: &str) -> (StatusCode, Value) {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -234,17 +227,18 @@ async fn the_branch_manager_may_request_and_roles_without_reversal_request_may_n
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     // Under §11.2, staff roles whose `RoleGrants::seed` lacks `ReversalRequest` are refused by the route row.
-    let refused: Vec<Role> = Role::STAFF
+    let refused: Vec<&str> = test_callers::V2_STAFF
         .into_iter()
-        .filter(|&r| {
-            !blueprint_roles(r)
+        .filter_map(|(name, roles)| {
+            (!roles
                 .iter()
-                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReversalRequest))
+                .any(|&br| RoleGrants::seed(br).contains(&Permission::ReversalRequest)))
+            .then_some(name)
         })
         .collect();
     assert!(!refused.is_empty(), "some staff role lacks ReversalRequest");
     for role in refused {
-        let who = format!("staff:{}:MAIN", role.as_str());
+        let who = format!("staff:{role}:MAIN");
         let (status, body) =
             post(&db, &who, &b, json!({ "reason": "x" }), &format!("k-{who}")).await;
         assert!(

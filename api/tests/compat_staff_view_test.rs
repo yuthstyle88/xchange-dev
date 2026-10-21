@@ -12,12 +12,22 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use compat_common::{Fixture, Person, RPC_FILES, SNAPSHOT_FILES, Step};
 use serde_json::{Value, json};
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::application::compat::staff_view::{StaffMember, rewrite_urls, staff_view};
 
 const RPC: &str = "/api/rpc";
 const STAFF_RPC: &str = "/api/staff/rpc";
+const STAFF_ROLES: [&str; 9] = [
+    "FRONT",
+    "BACKEND",
+    "MANAGER",
+    "RATES",
+    "MONITOR",
+    "FINANCE",
+    "SYSTEM",
+    "DOCUMENTS",
+    "DOCUMENT_REVIEW",
+];
 
 fn step_files() -> Vec<&'static str> {
     SNAPSHOT_FILES
@@ -144,13 +154,13 @@ fn keys(value: &Value) -> BTreeSet<&str> {
         .collect()
 }
 
-fn a_member(id: &str, role: Role, branch: &str) -> StaffMember {
+fn a_member(id: &str, role: &str, branch: &str) -> StaffMember {
     StaffMember {
         id: id.to_string(),
         username: id.to_lowercase(),
         name: format!("{id} name"),
-        role: v3_role(role.as_str()).expect("staff role"),
-        role_text: role.as_str().to_string(),
+        role: v3_role(role).expect("staff role"),
+        role_text: role.to_string(),
         branch: BranchId::new(branch),
     }
 }
@@ -224,7 +234,7 @@ fn every_recorded_staff_snapshot_is_the_rpc_snapshot_viewed() {
     .collect();
     assert_eq!(per_file, expected_per_file);
     assert_eq!(count, 34, "the generator checked its claim on 34 pairs");
-    let nine: BTreeSet<String> = Role::STAFF.iter().map(|r| r.as_str().to_string()).collect();
+    let nine: BTreeSet<String> = STAFF_ROLES.iter().map(|r| (*r).to_string()).collect();
     assert_eq!(
         roles, nine,
         "every role an employee can hold is among the pairs"
@@ -399,18 +409,18 @@ fn a_recorded_staff_answer_is_left_as_it_is() {
 #[test]
 fn the_other_seven_roles_lose_nothing() {
     let snapshot = a_snapshot();
-    for role in Role::STAFF {
-        if matches!(role, Role::Rates | Role::System) {
+    for role in STAFF_ROLES {
+        if matches!(role, "RATES" | "SYSTEM") {
             continue;
         }
         let me = a_member("E1", role, "MAIN");
         let view = staff_view(snapshot.clone(), &me, std::slice::from_ref(&me));
         let mut expected = rewrite_urls(snapshot.clone());
         expected["employee"] = json!({
-            "id": "E1", "username": "e1", "name": "E1 name", "role": role.as_str(),
+            "id": "E1", "username": "e1", "name": "E1 name", "role": role,
             "branchId": "MAIN", "active": true, "mustChange": false
         });
-        expected["employees"] = json!([{"id": "E1", "name": "E1 name", "role": role.as_str()}]);
+        expected["employees"] = json!([{"id": "E1", "name": "E1 name", "role": role}]);
         assert_eq!(view, expected, "{role:?}");
         assert_eq!(length(&view["transactions"]), 2, "{role:?}");
         assert_eq!(length(&view["operations"]["attendance"]), 3, "{role:?}");
@@ -420,7 +430,7 @@ fn the_other_seven_roles_lose_nothing() {
 
 #[test]
 fn rates_on_the_small_snapshot() {
-    let me = a_member("E1", Role::Rates, "MAIN");
+    let me = a_member("E1", "RATES", "MAIN");
     let view = staff_view(a_snapshot(), &me, std::slice::from_ref(&me));
     let truth = a_snapshot();
     assert_eq!(view["transactions"], json!([]));
@@ -454,7 +464,7 @@ fn rates_on_the_small_snapshot() {
 
 #[test]
 fn system_on_the_small_snapshot() {
-    let me = a_member("E1", Role::System, "MAIN");
+    let me = a_member("E1", "SYSTEM", "MAIN");
     let view = staff_view(a_snapshot(), &me, std::slice::from_ref(&me));
     assert_eq!(
         view,
@@ -485,7 +495,7 @@ fn system_on_the_small_snapshot() {
 
 #[test]
 fn system_is_told_enabled_false_when_custody_is_off_too_and_a_null_entity_stays_null() {
-    let me = a_member("E1", Role::System, "MAIN");
+    let me = a_member("E1", "SYSTEM", "MAIN");
     let mut snapshot = a_snapshot();
     snapshot["operations"]["enabled"] = json!(false);
     snapshot["operations"]["entity"] = Value::Null;
@@ -550,12 +560,12 @@ fn the_colleagues_are_the_employees_of_the_callers_branch_in_the_order_given() {
 
 #[test]
 fn colleagues_keep_the_order_they_are_given_in_and_have_three_keys() {
-    let me = a_member("E1", Role::Front, "MAIN");
+    let me = a_member("E1", "FRONT", "MAIN");
     let colleagues = [
-        a_member("Z9", Role::DocumentReview, "MAIN"),
-        a_member("E7", Role::Backend, "B-2"),
+        a_member("Z9", "DOCUMENT_REVIEW", "MAIN"),
+        a_member("E7", "BACKEND", "B-2"),
         me.clone(),
-        a_member("A0", Role::Manager, "MAIN"),
+        a_member("A0", "MANAGER", "MAIN"),
     ];
     let view = staff_view(json!({}), &me, &colleagues);
     assert_eq!(
@@ -570,7 +580,7 @@ fn colleagues_keep_the_order_they_are_given_in_and_have_three_keys() {
 
 #[test]
 fn what_the_snapshot_says_of_employees_is_replaced() {
-    let me = a_member("E1", Role::Front, "MAIN");
+    let me = a_member("E1", "FRONT", "MAIN");
     let view = staff_view(
         json!({"employee": {"id": "somebody else"}, "employees": [1, 2, 3]}),
         &me,
@@ -582,7 +592,7 @@ fn what_the_snapshot_says_of_employees_is_replaced() {
 
 #[test]
 fn the_snapshot_links_are_the_staff_ones() {
-    let me = a_member("E1", Role::Front, "MAIN");
+    let me = a_member("E1", "FRONT", "MAIN");
     let view = staff_view(a_snapshot(), &me, &[]);
     assert_eq!(view["sheetUrl"], json!("/staff"));
     assert_eq!(view["deskUrl"], json!("/staff/desk"));
@@ -599,7 +609,7 @@ fn the_snapshot_links_are_the_staff_ones() {
 
 #[test]
 fn a_name_that_looks_like_a_link_is_rewritten_as_v2_rewrites_the_whole_answer() {
-    let mut me = a_member("E1", Role::Front, "MAIN");
+    let mut me = a_member("E1", "FRONT", "MAIN");
     me.name = "/files/odd".to_string();
     let view = staff_view(json!({}), &me, std::slice::from_ref(&me));
     assert_eq!(view["employee"]["name"], json!("/api/staff/file/odd"));
@@ -610,7 +620,7 @@ fn a_name_that_looks_like_a_link_is_rewritten_as_v2_rewrites_the_whole_answer() 
 
 #[test]
 fn rates_without_operations_gets_none_and_does_not_panic() {
-    let me = a_member("E1", Role::Rates, "MAIN");
+    let me = a_member("E1", "RATES", "MAIN");
     let view = staff_view(json!({"transactions": [1], "customers": [2]}), &me, &[]);
     assert_eq!(view["transactions"], json!([]));
     assert_eq!(view["customers"], json!([]));
@@ -619,7 +629,7 @@ fn rates_without_operations_gets_none_and_does_not_panic() {
 
 #[test]
 fn rates_with_operations_that_lack_a_list_still_hides_all_six() {
-    let me = a_member("E1", Role::Rates, "MAIN");
+    let me = a_member("E1", "RATES", "MAIN");
     let view = staff_view(
         json!({"operations": {"enabled": true, "attendance": "not a list"}}),
         &me,
@@ -645,14 +655,14 @@ fn rates_with_operations_that_lack_a_list_still_hides_all_six() {
 
 #[test]
 fn rates_with_operations_that_is_no_object_is_shown_none_of_it() {
-    let me = a_member("E1", Role::Rates, "MAIN");
+    let me = a_member("E1", "RATES", "MAIN");
     let view = staff_view(json!({"operations": [{"requests": ["secret"]}]}), &me, &[]);
     assert_eq!(view["operations"], Value::Null);
 }
 
 #[test]
 fn system_without_operations_gets_the_three_keys_with_a_null_entity() {
-    let me = a_member("E1", Role::System, "MAIN");
+    let me = a_member("E1", "SYSTEM", "MAIN");
     for snapshot in [
         json!({}),
         json!({"operations": null}),
@@ -670,7 +680,7 @@ fn system_without_operations_gets_the_three_keys_with_a_null_entity() {
 
 #[test]
 fn a_snapshot_that_is_no_object_has_only_its_urls_rewritten() {
-    let me = a_member("E1", Role::System, "MAIN");
+    let me = a_member("E1", "SYSTEM", "MAIN");
     assert_eq!(
         staff_view(json!(["/files/a", 1]), &me, &[]),
         json!(["/api/staff/file/a", 1])

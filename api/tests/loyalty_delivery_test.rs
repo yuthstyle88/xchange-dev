@@ -284,14 +284,14 @@ impl World {
         let _ = xc_customer::install_pii_keys(keys());
         let db = TestDb::start().await;
         db.exec(
-            "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-             SELECT id, 'ly2-teller', 'PENDING', 'test', 'ly2-teller' FROM organizations WHERE code = 'XC'",
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT id, 'ly2-teller', 'PENDING', 'test' FROM organizations WHERE code = 'XC'",
         )
         .await;
         db.exec(
             "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
              VALUES ('ly2-shift', 'MAIN', 'OPEN', now(), 'owner', 'ly2-open', \
-               (SELECT id FROM users WHERE legacy_employee_id = 'ly2-teller'))",
+               (SELECT id FROM users WHERE name = 'ly2-teller' AND created_by = 'test' ORDER BY created_at, id LIMIT 1))",
         )
         .await;
         db.exec(

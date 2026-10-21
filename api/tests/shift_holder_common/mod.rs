@@ -25,8 +25,8 @@ pub async fn teller_of_open_shift(pool: &PgPool, branch: &str) -> String {
 }
 
 /// The `users.id` a saver id answers to, as `teller_of_actor_in` resolves the ids the suites use: a `users.id`, or a
-/// `users.legacy_employee_id` (an employee id), seeded in the XC organisation if missing. Not for `"owner"`: the
-/// suites' owner user already exists and is found by the core.
+/// test user by `name` in the XC organisation, seeded if missing. Not for `"owner"`: the suites' owner user already
+/// exists and is found by the core.
 pub async fn user_of(pool: &PgPool, saver: &str) -> String {
     if let Some(id) =
         sqlx::query_scalar::<_, String>("SELECT id::text FROM users WHERE id::text = $1")
@@ -37,20 +37,27 @@ pub async fn user_of(pool: &PgPool, saver: &str) -> String {
     {
         return id;
     }
-    sqlx::query(
-        "INSERT INTO users (organization_id, name, status, created_by, legacy_employee_id) \
-         SELECT id, $1, 'PENDING', 'test', $1 FROM organizations WHERE code = 'XC' \
-         ON CONFLICT (legacy_employee_id) DO NOTHING",
+    if let Some(id) = sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = $1 AND u.created_by = 'test' \
+         ORDER BY u.created_at, u.id LIMIT 1",
     )
     .bind(saver)
-    .execute(pool)
+    .fetch_optional(pool)
     .await
-    .expect("seed the saver's user");
-    sqlx::query_scalar("SELECT id::text FROM users WHERE legacy_employee_id = $1")
-        .bind(saver)
-        .fetch_one(pool)
-        .await
-        .unwrap_or_else(|e| panic!("the user of saver {saver}: {e}"))
+    .expect("look up the saver's user by name")
+    {
+        return id;
+    }
+    sqlx::query_scalar(
+        "INSERT INTO users (organization_id, name, status, created_by) \
+         SELECT id, $1, 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+         RETURNING id::text",
+    )
+    .bind(saver)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("the user of saver {saver}: {e}"))
 }
 
 /// An OPEN shift of `saver` at `branch`, written straight into `shifts` (no `opened_by_count`), with `opening`
@@ -64,6 +71,17 @@ pub async fn open_shift_for(
     use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
     use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
     let teller = user_of(pool, saver).await;
+    if let Some(existing) = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM shifts WHERE branch_id = $1 AND teller_id = $2::uuid AND status = 'OPEN' LIMIT 1",
+    )
+    .bind(branch)
+    .bind(&teller)
+    .fetch_optional(pool)
+    .await
+    .expect("check the saver's existing OPEN shift at branch")
+    {
+        return existing;
+    }
     let shift = format!("SH-{}", uuid::Uuid::new_v4());
     sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \

@@ -10,7 +10,6 @@ pub mod device_agent;
 pub mod device_setup;
 pub mod devices;
 pub mod drawer_passport;
-pub mod employees;
 pub mod files;
 pub mod health;
 pub mod kiosk;
@@ -38,7 +37,6 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     device_setup::configure(cfg, state);
     devices::configure(cfg, state);
     drawer_passport::configure(cfg, state);
-    employees::configure(cfg, state);
     files::configure(cfg, state);
     verification_content::configure(cfg, state);
     app_verification_upload::configure(cfg, state);

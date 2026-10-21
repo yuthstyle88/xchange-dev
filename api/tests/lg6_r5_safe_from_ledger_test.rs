@@ -106,13 +106,34 @@ async fn backfill_safe(shop: &Shop, branch: &BranchId, currency: &str, amount: &
 
 /// An OPEN shift of `branch` (a drawer needs its shift: `ledger_postings.rs` `branch_of`).
 async fn open_shift(shop: &Shop, branch: &BranchId, id: &str) {
+    let teller_id: uuid::Uuid = if let Some(id) = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT u.id FROM users u JOIN organizations o ON o.id = u.organization_id \
+         WHERE o.code = 'XC' AND u.name = 'test' AND u.created_by = 'test' \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_optional(&shop.db.pool)
+    .await
+    .expect("look up teller user")
+    {
+        id
+    } else {
+        sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT id, 'test', 'PENDING', 'test' FROM organizations WHERE code = 'XC' \
+             RETURNING id",
+        )
+        .fetch_one(&shop.db.pool)
+        .await
+        .expect("insert teller user")
+    };
     let inserted = sqlx::query(
         "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, open_request_id, teller_id) \
-         SELECT $1, $2, 'OPEN', now(), 'test', $3, u.id FROM users u WHERE u.legacy_employee_id = 'test'",
+         VALUES ($1, $2, 'OPEN', now(), 'test', $3, $4)",
     )
     .bind(id)
     .bind(branch.as_str())
     .bind(format!("open-{id}"))
+    .bind(teller_id)
     .execute(&shop.db.pool)
     .await
     .expect("insert an OPEN shift")

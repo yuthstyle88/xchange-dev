@@ -22,13 +22,28 @@
 // the shop of the save tests: its helpers build the rows these tests read
 #[allow(unused_imports)]
 mod save_common;
+mod shift_holder_common;
 
 use std::sync::Arc;
 
 use save_common::*;
+use shift_holder_common::user_of;
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
-use xc_shift::domain::custody::value_objects::custody_role::CustodyRole;
 use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;
+
+async fn owner_user(pool: &sqlx::PgPool, branch_id: &str) -> String {
+    sqlx::query_scalar::<_, String>(
+        "SELECT u.id::text FROM users u \
+         JOIN branches b ON b.id = $1 AND b.organization_id = u.organization_id \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(branch_id)
+    .fetch_one(pool)
+    .await
+    .expect("read branch owner user id")
+}
 
 const B01: &str = "XC-B01";
 
@@ -68,16 +83,6 @@ async fn owned(shop: &Shop, branch_id: &str, owner: &str, keys: &[&str]) -> bool
     got
 }
 
-async fn role(shop: &Shop, branch_id: &str, employee_id: &str) -> Option<CustodyRole> {
-    let mut tx = shop.pool.begin().await.expect("begin");
-    let got = ports()
-        .employee_role(&mut tx, &branch(branch_id), employee_id)
-        .await
-        .expect("employee_role");
-    tx.rollback().await.expect("rollback");
-    got
-}
-
 /// A publication of `currency` in `branch` dated `published_at`: published through the rate
 /// engine (over the branch's current publication), then its `published_at` set to the instant the
 /// test names, so each instant is the test's, to the millisecond.
@@ -105,31 +110,6 @@ async fn date_current<'e>(
     .execute(executor)
     .await
     .expect("date the current publication");
-}
-
-/// An employee (the table is ticket T4b's).
-async fn employee(
-    shop: &Shop,
-    id: &str,
-    role: &str,
-    branch_id: &str,
-    active: bool,
-    must_change: bool,
-) {
-    sqlx::query(
-        "INSERT INTO employees (id, username, name, role, branch_id, password_hash, active, must_change, created_at) \
-         VALUES ($1, $2, $3, $4, $5, 'x', $6, $7, now())",
-    )
-    .bind(id)
-    .bind(format!("user-{id}"))
-    .bind(format!("Name {id}"))
-    .bind(role)
-    .bind(branch_id)
-    .bind(active)
-    .bind(must_change)
-    .execute(&shop.pool)
-    .await
-    .expect("insert into employees");
 }
 
 // ---------------------------------------------------------------- the rates
@@ -409,25 +389,43 @@ async fn evidence_is_owned_when_every_key_is_the_callers_upload_in_that_branch()
     let elsewhere = shop.upload(B01, staff, "image/jpeg", JPEG).await;
     let never = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
-    assert!(owned(&shop, MAIN, staff, &[&a]).await);
-    assert!(owned(&shop, MAIN, staff, &[&a, &b]).await);
+    let staff_id = user_of(&shop.pool, staff).await;
+    let owner_id = owner_user(&shop.pool, MAIN).await;
+
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &staff_id, &[&a]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &staff_id, &[&a, &b]).await);
+    // OR-7.m G1b: rule 2 (#3797)
     assert!(
-        owned(&shop, MAIN, staff, &[&b, &a, &a]).await,
+        owned(&shop, MAIN, &staff_id, &[&b, &a, &a]).await,
         "a key named twice is still owned"
     );
+    // OR-7.m G1b: rule 2 (#3797)
     assert!(
-        owned(&shop, MAIN, staff, &[]).await,
+        owned(&shop, MAIN, &staff_id, &[]).await,
         "nothing to own: how many are needed is the service's rule"
     );
-    assert!(owned(&shop, B01, staff, &[&elsewhere]).await);
-    assert!(owned(&shop, MAIN, OWNER, &[&others]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, B01, &staff_id, &[&elsewhere]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &owner_id, &[&others]).await);
 
     // one key that is not theirs spoils the lot, wherever it stands
     for bad in [others.as_str(), elsewhere.as_str(), never, "", "x", "%"] {
-        assert!(!owned(&shop, MAIN, staff, &[bad]).await, "{bad:?} alone");
-        assert!(!owned(&shop, MAIN, staff, &[&a, bad]).await, "{bad:?} last");
+        // OR-7.m G1b: rule 2 (#3797)
         assert!(
-            !owned(&shop, MAIN, staff, &[bad, &a, &b]).await,
+            !owned(&shop, MAIN, &staff_id, &[bad]).await,
+            "{bad:?} alone"
+        );
+        // OR-7.m G1b: rule 2 (#3797)
+        assert!(
+            !owned(&shop, MAIN, &staff_id, &[&a, bad]).await,
+            "{bad:?} last"
+        );
+        // OR-7.m G1b: rule 2 (#3797)
+        assert!(
+            !owned(&shop, MAIN, &staff_id, &[bad, &a, &b]).await,
             "{bad:?} first"
         );
     }
@@ -435,62 +433,13 @@ async fn evidence_is_owned_when_every_key_is_the_callers_upload_in_that_branch()
         !owned(&shop, MAIN, "Employee-7", &[&a]).await,
         "owners are compared exactly"
     );
-    assert!(!owned(&shop, B01, staff, &[&a]).await);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(!owned(&shop, B01, &staff_id, &[&a]).await);
 
     // v2 asks only for the record: bytes gone from the disk do not change the answer
     std::fs::remove_file(shop.dir.join(&a)).expect("remove an uploaded file");
-    assert!(owned(&shop, MAIN, staff, &[&a]).await);
-    shop.finish().await;
-}
-
-// -------------------------------------------------------------- the employee
-
-#[tokio::test]
-async fn an_employees_role_is_told_for_an_active_employee_of_that_branch() {
-    // v2: SELECT id, role FROM employees WHERE id = ? AND branch_id = ? AND active
-    let shop = Shop::start().await;
-    shop.seed_branch(B01, "Second").await;
-    let table = [
-        ("e-front", "FRONT", Some(CustodyRole::Front)),
-        ("e-finance", "FINANCE", Some(CustodyRole::Finance)),
-        ("e-monitor", "MONITOR", Some(CustodyRole::Monitor)),
-        ("e-manager", "MANAGER", Some(CustodyRole::Manager)),
-        ("e-backend", "BACKEND", Some(CustodyRole::Backend)),
-        // an employee whose role has no part in custody is still an employee
-        ("e-rates", "RATES", Some(CustodyRole::Other)),
-        ("e-system", "SYSTEM", Some(CustodyRole::Other)),
-        ("e-documents", "DOCUMENTS", Some(CustodyRole::Other)),
-        ("e-review", "DOCUMENT_REVIEW", Some(CustodyRole::Other)),
-        // an employee is never the owner, whatever the row says
-        ("e-owner", "OWNER", Some(CustodyRole::Other)),
-        ("e-lower", "front", Some(CustodyRole::Other)),
-    ];
-    for (id, role_text, _) in table {
-        employee(&shop, id, role_text, MAIN, true, false).await;
-    }
-    employee(&shop, "e-inactive", "FRONT", MAIN, false, false).await;
-    employee(&shop, "e-elsewhere", "FRONT", B01, true, false).await;
-    // not yet through the first password change: still an employee with a role
-    employee(&shop, "e-new", "MANAGER", MAIN, true, true).await;
-
-    for (id, _, want) in table {
-        assert_eq!(role(&shop, MAIN, id).await, want, "{id}");
-        assert_eq!(
-            role(&shop, B01, id).await,
-            None,
-            "{id} is not of the other branch"
-        );
-    }
-    assert_eq!(role(&shop, MAIN, "e-inactive").await, None);
-    assert_eq!(role(&shop, MAIN, "e-elsewhere").await, None);
-    assert_eq!(
-        role(&shop, B01, "e-elsewhere").await,
-        Some(CustodyRole::Front)
-    );
-    assert_eq!(role(&shop, MAIN, "e-new").await, Some(CustodyRole::Manager));
-    for unknown in ["e-nobody", "", "E-FRONT", "e-front ", "%"] {
-        assert_eq!(role(&shop, MAIN, unknown).await, None, "{unknown:?}");
-    }
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &staff_id, &[&a]).await);
     shop.finish().await;
 }
 
@@ -503,6 +452,7 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
     // here inside a transaction, asked for through it, and then rolled back.
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    let owner_id = owner_user(&shop.pool, MAIN).await;
     let shift = shop.open_shift_id(MAIN).await;
     shop.save(
         MAIN,
@@ -545,9 +495,10 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
         .execute(&mut *tx)
         .await
         .expect("update a file");
+    // OR-7.m G1b: rule 2 (#3797)
     assert!(
         !ports
-            .evidence_owned(&mut tx, &main, OWNER, std::slice::from_ref(&passport))
+            .evidence_owned(&mut tx, &main, &owner_id, std::slice::from_ref(&passport))
             .await
             .unwrap()
     );
@@ -561,18 +512,6 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
             )
             .await
             .unwrap()
-    );
-    sqlx::query(
-        "INSERT INTO employees (id, username, name, role, branch_id, password_hash, active, must_change, created_at) \
-         VALUES ('e-tx', 'user-e-tx', 'In The Tx', 'FINANCE', $1, 'x', true, false, now())",
-    )
-    .bind(MAIN)
-    .execute(&mut *tx)
-    .await
-    .expect("insert an employee");
-    assert_eq!(
-        ports.employee_role(&mut tx, &main, "e-tx").await.unwrap(),
-        Some(CustodyRole::Finance)
     );
     sqlx::query("DELETE FROM transaction_files")
         .execute(&mut *tx)
@@ -608,8 +547,8 @@ async fn every_answer_is_read_through_the_transaction_it_was_handed() {
         "RE-7 #604: the publication's committed date, not the one moved in the transaction"
     );
     assert!(known(&shop, MAIN, &customer).await);
-    assert!(owned(&shop, MAIN, OWNER, &[&passport]).await);
-    assert_eq!(role(&shop, MAIN, "e-tx").await, None);
+    // OR-7.m G1b: rule 2 (#3797)
+    assert!(owned(&shop, MAIN, &owner_id, &[&passport]).await);
     assert_eq!(
         outside(&shop, MAIN, Some(&shift)).await.last_transaction,
         Some("XC-20261006-000001".to_owned())

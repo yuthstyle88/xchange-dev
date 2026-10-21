@@ -9,6 +9,7 @@
 //! - `TestDatabase::drop` closes the pool and drops the copy.
 //!
 pub mod people;
+pub mod sessions;
 
 use std::path::Path;
 use std::str::FromStr;

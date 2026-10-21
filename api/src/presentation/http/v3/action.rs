@@ -223,7 +223,7 @@ mod tests {
     use ts_rs::TS;
 
     use super::*;
-    use crate::presentation::pages::{Callers, SessionReader, Sessions};
+    use crate::presentation::pages::{Callers, SessionReader};
     use xc_auth::domain::access::{Role, ScopedRole};
 
     #[derive(Debug, Clone, Deserialize, TS)]
@@ -262,20 +262,8 @@ mod tests {
         }
     }
 
-    struct MockSessions;
-    impl SessionReader for MockSessions {
-        fn sessions<'a>(
-            &'a self,
-            _req: &'a HttpRequest,
-        ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-            Box::pin(async move {
-                Sessions {
-                    owner: None,
-                    staff: None,
-                }
-            })
-        }
-
+    struct MockCallers;
+    impl SessionReader for MockCallers {
         /// An organisation-wide EXECUTIVE + ADMIN (the former owner, design §3.3).
         fn callers<'a>(
             &'a self,
@@ -308,7 +296,7 @@ mod tests {
                     ComputeEndpoint::register(cfg, Arc::new(EchoAction));
                 })
                 .app_data(web::Data::from(
-                    Arc::new(MockSessions) as Arc<dyn SessionReader>
+                    Arc::new(MockCallers) as Arc<dyn SessionReader>
                 )),
         )
         .await;
@@ -346,7 +334,7 @@ mod tests {
                     ComputeEndpoint::register(cfg, Arc::new(EchoAction));
                 })
                 .app_data(web::Data::from(
-                    Arc::new(MockSessions) as Arc<dyn SessionReader>
+                    Arc::new(MockCallers) as Arc<dyn SessionReader>
                 )),
         )
         .await;

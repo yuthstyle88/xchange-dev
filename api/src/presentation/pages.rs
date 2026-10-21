@@ -74,9 +74,21 @@ pub fn old_cookie_callers(sessions: Sessions, org_id: &str) -> Callers {
 
 /// Reads the sessions of a request. Declared here until ticket T4c, which
 /// implements it in `presentation/extractors/actor.rs`; it may move there then.
+///
+/// OR-7.m (#1027): `sessions` has a default (no session) so a reader can override `callers` alone,
+/// built with `presentation::test_callers`. Both go when password login is deleted.
 pub trait SessionReader: Send + Sync {
-    fn sessions<'a>(&'a self, req: &'a HttpRequest)
-    -> Pin<Box<dyn Future<Output = Sessions> + 'a>>;
+    fn sessions<'a>(
+        &'a self,
+        _req: &'a HttpRequest,
+    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+        Box::pin(async {
+            Sessions {
+                owner: None,
+                staff: None,
+            }
+        })
+    }
 
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {

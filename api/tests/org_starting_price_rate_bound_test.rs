@@ -32,11 +32,9 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -208,35 +206,6 @@ fn user_of(spec: &str, org: &str) -> Option<AccessActor> {
     ))
 }
 
-fn legacy_of(spec: &str) -> Sessions {
-    match spec {
-        "owner" | "EXECUTIVE@*" => Sessions {
-            owner: Some(Actor::owner(user_id(spec))),
-            staff: None,
-        },
-        "admin" | "ADMIN@*" => Sessions {
-            owner: None,
-            staff: Actor::staff(user_id(spec), Role::Manager, BranchId::new("XC-B01")),
-        },
-        "rates" | "RATES@XC-B01" => Sessions {
-            owner: None,
-            staff: Actor::staff(user_id(spec), Role::Rates, BranchId::new("XC-B01")),
-        },
-        "teller" | "TELLER@XC-B01" => Sessions {
-            owner: None,
-            staff: Actor::staff(user_id(spec), Role::Front, BranchId::new("XC-B01")),
-        },
-        "branch_manager" | "BRANCH_MANAGER@XC-B01" => Sessions {
-            owner: None,
-            staff: Actor::staff(user_id(spec), Role::Manager, BranchId::new("XC-B01")),
-        },
-        _ => Sessions {
-            owner: None,
-            staff: None,
-        },
-    }
-}
-
 fn spec_of(req: &HttpRequest) -> String {
     req.headers()
         .get(AS)
@@ -245,19 +214,10 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
         let org = self.org.clone();
         Box::pin(async move {
-            let _s = legacy_of(&spec);
             let user = user_of(&spec, &org);
             Callers {
                 user: user.clone(),

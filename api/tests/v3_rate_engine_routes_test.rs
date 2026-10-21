@@ -74,15 +74,15 @@ use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
+use xc_auth::domain::access::{Actor as AccessActor, Permission, RoleGrants};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -179,76 +179,70 @@ impl TestDb {
 
 /// Who is signed in, from the request header `x-test-as`: `owner`,
 /// `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn staff_of(spec: &str) -> Option<Actor> {
+fn staff_caller_of(spec: &str) -> AccessActor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role_name = parts.next().expect("a role");
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
-    Actor::staff(
-        format!("employee-{}", role.as_str()),
-        role,
+    test_callers::staff(
+        &format!("employee-{role_name}"),
+        roles,
         BranchId::new(branch),
     )
 }
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
+        return test_callers::callers(
+            Some(test_callers::owner("owner-1")),
+            Some(staff_caller_of(staff)),
+        );
     }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
+    test_callers::callers(None, Some(staff_caller_of(spec)))
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+fn actors(spec: &str) -> (Option<AccessActor>, Option<AccessActor>) {
+    if spec.is_empty() {
+        return (None, None);
+    }
+    if spec == "owner" {
+        return (Some(test_callers::owner("owner-1")), None);
+    }
+    if let Some(staff) = spec.strip_prefix("owner+") {
+        return (
+            Some(test_callers::owner("owner-1")),
+            Some(staff_caller_of(staff)),
+        );
+    }
+    (None, Some(staff_caller_of(spec)))
+}
+
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
-
-const STAFF_ROLES: [&str; 9] = [
-    "FRONT",
-    "BACKEND",
-    "MANAGER",
-    "RATES",
-    "MONITOR",
-    "FINANCE",
-    "SYSTEM",
-    "DOCUMENTS",
-    "DOCUMENT_REVIEW",
-];
 
 /// Every caller kind: nobody, the owner, each staff role of XC-B01, and the owner and a staff
 /// member in one browser.
 fn every_caller() -> Vec<String> {
     let mut out = vec![String::new(), "owner".to_string()];
-    for role in STAFF_ROLES {
+    for (role, _) in test_callers::V2_STAFF {
         out.push(format!("staff:{role}:{B01}"));
         out.push(format!("owner+staff:{role}:{B01}"));
     }
@@ -256,39 +250,35 @@ fn every_caller() -> Vec<String> {
 }
 
 /// The actor the policy is asked about on `path`, by the rule of `view.rs:331`.
-fn actor_on(path: EntryPath, spec: &str) -> Option<Actor> {
-    let s = sessions_of(spec);
+fn actor_on(path: EntryPath, spec: &str) -> Option<AccessActor> {
+    let c = callers_of(spec);
     match path {
-        EntryPath::StaffRpc => s.staff,
-        _ => s.owner.or(s.staff),
+        EntryPath::StaffRpc => c.staff_user,
+        _ => c.user,
     }
 }
 
 fn has_owner(spec: &str) -> bool {
-    sessions_of(spec).owner.is_some()
+    actors(spec).0.is_some()
 }
 
 fn has_staff(spec: &str) -> bool {
-    sessions_of(spec).staff.is_some()
+    actors(spec).1.is_some()
 }
 
 fn is_approver_staff(spec: &str) -> bool {
-    use xc_auth::domain::access::v3_roles::blueprint_roles;
-    use xc_auth::domain::access::{Permission, RoleGrants};
-    sessions_of(spec).staff.is_some_and(|s| {
-        blueprint_roles(s.role())
+    actors(spec).1.is_some_and(|s| {
+        s.roles
             .iter()
-            .any(|&r| RoleGrants::seed(r).contains(&Permission::ApprovalsDecide))
+            .any(|r| RoleGrants::seed(r.role).contains(&Permission::ApprovalsDecide))
     })
 }
 
 fn is_rates_staff(spec: &str) -> bool {
-    use xc_auth::domain::access::v3_roles::blueprint_roles;
-    use xc_auth::domain::access::{Permission, RoleGrants};
-    sessions_of(spec).staff.is_some_and(|s| {
-        blueprint_roles(s.role())
+    actors(spec).1.is_some_and(|s| {
+        s.roles
             .iter()
-            .any(|&r| RoleGrants::seed(r).contains(&Permission::RatesDraft))
+            .any(|r| RoleGrants::seed(r.role).contains(&Permission::RatesDraft))
     })
 }
 
@@ -317,10 +307,16 @@ impl Who {
     }
 }
 
-/// The branch the request runs on with no branch named (`Policy::branch`).
+/// The branch the request runs on with no branch named: the staff member's own branch, else MAIN
+/// (what v2's `Policy::branch` answered).
 fn branch_of(path: EntryPath, spec: &str) -> String {
     let actor = actor_on(path, spec).expect("a signed-in caller");
-    Policy::branch(Some(&actor), None).as_str().to_owned()
+    actor
+        .branch
+        .as_ref()
+        .or_else(|| actor.roles.iter().find_map(|r| r.branch.as_ref()))
+        .map(|b| b.as_str().to_owned())
+        .unwrap_or_else(|| "MAIN".to_owned())
 }
 
 // ------------------------------------------------------------ requests
@@ -333,7 +329,7 @@ struct Answer {
 
 async fn call(db: &TestDb, who: &str, method: Method, uri: &str, body: Option<Value>) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| bootstrap::configure(cfg, state))
@@ -691,14 +687,7 @@ async fn every_route_lets_through_exactly_its_role_row_and_refuses_the_rest_as_t
         for who in every_caller() {
             let what = format!("{} {} as {who:?}", route.what, route.method);
             let expected = route.who.allows(&who);
-            let actor = actor_on(path, &who);
-            let user = actor.as_ref().map(|ac| {
-                xc_auth::domain::access::v3_roles::actor_from_v3(
-                    ac,
-                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
-                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-                )
-            });
+            let user = actor_on(path, &who);
             let policy = Policy::authorize(
                 user.as_ref(),
                 path,

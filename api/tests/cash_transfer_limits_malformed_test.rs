@@ -53,13 +53,12 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_approval::domain::request::Outcome;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role as OldRole;
 use xc_cash::application::transfer::TransferFlow;
 use xc_kernel::ids::BranchId;
 use xc_testdb::people::{RoleRow, seed_person};
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -327,25 +326,6 @@ fn user_of(spec: &str) -> Option<User> {
     ))
 }
 
-/// The legacy actor the seam carries beside the user; its role does not decide here.
-fn legacy_of(spec: &str) -> Sessions {
-    let mut parts = spec.splitn(3, '|');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(id), Some(_), Some("*")) => Sessions {
-            owner: Some(Actor::owner(id)),
-            staff: None,
-        },
-        (Some(id), Some(_), Some(branch)) => Sessions {
-            owner: None,
-            staff: Actor::staff(id, OldRole::Finance, BranchId::new(branch)),
-        },
-        _ => Sessions {
-            owner: None,
-            staff: None,
-        },
-    }
-}
-
 struct HeaderUsers;
 
 fn spec_of(req: &HttpRequest) -> String {
@@ -356,24 +336,9 @@ fn spec_of(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = spec_of(req);
-        Box::pin(async move { legacy_of(&spec) })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = spec_of(req);
-        Box::pin(async move {
-            let _s = legacy_of(&spec);
-            let user = user_of(&spec);
-            Callers {
-                user: user.clone(),
-                staff_user: user,
-            }
-        })
+        Box::pin(async move { test_callers::callers(None, user_of(&spec)) })
     }
 }
 

@@ -75,18 +75,17 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
-use xc_auth::domain::access::Actor as AccessActor;
+use xc_auth::domain::access::{Actor as AccessActor, Role as AccessRole};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::idempotency::store::IdempotencyKey;
 use xchange::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use xchange::presentation::http::v3::error::V3Error;
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -188,50 +187,51 @@ impl TestDb {
 /// `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
 struct HeaderSessions;
 
-fn staff_of(spec: &str) -> Option<Actor> {
-    let mut parts = spec.splitn(3, ':');
-    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
-    let branch = parts.next().expect("a branch");
-    Actor::staff("employee-7", role, BranchId::new(branch))
+fn roles_of(role: &str) -> &'static [AccessRole] {
+    match role {
+        "FRONT" => &[AccessRole::Teller],
+        "BACKEND" | "MANAGER" => &[AccessRole::BranchManager],
+        "RATES" => &[AccessRole::RateManager],
+        "FINANCE" => &[AccessRole::Finance],
+        "SYSTEM" => &[AccessRole::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[AccessRole::VerificationReviewer],
+        other => panic!("unknown role {other:?}"),
+    }
 }
 
-fn sessions_of(spec: &str) -> Sessions {
+fn staff_of(spec: &str) -> Option<AccessActor> {
+    let mut parts = spec.splitn(3, ':');
+    assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
+    let role = parts.next().expect("a role");
+    let branch = parts.next().expect("a branch");
+    Some(test_callers::staff(
+        "employee-7",
+        roles_of(role),
+        BranchId::new(branch),
+    ))
+}
+
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), staff_of(staff));
     }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
+    test_callers::callers(None, staff_of(spec))
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -259,11 +259,11 @@ fn every_caller() -> Vec<String> {
 }
 
 /// The actor the policy is asked about on `path`, by the rule of `view.rs:331`.
-fn actor_on(path: EntryPath, spec: &str) -> Option<Actor> {
-    let s = sessions_of(spec);
+fn actor_on(path: EntryPath, spec: &str) -> Option<AccessActor> {
+    let c = callers_of(spec);
     match path {
-        EntryPath::StaffRpc => s.staff,
-        _ => s.owner.or(s.staff),
+        EntryPath::StaffRpc => c.staff_user,
+        _ => c.user,
     }
 }
 
@@ -327,8 +327,7 @@ type SubmitDraft = Recording<0>;
 type SaveDraft = Recording<1>;
 /// `POST /api/test-desk/{id}`, `(StaffRpc, "adminDeskConfig")`: staff session only.
 type SaveDesk = Recording<2>;
-/// `POST /api/test-employees/{id}`, `(OwnerRoute, "list")`: the same row as the
-/// real view `admin_employees`.
+/// `POST /api/test-employees/{id}`, `(OwnerRoute, "list")`: `UsersManage` (EXECUTIVE or ADMIN).
 type SaveEmployee = Recording<3>;
 
 const SUBMIT_NAME: &str = "test-draft-submit";
@@ -674,32 +673,20 @@ fn owner_submit(id: &str, amount: &str, key: &str, run: usize) -> Value {
 /// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
 /// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
 fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    actor: Option<&AccessActor>,
+    path: EntryPath,
     action: &str,
     named: Option<&str>,
-) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
-    let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
+) -> Result<BranchId, xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
+    let act = Action::new(action);
     Policy::authorize(
-        user.as_ref(),
+        actor,
         path,
         &act,
-        named.map(xc_kernel::ids::BranchId::new).as_ref(),
+        named.map(BranchId::new).as_ref(),
         chrono::Utc::now(),
     )
-    .map(|_| ())
+    .map(|g| g.branch)
 }
 
 /// §6: a missing `Idempotency-Key` is `400 validationFailed`, field
@@ -870,7 +857,7 @@ async fn a_command_refuses_exactly_whom_the_view_core_refuses_for_the_same_inher
             EntryPath::OwnerRoute,
             "list",
             "test-employee-save",
-            Some("admin_employees"),
+            None,
         ),
     ];
     for (uri, method, path, action, name, view) in rows {
@@ -886,16 +873,15 @@ async fn a_command_refuses_exactly_whom_the_view_core_refuses_for_the_same_inher
             let actor = actor_on(path, &who);
             // OR-4b (#767): the route table's rule (C4: SYSTEM, ADMIN under B1, saves employees)
             match blueprint_rule(actor.as_ref(), path, action, None) {
-                Ok(()) => {
+                Ok(branch) => {
                     allowed += 1;
                     let actor = actor.expect("allowed means signed in");
-                    let branch = Policy::branch(Some(&actor), None);
                     assert_eq!(a.status, StatusCode::OK, "{what}: allowed; body {}", a.text);
                     assert_eq!(a.body["operation"], json!(name), "{what}");
                     assert_eq!(a.body["branch"], json!(branch.as_str()), "{what}: branch");
                     assert_eq!(
                         a.body["who"],
-                        json!(actor.id()),
+                        json!(actor.user_id),
                         "{what}: the actor of its entry path"
                     );
                     assert_eq!(a.body["key"], json!(key), "{what}: the key run received");
@@ -923,7 +909,7 @@ async fn a_command_refuses_exactly_whom_the_view_core_refuses_for_the_same_inher
     assert!(allowed >= 20, "allowed: {allowed}");
     assert!(refused >= 20, "refused: {refused}");
     assert!(
-        compared_with_a_view >= 2,
+        compared_with_a_view >= 1,
         "refusals compared with a real view: {compared_with_a_view}"
     );
     assert_eq!(
@@ -1143,10 +1129,12 @@ async fn a_command_is_served_at_its_declared_method_and_route_only() {
         "POST submit X-42: the path parameter reaches run",
     );
     assert!(
-        Policy::allow(
-            Some(&Actor::owner("owner-1")),
+        Policy::authorize(
+            Some(&test_callers::owner("owner-1")),
             EntryPath::Rpc,
-            &Action::new("rateDraft")
+            &Action::new("rateDraft"),
+            None,
+            chrono::Utc::now(),
         )
         .is_ok(),
         "precondition: the owner may call rateDraft (RE-7 #604: was adminSaveRate)"

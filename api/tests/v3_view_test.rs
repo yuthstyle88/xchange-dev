@@ -43,16 +43,15 @@ use ts_rs::TS;
 use xc_auth::domain::access::Actor as AccessActor;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::dto::v3::common::NoFilter;
 use xchange::presentation::http::v3::view::{BranchView, PagedView, RowId, ViewEndpoint};
-use xchange::presentation::pages::{SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
 const AS: &str = "x-test-as";
@@ -150,52 +149,42 @@ impl TestDb {
 
 /// Who is signed in, from the request header `x-test-as`: `owner`,
 /// `staff:<ROLE>:<branch>`, `owner+staff:<ROLE>:<branch>`, or absent.
-struct HeaderSessions;
+struct HeaderCallers;
 
-fn staff_of(spec: &str) -> Option<Actor> {
+fn staff_caller_of(spec: &str) -> AccessActor {
     let mut parts = spec.splitn(3, ':');
     assert_eq!(parts.next(), Some("staff"), "staff spec {spec:?}");
-    let role = Role::parse(parts.next().expect("a role")).expect("a known role");
+    let role_name = parts.next().expect("a role");
+    let roles = test_callers::v2_staff_roles(role_name)
+        .unwrap_or_else(|| panic!("unknown role {role_name:?}"));
     let branch = parts.next().expect("a branch");
-    Actor::staff("employee-7", role, BranchId::new(branch))
+    test_callers::staff("employee-7", roles, BranchId::new(branch))
 }
 
-fn sessions_of(spec: &str) -> Sessions {
+fn callers_of(spec: &str) -> Callers {
     if spec.is_empty() {
-        return Sessions {
-            owner: None,
-            staff: None,
-        };
+        return test_callers::nobody();
     }
     if spec == "owner" {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: None,
-        };
+        return test_callers::callers(Some(test_callers::owner("owner-1")), None);
     }
     if let Some(staff) = spec.strip_prefix("owner+") {
-        return Sessions {
-            owner: Some(Actor::owner("owner-1")),
-            staff: staff_of(staff),
-        };
+        return test_callers::callers(
+            Some(test_callers::owner("owner-1")),
+            Some(staff_caller_of(staff)),
+        );
     }
-    Sessions {
-        owner: None,
-        staff: staff_of(spec),
-    }
+    test_callers::callers(None, Some(staff_caller_of(spec)))
 }
 
-impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for HeaderCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = req
             .headers()
             .get(AS)
             .map(|v| v.to_str().expect("an ASCII header").to_owned())
             .unwrap_or_default();
-        Box::pin(async move { sessions_of(&spec) })
+        Box::pin(async move { callers_of(&spec) })
     }
 }
 
@@ -223,11 +212,11 @@ fn every_caller() -> Vec<String> {
 }
 
 /// The actor the policy is asked about on `path`, by the rule of `rpc.rs`.
-fn actor_on(path: EntryPath, spec: &str) -> Option<Actor> {
-    let s = sessions_of(spec);
+fn actor_on(path: EntryPath, spec: &str) -> Option<AccessActor> {
+    let c = callers_of(spec);
     match path {
-        EntryPath::StaffRpc => s.staff,
-        _ => s.owner.or(s.staff),
+        EntryPath::StaffRpc => c.staff_user,
+        _ => c.user,
     }
 }
 
@@ -377,7 +366,7 @@ async fn get(db: &TestDb, views: &Views, who: &str, uri: &str) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
     let counting = views.counting.clone();
     let paging = views.paging.clone();
-    let reader: Arc<dyn SessionReader> = Arc::new(HeaderSessions);
+    let reader: Arc<dyn SessionReader> = Arc::new(HeaderCallers);
     let app = atest::init_service(
         App::new()
             .configure(move |cfg| {
@@ -691,7 +680,6 @@ async fn a_role_outside_the_views_row_gets_the_policys_refusal() {
 #[actix_web::test]
 async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
     use xc_auth::domain::access::RoleGrants;
-    use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
     use xc_auth::domain::policy::entities::policy::Need;
 
     let db = TestDb::start().await;
@@ -709,18 +697,11 @@ async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
         for who in every_caller() {
             let a = get(&db, &views, &who, &format!("/api/v3/views/{view}")).await;
             let what = format!("{view} as {who:?}");
-            let actor = actor_on(path, &who);
-            let holds = actor.as_ref().is_some_and(|ac| {
-                blueprint_roles(ac.role())
+            let user = actor_on(path, &who);
+            let holds = user.as_ref().is_some_and(|u| {
+                u.roles
                     .iter()
-                    .any(|&r| RoleGrants::seed(r).contains(&perm))
-            });
-            let user = actor.as_ref().map(|ac| {
-                actor_from_v3(
-                    ac,
-                    xchange::presentation::pages::SEEDED_XC_ORG_ID,
-                    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-                )
+                    .any(|r| RoleGrants::seed(r.role).contains(&perm))
             });
             let auth = Policy::authorize(user.as_ref(), path, &act, None, chrono::Utc::now());
             assert_eq!(
@@ -734,7 +715,7 @@ async fn a_view_refuses_exactly_whom_the_policy_refuses_for_its_pair() {
                     is_changed(&a, 0, &what);
                     assert_eq!(
                         a.body["data"]["who"],
-                        actor.expect("allowed means signed in").id(),
+                        user.expect("allowed means signed in").user_id,
                         "{what}: answered for the actor of its entry path"
                     );
                 }

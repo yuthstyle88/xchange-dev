@@ -72,7 +72,6 @@ async fn seed_user(
         version: 1,
         created_at: now,
         created_by: "admin".to_string(),
-        legacy_employee_id: None,
         roles: roles.clone(),
     };
     service

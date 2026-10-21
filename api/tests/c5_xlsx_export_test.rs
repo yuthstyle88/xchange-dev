@@ -38,10 +38,10 @@ use chrono::{DateTime, Utc};
 use quote_common::*;
 use serde_json::{Value, json};
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::policy::value_objects::actor::Actor as V2Actor;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
+use xchange::presentation::test_callers;
 
 const AS: &str = "x-test-as";
 const HOST: &str = "xc.test";
@@ -92,26 +92,9 @@ fn header(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        let spec = header(req);
-        Box::pin(async move {
-            let owner = actor_of(&spec).map(|_| V2Actor::owner(USER));
-            Sessions { owner, staff: None }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = header(req);
-        Box::pin(async move {
-            let user = actor_of(&spec);
-            Callers {
-                user: user.clone(),
-                staff_user: user,
-            }
-        })
+        Box::pin(async move { test_callers::callers(None, actor_of(&spec)) })
     }
 }
 

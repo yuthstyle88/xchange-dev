@@ -73,7 +73,7 @@ use xc_referral::infrastructure::booking_member_keys::BookingMemberKeys;
 use xchange::application::compat::snapshot_sources::{MemberMark, SnapshotSources};
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::compat::snapshot_sources::ServiceSnapshotSources;
-use xchange::presentation::pages::{Callers, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SessionReader};
 
 const TEST_KEYS: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
@@ -505,18 +505,6 @@ fn header_spec(req: &HttpRequest) -> String {
 }
 
 impl SessionReader for HeaderUsers {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         let spec = header_spec(req);
         Box::pin(async move {

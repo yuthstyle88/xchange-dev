@@ -27,7 +27,7 @@ const GIVE_UP_AFTER: Duration = Duration::from_secs(12);
 ///
 /// 1. Sends GET /healthz and reads its complete 200 answer. Only a worker writes
 ///    that answer, so the connection belongs to a worker.
-/// 2. On the same connection, sends the head of POST /api/staff/login with
+/// 2. On the same connection, sends the head of POST /api/auth/login with
 ///    Content-Length: 64 and no body. The same worker now waits for the body.
 fn prepare_held_connection(port: u16) -> TcpStream {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to the server");
@@ -78,10 +78,10 @@ fn prepare_held_connection(port: u16) -> TcpStream {
 
     write!(
         stream,
-        "POST /api/staff/login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+        "POST /api/auth/login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
          Content-Type: application/json\r\nContent-Length: 64\r\n\r\n"
     )
-    .expect("send POST /api/staff/login head");
+    .expect("send POST /api/auth/login head");
     stream.flush().expect("flush POST head");
 
     stream

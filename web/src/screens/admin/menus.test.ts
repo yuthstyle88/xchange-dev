@@ -125,16 +125,6 @@ const SERVED: Record<string, Served> = {
     title: 'สลิปและหลักฐาน',
     subtitle: 'ค้นหาหลักฐานรับ–จ่ายจากรายการแลกเงิน',
   },
-  employees: {
-    group: 'data',
-    order: 10,
-    label: 'พนักงานและสิทธิ์',
-    icon: '♙',
-    dated: false,
-    eyebrow: 'TEAM & OPERATIONS',
-    title: 'พนักงานและสิทธิ์',
-    subtitle: 'บัญชีพนักงานและการตั้งค่าขั้นตอนรับ–ส่งเงิน',
-  },
 };
 
 // ── fixture menus ────────────────────────────────────────────────────────────

@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
-use xc_auth::domain::account::repositories::account_repository::AccountRepository;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
+use xc_auth::infrastructure::attempts::PgAttemptCounter;
 use xc_kernel::branch_tx::BranchTx;
 
 use super::agent_repository::{AgentRepository, AgentSeen, DeviceAgent};
@@ -57,7 +56,7 @@ pub struct PairParams<'a> {
 pub struct AgentService {
     pub(crate) agent_repo: Arc<PgAgentRepository>,
     pub(crate) device_repo: Arc<PgDeviceRepository>,
-    pub(crate) account_repo: Arc<PgAccountRepository>,
+    pub(crate) attempts: PgAttemptCounter,
     pub(crate) branch_tx: BranchTx,
     pub(crate) printer_models: PrinterModels,
 }
@@ -66,14 +65,14 @@ impl AgentService {
     pub fn new(
         agent_repo: Arc<PgAgentRepository>,
         device_repo: Arc<PgDeviceRepository>,
-        account_repo: Arc<PgAccountRepository>,
+        attempts: PgAttemptCounter,
         branch_tx: BranchTx,
         printer_models: PrinterModels,
     ) -> Self {
         Self {
             agent_repo,
             device_repo,
-            account_repo,
+            attempts,
             branch_tx,
             printer_models,
         }
@@ -114,7 +113,7 @@ impl AgentService {
     ) -> AppResult<AuthOutcome> {
         let key = AgentToken::hash(&format!("AGENT:{address}"));
         let win = window_start_15m(now);
-        let count = self.account_repo.increment_attempt(&key, win).await?;
+        let count = self.attempts.increment(&key, win).await?;
         if count > 30 {
             Ok(AuthOutcome::RateLimited)
         } else {
@@ -131,7 +130,7 @@ impl AgentService {
     ) -> AppResult<PairOutcome> {
         let key = AgentToken::hash(&format!("PAIR:{address}"));
         let win = window_start_15m(now);
-        let count = self.account_repo.increment_attempt(&key, win).await?;
+        let count = self.attempts.increment(&key, win).await?;
         if count > 10 {
             return Ok(PairOutcome::RateLimited);
         }

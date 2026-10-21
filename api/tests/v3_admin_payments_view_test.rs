@@ -39,13 +39,13 @@ use pos_infra::transactions::Transactor;
 use rpc_common::{Answer, App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
 use snapshot_common::time;
-use xc_auth::domain::policy::value_objects::actor::Actor;
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::branch_versions::BranchVersions;
 use xc_kernel::ids::BranchId;
 use xchange::presentation::http::v3::VIEWS;
+use xchange::presentation::test_callers;
 
 const ORIGIN: &str = "http://desk.test";
 const ROUTE: &str = "/api/payment-methods";
@@ -289,22 +289,31 @@ impl Room {
     }
 }
 
+const STAFF: [(&str, &[Role]); 9] = [
+    ("FRONT", &[Role::Teller]),
+    ("BACKEND", &[Role::BranchManager]),
+    ("MANAGER", &[Role::BranchManager]),
+    ("RATES", &[Role::RateManager]),
+    ("MONITOR", &[Role::VerificationReviewer]),
+    ("FINANCE", &[Role::Finance]),
+    ("SYSTEM", &[Role::Admin]),
+    ("DOCUMENTS", &[Role::VerificationReviewer]),
+    ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
+];
+
 /// Every caller kind: nobody, the owner, each staff role (of `MAIN`), and the owner with each
 /// staff role in the same browser.
 fn callers() -> Vec<(String, Option<Actor>)> {
     let mut callers: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
-        ("OWNER".to_string(), Some(Actor::owner("owner"))),
+        ("OWNER".to_string(), Some(test_callers::owner("owner"))),
     ];
-    for role in Role::STAFF {
+    for (name, roles) in STAFF {
         callers.push((
-            role.as_str().to_string(),
-            Actor::staff("employee", role, BranchId::new(MAIN)),
+            name.to_string(),
+            Some(test_callers::staff("employee", roles, BranchId::new(MAIN))),
         ));
-        callers.push((
-            format!("OWNER+{}", role.as_str()),
-            Some(Actor::owner("owner")),
-        ));
+        callers.push((format!("OWNER+{name}"), Some(test_callers::owner("owner"))));
     }
     callers
 }
@@ -326,26 +335,15 @@ fn assert_out_of_scope(answer: &rpc_common::Answer, label: &str) {
 /// OR-4b (#767): the rule a route asks once it is on `Policy::authorize` (design §4.2): the caller
 /// as B1 maps them (§3.3), naming `named` (D-4: a branch outside the caller's scope is refused).
 fn blueprint_rule(
-    actor: Option<&xc_auth::domain::policy::value_objects::actor::Actor>,
-    path: xc_auth::domain::policy::value_objects::entry_path::EntryPath,
+    actor: Option<&Actor>,
+    path: EntryPath,
     action: &str,
     named: Option<&str>,
 ) -> Result<(), xc_auth::domain::policy::value_objects::policy_error::PolicyError> {
-    use xc_auth::domain::policy::entities::policy::{Need, Policy};
+    use xc_auth::domain::policy::entities::policy::Policy;
     let act = xc_auth::domain::policy::value_objects::action::Action::new(action);
-    if Policy::need(path, &act) == Some(Need::Custody) {
-        // #582's rows stay on the v2 rule
-        return Policy::allow(actor, path, &act);
-    }
-    let user = actor.map(|a| {
-        xc_auth::domain::access::v3_roles::actor_from_v3(
-            a,
-            "XC",
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        )
-    });
     Policy::authorize(
-        user.as_ref(),
+        actor,
         path,
         &act,
         named.map(xc_kernel::ids::BranchId::new).as_ref(),
@@ -366,7 +364,7 @@ async fn admin_payments_asks_nobody_signed_in_to_sign_in() {
     room.finish().await;
 }
 
-/// The view answers exactly whom `Policy::allow(_, PaymentMethods, "list")` answers (every
+/// The view answers exactly whom `Policy::authorize(_, PaymentMethods, "list", ..)` answers (every
 /// signed-in caller), and each caller gets the list answer `/api/payment-methods` gives the same
 /// cookies for the same named branch: the owner the named branch with `canEdit: true` and the
 /// history, staff their own branch with `canEdit: false` and no history.
@@ -398,7 +396,9 @@ async fn admin_payments_answers_every_caller_what_the_payment_methods_list_answe
                     expected_data(&list),
                     "{what}: the list answer of the same caller"
                 );
-                let owner = actor.as_ref().is_some_and(|a| a.branch_id().is_none());
+                let owner = actor
+                    .as_ref()
+                    .is_some_and(|a| a.roles.iter().all(|r| r.branch.is_none()));
                 assert_eq!(body["data"]["canEdit"], json!(owner), "{what}");
                 if owner {
                     assert_eq!(body["data"]["branchId"], json!(AIRPORT), "{what}");
@@ -423,7 +423,7 @@ async fn admin_payments_answers_every_caller_what_the_payment_methods_list_answe
     // D-4: an employee of MAIN naming AIRPORT is refused; the owner, alone or not, reads it
     assert_eq!(
         allowed,
-        1 + Role::STAFF.len(),
+        1 + STAFF.len(),
         "the owner, alone or beside an employee, reads AIRPORT"
     );
     room.finish().await;
@@ -487,6 +487,15 @@ async fn admin_payments_answers_the_defaults_before_any_save() {
 #[actix_web::test]
 async fn admin_payments_answers_the_named_branch_for_the_owner_and_their_own_for_staff() {
     let room = Room::open().await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     room.save(AIRPORT, 0, &rows_without("airport", "Alipay"))
         .await;
     room.save(MAIN, 0, &rows("main")).await;
@@ -497,7 +506,8 @@ async fn admin_payments_answers_the_named_branch_for_the_owner_and_their_own_for
         airport["data"]["methods"],
         rows_without("airport", "Alipay")
     );
-    assert_eq!(airport["data"]["updatedBy"], json!("owner"));
+    // OR-7.m G2: rule 2 (#3700)
+    assert_eq!(airport["data"]["updatedBy"], json!(owner_id));
     assert_eq!(
         airport["data"],
         expected_data(&room.list("OWNER", Some(AIRPORT)).await)
@@ -598,6 +608,15 @@ async fn admin_payments_settings_version_is_the_409_guard_not_the_views_version(
 #[actix_web::test]
 async fn admin_payments_history_is_the_last_twenty_newest_first_for_the_owner_only() {
     let room = Room::open().await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     for n in 0..22 {
         room.save(MAIN, n, &rows(&format!("n{n}"))).await;
     }
@@ -624,7 +643,8 @@ async fn admin_payments_history_is_the_last_twenty_newest_first_for_the_owner_on
             ]),
             "{h}"
         );
-        assert_eq!(h["actor"], json!("owner"), "{h}");
+        // OR-7.m G2: rule 2 (#3700)
+        assert_eq!(h["actor"], json!(owner_id), "{h}");
         let v = h["version"].as_i64().expect("a version");
         assert_eq!(h["afterMethods"], rows(&format!("n{}", v - 1)), "{h}");
         assert_eq!(h["beforeMethods"], rows(&format!("n{}", v - 2)), "{h}");
@@ -665,6 +685,15 @@ async fn admin_payments_first_history_entry_starts_from_the_defaults() {
 #[actix_web::test]
 async fn admin_payments_follows_its_branchs_since_through_the_save() {
     let room = Room::open().await;
+    let owner_id: String = sqlx::query_scalar(
+        "SELECT u.id::text FROM users u \
+         WHERE EXISTS (SELECT 1 FROM user_roles r \
+                       WHERE r.user_id = u.id AND r.role_code = 'EXECUTIVE' AND r.branch_id IS NULL) \
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .fetch_one(&room.desk.db.pool)
+    .await
+    .expect("read owner users.id");
     let v0 = room.version(MAIN).await;
     let same = room.view("OWNER", &format!("branch=MAIN&since={v0}")).await;
     assert_eq!(
@@ -681,7 +710,8 @@ async fn admin_payments_follows_its_branchs_since_through_the_save() {
     assert_eq!(after["version"], json!(v1), "{after}");
     assert_eq!(after["data"]["settingsVersion"], json!(1), "{after}");
     assert_eq!(after["data"]["methods"], rows("saved"), "{after}");
-    assert_eq!(after["data"]["updatedBy"], json!("owner"), "{after}");
+    // OR-7.m G2: rule 2 (#3700)
+    assert_eq!(after["data"]["updatedBy"], json!(owner_id), "{after}");
 
     let quiet = room.view("OWNER", &format!("branch=MAIN&since={v1}")).await;
     assert_eq!(quiet, json!({ "version": v1, "changed": false }));

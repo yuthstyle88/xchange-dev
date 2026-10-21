@@ -34,9 +34,10 @@ use xchange::application::workflows::save_step::{
     SaveActor, SaveContext, SaveExtras, SaveStep, StepFuture,
 };
 
-fn owner() -> SaveActor {
+// OR-7.m G1a: rule 1 (#3796)
+fn owner(id: &str) -> SaveActor {
     SaveActor {
-        id: OWNER.to_owned(),
+        id: id.to_owned(),
         username: "boss".to_owned(),
         employee_id: None,
         standing: StandingKind::Owner,
@@ -44,10 +45,11 @@ fn owner() -> SaveActor {
 }
 
 /// A staff member: the id is the employee's id, the username something else.
-fn staff(id: &str, standing: StandingKind) -> SaveActor {
+// OR-7.m G1a: rule 1 (#3796)
+fn staff(id: &str, name: &str, standing: StandingKind) -> SaveActor {
     SaveActor {
         id: id.to_owned(),
-        username: format!("user-{id}"),
+        username: format!("user-{name}"),
         employee_id: Some(id.to_owned()),
         standing,
     }
@@ -175,13 +177,16 @@ async fn marks(shop: &Shop) -> Vec<String> {
 async fn the_forms_staff_is_the_savers_username_whatever_was_sent() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    // OR-7.m G1a: rule 1 (#3796)
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
+    let owner = owner(&owner_id);
     let flow = workflow(&shop, vec![]);
 
     // sent with another name
     let mut cmd = form("staff-0001-aaaaaaaaaa", &customer, &passport);
     cmd.staff = "somebody else".to_owned();
     let saved = flow
-        .save_as(&branch(MAIN), cmd, &SaveExtras::default(), &owner(), at(0))
+        .save_as(&branch(MAIN), cmd, &SaveExtras::default(), &owner, at(0))
         .await
         .expect("a save");
     let stored = shop
@@ -191,10 +196,15 @@ async fn the_forms_staff_is_the_savers_username_whatever_was_sent() {
         .unwrap()
         .unwrap();
     assert_eq!(stored.staff, "boss", "the saver's username");
-    assert_eq!(stored.recorded_by, OWNER, "the saver's id");
+    // OR-7.m G1a: rule 2 (#3796)
+    assert_eq!(stored.recorded_by, owner_id, "the saver's id");
+    // OR-7.m G1a: rule 2 (#3796)
     let receipt = shop
         .files
-        .open_owned(saved.receipt_url.strip_prefix("/files/").unwrap(), OWNER)
+        .open_owned(
+            saved.receipt_url.strip_prefix("/files/").unwrap(),
+            &owner_id,
+        )
         .await
         .unwrap()
         .expect("the receipt belongs to the saver's id");
@@ -209,7 +219,7 @@ async fn the_forms_staff_is_the_savers_username_whatever_was_sent() {
     cmd.staff = String::new();
     cmd.amount = "1".to_owned();
     let saved = flow
-        .save_as(&branch(MAIN), cmd, &SaveExtras::default(), &owner(), at(1))
+        .save_as(&branch(MAIN), cmd, &SaveExtras::default(), &owner, at(1))
         .await
         .expect("an empty staff field is filled in");
     let stored = shop
@@ -225,13 +235,7 @@ async fn the_forms_staff_is_the_savers_username_whatever_was_sent() {
     again.staff = "a third name".to_owned();
     again.amount = "1".to_owned();
     let answered = flow
-        .save_as(
-            &branch(MAIN),
-            again,
-            &SaveExtras::default(),
-            &owner(),
-            at(2),
-        )
+        .save_as(&branch(MAIN), again, &SaveExtras::default(), &owner, at(2))
         .await
         .expect("the staff sent is not part of what makes it the same");
     assert_eq!(answered, saved);
@@ -240,7 +244,11 @@ async fn the_forms_staff_is_the_savers_username_whatever_was_sent() {
     let mut cmd = form("staff-0003-aaaaaaaaaa", &customer, &passport);
     cmd.staff = "EMP-009".to_owned();
     cmd.amount = "2".to_owned();
-    let saved = flow.save(&branch(MAIN), cmd, OWNER, at(3)).await.unwrap();
+    // OR-7.m G1a: rule 1 (#3796)
+    let saved = flow
+        .save(&branch(MAIN), cmd, &owner_id, at(3))
+        .await
+        .unwrap();
     let stored = shop
         .transactions
         .find(&branch(MAIN), &saved.document_ref)
@@ -255,7 +263,13 @@ async fn the_forms_staff_is_the_savers_username_whatever_was_sent() {
 async fn the_steps_run_in_order_around_the_save_and_are_told_about_it() {
     let shop = Shop::start().await;
     let (customer, _) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
-    let me = staff("employee-7", StandingKind::Staff(AccessRole::Teller));
+    // OR-7.m G1a: rule 1 (#3796)
+    let emp_id = shift_holder_common::user_of(&shop.pool, "employee-7").await;
+    let me = staff(
+        &emp_id,
+        "employee-7",
+        StandingKind::Staff(AccessRole::Teller),
+    );
     let shift = shift_holder_common::open_shift_for(
         &shop.pool,
         MAIN,
@@ -306,10 +320,12 @@ async fn the_steps_run_in_order_around_the_save_and_are_told_about_it() {
         .await
         .expect("a save");
     assert_eq!(saved.document_ref, "XC-20261006-000001");
+    // OR-7.m G1a: rule 2 (#3796)
     let before = |name: &str, prior: &str| {
         format!(
-            "before {name} staff=user-employee-7 actor=employee-7 draft=Some(\"draft-1\") counted=true \
-             kiosk=Some(\"kiosk-9\") prior={prior} amount=100.00 at=123000"
+            "before {name} staff=user-employee-7 actor={} draft=Some(\"draft-1\") counted=true \
+             kiosk=Some(\"kiosk-9\") prior={prior} amount=100.00 at=123000",
+            me.id
         )
     };
     assert_eq!(
@@ -386,6 +402,9 @@ async fn the_steps_run_in_order_around_the_save_and_are_told_about_it() {
 async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    // OR-7.m G1a: rule 1 (#3796)
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
+    let owner = owner(&owner_id);
     let seen: Seen = Seen::default();
     let mut second = Telling::new("B", &seen);
     second.refuse_before = Some("ขั้นที่สองไม่ให้ผ่าน");
@@ -404,7 +423,7 @@ async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
             &branch(MAIN),
             form("refuse-0001-aaaaaaaaa", &customer, &passport),
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(0),
         )
         .await;
@@ -434,7 +453,7 @@ async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
             &branch(MAIN),
             bad_form,
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(0),
         )
         .await;
@@ -444,7 +463,7 @@ async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
             &branch("XC-B99"),
             form("refuse-0003-aaaaaaaaa", &customer, &passport),
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(0),
         )
         .await;
@@ -463,7 +482,7 @@ async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
             &branch(MAIN),
             wrong_rate,
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(0),
         )
         .await;
@@ -481,13 +500,7 @@ async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
     let mut wrong = form("refuse-0005-aaaaaaaaa", "CX-99999999", &passport);
     wrong.amount = "99999999".to_owned();
     let got = flow
-        .save_as(
-            &branch(MAIN),
-            wrong,
-            &SaveExtras::default(),
-            &owner(),
-            at(0),
-        )
+        .save_as(&branch(MAIN), wrong, &SaveExtras::default(), &owner, at(0))
         .await;
     assert_eq!(refusal(got), "ขั้นที่สองไม่ให้ผ่าน");
     shop.finish().await;
@@ -497,6 +510,9 @@ async fn a_step_that_refuses_ends_the_save_and_nothing_is_kept() {
 async fn a_step_that_fails_after_the_save_undoes_the_save() {
     let shop = Shop::start().await;
     let (customer, passport) = shop.ready(&[("THB", "100000"), ("USD", "1000")]).await;
+    // OR-7.m G1a: rule 1 (#3796)
+    let owner_id = shop.teller_of(MAIN).await.expect("owner user");
+    let owner = owner(&owner_id);
     let seen: Seen = Seen::default();
     let mut second = Telling::new("B", &seen);
     second.fail_after = true;
@@ -511,7 +527,7 @@ async fn a_step_that_fails_after_the_save_undoes_the_save() {
             &branch(MAIN),
             form("undo-0001-aaaaaaaaaaa", &customer, &passport),
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(0),
         )
         .await;
@@ -543,7 +559,7 @@ async fn a_step_that_fails_after_the_save_undoes_the_save() {
             &branch(MAIN),
             wrong_rate,
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(0),
         )
         .await;
@@ -560,7 +576,7 @@ async fn a_step_that_fails_after_the_save_undoes_the_save() {
             &branch(MAIN),
             too_much,
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(0),
         )
         .await;
@@ -577,7 +593,7 @@ async fn a_step_that_fails_after_the_save_undoes_the_save() {
             &branch(MAIN),
             form("undo-0001-aaaaaaaaaaa", &customer, &passport),
             &SaveExtras::default(),
-            &owner(),
+            &owner,
             at(1),
         )
         .await

@@ -32,12 +32,12 @@ use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, HttpResponse, test, web};
 use common::{FakeDatabase, settings, state_with};
 use serde_json::Value;
-use xc_auth::domain::policy::value_objects::actor::Actor;
-use xc_auth::domain::policy::value_objects::role::Role;
+use xc_auth::domain::access::Role;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
-use xchange::presentation::pages::{self, SessionReader, Sessions};
+use xchange::presentation::pages::{self, Callers, SessionReader};
 use xchange::presentation::screens::ScreenTable;
+use xchange::presentation::test_callers;
 use xchange::presentation::ui::UiAssets;
 
 // ------------------------------------------------------------------ helpers
@@ -58,17 +58,26 @@ fn cases() -> Value {
     serde_json::from_str(&text).expect("v2_page_cases.json is JSON")
 }
 
+fn roles_of(role: &str) -> &'static [Role] {
+    match role {
+        "FRONT" => &[Role::Teller],
+        "BACKEND" | "MANAGER" => &[Role::BranchManager],
+        "RATES" => &[Role::RateManager],
+        "FINANCE" => &[Role::Finance],
+        "SYSTEM" => &[Role::Admin],
+        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => &[Role::VerificationReviewer],
+        other => panic!("unknown v2 role: {other}"),
+    }
+}
+
 /// Answers from the `x-test-sessions` header and counts how often it is asked.
 #[derive(Default)]
-struct FakeSessions {
+struct FakeCallers {
     asked: AtomicUsize,
 }
 
-impl SessionReader for FakeSessions {
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
+impl SessionReader for FakeCallers {
+    fn callers<'a>(&'a self, req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         self.asked.fetch_add(1, Ordering::SeqCst);
         let who = req
             .headers()
@@ -79,14 +88,15 @@ impl SessionReader for FakeSessions {
         Box::pin(async move {
             let staff = who.find("staff:").map(|at| {
                 let mut parts = who[at..].split(':').skip(1);
-                let role = Role::parse(parts.next().expect("a role")).expect("a role v2 knows");
+                let roles = roles_of(parts.next().expect("a role"));
                 let branch = BranchId::new(parts.next().expect("a branch"));
-                Actor::staff("employee-7", role, branch).expect("a staff role")
+                test_callers::staff("employee-7", roles, branch)
             });
-            Sessions {
-                owner: who.starts_with("owner").then(|| Actor::owner("owner-1")),
+            test_callers::callers(
+                who.starts_with("owner")
+                    .then(|| test_callers::owner("owner-1")),
                 staff,
-            }
+            )
         })
     }
 }
@@ -115,7 +125,7 @@ macro_rules! app_with {
 
 macro_rules! app {
     ($web_dir:expr) => {
-        app_with!($web_dir, Arc::new(FakeSessions::default()))
+        app_with!($web_dir, Arc::new(FakeCallers::default()))
     };
 }
 
@@ -819,7 +829,7 @@ async fn every_static_file_answers_as_v2_does() {
     let cases = cases();
     let statics = cases["statics"].as_array().expect("statics");
     assert_eq!(statics.len(), 36, "v2_page_cases.json was cut short");
-    let reader = Arc::new(FakeSessions::default());
+    let reader = Arc::new(FakeCallers::default());
     let web_dir = fixtures().join("web");
     let app = app_with!(&web_dir, reader.clone());
     let mut served = 0;
