@@ -77,7 +77,7 @@
 
 ## 4. Server half (BE lane)
 
-> designed-by: claude/a90d906e for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` and
+> designed-by: claude/c4be83 for the BE lane controller claude/553782 · measured on xchange `main` `f62cbf6c` and
 > `108-Plaza/Identity-Platform` `ffe908d` · §4.7 holds the questions that go to the owner through claude/553782
 
 ### 4.1 What the server does today (measured)
