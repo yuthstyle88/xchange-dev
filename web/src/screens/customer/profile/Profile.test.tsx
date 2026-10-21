@@ -27,6 +27,7 @@ const PROFILE = makeMyProfileData({
   displayName: 'Somchai',
   preferredLanguage: 'th',
   status: 'ACTIVE',
+  offeredLanguages: ['th', 'en', 'zh'],
   consents: [
     makeMyConsent({ purpose: 'MARKETING', channel: 'EMAIL', granted: true, policyVersion: 2, lang: 'th', effectiveAt: '2026-10-01T00:00:00Z' }),
     makeMyConsent({ purpose: 'MARKETING', channel: 'SMS', granted: false, policyVersion: 2, lang: 'th', effectiveAt: '2026-10-01T00:00:00Z' }),

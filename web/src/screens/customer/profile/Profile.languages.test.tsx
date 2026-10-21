@@ -116,6 +116,24 @@ describe('ProfileScreen languages and consentTextMissing (#4165)', () => {
     expect(saveButton().disabled).toBe(true);
   });
 
+  it('an empty offeredLanguages shows only the current language', async () => {
+    const h = harness({
+      profile: makeMyProfileData({
+        customerId: 'cus-4165',
+        customerNo: 'C-004165',
+        displayName: 'Somchai',
+        preferredLanguage: 'th',
+        status: 'ACTIVE',
+        offeredLanguages: [],
+      }),
+    });
+    mount(h.api);
+    await flush();
+    expect(Array.from(langSelect().options).map((o) => o.value)).toEqual(['th']);
+    expect(langSelect().value).toBe('th');
+    expect(saveButton().disabled).toBe(true);
+  });
+
   it.each(['th', 'en', 'zh'] as const)(
     '409 consentTextMissing on save shows its own worded text in %s instead of the generic wordedError',
     async (l) => {

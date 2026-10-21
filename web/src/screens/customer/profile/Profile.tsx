@@ -18,7 +18,6 @@ const t = screenT('customer.profile', table);
 
 const CHANNELS = ['SMS', 'EMAIL', 'PUSH'] as const;
 type Channel = (typeof CHANNELS)[number];
-const LANGUAGES = ['th', 'en', 'zh'] as const;
 
 export interface ProfileScreenProps {
   /** Injected so tests mock at the fetch level; defaults to `new ApiClient()`. */
@@ -186,9 +185,8 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
   };
 
   const selectableLanguages = (offered: string[]) => {
-    const base = offered.length > 0 ? offered : [...LANGUAGES];
     const cur = origLang();
-    return base.includes(cur) ? base : [cur, ...base];
+    return offered.includes(cur) ? offered : [cur, ...offered];
   };
 
   return (
