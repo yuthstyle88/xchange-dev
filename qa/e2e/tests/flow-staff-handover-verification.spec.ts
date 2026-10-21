@@ -301,7 +301,10 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         // Invalid Case 3: negative quantity (`-5`) with valid receiver -> refused with worded message, form keeps `-5`.
         await receiverSelect.selectOption(managerUserId);
         await thbInput.fill('-5');
-        await saveBtn.click();
+        // shift-error still holds case 2's message (ShiftCard.tsx:273-276 replaces it only on a refusal), so wait for
+        // this POST's own answer: a visible banner alone would pass on the stale text.
+        const negRes = await posted(teller, /^\/api\/handovers$/, () => saveBtn.click());
+        expect(negRes.ok, `negative quantity POST /api/handovers must be refused (${lang}): ${negRes.text}`).toBeFalsy();
         await expect(errEl, `shift-error visible on negative quantity (${lang})`).toBeVisible({ timeout: 10_000 });
         const negErrText = await errEl.innerText();
         expectWordedRefusal(negErrText, `negative quantity (${lang})`);
@@ -312,7 +315,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
         // Invalid Case 4: decimal quantity (`1.5`) with valid receiver -> refused with worded message, form keeps `1.5`.
         await thbInput.fill('1.5');
-        await saveBtn.click();
+        const decRes = await posted(teller, /^\/api\/handovers$/, () => saveBtn.click());
+        expect(decRes.ok, `decimal quantity POST /api/handovers must be refused (${lang}): ${decRes.text}`).toBeFalsy();
         await expect(errEl, `shift-error visible on decimal quantity (${lang})`).toBeVisible({ timeout: 10_000 });
         const decErrText = await errEl.innerText();
         expectWordedRefusal(decErrText, `decimal quantity (${lang})`);
@@ -661,6 +665,12 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       // Case 2: Past `expiresAt` (`"2020-01-01"`) -> refused with worded `errExpiresAtRequired` in `[data-error]`; input keeps `"2020-01-01"`.
       // Case 3: Today's `expiresAt` (`todayBangkokIso()`) -> refused (`expiresAt <= todayBangkokIso()`, VerificationScreen.tsx:505); input keeps today's date.
       const todayIso = todayBangkokIso();
+      // [data-error] stays up between cases, so prove the screen refused each one itself: no approve/reject POST leaves.
+      const invalidPosts: string[] = [];
+      const countInvalidPost = (r: { method(): string; url(): string }) => {
+        if (r.method() === 'POST' && /\/(approve|reject)$/.test(new URL(r.url()).pathname)) invalidPosts.push(r.url());
+      };
+      admin.on('request', countInvalidPost);
       for (const lang of STAFF_LANGS) {
         await withLang(admin, lang);
         await admin.goto('about:blank');
@@ -715,6 +725,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
         await shot(admin, 'desk', 'r9-8-verification-approve-invalid', lang);
       }
+      admin.off('request', countInvalidPost);
+      expect(invalidPosts, 'invalid expiresAt / empty reason sent no approve or reject POST').toEqual([]);
 
       // ---- (a) Happy path 1: verificationCaseApprove (POST /api/operations/verification/cases/{id}/approve) ----
       const expiryIso = futureExpiryIso();
