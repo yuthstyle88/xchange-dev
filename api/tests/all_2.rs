@@ -133,6 +133,8 @@ mod pages_test;
 mod planner_preview_overflow_test;
 #[path = "published_rates_tier_overflow_test.rs"]
 mod published_rates_tier_overflow_test;
+#[path = "queue_day_close_wiring_test.rs"]
+mod queue_day_close_wiring_test;
 #[path = "quote_benefit_db_error_test.rs"]
 mod quote_benefit_db_error_test;
 #[path = "quote_thb_overflow_test.rs"]

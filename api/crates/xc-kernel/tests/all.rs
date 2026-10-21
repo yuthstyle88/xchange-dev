@@ -61,6 +61,8 @@ mod rate_units_test;
 mod rate_value_test;
 #[path = "request_id_test.rs"]
 mod request_id_test;
+#[path = "shift_lifecycle_hooks_test.rs"]
+mod shift_lifecycle_hooks_test;
 #[path = "text_redactor_forms_test.rs"]
 mod text_redactor_forms_test;
 #[path = "text_redactor_test.rs"]

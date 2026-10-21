@@ -15,6 +15,8 @@ mod ca7e_ready_on_open_count_rule_test;
 mod cash_schema_test;
 #[path = "custody_pages_test.rs"]
 mod custody_pages_test;
+#[path = "cut_off_day_close_test.rs"]
+mod cut_off_day_close_test;
 #[path = "k2063_custody_repository_overflow_test.rs"]
 mod k2063_custody_repository_overflow_test;
 #[path = "k2063_shift_repository_overflow_test.rs"]
@@ -29,6 +31,8 @@ mod request_id_rule_test;
 mod service_not_ready_message_test;
 #[path = "service_window_test.rs"]
 mod service_window_test;
+#[path = "shift_day_close_test.rs"]
+mod shift_day_close_test;
 #[path = "shift_ledger_test.rs"]
 mod shift_ledger_test;
 #[path = "shift_row_mapper_test.rs"]

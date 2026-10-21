@@ -17,6 +17,8 @@ mod queue_counter_hook_test;
 mod queue_counter_test;
 #[path = "queue_day_hook_test.rs"]
 mod queue_day_hook_test;
+#[path = "queue_day_shift_hook_test.rs"]
+mod queue_day_shift_hook_test;
 #[path = "queue_desk_non_user_actor_test.rs"]
 mod queue_desk_non_user_actor_test;
 #[path = "queue_desk_on_duty_test.rs"]

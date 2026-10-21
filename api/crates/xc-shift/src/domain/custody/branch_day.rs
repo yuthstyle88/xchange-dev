@@ -63,6 +63,13 @@ impl BranchDay {
         }
     }
 
+    /// #4136 (design `queue-day-close.md` §3.2): whether a shift close just closed the branch day — the stored
+    /// phase is CUT_OFF and `open_after` (OPEN shifts after the close) is 0. A stored CLOSED, READY or OPEN is
+    /// `false`, unlike `read_phase`.
+    pub fn day_closes_on_shift_close(stored: Phase, open_after: usize) -> bool {
+        stored == Phase::CutOff && open_after == 0
+    }
+
     /// CA-7e (#1911, design §4.2): a verified OPEN count moves the branch day to READY when the day reads CLOSED
     /// before the count's shift is opened; any other day is left as stored.
     pub fn ready_on_open_count(stored: Phase, open_shifts_before: usize) -> Option<Phase> {
