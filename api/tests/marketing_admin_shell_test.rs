@@ -26,7 +26,7 @@ use common::{FakeDatabase, settings, state_with};
 use xc_auth::domain::access::{Actor, Role, ScopedRole, Standing};
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap;
-use xchange::presentation::pages::{Callers, SEEDED_XC_ORG_ID, SessionReader, Sessions};
+use xchange::presentation::pages::{Callers, SEEDED_XC_ORG_ID, SessionReader};
 use xchange::presentation::screens::ScreenTable;
 use xchange::presentation::ui::UiAssets;
 
@@ -40,19 +40,6 @@ struct BlueprintSession {
 }
 
 impl SessionReader for BlueprintSession {
-    fn sessions<'a>(
-        &'a self,
-        _req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        // no old v2 cookie
-        Box::pin(async move {
-            Sessions {
-                owner: None,
-                staff: None,
-            }
-        })
-    }
-
     fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
         Box::pin(async move {
             let now = chrono::Utc::now();

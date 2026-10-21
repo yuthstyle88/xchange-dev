@@ -113,12 +113,14 @@ async fn a_signin_through_identity_sets_the_one_session_cookie_and_clears_the_ol
         "Path=/; HttpOnly; Secure; SameSite=Strict"
     );
     assert_eq!(cookie.max_age, SESSION_SECONDS);
+    // OR-7.m w2 F-b (#1027 issuecomment-6305469252): sign-in no longer clears the v2 cookies; it
+    // sends no `__Host-xc_owner` / `__Host-xc_staff` header at all.
     for old in [OWNER_COOKIE, STAFF_COOKIE] {
-        let cleared = reply
-            .cookies
-            .get(old)
-            .unwrap_or_else(|| panic!("{old} is cleared: {:?}", reply.cookies));
-        assert_eq!((cleared.value.as_str(), cleared.max_age), ("", 0), "{old}");
+        assert!(
+            !reply.cookies.contains_key(old),
+            "{old} is not sent: {:?}",
+            reply.cookies
+        );
     }
 
     for secret in [
@@ -587,12 +589,19 @@ async fn logout_ends_the_session_and_revokes_the_refresh_token_at_identity() {
         .await;
     assert_eq!(reply.status, 200, "{}", reply.text);
     assert_eq!(reply.json(), json!({ "saved": true }));
-    for name in [SESSION_COOKIE, OWNER_COOKIE, STAFF_COOKIE] {
-        let c = reply
-            .cookies
-            .get(name)
-            .unwrap_or_else(|| panic!("{name} is cleared: {:?}", reply.cookies));
-        assert_eq!((c.value.as_str(), c.max_age), ("", 0), "{name}");
+    // OR-7.m w2 F-b (#1027 issuecomment-6305469252): only the session cookie is cleared; the v2
+    // cookies `__Host-xc_owner` / `__Host-xc_staff` are no longer sent at all.
+    let c = reply
+        .cookies
+        .get(SESSION_COOKIE)
+        .unwrap_or_else(|| panic!("{SESSION_COOKIE} is cleared: {:?}", reply.cookies));
+    assert_eq!((c.value.as_str(), c.max_age), ("", 0), "{SESSION_COOKIE}");
+    for old in [OWNER_COOKIE, STAFF_COOKIE] {
+        assert!(
+            !reply.cookies.contains_key(old),
+            "{old} is not sent: {:?}",
+            reply.cookies
+        );
     }
     assert_eq!(sessions_of(&desk.pool, &user).await, 0);
     let sent = identity.received("/auth/logout");

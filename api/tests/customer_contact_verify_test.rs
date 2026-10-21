@@ -57,10 +57,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
-use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
-use xc_auth::domain::account::value_objects::password_hasher::PasswordHasher;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_customer::application::customer::contact_verify::{ContactVerify, ContactVerifyError};
 use xc_exchange::application::exchange::service::TransactionService;
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
@@ -401,16 +398,10 @@ impl Db {
 
     /// The compat snapshot's member marks of `branch`, in a fixed order.
     async fn snapshot_marks(&self, branch: &str) -> Vec<MemberMark> {
-        let sources = ServiceSnapshotSources::new(
-            TransactionService::new(
-                Arc::new(PgTransactionRepository::new(self.pool.clone())),
-                self.branch_tx(),
-            ),
-            AccountService::new(
-                Arc::new(PgAccountRepository::new(self.pool.clone())),
-                PasswordHasher::with_cost(8, 1, 1),
-            ),
-        );
+        let sources = ServiceSnapshotSources::new(TransactionService::new(
+            Arc::new(PgTransactionRepository::new(self.pool.clone())),
+            self.branch_tx(),
+        ));
         let mut marks = sources
             .members(&BranchId::new(branch))
             .await

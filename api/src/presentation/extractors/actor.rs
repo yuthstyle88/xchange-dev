@@ -2,33 +2,20 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::time::SystemTime;
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
 use pos_error::AppError;
 use serde_json::{Value, json};
-use xc_auth::application::account::service::AccountService;
 use xc_auth::domain::access::Grant;
-use xc_auth::domain::account::entities::employee::Employee;
-use xc_auth::domain::account::entities::session::SignedIn;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
-use xc_auth::domain::policy::value_objects::actor::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::role::Role;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_kernel::ids::BranchId;
 
-use crate::presentation::pages::{Callers, SessionReader, Sessions};
-
-pub type Accounts = AccountService<PgAccountRepository>;
+use crate::presentation::pages::{Callers, SessionReader};
 
 pub const SESSION_COOKIE: &str = "__Host-xc_session";
-pub const OWNER_COOKIE: &str = "__Host-xc_owner";
-pub const STAFF_COOKIE: &str = "__Host-xc_staff";
-/// v2's `OWNER_ID`: the id every owner acts under.
-pub const OWNER_ID: &str = "owner";
 pub const SESSION_SECONDS: u32 = 43_200;
 
 pub const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
@@ -109,35 +96,13 @@ pub fn payload_of(body: &Value) -> Value {
     }
 }
 
-pub fn accounts(req: &HttpRequest) -> Option<&web::Data<Accounts>> {
-    req.app_data::<web::Data<Accounts>>()
-}
-
-pub fn staff_actor(e: &Employee) -> Option<Actor> {
-    Actor::staff(
-        e.id.clone(),
-        Role::parse(&e.role)?,
-        BranchId::new(e.branch_id.clone()),
-    )
-}
-
-pub fn actor_of(who: &SignedIn) -> Option<Actor> {
-    match who {
-        SignedIn::Owner(_) => Some(Actor::owner(OWNER_ID)),
-        SignedIn::Employee(e) => staff_actor(e),
-    }
-}
-
 use crate::presentation::extractors::session_actor::{actor_of_user, resolve_session_actor};
 use chrono::{DateTime, Utc};
 use xc_auth::application::session::SessionService;
 use xc_auth::domain::access::{ScopedRole, Standing};
 
 /// The reader `pages.rs` looks up as `web::Data<dyn SessionReader>`.
-pub struct AccountSessionReader {
-    pub accounts: Accounts,
-    pub org_id: String,
-}
+pub struct AccountSessionReader;
 
 impl SessionReader for AccountSessionReader {
     #[allow(clippy::collapsible_if)]
@@ -167,62 +132,12 @@ impl SessionReader for AccountSessionReader {
                     }
                 }
             }
-            let s = self.sessions(req).await;
-            crate::presentation::pages::old_cookie_callers(s, &self.org_id)
+            Callers {
+                user: None,
+                staff_user: None,
+            }
         })
     }
-
-    fn sessions<'a>(
-        &'a self,
-        req: &'a HttpRequest,
-    ) -> Pin<Box<dyn Future<Output = Sessions> + 'a>> {
-        Box::pin(async move {
-            let now = SystemTime::now();
-            let owner = match self
-                .accounts
-                .status(&cookie(req, OWNER_COOKIE), "", now.into())
-                .await
-            {
-                Ok(Some(who @ SignedIn::Owner(_))) => actor_of(&who),
-                _ => None,
-            };
-            let staff = match self
-                .accounts
-                .status("", &cookie(req, STAFF_COOKIE), now.into())
-                .await
-            {
-                Ok(Some(who @ SignedIn::Employee(_))) => actor_of(&who),
-                _ => None,
-            };
-            Sessions { owner, staff }
-        })
-    }
-}
-
-/// The password session a request carries: the owner cookie's first, else the staff cookie's.
-/// Routes read v2 sessions only through this and [`staff_password_session`] (OR-4b #767), so no
-/// route names a cookie.
-pub async fn password_session(
-    accounts: &Accounts,
-    req: &HttpRequest,
-    now: DateTime<Utc>,
-) -> pos_error::AppResult<Option<SignedIn>> {
-    accounts
-        .status(&cookie(req, OWNER_COOKIE), &cookie(req, STAFF_COOKIE), now)
-        .await
-}
-
-/// The staff password session alone (an owner cookie counts for nothing), as
-/// `AccountService::employee_session` answers it.
-pub async fn staff_password_session(
-    accounts: &Accounts,
-    req: &HttpRequest,
-    allow_must_change: bool,
-    now: DateTime<Utc>,
-) -> pos_error::AppResult<Employee> {
-    accounts
-        .employee_session(&cookie(req, STAFF_COOKIE), allow_must_change, now)
-        .await
 }
 
 /// The Blueprint session (`__Host-xc_session`) a request carries: its user and roles, or `None`

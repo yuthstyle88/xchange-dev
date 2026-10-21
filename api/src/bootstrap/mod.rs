@@ -81,7 +81,6 @@ pub struct AppState {
     pub build: BuildInfo,
     pub database_probe: Arc<dyn DatabaseProbe>,
     pub rate_source: Arc<dyn RateSource>,
-    pub old_cookie_org_id: String,
     pub shift_balances: Arc<dyn ShiftBalances>,
     pub document_store: Arc<dyn DocumentStore>,
     pub loyalty_summary: Arc<dyn LoyaltySummarySource>,
@@ -181,7 +180,6 @@ impl AppState {
             build: BuildInfo::current(),
             database_probe: probe,
             rate_source,
-            old_cookie_org_id: crate::presentation::pages::SEEDED_XC_ORG_ID.to_string(),
             shift_balances,
             document_store,
             loyalty_summary: Arc::new(UnavailableLoyaltySummary),
@@ -401,9 +399,6 @@ impl Application {
         }
 
         let pool = connect(&settings).await?;
-        let old_cookie_org_id = crate::presentation::pages::resolve_old_cookie_org_id(&pool)
-            .await
-            .map_err(anyhow::Error::msg)?;
 
         let address = format!(
             "{}:{}",
@@ -424,8 +419,7 @@ impl Application {
             },
         ));
 
-        let mut state = AppState::new(Arc::new(settings), pool.clone());
-        state.old_cookie_org_id = old_cookie_org_id;
+        let state = AppState::new(Arc::new(settings), pool.clone());
 
         let registry = outbox_handlers::registry(&state)?;
         registry.verify_against(&pool).await?;

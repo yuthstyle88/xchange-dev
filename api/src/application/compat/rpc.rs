@@ -43,14 +43,12 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Map, Value};
-use xc_auth::application::account::service::AccountService;
+use xc_auth::domain::access::Standing;
 use xc_auth::domain::access::authorizer::Grant;
-use xc_auth::domain::access::{Role, Standing};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_auth::infrastructure::account::account_repository::PgAccountRepository;
 use xc_customer::application::customer::service::CustomerService;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::ids::BranchId;
@@ -66,19 +64,6 @@ use crate::application::compat::v2_json::V2Json;
 
 /// `payload.branchId` that is not a branch id at all.
 pub const BAD_BRANCH: &str = "สาขาไม่ถูกต้อง";
-
-/// Maps the stored `employees.role` text to a Blueprint staff [`Role`] (OR-7, design §3.3).
-pub(crate) fn v3_stored_role(text: &str) -> Option<Role> {
-    match text {
-        "FRONT" => Some(Role::Teller),
-        "BACKEND" | "MANAGER" => Some(Role::BranchManager),
-        "RATES" => Some(Role::RateManager),
-        "FINANCE" => Some(Role::Finance),
-        "SYSTEM" => Some(Role::Admin),
-        "MONITOR" | "DOCUMENTS" | "DOCUMENT_REVIEW" => Some(Role::VerificationReviewer),
-        _ => None,
-    }
-}
 
 /// The order of the keys the staff view adds to a snapshot (`employees`, then
 /// `employee`) and of the keys inside them, as v2 prints them.
@@ -157,7 +142,6 @@ pub struct RpcServices {
     pub branches: BranchService,
     pub customers: CustomerService,
     pub abandon: AbandonRequest,
-    pub accounts: AccountService<PgAccountRepository>,
 }
 
 /// The dispatcher of both RPC routes.

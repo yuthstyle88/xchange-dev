@@ -12,9 +12,8 @@
 //!   `Custody` = a row #582 decides; until #582 the custody engine asks the v2 rule.
 //! - `Permission` gains `ReferenceRatesRead`: a v3-only row of an OWNER-only route that §4.2 does not
 //!   list, given to EXECUTIVE, the B1 translation of OWNER (no role changes). (v2's bookings-admin permission went with v2's booking in BK-11 #1413.)
-//! - `xc_auth::domain::access::v3_roles::blueprint_roles(v3: policy Role) -> &'static [Role]` and
-//!   `actor_from_v3(v3: &policy Actor, organization_id: &str, since: DateTime<Utc>) -> access::Actor`
-//!   (B1; the extractor maps a password session through it until OR-7).
+//! - (until OR-7.m w2, #1027) `xc_auth::domain::access::v3_roles::{blueprint_roles, actor_from_v3}`, the
+//!   B1 mapping of a password session; deleted with password login, and its two tests with it.
 //!
 //! Re-expected for RE-7 #604 by the ticket author (claude/07d3765f): RE-7 removes `adminSaveRate`
 //! (`docs/design/blueprint/rates.md` §9), so its two rows (Rpc and StaffRpc, RatesDraft) move to
@@ -29,9 +28,6 @@
 mod policy_common;
 
 use policy_common::*;
-use xc_auth::domain::access::v3_roles::{actor_from_v3, blueprint_roles};
-use xc_auth::domain::policy::value_objects::actor::Actor as V3Actor;
-use xc_auth::domain::policy::value_objects::role::Role as V3Role;
 
 fn need(on: EntryPath, name: &str) -> Option<Need> {
     Policy::need(on, &action(name))
@@ -206,53 +202,23 @@ fn the_role_table_holds_what_b1_translates() {
     assert!(has(Role::Executive, Permission::FileRead));
 }
 
+// OR-7.m w2 (#1027): `a_v3_role_becomes_the_blueprint_roles_of_its_duty` and
+// `a_password_session_becomes_the_user_b1_makes_of_it` pinned `v3_roles` (`blueprint_roles`,
+// `actor_from_v3`), which went with password login. The two Blueprint answers the second one also
+// checked stay, asked of the Blueprint users directly.
 #[test]
-fn a_v3_role_becomes_the_blueprint_roles_of_its_duty() {
-    // §3.3 (B1, B3)
-    let table = [
-        (V3Role::Owner, vec![Role::Executive, Role::Admin]),
-        (V3Role::Front, vec![Role::Teller]),
-        (V3Role::Backend, vec![Role::BranchManager]),
-        (V3Role::Manager, vec![Role::BranchManager]),
-        (V3Role::Rates, vec![Role::RateManager]),
-        (V3Role::Finance, vec![Role::Finance]),
-        (V3Role::System, vec![Role::Admin]),
-        (V3Role::Monitor, vec![Role::VerificationReviewer]),
-        (V3Role::Documents, vec![Role::VerificationReviewer]),
-        (V3Role::DocumentReview, vec![Role::VerificationReviewer]),
-    ];
-    for (v3, want) in table {
-        assert_eq!(blueprint_roles(v3), want.as_slice(), "{}", v3.as_str());
-    }
-}
-
-#[test]
-fn a_password_session_becomes_the_user_b1_makes_of_it() {
-    // the owner: EXECUTIVE + ADMIN, organisation-wide; an employee: their role(s) on their branch
-    let o = actor_from_v3(&V3Actor::owner("owner"), ORG, since());
-    assert_eq!(o.user_id, "owner");
-    assert_eq!(o.organization_id, ORG);
-    assert_eq!(o.customer_id, None);
+fn the_blueprint_users_b1_made_are_answered_as_before() {
+    // a BRANCH_MANAGER of B2 (B1's MANAGER) and the owner (EXECUTIVE + ADMIN)
     assert_eq!(
-        o.roles,
-        [
-            ScopedRole::new(Role::Executive, None, since(), None),
-            ScopedRole::new(Role::Admin, None, since(), None)
-        ]
-    );
-    let e = V3Actor::staff("E-1", V3Role::Manager, branch("B2")).expect("a staff role");
-    let m = actor_from_v3(&e, ORG, since());
-    assert_eq!(m.user_id, "E-1");
+        ask(
+            Some(&staff(Role::BranchManager, "B2")),
+            EntryPath::Devices,
+            "printerOnline"
+        ),
+        Ok(())
+    ); // C7
     assert_eq!(
-        m.roles,
-        [ScopedRole::new(
-            Role::BranchManager,
-            Some(branch("B2")),
-            since(),
-            None
-        )]
+        ask(Some(&owner()), EntryPath::OwnerRoute, "employees"),
+        Ok(())
     );
-    // and that user is answered as the mapped fixture answers its v2 caller
-    assert_eq!(ask(Some(&m), EntryPath::Devices, "printerOnline"), Ok(())); // C7
-    assert_eq!(ask(Some(&o), EntryPath::OwnerRoute, "employees"), Ok(()));
 }
