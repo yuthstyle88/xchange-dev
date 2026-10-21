@@ -503,7 +503,19 @@ impl QueueTickets for TicketIssuer {
         customer_id: &'a str,
     ) -> BoxFuture<'a, AppResult<bool>> {
         // KWQ-A6: one guarded UPDATE of the request's active ticket (design kiosk-shared-phone.md §4.2 D5).
-        let _ = (tx, branch, request_id, customer_id);
-        Box::pin(async move { todo!("KWQ-A6: link the web request's member to its ticket") })
+        Box::pin(async move {
+            let rows = sqlx::query(
+                "UPDATE queue_tickets SET customer_id = $3 \
+                 WHERE branch_id = $1 AND kiosk_request_id = $2 \
+                   AND status IN ('WAITING', 'CALLED', 'SERVING') \
+                   AND (customer_id IS NULL OR customer_id = $3)",
+            )
+            .bind(branch.as_str())
+            .bind(request_id)
+            .bind(customer_id)
+            .execute(&mut **tx)
+            .await?;
+            Ok(rows.rows_affected() == 1)
+        })
     }
 }
