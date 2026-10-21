@@ -363,6 +363,52 @@ on for customers is not.
 Steps 1–4 can run in parallel with 5. Step 7 must wait for 1–3 (and 4 for the phone), or every kiosk customer is
 stopped at the phone step.
 
+### 4.9 Owner setup: Identity OTP → 108 Plaza Notify (steps 1–2 of §4.8)
+
+> measured 2026-10-21 by claude/c4be83 from the Mac Studio. Only names were read from env files and secrets, never
+> values. This part does not depend on the login decision: the SMS ticket (KS-6) needs the same Notify tenant.
+
+**What is there now.**
+- **xc-identity** on do-sgp1 (`152.42.247.83`):
+  - `active`, build `681bea2` (`/opt/xc-identity/BUILD`).
+  - `/etc/xc-identity/env` has `AUTH_OTP_DELIVERY_MODE=noop`, and no `AUTH_OTP_HTTP_*` lines.
+  - `681bea2` already has the HTTP sender and `registerIfAbsent` (`108-platform-services`
+    `crates/auth/src/contract/mod.rs:536`, `crates/auth/src/infrastructure/config.rs:414`). **No rebuild is needed.**
+- **Notify** runs on Dell k3s, `staging/notify`, NodePort 30710.
+  - Its secret `staging/notify-secrets` holds `ADMIN_API_KEY` and `THAIBULKSMS_API_KEY`/`_SECRET`/`_SENDER` (names
+    only; whether the SMS keys are filled was not checked).
+  - Prod (`prod/notify`, 31710) has the same names.
+- **Reach.**
+  - do-sgp1 **cannot** reach Dell's NodePorts (`http://103.27.202.40:30710` and `:31710` both time out).
+  - It **does** reach the public name `https://notify.staging.108plaza.net`: `/health` = `200`, and `POST /api/v1/otp`
+    with no key = `401`. That name is Dell's nginx vhost to NodePort 30710, with a Let's Encrypt certificate.
+- **The contract** (`108-platform-services` `crates/notification-api/src/routes/otp.rs`, `middleware.rs:84-113`):
+  - Identity POSTs `{channel, to, code, purpose}` with `Authorization: Bearer <tenant API key>`.
+  - Notify answers `202 {id}`, which means queued, not yet delivered.
+  - A tenant may define an `otp_code` template for its own SMS text; without one, the built-in text is used.
+
+**The tenant and key.** One new Notify tenant `xchange` on **staging** Notify. It is the xchange test host's own
+tenant, so its rate limit, audit and SMS text are separate from other users of Notify.
+
+| # | Step | Where | Command (the owner runs it; nothing here prints a secret) |
+|---|---|---|---|
+| 1 | Create the tenant. The answer shows the API key **once** | Dell | `ADMIN=$(kubectl -n staging get secret notify-secrets -o jsonpath='{.data.ADMIN_API_KEY}' \| base64 -d)`, then `curl -s -X POST http://127.0.0.1:30710/api/v1/admin/tenants -H "X-Admin-Key: $ADMIN" -H 'X-Admin-Actor: owner' -H 'Content-Type: application/json' -d '{"name":"xchange","rate_limit_per_minute":60}'`. Keep `api_key` from the answer and paste it only into step 2 |
+| 2 | Point Identity at Notify: **all three lines together** | do-sgp1, `/etc/xc-identity/env` (root:xc-identity 640) | `AUTH_OTP_DELIVERY_MODE=http`, `AUTH_OTP_HTTP_ENDPOINT=https://notify.staging.108plaza.net/api/v1/otp`, `AUTH_OTP_HTTP_API_KEY=<the key from step 1>` |
+| 3 | Restart and check | do-sgp1 | `systemctl restart xc-identity && systemctl is-active xc-identity && journalctl -u xc-identity -n 30 \| grep otp_delivery`. The log must say `otp_delivery="http"` |
+| 4 | Test Notify alone, to the owner's phone | do-sgp1 | `KEY=$(grep '^AUTH_OTP_HTTP_API_KEY=' /etc/xc-identity/env \| cut -d= -f2-)`, then `curl -s -w ' %{http_code}\n' -X POST https://notify.staging.108plaza.net/api/v1/otp -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"channel":"sms","to":"+66XXXXXXXXX","code":"123456","purpose":"login_phone_otp"}'`. Expect `202` and an SMS with `123456` |
+| 5 | Test the whole path, the way the kiosk will call it | anywhere | `curl -s -X POST https://xc-v3.spacing.cloud/api/auth/otp/request -H 'Origin: https://xc-v3.spacing.cloud' -H 'X-Xchange-Request: 1' -H 'Content-Type: application/json' -d '{"destination":"+66XXXXXXXXX","channel":"sms"}'`. Expect `200 {challengeId, expiresAt}` and a real code on the phone. Both headers are required (`same_origin`, `api/src/presentation/extractors/origin.rs:33-55`) |
+
+- 🔴 **Step 2 is all-or-nothing.** With `http` mode and a missing endpoint or key, Identity **refuses to boot**
+  (`crates/identity-api/src/main.rs:381-394` at `681bea2`), and then **every** sign-in fails, staff included. If step 3
+  does not show `active`, put `AUTH_OTP_DELIVERY_MODE=noop` back and restart.
+- **Step 4 `202` but no SMS** ⇒ the fault is in Notify or the provider, not Identity. Check the notification's delivery
+  attempts, and whether the `THAIBULKSMS_*` values are filled. A tenant `otp_code` template made for e-mail falls back
+  to the built-in SMS text (`otp.rs`, the 2026-08-12 fix), so a template is not the cause.
+- **Step 4 `401`** ⇒ wrong or inactive key. Rotate it with `POST /api/v1/admin/tenants/{id}/rotate-key`.
+- **Step 5 `503 identityUnavailable`** ⇒ step 3 failed, or xc-v3 lost its Identity drop-in (`HOST-do-sgp1.md` §2).
+- **Real production** (when the owner says so) gets its own tenant on `prod/notify`, which needs a public name like the
+  staging one. No such name was found on Dell's nginx (only `notify.staging.108plaza.net` points at Notify).
+
 ## 5. Front ends (this lane)
 
 - **Admin:** `/kiosk-currencies.html` becomes **ตั้งค่าตู้**: the currency switches plus `resultSeconds` and `idleSeconds`.
