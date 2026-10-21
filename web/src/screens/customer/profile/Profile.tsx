@@ -118,10 +118,13 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
     return displayName() !== origName() || preferredLanguage() !== origLang();
   };
 
-  const saveError = (err: unknown) =>
-    err instanceof ApiError && !isServerFailure(err) && err.code === 'consentTextMissing'
-      ? t('consentTextMissing')
-      : wordedError(err);
+  const saveError = (err: unknown) => {
+    if (err instanceof ApiError && !isServerFailure(err)) {
+      if (err.code === 'consentTextMissing') return t('consentTextMissing');
+      if (err.code === 'nameTooLong') return t('nameTooLong');
+    }
+    return wordedError(err);
+  };
 
   const handleSave = async (e: Event) => {
     e.preventDefault();
@@ -243,6 +246,7 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
                 <input
                   type="text"
                   data-field="displayName"
+                  maxLength={100}
                   value={displayName()}
                   onInput={(e) => {
                     setDisplayName(e.currentTarget.value);

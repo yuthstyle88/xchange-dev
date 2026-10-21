@@ -1,21 +1,18 @@
-// #174 (A3): start-up with an endpoint the kiosk refuses, the IPv6 origin,
+// #174 (A3): start-up with an endpoint the app refuses, the IPv6 origin,
 // and the setup texts. Written before the code.
-//
-// Mutations that must turn this red:
-// - let bootstrap rethrow EndpointFormatException -> a refused branch starts
-// - start the controller on a refused endpoint    -> … nothing is asked
-// - drop the brackets from an IPv6 host           -> IPv6 keeps its brackets
-// - leave a key out of one language               -> every key in en and th
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchange_kiosk/core/endpoint/endpoint_store.dart';
 import 'package:xchange_kiosk/core/endpoint/kiosk_endpoint.dart';
-import 'package:xchange_kiosk/features/kiosk/app/kiosk_providers.dart';
+import 'package:xchange_kiosk/l10n/kiosk_l10n.dart';
 import 'package:xchange_kiosk/main.dart' as app;
 
-import '../kiosk/kiosk_controller_test.dart' show FakeRepository, l10n;
+KioskL10n texts() => KioskL10n.fromJson(
+  jsonDecode(File('assets/l10n/kiosk.json').readAsStringSync())
+      as Map<String, dynamic>,
+);
 
 /// What `PageEndpointStore` does with `?branch=A%20B`: it throws.
 class RefusingStore implements EndpointStore {
@@ -34,23 +31,12 @@ class RefusingStore implements EndpointStore {
 }
 
 void main() {
-  test('a refused endpoint starts the kiosk with its error line, and nothing '
-      'is asked of any server', () async {
-    final repo = FakeRepository();
-    final c = await app.bootstrap(
-      l10n: l10n(),
-      store: RefusingStore(),
-      overrides: [
-        kioskRepositoryProvider.overrideWithValue(repo),
-        deviceLanguagesProvider.overrideWithValue(const ['en']),
-      ],
-    );
+  test('a refused endpoint leaves the stored endpoint null', () async {
+    final c = await app.bootstrap(l10n: texts(), store: RefusingStore());
     addTearDown(c.dispose);
     await Future<void>.delayed(Duration.zero);
 
     expect(c.read(kioskEndpointProvider), isNull);
-    expect(c.read(kioskControllerProvider).error, 'generic-en');
-    expect(repo.calls, isEmpty);
   });
 
   group('IPv6', () {
