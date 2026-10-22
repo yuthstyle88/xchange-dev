@@ -10,6 +10,9 @@
 >
 > 🔴 **Branch tablet (2026-10-22):** §7 is the current design for the branch tablet. It replaces D16's "no tablet
 > credential", F9, U6–U8, QW-3 and QW-2g.
+>
+> 🔴 **Wrapper app (2026-10-22):** §7.11 adds the wrapper app the branch tablet runs the page inside. It amends R-T5's
+> "no tablet app"; the page itself stays one page.
 
 ## 0a. Current rules (owner, 2026-10-21; supersede §0–§3, §5, §6 where they differ)
 
@@ -861,7 +864,7 @@ issuecomment-6330800215.
 | R-T2 | **Each new person starts from the first page, "start booking".** The device loops, one booking after another. | *"ใคร มาใหม่ ต้องไปเริ่ม เมนู เริ่มต้นการจอง"* · *"มันจะวนลูป การจองไปเรื่อย ๆ"* |
 | R-T3 | **Right after the scan, the device goes straight to the first page.** There is no idle timer and no sign-out step. | *"คือไป สแกน มันก็ จะไปหน้าแรก ทันที่ ที่สแกน เสร็จ"* |
 | R-T4 | **The device is the branch's own tablet, and it must be marked as one.** Only a marked tablet loops. | *"tablet ที่สาขา นะ"* · *"จะต้อง ทำเครื่องหมาย ว่า เป็นtable ที่สาขา ให้ มันมีพฤติกรรม แบบนี้"* |
-| R-T5 | **The tablet runs the same page the customer uses on their own phone or computer.** There is no tablet app and no second set of screens. Pairing switches only what happens after the scan. | *"แต่มันคือหน้า เดียวกัน นะ กับที่ลูกค้า ใช้ งาน จาก มือถือ ส่วนตัวหรือ อุปกรณ์ ตอมส่วนตัว"* |
+| R-T5 | **The tablet runs the same page the customer uses on their own phone or computer.** There is no second set of screens. Pairing switches only what happens after the scan. **Amended by §7.11:** the branch tablet hosts that page inside a wrapper app; a customer's own phone or computer uses a normal browser and installs nothing. | *"แต่มันคือหน้า เดียวกัน นะ กับที่ลูกค้า ใช้ งาน จาก มือถือ ส่วนตัวหรือ อุปกรณ์ ตอมส่วนตัว"* |
 | R-T6 | **The scan is mandatory, and it is the last step on every device.** The customer takes the queue ticket at the queue point, so they are never confused. | *"ที่ต้องไปสแกน เพื่อให้ ลูกค้า ไปรับ คิว"* · *"มันจะได้ไม่งง"* · *"จำเป็นต้องให้ไปสแกน เพื่อรับคิว ก่อน"* |
 | R-T7 | **The page never issues or prints a queue ticket**, on the tablet or on any other device. | *"ถ้าให้ พิมพ์ คิว เลย เดี๋ยวไม่รู้ว่าต้องไปรับ คิวที่ไหน"* |
 | R-T8 | **Approved:** pairing with a short-lived code, a revocable token per tablet, a new table (additive migration), and one pairing core shared with `device_agents`. | *"อนุมัติ"* |
@@ -1152,3 +1155,234 @@ what happens after the scan.
 
 Not asked, recorded: §4.7's W7 (a device credential for the queue machine) could later be a third `DeviceKind` on the
 same core, as one store file. It is not designed here.
+
+### 7.11 The wrapper app (owner, 2026-10-22)
+
+> designed-by: a design session for the XC FE controller (claude/e8020026) · measured on xchange `main` `01c5ff79` ·
+> every `file:line` below is at that sha · owner's words recorded on #4562, relayed by the design coordinator.
+
+#### 7.11.1 Owner requirement
+
+| # | Rule | Owner's words |
+|---|---|---|
+| R-W1 | **Build a wrapper, so a customer cannot close the screen.** | *"เราทำตัวครอบ เอา น่าจะดี เพราะ เจ้าของไม่อยกให้ ลูกค้าปิด หน้าจอได้"* |
+| R-W2 | **The wrapper hosts the page in a WebView.** The branch has a tablet; its OS is not known yet (iPad or Android). | *"ครอบ เว็บวิว เอาจะได้ ง่าย"* · *"สาขามี เท็บเล็ต"* |
+| R-W3 | **Not Flutter.** | *"ถ้าทำ flutter มัน มีงานเพิ่ม มาก"* |
+| R-W4 | **The main requirement: people cannot leave the app or go to another page.** | *"เราเอาแค่ ครอบ ไม่ให้ คนออกจากแอฟ ไปหน้า อื่น อันนี้คือที่ต้องการหลัก"* |
+| R-W5 | **Everything else follows the web already being built** (§7, BT-0..BT-5, BT-F1..BT-F3). | *"ส่วนอย่างอื่นก็ ตาม เว็บ ที่ทำอยู่"* |
+| R-W6 | **The only difference between devices: the branch tablet runs inside the wrapper.** A customer's own phone or computer uses a normal browser and installs nothing. | *"ต่างแค่ ถ้าที่สาขา ต้องมี แอฟ ครอบไว้"* |
+| R-W7 | **Setting up the wrapper is the branch pairing.** | *"เป็นการจับคู่ สาขาไปในตัวด้วย"* |
+| R-W8 | **The pairing says which branch and which terminal.** | *"สาขา อะไร  terminal อะไร"* |
+
+**The two must-haves.** The wrapper adds these and nothing else:
+- **M1.** The customer cannot leave the app: no home, no back, no app switch, no closing it.
+- **M2.** The customer cannot reach any page outside the queue flow: no other site, and no other path on our origin.
+
+**What stays in the web (R-W5).** Pairing, the `__Host-xc_tablet` cookie, the return to the first page after the scan,
+the sign-in, the 30-minute cap and "no print" are §7's, unchanged (T-D2..T-D11, T12–T23). The wrapper only hosts the
+page, plus one setup screen (R-W7). The one-page rule (R-T5) holds: one page everywhere; only the branch tablet runs it
+inside the wrapper (R-W6).
+
+#### 7.11.2 What exists today (measured)
+
+- **No wrapper and no web app manifest.** I swept `web/`, `api/static` and `api/src` for `webmanifest`,
+  `rel="manifest"`, `apple-mobile-web-app` and `display-mode`: 0 hits. `web/vite.config.ts:32` `manifest: true` is
+  Vite's build manifest, not a web app manifest.
+- **`app/` is the staff queue machine, in Flutter** (R-2, R-4): `xchange_kiosk` (`app/pubspec.yaml:1-2`), Android id
+  `com.spacing.xchange` (`app/android/app/build.gradle.kts:23,33`). It has no kiosk code: a sweep of `app/` for
+  `wakelock`, `SystemUiMode`, `immersive`, `setPreferredOrientations`, `startLockTask`, `lockTask`, `webview_flutter`
+  and `flutter_inappwebview` found 0 hits. Its Android build runs by hand or on `release/**`
+  (`.github/workflows/app-android.yml:1-16`), on `[self-hosted, macOS, ARM64, mac-studio]` (`:28`), and signs with
+  four `XCHANGE_ANDROID_*` secrets or falls back to the debug key (`:3-7`; `build.gradle.kts:53-57`).
+- **No fleet app has a WebView or lock-task pattern to borrow.** Swept `heros/mobile` (`e1a929eb`) and `parking/app`
+  (`3d89a48`) for `webview_flutter`, `flutter_inappwebview`, `wakelock`, `startLockTask`, `setLockTaskPackages` and
+  `DeviceAdminReceiver`, outside build folders: 0 hits.
+- **The queue flow is all on our origin.** The page is `/app/queue` (`web/pages/app-queue.html:7`). Sign-in posts to
+  `/api/auth/otp/request` and `/api/auth/otp/verify` on the same origin (`web/src/screens/customer/sign-in/SignIn.tsx:59,87`).
+  A sweep of `web/src/screens/customer` (tests and flag SVGs excluded) for `http://`, `https://`, `tel:`, `mailto:`,
+  `target="_blank"` and `window.open` found no link to another site.
+- **But the page links to our other paths.** It sits inside `CustomerShell` (`queue/main.tsx:14`), whose bar and nav
+  link to `/app/sign-in`, `/app/profile`, `/app/member`, `/app/rate-alerts`, `/app/notifications` (`_shell/Shell.tsx:81-116`)
+  and `/app`, `/app/branches`, `/app/bookings`, `/app/history`, `/app/assistant` (`Shell.tsx:32-38`, `:124-128`).
+  `/app/history` opens receipts with `target="_blank"` (`history/HistoryScreen.tsx:122-126`). Sign-in links to
+  `/app/sign-up` (`SignIn.tsx:144`), and sign-up ends with `navigate('/app')` (`SignUp.tsx:47`). So M2 needs a path
+  rule, not only a host rule.
+- **The page never uses a camera.** It shows the request QR (`queue/RequestQr.tsx:35-43`); staff scan it at the queue
+  machine (R-3). No `getUserMedia` or `BarcodeDetector` in `web/src` outside tests.
+- **The web half of pairing is on `main`:** `pairFromFragment` posts `#pair=` and strips it (`shared/session/tablet.ts:56-70`);
+  `readTabletMode` reads `me` once and fails open to `{paired: false}` (`:42-54`); the page uses the tablet's branch
+  (`queue/queue-tablet.ts:64-67`) and loops to `/app/queue?branch=<tablet branch>` (`:83`).
+- **The admin half is on `main`:** `BranchTablets` lists each tablet of the branch with its `name`, state and
+  `lastSeenAt` (`admin/branches/BranchTablets.tsx:29-35`, `:238-245`), with a new code and a revoke on each row
+  (`:246-265`). Its pairing QR is `<location.origin>/app/queue?branch=<branchCode>#pair=<CODE>` (`:14-15`).
+- **The server half is not on `main`:** `branch_tablet` has 0 hits under `api/`. BT-0..BT-5 must merge and deploy
+  before a wrapper can pair.
+
+#### 7.11.3 Options, judged only on M1, M2 and work
+
+| Option | M1 on Android | M2 on Android | iPad | Work | Verdict |
+|---|---|---|---|---|---|
+| Chrome tab + screen pinning (zero code) | partly: pinning blocks home and recents, but the tab can be closed | **no**: address bar, new tabs | — | none | no |
+| A kiosk-browser app (third party), set to our URL with an exit PIN | yes | yes, if its URL list matches paths (vendor feature, not checked) | a paid iPad kiosk browser | a per-device licence (price not checked); a closed third-party app holds the customer's session cookie and OTP screens; its setup is not our pairing (R-W7) | no |
+| A web app manifest (`display: fullscreen`) + pinning | unknown: back at the root may close the app (device test) | **no**: no address bar, but the shell's links still reach `/app/history` and the rest | home-screen app + Guided Access; same path gap | a manifest plus a web change to hide the links | no |
+| Capacitor | needs native lock-task lines or a plugin | **not alone**: `server.allowNavigation` is a host list, and other hosts open in the system browser (that leaves the app, M1); the path rule needs a native hook on each OS | Guided Access, plus its iOS project | npm + `@capacitor/*`, generated Gradle and Xcode projects, and still native lines on both OSes | no: the native parts are the same as below, with a build system on top |
+| **A single-file native WebView app per OS** | `startLockTask()` + back does nothing | `shouldOverrideUrlLoading` (Android) / `decidePolicyFor` (iOS) with the path rule | Guided Access for M1 | about 200 lines of Kotlin (or Swift) plus build files | **chosen** |
+
+🔴 **On iPad, M1 needs Guided Access whichever wrapper we pick.** iOS lets an app lock itself only on a supervised iPad
+under MDM (autonomous Single App Mode). Single App Mode without MDM needs Apple Configurator on a Mac, which erases the
+iPad to supervise it. The wrapper app on iPad gives M2; Guided Access gives M1.
+
+#### 7.11.4 Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| W-D1 | **Android: one Kotlin WebView app in a new `tablet/android/`, id `com.spacing.xchange.tablet`.** Not in `app/`, not Flutter. | R-W3; a separate id never replaces the queue machine app (`com.spacing.xchange`) |
+| W-D2 | **M1 on Android = screen pinning, started by the app.** `startLockTask()` on start: Android asks staff once to pin. With *Settings → Security → App pinning → Ask for PIN before unpinning* on, leaving needs the device's screen-lock PIN. Back does nothing. The window keeps the screen on and shows over the lock screen, because a lock screen PIN is now set and the next customer must not meet it. A crashed WebView renderer reloads the start page instead of closing the app. | the least code that meets M1; the staff exit and its PIN are the system's, so the app has no exit code |
+| W-D3 | **Device-owner mode is not built.** It removes the pin prompt and the unpin gesture, but needs a factory reset and `adb shell dm set-device-owner` on a device with no accounts (or QR provisioning at first boot), plus an admin receiver and an exit of our own. | M1 as worded is met by pinning; later only if pinning proves too weak |
+| W-D4 | **iPad: one Swift `WKWebView` app in `tablet/ios/`, built only if the tablet is an iPad** (Q-W1), with Guided Access for M1. | 🔴 above |
+| W-D5 | **M2 is one rule for every top-level navigation, in both apps:** `https`, our origin (built in, per build), and a path in the flow ⇒ load it. Our origin, other path ⇒ load the start page instead. Anything else (another host, `http`, `intent:`, `tel:`, `mailto:`, `blob:`, `data:`, `file:`) ⇒ ignore, and never hand it to another app. New windows are off, so `target="_blank"` runs through the same rule. No download, file-chooser or share handler is set. | M2; the shell's links land on the first page, which is where R-T2 sends a new person anyway. Sign-up's `/app` is a web bug, not a flow exit: #4648 |
+| W-D6 | **The flow paths are `/app/queue`, `/app/sign-in`, `/app/sign-up`**, any query or fragment. Subresources (`/ui/…`, `/api/…`) are not navigations and are not filtered. The start page is `<origin>/app/queue`; the page picks the tablet's branch itself (`queue-tablet.ts:64-67`). | the queue flow as built (`QueueRequest.tsx:72`, `SignIn.tsx:144`) |
+| W-D7 | **The rule's cases live once, in `tablet/policy-cases.json`**, and both apps' unit tests read that file. | ♻️: two languages cannot share code, so they share the cases |
+| W-D8 | **Setup is the §7 pairing (R-W7), with no new server work.** At launch the app reads `GET /api/branch-tablet/me` with the WebView's own cookie. `paired: false` ⇒ the setup screen. Staff scan the admin QR (Google code scanner on Android, which needs no camera permission; VisionKit on iPad) or type the code. A scanned URL is used only if it passes W-D5 and carries `#pair=`; a typed code becomes `<origin>/app/queue#pair=<CODE>`. The WebView loads it, the page pairs (T-D10) and the cookie lands in the WebView's persistent store. The app then reads `me` once and shows **"Branch MAIN · Tablet Front-1"** (`branchCode` · `name`) once, to confirm. A revoked tablet answers `paired: false` and goes back to setup. Any other answer (network failure, non-2xx) opens the page as is, as `readTabletMode` does. | R-W7, R-W8; setup is the only other screen, so M2 holds |
+| W-D9 | **The page shows a small label "MAIN · Front-1" on a paired tablet**, from the `me` it already reads (T-D6). Nothing shows on a phone. | R-W8; web, so it follows the web (R-W5) |
+| W-D10 | **Admin needs nothing new.** `BranchTablets` already lists each terminal by name with its last-seen time and revokes each on its own (§7.11.2). | R-W8 |
+| W-D11 | **Android ships as a signed APK, installed by hand (sideload)**, built by a hand-run workflow. No Play listing. | one or a few tablets; no store review |
+
+**What `me` lacks:** nothing for the code and the terminal. `me` returns `branchCode` and the tablet's `name` (§7.7).
+It has no branch **display name**. If the owner wants "สาขาสีลม" rather than "MAIN", BT-4 adds one field, `branchName`,
+to `me`; until then the label uses the code (Q-W4).
+
+#### 7.11.5 Class diagram
+
+```mermaid
+classDiagram
+  direction LR
+  class policy_cases_json {
+    <<shared test data>>
+    origin
+    cases: url, expect allow / start / ignore
+  }
+  class QueueFlowPolicy {
+    <<pure>>
+    FLOW_PATHS /app/queue /app/sign-in /app/sign-up
+    decide(url, origin) Allow | StartPage | Ignore
+  }
+  class PairingUrl {
+    <<pure>>
+    fromScan(text, origin) url?
+    fromCode(code, origin) url?
+  }
+  class PairState {
+    <<pure>>
+    fromMe(status, body) Paired(branchCode, name) | Unpaired | Unknown
+  }
+  class MeClient {
+    get(origin, cookie) status, body
+  }
+  class TabletActivity {
+    WebView, new windows off
+    shouldOverrideUrlLoading uses QueueFlowPolicy
+    onResume: startLockTask
+    back: nothing
+    keep screen on, show when locked
+    onRenderProcessGone: reload start
+  }
+  class SetupActivity {
+    scan or type code
+    confirm line once
+  }
+  class TabletViewController {
+    <<iOS, only if iPad>>
+    WKWebView decidePolicyFor uses QueueFlowPolicy
+  }
+  class SetupViewController {
+    <<iOS, only if iPad>>
+  }
+  QueueFlowPolicy ..> policy_cases_json : tests read
+  TabletActivity --> QueueFlowPolicy
+  TabletActivity --> PairState
+  TabletActivity --> MeClient
+  TabletActivity --> SetupActivity : Unpaired
+  SetupActivity --> PairingUrl
+  TabletViewController --> QueueFlowPolicy
+  TabletViewController --> SetupViewController : Unpaired
+  SetupViewController --> PairingUrl
+```
+
+The three pure parts exist once per language (Kotlin, and Swift only if iPad), each tested against
+`policy-cases.json` and its own small tests. The activities are glue and hold no rule.
+
+| Unit | File | New |
+|---|---|---|
+| shared cases | `tablet/policy-cases.json` | new |
+| pure parts (Android) | `tablet/android/app/src/main/kotlin/com/spacing/xchange/tablet/{QueueFlowPolicy.kt, PairingUrl.kt, PairState.kt}` | new |
+| glue (Android) | `…/tablet/{TabletActivity.kt, SetupActivity.kt, MeClient.kt}`, `tablet/android/app/src/main/AndroidManifest.xml`, `tablet/android/app/src/main/res/layout/setup.xml` | new |
+| build (Android) | `tablet/android/{settings.gradle.kts, build.gradle.kts, gradle.properties, gradle/wrapper/*, gradlew}`, `tablet/android/app/build.gradle.kts` (the origin as a Gradle property ⇒ `BuildConfig.XC_ORIGIN`) | new |
+| CI | `.github/workflows/tablet-android.yml` | new |
+| page label | `web/src/screens/customer/queue/{TabletLabel.tsx, TabletLabel.test.tsx}`, one line in `QueueRequest.tsx`, `queue.css`, `i18n.ts` | new / changed |
+| iOS (only if iPad) | `tablet/ios/…` | new |
+
+#### 7.11.6 Behaviour
+
+Only M1, M2, setup and the label. Everything else is §7.8's rows, unchanged (R-W5).
+
+| # | Given | When | Then |
+|---|---|---|---|
+| W1 | a paired wrapper | it starts | the page `<origin>/app/queue` fills the screen with no address bar; Android asks staff to pin the first time after each start; the screen stays on |
+| W2 | a pinned wrapper (Android) or Guided Access on (iPad) | the customer presses home, recents or app switch | nothing; the page stays |
+| W3 | the page on any screen | the customer presses back | nothing: the app does not close and the WebView does not go back |
+| W4 | a pinned wrapper with *Ask for PIN before unpinning* | someone does the unpin gesture | the device asks for its screen-lock PIN; a wrong PIN keeps it pinned. iPad: triple-click asks the Guided Access passcode |
+| W5 | the page | a navigation to `https://<origin>` with path `/app/queue`, `/app/sign-in` or `/app/sign-up` (any query or fragment) | it loads |
+| W6 | the page | a navigation to `<origin>` on any other path (the shell's `/app/history`, sign-up's `/app`, a receipt with `target="_blank"`) | the start page loads instead |
+| W7 | the page | a navigation to another host, to `http://<origin>`, or to `intent:`, `tel:`, `mailto:`, `blob:`, `data:`, `file:` | ignored; no other app opens; the QR download button does nothing in the wrapper |
+| W8 | the page | the customer long-presses text | the selection menu offers no item that opens another app (share, web search, translate) |
+| W9 | the page | the WebView's renderer crashes | the start page reloads; the app does not close |
+| W10 | a wrapper that is new, or whose tablet was revoked (`me` ⇒ `paired: false`) | it starts | the setup screen. Staff scan the admin QR or type the code ⇒ the WebView loads `/app/queue…#pair=<CODE>`, the page pairs (T-D10), the app shows "Branch MAIN · Tablet Front-1" once, then the start page. A QR for another origin, or with no `#pair=`, is refused on the setup screen. A refused code (`me` still `paired: false`) returns to setup with a worded line. Every later start opens the start page |
+| W11 | `me` cannot be read (no network, non-2xx) | the wrapper starts | the page opens as is; setup appears only on an explicit `paired: false` |
+| W12 | a paired tablet, in the wrapper or not | the page loads | a small "MAIN · Front-1" label from `me`; a phone shows none |
+
+**Tests:**
+- W5–W7 and W10's URL checks are JVM unit tests (`./gradlew test`) over `policy-cases.json`, with no device.
+- `PairState` has unit tests for `paired: true`, `paired: false`, a missing field, non-JSON, 404 and 5xx.
+- W12 is a vitest test with a fake `me`.
+- **W1–W4, W8 and W9 need the real tablet**: lock task, back, recents and the selection menu cannot be tested in CI.
+  They are a written checklist in `tablet/android/DEVICE_CHECKLIST.md`, run on the branch tablet before each release.
+  The same goes for one more row to measure on the device: the notification shade while pinned.
+
+#### 7.11.7 Tickets
+
+The design must merge first. TW-0 to TW-3 wait for Q-W1 = Android, or for no answer (default below). TW-F1 runs on any
+answer. iOS tickets are cut only if Q-W1 = iPad. File scopes are disjoint.
+
+| Ticket | Side | Scope (File scope = these paths) | Class | Up-front tests | Needs |
+|---|---|---|---|---|---|
+| TW-0 | app | `tablet/android/` build files (§7.11.5 build row), `tablet/policy-cases.json` with every W5–W7 case, and the up-front test files of TW-1, written against §7.11.5's signatures (they fail until TW-1). `tablet/android/app/build.gradle.kts` carries the release `signingConfig` from the four `XCHANGE_ANDROID_*` values with the debug-key fallback, as `app/android/app/build.gradle.kts:53-57`, so TW-3 touches only its workflow | skeleton (controller) | — | design merged |
+| TW-1 | app | `tablet/android/app/src/main/kotlin/com/spacing/xchange/tablet/{QueueFlowPolicy.kt, PairingUrl.kt, PairState.kt}` | logic | `tablet/android/app/src/test/kotlin/com/spacing/xchange/tablet/{PolicyCasesTest.kt, PairingUrlTest.kt, PairStateTest.kt}`: every case of `policy-cases.json`, W10's scan/code rules, and `PairState` as in §7.11.6 | TW-0 |
+| TW-2 | app | `…/tablet/{TabletActivity.kt, SetupActivity.kt, MeClient.kt}`, `AndroidManifest.xml`, `res/layout/setup.xml`, `tablet/android/DEVICE_CHECKLIST.md` | logic | no CI test for the lock; the checklist covers W1–W4 and W8–W11 and is run on a device, with the result posted on the PR | TW-1 |
+| TW-3 | CI | `.github/workflows/tablet-android.yml`: `workflow_dispatch` plus PRs touching `tablet/android/**`; `./gradlew test` on PRs; a signed APK as an artifact on hand runs; `runs-on` as `app-android.yml:28`; release signing with the existing four `XCHANGE_ANDROID_*` secrets, else the debug key, as `app-android.yml:3-7` | mechanical | the workflow's own run is the test | TW-1 (so its first PR run is green) |
+| TW-F1 | FE | `web/src/screens/customer/queue/{TabletLabel.tsx, TabletLabel.test.tsx, QueueRequest.tsx, queue.css, i18n.ts}` | mechanical | W12 with a fake `me`: paired ⇒ "MAIN · Front-1"; unpaired ⇒ nothing | design merged |
+| TW-i1, TW-i2 | app (iOS) | `tablet/ios/…`: the pure parts tested on `policy-cases.json` (i1), then the view controllers and the checklist (i2) | logic | as TW-1 / TW-2 | Q-W1 = iPad; an Apple Developer account |
+
+**Done lines:** TW-1 and TW-2: `./gradlew test` green, plus the checklist for TW-2. TW-F1: §5r.4's web done line.
+
+**Found while measuring, for the web lane (not wrapper work, R-W5):** on a paired tablet a shell link or sign-up's
+`/app` now lands on the first page (W6), so a customer who opens `/app/history` mid-request leaves that request's
+screen. The page could hide the shell's links on a paired tablet; that is the web lane's call.
+Separately, sign-up drops `?next=` (`SignUp.tsx:47` navigates to `/app`; `:93` links a bare `/app/sign-in`), so on a
+paired tablet a customer who has just signed up lands on the start page without `from=sign-in` and is asked to sign in
+again; on a phone they land on home. The fix is in the web, not in the wrapper's rule: #4648.
+
+#### 7.11.8 Owner questions
+
+1. **Q-W1, the tablet's OS.** Android gives M1 from inside the app (pinning). iPad needs Guided Access for M1 whichever
+   wrapper, plus an Apple Developer account to install the app.
+   **I propose: an Android tablet.** **If no answer:** build the Android app (TW-0..TW-3) and TW-F1; no iOS ticket.
+2. **Q-W2, who holds the exit PIN.** On Android it is the tablet's screen-lock PIN (pinning asks for it). On iPad it is
+   the Guided Access passcode. Either is set in the tablet's Settings at setup, not in our code.
+   **I propose: the branch manager sets it and keeps it.** **If no answer:** the person who sets up the tablet sets
+   it and hands it to the branch manager.
+3. **Q-W3, how the Android app is installed.** A signed APK installed by hand (no store, no review), or a Play Store
+   listing (review, listing and policy pages, for a handful of tablets). **I propose: install by hand.**
+   **If no answer:** install by hand.
+4. **Q-W4, the label's branch.** `me` gives the branch code ("MAIN"), not its display name. **I propose: the code**,
+   which needs no server change. **If no answer:** the code; adding `branchName` to `me` later is one field in BT-4.
