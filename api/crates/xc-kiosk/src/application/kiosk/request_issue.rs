@@ -12,6 +12,7 @@ use chrono_tz::Tz;
 use pos_error::{AppError, AppResult};
 use xc_kernel::ids::BranchId;
 use xc_kernel::queue_tickets::QueueTickets;
+use xc_kernel::tablet_sessions::{NoTabletSessions, TabletSessions};
 
 use crate::domain::kiosk::value_objects::ticket_print_job::TicketPrintJob;
 
@@ -30,11 +31,21 @@ pub struct Issued {
 pub struct RequestIssueService {
     kiosk: KioskService,
     queue: Arc<dyn QueueTickets>,
+    tablet_sessions: Arc<dyn TabletSessions>,
 }
 
 impl RequestIssueService {
     pub fn new(kiosk: KioskService, queue: Arc<dyn QueueTickets>) -> Self {
-        Self { kiosk, queue }
+        Self {
+            kiosk,
+            queue,
+            tablet_sessions: Arc::new(NoTabletSessions),
+        }
+    }
+
+    pub fn with_tablet_sessions(mut self, s: Arc<dyn TabletSessions>) -> Self {
+        self.tablet_sessions = s;
+        self
     }
 
     /// `issueByToken` (D5, D9; B6, B7, B10): `KioskService::issue_by_token`, then the ticket
@@ -50,7 +61,13 @@ impl RequestIssueService {
     ) -> AppResult<Issued> {
         let issued = self
             .kiosk
-            .issue_by_token(branch, token, now, self.queue.clone())
+            .issue_by_token_with_sessions(
+                branch,
+                token,
+                now,
+                self.queue.clone(),
+                self.tablet_sessions.clone(),
+            )
             .await?;
         let tz: Tz = issued.timezone.parse().map_err(|_| {
             AppError::Internal(format!("invalid branch timezone: {}", issued.timezone))

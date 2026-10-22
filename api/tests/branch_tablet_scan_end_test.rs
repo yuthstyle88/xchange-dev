@@ -487,7 +487,6 @@ async fn a_scan_of_a_request_with_no_member_ends_nothing() {
 /// T18: the member's cancel (`webRequestCancel`) deletes their session bound to the B01 tablet
 /// on the cancel's transaction; the phone session stays.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs PR 4481 (feat/kwq-c): webRequestCancel is not on main at BT-0; BT-6 removes this ignore once it merges"]
 async fn t18_the_members_cancel_ends_the_session_bound_to_the_tablet() {
     let db = TestDb::start().await;
     let s = three_sessions(&db).await;

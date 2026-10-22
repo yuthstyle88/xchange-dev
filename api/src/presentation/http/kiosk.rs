@@ -47,6 +47,7 @@ use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::application::compat::v2_json::V2Json;
 use crate::bootstrap::AppState;
+use crate::infrastructure::branch_tablets::pg_tablet_store::PgBranchTabletStore;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::kiosk::pg_kiosk_settings_repository::PgKioskSettingsRepository;
@@ -796,7 +797,8 @@ async fn handle_kiosk(
                 .get(header::ORIGIN)
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("");
-            let issue_service = RequestIssueService::new(service, confirm_queue(pool));
+            let issue_service = RequestIssueService::new(service, confirm_queue(pool))
+                .with_tablet_sessions(Arc::new(PgBranchTabletStore::new(pool.clone())));
             match issue_service
                 .issue_by_token(&branch, token, origin, now)
                 .await
@@ -820,7 +822,8 @@ async fn handle_kiosk(
             if token.is_empty() {
                 return refuse(404, "notFound");
             }
-            let issue_service = RequestIssueService::new(service, confirm_queue(pool));
+            let issue_service = RequestIssueService::new(service, confirm_queue(pool))
+                .with_tablet_sessions(Arc::new(PgBranchTabletStore::new(pool.clone())));
             match issue_service.find_by_token(&branch, token, now).await {
                 Ok(request_id) => answer(200, json!({ "requestId": request_id }), true),
                 Err(AppError::NotFound { .. }) => refuse(404, "notFound"),
