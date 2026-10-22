@@ -99,7 +99,7 @@ pub fn payload_of(body: &Value) -> Value {
 use crate::presentation::extractors::session_actor::{actor_of_user, resolve_session_actor};
 use chrono::{DateTime, Utc};
 use xc_auth::application::session::SessionService;
-use xc_auth::domain::access::{ScopedRole, Standing};
+use xc_auth::domain::access::{ScopedRole, is_staff_caller};
 
 /// The reader `pages.rs` looks up as `web::Data<dyn SessionReader>`.
 pub struct AccountSessionReader;
@@ -122,9 +122,8 @@ impl SessionReader for AccountSessionReader {
                     )
                     .await
                     {
-                        let staff_user = Standing::of(&access_actor, now_utc)
-                            .filter(|s| !s.is_owner())
-                            .map(|_| access_actor.clone());
+                        let staff_user =
+                            is_staff_caller(&access_actor, now_utc).then(|| access_actor.clone());
                         return Callers {
                             user: Some(access_actor),
                             staff_user,
@@ -191,10 +190,17 @@ pub async fn identity_session_actor(
     req: &HttpRequest,
     now: DateTime<Utc>,
 ) -> Option<(xc_auth::domain::user::User, xc_auth::domain::access::Actor)> {
-    let (user, roles) = identity_session(req, now).await.ok().flatten()?;
+    let token = cookie(req, SESSION_COOKIE);
+    if token.is_empty() {
+        return None;
+    }
     let sessions = req.app_data::<web::Data<SessionService>>()?;
-    let actor = actor_of_user(sessions.pool(), &user, roles).await?;
-    Some((user, actor))
+    let active = sessions.active_session(&token, now).await.ok().flatten()?;
+    let branch = active.effective_branch(now);
+    let actor = actor_of_user(sessions.pool(), &active.user, active.roles)
+        .await?
+        .with_branch(branch);
+    Some((active.user, actor))
 }
 
 pub async fn callers(req: &HttpRequest) -> Callers {

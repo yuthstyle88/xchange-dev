@@ -1057,6 +1057,12 @@ pub const WIDENED_BY_11_2: &[(&str, usize, Permission)] = &[
     ("kiosk/queue_work.json", 64, Permission::QueueOperate),
 ];
 
+/// Recorded steps where v2 refused the owner on `/api/staff/rpc` with `401 EMPLOYEE_AUTH_REQUIRED`
+/// and RBAC §11.8 S10 (`user-management-rbac.md` §11.8, #4528) admits the owner as a staff caller
+/// so `Policy::authorize` lets them through: `(fixture, step, permission)`.
+pub const WIDENED_BY_11_8: &[(&str, usize, Option<Permission>)] =
+    &[("rpc/transport.json", 61, None)];
+
 /// CA-10 #626 + RBAC §11.2 (#3659): the owner holds `ExchangeTransact` again via `EXECUTIVE`
 /// (Customers Full), so `Policy::authorize` lets the owner's `saveTransaction` steps through to the
 /// workflow, where the CA-10 teller gate (`check_teller_save_in`) refuses with `ShiftError::NoOpenShift`
@@ -1347,11 +1353,7 @@ impl<'f> Replay<'f> {
                 };
             }
             let v2 = v2_policy_verdict(step, entry, &Action::new(&action));
-            // the staff route reads the staff session only: the owner's is nobody there
-            let caller = actor.as_ref().filter(|_| {
-                !(entry == EntryPath::StaffRpc
-                    && self.fixture.sender(step).is_some_and(Person::is_owner))
-            });
+            let caller = actor.as_ref();
             match route_rule(caller, entry, &action) {
                 Err(refusal) if v2.as_ref().err() != Some(&refusal) => {
                     return Rule::Blueprint(refusal);
@@ -1372,6 +1374,24 @@ impl<'f> Replay<'f> {
                             self.label(step),
                             caller.roles
                         );
+                        return Rule::Widened(v2_refusal);
+                    }
+                    if let Some((_, _, permission)) = WIDENED_BY_11_8
+                        .iter()
+                        .find(|(f, n, _)| *f == self.fixture.name && *n == step.n)
+                    {
+                        let caller = caller.expect("a widened caller is signed in");
+                        if let Some(permission) = permission {
+                            assert!(
+                                caller
+                                    .roles
+                                    .iter()
+                                    .any(|r| RoleGrants::of(r.role.as_str()).contains(permission)),
+                                "{}: listed in WIDENED_BY_11_8 for {permission:?}, which {:?} lacks",
+                                self.label(step),
+                                caller.roles
+                            );
+                        }
                         return Rule::Widened(v2_refusal);
                     }
                     panic!(

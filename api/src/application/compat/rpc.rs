@@ -43,8 +43,8 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use serde_json::{Map, Value};
-use xc_auth::domain::access::Standing;
 use xc_auth::domain::access::authorizer::Grant;
+use xc_auth::domain::access::{Role, Standing};
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -96,10 +96,10 @@ impl RpcCaller {
         !self.standing.is_owner()
     }
 
-    /// The caller as the staff view names them; `None` for the owner.
+    /// The caller as the staff view names them; `None` when the standing has no branch.
     fn staff_member(&self) -> Option<StaffMember> {
         let branch = self.standing.branch.as_ref()?;
-        let role = self.standing.staff_role()?;
+        let role = self.standing.staff_role().unwrap_or(Role::Executive);
         Some(StaffMember {
             id: self.standing.user_id.clone(),
             username: self.username.clone(),
