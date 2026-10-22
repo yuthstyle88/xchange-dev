@@ -123,9 +123,8 @@ impl Policy {
             EntryPath::Kiosk => match act {
                 // R-8 (owner Q12, design kiosk-shared-phone.md §4.2 D19): only staff issue numbers, so the
                 // kiosk `confirm` needs `QueueOperate`.
-                "rates" | "quote" | "status" | "customerReceipt" | "customerCancel" | "settings" => {
-                    Some(Need::Public)
-                }
+                "rates" | "quote" | "status" | "customerReceipt" | "customerCancel"
+                | "settings" => Some(Need::Public),
                 "manage" | "configure" | "configureSettings" => {
                     Some(Need::Permission(Permission::RatesDraft))
                 }
