@@ -20,7 +20,7 @@
 //   :489 [data-testid="shift-handover-form"], :496 select[data-testid="shift-receiver"]
 //   :511 [data-denomination-row], :517 input[data-denomination-id]
 //   :537 [data-testid="shift-handover-save"], :545 button.xc-shift-cancel-btn
-//   :593 li[data-handover-id="<id>"], :600 [data-testid="shift-accept"], :609 [data-testid="shift-reject"]
+//   :593 [data-handover-id="<id>"], :600 [data-testid="shift-accept"], :609 [data-testid="shift-reject"]
 // - web/src/screens/operations/verification/VerificationScreen.tsx:
 //   :274-278 lacks VerificationReview -> setAuthorized(false), setRefusalMessage(st('refused'))
 //   :420 POST /api/operations/verification/cases/{id}/start-review
@@ -68,7 +68,7 @@ const TINY_PNG = Buffer.from(
 
 interface MeViewAnswer {
   data?: {
-    userId?: string;
+    id?: string;
     permissions?: string[];
   };
 }
@@ -126,13 +126,13 @@ function expectWordedRefusal(text: string, context: string): void {
   ).not.toMatch(/^(validationFailed|invalidInput|forbidden|unauthorized|notFound|conflict|internalError|[a-z]+_[a-z_]+)$/);
 }
 
-/** Reads the signed-in user's userId from GET /api/v3/views/me. */
+/** Reads the signed-in user's id from GET /api/v3/views/me (api/src/presentation/dto/v3/common.rs:59-61). */
 async function meUserId(page: Page): Promise<string> {
   const res = await page.request.get('/api/v3/views/me');
   expect(res.ok(), `GET /api/v3/views/me status ${res.status()}`).toBeTruthy();
   const body = (await res.json().catch(() => ({}))) as MeViewAnswer;
-  const uid = String(body.data?.userId ?? '');
-  expect(uid, 'me.data.userId from /api/v3/views/me').not.toBe('');
+  const uid = String(body.data?.id ?? '');
+  expect(uid, 'me.data.id from /api/v3/views/me').not.toBe('');
   return uid;
 }
 
@@ -200,6 +200,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
     const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
     const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
+    let shiftOpened = false;
 
     try {
       // ---- (c) Permission check on /staff shift card ----
@@ -244,6 +245,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
       // Open teller's shift with SHIFT_QTY ('10') on the first THB denomination row.
       await openShift(teller, manager);
+      shiftOpened = true;
       await expect(
         teller.getByTestId('shift-handover'),
         'shift-handover button visible when shift is OPEN (ShiftCard.tsx:422)',
@@ -355,8 +357,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       await teller.reload();
       await manager.reload();
       const pendingItem1 = handoverId1
-        ? manager.locator(`li[data-handover-id="${handoverId1}"]`)
-        : manager.locator('li[data-handover-id]').first();
+        ? manager.locator(`[data-handover-id="${handoverId1}"]`)
+        : manager.locator('[data-handover-id]').first();
       await expect(
         pendingItem1,
         'initiated handover 1 visible on manager /staff after reload (ShiftCard.tsx:593)',
@@ -365,9 +367,9 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         handoverId1 || ((await pendingItem1.getAttribute('data-handover-id')) ?? '');
       expect(resolvedHandoverId1, 'resolved handoverId 1').not.toBe('');
       await expect(
-        teller.locator(`li[data-handover-id="${resolvedHandoverId1}"]`),
-        'initiated handover 1 also visible on teller /staff after reload',
-      ).toBeVisible({ timeout: 20_000 });
+        teller.locator(`[data-handover-id="${resolvedHandoverId1}"]`),
+        'sender is not offered accept/reject for its own handover (ShiftCard.tsx:370-375)',
+      ).toHaveCount(0);
       await shot(manager, 'staff', 'r9-8-handover-started-1');
 
       // Manager clicks shift-reject on handover 1 -> POST /api/handovers/{id}/reject.
@@ -383,7 +385,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       await manager.reload();
       await teller.reload();
       await expect(
-        manager.locator(`li[data-handover-id="${resolvedHandoverId1}"]`),
+        manager.locator(`[data-handover-id="${resolvedHandoverId1}"]`),
         'rejected handover 1 removed from pending list after reload',
       ).toHaveCount(0);
       await expect(
@@ -412,8 +414,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
       await manager.reload();
       const pendingItem2 = handoverId2
-        ? manager.locator(`li[data-handover-id="${handoverId2}"]`)
-        : manager.locator('li[data-handover-id]').first();
+        ? manager.locator(`[data-handover-id="${handoverId2}"]`)
+        : manager.locator('[data-handover-id]').first();
       await expect(
         pendingItem2,
         'initiated handover 2 visible on manager /staff after reload (ShiftCard.tsx:593)',
@@ -437,7 +439,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       await teller.reload();
       await manager.reload();
       await expect(
-        manager.locator(`li[data-handover-id="${resolvedHandoverId2}"]`),
+        manager.locator(`[data-handover-id="${resolvedHandoverId2}"]`),
         'accepted handover 2 removed from pending list after reload',
       ).toHaveCount(0);
       await expect(
@@ -469,7 +471,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       expect(returnStartRes.ok, `return handoverStart (manager -> teller): ${returnStartRes.text}`).toBeTruthy();
 
       await teller.reload();
-      const returnPending = teller.locator('li[data-handover-id]').first();
+      const returnPending = teller.locator('[data-handover-id]').first();
       await expect(returnPending, 'return handover visible to teller').toBeVisible({ timeout: 20_000 });
       const returnAcceptRes = await posted(teller, /^\/api\/handovers\/[^/]+\/accept$/, () =>
         returnPending.getByTestId('shift-accept').click(),
@@ -479,9 +481,13 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       await manager.reload();
       await clockOutIfClockedIn(manager);
     } finally {
-      await closeShift(teller, manager).catch((e) =>
-        console.log(`[R9-8] cleanup closeShift warning: ${e instanceof Error ? e.message : String(e)}`),
-      );
+      if (shiftOpened) {
+        await closeShift(teller, manager).catch((e) =>
+          console.log(`[R9-8] cleanup closeShift warning: ${e instanceof Error ? e.message : String(e)}`),
+        );
+      } else {
+        console.log('[R9-8] cleanup: no shift opened by this test, skipping closeShift');
+      }
       await teller.close();
       await manager.close();
     }

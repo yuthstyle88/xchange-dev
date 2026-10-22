@@ -15,6 +15,10 @@ pub enum KioskAction {
     Configure,
     Cancel,
     CustomerCancel,
+    IssueByToken,
+    FindByToken,
+    Settings,
+    ConfigureSettings,
 }
 
 impl KioskAction {
@@ -35,6 +39,10 @@ impl KioskAction {
             Self::Configure => "configure",
             Self::Cancel => "cancel",
             Self::CustomerCancel => "customerCancel",
+            Self::IssueByToken => "issueByToken",
+            Self::FindByToken => "findByToken",
+            Self::Settings => "settings",
+            Self::ConfigureSettings => "configureSettings",
         }
     }
 }
