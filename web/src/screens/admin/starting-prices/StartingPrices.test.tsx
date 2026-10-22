@@ -386,6 +386,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('.xc-sp-add-currency')).not.toBeNull();
+      expect(container.querySelector('.xc-sp-loading')).toBeNull();
     });
 
     const addInput = container.querySelector('.xc-sp-add-code-input') as HTMLInputElement;
@@ -483,6 +484,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('.xc-sp-add-currency')).not.toBeNull();
+      expect(container.querySelector('.xc-sp-loading')).toBeNull();
     });
 
     const addInput = container.querySelector('.xc-sp-add-code-input') as HTMLInputElement;
