@@ -12,7 +12,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::{ApprovalSubject, SubjectError};
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 use xc_loyalty::application::rule_publisher::{
     LoyaltyRuleError, LoyaltyRuleWriter, RuleKind, RuleVersion,
 };
@@ -228,7 +228,7 @@ impl Default for LoyaltyRuleVersionPolicy {
 
 impl ApprovalPolicy for LoyaltyRuleVersionPolicy {
     fn may_decide(&self, who: &Actor, _request: &ApprovalRequest) -> Result<(), Refusal> {
-        if who.roles.iter().any(|r| r.role == Role::Executive) {
+        if ApprovalDecider::holds_anywhere(who, Permission::ApproveLoyaltyRuleVersion) {
             Ok(())
         } else {
             Err(Refusal::new(
