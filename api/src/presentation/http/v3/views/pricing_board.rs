@@ -264,8 +264,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
                 Tier1Published {
                     buy,
                     sell,
-                    partner_cost: partner_cost_str
-                        .and_then(|s| Decimal::from_str(s.trim()).ok()),
+                    partner_cost: partner_cost_str.and_then(|s| Decimal::from_str(s.trim()).ok()),
                     published_at,
                 },
             );
@@ -403,10 +402,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
         let ref_unit: Decimal = ref_row.get("unit_size");
         let ref_buy: Option<Decimal> = ref_row.get("buy");
         let ref_sell: Option<Decimal> = ref_row.get("sell");
-        let cur_unit = unit_by_currency
-            .get(code)
-            .copied()
-            .unwrap_or(Decimal::ONE);
+        let cur_unit = unit_by_currency.get(code).copied().unwrap_or(Decimal::ONE);
         if ref_unit > Decimal::ZERO && cur_unit > Decimal::ZERO {
             let b_buy = ref_buy
                 .map(|b| b * cur_unit / ref_unit)
@@ -442,7 +438,9 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
         .filter(|c| {
             quotes_by_currency.get(*c).is_some_and(|qs| {
                 qs.iter().any(|q| q.market_source == MarketSource::Tt)
-                    && qs.iter().any(|q| q.market_source == MarketSource::SuperRich)
+                    && qs
+                        .iter()
+                        .any(|q| q.market_source == MarketSource::SuperRich)
             })
         })
         .cloned()
@@ -461,10 +459,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
     let mut rows = Vec::with_capacity(ordered_codes.len());
     let mut counters = Vec::new();
     for (code, enabled) in ordered_codes {
-        let cur_unit = unit_by_currency
-            .get(&code)
-            .copied()
-            .unwrap_or(Decimal::ONE);
+        let cur_unit = unit_by_currency.get(&code).copied().unwrap_or(Decimal::ONE);
         let unit_size = cur_unit.normalize().to_string();
         let ovr = overrides.iter().find(|o| o.currency.as_str() == code);
         let overridden = ovr.and_then(|o| o.tiers.as_ref()).is_some();
