@@ -30,7 +30,7 @@
 | SF-c (B4) | `web/src/screens/customer/book/Book.tsx`, `web/src/screens/customer/book/Book.slots-parse.test.tsx` | mechanical | — |
 
 ## 4. Not in this round
-- **B3, the sign-up terms text** (`TermsText.tsx:37-39` returns null, so sign-up records TERMS consent to a text the person never saw). This waits on an **owner decision**: block sign-up until the text loads, or only warn.
+- **B3, the sign-up terms text:** moved to §6 (owner decision 2026-10-22: A).
 - **B5, pricing `me` failure** (`Pricing.tsx:80-87`: `api.view('me')…catch(() => {})`, the #1719 pattern). Not fixed in this round. The admin pricing screen is under the pricing work of #4324 (its body names `web/src/screens/admin/pricing/TierEditor.tsx` in the same folder). No File scope at fa4163ab claims `Pricing.tsx` yet.
 - **G-ME:** three staff screens pin a silent hide when `me` fails. Designed in §5.
 - **Already decided as "not a bug"** (so they are not re-audited): `BranchLive.tsx:33,45`, `save.ts:213,275`, `ReceiptFrame.tsx:47`, `tablet.ts:48`, `Shell.tsx:65`, `DeskBookingsScreen.tsx:212`, and the `UsersScreen` and `VerificationScreen` fallbacks pinned by their designs.
@@ -105,3 +105,50 @@ Notes for the implementers:
 - **B04 and the referral field still read `me` themselves** (GM-4). Moving them onto the session store needs the rows named
   in GM-4 retired or rewritten (B04's D2 changes from "the screen reads me" to "the session reads me"). That is a
   controller decision; the shared line and text do not change either way.
+
+## 6. SF-5: sign-up waits for the TERMS text (owner 2026-10-22: A)
+
+> designed-by: claude/e8020026 (XC FE lane controller), through a sub-agent, 2026-10-22 ICT, measured on main
+> `ab456e93`. Owner decision 2026-10-22 ~15:25 ICT, verbatim "A": **sign-up is blocked until the TERMS text has loaded
+> and is shown.** The alternative, warning only, was rejected. Skeleton and up-front tests: branch `feat/sf5-terms`.
+
+### 6.1 Bug and root cause
+
+| Screen | What the person sees | Root cause |
+|---|---|---|
+| B3 `/app/sign-up` | Any failure to read the TERMS text (host read, texts read, network, a body that is not an array) or no TERMS text in the page language shows the generic line "By signing up you accept the terms of service", and the submit button works. Sign-up records TERMS consent (the server writes the TERMS text of `lang`) to a text the person never saw. | `TermsText.tsx:33,36,37-38`: `loadTerms` turns every outcome other than "found" into `null`, and `null` shows the static `terms` line. `SignUp.tsx:88-89`: `<TermsText />` reports nothing to its parent, and the button is gated only on `pending()`. `TermsText` also reads through the global `fetch`, not the screen's. |
+
+The server already refuses a sign-up with no TERMS text in `lang` (`ConsentTextMissing`,
+`api/src/application/customer_binder.rs:25`), so `missing` is refused either way. The gap is `failed`: the text exists,
+the person did not see it, and the server accepts.
+
+### 6.2 Rule
+
+| # | Decision |
+|---|---|
+| SF-5.1 | **`TermsText` reports a state** `TermsState = 'loading' \| 'ready' \| 'missing' \| 'failed'` through `onState?: (state: TermsState) => void`. It calls `onState('loading')` each time a read starts (on mount and on retry), then `onState(<outcome>)` when that read ends. Its existing props (`fetch`, `api`) keep working, and `onState` is optional. |
+| SF-5.2 | **`ready`**: the TERMS item in the page language was found. Body and version are shown as today (`terms-body`, `terms-version`). |
+| SF-5.3 | **`missing`**: a 200 answer that is an array with no TERMS item (`[]`, or only MARKETING). It shows `<p class="xc-sign-in-terms-missing" role="alert" data-testid="terms-missing">` with `consentTextMissing`, the sentence the server's refusal already shows for the same fact. No retry: changing the language is the remedy. |
+| SF-5.4 | **`failed`**: the host read failed (a refusal, a network failure, or an answer with no org: `readHostOrg` throws), the texts read failed (non-2xx or network), or the texts answer is not an array. It shows `<div class="xc-sign-in-terms-failed-box">` holding `<p class="xc-sign-in-terms-failed" role="alert" data-testid="terms-failed">` with `termsFailed`, and `<button type="button" class="xc-sign-in-link" data-testid="terms-retry">` with `termsRetry`. The button is `type="button"`, so it never submits the form. A click loads again (host and texts), through the same path. |
+| SF-5.5 | **`loading`** shows `<p class="xc-sign-in-terms" data-testid="terms-loading">` with `termsLoading`. **No state but `ready` shows the static `terms` line.** The `terms` key stays in `i18n.ts`, because the tests use it to prove it is not shown. |
+| SF-5.6 | **`SignUp.tsx`** passes its `fetch` to `TermsText` (in the skeleton) and keeps the reported state in a signal that starts at `loading`. The submit button is `disabled={pending() \|\| state !== 'ready'}`, and `submit` returns before posting when the state is not `ready` (a form submit event, e.g. Enter in a field, must not post either). It never posts `/api/app/register` without a shown TERMS text. |
+
+### 6.3 Ticket
+
+| Ticket | File scope | Class | Needs |
+|---|---|---|---|
+| SF-5 | `web/src/screens/customer/sign-in/TermsText.tsx`<br>`web/src/screens/customer/sign-in/SignUp.tsx` | logic | — |
+
+Skeleton (on `feat/sf5-terms`, do not edit): the `TermsState` type and the `onState` prop (not called yet);
+`<TermsText fetch={props.fetch} />` in `SignUp.tsx`; keys `termsLoading`, `termsFailed`, `termsRetry` (th, en, zh) in
+`customer/sign-in/i18n.ts`; classes `.xc-sign-in-terms-missing`, `.xc-sign-in-terms-failed`,
+`.xc-sign-in-terms-failed-box` in `sign-in.css`. Retired, because the owner's decision supersedes them:
+`TermsText.test.tsx` "falls back to the static terms line when %s" (5 rows). The other SignUp tests'
+(`SignUp.client`, `SignUp.next`, `sign-in`, `worded`) fake servers now also answer the host and a TERMS text and wait for
+it before clicking; no assertion changed.
+
+Up-front tests (do not edit): `customer/sign-in/TermsText.state.test.tsx` (13: 12 red, 1 guard) and
+`customer/sign-in/SignUp.terms-gate.test.tsx` (9: 8 red, 1 guard).
+
+Note for the implementer: let `loadTerms` return the outcome (`{state:'ready', text} | {state:'missing'} |
+{state:'failed'}`) instead of `null`, and keep the `ApiClient` in the component so a retry reuses it.
