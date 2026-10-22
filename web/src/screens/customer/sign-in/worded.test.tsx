@@ -8,6 +8,27 @@ import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
 import { SignUp } from './SignUp';
 
+// SF-5 harness (docs/design/web-silent-failures.md §6): sign-up waits for the TERMS text, so the fake server also
+// answers the host and a TERMS consent text; every other request goes to this test's own fake, unchanged.
+function withTerms(inner: typeof fetch): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (path === '/api/public/host') return json({ org: 'XC' });
+    if (path === '/api/public/orgs/XC/consent_texts') return json([{ purpose: 'TERMS', version: 1, body: 'Terms.' }]);
+    return inner(input, init);
+  }) as typeof fetch;
+}
+
+/** SF-5 harness: wait until the TERMS text is shown and the submit button can be pressed. */
+async function waitForTerms(root: HTMLElement): Promise<void> {
+  await vi.waitFor(() => {
+    if (!root.querySelector('[data-testid="terms-body"]')) throw new Error('TERMS text not shown yet');
+    if (root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled) throw new Error('submit disabled');
+  });
+}
+
 describe('SignUp worded error handling (#1779)', () => {
   let host: HTMLDivElement;
   let dispose: (() => void) | undefined;
@@ -31,7 +52,7 @@ describe('SignUp worded error handling (#1779)', () => {
   function mount(mockFetch: typeof fetch) {
     const navigate = vi.fn();
     dispose = render(
-      () => <SignUp navigate={navigate} fetch={mockFetch} />,
+      () => <SignUp navigate={navigate} fetch={withTerms(mockFetch)} />,
       host,
     );
     return { navigate };
@@ -52,6 +73,7 @@ describe('SignUp worded error handling (#1779)', () => {
 
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtn).not.toBeNull();
+      await waitForTerms(host);
       submitBtn!.click();
 
       await vi.waitFor(() => {
@@ -66,6 +88,7 @@ describe('SignUp worded error handling (#1779)', () => {
 
       const submitBtnEn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtnEn).not.toBeNull();
+      await waitForTerms(host);
       submitBtnEn!.click();
 
       await vi.waitFor(() => {
@@ -87,6 +110,7 @@ describe('SignUp worded error handling (#1779)', () => {
 
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtn).not.toBeNull();
+      await waitForTerms(host);
       submitBtn!.click();
 
       await vi.waitFor(() => {
@@ -108,6 +132,7 @@ describe('SignUp worded error handling (#1779)', () => {
 
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtn).not.toBeNull();
+      await waitForTerms(host);
       submitBtn!.click();
 
       await vi.waitFor(() => {

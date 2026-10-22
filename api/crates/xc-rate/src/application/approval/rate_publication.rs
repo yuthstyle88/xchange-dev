@@ -8,7 +8,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 
 pub struct RatePublicationSubject;
 
@@ -89,7 +89,7 @@ impl RatePublicationPolicy {
 
 impl ApprovalPolicy for RatePublicationPolicy {
     fn may_decide(&self, who: &Actor, _request: &ApprovalRequest) -> Result<(), Refusal> {
-        if who.roles.iter().any(|r| r.role == Role::Executive) {
+        if ApprovalDecider::holds_anywhere(who, Permission::ApproveRatePublication) {
             Ok(())
         } else {
             Err(Refusal::new(
@@ -100,7 +100,7 @@ impl ApprovalPolicy for RatePublicationPolicy {
     }
 
     fn allows_self_decision(&self, who: &Actor) -> bool {
-        who.roles.iter().any(|r| r.role == Role::Executive)
+        ApprovalDecider::holds_anywhere(who, Permission::ApproveRatePublication)
     }
 
     fn policy_version(&self) -> String {

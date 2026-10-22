@@ -12,6 +12,12 @@ use super::agent_repository::{
     AgentRepository, AgentSeen, ClaimArgs, ClaimStep, ClaimWindow, DeviceAgent, JobLease, NewAgent,
 };
 use crate::infrastructure::devices::device_job::{DeviceJob, JobKind, JobStatus};
+use crate::infrastructure::devices::device_repository::{DeviceRepository, NewEvent};
+use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
+use crate::infrastructure::paired_devices::kind::DeviceKind;
+use crate::infrastructure::paired_devices::store::{
+    NewPaired, PairedDevice, PairedDeviceStore, Tx,
+};
 
 #[derive(Clone)]
 pub struct PgAgentRepository {
@@ -464,5 +470,138 @@ impl AgentRepository for PgAgentRepository {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(DeviceAgent::from).collect())
+    }
+}
+
+impl PairedDevice for DeviceAgent {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn branch_id(&self) -> &str {
+        &self.branch_id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn is_revoked(&self) -> bool {
+        self.revoked_at.is_some()
+    }
+}
+
+impl PairedDeviceStore for PgAgentRepository {
+    const KIND: DeviceKind = DeviceKind::DrawerAgent;
+    type Device = DeviceAgent;
+    type Seen<'a> = AgentSeen<'a>;
+
+    async fn insert_pending_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        device: &NewPaired<'_>,
+    ) -> AppResult<bool> {
+        let new_agent = NewAgent {
+            id: device.id,
+            name: device.name,
+            created_by: device.created_by,
+            pair_code_hash: device.pair_code_hash,
+            pair_code_expires_at: device.pair_code_expires_at,
+            at: device.at,
+        };
+        AgentRepository::insert_agent(self, tx, branch, &new_agent).await
+    }
+
+    async fn set_code_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        pair_code_hash: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<bool> {
+        AgentRepository::set_pairing(self, tx, branch, id, pair_code_hash, expires_at).await
+    }
+
+    async fn pair(
+        &self,
+        pair_code_hash: &str,
+        token_hash: &str,
+        seen: &Self::Seen<'_>,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<DeviceAgent>> {
+        AgentRepository::pair(self, pair_code_hash, token_hash, seen, now).await
+    }
+
+    async fn find_by_token_hash(&self, token_hash: &str) -> AppResult<Option<DeviceAgent>> {
+        AgentRepository::find_by_token_hash(self, token_hash).await
+    }
+
+    async fn find(&self, id: &str) -> AppResult<Option<DeviceAgent>> {
+        AgentRepository::find(self, id).await
+    }
+
+    async fn revoke_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        id: &str,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<bool> {
+        let done = sqlx::query(
+            "UPDATE device_agents SET revoked_at = $4, revoked_by = $3 \
+             WHERE branch_id = $1 AND id = $2::uuid AND revoked_at IS NULL",
+        )
+        .bind(branch.as_str())
+        .bind(id)
+        .bind(actor)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    async fn after_revoke_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        _id: &str,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        let failed: Vec<JobRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "UPDATE device_jobs SET status = 'FAILED', outcome_reason = $3, updated_at = $2 \
+             WHERE branch_id = $1 AND status = 'QUEUED' AND kind = 'DRAWER_REQUEST' \
+             RETURNING {JOB_COLUMNS}"
+        )))
+        .bind(branch.as_str())
+        .bind(now)
+        .bind(AGENT_REVOKED)
+        .fetch_all(&mut **tx)
+        .await?;
+        let device_repo = PgDeviceRepository::new(self.pool.clone());
+        for job in ordered(failed)? {
+            let detail = serde_json::json!({
+                "job": job.id,
+                "reason": AGENT_REVOKED,
+            });
+            let line = NewEvent {
+                dedupe: None,
+                actor,
+                kind: "FAILED",
+                reference: &job.reference,
+                detail: &detail,
+                amounts: &[],
+                at: now,
+            };
+            device_repo.insert_event(tx, branch, &line).await?;
+        }
+        Ok(())
+    }
+
+    async fn list(&self) -> AppResult<Vec<DeviceAgent>> {
+        AgentRepository::list(self).await
     }
 }

@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 use xc_kernel::money::Side;
 
-use super::calculator::{ParamError, decimal_param};
+use super::calculator::{MONEY_SCALE, ParamError, RATE_SCALE, decimal_param};
 use super::eligibility::{Eligibility, EligibilityContext};
 use super::registry::CalculatorRegistry;
 use super::rule::{BenefitClass, BenefitRule};
@@ -90,10 +90,10 @@ pub fn summary(
         field: "benefitType",
         reason: format!("unknown benefit type: {}", rule.benefit_type),
     })?;
-    let delta = decimal_param(&rule.calculation, "delta", "delta")?;
-    let percent = decimal_param(&rule.calculation, "percent", "percent")?;
-    let amount = decimal_param(&rule.calculation, "amount", "amount")?;
-    let fixed = decimal_param(&rule.calculation, "fixed", "fixed")?;
+    let delta = decimal_param(&rule.calculation, "delta", "delta", RATE_SCALE)?;
+    let percent = decimal_param(&rule.calculation, "percent", "percent", RATE_SCALE)?;
+    let amount = decimal_param(&rule.calculation, "amount", "amount", MONEY_SCALE)?;
+    let fixed = decimal_param(&rule.calculation, "fixed", "fixed", MONEY_SCALE)?;
     calc.validate_params(&rule.calculation)?;
     Ok(BenefitSummary {
         benefit_type: rule.benefit_type.clone(),

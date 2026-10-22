@@ -1,5 +1,7 @@
 // APP-7 (#998) C14 sign-in and sign-up texts (design customer-app.md §4.5).
 // Note: Chinese texts are checked by a reader of Chinese before review (languages.md L7).
+// SF-5 (web-silent-failures.md §6): `termsLoading`, `termsFailed`, `termsRetry`; the `missing` state reuses
+// `consentTextMissing`, the sentence the server's refusal already shows for the same fact.
 
 export const th = {
   signInTitle: 'เข้าสู่ระบบ',
@@ -26,6 +28,9 @@ export const th = {
   consentTextMissing: 'ยังไม่มีข้อกำหนดการใช้บริการในภาษานี้ กรุณาเลือกภาษาอื่น',
   alreadyRegistered: 'บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ',
   termsVersion: 'ข้อกำหนดฉบับที่ {version}',
+  termsLoading: 'กำลังโหลดข้อกำหนดการใช้บริการ…',
+  termsFailed: 'โหลดข้อกำหนดการใช้บริการไม่สำเร็จ จึงยังสมัครสมาชิกไม่ได้ กรุณาลองอีกครั้ง',
+  termsRetry: 'ลองอีกครั้ง',
 };
 
 export const en = {
@@ -53,6 +58,9 @@ export const en = {
   consentTextMissing: 'The terms of service are not available in this language yet. Please choose another language',
   alreadyRegistered: 'This account is already registered. Please sign in',
   termsVersion: 'Terms, version {version}',
+  termsLoading: 'Loading the terms of service…',
+  termsFailed: 'The terms of service could not be loaded, so sign-up is not available yet. Please try again',
+  termsRetry: 'Try again',
 };
 
 export const zh = {
@@ -80,4 +88,7 @@ export const zh = {
   consentTextMissing: '此语言暂无服务条款，请选择其他语言',
   alreadyRegistered: '该账户已注册，请登录',
   termsVersion: '条款第 {version} 版',
+  termsLoading: '正在加载服务条款…',
+  termsFailed: '服务条款加载失败，暂时无法注册，请重试',
+  termsRetry: '重试',
 };

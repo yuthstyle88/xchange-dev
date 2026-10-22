@@ -11,7 +11,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome, RequestId};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::count::CashCount;
@@ -114,13 +114,9 @@ pub struct CountDifferencePolicy;
 impl ApprovalPolicy for CountDifferencePolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
         let req_branch = request.branch_id.as_deref();
-        let is_finance_of_branch = who
-            .roles
-            .iter()
-            .any(|r| r.role == Role::Finance && r.covers(req_branch));
-        if is_finance_of_branch {
+        if ApprovalDecider::holds_on(who, Permission::ApproveCountDifference, req_branch) {
             Ok(())
-        } else if !who.roles.iter().any(|r| r.role == Role::Finance) {
+        } else if !ApprovalDecider::holds_anywhere(who, Permission::ApproveCountDifference) {
             Err(Refusal::new(
                 "outOfScope",
                 "only finance staff may decide count difference",

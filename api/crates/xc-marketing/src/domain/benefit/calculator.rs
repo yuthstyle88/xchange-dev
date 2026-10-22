@@ -24,6 +24,9 @@ impl fmt::Display for ParamError {
 
 impl std::error::Error for ParamError {}
 
+pub const MONEY_SCALE: u32 = 2;
+pub const RATE_SCALE: u32 = 8;
+
 /// Reads an optional decimal-string parameter from `params[key]` (D-6a).
 ///
 /// Absent ⇒ `Ok(None)`; a JSON string `Decimal` reads ⇒ `Ok(Some)`; anything else (including a
@@ -32,6 +35,7 @@ pub fn decimal_param(
     params: &serde_json::Value,
     key: &str,
     field: &'static str,
+    max_scale: u32,
 ) -> Result<Option<Decimal>, ParamError> {
     let Some(val) = params.get(key) else {
         return Ok(None);
@@ -42,10 +46,17 @@ pub fn decimal_param(
             reason: format!("parameter {key:?} must be a decimal string"),
         });
     };
-    Decimal::from_str(s).map(Some).map_err(|e| ParamError {
+    let value = Decimal::from_str(s).map_err(|e| ParamError {
         field,
         reason: format!("parameter {key:?} is not a valid decimal: {e}"),
-    })
+    })?;
+    if value.normalize().scale() > max_scale {
+        return Err(ParamError {
+            field,
+            reason: format!("parameter {key:?} has more than {max_scale} decimal places"),
+        });
+    }
+    Ok(Some(value))
 }
 
 /// The calculated effect of applying a benefit to a quote line.

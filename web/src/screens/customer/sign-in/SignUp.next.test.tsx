@@ -11,6 +11,27 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
+// SF-5 harness (docs/design/web-silent-failures.md §6): sign-up waits for the TERMS text, so the fake server also
+// answers the host and a TERMS consent text; every other request goes to this test's own fake, unchanged.
+function withTerms(inner: typeof fetch): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (path === '/api/public/host') return json({ org: 'XC' });
+    if (path === '/api/public/orgs/XC/consent_texts') return json([{ purpose: 'TERMS', version: 1, body: 'Terms.' }]);
+    return inner(input, init);
+  }) as typeof fetch;
+}
+
+/** SF-5 harness: wait until the TERMS text is shown and the submit button can be pressed. */
+async function waitForTerms(root: HTMLElement): Promise<void> {
+  await vi.waitFor(() => {
+    if (!root.querySelector('[data-testid="terms-body"]')) throw new Error('TERMS text not shown yet');
+    if (root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled) throw new Error('submit disabled');
+  });
+}
+
 describe('APP-7d (#4648): sign-up returns to ?next= and keeps next on the sign-in link', () => {
   let host: HTMLDivElement;
   let dispose: (() => void) | undefined;
@@ -45,12 +66,13 @@ describe('APP-7d (#4648): sign-up returns to ?next= and keeps next on the sign-i
 
   function renderSignUp(search: string): ReturnType<typeof vi.fn> {
     const navigate = vi.fn();
-    dispose = render(() => <SignUp navigate={navigate} fetch={fetchFn} search={search} />, host);
+    dispose = render(() => <SignUp navigate={navigate} fetch={withTerms(fetchFn)} search={search} />, host);
     return navigate;
   }
 
   async function landsOn(search: string, expected: string): Promise<void> {
     const navigate = renderSignUp(search);
+    await waitForTerms(host);
     host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
     expect(navigate).toHaveBeenCalledWith(expected);
@@ -102,6 +124,7 @@ describe('APP-7d (#4648): sign-up returns to ?next= and keeps next on the sign-i
   it('a failed register navigates nowhere', async () => {
     registerStatus = 409;
     const navigate = renderSignUp('?next=%2Fapp%2Fqueue%3Fbranch%3DMAIN%26from%3Dsign-in');
+    await waitForTerms(host);
     host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
     await vi.waitFor(() =>
       expect(fetchFn.mock.calls.filter((c) => String(c[0]) === '/api/app/register').length).toBeGreaterThan(0),

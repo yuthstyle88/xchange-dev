@@ -58,3 +58,17 @@
   white-space: pre-wrap;
 }
 
+
+/* SF-5 (web-silent-failures.md §6): sign-up waits for the TERMS text. */
+.xc-sign-in-terms-missing,
+.xc-sign-in-terms-failed {
+  color: var(--xc-danger, #ef4444);
+  margin: 0;
+}
+
+.xc-sign-in-terms-failed-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}

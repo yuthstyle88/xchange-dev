@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from 'solid-js';
-import { ApiClient, type Fetch, type ViewAnswer, type ViewParams } from '../api/client';
+import { ApiClient, ApiError, type Fetch, type ViewAnswer, type ViewParams } from '../api/client';
 import type { Me, MeRole } from '../api/generated/common';
 import { ViewPoller } from '../live/view-poller';
 import { goChangePassword, needsPasswordChange, passwordChangeUrl } from './password-change';
@@ -29,6 +29,18 @@ export function sameAccount(a: Account, b: Account): boolean {
 
 export interface SessionStore {
   me: Accessor<Me | undefined>;
+  /**
+   * G-ME (`docs/design/web-silent-failures.md` §5): the last failure of the session's own `me` read, as an `ApiError`
+   * (a thrown `ApiError` as is; anything else, e.g. a network `TypeError`, as `ApiError{code:'network', status:0}`),
+   * cleared by the next good read. Reactive. Optional here only so the many test fakes of `SessionStore` stay valid;
+   * `EndingSessionStore` (the real store) always has it.
+   */
+  meError?: Accessor<ApiError | null>;
+  /**
+   * G-ME: re-reads `me` now, through the session's own poller (the one reader of `me`; no second request path). It
+   * does nothing once the session has ended or signed out. The poller's schedule and backoff are unchanged after it.
+   */
+  retryMe?(): void;
   ended?: Accessor<EndReason | undefined>;
   end?: (reason: EndReason) => void;
   switchBranch?(branch: string): Promise<void>;
@@ -38,6 +50,8 @@ export interface SessionStore {
 }
 
 export interface EndingSessionStore extends SessionStore {
+  meError: Accessor<ApiError | null>;
+  retryMe(): void;
   ended: Accessor<EndReason | undefined>;
   end(reason: EndReason): void;
   switchBranch(branch: string): Promise<void>;
@@ -97,6 +111,7 @@ export function endingFetch(inner: Fetch, onEnd: () => void, onPasswordChange?: 
 export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): EndingSessionStore {
   const [signedOut, setSignedOut] = createSignal(false);
   const [ended, setEnded] = createSignal<EndReason | undefined>(undefined);
+  const [meError, setMeError] = createSignal<ApiError | null>(null);
 
   let poller!: ViewPoller<Me>;
 
@@ -111,19 +126,33 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
     view: async <T>(name: string, params: ViewParams = {}): Promise<ViewAnswer<T>> => {
       try {
         const answer = await api.view<T>(name, params);
-        if (name === 'me' && answer.changed && answer.data !== undefined) {
-          const held = poller.data();
-          const next = answer.data as unknown as Me;
-          if (held !== undefined) {
-            if (!sameAccount(next, held)) {
-              end('switched');
-            } else if (next.branch !== held.branch) {
-              end('branchChanged');
+        if (name === 'me') {
+          setMeError(null);
+          if (answer.changed && answer.data !== undefined) {
+            const held = poller.data();
+            const next = answer.data as unknown as Me;
+            if (held !== undefined) {
+              if (!sameAccount(next, held)) {
+                end('switched');
+              } else if (next.branch !== held.branch) {
+                end('branchChanged');
+              }
             }
           }
         }
         return answer;
       } catch (err: unknown) {
+        if (name === 'me') {
+          setMeError(
+            err instanceof ApiError
+              ? err
+              : new ApiError({
+                  code: 'network',
+                  message: err instanceof Error ? err.message : 'network',
+                  status: 0,
+                }),
+          );
+        }
         const status = (err as { status?: number })?.status;
         const code = (err as { code?: string })?.code;
         if (status !== undefined && endsSession(status, code) && poller.data() !== undefined) {
@@ -147,8 +176,16 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
     return manualMe() ?? poller.data();
   };
 
+  const retryMe = (): void => {
+    if (signedOut() || ended() !== undefined) return;
+    poller.stop();
+    poller.start();
+  };
+
   const store: EndingSessionStore = {
     me,
+    meError,
+    retryMe,
     ended,
     end,
     async switchBranch(branch: string): Promise<void> {

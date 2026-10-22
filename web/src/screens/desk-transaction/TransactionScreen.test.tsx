@@ -360,13 +360,9 @@ describe('states (D11)', () => {
     expect(state()).toBe('ready');
   });
 
-  it('me failing still shows the data, with no action button', async () => {
-    await mount({ me: { status: 500, json: { error: { code: 'serverError', message: 'x' } } } });
-    expect(state()).toBe('ready');
-    expect(text()).toContain('35120.00');
-    expect(btn('reprint')).toHaveLength(0);
-    expect(btn('request-reversal')).toHaveLength(0);
-  });
+  // Retired by G-ME (docs/design/web-silent-failures.md §5, the #1719 standard): "me failing ⇒ no action button" was
+  // the silent hide. A failed `me` read is now worded and the actions are shown disabled with the reason; see
+  // TransactionScreen.me-error.test.tsx.
 });
 
 // ── content (D3) ────────────────────────────────────────────────────────────────────────────────────────────────

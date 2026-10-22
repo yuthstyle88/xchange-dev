@@ -1,10 +1,12 @@
 // C14 up-front tests (feat/fe-customer-2 skeleton): TermsText shows the published TERMS text in the page language
-// from the public `GET /api/public/orgs/{org}/consent_texts?lang=` (BE contract #3409), and falls back to today's
-// static line when there is none. The implementer makes these pass and must not edit them.
+// from the public `GET /api/public/orgs/{org}/consent_texts?lang=` (BE contract #3409). The implementer makes these pass
+// and must not edit them.
+// SF-5 (docs/design/web-silent-failures.md §6, owner 2026-10-22 "A") retired the five "falls back to the static terms
+// line when …" rows: a missing or failed text no longer shows the static line. TermsText.state.test.tsx pins what it
+// shows instead.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import * as table from './i18n';
 import { TermsText } from './TermsText';
 
 type Reply = { status: number; body: unknown } | 'network';
@@ -65,19 +67,5 @@ describe('TermsText (C14)', () => {
     mount(s.fetchFn);
     await flush();
     expect(s.urls.find((u) => u.pathname.endsWith('/consent_texts'))?.searchParams.get('lang')).toBe('zh');
-  });
-
-  it.each<[string, { host?: Reply; texts?: Reply }]>([
-    ['no text in this language', { texts: { status: 200, body: [] } }],
-    ['only a MARKETING text', { texts: { status: 200, body: [TEXTS[0]] } }],
-    ['the host fails', { host: { status: 500, body: {} } }],
-    ['the texts read fails', { texts: { status: 503, body: {} } }],
-    ['the network is down', { texts: 'network' }],
-  ])('falls back to the static terms line when %s', async (_why, over) => {
-    setLang('en');
-    mount(server(over).fetchFn);
-    await flush();
-    expect(host.querySelector('.xc-sign-in-terms')?.textContent).toBe(table.en.terms);
-    expect(host.querySelector('[data-testid="terms-body"]')).toBeNull();
   });
 });

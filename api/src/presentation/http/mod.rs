@@ -2,6 +2,7 @@
 pub mod app_receipts;
 pub mod app_verification_upload;
 pub mod auth;
+pub mod branch_tablets;
 pub mod branch_verification_intake;
 pub mod client_address;
 pub mod customer_register;
@@ -31,6 +32,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     auth::configure(cfg, state);
     customer_register::configure(cfg);
     app_receipts::configure(cfg, state);
+    branch_tablets::configure(cfg, state);
     branch_verification_intake::configure(cfg, state);
     customers::configure(cfg, state);
     device_agent::configure(cfg, state);

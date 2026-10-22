@@ -292,11 +292,9 @@ describe('RF-9: the step is shown only to ReversalRequest on OWNER_DESK', () => 
     expect(reads('desk_refunds')).toEqual([]);
   });
 
-  it('when me fails: no nav item, and desk_refunds is never called', async () => {
-    await boot({ me: 'fail' });
-    expect(navItem()).toBeNull();
-    expect(reads('desk_refunds')).toEqual([]);
-  });
+  // Retired by G-ME (docs/design/web-silent-failures.md §5, the #1719 standard): "when me fails: no nav item" was the
+  // silent hide. A failed `me` read is now worded and the nav item is shown disabled with the reason (desk_refunds is
+  // still never called); see refunds.me-error.test.tsx.
 
   it('on STAFF_DESK (/staff/desk): no nav item, and desk_refunds is never called (O-8)', async () => {
     await boot({}, '/staff/desk');

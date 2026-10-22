@@ -107,11 +107,23 @@ impl RoleGrants {
         Role::VerificationReviewer,
     ];
 
-    /// Current seed version (#3976, #4155).
-    pub const SEED_VERSION: i32 = 3;
+    /// Current seed version (#3976, #4155; RBAC §11.9: 4, the nine approval kinds).
+    pub const SEED_VERSION: i32 = 4;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
-    pub const SEED_ADDITIONS: &[(i32, Permission)] = &[(2, Permission::MarketRatesRefresh)];
+    pub const SEED_ADDITIONS: &[(i32, Permission)] = &[
+        (2, Permission::MarketRatesRefresh),
+        // RBAC §11.9: the nine approval kinds, each seeded on the base role that decides it today.
+        (4, Permission::ApproveCashTransferWithinLimit),
+        (4, Permission::ApproveCashTransferAboveLimit),
+        (4, Permission::ApproveCountDifference),
+        (4, Permission::ApproveNegativeStock),
+        (4, Permission::ApproveCampaignVersion),
+        (4, Permission::ApproveRatePublication),
+        (4, Permission::ApproveExchangeTransaction),
+        (4, Permission::ApproveTransactionReversal),
+        (4, Permission::ApproveLoyaltyRuleVersion),
+    ];
 
     /// Permissions removed from [`Self::seed`] after version 1, with the seed version in which they left (#4155).
     pub const SEED_REMOVALS: &[(i32, Permission)] = &[
@@ -191,6 +203,11 @@ impl RoleGrants {
         let no_module: &[Permission] = match role {
             Role::Executive => &[
                 P::ApprovalsDecide,
+                // RBAC §11.9: the organisation approval kinds.
+                P::ApproveCashTransferAboveLimit,
+                P::ApproveCampaignVersion,
+                P::ApproveRatePublication,
+                P::ApproveLoyaltyRuleVersion,
                 P::CashManage,
                 P::AttendanceClock,
                 P::CompatRead,
@@ -211,6 +228,10 @@ impl RoleGrants {
             ],
             Role::BranchManager => &[
                 P::ApprovalsDecide,
+                // RBAC §11.9: the branch approval kinds a branch manager decides today.
+                P::ApproveCashTransferWithinLimit,
+                P::ApproveNegativeStock,
+                P::ApproveExchangeTransaction,
                 P::CashManage,
                 P::ShiftOperate,
                 P::ShiftCloseCertify,
@@ -237,6 +258,9 @@ impl RoleGrants {
             ],
             Role::Finance => &[
                 P::ApprovalsDecide,
+                // RBAC §11.9: the branch approval kinds finance decides today.
+                P::ApproveCountDifference,
+                P::ApproveTransactionReversal,
                 P::CashManage,
                 P::AttendanceClock,
                 P::CompatRead,
