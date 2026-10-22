@@ -18,26 +18,28 @@ export function e164(phone: string): string {
   return /^0\d{8,9}$/.test(digits) ? `+66${digits.slice(1)}` : digits;
 }
 
+export function nextTarget(search?: string): string | null {
+  const safe = safeNext(new URLSearchParams(search ?? window.location.search).get('next'));
+  if (
+    safe &&
+    (safe === '/app' || safe.startsWith('/app/') || safe.startsWith('/app?')) &&
+    safe !== '/app/sign-in' &&
+    !safe.startsWith('/app/sign-in/') &&
+    !safe.startsWith('/app/sign-in?') &&
+    !safe.startsWith('/app/sign-in#')
+  ) {
+    return safe;
+  }
+  return null;
+}
+
 export function SignIn(props: {
   navigate: (url: string) => void;
   fetch?: typeof fetch;
   search?: string;
 }): JSX.Element {
   const api = new ApiClient(props.fetch);
-  const nextTarget = (): string | null => {
-    const safe = safeNext(new URLSearchParams(props.search ?? window.location.search).get('next'));
-    if (
-      safe &&
-      (safe === '/app' || safe.startsWith('/app/') || safe.startsWith('/app?')) &&
-      safe !== '/app/sign-in' &&
-      !safe.startsWith('/app/sign-in/') &&
-      !safe.startsWith('/app/sign-in?') &&
-      !safe.startsWith('/app/sign-in#')
-    ) {
-      return safe;
-    }
-    return null;
-  };
+  const next = () => nextTarget(props.search);
   const [challenge, setChallenge] = createSignal<string | undefined>();
   const [error, setError] = createSignal('');
   const [pending, setPending] = createSignal(false);
@@ -85,7 +87,7 @@ export function SignIn(props: {
       if (!challengeId) return;
       setError('');
       await api.post('/api/auth/otp/verify', { challengeId, code });
-      props.navigate(nextTarget() ?? '/app');
+      props.navigate(next() ?? '/app');
     } catch (err: unknown) {
       setError(wordedError(err));
     } finally {
@@ -141,7 +143,7 @@ export function SignIn(props: {
       </Show>
       <p class="xc-sign-in-switch">
         {tr('noAccount')}{' '}
-        <a href={nextTarget() ? `/app/sign-up?next=${encodeURIComponent(nextTarget()!)}` : '/app/sign-up'}>
+        <a href={next() ? `/app/sign-up?next=${encodeURIComponent(next()!)}` : '/app/sign-up'}>
           {tr('toSignUp')}
         </a>
       </p>

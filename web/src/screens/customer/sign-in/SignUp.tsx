@@ -8,14 +8,20 @@ import { lang, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { useForm } from '../../../shared/ui/form';
 import { PasswordField } from '../../../shared/ui/PasswordField';
+import { nextTarget } from './SignIn';
 import { TermsText } from './TermsText';
 import * as table from './i18n';
 import './sign-in.css';
 
 const tr = screenT('customer.sign-in', table);
 
-export function SignUp(props: { navigate: (url: string) => void; fetch?: typeof fetch }): JSX.Element {
+export function SignUp(props: {
+  navigate: (url: string) => void;
+  fetch?: typeof fetch;
+  search?: string;
+}): JSX.Element {
   const client = new ApiClient(props.fetch);
+  const next = () => nextTarget(props.search);
   const [error, setError] = createSignal('');
   const [pending, setPending] = createSignal(false);
   let nameInput: HTMLInputElement | undefined;
@@ -44,7 +50,7 @@ export function SignUp(props: { navigate: (url: string) => void; fetch?: typeof 
         lang: lang(),
         marketing: marketingInput?.checked ? ['SMS'] : [],
       });
-      props.navigate('/app');
+      props.navigate(next() ?? '/app');
     } catch (err: unknown) {
       if (err instanceof ApiError && !isServerFailure(err)) {
         if (err.code === 'consentTextMissing') {
@@ -90,7 +96,10 @@ export function SignUp(props: { navigate: (url: string) => void; fetch?: typeof 
         </p>
       </Show>
       <p class="xc-sign-in-switch">
-        {tr('haveAccount')} <a href="/app/sign-in">{tr('toSignIn')}</a>
+        {tr('haveAccount')}{' '}
+        <a href={next() ? `/app/sign-in?next=${encodeURIComponent(next()!)}` : '/app/sign-in'}>
+          {tr('toSignIn')}
+        </a>
       </p>
     </section>
   );

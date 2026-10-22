@@ -186,6 +186,28 @@ export class ApiClient {
     return [];
   }
 
+  /**
+   * PH-0 (docs/design/web-public-get.md): a plain same-origin GET of a non-v3 route of this server (`/api/public/*`,
+   * `/api/branch-tablet/me`). Answers the parsed JSON of a 2xx and refuses anything else through `parseError`, like
+   * every other method. A path that does not start with `/api/`, or that starts with `/api/v3/`, rejects with an
+   * `Error` before any request (v3's own reads go through `view`, `viewBare` and `page`).
+   */
+  async publicGet<T>(path: string): Promise<T> {
+    if (!path.startsWith('/api/') || path.startsWith('/api/v3/')) {
+      throw new Error(`Invalid path for publicGet: ${path}`);
+    }
+    const res = await this.fetchFn(path, {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+
+    if (!res.ok) {
+      await this.parseError(res);
+    }
+
+    return (await res.json()) as T;
+  }
+
   async act<B, R>(area: string, action: string, body: B): Promise<R> {
     const url = `/api/v3/${area}/${action}`;
     const res = await this.fetchFn(url, {

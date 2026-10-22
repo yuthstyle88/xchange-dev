@@ -14,6 +14,7 @@ import { fill, lang, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
+import { readHostOrg } from '../../../shared/api/public-host';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/public/public_branches';
@@ -80,27 +81,23 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
   const [savedPlanId, setSavedPlanId] = createSignal<string | null>(null);
   const [savePlanError, setSavePlanError] = createSignal<string | null>(null);
 
+  const resolveOrg = async () => {
+    try {
+      setOrg(await readHostOrg(api));
+      setOrgState('ready');
+    } catch {
+      setOrgState('error');
+    }
+  };
+
   // Initialize Org
-  onMount(async () => {
+  onMount(() => {
     if (props.org) {
       setOrg(props.org);
       setOrgState('ready');
       return;
     }
-    try {
-      const res = await doFetch('/api/public/host');
-      if (res.status === 200) {
-        const json = (await res.json()) as { org?: string };
-        if (json && typeof json.org === 'string' && json.org.length > 0) {
-          setOrg(json.org);
-          setOrgState('ready');
-          return;
-        }
-      }
-      setOrgState('error');
-    } catch {
-      setOrgState('error');
-    }
+    void resolveOrg();
   });
 
   // Setup Branches Poller when Org is ready
@@ -206,19 +203,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
   const handleRetryBranches = () => {
     if (orgState() === 'error' && !props.org) {
       setOrgState('loading');
-      doFetch('/api/public/host')
-        .then(async (res) => {
-          if (res.status === 200) {
-            const json = (await res.json()) as { org?: string };
-            if (json && typeof json.org === 'string' && json.org.length > 0) {
-              setOrg(json.org);
-              setOrgState('ready');
-              return;
-            }
-          }
-          setOrgState('error');
-        })
-        .catch(() => setOrgState('error'));
+      void resolveOrg();
       return;
     }
     const bPoller = branchesPoller();
