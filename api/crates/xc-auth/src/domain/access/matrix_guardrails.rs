@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use super::permission::Permission;
-use super::permission_module::{Level, Module, PermissionModule};
+use super::permission_module::{APPROVAL_KINDS, Level, Module, PermissionModule};
 use super::role::Role;
 use super::role_grants::{Group, RoleGrants};
 
@@ -45,7 +45,7 @@ impl GuardrailBreach {
 pub struct MatrixGuardrails;
 
 impl MatrixGuardrails {
-    /// May `group` hold exactly `set`? Rule 4 is checked first, then 1, 2, 3 and 5; the first broken one is answered.
+    /// May `group` hold exactly `set`? Rule 4 is checked first, then 1, 2, 3, 6 and 5; the first broken one is answered.
     pub fn check(group: &Group, set: &[Permission]) -> Result<(), GuardrailBreach> {
         if group.code == "EXECUTIVE" && group.built_in {
             return Err(GuardrailBreach::ExecutiveFixed);
@@ -84,14 +84,23 @@ impl MatrixGuardrails {
             return Err(GuardrailBreach::AdminBaseAboveView);
         }
 
+        if group.base == Role::Admin && set.iter().any(|p| APPROVAL_KINDS.contains(p)) {
+            return Err(GuardrailBreach::AdminBaseHoldsApproval);
+        }
+
+        let is_fixed_no_module = |p: Permission| {
+            PermissionModule::module(p).is_none()
+                && p != Permission::ApprovalsDecide
+                && !APPROVAL_KINDS.contains(&p)
+        };
         let got_no_module: BTreeSet<Permission> = set
             .iter()
             .copied()
-            .filter(|p| PermissionModule::module(*p).is_none())
+            .filter(|&p| is_fixed_no_module(p))
             .collect();
         let seed_no_module: BTreeSet<Permission> = RoleGrants::seed(group.base)
             .into_iter()
-            .filter(|p| PermissionModule::module(*p).is_none())
+            .filter(|&p| is_fixed_no_module(p))
             .collect();
         if got_no_module != seed_no_module {
             return Err(GuardrailBreach::NoModuleEdited);
