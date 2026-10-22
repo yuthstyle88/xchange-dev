@@ -7,17 +7,23 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::CurrencyCode;
+use xc_rate::domain::pricing::suggestion_settings::SuggestionSettings;
+use xc_rate::infrastructure::pricing::suggestion_settings_store::PricingSuggestionSettingsStore;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -54,10 +60,69 @@ impl CommandAction for PricingSuggestionSettingsSaveCommand {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        key: IdempotencyKey,
+        _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input, key);
-        todo!("PX-11: pricingSuggestionSettingsSave")
+        let trimmed = input.currency.trim();
+        let scope: &str = if trimmed == "*" {
+            "*"
+        } else {
+            CurrencyCode::parse(trimmed)
+                .map_err(|e| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("currency"),
+                        e.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?
+                .as_str()
+        };
+
+        let values = match &input.better_pct {
+            Some(strings) => {
+                let mut parsed = Vec::with_capacity(strings.len());
+                for s in strings {
+                    let d = s.trim().parse::<Decimal>().map_err(|e| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("betterPct"),
+                            format!("invalid decimal in betterPct: {e}"),
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
+                    parsed.push(d);
+                }
+                let validated = SuggestionSettings::validate(&parsed).map_err(|msg| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("betterPct"),
+                        msg,
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?;
+                Some(validated)
+            }
+            None => None,
+        };
+
+        let now = Utc::now();
+        if !crate::presentation::http::v3::rate_policy_save::may_change_the_frame(who, branch, now)
+        {
+            return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
+        }
+
+        PricingSuggestionSettingsStore::save(
+            tx,
+            branch.as_str(),
+            scope,
+            values,
+            &who.user_id,
+            now,
+        )
+        .await
+        .map_err(|_| server_error())?;
+
+        Ok(PricingSuggestionSettingsSaveOutput { saved: true })
     }
 }
 
