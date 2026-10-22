@@ -4,7 +4,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::web;
@@ -116,10 +115,12 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             let anchor = AnchorSource::parse(anchor_str.trim()).unwrap_or(AnchorSource::Bot);
             let buy_adj: Decimal = r.get("buy_adjust_pct");
             let sell_adj: Decimal = r.get("sell_adjust_pct");
-            let buy_adjust_pct =
-                RatePercent::parse(&buy_adj.to_string()).unwrap_or(RatePercent::ZERO);
-            let sell_adjust_pct =
-                RatePercent::parse(&sell_adj.to_string()).unwrap_or(RatePercent::ZERO);
+            let buy_adjust_pct = RatePercent::parse(&buy_adj.to_string()).map_err(|_| {
+                AppError::Internal(format!("invalid adjust_pct on policy version {id}"))
+            })?;
+            let sell_adjust_pct = RatePercent::parse(&sell_adj.to_string()).map_err(|_| {
+                AppError::Internal(format!("invalid adjust_pct on policy version {id}"))
+            })?;
             let pt = if tiers_on {
                 PolicyTiersStore::for_version(&mut tx, &id)
                     .await
@@ -264,7 +265,8 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
                 Tier1Published {
                     buy,
                     sell,
-                    partner_cost: partner_cost_str.and_then(|s| Decimal::from_str(s.trim()).ok()),
+                    partner_cost: partner_cost_str
+                        .and_then(|s| Rate::parse(s.trim()).ok().map(Rate::value)),
                     published_at,
                 },
             );
@@ -572,20 +574,17 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             .map(|f| format!("{f:?}"))
             .collect();
 
-        if enabled {
-            let (c_buy, c_sell) = match t1 {
-                Some(t) if cur_unit > Decimal::ZERO => (
-                    t.buy.map(|d| d / cur_unit).unwrap_or(Decimal::ZERO),
-                    t.sell.map(|d| d / cur_unit).unwrap_or(Decimal::ZERO),
-                ),
-                _ => (Decimal::ZERO, Decimal::ZERO),
-            };
+        if enabled
+            && cur_unit > Decimal::ZERO
+            && let Some(t) = t1
+            && let (Some(buy), Some(sell)) = (t.buy, t.sell)
+        {
             counters.push(CounterRate {
                 currency: code.clone(),
-                buy: c_buy,
-                sell: c_sell,
-                partner_cost: t1.and_then(|t| t.partner_cost),
-                published_at: t1.and_then(|t| t.published_at),
+                buy: buy / cur_unit,
+                sell: sell / cur_unit,
+                partner_cost: t.partner_cost,
+                published_at: t.published_at,
                 anchor: MarketQuote::anchor_for(&domain_quotes).0.cloned(),
             });
         }
