@@ -81,6 +81,11 @@ pub struct RecommendationInput {
     pub volume_thb: HashMap<String, Decimal>,
 }
 
+/// THB volume over the last 7 days for `code` (0 when none; `engine.mjs:164`).
+fn volume_of(input: &RecommendationInput, code: &str) -> Decimal {
+    input.volume_thb.get(code).copied().unwrap_or(Decimal::ZERO)
+}
+
 impl Recommendation {
     /// Every recommendation, highest severity first, then the largest 7-day volume (`engine.mjs:196-197`).
     pub fn list(input: &RecommendationInput) -> Vec<Recommendation> {
@@ -135,11 +140,7 @@ impl Recommendation {
             if a_buy <= Decimal::ZERO || a_sell <= Decimal::ZERO {
                 continue;
             }
-            let vol = input
-                .volume_thb
-                .get(&c.currency)
-                .copied()
-                .unwrap_or(Decimal::ZERO);
+            let vol = volume_of(input, &c.currency);
 
             let sell_gap = (c.sell / a_sell - Decimal::ONE) * Decimal::ONE_HUNDRED;
             let buy_gap = (c.buy / a_buy - Decimal::ONE) * Decimal::ONE_HUNDRED;
@@ -229,7 +230,7 @@ impl Recommendation {
 
         for code in &input.listed_by_both {
             if !input.enabled.contains(code) {
-                let vol = input.volume_thb.get(code).copied().unwrap_or(Decimal::ZERO);
+                let vol = volume_of(input, code);
                 out.push(plain(
                     Severity::Low,
                     RecommendationCode::NotOffered,
