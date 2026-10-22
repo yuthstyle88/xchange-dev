@@ -578,7 +578,7 @@ This replaces Q2 A.
   - So a new group behaves like its base everywhere except in what it is allowed.
 - **The eight built-in groups are the sample groups.** They are seeded once and edited like any other. A built-in group cannot be deleted, and its base is itself.
 - **New groups:** EXECUTIVE adds one on screen with a name, a base (any built-in except EXECUTIVE) and a permission set. A group that any user holds cannot be deleted.
-- **Unchanged:** the 52 `Permission`s and every guard that checks one; `INHERITS` / `Policy`.
+- **Unchanged:** the `Permission`s (52 then; 61 since §11.9) and every guard that checks one; `INHERITS` / `Policy`.
 
 ### 11.2 The seed: the owner's V.9 matrix, through the Blueprint's role mapping
 - **The Blueprint's mapping** (`XC-Desk-Blueprint-Data-Model-v2.html`, §02, decision B1), from V.9 role to v3 group:
@@ -630,7 +630,7 @@ Checked on every save:
 2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` go **above VIEW** only for groups whose base is EXECUTIVE or ADMIN (V.9 :62). Any group may hold their VIEW-level permissions.
 3. A group whose base is ADMIN holds, outside those two modules, at most VIEW-level permissions.
 4. **The built-in EXECUTIVE group is fixed**, so the owner can't be locked out.
-5. The no-module permissions (§11.2: `ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`, `DeviceQueue`, `DeviceProcess`, `DevicePrinterOnline`, `DrawerPassport`, `ProofUpload`, `AttendanceClock`, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix.
+5. The no-module permissions (§11.2: `ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`, `DeviceQueue`, `DeviceProcess`, `DevicePrinterOnline`, `DrawerPassport`, `ProofUpload`, `AttendanceClock`, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix. Since §11.9, this rule does not cover the nine approval-kind permissions or `ApprovalsDecide`.
 
 **Only EXECUTIVE adds groups and edits permissions** (V.9 :66). Every add, edit or delete writes one `AccountAuditor` row, `PERMISSION_CHANGE` / `GROUP_ADD` / `GROUP_DELETE`, with before and after.
 
@@ -805,3 +805,128 @@ The owner, verbatim, in the FE controller claude/e8020026's session (relayed on 
 **FE:** `StaffPage` already renders what `staff_me` returns; the e2e expectation for an ADMIN/EXECUTIVE account on `/staff` becomes permission-driven (`xchange#4519`): cards when `me.permissions` grant the desk, the worded refusal otherwise.
 
 **Data migration:** none. No table, column or stored value changes.
+
+### 11.9 Who decides each kind of approval: a permission per kind, seeded to today's roles (owner, 2026-10-22)
+
+The owner, verbatim, in the BE controller claude/7ca80c's session, choosing between two ways to make approvals editable: *"ทำ B"*. This follows the same principle as §11.8: *"งานผม ต้องให้คอนฟิกได้เอง … งาน เริ่มต้นให้ ตรงพิมพ์เขียว"*. The customer configures who decides, and the defaults are the Blueprint's.
+
+It narrows the 2026-10-19 ruling in §11.2 ("`ApprovalsDecide` … the matrix does not edit them"). `ApprovalsDecide` stays a no-module basic. The new per-kind permissions below are edited on screen.
+
+**The gap, measured on main `6d57fcc07`:** every approval type decides by a fixed base role in its `ApprovalPolicy::may_decide`. No permission row is read. So a customer cannot change who approves anything.
+
+| Approval type | `may_decide` | Today's rule |
+|---|---|---|
+| `CASH_TRANSFER` | `api/crates/xc-cash/src/application/approval/transfer.rs:130-165` | within the limit: a BRANCH_MANAGER row on the source branch (`from_branch`); FINANCE does not decide (ruling A5/Q2). Above the limit, or with no limit: any EXECUTIVE row |
+| `COUNT_DIFFERENCE` | `api/crates/xc-cash/src/application/ledger_approval/count_difference.rs:115-134` | a FINANCE row that `covers` the request branch |
+| `NEGATIVE_STOCK` | `api/crates/xc-cash/src/application/ledger_approval/negative_stock.rs:68-90` | a BRANCH_MANAGER row on the request branch |
+| `CAMPAIGN_VERSION` | `api/crates/xc-marketing/src/application/approval.rs:137-155` | any EXECUTIVE row; the proposer never decides (D-5) |
+| `RATE_PUBLICATION` | `api/crates/xc-rate/src/application/approval/rate_publication.rs:91-104` | any EXECUTIVE row; an EXECUTIVE proposer may close it at submit |
+| `EXCHANGE_TRANSACTION` | `api/src/application/workflows/exchange/approval.rs:167-184` | a BRANCH_MANAGER row on the request branch |
+| `TRANSACTION_REVERSAL` | `api/src/application/workflows/exchange/reversal_approval.rs:98-112` | a FINANCE row that `covers` the request branch |
+| `LOYALTY_RULE_VERSION` | `api/src/application/workflows/loyalty/rule_approval.rs:230-239` | any EXECUTIVE row |
+
+`ApprovalsDecide` is the only approval permission today (`permission.rs:11`). It opens `approvalDecide` / `approvalRead` (`policy.rs:92`) and the transfer flow (`transfer_flow.rs:173-176`). It does not say *which* kinds a group decides.
+
+**The rule:**
+- **One permission per decision, nine in all** (the cash transfer has two, because the limit already splits who decides it).
+- Each `may_decide` keeps every rule that is not about the role and replaces its role test with the shared core `ApprovalDecider` (below). Proposer ≠ decider, the organisation check, the transfer's limit split and `allows_self_decision` all stay.
+- **Seeded so that ship day changes nothing.** The seed gives each permission to exactly the base role that decides it today.
+- **Scope stays per kind.** *Branch* kinds need a row that `covers` the request's branch, which is `ScopedRole::covers`, `scoped_role.rs:58-63`. *Organisation* kinds accept any row, as today. A BRANCH_MANAGER row always has a branch (`scope_rule.rs:33-36`), so for the branch kinds `covers` is exactly today's "row on the request branch".
+- **`ApprovalsDecide` follows the kinds.** A group holds it iff it holds at least one of the nine. The seed already satisfies this. The matrix save sets it, and it is never edited on its own.
+
+| Permission | Approval type | Scope | Seeded on | Kept rules |
+|---|---|---|---|---|
+| `ApproveCashTransferWithinLimit` | `CASH_TRANSFER`, `within_limit = true` | branch: `from_branch` | BRANCH_MANAGER | no self decision |
+| `ApproveCashTransferAboveLimit` | `CASH_TRANSFER`, otherwise | branch: `from_branch` (an org-wide row covers every branch) | EXECUTIVE | no self decision |
+| `ApproveCountDifference` | `COUNT_DIFFERENCE` | branch | FINANCE | no self decision |
+| `ApproveNegativeStock` | `NEGATIVE_STOCK` | branch | BRANCH_MANAGER | no self decision |
+| `ApproveCampaignVersion` | `CAMPAIGN_VERSION` | organisation | EXECUTIVE | proposer never decides (D-5); no self decision |
+| `ApproveRatePublication` | `RATE_PUBLICATION` | organisation | EXECUTIVE | a proposer holding it may close at submit |
+| `ApproveExchangeTransaction` | `EXCHANGE_TRANSACTION` | branch | BRANCH_MANAGER | no self decision |
+| `ApproveTransactionReversal` | `TRANSACTION_REVERSAL` | branch | FINANCE | no self decision |
+| `ApproveLoyaltyRuleVersion` | `LOYALTY_RULE_VERSION` | organisation | EXECUTIVE | no self decision |
+
+Self decision: every kind except `RATE_PUBLICATION` refuses it today. `allows_self_decision` defaults to false (`xc-approval/src/domain/policy.rs:41`), and `approval_service.rs:467` enforces it. That stays.
+
+**Refusal codes stay exactly as today:**
+- `CASH_TRANSFER` answers `ABOVE_LIMIT` / `WITHIN_LIMIT`, not `outOfScope`.
+- `COUNT_DIFFERENCE` and `NEGATIVE_STOCK` each keep their two `outOfScope` messages:
+  - "only … may decide": the caller holds the kind nowhere, `!holds_anywhere`.
+  - "… only for their own branch": `holds_anywhere && !holds_on`.
+- `CAMPAIGN_VERSION` checks `proposerCannotDecide` first, then `outOfScope`.
+- `RATE_PUBLICATION`, `EXCHANGE_TRANSACTION`, `TRANSACTION_REVERSAL` and `LOYALTY_RULE_VERSION` each keep their one `outOfScope`.
+
+**Why the above-limit transfer is a branch kind (review FAIL on this PR, must-fix 1).** The transfer flow checks scope before the policy runs. `transfer_flow.rs:173` calls `require(who, ApprovalsDecide, &t.from_branch, now)`, and `:176` calls `policy_actor`, which accepts only a row that holds the permission and is org-wide or on the source branch (`transfer.rs:35-40`). Both kinds of transfer decision therefore use `holds_on(who, p, from_branch)`, which agrees with that pre-check, and `transfer_flow.rs` does not change. Nothing changes for the seed, because EXECUTIVE rows are always org-wide (`scope_rule.rs:28-31`). A branch-scoped group granted the above-limit kind decides only transfers from its own branch.
+
+**Outside the nine, on purpose:** `RATE_FEED_PUBLICATION` (`rate_feed_publication.rs:79-90`) is a registered approval type that nobody decides by hand. Its `may_decide` always refuses, and its self-decision rule stays as it is.
+
+**The decision record keeps the base role.** `approval_service.rs:51-67` `approver_role` writes the decider's base role, picked by priority, into the decision row and the audit `actor_role` (`:331`, `:342`, `:493`, `:504`). That stays: a decision by `NIGHT_FIN` (base TELLER) is recorded as `TELLER`. The group code is not added to the record in this change.
+
+**`covers` widens the branch kinds on purpose.** Today `CASH_TRANSFER` within the limit, `NEGATIVE_STOCK` and `EXCHANGE_TRANSACTION` need a row whose branch equals the request's branch, so an org-wide row is refused. (The above-limit transfer already accepts an org-wide row today: the policy tests only the role, `transfer.rs:137-144`, and the flow's pre-check admits org-wide rows.) With `covers`, an org-wide row of a group that holds the kind decides any branch. Nothing changes for the seed, because a BRANCH_MANAGER row always has a branch (`scope_rule.rs:33-36`). It matters only when the customer grants a branch kind to an org-wide group, and that is intended: the customer chose it.
+
+**Guardrails (§11.3), changed:**
+- Rule 5 no longer covers the nine, nor `ApprovalsDecide`. The other no-module permissions still equal the base's seed.
+- **New rule 6: a group whose base is ADMIN holds none of the nine.** This follows rule 3: an ADMIN base is at most VIEW outside USER_MANAGEMENT and SYSTEM_SETTINGS, and deciding an approval is above VIEW.
+- Rule 4 is unchanged. The built-in EXECUTIVE group is fixed, so it keeps its five organisation kinds.
+
+**Classes:**
+
+```mermaid
+classDiagram
+  class ApprovalDecider {
+    <<xc-auth domain/access/approval_decider.rs>>
+    +holds_anywhere(who: &Actor, p: Permission) bool
+    +holds_on(who: &Actor, p: Permission, branch: Option~&str~) bool
+  }
+  class RoleGrants {
+    +holds(group: &str, p: Permission) bool
+    +seed(role: Role) Vec~Permission~
+    SEED_VERSION = 4
+    SEED_ADDITIONS += (4, each of the nine)
+  }
+  class ApprovalPolicy {
+    <<trait, xc-approval>>
+    +may_decide(who, request) Result
+    +allows_self_decision(who) bool
+  }
+  ApprovalDecider ..> RoleGrants : group_code() of each row
+  ApprovalPolicy ..> ApprovalDecider : the role test of each of the 8 policies
+```
+
+- `holds_anywhere(who, p)` is true iff some row `r` of `who` has `RoleGrants::holds(r.group_code(), p)`.
+- `holds_on(who, p, branch)` is the same, and also requires `r.covers(branch)`.
+- Neither reads a clock. The session holds only rows valid now (`session_service.rs:213-216`), the same assumption every `may_decide` makes today.
+- The base role (`r.role`) is not read. That is the point of the change.
+
+**Data migration:** no SQL file.
+- **Built-in groups:** `RoleGrants::SEED_VERSION` goes 3 → 4, and the nine permissions are appended to `SEED_ADDITIONS` with version 4. The boot path `seed_additions` (`role_grant_store.rs:56-60`, #3976) inserts each into every built-in group whose `seed(role)` holds it. Existing rows are not touched.
+- **Custom groups (§11.1):** their no-module set equals their base's seed, which rule 5 enforces. So today a group based on BRANCH_MANAGER decides exchanges through its base. To keep that, `seed_additions` also inserts version-4 additions into every **custom** group whose **base**'s seed holds the permission. This writes rows at boot, the same mechanism the owner approved for #3976 and #4155. It is `class:guarded`.
+- Nothing is removed. `SEED_REMOVALS` is unchanged.
+
+**FE:** the matrix screen (F5, `rbac_f12`) gains an "Approvals" section: nine on/off rows per group, with Thai labels. The save takes permission names (`admin_groups.rs:283`), and the payload does not change shape. But `check_and_build_full_set` (`admin_groups.rs:299`) rebuilds every no-module permission from the base's seed and refuses any it is sent (`guardrail:5`). It must let the nine through as sent, then set `ApprovalsDecide` iff the set holds one of the nine (A8: the save normalises; it does not refuse). That is AP-12. The ADMIN base shows the nine as unavailable (rule 6). The built-in EXECUTIVE group shows them read-only (rule 4).
+
+**Behaviour (locked by up-front tests):**
+
+| # | Given | Then |
+|---|---|---|
+| A1 | the seed, with no edits | every policy decides exactly as in the gap table (today's tests stay green unchanged) |
+| A2 | custom group `NIGHT_FIN`, base TELLER, granted `ApproveTransactionReversal`, row at B1 | decides a B1 reversal; refused for a B2 reversal with today's code |
+| A3 | built-in FINANCE with `ApproveCountDifference` removed | a FINANCE@B1 user is refused a B1 count difference with today's code |
+| A4 | BRANCH_MANAGER@B1 | decides a B1 transfer within the limit; refused above the limit (`ABOVE_LIMIT`) |
+| A5 | custom group, base FINANCE, granted `ApproveCashTransferWithinLimit`, row at B1 | decides a B1 within-limit transfer. Ruling Q2 is now the seed's default, not a fixed rule |
+| A6 | EXECUTIVE@B1 (branch-scoped) | still decides `CAMPAIGN_VERSION`, `RATE_PUBLICATION` and `LOYALTY_RULE_VERSION` (organisation scope), and an above-limit transfer from B1. An above-limit transfer from B2 is refused by the flow's pre-check, unchanged (`transfer_flow.rs:173-176`). |
+| A7 | save a group based on ADMIN holding `ApproveNegativeStock` | refused, guardrail 6 |
+| A8 | save a group holding none of the nine | it holds no `ApprovalsDecide`; one holding any of them holds `ApprovalsDecide` |
+| A9 | campaign proposer holding `ApproveCampaignVersion` | still refused (`proposerCannotDecide`) |
+| A10 | boot on a database at `seed_version = 3` with custom group base BRANCH_MANAGER | after boot it holds `ApproveExchangeTransaction`, `ApproveNegativeStock`, `ApproveCashTransferWithinLimit`; `seed_version = 4` |
+
+**Tickets** (each a disjoint File scope). AP-0 is the skeleton: the nine variants, `Permission::ALL`, the module mapping, the seed lists, the decider signatures and the up-front tests, written by the lane controller. The rest follow it in parallel:
+
+| Ticket | What | File | Class |
+|---|---|---|---|
+| AP-1 | `ApprovalDecider` bodies | `api/crates/xc-auth/src/domain/access/approval_decider.rs` | logic |
+| AP-2 | guardrail 5 exclusion, rule 6, `ApprovalsDecide` follows the kinds | `api/crates/xc-auth/src/domain/access/matrix_guardrails.rs` | logic |
+| AP-3 | `seed_additions` covers custom groups by base. It restates `rbac_seed_version_test.rs::a_custom_group_is_untouched` (:313-346), which pins today's "custom groups untouched": custom groups now gain version-4 additions by base. It adds the A10 boot test. | the Postgres `RoleGrantStore` implementation + `api/crates/xc-auth/tests/rbac_seed_version_test.rs` | guarded |
+| AP-4..AP-11 | one policy each, its role test → `ApprovalDecider`. `RATE_PUBLICATION`'s ticket also changes `allows_self_decision` (`rate_publication.rs:102-104`), which is a role test too. | the 8 `may_decide` files in the gap table | logic |
+| AP-12 | the matrix save lets the nine through and sets `ApprovalsDecide` from them (A8) | `api/src/presentation/http/v3/commands/admin_groups.rs` | logic |
+| AP-F1 | the matrix "Approvals" section | FE lane | logic |
