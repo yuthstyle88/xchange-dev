@@ -19,6 +19,12 @@ import type {
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import {
+  ADMIN_BASE,
+  ApprovalsEditor,
+  ApprovalsOverview,
+  isApprovalKind,
+} from './ApprovalsSection';
 import type { UsersTabProps } from './UsersScreen';
 import * as table from './i18n';
 import './users.css';
@@ -60,6 +66,8 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
           return t('matrixGuardrail_4');
         case 'guardrail:5':
           return t('matrixGuardrail_5');
+        case 'guardrail:6':
+          return t('matrixGuardrail_6');
         case 'builtIn':
           return t('matrixBuiltIn');
         case 'inUse':
@@ -109,9 +117,12 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
     (data()?.permissions ?? []).filter((p) => p.editable && p.module !== null);
   const baseOptions = () =>
     (data()?.groups ?? []).filter((g) => g.builtIn && g.code !== 'EXECUTIVE');
+  const editingGroup = () =>
+    (data()?.groups ?? []).find((g) => g.code === editingCode());
 
-  const orderedPermissions = (selected: Set<string>): string[] =>
-    editablePermissions()
+  const orderedPermissions = (selected: Set<string>, includeApprovals = false): string[] =>
+    (data()?.permissions ?? [])
+      .filter((p) => (p.editable && p.module !== null) || (includeApprovals && isApprovalKind(p.name)))
       .map((p) => p.name)
       .filter((name) => selected.has(name));
 
@@ -149,8 +160,13 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
     setError(null);
     setAdding(false);
     setEditingCode(group.code);
+    const allowKinds = group.base !== ADMIN_BASE;
     const allowed = new Set(editablePermissions().map((p) => p.name));
-    setEditPerms(new Set(group.permissions.filter((name) => allowed.has(name))));
+    setEditPerms(
+      new Set(
+        group.permissions.filter((name) => allowed.has(name) || (allowKinds && isApprovalKind(name))),
+      ),
+    );
   };
 
   const openAdd = () => {
@@ -167,10 +183,11 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
     const code = editingCode();
     if (!code) return;
     setError(null);
+    const allowKinds = editingGroup()?.base !== ADMIN_BASE;
     try {
       await saveWrite.send({
         code,
-        permissions: orderedPermissions(editPerms()),
+        permissions: orderedPermissions(editPerms(), allowKinds),
       });
       setEditingCode(null);
       await loadMatrix();
@@ -315,6 +332,7 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
             </tbody>
           </table>
         </div>
+        <ApprovalsOverview groups={data()!.groups} />
       </Show>
 
       <Show when={editingCode()}>
@@ -340,6 +358,11 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
                 )}
               </For>
             </div>
+            <ApprovalsEditor
+              base={editingGroup()?.base ?? ''}
+              selected={editPerms()}
+              onToggle={(kind, on) => setPermIn(editPerms(), setEditPerms, kind, on)}
+            />
             <div class="users-dialog-actions">
               <button
                 type="button"

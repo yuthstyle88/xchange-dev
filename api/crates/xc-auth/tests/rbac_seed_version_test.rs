@@ -308,10 +308,11 @@ async fn an_addition_the_owner_removed_is_not_given_back() {
     );
 }
 
-/// #3976 §7 row 3: a custom group (`built_in = false`) is untouched, even one based on a group whose seed holds an
-/// addition.
+/// #3976 §7 row 3, restated for RBAC §11.9 (#4614): a custom group (`built_in = false`) based on EXECUTIVE gains only
+/// EXECUTIVE's four version-4 approval kinds when `seed_additions` upgrades from version 1, and its `seed_version`
+/// stays 0.
 #[tokio::test]
-async fn a_custom_group_is_untouched() {
+async fn a_custom_group_gains_only_its_base_s_version_4_kinds_and_stays_at_seed_version_0() {
     let db = database_at_version_1().await;
     let base = group_with_additions();
     let custom = Group {
@@ -331,8 +332,18 @@ async fn a_custom_group_is_untouched() {
 
     assert_eq!(
         stored_set(&db, &custom.code).await,
-        names(&set),
-        "the custom group's set is unchanged"
+        names(
+            &set.iter()
+                .copied()
+                .chain([
+                    Permission::ApproveCashTransferAboveLimit,
+                    Permission::ApproveCampaignVersion,
+                    Permission::ApproveRatePublication,
+                    Permission::ApproveLoyaltyRuleVersion,
+                ])
+                .collect::<Vec<_>>()
+        ),
+        "the custom group gains only EXECUTIVE's four version-4 kinds"
     );
     assert_eq!(
         seed_version(&db, &custom.code).await,
