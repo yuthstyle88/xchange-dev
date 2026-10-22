@@ -126,11 +126,17 @@ impl CopyByEmailService {
             .link
             .sign(kind, id, qr, now + Duration::hours(LINK_LIFETIME_HOURS));
         let link_url = CopyLink::url(&self.origin, &signed);
+        let qr_data = match kind {
+            CopySubjectKind::WebRequest => {
+                format!("{}/q#{qr}", self.origin.trim_end_matches('/'))
+            }
+            CopySubjectKind::Booking => qr.to_owned(),
+        };
         let message = build_message(
             &email.address,
             &email.lang,
             &details,
-            qr,
+            &qr_data,
             &qr_hash,
             &link_url,
         );
