@@ -520,7 +520,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               type="button"
               class="xc-home-btn xc-home-btn-primary"
               onClick={handleCalculate}
-              disabled={previewLoading()}
+              disabled={previewLoading() || !selectedBranchCode()}
             >
               {previewLoading() ? t('calculating') : t('calculate')}
             </button>
