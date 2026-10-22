@@ -40,7 +40,7 @@ function makeHarness(steps: StepAnswer[]) {
       return jsonResponse(200, { org: 'tk' });
     }
     if (method === 'GET' && u.pathname === '/api/public/orgs/tk/branches') {
-      return jsonResponse(200, { branches: [{ code: 'MAIN', name: 'Siam Head Office' }] });
+      return jsonResponse(200, { branches: [{ id: 'MAIN', code: 'MAIN', name: 'Siam Head Office' }] });
     }
     if (method === 'GET' && u.pathname === '/api/v3/views/my_rate_alerts') {
       return jsonResponse(200, { version: 1, changed: true, data: ALERTS_DATA });

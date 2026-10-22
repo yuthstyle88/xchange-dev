@@ -35,7 +35,7 @@ export interface RateAlertsScreenProps {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Organisation code override; if omitted, fetched from /api/public/host */
   org?: string;
-  /** Default branch code */
+  /** Default branch id (`PublicBranchDto.id`) */
   defaultBranch?: string;
   /** Polling interval in ms (optional) */
   pollIntervalMs?: number;
@@ -169,7 +169,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       setBranches(list);
       setBranchesError(null);
       if (list.length > 0 && !branch()) {
-        setBranch(list[0].code);
+        setBranch(list[0].id);
       }
     } catch (err: unknown) {
       setBranchesError(wordedError(err));
@@ -357,7 +357,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
             >
               <For each={branches()}>
                 {(b) => (
-                  <option value={b.code}>
+                  <option value={b.id}>
                     {b.name ? `${b.name} (${b.code})` : b.code}
                   </option>
                 )}
@@ -511,7 +511,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                       <span class="xc-alert-currency">{alert.currency}</span>
                       <span class="xc-alert-side">{sideLabel()}</span>
                       <span class="xc-alert-unit">({unitLabel()})</span>
-                      <span class="xc-alert-branch-badge">{alert.branch}</span>
+                      <span class="xc-alert-branch-badge">{branches().find(b => b.id === alert.branch)?.code ?? alert.branch}</span>
                     </div>
 
                     <span class={alert.enabled ? "xc-badge xc-badge-active" : "xc-badge xc-badge-paused"}>

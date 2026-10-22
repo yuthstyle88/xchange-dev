@@ -10,6 +10,7 @@ const disposers: Array<() => void> = [];
 const SAMPLE_BRANCHES = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       address: null,
