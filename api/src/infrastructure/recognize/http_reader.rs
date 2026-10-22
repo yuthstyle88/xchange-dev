@@ -22,10 +22,8 @@ pub struct RecognizeHttpReader {
 
 impl RecognizeHttpReader {
     pub fn new(settings: &RecognizeSettings) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(settings.timeout)
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        let client =
+            crate::infrastructure::http_client::build_client(settings.timeout, "xchange-recognize");
         Self {
             client,
             settings: settings.clone(),

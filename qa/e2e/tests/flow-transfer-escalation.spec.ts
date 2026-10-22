@@ -96,6 +96,7 @@ async function findPendingTransferRequestId(admin: Page, transferId: string): Pr
 
 async function approveOnAdminScreen(admin: Page, reqId: string): Promise<void> {
   await admin.goto('/#approvals');
+  await admin.reload();
   const filterBtn = admin.locator('[data-type-filter="CASH_TRANSFER"]');
   await expect(filterBtn).toBeVisible({ timeout: 20_000 });
   await filterBtn.click();

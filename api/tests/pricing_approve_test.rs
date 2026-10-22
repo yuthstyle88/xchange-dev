@@ -199,10 +199,14 @@ async fn bulk_approve_writes_one_version_and_one_draft_for_every_currency() {
 async fn approve_out_of_bound_waits_for_executive() {
     let room = Room::start().await;
     let v1 = room.worked_example().await;
-    // T4 sell 34.6766 = 32.9 × 1.054 ⇒ margin 5.0, adjust + margin = 5.4 > USD's 5 (buy stays below sell).
+    // Restated on feat/4324-pricing-suggestion by the XC-PRICING controller (claude/mbp-xc-pricing, PX-0): the
+    // out-of-bound tier is now T1's buy, because a T4 sell above T3's breaks equal-or-better, which `TierCheck`
+    // refuses before the guard (PX-7; V.9 `engine.mjs:75-76`; pricing-tiers.md §5.2). It was T4 sell 34.6766.
+    // T1 buy 30.66525 = 32.45 × 0.945 ⇒ margin −5.0, adjust + margin = −5.5 < USD's −5 (buy stays below sell, and
+    // T1's buy is the lowest, so every higher tier is equal-or-better).
     // A RATE_MANAGER approves: an EXECUTIVE proposer self-approves an out-of-bound draft (rates.md §4.5).
     let mut prices = USD_PRICES;
-    prices[3] = ("32.48245", "34.6766");
+    prices[0] = ("30.66525", "32.90");
     let a = command(
         &room,
         &rate_manager(),

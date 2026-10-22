@@ -1,7 +1,7 @@
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { ApiError } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import * as table from './i18n';
 import {
   fetchMyVerification,
@@ -59,6 +59,9 @@ function formatUploadError(err: unknown): string {
         return `${t('documentTypeNotAccepted')} (${rawMsg})`;
       }
       return t('documentTypeNotAccepted');
+    }
+    if (isServerFailure(err) || err.status === 401) {
+      return wordedError(err);
     }
     const rawMsg = err.message?.trim() ?? '';
     if (rawMsg && !rawMsg.toLowerCase().includes(err.code.toLowerCase())) {

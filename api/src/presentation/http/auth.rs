@@ -399,6 +399,15 @@ async fn v3_otp_verify_inner(
                     .await
             {
                 tracing::error!(error = %e, "branch tablet sign-in bind failed");
+                if let Err(logout_err) = session
+                    .logout(&signed_in.tail.session_token, Some(ip))
+                    .await
+                {
+                    tracing::error!(
+                        error = ?logout_err,
+                        "session logout after branch tablet bind failure failed"
+                    );
+                }
                 return refusal_response(500, "serverError", "เซิร์ฟเวอร์ขัดข้อง");
             }
             let mut resp = HttpResponse::Ok();

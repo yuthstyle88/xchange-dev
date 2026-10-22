@@ -113,12 +113,18 @@ describe('KioskCurrenciesScreen result_seconds setting (QW-6 #4373)', () => {
       if (b.action === 'configureSettings') {
         return { resultSeconds: b.payload?.resultSeconds ?? 25, version: 2 };
       }
-      return { resultSeconds: 10, version: 0 };
+      return { resultSeconds: 20, version: 0 };
     });
 
     dispose = render(() => <KioskCurrenciesScreen api={fake.api} branch="B9" />, host);
 
     const input = getResultInput();
+    // R4-1: the setting is saved only once it has been read for this branch.
+    getReadButton().click();
+    await vi.waitFor(() => {
+      expect(input.value).toBe('20');
+    });
+
     input.value = '25';
     input.dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -149,12 +155,18 @@ describe('KioskCurrenciesScreen result_seconds setting (QW-6 #4373)', () => {
           message: 'validationFailed',
         });
       }
-      return { resultSeconds: 10, version: 0 };
+      return { resultSeconds: 20, version: 0 };
     });
 
     dispose = render(() => <KioskCurrenciesScreen api={fake.api} branch="B9" />, host);
 
     const input = getResultInput();
+    // R4-1: the setting is saved only once it has been read for this branch.
+    getReadButton().click();
+    await vi.waitFor(() => {
+      expect(input.value).toBe('20');
+    });
+
     input.value = '999';
     input.dispatchEvent(new Event('input', { bubbles: true }));
 

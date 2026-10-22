@@ -11,7 +11,8 @@
 //! - `margins` are the effective margins (the currency's override, else the branch's), four rows when value tiers
 //!   are ON and none when OFF; `overridden` says which. `anchorSource` is the effective anchor (§3.1).
 //! - `flags` / `selectable` / `status` come from `MarketQuote::anchor_for`, `PricingFlag::blocking` and
-//!   `RowStatus::of` (PT-8). Until PT-9, `suggestion` is `null` and `recommendations` is `[]`.
+//!   `RowStatus::of` (PT-8). The suggestion and recommendations (XC-PRICING PX-9) are pinned in
+//!   `pricing_board_suggestion_test.rs`; two cases here were restated for them (marked in place).
 //! - Decimals are strings (compared here as decimals).
 //!
 //! Runs once PT-2, PT-3 and PT-8 are on `feat/pricing-tiers`.
@@ -75,7 +76,16 @@ async fn the_board_names_the_policy_it_was_built_on_and_the_branch_bands() {
     assert_eq!(dec_of(&bands[0]["upperInclusiveThb"]), dec("20000"));
     assert_eq!(dec_of(&bands[3]["lowerExclusiveThb"]), dec("500000"));
     assert_eq!(bands[3]["upperInclusiveThb"], Value::Null);
-    assert_eq!(data["recommendations"], json!([]));
+    // Restated on feat/4324-pricing-suggestion by the XC-PRICING controller (claude/mbp-xc-pricing, PX-0): with no
+    // TT or Super Rich batch both sources are stale (V.9 `market.mjs:133`), and a stale source is a `Warn`
+    // recommendation (V.9 `engine.mjs:165-166`; pricing-tiers.md §5.2). It was `[]` until PT-10.
+    let codes: Vec<&str> = data["recommendations"]
+        .as_array()
+        .expect("recommendations")
+        .iter()
+        .map(|r| r["code"].as_str().unwrap())
+        .collect();
+    assert!(codes.contains(&"TtStale") && codes.contains(&"SrStale"), "{codes:?}");
     room.finish().await;
 }
 
@@ -181,7 +191,7 @@ async fn a_row_shows_its_market_quotes_and_its_effective_margins() {
         ],
         "the branch's margins"
     );
-    assert_eq!(eur["suggestion"], Value::Null, "PT-9 waits for V.9's files");
+    assert_eq!(eur["suggestion"], Value::Null, "EUR has no market quote: no anchor, no suggestion");
     room.finish().await;
 }
 
@@ -211,7 +221,10 @@ async fn a_currency_with_no_market_quote_is_manual_and_not_selectable() {
 async fn a_super_rich_only_currency_flags_no_tt_quote_and_stays_selectable() {
     let room = Room::start().await;
     room.worked_example().await;
-    room.sr_batch(&[("USD", "32.6000", "33.0000")], 1).await;
+    // Restated by the XC-PRICING controller (PX-0): the batch is fresh (0 h, was 1 h). From PX-9 a quote older than
+    // 30 minutes is `StaleSource`, which blocks (V.9 `market.mjs:10,133`; pricing-tiers.md §4), and this case is
+    // about `NoTtQuote` alone.
+    room.sr_batch(&[("USD", "32.6000", "33.0000")], 0).await;
     let data = board(&room).await;
     let usd = row(&data, "USD");
     let flags = usd["flags"].as_array().unwrap();

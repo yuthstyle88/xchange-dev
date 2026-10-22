@@ -130,6 +130,25 @@
   text-align: center;
 }
 
+.xc-alerts-reread-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0.375rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: var(--xc-danger, #b91c1c);
+  font-size: 0.875rem;
+}
+
+.xc-alerts-reread-error .xc-alerts-retry-btn {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+}
+
 .xc-alerts-retry-btn,
 .xc-btn-primary {
   display: inline-flex;

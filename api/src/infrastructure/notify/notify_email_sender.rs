@@ -24,11 +24,10 @@ pub struct NotifyEmailSender {
 
 impl NotifyEmailSender {
     pub fn new(base_url: Option<String>, api_key: Option<String>) -> Self {
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        let client = crate::infrastructure::http_client::build_client(
+            Duration::from_secs(10),
+            "xchange-notify",
+        );
         Self {
             base_url,
             api_key,

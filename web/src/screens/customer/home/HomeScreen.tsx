@@ -173,9 +173,10 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
   const branchesState = () => {
     if (orgState() === 'loading') return 'loading';
     if (orgState() === 'error') return 'error';
-    const state = branchesPoller()?.state() ?? 'loading';
-    if (state === 'ready' && branches().length === 0) return 'empty';
-    return state;
+    if (branchesPoller()?.data() !== undefined) {
+      return branches().length === 0 ? 'empty' : 'ready';
+    }
+    return branchesPoller()?.state() ?? 'loading';
   };
 
   const selectedBranch = createMemo<PublicBranchDto | undefined>(() => {
@@ -186,9 +187,9 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
   const ratesData = () => ratesPoller()?.data();
   const ratesLines = () => ratesData()?.lines ?? [];
   const ratesState = () => {
-    if (branchesState() === 'loading' || !selectedBranchCode()) return 'loading';
-    if (branchesState() === 'error') return 'error';
-    if (branchesState() === 'empty') return 'empty';
+    if (!selectedBranchCode()) {
+      return branchesState() === 'loading' ? 'loading' : 'idle';
+    }
     const state = ratesPoller()?.state() ?? 'loading';
     if (state === 'ready' && ratesLines().length === 0) return 'empty';
     return state;

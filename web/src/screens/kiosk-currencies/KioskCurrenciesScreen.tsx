@@ -202,6 +202,10 @@ export function KioskCurrenciesScreen(props: {
 
   createEffect(() => {
     const b = props.branch;
+    setResultSecondsInput('');
+    setSettingsError(undefined);
+    setResultSecondsDirty(false);
+    setKnown(false);
     if (!b) {
       setLoaded(false);
       setCurrencies([]);
@@ -210,12 +214,8 @@ export function KioskCurrenciesScreen(props: {
       setLoadError(undefined);
       setCardStatuses({});
       setSavingCodes({});
-      setResultSecondsInput('10');
-      setSettingsError(undefined);
       return;
     }
-    setSettingsError(undefined);
-    setResultSecondsDirty(false);
     void fetchCurrencies(b);
   });
 
@@ -315,10 +315,11 @@ export function KioskCurrenciesScreen(props: {
     return st.text;
   };
 
-  const [resultSecondsInput, setResultSecondsInput] = createSignal<string>('10');
+  const [resultSecondsInput, setResultSecondsInput] = createSignal<string>('');
   const [settingsError, setSettingsError] = createSignal<string | undefined>();
   const [savingSettings, setSavingSettings] = createSignal<boolean>(false);
   const [resultSecondsDirty, setResultSecondsDirty] = createSignal<boolean>(false);
+  const [known, setKnown] = createSignal<boolean>(false);
 
   const handleReadSettings = async () => {
     const branchId = props.branch;
@@ -334,6 +335,7 @@ export function KioskCurrenciesScreen(props: {
       if (props.branch === branchId) {
         // A read never overwrites what the admin has typed since.
         if (!resultSecondsDirty()) setResultSecondsInput(String(res.resultSeconds));
+        setKnown(true);
         setSettingsError(undefined);
       }
     } catch (err: unknown) {
@@ -344,7 +346,7 @@ export function KioskCurrenciesScreen(props: {
   const handleSaveSettings = async (e?: Event) => {
     e?.preventDefault();
     const branchId = props.branch;
-    if (!branchId) return;
+    if (!branchId || !known()) return;
     const raw = resultSecondsInput();
     const parsed = Number(raw);
     setSavingSettings(true);
@@ -505,7 +507,7 @@ export function KioskCurrenciesScreen(props: {
               type="button"
               name="save_result_seconds"
               class="primary"
-              disabled={savingSettings()}
+              disabled={!known() || savingSettings()}
               onClick={handleSaveSettings}
             >
               {lang() === 'en' ? 'Save' : 'บันทึก'}

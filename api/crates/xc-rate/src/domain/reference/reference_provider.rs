@@ -12,6 +12,13 @@ pub trait ReferenceProvider: Send + Sync {
     fn reference_type(&self) -> &'static str;
     fn row_key(&self, row: &Value) -> String;
     fn parse(&self, rates: &ReferenceRates) -> Result<ParsedBatch, RateEngineError>;
+
+    /// True when an answer identical to an earlier batch **confirms** that batch: the writer moves its `fetched_at` to
+    /// this fetch instead of returning it untouched, so `fetched_at` means "last confirmed" (pricing-tiers.md §4).
+    /// BoT keeps `false` (its behaviour is unchanged); the market feeds return `true`.
+    fn confirms_on_repeat(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

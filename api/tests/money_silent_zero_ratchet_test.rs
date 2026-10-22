@@ -71,6 +71,8 @@ const R1_CEILINGS: &[(&str, usize)] = &[
         "crates/xc-marketing/src/infrastructure/pg_performance.rs",
         1,
     ),
+    // no sale in 7 days = 0 THB volume, an ordering key (V.9 engine.mjs:164), not a price
+    ("crates/xc-rate/src/domain/pricing/recommendation.rs", 1),
     (
         "crates/xc-shift/src/domain/shift/value_objects/balances.rs",
         1,

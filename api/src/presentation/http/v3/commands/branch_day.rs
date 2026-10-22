@@ -48,9 +48,6 @@ fn map_service_error(err: pos_error::AppError) -> V3Error {
         pos_error::AppError::Domain(ref code) if code == "roleNotAllowed" => V3Error::from(
             xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowed,
         ),
-        pos_error::AppError::Domain(ref code) if code == "roleNotAllowedHere" => V3Error::from(
-            xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,
-        ),
         pos_error::AppError::Domain(ref code) if code == "outOfScope" => V3Error::new(
             "outOfScope",
             None,
