@@ -121,6 +121,7 @@ describe('Customer My Bookings (C03): wordedError handling (#2194)', () => {
         return json(200, {
           branches: [
             {
+              id: BRANCH_ID,
               code: BRANCH_ID,
               name: BRANCH_ID,
               address: null,

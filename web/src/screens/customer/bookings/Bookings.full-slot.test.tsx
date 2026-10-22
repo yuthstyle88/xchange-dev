@@ -117,6 +117,7 @@ describe('xchange#2607: full slot cannot be selected in reschedule dialog', () =
           return json(200, {
             branches: [
               {
+                id: BRANCH_ID,
                 code: BRANCH_ID,
                 name: BRANCH_ID,
                 address: null,

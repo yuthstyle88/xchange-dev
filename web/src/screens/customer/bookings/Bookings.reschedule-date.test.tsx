@@ -103,6 +103,7 @@ describe('Bookings.tsx — reschedule dialog date picker (#4152)', () => {
         return jsonResponse(200, {
           branches: [
             {
+              id: BRANCH_ID,
               code: BRANCH_ID,
               name: BRANCH_ID,
               address: null,
