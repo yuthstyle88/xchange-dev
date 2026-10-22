@@ -87,11 +87,8 @@ pub(crate) async fn caller_in(
                 server_error()
             })?;
     let Some(org) = org else {
-        return Err(V3Error::new(
-            "roleNotAllowedHere",
-            None,
-            "บัญชีนี้ไม่มีสิทธิ์ทำรายการเงินสด",
-            StatusCode::FORBIDDEN,
+        return Err(V3Error::from(
+            xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,
         ));
     };
     let rows: Vec<RoleRow> = sqlx::query_as(
