@@ -106,6 +106,7 @@ export * from './planner_preview';
 export * from './pricing_approve';
 export * from './pricing_board';
 export * from './pricing_configure';
+export * from './pricing_suggestion_settings_save';
 export * from './profit_summary';
 export * from './published_rates';
 export * from './queue';
