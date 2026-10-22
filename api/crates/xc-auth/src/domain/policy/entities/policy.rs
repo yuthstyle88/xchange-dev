@@ -123,10 +123,12 @@ impl Policy {
             EntryPath::Kiosk => match act {
                 // R-8 (owner Q12, design kiosk-shared-phone.md §4.2 D19): only staff issue numbers, so the
                 // kiosk `confirm` needs `QueueOperate`.
-                "rates" | "quote" | "status" | "customerReceipt" | "customerCancel" => {
+                "rates" | "quote" | "status" | "customerReceipt" | "customerCancel" | "settings" => {
                     Some(Need::Public)
                 }
-                "manage" | "configure" => Some(Need::Permission(Permission::RatesDraft)),
+                "manage" | "configure" | "configureSettings" => {
+                    Some(Need::Permission(Permission::RatesDraft))
+                }
                 "notifications" | "list" => Some(Need::Permission(Permission::SignedIn)),
                 "confirm" | "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel"
                 | "issueByToken" | "findByToken" => {
@@ -209,7 +211,9 @@ impl Policy {
                 | EntryPath::StaffFile
                 | EntryPath::StaffUpload => Err(PolicyError::EmployeeAuthRequired),
                 EntryPath::Kiosk => match action.as_str() {
-                    "manage" | "configure" => Err(PolicyError::KioskOwnerOrRates),
+                    "manage" | "configure" | "configureSettings" => {
+                        Err(PolicyError::KioskOwnerOrRates)
+                    }
                     _ => Err(PolicyError::KioskStaff),
                 },
                 _ => Err(PolicyError::SignIn),
@@ -317,7 +321,9 @@ impl Policy {
                 EntryPath::OwnerRoute | EntryPath::DeviceSetup => Err(PolicyError::OwnerOnly),
                 EntryPath::Devices => Err(PolicyError::DeviceStepNotAllowed),
                 EntryPath::Kiosk => match action.as_str() {
-                    "manage" | "configure" => Err(PolicyError::KioskOwnerOrRates),
+                    "manage" | "configure" | "configureSettings" => {
+                        Err(PolicyError::KioskOwnerOrRates)
+                    }
                     _ => Err(PolicyError::KioskStaff),
                 },
                 EntryPath::PaymentMethods => match action.as_str() {

@@ -619,7 +619,7 @@ const TODAY: &[(EntryPath, &str, Option<Need>)] = &[
     (EntryPath::Kiosk, "saveTransaction", None),
     (EntryPath::Kiosk, "setDrawer", None),
     (EntryPath::Kiosk, "setPrinter", None),
-    (EntryPath::Kiosk, "settings", None),
+    (EntryPath::Kiosk, "settings", Some(Need::Public)), // KWQ-E3: kiosk-shared-phone.md D14, the screen reads its own settings
     (EntryPath::Kiosk, "status", Some(Need::Public)),
     (EntryPath::Kiosk, "zzNoSuchAction", None),
     (EntryPath::OwnerRoute, "accept", Some(Need::Permission(Permission::UsersManage))),
