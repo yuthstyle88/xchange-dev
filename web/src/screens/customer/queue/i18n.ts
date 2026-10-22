@@ -39,8 +39,6 @@ export const th = {
   emailCopy: 'ส่งเข้าอีเมล',
   emailTo: 'ส่งไปที่ {to}',
   emailSent: 'ส่งเข้าอีเมลแล้ว',
-  // queue-tablet
-  signOutFailed: 'ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง หรือแจ้งพนักงาน',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -77,7 +75,6 @@ export const en: Record<keyof typeof th, string> = {
   emailCopy: 'Send to my e-mail',
   emailTo: 'Sends to {to}',
   emailSent: 'Sent to your e-mail',
-  signOutFailed: 'Sign-out failed. Please try again or ask staff.',
 };
 
 export const zh: Record<keyof typeof th, string> = {
@@ -114,5 +111,4 @@ export const zh: Record<keyof typeof th, string> = {
   emailCopy: '发送到我的邮箱',
   emailTo: '发送至 {to}',
   emailSent: '已发送到您的邮箱',
-  signOutFailed: '退出登录失败，请重试或联系工作人员',
 };

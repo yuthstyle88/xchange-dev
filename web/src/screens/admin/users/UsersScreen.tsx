@@ -213,6 +213,40 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const reloadShown = async () => {
+    const target = Math.max(users().length, PAGE_SIZE);
+    const seq = ++usersSeq;
+    setLoading(true);
+    setPageError(null);
+    try {
+      const collected: UserRow[] = [];
+      let more = false;
+      while (collected.length < target) {
+        const last = collected[collected.length - 1];
+        const rows = await api.page<UserRow>('admin_users', {
+          branch: props.branch(),
+          ...(last ? { before: last.userId } : {}),
+          limit: PAGE_SIZE,
+        });
+        if (seq !== usersSeq) return;
+        collected.push(...rows);
+        more = rows.length === PAGE_SIZE;
+        if (!more) break;
+      }
+      setUsers(collected);
+      setHasMore(more);
+    } catch (err: unknown) {
+      if (seq !== usersSeq) return;
+      setPageError(wordedError(err));
+      setUsers([]);
+      setHasMore(false);
+    } finally {
+      if (seq === usersSeq) {
+        setLoading(false);
+      }
+    }
+  };
+
   let activeBranch = '';
   createEffect(() => {
     if (!props.shown()) return;
@@ -279,7 +313,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       if (openDialogKey() === sentFrom) setShowCreate(false);
       setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successCreated'));
-      await loadUsers();
+      await reloadShown();
     } catch (err: unknown) {
       if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
     } finally {
@@ -319,7 +353,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       if (openDialogKey() === sentFrom) setActivatingUser(null);
       setTempPassword(res.temporaryPassword ?? null);
       setPageSuccess(t('successActivated'));
-      await loadUsers();
+      await reloadShown();
     } catch (err: unknown) {
       if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
     } finally {
@@ -377,7 +411,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       });
       if (openDialogKey() === sentFrom) setGrantingUser(null);
       setPageSuccess(t('successGranted'));
-      await loadUsers();
+      await reloadShown();
     } catch (err: unknown) {
       if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
     } finally {
@@ -420,7 +454,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       });
       if (openDialogKey() === sentFrom) setProfilingUser(null);
       setPageSuccess(t('successProfileSaved'));
-      await loadUsers();
+      await reloadShown();
     } catch (err: unknown) {
       if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
     } finally {
@@ -442,7 +476,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       });
       if (props.branch() !== branch) return;
       setPageSuccess(t('successRevoked'));
-      await loadUsers();
+      await reloadShown();
     } catch (err: unknown) {
       if (props.branch() !== branch) return;
       setPageSuccess(null);
@@ -468,7 +502,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       });
       if (props.branch() !== branch) return;
       setPageSuccess(t(successKey));
-      await loadUsers();
+      await reloadShown();
     } catch (err: unknown) {
       if (props.branch() !== branch) return;
       setPageSuccess(null);

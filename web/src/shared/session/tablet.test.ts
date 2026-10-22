@@ -1,128 +1,169 @@
-// QW-3 (kiosk-shared-phone §5r F9, rows U6–U8): the borrowed branch tablet signs the customer out on done and on
-// idle; a personal phone never does. Written before the implementation by the sub-controller claude/36d9dc6a.
-// Do not edit, delete or weaken these tests; add tests in a file of your own.
+// BT-F1 (kiosk-shared-phone §7.3 T-D6, T-D10; §7.7; §7.8 rows T6, T7, T10, T12, FE side): the branch tablet mark is
+// the server's answer, never the URL or storage. Written before the implementation by the XC FE controller
+// claude/e8020026. Do not edit, delete or weaken these tests; add tests in a file of your own.
 //
-// What these tests pin:
-// - `isSharedTablet()` is true when the page URL has `?shared=1`, and stays true for the tab via
-//   sessionStorage['xc.sharedTablet'] after the parameter is gone.
-// - `signOutAndRestart(branch, api)` posts `POST /api/auth/logout` once (§4.3a W12), then calls
-//   `location.assign('/app/queue?branch=<branch>&shared=1')`.
-// - `armTabletIdle(branch, api)` on a shared tablet signs out after `TABLET_IDLE_MS` (120 000 ms) with no input;
-//   a `pointerdown` or `keydown` restarts the wait; the returned disposer stops it. On a personal phone it does nothing.
+// What these tests pin (the header of ./tablet.ts is the contract):
+// - `readTabletMode(fetchFn)` reads `GET /api/branch-tablet/me` once and returns its answer when it is a well-formed
+//   `paired: true`; anything else (`paired: false`, a revoked/unknown cookie, 404, 5xx, a network failure, a body that
+//   is not JSON, a `paired: true` with a field missing) is `{paired: false}`, and it never throws.
+// - `?shared=1` and `sessionStorage['xc.sharedTablet']` change nothing.
+// - `pairFromFragment(api, loc, history)` posts `#pair=<CODE>` once through the ApiClient as `{code}`, strips the
+//   fragment on success and on refusal, and answers 'paired' / 'invalid'; no `pair=` ⇒ 'none' and no request.
+// - The old QW-3 API (`isSharedTablet`, `signOutAndRestart`, `armTabletIdle`) is gone.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../api/client';
-import { TABLET_IDLE_MS } from './idle';
-import { armTabletIdle, isSharedTablet, signOutAndRestart } from './tablet';
+import * as tabletModule from './tablet';
+import { pairFromFragment, readTabletMode } from './tablet';
 
-let assign: ReturnType<typeof vi.fn>;
-let calls: { url: string; method: string }[];
+interface Sent {
+  method: string;
+  path: string;
+  body: unknown;
+  headers: Headers;
+  credentials: RequestCredentials | undefined;
+}
 
-function fakeApi(): ApiClient {
-  const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(input), method: init?.method ?? 'GET' });
-    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+let sent: Sent[];
+let answer: () => Promise<Response>;
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
+const fetchFn = vi.fn(async (input: string, init?: RequestInit): Promise<Response> => {
+  const u = new URL(input, 'http://localhost');
+  sent.push({
+    method: (init?.method ?? 'GET').toUpperCase(),
+    path: u.pathname,
+    body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+    headers: new Headers(init?.headers),
+    credentials: init?.credentials,
   });
-  return new ApiClient(fetchFn as unknown as typeof fetch);
-}
+  return answer();
+});
 
-function openAt(search: string): void {
-  vi.stubGlobal('location', { ...window.location, search, pathname: '/app/queue', assign });
-}
+const meReads = () => sent.filter((s) => s.path === '/api/branch-tablet/me');
+const pairs = () => sent.filter((s) => s.path === '/api/branch-tablet/pair');
 
-async function flush(): Promise<void> {
-  for (let i = 0; i < 5; i += 1) await Promise.resolve();
-}
+const PAIRED = { paired: true, tabletId: 'bt-1', branchCode: 'MAIN', name: 'Front desk tablet' };
 
 beforeEach(() => {
-  calls = [];
-  assign = vi.fn();
+  sent = [];
+  fetchFn.mockClear();
+  answer = async () => json(200, { paired: false });
   try {
     window.sessionStorage.clear();
   } catch {
-    // storage blocked in this environment: the tests below still drive the URL flag
+    // storage blocked here: the rows below do not need it
   }
 });
 
 afterEach(() => {
-  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-describe('QW-3: isSharedTablet', () => {
-  it('is false on a personal phone (no ?shared=1)', () => {
-    openAt('?branch=MAIN');
-    expect(isSharedTablet()).toBe(false);
+describe('BT-F1: readTabletMode', () => {
+  it('T-D6: reads GET /api/branch-tablet/me once, same-origin, and returns the paired answer', async () => {
+    answer = async () => json(200, PAIRED);
+    const mode = await readTabletMode(fetchFn);
+    expect(mode).toEqual(PAIRED);
+    expect(meReads()).toHaveLength(1);
+    expect(meReads()[0]!.method).toBe('GET');
+    expect(meReads()[0]!.credentials).toBe('same-origin');
+    expect(sent).toHaveLength(1);
   });
 
-  it('is true with ?shared=1, and stays true for the tab after the parameter is gone', () => {
-    openAt('?branch=MAIN&shared=1');
-    expect(isSharedTablet()).toBe(true);
-    openAt('?branch=MAIN');
-    expect(isSharedTablet()).toBe(true);
+  it('T6/T7: a revoked or unknown cookie ({paired: false}) is not paired', async () => {
+    answer = async () => json(200, { paired: false });
+    await expect(readTabletMode(fetchFn)).resolves.toEqual({ paired: false });
+    expect(meReads()).toHaveLength(1);
+  });
+
+  it.each([
+    ['404 (the BE not deployed yet)', async () => json(404, { error: { code: 'notFound', message: 'nope' } })],
+    ['500', async () => json(500, { error: { code: 'serverError', message: 'down' } })],
+    ['503 with a non-JSON body', async () => new Response('Service Unavailable', { status: 503 })],
+    ['a network failure', async () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['a 200 that is not JSON', async () => new Response('<html>oops</html>', { status: 200 })],
+    ['a 200 with paired: true but no branchCode', async () => json(200, { paired: true, tabletId: 'bt-1', name: 'x' })],
+    ['a 200 with paired: true and an empty branchCode', async () => json(200, { ...PAIRED, branchCode: '' })],
+    ['a 200 with paired: "yes"', async () => json(200, { ...PAIRED, paired: 'yes' })],
+    ['a 200 with null', async () => json(200, null)],
+  ])('T12 fail-open: %s ⇒ {paired: false}, no throw', async (_label, a) => {
+    answer = a as () => Promise<Response>;
+    await expect(readTabletMode(fetchFn)).resolves.toEqual({ paired: false });
+    expect(meReads()).toHaveLength(1);
+  });
+
+  it('T12: ?shared=1 and the old sessionStorage mark have no effect', async () => {
+    vi.stubGlobal('location', { ...window.location, search: '?branch=MAIN&shared=1', pathname: '/app/queue' });
+    try {
+      window.sessionStorage.setItem('xc.sharedTablet', '1');
+    } catch {
+      // storage blocked: the URL flag alone is still checked
+    }
+    answer = async () => json(200, { paired: false });
+    await expect(readTabletMode(fetchFn)).resolves.toEqual({ paired: false });
+    expect(meReads()).toHaveLength(1);
+  });
+
+  it('the QW-3 API is gone: the module exports no isSharedTablet, signOutAndRestart or armTabletIdle', () => {
+    const names = Object.keys(tabletModule);
+    expect(names).not.toContain('isSharedTablet');
+    expect(names).not.toContain('signOutAndRestart');
+    expect(names).not.toContain('armTabletIdle');
   });
 });
 
-describe('QW-3: signOutAndRestart (U6)', () => {
-  it('posts /api/auth/logout once, then restarts the tablet page for the branch', async () => {
-    openAt('?branch=MAIN&shared=1');
-    await signOutAndRestart('MAIN', fakeApi());
-    const logouts = calls.filter((c) => c.url.endsWith('/api/auth/logout'));
-    expect(logouts).toHaveLength(1);
-    expect(logouts[0]!.method).toBe('POST');
-    expect(assign).toHaveBeenCalledTimes(1);
-    expect(assign).toHaveBeenCalledWith('/app/queue?branch=MAIN&shared=1');
-  });
-});
+describe('BT-F1: pairFromFragment (T-D10)', () => {
+  function at(hash: string) {
+    const loc = { hash, pathname: '/app/queue', search: '?branch=MAIN' };
+    const history = { replaceState: vi.fn() };
+    return { loc, history };
+  }
 
-describe('QW-3: armTabletIdle (U7, U8)', () => {
-  it('U7: on a shared tablet, no input for TABLET_IDLE_MS signs out', async () => {
-    expect(TABLET_IDLE_MS).toBe(120_000);
-    vi.useFakeTimers();
-    openAt('?branch=MAIN&shared=1');
-    const dispose = armTabletIdle('MAIN', fakeApi());
-    await vi.advanceTimersByTimeAsync(TABLET_IDLE_MS - 1);
-    await flush();
-    expect(assign).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    await flush();
-    expect(calls.filter((c) => c.url.endsWith('/api/auth/logout'))).toHaveLength(1);
-    expect(assign).toHaveBeenCalledWith('/app/queue?branch=MAIN&shared=1');
-    dispose();
+  it('#pair=<CODE>: one POST /api/branch-tablet/pair {code} through ApiClient; the fragment is stripped; "paired"', async () => {
+    answer = async () => json(200, { tabletId: 'bt-1', branchCode: 'MAIN', name: 'Front desk tablet' });
+    const { loc, history } = at('#pair=ABCDE-12345');
+    const outcome = await pairFromFragment(new ApiClient(fetchFn), loc, history);
+    expect(outcome).toBe('paired');
+    expect(pairs()).toHaveLength(1);
+    expect(pairs()[0]!.method).toBe('POST');
+    expect(pairs()[0]!.body).toEqual({ code: 'ABCDE-12345' });
+    // ApiClient's write header: proof it went through the client, not a raw fetch.
+    expect(pairs()[0]!.headers.get('x-xchange-request')).toBe('1');
+    expect(sent).toHaveLength(1);
+    expect(history.replaceState).toHaveBeenCalledTimes(1);
+    expect(history.replaceState).toHaveBeenCalledWith(null, '', '/app/queue?branch=MAIN');
   });
 
-  it('U7: a pointerdown or keydown restarts the wait', async () => {
-    vi.useFakeTimers();
-    openAt('?branch=MAIN&shared=1');
-    const dispose = armTabletIdle('MAIN', fakeApi());
-    await vi.advanceTimersByTimeAsync(TABLET_IDLE_MS - 1_000);
-    document.dispatchEvent(new Event('pointerdown'));
-    await vi.advanceTimersByTimeAsync(TABLET_IDLE_MS - 1_000);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
-    await vi.advanceTimersByTimeAsync(TABLET_IDLE_MS - 1_000);
-    await flush();
-    expect(assign).not.toHaveBeenCalled();
-    dispose();
+  it('T10: 400 PAIRING_CODE_INVALID ⇒ "invalid", and the fragment is stripped all the same', async () => {
+    answer = async () => json(400, { error: { code: 'PAIRING_CODE_INVALID', message: 'invalid code' } });
+    const { loc, history } = at('#pair=ABCDE-12345');
+    const outcome = await pairFromFragment(new ApiClient(fetchFn), loc, history);
+    expect(outcome).toBe('invalid');
+    expect(pairs()).toHaveLength(1);
+    expect(history.replaceState).toHaveBeenCalledWith(null, '', '/app/queue?branch=MAIN');
   });
 
-  it('the disposer stops the timer', async () => {
-    vi.useFakeTimers();
-    openAt('?branch=MAIN&shared=1');
-    const dispose = armTabletIdle('MAIN', fakeApi());
-    dispose();
-    await vi.advanceTimersByTimeAsync(TABLET_IDLE_MS * 2);
-    await flush();
-    expect(assign).not.toHaveBeenCalled();
-    expect(calls).toHaveLength(0);
+  it('429 RATE_LIMITED or a network failure ⇒ "invalid", no throw, the fragment stripped', async () => {
+    for (const a of [
+      async () => json(429, { error: { code: 'RATE_LIMITED', message: 'slow down' } }),
+      async () => Promise.reject(new TypeError('Failed to fetch')),
+    ]) {
+      answer = a as () => Promise<Response>;
+      const { loc, history } = at('#pair=ABCDE-12345');
+      await expect(pairFromFragment(new ApiClient(fetchFn), loc, history)).resolves.toBe('invalid');
+      expect(history.replaceState).toHaveBeenCalledWith(null, '', '/app/queue?branch=MAIN');
+    }
   });
 
-  it('U8: on a personal phone it never signs out', async () => {
-    vi.useFakeTimers();
-    openAt('?branch=MAIN');
-    const dispose = armTabletIdle('MAIN', fakeApi());
-    await vi.advanceTimersByTimeAsync(TABLET_IDLE_MS * 3);
-    await flush();
-    expect(assign).not.toHaveBeenCalled();
-    expect(calls).toHaveLength(0);
-    dispose();
+  it('no #pair= ⇒ "none": no request, and the URL is left alone', async () => {
+    for (const hash of ['', '#', '#other=1']) {
+      const { loc, history } = at(hash);
+      await expect(pairFromFragment(new ApiClient(fetchFn), loc, history)).resolves.toBe('none');
+      expect(history.replaceState).not.toHaveBeenCalled();
+    }
+    expect(sent).toHaveLength(0);
   });
 });
