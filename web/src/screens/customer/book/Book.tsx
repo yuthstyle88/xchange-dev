@@ -11,6 +11,7 @@ import { fill, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
+import { readHostOrg } from '../../../shared/api/public-host';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { QrCode } from '../../../shared/ui/QrCode';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
@@ -140,45 +141,21 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     setBranchesLoading(true);
     setBranchesError(null);
     try {
-      let list: PublicBranch[] = [];
-      let org: string | undefined = typeof props.org === 'string' ? props.org : undefined;
-      if (!org) {
-        const hostRes = await fetchFn('/api/public/host');
-        if (hostRes.status !== 200) {
-          setBranches([]);
-          setBranchesLoading(false);
-          setBranchesError(t('error.loadFailed'));
-          return;
+      const org =
+        typeof props.org === 'string' && props.org
+          ? props.org
+          : await readHostOrg(api);
+      const branchJson = await api.publicGet<{ branches?: PublicBranch[] }>(
+        `/api/public/orgs/${encodeURIComponent(org)}/branches`,
+      );
+      const list = (branchJson?.branches ?? []).filter(
+        (b: PublicBranch) => b.bookingEnabled !== false,
+      );
+      for (const b of list) {
+        if (!b.timezone) {
+          throw new Error('missing branch timezone');
         }
-        const hostJson = await hostRes.json().catch(() => null);
-        if (hostJson && typeof hostJson.org === 'string' && hostJson.org.length > 0) {
-          org = hostJson.org;
-        } else {
-          setBranches([]);
-          setBranchesLoading(false);
-          setBranchesError(t('error.loadFailed'));
-          return;
-        }
-      }
-
-      if (org) {
-        const branchRes = await fetchFn(`/api/public/orgs/${encodeURIComponent(org)}/branches`);
-        if (branchRes.status !== 200) {
-          setBranches([]);
-          setBranchesLoading(false);
-          setBranchesError(t('error.loadFailed'));
-          return;
-        }
-        const branchJson = await branchRes.json().catch(() => ({}));
-        list = (branchJson.branches ?? []).filter(
-          (b: PublicBranch) => b.bookingEnabled !== false,
-        );
-        for (const b of list) {
-          if (!b.timezone) {
-            throw new Error('missing branch timezone');
-          }
-          getTodayInTimezone(b.timezone);
-        }
+        getTodayInTimezone(b.timezone);
       }
       setBranches(list);
       setBranchesLoading(false);

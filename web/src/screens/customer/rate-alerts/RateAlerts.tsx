@@ -9,6 +9,7 @@ import {
 } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
+import { readHostOrg } from '../../../shared/api/public-host';
 import type {
   CreateRateAlertInput,
   MyRateAlertItem,
@@ -160,64 +161,15 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
 
   const loadBranches = async () => {
     try {
-      let org = props.org;
-      if (!org) {
-        const res = await fetchFn('/api/public/host');
-        if (!res.ok) {
-          let errJson: any = null;
-          try {
-            errJson = await res.json();
-          } catch {
-            // ignore
-          }
-          if (errJson?.error) {
-            throw new ApiError({
-              code: errJson.error.code ?? 'serverError',
-              message: errJson.error.message ?? '',
-              status: res.status,
-            });
-          }
-          throw new ApiError({
-            code: 'httpError',
-            message: res.statusText,
-            status: res.status,
-          });
-        }
-        const json = (await res.json()) as { org?: string };
-        if (json && typeof json.org === 'string' && json.org.length > 0) {
-          org = json.org;
-        }
-      }
-      if (org) {
-        const branchesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches`;
-        const bRes = await fetchFn(branchesUrl);
-        if (!bRes.ok) {
-          let errJson: any = null;
-          try {
-            errJson = await bRes.json();
-          } catch {
-            // ignore
-          }
-          if (errJson?.error) {
-            throw new ApiError({
-              code: errJson.error.code ?? 'serverError',
-              message: errJson.error.message ?? '',
-              status: bRes.status,
-            });
-          }
-          throw new ApiError({
-            code: 'httpError',
-            message: bRes.statusText,
-            status: bRes.status,
-          });
-        }
-        const bJson = (await bRes.json()) as PublicBranchesData;
-        const list = bJson.branches ?? [];
-        setBranches(list);
-        setBranchesError(null);
-        if (list.length > 0 && !branch()) {
-          setBranch(list[0].code);
-        }
+      const org = props.org || (await readHostOrg(api));
+      const bJson = await api.publicGet<PublicBranchesData>(
+        `/api/public/orgs/${encodeURIComponent(org)}/branches`,
+      );
+      const list = bJson.branches ?? [];
+      setBranches(list);
+      setBranchesError(null);
+      if (list.length > 0 && !branch()) {
+        setBranch(list[0].code);
       }
     } catch (err: unknown) {
       setBranchesError(wordedError(err));
