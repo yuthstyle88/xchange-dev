@@ -428,7 +428,7 @@ async fn an_org_wide_admin_cannot_grant_admin() {
     let a = grant(&db, ORG_ADMIN, &user, "ADMIN", Some(B01)).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "ADMIN grants ADMIN@B01",
     );
@@ -444,7 +444,7 @@ async fn an_org_wide_admin_cannot_grant_executive() {
     let a = grant(&db, ORG_ADMIN, &user, "EXECUTIVE", None).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "ADMIN grants EXECUTIVE",
     );
@@ -474,7 +474,7 @@ async fn executive_with_only_a_branch_admin_cannot_grant_admin() {
     let a = grant(&db, "EXECUTIVE@*+ADMIN@XC-B01", &user, "ADMIN", Some(B01)).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "EXECUTIVE + ADMIN@B01 grants ADMIN@B01",
     );
@@ -491,7 +491,7 @@ async fn an_org_wide_admin_cannot_disable_another_admin() {
     let a = disable(&db, ORG_ADMIN, &other).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "ADMIN disables ADMIN@B01",
     );
@@ -507,7 +507,7 @@ async fn an_org_wide_admin_cannot_disable_an_executive() {
     let a = disable(&db, ORG_ADMIN, &exec).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "ADMIN disables EXECUTIVE",
     );
@@ -527,7 +527,7 @@ async fn an_org_wide_admin_cannot_change_the_roles_of_an_executive() {
     let r = revoke(&db, ORG_ADMIN, &exec, "FINANCE", Some(B01)).await;
     refused(
         &r,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "ADMIN revokes from an EXECUTIVE",
     );
@@ -539,7 +539,7 @@ async fn an_org_wide_admin_cannot_change_the_roles_of_an_executive() {
     let g = grant(&db, ORG_ADMIN, &exec, "RATE_MANAGER", Some(B01)).await;
     refused(
         &g,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "ADMIN grants to an EXECUTIVE",
     );

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TW-0 skeleton (kiosk-shared-phone §7.11.4 W-D8; §7.11.6 W10): the setup screen, the wrapper's only screen besides
+     the page. TW-2 owns it: scan the admin QR, or type the code, and the one confirm / refusal line. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="32dp">
+
+    <Button
+        android:id="@+id/setup_scan"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/setup_scan" />
+
+    <EditText
+        android:id="@+id/setup_code"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/setup_code_hint"
+        android:importantForAutofill="no"
+        android:inputType="textCapCharacters|textNoSuggestions"
+        android:maxLength="13" />
+
+    <Button
+        android:id="@+id/setup_pair"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/setup_pair" />
+
+    <TextView
+        android:id="@+id/setup_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center" />
+</LinearLayout>

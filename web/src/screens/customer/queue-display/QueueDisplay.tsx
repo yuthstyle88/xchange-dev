@@ -1,4 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { ApiClient } from '../../../shared/api/client';
+import { readHostOrg } from '../../../shared/api/public-host';
 import { screenT } from '../../../shared/i18n';
 import { chime, soundOn, toggleSound } from '../../../shared/queue/queue-sound';
 import { FullscreenButton } from '../../customer/rate-display/FullscreenButton';
@@ -32,27 +34,30 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
     Array<{ displayNumber: string; status: string; calledAt: string }>
   >([]);
 
+  const api = new ApiClient(props.fetch);
   let org: string | null = null;
   let sinceVersion: number | null = null;
 
   const branch = () => branchFromSearch(props.search);
 
-  const poll = async (isFirst = false) => {
-    const code = branch();
-    if (!org || !code) return;
-    const base = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(code)}/queue-display`;
-    const url = sinceVersion !== null ? `${base}?since=${sinceVersion}` : base;
+  const poll = async () => {
     try {
-      const res = await props.fetch(url);
-      if (!res.ok) return;
-      const body = (await res.json()) as {
+      const isFirst = !org;
+      if (!org) {
+        org = await readHostOrg(api);
+      }
+      const code = branch();
+      if (!code) return;
+      const base = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(code)}/queue-display`;
+      const url = sinceVersion !== null ? `${base}?since=${sinceVersion}` : base;
+      const body = await api.publicGet<{
         version?: number;
         changed?: boolean;
         data?: {
           called?: Array<{ displayNumber?: string; status?: string; calledAt?: string }>;
           recent?: Array<{ displayNumber?: string; status?: string; calledAt?: string }>;
         };
-      };
+      }>(url);
       if (typeof body.version === 'number') {
         sinceVersion = body.version;
       }
@@ -73,21 +78,8 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
     }
   };
 
-  const load = async () => {
-    try {
-      const hostRes = await props.fetch('/api/public/host');
-      if (!hostRes.ok) return;
-      const hostBody = (await hostRes.json()) as { org?: string };
-      if (!hostBody.org) return;
-      org = hostBody.org;
-      await poll(true);
-    } catch {
-      // keep empty state until next load
-    }
-  };
-
   onMount(() => {
-    void load();
+    void poll();
     const ms = props.intervalMs ?? 5_000;
     const id = setInterval(() => {
       void poll();

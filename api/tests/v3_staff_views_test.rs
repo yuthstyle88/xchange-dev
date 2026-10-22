@@ -37,7 +37,8 @@
 //!     access role's `as_str()`, choice), `branchId`, `branchName` (`branches.name`), `permissions`
 //!     (the actor's effective permissions on this branch, each serialised as `Permission` is, so the
 //!     page decides with no role literal).
-//!   - `staff_floor`: `phase` (`ops_state.phase`), `hours` `{ open, close }` or absent, `myClockIn`
+//!   - `staff_floor`: `phase` (the read phase (`BranchDay::read_phase` over `ops_state.phase` and
+//!     the branch's OPEN shifts)), `hours` `{ open, close }` or absent, `myClockIn`
 //!     or absent, `myShift` `{ id, openedAt }` or absent, `cutoff` `{ at, pendingCount }` or absent;
 //!     and **only** for an actor holding `BranchDayOperate`, `CashTargetSet` or `CashManage`:
 //!     `target` `{ amounts: { CUR: "0.00" }, at }` and `safe` `{ CUR: "0.00" }`.
@@ -263,7 +264,9 @@ impl Floor {
     ) {
         sqlx::query(
             "INSERT INTO ops_state (branch_id, phase, target, cutoff) \
-             VALUES ('MAIN', $1, $2, $3)",
+             VALUES ('MAIN', $1, $2, $3) \
+             ON CONFLICT (branch_id) DO UPDATE \
+             SET phase = EXCLUDED.phase, target = EXCLUDED.target, cutoff = EXCLUDED.cutoff",
         )
         .bind(phase)
         .bind(target)
@@ -729,11 +732,36 @@ async fn staff_floor_my_shift_is_my_own_open_shift_and_not_another_tellers() {
 #[actix_web::test]
 async fn staff_floor_cutoff_answers_its_time_and_how_many_are_pending() {
     let f = Floor::start().await;
+    let teller = test_callers::V2_STAFF
+        .into_iter()
+        .map(|(r, _)| r)
+        .find(|r| holds(r, Permission::AttendanceClock))
+        .unwrap();
+    let teller_id = f.person("p").await;
+    let manager = f.person("manager").await;
+    f.open_shift(&teller_id, &manager).await;
     f.ops(
         "CUT_OFF",
         None,
         None,
         Some(json!({ "at": T0, "by": "bm", "shiftId": "s-1", "pending": ["r-1", "r-2"] })),
+    )
+    .await;
+    let floor = f.ok(&spec(teller, &teller_id, "MAIN"), "staff_floor", "").await;
+    assert_eq!(floor["phase"], json!("CUT_OFF"));
+    assert_eq!(instant(&floor["cutoff"]["at"], "cutoff.at"), millis(T0));
+    assert_eq!(floor["cutoff"]["pendingCount"], json!(2));
+    f.finish().await;
+}
+
+#[actix_web::test]
+async fn staff_floor_reads_closed_after_cutoff_with_no_open_shift() {
+    let f = Floor::start().await;
+    f.ops(
+        "CUT_OFF",
+        None,
+        None,
+        Some(json!({ "at": T0, "by": "bm", "shiftId": "s-1", "pending": [] })),
     )
     .await;
     let teller = test_callers::V2_STAFF
@@ -743,9 +771,9 @@ async fn staff_floor_cutoff_answers_its_time_and_how_many_are_pending() {
         .unwrap();
     let id = f.person("p").await;
     let floor = f.ok(&spec(teller, &id, "MAIN"), "staff_floor", "").await;
-    assert_eq!(floor["phase"], json!("CUT_OFF"));
+    assert_eq!(floor["phase"], json!("CLOSED"));
     assert_eq!(instant(&floor["cutoff"]["at"], "cutoff.at"), millis(T0));
-    assert_eq!(floor["cutoff"]["pendingCount"], json!(2));
+    assert_eq!(floor["cutoff"]["pendingCount"], json!(0));
     f.finish().await;
 }
 

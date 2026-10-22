@@ -7,6 +7,12 @@
 > 🔴 **Superseded in part (claude/e92db6, 2026-10-21).** The owner's later rulings changed the kiosk model. **§4 is the
 > current design for the server, and §0a below is the current set of rules.** §0–§3, §5 and §6 are kept as history. Where
 > they differ from §0a or §4, they are superseded and must not be built. Every changed row is marked ~~superseded~~ inline.
+>
+> 🔴 **Branch tablet (2026-10-22):** §7 is the current design for the branch tablet. It replaces D16's "no tablet
+> credential", F9, U6–U8, QW-3 and QW-2g.
+>
+> 🔴 **Wrapper app (2026-10-22):** §7.11 adds the wrapper app the branch tablet runs the page inside. It amends R-T5's
+> "no tablet app"; the page itself stays one page.
 
 ## 0a. Current rules (owner, 2026-10-21; supersede §0–§3, §5, §6 where they differ)
 
@@ -223,8 +229,8 @@ Recorded on PR 4249: issuecomment-6312118645 (R-1..R-3, R-9), issuecomment-63215
 | D13 | **At the desk save** (owner Q2): passport customer A ≠ the request's member B ⇒ save on A, keep B on the request and quote, and write one `KIOSK_CUSTOMER_DIFFERS` audit row. | owner Q2 |
 | D14 | **KS-3 settings** shrink to what the queue machine needs: `kiosk_settings.result_seconds` (how long the issued number stays on the machine, default 10) with a public read on the poll seam and a `RatesDraft` write. | KS-3 |
 | D15 | `queueTicketTake` and `/app/book` stay unchanged (owner Q4). | owner Q4 |
-| D16 | **The branch tablet is a borrowed phone: the customer signs in on it** (owner Q11: *"ก็ทำเหมือน ที่ลูกค้า ใช้ เครื่องตัว เอง ไง"* · *"แค่ ยืมที่สาขาใช้งานชั่วคราว"*). <br>• Same page, same sign-in (D11, SMS or e-mail OTP), same `webRequestCreate`, so every request has a member. There is **no no-login path**, no tablet credential and no new table. <br>• Because the device is borrowed, the page **signs out and starts over** when the request QR has been shown and the customer presses เสร็จ, or after the idle timeout. That is FE behaviour (as #4243 does for one customer at a time). The server's part is today's sign-out, which revokes the session. | owner Q11 |
-| D17 | *(dropped by owner Q11: the no-login tablet guard, `branch_tablets`, `kiosk_requests.tablet_id`)* | |
+| D16 | *(§7 supersedes the tablet credential, the table and the sign-out on เสร็จ/idle; the sign-in stands)* **The branch tablet is a borrowed phone: the customer signs in on it** (owner Q11: *"ก็ทำเหมือน ที่ลูกค้า ใช้ เครื่องตัว เอง ไง"* · *"แค่ ยืมที่สาขาใช้งานชั่วคราว"*). <br>• Same page, same sign-in (D11, SMS or e-mail OTP), same `webRequestCreate`, so every request has a member. There is **no no-login path**, no tablet credential and no new table. <br>• Because the device is borrowed, the page **signs out and starts over** when the request QR has been shown and the customer presses เสร็จ, or after the idle timeout. That is FE behaviour (as #4243 does for one customer at a time). The server's part is today's sign-out, which revokes the session. | owner Q11 |
+| D17 | *(dropped by owner Q11: the no-login tablet guard, `branch_tablets`, `kiosk_requests.tablet_id`)* · `branch_tablets` comes back, as a paired device, in §7 (owner 2026-10-22, *"อนุมัติ"*); the no-login guard and `kiosk_requests.tablet_id` stay dropped | |
 | D18 | *(dropped with D17: every web request now carries its member, so the desk has nothing to attach)* | |
 | D19 | **The kiosk's public `confirm` no longer issues numbers on its own** (R-8, Q12: *"เฉพาะพนักงาน (แนะนำ)"*). `confirm` is `Need::Public` today (`policy.rs:123-126`), so anyone who can call `/api/kiosk` can get a queue number without a staff scan. That broke the owner's rule that the number is issued at the scan. `confirm` needs `QueueOperate`, so the queue machine can still call it, and nothing is removed. `quote`/`status`/`customerReceipt`/`customerCancel` stay public. | owner: the number is issued when staff scan |
 | D20 | **The desk's passport skip stays, and nothing here gets in front of it** (owner: *"ตรวจ พาสปอร์ท ให้ กดข้ามได้"*). <br>• Measured on `main` `7834507`: `onSkip` (`web/src/screens/desk/steps/customer/step.tsx:159-177`, #539) sends a placeholder passport image with `WALK-IN` / `WALKIN` / `XXX`, then runs the normal `reserve`. The server's passport step only requires a passport file (`api/crates/xc-exchange/src/domain/exchange/value_objects/transaction_form.rs:246-249`). So a skipped save lands on the one placeholder customer that `reserve` finds or creates for `WALKIN`/`XXX`. <br>• A request opened from the QR (`findByToken` → `?kiosk=<id>`), or issued by the queue machine, adds **no** passport check and **no** "customer required" rule to the desk save. `issueByToken` checks nothing about the customer. <br>• **The skip placeholder never counts as a different customer.** D13 (the `KIOSK_CUSTOMER_DIFFERS` audit) skips a save whose passport is the placeholder. It is recognised in one place, `WalkInPlaceholder::is(passport_no, nationality)`, with the desk's values (`WALKIN`, `XXX`). <br>• So a skipped save keeps the request's member, with no audit row. | owner; #539 |
@@ -426,7 +432,7 @@ Renumbered with `scripts/migration-slot.sh next` right before `pr_open`. No back
 e-mail OTP (D11, the existing `EMAIL` identity type); the e-mail copy and its link (D21, D22, signed, nothing stored).
 
 **Dropped with the owner's answers:** `device_jobs.kind` + `PRINT_QUEUE_TICKET` (Q7 B), `branch_tablets` and
-`kiosk_requests.tablet_id` (Q11).
+`kiosk_requests.tablet_id` (Q11). ~~superseded~~ for `branch_tablets`: §7.6 adds it (owner 2026-10-22).
 
 **Not wanted:** `queue_counters.label`. The display and the phone show the number only (R-7, Q8). The version of W4a
 needs no column either.
@@ -568,7 +574,7 @@ tenant, so its rate limit, audit and SMS text are separate from other users of N
 | F6 | **Issued screen:** the number, large, for `result_seconds` (the `kiosk_settings` read, §4 D14; default 10), then the scanner again. | §4 D14 |
 | F7 | **Web request page `/app/queue?branch=<code>`** (customer, th/en/zh), behind sign-in like `/app/bookings`. <br>• It reads the branch's currencies and rates from the public `queue-rates` view (`GET /api/public/orgs/{org}/branches/{code}/queue-rates`, today's kiosk `rates` JSON, W2; `{org}` from `/api/public/host`). It then sends `{branch, type, currency, amount, paymentMethod?}` to `webRequestCreate` (W1). <br>• `409 alreadyQueued` opens that request instead (§4 D12). | R-3, §4 D2 |
 | F8 | **Status on the same page, after submit.** <br>• `ViewPoller` on `myWebRequest {id}` (W4). It shows the request QR (`QrCode` of `requestQrUrl`, with its download, R-10), the expiry, and then the number, place in line and status (W5: `QUOTED`, `WAITING`, `CALLED`, `SERVING`, `COMPLETED`, `CANCELLED`, `NO_SHOW`). <br>• **The token is held in memory only** (W3). After a reload the page calls `webRequestQrReissue {id}` and draws the new QR. <br>• **Expired:** `404 notFound` after `expiresAt` shows *expired, please fill the request again* (W5: there is no `EXPIRED` status). <br>• **ยกเลิกคิว** is one press, `webRequestCancel` (R-11). **ส่งเข้าอีเมล** shows only when `my_profile.emailCopy.available`, with the masked `to` (W11). It posts `copyByEmail {subject:"webRequest", id, qr}`, where `qr` is the in-memory token (W3). **เสร็จ** leaves the page. | §4 D8, D21, W3–W5, W11 |
-| F9 | **The borrowed tablet (R-5):** the page signs out on **เสร็จ** and after an idle timeout, but only on a tablet. The tablet is told apart by a **`?shared=1` on its home URL**, stored in `sessionStorage` for that tab; there is no server flag. Sign-out is today's `POST /api/auth/logout`, which revokes the customer's session too (W12; the customer app has no sign-out call today, so this is its first), then `location.assign('/app/queue?branch=<code>&shared=1')`. The idle timeout is 120 s, one constant `TABLET_IDLE_MS`, in a new `shared/session/idle.ts`. On a personal phone nothing signs out. | R-5, §4 D16 |
+| F9 | ~~superseded~~ by §7 (T-D6..T-D8, BT-F1, BT-F2). **The borrowed tablet (R-5):** the page signs out on **เสร็จ** and after an idle timeout, but only on a tablet. The tablet is told apart by a **`?shared=1` on its home URL**, stored in `sessionStorage` for that tab; there is no server flag. Sign-out is today's `POST /api/auth/logout`, which revokes the customer's session too (W12; the customer app has no sign-out call today, so this is its first), then `location.assign('/app/queue?branch=<code>&shared=1')`. The idle timeout is 120 s, one constant `TABLET_IDLE_MS`, in a new `shared/session/idle.ts`. On a personal phone nothing signs out. | R-5, §4 D16 |
 | F10 | **The board QR** (`BookingQr.tsx:16`) targets `/app/queue?branch=<code>` instead of `/app/book` (R-3; §0a KS-7). `/app/book` itself stays (§4 D15). | R-3 |
 | F11 | **`/q` page:** the request QR's URL must open something on a phone. It is a signed-out page that says *"show this QR to staff"* and never sends the fragment anywhere. | §4 D3 |
 | F12 | **`/c` page** (§4 D22): signed-out. It posts the fragment to `copyLinkView` and shows the details and the live status, drawing the QR from the fragment with `QrCode`. It is read-only. | §4 D22 |
@@ -615,7 +621,7 @@ classDiagram
   }
   class TabletSession {
     isShared()
-    armIdle(ms, onIdle)
+    armIdle(ms, onIdle, onFailed)
     signOutAndRestart(branch)
   }
   class RequestQrToken {
@@ -638,7 +644,7 @@ classDiagram
 | customer kiosk flow | `app/lib/features/kiosk/**`, `app/test/features/kiosk/**` | removed (F1) |
 | `RequestQrToken.parse` | `web/src/shared/queue/request-qr.ts` | new: the one place that reads `/q#<token>` (♻️: queue page, desk, `/q`) |
 | `/app/queue` | `web/pages/app-queue.html`, `web/src/screens/customer/queue/{main.tsx, QueueRequest.tsx, i18n.ts, queue.css}` | new |
-| `TabletSession` | `web/src/shared/session/tablet.ts` (+ `idle.ts`) | new |
+| `TabletSession` | `web/src/shared/session/tablet.ts` (+ `idle.ts`) | new · ~~superseded~~ by §7 BT-F1 (`readTabletMode`, no idle) |
 | `/q`, `/c` | `web/pages/{q,c}.html`, `web/src/screens/public/{request-qr,copy-link}/…` | new |
 | `/queue-display` | `web/pages/queue-display.html`, `web/src/screens/public/queue-display/{main.tsx, QueueDisplay.tsx, i18n.ts, queue-display.css}` | new |
 | desk scan | `web/src/screens/desk/bookings/DeskBookingsScreen.tsx` (`handleQrLookup`) | changed |
@@ -665,9 +671,12 @@ Row ids: A = the app, **U = the web UI** (not §4.3a's wire contract W1–W12), 
 | U3 | `myWebRequest` moves `QUOTED` → `WAITING` | the number and place in line appear; one `ViewPoller` with `since` |
 | U4 | ยกเลิกคิว | one `webRequestCancel`, no dialog; status `CANCELLED` |
 | U5 | `me.emailCopy.available` false / true | no e-mail button / a button that posts `copyByEmail` once |
-| U6 | `?shared=1` and เสร็จ | `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1` |
-| U7 | `?shared=1`, no input for `TABLET_IDLE_MS` | as U6 (fake time) |
-| U8 | no `shared` and เสร็จ | no sign-out |
+| U6 | ~~superseded~~ by §7 T15. `?shared=1` and เสร็จ | `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1` |
+| U7 | ~~superseded~~ by §7 T21. `?shared=1`, no input for `TABLET_IDLE_MS` | as U6 (fake time) |
+| U7a | ~~superseded~~ by §7 T21 (no idle sign-out is left to fail). `?shared=1`, no input for `TABLET_IDLE_MS`, and `POST /api/auth/logout` fails | no restart; the page shows the worded `signOutFailed` alert (as a failed เสร็จ does); the idle wait starts again, so the sign-out is tried again after another `TABLET_IDLE_MS` with no input, and an input restarts that wait. The rejection is never dropped (#4562) |
+| U7b | ~~superseded~~ by §7 T15 (the server ends the session at the scan; the page makes no sign-out call). `?shared=1`, a request shown, and its status leaves `QUOTED` (the staff scan issued the number) | at once, as U6: `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1`; a failed sign-out is handled as U7a. On a phone the page stays and shows the number (owner, #4562) |
+| U8 | ~~superseded~~ by §7 T12. no `shared` and เสร็จ | no sign-out |
+| U8a | no `shared` (a personal phone), a request shown, and เสร็จ | `location.assign('/app/bookings')` once, the customer's own pages (KS-7); no `/api/auth/logout` (#4477 review, PR 4574) |
 | U9 | `409 alreadyQueued` | opens the existing request's status |
 | D1 | desk `qrToken` = `…/q#tok` | `findByToken`, then `location.assign('/desk?branch=B&kiosk=<id>')` |
 | D2 | desk `qrToken` = a booking token | today's booking lookup, unchanged (today's tests stay green) |
@@ -794,6 +803,30 @@ classDiagram
 - Workers: Argon for the five logic tickets, Flash for the two mechanical ones. All seven are released together, once the skeleton is on the branch and BE slices c (PR 4481) and d (PR 4488) are on `main`.
 - QW-2 (#4477) becomes this team's umbrella. It closes with the feat → main merge.
 
+**QW-2h: เสร็จ on a personal phone (found by the branch review of PR 4574, 2026-10-22).** Each unit is right alone: `useQueueTablet().done()` does nothing on a phone (U8, QW-2g). But the glue (`QueueRequest.tsx`) wires เสร็จ only to `tablet.done()`, so on a phone the button does nothing, and F8 says เสร็จ leaves the page. The fix is in the glue: on a shared tablet keep `tablet.done()`, on a phone `location.assign('/app/bookings')` (row U8a). One ticket, `logic` (it also carries U7b, §5r.4b), files `QueueRequest.tsx` and `RequestStatus.tsx` (the `onStatus` prop), with up-front tests in a new file `QueueRequest.done.test.tsx` (branch `test/qw2h-done-and-scan`). It merges into `feat/qw2-queue-page` before PR 4574.
+
+### 5r.4b The branch tablet's loop: back to the first page after the scan, and a failed sign-out (#4562; XC FE controller claude/e8020026, 2026-10-22)
+
+The owner, on #4562 (relayed verbatim by claude/7ca80c, issuecomment-6330750137 … 6330800215):
+- *"ผมว่า แค่ทำรายการ ก็ไป สแกน รับคิว ก็จบ นะ"* · *"คือใคร มาใหม่ ต้องไปเริ่ม เมนู เริ่มต้นการจอง"* · *"มันจะวนลูป การจองไปเรื่อย ๆ"*;
+- *"คือไป สแกน มันก็ จะไปหน้าแรก ทันที่ ที่สแกน เสร็จ"* · *"ทำรายการ  เสร็จ สแกน วิ่งไป หน้า แรก เริ่มการจองใหม่"* · *"tablet ที่สาขา นะ"*;
+- *"จะต้อง ทำเครื่องหมาย ว่า เป็นtable ที่สาขา ให้ มันมีพฤติกรรม แบบนี้"*.
+
+What this changes:
+- **A new trigger, U7b.** On the branch tablet the page starts over **as soon as the scan is done**: the request's status leaves `QUOTED`. เสร็จ (U6) and idle (U7, KS-1's "a request someone leaves half-done must not stay on screen") stay as the other two ways back.
+- **Start over still signs out.** Q11/D16 (*"ก็ทำเหมือน ที่ลูกค้า ใช้ เครื่องตัว เอง ไง"*) has the customer signed in on the tablet, so going back to the first page must end that session, or the next person starts inside it. The new lines do not drop the sign-in. If the owner means to drop it, that reverses Q11 and is the owner's call.
+- **A failed sign-out (U7a)** is handled the same on all three triggers: no restart, the worded `signOutFailed` alert, and a retry on the next idle wait. Today `armTabletIdle` (`web/src/shared/session/tablet.ts:30-32`) drops the rejection with `void`.
+- **The mark: a pairing, designed by the BE lane** (owner on #4562: *"จะต้อง ทำเครื่องหมาย ว่า เป็นtable ที่สาขา ให้ มันมีพฤติกรรม แบบนี้"*; claude/7ca80c reports the pairing approved). Today a tablet is marked only by `?shared=1`, copied into `sessionStorage` (`tablet.ts:6-21`). Anyone can type it, and it is lost when the tab closes. The pairing (a `device_agents`-style revocable token, with a migration) replaces it. The FE reads the mark only in `isSharedTablet()`, so the switch is one function plus the tests' way of setting the mark. Until then `?shared=1` stays. *"แต่มันคือหน้า เดียวกัน นะ …"*: the mark only switches what happens after the scan, with no separate tablet screens.
+
+| Unit | File | Change | Ticket | Class |
+|---|---|---|---|---|
+| `TabletSession` | `web/src/shared/session/tablet.ts` | `armTabletIdle(branch, api, onFailed?: () => void)`. When the idle sign-out rejects: call `onFailed()`, do not restart, and start the idle wait again (`timer.touch()`), so it is retried after another `TABLET_IDLE_MS` with no input. The disposer still stops everything. The signature stays compatible: a caller without `onFailed` still gets the retry. | #4562 | logic |
+| `QueueTablet` | `web/src/screens/customer/queue/queue-tablet.ts` | passes `onFailed = () => setError(tr('signOutFailed'))`, the same text a failed เสร็จ shows. No new i18n key. | #4562 | logic |
+| glue | `web/src/screens/customer/queue/QueueRequest.tsx` | on a shared tablet, when the open request's status first leaves `QUOTED`, calls `tablet.done()` once per mount (U7b). Same file as QW-2h, so the two are one ticket. | QW-2h | logic |
+| `RequestStatus` | `web/src/screens/customer/queue/RequestStatus.tsx` | a new optional prop `onStatus?: (s: WebRequestStatus) => void`, called whenever the shown status changes. Today the polled status stays inside `RequestStatus`, so the glue cannot see the scan without it. | QW-2h (#4577) | logic |
+
+U7a is one ticket, QW-2i (#4578, the fix for #4562): `tablet.ts` and its only caller `queue-tablet.ts`. QW-2h (#4577: U8a, U7b) is a second ticket on the glue, with no shared file, so the two run in parallel. Both go into `feat/qw2-queue-page` before that branch's PR 4574. The provided tests `tablet.test.ts` and `queue-tablet.test.ts` stay unchanged. The up-front tests are in new files on `test/4562-idle-signout` and `test/qw2h-done-and-scan`.
+
 ### 5r.5 Data
 
 None on the FE side. New DTO types arrive with the BE tickets (ts-rs), and each FE ticket that reads one runs `npm run gen:fixtures`.
@@ -809,3 +842,548 @@ None on the FE side. New DTO types arrive with the BE tickets (ts-rs), and each 
 1. ✅ **KS-5 answered:** a calling display like a bank's (§2). Still open: whether to add a spoken announcement. Earlier wording of this question: Today a teller presses call-next, which picks BOOKING tickets before WALK_IN and then the lowest number (`xc-queue/src/infrastructure/repository.rs:355-364`). Does the owner mean (a) call-next is already right; (b) the **system** should call the next number by itself when a counter frees up; or (c) kiosk requests should be ordered with bookings?
 2. ✅ **Decided 2026-10-21: the 108 Plaza Notify platform** (*"ใช่ Notify ชอง 108 plaza"*). With KS-4b the setting lives on **Identity**, not on xc-v3: set Identity's `AUTH_OTP_DELIVERY_MODE=http`, plus `AUTH_OTP_HTTP_ENDPOINT` (Notify's `/api/v1/otp`) and `AUTH_OTP_HTTP_API_KEY`, the same as 108heros's Identity. Today the instance xc-v3 uses runs `noop`. **The owner creates and sets the key**, because secrets are the owner's. Background: which SMS sender xc-v3 uses was an owner prerequisite of KS-4, per I-3. The fleet already has one: the Notify platform (`108-platform-services`). It sends SMS through ThaiBulkSMS with the approved sender `108-Pos`, per the memory store's notify record of 2026-07-31; that is **not re-measured today**. Pointing xc-v3's `NOTIFY_BASE_URL` / `NOTIFY_API_KEY` at it needs no new provider. **Proposed:** use Notify. The owner sets the key (secrets are the owner's). There is no bridge: KS-4a requires login first, so this setup must be done before the feature ships.
 3. ✅ **Migration approved** for §3 (*"อนุมัติ migration"*, 2026-10-21). Deploy remains a separate owner order.
+
+## 7. Branch tablet: pairing and the booking loop (owner, 2026-10-22)
+
+> designed-by: claude/7ca80c's design session (BE lane), for the BE lane and the XC FE controller · measured on xchange
+> `main` `6d57fcc0`, plus `feat/qw2-queue-page` `1494f35d` (the `/app/queue` page, PR 4574) and `feat/kwq-c` `0463269a`
+> (the web request commands, PR 4481), neither on `main` yet · every `file:line` below is at those shas.
+>
+> 🔴 **Supersedes in part:** D16's *"no tablet credential and no new table"*, D17, §4.6's *"Dropped: `branch_tablets`"*,
+> F9, the `TabletSession` row of §5r.2, rows U6–U8 and U7a/U7b of §5r.3, §5r.4b's U7a/U7b units, QW-3, QW-2g and
+> QW-2i (#4578). U8a (เสร็จ on a personal phone) stays. D16's sign-in stays (§7.1 R-T6).
+
+### 7.1 Owner requirement
+
+Recorded on #4562 (relayed by claude/7ca80c) and by the design coordinator, 2026-10-22. The approval is
+issuecomment-6330800215.
+
+| # | Rule | Owner's words |
+|---|---|---|
+| R-T1 | **The flow is: make the request, go and scan, take the queue ticket. That is all.** | *"แค่ทำรายการ ก็ไป สแกน รับคิว ก็จบ"* |
+| R-T2 | **Each new person starts from the first page, "start booking".** The device loops, one booking after another. | *"ใคร มาใหม่ ต้องไปเริ่ม เมนู เริ่มต้นการจอง"* · *"มันจะวนลูป การจองไปเรื่อย ๆ"* |
+| R-T3 | **Right after the scan, the device goes straight to the first page.** There is no idle timer and no sign-out step. | *"คือไป สแกน มันก็ จะไปหน้าแรก ทันที่ ที่สแกน เสร็จ"* |
+| R-T4 | **The device is the branch's own tablet, and it must be marked as one.** Only a marked tablet loops. | *"tablet ที่สาขา นะ"* · *"จะต้อง ทำเครื่องหมาย ว่า เป็นtable ที่สาขา ให้ มันมีพฤติกรรม แบบนี้"* |
+| R-T5 | **The tablet runs the same page the customer uses on their own phone or computer.** There is no second set of screens. Pairing switches only what happens after the scan. **Amended by §7.11:** the branch tablet hosts that page inside a wrapper app; a customer's own phone or computer uses a normal browser and installs nothing. | *"แต่มันคือหน้า เดียวกัน นะ กับที่ลูกค้า ใช้ งาน จาก มือถือ ส่วนตัวหรือ อุปกรณ์ ตอมส่วนตัว"* |
+| R-T6 | **The scan is mandatory, and it is the last step on every device.** The customer takes the queue ticket at the queue point, so they are never confused. | *"ที่ต้องไปสแกน เพื่อให้ ลูกค้า ไปรับ คิว"* · *"มันจะได้ไม่งง"* · *"จำเป็นต้องให้ไปสแกน เพื่อรับคิว ก่อน"* |
+| R-T7 | **The page never issues or prints a queue ticket**, on the tablet or on any other device. | *"ถ้าให้ พิมพ์ คิว เลย เดี๋ยวไม่รู้ว่าต้องไปรับ คิวที่ไหน"* |
+| R-T8 | **Approved:** pairing with a short-lived code, a revocable token per tablet, a new table (additive migration), and one pairing core shared with `device_agents`. | *"อนุมัติ"* |
+
+Read with R-T5, D16's sign-in stands: the page signs the customer in on the customer's own phone (U1), so it does on
+the tablet too. What changes is that no customer session outlives the scan (R-T3).
+
+### 7.2 What exists today (measured)
+
+- **The drawer agent's pairing is the only paired-device model.** I swept `api/migrations` for kiosk, device, tablet and
+  machine tables.
+  - Table: `api/migrations/20261008120000_device_agents.sql:7-28`. One active agent per branch, by
+    `device_agents_one_active_per_branch_idx` (`:29-31`). `device_jobs.leased_by` references it (`:35`).
+  - Code: `AgentAdmin::add` (`api/src/infrastructure/device_agents/agent_admin.rs:140-202`) stores a new agent with a
+    10-minute code (`:162`). `new_code` re-pairs (`:204-257`, expiry `:226`). `revoke` (`:259-319`) also fails the
+    branch's queued drawer jobs (`:288-308`).
+  - Secrets: `AgentToken` (`agent_token.rs:17-24`) makes the token `xcda_` + 64 hex. It makes the code as 10 Crockford
+    characters (`:28-40`). Only SHA-256 is stored (`:43-48`, `:53-62`).
+  - `AgentService::pair` (`agent_service.rs:125-166`) limits attempts to 10 per 15 min per address (`PAIR:` key,
+    `:131-136`). The single-use statement is `pg_agent_repository.rs:230-237`. `authenticate` (`agent_service.rs:82-107`)
+    checks the `xcda_` prefix (`:93`) and limits failures to 30 per 15 min (`AGENT:` key, `:114-117`).
+  - Routes: `POST /api/device-agent/pair` (`api/src/presentation/http/device_agent.rs:40-46`). Agent routes refuse
+    browsers (`check_browser`, `api/src/presentation/extractors/agent_auth.rs:42-51`).
+  - Staff side: `POST /api/device-setup {action: list|add|newCode|revoke}`
+    (`api/src/presentation/http/device_setup.rs:30-45`). It names the branch (`:97-115`), authorises
+    `EntryPath::DeviceSetup` (`:117-127`), then requires same-origin (`:129-131`). The UI is the owner-only static page
+    `/_xc/device-agents` (`:64-79`, `api/static/xc-device-agents.html`).
+- **The permission is `SystemSettings`.** `EntryPath::DeviceSetup` needs it for every action
+  (`api/crates/xc-auth/src/domain/policy/entities/policy.rs:152`), and a refusal answers `OwnerOnly` (`:318`). Only the
+  EXECUTIVE and ADMIN seeds hold it (`api/crates/xc-auth/src/domain/access/role_grants.rs:153,159`). The admin branches
+  screen needs `BranchesManage` (`web/src/screens/admin/branches/menu.ts:12`), which the same two seeds hold.
+- **Other readers assume every `device_agents` row is a drawer agent:** `has_active_agent_in`
+  (`pg_agent_repository.rs:141-154`), `find_by_token_hash` (`:156-164`), `list` (`:460-466`), and the devices view
+  (`api/src/presentation/http/v3/views/devices.rs:100-102`).
+- **Today's tablet mark is `?shared=1`** (`web/src/shared/session/tablet.ts:6-21`). It is copied into
+  `sessionStorage`, so anyone can type it, it is lost when the tab closes, and the server never sees it.
+  - The tablet signs out on เสร็จ (`signOutAndRestart`, `:23-26`) and after 120 s idle (`armTabletIdle`, `:28-34`;
+    `idle.ts:1`).
+  - The page's one call into it is `useQueueTablet` (`web/src/screens/customer/queue/queue-tablet.ts:25-46` on
+    `feat/qw2-queue-page`).
+  - #4562 is that design's open hole: a failed idle sign-out leaves the last customer signed in. The cause is that
+    ending the session depends on one browser call succeeding.
+- **Customer sessions are `user_sessions` rows** keyed by `hash` (`api/migrations/20261011110000_users_roles.sql:74-81`;
+  insert `api/crates/xc-auth/src/application/session/session_service.rs:392`). The cookie is `__Host-xc_session`, 12 h
+  (`api/src/presentation/http/auth.rs:139`). `otp/verify` sets it (`auth.rs:319-340`).
+- **The scan** is `KioskService::issue_by_token` (`api/crates/xc-kiosk/src/application/kiosk/customer.rs:224-280`). It
+  runs one branch transaction that confirms the request, issues the ticket and links the member
+  (`link_kiosk_customer_in`, `:262-266`).
+- **A v3 command sees no cookie and no session hash:** `CommandAction::run` gets `(tx, branch, who: &Actor, input,
+  key)` (`api/src/presentation/http/v3/commands/web_request_create.rs:124-131` on `feat/kwq-c`). `Actor` has no session
+  field (`api/crates/xc-auth/src/domain/access/actor.rs:7-17`).
+
+### 7.3 Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| T-D1 | **A new table `branch_tablets`, beside `device_agents`, and one pairing core in code for both** (option B, §7.4). | ♻️; `device_agents` is untouched |
+| T-D2 | **Pairing = the drawer agent's, unchanged in its rules.** A 10-character Crockford code, valid 10 minutes and single use, stored as SHA-256. One answer (`PAIRING_CODE_INVALID`) for unknown, expired and used codes. 10 attempts per 15 min per address. A new code re-pairs the tablet and voids the old token. Revoke voids the token. | approved proposal; the core is shared |
+| T-D3 | **The tablet token is a cookie, never readable by page script:** `__Host-xc_tablet=xcbt_<64 hex>; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=34560000` (400 days, the browser cap). Only its SHA-256 is stored (`token_hash UNIQUE`). After 400 days the tablet is paired again. | the tablet is a browser; agent routes refuse browsers (`agent_auth.rs:42-51`), so it cannot use a bearer header from a script |
+| T-D4 | **Many tablets per branch.** No one-per-branch index. | a branch may have several tablets; the drawer stays one per branch |
+| T-D5 | **Who pairs, lists and revokes: `SystemSettings`, branch-scoped**, through `EntryPath::DeviceSetup` exactly as the drawer agent (`policy.rs:152`). No new permission and no policy change. | the same act as pairing a drawer; Q-T2 |
+| T-D6 | **The page reads one flag:** `GET /api/branch-tablet/me` once at load ⇒ `{paired: false}` or `{paired: true, tabletId, branchCode, name}`. It is read by a person's page load, not polled, so it needs no version (🔁 does not apply). | R-T5: one page, one flag |
+| T-D7 | **No customer session outlives the scan, and the server ends it, not the page.** <br>• At `otp/verify` on a paired tablet, the new session's hash is bound to the tablet row, and the session bound before it is deleted. So the tablet holds one customer at a time. <br>• The scan (`issue_by_token`) and `webRequestCancel` delete the member's session bound to a tablet of that branch, on their own transaction. <br>• The page's next poll then answers `401`, which the paired page reads as "done". | R-T3; fixes #4562 at its cause; the page cannot fail to sign out, because it never has to |
+| T-D8 | **On a paired tablet the first page always starts at sign-in**, even if a session cookie is still there. The first page is `/app/queue?branch=<the tablet's branch>`. The next person's sign-in replaces the bound session (T-D7). | R-T2: whoever comes next starts at "start booking" |
+| T-D9 | **The page has no issue and no print path, on any device.** The number comes only from the staff scan (D5). `confirm` needs `QueueOperate` (D19, B27). | R-T6, R-T7 |
+| T-D10 | **Pairing on the tablet uses the same page.** The admin panel shows the code and a QR of `<origin>/app/queue?branch=<code>#pair=<CODE>`. The page reads `#pair=`, posts it, strips the fragment and reloads. A code typed into the same URL works too. The fragment keeps the code out of request lines and logs. | R-T5; no new screen |
+| T-D11 | **A paired tablet always uses its own branch.** `?branch=` naming another branch is replaced by the tablet's branch. | the binding and the end in T-D7 are per branch |
+
+### 7.4 Options for the data, and the choice
+
+| Option | What it takes | Verdict |
+|---|---|---|
+| A. Widen `device_agents` with `kind` | <br>• Rebuild `device_agents_one_active_per_branch_idx` as `… WHERE revoked_at IS NULL AND kind = 'DRAWER_AGENT'`. That is an index rewrite, not a pure addition. <br>• Every statement in §7.2's reader list must add `kind = 'DRAWER_AGENT'`. Miss one and a tablet passes for the branch's drawer agent: `has_active_agent_in` would route drawer jobs to an agent that does not exist, the devices view would show a drawer, and a tablet token could claim drawer jobs. <br>• `device_jobs.leased_by` would accept a tablet. <br>• 8 drawer-only columns (`agent_version` … `claim_count`) stay `NULL` for every tablet. | **no**: one missed filter breaks the cash drawer, and only review would catch it |
+| **B. New table `branch_tablets`; the shared part is code** | One `CREATE TABLE`, with no existing row or index touched. The drawer code moves onto the shared core with its behaviour pinned by its existing tests. | **chosen** |
+| C. One generic `paired_devices` table for both | Moves drawer rows into it, and moves `device_jobs.leased_by`'s foreign key. That is a backfill and a destructive change. | **no**: outside the approval |
+
+♻️ asks for one copy of the *job* (code → token → revoke), and that job lives in code. The two tables hold different
+facts: a drawer agent has a lease, a claim window and a drawer target, and a tablet holds a customer session.
+
+### 7.5 Class diagram
+
+```mermaid
+classDiagram
+  direction LR
+  class DeviceKind {
+    <<enum>>
+    DRAWER_AGENT
+    BRANCH_TABLET
+    token_prefix() xcda_ or xcbt_
+    pair_key(addr) PAIR: or TABLET_PAIR:
+    token_key(addr) AGENT: or TABLET:
+    per_branch() One or Many
+  }
+  class DeviceSecret {
+    new_token(kind) String
+    new_pairing_code() String
+    code_hash(code) String?
+    hash(text) String
+  }
+  class PairedDeviceStore {
+    <<trait>>
+    KIND DeviceKind
+    type Device
+    type Seen
+    insert_pending_in(tx, branch, NewPaired) bool
+    set_code_in(tx, branch, id, code_hash, expires) bool
+    pair(code_hash, token_hash, seen, now) Device?
+    find_by_token_hash(hash) Device?
+    find(id) Device?
+    revoke_in(tx, branch, id, actor, now) bool
+    after_revoke_in(tx, branch, id, actor, now)
+    list() Vec~Device~
+  }
+  class DevicePairing~S~ {
+    issue(branch, name, actor, now) PairingCode
+    renew(id, actor, now) PairingCode
+    pair(code, seen, address, now) PairOutcome
+    authenticate(token, address, now) AuthOutcome
+    revoke(id, actor, now)
+    branch_of(id) BranchId?
+  }
+  class PgAgentRepository {
+    after_revoke_in: fail QUEUED drawer jobs
+  }
+  class PgBranchTabletStore {
+    after_revoke_in: delete the bound session
+    bind_session_in(tx, tablet, session_hash, user_id)
+    end_for_member_in(tx, branch, customer_id) u64
+  }
+  class TabletSessions {
+    <<trait, xc-kernel>>
+    end_for_member_in(tx, branch, customer_id) u64
+  }
+  class AgentAdmin
+  class AgentService
+  class BranchTabletService {
+    me(token, address, now) TabletMe
+    bind_on_sign_in(token, session_hash, user_id, now)
+  }
+  DevicePairing --> PairedDeviceStore
+  DevicePairing --> DeviceSecret
+  DevicePairing --> DeviceKind
+  PairedDeviceStore <|.. PgAgentRepository
+  PairedDeviceStore <|.. PgBranchTabletStore
+  TabletSessions <|.. PgBranchTabletStore
+  AgentAdmin --> DevicePairing : DrawerAgent
+  AgentService --> DevicePairing : DrawerAgent
+  BranchTabletService --> DevicePairing : BranchTablet
+  KioskService_issue_by_token --> TabletSessions
+```
+
+| Unit | File | New / changed |
+|---|---|---|
+| `DeviceKind`, `DeviceSecret`, `PairedDeviceStore`, `DevicePairing`, `PairingCode`, `PairOutcome`, `AuthOutcome` | `api/src/infrastructure/paired_devices/{mod.rs, kind.rs, secret.rs, store.rs, pairing.rs}` | new: the one core. `DeviceSecret` is `AgentToken` generalised; `agent_token.rs` keeps its names as thin calls into it, so its callers and tests do not change |
+| drawer agent on the core | `api/src/infrastructure/device_agents/{agent_admin.rs, agent_service.rs, agent_token.rs, pg_agent_repository.rs}` | changed: `add`/`new_code`/`pair`/`authenticate`/`revoke` delegate to `DevicePairing<PgAgentRepository>`; claim and report untouched |
+| `PgBranchTabletStore`, `BranchTabletService` | `api/src/infrastructure/branch_tablets/{mod.rs, pg_tablet_store.rs, tablet_service.rs}` | new |
+| `TabletSessions` port | `api/crates/xc-kernel/src/tablet_sessions.rs` | new; the default ends nothing, so code with no tablet store behaves as today (as `link_kiosk_customer_in` in the §4.3 amendment) |
+| HTTP | `api/src/presentation/http/branch_tablets.rs`; one line in `api/src/presentation/http/mod.rs` | new |
+| tablet cookie reader | `api/src/presentation/extractors/tablet_cookie.rs` | new |
+| sign-in binding | `api/src/presentation/http/auth.rs` (`v3_otp_verify_inner`, `:328`) | changed |
+| scan / cancel end | `api/crates/xc-kiosk/src/application/kiosk/customer.rs` (`issue_by_token`, `:262-266`), `api/crates/xc-kiosk/src/application/kiosk/request_issue.rs` and `api/src/presentation/http/kiosk.rs` (the port's wiring, BT-6), `api/src/presentation/http/v3/commands/web_request_cancel.rs` (on `feat/kwq-c`) | changed |
+
+### 7.6 Data migration
+
+Owner-approved (R-T8). It is additive: one new table, no existing table, row or index changed, and no backfill. Take the
+slot with `scripts/migration-slot.sh next` right before `pr_open`.
+
+```sql
+-- Branch tablets (kiosk-shared-phone §7). Additive: a new table; device_agents and every existing row are untouched.
+CREATE TABLE branch_tablets (
+    id                    uuid        PRIMARY KEY,
+    branch_id             text        NOT NULL REFERENCES branches (id),
+    name                  text        NOT NULL,
+    created_at            timestamptz NOT NULL,
+    created_by            text        NOT NULL,
+    pair_code_hash        text        UNIQUE,
+    pair_code_expires_at  timestamptz,
+    token_hash            text        UNIQUE,
+    paired_at             timestamptz,
+    revoked_at            timestamptz,
+    revoked_by            text,
+    last_seen_at          timestamptz,
+    user_agent            text,
+    -- The customer session open on this tablet (user_sessions.hash), and its user. No FK: sign-out deletes the session row.
+    customer_session_hash text        UNIQUE,
+    customer_user_id      uuid
+);
+CREATE INDEX branch_tablets_branch_idx ON branch_tablets (branch_id, created_at, id);
+```
+
+- No one-per-branch index (T-D4).
+- A tablet's code is looked up only in `branch_tablets`. So a drawer code typed on a tablet answers
+  `PAIRING_CODE_INVALID`, and a tablet code given to the agent answers the same.
+- Revoke keeps the row and its hashes for the audit trail, as `device_agents` does.
+
+### 7.7 Endpoints
+
+| Route | Who | Body / answer |
+|---|---|---|
+| `POST /api/branch-tablets` | staff with `SystemSettings` at the named branch (`EntryPath::DeviceSetup`, `policy.rs:152`), same-origin; authorised like `device_setup.rs:97-131` | `{action: "list"}` ⇒ the tablets of the branches the caller may see, with `state`: `PENDING` (never paired) · `PAIRED` · `REVOKED`, plus `lastSeenAt`. `{action: "add", payload: {branchId, name}}` ⇒ `{tabletId, code, codeExpiresAt}`, shown once. `{action: "newCode", payload: {tabletId}}` ⇒ the same shape. `{action: "revoke", payload: {tabletId}}` ⇒ `{saved: true}`. A tablet of a branch the caller is not scoped to is refused before anything is read, as `device_setup_branch_scope_test.rs` pins for agents |
+| `POST /api/branch-tablet/pair` | public, same-origin (it is a browser route; add it to `write_routes_same_origin_guard_test.rs`) | `{code}` ⇒ `200 {tabletId, branchCode, name}` + `Set-Cookie: __Host-xc_tablet=…` (T-D3). The token is **never** in the body. `400 PAIRING_CODE_INVALID` · `429 RATE_LIMITED` (key `TABLET_PAIR:<address>`, 10 per 15 min) |
+| `GET /api/branch-tablet/me` | public; reads the cookie | `{paired: false}` or `{paired: true, tabletId, branchCode, name}`, with `Cache-Control: no-store`. A revoked or unknown cookie ⇒ `{paired: false}` + a clearing `Set-Cookie`. Failed checks are limited (key `TABLET:<address>`, 30 per 15 min); past the limit it answers `{paired: false}` without a lookup. A good cookie sets `last_seen_at` and `user_agent` in one statement |
+| `POST /api/auth/otp/verify` | as today | unchanged answer. If the request carries a valid tablet cookie, the new session is bound to the tablet in the same handler (T-D7) |
+| the scan (`issueByToken`) and `webRequestCancel` | as today | unchanged answer. On their transaction, `TabletSessions::end_for_member_in(tx, branch, customer_id)` (`customer_id` = `kiosk_requests.customer_id`, a `customers.id`) finds the member's user through `customers.user_id`, which is what `otp/verify` binds as `customer_user_id`, and deletes the member's session bound to a tablet of that branch, and clears the tablet's two `customer_*` columns |
+
+**How the tablet proves itself on later requests:** the browser sends `__Host-xc_tablet` on every same-origin request.
+The server hashes it and looks it up by `token_hash`. Only `me`, the sign-in binding and nothing else read it. The tablet
+cookie is not an `Actor`, so `Policy` never sees it and it opens no staff or customer route. `POST /api/auth/logout`
+clears only `__Host-xc_session`, so a customer sign-out never unpairs the tablet.
+
+### 7.8 Behaviour (up-front rows; `class:logic` tickets get them as failing tests first)
+
+| # | Given | When | Then |
+|---|---|---|---|
+| T1 | staff with `SystemSettings` at branch A | `add {branchId: A, name}` | a `PENDING` tablet; a code `XXXXX-XXXXX`, valid 10 min, shown once; only its hash is stored |
+| T2 | a code 9 min old | `pair {code}` | `200 {tabletId, branchCode: A, name}`; `Set-Cookie __Host-xc_tablet` (HttpOnly, Secure, SameSite=Strict); no token in the body; the row is `PAIRED`, both code columns `NULL` |
+| T3 | a code 11 min old | `pair` | `400 PAIRING_CODE_INVALID`; no cookie |
+| T4 | a code already used by T2 | `pair` again | `400 PAIRING_CODE_INVALID`, the same answer as T3 and as an unknown code |
+| T5 | 10 failed pairs from one address in 15 min | the 11th | `429 RATE_LIMITED` |
+| T6 | a paired tablet | staff `revoke` | `me` ⇒ `{paired: false}` + a clearing cookie; the row keeps its hashes; the bound customer session, if any, is deleted |
+| T7 | a paired tablet | staff `newCode`, then `pair` with it | the new cookie works; the old token ⇒ `me {paired: false}` |
+| T8 | staff scoped to branch B only | `newCode` or `revoke` of a tablet of branch A | refused (`OwnerOnly` / out of scope), nothing read or changed; `list` does not show A's tablets |
+| T9 | branch A with an active drawer agent | `add` three tablets | all three stored (T-D4); `has_active_agent_in`, the devices view and drawer routing answer exactly as before |
+| T10 | a drawer agent's code | `POST /api/branch-tablet/pair` | `400 PAIRING_CODE_INVALID`; and a tablet's code on `/api/device-agent/pair` ⇒ the same |
+| T11 | a tablet token sent as `Authorization: Bearer` to `/api/device-agent/claim` | — | `401`, as any unknown token |
+| T12 | a browser with no tablet cookie (a phone, a home computer, or a tablet never paired), even with `?shared=1` | opens `/app/queue?branch=A` | the normal customer flow (U1–U5, U9); `?shared=1` does nothing; after the scan the page stays on the status (no loop) |
+| T13 | a paired tablet of branch A | opens `/app/queue?branch=B` | the page uses branch A (T-D11) |
+| T14 | a paired tablet, a customer signed in on it by OTP | `otp/verify` succeeds | the session's hash is on the tablet row; the session bound before it, if any, is deleted |
+| T15 | a paired tablet, the customer's request `QUOTED`, its QR on screen | staff scan it at the queue machine (`issueByToken`) | the same transaction deletes the tablet-bound session; the page's next poll answers `401` or `WAITING`; the page goes **straight** to `/app/queue?branch=A` with no button, no timer and no sign-out call |
+| T16 | the same member signed in on their own phone too | T15's scan | only the tablet-bound session is deleted; the phone session stays |
+| T17 | a paired tablet back on the first page, an old session cookie still present | the next person opens the page | the start, with sign-in first (T-D8); nothing of the last customer is shown |
+| T18 | a paired tablet | the customer presses ยกเลิกคิว (`webRequestCancel`) | the bound session is deleted on the cancel's transaction; the page goes to the first page |
+| T19 | any device, paired or not | the request is submitted | the page shows the request QR and **no number**; it never calls `confirm` or `issueByToken` and has no print path; the number comes only from the staff scan (R-T6, R-T7; B27) |
+| T20 | any device | the customer never goes to scan | no ticket exists and no number is shown; the request expires (D4) |
+| T21 | a paired tablet | no input for any length of time | nothing happens: no idle timer, no sign-out (R-T3) |
+| T22 | the drawer agent's flow (pair, claim, report, re-pair, revoke) | after the drawer moves onto the core | every existing agent test answers as before, unchanged (§7.9 BT-2) |
+| T23 | a paired tablet, a customer signed in on it (T14) | 30 min pass, or the page calls `POST /api/auth/refresh` | `bind_session_in` set the session's `user_sessions.expires` to at most sign-in + 30 min, so the next request answers `401`; the refresh route refuses a tablet-bound session (`401`) and never extends it. A session not bound to a tablet refreshes as today (Q-T1 A) |
+
+### 7.9 Tickets
+
+Every File scope below is disjoint from every other. BE tickets wait for this design to merge. BT-6 also waits for
+slice c (PR 4481) and slice a. FE tickets wait for PR 4574 to land on `main`.
+
+| Ticket | Side | Scope (File scope = these paths) | Class | Up-front tests (written by the ticket author, failing first) | Needs |
+|---|---|---|---|---|---|
+| BT-0 | BE | the migration of §7.6; `api/src/infrastructure/paired_devices/{mod.rs,kind.rs,store.rs}` and `api/src/infrastructure/branch_tablets/mod.rs` with the exact signatures of §7.5 and `todo!()` bodies; the `TabletSessions` trait in `api/crates/xc-kernel/src/tablet_sessions.rs` with its no-op default; the module lines in `api/src/infrastructure/mod.rs` and `api/crates/xc-kernel/src/lib.rs`; the up-front test files of BT-1 and BT-3 to BT-6 | skeleton (controller) | — | design merged |
+| BT-1 | BE | `api/src/infrastructure/paired_devices/{secret.rs, pairing.rs}` | logic | `api/tests/paired_device_core_test.rs`: T1–T5 and T7 run **for both kinds through one table**, with a fake `PairedDeviceStore`, so a rule that holds for one kind and not the other fails. It also checks: `xcda_`/`xcbt_` prefixes, the attempt keys per kind, and the code shape | BT-0 |
+| BT-2 | BE | `api/src/infrastructure/device_agents/{agent_admin.rs, agent_service.rs, agent_token.rs, pg_agent_repository.rs}` | guarded | no new test. **Must stay green, unedited:** `agent_claim_test`, `agent_repository_test`, `device_agent_http_test`, `device_setup_http_test`, `device_setup_branch_scope_test`, `device_drawer_job_test`, `passport_drawer_device_test`, `passport_drawer_read_window_test`, `r_device_claim_transport_test`, `v3_devices_view_test`, `configured_printer_models_test` (T22) | BT-1 |
+| BT-3 | BE | `api/src/infrastructure/branch_tablets/{pg_tablet_store.rs, tablet_service.rs}` | logic | `api/tests/branch_tablet_store_test.rs`, real Postgres: T6, T9, T10, T14, T16, T23's expiry cap, and `end_for_member_in` clearing only that branch's tablet | BT-1 |
+| BT-4 | BE | `api/src/presentation/http/branch_tablets.rs`, `api/src/presentation/extractors/tablet_cookie.rs`, one line each in `api/src/presentation/http/mod.rs` and `api/src/presentation/extractors/mod.rs`, `api/tests/write_routes_same_origin_guard_test.rs` | logic | `api/tests/branch_tablet_http_test.rs`: T1–T8 and T11 over HTTP. It checks the cookie attributes, that no token is in any body, `no-store`, and a cross-origin pair ⇒ `400 ORIGIN_REJECTED` | BT-3 |
+| BT-5 | BE | `api/src/presentation/http/auth.rs` | guarded | `api/tests/branch_tablet_sign_in_test.rs`: T14 through `otp/verify` with a fake Identity, and T23's refresh refusal (`auth.rs:517`). A sign-in with no tablet cookie answers byte-for-byte as before | BT-3 |
+| BT-6 | BE | `api/crates/xc-kiosk/src/application/kiosk/customer.rs`, `api/crates/xc-kiosk/src/application/kiosk/request_issue.rs` (a `with_tablet_sessions(..)` builder, defaulting to the no-op, so `RequestIssueService::new` and `kwq_a4_request_issue_test.rs` stay unchanged), `api/src/presentation/http/kiosk.rs` (its two `RequestIssueService::new` calls, `:798`, `:822`, add `.with_tablet_sessions(..)`), `api/src/presentation/http/v3/commands/web_request_cancel.rs` | guarded | `api/tests/branch_tablet_scan_end_test.rs`, real Postgres: T15, T16, T18. B6–B8 stay green unedited | BT-3; PR 4481 merged |
+| BT-F1 | FE | `web/src/shared/session/tablet.ts`, `tablet.test.ts`; delete `web/src/shared/session/idle.ts` | logic | rewritten from T6, T7, T10, T12 (FE side): `readTabletMode(api)` reads `me` once, and `pairFromFragment()` posts `#pair=` and strips it. No `sessionStorage`, no `?shared=1`, no idle | BT-4 |
+| BT-F2 | FE | `web/src/screens/customer/queue/{queue-tablet.ts, queue-tablet.test.ts, QueueRequest.tsx, i18n.ts}` | logic | T12, T13, T15, T17, T18, T21 with a fake API: on `paired`, the end of the request (`WAITING`, or `401` after submit, cancel, expiry) ⇒ `location.assign('/app/queue?branch=<tablet branch>')`. On a phone nothing changes. Drop `signOutFailed` | BT-F1 |
+| BT-F3 | FE | `web/src/screens/admin/branches/{BranchTablets.tsx, BranchTablets.test.tsx, i18n.ts, BranchesScreen.tsx}` | mechanical | behaviour table T1, T6–T8 on the panel. The panel shows only for a caller with `SystemSettings`. The code is shown as text plus a `QrCode` of `<origin>/app/queue?branch=<code>#pair=<CODE>` (T-D10) | BT-4 |
+
+**Done lines:**
+- BE tickets: the ticket's tests by name, plus `cargo fmt --all --check` and
+  `cargo clippy -p xchange --all-targets -- -D warnings`.
+- FE tickets: §5r.4's web done line, plus §5r.4a's two gates.
+
+**Becomes obsolete, close or rework when BT-F2 merges:**
+- QW-3 (#4367): `isSharedTablet` / `signOutAndRestart` / `armTabletIdle`, and `idle.ts`'s `TABLET_IDLE_MS`.
+- QW-2g (#4548): the idle and sign-out body of `queue-tablet.ts`, and `signOutFailed`.
+- #4562: there is no idle sign-out left to fail. Close it `not planned`, citing BT-6 + BT-F2.
+- QW-2i (#4578, U7a) and QW-2h's U7b half (§5r.4b): the sign-out-after-scan and the idle retry. QW-2h's U8a half stays.
+
+### 7.10 Owner questions
+
+**Answered by the owner, 2026-10-22 (verbatim: *"ทำตามที่เสนอ ทั้งสองข้อ"*):** Q-T1 is **A**, so a tablet-bound customer session expires 30 minutes after sign-in, cannot be refreshed, and the page runs no timer; BT-3 sets the cap at the bind and BT-5 refuses the refresh (row T23). Q-T2 keeps **`SystemSettings`** for pairing.
+
+1. **Q-T1, a tablet left mid-flow.** Root cause: R-T3 removes the idle timer, so a customer who signs in and walks away
+   *before* submitting leaves their session on screen. T-D7 ends a session at the scan or the cancel, and T-D8 makes the
+   next person who starts at the first page sign in afresh. What remains is a passer-by using the page exactly as it
+   was left.
+   - A. Accept it: staff can see the tablet. Add a server cap only: a tablet-bound session expires 30 min after
+     sign-in and cannot be refreshed. No page timer. Reversible; one line in BT-5.
+   - B. Bring back a return-to-start timer, but only on the screens before submit.
+
+   **I propose A.** It keeps R-T3 as worded, and the cap is enforced by the server, not the browser. **If no answer:**
+   build without the cap. It can be added later in one statement.
+2. **Q-T2, who pairs a tablet.** Today it is `SystemSettings` (EXECUTIVE, ADMIN), the same as the drawer. A
+   BRANCH_MANAGER cannot do it. Changing that means a new permission in the RBAC seed. **I propose: keep
+   `SystemSettings`.** **If no answer:** that is what is built.
+
+Not asked, settled by R-T5: the customer signs in on the tablet as on their own phone (D16, Q11). The tablet changes only
+what happens after the scan.
+
+Not asked, recorded: §4.7's W7 (a device credential for the queue machine) could later be a third `DeviceKind` on the
+same core, as one store file. It is not designed here.
+
+### 7.11 The wrapper app (owner, 2026-10-22)
+
+> designed-by: a design session for the XC FE controller (claude/e8020026) · measured on xchange `main` `01c5ff79` ·
+> every `file:line` below is at that sha · owner's words recorded on #4562, relayed by the design coordinator.
+
+#### 7.11.1 Owner requirement
+
+| # | Rule | Owner's words |
+|---|---|---|
+| R-W1 | **Build a wrapper, so a customer cannot close the screen.** | *"เราทำตัวครอบ เอา น่าจะดี เพราะ เจ้าของไม่อยกให้ ลูกค้าปิด หน้าจอได้"* |
+| R-W2 | **The wrapper hosts the page in a WebView.** The branch has a tablet; its OS is not known yet (iPad or Android). | *"ครอบ เว็บวิว เอาจะได้ ง่าย"* · *"สาขามี เท็บเล็ต"* |
+| R-W3 | **Not Flutter.** | *"ถ้าทำ flutter มัน มีงานเพิ่ม มาก"* |
+| R-W4 | **The main requirement: people cannot leave the app or go to another page.** | *"เราเอาแค่ ครอบ ไม่ให้ คนออกจากแอฟ ไปหน้า อื่น อันนี้คือที่ต้องการหลัก"* |
+| R-W5 | **Everything else follows the web already being built** (§7, BT-0..BT-5, BT-F1..BT-F3). | *"ส่วนอย่างอื่นก็ ตาม เว็บ ที่ทำอยู่"* |
+| R-W6 | **The only difference between devices: the branch tablet runs inside the wrapper.** A customer's own phone or computer uses a normal browser and installs nothing. | *"ต่างแค่ ถ้าที่สาขา ต้องมี แอฟ ครอบไว้"* |
+| R-W7 | **Setting up the wrapper is the branch pairing.** | *"เป็นการจับคู่ สาขาไปในตัวด้วย"* |
+| R-W8 | **The pairing says which branch and which terminal.** | *"สาขา อะไร  terminal อะไร"* |
+
+**The two must-haves.** The wrapper adds these and nothing else:
+- **M1.** The customer cannot leave the app: no home, no back, no app switch, no closing it.
+- **M2.** The customer cannot reach any page outside the queue flow: no other site, and no other path on our origin.
+
+**What stays in the web (R-W5).** Pairing, the `__Host-xc_tablet` cookie, the return to the first page after the scan,
+the sign-in, the 30-minute cap and "no print" are §7's, unchanged (T-D2..T-D11, T12–T23). The wrapper only hosts the
+page, plus one setup screen (R-W7). The one-page rule (R-T5) holds: one page everywhere; only the branch tablet runs it
+inside the wrapper (R-W6).
+
+#### 7.11.2 What exists today (measured)
+
+- **No wrapper and no web app manifest.** I swept `web/`, `api/static` and `api/src` for `webmanifest`,
+  `rel="manifest"`, `apple-mobile-web-app` and `display-mode`: 0 hits. `web/vite.config.ts:32` `manifest: true` is
+  Vite's build manifest, not a web app manifest.
+- **`app/` is the staff queue machine, in Flutter** (R-2, R-4): `xchange_kiosk` (`app/pubspec.yaml:1-2`), Android id
+  `com.spacing.xchange` (`app/android/app/build.gradle.kts:23,33`). It has no kiosk code: a sweep of `app/` for
+  `wakelock`, `SystemUiMode`, `immersive`, `setPreferredOrientations`, `startLockTask`, `lockTask`, `webview_flutter`
+  and `flutter_inappwebview` found 0 hits. Its Android build runs by hand or on `release/**`
+  (`.github/workflows/app-android.yml:1-16`), on `[self-hosted, macOS, ARM64, mac-studio]` (`:28`), and signs with
+  four `XCHANGE_ANDROID_*` secrets or falls back to the debug key (`:3-7`; `build.gradle.kts:53-57`).
+- **No fleet app has a WebView or lock-task pattern to borrow.** Swept `heros/mobile` (`e1a929eb`) and `parking/app`
+  (`3d89a48`) for `webview_flutter`, `flutter_inappwebview`, `wakelock`, `startLockTask`, `setLockTaskPackages` and
+  `DeviceAdminReceiver`, outside build folders: 0 hits.
+- **The queue flow is all on our origin.** The page is `/app/queue` (`web/pages/app-queue.html:7`). Sign-in posts to
+  `/api/auth/otp/request` and `/api/auth/otp/verify` on the same origin (`web/src/screens/customer/sign-in/SignIn.tsx:59,87`).
+  A sweep of `web/src/screens/customer` (tests and flag SVGs excluded) for `http://`, `https://`, `tel:`, `mailto:`,
+  `target="_blank"` and `window.open` found no link to another site.
+- **But the page links to our other paths.** It sits inside `CustomerShell` (`queue/main.tsx:14`), whose bar and nav
+  link to `/app/sign-in`, `/app/profile`, `/app/member`, `/app/rate-alerts`, `/app/notifications` (`_shell/Shell.tsx:81-116`)
+  and `/app`, `/app/branches`, `/app/bookings`, `/app/history`, `/app/assistant` (`Shell.tsx:32-38`, `:124-128`).
+  `/app/history` opens receipts with `target="_blank"` (`history/HistoryScreen.tsx:122-126`). Sign-in links to
+  `/app/sign-up` (`SignIn.tsx:144`), and sign-up ends with `navigate('/app')` (`SignUp.tsx:47`). So M2 needs a path
+  rule, not only a host rule.
+- **The page never uses a camera.** It shows the request QR (`queue/RequestQr.tsx:35-43`); staff scan it at the queue
+  machine (R-3). No `getUserMedia` or `BarcodeDetector` in `web/src` outside tests.
+- **The web half of pairing is on `main`:** `pairFromFragment` posts `#pair=` and strips it (`shared/session/tablet.ts:56-70`);
+  `readTabletMode` reads `me` once and fails open to `{paired: false}` (`:42-54`); the page uses the tablet's branch
+  (`queue/queue-tablet.ts:64-67`) and loops to `/app/queue?branch=<tablet branch>` (`:83`).
+- **The admin half is on `main`:** `BranchTablets` lists each tablet of the branch with its `name`, state and
+  `lastSeenAt` (`admin/branches/BranchTablets.tsx:29-35`, `:238-245`), with a new code and a revoke on each row
+  (`:246-265`). Its pairing QR is `<location.origin>/app/queue?branch=<branchCode>#pair=<CODE>` (`:14-15`).
+- **The server half is not on `main`:** `branch_tablet` has 0 hits under `api/`. BT-0..BT-5 must merge and deploy
+  before a wrapper can pair.
+
+#### 7.11.3 Options, judged only on M1, M2 and work
+
+| Option | M1 on Android | M2 on Android | iPad | Work | Verdict |
+|---|---|---|---|---|---|
+| Chrome tab + screen pinning (zero code) | partly: pinning blocks home and recents, but the tab can be closed | **no**: address bar, new tabs | — | none | no |
+| A kiosk-browser app (third party), set to our URL with an exit PIN | yes | yes, if its URL list matches paths (vendor feature, not checked) | a paid iPad kiosk browser | a per-device licence (price not checked); a closed third-party app holds the customer's session cookie and OTP screens; its setup is not our pairing (R-W7) | no |
+| A web app manifest (`display: fullscreen`) + pinning | unknown: back at the root may close the app (device test) | **no**: no address bar, but the shell's links still reach `/app/history` and the rest | home-screen app + Guided Access; same path gap | a manifest plus a web change to hide the links | no |
+| Capacitor | needs native lock-task lines or a plugin | **not alone**: `server.allowNavigation` is a host list, and other hosts open in the system browser (that leaves the app, M1); the path rule needs a native hook on each OS | Guided Access, plus its iOS project | npm + `@capacitor/*`, generated Gradle and Xcode projects, and still native lines on both OSes | no: the native parts are the same as below, with a build system on top |
+| **A single-file native WebView app per OS** | `startLockTask()` + back does nothing | `shouldOverrideUrlLoading` (Android) / `decidePolicyFor` (iOS) with the path rule | Guided Access for M1 | about 200 lines of Kotlin (or Swift) plus build files | **chosen** |
+
+🔴 **On iPad, M1 needs Guided Access whichever wrapper we pick.** iOS lets an app lock itself only on a supervised iPad
+under MDM (autonomous Single App Mode). Single App Mode without MDM needs Apple Configurator on a Mac, which erases the
+iPad to supervise it. The wrapper app on iPad gives M2; Guided Access gives M1.
+
+#### 7.11.4 Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| W-D1 | **Android: one Kotlin WebView app in a new `tablet/android/`, id `com.spacing.xchange.tablet`.** Not in `app/`, not Flutter. | R-W3; a separate id never replaces the queue machine app (`com.spacing.xchange`) |
+| W-D2 | **M1 on Android = screen pinning, started by the app.** `startLockTask()` on start: Android asks staff once to pin. With *Settings → Security → App pinning → Ask for PIN before unpinning* on, leaving needs the device's screen-lock PIN. Back does nothing. The window keeps the screen on and shows over the lock screen, because a lock screen PIN is now set and the next customer must not meet it. A crashed WebView renderer reloads the start page instead of closing the app. | the least code that meets M1; the staff exit and its PIN are the system's, so the app has no exit code |
+| W-D3 | **Device-owner mode is not built.** It removes the pin prompt and the unpin gesture, but needs a factory reset and `adb shell dm set-device-owner` on a device with no accounts (or QR provisioning at first boot), plus an admin receiver and an exit of our own. | M1 as worded is met by pinning; later only if pinning proves too weak |
+| W-D4 | **iPad: one Swift `WKWebView` app in `tablet/ios/`, built only if the tablet is an iPad** (Q-W1), with Guided Access for M1. | 🔴 above |
+| W-D5 | **M2 is one rule for every top-level navigation, in both apps:** `https`, our origin (built in, per build), and a path in the flow ⇒ load it. Our origin, other path ⇒ load the start page instead. Anything else (another host, `http`, `intent:`, `tel:`, `mailto:`, `blob:`, `data:`, `file:`) ⇒ ignore, and never hand it to another app. New windows are off, so `target="_blank"` runs through the same rule. No download, file-chooser or share handler is set. | M2; the shell's links land on the first page, which is where R-T2 sends a new person anyway. Sign-up's `/app` is a web bug, not a flow exit: #4648 |
+| W-D6 | **The flow paths are `/app/queue`, `/app/sign-in`, `/app/sign-up`**, any query or fragment. Subresources (`/ui/…`, `/api/…`) are not navigations and are not filtered. The start page is `<origin>/app/queue`; the page picks the tablet's branch itself (`queue-tablet.ts:64-67`). | the queue flow as built (`QueueRequest.tsx:72`, `SignIn.tsx:144`) |
+| W-D7 | **The rule's cases live once, in `tablet/policy-cases.json`**, and both apps' unit tests read that file. | ♻️: two languages cannot share code, so they share the cases |
+| W-D8 | **Setup is the §7 pairing (R-W7), with no new server work.** At launch the app reads `GET /api/branch-tablet/me` with the WebView's own cookie. `paired: false` ⇒ the setup screen. Staff scan the admin QR (Google code scanner on Android, which needs no camera permission; VisionKit on iPad) or type the code. A scanned URL is used only if it passes W-D5 and carries `#pair=`; a typed code becomes `<origin>/app/queue#pair=<CODE>`. The WebView loads it, the page pairs (T-D10) and the cookie lands in the WebView's persistent store. The app then reads `me` once and shows **"Branch MAIN · Tablet Front-1"** (`branchCode` · `name`) once, to confirm. A revoked tablet answers `paired: false` and goes back to setup. Any other answer (network failure, non-2xx) opens the page as is, as `readTabletMode` does. | R-W7, R-W8; setup is the only other screen, so M2 holds |
+| W-D9 | **The page shows a small label "MAIN · Front-1" on a paired tablet**, from the `me` it already reads (T-D6). Nothing shows on a phone. | R-W8; web, so it follows the web (R-W5) |
+| W-D10 | **Admin needs nothing new.** `BranchTablets` already lists each terminal by name with its last-seen time and revokes each on its own (§7.11.2). | R-W8 |
+| W-D11 | **Android ships as a signed APK, installed by hand (sideload)**, built by a hand-run workflow. No Play listing. | one or a few tablets; no store review |
+| W-D12 | **On a paired tablet the customer shell shows no links on the flow pages (BT-F4, FE lane, XC FE controller claude/e8020026, 2026-10-22).** W-D5 sends any shell link to the first page, which keeps M2 but throws away the request on screen when a customer taps one mid-request (found by claude/7ca80c). The links are the bar's (`customer/_shell/Shell.tsx:81-120`; its sign-in link at `:81` carries no `next`, so it would drop the flow too) and the bottom nav (`:32-38`, rendered at `:124-128`). All three flow pages of W-D6 render `CustomerShell`: `/app/queue` (`queue/main.tsx`), `/app/sign-in` (`sign-in/main.tsx:15`, `route="/app"`) and `/app/sign-up` (`sign-in/sign-up-main.tsx:14`, `route="/app"`). Rule: `CustomerShell` takes a new optional prop `tabletFlow?: boolean`, which those three entries pass, and only them. With `tabletFlow`, the shell reads `readTabletMode` once (BT-F1, fail-open); when paired it renders neither the bar's links (sign-in, profile, member, rate alerts, notifications) nor the bottom nav. The header (title, language switch) and the page body stay. Without `tabletFlow` (every other page), or unpaired, or on a failed read: exactly as today, and no `me` read is made. The wrapper's W-D5 rule stays as the backstop. | M2 inside the web, so it also holds in a plain browser; R-T5 (one page) |
+
+**What `me` lacks:** nothing for the code and the terminal. `me` returns `branchCode` and the tablet's `name` (§7.7).
+It has no branch **display name**. If the owner wants "สาขาสีลม" rather than "MAIN", BT-4 adds one field, `branchName`,
+to `me`; until then the label uses the code (Q-W4).
+
+#### 7.11.5 Class diagram
+
+```mermaid
+classDiagram
+  direction LR
+  class policy_cases_json {
+    <<shared test data>>
+    origin
+    cases: url, expect allow / start / ignore
+  }
+  class QueueFlowPolicy {
+    <<pure>>
+    FLOW_PATHS /app/queue /app/sign-in /app/sign-up
+    decide(url, origin) Allow | StartPage | Ignore
+  }
+  class PairingUrl {
+    <<pure>>
+    fromScan(text, origin) url?
+    fromCode(code, origin) url?
+  }
+  class PairState {
+    <<pure>>
+    fromMe(status, body) Paired(branchCode, name) | Unpaired | Unknown
+  }
+  class MeClient {
+    get(origin, cookie) status, body
+  }
+  class TabletActivity {
+    WebView, new windows off
+    shouldOverrideUrlLoading uses QueueFlowPolicy
+    onResume: startLockTask
+    back: nothing
+    keep screen on, show when locked
+    onRenderProcessGone: reload start
+  }
+  class SetupActivity {
+    scan or type code
+    confirm line once
+  }
+  class TabletViewController {
+    <<iOS, only if iPad>>
+    WKWebView decidePolicyFor uses QueueFlowPolicy
+  }
+  class SetupViewController {
+    <<iOS, only if iPad>>
+  }
+  QueueFlowPolicy ..> policy_cases_json : tests read
+  TabletActivity --> QueueFlowPolicy
+  TabletActivity --> PairState
+  TabletActivity --> MeClient
+  TabletActivity --> SetupActivity : Unpaired
+  SetupActivity --> PairingUrl
+  TabletViewController --> QueueFlowPolicy
+  TabletViewController --> SetupViewController : Unpaired
+  SetupViewController --> PairingUrl
+```
+
+The three pure parts exist once per language (Kotlin, and Swift only if iPad), each tested against
+`policy-cases.json` and its own small tests. The activities are glue and hold no rule.
+
+| Unit | File | New |
+|---|---|---|
+| shared cases | `tablet/policy-cases.json` | new |
+| pure parts (Android) | `tablet/android/app/src/main/kotlin/com/spacing/xchange/tablet/{QueueFlowPolicy.kt, PairingUrl.kt, PairState.kt}` | new |
+| glue (Android) | `…/tablet/{TabletActivity.kt, SetupActivity.kt, MeClient.kt}`, `tablet/android/app/src/main/AndroidManifest.xml`, `tablet/android/app/src/main/res/layout/setup.xml` | new |
+| build (Android) | `tablet/android/{settings.gradle.kts, build.gradle.kts, gradle.properties, gradle/wrapper/*, gradlew}`, `tablet/android/app/build.gradle.kts` (the origin as a Gradle property ⇒ `BuildConfig.XC_ORIGIN`) | new |
+| CI | `.github/workflows/tablet-android.yml` | new |
+| page label | `web/src/screens/customer/queue/{TabletLabel.tsx, TabletLabel.test.tsx}`, one line in `QueueRequest.tsx`, `queue.css`, `i18n.ts` | new / changed |
+| iOS (only if iPad) | `tablet/ios/…` | new |
+
+#### 7.11.6 Behaviour
+
+Only M1, M2, setup and the label. Everything else is §7.8's rows, unchanged (R-W5).
+
+| # | Given | When | Then |
+|---|---|---|---|
+| W1 | a paired wrapper | it starts | the page `<origin>/app/queue` fills the screen with no address bar; Android asks staff to pin the first time after each start; the screen stays on |
+| W2 | a pinned wrapper (Android) or Guided Access on (iPad) | the customer presses home, recents or app switch | nothing; the page stays |
+| W3 | the page on any screen | the customer presses back | nothing: the app does not close and the WebView does not go back |
+| W4 | a pinned wrapper with *Ask for PIN before unpinning* | someone does the unpin gesture | the device asks for its screen-lock PIN; a wrong PIN keeps it pinned. iPad: triple-click asks the Guided Access passcode |
+| W5 | the page | a navigation to `https://<origin>` with path `/app/queue`, `/app/sign-in` or `/app/sign-up` (any query or fragment) | it loads |
+| W6 | the page | a navigation to `<origin>` on any other path (the shell's `/app/history`, sign-up's `/app`, a receipt with `target="_blank"`) | the start page loads instead |
+| W7 | the page | a navigation to another host, to `http://<origin>`, or to `intent:`, `tel:`, `mailto:`, `blob:`, `data:`, `file:` | ignored; no other app opens; the QR download button does nothing in the wrapper |
+| W8 | the page | the customer long-presses text | the selection menu offers no item that opens another app (share, web search, translate) |
+| W9 | the page | the WebView's renderer crashes | the start page reloads; the app does not close |
+| W10 | a wrapper that is new, or whose tablet was revoked (`me` ⇒ `paired: false`) | it starts | the setup screen. Staff scan the admin QR or type the code ⇒ the WebView loads `/app/queue…#pair=<CODE>`, the page pairs (T-D10), the app shows "Branch MAIN · Tablet Front-1" once, then the start page. A QR for another origin, or with no `#pair=`, is refused on the setup screen. A refused code (`me` still `paired: false`) returns to setup with a worded line. Every later start opens the start page |
+| W11 | `me` cannot be read (no network, non-2xx) | the wrapper starts | the page opens as is; setup appears only on an explicit `paired: false` |
+| W12 | a paired tablet, in the wrapper or not | the page loads | a small "MAIN · Front-1" label from `me`; a phone shows none |
+
+**Tests:**
+- W5–W7 and W10's URL checks are JVM unit tests (`./gradlew test`) over `policy-cases.json`, with no device.
+- `PairState` has unit tests for `paired: true`, `paired: false`, a missing field, non-JSON, 404 and 5xx.
+- W12 is a vitest test with a fake `me`.
+- **W1–W4, W8 and W9 need the real tablet**: lock task, back, recents and the selection menu cannot be tested in CI.
+  They are a written checklist in `tablet/android/DEVICE_CHECKLIST.md`, run on the branch tablet before each release.
+  The same goes for one more row to measure on the device: the notification shade while pinned.
+
+#### 7.11.7 Tickets
+
+The design must merge first. TW-0 to TW-3 wait for Q-W1 = Android, or for no answer (default below). TW-F1 runs on any
+answer. iOS tickets are cut only if Q-W1 = iPad. File scopes are disjoint.
+
+| Ticket | Side | Scope (File scope = these paths) | Class | Up-front tests | Needs |
+|---|---|---|---|---|---|
+| TW-0 | app | `tablet/android/` build files (§7.11.5 build row), `tablet/policy-cases.json` with every W5–W7 case, and the up-front test files of TW-1, written against §7.11.5's signatures (they fail until TW-1). `tablet/android/app/build.gradle.kts` carries the release `signingConfig` from the four `XCHANGE_ANDROID_*` values with the debug-key fallback, as `app/android/app/build.gradle.kts:53-57`, so TW-3 touches only its workflow | skeleton (controller) | — | design merged |
+| TW-1 | app | `tablet/android/app/src/main/kotlin/com/spacing/xchange/tablet/{QueueFlowPolicy.kt, PairingUrl.kt, PairState.kt}` | logic | `tablet/android/app/src/test/kotlin/com/spacing/xchange/tablet/{PolicyCasesTest.kt, PairingUrlTest.kt, PairStateTest.kt}`: every case of `policy-cases.json`, W10's scan/code rules, and `PairState` as in §7.11.6 | TW-0 |
+| TW-2 | app | `…/tablet/{TabletActivity.kt, SetupActivity.kt, MeClient.kt}`, `AndroidManifest.xml`, `res/layout/setup.xml`, `tablet/android/DEVICE_CHECKLIST.md` | logic | no CI test for the lock; the checklist covers W1–W4 and W8–W11 and is run on a device, with the result posted on the PR | TW-1 |
+| TW-3 | CI | `.github/workflows/tablet-android.yml`: `workflow_dispatch` plus PRs touching `tablet/android/**`; `./gradlew test` on PRs; a signed APK as an artifact on hand runs; `runs-on` as `app-android.yml:28`; release signing with the existing four `XCHANGE_ANDROID_*` secrets, else the debug key, as `app-android.yml:3-7` | mechanical | the workflow's own run is the test | TW-1 (so its first PR run is green) |
+| TW-F1 | FE | `web/src/screens/customer/queue/{TabletLabel.tsx, TabletLabel.test.tsx, QueueRequest.tsx, queue.css, i18n.ts}` | mechanical | W12 with a fake `me`: paired ⇒ "MAIN · Front-1"; unpaired ⇒ nothing | design merged |
+| TW-i1, TW-i2 | app (iOS) | `tablet/ios/…`: the pure parts tested on `policy-cases.json` (i1), then the view controllers and the checklist (i2) | logic | as TW-1 / TW-2 | Q-W1 = iPad; an Apple Developer account |
+
+**Done lines:** TW-1 and TW-2: `./gradlew test` green, plus the checklist for TW-2. TW-F1: §5r.4's web done line.
+
+**Found while measuring, for the web lane (not wrapper work, R-W5):** on a paired tablet a shell link or sign-up's
+`/app` now lands on the first page (W6), so a customer who opens `/app/history` mid-request leaves that request's
+screen. The page could hide the shell's links on a paired tablet; that is the web lane's call.
+Separately, sign-up drops `?next=` (`SignUp.tsx:47` navigates to `/app`; `:93` links a bare `/app/sign-in`), so on a
+paired tablet a customer who has just signed up lands on the start page without `from=sign-in` and is asked to sign in
+again; on a phone they land on home. The fix is in the web, not in the wrapper's rule: #4648.
+
+#### 7.11.8 Owner questions
+
+1. **Q-W1, the tablet's OS.** Android gives M1 from inside the app (pinning). iPad needs Guided Access for M1 whichever
+   wrapper, plus an Apple Developer account to install the app.
+   **I propose: an Android tablet.** **If no answer:** build the Android app (TW-0..TW-3) and TW-F1; no iOS ticket.
+2. **Q-W2, who holds the exit PIN.** On Android it is the tablet's screen-lock PIN (pinning asks for it). On iPad it is
+   the Guided Access passcode. Either is set in the tablet's Settings at setup, not in our code.
+   **I propose: the branch manager sets it and keeps it.** **If no answer:** the person who sets up the tablet sets
+   it and hands it to the branch manager.
+3. **Q-W3, how the Android app is installed.** A signed APK installed by hand (no store, no review), or a Play Store
+   listing (review, listing and policy pages, for a handful of tablets). **I propose: install by hand.**
+   **If no answer:** install by hand.
+4. **Q-W4, the label's branch.** `me` gives the branch code ("MAIN"), not its display name. **I propose: the code**,
+   which needs no server change. **If no answer:** the code; adding `branchName` to `me` later is one field in BT-4.

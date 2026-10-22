@@ -6,6 +6,7 @@ import { t } from './texts';
 export function ReceiptsSection(props: {
   receipts: TxReceiptDto[];
   canReprint: boolean;
+  disabledReason?: string;
   busy: boolean;
   onReprint: (number: string) => void;
 }): JSX.Element {
@@ -31,13 +32,16 @@ export function ReceiptsSection(props: {
                 </td>
                 <td>{r.issuedAt}</td>
                 <td>
-                  <Show when={props.canReprint}>
+                  <Show when={props.canReprint || Boolean(props.disabledReason)}>
                     <button
                       type="button"
                       data-action="reprint"
                       data-number={r.number}
-                      disabled={props.busy}
-                      onClick={() => props.onReprint(r.number)}
+                      disabled={props.busy || Boolean(props.disabledReason)}
+                      title={props.disabledReason}
+                      onClick={() => {
+                        if (!props.disabledReason) props.onReprint(r.number);
+                      }}
                     >
                       {t('reprint')}
                     </button>

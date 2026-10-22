@@ -16,6 +16,9 @@ use xc_auth::infrastructure::identity::HttpIdentityClient;
 use xc_auth::infrastructure::token::http_jwks_source::HttpJwksSource;
 use xc_auth::infrastructure::token::jwks_verifier::JwksTokenVerifier;
 
+use crate::application::customer_binder::BindError;
+use crate::application::customer_otp_sign_in::{CustomerOtpSignIn, OtpRegister, OtpSignInError};
+use crate::application::otp_challenge_seal::{OTP_COOKIE, OtpChallengeSeal, OtpChannel};
 use crate::bootstrap::AppState;
 use crate::presentation::extractors::actor::{
     AccountSessionReader, cookie, failure, same_origin, server_error,
@@ -218,22 +221,111 @@ async fn v3_otp_request(
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let channel = body.get("channel").and_then(|v| v.as_str()).unwrap_or("");
-    if destination.is_empty() || channel.is_empty() {
+    let Some(otp_channel) = OtpChannel::parse(channel) else {
+        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
+    };
+    if destination.is_empty() {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
     }
     let ip = client_address(&req);
     match session.otp_request(destination, channel, Some(ip)).await {
-        Ok(resp) => HttpResponse::Ok()
-            .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-            .json(json!({
-                "challengeId": resp.challenge_id,
-                "expiresAt": resp.expires_at,
-            })),
+        Ok(resp) => {
+            let mut response = HttpResponse::Ok();
+            let id_type = match otp_channel {
+                OtpChannel::Sms => xc_kernel::pii::IdentityType::Phone,
+                OtpChannel::Email => xc_kernel::pii::IdentityType::Email,
+            };
+            if let (Ok(norm_dest), Ok(keys)) = (
+                xc_kernel::pii::normalize(id_type, destination, None),
+                xc_customer::get_pii_keys(),
+            ) {
+                let sealed = OtpChallengeSeal {
+                    channel: otp_channel,
+                    destination: norm_dest,
+                    challenge_id: resp.challenge_id.clone(),
+                }
+                .seal(&keys);
+                let now_secs = Utc::now().timestamp().max(0) as u64;
+                let max_age = resp.expires_at.saturating_sub(now_secs).min(600);
+                let otp_cookie = format!(
+                    "{OTP_COOKIE}={sealed}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={max_age}"
+                );
+                response.append_header((actix_web::http::header::SET_COOKIE, otp_cookie));
+            }
+            response
+                .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+                .json(json!({
+                    "challengeId": resp.challenge_id,
+                    "expiresAt": resp.expires_at,
+                }))
+        }
         Err(err) => handle_session_error(err),
     }
 }
 
+fn clear_otp_cookie(mut resp: HttpResponse) -> HttpResponse {
+    let clear = format!("{OTP_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");
+    resp.headers_mut().append(
+        actix_web::http::header::SET_COOKIE,
+        actix_web::http::header::HeaderValue::from_str(&clear).unwrap(),
+    );
+    resp
+}
+
+fn parse_otp_register(body: &Value) -> Result<Option<OtpRegister>, HttpResponse> {
+    let Some(reg) = body.get("register") else {
+        return Ok(None);
+    };
+    if reg.is_null() {
+        return Ok(None);
+    }
+    let Some(obj) = reg.as_object() else {
+        return Err(refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง"));
+    };
+    let Some(display_name) = obj.get("displayName").and_then(Value::as_str) else {
+        return Err(refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง"));
+    };
+    let lang = obj.get("lang").and_then(Value::as_str).unwrap_or("");
+    if !["th", "en", "zh"].contains(&lang) {
+        return Err(validation_response("lang", "ภาษาต้องเป็น th, en หรือ zh"));
+    }
+    if display_name.trim().is_empty() {
+        return Err(validation_response("displayName", "กรุณากรอกชื่อ"));
+    }
+    let marketing = match obj.get("marketing") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(items)) => {
+            let mut channels = Vec::new();
+            for item in items {
+                let channel: xc_customer::domain::consent::Channel = item
+                    .as_str()
+                    .and_then(|c| c.parse().ok())
+                    .ok_or_else(|| validation_response("marketing", "ช่องทางการตลาดไม่ถูกต้อง"))?;
+                if !channels.contains(&channel) {
+                    channels.push(channel);
+                }
+            }
+            channels
+        }
+        Some(_) => return Err(validation_response("marketing", "ช่องทางการตลาดไม่ถูกต้อง")),
+    };
+    Ok(Some(OtpRegister {
+        display_name: display_name.trim().to_owned(),
+        lang: lang.to_owned(),
+        marketing,
+    }))
+}
+
 async fn v3_otp_verify(
+    req: HttpRequest,
+    bytes: web::Bytes,
+    session: web::Data<SessionService>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    clear_otp_cookie(v3_otp_verify_inner(req, bytes, session, state).await)
+}
+
+async fn v3_otp_verify_inner(
     req: HttpRequest,
     bytes: web::Bytes,
     session: web::Data<SessionService>,
@@ -263,29 +355,69 @@ async fn v3_otp_verify(
     if challenge_id.is_empty() || code.is_empty() {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
     }
+    let register = match parse_otp_register(&body) {
+        Ok(reg) => reg,
+        Err(resp) => return resp,
+    };
+    let seal = xc_customer::get_pii_keys()
+        .ok()
+        .and_then(|keys| OtpChallengeSeal::open(&cookie(&req, OTP_COOKIE), &keys));
     let ip = client_address(&req);
     let now = Utc::now();
-    match session.otp_verify(challenge_id, code, Some(ip), now).await {
-        Ok(tail) => {
+    match CustomerOtpSignIn::new(&session, &state.db)
+        .sign_in(challenge_id, code, seal.as_ref(), register, Some(ip), now)
+        .await
+    {
+        Ok(signed_in) => {
             // #998 APP-7 (P6): the anonymous app session this browser carries becomes the customer's.
             if let Some(app) = req
                 .cookie(xc_app::domain::app_session::APP_SESSION_COOKIE)
                 .and_then(|c| xc_app::domain::app_session::AppSessionId::parse(c.value()))
+                && let Some(ref cid) = signed_in.customer_id
             {
-                crate::application::app_session_claim::claim_session_for_user(
+                crate::application::app_session_claim::claim_session_for(
                     &state.db,
                     &app.hash(),
-                    &tail.user.id,
+                    cid,
                     now,
                 )
                 .await;
             }
             let mut resp = HttpResponse::Ok();
-            attach_signin_cookies(&mut resp, &tail.session_token);
+            attach_signin_cookies(&mut resp, &signed_in.tail.session_token);
             resp.insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-                .json(json!({ "user": tail.user }))
+                .json(json!({
+                    "user": signed_in.tail.user,
+                    "customerId": signed_in.customer_id,
+                    "registered": signed_in.registered,
+                }))
         }
-        Err(err) => handle_session_error(err),
+        Err(OtpSignInError::NotRegistered) => {
+            refusal_response(401, "notRegistered", "ยังไม่มีบัญชี กรุณาสมัครสมาชิก")
+        }
+        Err(OtpSignInError::Bind(BindError::AlreadyRegistered)) => {
+            refusal_response(409, "alreadyRegistered", "บัญชีนี้ลงทะเบียนแล้ว")
+        }
+        Err(OtpSignInError::Bind(BindError::ConsentTextMissing)) => HttpResponse::Conflict()
+            .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+            .json(json!({
+                "error": {
+                    "code": "consentTextMissing",
+                    "field": "lang",
+                    "message": "ยังไม่มีข้อความยินยอมในภาษานี้",
+                }
+            })),
+        Err(OtpSignInError::Bind(BindError::PhoneInUse)) => {
+            refusal_response(409, "phoneInUse", "เบอร์โทรนี้ผูกกับลูกค้าอื่นแล้ว")
+        }
+        Err(OtpSignInError::Bind(BindError::EmailInUse)) => {
+            refusal_response(409, "emailInUse", "อีเมลนี้ผูกกับลูกค้าอื่นแล้ว")
+        }
+        Err(OtpSignInError::Bind(BindError::Internal(e))) => {
+            tracing::error!(error = %e, "customer otp sign-in failed");
+            refusal_response(500, "serverError", "เซิร์ฟเวอร์ขัดข้อง")
+        }
+        Err(OtpSignInError::Session(err)) => handle_session_error(err),
     }
 }
 

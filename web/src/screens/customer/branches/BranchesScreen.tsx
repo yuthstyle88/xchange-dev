@@ -8,6 +8,8 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
+import { ApiClient, ApiError } from '../../../shared/api/client';
+import { readHostOrg } from '../../../shared/api/public-host';
 import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { lang, screenT } from '../../../shared/i18n';
 import { PublicPoller } from '../../../shared/live/public-poller';
@@ -29,6 +31,7 @@ export interface BranchesScreenProps {
 export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
   const t = screenT('customer.branches', { th, en, zh });
   const fetchFn = props.fetch ?? ((url, init) => window.fetch(url, init));
+  const api = new ApiClient(fetchFn);
 
   const [hostState, setHostState] = createSignal<'loading' | 'ready' | 'notFound' | 'error'>(
     props.org ? 'ready' : 'loading',
@@ -58,25 +61,12 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
     }
     setHostState('loading');
     try {
-      const res = await fetchFn('/api/public/host');
-      if (res.status === 200) {
-        const json = (await res.json()) as { org?: string };
-        if (json && typeof json.org === 'string' && json.org.length > 0) {
-          setResolvedOrg(json.org);
-          setHostState('ready');
-          initPoller(json.org);
-          return;
-        }
-        setHostState('notFound');
-        return;
-      }
-      if (res.status === 404) {
-        setHostState('notFound');
-        return;
-      }
-      setHostState('error');
-    } catch {
-      setHostState('error');
+      const org = await readHostOrg(api);
+      setResolvedOrg(org);
+      setHostState('ready');
+      initPoller(org);
+    } catch (err) {
+      setHostState(err instanceof ApiError && err.status === 404 ? 'notFound' : 'error');
     }
   };
 

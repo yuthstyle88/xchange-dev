@@ -34,6 +34,27 @@ export const th = {
   refresh: 'รีเฟรช',
   errorTitle: 'เกิดข้อผิดพลาด',
   codeConflict: 'รหัสสาขาซ้ำกับสาขาอื่น',
+
+  // BT-F3 (kiosk-shared-phone §7): BranchTablets.tsx
+  tabletsHeading: 'แท็บเล็ตของสาขา',
+  tabletsIntro: 'แท็บเล็ตที่จับคู่แล้วจะกลับไปหน้าเริ่มต้นการจองทันทีที่สแกนรับคิวเสร็จ',
+  tabletsEmpty: 'ยังไม่มีแท็บเล็ตของสาขานี้',
+  tabletName: 'ชื่อแท็บเล็ต',
+  tabletNameRequired: 'กรุณากรอกชื่อแท็บเล็ต',
+  tabletAdd: 'เพิ่มแท็บเล็ต',
+  tabletNewCode: 'สร้างรหัสจับคู่ใหม่',
+  tabletRevoke: 'ยกเลิกการจับคู่',
+  tabletRevoked: 'ยกเลิกการจับคู่แท็บเล็ตแล้ว',
+  tabletState: 'สถานะ',
+  tabletStatePending: 'รอจับคู่',
+  tabletStatePaired: 'จับคู่แล้ว',
+  tabletStateRevoked: 'ยกเลิกแล้ว',
+  tabletLastSeen: 'ใช้งานล่าสุด',
+  tabletNeverSeen: 'ยังไม่เคยใช้งาน',
+  tabletCode: 'รหัสจับคู่',
+  tabletCodeOnce: 'รหัสนี้แสดงเพียงครั้งเดียวและใช้ได้ 10 นาที ให้สแกน QR ด้วยแท็บเล็ต หรือเปิดลิงก์นี้บนแท็บเล็ต',
+  tabletCodeExpires: 'ใช้ได้ถึง {time}',
+  tabletQrLabel: 'QR สำหรับจับคู่แท็บเล็ต',
 };
 
 export const en = {
@@ -72,4 +93,25 @@ export const en = {
   refresh: 'Refresh',
   errorTitle: 'Error',
   codeConflict: 'Branch code is already used by another branch',
+
+  // BT-F3 (kiosk-shared-phone §7): BranchTablets.tsx
+  tabletsHeading: 'Branch tablets',
+  tabletsIntro: 'A paired tablet goes back to the first booking page as soon as the queue scan is done',
+  tabletsEmpty: 'This branch has no tablets yet',
+  tabletName: 'Tablet name',
+  tabletNameRequired: 'Tablet name is required',
+  tabletAdd: 'Add tablet',
+  tabletNewCode: 'New pairing code',
+  tabletRevoke: 'Revoke',
+  tabletRevoked: 'Tablet revoked',
+  tabletState: 'State',
+  tabletStatePending: 'Waiting to pair',
+  tabletStatePaired: 'Paired',
+  tabletStateRevoked: 'Revoked',
+  tabletLastSeen: 'Last seen',
+  tabletNeverSeen: 'Never',
+  tabletCode: 'Pairing code',
+  tabletCodeOnce: 'This code is shown once and is valid for 10 minutes. Scan the QR with the tablet, or open this link on it.',
+  tabletCodeExpires: 'Valid until {time}',
+  tabletQrLabel: 'Tablet pairing QR',
 };

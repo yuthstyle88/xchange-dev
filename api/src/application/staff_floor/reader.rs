@@ -11,6 +11,7 @@ use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::ids::BranchId;
 use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
+use xc_shift::domain::custody::branch_day::BranchDay;
 use xc_shift::domain::custody::entities::customer_hold::HoldStatus;
 use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
@@ -59,7 +60,11 @@ impl StaffFloorReader {
         let phase = facts
             .ops
             .as_ref()
-            .map(|o| o.phase.as_str().to_string())
+            .map(|o| {
+                BranchDay::read_phase(o.phase, facts.open_shifts)
+                    .as_str()
+                    .to_string()
+            })
             .unwrap_or_else(|| "CLOSED".to_string());
 
         let hours = self.read_hours(branch, now).await?;

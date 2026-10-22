@@ -9,6 +9,7 @@ import {
 } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
+import { readHostOrg } from '../../../shared/api/public-host';
 import type {
   BookingCancelInput,
   BookingCancelOutput,
@@ -123,21 +124,11 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const loadBranches = async (): Promise<void> => {
     setBranchNames(new Map());
     setBranchTimezones(new Map());
-    let data: PublicBranchesData | null = null;
     try {
-      const hostRes = await fetchFn('/api/public/host');
-      if (!hostRes.ok) return;
-      const host = (await hostRes.json()) as { org?: string } | null;
-      if (!host || typeof host.org !== 'string' || !host.org) return;
-
-      const listRes = await fetchFn(`/api/public/orgs/${encodeURIComponent(host.org)}/branches`);
-      if (!listRes.ok) return;
-      data = (await listRes.json()) as PublicBranchesData | null;
-    } catch {
-      return;
-    }
-
-    try {
+      const org = await readHostOrg(api);
+      const data = await api.publicGet<PublicBranchesData | null>(
+        `/api/public/orgs/${encodeURIComponent(org)}/branches`,
+      );
       const names = new Map<string, string>();
       const timezones = new Map<string, string>();
       for (const b of data?.branches ?? []) {
@@ -151,8 +142,6 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
       setBranchNames(names);
       setBranchTimezones(timezones);
     } catch {
-      setBranchNames(new Map());
-      setBranchTimezones(new Map());
       setLoadError(t('error.loadFailed'));
     }
   };

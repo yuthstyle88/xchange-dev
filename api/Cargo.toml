@@ -72,6 +72,8 @@ thiserror = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 chrono-tz = { version = "0.10" }
 sha2 = "0.10"
+# The OTP challenge seal (design kiosk-shared-phone.md §4.2 D11, application/otp_challenge_seal.rs).
+hmac = "0.12"
 uuid = { version = "1", features = ["v4"] }
 actix-web = "4"
 anyhow = "1"
@@ -85,6 +87,9 @@ rust-embed = "=8.13.0"
 ts-rs = "=12.0.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 rust_xlsxwriter = "0.100"
+# The e-mail copy's inline QR picture (design kiosk-shared-phone.md §4.2 D21, §4.3 "the e-mail's QR PNG").
+qrcode = { version = "0.14", default-features = false }
+png = "0.17"
 
 [dev-dependencies]
 calamine = "0.37"

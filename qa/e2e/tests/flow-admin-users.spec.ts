@@ -10,7 +10,17 @@ const RAW_CODE =
 
 const REVIEWER_ROLE_CODE = 'VERIFICATION_REVIEWER';
 
+// v3 commands need the same-origin headers and an Idempotency-Key header (command.rs:256-268).
+const writeHeaders = (key: string) => ({
+  'x-xchange-request': '1',
+  origin: new URL(users.baseUrl).origin,
+  'Idempotency-Key': key,
+});
+
 let cachedMarketingUserId: string | undefined;
+let originalProfile:
+  | { employeeCode: string; department: string; position: string; tellCode: string }
+  | undefined;
 
 async function getMarketingUserId(browser: Browser): Promise<string> {
   if (cachedMarketingUserId) return cachedMarketingUserId;
@@ -32,21 +42,55 @@ async function getMarketingUserId(browser: Browser): Promise<string> {
 
 // Locate tr[data-user-id="<id>"] (UsersScreen.tsx:624), paging with button[data-action="more"] (UsersScreen.tsx:762) if needed.
 async function ensureUserRow(screen: Locator, userId: string): Promise<Locator> {
-  await expect(screen.locator('table.users-table')).toBeVisible({ timeout: 20_000 }); // UsersScreen.tsx:604
-  const row = screen.locator(`tr[data-user-id="${userId}"]`); // UsersScreen.tsx:624
+  const table = screen.locator('table.users-table'); // UsersScreen.tsx:604
+  await expect(table).toBeVisible({ timeout: 20_000 });
+  const rows = table.locator('tbody tr');
+  const row = table.locator(`tr[data-user-id="${userId}"]`); // UsersScreen.tsx:624
   while ((await row.count()) === 0) {
     const moreBtn = screen.locator('button[data-action="more"]'); // UsersScreen.tsx:762
     if (!(await moreBtn.isVisible().catch(() => false))) break;
+    const prevCount = await rows.count();
     await moreBtn.click();
-    await expect(moreBtn)
-      .toBeEnabled({ timeout: 15_000 })
-      .catch(() => {});
+    // UsersScreen.tsx:205,757 unmounts moreBtn when the final page (<50 rows) loads; poll for row, unmount, or new rows.
+    await expect
+      .poll(
+        async () => {
+          if ((await row.count()) > 0) return true;
+          if (!(await moreBtn.isVisible().catch(() => false))) return true;
+          const disabled = await moreBtn.isDisabled().catch(() => true);
+          return !disabled && (await rows.count()) > prevCount;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
   }
   await expect(
     row,
     `seeded marketing user row tr[data-user-id="${userId}"] must be present on /#users`,
   ).toHaveCount(1, { timeout: 15_000 });
   return row;
+}
+
+// Row writes (revoke/suspend/resume/disable/enable) call loadUsers() (UsersScreen.tsx:445,471), resetting the table to page 1.
+async function completeRowWrite(
+  screen: Locator,
+  targetUserId: string,
+  trigger: () => Promise<void>,
+): Promise<Locator> {
+  const page = screen.page();
+  const reloadDone = page.waitForResponse(
+    (res) => res.url().includes('/api/v3/views/admin_users') && res.request().method() === 'GET',
+    { timeout: 15_000 },
+  );
+  await trigger();
+  await reloadDone;
+  await expect(screen.locator('[role="status"].users-form-success')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(screen.locator('table.users-table button:disabled')).toHaveCount(0, {
+    timeout: 15_000,
+  });
+  return ensureUserRow(screen, targetUserId);
 }
 
 // Active (non-ended) role tags on a user row: .users-role-tag:not([data-role-ended]) with .users-role-name (UsersScreen.tsx:637-641).
@@ -56,68 +100,49 @@ function activeRoleTag(row: Locator, roleCode: string): Locator {
   });
 }
 
-async function restoreMarketingUser(
-  page: Page,
-  targetUserId: string,
-  originalProfile?: {
-    employeeCode: string;
-    department: string;
-    position: string;
-    tellCode: string;
-  },
-): Promise<void> {
+async function restoreMarketingUser(page: Page, targetUserId: string): Promise<void> {
   try {
-    await page.goto('/#users');
-    const screen = page.locator('.users-screen'); // UsersScreen.tsx:532
-    await expect(screen).toBeVisible({ timeout: 20_000 });
-    await screen.locator('button[data-users-tab="users"]').click(); // UsersScreen.tsx:543
-    const row = await ensureUserRow(screen, targetUserId);
-
-    // Restore suspended → resume (UsersScreen.tsx:729) or disabled → enable (UsersScreen.tsx:741).
-    const resumeBtn = row.locator('button[data-users-action="resume"]'); // UsersScreen.tsx:729
-    if (await resumeBtn.isVisible().catch(() => false)) {
-      await resumeBtn.click();
-      await expect(
-        row.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
-      ).toBeVisible({ timeout: 15_000 });
-    }
-    const enableBtn = row.locator('button[data-users-action="enable"]'); // UsersScreen.tsx:741
-    if (await enableBtn.isVisible().catch(() => false)) {
-      await enableBtn.click();
-      await expect(
-        row.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
-      ).toBeVisible({ timeout: 15_000 });
-    }
-
-    // Restore granted role → revoke (UsersScreen.tsx:655).
-    const reviewerTag = activeRoleTag(row, REVIEWER_ROLE_CODE);
-    if ((await reviewerTag.count()) > 0) {
-      await reviewerTag.first().locator('button.users-btn-revoke').click(); // UsersScreen.tsx:655
-      await expect(reviewerTag).toHaveCount(0, { timeout: 15_000 });
-    }
-
-    // Restore employee profile fields if captured (UsersScreen.tsx:690,1022,1031-1083).
-    if (originalProfile) {
-      const profileBtn = row.locator('button[data-users-action="profile"]'); // UsersScreen.tsx:690
-      if (await profileBtn.isVisible().catch(() => false)) {
-        await profileBtn.click();
-        const dialog = screen.locator('.users-dialog[role="dialog"]'); // UsersScreen.tsx:1022
-        await expect(dialog).toBeVisible({ timeout: 10_000 });
-        await dialog
-          .locator('input#profile-employee-code[name="employeeCode"]') // UsersScreen.tsx:1031-1032
-          .fill(originalProfile.employeeCode);
-        await dialog
-          .locator('input#profile-department[name="department"]') // UsersScreen.tsx:1042-1043
-          .fill(originalProfile.department);
-        await dialog
-          .locator('input#profile-position[name="position"]') // UsersScreen.tsx:1053-1054
-          .fill(originalProfile.position);
-        await dialog
-          .locator('input#profile-tell-code[name="tellCode"]') // UsersScreen.tsx:1064-1065
-          .fill(originalProfile.tellCode);
-        await dialog.locator('button[data-users-action="profile-save"]').click(); // UsersScreen.tsx:1083
-        await expect(dialog).toHaveCount(0, { timeout: 15_000 });
+    const req = page.request;
+    const now = Date.now();
+    const postCleanup = async (url: string, key: string, data: Record<string, unknown>) => {
+      const res = await req
+        .post(url, { headers: writeHeaders(key), data })
+        .catch(() => undefined);
+      if (res && !res.ok()) {
+        console.log(`[r9-1 cleanup] POST ${url} returned ${res.status()}`);
       }
+    };
+
+    // Restore suspended → resume and disabled → enable directly via API so cleanup never depends on UI paging.
+    await postCleanup('/api/users/resume', `qa-r9-1-cleanup-resume-${now}`, {
+      userId: targetUserId,
+    });
+    await postCleanup('/api/users/enable', `qa-r9-1-cleanup-enable-${now}`, {
+      userId: targetUserId,
+    });
+
+    // Restore granted role → revoke (UsersScreen.tsx:85,438).
+    for (const branch of [null, 'MAIN']) {
+      await postCleanup(
+        '/api/users/revoke',
+        `qa-r9-1-cleanup-revoke-${branch ?? 'org'}-${now}`,
+        { userId: targetUserId, role: REVIEWER_ROLE_CODE, branch },
+      );
+    }
+
+    // Restore employee profile fields if captured (UsersScreen.tsx:90,414).
+    if (originalProfile) {
+      const trimOrNull = (val: string): string | null => {
+        const trimmed = val.trim();
+        return trimmed === '' ? null : trimmed;
+      };
+      await postCleanup('/api/users/profile', `qa-r9-1-cleanup-profile-${now}`, {
+        userId: targetUserId,
+        employeeCode: trimOrNull(originalProfile.employeeCode),
+        department: trimOrNull(originalProfile.department),
+        position: trimOrNull(originalProfile.position),
+        tellCode: trimOrNull(originalProfile.tellCode),
+      });
     }
   } catch (e) {
     console.log('[r9-1 cleanup] restoreMarketingUser failed:', e);
@@ -144,6 +169,21 @@ async function cleanupMatrixGroup(page: Page, groupCode: string): Promise<void> 
 }
 
 test.describe('QA-R9-1 admin user management and permission groups', () => {
+  test.afterAll(async ({ browser }) => {
+    if (!hasAccount('admin') || !hasAccount('marketing')) return;
+    const context = await browser.newContext({ baseURL: users.baseUrl });
+    try {
+      const targetUserId = cachedMarketingUserId ?? (await getMarketingUserId(browser));
+      const page = await context.newPage();
+      await signIn(page, 'admin', '/#users');
+      await restoreMarketingUser(page, targetUserId);
+    } catch (e) {
+      console.log('[r9-1 cleanup] afterAll restoreMarketingUser failed:', e);
+    } finally {
+      await context.close().catch(() => {});
+    }
+  });
+
   test('(a) happy path: userProfileSave, userGrant, userRevoke, userSuspend, userResume, userDisable, userEnable persist across reload', async ({
     page,
     browser,
@@ -158,10 +198,6 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
     const dept = `${marker}-dept`;
     const pos = `${marker}-pos`;
     const tellCode = `T${String(ts).slice(-6)}`;
-
-    let originalProfile:
-      | { employeeCode: string; department: string; position: string; tellCode: string }
-      | undefined;
 
     try {
       await signIn(page, 'admin', '/#users');
@@ -235,11 +271,13 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       await shot(page, 'admin-users', 'r9-1-user-profile-and-grant');
 
       // 3. userRevoke (POST /api/users/revoke, UsersScreen.tsx:85,438,655)
-      await activeRoleTag(rowAfterGrant, REVIEWER_ROLE_CODE)
-        .first()
-        .locator('button.users-btn-revoke') // UsersScreen.tsx:655
-        .click();
-      await expect(activeRoleTag(rowAfterGrant, REVIEWER_ROLE_CODE)).toHaveCount(0, {
+      const rowAfterRevokeWrite = await completeRowWrite(screen, targetUserId, () =>
+        activeRoleTag(rowAfterGrant, REVIEWER_ROLE_CODE)
+          .first()
+          .locator('button.users-btn-revoke') // UsersScreen.tsx:655
+          .click(),
+      );
+      await expect(activeRoleTag(rowAfterRevokeWrite, REVIEWER_ROLE_CODE)).toHaveCount(0, {
         timeout: 15_000,
       });
 
@@ -252,9 +290,11 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       });
 
       // 4. userSuspend (POST /api/users/suspend, UsersScreen.tsx:87,484,709)
-      await rowAfterRevoke.locator('button[data-users-action="suspend"]').click(); // UsersScreen.tsx:709
+      const rowAfterSuspendWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowAfterRevoke.locator('button[data-users-action="suspend"]').click(), // UsersScreen.tsx:709
+      );
       await expect(
-        rowAfterRevoke.locator('.users-status-badge.users-status-suspended'), // UsersScreen.tsx:500,670
+        rowAfterSuspendWrite.locator('.users-status-badge.users-status-suspended'), // UsersScreen.tsx:500,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify SUSPENDED persists.
@@ -266,9 +306,11 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       ).toBeVisible({ timeout: 15_000 });
 
       // 5. userResume (POST /api/users/resume, UsersScreen.tsx:88,486,729)
-      await rowAfterSuspend.locator('button[data-users-action="resume"]').click(); // UsersScreen.tsx:729
+      const rowAfterResumeWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowAfterSuspend.locator('button[data-users-action="resume"]').click(), // UsersScreen.tsx:729
+      );
       await expect(
-        rowAfterSuspend.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
+        rowAfterResumeWrite.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify ACTIVE persists after resume.
@@ -280,9 +322,11 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       ).toBeVisible({ timeout: 15_000 });
 
       // 6. userDisable (POST /api/users/disable, UsersScreen.tsx:86,482,717)
-      await rowAfterResume.locator('button.users-btn-disable').click(); // UsersScreen.tsx:717
+      const rowAfterDisableWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowAfterResume.locator('button.users-btn-disable').click(), // UsersScreen.tsx:717
+      );
       await expect(
-        rowAfterResume.locator('.users-status-badge.users-status-disabled'), // UsersScreen.tsx:502,670
+        rowAfterDisableWrite.locator('.users-status-badge.users-status-disabled'), // UsersScreen.tsx:502,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify DISABLED persists.
@@ -294,9 +338,11 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       ).toBeVisible({ timeout: 15_000 });
 
       // 7. userEnable (POST /api/users/enable, UsersScreen.tsx:89,488,741)
-      await rowAfterDisable.locator('button[data-users-action="enable"]').click(); // UsersScreen.tsx:741
+      const rowAfterEnableWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowAfterDisable.locator('button[data-users-action="enable"]').click(), // UsersScreen.tsx:741
+      );
       await expect(
-        rowAfterDisable.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
+        rowAfterEnableWrite.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
       ).toBeVisible({ timeout: 15_000 });
 
       // Reload and verify ACTIVE persists after enable.
@@ -308,7 +354,7 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       ).toBeVisible({ timeout: 15_000 });
       await shot(page, 'admin-users', 'r9-1-user-status-restored');
     } finally {
-      await restoreMarketingUser(page, targetUserId, originalProfile);
+      await restoreMarketingUser(page, targetUserId);
     }
   });
 
@@ -406,12 +452,6 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
     const markerName = `qa-r9-1-inv-${ts}`;
     const validCode = `QA_R9_1_INV_${ts}`;
     const ownCodes: string[] = [];
-    // v3 commands need the same-origin headers and an Idempotency-Key header (command.rs:256-268).
-    const writeHeaders = (key: string) => ({
-      'x-xchange-request': '1',
-      origin: new URL(users.baseUrl).origin,
-      'Idempotency-Key': key,
-    });
 
     try {
       await signIn(page, 'admin', '/#users');
