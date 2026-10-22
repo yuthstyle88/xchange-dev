@@ -2,8 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { setLang } from '../../../../shared/i18n';
-import type { ApiClient } from '../../../../shared/api/client';
+import { setLang, t } from '../../../../shared/i18n';
+import { ApiClient } from '../../../../shared/api/client';
 import { TierBadge } from './TierBadge';
 import { th } from './i18n';
 
@@ -85,7 +85,8 @@ describe('TierBadge component', () => {
 
     await sleep();
 
-    expect(host.textContent).toContain('connection offline');
+    expect(host.textContent).toContain(t('error.network'));
+    expect(host.textContent).not.toContain('connection offline');
     expect(host.querySelector('[role="alert"]')).toBeNull();
     expect(host.querySelector('.desk-notice')).not.toBeNull();
   });
@@ -167,5 +168,27 @@ describe('TierBadge component', () => {
     // Still PLATINUM, stale answer dropped
     expect(host.textContent).toContain('PLATINUM');
     expect(host.textContent).not.toContain('OLD_BRONZE');
+  });
+
+  it('row 6: a roleNotAllowed refusal shows the worded roleNotAllowed text, not raw server text', async () => {
+    const api = new ApiClient(async () =>
+      new Response(
+        JSON.stringify({
+          error: { code: 'roleNotAllowed', message: 'raw server text' },
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    mount(() => (
+      <TierBadge api={api} branch="MAIN" customerId="c-1" refreshKey={0} />
+    ));
+
+    await sleep();
+
+    expect(host.textContent).toContain(t('error.roleNotAllowed'));
+    expect(host.textContent).not.toContain('raw server text');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector('.desk-notice')).not.toBeNull();
   });
 });

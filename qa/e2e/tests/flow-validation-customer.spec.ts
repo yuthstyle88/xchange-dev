@@ -99,9 +99,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
       const branchSelect = page.locator('select[data-testid="branch-select"]');
       await expect(branchSelect).toBeVisible({ timeout: 15_000 });
-      if ((await branchSelect.locator('option').count()) > 1) {
-        await branchSelect.selectOption({ index: 1 }, { timeout: 10_000 });
-      }
+      await branchSelect.selectOption(users.branch, { timeout: 10_000 });
 
       const qtyInput = page.locator('input[data-testid="quantity-input"]');
       const slotSelect = page.locator('select[data-testid="slot-select"]');
@@ -303,6 +301,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await page.goto('/app/rate-alerts');
 
       await expect(page.locator('.xc-rate-alerts-screen')).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('.xc-alerts-empty, .xc-alerts-list').first()).toBeVisible({ timeout: 20_000 });
 
       const initialAlertCards = await page.locator('article.xc-alert-card').count();
 
@@ -370,6 +369,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       expect(await page.locator('article.xc-alert-card').count()).toBe(initialAlertCards);
 
       // Read back: alert count unchanged
+      await expect(page.locator('.xc-alerts-empty, .xc-alerts-list').first()).toBeVisible({ timeout: 20_000 });
       expect(await page.locator('article.xc-alert-card').count(), `${lang}: alerts count unchanged`).toBe(initialAlertCards);
     });
 
@@ -454,8 +454,11 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
     test(`/app/journey plannerDraftSave validation (${lang})`, async ({ page }) => {
       await withLang(page, lang);
       await page.goto('about:blank');
-      await signIn(page, 'customer', '/app');
-      await page.goto('/app');
+      await signIn(page, 'customer', `/app?branch=${encodeURIComponent(users.branch)}`);
+      await page.goto(`/app?branch=${encodeURIComponent(users.branch)}`);
+
+      await expect(page.locator('select#branch-select'), `${lang}: branch select has users.branch`).toHaveValue(users.branch, { timeout: 20_000 });
+      await expect(page.locator('.xc-home-rates-section tbody tr').first(), `${lang}: rate board has at least one row`).toBeVisible({ timeout: 20_000 });
 
       const amtInput = page.locator('input#amount-input');
       await expect(amtInput).toBeVisible({ timeout: 20_000 });

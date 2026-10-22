@@ -9,6 +9,7 @@ pub mod document_store;
 pub mod executive;
 pub mod files;
 pub mod finance;
+pub mod http_client;
 pub mod idempotency;
 pub mod kiosk;
 pub mod loyalty;

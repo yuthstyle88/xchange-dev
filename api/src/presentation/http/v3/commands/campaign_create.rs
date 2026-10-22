@@ -68,6 +68,14 @@ impl CommandAction for CampaignCreateCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
+        if input.name.trim().is_empty() {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("name"),
+                "name cannot be blank",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
         let user_id = resolve_user_id(tx, who, org_id).await;
         let starts_at = chrono::DateTime::parse_from_rfc3339(&input.starts_at)
             .map_err(|e| {

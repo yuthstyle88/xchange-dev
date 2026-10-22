@@ -212,3 +212,52 @@ the staff card gates (match `staff_floor.rs`, `cash.rs`, `branch_day.rs`); `Admi
 server checks it); `RateAlertSettings.tsx` (org-level); `Payments.tsx` (`canEdit` from the server); Reconciliation,
 Approvals, Members, Loyalty, Customers, StartingPrices, BranchTablets, Notices, Campaigns and the desk customer,
 phone-verify, kiosk-cancel, queue and desk-transaction paths (every failure worded). Pricing belongs to #4324's lane.
+
+## 8. Round 4: kiosk settings, customer home, rate alerts, verification upload
+
+> designed-by: claude/e8020026 (XC FE lane controller), 2026-10-22 ICT. A read-only audit (sub-agent) of the screens
+> rounds 1–3 did not cover (`devices`, `documents`, `kiosk-currencies`, `kiosk-queue`, `login`, `receipt-sample`,
+> `staff-guide`, `staff-report`, the remaining `customer/*` screens, and `shared/{live,notifications,queue,receipt,ui}`)
+> on main `1ab96483`, about 30 candidates in depth. The controller re-read R4-1, R4-2 and R4-4.
+
+### 8.1 Bugs and root causes
+
+| # | Screen | What the person sees | Root cause |
+|---|---|---|---|
+| R4-1 | Admin `/kiosk-currencies` › queue machine `result_seconds` | The field shows `10` on open, whatever the branch has stored. Nothing reads the setting until the field gets focus or Read is pressed. After a failed read, or after a branch change, `10` (or the previous branch's value) stays and Save stays enabled, so Save, or the blur save, writes a value the screen never read over the branch's real setting. | `KioskCurrenciesScreen.tsx:318` starts the field at `'10'`; the branch effect (`:203-220`) neither reads the setting nor resets the field (it only clears the dirty flag, `:218`); a failed read (`:339-341`) leaves the value; Save (`:504-510`) and the `onChange` save (`:491`) are gated only on `savingSettings()`. |
+| R4-2 | Customer `/app` home | A later branch-list poll failure (every 600 s; e.g. the phone wakes before the network) turns the branch picker into "couldn't load branches" **and** the healthy rate board into "couldn't load rates", whose Retry does nothing, for up to the branch poller's 10-minute backoff. A failed first branch read with no `?branch` leaves the rate section on "Loading rates…" for good. | `HomeScreen.tsx:173-179`: `branchesState` reports the poller's `'error'` even while it holds data (`PublicPoller.handleError` keeps the data, `public-poller.ts:166-173`). `:188-195`: `ratesState` is `'error'` whenever `branchesState` is, and `'loading'` whenever no branch is chosen. `:216-222`: the rate retry restarts only the rate poller. |
+| R4-3 | Customer `/app/rate-alerts` | After a create, pause, resume or delete succeeds and the re-read fails: no word at all. A deleted alert stays with its buttons; a paused one still shows Pause; a new one is missing while the form clears, so the customer may create it again (it counts toward `alertLimitReached`). | `RateAlerts.tsx:199-203`: the `loadAlerts` catch words a failure only when the list is empty; the error box (`:471`) shows only for an empty list. Re-reads after writes: `:263`, `:281`, `:298`, `:315`. |
+| R4-4 | Customer `/app/verification`, document upload | A 5xx, 401 or non-JSON answer (e.g. a proxy 413/502 page) shows the raw server text or the proxy page's text beside the upload button. | `customer/verification/VerificationScreen.tsx:63-66`: `formatUploadError` returns `err.message` for any `ApiError` whose message lacks the code, including `httpError` (whose message is the raw body, `shared/api/client.ts:92-95`), 5xx and 401. The §4 note on "VerificationScreen fallbacks" covers the staff screen's pinned cases, not this path. |
+
+### 8.2 Rules
+
+| # | Rule |
+|---|---|
+| R4-1 | The field has a `known` state: false at mount and **on every branch change**, true only after a settings read for the current branch succeeds. While not known, the field is **empty** (never `10`, never another branch's value), and Save, the `onChange` save and Enter send nothing (`disabled` / early return). A failed read shows its worded error as today and leaves it not known. **No read on mount**: focus and Read load the value, as today. A branch change also clears `resultSecondsInput`. Typing before a read is allowed but cannot be saved until a read succeeds. |
+| R4-2 | The branch section shows its error state only when it has **no** data; after a later poll failure it keeps the list (as the customer `BranchesScreen` does, §8.4). Once a branch is chosen, the rate state and its retry come **only** from the rate poller, never from the branch state. A failed first branch read with no branch chosen shows the branch error, and the rate section **shows nothing** (no "Loading rates…", no rate error, no rate retry). |
+| R4-3 | Every failed `loadAlerts` read sets a worded error. With alerts on screen, it shows as a separate non-blocking `<p role="alert" class="xc-alerts-reread-error">` line with a `type="button"` retry, and the list stays. `.xc-alerts-error` stays the empty-list box. The new line is **not** `.xc-form-error` and is not a direct child of `.xc-rate-alerts-screen`, because `worded.test.tsx:325-486` takes the first `.xc-rate-alerts-screen > .xc-form-error[role="alert"]` as the action error. The CSS rule for `.xc-alerts-reread-error` goes in `rate-alerts.css`, so the main-only `screen-look.test.ts` class ratchet passes. The error is cleared **only by a successful read**: the `setLoadError(null)` at the start of `loadAlerts` (`:187`) moves into the success branch. |
+| R4-4 | `formatUploadError` returns `wordedError(err)` when `isServerFailure(err)` (5xx, `serverError`, `httpError`) or the status is 401. The server's 4xx sentences stay as today (pinned by `VerificationUploadErrors.test.tsx` rows `:59` and `:125`). |
+
+### 8.3 Tickets (File scopes disjoint)
+
+| Ticket | File scope | Class | Base |
+|---|---|---|---|
+| R4-1 | `web/src/screens/kiosk-currencies/KioskCurrenciesScreen.tsx` | logic | `feat/r4-result-seconds`, created before release with the up-front tests (`KioskCurrencies.result-seconds-known.test.tsx`) and the rewrite of `KioskCurrencies.result-seconds.test.tsx` "the save body" and "the refusal" (they type and save without a read) |
+| R4-2 | `web/src/screens/customer/home/HomeScreen.tsx` | logic | `feat/r4-home-rates`, created before release with the up-front tests (`HomeScreen.later-failure.test.tsx`) |
+| R4-3 | `web/src/screens/customer/rate-alerts/RateAlerts.tsx`<br>`web/src/screens/customer/rate-alerts/rate-alerts.css`<br>`web/src/screens/customer/rate-alerts/RateAlerts.reread-error.test.tsx` | mechanical | main |
+| R4-4 | `web/src/screens/customer/verification/VerificationScreen.tsx`<br>`web/src/screens/customer/verification/VerificationUploadErrors.server.test.tsx` | mechanical | main |
+
+### 8.4 Not a bug (round 4)
+
+Devices: a branch switch remounts the screen (keyed `<Show>` in `devices/main.tsx`); "no transactions" over a failed
+read is pinned with the worded message (`DevicesScreen.rework.test.tsx:164`); `failedViews` keeps each view's failure.
+Documents `refusal.ts:9-10` (design D-A3/D-A4). Kiosk settings' 400 field sentence (pinned). Kiosk queue panel (offline
+is worded in `QueueCard`). Login `home.ts` (§11.10). Staff report's sign-in link (v2 parity). `QueueDisplay` (§3 of
+`web-public-get.md`), `RateDisplay` (offline after 30 s). Customer `BranchesScreen` keeps its list after a later poll
+failure (deliberate, `:150`). `TakeNumber` (its own i18n text). Journey 403/404 as "no ticket" (pinned,
+`journey.test.tsx:413`); journey without a branch (contract S5); `JourneyBookings` on 401. Assistant (no conversation id
+in the contract). Notifications re-read after a mark (the optimistic state is right). Rate alerts keep data on a
+background poll failure (pinned, `worded.test.tsx:497`). `CopyLink` (the server answers bad links 410). History has no
+paging (no cursor in the contract). `PublicPoller` stops after a 404 (by design); `queue-store` stops on 401 (the
+session-ended path, worded by `AppShell`). `VersionFooter`. Home preview and save-plan, Profile, Member, AnswerPreview:
+worded.

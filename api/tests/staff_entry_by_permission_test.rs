@@ -528,3 +528,25 @@ async fn s14_s15_teller_and_executive_plus_teller_keep_staff_standing_on_staff_r
 
     h.finish().await;
 }
+
+/// S5: CUSTOMER-only `POST /api/staff/rpc` `adminSnapshot` gets 401 `employeeAuthRequired`.
+#[actix_web::test]
+async fn s5_customer_only_staff_rpc_admin_snapshot_gets_401_employee_auth_required() {
+    let h = Harness::start().await;
+    let (_, cust_tok) = h
+        .seed_user_session("CustomerOnly", &[("CUSTOMER", Some(B1))], Some(B1))
+        .await;
+    let resp = send(
+        &h.app,
+        Call::post(
+            "/api/staff/rpc",
+            json!({ "action": "adminSnapshot", "payload": {} }),
+        )
+        .session(&cust_tok),
+    )
+    .await;
+    assert_eq!(resp.status, 401, "S5 customer adminSnapshot: {}", resp.text);
+    assert_eq!(resp.error(), PolicyError::EmployeeAuthRequired.to_string());
+    h.finish().await;
+}
+

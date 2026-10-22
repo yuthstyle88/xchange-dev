@@ -33,6 +33,7 @@ const ACTIVE_BOOKING = makeMyBookingItemDto({
 const BRANCHES = {
   branches: [
     {
+      id: BRANCH_ID,
       code: BRANCH_ID,
       name: BRANCH_NAME,
       address: null,

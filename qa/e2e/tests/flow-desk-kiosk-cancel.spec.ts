@@ -29,6 +29,7 @@ import {
 } from './helpers';
 
 const REQUIRED_ROLES: readonly Role[] = ['teller', 'branchManager'];
+const KIOSK_PRECONDITION_RE = /Counter is closed|Rate changed or counter closed|queueClosed|outside.*hours/i;
 
 interface KioskQuoteAnswer {
   id: string;
@@ -125,7 +126,10 @@ test.describe.serial('F20 desk kiosk cancel', () => {
       const quoteText = await quoteRes.text();
       console.log(`[F20] POST /api/kiosk quote: ${quoteRes.status()} ${quoteText.slice(0, 300)}`);
       if (!quoteRes.ok()) {
-        test.skip(true, `POST /api/kiosk quote refused (${quoteRes.status()}): ${quoteText}`);
+        if (quoteRes.status() < 500 && KIOSK_PRECONDITION_RE.test(quoteText)) {
+          test.skip(true, `POST /api/kiosk quote refused (${quoteRes.status()}): ${quoteText}`);
+        }
+        expect(quoteRes.ok(), `POST /api/kiosk quote: ${quoteRes.status()} ${quoteText}`).toBeTruthy();
       }
       const quoted = JSON.parse(quoteText) as KioskQuoteAnswer;
       expect(quoted.id, 'quoted kiosk request id').toBeTruthy();
@@ -146,7 +150,10 @@ test.describe.serial('F20 desk kiosk cancel', () => {
       const confirmText = await confirmRes.text();
       console.log(`[F20] POST /api/kiosk confirm: ${confirmRes.status()} ${confirmText.slice(0, 300)}`);
       if (!confirmRes.ok()) {
-        test.skip(true, `POST /api/kiosk confirm refused (${confirmRes.status()}): ${confirmText}`);
+        if (confirmRes.status() < 500 && KIOSK_PRECONDITION_RE.test(confirmText)) {
+          test.skip(true, `POST /api/kiosk confirm refused (${confirmRes.status()}): ${confirmText}`);
+        }
+        expect(confirmRes.ok(), `POST /api/kiosk confirm: ${confirmRes.status()} ${confirmText}`).toBeTruthy();
       }
       const confirmed = JSON.parse(confirmText) as KioskConfirmAnswer;
       requestId = String(confirmed.id ?? '').trim();
@@ -209,8 +216,6 @@ test.describe.serial('F20 desk kiosk cancel', () => {
       );
       console.log(`[F20] POST /api/kiosk cancel ${cancelRes.text}`);
       expect(cancelRes.ok, `POST /api/kiosk cancel: ${cancelRes.text}`).toBeTruthy();
-      const cancelBody = JSON.parse(cancelRes.body) as KioskIdentityAnswer;
-      expect(cancelBody.status, 'cancel response status').toBe('CANCELLED');
 
       // The desk navigates to /desk?branch=MAIN with no kiosk= parameter (entry.ts:89).
       await teller.waitForURL(

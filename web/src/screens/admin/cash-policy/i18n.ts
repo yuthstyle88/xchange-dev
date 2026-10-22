@@ -17,6 +17,8 @@ export const th = {
   'error.currency': 'รหัสสกุลเงินไม่ถูกต้อง กรุณาตรวจสอบสกุลเงินอีกครั้ง',
   invalidPolicyNote: 'การบันทึกวงเงินจะเขียนทับนโยบายทั้งหมด และตัดรายการที่ไม่ถูกต้องด้านล่างนี้ออก',
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
+  unreadable: 'อ่านนโยบายปัจจุบันไม่สำเร็จ แก้ไขไม่ได้จนกว่าจะโหลดได้',
+  retry: 'ลองอีกครั้ง',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -37,4 +39,6 @@ export const en: Record<keyof typeof th, string> = {
   'error.currency': 'Invalid currency code: check the currency entries and try again',
   invalidPolicyNote: 'Saving the form replaces the whole policy and drops the invalid entries listed below',
   connectionError: 'Connection error',
+  unreadable: "Couldn't read the current policy; it can't be changed until it loads",
+  retry: 'Try again',
 };

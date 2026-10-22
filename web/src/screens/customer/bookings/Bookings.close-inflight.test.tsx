@@ -94,6 +94,7 @@ function makeDeferredHarness() {
     if (method === 'GET' && u.pathname === '/api/public/orgs/XC/branches') {
       return jsonResponse(200, {
         branches: [BRANCH_A, BRANCH_B].map((code) => ({
+          id: code,
           code,
           name: code,
           address: null,

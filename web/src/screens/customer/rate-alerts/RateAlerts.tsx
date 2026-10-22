@@ -35,7 +35,7 @@ export interface RateAlertsScreenProps {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Organisation code override; if omitted, fetched from /api/public/host */
   org?: string;
-  /** Default branch code */
+  /** Default branch id (`PublicBranchDto.id`) */
   defaultBranch?: string;
   /** Polling interval in ms (optional) */
   pollIntervalMs?: number;
@@ -169,7 +169,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       setBranches(list);
       setBranchesError(null);
       if (list.length > 0 && !branch()) {
-        setBranch(list[0].code);
+        setBranch(list[0].id);
       }
     } catch (err: unknown) {
       setBranchesError(wordedError(err));
@@ -184,10 +184,10 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     if (alerts().length === 0) {
       setLoading(true);
     }
-    setLoadError(null);
     try {
       const answer = await api.view<MyRateAlertsData>('my_rate_alerts', { since: sinceVersion });
       if (seq !== loadSeq) return;
+      setLoadError(null);
       if (answer.changed && answer.data) {
         setAlerts(answer.data.alerts ?? []);
         sinceVersion = answer.version;
@@ -198,9 +198,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       // If changed === false, keep alerts as is per §8
     } catch (err: unknown) {
       if (seq !== loadSeq) return;
-      if (alerts().length === 0) {
-        setLoadError(rateAlertsError(err));
-      }
+      setLoadError(rateAlertsError(err));
     } finally {
       if (seq === loadSeq) {
         setLoading(false);
@@ -359,7 +357,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
             >
               <For each={branches()}>
                 {(b) => (
-                  <option value={b.code}>
+                  <option value={b.id}>
                     {b.name ? `${b.name} (${b.code})` : b.code}
                   </option>
                 )}
@@ -484,6 +482,16 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
         </div>
       </Show>
 
+      {/* Re-read Error State with alerts on screen */}
+      <Show when={loadError() && alerts().length > 0}>
+        <p role="alert" class="xc-alerts-reread-error">
+          <span>{loadError()}</span>
+          <button type="button" class="xc-alerts-retry-btn" onClick={() => void loadAlerts(true)}>
+            {t('retry')}
+          </button>
+        </p>
+      </Show>
+
       {/* Alerts List */}
       <Show when={alerts().length > 0}>
         <div class="xc-alerts-list">
@@ -503,7 +511,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                       <span class="xc-alert-currency">{alert.currency}</span>
                       <span class="xc-alert-side">{sideLabel()}</span>
                       <span class="xc-alert-unit">({unitLabel()})</span>
-                      <span class="xc-alert-branch-badge">{alert.branch}</span>
+                      <span class="xc-alert-branch-badge">{branches().find(b => b.id === alert.branch)?.code ?? alert.branch}</span>
                     </div>
 
                     <span class={alert.enabled ? "xc-badge xc-badge-active" : "xc-badge xc-badge-paused"}>

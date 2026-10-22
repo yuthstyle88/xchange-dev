@@ -79,31 +79,7 @@ impl ResponseError for V3Error {
 
 impl From<PolicyError> for V3Error {
     fn from(err: PolicyError) -> Self {
-        let code = match err {
-            PolicyError::SignIn => "signIn",
-            PolicyError::OwnerOnly => "ownerOnly",
-            PolicyError::EmployeeAuthRequired => "employeeAuthRequired",
-            PolicyError::InvalidRequest => "invalidRequest",
-            PolicyError::RoleNotAllowed => "roleNotAllowed",
-            PolicyError::RoleNotAllowedHere => "roleNotAllowedHere",
-            PolicyError::OwnerEnables => "ownerEnables",
-            PolicyError::FrontOnly => "frontOnly",
-            PolicyError::DocumentsNotReadable => "documentsNotReadable",
-            PolicyError::FilesNotReadable => "filesNotReadable",
-            PolicyError::UploadNotAllowed => "uploadNotAllowed",
-            PolicyError::NotFound => "notFound",
-            PolicyError::DeviceStepNotAllowed => "deviceStepNotAllowed",
-            PolicyError::KioskOwnerOrRates => "kioskOwnerOrRates",
-            PolicyError::KioskStaff => "kioskStaff",
-            PolicyError::KioskUnknown => "kioskUnknown",
-            PolicyError::SignNotAllowed => "signNotAllowed",
-            PolicyError::BackendUsesCommit => "backendUsesCommit",
-            PolicyError::EmployeeAccount => "employeeAccount",
-            PolicyError::ClockInFirst => "clockInFirst",
-            PolicyError::PaymentOwnerOnly => "paymentOwnerOnly",
-            PolicyError::DrawerRoleNotAllowed => "drawerRoleNotAllowed",
-            PolicyError::OutOfScope => "outOfScope",
-        };
+        let code = err.code();
         let status =
             StatusCode::from_u16(err.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         Self {

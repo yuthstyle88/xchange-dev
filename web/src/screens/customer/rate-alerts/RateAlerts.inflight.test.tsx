@@ -29,6 +29,7 @@ function deferred<T>(): Deferred<T> {
 const SAMPLE_BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       address: '991 ถ.พระราม 1',

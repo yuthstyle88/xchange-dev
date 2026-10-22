@@ -253,6 +253,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
           return json(200, {
             branches: [
               {
+                id: BRANCH_ID,
                 code: BRANCH_ID,
                 name: BRANCH_ID,
                 address: null,
@@ -733,6 +734,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
             return json(200, {
               branches: [
                 {
+                  id: BRANCH_ID,
                   code: BRANCH_ID,
                   name: BRANCH_ID,
                   address: null,

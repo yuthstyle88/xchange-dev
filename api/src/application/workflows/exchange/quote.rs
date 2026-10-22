@@ -316,6 +316,7 @@ impl QuoteService {
             .fetch_optional(&mut **tx)
             .await
             .map_err(AppError::Database)?
+            .flatten()
         } else {
             None
         };

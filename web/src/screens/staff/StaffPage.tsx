@@ -142,7 +142,13 @@ export function StaffPage(props: StaffPageProps): JSX.Element {
                   >
                     {t('refresh')}
                   </button>
-                  <Show when={can(currentMe(), 'FinanceReconcile') || can(currentMe(), 'BranchDayOperate')}>
+                  <Show
+                    when={
+                      can(currentMe(), 'ShiftCloseCertify') ||
+                      can(currentMe(), 'FinanceReconcile') ||
+                      can(currentMe(), 'OverviewRead')
+                    }
+                  >
                     <a href="/staff/report" class="xc-staff-report-link">
                       {t('reportLink')}
                     </a>

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
+import { ApiError } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
-import { en as sharedEn } from '../../../shared/i18n/en';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import {
   makeCashCountRow,
@@ -10,6 +10,7 @@ import {
   makeCashTransferLineRow,
   makeCashTransferRow,
 } from '../../../shared/testing/fixtures';
+import { permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
@@ -145,6 +146,12 @@ describe('CashFlows rework: me read failure shows worded error (#1719)', () => {
     return { setBranch };
   }
 
+  /** The shared PermissionsUnavailable line (R3-4b), or '' when it is not shown. */
+  function permLineText(): string {
+    const el = root.querySelector('.cash-flows [data-permissions-unavailable]');
+    return (el?.textContent ?? '').trim();
+  }
+
   function alertText(): string {
     const el = root.querySelector('.cash-flows [role="alert"], .cash-flows .error-message');
     return (el?.textContent ?? '').trim();
@@ -169,18 +176,20 @@ describe('CashFlows rework: me read failure shows worded error (#1719)', () => {
   });
 
   // Row 1: web/src/screens/admin/cash/CashFlows.tsx:89 — me fails: permissions [], action buttons silently hidden -> worded error; actions shown disabled with the reason
+  // R3-4b (docs/design/web-silent-failures.md §7.2): the me failure is the shared PermissionsUnavailable line, and every
+  // gated button's title is permissionsUnavailableText(meError()); rows 1-6 rewritten by the feat/r3-cash-errors skeleton.
   describe('Row 1: CashFlows.tsx:89 me read failure', () => {
     it('shows network worded error and actions disabled with reason when me read fails with network failure', async () => {
       server.meRefusal = 'network';
       mount();
 
-      const expectedReason = sharedTh['error.network'];
+      const expectedReason = permissionsUnavailableText(new TypeError('Failed to fetch'));
       await vi.waitFor(() => {
-        expect(alertText()).toBe(expectedReason);
+        expect(permLineText()).toContain(expectedReason);
         expect(root.querySelector('[data-action="verify"]')).not.toBeNull();
         expect(root.querySelector('[data-action="create"]')).not.toBeNull();
       });
-      expect(alertText()).not.toContain('Failed to fetch');
+      expect(permLineText()).not.toContain('Failed to fetch');
 
       // Actions are rendered and disabled with the reason
       const verifyBtn = root.querySelector<HTMLButtonElement>('[data-action="verify"]')!;
@@ -199,13 +208,13 @@ describe('CashFlows rework: me read failure shows worded error (#1719)', () => {
       };
       mount();
 
-      const expectedReason = sharedTh['error.serverError'];
+      const expectedReason = permissionsUnavailableText(new ApiError({ status: 500, code: 'serverError', message: 'fatal crash' }));
       await vi.waitFor(() => {
-        expect(alertText()).toBe(expectedReason);
+        expect(permLineText()).toContain(expectedReason);
         expect(root.querySelector('[data-action="verify"]')).not.toBeNull();
         expect(root.querySelector('[data-action="create"]')).not.toBeNull();
       });
-      expect(alertText()).not.toContain('fatal crash');
+      expect(permLineText()).not.toContain('fatal crash');
 
       const verifyBtn = root.querySelector<HTMLButtonElement>('[data-action="verify"]')!;
       expect(verifyBtn.disabled).toBe(true);
@@ -223,14 +232,14 @@ describe('CashFlows rework: me read failure shows worded error (#1719)', () => {
       };
       mount();
 
-      const expectedReason = sharedTh['error.roleNotAllowedHere'];
+      const expectedReason = permissionsUnavailableText(new ApiError({ status: 403, code: 'roleNotAllowedHere', message: 'raw forbidden message' }));
       await vi.waitFor(() => {
-        expect(alertText()).toBe(expectedReason);
+        expect(permLineText()).toContain(expectedReason);
         expect(root.querySelector('[data-action="verify"]')).not.toBeNull();
         expect(root.querySelector('[data-action="create"]')).not.toBeNull();
       });
-      expect(alertText()).not.toContain('roleNotAllowedHere');
-      expect(alertText()).not.toContain('raw forbidden message');
+      expect(permLineText()).not.toContain('roleNotAllowedHere');
+      expect(permLineText()).not.toContain('raw forbidden message');
 
       const verifyBtn = root.querySelector<HTMLButtonElement>('[data-action="verify"]')!;
       expect(verifyBtn.disabled).toBe(true);
@@ -249,14 +258,14 @@ describe('CashFlows rework: me read failure shows worded error (#1719)', () => {
       };
       mount();
 
-      const expectedReason = serverSentence;
+      const expectedReason = permissionsUnavailableText(new ApiError({ status: 400, code: 'unknownMeCode123', message: serverSentence }));
       await vi.waitFor(() => {
-        expect(alertText()).toBe(expectedReason);
+        expect(permLineText()).toContain(expectedReason);
         expect(root.querySelector('[data-action="verify"]')).not.toBeNull();
         expect(root.querySelector('[data-action="create"]')).not.toBeNull();
       });
-      expect(alertText()).not.toContain('unknownMeCode123');
-      expect(alertText()).not.toBe(sharedTh['error.serverError']);
+      expect(permLineText()).not.toContain('unknownMeCode123');
+      expect(permLineText()).not.toContain(sharedTh['error.serverError']);
 
       const verifyBtn = root.querySelector<HTMLButtonElement>('[data-action="verify"]')!;
       expect(verifyBtn.disabled).toBe(true);
@@ -272,13 +281,13 @@ describe('CashFlows rework: me read failure shows worded error (#1719)', () => {
       server.meRefusal = 'network';
       mount();
 
-      const expectedReason = sharedEn['error.network'];
+      const expectedReason = permissionsUnavailableText(new TypeError('Failed to fetch'));
       await vi.waitFor(() => {
-        expect(alertText()).toBe(expectedReason);
+        expect(permLineText()).toContain(expectedReason);
         expect(root.querySelector('[data-action="verify"]')).not.toBeNull();
         expect(root.querySelector('[data-action="create"]')).not.toBeNull();
       });
-      expect(alertText()).not.toContain('Failed to fetch');
+      expect(permLineText()).not.toContain('Failed to fetch');
 
       const verifyBtn = root.querySelector<HTMLButtonElement>('[data-action="verify"]')!;
       expect(verifyBtn.disabled).toBe(true);
@@ -297,13 +306,13 @@ describe('CashFlows rework: me read failure shows worded error (#1719)', () => {
       };
       mount();
 
-      const expectedReason = sharedEn['error.roleNotAllowedHere'];
+      const expectedReason = permissionsUnavailableText(new ApiError({ status: 403, code: 'roleNotAllowedHere', message: 'raw' }));
       await vi.waitFor(() => {
-        expect(alertText()).toBe(expectedReason);
+        expect(permLineText()).toContain(expectedReason);
         expect(root.querySelector('[data-action="verify"]')).not.toBeNull();
         expect(root.querySelector('[data-action="create"]')).not.toBeNull();
       });
-      expect(alertText()).not.toContain('roleNotAllowedHere');
+      expect(permLineText()).not.toContain('roleNotAllowedHere');
 
       const verifyBtn = root.querySelector<HTMLButtonElement>('[data-action="verify"]')!;
       expect(verifyBtn.disabled).toBe(true);

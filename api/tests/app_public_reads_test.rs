@@ -238,6 +238,7 @@ async fn the_list_answers_the_organisations_branches_by_code_with_the_public_key
     let body = answer.json();
     assert_eq!(key_set(&body), set(&["branches"]));
     let wanted = set(&[
+        "id",
         "code",
         "name",
         "address",
@@ -252,6 +253,8 @@ async fn the_list_answers_the_organisations_branches_by_code_with_the_public_key
     assert_eq!(forbidden_keys(&body), Vec::<String>::new());
 
     let alpha = &body["branches"][0];
+    assert_eq!(alpha["id"], "b-alpha");
+    assert_eq!(alpha["code"], "ALPHA");
     assert_eq!(alpha["name"], "Branch ALPHA");
     assert_eq!(alpha["address"], "1 Silom Rd");
     assert_eq!(alpha["timezone"], "Asia/Bangkok");
@@ -269,6 +272,26 @@ async fn the_list_answers_the_organisations_branches_by_code_with_the_public_key
 
     let other = list(&db, YY).await;
     assert_eq!(codes(&other), ["YONLY"], "YY lists only its own branch");
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn a_branch_whose_code_differs_from_its_id_is_listed_with_both() {
+    let db = TestDb::start().await;
+    xc_branch(&db, "b-stable-id", "ORIGINAL").await;
+    db.exec("UPDATE branches SET code = 'RENAMED' WHERE id = 'b-stable-id'")
+        .await;
+
+    let answer = list(&db, XC).await;
+    let body = answer.json();
+    let branch = body["branches"]
+        .as_array()
+        .expect("branches")
+        .iter()
+        .find(|b| b["id"] == "b-stable-id")
+        .expect("found by stable id");
+    assert_eq!(branch["id"], "b-stable-id");
+    assert_eq!(branch["code"], "RENAMED");
     db.finish().await;
 }
 

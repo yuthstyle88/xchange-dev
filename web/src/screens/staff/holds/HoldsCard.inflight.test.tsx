@@ -376,6 +376,7 @@ describe('HoldsCard in-flight guard (#2406 §8, §9)', () => {
     expect(placeBtn.disabled).toBe(true);
     expect(posts).toHaveLength(1);
     expect(JSON.parse(posts[0]!.body!)).toEqual({
+      branch: BRANCH,
       customerId: CUST_B.id,
       reason: 'Large cash',
     });
@@ -523,6 +524,7 @@ describe('HoldsCard in-flight guard (#2406 §8, §9)', () => {
 
     expect(posts).toHaveLength(2);
     expect(JSON.parse(posts[1]!.body!)).toEqual({
+      branch: BRANCH,
       customerId: CUST_B.id,
       reason: 'Large cash',
     });

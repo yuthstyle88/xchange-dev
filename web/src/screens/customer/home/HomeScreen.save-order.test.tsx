@@ -16,6 +16,7 @@ import { th as screenTh } from './i18n';
 const BRANCHES_BOTH: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       address: 'ชั้น G สยามพารากอน',
@@ -25,6 +26,7 @@ const BRANCHES_BOTH: PublicBranchesData = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาอโศก',
       address: 'อโศก',

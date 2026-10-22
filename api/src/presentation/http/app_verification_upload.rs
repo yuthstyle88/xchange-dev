@@ -15,7 +15,6 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::document_store::DocumentStore;
 use xc_kernel::pii::IdentityType;
 use xc_verification::application::case_service::CaseService;
@@ -266,17 +265,13 @@ async fn handle_upload(
     {
         Ok(g) => g,
         Err(e) => {
-            let (status, code) = match e {
-                PolicyError::SignIn => (StatusCode::UNAUTHORIZED, "signIn"),
-                PolicyError::RoleNotAllowedHere => (StatusCode::BAD_REQUEST, "roleNotAllowedHere"),
-                PolicyError::OutOfScope => (StatusCode::FORBIDDEN, "outOfScope"),
-                _ => (StatusCode::FORBIDDEN, "outOfScope"),
-            };
+            let status =
+                StatusCode::from_u16(e.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             return HttpResponse::build(status)
                 .insert_header((header::CACHE_CONTROL, "no-store"))
                 .json(serde_json::json!({
                     "error": {
-                        "code": code,
+                        "code": e.code(),
                         "message": e.to_string(),
                     }
                 }));

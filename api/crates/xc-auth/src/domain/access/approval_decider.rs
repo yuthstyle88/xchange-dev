@@ -4,10 +4,10 @@
 //! organisation check, the transfer's limit split, `allows_self_decision`) and replaces its role test with one of
 //! these two calls, passing the kind's permission (`permission_module::APPROVAL_KINDS`).
 //!
-//! - *Organisation* kinds (`ApproveCashTransferAboveLimit`, `ApproveCampaignVersion`, `ApproveRatePublication`,
-//!   `ApproveLoyaltyRuleVersion`) call [`ApprovalDecider::holds_anywhere`]: any row qualifies, as today.
-//! - *Branch* kinds (`ApproveCashTransferWithinLimit` on `from_branch`, `ApproveCountDifference`,
-//!   `ApproveNegativeStock`, `ApproveExchangeTransaction`, `ApproveTransactionReversal`) call
+//! - *Organisation* kinds (`ApproveCampaignVersion`, `ApproveRatePublication`, `ApproveLoyaltyRuleVersion`) call
+//!   [`ApprovalDecider::holds_anywhere`]: any row qualifies, as today.
+//! - *Branch* kinds (`ApproveCashTransferWithinLimit` and `ApproveCashTransferAboveLimit` on `from_branch`,
+//!   `ApproveCountDifference`, `ApproveNegativeStock`, `ApproveExchangeTransaction`, `ApproveTransactionReversal`) call
 //!   [`ApprovalDecider::holds_on`] with the request's branch: the row must also `covers` it.
 //!
 //! Neither reads a clock: the session holds only rows valid now (`session_service.rs`), the same assumption every

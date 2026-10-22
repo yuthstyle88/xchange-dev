@@ -439,3 +439,61 @@ async fn branch_day_role_refusals_answer_400_per_route_and_command() {
     drop(tx);
     db.finish().await;
 }
+
+#[actix_web::test]
+async fn branch_day_out_of_scope_answers_403() {
+    let db = TestDb::start().await;
+
+    let (status, payload) = post(
+        &db,
+        "BRANCH_MANAGER@XC-B09",
+        "/api/branch-day/cutoff",
+        json!({ "branch": B01 }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "dayCutoff outOfScope must answer 403, got {status}: {payload}"
+    );
+    assert_eq!(
+        payload["error"]["code"],
+        "outOfScope",
+        "dayCutoff error.code: {payload}"
+    );
+
+    let branch_tx = BranchTx::new(Transactor::new(db.pool.clone()));
+    let shifts = ShiftService::new(
+        Arc::new(
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                db.pool.clone(),
+            ),
+        ),
+        branch_tx,
+    );
+    let repo = Arc::new(PgCustodyRepository::new(db.pool.clone()));
+    let ports = Arc::new(PgCustodyPorts);
+    let service = Arc::new(BranchDayService::new(repo, shifts, ports));
+    let branch = BranchId::new(B01);
+    let other_finance = user_of("FINANCE@XC-B09").expect("finance@XC-B09");
+    let mut tx = db.pool.begin().await.expect("tx");
+    let mut amounts = BTreeMap::new();
+    amounts.insert("USD".to_string(), "100.00".to_string());
+    let err = DayTargetCommand::new(service)
+        .run(
+            &mut tx,
+            &branch,
+            &other_finance,
+            DayTargetInput {
+                branch: B01.into(),
+                amounts,
+            },
+            IdempotencyKey::new(unique("k")),
+        )
+        .await
+        .expect_err("dayTarget as finance@XC-B09");
+    assert_eq!((err.status, err.code), (StatusCode::FORBIDDEN, "outOfScope"));
+    drop(tx);
+
+    db.finish().await;
+}

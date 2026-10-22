@@ -12,6 +12,7 @@ const SLOT_1_ID = '00000000-0000-4000-8000-000000000001';
 const SAMPLE_BRANCHES = {
   branches: [
     {
+      id: BRANCH_ID,
       code: BRANCH_ID,
       name: 'สาขาสยามพารากอน',
       timezone: 'Asia/Bangkok',

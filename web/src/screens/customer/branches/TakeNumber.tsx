@@ -8,7 +8,7 @@ import { screenT } from '../../../shared/i18n';
 import { en, th, zh } from './i18n';
 
 export interface TakeNumberProps {
-  /** The branch's public code, which is its id. */
+  /** The branch id (`PublicBranchDto.id`); views and commands match it against `branches.id`. */
   branch: string;
   /** `PublicBranchDto.queueOpen`: no button when the queue is closed. */
   queueOpen: boolean;

@@ -8,7 +8,7 @@ import { screenT } from '../../../shared/i18n';
 import { th, en, zh } from './i18n';
 
 export interface BranchLiveProps {
-  /** The branch's public code, which is its id. */
+  /** The branch id (`PublicBranchDto.id`); views and commands match it against `branches.id`. */
   branch: string;
   /** `PublicBranchDto.bookingEnabled`: no slots are read for a branch that takes no bookings. */
   bookingEnabled: boolean;

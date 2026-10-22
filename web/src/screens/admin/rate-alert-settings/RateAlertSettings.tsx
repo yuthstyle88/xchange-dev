@@ -142,7 +142,8 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
     // Validate Cooldown Hours (> 0 number)
     const cdTrim = cooldownHours().trim();
     const cdNum = Number(cdTrim);
-    if (!cdTrim || isNaN(cdNum) || cdNum <= 0) {
+    const cdSeconds = Math.round(cdNum * 3600);
+    if (!cdTrim || isNaN(cdNum) || cdSeconds < 1) {
       setCooldownError(t('errorCooldownInvalid'));
       hasError = true;
     }
@@ -180,7 +181,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
     setSaving(true);
 
     const payload: SaveRateAlertSettingsInput = {
-      defaultCooldownSeconds: Math.round(cdNum * 3600),
+      defaultCooldownSeconds: cdSeconds,
       maxActivePerCustomer: maxNum,
       observePolicy: pol,
     };

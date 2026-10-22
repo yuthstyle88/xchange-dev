@@ -73,6 +73,7 @@ async fn handle(
 
     let rows = match sqlx::query(
         "SELECT \
+            b.id, \
             b.code, \
             b.name, \
             b.address, \
@@ -99,6 +100,7 @@ async fn handle(
     let branches: Vec<PublicBranchDto> = rows
         .into_iter()
         .map(|r| PublicBranchDto {
+            id: r.get("id"),
             code: r.get("code"),
             name: r.get("name"),
             address: r.get("address"),

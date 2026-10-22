@@ -141,6 +141,7 @@ describe('xchange#2418: reschedule dialog lists only the open booking’s slots'
         if (u.pathname === '/api/public/orgs/XC/branches') {
           return json(200, {
             branches: [BRANCH_A, BRANCH_B].map((code) => ({
+              id: code,
               code,
               name: code,
               address: null,

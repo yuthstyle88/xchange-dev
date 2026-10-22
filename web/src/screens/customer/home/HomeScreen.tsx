@@ -64,7 +64,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     PublicPoller<PublishedRatesData> | undefined
   >(undefined);
 
-  const [selectedBranchCode, setSelectedBranchCode] = createSignal<string>(
+  const [selectedBranchId, setSelectedBranchId] = createSignal<string>(
     branchFromSearch(props.search) ?? '',
   );
 
@@ -128,21 +128,40 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     const bData = branchesPoller()?.data();
     const branches = bData?.branches;
     if (branches && branches.length > 0) {
-      const current = untrack(() => selectedBranchCode());
-      const match = branches.find((b) => b.code === current);
+      const current = untrack(() => selectedBranchId());
+      const match = branches.find((b) => b.id === current);
       if (!match) {
-        const fromSearch = branchFromSearch(props.search);
-        const searchMatch = fromSearch ? branches.find((b) => b.code === fromSearch) : undefined;
-        setSelectedBranchCode(searchMatch ? searchMatch.code : branches[0]!.code);
+        const q = branchFromSearch(props.search);
+        const searchMatch = q
+          ? (branches.find((b) => b.id === q) ?? branches.find((b) => b.code === q))
+          : undefined;
+        setSelectedBranchId(searchMatch ? searchMatch.id : branches[0]!.id);
         clearPreview();
       }
     }
   });
 
+  const branches = () => branchesPoller()?.data()?.branches ?? [];
+  const branchesState = () => {
+    if (orgState() === 'loading') return 'loading';
+    if (orgState() === 'error') return 'error';
+    if (branchesPoller()?.data() !== undefined) {
+      return branches().length === 0 ? 'empty' : 'ready';
+    }
+    return branchesPoller()?.state() ?? 'loading';
+  };
+
+  const selectedBranch = createMemo<PublicBranchDto | undefined>(() => {
+    const id = selectedBranchId();
+    return branches().find((b) => b.id === id);
+  });
+
+  const selectedCode = createMemo(() => selectedBranch()?.code ?? '');
+
   // Setup Rates Poller when Branch or Org changes
   createEffect(() => {
     const currentOrg = org();
-    const branchCode = selectedBranchCode();
+    const branchCode = selectedCode();
 
     if (orgState() !== 'ready' || !currentOrg || !branchCode) {
       setRatesPoller(undefined);
@@ -169,26 +188,12 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
     ratesPoller()?.stop();
   });
 
-  const branches = () => branchesPoller()?.data()?.branches ?? [];
-  const branchesState = () => {
-    if (orgState() === 'loading') return 'loading';
-    if (orgState() === 'error') return 'error';
-    const state = branchesPoller()?.state() ?? 'loading';
-    if (state === 'ready' && branches().length === 0) return 'empty';
-    return state;
-  };
-
-  const selectedBranch = createMemo<PublicBranchDto | undefined>(() => {
-    const code = selectedBranchCode();
-    return branches().find((b) => b.code === code);
-  });
-
   const ratesData = () => ratesPoller()?.data();
   const ratesLines = () => ratesData()?.lines ?? [];
   const ratesState = () => {
-    if (branchesState() === 'loading' || !selectedBranchCode()) return 'loading';
-    if (branchesState() === 'error') return 'error';
-    if (branchesState() === 'empty') return 'empty';
+    if (!selectedCode()) {
+      return branchesState() === 'loading' ? 'loading' : 'idle';
+    }
     const state = ratesPoller()?.state() ?? 'loading';
     if (state === 'ready' && ratesLines().length === 0) return 'empty';
     return state;
@@ -256,7 +261,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
       return;
     }
 
-    const branch = selectedBranchCode();
+    const branch = selectedBranch()?.id ?? '';
     if (!branch) {
       setPreviewError(t('validationError'));
       setPreviewResult(null);
@@ -311,7 +316,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
       return;
     }
 
-    const branch = selectedBranchCode();
+    const branch = selectedBranch()?.id ?? '';
     const seq = calcSeq;
     setSavingPlan(true);
     setSavedPlanId(null);
@@ -383,14 +388,14 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               <select
                 id="branch-select"
                 class="xc-home-select"
-                value={selectedBranchCode()}
+                value={selectedBranchId()}
                 onChange={(e) => {
-                  setSelectedBranchCode(e.currentTarget.value);
+                  setSelectedBranchId(e.currentTarget.value);
                   clearPreview();
                 }}
               >
                 <For each={branches()}>
-                  {(b) => <option value={b.code}>{b.name} ({b.code})</option>}
+                  {(b) => <option value={b.id}>{b.name} ({b.code})</option>}
                 </For>
               </select>
             </div>
@@ -519,7 +524,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
               type="button"
               class="xc-home-btn xc-home-btn-primary"
               onClick={handleCalculate}
-              disabled={previewLoading()}
+              disabled={previewLoading() || !selectedBranch()}
             >
               {previewLoading() ? t('calculating') : t('calculate')}
             </button>

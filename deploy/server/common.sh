@@ -18,8 +18,9 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/$SERVICE_NAME}"
 # The override is a test seam. On a host it must stay /etc/xc-v3, because
 # the binary reads /etc/xc-v3/pii.key (api/src/bootstrap/mod.rs:177, #1084).
 ETC_DIR="${ETC_DIR:-/etc/$SERVICE_NAME}"
-# Uploaded files; the only directory the service may write.
+# Uploaded files and sealed verification documents; the only directories the service may write.
 UPLOADS_DIR="${UPLOADS_DIR:-/var/lib/$SERVICE_NAME/uploads}"
+VERIFICATION_STORE_DIR="${VERIFICATION_STORE_DIR:-/var/lib/$SERVICE_NAME/verification-documents}"
 # PostgreSQL role and database (role owns the database).
 DB_ROLE="${DB_ROLE:-xc_v3}"
 DB_NAME="${DB_NAME:-xc_v3}"
@@ -70,9 +71,12 @@ check_names() {
   [[ "$SERVICE_NAME" =~ ^[a-z][a-z0-9-]*$ ]] || die "bad SERVICE_NAME: $SERVICE_NAME"
   [[ "$PORT" =~ ^[0-9]+$ ]] || die "bad PORT: $PORT"
   local d
-  for d in "$INSTALL_DIR" "$ETC_DIR" "$UPLOADS_DIR"; do
+  for d in "$INSTALL_DIR" "$ETC_DIR" "$UPLOADS_DIR" "$VERIFICATION_STORE_DIR"; do
     check_own_path "$d"
   done
+  if [ "$VERIFICATION_STORE_DIR" = "$UPLOADS_DIR" ] || [[ "$VERIFICATION_STORE_DIR" == "$UPLOADS_DIR"/* ]] || [[ "$UPLOADS_DIR" == "$VERIFICATION_STORE_DIR"/* ]]; then
+    die "VERIFICATION_STORE_DIR ($VERIFICATION_STORE_DIR) and UPLOADS_DIR ($UPLOADS_DIR) must be separate directories (never under files.dir)"
+  fi
   case "$APP_ENVIRONMENT" in
     development | staging | production) ;;
     *) die "APP_ENVIRONMENT must be development, staging or production" ;;
@@ -217,7 +221,7 @@ render_unit() {
     -e "s|^WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|" \
     -e "s|^EnvironmentFile=/etc/xc-v3/env$|EnvironmentFile=$ENV_FILE|" \
     -e "s|^ExecStart=.*|ExecStart=$BIN|" \
-    -e "s|^ReadWritePaths=.*|ReadWritePaths=$UPLOADS_DIR|" \
+    -e "s|^ReadWritePaths=.*|ReadWritePaths=$UPLOADS_DIR $VERIFICATION_STORE_DIR|" \
     "$HERE/xc-v3.service"
 }
 
@@ -238,8 +242,9 @@ install_unit() {
 env_value() { sudo sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1; }
 
 # On a host that is already installed the env file, not this run's variables,
-# says where the uploads live: the unit's ReadWritePaths must follow it, or a
-# later run without the same override would lock the service out of its files.
+# says where the uploads and verification documents live: the unit's
+# ReadWritePaths must follow it, or a later run without the same override would
+# lock the service out of its files.
 adopt_installed_settings() {
   local v
   sudo test -f "$ENV_FILE" || return 0
@@ -247,6 +252,11 @@ adopt_installed_settings() {
   if [ -n "$v" ] && [ "$v" != "$UPLOADS_DIR" ]; then
     say "uploads directory taken from $ENV_FILE: $v (not $UPLOADS_DIR)"
     UPLOADS_DIR="$v"
+  fi
+  v="$(env_value APP_VERIFICATION__STORE_DIR)"
+  if [ -n "$v" ] && [ "$v" != "$VERIFICATION_STORE_DIR" ]; then
+    say "verification store directory taken from $ENV_FILE: $v (not $VERIFICATION_STORE_DIR)"
+    VERIFICATION_STORE_DIR="$v"
   fi
 }
 

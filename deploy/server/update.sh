@@ -170,6 +170,12 @@ PHASE=swap
 sudo systemctl stop "$SERVICE_NAME.service"
 replace_binary
 replace_configuration
+ensure_dir "$VERIFICATION_STORE_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
+warn_if_unreachable "$SERVICE_USER" "$VERIFICATION_STORE_DIR"
+if ! sudo grep -q "^APP_VERIFICATION__STORE_DIR=" "$ENV_FILE"; then
+  printf 'APP_VERIFICATION__STORE_DIR=%s\n' "$VERIFICATION_STORE_DIR" | sudo tee -a "$ENV_FILE" >/dev/null
+  say "added APP_VERIFICATION__STORE_DIR=$VERIFICATION_STORE_DIR to $ENV_FILE"
+fi
 install_unit
 sudo systemctl start "$SERVICE_NAME.service"
 PHASE=started

@@ -342,7 +342,7 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
     }
   });
 
-  test('(c) permission: teller lacks LoyaltyRulesManage and MarketingMembers — menus not offered and command routes refuse with 403', async ({
+  test('(c) permission: teller lacks LoyaltyRulesManage and MarketingMembers — menus not offered and command routes refuse with 400', async ({
     page,
   }) => {
     test.skip(!hasAccount('teller'), 'no teller account in users.json: run scripts/reseed.sh');
@@ -361,7 +361,7 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
     await expect(page.locator('h2.title')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('#segment-name')).toHaveCount(0);
 
-    // Direct command calls as teller are refused at the policy gate with 403.
+    // Direct command calls as teller are refused at the policy gate with 400 (PolicyError::status, #4512).
     const dummyId = '00000000-0000-0000-0000-000000000001';
     const marker = `qa-r9-3-teller-${Date.now()}`;
     const checks: Array<{ name: string; url: string; data: Record<string, unknown> }> = [
@@ -407,8 +407,9 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
       });
       const body = await res.text();
       console.log(`[R9-3 teller] POST ${c.url} -> ${res.status()} ${body.slice(0, 200)}`);
-      expect(res.status(), `${c.name} refused for teller: ${body}`).toBe(403);
-      expect(body, `${c.name} refusal code`).toMatch(/roleNotAllowed|outOfScope/);
+      expect(res.status(), `${c.name} refused for teller: ${body}`).toBe(400);
+      const code = /"code":"(\w+)"/.exec(body)?.[1] ?? '';
+      expect(['roleNotAllowed', 'roleNotAllowedHere'], `${c.name} refusal code: ${body}`).toContain(code);
     }
   });
 });

@@ -103,6 +103,7 @@ describe('Bookings.tsx — branch timezone from public branch list (#4172)', () 
         return jsonResponse(200, {
           branches: [
             {
+              id: BRANCH_TYO,
               code: BRANCH_TYO,
               name: 'Tokyo Branch',
               address: null,
@@ -170,6 +171,7 @@ describe('Bookings.tsx — branch timezone from public branch list (#4172)', () 
         return jsonResponse(200, {
           branches: [
             {
+              id: BRANCH_TYO,
               code: BRANCH_TYO,
               name: 'Tokyo Branch',
               address: null,
