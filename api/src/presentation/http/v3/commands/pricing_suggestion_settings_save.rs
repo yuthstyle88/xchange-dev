@@ -111,16 +111,9 @@ impl CommandAction for PricingSuggestionSettingsSaveCommand {
             return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
         }
 
-        PricingSuggestionSettingsStore::save(
-            tx,
-            branch.as_str(),
-            scope,
-            values,
-            &who.user_id,
-            now,
-        )
-        .await
-        .map_err(|_| server_error())?;
+        PricingSuggestionSettingsStore::save(tx, branch.as_str(), scope, values, &who.user_id, now)
+            .await
+            .map_err(|_| server_error())?;
 
         Ok(PricingSuggestionSettingsSaveOutput { saved: true })
     }
