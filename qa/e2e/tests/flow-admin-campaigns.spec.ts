@@ -382,9 +382,11 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         assertWordedRefusal(await calcErr.innerText(), lang, 'negative-benefit');
         await expect(calcInput, 'negative benefit input preserved').toHaveValue('-0.10');
 
-        // 2. Too-many-decimal benefit calculation value (0.123456789, > 6 decimals) -> refused by server on Save
-        // (campaign_version_save.rs:254-268, rate_improvement.rs:28 MAX_SCALE = 6).
-        await calcInput.fill('0.123456789');
+        // 2. Too-many-decimal benefit calculation value (10.255 in fee-waiver amount, > 2 decimals for THB money)
+        // -> refused by server on Save (campaign_version_save.rs, fee_waiver.rs: MONEY_SCALE = 2).
+        await ruleRow.locator('select[name="benefitType"]').selectOption('FEE_WAIVER');
+        await ruleRow.locator('select[name="calcMode"]').selectOption('amount');
+        await calcInput.fill('10.255');
         const badScaleRes = await posted(
           page,
           new RegExp(`^/api/campaigns/${encodeURIComponent(campaignId)}/draft$`),
@@ -395,7 +397,7 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         const detailErr = detail.locator('.xc-campaigns-error');
         await expect(detailErr, `too-many-decimal benefit error banner (${lang})`).toBeVisible({ timeout: 15_000 });
         assertWordedRefusal(await detailErr.innerText(), lang, 'too-many-decimal-benefit');
-        await expect(calcInput, 'too-many-decimal benefit input preserved').toHaveValue('0.123456789');
+        await expect(calcInput, 'too-many-decimal benefit input preserved').toHaveValue('10.255');
 
         // 3. Coupon count of 0 in .xc-coupon-issue-section (Campaigns.tsx:1073-1129,591-595).
         const couponSection = detail.locator('.xc-coupon-issue-section');
