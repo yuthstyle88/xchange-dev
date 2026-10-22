@@ -184,10 +184,10 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     if (alerts().length === 0) {
       setLoading(true);
     }
-    setLoadError(null);
     try {
       const answer = await api.view<MyRateAlertsData>('my_rate_alerts', { since: sinceVersion });
       if (seq !== loadSeq) return;
+      setLoadError(null);
       if (answer.changed && answer.data) {
         setAlerts(answer.data.alerts ?? []);
         sinceVersion = answer.version;
@@ -198,9 +198,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       // If changed === false, keep alerts as is per §8
     } catch (err: unknown) {
       if (seq !== loadSeq) return;
-      if (alerts().length === 0) {
-        setLoadError(rateAlertsError(err));
-      }
+      setLoadError(rateAlertsError(err));
     } finally {
       if (seq === loadSeq) {
         setLoading(false);
@@ -482,6 +480,16 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
         <div class="xc-alerts-empty">
           {t('empty')}
         </div>
+      </Show>
+
+      {/* Re-read Error State with alerts on screen */}
+      <Show when={loadError() && alerts().length > 0}>
+        <p role="alert" class="xc-alerts-reread-error">
+          <span>{loadError()}</span>
+          <button type="button" class="xc-alerts-retry-btn" onClick={() => void loadAlerts(true)}>
+            {t('retry')}
+          </button>
+        </p>
       </Show>
 
       {/* Alerts List */}
