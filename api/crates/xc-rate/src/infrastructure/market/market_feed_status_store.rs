@@ -29,15 +29,54 @@ impl MarketFeedStatusStore {
         at: DateTime<Utc>,
         error: Option<&str>,
     ) -> Result<(), RateEngineError> {
-        let _ = (pool, source, at, error);
-        todo!("PX-5: MarketFeedStatusStore::record")
+        let code = match source {
+            MarketSource::Tt => "TT",
+            MarketSource::SuperRich => "SR",
+            MarketSource::Bot => {
+                return Err(RateEngineError::Internal(
+                    "invalid market_feed_status source: BOT".into(),
+                ));
+            }
+        };
+        let truncated: Option<String> = error.map(|s| s.chars().take(200).collect());
+        sqlx::query(
+            "INSERT INTO market_feed_status (source, last_attempt_at, last_error) \
+             VALUES ($1, $2, $3) \
+             ON CONFLICT (source) DO UPDATE \
+             SET last_attempt_at = EXCLUDED.last_attempt_at, last_error = EXCLUDED.last_error",
+        )
+        .bind(code)
+        .bind(at)
+        .bind(truncated)
+        .execute(pool)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        Ok(())
     }
 
     /// Every stored row, keyed by source.
     pub async fn all(
         conn: &mut PgConnection,
     ) -> Result<HashMap<MarketSource, MarketAttempt>, RateEngineError> {
-        let _ = conn;
-        todo!("PX-5: MarketFeedStatusStore::all")
+        let rows: Vec<(String, DateTime<Utc>, Option<String>)> =
+            sqlx::query_as("SELECT source, last_attempt_at, last_error FROM market_feed_status")
+                .fetch_all(&mut *conn)
+                .await
+                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        let mut out = HashMap::with_capacity(rows.len());
+        for (source_str, at, error) in rows {
+            let source = match source_str.as_str() {
+                "TT" => MarketSource::Tt,
+                "SR" => MarketSource::SuperRich,
+                other => {
+                    return Err(RateEngineError::Internal(format!(
+                        "unknown market_feed_status.source: {other}"
+                    )));
+                }
+            };
+            out.insert(source, MarketAttempt { at, error });
+        }
+        Ok(out)
     }
 }
