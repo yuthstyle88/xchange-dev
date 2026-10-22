@@ -28,8 +28,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# (rendered) The uploads directory (APP_FILES__DIR). It must exist before start.
-ReadWritePaths=/var/lib/xc-v3/uploads
+# (rendered) The uploads directory (APP_FILES__DIR) and verification store directory (APP_VERIFICATION__STORE_DIR). Both must exist before start.
+ReadWritePaths=/var/lib/xc-v3/uploads /var/lib/xc-v3/verification-documents
 
 [Install]
 WantedBy=multi-user.target

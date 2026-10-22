@@ -310,7 +310,9 @@ set +e
 OUT="$(PATH="$BIN_STUBS:$PATH" \
   SERVICE_NAME="$T1_SERVICE" SERVICE_USER="$T1_USER" \
   INSTALL_DIR="$t1/opt/$T1_SERVICE" ETC_DIR="$t1/etc/$T1_SERVICE" \
-  UPLOADS_DIR="$t1/var/lib/$T1_SERVICE/uploads" V2_BUNDLE_DIR="$t1/v2bundle" \
+  UPLOADS_DIR="$t1/var/lib/$T1_SERVICE/uploads" \
+  VERIFICATION_STORE_DIR="$t1/var/lib/$T1_SERVICE/verification-documents" \
+  V2_BUNDLE_DIR="$t1/v2bundle" \
   bash "$t1/stage/install.sh" 2>&1)"
 T1_RC=$?
 set -e
@@ -495,18 +497,20 @@ ck "render_unit succeeded" test "$RC" -eq 0
 ck "the unit reads the server's env file" grep -qsx 'EnvironmentFile=/etc/xc-v3/env' "$LOGS/t7.out"
 ck "the unit reads the optional Identity file" grep -qsx 'EnvironmentFile=-/etc/xc-v3/identity-client.env' "$LOGS/t7.out"
 ckeq "exactly two EnvironmentFile lines" "2" "$(grep -c '^EnvironmentFile=' "$LOGS/t7.out")"
+ck "the unit's ReadWritePaths holds both the uploads and verification directories" grep -qsx 'ReadWritePaths=/var/lib/xc-v3/uploads /var/lib/xc-v3/verification-documents' "$LOGS/t7.out"
 report T7 "the rendered unit loads the server's env file and the optional Identity file"
 
 # ---- T7b: a non-default ENV_FILE leaves the Identity line alone (#1204) -----
 t7b="$ROOT/t7b"
 mkdir -p "$t7b"
-printf 'ENV_FILE=/tmp/x.env\n' >"$t7b/pre.sh"
+printf 'ENV_FILE=/tmp/x.env\nUPLOADS_DIR=/var/lib/xc-v3/custom-uploads\nVERIFICATION_STORE_DIR=/var/lib/xc-v3/custom-verification\n' >"$t7b/pre.sh"
 run_fn "$ROOT/empty-stage" "$ROOT/t7binst" "$t7b/pre.sh" render_unit
 printf '%s\n' "$OUT" >"$LOGS/t7b.out"
 ck "render_unit succeeded" test "$RC" -eq 0
 ck "the server's env file is the one given" grep -qsx 'EnvironmentFile=/tmp/x.env' "$LOGS/t7b.out"
 ck "the Identity line is unchanged" grep -qsx 'EnvironmentFile=-/etc/xc-v3/identity-client.env' "$LOGS/t7b.out"
 ckeq "no line still names the default env file" "0" "$(grep -cx 'EnvironmentFile=/etc/xc-v3/env' "$LOGS/t7b.out")"
+ck "ReadWritePaths follows UPLOADS_DIR and VERIFICATION_STORE_DIR" grep -qsx 'ReadWritePaths=/var/lib/xc-v3/custom-uploads /var/lib/xc-v3/custom-verification' "$LOGS/t7b.out"
 report T7b "a non-default ENV_FILE rewrites only the server's env line"
 
 # ==== backups (#121, design §7b, row BK) ====================================
@@ -1340,7 +1344,7 @@ ck "the service reads the server's env file" grep -qsx 'EnvironmentFile=/etc/xc-
 report B8 "the backup timer is daily with Persistent=true; the service is a oneshot"
 
 # ---- B9: env.example names every backup setting ------------------------------
-for v in XC_BACKUP_DIR XC_BACKUP_KEEP XC_BACKUP_OFFHOST XC_BACKUP_SSH_KEY; do
+for v in XC_BACKUP_DIR XC_BACKUP_KEEP XC_BACKUP_OFFHOST XC_BACKUP_SSH_KEY APP_VERIFICATION__STORE_DIR; do
   ck "env.example names $v" grep -Eqs "^#?$v=" "$HERE/env.example"
 done
 report B9 "env.example names every XC_BACKUP_* setting"
@@ -1532,12 +1536,30 @@ for a in "$@"; do
   fi
   case "$a" in
     -u | -o | -g) skip=1 ;;
-    chown) exit 0 ;;
+    chown)
+      if [ -n "${XC_TEST_OWNERS:-}" ] && [ "$#" -ge 3 ]; then
+        printf '%s\t%s %s\n' "$3" "${2%%:*}" "${2#*:}" >>"$XC_TEST_OWNERS"
+      fi
+      exit 0
+      ;;
     /etc/systemd/system/*) argv+=("${XC_TEST_SYSTEMD:?}/${a#/etc/systemd/system/}") ;;
     *) argv+=("$a") ;;
   esac
 done
 exec "${argv[@]}"
+STUB
+
+write_ustub stat <<'STUB'
+#!/usr/bin/env bash
+real=/usr/bin/stat
+[ -x "$real" ] || real=/bin/stat
+if [ "$#" = 3 ] && [ "$1" = -c ] && [ "$2" = '%U %G %a' ] && [ -n "${XC_TEST_OWNERS:-}" ] && [ -f "$XC_TEST_OWNERS" ]; then
+  mode="$("$real" -c '%a' "$3")" || exit
+  og="$(awk -F'\t' -v p="$3" '$1 == p { v = $2 } END { print v }' "$XC_TEST_OWNERS")"
+  printf '%s %s\n' "${og:-root root}" "$mode"
+  exit 0
+fi
+exec "$real" "$@"
 STUB
 
 # systemctl: logs. For xc-v3-backup(.service) it answers from whether
@@ -1912,6 +1934,7 @@ u_case() {
   local c="$1"
   mkdir -p "$c/log" "$c/opt/xc-v3/configuration" "$c/etc/xc-v3" "$c/var/lib/xc-v3/uploads" "$c/systemd"
   mkdir -m 700 "$c/backups"
+  : >"$c/owners"
   printf 'old-binary-A' >"$c/opt/xc-v3/xchange"
   chmod 755 "$c/opt/xc-v3/xchange"
   printf '# base, installed\n' >"$c/opt/xc-v3/configuration/base.yaml"
@@ -1966,10 +1989,11 @@ run_update() {
   shift
   set +e
   OUT="$(env PATH="$U_STUBS:$BIN_STUBS:$PATH" XC_TEST_LOG="$c/log" XC_TEST_SYSTEMD="$c/systemd" \
+    XC_TEST_OWNERS="$c/owners" \
     XC_TEST_MIGRATIONS="$c/migrations" XC_STUB_BACKUP_SET="$c/backups/$U_NEW_SET" \
     XC_TEST_PG="$c/pg" XC_TEST_APPLIED="$c/applied" \
     STAGE="$c/stage" INSTALL_DIR="$c/opt/xc-v3" ETC_DIR="$c/etc/xc-v3" \
-    UPLOADS_DIR="$c/var/lib/xc-v3/uploads" SMOKE_WAIT_SECS=0 \
+    UPLOADS_DIR="$c/var/lib/xc-v3/uploads" VERIFICATION_STORE_DIR="$c/var/lib/xc-v3/verification-documents" SMOKE_WAIT_SECS=0 \
     "$@" bash "$HERE/update.sh" </dev/null 2>&1)"
   RC=$?
   set -e
@@ -2133,6 +2157,23 @@ ck "the message says the dump is not age-encrypted" grep -qs 'backup dump is not
 ck "the message names the dump" grep -qsF -- "$u5e/backups/$U_NEW_SET/db-$U_NEW_SET.dump.age" "$LOGS/u5e.out"
 report U5e "a set whose dump lacks the age header is refused even if the archive is encrypted"
 
+# ---- U6: update.sh on a host without verification store dir or env key (#4788)
+u6="$ROOT/u6"
+u_case "$u6"
+U6_VDIR="$u6/var/lib/xc-v3/verification-documents"
+ck "precondition: verification directory absent before update" test ! -e "$U6_VDIR"
+ck "precondition: APP_VERIFICATION__STORE_DIR absent from env before update" absent '^APP_VERIFICATION__STORE_DIR=' "$u6/etc/xc-v3/env"
+run_update "$u6"
+printf '%s\n' "$OUT" >"$LOGS/u6.out"
+ck "update.sh exited 0" test "$RC" -eq 0
+ck "verification store directory exists after update" test -d "$U6_VDIR"
+ckeq "verification store directory is mode 700" 700 "$(stat -c '%a' "$U6_VDIR" 2>/dev/null || echo missing)"
+ckeq "verification store directory is owned by service user" "xc-v3 xc-v3" "$(awk -F'\t' -v p="$U6_VDIR" '$1 == p { v = $2 } END { print v }' "$u6/owners")"
+ck "env file sets APP_VERIFICATION__STORE_DIR" grep -qsx "APP_VERIFICATION__STORE_DIR=$U6_VDIR" "$u6/etc/xc-v3/env"
+ck "installed unit ReadWritePaths holds both uploads and verification store dirs" \
+  grep -qsx "ReadWritePaths=$u6/var/lib/xc-v3/uploads $U6_VDIR" "$u6/systemd/xc-v3.service"
+report U6 "update.sh creates missing verification directory (700, service user), adds APP_VERIFICATION__STORE_DIR to env, and renders both in ReadWritePaths"
+
 # ---- stubs of the install cases (#1084; first on PATH, before the update stubs)
 # A full install.sh run needs the owners it set to be read back, so that a
 # second run judges its own directories as the first run left them:
@@ -2260,7 +2301,9 @@ run_install() {
     XC_TEST_MIGRATIONS="$c/migrations" XC_TEST_APPLIED="$c/applied" \
     SERVICE_NAME="$K_SERVICE" SERVICE_USER="$K_USER" STAGE="$c/stage" \
     INSTALL_DIR="$c/opt/$K_SERVICE" ETC_DIR="$c/etc/$K_SERVICE" \
-    UPLOADS_DIR="$c/var/lib/$K_SERVICE/uploads" V2_BUNDLE_DIR="$c/v2bundle" \
+    UPLOADS_DIR="$c/var/lib/$K_SERVICE/uploads" \
+    VERIFICATION_STORE_DIR="$c/var/lib/$K_SERVICE/verification-documents" \
+    V2_BUNDLE_DIR="$c/v2bundle" \
     SMOKE_WAIT_SECS=0 "$@" bash "$HERE/install.sh" </dev/null 2>&1)"
   RC=$?
   set -e
@@ -2300,6 +2343,13 @@ ckeq "mode 640" 640 "$(stat -c '%a' "$K1_KEY" 2>/dev/null || echo missing)"
 ckeq "owned root:<service group>" "root $K_USER" "$(owner_of "$k1" "$K1_KEY")"
 ck "the key is not on stdout or stderr" not_shown "${K1_LINE#k1:}" "$LOGS/k1.out"
 ck "the key is on no command line or log the stubs saw" not_shown "${K1_LINE#k1:}" "$k1/log"
+K1_VDIR="$k1/var/lib/$K_SERVICE/verification-documents"
+ck "the verification store directory exists" test -d "$K1_VDIR"
+ckeq "verification store directory is mode 700" 700 "$(stat -c '%a' "$K1_VDIR" 2>/dev/null || echo missing)"
+ckeq "verification store directory is owned by service user" "$K_USER $K_USER" "$(owner_of "$k1" "$K1_VDIR")"
+ck "the env file sets APP_VERIFICATION__STORE_DIR" grep -qsx "APP_VERIFICATION__STORE_DIR=$K1_VDIR" "$k1/etc/$K_SERVICE/env"
+ck "the installed unit ReadWritePaths holds both uploads and verification store dirs" \
+  grep -qsx "ReadWritePaths=$k1/var/lib/$K_SERVICE/uploads $K1_VDIR" "$k1/systemd/$K_SERVICE.service"
 report K1 "a first install writes pii.key: one k1: line of 32 random bytes, root:<group> 640, never shown"
 
 # ---- K2: an existing key is never overwritten -------------------------------
@@ -2320,6 +2370,15 @@ ck "the second install.sh exited 0" test "$RC" -eq 0
 ck "the key file is byte-identical" cmp -s "$k2/key.before" "$K2_KEY"
 ckeq "its mode is unchanged" 640 "$(stat -c '%a' "$K2_KEY" 2>/dev/null || echo missing)"
 ck "the output names the key file it kept" grep -qsF -- "$K2_KEY" "$LOGS/k2.out"
+# If an older host env file lacked APP_VERIFICATION__STORE_DIR, re-running install.sh adds it
+sed -i '/^APP_VERIFICATION__STORE_DIR=/d' "$k2/etc/$K_SERVICE/env"
+# VERIFICATION_STORE_DIR under UPLOADS_DIR is refused by check_names
+run_install "$k2" VERIFICATION_STORE_DIR="$k2/var/lib/$K_SERVICE/uploads/verification"
+ck "VERIFICATION_STORE_DIR under UPLOADS_DIR is refused" test "$RC" -ne 0
+run_install "$k2"
+ck "re-run on host missing APP_VERIFICATION__STORE_DIR exited 0" test "$RC" -eq 0
+ck "re-run added APP_VERIFICATION__STORE_DIR to existing env file" \
+  grep -qsx "APP_VERIFICATION__STORE_DIR=$k2/var/lib/$K_SERVICE/verification-documents" "$k2/etc/$K_SERVICE/env"
 report K2 "install.sh run again keeps an existing pii.key byte for byte and says so"
 
 # ---- K3: update.sh without the key refuses before anything ------------------
