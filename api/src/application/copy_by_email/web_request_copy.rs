@@ -6,9 +6,9 @@ use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Row};
 use xc_customer::domain::sms_sender::BoxFuture;
+use xc_kiosk::domain::kiosk::value_objects::web_request_status::derive_status;
 
 use super::subject::{CopyDetails, CopySubject, CopySubjectKind};
-use crate::presentation::http::v3::my_web_request::derive_status;
 
 #[derive(Clone)]
 pub struct WebRequestCopy {

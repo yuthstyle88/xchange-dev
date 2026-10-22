@@ -31,6 +31,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
 use xc_kiosk::domain::kiosk::entities::kiosk_machine::KioskMachine;
+use xc_kiosk::domain::kiosk::value_objects::web_request_status::derive_status;
 use xc_queue::application::status::status_service::TicketRef;
 
 use crate::bootstrap::AppState;
@@ -88,24 +89,6 @@ fn version_of(row: &WebRequestRow) -> String {
         let _ = write!(&mut f, "{b:02x}");
     }
     format!("{}.{f}", row.queue_version)
-}
-
-pub(crate) fn derive_status(req_status: &str, ticket_status: Option<&str>) -> &'static str {
-    if req_status == "CANCELLED" || ticket_status == Some("CANCELLED") {
-        "CANCELLED"
-    } else if ticket_status == Some("NO_SHOW") {
-        "NO_SHOW"
-    } else if req_status == "COMPLETED" || ticket_status == Some("COMPLETED") {
-        "COMPLETED"
-    } else if matches!(req_status, "ACCEPTED" | "ID_CHECKED") || ticket_status == Some("SERVING") {
-        "SERVING"
-    } else if ticket_status == Some("CALLED") {
-        "CALLED"
-    } else if ticket_status == Some("WAITING") || req_status == "WAITING" {
-        "WAITING"
-    } else {
-        "QUOTED"
-    }
 }
 
 async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
