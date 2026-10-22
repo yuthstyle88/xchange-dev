@@ -6,6 +6,7 @@ import { createSignal, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { safeNext } from '../../login/home';
 import * as table from './i18n';
 import './sign-in.css';
 
@@ -17,8 +18,28 @@ export function e164(phone: string): string {
   return /^0\d{8,9}$/.test(digits) ? `+66${digits.slice(1)}` : digits;
 }
 
-export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof fetch }): JSX.Element {
+export function nextTarget(search?: string): string | null {
+  const safe = safeNext(new URLSearchParams(search ?? window.location.search).get('next'));
+  if (
+    safe &&
+    (safe === '/app' || safe.startsWith('/app/') || safe.startsWith('/app?')) &&
+    safe !== '/app/sign-in' &&
+    !safe.startsWith('/app/sign-in/') &&
+    !safe.startsWith('/app/sign-in?') &&
+    !safe.startsWith('/app/sign-in#')
+  ) {
+    return safe;
+  }
+  return null;
+}
+
+export function SignIn(props: {
+  navigate: (url: string) => void;
+  fetch?: typeof fetch;
+  search?: string;
+}): JSX.Element {
   const api = new ApiClient(props.fetch);
+  const next = () => nextTarget(props.search);
   const [challenge, setChallenge] = createSignal<string | undefined>();
   const [error, setError] = createSignal('');
   const [pending, setPending] = createSignal(false);
@@ -66,7 +87,7 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
       if (!challengeId) return;
       setError('');
       await api.post('/api/auth/otp/verify', { challengeId, code });
-      props.navigate('/app');
+      props.navigate(next() ?? '/app');
     } catch (err: unknown) {
       setError(wordedError(err));
     } finally {
@@ -121,7 +142,10 @@ export function SignIn(props: { navigate: (url: string) => void; fetch?: typeof 
         </p>
       </Show>
       <p class="xc-sign-in-switch">
-        {tr('noAccount')} <a href="/app/sign-up">{tr('toSignUp')}</a>
+        {tr('noAccount')}{' '}
+        <a href={next() ? `/app/sign-up?next=${encodeURIComponent(next()!)}` : '/app/sign-up'}>
+          {tr('toSignUp')}
+        </a>
       </p>
     </section>
   );

@@ -1,0 +1,256 @@
+/* QW-2.0 (kiosk-shared-phone §5r F7–F9, §5r.4a): /app/queue. Every static class the page's parts use has its rule
+   here; a part never adds its own stylesheet. */
+
+.xc-queue {
+  padding: 1.25rem 1rem 3rem;
+  max-width: 560px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  color: var(--xc-text, #0f172a);
+}
+
+.xc-queue-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.xc-queue-subtitle {
+  margin: 0 0 1.25rem;
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #64748b);
+}
+
+.xc-queue-loading {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--xc-text-muted, #64748b);
+}
+
+.xc-queue-error {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  color: var(--xc-danger, #ef4444);
+  font-weight: 500;
+}
+
+.xc-queue-notice {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 0.5rem;
+  color: #92400e;
+}
+
+.xc-queue-signin {
+  display: inline-block;
+  margin: 1rem 0;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  background: var(--xc-primary, #2563eb);
+  color: #ffffff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* RequestForm */
+.xc-queue-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e2e8f0);
+  border-radius: 0.75rem;
+}
+
+.xc-queue-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.xc-queue-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.xc-queue-select,
+.xc-queue-input {
+  padding: 0.625rem 0.75rem;
+  font-size: 1rem;
+  border: 1px solid var(--xc-border, #cbd5e1);
+  border-radius: 0.5rem;
+  background: var(--xc-surface, #ffffff);
+  color: inherit;
+}
+
+.xc-queue-submit {
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--xc-primary, #2563eb);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.xc-queue-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* RequestQr */
+.xc-queue-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e2e8f0);
+  border-radius: 0.75rem;
+}
+
+.xc-queue-qr [role='img'] {
+  width: min(72vw, 260px);
+  aspect-ratio: 1;
+}
+
+.xc-queue-qr-caption {
+  margin: 0;
+  font-weight: 600;
+  text-align: center;
+}
+
+.xc-queue-expiry {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #64748b);
+}
+
+/* RequestStatus */
+.xc-queue-status {
+  margin: 1rem 0;
+  padding: 1rem 1.25rem;
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e2e8f0);
+  border-radius: 0.75rem;
+  text-align: center;
+}
+
+.xc-queue-status-label {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.xc-queue-number {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.xc-queue-number:empty {
+  display: none;
+}
+
+.xc-queue-ahead {
+  margin: 0.25rem 0 0;
+  color: var(--xc-text-muted, #64748b);
+}
+
+/* RequestStatus when a read fails (SF-2): the worded unavailable / last-updated line and the sign-in link */
+.xc-queue-status-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: #92400e;
+}
+
+.xc-queue-status-signin {
+  display: inline-block;
+  margin: 0.5rem 0 0;
+  color: var(--xc-primary, #2563eb);
+  font-weight: 600;
+}
+
+/* The reload's reissue failed (SF-3): the worded error and its retry */
+.xc-queue-reissue-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.xc-queue-retry {
+  padding: 0.625rem 1rem;
+  font-size: 1rem;
+  border: 1px solid var(--xc-border, #cbd5e1);
+  border-radius: 0.5rem;
+  background: var(--xc-surface, #ffffff);
+  color: inherit;
+  cursor: pointer;
+}
+
+.xc-queue-retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* RequestActions */
+.xc-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.xc-queue-cancel,
+.xc-queue-done,
+.xc-queue-email {
+  padding: 0.625rem 1rem;
+  font-size: 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.xc-queue-cancel {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: var(--xc-danger, #b91c1c);
+}
+
+.xc-queue-done {
+  border: 0;
+  background: var(--xc-primary, #2563eb);
+  color: #ffffff;
+}
+
+.xc-queue-email {
+  border: 1px solid var(--xc-border, #cbd5e1);
+  background: var(--xc-surface, #ffffff);
+  color: inherit;
+}
+
+.xc-queue-cancel:disabled,
+.xc-queue-done:disabled,
+.xc-queue-email:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.xc-queue-email-to {
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #64748b);
+}
+
+.xc-queue-email-sent {
+  margin: 0.5rem 0 0;
+  color: var(--xc-success, #15803d);
+}

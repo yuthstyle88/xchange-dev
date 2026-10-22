@@ -390,7 +390,7 @@ async fn an_org_wide_admin_alone_cannot_disable_an_executive() {
     let db = TestDb::start().await;
     let exec = a_user_with(&db, "Exec", "EXECUTIVE", None).await;
     let a = disable(&db, ADMIN, &exec).await;
-    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(code(&a), "roleNotAllowed", "{}", a.text);
     assert_eq!(status_of(&db, &exec).await, "ACTIVE");
     db.finish().await;

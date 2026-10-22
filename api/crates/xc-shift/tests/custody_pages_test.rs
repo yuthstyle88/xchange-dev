@@ -443,16 +443,37 @@ async fn t_p4_floor_answers_only_its_own_branch() {
         o.phase = Phase::CutOff;
         o.attendance = vec![attendance(&format!("{tag}-other"), "me", 2 * MINUTE, None)];
         store(&db.pool, &other, &o).await;
+        db.seed_open_shift(
+            &other,
+            "F1",
+            "req-other",
+            &[],
+            shift_service_common::at(0, 0),
+        )
+        .await;
 
         let FloorFacts {
             ops,
             my_open_attendance,
+            open_shifts,
         } = pages(&db).floor(&mine, "me").await.expect("floor");
         let ops = ops.expect("this branch has its ops_state row");
         assert_eq!(ops.phase, Phase::Ready);
         assert!(
             my_open_attendance.is_none(),
             "me is clocked in at the other branch only"
+        );
+        assert_eq!(
+            open_shifts, 0,
+            "an OPEN shift at another branch is not counted"
+        );
+        assert_eq!(
+            pages(&db)
+                .floor(&other, "me")
+                .await
+                .expect("other floor")
+                .open_shifts,
+            1
         );
     })
     .await;

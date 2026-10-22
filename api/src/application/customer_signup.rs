@@ -9,15 +9,12 @@
 use chrono::{DateTime, Utc};
 use pos_error::AppError;
 use sqlx::PgPool;
-use xc_auth::application::session::session_service::generate_uuid;
 use xc_auth::application::session::{SessionError, SessionService, SignInTail};
-use xc_auth::domain::access::{Role, ScopedRole};
 use xc_auth::domain::identity::identity_client::IdentityLoginResponse;
-use xc_auth::domain::user::{User, UserRepository, UserStatus};
-use xc_auth::infrastructure::user::PgUserRepository;
-use xc_customer::application::consent_service::{ConsentService, Registration};
 use xc_customer::domain::consent::{Channel, ConsentError};
-use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher, normalize};
+use xc_kernel::pii::{IdentityType, normalize};
+
+use crate::application::customer_binder::{BindError, BindInput, CustomerBinder, ProvenContact};
 
 /// What `POST /api/app/register` asks for, already checked for shape.
 pub struct SignupInput {
@@ -48,14 +45,22 @@ impl From<SessionError> for SignupError {
     }
 }
 
+impl From<BindError> for SignupError {
+    fn from(e: BindError) -> Self {
+        match e {
+            BindError::AlreadyRegistered => Self::AlreadyRegistered,
+            BindError::ConsentTextMissing => Self::ConsentTextMissing,
+            BindError::PhoneInUse => Self::PhoneInUse,
+            BindError::EmailInUse => Self::Internal("unexpected email in use".to_owned()),
+            BindError::Internal(m) => Self::Internal(m),
+        }
+    }
+}
+
 /// Who wrote a customer's own user and role, in `users.created_by` and `user_audit`.
 const CREATED_BY: &str = "customer-register";
 /// The consent evidence of a sign-up made in the app.
 const EVIDENCE: &str = "app:register";
-
-fn unique_violation(e: &AppError) -> bool {
-    matches!(e, AppError::Database(sqlx::Error::Database(d)) if d.code().as_deref() == Some("23505"))
-}
 
 /// Whether `e` is `ConsentError::TextMissing`: `From<ConsentError> for AppError` keeps only its sentence, so the
 /// one match on that sentence lives here (`consentTextMissing`, §4.3).
@@ -90,127 +95,38 @@ pub async fn register_customer(
         .verified_login(&input.identifier, &input.password, client_ip)
         .await?;
     let org = signup_organization(pool).await.map_err(internal)?;
-    let users = PgUserRepository::new();
+    let proven = verified_phone(&login);
 
     let mut tx = pool.begin().await.map_err(internal)?;
-    if users
-        .find_by_auth_subject(&mut tx, &verified.subject)
-        .await
-        .map_err(internal)?
-        .is_some()
-    {
-        return Err(SignupError::AlreadyRegistered);
-    }
-    let role = ScopedRole::new(Role::Customer, None, now, None);
-    let user = User {
-        id: generate_uuid(),
-        organization_id: org.clone(),
-        auth_subject: Some(verified.subject.clone()),
-        name: input.display_name.clone(),
-        status: UserStatus::Active,
-        version: 1,
-        created_at: now,
-        created_by: CREATED_BY.to_owned(),
-        roles: vec![role.clone()],
-    };
-    // A concurrent register of the same subject waits on `users.auth_subject UNIQUE` and lands here (R13).
-    match users.create_user(&mut tx, &user).await {
-        Ok(()) => {}
-        Err(e) if unique_violation(&e) => return Err(SignupError::AlreadyRegistered),
-        Err(e) => return Err(internal(e)),
-    }
-    users
-        .add_role(&mut tx, &user.id, &org, &role)
-        .await
-        .map_err(internal)?;
-    users
-        .append_audit(&mut tx, &user.id, &user.id, "customerRegister", &org)
-        .await
-        .map_err(internal)?;
-
-    let customer_id = ConsentService::register_in(
+    let bound = CustomerBinder::bind_in(
         &mut tx,
         &org,
-        Registration {
-            user_id: user.id.clone(),
+        &verified.subject,
+        &proven,
+        BindInput {
             display_name: input.display_name,
             lang: input.lang,
             marketing: input.marketing,
             evidence_ref: EVIDENCE.to_owned(),
+            created_by: CREATED_BY.to_owned(),
         },
         now,
     )
-    .await
-    .map_err(|e| {
-        if is_consent_text_missing(&e) {
-            SignupError::ConsentTextMissing
-        } else {
-            internal(e)
-        }
-    })?;
-
-    write_verified_phone(&mut tx, &org, &customer_id, &login, now).await?;
+    .await?;
     tx.commit().await.map_err(internal)?;
 
     let tail = session.sign_in_with_login(login, now).await?;
-    Ok((tail, customer_id))
+    Ok((tail, bound.customer_id))
 }
 
-/// One ACTIVE PHONE identity when Identity reports the phone as verified (07:42Z): the E.164 text sealed with AAD
-/// `customer_id ‖ "PHONE"`, `lookup_hash = LookupHasher(PHONE, e164)`, `verified_at = now`. Nothing otherwise.
-async fn write_verified_phone(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    org: &str,
-    customer_id: &str,
-    login: &IdentityLoginResponse,
-    now: DateTime<Utc>,
-) -> Result<(), SignupError> {
+fn verified_phone(login: &IdentityLoginResponse) -> Vec<ProvenContact> {
     let (Some(phone), Some(true)) = (login.phone.as_deref(), login.phone_verified) else {
-        return Ok(());
+        return Vec::new();
     };
     let Ok(e164) = normalize(IdentityType::Phone, phone, None) else {
         // Identity's phone is not one the desk can match; the register goes on without it.
         tracing::warn!("Identity's verified phone does not normalise; no PHONE identity written");
-        return Ok(());
+        return Vec::new();
     };
-    let keys = xc_customer::get_pii_keys().map_err(internal)?;
-    let hash = LookupHasher::new(&keys).hash(IdentityType::Phone, &e164);
-
-    let taken: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM customer_identities \
-         WHERE organization_id = $1::uuid AND type = 'PHONE' AND lookup_hash = $2 AND status = 'ACTIVE')",
-    )
-    .bind(org)
-    .bind(hash.as_slice())
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(internal)?;
-    if taken {
-        return Err(SignupError::PhoneInUse);
-    }
-
-    let sealed = PiiCipher::new(keys).encrypt(
-        format!("{customer_id}{}", IdentityType::Phone.as_str()).as_bytes(),
-        e164.as_bytes(),
-    );
-    let inserted = sqlx::query(
-        "INSERT INTO customer_identities (id, organization_id, customer_id, type, encrypted_value, key_id, \
-             lookup_hash, verified_at, status) \
-         VALUES (gen_random_uuid(), $1::uuid, $2, 'PHONE', $3, $4, $5, $6, 'ACTIVE')",
-    )
-    .bind(org)
-    .bind(customer_id)
-    .bind(&sealed.bytes)
-    .bind(&sealed.key_id)
-    .bind(hash.as_slice())
-    .bind(now)
-    .execute(&mut **tx)
-    .await
-    .map_err(AppError::Database);
-    match inserted {
-        Ok(_) => Ok(()),
-        // Another register bound the same phone between the check and the insert.
-        Err(e) if unique_violation(&e) => Err(SignupError::PhoneInUse),
-        Err(e) => Err(internal(e)),
-    }
+    vec![ProvenContact::Phone(e164)]
 }

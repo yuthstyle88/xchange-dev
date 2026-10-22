@@ -13,7 +13,7 @@ import type {
   KioskCurrencies,
   KioskCurrency,
 } from '../../shared/api/generated/kiosk_currencies';
-import { locale, screenT } from '../../shared/i18n';
+import { lang, locale, screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { formatRate } from '../../shared/ui/rate';
 import { RateFreshness } from '../../shared/ui/RateFreshness';
@@ -210,8 +210,12 @@ export function KioskCurrenciesScreen(props: {
       setLoadError(undefined);
       setCardStatuses({});
       setSavingCodes({});
+      setResultSecondsInput('10');
+      setSettingsError(undefined);
       return;
     }
+    setSettingsError(undefined);
+    setResultSecondsDirty(false);
     void fetchCurrencies(b);
   });
 
@@ -311,6 +315,86 @@ export function KioskCurrenciesScreen(props: {
     return st.text;
   };
 
+  const [resultSecondsInput, setResultSecondsInput] = createSignal<string>('10');
+  const [settingsError, setSettingsError] = createSignal<string | undefined>();
+  const [savingSettings, setSavingSettings] = createSignal<boolean>(false);
+  const [resultSecondsDirty, setResultSecondsDirty] = createSignal<boolean>(false);
+
+  const handleReadSettings = async () => {
+    const branchId = props.branch;
+    if (!branchId) return;
+    try {
+      const res = await props.api.post<
+        { action: string; payload: { branchId: string } },
+        { resultSeconds: number; version: number }
+      >('/api/kiosk', {
+        action: 'settings',
+        payload: { branchId },
+      });
+      if (props.branch === branchId) {
+        // A read never overwrites what the admin has typed since.
+        if (!resultSecondsDirty()) setResultSecondsInput(String(res.resultSeconds));
+        setSettingsError(undefined);
+      }
+    } catch (err: unknown) {
+      if (props.branch === branchId) setSettingsError(wordedError(err));
+    }
+  };
+
+  const handleSaveSettings = async (e?: Event) => {
+    e?.preventDefault();
+    const branchId = props.branch;
+    if (!branchId) return;
+    const raw = resultSecondsInput();
+    const parsed = Number(raw);
+    setSavingSettings(true);
+    setSettingsError(undefined);
+    try {
+      const res = await props.api.post<
+        { action: string; payload: { branchId: string; resultSeconds: number | string } },
+        { resultSeconds: number; version: number }
+      >('/api/kiosk', {
+        action: 'configureSettings',
+        payload: {
+          branchId,
+          resultSeconds: Number.isFinite(parsed) ? parsed : raw,
+        },
+      });
+      if (props.branch === branchId) {
+        setResultSecondsInput(String(res.resultSeconds));
+        setResultSecondsDirty(false);
+      }
+    } catch (err: unknown) {
+      if (props.branch === branchId) {
+        const errObj = err as any;
+        const isValidation =
+          errObj?.status === 400 ||
+          errObj?.code === 'validationFailed' ||
+          errObj?.message === 'validationFailed';
+        let msg = '';
+        if (isValidation) {
+          if (
+            typeof errObj?.message === 'string' &&
+            errObj.message.trim() &&
+            errObj.message !== 'validationFailed' &&
+            errObj.message !== 'refused'
+          ) {
+            msg = errObj.message;
+          } else {
+            msg = lang() === 'en' ? 'Validation failed' : 'ข้อมูลไม่ถูกต้อง';
+          }
+        } else {
+          msg = wordedError(err);
+        }
+        setSettingsError(msg);
+      }
+    } finally {
+      if (props.branch === branchId) {
+        setSavingSettings(false);
+      }
+    }
+  };
+
   return (
     <div>
       <a href="/">{t('back')}</a>
@@ -381,6 +465,60 @@ export function KioskCurrenciesScreen(props: {
             </>
           )}
         </Show>
+      </section>
+
+      <section aria-label={lang() === 'en' ? 'Queue machine settings' : 'ตั้งค่าตู้คิว'}>
+        <div>
+          <label for="result_seconds">
+            {lang() === 'en' ? 'Result display time (seconds)' : 'เวลาแสดงผลบัตรคิว (วินาที)'}
+          </label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input
+              id="result_seconds"
+              name="result_seconds"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              value={resultSecondsInput()}
+              disabled={savingSettings()}
+              aria-invalid={settingsError() ? 'true' : 'false'}
+              onFocus={handleReadSettings}
+              onInput={(e) => {
+                setResultSecondsInput(e.currentTarget.value);
+                setResultSecondsDirty(true);
+                setSettingsError(undefined);
+              }}
+              onChange={handleSaveSettings}
+            />
+            <button
+              type="button"
+              name="load_result_seconds"
+              disabled={savingSettings()}
+              onClick={() => {
+                setResultSecondsDirty(false);
+                void handleReadSettings();
+              }}
+            >
+              {lang() === 'en' ? 'Read' : 'อ่านค่า'}
+            </button>
+            <button
+              type="button"
+              name="save_result_seconds"
+              class="primary"
+              disabled={savingSettings()}
+              onClick={handleSaveSettings}
+            >
+              {lang() === 'en' ? 'Save' : 'บันทึก'}
+            </button>
+            <Show when={settingsError()}>
+              {(err) => (
+                <span role="alert" class="warning" data-error="validationFailed">
+                  {err()}
+                </span>
+              )}
+            </Show>
+          </div>
+        </div>
       </section>
 
       <div>

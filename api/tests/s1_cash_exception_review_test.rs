@@ -906,7 +906,12 @@ async fn s1_a_teller_cannot_review_or_raise() {
     let room = Room::start().await;
     let id = open_exception(&room).await;
     let r = review(&room, COUNTER, &id, "x", &unique("k")).await;
-    assert_eq!(r.status, StatusCode::FORBIDDEN, "{}", r.text);
+    assert_refused(
+        &r,
+        StatusCode::BAD_REQUEST,
+        "roleNotAllowedHere",
+        "teller review",
+    );
     let r = call(
         &room,
         COUNTER,
@@ -917,7 +922,12 @@ async fn s1_a_teller_cannot_review_or_raise() {
         &unique("k"),
     )
     .await;
-    assert_eq!(r.status, StatusCode::FORBIDDEN, "{}", r.text);
+    assert_refused(
+        &r,
+        StatusCode::BAD_REQUEST,
+        "roleNotAllowedHere",
+        "teller raise",
+    );
     assert_eq!(data_of(&room, &id).await["status"], "OPEN");
     room.finish().await;
 }

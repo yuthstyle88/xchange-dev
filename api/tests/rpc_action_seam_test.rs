@@ -29,9 +29,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use chrono::SecondsFormat;
 use pos_error::AppError;
 use rpc_common::{
-    Answer, App, BAD_BRANCH, Call, Cookies, Desk, EMPLOYEE_AUTH_REQUIRED, INVALID_REQUEST,
-    NO_SUCH_BRANCH, ROLE_NOT_ALLOWED_RPC, ROLE_NOT_ALLOWED_STAFF, RPC, SERVER_ERROR, STAFF_RPC,
-    one_of_each_role, sign_in,
+    Answer, App, BAD_BRANCH, Call, Cookies, Desk, INVALID_REQUEST, NO_SUCH_BRANCH,
+    ROLE_NOT_ALLOWED_RPC, ROLE_NOT_ALLOWED_STAFF, RPC, SERVER_ERROR, STAFF_RPC, one_of_each_role,
+    sign_in,
 };
 use serde_json::{Value, json};
 use xchange::application::compat::actions::{ActionFuture, RpcAction, RpcActions, RpcCall};
@@ -340,10 +340,10 @@ async fn the_role_is_judged_before_a_family_is_asked() {
     ask(&app, &cookies, RPC, "opsClock", "FRONT", json!({}))
         .await
         .assert_refused(400, ROLE_NOT_ALLOWED_RPC, "FRONT asks opsClock on /api/rpc");
-    // the owner has no session on the staff route
+    // RBAC §11.8 S10 (#4528): the owner on the staff route reaches Policy::authorize
     ask(&app, &cookies, STAFF_RPC, "opsClock", "OWNER", json!({}))
         .await
-        .assert_refused(401, EMPLOYEE_AUTH_REQUIRED, "the owner on the staff route");
+        .assert_refused(400, ROLE_NOT_ALLOWED_STAFF, "the owner on the staff route");
     // a name `Policy` does not know is not a family's to answer
     ask(
         &app,
