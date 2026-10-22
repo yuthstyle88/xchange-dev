@@ -12,13 +12,13 @@
         android:id="@+id/setup_scan"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Scan" />
+        android:text="@string/setup_scan" />
 
     <EditText
         android:id="@+id/setup_code"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="XXXXX-XXXXX"
+        android:hint="@string/setup_code_hint"
         android:importantForAutofill="no"
         android:inputType="textCapCharacters|textNoSuggestions"
         android:maxLength="13" />
@@ -27,7 +27,7 @@
         android:id="@+id/setup_pair"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Pair" />
+        android:text="@string/setup_pair" />
 
     <TextView
         android:id="@+id/setup_message"
