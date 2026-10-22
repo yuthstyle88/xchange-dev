@@ -213,8 +213,8 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
                         </span>
                       </div>
 
-                      <BranchLive branch={branch.code} bookingEnabled={branch.bookingEnabled} fetch={fetchFn} />
-                      <TakeNumber branch={branch.code} queueOpen={branch.queueOpen} fetch={fetchFn} />
+                      <BranchLive branch={branch.id} bookingEnabled={branch.bookingEnabled} fetch={fetchFn} />
+                      <TakeNumber branch={branch.id} queueOpen={branch.queueOpen} fetch={fetchFn} />
 
                       <div class="xc-branch-details">
                         <div class="xc-branch-row xc-branch-address">
@@ -235,14 +235,14 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
 
                       <div class="xc-branch-actions">
                         <a
-                          href={`/rates?branch=${encodeURIComponent(branch.code)}`}
+                          href={`/rates?branch=${encodeURIComponent(branch.id)}`}
                           class="xc-branch-rates-link"
                         >
                           {t('viewRates')}
                         </a>
                         <Show when={branch.bookingEnabled}>
                           <a
-                            href={`/app/book?branch=${encodeURIComponent(branch.code)}`}
+                            href={`/app/book?branch=${encodeURIComponent(branch.id)}`}
                             class="xc-branch-book-link"
                           >
                             {t('bookingStatus')}
