@@ -105,9 +105,10 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
     setBusy(true);
     try {
       await placeCmd.send({
+        branch: props.ctx.me.branchId,
         customerId: cust.id,
         reason: reason(),
-      } as CustomerHoldCreateInput);
+      });
       setSelectedCustomer(null);
       setReason('');
       setNotice(t('saved'));
@@ -130,9 +131,10 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
     try {
       const cmd = getReleaseCmd(target.id);
       await cmd.send({
+        branch: props.ctx.me.branchId,
         id: target.id,
         note,
-      } as CustomerHoldReleaseInput);
+      });
       setNotice(t('saved'));
       setError(null);
       setReleaseTarget(null);

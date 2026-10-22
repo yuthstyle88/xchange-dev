@@ -250,7 +250,7 @@ describe('#2458 ReasonDialog target switch tests', () => {
     expect(posts).toEqual([
       {
         path: `/api/customer-holds/${HOLD_B}/release`,
-        body: { id: HOLD_B, note: 'note for B' },
+        body: { branch: BRANCH, id: HOLD_B, note: 'note for B' },
       },
     ]);
   });
