@@ -418,6 +418,10 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
         expect(activeCapture, `ACTIVE referral attribution for ${txId} must read back after reload`).toBeTruthy();
         expect(activeCapture?.code).toBe(VALID_REFERRAL_CODE);
         expect(activeCapture?.source).toBe('DESK');
+      } catch (err) {
+        console.error('[QA-R9-9 (a)] primary error:', err);
+        await test.info().attach('primary-error', { body: String((err as Error)?.stack ?? err), contentType: 'text/plain' });
+        throw err;
       } finally {
         if (completedTxId) {
           await reverseCompletedExchange(teller, finance, completedTxId);
