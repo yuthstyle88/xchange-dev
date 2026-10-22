@@ -37,15 +37,27 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
         .route(ROUTE, web::post().to(handle));
 }
 
-fn rate_limited(address: &str) -> bool {
+fn rate_map() -> &'static Mutex<HashMap<String, Vec<Instant>>> {
     static WINDOWS: OnceLock<Mutex<HashMap<String, Vec<Instant>>>> = OnceLock::new();
-    let mutex = WINDOWS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut map = mutex.lock().unwrap_or_else(|e| e.into_inner());
-    let now = Instant::now();
+    WINDOWS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn rate_limited(address: &str) -> bool {
+    rate_limited_at(address, Instant::now())
+}
+
+fn rate_limited_at(address: &str, now: Instant) -> bool {
+    let mut map = rate_map().lock().unwrap_or_else(|e| e.into_inner());
     let window = Duration::from_millis(QuoteLimit::WINDOW_MS as u64);
+    map.retain(|_, v| {
+        v.retain(|&t| now.duration_since(t) < window);
+        !v.is_empty()
+    });
     let timestamps = map.entry(address.to_owned()).or_default();
-    timestamps.retain(|&t| now.duration_since(t) < window);
     if QuoteLimit::reached(timestamps.len() as i64) {
+        if timestamps.is_empty() {
+            map.remove(address);
+        }
         return true;
     }
     timestamps.push(now);
@@ -122,4 +134,22 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>, body: web::Bytes) 
             "qr": view.qr,
             "expiresAt": view.expires_at.to_rfc3339(),
         }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rate_map_drops_address_after_window_passes() {
+        let t0 = Instant::now();
+        let window = Duration::from_millis(QuoteLimit::WINDOW_MS as u64);
+        assert!(!rate_limited_at("198.51.100.250", t0));
+        assert!(rate_map().lock().unwrap().contains_key("198.51.100.250"));
+
+        assert!(!rate_limited_at("198.51.100.251", t0 + window));
+        let map = rate_map().lock().unwrap();
+        assert!(!map.contains_key("198.51.100.250"));
+        assert!(map.contains_key("198.51.100.251"));
+    }
 }
