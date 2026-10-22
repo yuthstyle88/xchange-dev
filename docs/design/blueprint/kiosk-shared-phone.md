@@ -709,6 +709,91 @@ It runs the **whole** app suite: `test/l10n/` covers `kiosk_l10n_matches_v2`, an
 
 QW-2 and QW-3 both touch the `/app/queue` screen, so QW-3 owns only `shared/session/tablet.ts`, `idle.ts` and their tests. QW-2 wires it in with one call that QW-3's test pins.
 
+### 5r.4a QW-2 as a team (XC FE controller claude/e8020026, 2026-10-22)
+
+Owner, 2026-10-22: *"ต้องทำงานเป็น ทีม"*, then *"เริ่มเลย"*. QW-2 (#4477) is one screen in seven files, so it runs on one worker at a time. It is split here along the screen's parts. Each part lives in its own file, so the parts run in parallel on a feature branch `feat/qw2-queue-page`, and the branch lands on `main` in one PR.
+
+```mermaid
+classDiagram
+  direction LR
+  class QueueRequestScreen {
+    <<QueueRequest.tsx — skeleton, glue only>>
+    props fetch search intervalMs
+  }
+  class QueueRequestState {
+    <<queue-state.ts>>
+    load(search) Loaded or signedOut
+    submit(input) Promise~void~
+    cancel() Promise~void~
+    reissue() Promise~void~
+    request() Current?
+  }
+  class QueueApi {
+    <<queue-api.ts>>
+    host() org
+    rates(org, code) Rates
+    profile() Profile
+    create(input, key) Created
+    reissueQr(id, branchId) Created
+    cancel(id, branchId) Cancelled
+    emailCopy(id, token) void
+  }
+  class RequestForm {
+    <<RequestForm.tsx>>
+    props rates onSubmit(input)
+  }
+  class RequestQr {
+    <<RequestQr.tsx>>
+    props qrUrl
+  }
+  class RequestStatus {
+    <<RequestStatus.tsx>>
+    props fetch branchId requestId status intervalMs onExpired
+  }
+  class RequestActions {
+    <<RequestActions.tsx>>
+    props emailCopy(available, to) onCancel onDone onEmail
+  }
+  class QueueTablet {
+    <<queue-tablet.ts>>
+    useQueueTablet(branchCode, api) done error
+  }
+  QueueRequestScreen --> QueueRequestState
+  QueueRequestScreen --> RequestForm
+  QueueRequestScreen --> RequestQr
+  QueueRequestScreen --> RequestStatus
+  QueueRequestScreen --> RequestActions
+  QueueRequestScreen --> QueueTablet
+  QueueRequestState --> QueueApi
+  RequestQr --> QrCode : shared/ui/QrCode.tsx
+  RequestStatus --> ViewPoller : shared
+  QueueTablet --> TabletSession : shared/session/tablet.ts (QW-3)
+```
+
+**Who provides, who uses.** Every file is in `web/src/screens/customer/queue/`.
+
+| Unit | File | Provides | Used by | Ticket | Class |
+|---|---|---|---|---|---|
+| skeleton | `QueueRequest.tsx`, `main.tsx`, `i18n.ts`, `queue.css`, `web/pages/app-queue.html`, the `'/app/queue'` line in `customer/_shell/Shell.tsx`, and `QueueRequest.test.tsx` (brought from `test/qw2-queue-page` 85a09750 unchanged; the branch starts from it) | the glue that renders the parts, plus the signed-out branch: `load()` gives `signedOut` ⇒ the `a[href^="/app/sign-in"]` link instead of the form (U1). Also every i18n key (th/en/zh), every CSS class the parts use, and stub files for the seven units below, with the exact signatures above | everyone | QW-2.0 (the controller writes it) | — |
+| `QueueApi` | `queue-api.ts` | the wire calls of §4.3a: `Idempotency-Key` on create; `409 alreadyQueued` gives the open id from `error.message`; a replayed create (`requestQrUrl: null`) is followed by `reissueQr` | `QueueRequestState` | QW-2a | logic |
+| `QueueRequestState` | `queue-state.ts` | the screen's state: `my_profile` 401 ⇒ `signedOut` (U1); branch code → `branchId`; submit → QR; reload or 409 → the existing request with a fresh token; cancel → status `CANCELLED`, passed to `RequestStatus` (U4); expired → back to the form | `QueueRequestScreen` | QW-2b | logic |
+| `RequestForm` | `RequestForm.tsx` | `select[name=type]`, `select[name=currency]` (from `rates`), `input[name=amount]`, `button[data-action=submit-request]` | screen | QW-2c | mechanical |
+| `RequestQr` | `RequestQr.tsx` | `[data-request-qr][data-qr-url="<origin>/q#<token>"]`, drawn with `QrCode`, with its download (R-10) | screen | QW-2d | mechanical |
+| `RequestStatus` | `RequestStatus.tsx` | one `ViewPoller` on `my_web_request` with `since`; `[data-request-status]` shows the newest of the state's `status` prop and the poll's status, so `CANCELLED` shows right after the cancel answer (U4); `[data-display-number]` once there is a number; `404` after `expiresAt` ⇒ `onExpired` | screen | QW-2e | logic |
+| `RequestActions` | `RequestActions.tsx` | `cancel-web-request` (one press, no dialog, R-11), `done`, `email-copy` only when `emailCopy.available`, shown with the masked `emailCopy.to` (U5, W11); each posts once | screen | QW-2f | logic |
+| `QueueTablet` | `queue-tablet.ts` | on a shared tablet, `armTabletIdle` while mounted; **เสร็จ** ⇒ `signOutAndRestart`; a failed sign-out ⇒ a worded `role="alert"` error, and no restart | screen | QW-2g | logic |
+
+**Rules for the team:**
+- A function ticket touches **only its own file and its own new test file**. Never `i18n.ts` or `queue.css`: the skeleton defines every key and class first. A missing key is reported on the ticket, not added.
+- Function level: each ticket runs only its own tests. Logic level: the up-front `QueueRequest.test.tsx` (branch `test/qw2-queue-page`, 85a09750) is the whole-screen test. It runs on `feat/qw2-queue-page` as soon as the skeleton lands, and again after each merge into the branch.
+- **Main-only web gates apply** (#564 issuecomment-6329735131):
+  - `queue-api.ts` writes through `ApiClient`'s keyed writes or commands, never a raw `fetch` with `method: 'POST'` (`src/shared/api/raw-write.gate.test.ts`, `KNOWN = []`);
+  - `app-queue.html`'s module renders `AppShell` or `AuthLayout`, as the other customer pages do, or the skeleton lists it in `CHILD_MODULE_ENTRIES` (`src/shared/ui/shell-look.test.ts`);
+  - every QW-2 done line runs `src/shared/api/raw-write.gate.test.ts src/shared/ui/shell-look.test.ts` beside the three guards of §5r.4.
+- `logic` tickets get failing tests first, written from the 5r.3 rows they name. `mechanical` tickets carry a behaviour table, and the implementer writes the tests.
+- Workers: Argon for the five logic tickets, Flash for the two mechanical ones. All seven are released together, once the skeleton is on the branch and BE slices c (PR 4481) and d (PR 4488) are on `main`.
+- QW-2 (#4477) becomes this team's umbrella. It closes with the feat → main merge.
+
 ### 5r.5 Data
 
 None on the FE side. New DTO types arrive with the BE tickets (ts-rs), and each FE ticket that reads one runs `npm run gen:fixtures`.
