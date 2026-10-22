@@ -1,6 +1,8 @@
 // TW-0 skeleton (kiosk-shared-phone §7.11.4 W-D5, W-D6; §7.11.5; §7.11.6 W5-W7). The body is TW-1's.
 package com.spacing.xchange.tablet
 
+import java.net.URI
+
 /** What the wrapper does with one top-level navigation (W-D5). */
 enum class NavDecision {
     /** Load the URL as asked. */
@@ -36,5 +38,29 @@ object QueueFlowPolicy {
     /** W-D6: the start page is `<origin>` + this; the page picks the tablet's branch itself. */
     const val START_PATH: String = "/app/queue"
 
-    fun decide(url: String, origin: String): NavDecision = TODO("TW-1")
+    fun decide(url: String, origin: String): NavDecision {
+        val u = try {
+            URI(url)
+        } catch (_: Exception) {
+            return NavDecision.Ignore
+        }
+        val o = try {
+            URI(origin)
+        } catch (_: Exception) {
+            return NavDecision.Ignore
+        }
+        if (!u.scheme.equals("https", ignoreCase = true) || !o.scheme.equals("https", ignoreCase = true)) {
+            return NavDecision.Ignore
+        }
+        if (u.rawUserInfo != null || o.rawUserInfo != null) {
+            return NavDecision.Ignore
+        }
+        val host = u.host ?: return NavDecision.Ignore
+        val originHost = o.host ?: return NavDecision.Ignore
+        if (!host.equals(originHost, ignoreCase = true) || u.port != o.port) {
+            return NavDecision.Ignore
+        }
+        val path = u.rawPath ?: ""
+        return if (path in FLOW_PATHS) NavDecision.Allow else NavDecision.StartPage
+    }
 }
