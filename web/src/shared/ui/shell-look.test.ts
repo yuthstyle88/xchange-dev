@@ -42,6 +42,9 @@ const CHILD_MODULE_ENTRIES: Record<string, string[]> = {
 // guard below keeps every one of them an `anyone` page, so the list can never hide a staff page.
 // (RD-3, xchange FE lane controller claude/5edf7bb5's ruling A, 2026-10-11.)
 const SHELL_LESS_PUBLIC_PAGES: Record<string, string> = {
+  'c.html': 'F12 /c 1-day copy link: no shell, no session (kiosk-shared-phone.md §5r F12)',
+  'q.html': 'F11 /q show this to staff, sends nothing: no shell, no session (kiosk-shared-phone.md §5r F11)',
+  'queue-display.html': 'F14 /queue-display public board, numbers only: no shell, no session (kiosk-shared-phone.md §5r F14)',
   'rates.html': 'P01 public board: no shell, no session (rate-display.md D3, D8)',
 };
 

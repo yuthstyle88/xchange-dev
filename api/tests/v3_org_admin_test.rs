@@ -784,7 +784,7 @@ async fn g6_org_wide_admin_alone_cannot_grant_org_wide_executive() {
         Key::Fresh,
     )
     .await;
-    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(code(&a), "roleNotAllowed", "{}", a.text);
     assert_eq!(
         db.count(&format!(

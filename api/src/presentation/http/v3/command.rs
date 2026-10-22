@@ -129,7 +129,7 @@ pub trait CommandAction: Send + Sync + 'static {
 
 /// Helper for commands to map internal failures to `500 serverError`.
 /// What a command answers when the caller has no `Standing` (OR-7; formerly the `legacy_actor` bridge, #1030 §3.8):
-/// `403 roleNotAllowedHere`, as a refused route does.
+/// `400 roleNotAllowedHere`, as a refused route does.
 pub(crate) fn role_not_allowed_here() -> V3Error {
     V3Error::from(
         xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,

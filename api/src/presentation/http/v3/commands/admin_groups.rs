@@ -5,7 +5,7 @@
 //! - `adminGroupDelete` (`POST /api/admin/groups/delete`): delete a custom group nobody holds.
 //!
 //! Each needs `UsersManage` on its policy row (`org_admin.rs`) **and** a valid organisation-wide row whose base is
-//! EXECUTIVE (§11.3, V.9 :66), else `403 roleNotAllowed`. A save or add runs `MatrixGuardrails::check` on the full
+//! EXECUTIVE (§11.3, V.9 :66), else `400 roleNotAllowed`. A save or add runs `MatrixGuardrails::check` on the full
 //! set (requested module permissions plus the base's no-module seed) and answers `409 guardrail:<n>`. Each writes one
 //! `user_audit` row (`PERMISSION_CHANGE` / `GROUP_ADD` / `GROUP_DELETE`, subject = group code, before and after) and
 //! installs the new snapshot after commit.
@@ -241,11 +241,8 @@ fn require_executive(who: &Actor) -> Result<(), V3Error> {
     if is_exec {
         Ok(())
     } else {
-        Err(V3Error::new(
-            "roleNotAllowed",
-            None,
-            "role not allowed",
-            StatusCode::FORBIDDEN,
+        Err(V3Error::from(
+            xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowed,
         ))
     }
 }

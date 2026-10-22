@@ -1,4 +1,5 @@
 import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
+import { ApiClient, ApiError, type Fetch } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { th, en, zh } from './i18n';
@@ -132,32 +133,18 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
       return;
     }
 
-    const fetcher = props.fetch ?? fetch;
+    const api = new ApiClient(props.fetch as Fetch | undefined);
     try {
-      const res = await fetcher('/api/public/copy-link', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ link: frag }),
+      const json = await api.post<{ link: string }, CopyView>('/api/public/copy-link', {
+        link: frag,
       });
-
-      if (res.status === 410) {
-        setExpired(true);
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok) {
-        setError('loadFailed');
-        setLoading(false);
-        return;
-      }
-
-      const json = (await res.json()) as CopyView;
       setData(json);
-    } catch {
-      setError('loadFailed');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 410) {
+        setExpired(true);
+      } else {
+        setError('loadFailed');
+      }
     } finally {
       setLoading(false);
     }

@@ -334,7 +334,7 @@ async fn r3_branch_admin_can_revoke_role_at_own_branch() {
 }
 
 /// R4, changed by RBAC C1a (owner decision Q4 A, PR 3083 §2 and §3.1 rule 3): `ADMIN@*` revoking
-/// `EXECUTIVE` from an EXECUTIVE is refused (`403` `roleNotAllowed`); only EXECUTIVE + ADMIN (the
+/// `EXECUTIVE` from an EXECUTIVE is refused (`400` `roleNotAllowed`); only EXECUTIVE + ADMIN (the
 /// owner, B3) changes an EXECUTIVE. The owner's case is in `rbac_c1a_user_commands_test.rs`.
 #[actix_web::test]
 async fn r4_org_admin_alone_cannot_revoke_org_wide_executive() {
@@ -350,7 +350,7 @@ async fn r4_org_admin_alone_cannot_revoke_org_wide_executive() {
     )
     .await;
 
-    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(code(&a), "roleNotAllowed", "{}", a.text);
     assert_eq!(
         db.live_role_count(&user, "EXECUTIVE", None).await,

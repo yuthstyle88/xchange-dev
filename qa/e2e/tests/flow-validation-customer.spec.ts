@@ -220,7 +220,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
         // Case 3: server-level refusal on blank display name via direct command
         const directRes = await page.request.put('/api/app/profile', {
-          headers: sameOrigin,
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-blank-${lang}-${Date.now()}` },
           data: { displayName: '   ' },
         });
         expect(directRes.status(), `${lang}: direct blank displayName returns 400`).toBe(400);
@@ -228,10 +228,31 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         expect(directJson?.error?.code).toBe('validationFailed');
         expect(directJson?.error?.field).toBe('displayName');
 
+        // Case 3b-3d: 100-character display name cap (#4397, #4628)
+        const thai101 = 'ก'.repeat(101);
+        const thai100 = 'ก'.repeat(100);
+
+        await nameInput.fill(thai101);
+        expect((await nameInput.inputValue()).length).toBe(100);
+
+        const tooLongRes = await page.request.put('/api/app/profile', {
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-name101-${lang}-${Date.now()}` },
+          data: { displayName: thai101 },
+        });
+        expect(tooLongRes.status(), `${lang}: 101-char displayName returns 400`).toBe(400);
+        const tooLongJson = (await tooLongRes.json()) as { error?: { code?: string; field?: string } };
+        expect(tooLongJson?.error?.code).toBe('nameTooLong');
+
+        const maxOkRes = await page.request.put('/api/app/profile', {
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-name100-${lang}-${Date.now()}` },
+          data: { displayName: thai100 },
+        });
+        expect(maxOkRes.status(), `${lang}: 100-char displayName returns 200`).toBe(200);
+
         // Case 4: consentRecord validation checks (direct API commands on /api/app/consents)
         // 4a: invalid purpose
         const badPurposeRes = await page.request.post('/api/app/consents', {
-          headers: sameOrigin,
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-purpose-${lang}-${Date.now()}` },
           data: { purpose: 'INVALID_PURPOSE', channel: 'SMS', granted: true, lang },
         });
         expect(badPurposeRes.status(), `${lang}: invalid consent purpose returns 400`).toBe(400);
@@ -241,7 +262,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
         // 4b: invalid language
         const badLangRes = await page.request.post('/api/app/consents', {
-          headers: sameOrigin,
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-lang-${lang}-${Date.now()}` },
           data: { purpose: 'MARKETING', channel: 'SMS', granted: true, lang: 'xx' },
         });
         expect(badLangRes.status(), `${lang}: invalid consent lang returns 400`).toBe(400);
@@ -251,7 +272,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
         // 4c: withdrawing TERMS
         const withdrawTermsRes = await page.request.post('/api/app/consents', {
-          headers: sameOrigin,
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-terms-${lang}-${Date.now()}` },
           data: { purpose: 'TERMS', granted: false, lang },
         });
         expect(withdrawTermsRes.status(), `${lang}: withdrawing TERMS returns 400`).toBe(400);
@@ -259,6 +280,10 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         expect(withdrawTermsJson?.error?.code).toBe('validationFailed');
       } finally {
         // Restore original name
+        await page.request.put('/api/app/profile', {
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-restore-${lang}-${Date.now()}` },
+          data: { displayName: origName },
+        });
         await nameInput.fill(origName);
       }
 
@@ -527,7 +552,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       // Check 2: bookingCancel validation
       // 2a: Direct command for cancelling a non-existent booking ID
       const badCancelRes = await page.request.post('/api/bookings/00000000-0000-0000-0000-000000000000/cancel', {
-        headers: sameOrigin,
+        headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-cancel-${lang}-${Date.now()}` },
         data: { reason: 'test' },
       });
       expect(badCancelRes.status(), `${lang}: cancelling non-existent booking returns 404`).toBe(404);

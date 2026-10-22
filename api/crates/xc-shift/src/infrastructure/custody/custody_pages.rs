@@ -168,9 +168,17 @@ impl CustodyPages for PgCustodyPages {
                 None => None,
             };
 
+            let open_shifts: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM shifts WHERE branch_id = $1 AND status = 'OPEN'",
+            )
+            .bind(branch.as_str())
+            .fetch_one(&self.pool)
+            .await?;
+
             Ok(FloorFacts {
                 ops,
                 my_open_attendance,
+                open_shifts: usize::try_from(open_shifts).unwrap_or(0),
             })
         })
     }

@@ -221,11 +221,8 @@ pub(crate) fn from_change_error(
             GrantRefusal::ProtectedTarget
             | GrantRefusal::ProtectedRole
             | GrantRefusal::EnableNeedsExecutive,
-        ) => V3Error::new(
-            "roleNotAllowed",
-            None,
-            "role not allowed",
-            StatusCode::FORBIDDEN,
+        ) => V3Error::from(
+            xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowed,
         ),
         UserChangeError::Refused(GrantRefusal::LastOwner) => {
             V3Error::new("lastOwner", None, "last owner", StatusCode::CONFLICT)
