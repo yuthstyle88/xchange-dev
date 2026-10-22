@@ -736,3 +736,72 @@ classDiagram
 - a group in use can't be deleted;
 - every change writes one audit row;
 - **wiring mutant:** `RoleGrants::of` returning the base's seed must turn the "an edited set is what `Authorizer::check` sees" test red.
+
+### 11.8 Who may enter `/staff`: the group's permissions decide, not a fixed role rule (owner, 2026-10-22)
+
+The owner, verbatim, in the FE controller claude/e8020026's session (relayed on `xchange#564`, issuecomment-6329341806 and issuecomment-6329380630):
+- *"เรื่องสิทธิ์ มันแก้ไขได้ เพราะ ผมให้ สามารถแก้ไข role ของแต่ละกลุ่มได้เอง"*: permissions are editable, because each group's role can be edited;
+- *"ดั้ง นั้น ต้องมุ่งไปที่การแก้ไข เองได้"* · *"เพราะ สุดท้ายเค้าเป็นคนจัดการสิทธิ์ เอง"*: so make it self-editable, because the customer manages the permissions;
+- *"งานผม ต้องให้คอนฟิกได้เอง … งาน เริ่มต้นให้ ตรงพิมพ์เขียว … เราต้องทำให้ มันยืดหยุ่น โดยสามารถให้ปรับเปลี่ยนได้เอง"*: Blueprint values are the defaults; the customer can change them.
+
+**The gap, measured on main `1cb325fd`:**
+- Every `/staff` route (`EntryPath::StaffRpc`, `StaffDesk`, `StaffFile`, `StaffUpload`) is decided against `Callers::staff_user` (`api/src/presentation/extractors/actor.rs:211-231`).
+- `AccountSessionReader::callers` builds `staff_user` from a fixed role-name rule: `Standing::of(&actor, now).filter(|s| !s.is_owner())` (`actor.rs:125-127`, rule in `standing.rs:59-95`).
+- That rule gives no staff caller to:
+  - the owner (org-wide EXECUTIVE + org-wide ADMIN), which the `!is_owner()` filter drops;
+  - a caller holding EXECUTIVE alone, which `STAFF_PRIORITY` does not list.
+- With `staff_user = None`, `Policy::authorize` answers `EmployeeAuthRequired` (401) at step 2 (`policy.rs:205-209`) before any permission is read.
+- So a group the customer gave the desk permissions in the matrix (§11.3) still cannot open `/staff` when its base is EXECUTIVE, or when the person also holds ADMIN org-wide. The Policy layer itself already answers the owner by its roles on StaffRpc (C1 in `xc-auth/tests/policy_rate_engine_test.rs:36-39`); only the caller selection blocks it.
+
+**The rule:**
+- **A session is a staff caller when it holds at least one group, valid now, whose base is not CUSTOMER.** The permission set of the groups it holds then decides each `/staff` action, through the existing `Need` rows and `Authorizer::check`. `staffMe` needs `SignedIn`; the desk views and commands need what their rows already name.
+- **Unchanged:**
+  - no session ⇒ `EmployeeAuthRequired`;
+  - a session holding only CUSTOMER ⇒ `EmployeeAuthRequired`;
+  - an expired group (`valid_to <= now`) doesn't count.
+- **`Standing::of` is not changed.** It stays the v2 compat answer for `save_step.rs`, `pages.rs`, `kiosk.rs`, `/api/rpc`, the v3 `denomination_groups` / `exchange_settings_save` commands and the audit `actor_role` text. An owner who acts at the desk is audited as `OWNER` (`StandingKind::Owner`).
+- **A §11 group can't have CUSTOMER as its base** (§11.1: the base is one of the eight built-ins). So a custom group never makes a staff caller through a CUSTOMER base, whatever the matrix gives it.
+
+**The compat desk, `/api/staff/rpc`, follows the same rule** (review FAIL on this PR, must-fix 1). Every desk action posts there (`web/src/screens/desk/desk-path.ts:47`), and `caller_of_staff_rpc` (`api/src/presentation/http/rpc.rs:278-295`) has its own fixed-role gate: `Some(standing) if !standing.is_owner()`. Left alone, the owner would see the desk cards and then be refused on every action.
+- `caller_of_staff_rpc` accepts every session for which `is_staff_caller` is true. Its `RpcCaller.standing` is:
+  - `Standing::of(actor)` when that is a staff standing (unchanged);
+  - otherwise `Standing { kind: Owner, branch: Some(<the session's effective branch, `Actor.branch`, else `MAIN`>) }`. "Otherwise" covers the owner (EXECUTIVE + ADMIN org-wide) and EXECUTIVE without org ADMIN; EXECUTIVE is the Blueprint's OWNER (decision B1, §11.2).
+- `RpcCaller::staff_member()` (`api/src/application/compat/rpc.rs:99-111`) also answers for an owner standing that carries a branch: `StaffMember { role: Role::Executive, role_text: "OWNER", branch: <that branch>, .. }`. So `adminSnapshot` on the staff route returns the staff view for the owner, as it does for any staff member. An owner standing without a branch (only `/api/rpc` builds one) still gives `None`, as today.
+- The owner standing with a branch is built only by `caller_of_staff_rpc`. `/api/rpc`'s `caller_of_rpc` (`rpc.rs:262-275`) is unchanged.
+- Each desk action is still decided by `Policy` against `callers.staff_user` (`rpc.rs:177-180`), i.e. by the permission rows.
+
+**`files.rs` keeps today's meaning** (review FAIL, must-fix 2). `/api/upload` (`api/src/presentation/http/files.rs:143-144`) and `/files/{key}` (`:276-279`) read `callers.staff_user`. Today `staff_user.is_some()` holds exactly when `staff_standing().is_some()` does, because `staff_user` was built from a non-owner standing. ST-1 drops the `staff_user` term from both lines and keeps the `staff_standing()` term, so their answers don't change for anyone (rows S12, S13).
+
+**Class (one new pure function, one new file):**
+
+| What | File | Ticket |
+|---|---|---|
+| `pub fn is_staff_caller(actor: &Actor, now: DateTime<Utc>) -> bool`: true iff some `ScopedRole` is valid at `now` (`valid_from <= now`, `valid_to` none or `> now`) and its base `role != Role::Customer` | `api/crates/xc-auth/src/domain/access/staff_caller.rs` (new) | ST-1 |
+| `pub mod staff_caller;` + `pub use staff_caller::is_staff_caller;` | `api/crates/xc-auth/src/domain/access/mod.rs` | ST-1 |
+| `staff_user = is_staff_caller(&access_actor, now_utc).then(\|\| access_actor.clone())` in place of the `Standing::of(..).filter(..)` line | `api/src/presentation/extractors/actor.rs:125-127` | ST-1 |
+| `caller_of_staff_rpc` accepts `is_staff_caller` sessions; the owner standing carries the session branch | `api/src/presentation/http/rpc.rs:278-295` | ST-1 |
+| `RpcCaller::staff_member()` answers for an owner standing that carries a branch | `api/src/application/compat/rpc.rs:99-111` | ST-1 |
+| drop the `staff_user` term at `:143-144` and `:276-279` | `api/src/presentation/http/files.rs` | ST-1 |
+
+**Behaviour (locked by ST-1's up-front tests):**
+
+| # | Session's groups (valid now unless said) | `is_staff_caller` | `staffMe` |
+|---|---|---|---|
+| S1 | EXECUTIVE org-wide + ADMIN org-wide (the owner) | true | 200, `permissions` = the union of both groups' sets |
+| S2 | EXECUTIVE org-wide only | true | 200 |
+| S3 | ADMIN org-wide only | true (unchanged) | 200 (unchanged) |
+| S4 | TELLER@B1 | true (unchanged) | 200 (unchanged) |
+| S5 | CUSTOMER only | false (unchanged) | 401 `employeeAuthRequired` (unchanged) |
+| S6 | no session | n/a | 401 `employeeAuthRequired` (unchanged) |
+| S7 | EXECUTIVE with `valid_to` in the past, nothing else | false | 401 `employeeAuthRequired` |
+| S8 | CUSTOMER + TELLER@B1 | true | 200 |
+| S9 | the owner, on a desk action whose row needs a permission the owner's groups hold | granted by the permission (`Authorizer::check`), not refused by the caller rule | |
+| S10 | the owner, `/api/staff/rpc` `adminSnapshot`, session branch B1 | (staff caller) | 200, the staff view, with `employee` = the owner's name and role text `OWNER`, at B1 |
+| S11 | EXECUTIVE org-wide only, `/api/staff/rpc` `adminSnapshot` | (staff caller) | 200, the staff view as in S10 |
+| S12 | EXECUTIVE org-wide only, `/api/upload?branch=B2` | n/a | unchanged: the owner branch, honouring `?branch=`, stored as today |
+| S13 | EXECUTIVE org-wide only, `/files/{key}` | n/a | unchanged: `open_owned(key, actor_id)` |
+| S14 | TELLER@B1, `/api/staff/rpc` `adminSnapshot` | (staff caller) | unchanged: the staff view of B1 as TELLER |
+
+**FE:** `StaffPage` already renders what `staff_me` returns; the e2e expectation for an ADMIN/EXECUTIVE account on `/staff` becomes permission-driven (`xchange#4519`): cards when `me.permissions` grant the desk, the worded refusal otherwise.
+
+**Data migration:** none. No table, column or stored value changes.
