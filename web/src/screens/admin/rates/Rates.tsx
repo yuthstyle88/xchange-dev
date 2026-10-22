@@ -18,6 +18,7 @@ import { RatesHistory } from './RatesHistory';
 import type { RatePublicationRow } from './rate-history';
 import { locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import { formatRate } from '../../../shared/ui/rate';
 import type { AdminMenuProps } from '../menus';
@@ -63,6 +64,8 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [policyError, setPolicyError] = createSignal<string | null>(null);
 
   const [permissions, setPermissions] = createSignal<readonly string[]>([]);
+  const [meError, setMeError] = createSignal<unknown>(null);
+  const [meBusy, setMeBusy] = createSignal<boolean>(false);
   const canSavePolicy = () => permissions().includes('RatePolicySave');
 
   const [valueTiersOn, setValueTiersOn] = createSignal<boolean>(false);
@@ -167,6 +170,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   };
 
   const readMe = async (gen: number) => {
+    setMeBusy(true);
     try {
       const res = await client.view<{ permissions?: readonly string[] }>('me');
       if (gen !== readGen) return;
@@ -175,10 +179,15 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       } else {
         setPermissions([]);
       }
+      setMeError(null);
     } catch (err: unknown) {
       if (gen !== readGen) return;
       setPermissions([]);
-      setPolicyError(wordedError(err));
+      setMeError(err);
+    } finally {
+      if (gen === readGen) {
+        setMeBusy(false);
+      }
     }
   };
 
@@ -320,10 +329,16 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       </div>
 
       {/* Rate Policy: Value Tiers & Sharp-Move Threshold (VT-5) */}
+      <PermissionsUnavailable
+        error={meError()}
+        onRetry={() => void readMe(readGen)}
+        busy={meBusy()}
+      />
       <RatesPolicyCard
         branch={props.branch}
         busy={busy}
         canSavePolicy={canSavePolicy}
+        disabledReason={meError() !== null ? permissionsUnavailableText(meError()) : undefined}
         policyData={policyData}
         policyError={policyError}
         valueTiers={valueTiers}

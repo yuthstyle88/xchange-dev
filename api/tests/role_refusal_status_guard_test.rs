@@ -7,12 +7,44 @@ use std::path::{Path, PathBuf};
 // Non-empty entries require the lane controller's ruling cited in a comment.
 const ALLOWLIST: &[&str] = &[];
 
+fn char_lit_end(b: &[u8], i: usize) -> Option<usize> {
+    let q = if b.get(i) == Some(&b'\'') {
+        i
+    } else if b.get(i) == Some(&b'b') && b.get(i + 1) == Some(&b'\'') {
+        i + 1
+    } else {
+        return None;
+    };
+    if i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_') {
+        return None;
+    }
+    let after = *b.get(q + 1)?;
+    if after == b'\\' {
+        let mut j = q + 2;
+        while j < b.len() && j <= q + 12 && b[j] != b'\n' {
+            if b[j] == b'\'' {
+                return Some(j + 1);
+            }
+            j += 1;
+        }
+        None
+    } else if after != b'\'' && after != b'\n' && after != b'\r' {
+        let clen = std::str::from_utf8(&b[q + 1..]).ok()?.chars().next()?.len_utf8();
+        (b.get(q + 1 + clen) == Some(&b'\'')).then_some(q + 1 + clen + 1)
+    } else {
+        None
+    }
+}
+
 fn strip_comments_and_cfg_test(src: &str) -> String {
     let b = src.as_bytes();
     let mut out = b.to_vec();
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'"' {
+        if let Some(end) = char_lit_end(b, i) {
+            out[i..end].fill(b' ');
+            i = end;
+        } else if b[i] == b'"' {
             i += 1;
             while i < b.len() && b[i] != b'"' {
                 if b[i] == b'\\' {
@@ -257,5 +289,34 @@ mod tests {
     assert_eq!(
         scan_source("api/src/sample.rs", sample),
         vec!["api/src/sample.rs:3", "api/src/sample.rs:11"]
+    );
+}
+
+#[test]
+fn role_refusal_status_guard_skips_char_literals_and_keeps_lifetimes() {
+    let no_false_hit = r#"
+fn char_then_string() {
+    let (_x, _q, _e, _u, _bx) = ('x', '\'', '\\', '\u{201c}', b'x');
+    let q = '"'; let s = "refuse(403, \"roleNotAllowed\", \"in string\")";
+    let bq = b'"'; let s2 = "V3Error::new(\"roleNotAllowed\", None, \"x\", StatusCode::FORBIDDEN)";
+}
+"#;
+    assert!(scan_source("api/src/clean.rs", no_false_hit).is_empty());
+
+    let hits_kept = r#"
+fn f<'a>(x: &'a str) -> HttpResponse {
+    refuse(403, "roleNotAllowed", x)
+}
+fn after_char_and_label<'a>(x: &'a str) -> HttpResponse {
+    let _ = ('"', b'"', '\'', '\\', '\u{22}', b'x');
+    'outer: loop {
+        let _: &'static str = x;
+        break 'outer V3Error::new("roleNotAllowedHere", None, "denied", StatusCode::FORBIDDEN);
+    }
+}
+"#;
+    assert_eq!(
+        scan_source("api/src/bad.rs", hits_kept),
+        vec!["api/src/bad.rs:9", "api/src/bad.rs:3"]
     );
 }

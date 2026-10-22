@@ -6,6 +6,7 @@ export const th = {
 
   branchSelect: 'เลือกสาขา',
   branchList: 'รายการสาขา',
+  loading: 'กำลังโหลด...',
   noBranches: 'ไม่พบข้อมูลสาขา',
   profileHeading: 'ข้อมูลสาขาและเวลาทำการ',
   code: 'รหัสสาขา',
@@ -65,6 +66,7 @@ export const en = {
 
   branchSelect: 'Select branch',
   branchList: 'Branch list',
+  loading: 'Loading...',
   noBranches: 'No branches found',
   profileHeading: 'Branch Profile & Hours',
   code: 'Branch Code',

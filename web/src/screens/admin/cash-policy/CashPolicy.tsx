@@ -85,6 +85,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
   );
 
   const [policy, setPolicy] = createSignal<CashTransferPolicyData | null>(null);
+  const [known, setKnown] = createSignal(false);
   const [register, setRegister] = createSignal<string[]>([]);
   const [typed, setTyped] = createSignal<Record<string, string>>({});
   const [busy, setBusy] = createSignal(false);
@@ -99,15 +100,22 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
     return out;
   };
 
-  async function readPolicy() {
-    try {
-      const answer = await api.view<CashTransferPolicyData | null>('cash_transfer_policy');
-      const data = answer.data ?? null;
-      setPolicy(data);
-      setTyped({ ...(data?.limits ?? {}) });
-    } catch (err: unknown) {
-      setRefusal(policyError(err));
-    }
+  let readPending: Promise<void> | undefined;
+  function readPolicy() {
+    readPending = (async () => {
+      try {
+        const answer = await api.view<CashTransferPolicyData | null>('cash_transfer_policy');
+        const data = answer.data ?? null;
+        setPolicy(data);
+        setTyped({ ...(data?.limits ?? {}) });
+        setKnown(true);
+        setRefusal(null);
+      } catch (err: unknown) {
+        setKnown(false);
+        setRefusal(policyError(err));
+      }
+    })();
+    return readPending;
   }
 
   let registerSeq = 0;
@@ -142,7 +150,8 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
 
   async function save(e: Event) {
     e.preventDefault();
-    if (busy()) return;
+    if (!known() && !refusal()) await readPending;
+    if (!known() || busy()) return;
     const limits: Record<string, string> = {};
     const now = typed();
     for (const cur of currencies()) {
@@ -172,10 +181,22 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
   return (
     <div class="admin-cash-policy-screen" data-section="cash-policy">
       <div class="stock-banner">
-        <Show when={policy()} fallback={<strong>{t('noLimit')}</strong>}>
-          {(p) => (
-            <strong>{t('current', { version: p().version, setBy: p().setBy, when: when(p().createdAt) })}</strong>
-          )}
+        <Show
+          when={known()}
+          fallback={
+            <Show when={refusal()}>
+              <strong>{t('unreadable')}</strong>
+              <button type="button" onClick={() => void readPolicy()}>
+                {t('retry')}
+              </button>
+            </Show>
+          }
+        >
+          <Show when={policy()} fallback={<strong>{t('noLimit')}</strong>}>
+            {(p) => (
+              <strong>{t('current', { version: p().version, setBy: p().setBy, when: when(p().createdAt) })}</strong>
+            )}
+          </Show>
         </Show>
         <p>{t('emptyNote')}</p>
       </div>
@@ -252,7 +273,13 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
               </table>
             </div>
             <div class="cash-policy-actions">
-              <button type="submit" class="primary" data-action="save" disabled={busy()}>
+              <button
+                type="submit"
+                class="primary"
+                data-action="save"
+                disabled={(!known() && Boolean(refusal())) || busy()}
+                title={!known() && refusal() ? t('unreadable') : undefined}
+              >
                 {t('save')}
               </button>
             </div>

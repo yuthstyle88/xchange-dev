@@ -13,6 +13,8 @@ export const th = {
   'error.countDifferenceLimitThb': 'เกณฑ์ยอดนับต่างไม่ถูกต้อง ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไปและทศนิยมไม่เกิน 2 ตำแหน่ง',
   'error.roleNotAllowedHere': 'บัญชีนี้ไม่มีสิทธิ์ตั้งเกณฑ์ยอดนับต่าง',
   'error.idempotencyConflict': 'คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลอื่น กรุณาโหลดหน้าใหม่แล้วบันทึกอีกครั้ง',
+  unreadable: 'อ่านเกณฑ์ปัจจุบันไม่สำเร็จ แก้ไขไม่ได้จนกว่าจะโหลดได้',
+  retry: 'ลองอีกครั้ง',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -29,4 +31,6 @@ export const en: Record<keyof typeof th, string> = {
   'error.countDifferenceLimitThb': 'Invalid count difference limit: enter a non-negative amount with at most 2 decimal places',
   'error.roleNotAllowedHere': 'This account may not set the count difference limit',
   'error.idempotencyConflict': 'This request was already sent with other data; reload the page and save again',
+  unreadable: "Couldn't read the current limit; it can't be changed until it loads",
+  retry: 'Try again',
 };

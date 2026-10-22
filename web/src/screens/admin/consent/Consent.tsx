@@ -55,7 +55,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
         periodDays,
         branch: props.branch(),
       });
-      toast(t('save'));
+      toast(t('saved'));
     } catch (err: unknown) {
       setError(err);
       toast(wordedError(err));

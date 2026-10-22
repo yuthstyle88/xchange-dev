@@ -66,6 +66,7 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
   const [current, setCurrent] = createSignal<CashLimitsData | null>(null);
   const [typed, setTyped] = createSignal('');
   const [noLimit, setNoLimit] = createSignal(false);
+  const [known, setKnown] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
   const [fieldRefusal, setFieldRefusal] = createSignal<string | null>(null);
@@ -89,10 +90,12 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
       const answer = await api.view<CashLimitsData | null>('cash_limits', { branch });
       if (mine !== readSeq) return;
       applyData(answer.data ?? null);
+      setKnown(true);
       setRefusal(null);
       setFieldRefusal(null);
     } catch (err: unknown) {
       if (mine !== readSeq) return;
+      setKnown(false);
       setRefusal(limitsError(err));
     }
   }
@@ -104,13 +107,19 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
     untrack(() => {
       if (lastBranch === branch) return;
       lastBranch = branch;
+      setKnown(false);
+      setRefusal(null);
+      setFieldRefusal(null);
+      setCurrent(null);
+      setTyped('');
+      setNoLimit(false);
       void readLimits(branch);
     });
   });
 
   async function save(e: Event) {
     e.preventDefault();
-    if (busy()) return;
+    if (!known() || busy()) return;
     const useNoLimit = noLimit();
     const raw = typed();
     if (!useNoLimit && raw.trim() === '') {
@@ -148,16 +157,28 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
   return (
     <div class="cash-limits" data-section="cash-limits">
       <div class="stock-banner" data-current-limit>
-        <Show when={shownLimit()} fallback={<strong>{t('noLimit')}</strong>}>
-          {(c) => (
-            <strong>
-              {t('current', {
-                limit: c().countDifferenceLimitThb ?? '',
-                updatedBy: c().updatedBy ?? '',
-                updatedAt: c().updatedAt ? when(c().updatedAt!) : '',
-              })}
-            </strong>
-          )}
+        <Show
+          when={known()}
+          fallback={
+            <Show when={refusal()}>
+              <span>{t('unreadable')}</span>{' '}
+              <button type="button" onClick={() => void readLimits(props.branch())}>
+                {t('retry')}
+              </button>
+            </Show>
+          }
+        >
+          <Show when={shownLimit()} fallback={<strong>{t('noLimit')}</strong>}>
+            {(c) => (
+              <strong>
+                {t('current', {
+                  limit: c().countDifferenceLimitThb ?? '',
+                  updatedBy: c().updatedBy ?? '',
+                  updatedAt: c().updatedAt ? when(c().updatedAt!) : '',
+                })}
+              </strong>
+            )}
+          </Show>
         </Show>
       </div>
 
@@ -208,7 +229,13 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
             </div>
 
             <div class="cash-limits-actions">
-              <button type="submit" class="primary" data-action="save" disabled={busy()}>
+              <button
+                type="submit"
+                class="primary"
+                data-action="save"
+                disabled={!known() || busy()}
+                title={!known() && refusal() ? t('unreadable') : undefined}
+              >
                 {t('save')}
               </button>
             </div>

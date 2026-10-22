@@ -10,7 +10,7 @@ import type {
   CountVerifyOutput,
   CashLineInput,
 } from '../../../shared/api/generated/cash';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
+import type { CashCountRow, CashCountsFilter } from '../../../shared/api/generated/cash_counts';
 import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
@@ -63,7 +63,10 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const loadCashCounts = async () => {
     if (!canCertify()) return;
     try {
-      const res = await api.view<CashCountRow[] | { rows: CashCountRow[] }>('cash_counts');
+      const res = await api.view<CashCountRow[] | { rows: CashCountRow[] }, Partial<CashCountsFilter>>('cash_counts', {
+        branch: props.ctx.me.branchId,
+        filter: { status: 'WAITING' },
+      });
       const data = res.data;
       if (Array.isArray(data)) {
         setCashCounts(data);

@@ -280,7 +280,13 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
 
         <Show
           when={profile()}
-          fallback={<div class="branches-empty">{loading() ? t('saving') : t('noBranches')}</div>}
+          fallback={
+            loading() ? (
+              <div class="branches-empty">{t('loading')}</div>
+            ) : !(error() ?? listError()) ? (
+              <div class="branches-empty">{t('noBranches')}</div>
+            ) : null
+          }
         >
           {(prof) => (
             <div class="branches-card">
