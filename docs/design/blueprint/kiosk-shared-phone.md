@@ -615,7 +615,7 @@ classDiagram
   }
   class TabletSession {
     isShared()
-    armIdle(ms, onIdle)
+    armIdle(ms, onIdle, onFailed)
     signOutAndRestart(branch)
   }
   class RequestQrToken {
@@ -667,7 +667,10 @@ Row ids: A = the app, **U = the web UI** (not §4.3a's wire contract W1–W12), 
 | U5 | `me.emailCopy.available` false / true | no e-mail button / a button that posts `copyByEmail` once |
 | U6 | `?shared=1` and เสร็จ | `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1` |
 | U7 | `?shared=1`, no input for `TABLET_IDLE_MS` | as U6 (fake time) |
+| U7a | `?shared=1`, no input for `TABLET_IDLE_MS`, and `POST /api/auth/logout` fails | no restart; the page shows the worded `signOutFailed` alert (as a failed เสร็จ does); the idle wait starts again, so the sign-out is tried again after another `TABLET_IDLE_MS` with no input, and an input restarts that wait. The rejection is never dropped (#4562) |
+| U7b | `?shared=1`, a request shown, and its status leaves `QUOTED` (the staff scan issued the number) | at once, as U6: `POST /api/auth/logout`, then `/app/queue?branch=…&shared=1`; a failed sign-out is handled as U7a. On a phone the page stays and shows the number (owner, #4562) |
 | U8 | no `shared` and เสร็จ | no sign-out |
+| U8a | no `shared` (a personal phone), a request shown, and เสร็จ | `location.assign('/app/bookings')` once, the customer's own pages (KS-7); no `/api/auth/logout` (#4477 review, PR 4574) |
 | U9 | `409 alreadyQueued` | opens the existing request's status |
 | D1 | desk `qrToken` = `…/q#tok` | `findByToken`, then `location.assign('/desk?branch=B&kiosk=<id>')` |
 | D2 | desk `qrToken` = a booking token | today's booking lookup, unchanged (today's tests stay green) |
@@ -793,6 +796,29 @@ classDiagram
 - `logic` tickets get failing tests first, written from the 5r.3 rows they name. `mechanical` tickets carry a behaviour table, and the implementer writes the tests.
 - Workers: Argon for the five logic tickets, Flash for the two mechanical ones. All seven are released together, once the skeleton is on the branch and BE slices c (PR 4481) and d (PR 4488) are on `main`.
 - QW-2 (#4477) becomes this team's umbrella. It closes with the feat → main merge.
+
+**QW-2h: เสร็จ on a personal phone (found by the branch review of PR 4574, 2026-10-22).** Each unit is right alone: `useQueueTablet().done()` does nothing on a phone (U8, QW-2g). But the glue (`QueueRequest.tsx`) wires เสร็จ only to `tablet.done()`, so on a phone the button does nothing, and F8 says เสร็จ leaves the page. The fix is in the glue: on a shared tablet keep `tablet.done()`, on a phone `location.assign('/app/bookings')` (row U8a). One ticket, `logic` (it also carries U7b, §5r.4b), file `QueueRequest.tsx`, with up-front tests in a new file `QueueRequest.done.test.tsx`. It merges into `feat/qw2-queue-page` before PR 4574.
+
+### 5r.4b The branch tablet's loop: back to the first page after the scan, and a failed sign-out (#4562; XC FE controller claude/e8020026, 2026-10-22)
+
+The owner, on #4562 (relayed verbatim by claude/7ca80c, issuecomment-6330750137 … 6330800215):
+- *"ผมว่า แค่ทำรายการ ก็ไป สแกน รับคิว ก็จบ นะ"* · *"คือใคร มาใหม่ ต้องไปเริ่ม เมนู เริ่มต้นการจอง"* · *"มันจะวนลูป การจองไปเรื่อย ๆ"*;
+- *"คือไป สแกน มันก็ จะไปหน้าแรก ทันที่ ที่สแกน เสร็จ"* · *"ทำรายการ  เสร็จ สแกน วิ่งไป หน้า แรก เริ่มการจองใหม่"* · *"tablet ที่สาขา นะ"*;
+- *"จะต้อง ทำเครื่องหมาย ว่า เป็นtable ที่สาขา ให้ มันมีพฤติกรรม แบบนี้"*.
+
+What this changes:
+- **A new trigger, U7b.** On the branch tablet the page starts over **as soon as the scan is done**: the request's status leaves `QUOTED`. เสร็จ (U6) and idle (U7, KS-1's "a request someone leaves half-done must not stay on screen") stay as the other two ways back.
+- **Start over still signs out.** Q11/D16 (*"ก็ทำเหมือน ที่ลูกค้า ใช้ เครื่องตัว เอง ไง"*) has the customer signed in on the tablet, so going back to the first page must end that session, or the next person starts inside it. The new lines do not drop the sign-in. If the owner means to drop it, that reverses Q11 and is the owner's call.
+- **A failed sign-out (U7a)** is handled the same on all three triggers: no restart, the worded `signOutFailed` alert, and a retry on the next idle wait. Today `armTabletIdle` (`web/src/shared/session/tablet.ts:30-32`) drops the rejection with `void`.
+- **The mark is open (owner).** Today a tablet is marked only by `?shared=1`, copied into `sessionStorage` (`tablet.ts:6-21`). Anyone can type it, it is lost when the tab closes, and the server does not know the branch's tablets. A real mark is a server-side device record (the only paired-device model today is `device_agents`, `20261008120000_device_agents.sql`), so it is the BE lane's design, and a table is a migration. Until it lands, `isSharedTablet()` stays the FE's one place that reads the mark, so the switch later is one function.
+
+| Unit | File | Change | Ticket | Class |
+|---|---|---|---|---|
+| `TabletSession` | `web/src/shared/session/tablet.ts` | `armTabletIdle(branch, api, onFailed?: () => void)`. When the idle sign-out rejects: call `onFailed()`, do not restart, and start the idle wait again (`timer.touch()`), so it is retried after another `TABLET_IDLE_MS` with no input. The disposer still stops everything. The signature stays compatible: a caller without `onFailed` still gets the retry. | #4562 | logic |
+| `QueueTablet` | `web/src/screens/customer/queue/queue-tablet.ts` | passes `onFailed = () => setError(tr('signOutFailed'))`, the same text a failed เสร็จ shows. No new i18n key. | #4562 | logic |
+| glue | `web/src/screens/customer/queue/QueueRequest.tsx` | on a shared tablet, when the open request's status first leaves `QUOTED`, calls `tablet.done()` once (U7b). Same file as QW-2h, so the two are one ticket. | QW-2h | logic |
+
+#4562 is one ticket: U7a over `tablet.ts` and its only caller `queue-tablet.ts`. QW-2h (U8a, U7b) is a second ticket on the glue. The provided tests `tablet.test.ts` and `queue-tablet.test.ts` stay unchanged. The up-front tests for U7a go in new files beside them. Release after `feat/qw2-queue-page` lands on `main` (PR 4574), because `queue-tablet.ts` exists only there until then.
 
 ### 5r.5 Data
 
