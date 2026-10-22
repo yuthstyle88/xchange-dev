@@ -192,24 +192,7 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
     let action = Action::new(COMMAND_NAME);
     let _grant = match Policy::authorize(Some(user), EntryPath::Rpc, &action, None, now) {
         Ok(g) => g,
-        Err(e) => {
-            let code = match e {
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere => {
-                    "roleNotAllowedHere"
-                }
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowed => {
-                    "roleNotAllowed"
-                }
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::OutOfScope => {
-                    "outOfScope"
-                }
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn => {
-                    "signIn"
-                }
-                _ => "roleNotAllowed",
-            };
-            return refuse(e.status(), code, &e.to_string());
-        }
+        Err(e) => return refuse(e.status(), e.code(), &e.to_string()),
     };
 
     let user_id = match Uuid::parse_str(&user.user_id) {

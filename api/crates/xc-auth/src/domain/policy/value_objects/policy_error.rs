@@ -124,4 +124,33 @@ impl PolicyError {
             | Self::DrawerRoleNotAllowed => 400,
         }
     }
+
+    /// Returns the wire refusal code associated with this refusal.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::SignIn => "signIn",
+            Self::OwnerOnly => "ownerOnly",
+            Self::EmployeeAuthRequired => "employeeAuthRequired",
+            Self::InvalidRequest => "invalidRequest",
+            Self::RoleNotAllowed => "roleNotAllowed",
+            Self::RoleNotAllowedHere => "roleNotAllowedHere",
+            Self::OwnerEnables => "ownerEnables",
+            Self::FrontOnly => "frontOnly",
+            Self::DocumentsNotReadable => "documentsNotReadable",
+            Self::FilesNotReadable => "filesNotReadable",
+            Self::UploadNotAllowed => "uploadNotAllowed",
+            Self::NotFound => "notFound",
+            Self::DeviceStepNotAllowed => "deviceStepNotAllowed",
+            Self::KioskOwnerOrRates => "kioskOwnerOrRates",
+            Self::KioskStaff => "kioskStaff",
+            Self::KioskUnknown => "kioskUnknown",
+            Self::SignNotAllowed => "signNotAllowed",
+            Self::BackendUsesCommit => "backendUsesCommit",
+            Self::EmployeeAccount => "employeeAccount",
+            Self::ClockInFirst => "clockInFirst",
+            Self::PaymentOwnerOnly => "paymentOwnerOnly",
+            Self::DrawerRoleNotAllowed => "drawerRoleNotAllowed",
+            Self::OutOfScope => "outOfScope",
+        }
+    }
 }
