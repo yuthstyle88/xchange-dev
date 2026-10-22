@@ -3,7 +3,8 @@
 // Written by ticket #4237 (QA-F19); this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 //
-// Selectors and routes cited from web/src/shared/ui/ and api/src/presentation/http/kiosk.rs:
+// Selectors and routes cited from web/src/shared/ui/, web/src/screens/desk/queue/, and api/src/presentation/http/kiosk.rs:
+// - CounterBar.tsx:114-139         button[name="openQueue"], button[name="closeQueue"] (POST /api/queue/open|close)
 // - QueuePanel.tsx:379-383,453-462 article.xc-queue-card (h3 queue number), button[data-action="cancel-request"]
 // - CancelReasonDialog.tsx:61-96   dialog.xc-dialog, select[name="reason"], textarea[name="note"], button[data-action="confirm-cancel-request"]
 // - kiosk-cancel.ts:12-25          POST /api/kiosk { action: 'cancel', payload: { id, branchId, reason, note } }
@@ -34,12 +35,60 @@ interface KioskIdentityAnswer {
   status: string;
 }
 
+interface BranchServiceStatusEnvelope {
+  data?: {
+    queueOpen?: boolean;
+  };
+}
+
 const kioskHeaders = {
   'x-xchange-request': '1',
   origin: new URL(users.baseUrl).origin,
   'content-type': 'application/json',
 };
-const KIOSK_PRECONDITION_RE = /Counter is closed|Rate changed or counter closed|queueClosed|outside.*hours/i;
+const KIOSK_PRECONDITION_RE = /Counter is closed|Rate changed or counter closed|outside.*hours/i;
+
+async function ensureQueueOpen(manager: Page): Promise<boolean> {
+  await signIn(manager, 'branchManager', '/desk/queue');
+  const openQueueBtn = manager.locator('button[name="openQueue"]');
+  await expect(openQueueBtn, 'branch manager openQueue button (CounterBar.tsx:114-126)').toBeVisible({
+    timeout: 20_000,
+  });
+
+  const statusViewRes = await manager.request.get(
+    `/api/v3/views/branch_service_status?branch=${encodeURIComponent(users.branch)}`,
+  );
+  expect(
+    statusViewRes.ok(),
+    `GET /api/v3/views/branch_service_status: ${statusViewRes.status()} ${await statusViewRes.text().catch(() => '')}`,
+  ).toBeTruthy();
+  const statusViewBody = (await statusViewRes.json()) as BranchServiceStatusEnvelope;
+  if (statusViewBody.data?.queueOpen) {
+    return false;
+  }
+
+  const openRes = await posted(manager, /^\/api\/queue\/open$/, () => openQueueBtn.click());
+  console.log(`[F19] POST /api/queue/open ${openRes.text}`);
+  if (!openRes.ok) {
+    if (!/^5\d\d\b/.test(openRes.text)) {
+      test.skip(true, `POST /api/queue/open refused: ${openRes.text}`);
+    }
+    expect(openRes.ok, `open queue accepted: ${openRes.text}`).toBeTruthy();
+  }
+  return true;
+}
+
+async function closeQueueIfOpened(manager: Page, openedQueue: boolean): Promise<void> {
+  if (!openedQueue) return;
+  await manager.goto('/desk/queue');
+  const closeQueueBtn = manager.locator('button[name="closeQueue"]');
+  await expect(closeQueueBtn, 'branch manager closeQueue button (CounterBar.tsx:127-139)').toBeVisible({
+    timeout: 20_000,
+  });
+  const closeRes = await posted(manager, /^\/api\/queue\/close$/, () => closeQueueBtn.click());
+  console.log(`[F19] POST /api/queue/close ${closeRes.text}`);
+  expect(closeRes.ok, `close queue accepted: ${closeRes.text}`).toBeTruthy();
+}
 
 async function createWaitingKioskRequest(
   page: Page,
@@ -146,12 +195,19 @@ async function cleanupKioskRequest(
   expect(res.ok(), `cleanup cancel of kiosk request ${id}: ${res.status()} ${text}`).toBeTruthy();
 }
 
-test.describe('QA-F19 kiosk cancel', () => {
-  test('staff cancels a waiting kiosk request from the queue panel', async ({ page }) => {
+test.describe.serial('QA-F19 kiosk cancel', () => {
+  test('staff cancels a waiting kiosk request from the queue panel', async ({ browser, page }) => {
+    const manager = await browser.newPage({
+      baseURL: users.baseUrl,
+      viewport: { width: 1280, height: 900 },
+    });
+    let openedQueue = false;
     let createdId: string | null = null;
     let tellerSignedIn = false;
 
     try {
+      openedQueue = await ensureQueueOpen(manager);
+
       const created = await createWaitingKioskRequest(page);
       createdId = created.id;
 
@@ -199,16 +255,32 @@ test.describe('QA-F19 kiosk cancel', () => {
       expect(statusAfter.status, `status of ${created.id} after staff cancel`).toBe('CANCELLED');
       createdId = null;
     } finally {
-      await cleanupKioskRequest(page, createdId, tellerSignedIn);
+      try {
+        await cleanupKioskRequest(page, createdId, tellerSignedIn);
+      } finally {
+        try {
+          await closeQueueIfOpened(manager, openedQueue);
+        } finally {
+          await manager.close().catch(() => {});
+        }
+      }
     }
   });
 
   test('customer cancels a waiting kiosk request with cancelToken; wrong token is refused', async ({
+    browser,
     page,
   }) => {
+    const manager = await browser.newPage({
+      baseURL: users.baseUrl,
+      viewport: { width: 1280, height: 900 },
+    });
+    let openedQueue = false;
     let createdId: string | null = null;
 
     try {
+      openedQueue = await ensureQueueOpen(manager);
+
       const created = await createWaitingKioskRequest(page);
       createdId = created.id;
 
@@ -258,7 +330,15 @@ test.describe('QA-F19 kiosk cancel', () => {
       expect(statusAfterOk.status, 'status is CANCELLED after customerCancel').toBe('CANCELLED');
       createdId = null;
     } finally {
-      await cleanupKioskRequest(page, createdId, false);
+      try {
+        await cleanupKioskRequest(page, createdId, false);
+      } finally {
+        try {
+          await closeQueueIfOpened(manager, openedQueue);
+        } finally {
+          await manager.close().catch(() => {});
+        }
+      }
     }
   });
 });
