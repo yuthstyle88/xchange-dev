@@ -40,6 +40,11 @@ use crate::presentation::http::v3::view::authenticate_and_authorize;
 
 pub const ROUTE: &str = "/api/app/copy-by-email";
 
+/// Outside `CommandAction` (see the module doc), so the route-file rule (ruling (b) on #767) reads
+/// this marker. It is **not open**: `handle` asks the route table itself through
+/// `authenticate_and_authorize(.., (EntryPath::Rpc, "copyByEmail"))` (`CustomerSelf`).
+pub const PUBLIC_ROUTE: &str = ROUTE;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "copy_by_email.ts")]
