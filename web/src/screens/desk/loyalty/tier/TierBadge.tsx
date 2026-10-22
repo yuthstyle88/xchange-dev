@@ -4,6 +4,7 @@ import { createEffect, createSignal, Show, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../../shared/api/client';
 import type { CustomerTierData } from '../../../../shared/api/generated/customer_tier';
 import { screenT } from '../../../../shared/i18n';
+import { wordedError } from '../../../../shared/i18n/worded-error';
 import { en, th } from './i18n';
 
 export interface TierBadgeProps {
@@ -48,9 +49,7 @@ export function TierBadge(props: TierBadgeProps): JSX.Element {
       .catch((err: unknown) => {
         if (reqId !== latestReq) return;
         setTier(undefined);
-        const msg =
-          err instanceof Error && err.message ? err.message : t('readError');
-        setError(msg);
+        setError(wordedError(err));
       });
   });
 
