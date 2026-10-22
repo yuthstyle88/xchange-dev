@@ -8,25 +8,20 @@
 //! `signIn`; anyone but the ticket's customer → 403 `outOfScope` (no oracle for other tickets).
 
 use std::path::Path;
-use std::sync::Arc;
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use chrono::{DateTime, Utc};
-use pos_infra::transactions::Transactor;
 use serde_json::json;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_queue::application::status::status_service::{StatusService, TicketRef};
-use xc_queue::domain::repository::QueueRepository;
-use xc_queue::infrastructure::repository::PgQueueRepository;
+use xc_queue::application::status::status_service::TicketRef;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::my_queue_ticket::MyQueueTicketData;
 use crate::presentation::http::v3::error::V3Error;
-use crate::presentation::http::v3::view::require_branch;
+use crate::presentation::http::v3::view::{require_branch, ticket_wait};
 use crate::presentation::pages;
 
 /// Outside the staff policy table (ruling (b) on #767; the lane controller's ruling 3 on PR 1336), but
@@ -189,24 +184,6 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
         estimate_as_of: as_of.map(|t: DateTime<Utc>| t.to_rfc3339()),
     };
     answer(json!({ "version": version, "changed": true, "data": data }))
-}
-
-/// `StatusService::ticket_wait_in` on a read-only transaction of its own: the same ahead count and
-/// estimate the branch's queue computes for `ticket`.
-async fn ticket_wait(
-    pool: &sqlx::PgPool,
-    ticket: TicketRef<'_>,
-    now: DateTime<Utc>,
-) -> pos_error::AppResult<(
-    i32,
-    Option<xc_queue::domain::status::wait_estimator::WaitEstimate>,
-)> {
-    let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
-    let status = StatusService::new(BranchTx::new(Transactor::new(pool.clone())), repo);
-    let mut tx = pool.begin().await?;
-    let wait = status.ticket_wait_in(&mut tx, ticket, now).await?;
-    tx.rollback().await?;
-    Ok(wait)
 }
 
 fn answer(body: serde_json::Value) -> HttpResponse {
