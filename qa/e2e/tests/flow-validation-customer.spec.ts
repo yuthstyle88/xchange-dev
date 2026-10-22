@@ -301,6 +301,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await page.goto('/app/rate-alerts');
 
       await expect(page.locator('.xc-rate-alerts-screen')).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('.xc-alerts-empty, .xc-alerts-list').first()).toBeVisible({ timeout: 20_000 });
 
       const initialAlertCards = await page.locator('article.xc-alert-card').count();
 
@@ -368,6 +369,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       expect(await page.locator('article.xc-alert-card').count()).toBe(initialAlertCards);
 
       // Read back: alert count unchanged
+      await expect(page.locator('.xc-alerts-empty, .xc-alerts-list').first()).toBeVisible({ timeout: 20_000 });
       expect(await page.locator('article.xc-alert-card').count(), `${lang}: alerts count unchanged`).toBe(initialAlertCards);
     });
 

@@ -318,6 +318,10 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
             `(${lang}) #alert-branch options loaded`,
           ).not.toHaveCount(0, { timeout: 15_000 });
           await expect(formError, `(${lang}) .xc-form-error absent before submit`).toHaveCount(0);
+          await expect(
+            page.locator('.xc-alerts-empty, .xc-alerts-list').first(),
+            `(${lang}) alerts list or empty state loaded`,
+          ).toBeVisible({ timeout: 15_000 });
           const countBefore = await alertCards.count();
 
           await targetInput.fill(badValue);
@@ -368,6 +372,10 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           await expect(targetInput, `(${lang}) #alert-target visible after reload`).toBeVisible({
             timeout: 15_000,
           });
+          await expect(
+            page.locator('.xc-alerts-empty, .xc-alerts-list').first(),
+            `(${lang}) alerts list or empty state loaded after reload`,
+          ).toBeVisible({ timeout: 15_000 });
           expect(
             await alertCards.count(),
             `(${lang}) alert count unchanged after refused target="${badValue}"`,
