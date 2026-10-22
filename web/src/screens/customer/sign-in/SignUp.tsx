@@ -9,7 +9,7 @@ import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error'
 import { useForm } from '../../../shared/ui/form';
 import { PasswordField } from '../../../shared/ui/PasswordField';
 import { nextTarget } from './SignIn';
-import { TermsText } from './TermsText';
+import { TermsText, type TermsState } from './TermsText';
 import * as table from './i18n';
 import './sign-in.css';
 
@@ -24,6 +24,7 @@ export function SignUp(props: {
   const next = () => nextTarget(props.search);
   const [error, setError] = createSignal('');
   const [pending, setPending] = createSignal(false);
+  const [termsState, setTermsState] = createSignal<TermsState>('loading');
   let nameInput: HTMLInputElement | undefined;
   let identifierInput: HTMLInputElement | undefined;
   let passwordInput: HTMLInputElement | undefined;
@@ -39,7 +40,7 @@ export function SignUp(props: {
 
   const submit = async (e: Event) => {
     e.preventDefault();
-    if (pending()) return;
+    if (pending() || termsState() !== 'ready') return;
     setPending(true);
     setError('');
     try {
@@ -85,8 +86,8 @@ export function SignUp(props: {
           <input ref={marketingInput} type="checkbox" name="marketing" />
           {tr('marketing')}
         </label>
-        <TermsText />
-        <button type="submit" disabled={pending()}>
+        <TermsText fetch={props.fetch} onState={setTermsState} />
+        <button type="submit" disabled={pending() || termsState() !== 'ready'}>
           {tr('submitSignUp')}
         </button>
       </form>
