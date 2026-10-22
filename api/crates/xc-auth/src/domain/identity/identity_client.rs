@@ -142,6 +142,25 @@ pub trait IdentityClient: Send + Sync + 'static {
         client_ip: Option<&'a str>,
     ) -> BoxFuture<'a, Result<IdentityOtpVerifyResponse, IdentityError>>;
 
+    /// `otp_verify` with Identity's first-sight sign-up flag (design `kiosk-shared-phone.md` §4.2 D11):
+    /// `registerIfAbsent` on the wire. With `true`, a login challenge whose destination matches no account
+    /// creates it and answers `login` with `registered: true`.
+    /// [proposed] The default keeps every existing client and fake as it is: `false` calls `otp_verify`;
+    /// `true` refuses `InvalidRequest`, so a client that cannot register never pretends to.
+    fn otp_verify_registering<'a>(
+        &'a self,
+        challenge_id: &'a str,
+        code: &'a str,
+        register_if_absent: bool,
+        client_ip: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<IdentityOtpVerifyResponse, IdentityError>> {
+        if register_if_absent {
+            Box::pin(async { Err(IdentityError::InvalidRequest) })
+        } else {
+            self.otp_verify(challenge_id, code, client_ip)
+        }
+    }
+
     /// Creates an Identity account server-side (#1157). Only the staff create and the
     /// `create-owner` bootstrap call this; no public route reaches it. No OTP is sent.
     fn register<'a>(

@@ -4396,6 +4396,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "config",
+ "hmac 0.12.1",
  "pos-error",
  "pos-infra",
  "pos-printer",
