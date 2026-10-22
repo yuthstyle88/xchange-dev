@@ -1,8 +1,8 @@
 //! `MarketRefresh`: every 5 minutes, fetch each market source and store its headline lines (pricing-tiers.md §4;
 //! V.9 `refreshMarket`, `market.mjs:101-121`). It never refreshes a branch or writes a draft.
 //!
-//! SKELETON (XC-PRICING PX-0): `tick` and `run` are PX-5's. `run` returns at once until then, so the spawn in
-//! `bootstrap/mod.rs` is inert. `MarketRefreshConfig` is final.
+//! `run` ticks at once, then every interval, until `stop` turns true; `bootstrap/mod.rs` spawns it only when
+//! `MARKET_FEED_ENABLED=true` (PX-5, #4389).
 
 use std::collections::HashSet;
 use std::sync::Arc;
