@@ -1,6 +1,7 @@
 // RD-3 public customer rate display (design rate-display.md §3, §4.3), P01 v2 board (§9, PR 3558): the host lookup,
 // the pollers and the no-branch / not-linked / not-found states are v1's; everything else is the boarding-pass board.
 import {
+  createEffect,
   createMemo,
   createSignal,
   onCleanup,
@@ -63,13 +64,10 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
   }
 
   const [hostState, setHostState] = createSignal<'loading' | 'ready' | 'notFound' | 'error'>('loading');
-  const [pollers, setPollers] = createSignal<
-    | {
-        rates: PublicPoller<BoardRatesData>;
-        branches: PublicPoller<PublicBranchesData>;
-      }
-    | undefined
-  >(undefined);
+  const [branchesPoller, setBranchesPoller] = createSignal<PublicPoller<PublicBranchesData> | undefined>(undefined);
+  const [ratesPoller, setRatesPoller] = createSignal<PublicPoller<BoardRatesData> | undefined>(undefined);
+  const [matchedBranchId, setMatchedBranchId] = createSignal<string | null | undefined>(undefined);
+  let hostOrg: string | undefined;
 
   const MAX_HOST_BACKOFF_MS = 300_000;
   let disposed = false;
@@ -97,26 +95,17 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
     try {
       const org = await readHostOrg(api);
       if (disposed) return;
+      hostOrg = org;
       setHostState('ready');
 
-      const ratesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(branch)}/rates`;
       const branchesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches`;
-
-      const rPoller = new PublicPoller<BoardRatesData>(
-        ratesUrl,
-        props.fetch,
-        props.ratesIntervalMs ?? 10_000,
-        MAX_HOST_BACKOFF_MS,
-      );
       const bPoller = new PublicPoller<PublicBranchesData>(
         branchesUrl,
         props.fetch,
         props.branchesIntervalMs ?? 600_000,
         600_000,
       );
-
-      setPollers({ rates: rPoller, branches: bPoller });
-      rPoller.start();
+      setBranchesPoller(bPoller);
       bPoller.start();
     } catch (err) {
       if (disposed) return;
@@ -128,6 +117,28 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
     }
   };
 
+  createEffect(() => {
+    const bData = branchesPoller()?.data();
+    if (!bData || matchedBranchId() !== undefined || !hostOrg) return;
+    const list = bData.branches ?? [];
+    const matched = list.find((b) => b.id === branch) ?? list.find((b) => b.code === branch);
+    if (!matched) {
+      setMatchedBranchId(null);
+      return;
+    }
+    setMatchedBranchId(matched.id);
+
+    const ratesUrl = `/api/public/orgs/${encodeURIComponent(hostOrg)}/branches/${encodeURIComponent(matched.code)}/rates`;
+    const rPoller = new PublicPoller<BoardRatesData>(
+      ratesUrl,
+      props.fetch,
+      props.ratesIntervalMs ?? 10_000,
+      MAX_HOST_BACKOFF_MS,
+    );
+    setRatesPoller(rPoller);
+    rPoller.start();
+  });
+
   onMount(() => {
     void loadHost();
   });
@@ -138,14 +149,13 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
       clearTimeout(hostRetryTimer);
       hostRetryTimer = undefined;
     }
-    const current = pollers();
-    current?.rates.stop();
-    current?.branches.stop();
+    ratesPoller()?.stop();
+    branchesPoller()?.stop();
   });
 
-  const ratesData = () => pollers()?.rates.data();
-  const ratesState = () => pollers()?.rates.state() ?? 'loading';
-  const branchesData = () => pollers()?.branches.data();
+  const ratesData = () => ratesPoller()?.data();
+  const ratesState = () => ratesPoller()?.state() ?? 'loading';
+  const branchesData = () => branchesPoller()?.data();
 
   // A one-second tick so the 30 s hide (§9.5) happens without waiting for the next poll.
   const [now, setNow] = createSignal(Date.now());
@@ -154,7 +164,10 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
 
   const attract = new URLSearchParams(props.search).get('attract') !== '0';
 
-  const branchEntry = () => branchesData()?.branches?.find((b) => b.code === branch);
+  const branchEntry = () => {
+    const id = matchedBranchId();
+    return id ? branchesData()?.branches?.find((b) => b.id === id) : undefined;
+  };
   const branchName = () => branchEntry()?.name || branch;
   const branchHours = () => formatOpeningHours(branchEntry()?.openingHours);
 
@@ -166,7 +179,7 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
   const status = createMemo(() =>
     boardStatus({
       pollerState: ratesState(),
-      lastOkAt: pollers()?.rates.lastOkAt(),
+      lastOkAt: ratesPoller()?.lastOkAt(),
       now: now(),
       lineCount: ratesData()?.lines.length,
     }),
@@ -174,7 +187,7 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
 
   return (
     <div class="xc-rate-display">
-      <Show when={hostState() === 'loading'}>
+      <Show when={hostState() === 'loading' || (hostState() === 'ready' && matchedBranchId() === undefined)}>
         <div class="xc-rate-display-loading">{t('loading')}</div>
       </Show>
 
@@ -186,19 +199,19 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
         <div class="xc-rate-display-message">{t('loadFailed')}</div>
       </Show>
 
-      <Show when={hostState() === 'ready'}>
+      <Show when={hostState() === 'ready' && matchedBranchId() !== undefined}>
         <Show
-          when={ratesState() !== 'notFound'}
+          when={matchedBranchId() !== null && ratesState() !== 'notFound'}
           fallback={<div class="xc-rate-display-message">{t('notFound')}</div>}
         >
           <FullscreenButton label={t('fullscreen')} />
           <BoardShell
-            branch={branch}
+            branch={branchEntry()?.code ?? ''}
             branchName={branchName()}
             model={model()}
             status={status()}
             stale={ratesData()?.stale ?? false}
-            lastOkAt={pollers()?.rates.lastOkAt()}
+            lastOkAt={ratesPoller()?.lastOkAt()}
             sourceDate={ratesData()?.sourceDate ?? null}
             snapshotId={ratesData()?.publication?.id ?? null}
             hours={branchHours()}

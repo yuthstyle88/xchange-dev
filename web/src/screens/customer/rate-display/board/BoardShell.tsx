@@ -13,6 +13,7 @@ import { Ticker } from './Ticker';
 import './board-shell.css';
 
 export interface BoardShellProps {
+  /** The matched branch's current code: shown in the route strip and printed in the /app/queue booking QR (code-keyed, CB-7). */
   branch: string;
   branchName: string;
   model: BoardModel;
