@@ -389,6 +389,8 @@ impl Drop for Application {
 
 impl Application {
     pub async fn build(settings: Settings) -> Result<Self, anyhow::Error> {
+        crate::infrastructure::http_client::probe()?;
+
         let pii_key_path = settings.pii.key_path.as_path();
         if pii_key_path.exists() {
             let keys = xc_kernel::pii::PiiKeys::load(pii_key_path)?;
