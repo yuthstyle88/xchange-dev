@@ -376,8 +376,12 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     }
   }
 
-  const orgWideAdmin = () =>
-    (sharedSession().me()?.roles ?? []).some((r) => r.role === 'ADMIN' && r.branchId === null);
+  // shortcut: me cannot tell which role row grants BranchesManage; errs toward showing, upgrade when me exposes orgPermissions
+  const mayEditBookingPolicy = () =>
+    Boolean(
+      sharedSession().me()?.permissions?.includes('BranchesManage') &&
+        sharedSession().me()?.roles?.some((r) => r.branchId === null),
+    );
 
   return (
     <div class="booking-slots-screen">
@@ -523,7 +527,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       </section>
 
       {/* Section 4: Booking Policy */}
-      <Show when={orgWideAdmin()}>
+      <Show when={mayEditBookingPolicy()}>
         <section class="booking-slots-section">
           <h3>{t('policySection')}</h3>
           <div class="form-group">

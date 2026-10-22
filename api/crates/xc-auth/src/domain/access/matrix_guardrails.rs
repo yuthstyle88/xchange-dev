@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use super::permission::Permission;
-use super::permission_module::{Level, Module, PermissionModule};
+use super::permission_module::{APPROVAL_KINDS, Level, Module, PermissionModule};
 use super::role::Role;
 use super::role_grants::{Group, RoleGrants};
 
@@ -23,10 +23,13 @@ pub enum GuardrailBreach {
     ExecutiveFixed,
     /// 5. The set's no-module permissions differ from its base's seed (they are not edited in the matrix).
     NoModuleEdited,
+    /// 6. RBAC §11.9: a group whose base is ADMIN holds one of the nine approval kinds
+    ///    (`permission_module::APPROVAL_KINDS`); deciding an approval is above VIEW (rule 3).
+    AdminBaseHoldsApproval,
 }
 
 impl GuardrailBreach {
-    /// 1 to 5, as §11.3 numbers them.
+    /// 1 to 6, as §11.3 and §11.9 number them.
     pub fn number(self) -> u8 {
         match self {
             GuardrailBreach::AuditLogsAboveView => 1,
@@ -34,6 +37,7 @@ impl GuardrailBreach {
             GuardrailBreach::AdminBaseAboveView => 3,
             GuardrailBreach::ExecutiveFixed => 4,
             GuardrailBreach::NoModuleEdited => 5,
+            GuardrailBreach::AdminBaseHoldsApproval => 6,
         }
     }
 }
@@ -41,7 +45,7 @@ impl GuardrailBreach {
 pub struct MatrixGuardrails;
 
 impl MatrixGuardrails {
-    /// May `group` hold exactly `set`? Rule 4 is checked first, then 1, 2, 3 and 5; the first broken one is answered.
+    /// May `group` hold exactly `set`? Rule 4 is checked first, then 1, 2, 3, 6 and 5; the first broken one is answered.
     pub fn check(group: &Group, set: &[Permission]) -> Result<(), GuardrailBreach> {
         if group.code == "EXECUTIVE" && group.built_in {
             return Err(GuardrailBreach::ExecutiveFixed);
@@ -80,14 +84,23 @@ impl MatrixGuardrails {
             return Err(GuardrailBreach::AdminBaseAboveView);
         }
 
+        if group.base == Role::Admin && set.iter().any(|p| APPROVAL_KINDS.contains(p)) {
+            return Err(GuardrailBreach::AdminBaseHoldsApproval);
+        }
+
+        let is_fixed_no_module = |p: Permission| {
+            PermissionModule::module(p).is_none()
+                && p != Permission::ApprovalsDecide
+                && !APPROVAL_KINDS.contains(&p)
+        };
         let got_no_module: BTreeSet<Permission> = set
             .iter()
             .copied()
-            .filter(|p| PermissionModule::module(*p).is_none())
+            .filter(|&p| is_fixed_no_module(p))
             .collect();
         let seed_no_module: BTreeSet<Permission> = RoleGrants::seed(group.base)
             .into_iter()
-            .filter(|p| PermissionModule::module(*p).is_none())
+            .filter(|&p| is_fixed_no_module(p))
             .collect();
         if got_no_module != seed_no_module {
             return Err(GuardrailBreach::NoModuleEdited);

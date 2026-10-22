@@ -10,7 +10,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 
 pub struct CampaignVersionSubject {
     _pool: PgPool,
@@ -143,8 +143,8 @@ impl ApprovalPolicy for CampaignApprovalPolicy {
             ));
         }
 
-        // D-5: only EXECUTIVE decides
-        if !who.roles.iter().any(|r| r.role == Role::Executive) {
+        // D-5, §11.9: ApproveCampaignVersion (organisation kind) decides
+        if !ApprovalDecider::holds_anywhere(who, Permission::ApproveCampaignVersion) {
             return Err(Refusal::new(
                 "outOfScope",
                 "only executive may decide campaign versions",

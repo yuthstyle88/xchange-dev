@@ -249,7 +249,8 @@ fn build_message(
     text.push_str(&format!("{link_lbl}: {link_url}\n"));
     let b64 = base64::engine::general_purpose::STANDARD.encode(qr_png(qr));
     let html = format!(
-        "<div><table>{rows_html}</table><p><img src=\"data:image/png;base64,{b64}\" alt=\"QR\"></p><p><a href=\"{link_url}\">{}</a></p></div>",
+        "<div><table>{rows_html}</table><p><img src=\"data:image/png;base64,{b64}\" alt=\"QR\"></p><p><a href=\"{}\">{}</a></p></div>",
+        escape_html(link_url),
         escape_html(link_lbl),
     );
     EmailMessage {

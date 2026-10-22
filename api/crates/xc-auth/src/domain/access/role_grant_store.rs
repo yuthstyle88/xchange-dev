@@ -53,10 +53,11 @@ pub trait RoleGrantStore: Send + Sync + 'static {
         tx: &mut Transaction<'_, Postgres>,
     ) -> impl Future<Output = Result<u64, RoleGrantStoreError>> + Send;
 
-    /// #3976: for each built-in group with `seed_version < RoleGrants::SEED_VERSION`, insert every `(v, p)` of
-    /// `RoleGrants::SEED_ADDITIONS` with `v > seed_version` and `p ∈ RoleGrants::seed(role)`, then set its
-    /// `seed_version = RoleGrants::SEED_VERSION`. Bump `role_grant_version` once if anything was inserted. Answers how
-    /// many grants it inserted.
+    /// #3976, RBAC §11.9: for each built-in group with `seed_version < RoleGrants::SEED_VERSION`, insert every `(v, p)`
+    /// of `RoleGrants::SEED_ADDITIONS` with `v > seed_version` and `p ∈ RoleGrants::seed(role)` (and, for `v == 4`, also
+    /// insert `p` into every custom group of that base, leaving each custom group's `seed_version` at 0), then set the
+    /// built-in group's `seed_version = RoleGrants::SEED_VERSION`. Bump `role_grant_version` once if anything was
+    /// inserted. Answers how many grants it inserted.
     fn seed_additions(
         &self,
         tx: &mut Transaction<'_, Postgres>,

@@ -72,6 +72,21 @@ impl Level {
     }
 }
 
+/// RBAC §11.9: the nine approval-kind permissions, one per decision (`CASH_TRANSFER` has two, split by the limit).
+/// Each is no-module ([`PermissionModule::module`] = `None`), seeded on exactly the base role that decides that kind
+/// today, and edited on screen. A group holds `ApprovalsDecide` iff it holds at least one of these.
+pub const APPROVAL_KINDS: [Permission; 9] = [
+    Permission::ApproveCashTransferWithinLimit,
+    Permission::ApproveCashTransferAboveLimit,
+    Permission::ApproveCountDifference,
+    Permission::ApproveNegativeStock,
+    Permission::ApproveCampaignVersion,
+    Permission::ApproveRatePublication,
+    Permission::ApproveExchangeTransaction,
+    Permission::ApproveTransactionReversal,
+    Permission::ApproveLoyaltyRuleVersion,
+];
+
 pub struct PermissionModule;
 
 impl PermissionModule {
@@ -128,7 +143,17 @@ impl PermissionModule {
             | P::DeviceProcess
             | P::DevicePrinterOnline
             | P::DrawerPassport
-            | P::ProofUpload => None,
+            | P::ProofUpload
+            // RBAC §11.9: the nine approval kinds are no-module (edited on screen, not by module level).
+            | P::ApproveCashTransferWithinLimit
+            | P::ApproveCashTransferAboveLimit
+            | P::ApproveCountDifference
+            | P::ApproveNegativeStock
+            | P::ApproveCampaignVersion
+            | P::ApproveRatePublication
+            | P::ApproveExchangeTransaction
+            | P::ApproveTransactionReversal
+            | P::ApproveLoyaltyRuleVersion => None,
         }
     }
 }

@@ -5,9 +5,10 @@ use std::sync::Arc;
 
 use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
+use pos_infra::transactions::Transactor;
 use serde_json::{Value, json};
 use xc_auth::application::session::session_service::SwitchBranchError;
-use xc_auth::application::session::{SESSION_COOKIE, SessionError, SessionService};
+use xc_auth::application::session::{SESSION_COOKIE, SessionError, SessionService, sha256_hex};
 use xc_auth::domain::identity::identity_client::{
     IdentityClient, IdentityError, UNAVAILABLE_MESSAGE,
 };
@@ -15,11 +16,14 @@ use xc_auth::domain::token::TokenVerifier;
 use xc_auth::infrastructure::identity::HttpIdentityClient;
 use xc_auth::infrastructure::token::http_jwks_source::HttpJwksSource;
 use xc_auth::infrastructure::token::jwks_verifier::JwksTokenVerifier;
+use xc_kernel::branch_tx::BranchTx;
 
 use crate::application::customer_binder::BindError;
 use crate::application::customer_otp_sign_in::{CustomerOtpSignIn, OtpRegister, OtpSignInError};
 use crate::application::otp_challenge_seal::{OTP_COOKIE, OtpChallengeSeal, OtpChannel};
 use crate::bootstrap::AppState;
+use crate::infrastructure::branch_tablets::TABLET_COOKIE;
+use crate::infrastructure::branch_tablets::tablet_service::BranchTabletService;
 use crate::presentation::extractors::actor::{
     AccountSessionReader, cookie, failure, same_origin, server_error,
 };
@@ -383,6 +387,20 @@ async fn v3_otp_verify_inner(
                 )
                 .await;
             }
+            let tablet_token = cookie(&req, TABLET_COOKIE);
+            if !tablet_token.is_empty()
+                && let Err(e) = branch_tablets(&state.db)
+                    .bind_on_sign_in(
+                        &tablet_token,
+                        &sha256_hex(&signed_in.tail.session_token),
+                        &signed_in.tail.user.id,
+                        now,
+                    )
+                    .await
+            {
+                tracing::error!(error = %e, "branch tablet sign-in bind failed");
+                return refusal_response(500, "serverError", "เซิร์ฟเวอร์ขัดข้อง");
+            }
             let mut resp = HttpResponse::Ok();
             attach_signin_cookies(&mut resp, &signed_in.tail.session_token);
             resp.insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
@@ -495,6 +513,10 @@ async fn v3_session_branch(
     }
 }
 
+fn branch_tablets(pool: &sqlx::PgPool) -> BranchTabletService {
+    BranchTabletService::new(BranchTx::new(Transactor::new(pool.clone())))
+}
+
 async fn v3_refresh(req: HttpRequest, session: web::Data<SessionService>) -> HttpResponse {
     if !same_origin(&req) {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
@@ -511,6 +533,19 @@ async fn v3_refresh(req: HttpRequest, session: web::Data<SessionService>) -> Htt
                     "message": "กรุณาเข้าสู่ระบบ",
                 }
             }));
+    }
+    if session.is_configured() {
+        match branch_tablets(session.pool())
+            .is_bound_session(&sha256_hex(&token))
+            .await
+        {
+            Ok(true) => return refusal_response(401, "signIn", "กรุณาเข้าสู่ระบบ"),
+            Ok(false) => {}
+            Err(e) => {
+                tracing::error!(error = %e, "branch tablet refresh check failed");
+                return refusal_response(500, "serverError", "เซิร์ฟเวอร์ขัดข้อง");
+            }
+        }
     }
     let ip = client_address(&req);
     let now = Utc::now();
