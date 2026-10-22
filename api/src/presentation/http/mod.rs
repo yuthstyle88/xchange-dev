@@ -2,6 +2,7 @@
 pub mod app_receipts;
 pub mod app_verification_upload;
 pub mod auth;
+pub mod branch_tablets;
 pub mod branch_verification_intake;
 pub mod client_address;
 pub mod customer_register;

@@ -1,6 +1,7 @@
 //! Infrastructure layer for xchange.
 pub mod compat;
 
+pub mod branch_tablets;
 pub mod custody;
 pub mod device_agents;
 pub mod devices;
@@ -13,6 +14,7 @@ pub mod kiosk;
 pub mod loyalty;
 pub mod marketing;
 pub mod notify;
+pub mod paired_devices;
 pub mod rate_feed;
 pub mod recognize;
 pub mod settings;
