@@ -244,4 +244,23 @@ describe('HomeScreen after a later poll failure (R4-2)', () => {
     expect(branchSection(host).textContent).toContain('สาขาสยามพารากอน');
     expect(branchSection(host).textContent).not.toContain(text('loadBranchesFailed'));
   });
+
+  it('(e) a failed first branch read with ?branch shows the branch error and its Retry, while the rate board shows its lines', async () => {
+    const server = scriptedServer();
+    server.state.failBranches = true;
+    const host = mount(server, { search: '?branch=XC-B01' });
+    await settle();
+
+    const branches = branchSection(host);
+    expect(branches.textContent, 'the branch error shows').toContain(text('loadBranchesFailed'));
+    const retry = branches.querySelector<HTMLButtonElement>('.xc-home-retry-btn');
+    expect(retry, 'the branch error has a Retry').not.toBeNull();
+    expect(retry!.textContent?.trim()).toBe(text('retry'));
+
+    const rates = ratesSection(host);
+    expect(rateRows(host).length, 'the rate board shows the rate poller lines').toBe(3);
+    expect(rates.textContent).toContain('USD');
+    expect(rates.textContent, 'no rate error').not.toContain(text('loadRatesFailed'));
+    expect(rates.textContent, 'no loading rates').not.toContain(text('loadingRates'));
+  });
 });
