@@ -8,6 +8,8 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
+import { ApiClient, ApiError } from '../../../shared/api/client';
+import { readHostOrg } from '../../../shared/api/public-host';
 import { screenT } from '../../../shared/i18n';
 import { PublicPoller } from '../../../shared/live/public-poller';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
@@ -88,48 +90,40 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
     }, delay);
   };
 
+  const api = new ApiClient(props.fetch);
+
   const loadHost = async () => {
     if (disposed) return;
     try {
-      const res = await props.fetch('/api/public/host');
+      const org = await readHostOrg(api);
       if (disposed) return;
-      if (res.status === 200) {
-        const json = (await res.json()) as { org?: string };
-        if (disposed) return;
-        if (json && typeof json.org === 'string' && json.org.length > 0) {
-          const org = json.org;
-          setHostState('ready');
+      setHostState('ready');
 
-          const ratesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(branch)}/rates`;
-          const branchesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches`;
+      const ratesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(branch)}/rates`;
+      const branchesUrl = `/api/public/orgs/${encodeURIComponent(org)}/branches`;
 
-          const rPoller = new PublicPoller<BoardRatesData>(
-            ratesUrl,
-            props.fetch,
-            props.ratesIntervalMs ?? 10_000,
-            MAX_HOST_BACKOFF_MS,
-          );
-          const bPoller = new PublicPoller<PublicBranchesData>(
-            branchesUrl,
-            props.fetch,
-            props.branchesIntervalMs ?? 600_000,
-            600_000,
-          );
+      const rPoller = new PublicPoller<BoardRatesData>(
+        ratesUrl,
+        props.fetch,
+        props.ratesIntervalMs ?? 10_000,
+        MAX_HOST_BACKOFF_MS,
+      );
+      const bPoller = new PublicPoller<PublicBranchesData>(
+        branchesUrl,
+        props.fetch,
+        props.branchesIntervalMs ?? 600_000,
+        600_000,
+      );
 
-          setPollers({ rates: rPoller, branches: bPoller });
-          rPoller.start();
-          bPoller.start();
-          return;
-        }
+      setPollers({ rates: rPoller, branches: bPoller });
+      rPoller.start();
+      bPoller.start();
+    } catch (err) {
+      if (disposed) return;
+      if (err instanceof ApiError && err.status === 404) {
         setHostState('notFound');
         return;
       }
-      if (res.status === 404) {
-        setHostState('notFound');
-        return;
-      }
-      scheduleHostRetry();
-    } catch {
       scheduleHostRetry();
     }
   };

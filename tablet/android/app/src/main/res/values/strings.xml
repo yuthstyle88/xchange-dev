@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">XCHANGE Tablet</string>
+    <string name="setup_scan">Scan</string>
+    <string name="setup_code_hint">XXXXX-XXXXX</string>
+    <string name="setup_pair">Pair</string>
+    <string name="setup_invalid_qr">Invalid pairing QR. Scan the branch tablet QR from the admin panel.</string>
+    <string name="setup_invalid_code">Invalid pairing code. Enter the 10-character code from the admin panel.</string>
+    <string name="setup_code_refused">Pairing code was refused or expired. Generate a new code in the admin panel.</string>
+    <string name="setup_scan_failed">Could not scan QR code. Try again or enter the pairing code.</string>
+    <string name="setup_paired">Branch %1$s · Tablet %2$s</string>
+</resources>

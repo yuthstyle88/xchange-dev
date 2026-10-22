@@ -2,6 +2,8 @@
 // (design customer-identity-consent.md `:163`; section-b-gaps.md S6; BE contract #3409:
 // `GET /api/public/orgs/{org}/consent_texts?lang=` answers `[{purpose, version, body}]`).
 import { createSignal, onMount, Show, type JSX } from 'solid-js';
+import { ApiClient, type Fetch } from '../../../shared/api/client';
+import { readHostOrg } from '../../../shared/api/public-host';
 import { lang, screenT, setAudience } from '../../../shared/i18n';
 import * as table from './i18n';
 
@@ -19,20 +21,15 @@ export interface PublicConsentText {
 export interface TermsTextProps {
   /** The sign-up screen's fetch, so tests mock at the fetch level. */
   fetch?: typeof fetch;
+  api?: Pick<ApiClient, 'publicGet'>;
 }
 
-async function loadTerms(fetchFn: typeof fetch, currentLang: string): Promise<PublicConsentText | null> {
+async function loadTerms(api: Pick<ApiClient, 'publicGet'>, currentLang: string): Promise<PublicConsentText | null> {
   try {
-    const hostRes = await fetchFn('/api/public/host');
-    if (!hostRes.ok) return null;
-    const host = (await hostRes.json()) as { org?: string } | null;
-    if (!host || typeof host.org !== 'string' || !host.org) return null;
-
-    const textsRes = await fetchFn(
-      `/api/public/orgs/${encodeURIComponent(host.org)}/consent_texts?lang=${encodeURIComponent(currentLang)}`,
+    const org = await readHostOrg(api);
+    const texts = await api.publicGet<PublicConsentText[]>(
+      `/api/public/orgs/${encodeURIComponent(org)}/consent_texts?lang=${encodeURIComponent(currentLang)}`,
     );
-    if (!textsRes.ok) return null;
-    const texts = (await textsRes.json()) as PublicConsentText[] | null;
     if (!Array.isArray(texts)) return null;
 
     const termsItem = texts.find((item) => item.purpose === 'TERMS');
@@ -42,12 +39,12 @@ async function loadTerms(fetchFn: typeof fetch, currentLang: string): Promise<Pu
   }
 }
 
-export function TermsText(props: TermsTextProps): JSX.Element {
+export function TermsText(props: TermsTextProps = {}): JSX.Element {
   const [terms, setTerms] = createSignal<PublicConsentText | null>(null);
 
   onMount(() => {
-    const fetchFn = props.fetch ?? ((input, init) => fetch(input, init));
-    void loadTerms(fetchFn, lang()).then(setTerms);
+    const api = props.api ?? new ApiClient(props.fetch as Fetch | undefined);
+    void loadTerms(api, lang()).then(setTerms);
   });
 
   return (
