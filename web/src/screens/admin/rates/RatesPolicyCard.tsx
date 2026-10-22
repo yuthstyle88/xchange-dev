@@ -177,6 +177,7 @@ export interface RatesPolicyCardProps {
   branch: () => string;
   busy: () => boolean;
   canSavePolicy: () => boolean;
+  disabledReason?: string;
   policyData: () => RatePolicyData | null;
   policyError: () => string | null;
   pubData?: () => PublishedRatesData | null;
@@ -407,6 +408,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                 !props.policyData()?.policy ||
                 !areValueTiersValid()
               }
+              title={props.disabledReason}
               onClick={handleSavePolicy}
             >
               {props.t('savePolicy')}
@@ -454,6 +456,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             data-testid="value-tiers-switch"
             checked={props.valueTiersOn()}
             disabled={!props.canSavePolicy()}
+            title={props.disabledReason}
             onChange={(e) => {
               props.setValueTiersOn(e.currentTarget.checked);
             }}
@@ -469,6 +472,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             data-testid="sharp-move-threshold"
             value={props.sharpMoveAlertPct()}
             disabled={!props.canSavePolicy()}
+            title={props.disabledReason}
             onInput={(e) => {
               props.setSharpMoveAlertPct(e.currentTarget.value);
             }}
@@ -481,6 +485,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             name="maxReferenceAgeHours"
             value={maxReferenceAgeHours()}
             disabled={!props.canSavePolicy()}
+            title={props.disabledReason}
             onInput={(e) => {
               setMaxReferenceAgeHours(e.currentTarget.value);
               setFrameErrs((prev) => ({ ...prev, maxReferenceAgeHours: undefined }));
@@ -493,6 +498,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             name="onStale"
             value={onStale()}
             disabled={!props.canSavePolicy()}
+            title={props.disabledReason}
             onChange={(e) => {
               setOnStale(e.currentTarget.value);
               setFrameErrs((prev) => ({ ...prev, staleLimitThb: undefined }));
@@ -511,6 +517,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
               name="staleLimitThb"
               value={staleLimitThb()}
               disabled={!props.canSavePolicy()}
+              title={props.disabledReason}
               onInput={(e) => {
                 setStaleLimitThb(e.currentTarget.value);
                 setFrameErrs((prev) => ({ ...prev, staleLimitThb: undefined }));
@@ -546,6 +553,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                           name="guardBuyMin"
                           value={row().buyMin}
                           disabled={!props.canSavePolicy()}
+                          title={props.disabledReason}
                           onInput={(e) => updateGuardField(code, 'buyMin', e.currentTarget.value)}
                         />
                       </td>
@@ -555,6 +563,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                           name="guardBuyMax"
                           value={row().buyMax}
                           disabled={!props.canSavePolicy()}
+                          title={props.disabledReason}
                           onInput={(e) => updateGuardField(code, 'buyMax', e.currentTarget.value)}
                         />
                       </td>
@@ -564,6 +573,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                           name="guardSellMin"
                           value={row().sellMin}
                           disabled={!props.canSavePolicy()}
+                          title={props.disabledReason}
                           onInput={(e) => updateGuardField(code, 'sellMin', e.currentTarget.value)}
                         />
                       </td>
@@ -573,6 +583,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                           name="guardSellMax"
                           value={row().sellMax}
                           disabled={!props.canSavePolicy()}
+                          title={props.disabledReason}
                           onInput={(e) => updateGuardField(code, 'sellMax', e.currentTarget.value)}
                         />
                       </td>
@@ -614,6 +625,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                           data-tier-field="upper"
                           value={row().upperInclusiveThb}
                           disabled={!props.canSavePolicy()}
+                          title={props.disabledReason}
                           aria-invalid={nonRisingTierNo() === tierNo ? 'true' : undefined}
                           onInput={(e) =>
                             updateTierField(tierNo, 'upperInclusiveThb', e.currentTarget.value)
@@ -634,6 +646,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                         data-tier-field="buy-margin"
                         value={row().buyMarginPct}
                         disabled={!props.canSavePolicy()}
+                        title={props.disabledReason}
                         onInput={(e) =>
                           updateTierField(tierNo, 'buyMarginPct', e.currentTarget.value)
                         }
@@ -647,6 +660,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                         data-tier-field="sell-margin"
                         value={row().sellMarginPct}
                         disabled={!props.canSavePolicy()}
+                        title={props.disabledReason}
                         onInput={(e) =>
                           updateTierField(tierNo, 'sellMarginPct', e.currentTarget.value)
                         }
