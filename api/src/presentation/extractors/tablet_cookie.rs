@@ -8,25 +8,38 @@
 //! binding (BT-5, `auth.rs`) reads the cookie with `extractors::actor::cookie(req, TABLET_COOKIE)`
 //! so that it does not wait for this file.
 
+use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponseBuilder};
 
 pub use crate::infrastructure::branch_tablets::{TABLET_COOKIE, TABLET_COOKIE_MAX_AGE};
+use crate::presentation::extractors::actor::cookie;
+
+const ATTRIBUTES: &str = "Path=/; HttpOnly; Secure; SameSite=Strict";
 
 /// The tablet cookie's value, trimmed; `None` when the request carries none (or an empty one).
 pub fn tablet_token(req: &HttpRequest) -> Option<String> {
-    let _ = req;
-    todo!("BT-4: tablet_token")
+    let raw = cookie(req, TABLET_COOKIE);
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
 }
 
 /// Appends `Set-Cookie: __Host-xc_tablet=<token>; Path=/; HttpOnly; Secure; SameSite=Strict;
 /// Max-Age=34560000`.
 pub fn set_tablet_cookie(builder: &mut HttpResponseBuilder, token: &str) {
-    let _ = (builder, token);
-    todo!("BT-4: set_tablet_cookie")
+    builder.append_header((
+        header::SET_COOKIE,
+        format!("{TABLET_COOKIE}={token}; {ATTRIBUTES}; Max-Age={TABLET_COOKIE_MAX_AGE}"),
+    ));
 }
 
 /// Appends `Set-Cookie: __Host-xc_tablet=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`.
 pub fn clear_tablet_cookie(builder: &mut HttpResponseBuilder) {
-    let _builder = builder;
-    todo!("BT-4: clear_tablet_cookie")
+    builder.append_header((
+        header::SET_COOKIE,
+        format!("{TABLET_COOKIE}=; {ATTRIBUTES}; Max-Age=0"),
+    ));
 }
