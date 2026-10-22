@@ -214,24 +214,12 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
     setSlotsLoading(true);
     setSlotsError(null);
     try {
-      const params = new URLSearchParams();
-      params.set('branch', b);
-      params.set('date', d);
-      const url = `${BOOKING_SLOTS_VIEW_ROUTE}?${params.toString()}`;
-
-      const slotsRes = await fetchFn(url);
+      const res = await api.view<BookingSlotsData>('booking_slots', {
+        branch: b,
+        filter: { date: d },
+      });
       if (seq !== slotsSeq) return;
-      if (slotsRes.status !== 200) {
-        setSlots([]);
-        setSlotId('');
-        setSlotsLoading(false);
-        setSlotsError(t('error.loadFailed'));
-        return;
-      }
-      const slotsJson: { data?: BookingSlotsData } =
-        await slotsRes.json().catch(() => ({}));
-      if (seq !== slotsSeq) return;
-      const list: BookingSlot[] = slotsJson.data?.slots ?? [];
+      const list: BookingSlot[] = res.data?.slots ?? [];
       setSlots(list);
       if (!list.some((s) => s.id === slotId())) {
         setSlotId('');
