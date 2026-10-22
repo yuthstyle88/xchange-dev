@@ -168,11 +168,14 @@ class TabletActivity : Activity() {
                 override fun onPageFinished(view: WebView, url: String?) {
                     CookieManager.getInstance().flush()
                     if (pendingPair.get()) {
+                        // Fallback only: the page posts #pair=, reloads, then reads `me` (queue-tablet.ts:56-61), and
+                        // that `me` request is the signal above. A short timer would read `me` while the pair POST is
+                        // still in flight on slow Wi-Fi and send staff back to setup with a code that is being consumed.
                         view.postDelayed({
                             if (pendingPair.compareAndSet(true, false)) {
                                 Thread { verifyPairingAfterLoad() }.start()
                             }
-                        }, 2_500L)
+                        }, 15_000L)
                     }
                 }
 
