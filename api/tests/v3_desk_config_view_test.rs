@@ -373,20 +373,13 @@ const STAFF: [(&str, &[Role]); 9] = [
     ("DOCUMENT_REVIEW", &[Role::VerificationReviewer]),
 ];
 
-/// Every caller key of [`Room`] and the actor `Policy` sees for it on `path`: on `StaffRpc` the
-/// staff session only, elsewhere the owner first (`rpc.rs`, `view.rs:339-341`).
-fn callers(path: EntryPath) -> Vec<(String, Option<Actor>)> {
+/// Every caller key of [`Room`] and the actor `Policy` sees for it, the owner first: on `StaffRpc`
+/// too, since the owner is a staff caller there (RBAC §11.8 S10, #4528).
+fn callers() -> Vec<(String, Option<Actor>)> {
     let owner = || Some(test_callers::owner("owner"));
     let mut out: Vec<(String, Option<Actor>)> = vec![
         (String::new(), None),
-        (
-            "OWNER".to_string(),
-            if path == EntryPath::StaffRpc {
-                None
-            } else {
-                owner()
-            },
-        ),
+        ("OWNER".to_string(), owner()),
     ];
     for (name, roles) in STAFF {
         let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
@@ -436,7 +429,7 @@ async fn each_view_answers_exactly_whom_its_pair_allows() {
         };
         let mut allowed = 0;
         let mut refused = 0;
-        for (who, actor) in callers(path) {
+        for (who, actor) in callers() {
             let answer = room.get(&who, &view_path(view, "")).await;
             let what = format!("{view} as {who:?}");
             // OR-7.m (merge of feat/rbac-groups): the caller is already a Blueprint actor
@@ -476,9 +469,11 @@ async fn each_view_answers_exactly_whom_its_pair_allows() {
                         .any(|&r| RoleGrants::seed(r).contains(&Permission::ExchangeTransact))
                 })
                 .count();
+            // + 1 is the owner (§11.8 S10, #4528)
             assert_eq!(
-                allowed, expected_staff,
-                "{view}: staff roles with ExchangeTransact, alone"
+                allowed,
+                expected_staff + 1,
+                "{view}: staff roles with ExchangeTransact plus owner"
             );
             assert!(
                 refused > 2,
