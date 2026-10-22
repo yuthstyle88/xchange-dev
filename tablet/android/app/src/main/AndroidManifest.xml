@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TW-0 skeleton (kiosk-shared-phone §7.11.4 W-D1, W-D2; §7.11.5). Minimal so the app builds; TW-2 completes it
+     (window flags, back handling, the code scanner's module meta-data). The id is com.spacing.xchange.tablet,
+     set in app/build.gradle.kts. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:label="XCHANGE Tablet"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar.Fullscreen"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".TabletActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SetupActivity"
+            android:exported="false" />
+    </application>
+</manifest>
