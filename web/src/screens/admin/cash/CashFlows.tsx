@@ -2,7 +2,7 @@
 // `docs/design/blueprint/cash-shift-transfer.md` §4.4, §4.7). Each section is drawn only when `me.permissions` holds the
 // permission its server row checks (`xc-auth/src/domain/policy/areas/cash.rs`), so no role is named here.
 
-import { createEffect, createSignal, For, Show, untrack, type JSX } from 'solid-js';
+import { batch, createEffect, createSignal, For, Show, untrack, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
@@ -24,6 +24,7 @@ import type { TransferBranchRow, TransferBranches } from '../../../shared/api/ge
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
+import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
@@ -73,7 +74,9 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   const [permissions, setPermissions] = createSignal<readonly string[] | null>(null);
   const can = (permission: string) => (permissions() ?? []).includes(permission);
-  const [meError, setMeError] = createSignal<string | null>(null);
+  const [meError, setMeError] = createSignal<unknown>(null);
+  const [meBusy, setMeBusy] = createSignal(false);
+  const meUnavailableTitle = () => (meError() !== null ? permissionsUnavailableText(meError()) : undefined);
 
   const [counts, setCounts] = createSignal<CashCountRow[]>([]);
   const [transfers, setTransfers] = createSignal<CashTransferRow[]>([]);
@@ -86,15 +89,22 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   // ── reads ───────────────────────────────────────────────────────────────────
 
   async function readMe() {
+    if (meBusy()) return;
+    setMeBusy(true);
     try {
       const res = await api.view<Me>('me');
-      setMeError(null);
-      setPermissions(res.data?.permissions ?? []);
+      // One batch: the effect must see the new permissions and the cleared error together,
+      // or it marks the branch read under the failed [] permissions and the gated reads never run.
+      lastBranch = undefined;
+      batch(() => {
+        setMeError(null);
+        setPermissions(res.data?.permissions ?? []);
+      });
     } catch (err: unknown) {
-      const text = message(err);
-      setRefusal(text);
-      setMeError(text);
+      setMeError(err);
       setPermissions([]);
+    } finally {
+      setMeBusy(false);
     }
   }
 
@@ -410,6 +420,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   return (
     <div class="cash-flows">
+      <PermissionsUnavailable error={meError()} onRetry={() => void readMe()} busy={meBusy()} />
       <Show when={refusal()}>
         <p role="alert" class="error-message">
           {refusal()}
@@ -473,7 +484,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                                     data-action="verify"
                                     data-id={row.id}
                                     disabled={busy() || Boolean(meError())}
-                                    title={meError() ?? undefined}
+                                    title={meUnavailableTitle()}
                                     onClick={() => verify(row)}
                                   >
                                     {t('btnVerify')}
@@ -543,22 +554,22 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           <td>{row.note ?? ''}</td>
                           <td>
                             <Show when={row.status === 'DRAFT'}>
-                              <button type="button" class="secondary" data-action="submit" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => step(row, 'submit')}>
+                              <button type="button" class="secondary" data-action="submit" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => step(row, 'submit')}>
                                 {t('btnSubmit')}
                               </button>
                             </Show>
                             <Show when={row.status === 'APPROVED'}>
-                              <button type="button" class="secondary" data-action="dispatch" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => step(row, 'dispatch')}>
+                              <button type="button" class="secondary" data-action="dispatch" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => step(row, 'dispatch')}>
                                 {t('btnDispatch')}
                               </button>
                             </Show>
                             <Show when={row.status === 'DISPATCHED'}>
-                              <button type="button" class="secondary" data-action="receive" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => receive(row)}>
+                              <button type="button" class="secondary" data-action="receive" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => receive(row)}>
                                 {t('btnReceive')}
                               </button>
                             </Show>
                             <Show when={row.status === 'RECEIVED' && (can(RECONCILE) || Boolean(meError()))}>
-                              <button type="button" class="secondary" data-action="reconcile" data-id={row.id} disabled={busy() || Boolean(meError())} title={meError() ?? undefined} onClick={() => reconcile(row)}>
+                              <button type="button" class="secondary" data-action="reconcile" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => reconcile(row)}>
                                 {t('btnReconcile')}
                               </button>
                             </Show>
@@ -672,7 +683,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                     class="primary"
                     data-action="create"
                     disabled={busy() || kind() === '' || Boolean(meError())}
-                    title={meError() ?? undefined}
+                    title={meUnavailableTitle()}
                   >
                     {t('btnCreateTransfer')}
                   </button>

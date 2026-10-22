@@ -39,6 +39,8 @@ export function Cash(props: AdminMenuProps): JSX.Element {
 
   const [cash, setCash] = createSignal<AdminCashData | null>(null);
   const [cashError, setCashError] = createSignal<string | null>(null);
+  const [movementsError, setMovementsError] = createSignal<string | null>(null);
+  const [shiftsError, setShiftsError] = createSignal<string | null>(null);
   const [movements, setMovements] = createSignal<AdminCashMovementRow[]>([]);
   const [shifts, setShifts] = createSignal<AdminShiftRow[]>([]);
   const [showAll, setShowAll] = createSignal<boolean>(false);
@@ -59,7 +61,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
   // must not page from them.
   let shiftsReadPending = false;
 
-  async function readCash(resetVersion = false, all = showAll(), isReadAll = false) {
+  async function readCash(resetVersion = false, all = showAll()) {
     const seq = ++cashSeq;
     const curBranch = props.branch();
     if (resetVersion || curBranch !== lastBranch) {
@@ -74,11 +76,9 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       });
       if (seq !== cashSeq) return;
       currentCashVersion = res.version;
+      setCashError(null);
       if (res.changed && res.data) {
         setCash(res.data);
-        if (!isReadAll) {
-          setCashError(null);
-        }
       }
     } catch (err: unknown) {
       if (seq !== cashSeq) return;
@@ -95,11 +95,12 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         limit: 100,
       });
       if (seq !== readAllSeq) return;
+      setMovementsError(null);
       setMovements(rows);
     } catch (err: unknown) {
       if (seq !== readAllSeq) return;
       setMovements([]);
-      setCashError(wordedError(err));
+      setMovementsError(wordedError(err));
     }
   }
 
@@ -118,6 +119,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       olderSeq++;
       shiftsReadPending = false;
       setLoadingOlderShifts(false);
+      setShiftsError(null);
       setShifts(rows);
       setHasMoreShifts(rows.length > 0);
     } catch (err: unknown) {
@@ -127,19 +129,21 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       setLoadingOlderShifts(false);
       setShifts([]);
       setHasMoreShifts(false);
-      setCashError(wordedError(err));
+      setShiftsError(wordedError(err));
     }
   }
 
   async function readAll(resetVersion = true) {
     const seq = ++readAllSeq;
-    setCashError(null);
     await Promise.all([
-      readCash(resetVersion, showAll(), true),
+      readCash(resetVersion, showAll()),
       readMovements(seq),
       readShifts(seq),
     ]);
   }
+
+  const hasReadError = () =>
+    cashError() !== null || movementsError() !== null || shiftsError() !== null;
 
   createEffect(() => {
     if (!props.shown()) return;
@@ -153,7 +157,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
         readAll(true);
       } else if (lastTick !== currentTick) {
         lastTick = currentTick;
-        if (cashError() !== null) {
+        if (hasReadError()) {
           readAll(true);
         } else {
           readCash(false, showAll());
@@ -199,7 +203,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
     }
   }
 
-  const isWriteDisabled = () => pendingWrite.busy() || cashError() !== null;
+  const isWriteDisabled = () => pendingWrite.busy() || hasReadError();
   const hasOpenShift = () => (cash()?.openShifts ?? []).length > 0;
 
   function shiftDiffText(s: AdminShiftRow): string {
@@ -417,12 +421,19 @@ export function Cash(props: AdminMenuProps): JSX.Element {
 
         <Card>
           <CardHead title={t('historyMovementsTitle')} />
+          <Show when={movementsError()}>
+            <div class="error-banner" role="alert">
+              {movementsError()}
+            </div>
+          </Show>
           <Show
             when={movements().length > 0}
             fallback={
-              <div class="empty">
-                <strong>{t('emptyMovements')}</strong>
-              </div>
+              <Show when={!movementsError()}>
+                <div class="empty">
+                  <strong>{t('emptyMovements')}</strong>
+                </div>
+              </Show>
             }
           >
             <div class="table-scroll">
@@ -462,12 +473,19 @@ export function Cash(props: AdminMenuProps): JSX.Element {
 
         <Card>
           <CardHead title={t('historyShiftsTitle')} />
+          <Show when={shiftsError()}>
+            <div class="error-banner" role="alert">
+              {shiftsError()}
+            </div>
+          </Show>
           <Show
             when={shifts().length > 0}
             fallback={
-              <div class="empty">
-                <strong>{t('emptyShifts')}</strong>
-              </div>
+              <Show when={!shiftsError()}>
+                <div class="empty">
+                  <strong>{t('emptyShifts')}</strong>
+                </div>
+              </Show>
             }
           >
             <div class="table-scroll">
