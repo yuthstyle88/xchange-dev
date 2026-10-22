@@ -1,7 +1,7 @@
 # Branch Tablet Wrapper — Device Checklist (`kiosk-shared-phone.md` §7.11.6)
 
 Run this checklist on the real Android branch tablet before each release, and post the results on the PR.
-Rows W5–W7 and W10's URL/state parsing are also covered by JVM unit tests (`./gradlew test`), and W12 is covered by Vitest (`TabletLabel.test.tsx`).
+Rows W5–W7 and W10's URL/state parsing are also covered by JVM unit tests (`./gradlew test`). W12's label is web work (§7.11 W-D9) with no web test on `main` yet, so check it here.
 
 ## Device Prerequisites
 
@@ -24,6 +24,6 @@ Rows W5–W7 and W10's URL/state parsing are also covered by JVM unit tests (`./
 | **W9** | On the queue page | Crash the WebView renderer (e.g., `adb shell am crash com.google.android.webview` or kill the `:sandboxed_process` PID) | `onRenderProcessGone` replaces the WebView and reloads `<origin>/app/queue`; the app does not close or unpin. | [ ] |
 | **W10** | A freshly installed wrapper, or a tablet whose pairing was revoked in Admin (`GET /api/branch-tablet/me` → `paired: false`) | Launch the app, then test: (a) scanning a QR for another origin or without `#pair=`, (b) entering an expired/invalid code, (c) scanning a valid admin pairing QR or typing a valid 10-character code | Opens `SetupActivity`. (a) Refused on Setup with an error message. (b) Loads in WebView, `me` remains `paired: false`, returns to Setup with a refusal message. (c) Pairs via `#pair=<CODE>`, shows `"Branch <code> · Tablet <name>"` once, and opens `<origin>/app/queue`. Subsequent launches go straight to `<origin>/app/queue`. | [ ] |
 | **W11** | A paired tablet with Wi-Fi / network turned off (`me` unreachable or non-2xx) | Launch the app | Opens `<origin>/app/queue` as is; does **not** fall back to `SetupActivity` (Setup only appears on explicit `paired: false`). | [ ] |
-| **W12** | A paired tablet on `<origin>/app/queue` | Page finishes loading | Displays the `"<code> · <name>"` tablet label (e.g., `"MAIN · Front-1"`). *(Also verified in CI by `TabletLabel.test.tsx`.)* | [ ] |
+| **W12** | A paired tablet on `<origin>/app/queue` | Page finishes loading | Displays the `"<code> · <name>"` tablet label (e.g., `"MAIN · Front-1"`). | [ ] |
 | **Reboot / Restart** | A paired tablet | Force-stop the app or reboot the tablet, then launch **XCHANGE Tablet** again | Persistent `CookieManager` retains `__Host-xc_tablet`; `me` returns `paired: true` and the app opens `<origin>/app/queue` without asking to pair again. | [ ] |
 | **Notification Shade** | Wrapper is pinned | Swipe down from the top edge of the screen | Notification shade and Quick Settings tiles cannot be pulled down to open Settings or leave the app while pinned. | [ ] |
