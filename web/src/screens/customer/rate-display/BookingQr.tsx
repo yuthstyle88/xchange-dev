@@ -12,9 +12,10 @@ export interface BookingQrProps {
 }
 
 export function BookingQr(props: BookingQrProps): JSX.Element {
+  // §0a R-3: Board QR opens web request flow /app/queue instead of /app/book (§5r F10)
   const q = () => encodeURIComponent(props.branchCode ?? '');
-  const targetUrl = () => `${window.location.origin}/app/book?branch=${q()}`;
-  const captionPath = () => `/app/book?branch=${q()}`;
+  const targetUrl = () => `${window.location.origin}/app/queue?branch=${q()}`;
+  const captionPath = () => `/app/queue?branch=${q()}`;
 
   return (
     <Show when={props.bookingEnabled && props.branchCode}>

@@ -112,7 +112,17 @@ case "$cmd" in
         *) argv+=("$a") ;;
       esac
     done
-    install "${argv[@]}" || exit
+    dest="${argv[-1]}"
+    src="${argv[-2]}"
+    if [ "$src" = "/dev/stdin" ]; then
+      cat > "$dest"
+    elif command -v ginstall >/dev/null 2>&1; then
+      ginstall "${argv[@]}" || exit
+    elif [ -x /opt/homebrew/bin/ginstall ]; then
+      /opt/homebrew/bin/ginstall "${argv[@]}" || exit
+    else
+      install "${argv[@]}" || exit
+    fi
     printf '%s\t%s %s\n' "${argv[-1]}" "$o" "$g" >>"$rec"
     exit 0
     ;;
@@ -142,7 +152,11 @@ STUB
 write_stub stat <<'STUB'
 #!/usr/bin/env bash
 real=/usr/bin/stat
-[ -x "$real" ] || real=/bin/stat
+if command -v gstat >/dev/null 2>&1; then
+  real="$(command -v gstat)"
+elif [ -x /opt/homebrew/bin/gstat ]; then
+  real=/opt/homebrew/bin/gstat
+fi
 if [ "$#" = 3 ] && [ "$1" = -c ] && [ "$2" = '%U %G %a' ]; then
   mode="$("$real" -c '%a' "$3")" || exit
   og="$(awk -F'\t' -v p="$3" '$1 == p { v = $2 } END { print v }' "${XC_TEST_OWNERS:?}")"
@@ -169,6 +183,7 @@ done
 body=""
 case "$url" in
   */health/ready) body='{"version":"1.0.0","build":"0123456789ab","builtAt":"2026-10-07T00:00:00Z","channel":"staging","database":true,"ui":"built"}' ;;
+  */health) body="${XC_TEST_HEALTH_BODY:-{\"status\":\"ok\",\"version\":\"1.0.0\",\"build\":\"${XC_TEST_HEALTH_BUILD:-unknown}\",\"built_at\":\"unknown\",\"channel\":\"unknown\"}}" ;;
 esac
 [ -n "$out" ] && printf '%s' "$body" >"$out"
 printf '200'
@@ -301,6 +316,80 @@ ck "hint matches key_id:base64(32 bytes) format" grep -Eq '^[a-zA-Z0-9_-]+:[A-Za
 HINT_BYTE_LEN="$(sed 's/^k1://' "$m2/hint_key" | openssl base64 -d 2>/dev/null | wc -c | tr -d ' ')"
 ckeq "hint base64 decodes to 32 bytes" 32 "$HINT_BYTE_LEN"
 report M2 "update.sh printed refusal hint command yields a key PiiKeys accepts"
+
+# ---- M3: update-identity.sh updates xc-identity, writes drop-in, rolls back on mismatch ----
+m3="$ROOT/m3"
+mkdir -p "$m3/log" "$m3/systemd" "$m3/opt/xc-identity" "$m3/stage"
+: >"$m3/owners"
+
+# Initial state on host
+printf 'old-identity-bin\n' >"$m3/opt/xc-identity/identity-api"
+chmod 755 "$m3/opt/xc-identity/identity-api"
+printf 'oldsha000\n' >"$m3/opt/xc-identity/BUILD"
+
+# Stage for new version
+printf 'new-identity-bin-v2\n' >"$m3/stage/identity-api"
+chmod 755 "$m3/stage/identity-api"
+printf '681bea2\n' >"$m3/stage/BUILD"
+(
+  cd "$m3/stage"
+  sha256sum identity-api BUILD >SHA256SUMS
+)
+
+# 1. Happy path: update succeeds when /health build matches
+set +e
+OUT="$(PATH="$STUBS:$PATH" \
+  XC_TEST_LOG="$m3/log" XC_TEST_SYSTEMD="$m3/systemd" XC_TEST_OWNERS="$m3/owners" \
+  XC_TEST_HEALTH_BUILD="681bea2" \
+  SERVICE_NAME="xc-identity" \
+  INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  SMOKE_WAIT_SECS=0 \
+  bash "$HERE/update-identity.sh" "$m3/stage" "681bea2" 2>&1)"
+RC=$?
+set -e
+printf '%s\n' "$OUT" >"$LOGS/m3_happy.out"
+
+ck "update-identity.sh exited 0 on match" test "$RC" -eq 0
+ck "identity-api.prev was kept" test -f "$m3/opt/xc-identity/identity-api.prev"
+ckeq "identity-api.prev has old binary" "old-identity-bin" "$(cat "$m3/opt/xc-identity/identity-api.prev")"
+ckeq "identity-api has new binary" "new-identity-bin-v2" "$(cat "$m3/opt/xc-identity/identity-api")"
+ckeq "BUILD file has new sha" "681bea2" "$(cat "$m3/opt/xc-identity/BUILD")"
+
+DROPIN_CONF="$m3/systemd/xc-identity.service.d/build.conf"
+ck "drop-in build.conf exists" test -f "$DROPIN_CONF"
+ck "drop-in contains APP_BUILD" grep -qsF "Environment=APP_BUILD=681bea2" "$DROPIN_CONF"
+ck "drop-in contains APP_BUILT_AT" grep -qs "Environment=APP_BUILT_AT=" "$DROPIN_CONF"
+ck "drop-in contains APP_CHANNEL" grep -qsF "Environment=APP_CHANNEL=staging" "$DROPIN_CONF"
+
+# 2. Health mismatch: update fails and rolls back to .prev
+m3_fail_stage="$m3/stage_fail"
+mkdir -p "$m3_fail_stage"
+printf 'bad-binary\n' >"$m3_fail_stage/identity-api"
+chmod 755 "$m3_fail_stage/identity-api"
+printf 'badsha999\n' >"$m3_fail_stage/BUILD"
+(
+  cd "$m3_fail_stage"
+  sha256sum identity-api BUILD >SHA256SUMS
+)
+
+set +e
+OUT_FAIL="$(PATH="$STUBS:$PATH" \
+  XC_TEST_LOG="$m3/log" XC_TEST_SYSTEMD="$m3/systemd" XC_TEST_OWNERS="$m3/owners" \
+  XC_TEST_HEALTH_BUILD="wrongsha" \
+  SERVICE_NAME="xc-identity" \
+  INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  SMOKE_WAIT_SECS=0 \
+  bash "$HERE/update-identity.sh" "$m3_fail_stage" "badsha999" 2>&1)"
+RC_FAIL=$?
+set -e
+printf '%s\n' "$OUT_FAIL" >"$LOGS/m3_fail.out"
+
+ck "update-identity.sh exited non-zero on mismatch" test "$RC_FAIL" -ne 0
+ckeq "rollback restored previous binary" "new-identity-bin-v2" "$(cat "$m3/opt/xc-identity/identity-api")"
+ckeq "rollback restored previous BUILD" "681bea2" "$(cat "$m3/opt/xc-identity/BUILD")"
+ck "rollback restored drop-in to previous APP_BUILD" grep -qsF "Environment=APP_BUILD=681bea2" "$DROPIN_CONF"
+
+report M3 "update-identity.sh writes drop-in with 3 keys, rolls back on /health mismatch"
 
 echo "# $PASS passed, $FAILURES failed"
 [ "$FAILURES" -eq 0 ]

@@ -450,7 +450,11 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
         await expect(saveLinesBtn).toBeVisible({ timeout: 15_000 });
         await expect(saveLinesBtn).toBeEnabled({ timeout: 15_000 });
       }
-      if (!(await saveLinesBtn.isVisible().catch(() => false))) {
+      // An open DRAFT can have zero lines (created while the published set was empty), so make a fresh one.
+      if (
+        !(await saveLinesBtn.isVisible().catch(() => false)) ||
+        (await draftCard.locator('tr[data-draft-line]').count()) === 0
+      ) {
         allowDraftSetupWrites = true;
         try {
           // `handleNewDraft` (`RatesDraftCard.tsx:139-176`) calls `POST /api/rate-references/fetch`,
@@ -493,7 +497,10 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
           await expect(saveLinesBtn).toBeEnabled({ timeout: 15_000 });
 
           const firstLine = draftCard.locator('tr[data-draft-line]').first();
-          await expect(firstLine).toBeVisible({ timeout: 15_000 });
+          await expect(
+            firstLine,
+            `new draft has no lines (${lang}): the published rate set for the branch is empty`,
+          ).toBeVisible({ timeout: 15_000 });
           const setupReasonInput = firstLine.locator('input[name="reason"]');
           await setupReasonInput.fill(runTag);
           await expect(setupReasonInput).toHaveValue(runTag);

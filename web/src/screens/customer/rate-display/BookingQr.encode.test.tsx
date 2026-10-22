@@ -25,7 +25,8 @@ vi.mock('qrcode-generator', () => ({
   __esModule: true,
 }));
 
-describe('Rate board BookingQr percent-encoding (#2370)', () => {
+// Target updated from /app/book to /app/queue per §0a R-3 (§5r F10)
+describe('Rate board BookingQr percent-encoding (#2370, §0a R-3)', () => {
   let root: HTMLDivElement;
   let dispose: (() => void) | undefined;
 
@@ -49,13 +50,13 @@ describe('Rate board BookingQr percent-encoding (#2370)', () => {
     setAudience('staff');
   });
 
-  it('row 1: Branch A&B -> data-qr-url and the QR data = <origin>/app/book?branch=A%26B', () => {
+  it('row 1: Branch A&B -> data-qr-url and the QR data = <origin>/app/queue?branch=A%26B', () => {
     dispose = render(() => <BookingQr branchCode="A&B" bookingEnabled={true} />, root);
 
     const qrEl = root.querySelector<HTMLElement>('[data-booking-qr]');
     expect(qrEl).not.toBeNull();
 
-    const expectedUrl = `${window.location.origin}/app/book?branch=A%26B`;
+    const expectedUrl = `${window.location.origin}/app/queue?branch=A%26B`;
     expect(qrEl!.getAttribute('data-qr-url')).toBe(expectedUrl);
     expect(mockAddData).toHaveBeenCalledWith(expectedUrl);
   });
@@ -66,7 +67,7 @@ describe('Rate board BookingQr percent-encoding (#2370)', () => {
     const qrEl = root.querySelector<HTMLElement>('[data-booking-qr]');
     expect(qrEl).not.toBeNull();
 
-    const expectedUrl = `${window.location.origin}/app/book?branch=B%232`;
+    const expectedUrl = `${window.location.origin}/app/queue?branch=B%232`;
     expect(qrEl!.getAttribute('data-qr-url')).toBe(expectedUrl);
     expect(mockAddData).toHaveBeenCalledWith(expectedUrl);
   });
@@ -77,7 +78,7 @@ describe('Rate board BookingQr percent-encoding (#2370)', () => {
     const qrEl = root.querySelector<HTMLElement>('[data-booking-qr]');
     expect(qrEl).not.toBeNull();
 
-    const expectedUrl = `${window.location.origin}/app/book?branch=%E0%B8%AA%E0%B8%B5%E0%B8%A5%E0%B8%A1%201`;
+    const expectedUrl = `${window.location.origin}/app/queue?branch=%E0%B8%AA%E0%B8%B5%E0%B8%A5%E0%B8%A1%201`;
     expect(qrEl!.getAttribute('data-qr-url')).toBe(expectedUrl);
     expect(mockAddData).toHaveBeenCalledWith(expectedUrl);
 
@@ -92,14 +93,14 @@ describe('Rate board BookingQr percent-encoding (#2370)', () => {
     const qrEl = root.querySelector<HTMLElement>('[data-booking-qr]');
     expect(qrEl).not.toBeNull();
 
-    const expectedPlain = `${window.location.origin}/app/book?branch=XC-B01`;
+    const expectedPlain = `${window.location.origin}/app/queue?branch=XC-B01`;
     expect(qrEl!.getAttribute('data-qr-url')).toBe(expectedPlain);
     expect(mockAddData).toHaveBeenLastCalledWith(expectedPlain);
 
     // Updating to a code with reserved chars encodes it, and switching back to XC-B01 keeps XC-B01 unchanged
     setCode('XC-B01&2');
     expect(qrEl!.getAttribute('data-qr-url')).toBe(
-      `${window.location.origin}/app/book?branch=XC-B01%262`,
+      `${window.location.origin}/app/queue?branch=XC-B01%262`,
     );
 
     setCode('XC-B01');
@@ -127,14 +128,14 @@ describe('Rate board BookingQr percent-encoding (#2370)', () => {
     const qrEl = root.querySelector<HTMLElement>('[data-booking-qr]');
     expect(qrEl).not.toBeNull();
     expect(qrEl!.getAttribute('data-qr-url')).toBe(
-      `${window.location.origin}/app/book?branch=A%26B`,
+      `${window.location.origin}/app/queue?branch=A%26B`,
     );
 
     setEnabled(false);
     expect(root.querySelector('[data-booking-qr]')).toBeNull();
   });
 
-  it('edge case 1 (§9): The booking page decodes the code back through URLSearchParams, so encoding round-trips', () => {
+  it('edge case 1 (§9): The queue page decodes the code back through URLSearchParams, so encoding round-trips', () => {
     const [code, setCode] = createSignal('A&B');
     dispose = render(() => <BookingQr branchCode={code()} bookingEnabled={true} />, root);
 
@@ -144,7 +145,7 @@ describe('Rate board BookingQr percent-encoding (#2370)', () => {
       expect(qrEl).not.toBeNull();
       const rawUrl = qrEl!.getAttribute('data-qr-url')!;
       const parsed = new URL(rawUrl);
-      expect(parsed.pathname).toBe('/app/book');
+      expect(parsed.pathname).toBe('/app/queue');
       expect(parsed.hash).toBe('');
       expect(parsed.searchParams.get('branch')).toBe(sample);
     }
@@ -161,7 +162,7 @@ describe('Rate board BookingQr percent-encoding (#2370)', () => {
       expect(qrEl).not.toBeNull();
       expect(pathEl).not.toBeNull();
 
-      const expectedPath = `/app/book?branch=${encodeURIComponent(sample)}`;
+      const expectedPath = `/app/queue?branch=${encodeURIComponent(sample)}`;
       expect(pathEl!.textContent).toBe(expectedPath);
       expect(qrEl!.getAttribute('data-qr-url')).toBe(`${window.location.origin}${expectedPath}`);
     }
