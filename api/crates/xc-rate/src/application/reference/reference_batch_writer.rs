@@ -62,20 +62,23 @@ impl ReferenceBatchWriter {
             .map_err(|e| RateEngineError::Internal(e.to_string()))?;
         let raw_checksum = sha256_hex(&rows_bytes);
 
+        let fetched_at = chrono::DateTime::parse_from_rfc3339(&rates.fetched_at)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now());
+
         // Deduplicate: same checksum for this provider returns existing id without writing
         if let Some(existing_id) = self
             .store
             .find_existing_by_checksum(tx, self.provider.provider(), &raw_checksum)
             .await?
         {
+            if self.provider.confirms_on_repeat() {
+                self.store.confirm(tx, existing_id, fetched_at).await?;
+            }
             return Ok(existing_id);
         }
 
         let parsed_batch = self.provider.parse(&rates)?;
-
-        let fetched_at = chrono::DateTime::parse_from_rfc3339(&rates.fetched_at)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| chrono::Utc::now());
 
         let status = if parsed_batch.complete {
             "COMPLETE"
