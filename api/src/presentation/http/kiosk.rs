@@ -20,12 +20,11 @@ use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::Side;
 use xc_kiosk::application::kiosk::request_issue::RequestIssueService;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
-use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
 use xc_kiosk::domain::kiosk::entities::kiosk_settings::KioskSettings;
 use xc_kiosk::domain::kiosk::repositories::kiosk_settings_repository::KioskSettingsRepository;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
@@ -47,6 +46,7 @@ use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::application::compat::v2_json::V2Json;
 use crate::bootstrap::AppState;
+use crate::infrastructure::branch_tablets::pg_tablet_store::PgBranchTabletStore;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::kiosk::pg_kiosk_settings_repository::PgKioskSettingsRepository;
@@ -57,6 +57,7 @@ use crate::presentation::extractors::actor::{
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::http::rpc::RpcClock;
+use crate::presentation::http::v3::web_request_create::parse_quote_input;
 use crate::presentation::pages;
 use crate::presentation::pages::Callers;
 
@@ -401,33 +402,12 @@ async fn handle_kiosk(
             Err(err) => handle_service_error(err),
         },
         KioskAction::Quote => {
-            let quote_type = payload.get("type").and_then(Value::as_str);
-            let side = match quote_type {
-                Some("BUY") => Some(Side::Buy),
-                Some("SELL") => Some(Side::Sell),
-                _ => None,
-            };
-            let currency = payload
-                .get("currency")
-                .and_then(Value::as_str)
-                .and_then(|s| CurrencyCode::parse(s).ok());
-            let amount = match payload.get("amount") {
-                Some(Value::Number(n)) => Money::parse(&n.to_string()).ok(),
-                Some(Value::String(s)) => Money::parse(s).ok(),
-                _ => None,
-            };
-            let payment_method = match payload.get("paymentMethod") {
-                Some(Value::String(s)) => Some(s.clone()),
-                Some(Value::Null) | None => None,
-                Some(_) => Some("invalid".to_string()),
-            };
-
-            let input = QuoteInput {
-                side,
-                currency,
-                amount,
-                payment_method,
-            };
+            let input = parse_quote_input(
+                payload.get("type").and_then(Value::as_str),
+                payload.get("currency").and_then(Value::as_str),
+                payload.get("amount"),
+                payload.get("paymentMethod"),
+            );
 
             let default_ids = RandomKioskIds;
             let ids: &dyn KioskIds = req
@@ -796,7 +776,8 @@ async fn handle_kiosk(
                 .get(header::ORIGIN)
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("");
-            let issue_service = RequestIssueService::new(service, confirm_queue(pool));
+            let issue_service = RequestIssueService::new(service, confirm_queue(pool))
+                .with_tablet_sessions(Arc::new(PgBranchTabletStore::new(pool.clone())));
             match issue_service
                 .issue_by_token(&branch, token, origin, now)
                 .await
@@ -820,7 +801,8 @@ async fn handle_kiosk(
             if token.is_empty() {
                 return refuse(404, "notFound");
             }
-            let issue_service = RequestIssueService::new(service, confirm_queue(pool));
+            let issue_service = RequestIssueService::new(service, confirm_queue(pool))
+                .with_tablet_sessions(Arc::new(PgBranchTabletStore::new(pool.clone())));
             match issue_service.find_by_token(&branch, token, now).await {
                 Ok(request_id) => answer(200, json!({ "requestId": request_id }), true),
                 Err(AppError::NotFound { .. }) => refuse(404, "notFound"),

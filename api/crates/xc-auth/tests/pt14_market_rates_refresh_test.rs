@@ -45,7 +45,12 @@ fn pt14_permission_all_holds_market_rates_refresh_exactly_once() {
         .filter(|p| **p == P::MarketRatesRefresh)
         .count();
     assert_eq!(n, 1, "MarketRatesRefresh appears once in Permission::ALL");
-    assert_eq!(Permission::ALL.len(), 52, "Permission::ALL grows 51 -> 52");
+    // RBAC §11.9 (AP-0) appends the nine approval kinds after it: 52 -> 61.
+    assert_eq!(
+        Permission::ALL.len(),
+        61,
+        "Permission::ALL grows 51 -> 52 (PT-14), then 52 -> 61 (§11.9)"
+    );
 }
 
 #[test]

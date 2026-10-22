@@ -246,6 +246,7 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     // §11.2 ("Branch cash basics"): BRANCH_MANAGER gains CashManage and ApprovalsDecide (31 -> 33).
     // PT-14 (#3968): EXECUTIVE and RATE_MANAGER gain MarketRatesRefresh (47 -> 48, 30 -> 31).
     // #4155 W/A1: only EXECUTIVE keeps DASHBOARD (OverviewRead, AlertSettingsSave).
+    // RBAC §11.9 (AP-0): EXECUTIVE +4, BRANCH_MANAGER +3, FINANCE +2 approval kinds (48 -> 52, 31 -> 34, 20 -> 22).
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
@@ -254,12 +255,12 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 48),
+            ("EXECUTIVE", 52),
             ("ADMIN", 9),           // #4155 W/A1: -OverviewRead
             ("RATE_MANAGER", 29),   // #4155 W/A1: -OverviewRead, -AlertSettingsSave
-            ("BRANCH_MANAGER", 31), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
+            ("BRANCH_MANAGER", 34), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("TELLER", 20),         // #4155 W/A1: -OverviewRead
-            ("FINANCE", 20),        // #4155 W/A1: -OverviewRead, -AlertSettingsSave
+            ("FINANCE", 22),        // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("MARKETING", 5),
             ("VERIFICATION_REVIEWER", 15), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("CUSTOMER", 2),

@@ -931,6 +931,27 @@ classDiagram
 | AP-12 | the matrix save lets the nine through and sets `ApprovalsDecide` from them (A8) | `api/src/presentation/http/v3/commands/admin_groups.rs` | logic |
 | AP-F1 | the matrix "Approvals" section | FE lane | logic |
 
+### 11.10 The web decides by permission, never by role name (XC FE controller claude/e8020026, 2026-10-22)
+
+The owner's rule (§11.8, §11.9): who may do what is the group's permissions, editable by the customer; never a fixed role. A sweep of `web/src` at main `56bb8713` for role-name checks (`role === '…'`, `roles.some(…)`) found:
+
+| Where | Today | Server rule | Verdict |
+|---|---|---|---|
+| `screens/admin/booking-slots/BookingSlots.tsx:380` (`orgWideAdmin`), which gates the Booking Policy section (`:526`) | role `ADMIN` with `branchId === null` | `bookingPolicySet` needs `BranchesManage` at scope **All** (`api/.../commands/bookings/policy.rs:59-63`) | **FE bug.** An owner, or a custom group holding `BranchesManage` org-wide, never sees the section although the server allows it. An org ADMIN whose group lost `BranchesManage` sees it and is refused. |
+| `screens/admin/pricing/Pricing.tsx:135` (`mayEditPolicy`) | role `EXECUTIVE` | `may_change_the_frame` checks `Role::Executive` (`rate_policy_save.rs:498-505`) | The server's own rule is role-based. The FE follows when the BE lane moves it to `RatePolicySave` (raised on #564, 14:52 ICT). Not changed here. |
+| `screens/login/home.ts:7-53` | picks the landing page after sign-in by role | — | Routing only, not a permission: every page re-checks its own permission. Not a bug. |
+| `screens/customer/assistant/AssistantScreen.tsx:313,317` | a chat message's author role | — | Not RBAC. |
+| `screens/admin/users/PermissionMatrix.tsx:111` (`baseOptions`) | built-in groups except `EXECUTIVE` offered as "based on" templates | — | Limits which templates are offered, not what the viewer may do. Not a permission gate. |
+| `screens/admin/users/UsersScreen.tsx:73-79, :116, :123, :287, :367` | the role option list and the `TELLER` default | — | Options and a default, not a check. Not a permission gate. |
+
+**RB-W1, the rule for BookingSlots:** the Booking Policy section shows iff `me.permissions` includes `BranchesManage` **and** the session holds at least one org-wide row (`branchId === null`). Nothing else changes.
+
+**Known limit (a contract gap, BE lane):** `me` gives a flat permission union and the role rows, but not which row grants which permission. So RB-W1 cannot tell whether `BranchesManage` itself comes from the org-wide row. It errs only toward showing. In that case the server refuses with `outOfScope`. Today the screen words that as `error.validationFailed` (`BookingSlots.tsx:135-153`, `booking-slots/i18n.ts`), which is wrong, so **RB-W1 also adds `error.outOfScope`** (th, en; worded as "no permission for the whole organisation", following the screen's `roleNotAllowed*` keys), and a refused save is never silent and never mislabelled. An exact gate needs `me` to expose org-wide permissions (e.g. `orgPermissions`); that is the BE lane's call.
+
+| Ticket | File scope | Class |
+|---|---|---|
+| RB-W1 | `web/src/screens/admin/booking-slots/BookingSlots.tsx`, `web/src/screens/admin/booking-slots/i18n.ts`, `web/src/screens/admin/booking-slots/BookingSlots.permission.test.tsx` | mechanical |
+
 ## 12. A row write keeps the rows the admin has already paged (#4558; XC FE controller claude/e8020026, 2026-10-22)
 
 **Bug.** On `/#users`, after the admin pages past the first 50 rows ("more") and then writes a row there (suspend, resume, disable, enable, revoke), the success line shows and the table jumps back to the first 50 rows. The row just changed disappears.

@@ -13,7 +13,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 use xc_exchange::domain::reversal::repository::ReversalRepository;
 use xc_exchange::domain::reversal::reversal::{ReversalId, ReversalStatus};
 use xc_exchange::infrastructure::reversal::repository::PgReversalRepository;
@@ -96,12 +96,11 @@ pub struct ReversalPolicy;
 
 impl ApprovalPolicy for ReversalPolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        let req_branch = request.branch_id.as_deref();
-        let is_finance_of_branch = who
-            .roles
-            .iter()
-            .any(|r| r.role == Role::Finance && r.covers(req_branch));
-        if is_finance_of_branch {
+        if ApprovalDecider::holds_on(
+            who,
+            Permission::ApproveTransactionReversal,
+            request.branch_id.as_deref(),
+        ) {
             Ok(())
         } else {
             Err(Refusal::new(
