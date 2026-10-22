@@ -70,11 +70,29 @@ pub enum Permission {
     LoyaltyRulesManage,
     /// C2 (user-management-rbac design §3.3): read the account audit and the login history. EXECUTIVE and ADMIN.
     AuditLogsRead,
+    /// RBAC §11.9: decide a `CASH_TRANSFER` within the limit, on a row covering `from_branch`. Seeded on BRANCH_MANAGER.
+    ApproveCashTransferWithinLimit,
+    /// RBAC §11.9: decide a `CASH_TRANSFER` above the limit or with no limit, any row. Seeded on EXECUTIVE.
+    ApproveCashTransferAboveLimit,
+    /// RBAC §11.9: decide a `COUNT_DIFFERENCE` on a row covering its branch. Seeded on FINANCE.
+    ApproveCountDifference,
+    /// RBAC §11.9: decide a `NEGATIVE_STOCK` on a row covering its branch. Seeded on BRANCH_MANAGER.
+    ApproveNegativeStock,
+    /// RBAC §11.9: decide a `CAMPAIGN_VERSION`, any row. Seeded on EXECUTIVE.
+    ApproveCampaignVersion,
+    /// RBAC §11.9: decide a `RATE_PUBLICATION`, any row. Seeded on EXECUTIVE.
+    ApproveRatePublication,
+    /// RBAC §11.9: decide an `EXCHANGE_TRANSACTION` on a row covering its branch. Seeded on BRANCH_MANAGER.
+    ApproveExchangeTransaction,
+    /// RBAC §11.9: decide a `TRANSACTION_REVERSAL` on a row covering its branch. Seeded on FINANCE.
+    ApproveTransactionReversal,
+    /// RBAC §11.9: decide a `LOYALTY_RULE_VERSION`, any row. Seeded on EXECUTIVE.
+    ApproveLoyaltyRuleVersion,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 52] = [
+    pub const ALL: [Permission; 61] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -127,5 +145,14 @@ impl Permission {
         Permission::MarketRatesRefresh,
         Permission::LoyaltyRulesManage,
         Permission::AuditLogsRead,
+        Permission::ApproveCashTransferWithinLimit,
+        Permission::ApproveCashTransferAboveLimit,
+        Permission::ApproveCountDifference,
+        Permission::ApproveNegativeStock,
+        Permission::ApproveCampaignVersion,
+        Permission::ApproveRatePublication,
+        Permission::ApproveExchangeTransaction,
+        Permission::ApproveTransactionReversal,
+        Permission::ApproveLoyaltyRuleVersion,
     ];
 }

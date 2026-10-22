@@ -292,6 +292,7 @@ fn guardrail_error(breach: GuardrailBreach) -> V3Error {
         GuardrailBreach::AdminBaseAboveView => "guardrail:3",
         GuardrailBreach::ExecutiveFixed => "guardrail:4",
         GuardrailBreach::NoModuleEdited => "guardrail:5",
+        GuardrailBreach::AdminBaseHoldsApproval => "guardrail:6",
     };
     V3Error::new(code, None, code, StatusCode::CONFLICT)
 }
