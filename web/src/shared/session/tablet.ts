@@ -25,10 +25,13 @@ export async function signOutAndRestart(branch: string, api: ApiClient): Promise
   window.location.assign(`/app/queue?branch=${encodeURIComponent(branch)}&shared=1`);
 }
 
-export function armTabletIdle(branch: string, api: ApiClient): () => void {
+export function armTabletIdle(branch: string, api: ApiClient, onFailed?: () => void): () => void {
   if (!isSharedTablet()) return () => {};
   const timer = idleTimer(TABLET_IDLE_MS, () => {
-    void signOutAndRestart(branch, api);
+    signOutAndRestart(branch, api).catch(() => {
+      onFailed?.();
+      timer.touch();
+    });
   });
   return () => timer.dispose();
 }

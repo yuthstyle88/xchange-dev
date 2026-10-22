@@ -459,7 +459,7 @@ async fn an_admin_based_group_is_the_owners_alone_to_grant() {
     let a = grant(&db, ORG_ADMIN, &user, NIGHT_ADMIN, Some(B01)).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "an ADMIN grants an ADMIN-based group",
     );
@@ -483,14 +483,14 @@ async fn a_holder_of_an_admin_based_group_is_a_protected_target() {
     let a = grant(&db, ORG_ADMIN, &holder, "FINANCE", Some(B01)).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "an ADMIN grants to a NIGHT_ADMIN holder",
     );
     let r = revoke(&db, ORG_ADMIN, &holder, NIGHT_ADMIN, Some(B01)).await;
     refused(
         &r,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "an ADMIN revokes NIGHT_ADMIN from its holder",
     );
@@ -632,7 +632,7 @@ async fn built_in_codes_work_as_before() {
     let admin = grant(&db, ORG_ADMIN, &user, "ADMIN", Some(B01)).await;
     refused(
         &admin,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "an ADMIN grants ADMIN, as today",
     );

@@ -19,6 +19,7 @@ export type CustomerRoute =
   | '/app/journey'
   | '/app/book'
   | '/app/bookings'
+  | '/app/queue'
   | '/app/assistant'
   | '/app/rate-alerts'
   | '/app/notifications'
@@ -44,6 +45,7 @@ const NAV_OF: Record<CustomerRoute, CustomerRoute | undefined> = {
   '/app/branches': '/app/branches',
   '/app/book': '/app/bookings',
   '/app/bookings': '/app/bookings',
+  '/app/queue': '/app/bookings',
   '/app/history': '/app/history',
   '/app/assistant': '/app/assistant',
   '/app/rate-alerts': undefined,

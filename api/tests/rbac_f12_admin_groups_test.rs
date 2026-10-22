@@ -4,7 +4,7 @@
 //! Do not edit, delete or weaken; add tests in a file of your own.
 //!
 //! What they pin:
-//! - only a caller with a valid organisation-wide row whose base is EXECUTIVE changes groups (`403 roleNotAllowed`
+//! - only a caller with a valid organisation-wide row whose base is EXECUTIVE changes groups (`400 roleNotAllowed`
 //!   for anyone else who passes the seam; the seam itself refuses a caller without `UsersManage`);
 //! - an add stores the requested module permissions plus the base's no-module seed; a save replaces the module set;
 //! - the answer is `{code, version}` with `version` = `role_grant_version` after the change;
@@ -679,21 +679,21 @@ async fn only_an_org_wide_executive_base_changes_groups() {
         let a = add(&db, who, NIGHT, "TELLER", &names(&night_set())).await;
         refused(
             &a,
-            StatusCode::FORBIDDEN,
+            StatusCode::BAD_REQUEST,
             "roleNotAllowed",
             &format!("{who} adds"),
         );
         let s = save(&db, who, "TELLER", &names(&night_set())).await;
         refused(
             &s,
-            StatusCode::FORBIDDEN,
+            StatusCode::BAD_REQUEST,
             "roleNotAllowed",
             &format!("{who} saves"),
         );
         let d = delete(&db, who, "SPARE_GROUP").await;
         refused(
             &d,
-            StatusCode::FORBIDDEN,
+            StatusCode::BAD_REQUEST,
             "roleNotAllowed",
             &format!("{who} deletes"),
         );

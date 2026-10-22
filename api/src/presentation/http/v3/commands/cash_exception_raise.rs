@@ -145,11 +145,8 @@ impl CommandAction for CashExceptionRaiseCommand {
         {
             return Err(match refusal {
                 Refusal::OutOfScope => out_of_scope(),
-                _ => V3Error::new(
-                    "roleNotAllowedHere",
-                    None,
-                    "บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้",
-                    StatusCode::FORBIDDEN,
+                _ => V3Error::from(
+                    xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,
                 ),
             });
         }

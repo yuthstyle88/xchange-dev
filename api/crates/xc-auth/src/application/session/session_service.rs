@@ -54,6 +54,15 @@ pub struct SignInTail {
     pub session_token: String,
 }
 
+/// What `otp_verified_login` answers for a confirmed code that resolved to an Identity account.
+#[derive(Debug, Clone)]
+pub struct VerifiedOtp {
+    pub login: IdentityLoginResponse,
+    pub verified: VerifiedToken,
+    /// Identity created the account in this call (`registered: true` on its answer).
+    pub registered: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionError {
     Identity(IdentityError),
@@ -896,6 +905,39 @@ impl SessionService {
             .otp_request(destination, channel, client_ip)
             .await
             .map_err(Into::into)
+    }
+
+    /// The customer OTP door's verify (design `kiosk-shared-phone.md` §4.2 D11): Identity's verify with
+    /// `register_if_absent`, then the access token checked by the verifier, as `verified_login` does for a
+    /// password. `Ok(None)` when Identity confirmed the code but answered no `login` (no account for that
+    /// destination, and no sign-up asked). Identity's refusals pass through. Signs nobody in.
+    pub async fn otp_verified_login(
+        &self,
+        challenge_id: &str,
+        code: &str,
+        register_if_absent: bool,
+        client_ip: Option<&str>,
+    ) -> Result<Option<VerifiedOtp>, SessionError> {
+        let identity = self.identity.as_ref().ok_or_else(|| {
+            IdentityError::unavailable("/api/auth/otp/verify", 503, "not_configured")
+        })?;
+        let resp = identity
+            .otp_verify_registering(challenge_id, code, register_if_absent, client_ip)
+            .await?;
+        let Some(login) = resp.login else {
+            return Ok(None);
+        };
+        let verifier = self.verifier.as_ref().ok_or_else(|| {
+            IdentityError::unavailable("/auth/login", 503, "verifier_not_configured")
+        })?;
+        let verified = verifier.verify(&login.access_token).await.map_err(|_| {
+            IdentityError::unavailable("/auth/login", 503, "token_verification_failed")
+        })?;
+        Ok(Some(VerifiedOtp {
+            login,
+            verified,
+            registered: resp.registered == Some(true),
+        }))
     }
 
     pub async fn otp_verify(

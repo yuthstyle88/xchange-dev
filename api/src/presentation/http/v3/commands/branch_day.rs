@@ -45,17 +45,11 @@ use crate::presentation::http::v3::error::V3Error;
 
 fn map_service_error(err: pos_error::AppError) -> V3Error {
     match err {
-        pos_error::AppError::Domain(ref code) if code == "roleNotAllowed" => V3Error::new(
-            "roleNotAllowed",
-            None,
-            "ไม่มีสิทธิ์ทำรายการ",
-            StatusCode::FORBIDDEN,
+        pos_error::AppError::Domain(ref code) if code == "roleNotAllowed" => V3Error::from(
+            xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowed,
         ),
-        pos_error::AppError::Domain(ref code) if code == "roleNotAllowedHere" => V3Error::new(
-            "roleNotAllowedHere",
-            None,
-            "ไม่มีสิทธิ์ทำรายการสำหรับบทบาทนี้",
-            StatusCode::FORBIDDEN,
+        pos_error::AppError::Domain(ref code) if code == "roleNotAllowedHere" => V3Error::from(
+            xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,
         ),
         pos_error::AppError::Domain(ref code) if code == "outOfScope" => V3Error::new(
             "outOfScope",
