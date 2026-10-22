@@ -261,3 +261,16 @@ background poll failure (pinned, `worded.test.tsx:497`). `CopyLink` (the server 
 paging (no cursor in the contract). `PublicPoller` stops after a 404 (by design); `queue-store` stops on 401 (the
 session-ended path, worded by `AppShell`). `VersionFooter`. Home preview and save-plan, Profile, Member, AnswerPreview:
 worded.
+
+## 9. Round 12 follow-up: admin starting prices lose typed values to the first load (#4844)
+
+> designed-by: claude/e8020026 (XC FE lane controller), 2026-10-23 ICT, from a code reading of main `627b2664`.
+> FE UI round 12 saw it on the host (`flow-admin-pricing-rates.spec.ts:717` (b): typed `32.10` read back `32.10000000`).
+
+| # | Bug and root cause | Rule |
+|---|---|---|
+| R5-1 | Admin › Starting prices: values typed before the first `org_starting_prices` read answers are overwritten with the stored values. `StartingPrices.tsx:154-160` starts `loadView(true)` asynchronously on open; the add-currency input and the buy/sell inputs are usable meanwhile (only the `xc-sp-loading` line shows); when the read answers, `resetTyped = true` (`:137-145`) replaces every typed value of a currency the server already prices. | Until the **first** `org_starting_prices` read answers (success or failure), the add-currency input and its button, every buy/sell input, and Save are `disabled`. After it answers they behave exactly as today. Later reloads (`loadView(true)` after a save, `:292`; the Retry button) are unchanged. **Existing tests:** `StartingPrices.test.tsx` tests 6 and 7 type before the first read answers. #4844 changes only their waiting: wait for `.xc-sp-loading` to be gone, or for the add-code input to be enabled, before typing. Every assertion is kept. Waiting for `.xc-sp-empty` is not enough, because it also shows while loading (`:358`). |
+
+| Ticket | File scope | Class |
+|---|---|---|
+| #4844 | `web/src/screens/admin/starting-prices/StartingPrices.tsx`<br>`web/src/screens/admin/starting-prices/StartingPrices.first-load.test.tsx`<br>`web/src/screens/admin/starting-prices/StartingPrices.test.tsx` | mechanical |
