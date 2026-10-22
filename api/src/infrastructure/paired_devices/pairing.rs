@@ -15,14 +15,26 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
+use uuid::Uuid;
 use xc_auth::infrastructure::attempts::PgAttemptCounter;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 
-use super::store::PairedDeviceStore;
+use super::secret::DeviceSecret;
+use super::store::{NewPaired, PairedDevice, PairedDeviceStore};
+use super::{
+    ATTEMPT_WINDOW_MINUTES, CODE_VALID_MINUTES, PAIR_ATTEMPTS_PER_WINDOW, TOKEN_FAILURES_PER_WINDOW,
+};
+
+fn window_start(now: DateTime<Utc>) -> DateTime<Utc> {
+    let millis = now.timestamp_millis();
+    let window_millis = millis.div_euclid(ATTEMPT_WINDOW_MINUTES * 60 * 1000)
+        * (ATTEMPT_WINDOW_MINUTES * 60 * 1000);
+    DateTime::from_timestamp_millis(window_millis).unwrap_or(now)
+}
 
 /// A pairing code answered by `issue` or `renew`. Shown once.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,17 +131,58 @@ impl<S: PairedDeviceStore> DevicePairing<S> {
         actor: &str,
         now: DateTime<Utc>,
     ) -> Result<PairingCode, PairingError> {
-        let _ = (
-            &self.store,
-            &self.branch_tx,
-            &self.attempts,
-            &self.branches,
-            branch,
-            name,
-            actor,
-            now,
-        );
-        todo!("BT-1: DevicePairing::issue")
+        self.branches.require(branch).await?;
+
+        let trimmed_name = name.trim();
+        let units = trimmed_name.encode_utf16().count();
+        if units == 0 || units > 60 {
+            return Err(PairingError::NameRequired);
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let code = DeviceSecret::new_pairing_code();
+        let code_hash = DeviceSecret::code_hash(&code)
+            .ok_or_else(|| AppError::Internal("failed to hash pairing code".to_owned()))?;
+        let expires_at = now + Duration::minutes(CODE_VALID_MINUTES);
+
+        let store = self.store.clone();
+        let b = branch.clone();
+        let id_clone = id.clone();
+        let name_string = trimmed_name.to_owned();
+        let actor_string = actor.to_owned();
+
+        let stored = self
+            .branch_tx
+            .run(branch, move |tx| {
+                let store = store.clone();
+                let b = b.clone();
+                let id_clone = id_clone.clone();
+                let name_string = name_string.clone();
+                let actor_string = actor_string.clone();
+                let code_hash = code_hash.clone();
+                Box::pin(async move {
+                    let new_paired = NewPaired {
+                        id: &id_clone,
+                        name: &name_string,
+                        created_by: &actor_string,
+                        pair_code_hash: &code_hash,
+                        pair_code_expires_at: expires_at,
+                        at: now,
+                    };
+                    store.insert_pending_in(tx, &b, &new_paired).await
+                })
+            })
+            .await?;
+
+        if !stored {
+            return Err(PairingError::BranchHasOne);
+        }
+
+        Ok(PairingCode {
+            device_id: id,
+            code,
+            code_expires_at: expires_at,
+        })
     }
 
     /// A new code for device `id` (re-pair), valid `CODE_VALID_MINUTES` from `now`.
@@ -139,8 +192,53 @@ impl<S: PairedDeviceStore> DevicePairing<S> {
         actor: &str,
         now: DateTime<Utc>,
     ) -> Result<PairingCode, PairingError> {
-        let _ = (id, actor, now);
-        todo!("BT-1: DevicePairing::renew")
+        let _ = actor;
+        let Ok(uuid) = Uuid::parse_str(id) else {
+            return Err(PairingError::NoSuchDevice);
+        };
+        let id_str = uuid.to_string();
+        let Some(device) = self.store.find(&id_str).await? else {
+            return Err(PairingError::NoSuchDevice);
+        };
+        if device.is_revoked() {
+            return Err(PairingError::NoSuchDevice);
+        }
+
+        let branch = BranchId::new(device.branch_id());
+        let code = DeviceSecret::new_pairing_code();
+        let code_hash = DeviceSecret::code_hash(&code)
+            .ok_or_else(|| AppError::Internal("failed to hash pairing code".to_owned()))?;
+        let expires_at = now + Duration::minutes(CODE_VALID_MINUTES);
+
+        let store = self.store.clone();
+        let b = branch.clone();
+        let id_clone = id_str.clone();
+        let hash_clone = code_hash.clone();
+
+        let updated = self
+            .branch_tx
+            .run(&branch, move |tx| {
+                let store = store.clone();
+                let b = b.clone();
+                let id_clone = id_clone.clone();
+                let hash_clone = hash_clone.clone();
+                Box::pin(async move {
+                    store
+                        .set_code_in(tx, &b, &id_clone, &hash_clone, expires_at)
+                        .await
+                })
+            })
+            .await?;
+
+        if !updated {
+            return Err(PairingError::NoSuchDevice);
+        }
+
+        Ok(PairingCode {
+            device_id: id_str,
+            code,
+            code_expires_at: expires_at,
+        })
     }
 
     /// Pairs the device whose live code is `code` (any case, with or without the dash) from
@@ -152,8 +250,25 @@ impl<S: PairedDeviceStore> DevicePairing<S> {
         address: &str,
         now: DateTime<Utc>,
     ) -> AppResult<PairOutcome<S::Device>> {
-        let _ = (code, seen, address, now);
-        todo!("BT-1: DevicePairing::pair")
+        let key = DeviceSecret::hash(&S::KIND.pair_key(address));
+        let win = window_start(now);
+        let count = self.attempts.increment(&key, win).await?;
+        if count > PAIR_ATTEMPTS_PER_WINDOW {
+            return Ok(PairOutcome::RateLimited);
+        }
+
+        let Some(code_hash) = DeviceSecret::code_hash(code) else {
+            return Ok(PairOutcome::InvalidCode);
+        };
+
+        let token = DeviceSecret::new_token(S::KIND);
+        let token_hash = DeviceSecret::hash(&token);
+
+        let Some(device) = self.store.pair(&code_hash, &token_hash, seen, now).await? else {
+            return Ok(PairOutcome::InvalidCode);
+        };
+
+        Ok(PairOutcome::Success { device, token })
     }
 
     /// The device holding `token` (trimmed), if it is not revoked. A missing token, one without
@@ -165,8 +280,40 @@ impl<S: PairedDeviceStore> DevicePairing<S> {
         address: &str,
         now: DateTime<Utc>,
     ) -> AppResult<AuthOutcome<S::Device>> {
-        let _ = (token, address, now);
-        todo!("BT-1: DevicePairing::authenticate")
+        let Some(raw_token) = token else {
+            return self.record_failed_auth(address, now).await;
+        };
+
+        let trimmed = raw_token.trim();
+        if !trimmed.starts_with(S::KIND.token_prefix()) {
+            return self.record_failed_auth(address, now).await;
+        }
+
+        let token_hash = DeviceSecret::hash(trimmed);
+        let Some(device) = self.store.find_by_token_hash(&token_hash).await? else {
+            return self.record_failed_auth(address, now).await;
+        };
+
+        if device.is_revoked() {
+            return self.record_failed_auth(address, now).await;
+        }
+
+        Ok(AuthOutcome::Ok(Box::new(device)))
+    }
+
+    async fn record_failed_auth(
+        &self,
+        address: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<AuthOutcome<S::Device>> {
+        let key = DeviceSecret::hash(&S::KIND.token_key(address));
+        let win = window_start(now);
+        let count = self.attempts.increment(&key, win).await?;
+        if count > TOKEN_FAILURES_PER_WINDOW {
+            Ok(AuthOutcome::RateLimited)
+        } else {
+            Ok(AuthOutcome::InvalidToken)
+        }
     }
 
     /// Revokes device `id`, then `after_revoke_in`, in one transaction of its branch.
@@ -176,14 +323,59 @@ impl<S: PairedDeviceStore> DevicePairing<S> {
         actor: &str,
         now: DateTime<Utc>,
     ) -> Result<(), PairingError> {
-        let _ = (id, actor, now);
-        todo!("BT-1: DevicePairing::revoke")
+        let Ok(uuid) = Uuid::parse_str(id) else {
+            return Err(PairingError::NoSuchDevice);
+        };
+        let id_str = uuid.to_string();
+        let Some(device) = self.store.find(&id_str).await? else {
+            return Err(PairingError::NoSuchDevice);
+        };
+        if device.is_revoked() {
+            return Err(PairingError::NoSuchDevice);
+        }
+
+        let branch = BranchId::new(device.branch_id());
+        let store = self.store.clone();
+        let b = branch.clone();
+        let id_clone = id_str.clone();
+        let actor_str = actor.to_owned();
+
+        let revoked = self
+            .branch_tx
+            .run(&branch, move |tx| {
+                let store = store.clone();
+                let b = b.clone();
+                let id_clone = id_clone.clone();
+                let actor_str = actor_str.clone();
+                Box::pin(async move {
+                    if !store.revoke_in(tx, &b, &id_clone, &actor_str, now).await? {
+                        return Ok(false);
+                    }
+                    store
+                        .after_revoke_in(tx, &b, &id_clone, &actor_str, now)
+                        .await?;
+                    Ok(true)
+                })
+            })
+            .await?;
+
+        if !revoked {
+            return Err(PairingError::NoSuchDevice);
+        }
+
+        Ok(())
     }
 
     /// The branch of device `id`, or `None` when `id` is not a UUID or names no device (revoked
     /// ones included), so the route can authorise the branch before anything else is read.
     pub async fn branch_of(&self, id: &str) -> AppResult<Option<BranchId>> {
-        let _ = id;
-        todo!("BT-1: DevicePairing::branch_of")
+        let Ok(uuid) = Uuid::parse_str(id) else {
+            return Ok(None);
+        };
+        let id_str = uuid.to_string();
+        let Some(device) = self.store.find(&id_str).await? else {
+            return Ok(None);
+        };
+        Ok(Some(BranchId::new(device.branch_id())))
     }
 }
