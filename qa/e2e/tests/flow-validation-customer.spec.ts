@@ -228,6 +228,27 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         expect(directJson?.error?.code).toBe('validationFailed');
         expect(directJson?.error?.field).toBe('displayName');
 
+        // Case 3b-3d: 100-character display name cap (#4397, #4628)
+        const thai101 = 'ก'.repeat(101);
+        const thai100 = 'ก'.repeat(100);
+
+        await nameInput.fill(thai101);
+        expect((await nameInput.inputValue()).length).toBe(100);
+
+        const tooLongRes = await page.request.put('/api/app/profile', {
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-name101-${lang}-${Date.now()}` },
+          data: { displayName: thai101 },
+        });
+        expect(tooLongRes.status(), `${lang}: 101-char displayName returns 400`).toBe(400);
+        const tooLongJson = (await tooLongRes.json()) as { error?: { code?: string; field?: string } };
+        expect(tooLongJson?.error?.code).toBe('nameTooLong');
+
+        const maxOkRes = await page.request.put('/api/app/profile', {
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-name100-${lang}-${Date.now()}` },
+          data: { displayName: thai100 },
+        });
+        expect(maxOkRes.status(), `${lang}: 100-char displayName returns 200`).toBe(200);
+
         // Case 4: consentRecord validation checks (direct API commands on /api/app/consents)
         // 4a: invalid purpose
         const badPurposeRes = await page.request.post('/api/app/consents', {
@@ -259,6 +280,10 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
         expect(withdrawTermsJson?.error?.code).toBe('validationFailed');
       } finally {
         // Restore original name
+        await page.request.put('/api/app/profile', {
+          headers: { ...sameOrigin, 'Idempotency-Key': `qa-r9-11-restore-${lang}-${Date.now()}` },
+          data: { displayName: origName },
+        });
         await nameInput.fill(origName);
       }
 
