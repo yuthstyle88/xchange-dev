@@ -192,6 +192,8 @@ describe('CashFlows me failure: the shared line with a retry (R3-4b)', () => {
 
     server.meFails = false;
     const meReadsBefore = server.reads('me').length;
+    const countsBefore = server.reads('cash_counts').filter((r) => r.branch === 'MAIN').length;
+    const transfersBefore = server.reads('cash_transfers').filter((r) => r.branch === 'MAIN').length;
     retry!.click();
     await settle();
 
@@ -209,8 +211,8 @@ describe('CashFlows me failure: the shared line with a retry (R3-4b)', () => {
     expect(submit!.title).toBe('');
     expect(button(s, 'reconcile', 'tr-received'), 'reconcile hidden (FinanceReconcile not held)').toBeNull();
 
-    expect(server.reads('cash_counts').filter((r) => r.branch === 'MAIN').length).toBeGreaterThan(0);
-    expect(server.reads('cash_transfers').filter((r) => r.branch === 'MAIN').length).toBeGreaterThan(0);
+    expect(server.reads('cash_counts').filter((r) => r.branch === 'MAIN').length).toBeGreaterThan(countsBefore);
+    expect(server.reads('cash_transfers').filter((r) => r.branch === 'MAIN').length).toBeGreaterThan(transfersBefore);
   });
 
   it('(d) refusal is not used for the me failure: before and after a branch switch, the only alert carrying it is the shared line', async () => {
