@@ -361,7 +361,7 @@ async fn readers_after_write() {
         branch: branch.clone(),
         shift_id: Some(shift_id),
         kind: CountKind::Close,
-        lines: vec![], // 0 counted vs 1000 THB expected -> diff -1000 THB
+        lines: vec![CountLine::new("THB", db.denom_id("THB", "1000").await, 0)], // 0 counted vs 1000 THB expected -> diff -1000 THB
         note: None,
         idempotency_key: unique("close_reader"),
     };

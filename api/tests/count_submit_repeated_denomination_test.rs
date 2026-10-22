@@ -453,3 +453,36 @@ async fn d4_single_line_succeeds_200() {
     );
     room.finish().await;
 }
+
+#[actix_web::test]
+async fn an_empty_lines_count_is_400_validation_failed_and_writes_nothing() {
+    let room = Room::start().await;
+    let teller = room.person(Role::Teller, Some(B01)).await;
+
+    let a = post(
+        &room,
+        &teller,
+        "/api/cash-counts",
+        json!({
+            "branch": B01,
+            "kind": "OPEN",
+            "lines": []
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        a.status,
+        StatusCode::BAD_REQUEST,
+        "empty lines status: {}",
+        a.text
+    );
+    assert_eq!(code(&a), "validationFailed", "empty lines code: {}", a.text);
+    assert_eq!(
+        room.scalar("SELECT COUNT(*) FROM cash_counts").await,
+        0,
+        "empty lines must write no cash_counts row"
+    );
+    room.finish().await;
+}
+
