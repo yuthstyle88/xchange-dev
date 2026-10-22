@@ -240,7 +240,7 @@ describe('HoldsCard customer pick and search lifecycle (#2270 §8 & §9)', () =>
   });
 
   it('row 3: Place succeeds, press Place again -> clears the pick and reason, and sends no second POST', async () => {
-    const posts: { customerId: string; reason: string }[] = [];
+    const posts: { branch?: string; customerId: string; reason: string }[] = [];
 
     vi.stubGlobal(
       'fetch',
@@ -282,7 +282,7 @@ describe('HoldsCard customer pick and search lifecycle (#2270 §8 & §9)', () =>
     placeBtn.click();
     await flush();
 
-    expect(posts).toEqual([{ customerId: CUST_A.id, reason: 'AML review' }]);
+    expect(posts).toEqual([{ branch: BRANCH, customerId: CUST_A.id, reason: 'AML review' }]);
 
     // Press Place again: no second POST
     placeBtn.click();
@@ -339,7 +339,7 @@ describe('HoldsCard customer pick and search lifecycle (#2270 §8 & §9)', () =>
   });
 
   it('row 5: A refusal keeps the picked customer (marked as picked) and the reason', async () => {
-    const posts: { customerId: string; reason: string }[] = [];
+    const posts: { branch?: string; customerId: string; reason: string }[] = [];
 
     vi.stubGlobal(
       'fetch',
@@ -390,7 +390,7 @@ describe('HoldsCard customer pick and search lifecycle (#2270 §8 & §9)', () =>
     placeBtn.click();
     await flush();
     expect(posts).toHaveLength(2);
-    expect(posts[1]).toEqual({ customerId: CUST_B.id, reason: 'Large cash' });
+    expect(posts[1]).toEqual({ branch: BRANCH, customerId: CUST_B.id, reason: 'Large cash' });
     expect(rowB.getAttribute('aria-pressed')).toBe('true');
     expect(rowA.getAttribute('aria-pressed')).toBe('false');
   });
@@ -449,7 +449,7 @@ describe('HoldsCard customer pick and search lifecycle (#2270 §8 & §9)', () =>
   });
 
   it('edge case 2: The same customer appearing in the new search must be picked again before Place sends', async () => {
-    const posts: { customerId: string; reason: string }[] = [];
+    const posts: { branch?: string; customerId: string; reason: string }[] = [];
 
     vi.stubGlobal(
       'fetch',
@@ -509,7 +509,7 @@ describe('HoldsCard customer pick and search lifecycle (#2270 §8 & §9)', () =>
 
     placeBtn.click();
     await flush();
-    expect(posts).toEqual([{ customerId: CUST_A.id, reason: 'Structuring' }]);
+    expect(posts).toEqual([{ branch: BRANCH, customerId: CUST_A.id, reason: 'Structuring' }]);
   });
 
   it('in-flight search: clicking a row of the old list while the new search request is pending sends no POST (both success and failure variants)', async () => {

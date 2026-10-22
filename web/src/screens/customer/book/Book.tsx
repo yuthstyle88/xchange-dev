@@ -666,7 +666,6 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           data-action="book"
           data-testid="book-submit"
           disabled={submitting()}
-          onClick={handleSubmit}
         >
           {submitting() ? t('submitting') : t('submit')}
         </button>

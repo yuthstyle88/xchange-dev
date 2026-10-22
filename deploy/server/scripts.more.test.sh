@@ -265,6 +265,7 @@ OUT="$(PATH="$STUBS:$PATH" \
   SERVICE_NAME="xc-v3" SERVICE_USER="xc-v3" \
   INSTALL_DIR="$m1/opt/xc-v3" ETC_DIR="$m1/etc/xc-v3" \
   UPLOADS_DIR="$m1/var/lib/xc-v3/uploads" \
+  VERIFICATION_STORE_DIR="$m1/var/lib/xc-v3/verification-documents" \
   V2_BUNDLE_DIR="$m1/v2bundle" STAGE="$m1/stage" \
   SMOKE_WAIT_SECS=0 \
   bash "$HERE/install.sh" </dev/null 2>&1)"
@@ -300,6 +301,7 @@ OUT="$(PATH="$STUBS:$PATH" \
   SERVICE_NAME="xc-v3" SERVICE_USER="xc-v3" \
   INSTALL_DIR="$m2/opt/xc-v3" ETC_DIR="$m2/etc/xc-v3" \
   UPLOADS_DIR="$m2/var/lib/xc-v3/uploads" \
+  VERIFICATION_STORE_DIR="$m2/var/lib/xc-v3/verification-documents" \
   STAGE="$m2/stage" SMOKE_WAIT_SECS=0 \
   bash "$HERE/update.sh" </dev/null 2>&1)"
 RC=$?
@@ -335,6 +337,7 @@ printf '681bea2\n' >"$m3/stage/BUILD"
   cd "$m3/stage"
   sha256sum identity-api BUILD >SHA256SUMS
 )
+chmod 700 "$m3/stage"
 
 # 1. Happy path: update succeeds when /health build matches
 set +e
@@ -343,6 +346,8 @@ OUT="$(PATH="$STUBS:$PATH" \
   XC_TEST_HEALTH_BUILD="681bea2" \
   SERVICE_NAME="xc-identity" \
   INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  UPLOADS_DIR="$m3/var/lib/xc-identity/uploads" \
+  VERIFICATION_STORE_DIR="$m3/var/lib/xc-identity/verification-documents" \
   SMOKE_WAIT_SECS=0 \
   bash "$HERE/update-identity.sh" "$m3/stage" "681bea2" 2>&1)"
 RC=$?
@@ -371,6 +376,7 @@ printf '0badc0de\n' >"$m3_fail_stage/BUILD"
   cd "$m3_fail_stage"
   sha256sum identity-api BUILD >SHA256SUMS
 )
+chmod 700 "$m3_fail_stage"
 
 set +e
 OUT_FAIL="$(PATH="$STUBS:$PATH" \
@@ -378,6 +384,8 @@ OUT_FAIL="$(PATH="$STUBS:$PATH" \
   XC_TEST_HEALTH_BUILD="wrongsha" \
   SERVICE_NAME="xc-identity" \
   INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  UPLOADS_DIR="$m3/var/lib/xc-identity/uploads" \
+  VERIFICATION_STORE_DIR="$m3/var/lib/xc-identity/verification-documents" \
   SMOKE_WAIT_SECS=0 \
   bash "$HERE/update-identity.sh" "$m3_fail_stage" "0badc0de" 2>&1)"
 RC_FAIL=$?
@@ -407,6 +415,8 @@ OUT_UNLISTED="$(PATH="$STUBS:$PATH" \
   XC_TEST_HEALTH_BUILD="681bea2" \
   SERVICE_NAME="xc-identity" \
   INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  UPLOADS_DIR="$m3/var/lib/xc-identity/uploads" \
+  VERIFICATION_STORE_DIR="$m3/var/lib/xc-identity/verification-documents" \
   SMOKE_WAIT_SECS=0 \
   bash "$HERE/update-identity.sh" "$m3_unlisted" "681bea2" 2>&1)"
 RC_UNLISTED=$?
@@ -437,6 +447,8 @@ OUT_BADSHA="$(PATH="$STUBS:$PATH" \
   XC_TEST_HEALTH_BUILD="681bea2" \
   SERVICE_NAME="xc-identity" \
   INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  UPLOADS_DIR="$m3/var/lib/xc-identity/uploads" \
+  VERIFICATION_STORE_DIR="$m3/var/lib/xc-identity/verification-documents" \
   SMOKE_WAIT_SECS=0 \
   bash "$HERE/update-identity.sh" "$m3_badsha" "681bea2 x" 2>&1)"
 RC_BADSHA=$?
@@ -467,6 +479,8 @@ OUT_777="$(PATH="$STUBS:$PATH" \
   XC_TEST_HEALTH_BUILD="681bea2" \
   SERVICE_NAME="xc-identity" \
   INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  UPLOADS_DIR="$m3/var/lib/xc-identity/uploads" \
+  VERIFICATION_STORE_DIR="$m3/var/lib/xc-identity/verification-documents" \
   SMOKE_WAIT_SECS=0 \
   bash "$HERE/update-identity.sh" "$m3_777" "681bea2" 2>&1)"
 RC_777=$?

@@ -30,4 +30,5 @@ pub mod save_attempt;
 pub mod ticket_print_job;
 pub mod transaction_link;
 pub mod transition;
+pub mod web_request_status;
 pub mod work_times;

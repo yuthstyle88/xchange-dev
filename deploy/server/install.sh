@@ -35,6 +35,7 @@ judge_dir "$INSTALL_DIR" root root 755
 judge_dir "$CONFIG_DIR" root root 755
 judge_dir "$ETC_DIR" root "$SERVICE_USER" 750
 judge_dir "$UPLOADS_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
+judge_dir "$VERIFICATION_STORE_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
 # WEB_DIR only when step 6 will create it (missing or empty).
 if ! sudo test -d "$WEB_DIR" || [ -z "$(sudo ls -A "$WEB_DIR")" ]; then
   judge_dir "$WEB_DIR" root root 755
@@ -53,9 +54,11 @@ ensure_dir "$INSTALL_DIR" root root 755
 ensure_dir "$CONFIG_DIR" root root 755
 ensure_dir "$ETC_DIR" root "$SERVICE_USER" 750
 ensure_dir "$UPLOADS_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
+ensure_dir "$VERIFICATION_STORE_DIR" "$SERVICE_USER" "$SERVICE_USER" 700
 # an existing parent the service user cannot enter would lock the service
-# out of its uploads; this script does not change such a directory, so say so
+# out of its uploads or verification documents; this script does not change such a directory, so say so
 warn_if_unreachable "$SERVICE_USER" "$UPLOADS_DIR"
+warn_if_unreachable "$SERVICE_USER" "$VERIFICATION_STORE_DIR"
 
 # 2b. the PII encryption key file, created once; never printed or put on a command line.
 #     api/src/bootstrap/mod.rs:177 reads /etc/xc-v3/pii.key
@@ -87,7 +90,8 @@ if ! sudo test -f "$ENV_FILE"; then
       "APP_DATABASE__USERNAME=$DB_ROLE" \
       "APP_DATABASE__DATABASE_NAME=$DB_NAME" \
       "APP_WEB__DIR=$WEB_DIR" \
-      "APP_FILES__DIR=$UPLOADS_DIR"
+      "APP_FILES__DIR=$UPLOADS_DIR" \
+      "APP_VERIFICATION__STORE_DIR=$VERIFICATION_STORE_DIR"
     # the leading letter keeps the value text: settings are type-parsed
     printf 'APP_DATABASE__PASSWORD=p'
     openssl rand -hex 24
@@ -95,7 +99,11 @@ if ! sudo test -f "$ENV_FILE"; then
   say "env file written: $ENV_FILE (root:$SERVICE_USER 640)"
 else
   say "env file kept as it is: $ENV_FILE"
-  for key in APP_WEB__DIR APP_FILES__DIR APP_DATABASE__PASSWORD APP_CONFIG_DIR; do
+  if ! sudo grep -q "^APP_VERIFICATION__STORE_DIR=" "$ENV_FILE"; then
+    printf 'APP_VERIFICATION__STORE_DIR=%s\n' "$VERIFICATION_STORE_DIR" | sudo tee -a "$ENV_FILE" >/dev/null
+    say "added APP_VERIFICATION__STORE_DIR=$VERIFICATION_STORE_DIR to $ENV_FILE"
+  fi
+  for key in APP_WEB__DIR APP_FILES__DIR APP_VERIFICATION__STORE_DIR APP_DATABASE__PASSWORD APP_CONFIG_DIR; do
     sudo grep -q "^$key=" "$ENV_FILE" || echo "WARNING: $ENV_FILE has no $key (see env.example)" >&2
   done
 fi

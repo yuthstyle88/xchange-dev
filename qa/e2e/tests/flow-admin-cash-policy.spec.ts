@@ -255,23 +255,47 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   }) => {
     const role = hasAccount('finance') ? 'finance' : 'admin';
     await signIn(page, role, adminPath('cash'));
+
+    const meRes = await page.request.get('/api/v3/views/me');
+    expect(meRes.ok(), `GET /api/v3/views/me: ${meRes.status()}`).toBeTruthy();
+    const meBody = (await meRes.json().catch(() => ({}))) as { data?: { id?: string } };
+    const myUserId = meBody.data?.id ?? '';
+    expect(myUserId, 'signed-in user id from /api/v3/views/me').toBeTruthy();
+
+    await page.goto('about:blank');
+    const viewLoaded = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'GET' &&
+        new URL(r.url()).pathname === '/api/v3/views/cash_transfers' &&
+        r.ok(),
+      { timeout: 20_000 },
+    );
     await page.goto(adminPath('cash'));
+    const viewRes = await viewLoaded;
 
     // web/src/screens/admin/cash/CashFlows.tsx:412,497,522,561
     await expect(page.locator('.cash-flows')).toBeVisible({ timeout: 20_000 });
     const transfersSection = page.locator('[data-section="transfers"]');
     await expect(transfersSection).toBeVisible({ timeout: 20_000 });
+    await expect(transfersSection.locator('table.transfers-table tbody tr, .empty').first()).toBeVisible({
+      timeout: 20_000,
+    });
 
-    const reconcileBtn = transfersSection.locator('button[data-action="reconcile"]').first();
-    if ((await reconcileBtn.count()) === 0) {
-      console.log('[qa-r9-5] transferReconcile: skipping — no RECEIVED transfer row on host');
-      test.skip(true, 'no RECEIVED transfer row on host to reconcile');
+    const viewBody = (await viewRes.json().catch(() => ({}))) as {
+      data?: Array<{ id: string; status: string; createdBy: string }>;
+    };
+    const transfers = Array.isArray(viewBody.data) ? viewBody.data : [];
+    const eligible = transfers.find((t) => t.status === 'RECEIVED' && t.createdBy !== myUserId);
+
+    if (!eligible) {
+      console.log('[qa-r9-5] transferReconcile: skipping — no RECEIVED transfer by another user');
+      test.skip(true, 'no RECEIVED transfer by another user');
       return;
     }
 
-    // The row carries no id; the reconcile button does (CashFlows.tsx:561 data-id).
-    const transferId = (await reconcileBtn.getAttribute('data-id')) ?? '';
-    expect(transferId, 'data-id on the RECEIVED row reconcile button').toBeTruthy();
+    const transferId = eligible.id;
+    const reconcileBtn = transfersSection.locator(`button[data-action="reconcile"][data-id="${transferId}"]`);
+    await expect(reconcileBtn, 'reconcile button for eligible RECEIVED transfer').toBeVisible({ timeout: 10_000 });
 
     await reconcileBtn.click();
     // web/src/screens/admin/cash/CashFlows.tsx:342-369
@@ -285,7 +309,15 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
     );
     expect(reconciled.ok, `POST /api/cash-transfers/${transferId}/reconcile accepted: ${reconciled.text}`).toBeTruthy();
 
+    const reloadViewLoaded = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'GET' &&
+        new URL(r.url()).pathname === '/api/v3/views/cash_transfers' &&
+        r.ok(),
+      { timeout: 20_000 },
+    );
     await page.reload();
+    await reloadViewLoaded;
     await expect(transfersSection).toBeVisible({ timeout: 20_000 });
     await expect(transfersSection.locator('tbody tr').first()).toBeVisible({ timeout: 20_000 });
     // Only a RECEIVED row offers reconcile (CashFlows.tsx:559), so its button gone = the state moved.

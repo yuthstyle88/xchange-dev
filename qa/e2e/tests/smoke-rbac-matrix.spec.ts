@@ -96,7 +96,7 @@ function adminBasePath(role: Role): string {
 }
 
 test.describe('QA-F11 smoke: RBAC matrix across menus, staff cards and verification', () => {
-  test('customer is redirected to /login?next=… from staff, desk, admin and verification routes', async ({ page }) => {
+  test('signed-in customer is forwarded to /app from staff, desk, admin and verification routes', async ({ page }) => {
     if (!hasAccount('customer')) {
       console.log('[rbac] skipping customer: no customer account in users.json');
       test.skip(true, 'no customer account in users.json: run scripts/reseed.sh');
@@ -105,14 +105,15 @@ test.describe('QA-F11 smoke: RBAC matrix across menus, staff cards and verificat
 
     const gatedPaths = ['/', '/staff', `/desk?branch=${encodeURIComponent(users.branch)}`, '/operations/verification'];
     for (const target of gatedPaths) {
-      await page.goto(target);
-      await page.waitForURL(
-        (url) => url.pathname.startsWith('/login') && url.searchParams.get('next') === target,
-        { timeout: 20_000 },
-      );
-      const url = new URL(page.url());
-      expect(url.pathname, `customer visiting ${target} lands on /login`).toBe('/login');
-      expect(url.searchParams.get('next'), `customer visiting ${target} preserves next=${target}`).toBe(target);
+      // The customer is signed in above, so since #4351 the login page forwards them to /app. Wait for that
+      // forward and the home page before the next goto, so no navigation is still in flight.
+      await page.goto(target, { waitUntil: 'commit' });
+      await page.waitForURL((url) => url.pathname === '/app', { timeout: 20_000 });
+      await expect(
+        page.locator('.xc-customer-home'),
+        `customer visiting ${target} settles on /app`,
+      ).toBeVisible({ timeout: 20_000 });
+      expect(new URL(page.url()).pathname, `customer visiting ${target} lands on /app`).toBe('/app');
     }
   });
 

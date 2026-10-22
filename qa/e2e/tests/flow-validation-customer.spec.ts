@@ -452,8 +452,11 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
     test(`/app/journey plannerDraftSave validation (${lang})`, async ({ page }) => {
       await withLang(page, lang);
       await page.goto('about:blank');
-      await signIn(page, 'customer', '/app');
-      await page.goto('/app');
+      await signIn(page, 'customer', `/app?branch=${encodeURIComponent(users.branch)}`);
+      await page.goto(`/app?branch=${encodeURIComponent(users.branch)}`);
+
+      await expect(page.locator('select#branch-select'), `${lang}: branch select has users.branch`).toHaveValue(users.branch, { timeout: 20_000 });
+      await expect(page.locator('.xc-home-rates-section tbody tr').first(), `${lang}: rate board has at least one row`).toBeVisible({ timeout: 20_000 });
 
       const amtInput = page.locator('input#amount-input');
       await expect(amtInput).toBeVisible({ timeout: 20_000 });

@@ -41,14 +41,17 @@ test.describe('QA-F14b flow: save and delete customer journey plan', () => {
     const quantity = String((Date.now() % 800) + 101);
 
     // Step 1: /app : BUY users.currency , a quantity -> estimate card shows
-    await signIn(page, 'customer', '/app');
-    await page.goto('/app');
+    await signIn(page, 'customer', `/app?branch=${encodeURIComponent(users.branch)}`);
+    await page.goto(`/app?branch=${encodeURIComponent(users.branch)}`);
+
+    await expect(page.locator('select#branch-select'), 'branch select has users.branch').toHaveValue(users.branch, { timeout: 20_000 });
+    await expect(page.locator('.xc-home-rates-section tbody tr').first(), 'rate board has at least one row').toBeVisible({ timeout: 20_000 });
 
     const buyBtn = page.locator('.xc-home-planner-section .xc-home-toggle-btn').first();
     await buyBtn.click();
 
-    const currOption = page.locator(`select#currency-select option[value="${currency}"]`);
-    await expect(currOption, `rate for ${currency} loaded in planner`).toHaveCount(1, { timeout: 20_000 });
+    const currRow = page.locator('.xc-home-rates-section tbody tr', { hasText: currency }).first();
+    await expect(currRow, `rate for ${currency} loaded in planner`).toBeVisible({ timeout: 20_000 });
     await page.locator('select#currency-select').selectOption(currency);
 
     await page.locator('input#amount-input').fill(quantity);
