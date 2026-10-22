@@ -394,6 +394,8 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
           'PUT',
         );
         expect(badScaleRes.ok, `too-many-decimal benefit PUT /draft refused (${lang}): ${badScaleRes.text}`).toBe(false);
+        expect(badScaleRes.text).toContain('rules.calculation.amount');
+        expect(badScaleRes.text).toContain('validationFailed');
         const detailErr = detail.locator('.xc-campaigns-error');
         await expect(detailErr, `too-many-decimal benefit error banner (${lang})`).toBeVisible({ timeout: 15_000 });
         assertWordedRefusal(await detailErr.innerText(), lang, 'too-many-decimal-benefit');
