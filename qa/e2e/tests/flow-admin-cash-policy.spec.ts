@@ -458,7 +458,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
     // Navigating to `/#cash`: teller lacks CashManage and FinanceReconcile (CashFlows.tsx:35-36, 496, 557),
     // so neither the transfers section nor the reconcile action is offered.
     await page.goto('/#cash');
-    await expect(page.locator('.cash-flows')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.cash-flows')).toHaveCount(1, { timeout: 20_000 });
     await expect(page.locator('[data-section="transfers"]')).toHaveCount(0);
     await expect(page.locator('button[data-action="reconcile"]')).toHaveCount(0);
 
