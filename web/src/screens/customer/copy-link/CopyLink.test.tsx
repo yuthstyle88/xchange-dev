@@ -41,7 +41,7 @@ describe('CopyLink (QW-5, kiosk-shared-phone §5r F12, §4 D22, row P4)', () => 
     const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       expect(url).toBe('/api/public/copy-link');
       expect(init?.method).toBe('POST');
-      expect(init?.headers).toEqual({ 'Content-Type': 'application/json' });
+      expect([new Headers(init?.headers).get('Content-Type'), new Headers(init?.headers).get('x-xchange-request')]).toEqual(['application/json', '1']);
       const parsedBody = JSON.parse(String(init?.body));
       expect(parsedBody).toEqual({ link: fragment });
 
