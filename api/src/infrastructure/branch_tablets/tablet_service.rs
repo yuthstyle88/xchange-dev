@@ -11,15 +11,20 @@ use chrono::{DateTime, Utc};
 use pos_error::AppResult;
 use xc_auth::infrastructure::attempts::PgAttemptCounter;
 use xc_kernel::branch_tx::BranchTx;
+use xc_kernel::ids::BranchId;
 
 use super::pg_tablet_store::PgBranchTabletStore;
-use super::{ListedTablet, TabletMe, TabletSeen};
-use crate::infrastructure::paired_devices::pairing::DevicePairing;
+use super::{ListedTablet, TabletMe, TabletSeen, TabletState};
+use crate::infrastructure::paired_devices::kind::DeviceKind;
+use crate::infrastructure::paired_devices::pairing::{AuthOutcome, DevicePairing};
+use crate::infrastructure::paired_devices::secret::DeviceSecret;
+use crate::infrastructure::paired_devices::store::PairedDeviceStore;
 
 #[derive(Clone)]
 pub struct BranchTabletService {
     store: Arc<PgBranchTabletStore>,
     pairing: DevicePairing<PgBranchTabletStore>,
+    branch_tx: BranchTx,
 }
 
 impl BranchTabletService {
@@ -30,10 +35,14 @@ impl BranchTabletService {
         let store = Arc::new(PgBranchTabletStore::new(pool.clone()));
         let pairing = DevicePairing::new(
             store.clone(),
-            branch_tx,
-            PgAttemptCounter::new(pool.clone()),
+            branch_tx.clone(),
+            PgAttemptCounter::new(pool),
         );
-        Self { store, pairing }
+        Self {
+            store,
+            pairing,
+            branch_tx,
+        }
     }
 
     /// The pairing core: `issue` (`add`), `renew` (`newCode`), `pair`, `revoke`, `branch_of`.
@@ -50,7 +59,29 @@ impl BranchTabletService {
     /// otherwise `PAIRED`. By branch id, then oldest first, then id.
     pub async fn list(&self, now: DateTime<Utc>) -> AppResult<Vec<ListedTablet>> {
         let _ = now;
-        todo!("BT-3: BranchTabletService::list")
+        let all = self.store.list().await?;
+        Ok(all
+            .into_iter()
+            .map(|t| {
+                let state = if t.revoked_at.is_some() {
+                    TabletState::Revoked
+                } else if t.paired_at.is_none() {
+                    TabletState::Pending
+                } else {
+                    TabletState::Paired
+                };
+                ListedTablet {
+                    tablet_id: t.id,
+                    branch_id: t.branch_id,
+                    name: t.name,
+                    state,
+                    last_seen_at: t.last_seen_at,
+                    created_at: t.created_at,
+                    paired_at: t.paired_at,
+                    revoked_at: t.revoked_at,
+                }
+            })
+            .collect())
     }
 
     /// `GET /api/branch-tablet/me` (T-D6, §7.7): the tablet holding `token` (the cookie's value),
@@ -65,8 +96,26 @@ impl BranchTabletService {
         address: &str,
         now: DateTime<Utc>,
     ) -> AppResult<TabletMe> {
-        let _ = (token, seen, address, now);
-        todo!("BT-3: BranchTabletService::me")
+        let Some(token) = token else {
+            return Ok(TabletMe::Unpaired {
+                clear_cookie: false,
+            });
+        };
+        match self.pairing.authenticate(Some(token), address, now).await? {
+            AuthOutcome::Ok(tablet) => {
+                if !self.store.touch(&tablet.id, seen, now).await? {
+                    return Ok(TabletMe::Unpaired { clear_cookie: true });
+                }
+                Ok(TabletMe::Paired {
+                    tablet_id: tablet.id,
+                    branch_code: tablet.branch_id,
+                    name: tablet.name,
+                })
+            }
+            AuthOutcome::RateLimited | AuthOutcome::InvalidToken => {
+                Ok(TabletMe::Unpaired { clear_cookie: true })
+            }
+        }
     }
 
     /// The sign-in binding (T-D7, T14, T23): when `token` (the tablet cookie's value) is a live
@@ -81,13 +130,39 @@ impl BranchTabletService {
         user_id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<bool> {
-        let _ = (token, session_hash, user_id, now);
-        todo!("BT-3: BranchTabletService::bind_on_sign_in")
+        let trimmed = token.trim();
+        if !trimmed.starts_with(DeviceKind::BranchTablet.token_prefix()) {
+            return Ok(false);
+        }
+        let token_hash = DeviceSecret::hash(trimmed);
+        let Some(tablet) = self.store.find_by_token_hash(&token_hash).await? else {
+            return Ok(false);
+        };
+        if tablet.revoked_at.is_some() || tablet.paired_at.is_none() {
+            return Ok(false);
+        }
+        let branch = BranchId::new(&tablet.branch_id);
+        let store = self.store.clone();
+        let tablet_id = tablet.id;
+        let session_hash = session_hash.to_owned();
+        let user_id = user_id.to_owned();
+        self.branch_tx
+            .run(&branch, move |tx| {
+                let store = store.clone();
+                let tablet_id = tablet_id.clone();
+                let session_hash = session_hash.clone();
+                let user_id = user_id.clone();
+                Box::pin(async move {
+                    store
+                        .bind_session_in(tx, &tablet_id, &session_hash, &user_id, now)
+                        .await
+                })
+            })
+            .await
     }
 
     /// Whether `session_hash` is bound to a tablet (T23: `POST /api/auth/refresh` refuses it).
     pub async fn is_bound_session(&self, session_hash: &str) -> AppResult<bool> {
-        let _ = session_hash;
-        todo!("BT-3: BranchTabletService::is_bound_session")
+        self.store.is_bound_session(session_hash).await
     }
 }
