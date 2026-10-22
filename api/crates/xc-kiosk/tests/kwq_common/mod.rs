@@ -20,6 +20,8 @@ struct Calls {
     issues: Vec<(String, QueueTicketSource, String)>,
     /// Every `link_kiosk_customer_in` call: (branch, request id, customer id).
     links: Vec<(String, String, String)>,
+    /// Every `cancel_active_for_kiosk_in` call: (branch, request id). Added for slice c.
+    cancels: Vec<(String, String)>,
 }
 
 /// A queue port that numbers tickets `W001`, `W002`, … in the order requests are first issued.
@@ -35,6 +37,10 @@ impl RecordingQueue {
 
     pub fn links(&self) -> Vec<(String, String, String)> {
         self.calls.lock().expect("lock").links.clone()
+    }
+
+    pub fn cancels(&self) -> Vec<(String, String)> {
+        self.calls.lock().expect("lock").cancels.clone()
     }
 
     /// The distinct tickets issued so far.
@@ -106,12 +112,19 @@ impl QueueTickets for RecordingQueue {
     fn cancel_active_for_kiosk_in<'a>(
         &'a self,
         _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _branch: &'a BranchId,
-        _request_id: &'a str,
+        branch: &'a BranchId,
+        request_id: &'a str,
         _outcome: &'a KioskTicketOutcome,
         _now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>> {
-        Box::pin(async { Ok(false) })
+        Box::pin(async move {
+            self.calls
+                .lock()
+                .expect("lock")
+                .cancels
+                .push((branch.as_str().to_owned(), request_id.to_owned()));
+            Ok(true)
+        })
     }
 
     fn link_kiosk_customer_in<'a>(

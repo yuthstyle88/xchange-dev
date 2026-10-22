@@ -167,7 +167,8 @@ fn saved_response() -> HttpResponse {
         .body(r#"{"saved":true}"#)
 }
 
-async fn publication_freshness(
+/// The kiosk's publication freshness (base lines only); also the web page's `queue-rates` (W2).
+pub(crate) async fn publication_freshness(
     pool: &sqlx::PgPool,
     branch: &BranchId,
 ) -> Result<RateFreshnessDto, AppError> {
