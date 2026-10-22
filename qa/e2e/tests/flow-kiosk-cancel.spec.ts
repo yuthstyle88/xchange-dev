@@ -39,6 +39,7 @@ const kioskHeaders = {
   origin: new URL(users.baseUrl).origin,
   'content-type': 'application/json',
 };
+const KIOSK_PRECONDITION_RE = /Counter is closed|Rate changed or counter closed|queueClosed|outside.*hours/i;
 
 async function createWaitingKioskRequest(
   page: Page,
@@ -58,8 +59,11 @@ async function createWaitingKioskRequest(
   });
   const quoteText = await quoteRes.text().catch(() => '');
   if (!quoteRes.ok()) {
-    console.log(`[F19] skip on quote refusal: ${quoteRes.status()} ${quoteText}`);
-    test.skip(true, `${quoteRes.status()} ${quoteText}`);
+    if (quoteRes.status() < 500 && KIOSK_PRECONDITION_RE.test(quoteText)) {
+      console.log(`[F19] skip on quote refusal: ${quoteRes.status()} ${quoteText}`);
+      test.skip(true, `${quoteRes.status()} ${quoteText}`);
+    }
+    expect(quoteRes.ok(), `POST /api/kiosk quote: ${quoteRes.status()} ${quoteText}`).toBeTruthy();
   }
   const quote = JSON.parse(quoteText) as KioskQuoteAnswer;
   expect(quote.id, 'kiosk quote id').toBeTruthy();
@@ -79,8 +83,11 @@ async function createWaitingKioskRequest(
   });
   const confirmText = await confirmRes.text().catch(() => '');
   if (!confirmRes.ok()) {
-    console.log(`[F19] skip on confirm refusal: ${confirmRes.status()} ${confirmText}`);
-    test.skip(true, `${confirmRes.status()} ${confirmText}`);
+    if (confirmRes.status() < 500 && KIOSK_PRECONDITION_RE.test(confirmText)) {
+      console.log(`[F19] skip on confirm refusal: ${confirmRes.status()} ${confirmText}`);
+      test.skip(true, `${confirmRes.status()} ${confirmText}`);
+    }
+    expect(confirmRes.ok(), `POST /api/kiosk confirm: ${confirmRes.status()} ${confirmText}`).toBeTruthy();
   }
   const confirmed = JSON.parse(confirmText) as KioskConfirmAnswer;
   expect(confirmed.id, 'confirmed request id').toBe(quote.id);
