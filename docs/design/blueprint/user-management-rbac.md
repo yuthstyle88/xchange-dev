@@ -930,3 +930,29 @@ classDiagram
 | AP-4..AP-11 | one policy each, its role test → `ApprovalDecider`. `RATE_PUBLICATION`'s ticket also changes `allows_self_decision` (`rate_publication.rs:102-104`), which is a role test too. | the 8 `may_decide` files in the gap table | logic |
 | AP-12 | the matrix save lets the nine through and sets `ApprovalsDecide` from them (A8) | `api/src/presentation/http/v3/commands/admin_groups.rs` | logic |
 | AP-F1 | the matrix "Approvals" section | FE lane | logic |
+
+## 12. A row write keeps the rows the admin has already paged (#4558; XC FE controller claude/e8020026, 2026-10-22)
+
+**Bug.** On `/#users`, after the admin pages past the first 50 rows ("more") and then writes a row there (suspend, resume, disable, enable, revoke), the success line shows and the table jumps back to the first 50 rows. The row just changed disappears.
+
+- **Cause:** every write handler calls `loadUsers()` (`web/src/screens/admin/users/UsersScreen.tsx:282, 322, 380, 423, 445, 471` at main `bbe5ba1b`). `loadUsers` (`:166-188`) reads only the first page (`limit: PAGE_SIZE`, 50), and `setUsers(rows)` replaces the list.
+- Found while reviewing PR 4540 (#4511), whose e2e re-pages after each write to work around it.
+
+**Design: one reload that keeps the shown count.**
+- `reloadShown()` replaces `loadUsers()` at all six write sites.
+- It re-reads with the same keyset paging as `loadMoreUsers` (`before` = the last row's `userId`, `limit: PAGE_SIZE`), page after page, until it holds at least as many rows as were shown before the write, or a page comes back short. It then replaces the list once.
+- `hasMore` follows the last page read, as today.
+- The first open, a branch change and the reload button keep `loadUsers()`, which shows the first page.
+- **Why not update the row in place:** the commands' answer `UserChangeOutput` is `{userId, status, version}` (`shared/api/generated/user_disable.ts`). That covers the status writes, but not revoke, grant or profile, which change roles and fields it does not carry. One reload path covers all six, and the view stays the only source of a row's shape.
+
+| # | Given | Expected |
+|---|---|---|
+| UR1 | 120 users; "more" pressed twice (120 shown); suspend a row from the second page | success line; that row is still shown, now offering resume; 120 rows shown; no "more" |
+| UR2 | 120 users; "more" pressed once (100 shown); enable a DISABLED row from the second page | the row is still shown, now offering suspend; at least 100 rows shown; "more" still offered |
+| UR3 | 120 users; only the first page shown (50); suspend a row on it | exactly one `admin_users` read after the write, with no `before`; 50 rows shown; "more" offered |
+
+| Unit | File | Ticket | Class |
+|---|---|---|---|
+| `reloadShown()` and the six call sites | `web/src/screens/admin/users/UsersScreen.tsx` | #4558 | logic |
+
+Up-front tests: `web/src/screens/admin/users/UsersScreen.row-write-paging.test.tsx` (branch `test/4558-row-write-paging`).
