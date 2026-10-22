@@ -14,8 +14,7 @@
 //   non-2xx answer (a 404 while the BE is not deployed, a 5xx), a network failure, a body that is not JSON, or a
 //   `paired: true` with a field missing or empty. Fail-open to the normal customer flow (T12).
 // - `?shared=1` and `sessionStorage` have no effect (T12): the only input is the server's answer.
-// - It takes a `Fetch`, not an `ApiClient`: `ApiClient` has no plain GET for a path outside `/api/v3/views/`, and a GET
-//   is not a write, so `raw-write.gate.test.ts` allows it (as `queue-api.ts` `getJson` does).
+// - It takes a `Fetch`, not an `ApiClient`: callers pass `fetchFn` and `readTabletMode` builds an `ApiClient` to call `publicGet`.
 //
 // `pairFromFragment(api, loc?, history?)` (T-D10):
 // - `loc.hash` holds `pair=<CODE>` (`#pair=ABCDE-12345`, read as URLSearchParams of the hash) ⇒ one
@@ -28,7 +27,7 @@
 // - It does not reload. T-D10's reload is the caller's (`useQueueTablet`, BT-F2): on `'paired'` the page reloads,
 //   so it starts again as the paired tablet's first page (T-D8), with `me` read afresh.
 // - `loc` and `history` default to `window.location` and `window.history`; tests inject them.
-import type { ApiClient, Fetch } from '../api/client';
+import { ApiClient, type Fetch } from '../api/client';
 
 /** The page's one flag (T-D6). */
 export type TabletMode = { paired: false } | { paired: true; tabletId: string; branchCode: string; name: string };
@@ -41,9 +40,8 @@ function nonEmpty(v: unknown): v is string {
 
 export async function readTabletMode(fetchFn: Fetch): Promise<TabletMode> {
   try {
-    const res = await fetchFn('/api/branch-tablet/me', { method: 'GET', credentials: 'same-origin' });
-    if (!res.ok) return { paired: false };
-    const body = (await res.json()) as Record<string, unknown> | null;
+    const api = new ApiClient(fetchFn);
+    const body = await api.publicGet<Record<string, unknown> | null>('/api/branch-tablet/me');
     if (body?.paired === true && nonEmpty(body.tabletId) && nonEmpty(body.branchCode) && nonEmpty(body.name)) {
       return { paired: true, tabletId: body.tabletId, branchCode: body.branchCode, name: body.name };
     }
