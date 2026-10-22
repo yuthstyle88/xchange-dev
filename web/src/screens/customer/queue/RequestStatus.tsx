@@ -11,16 +11,39 @@
 //   shows while it is a number.
 // - A `404 notFound` read after `expiresAt` ⇒ `onExpired()` once (W5: there is no EXPIRED status). A 404 before
 //   `expiresAt` is not an expiry.
-// Classes: xc-queue-status, xc-queue-status-label, xc-queue-number, xc-queue-ahead.
-// Texts: statusLabel, status_<W5 status>, number, ahead.
-import { createEffect, onCleanup, Show, type JSX } from 'solid-js';
+// - SF-2 (docs/design/web-silent-failures.md §2, B1; the body is SF-b's), from the poller's `error()` and
+//   `lastOkAt()` (SF-1):
+//   - no good read yet and `error()` set ⇒ [data-status-error="unavailable"] with `statusUnavailable`; the status
+//     label is never left blank (`Status:` with nothing after it).
+//   - a good read earlier and `error()` set now ⇒ the last status, number and place in line stay, plus
+//     [data-status-error="stale"] with `statusStale`, `{time}` = `lastOkAt` as hh:mm in the page's language (the
+//     same formatting as RequestQr's expiry). The next good read removes the line.
+//   - `error()` is a 401 ⇒ a[data-status-signin][href=signInHref] with `statusSignIn`, and no error line.
+//   - after `expiresAt`, a 404 stays silent as before (`onExpired()` only, no error line, no sign-in link).
+// Classes: xc-queue-status, xc-queue-status-label, xc-queue-number, xc-queue-ahead, xc-queue-status-error,
+// xc-queue-status-signin.
+// Texts: statusLabel, status_<W5 status>, number, ahead, statusUnavailable, statusStale, statusSignIn.
+import { createEffect, createSignal, onCleanup, Show, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
-import { screenT } from '../../../shared/i18n';
+import { locale, screenT } from '../../../shared/i18n';
 import { ViewPoller } from '../../../shared/live/view-poller';
 import * as table from './i18n';
 import type { MyWebRequestData, WebRequestStatus } from './queue-api';
 
 const t = screenT('customer.queue', table);
+
+function formatTime(ms: number): string {
+  try {
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return String(ms);
+    return d.toLocaleTimeString(locale(), {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return String(ms);
+  }
+}
 
 export interface RequestStatusProps {
   client: Pick<ApiClient, 'view'>;
@@ -33,17 +56,19 @@ export interface RequestStatusProps {
   status: WebRequestStatus | null;
   onExpired: () => void;
   onStatus?: (s: WebRequestStatus) => void;
+  /** SF-2: where the 401 sign-in link goes (the page's U1 link). Default `/app/sign-in?next=<this page>`. */
+  signInHref?: string;
 }
 
 export function RequestStatus(props: RequestStatusProps): JSX.Element {
-  let expiredCalled = false;
+  const [expired, setExpired] = createSignal(false);
   const client: Pick<ApiClient, 'view'> = {
     view: async (name, q) => {
       try {
         return await props.client.view(name, q);
       } catch (err) {
-        if ((err as { status?: number })?.status === 404 && !expiredCalled && Date.now() >= Date.parse(props.expiresAt)) {
-          expiredCalled = true;
+        if ((err as { status?: number })?.status === 404 && !expired() && Date.now() >= Date.parse(props.expiresAt)) {
+          setExpired(true);
           props.onExpired();
         }
         throw err;
@@ -62,6 +87,9 @@ export function RequestStatus(props: RequestStatusProps): JSX.Element {
   const status = () => props.status ?? poller.data()?.status ?? null;
   const displayNumber = () => poller.data()?.displayNumber ?? null;
   const ticketsAhead = () => poller.data()?.ticketsAhead ?? null;
+  const err = () => (expired() ? null : poller.error());
+  const signInHref = () =>
+    props.signInHref ?? `/app/sign-in?next=${encodeURIComponent(location.pathname + location.search)}`;
 
   createEffect<WebRequestStatus | null>((prev) => {
     const s = status();
@@ -71,14 +99,33 @@ export function RequestStatus(props: RequestStatusProps): JSX.Element {
 
   return (
     <div class="xc-queue-status" data-request-status={status() ?? ''}>
-      <p class="xc-queue-status-label">
-        {t('statusLabel')}: {status() ? t(`status_${status()!}`) : ''}
-      </p>
+      <Show when={status()}>
+        {(s) => (
+          <p class="xc-queue-status-label">
+            {t('statusLabel')}: {t(`status_${s()}`)}
+          </p>
+        )}
+      </Show>
       <p class="xc-queue-number" data-display-number={displayNumber() ?? ''} aria-label={t('number')}>
         {displayNumber() ?? ''}
       </p>
       <Show when={typeof ticketsAhead() === 'number'}>
         <p class="xc-queue-ahead">{t('ahead', { count: ticketsAhead()! })}</p>
+      </Show>
+      <Show when={err()?.status === 401}>
+        <a class="xc-queue-status-signin" data-status-signin href={signInHref()}>
+          {t('statusSignIn')}
+        </a>
+      </Show>
+      <Show when={err() && err()!.status !== 401 && poller.lastOkAt() === null}>
+        <p class="xc-queue-status-error" data-status-error="unavailable">
+          {t('statusUnavailable')}
+        </p>
+      </Show>
+      <Show when={err() && err()!.status !== 401 && poller.lastOkAt() !== null}>
+        <p class="xc-queue-status-error" data-status-error="stale">
+          {t('statusStale', { time: formatTime(poller.lastOkAt()!) })}
+        </p>
       </Show>
     </div>
   );

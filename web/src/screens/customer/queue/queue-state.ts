@@ -7,7 +7,14 @@
 //   No `?branch=` or a failed read ⇒ phase `failed` with a worded message.
 //   `?request=<id>` in `search` (a reload) ⇒ `reissueQr` for a fresh token and phase `open`; a refused reissue
 //   (`404`: cancelled, finished or purged) ⇒ phase `form`.
+//   SF-3 (docs/design/web-silent-failures.md §2, B2; the body is SF-b's): only a `404` means the request is gone.
+//   A reissue `401` ⇒ resolves `{signedOut: true}` (the U1 path; nothing can be sent afterwards). Any other failure
+//   (5xx, network) ⇒ phase `reissueFailed` with the worded `reissueFailed` text and the request id; the page URL
+//   keeps `request=<id>`. Never the empty form.
 //   Otherwise phase `form`.
+// - `retryReissue()` (SF-3): in phase `reissueFailed`, one more `reissueQr` for the same id, with the same outcomes
+//   as the reload (open / `404` ⇒ form / `401` ⇒ `{signedOut: true}` / else `reissueFailed` again). Anywhere else
+//   it sends nothing.
 // - `submit(v)`: one `create` with `{branch: branchId, ...v}` at a time (a second call while one is in flight sends
 //   nothing). `opened` ⇒ phase `open`. `replayed` or `alreadyQueued` ⇒ `reissueQr` for that id, then `open` (U9).
 //   A refusal ⇒ `error()` worded, phase stays `form`.
@@ -35,6 +42,8 @@ export type QueuePhase =
   | { kind: 'loading' }
   | { kind: 'failed'; message: string }
   | { kind: 'form'; expired: boolean }
+  /** SF-3: the reload's reissue failed with something other than 404 or 401; `retryReissue()` tries again. */
+  | { kind: 'reissueFailed'; requestId: string; message: string }
   /** `status` is what the page itself knows (CANCELLED after cancel()); null until then. */
   | { kind: 'open'; request: OpenedRequest; status: WebRequestStatus | null };
 
@@ -55,6 +64,8 @@ export interface QueueRequestState {
   /** The worded refusal of the last submit or cancel; null after a success. */
   error: Accessor<string | null>;
   load(): Promise<LoadResult>;
+  /** SF-3: reissue the failed reload's request once more (phase `reissueFailed` only). */
+  retryReissue(): Promise<LoadResult>;
   submit(value: RequestFormValue): Promise<void>;
   cancel(): Promise<void>;
   expire(): void;
@@ -104,6 +115,26 @@ export function createQueueRequestState(api: QueueApi, search: string): QueueReq
     setPhase({ kind: 'form', expired });
   }
 
+  async function reissue(bId: string, requestId: string): Promise<LoadResult> {
+    try {
+      const reopened = await api.reissueQr(bId, requestId);
+      openRequest(reopened);
+      return { signedOut: false };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        showForm(false);
+        return { signedOut: false };
+      }
+      if (err instanceof ApiError && err.status === 401) {
+        signedOut = true;
+        return { signedOut: true };
+      }
+      syncUrl(requestId);
+      setPhase({ kind: 'reissueFailed', requestId, message: t('reissueFailed') });
+      return { signedOut: false };
+    }
+  }
+
   async function load(): Promise<LoadResult> {
     if (!branchCode) {
       setPhase({ kind: 'failed', message: t('noBranch') });
@@ -117,15 +148,9 @@ export function createQueueRequestState(api: QueueApi, search: string): QueueReq
       setRates(queueRates.rates);
       setEmailCopy(profile.emailCopy);
       if (initialRequestId) {
-        try {
-          const reopened = await api.reissueQr(queueRates.branchId, initialRequestId);
-          openRequest(reopened);
-        } catch {
-          showForm(false);
-        }
-      } else {
-        showForm(false);
+        return await reissue(queueRates.branchId, initialRequestId);
       }
+      showForm(false);
       return { signedOut: false };
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -173,6 +198,13 @@ export function createQueueRequestState(api: QueueApi, search: string): QueueReq
     }
   }
 
+  async function retryReissue(): Promise<LoadResult> {
+    const p = phase();
+    const bId = branchId();
+    if (signedOut || !bId || p.kind !== 'reissueFailed') return { signedOut };
+    return reissue(bId, p.requestId);
+  }
+
   function expire(): void {
     setError(null);
     showForm(true);
@@ -187,6 +219,7 @@ export function createQueueRequestState(api: QueueApi, search: string): QueueReq
     busy,
     error,
     load,
+    retryReissue,
     submit,
     cancel,
     expire,

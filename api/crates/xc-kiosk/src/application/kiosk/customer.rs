@@ -81,136 +81,143 @@ impl KioskService {
         now: DateTime<Utc>,
     ) -> AppResult<IdentifiedRequest> {
         self.branch_name(branch).await?;
-        let at = cut_to_millis(now);
-        let now = time(now);
-        let (repo, ports, b) = (self.repo.clone(), self.ports.clone(), branch.clone());
+        let (this, b) = (self.clone(), branch.clone());
         self.branch_tx
             .run(branch, move |tx| {
-                Box::pin(async move {
-                    let view = ports.counter_in(tx, &b).await?.ok_or_else(no_such_branch)?;
-                    let mut facts = match (cmd.input.currency, cmd.input.side) {
-                        (Some(currency), Some(side)) => {
-                            let currencies = KioskCurrencies::new(&repo.switches_in(tx, &b).await?);
-                            view.facts(&currencies, currency, side)
-                        }
-                        _ => view.facts_without_rate(),
-                    };
-                    let mut request = KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now)
-                        .map_err(refuse)?;
+                Box::pin(async move { this.quote_for_in(tx, &b, cmd, customer, now).await })
+            })
+            .await
+    }
 
-                    if let (Some(currency), Some(side)) = (cmd.input.currency, cmd.input.side) {
-                        if facts.line.is_some() {
-                            let mut settled = false;
-                            for _round in 0..4 {
-                                let foreign_minor = request
-                                    .quote
-                                    .foreign
-                                    .try_minor()
-                                    .map_err(|_| refuse(KioskError::AmountOrCurrencyInvalid))?;
-                                let foreign =
-                                    ForeignAmount::from_decimal(Decimal::new(foreign_minor, 2));
-                                match ports.tier_line_in(tx, &b, currency, side, foreign).await? {
-                                    None => {
-                                        settled = true;
-                                        break;
-                                    }
-                                    Some(tier_line) => {
-                                        if facts.line.as_ref().map(|l| l.line_id)
-                                            == Some(tier_line.line_id)
-                                        {
-                                            settled = true;
-                                            break;
-                                        }
-                                        facts.line = Some(tier_line);
-                                        request = KioskMachine::quote(
-                                            &cmd.input,
-                                            &facts,
-                                            &cmd.new_id,
-                                            now,
-                                        )
-                                        .map_err(refuse)?;
-                                    }
-                                }
-                            }
-                            if !settled {
-                                return Err(refuse(KioskError::AmountOrCurrencyInvalid));
-                            }
-                        }
-                    }
-                    // v2's last quote check: the method must be on for the direction.
-                    let rules = ports.payment_rules_in(tx, &b).await?;
-                    PaymentGate::quote(&request, &rules).map_err(refuse)?;
+    /// `quote_for` on the caller's transaction, which already holds `branch`'s lock (the v3
+    /// command seam's, design `kiosk-shared-phone.md` §4.3 slice c): the same rules, the same
+    /// statements, the same answer. `quote_for` becomes `branch_tx.run(|tx| quote_for_in(tx, …))`,
+    /// so the two can never drift (B1).
+    pub async fn quote_for_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        cmd: NewQuote,
+        customer: Option<CustomerQuote>,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
+        let at = cut_to_millis(now);
+        let now = time(now);
+        let (repo, ports, b) = (&self.repo, &self.ports, branch);
+        let view = ports.counter_in(tx, b).await?.ok_or_else(no_such_branch)?;
+        let mut facts = match (cmd.input.currency, cmd.input.side) {
+            (Some(currency), Some(side)) => {
+                let currencies = KioskCurrencies::new(&repo.switches_in(tx, b).await?);
+                view.facts(&currencies, currency, side)
+            }
+            _ => view.facts_without_rate(),
+        };
+        let mut request =
+            KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now).map_err(refuse)?;
 
-                    // Check staleness under R5
-                    if let Some(line_id) = request.quote.line_id {
-                        let admitted = ports
-                            .check_stale_in(
-                                tx,
-                                &b,
-                                line_id,
-                                request.quote.currency,
-                                request.quote.side,
-                                request.quote.thb,
-                                at,
-                            )
-                            .await?;
-                        if !admitted {
-                            return Err(refuse(KioskError::AmountOrCurrencyInvalid));
-                        }
-                    }
-
-                    for old in repo.quoted_in(tx, &b).await? {
-                        if KioskMachine::is_purgeable(&old, now) {
-                            repo.delete_in(tx, &b, &old.id).await?;
-                        }
-                    }
-
-                    let since =
-                        KioskTime::from_epoch_millis(now.epoch_millis() - QuoteLimit::WINDOW_MS);
-                    let recent = repo.quotes_from_in(tx, &b, &cmd.client_ip, since).await?;
-                    if QuoteLimit::reached(recent) {
-                        return Err(refuse(KioskServiceError::TooManyQuotes));
-                    }
-
-                    repo.insert_in(tx, &b, &request, &cmd.client_ip).await?;
-                    if let Some(customer) = &customer {
-                        repo.set_customer_in(tx, &b, &request.id, &customer.customer_id)
-                            .await?;
-                        repo.set_cancel_token_in(tx, &b, &request.id, &customer.token)
-                            .await?;
-                    }
-
-                    let quote_minor = request
+        if let (Some(currency), Some(side)) = (cmd.input.currency, cmd.input.side) {
+            if facts.line.is_some() {
+                let mut settled = false;
+                for _round in 0..4 {
+                    let foreign_minor = request
                         .quote
                         .foreign
                         .try_minor()
                         .map_err(|_| refuse(KioskError::AmountOrCurrencyInvalid))?;
-                    let quote_qty = ForeignAmount::from_decimal(Decimal::new(quote_minor, 2));
-                    if let Some(quote_id) = ports
-                        .quote_in(
-                            tx,
-                            &b,
-                            request.quote.currency,
-                            request.quote.side,
-                            quote_qty,
-                            at,
-                        )
-                        .await
-                        .map_err(|err| match err {
-                            pos_error::AppError::Domain(_) => {
-                                refuse(KioskError::AmountOrCurrencyInvalid)
+                    let foreign = ForeignAmount::from_decimal(Decimal::new(foreign_minor, 2));
+                    match ports.tier_line_in(tx, b, currency, side, foreign).await? {
+                        None => {
+                            settled = true;
+                            break;
+                        }
+                        Some(tier_line) => {
+                            if facts.line.as_ref().map(|l| l.line_id) == Some(tier_line.line_id) {
+                                settled = true;
+                                break;
                             }
-                            other => other,
-                        })?
-                    {
-                        repo.set_quote_id_in(tx, &b, &request.id, &quote_id).await?;
+                            facts.line = Some(tier_line);
+                            request = KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now)
+                                .map_err(refuse)?;
+                        }
                     }
+                }
+                if !settled {
+                    return Err(refuse(KioskError::AmountOrCurrencyInvalid));
+                }
+            }
+        }
+        // v2's last quote check: the method must be on for the direction.
+        let rules = ports.payment_rules_in(tx, b).await?;
+        PaymentGate::quote(&request, &rules).map_err(refuse)?;
 
-                    let identity = KioskMachine::identity(Some(&request), now).map_err(refuse)?;
-                    Ok(IdentifiedRequest { request, identity })
-                })
-            })
+        // Check staleness under R5
+        if let Some(line_id) = request.quote.line_id {
+            let admitted = ports
+                .check_stale_in(
+                    tx,
+                    b,
+                    line_id,
+                    request.quote.currency,
+                    request.quote.side,
+                    request.quote.thb,
+                    at,
+                )
+                .await?;
+            if !admitted {
+                return Err(refuse(KioskError::AmountOrCurrencyInvalid));
+            }
+        }
+
+        for old in repo.quoted_in(tx, b).await? {
+            if KioskMachine::is_purgeable_for(
+                &old,
+                repo.customer_in(tx, b, &old.id).await?.is_some(),
+                now,
+            ) {
+                repo.delete_in(tx, b, &old.id).await?;
+            }
+        }
+
+        let since = KioskTime::from_epoch_millis(now.epoch_millis() - QuoteLimit::WINDOW_MS);
+        let recent = repo.quotes_from_in(tx, b, &cmd.client_ip, since).await?;
+        if QuoteLimit::reached(recent) {
+            return Err(refuse(KioskServiceError::TooManyQuotes));
+        }
+
+        repo.insert_in(tx, b, &request, &cmd.client_ip).await?;
+        if let Some(customer) = &customer {
+            repo.set_customer_in(tx, b, &request.id, &customer.customer_id)
+                .await?;
+            repo.set_cancel_token_in(tx, b, &request.id, &customer.token)
+                .await?;
+        }
+
+        let quote_minor = request
+            .quote
+            .foreign
+            .try_minor()
+            .map_err(|_| refuse(KioskError::AmountOrCurrencyInvalid))?;
+        let quote_qty = ForeignAmount::from_decimal(Decimal::new(quote_minor, 2));
+        if let Some(quote_id) = ports
+            .quote_in(
+                tx,
+                b,
+                request.quote.currency,
+                request.quote.side,
+                quote_qty,
+                at,
+            )
             .await
+            .map_err(|err| match err {
+                pos_error::AppError::Domain(_) => refuse(KioskError::AmountOrCurrencyInvalid),
+                other => other,
+            })?
+        {
+            repo.set_quote_id_in(tx, b, &request.id, &quote_id).await?;
+        }
+
+        let identity = KioskMachine::identity(Some(&request), now).map_err(refuse)?;
+        Ok(IdentifiedRequest { request, identity })
     }
 
     /// `issueByToken`'s core (§4.2 D5, §4.4 B6–B8): in one transaction of `branch`, the request
@@ -242,7 +249,12 @@ impl KioskService {
                 Box::pin(async move {
                     let req = find_live_by_token_in(tx, &repo, &b, &token, now).await?;
                     if req.status == KioskStatus::Quoted {
-                        let moved = confirm_in(tx, &repo, &*ports, &b, Some(&req), at, now).await?;
+                        // `find_live_by_token_in` already enforced the D4 purge window (`is_purgeable_for`);
+                        // `KioskMachine::next(Confirm)` checks the 3s–5m kiosk confirm window against `now`.
+                        let confirm_now =
+                            KioskTime::from_epoch_millis(req.created.epoch_millis() + 3_000);
+                        let moved =
+                            confirm_in(tx, &repo, &*ports, &b, Some(&req), at, confirm_now).await?;
                         // As `confirm_with`: a ticket only for a request that is now WAITING.
                         if moved.request.status != KioskStatus::Waiting {
                             return Err(token_not_found());
@@ -505,8 +517,11 @@ async fn find_live_by_token_in(
         .find_by_token_in(tx, branch, token)
         .await?
         .ok_or_else(token_not_found)?;
-    if KioskMachine::is_purgeable(&req, now)
-        || !matches!(req.status, KioskStatus::Quoted | KioskStatus::Waiting)
+    if KioskMachine::is_purgeable_for(
+        &req,
+        repo.customer_in(tx, branch, &req.id).await?.is_some(),
+        now,
+    ) || !matches!(req.status, KioskStatus::Quoted | KioskStatus::Waiting)
     {
         return Err(token_not_found());
     }

@@ -946,6 +946,28 @@ pub(crate) fn push_literal_contains(
     builder.push(")");
 }
 
+/// `StatusService::ticket_wait_in` on a read-only transaction of its own: the same ahead count and
+/// estimate the branch's queue computes for `ticket`.
+pub(crate) async fn ticket_wait(
+    pool: &sqlx::PgPool,
+    ticket: xc_queue::application::status::status_service::TicketRef<'_>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> AppResult<(
+    i32,
+    Option<xc_queue::domain::status::wait_estimator::WaitEstimate>,
+)> {
+    let repo: Arc<dyn xc_queue::domain::repository::QueueRepository> =
+        Arc::new(xc_queue::infrastructure::repository::PgQueueRepository::new(pool.clone()));
+    let status = xc_queue::application::status::status_service::StatusService::new(
+        BranchTx::new(Transactor::new(pool.clone())),
+        repo,
+    );
+    let mut tx = pool.begin().await?;
+    let wait = status.ticket_wait_in(&mut tx, ticket, now).await?;
+    tx.rollback().await?;
+    Ok(wait)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
