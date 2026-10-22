@@ -6,7 +6,7 @@
 import { expect, type Browser, type Page, test } from '@playwright/test';
 import { CUSTOMER_LANGS, hasAccount, signIn, smoke, users, withLang } from './helpers';
 
-const RUN_TAG = `qa-r9-10-${Date.now()}`;
+const RUN_TAG = `qa-rnine-ten-${Date.now().toString(26).replace(/[0-9]/g, (d) => String.fromCharCode(113 + Number(d)))}`;
 
 const RAW_ERROR_CODE =
   /^(validationFailed|notFound|outOfScope|roleNotAllowed|staleVersion|idempotencyConflict|serverError|rateAlertLimitReached|bookingsClosed|capacityFull|slotUnavailable|queueClosed|noOpenShift)$/;
@@ -291,6 +291,10 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           const alertCards = page.locator('article.xc-alert-card');
 
           await expect(targetInput, `(${lang}) #alert-target visible`).toBeVisible({ timeout: 15_000 });
+          await expect(
+            page.locator('#alert-branch option'),
+            `(${lang}) #alert-branch options loaded`,
+          ).not.toHaveCount(0, { timeout: 15_000 });
           await expect(formError, `(${lang}) .xc-form-error absent before submit`).toHaveCount(0);
           const countBefore = await alertCards.count();
 
@@ -352,21 +356,21 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       // (a) Happy path: create alert, pause + reload, resume + reload (never delete rows not created by this spec, §9.2)
       await withLang(page, 'en');
       await page.goto('/app/rate-alerts');
-      // #alert-branch: web/src/screens/customer/rate-alerts/RateAlerts.tsx:402
+      // #alert-branch: web/src/screens/customer/rate-alerts/RateAlerts.tsx:351-365
       const branchSelect = page.locator('#alert-branch');
       await expect(branchSelect, '#alert-branch visible').toBeVisible({ timeout: 15_000 });
+      await expect(branchSelect.locator('option'), '#alert-branch options loaded').not.toHaveCount(0, {
+        timeout: 15_000,
+      });
       if ((await branchSelect.locator(`option[value="${users.branch}"]`).count()) > 0) {
         await branchSelect.selectOption(users.branch);
       }
-      // #alert-currency: web/src/screens/customer/rate-alerts/RateAlerts.tsx:426
-      const currencySelect = page.locator('#alert-currency');
-      if ((await currencySelect.locator('option[value="USD"]').count()) > 0) {
-        await currencySelect.selectOption('USD');
-      }
-      // #alert-side: web/src/screens/customer/rate-alerts/RateAlerts.tsx:438
-      await page.locator('#alert-side').selectOption('BUY');
-      // #alert-condition: web/src/screens/customer/rate-alerts/RateAlerts.tsx:450
-      await page.locator('#alert-condition').selectOption('GTE');
+      // #alert-currency: web/src/screens/customer/rate-alerts/RateAlerts.tsx:375
+      await page.locator('#alert-currency').fill('USD');
+      // #alert-side: web/src/screens/customer/rate-alerts/RateAlerts.tsx:387-395
+      await page.locator('#alert-side').selectOption('CUSTOMER_BUY');
+      // #alert-condition: web/src/screens/customer/rate-alerts/RateAlerts.tsx:400-408
+      await page.locator('#alert-condition').selectOption('ABOVE');
       // #alert-target: web/src/screens/customer/rate-alerts/RateAlerts.tsx:464
       await page.locator('#alert-target').fill('98.75');
       // #alert-expires: web/src/screens/customer/rate-alerts/RateAlerts.tsx:478
@@ -659,8 +663,8 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
 
       // Verify on /app/bookings that the CONFIRMED card does not offer button[data-action="confirm"] (BookingExtras.tsx:104)
       await page.goto('/app/bookings');
-      // article.xc-booking-card[data-booking-id]: web/src/screens/customer/bookings/Bookings.tsx:379
-      const bookingCard = page.locator(`article.xc-booking-card[data-booking-id="${createdBookingId}"]`);
+      // .xc-booking-card[data-booking-id]: web/src/screens/customer/bookings/Bookings.tsx:380
+      const bookingCard = page.locator(`.xc-booking-card[data-booking-id="${createdBookingId}"]`);
       await expect(bookingCard, 'created booking card visible').toBeVisible({ timeout: 15_000 });
       // .xc-status-confirmed: web/src/screens/customer/bookings/Bookings.tsx:383
       await expect(bookingCard.locator('.xc-status-confirmed'), 'card shows CONFIRMED').toBeVisible();
@@ -685,7 +689,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
 
       // Reload and read back CONFIRMED status on /app/bookings
       await page.reload();
-      const reloadedCard = page.locator(`article.xc-booking-card[data-booking-id="${createdBookingId}"]`);
+      const reloadedCard = page.locator(`.xc-booking-card[data-booking-id="${createdBookingId}"]`);
       await expect(reloadedCard, 'booking card visible after reload').toBeVisible({ timeout: 15_000 });
       await expect(
         reloadedCard.locator('.xc-status-confirmed'),
