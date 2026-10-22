@@ -15,6 +15,7 @@ import type {
 } from '../../shared/api/generated/transaction_audit';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { ReceiptFrame } from '../../shared/receipt/ReceiptFrame';
+import { PermissionsUnavailable, permissionsUnavailableText } from '../../shared/ui/PermissionsUnavailable';
 import { can } from '../staff/parts/can';
 import { command } from '../staff/parts/command';
 import { ReasonDialog } from '../staff/parts/ReasonDialog';
@@ -44,6 +45,8 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
 
   const [state, setState] = createSignal<State>('loading');
   const [me, setMe] = createSignal<MeView | undefined>(undefined);
+  const [meError, setMeError] = createSignal<unknown>(null);
+  const [meBusy, setMeBusy] = createSignal(false);
   const [tx, setTx] = createSignal<TransactionDetailDto | null>(null);
   const [events, setEvents] = createSignal<TransactionAuditEventDto[]>([]);
   const [message, setMessage] = createSignal<string | null>(null);
@@ -85,26 +88,28 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     const meRead = withMe
       ? api
           .view<MeView>('me')
-          .then((a) => a.data)
-          .catch(() => undefined)
-      : Promise.resolve(me());
+          .then((a) => ({ who: a.data, err: null as unknown }))
+          .catch((err: unknown) => ({ who: undefined, err }))
+      : Promise.resolve({ who: me(), err: meError() });
     try {
-      const [who, detail, audit] = await Promise.all([
+      const [meRes, detail, audit] = await Promise.all([
         meRead,
         api.view<TransactionViewData>('transaction', { branch: branch(), filter: { id } }),
         api.view<TransactionAuditViewData>('transaction_audit', { branch: branch(), filter: { id } }),
       ]);
       if (seq !== loadSeq) return;
-      setMe(who);
+      setMe(meRes.who);
+      setMeError(meRes.err);
       const found = detail.data?.transaction ?? null;
       setTx(found);
       setEvents(audit.data?.events ?? []);
       setPendingRequest(false);
       setState(found === null ? 'not-found' : 'ready');
     } catch (err) {
-      const who = await meRead;
+      const meRes = await meRead;
       if (seq !== loadSeq) return;
-      setMe(who);
+      setMe(meRes.who);
+      setMeError(meRes.err);
       const errText = wordedError(err);
       if (preserveOnError && tx() !== null) {
         const prev = message();
@@ -126,7 +131,26 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     void load(true);
   }
 
+  async function retryMe(): Promise<void> {
+    if (meBusy()) return;
+    const seq = loadSeq;
+    setMeBusy(true);
+    try {
+      const a = await api.view<MeView>('me');
+      if (seq !== loadSeq) return;
+      setMe(a.data);
+      setMeError(null);
+    } catch (err) {
+      if (seq !== loadSeq) return;
+      setMe(undefined);
+      setMeError(err);
+    } finally {
+      setMeBusy(false);
+    }
+  }
+
   async function reprint(number: string): Promise<void> {
+    if (!can(me(), 'ReceiptReprint')) return;
     setMessage(null);
     setBusy(true);
     try {
@@ -146,7 +170,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
 
   async function sendRequest(reason: string): Promise<void> {
     setAsking(false);
-    if (request === null) return;
+    if (request === null || !can(me(), 'ReversalRequest')) return;
     setMessage(null);
     setBusy(true);
     try {
@@ -161,12 +185,14 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     }
   }
 
+  const disabledReason = () => (meError() !== null ? permissionsUnavailableText(meError()) : undefined);
+
   const canRequest = () => {
     const current = tx();
     if (current === null || current.status !== 'COMPLETED') return false;
     if (pendingRequest()) return false;
     if (current.reversal !== null && current.reversal.status !== 'REJECTED') return false;
-    return can(me(), 'ReversalRequest');
+    return meError() !== null || can(me(), 'ReversalRequest');
   };
 
   return (
@@ -198,6 +224,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
         <Match when={state() === 'ready' && tx()}>
           {(current) => (
             <>
+              <PermissionsUnavailable error={meError()} onRetry={() => void retryMe()} busy={meBusy()} />
               <HeaderSection tx={current()} />
               <LinesSection lines={current().lines} />
               <Show when={current().payment}>{(p) => <PaymentSection payment={p()} />}</Show>
@@ -205,6 +232,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
                 <ReceiptsSection
                   receipts={current().receipts}
                   canReprint={can(me(), 'ReceiptReprint')}
+                  disabledReason={disabledReason()}
                   busy={busy()}
                   onReprint={(number) => void reprint(number)}
                 />
@@ -212,7 +240,15 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
               <Show when={current().reversal}>{(r) => <ReversalSection reversal={r()} />}</Show>
               <Show when={canRequest()}>
                 <div class="xc-dtx-actions">
-                  <button type="button" data-action="request-reversal" disabled={busy()} onClick={() => setAsking(true)}>
+                  <button
+                    type="button"
+                    data-action="request-reversal"
+                    disabled={busy() || meError() !== null}
+                    title={disabledReason()}
+                    onClick={() => {
+                      if (meError() === null) setAsking(true);
+                    }}
+                  >
                     {t('requestReversal')}
                   </button>
                 </div>

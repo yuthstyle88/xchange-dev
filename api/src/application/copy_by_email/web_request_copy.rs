@@ -8,6 +8,7 @@ use sqlx::{PgPool, Row};
 use xc_customer::domain::sms_sender::BoxFuture;
 
 use super::subject::{CopyDetails, CopySubject, CopySubjectKind};
+use crate::presentation::http::v3::my_web_request::derive_status;
 
 #[derive(Clone)]
 pub struct WebRequestCopy {
@@ -57,7 +58,7 @@ impl WebRequestCopy {
         let created_at: DateTime<Utc> = row.get(7);
 
         let expires_at = (created_at + Duration::minutes(60)).to_rfc3339();
-        let status = w5_status(&request_status, ticket_status.as_deref());
+        let status = derive_status(&request_status, ticket_status.as_deref()).to_owned();
 
         Ok(Some(CopyDetails {
             kind: CopySubjectKind::WebRequest,
@@ -71,14 +72,6 @@ impl WebRequestCopy {
             ],
             status,
         }))
-    }
-}
-
-fn w5_status(request_status: &str, ticket_status: Option<&str>) -> String {
-    match request_status {
-        "ACCEPTED" | "ID_CHECKED" => "SERVING".to_owned(),
-        "COMPLETED" | "CANCELLED" => request_status.to_owned(),
-        _ => ticket_status.unwrap_or(request_status).to_owned(),
     }
 }
 

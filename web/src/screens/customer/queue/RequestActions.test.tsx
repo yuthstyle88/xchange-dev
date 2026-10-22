@@ -9,6 +9,7 @@ import { ApiError } from '../../../shared/api/client';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th } from './i18n';
 import type { EmailCopy, EmailCopyAnswer, WebRequestStatus } from './queue-api';
+import { makeEmailCopy } from '../../../shared/testing/fixtures/my_profile';
 import { RequestActions } from './RequestActions';
 
 let host: HTMLDivElement;
@@ -18,8 +19,8 @@ let onDone: ReturnType<typeof vi.fn<() => Promise<void>>>;
 let onEmailCopy: ReturnType<typeof vi.fn<() => Promise<EmailCopyAnswer>>>;
 let confirmSpy: ReturnType<typeof vi.fn>;
 
-const NO_EMAIL: EmailCopy = { available: false, to: null };
-const EMAIL: EmailCopy = { available: true, to: 'j***@example.com' };
+const NO_EMAIL = makeEmailCopy({ available: false, to: null });
+const EMAIL = makeEmailCopy({ available: true, to: 'j***@example.com' });
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();

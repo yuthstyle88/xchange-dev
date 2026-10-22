@@ -82,10 +82,17 @@ impl MyProfileView {
         .map_err(AppError::Database)?;
         tx.commit().await.map_err(AppError::Database)?;
         let to = match xc_customer::get_pii_keys() {
-            Ok(keys) => PgMemberEmails::new(self.db.clone(), keys)
+            Ok(keys) => match PgMemberEmails::new(self.db.clone(), keys)
                 .verified_email(customer)
-                .await?
-                .map(|v| mask_email(&v.address)),
+                .await
+            {
+                Ok(v) => v.map(|v| mask_email(&v.address)),
+                Err(AppError::Internal(reason)) => {
+                    tracing::warn!(customer_id = %customer, %reason, "my_profile email decrypt failed");
+                    None
+                }
+                Err(e) => return Err(e),
+            },
             Err(_) => None,
         };
         let available = to.is_some() && NotifyEmailSender::from_env().is_configured();
