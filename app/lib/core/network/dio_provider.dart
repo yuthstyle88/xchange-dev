@@ -1,6 +1,8 @@
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/queue_machine/infrastructure/staff_session.dart';
 import '../endpoint/endpoint_store.dart';
 
 /// Where the API is: the endpoint's origin. Throws StateError when there is no endpoint.
@@ -15,12 +17,16 @@ final apiBaseUrlProvider = Provider<String>((ref) {
 /// The kiosk's HTTP client for one server. [origin] is the `Origin` header,
 /// set only where the platform lets a client set it (not in a browser).
 /// Shared by [dioProvider] and setup's connection test.
-Dio buildKioskDio({required String baseUrl, String? origin}) {
+Dio buildKioskDio({
+  required String baseUrl,
+  String? origin,
+  CookieJar? cookieJar,
+}) {
   final headers = <String, dynamic>{
     'X-Xchange-Request': '1',
     'Origin': ?origin,
   };
-  return Dio(
+  final dio = Dio(
     BaseOptions(
       baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 10),
@@ -29,6 +35,10 @@ Dio buildKioskDio({required String baseUrl, String? origin}) {
       headers: headers,
     ),
   );
+  if (cookieJar != null) {
+    attachStaffCookieInterceptor(dio, cookieJar);
+  }
+  return dio;
 }
 
 final dioProvider = Provider<Dio>((ref) {
@@ -36,8 +46,13 @@ final dioProvider = Provider<Dio>((ref) {
   final endpoint = ref.watch(kioskEndpointProvider);
   final store = ref.watch(endpointStoreProvider);
   final origin = endpoint != null ? store.originHeader(endpoint) : null;
+  final cookieJar = ref.watch(staffCookieJarProvider);
 
-  final dio = buildKioskDio(baseUrl: baseUrl, origin: origin);
+  final dio = buildKioskDio(
+    baseUrl: baseUrl,
+    origin: origin,
+    cookieJar: cookieJar,
+  );
   ref.onDispose(dio.close);
   return dio;
 });

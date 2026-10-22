@@ -1,13 +1,13 @@
 // Written before the implementation by the test writer gemini/warut-4 (ticket author claude/e92db6), against design D9a (PR 1656). Do not edit, delete or weaken.
 //
-// Contract for RD-4 (issue #1374, design D9a in PR 1656):
+// Contract for RD-4 (issue #1374, design D9a in PR 1656; updated to /app/queue per §0a R-3):
 // The implementer must keep the following DOM hooks:
 // - `[data-booking-qr]`: the container element for the booking QR code on the rate board.
 // - `data-qr-url`: attribute on `[data-booking-qr]` holding the exact target URL:
-//   `${location.origin}/app/book?branch=${branchCode}`.
+//   `${location.origin}/app/queue?branch=${branchCode}`.
 // - `<svg>`: inline SVG element drawn inside `[data-booking-qr]` client-side via shared
 //   `QrCode` component wrapping `qrcode-generator`.
-// - Text caption: visible caption displaying the path `/app/book?branch=${branchCode}`.
+// - Text caption: visible caption displaying the path `/app/queue?branch=${branchCode}`.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
@@ -187,7 +187,8 @@ afterEach(() => {
 // ── RD-4: Booking QR Tests (D9a in PR 1656, #1374) ─────────────────────────────────────────────────────
 
 describe('RD-4: Booking QR on P01 Rate Board (#1374, D9a)', () => {
-  it('1. bookingEnabled true: renders [data-booking-qr] with <svg> and data-qr-url pointing to /app/book?branch=<code>', async () => {
+  // §0a R-3: Target updated from /app/book to /app/queue
+  it('1. bookingEnabled true: renders [data-booking-qr] with <svg> and data-qr-url pointing to /app/queue?branch=<code>', async () => {
     const s = createServer({
       branches: [{ status: 200, body: BRANCHES_ENABLED }],
     });
@@ -196,10 +197,10 @@ describe('RD-4: Booking QR on P01 Rate Board (#1374, D9a)', () => {
     const qrElement = root.querySelector<HTMLElement>('[data-booking-qr]');
     expect(qrElement, 'element with [data-booking-qr] must be present when bookingEnabled is true').not.toBeNull();
 
-    const expectedUrl = `${window.location.origin}/app/book?branch=XC-B01`;
+    const expectedUrl = `${window.location.origin}/app/queue?branch=XC-B01`;
     expect(
       qrElement?.getAttribute('data-qr-url'),
-      'data-qr-url attribute must match <origin>/app/book?branch=<branch code>',
+      'data-qr-url attribute must match <origin>/app/queue?branch=<branch code>',
     ).toBe(expectedUrl);
 
     const svg = qrElement?.querySelector('svg');
@@ -234,13 +235,14 @@ describe('RD-4: Booking QR on P01 Rate Board (#1374, D9a)', () => {
     expect(mockAddData, 'qrcode-generator must not be called when branch is missing').not.toHaveBeenCalled();
   });
 
-  it('4. caption text shows the /app/book?branch=<code> path', async () => {
+  // §0a R-3: Path updated to /app/queue
+  it('4. caption text shows the /app/queue?branch=<code> path', async () => {
     const s = createServer({
       branches: [{ status: 200, body: BRANCHES_ENABLED }],
     });
     const root = await mountThroughMain('?branch=XC-B01', s);
 
-    const expectedPath = '/app/book?branch=XC-B01';
+    const expectedPath = '/app/queue?branch=XC-B01';
     const textContent = root.textContent ?? '';
     expect(
       textContent,
@@ -257,7 +259,8 @@ describe('RD-4: Booking QR on P01 Rate Board (#1374, D9a)', () => {
     const qrElement = root.querySelector<HTMLElement>('[data-booking-qr]');
     expect(qrElement, '[data-booking-qr] must exist').not.toBeNull();
 
-    const expectedUrl = `${window.location.origin}/app/book?branch=XC-B01`;
+    // §0a R-3: Target updated to /app/queue
+    const expectedUrl = `${window.location.origin}/app/queue?branch=XC-B01`;
     expect(qrElement?.getAttribute('data-qr-url')).toBe(expectedUrl);
 
     // Switch to EN
@@ -305,7 +308,7 @@ describe('RD-4: Booking QR on P01 Rate Board (#1374, D9a)', () => {
     expect(qrElement, '[data-booking-qr] must exist').not.toBeNull();
 
     const qrUrl = qrElement?.getAttribute('data-qr-url') ?? '';
-    // Must be exactly `<origin>/app/book?branch=<code>` without additional parameters, tokens, or PII
-    expect(qrUrl).toMatch(/^https?:\/\/[^/]+\/app\/book\?branch=[A-Za-z0-9_-]+$/);
+    // Must be exactly `<origin>/app/queue?branch=<code>` without additional parameters, tokens, or PII (§0a R-3)
+    expect(qrUrl).toMatch(/^https?:\/\/[^/]+\/app\/queue\?branch=[A-Za-z0-9_-]+$/);
   });
 });

@@ -3,6 +3,7 @@
 //! the caller's (`deny_unknown_fields`, so a `customerId` is `400 invalidRequest`).
 //!
 //! - `400 validationFailed`: neither field given, a blank `displayName`, or `preferredLanguage` not th/en/zh;
+//! - `400 nameTooLong` (`field: displayName`): `displayName` over 100 characters after trim (#4397);
 //! - `409 consentTextMissing` (`field: preferredLanguage`): a language with no TERMS text (§4.3: a customer screen
 //!   offers a language only when its consent texts exist). Nothing is changed.
 
@@ -18,6 +19,7 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_customer::application::consent_service::ConsentService;
 use xc_customer::domain::consent::Purpose;
+use xc_customer::domain::customer::value_objects::exceeds_display_name_limit;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -78,6 +80,14 @@ impl CommandAction for ProfileUpdateCommand {
         let name = input.display_name.as_deref().map(str::trim);
         if name.is_some_and(str::is_empty) {
             return Err(invalid(Some("displayName"), "กรุณากรอกชื่อ"));
+        }
+        if name.is_some_and(exceeds_display_name_limit) {
+            return Err(V3Error::new(
+                "nameTooLong",
+                Some("displayName"),
+                "ชื่อที่แสดงยาวได้ไม่เกิน 100 ตัวอักษร",
+                StatusCode::BAD_REQUEST,
+            ));
         }
         let lang = input.preferred_language.as_deref();
         if let Some(lang) = lang {

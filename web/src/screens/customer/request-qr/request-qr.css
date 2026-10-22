@@ -1,0 +1,41 @@
+.xc-request-qr {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.xc-request-qr-card {
+  max-width: 400px;
+  width: 100%;
+  padding: 2rem;
+  text-align: center;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.xc-request-qr-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.xc-request-qr-instruction {
+  font-size: 1.125rem;
+  color: #333333;
+  margin-bottom: 1.5rem;
+}
+
+.xc-request-qr-code {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.xc-request-qr-error {
+  color: #d32f2f;
+  font-size: 1rem;
+}

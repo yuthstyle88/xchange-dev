@@ -7,6 +7,8 @@
 //! - `400 invalidRequest`: cross-site, not JSON, or `identifier`/`password`/`displayName` missing (Identity is not
 //!   asked);
 //! - `400 validationFailed` naming `lang`, `displayName` or `marketing` (Identity is not asked);
+//! - `400 nameTooLong` (`field: displayName`): `displayName` over 100 characters after trim (#4397; Identity is not
+//!   asked);
 //! - Identity's own refusals (`401 invalidCredentials`, `503 identityUnavailable`, also for a token the verifier
 //!   refuses);
 //! - `409 alreadyRegistered`, `409 consentTextMissing` (`field: lang`), `409 phoneInUse`.
@@ -21,6 +23,7 @@ use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSessionId};
 use xc_auth::application::session::SessionService;
 use xc_auth::domain::identity::identity_client::UNAVAILABLE_MESSAGE;
 use xc_customer::domain::consent::Channel;
+use xc_customer::domain::customer::value_objects::exceeds_display_name_limit;
 
 use crate::application::app_session_claim::claim_session_for;
 use crate::application::customer_signup::{SignupError, SignupInput, register_customer};
@@ -90,8 +93,17 @@ fn input_of(bytes: &[u8]) -> Result<SignupInput, HttpResponse> {
     if !LANGS.contains(&lang) {
         return Err(validation_failed("lang", "ภาษาต้องเป็น th, en หรือ zh"));
     }
-    if display_name.trim().is_empty() {
+    let display_name = display_name.trim();
+    if display_name.is_empty() {
         return Err(validation_failed("displayName", "กรุณากรอกชื่อ"));
+    }
+    if exceeds_display_name_limit(display_name) {
+        return Err(refused(
+            "nameTooLong",
+            Some("displayName"),
+            "ชื่อที่แสดงยาวได้ไม่เกิน 100 ตัวอักษร",
+            StatusCode::BAD_REQUEST,
+        ));
     }
     let marketing = match body.get("marketing") {
         None | Some(Value::Null) => Vec::new(),
@@ -113,7 +125,7 @@ fn input_of(bytes: &[u8]) -> Result<SignupInput, HttpResponse> {
     Ok(SignupInput {
         identifier: identifier.to_owned(),
         password: password.to_owned(),
-        display_name: display_name.trim().to_owned(),
+        display_name: display_name.to_owned(),
         lang: lang.to_owned(),
         marketing,
     })
