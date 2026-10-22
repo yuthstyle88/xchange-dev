@@ -170,9 +170,11 @@ async fn transport_json_is_answered_as_v2_answered_it() {
     );
     assert!(replay.tally.part_two.is_empty());
     assert_eq!(numbers(&replay.tally.excluded), vec![93, 94]);
+    assert_eq!(replay.tally.widened, vec![61]);
     // 88 since ticket #146 added #95-#99; 87 since CA-10 #626 retired #36
     // OR-7.m S-D5: D-4 / must-change known differences (#3700)
-    assert_eq!(replay.tally.replayed.len(), 82);
+    // RBAC §11.8 S10 (#4528): #61 (owner on /api/staff/rpc getConnectionStatus) is widened
+    assert_eq!(replay.tally.replayed.len(), 81);
     assert!(replay.tally.applied_behind.is_empty());
     replay.finish().await;
 }
@@ -984,10 +986,9 @@ async fn index_json_and_policy_agree_with_the_routes_for_the_ten_actions() {
             for action in PART_ONE {
                 let answer = ask(&app, &cookies, path, action, &person.key).await;
                 let label = format!("{action} on {path} as {}", person.key);
-                // OR-4b (#767): the gate is the route table's rule (`route_rule`). The staff route
-                // reads the staff session only: an owner's session is nobody there (C1 admits the
-                // owner's user on a staff path only through a session of that path)
-                let caller = (path == RPC || !person.is_owner()).then_some(&actor);
+                // OR-4b (#767) + RBAC §11.8 S10 (#4528): the gate is the route table's rule (`route_rule`),
+                // and the owner is a staff caller on `/api/staff/rpc` too
+                let caller = Some(&actor);
                 match route_rule(caller, entry, action) {
                     Ok(()) => assert!(
                         !is_gate_refusal(&answer),
