@@ -10,7 +10,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Permission, Role, RoleGrants};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission, RoleGrants};
 use xc_kernel::ids::BranchId;
 
 /// The type name.
@@ -133,9 +133,17 @@ impl ApprovalPolicy for TransferApprovalPolicy {
             .get("within_limit")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let from_branch = request
+            .proposed_payload
+            .get("from_branch")
+            .and_then(|v| v.as_str());
 
         if !within_limit {
-            if !who.roles.iter().any(|r| r.role == Role::Executive) {
+            if !ApprovalDecider::holds_on(
+                who,
+                Permission::ApproveCashTransferAboveLimit,
+                from_branch,
+            ) {
                 return Err(Refusal::new(
                     "ABOVE_LIMIT",
                     "only executive may approve transfers above limit",
@@ -144,18 +152,13 @@ impl ApprovalPolicy for TransferApprovalPolicy {
             return Ok(());
         }
 
-        let source = request
-            .proposed_payload
-            .get("from_branch")
-            .and_then(|v| v.as_str());
-        let on_source = who.roles.iter().any(|r| {
-            r.role == Role::BranchManager
-                && (match (r.branch.as_ref(), source) {
-                    (Some(branch), Some(source)) => branch.as_str() == source,
-                    _ => false,
-                })
-        });
-        if !on_source {
+        if from_branch.is_none()
+            || !ApprovalDecider::holds_on(
+                who,
+                Permission::ApproveCashTransferWithinLimit,
+                from_branch,
+            )
+        {
             return Err(Refusal::new(
                 "WITHIN_LIMIT",
                 "within the limit only a branch manager of the source branch approves",
