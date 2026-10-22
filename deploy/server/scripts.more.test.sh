@@ -366,7 +366,7 @@ m3_fail_stage="$m3/stage_fail"
 mkdir -p "$m3_fail_stage"
 printf 'bad-binary\n' >"$m3_fail_stage/identity-api"
 chmod 755 "$m3_fail_stage/identity-api"
-printf 'badsha999\n' >"$m3_fail_stage/BUILD"
+printf '0badc0de\n' >"$m3_fail_stage/BUILD"
 (
   cd "$m3_fail_stage"
   sha256sum identity-api BUILD >SHA256SUMS
@@ -379,7 +379,7 @@ OUT_FAIL="$(PATH="$STUBS:$PATH" \
   SERVICE_NAME="xc-identity" \
   INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
   SMOKE_WAIT_SECS=0 \
-  bash "$HERE/update-identity.sh" "$m3_fail_stage" "badsha999" 2>&1)"
+  bash "$HERE/update-identity.sh" "$m3_fail_stage" "0badc0de" 2>&1)"
 RC_FAIL=$?
 set -e
 printf '%s\n' "$OUT_FAIL" >"$LOGS/m3_fail.out"
@@ -388,6 +388,95 @@ ck "update-identity.sh exited non-zero on mismatch" test "$RC_FAIL" -ne 0
 ckeq "rollback restored previous binary" "new-identity-bin-v2" "$(cat "$m3/opt/xc-identity/identity-api")"
 ckeq "rollback restored previous BUILD" "681bea2" "$(cat "$m3/opt/xc-identity/BUILD")"
 ck "rollback restored drop-in to previous APP_BUILD" grep -qsF "Environment=APP_BUILD=681bea2" "$DROPIN_CONF"
+
+# 3. SHA256SUMS lists BUILD only, not identity-api: refused, install dir untouched
+m3_unlisted="$m3/stage_unlisted"
+mkdir -p "$m3_unlisted"
+printf 'unlisted-binary\n' >"$m3_unlisted/identity-api"
+chmod 755 "$m3_unlisted/identity-api"
+printf '681bea2\n' >"$m3_unlisted/BUILD"
+(
+  cd "$m3_unlisted"
+  sha256sum BUILD >SHA256SUMS
+)
+chmod 700 "$m3_unlisted"
+
+set +e
+OUT_UNLISTED="$(PATH="$STUBS:$PATH" \
+  XC_TEST_LOG="$m3/log" XC_TEST_SYSTEMD="$m3/systemd" XC_TEST_OWNERS="$m3/owners" \
+  XC_TEST_HEALTH_BUILD="681bea2" \
+  SERVICE_NAME="xc-identity" \
+  INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  SMOKE_WAIT_SECS=0 \
+  bash "$HERE/update-identity.sh" "$m3_unlisted" "681bea2" 2>&1)"
+RC_UNLISTED=$?
+set -e
+printf '%s\n' "$OUT_UNLISTED" >"$LOGS/m3_unlisted.out"
+
+ck "update-identity.sh exited non-zero when identity-api not in SHA256SUMS" test "$RC_UNLISTED" -ne 0
+ck "output contains does not list identity-api" grep -qsF "does not list identity-api" "$LOGS/m3_unlisted.out"
+ckeq "installed binary unchanged on unlisted stage" "new-identity-bin-v2" "$(cat "$m3/opt/xc-identity/identity-api")"
+ckeq "installed BUILD unchanged on unlisted stage" "681bea2" "$(cat "$m3/opt/xc-identity/BUILD")"
+
+# 4. sha argument "681bea2 x" (a space): refused, no build.conf written or changed
+m3_badsha="$m3/stage_badsha"
+mkdir -p "$m3_badsha"
+printf 'badsha-binary\n' >"$m3_badsha/identity-api"
+chmod 755 "$m3_badsha/identity-api"
+printf '681bea2\n' >"$m3_badsha/BUILD"
+(
+  cd "$m3_badsha"
+  sha256sum identity-api BUILD >SHA256SUMS
+)
+chmod 700 "$m3_badsha"
+cp -p "$DROPIN_CONF" "$m3/build.conf.expected"
+
+set +e
+OUT_BADSHA="$(PATH="$STUBS:$PATH" \
+  XC_TEST_LOG="$m3/log" XC_TEST_SYSTEMD="$m3/systemd" XC_TEST_OWNERS="$m3/owners" \
+  XC_TEST_HEALTH_BUILD="681bea2" \
+  SERVICE_NAME="xc-identity" \
+  INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  SMOKE_WAIT_SECS=0 \
+  bash "$HERE/update-identity.sh" "$m3_badsha" "681bea2 x" 2>&1)"
+RC_BADSHA=$?
+set -e
+printf '%s\n' "$OUT_BADSHA" >"$LOGS/m3_badsha.out"
+
+ck "update-identity.sh exited non-zero on non-hex sha" test "$RC_BADSHA" -ne 0
+ck "output contains not 7-40 lowercase hex" grep -qsF "not 7-40 lowercase hex" "$LOGS/m3_badsha.out"
+ckeq "installed binary unchanged on bad sha" "new-identity-bin-v2" "$(cat "$m3/opt/xc-identity/identity-api")"
+ckeq "installed BUILD unchanged on bad sha" "681bea2" "$(cat "$m3/opt/xc-identity/BUILD")"
+ck "drop-in build.conf unchanged on bad sha" cmp -s "$m3/build.conf.expected" "$DROPIN_CONF"
+
+# 5. stage dir mode 777: refused (writable by group or others), install dir untouched
+m3_777="$m3/stage_777"
+mkdir -p "$m3_777"
+printf 'mode777-binary\n' >"$m3_777/identity-api"
+chmod 755 "$m3_777/identity-api"
+printf '681bea2\n' >"$m3_777/BUILD"
+(
+  cd "$m3_777"
+  sha256sum identity-api BUILD >SHA256SUMS
+)
+chmod 777 "$m3_777"
+
+set +e
+OUT_777="$(PATH="$STUBS:$PATH" \
+  XC_TEST_LOG="$m3/log" XC_TEST_SYSTEMD="$m3/systemd" XC_TEST_OWNERS="$m3/owners" \
+  XC_TEST_HEALTH_BUILD="681bea2" \
+  SERVICE_NAME="xc-identity" \
+  INSTALL_DIR="$m3/opt/xc-identity" SYSTEMD_DIR="$m3/systemd" \
+  SMOKE_WAIT_SECS=0 \
+  bash "$HERE/update-identity.sh" "$m3_777" "681bea2" 2>&1)"
+RC_777=$?
+set -e
+printf '%s\n' "$OUT_777" >"$LOGS/m3_777.out"
+
+ck "update-identity.sh exited non-zero on mode 777 stage" test "$RC_777" -ne 0
+ck "output contains writable by group or others" grep -qsF "writable by group or others" "$LOGS/m3_777.out"
+ckeq "installed binary unchanged on mode 777 stage" "new-identity-bin-v2" "$(cat "$m3/opt/xc-identity/identity-api")"
+ckeq "installed BUILD unchanged on mode 777 stage" "681bea2" "$(cat "$m3/opt/xc-identity/BUILD")"
 
 report M3 "update-identity.sh writes drop-in with 3 keys, rolls back on /health mismatch"
 

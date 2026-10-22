@@ -7,23 +7,6 @@
 # Run as a sudo-capable user; only on the owner's order (deploy/HOST-do-sgp1.md).
 set -euo pipefail
 
-die() {
-  echo "ERROR: $*" >&2
-  exit 1
-}
-
-say() { echo "==> $*"; }
-
-need() {
-  local c
-  for c in "$@"; do
-    command -v "$c" >/dev/null 2>&1 || die "command not found: $c"
-  done
-}
-
-[ "$(id -u)" -ne 0 ] || die "run as a sudo-capable user, not as root"
-need sudo systemctl curl sha256sum stat sed
-
 SERVICE_NAME="${SERVICE_NAME:-xc-identity}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/$SERVICE_NAME}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
@@ -36,14 +19,13 @@ BUILT_AT="${BUILT_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 STAGE="${1:-${STAGE:-}}"
 SHA="${2:-${SHA:-}}"
 
-[ -n "$STAGE" ] || die "usage: $0 <stage-dir> [sha] (or set STAGE=...)"
-[ -d "$STAGE" ] || die "stage directory missing: $STAGE"
+# shellcheck source=deploy/server/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
-[ -f "$STAGE/identity-api" ] || die "missing in stage: $STAGE/identity-api"
-[ -f "$STAGE/SHA256SUMS" ] || die "missing in stage: $STAGE/SHA256SUMS"
+[ "$(id -u)" -ne 0 ] || die "run as a sudo-capable user, not as root"
+need sudo systemctl curl sha256sum stat sed
 
-say "verifying checksum in $STAGE..."
-(cd "$STAGE" && sha256sum -c SHA256SUMS) || die "checksum mismatch in $STAGE"
+check_stage identity-api
 
 if [ -z "$SHA" ]; then
   if [ -f "$STAGE/BUILD" ]; then
@@ -51,6 +33,7 @@ if [ -z "$SHA" ]; then
   fi
 fi
 [ -n "$SHA" ] || die "build sha missing: specify as second argument, set SHA=..., or provide $STAGE/BUILD"
+[[ "$SHA" =~ ^[0-9a-f]{7,40}$ ]] || die "build sha is not 7-40 lowercase hex: $SHA"
 
 sudo mkdir -p "$INSTALL_DIR"
 sudo mkdir -p "$DROPIN_DIR"
