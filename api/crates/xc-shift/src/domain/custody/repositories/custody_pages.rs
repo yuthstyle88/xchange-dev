@@ -23,11 +23,13 @@ pub struct OpsRow {
     pub service_opened_at: Option<CustodyTime>,
 }
 
-/// The floor facts for a branch: the `ops_state` row and the user's latest open attendance record.
+/// The floor facts for a branch: the `ops_state` row, the user's latest open attendance record,
+/// and the branch's OPEN shifts count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FloorFacts {
     pub ops: Option<OpsRow>,
     pub my_open_attendance: Option<Attendance>,
+    pub open_shifts: usize,
 }
 
 /// Bounded, paged read port for custody history.
