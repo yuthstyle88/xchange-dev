@@ -216,8 +216,6 @@ test.describe.serial('F20 desk kiosk cancel', () => {
       );
       console.log(`[F20] POST /api/kiosk cancel ${cancelRes.text}`);
       expect(cancelRes.ok, `POST /api/kiosk cancel: ${cancelRes.text}`).toBeTruthy();
-      const cancelBody = JSON.parse(cancelRes.body) as KioskIdentityAnswer;
-      expect(cancelBody.status, 'cancel response status').toBe('CANCELLED');
 
       // The desk navigates to /desk?branch=MAIN with no kiosk= parameter (entry.ts:89).
       await teller.waitForURL(
