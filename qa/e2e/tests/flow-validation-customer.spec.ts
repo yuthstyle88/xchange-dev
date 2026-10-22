@@ -99,9 +99,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
       const branchSelect = page.locator('select[data-testid="branch-select"]');
       await expect(branchSelect).toBeVisible({ timeout: 15_000 });
-      if ((await branchSelect.locator('option').count()) > 1) {
-        await branchSelect.selectOption({ index: 1 }, { timeout: 10_000 });
-      }
+      await branchSelect.selectOption(users.branch, { timeout: 10_000 });
 
       const qtyInput = page.locator('input[data-testid="quantity-input"]');
       const slotSelect = page.locator('select[data-testid="slot-select"]');
