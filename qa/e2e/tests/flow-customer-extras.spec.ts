@@ -139,7 +139,7 @@ async function produceQueueNotifications(
 }
 
 test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number, rate alerts pause/resume, notifications read', () => {
-  test('assistantAsk: (a) asks assistant and reads conversation back after reload; (b) refuses empty message in th/en; (c) refuses non-customer role', async ({
+  test('assistantAsk: (a) asks assistant and reads conversation back after reload; (b) refuses empty message in th/en; (c) serves non-customer role as anonymous app session', async ({
     page,
     browser,
   }) => {
@@ -208,6 +208,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
     await sendBtn.click();
     const askResp = await askRespPromise;
     expect(askResp.status(), 'POST /api/app/assistant/messages returns 200').toBe(200);
+    const askBody = (await askResp.json().catch(() => ({}))) as { conversationId?: string };
 
     // .message-wrapper.message-customer .message-bubble: web/src/screens/customer/assistant/AssistantScreen.tsx:311-321
     const customerBubble = page
@@ -231,8 +232,11 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       page.locator('.message-wrapper.message-assistant .message-bubble').first(),
       'assistant reply persists after page.reload()',
     ).toBeVisible({ timeout: 15_000 });
+    const customerConvId =
+      askBody.conversationId ?? new URL(page.url()).searchParams.get('conversation');
 
-    // (c) Permission: teller lacks CustomerSelf (smoke-rbac-matrix.spec.ts:92; assistant_ask.rs:58-76)
+    // (c) Anonymous app session: teller lacks a customer record, so assistantAsk serves them as
+    // an anonymous app visitor with its own conversation (assistant.rs:3-17; customer-app.md §4.4)
     if (hasAccount('teller')) {
       const tellerCtx = await browser.newContext();
       try {
@@ -242,7 +246,25 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           branch: users.branch,
           text: `${RUN_TAG} teller check`,
         });
-        expectPermissionRefused(tellerResp, 'teller assistantAsk');
+        expect(tellerResp.status, 'teller assistantAsk answers 200 as anonymous app session').toBe(200);
+        const tellerConvId = (tellerResp.body as { conversationId?: string }).conversationId;
+        expect(typeof tellerConvId, 'teller conversationId is non-empty string').toBe('string');
+        if (customerConvId) {
+          expect(tellerConvId, 'teller conversation is distinct from customer').not.toBe(
+            customerConvId,
+          );
+          const foreignConv = await tellerPage.evaluate(async (cid) => {
+            const res = await fetch(
+              `/api/v3/views/my_assistant_conversation?conversationId=${encodeURIComponent(cid)}`,
+              { credentials: 'same-origin' },
+            );
+            return { status: res.status };
+          }, customerConvId);
+          expect(
+            foreignConv.status,
+            'teller my_assistant_conversation on customer conversation refused with 403',
+          ).toBe(403);
+        }
       } finally {
         await tellerCtx.close();
       }
