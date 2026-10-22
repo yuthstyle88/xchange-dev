@@ -12,7 +12,7 @@ const root = document.getElementById('root');
 if (root) {
   render(
     () => (
-      <CustomerShell route="/app">
+      <CustomerShell route="/app" tabletFlow>
         <SignIn navigate={(url) => window.location.assign(url)} />
       </CustomerShell>
     ),

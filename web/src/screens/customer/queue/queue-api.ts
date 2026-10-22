@@ -17,6 +17,7 @@
 // The token is read from `requestQrUrl` (`/q#<token>`, relative) with `parseRequestQr` (shared/queue/request-qr.ts).
 import { ApiClient, ApiError, type Fetch } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
+import { readHostOrg } from '../../../shared/api/public-host';
 import { parseRequestQr } from '../../../shared/queue/request-qr';
 
 export type TradeType = 'BUY' | 'SELL';
@@ -154,47 +155,14 @@ export class QueueApi {
     return w as { send(body: B): Promise<R> };
   }
 
-  private async getJson<R>(path: string): Promise<R> {
-    const res = await this.fetchFn(path, {
-      method: 'GET',
-      credentials: 'same-origin',
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      try {
-        const json = JSON.parse(text);
-        if (json && typeof json === 'object' && json.error) {
-          if (typeof json.error === 'string') {
-            throw new ApiError({ code: 'refused', message: json.error, status: res.status });
-          }
-          throw new ApiError({
-            code: json.error.code ?? 'unknown',
-            field: json.error.field,
-            reason: typeof json.error.reason === 'string' ? json.error.reason : undefined,
-            message: json.error.message ?? text,
-            status: res.status,
-          });
-        }
-      } catch (e) {
-        if (e instanceof ApiError) throw e;
-      }
-      throw new ApiError({ code: 'httpError', message: text || res.statusText, status: res.status });
-    }
-    return (await res.json()) as R;
-  }
-
   /** The org of the request's host (`/api/public/host`). Rejects when there is none. */
-  async host(): Promise<string> {
-    const data = await this.getJson<{ org?: string }>('/api/public/host');
-    if (typeof data?.org !== 'string' || data.org.length === 0) {
-      throw new ApiError({ code: 'notFound', message: 'host org not found', status: 404 });
-    }
-    return data.org;
+  host(): Promise<string> {
+    return readHostOrg(this.client);
   }
 
   /** The branch's kiosk rates by branch code (W2). Rejects with ApiError on a non-2xx answer. */
   rates(org: string, code: string): Promise<QueueRates> {
-    return this.getJson<QueueRates>(
+    return this.client.publicGet<QueueRates>(
       `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(code)}/queue-rates`,
     );
   }

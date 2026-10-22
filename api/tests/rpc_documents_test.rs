@@ -29,8 +29,8 @@ mod snapshot_common;
 use chrono::Utc;
 use compat_common::{Fixture, Person};
 use rpc_common::{
-    Answer, Call, Desk, EMPLOYEE_AUTH_REQUIRED, INVALID_REQUEST, MAIN, ROLE_NOT_ALLOWED_RPC, RPC,
-    Replay, SERVER_ERROR, STAFF_RPC, one_of_each_role, sign_in, text_with_ids,
+    Answer, Call, Desk, INVALID_REQUEST, MAIN, ROLE_NOT_ALLOWED_RPC, RPC, Replay, SERVER_ERROR,
+    STAFF_RPC, one_of_each_role, sign_in, text_with_ids,
 };
 use serde_json::{Map, Value, json};
 use snapshot_common::time;
@@ -236,9 +236,10 @@ async fn every_role_but_rates_and_system_reads_the_documents_of_the_branch() {
             .await
             .assert_refused(400, DOCUMENTS_NOT_READABLE, who);
     }
-    // the owner has no employee session
+    // RBAC §11.8 S10 (#4528): the owner on the staff route is a staff caller and holds IdentityDocumentRead
     let owner = documents(&replay, "owner", json!({ "ref": CASH })).await;
-    owner.assert_refused(401, EMPLOYEE_AUTH_REQUIRED, "the owner on the staff route");
+    assert_eq!(owner.status, 200, "owner: {:.300}", owner.text);
+    assert_eq!(owner.text, expected, "owner");
 
     for (who, sentence) in [("owner", INVALID_REQUEST), ("FR1", ROLE_NOT_ALLOWED_RPC)] {
         let answer = replay
@@ -276,9 +277,9 @@ async fn the_role_table_of_documents_is_policys_on_both_routes() {
                 )
                 .await;
             let label = format!("documents on {path} as {}", person.key);
-            // OR-4b (#767): the route table's rule (`Policy::authorize`); the staff route reads the
-            // staff session only, so the owner's is nobody there
-            let caller = (path == RPC || person.key != "OWNER").then_some(&actor);
+            // OR-4b (#767) + RBAC §11.8 S10 (#4528): the route table's rule (`Policy::authorize`);
+            // the owner is a staff caller on the staff route too
+            let caller = Some(&actor);
             match Policy::authorize(caller, entry, &Action::new("documents"), None, Utc::now()) {
                 Err(refusal) => {
                     answer.assert_refused(refusal.status(), &refusal.to_string(), &label)
@@ -291,7 +292,7 @@ async fn the_role_table_of_documents_is_policys_on_both_routes() {
             }
         }
     }
-    assert_eq!(let_through.len(), 8, "{let_through:?}");
+    assert_eq!(let_through.len(), 9, "{let_through:?}");
     assert!(let_through.iter().all(|(_, path)| *path == STAFF_RPC));
     assert!(!let_through.iter().any(|(who, _)| who == "SYSTEM"));
     // signed in: refused for the role, not for the session

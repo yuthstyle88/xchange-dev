@@ -12,6 +12,7 @@ pub mod role_grants;
 pub mod scope_rule;
 pub mod scoped_role;
 pub mod session_branch;
+pub mod staff_caller;
 pub mod standing;
 pub mod target_user;
 
@@ -28,5 +29,6 @@ pub use role_grants::{Group, RoleGrants, RoleGrantsSnapshot};
 pub use scope_rule::ScopeRule;
 pub use scoped_role::ScopedRole;
 pub use session_branch::{BranchRef, SessionBranch};
+pub use staff_caller::is_staff_caller;
 pub use standing::{Standing, StandingKind};
 pub use target_user::TargetUser;

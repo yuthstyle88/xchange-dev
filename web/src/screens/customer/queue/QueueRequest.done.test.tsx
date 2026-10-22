@@ -1,9 +1,11 @@
 // QW-2h (kiosk-shared-phone §5r.3 rows U8a, U7b; §5r.4a QW-2h note, §5r.4b): how the /app/queue page ends.
 // - U8a: on a personal phone, เสร็จ leaves for the customer's own pages: location.assign('/app/bookings') once,
 //   and no /api/auth/logout.
-// - U7b: on the branch tablet (?shared=1), as soon as the open request's status leaves QUOTED (the staff scan issued
-//   the number), the page signs out (POST /api/auth/logout once) and starts over at /app/queue?branch=MAIN&shared=1,
-//   with no press. On a phone the same status change signs nothing out and the page stays, showing the number.
+// - U7b, phone half: when the status leaves QUOTED (the staff scan issued the number) the page signs nothing out and
+//   stays, showing the number (also §7.8 T12).
+// The U7b tablet rows (sign-out + restart after the scan, and the failed sign-out after the scan) were retired by the
+// XC FE controller claude/e8020026 per kiosk-shared-phone §7.9 "Becomes obsolete": the paired tablet's loop is
+// BT-F2's, pinned in QueueRequest.tablet.test.tsx.
 // Written before the implementation by the XC FE controller claude/e8020026 (owner lines on #4562).
 // Do not edit, delete or weaken these tests; add tests in a file of your own.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -128,7 +130,7 @@ const logouts = () => sent.filter((s) => s.path === '/api/auth/logout' && s.meth
 
 function at(search: string): ReturnType<typeof vi.fn> {
   try {
-    window.sessionStorage.clear(); // the tablet mark (shared/session/tablet.ts) must not leak between tests
+    window.sessionStorage.clear(); // nothing may leak between tests through storage
   } catch {
     // storage blocked: the URL flag still drives the mark
   }
@@ -147,36 +149,6 @@ describe('QW-2h: how /app/queue ends', () => {
     expect(assign).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledWith('/app/bookings');
     expect(logouts()).toHaveLength(0);
-  });
-
-  it('U7b: on the branch tablet, the scan (QUOTED → WAITING) signs out once and starts over with no press', async () => {
-    const assign = at('?branch=MAIN&shared=1');
-    views = [view('QUOTED', null, 5), view('WAITING', 'A012', 6)];
-    await mount('?branch=MAIN&shared=1');
-    await submit();
-    expect(logouts(), 'nothing before the scan').toHaveLength(0);
-    for (let i = 0; i < 3; i += 1) {
-      await vi.advanceTimersByTimeAsync(3_000);
-      await flush();
-    }
-    expect(logouts()).toHaveLength(1);
-    expect(assign).toHaveBeenCalledTimes(1);
-    expect(assign).toHaveBeenCalledWith('/app/queue?branch=MAIN&shared=1');
-  });
-
-  it('U7b + U7a: on the branch tablet, a failed sign-out after the scan shows the worded error and does not restart', async () => {
-    const assign = at('?branch=MAIN&shared=1');
-    logoutStatus = 503;
-    views = [view('QUOTED', null, 5), view('WAITING', 'A012', 6)];
-    await mount('?branch=MAIN&shared=1');
-    await submit();
-    for (let i = 0; i < 3; i += 1) {
-      await vi.advanceTimersByTimeAsync(3_000);
-      await flush();
-    }
-    expect(logouts().length).toBeGreaterThanOrEqual(1);
-    expect(assign).not.toHaveBeenCalled();
-    expect(q('[role="alert"]'), 'a worded error').not.toBeNull();
   });
 
   it('U7b on a phone: the scan signs nothing out, and the page stays showing the number', async () => {

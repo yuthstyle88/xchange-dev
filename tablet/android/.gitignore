@@ -1,0 +1,11 @@
+/.gradle/
+/.kotlin/
+/build/
+/*/build/
+/local.properties
+# Written by the release workflow from the XCHANGE_ANDROID_* secrets (TW-3); never committed.
+/key.properties
+*.jks
+*.keystore
+.idea/
+*.iml

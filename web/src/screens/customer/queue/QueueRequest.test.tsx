@@ -205,20 +205,4 @@ describe('QW-2: /app/queue', () => {
     expect(sent.some((s) => /\/api\/app\/web-requests\/k-old\/qr$/.test(s.path)), 'reissue for the open request').toBe(true);
     expect(q<HTMLElement>('[data-request-qr]')?.getAttribute('data-qr-url')).toBe(`${window.location.origin}/q#tok-fresh`);
   });
-
-  it('QW-3 follow-up: on a shared tablet, a failed sign-out shows an error and does not restart signed in', async () => {
-    const assign = vi.fn();
-    vi.stubGlobal('location', { ...window.location, assign, search: '?branch=MAIN&shared=1', pathname: '/app/queue' });
-    await mount('?branch=MAIN&shared=1');
-    await submit();
-    const original = fetchFn.getMockImplementation()!;
-    fetchFn.mockImplementation(async (input: string, init?: RequestInit) => {
-      if (new URL(input, 'http://localhost').pathname === '/api/auth/logout') return json(503, { error: { code: 'serverError', message: 'down' } });
-      return original(input, init);
-    });
-    q<HTMLButtonElement>('button[data-action="done"]')!.click();
-    await flush();
-    expect(assign).not.toHaveBeenCalled();
-    expect(q('[role="alert"]'), 'a worded error').not.toBeNull();
-  });
 });

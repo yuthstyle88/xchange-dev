@@ -376,7 +376,7 @@ async fn plain_admin_enabling_is_refused() {
     let a = enable(&db, ORG_ADMIN, &user).await;
     refused(
         &a,
-        StatusCode::FORBIDDEN,
+        StatusCode::BAD_REQUEST,
         "roleNotAllowed",
         "plain admin enables",
     );

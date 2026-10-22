@@ -435,8 +435,8 @@ async fn roles_without_verification_review_are_refused_forbidden() {
             .await;
         assert_eq!(
             answer.status,
-            StatusCode::FORBIDDEN,
-            "role {role} must be forbidden"
+            StatusCode::BAD_REQUEST,
+            "role {role} must be refused with 400"
         );
         let code = answer.json["error"]["code"]
             .as_str()
@@ -1267,6 +1267,25 @@ async fn assert_refused_403_no_case(env: &TestEnv, answer: &HttpAnswer, expected
     );
 }
 
+async fn assert_refused_400_no_case(env: &TestEnv, answer: &HttpAnswer, expected_code: &str) {
+    assert_eq!(
+        answer.status,
+        StatusCode::BAD_REQUEST,
+        "expected 400 {expected_code}, got {} {}",
+        answer.status,
+        answer.text
+    );
+    let code = answer.json["error"]["code"]
+        .as_str()
+        .unwrap_or_else(|| answer.json["error"].as_str().unwrap_or(""));
+    assert_eq!(code, expected_code, "body: {}", answer.text);
+    assert_eq!(
+        env.count("SELECT count(*) FROM verification_cases").await,
+        0,
+        "no case row may be written on 400 refusal"
+    );
+}
+
 #[actix_web::test]
 async fn row_1_two_branches_signed_in_at_b2_files_case_under_b2() {
     let env = TestEnv::start().await;
@@ -1348,7 +1367,7 @@ async fn row_6_expired_role_row_at_b1_answers_403_role_not_allowed_here() {
         Some(expired_to),
     );
     let answer = call_intake_as_actor(&env, vec![expired_role], Some(B01)).await;
-    assert_refused_403_no_case(&env, &answer, "roleNotAllowedHere").await;
+    assert_refused_400_no_case(&env, &answer, "roleNotAllowedHere").await;
     env.finish().await;
 }
 

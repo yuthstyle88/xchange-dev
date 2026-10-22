@@ -208,11 +208,7 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
                 }
                 _ => "roleNotAllowed",
             };
-            let status = match e {
-                xc_auth::domain::policy::value_objects::policy_error::PolicyError::SignIn => 401,
-                _ => 403,
-            };
-            return refuse(status, code, &e.to_string());
+            return refuse(e.status(), code, &e.to_string());
         }
     };
 
@@ -230,7 +226,7 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
             organization_id: org_id,
         },
         BranchScope::Branches(branches) if branches.is_empty() => {
-            return refuse(403, "roleNotAllowed", "Role has no VerificationReview");
+            return refuse(400, "roleNotAllowed", "Role has no VerificationReview");
         }
         BranchScope::Branches(branches) => {
             let branch = match &user.branch {

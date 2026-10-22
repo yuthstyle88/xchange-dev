@@ -11,7 +11,9 @@ import type { AdminBranchProfileData } from '../../../shared/api/generated/admin
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
+import { BranchTablets } from './BranchTablets';
 import * as table from './i18n';
 import './branches.css';
 
@@ -69,6 +71,9 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
     sat: { isOpen: false, open: '09:00', close: '17:00' },
     sun: { isOpen: false, open: '09:00', close: '17:00' },
   });
+
+  // BT-F3 (kiosk-shared-phone §7.3 T-D5): pairing a branch tablet needs `SystemSettings`, as the drawer agent does.
+  const canPairTablets = () => (sharedSession().me()?.permissions ?? []).includes('SystemSettings');
 
   let lastLoadedBranch = '';
   // #2247: only the latest profile read for the selected branch may fill the form.
@@ -386,6 +391,12 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
                 </div>
               </form>
             </div>
+          )}
+        </Show>
+
+        <Show when={canPairTablets() && profile()?.code}>
+          {(branchCode) => (
+            <BranchTablets branchId={selectedBranch()} branchCode={branchCode()} api={api} />
           )}
         </Show>
       </div>

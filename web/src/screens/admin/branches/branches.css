@@ -192,3 +192,88 @@
   color: #fff;
   border-color: #a5003c;
 }
+
+.branches-tablets {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.branches-tablets-intro {
+  margin: 0;
+  color: #676a73;
+  font-size: 14px;
+}
+
+.branches-tablets-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.branches-tablets-code {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: #f9f9fa;
+  border: 1px solid #cdd0d7;
+  border-radius: 8px;
+}
+
+.branches-tablets-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.branches-tablets-code-link {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.branches-tablets-code-meta {
+  margin: 0;
+  color: #676a73;
+  font-size: 13px;
+}
+
+.branches-tablets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branches-tablets-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f9f9fa;
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+
+.branches-tablets-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.branches-tablets-name {
+  font-weight: 600;
+}
+
+.branches-tablets-meta {
+  color: #676a73;
+  font-size: 13px;
+}
+
+.branches-tablets-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
