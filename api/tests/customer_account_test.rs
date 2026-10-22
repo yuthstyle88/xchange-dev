@@ -1320,6 +1320,98 @@ async fn a_profile_update_naming_a_customer_id_is_refused() {
     shop.finish().await;
 }
 
+/// #4397 row 1: `PUT /api/app/profile` with 100 Thai characters succeeds and saves as sent.
+#[actix_web::test]
+async fn name_too_long_row1_profile_update_accepts_100_thai_chars() {
+    let shop = Shop::start().await;
+    let (customer, token) = shop.registered().await;
+    let hundred = "ก".repeat(100);
+    let r = shop
+        .send(
+            profile(json!({ "displayName": hundred }))
+                .by(&token)
+                .key("p-4397-row1"),
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.text);
+    assert_eq!(r.json()["displayName"], hundred);
+    let saved: String = sqlx::query_scalar("SELECT display_name FROM customers WHERE id = $1")
+        .bind(&customer)
+        .fetch_one(shop.pool())
+        .await
+        .unwrap();
+    assert_eq!(saved, hundred);
+    shop.finish().await;
+}
+
+/// #4397 row 2: `PUT /api/app/profile` with 101 Thai characters → 400 `nameTooLong` (`field: displayName`), unchanged.
+#[actix_web::test]
+async fn name_too_long_row2_profile_update_refuses_101_thai_chars() {
+    let shop = Shop::start().await;
+    let (customer, token) = shop.registered().await;
+    let too_long = "ก".repeat(101);
+    let r = shop
+        .send(
+            profile(json!({ "displayName": too_long }))
+                .by(&token)
+                .key("p-4397-row2"),
+        )
+        .await;
+    assert_eq!(r.status, 400, "{}", r.text);
+    assert_eq!(
+        r.refusal(),
+        ("nameTooLong".to_owned(), Some("displayName".to_owned()))
+    );
+    let saved: String = sqlx::query_scalar("SELECT display_name FROM customers WHERE id = $1")
+        .bind(&customer)
+        .fetch_one(shop.pool())
+        .await
+        .unwrap();
+    assert_eq!(saved, "Somchai J.");
+    shop.finish().await;
+}
+
+/// #4397 row 3: `PUT /api/app/profile` with 100 Thai characters and two spaces each side → 200, saved trimmed.
+#[actix_web::test]
+async fn name_too_long_row3_profile_update_trims_before_counting_100_thai_chars() {
+    let shop = Shop::start().await;
+    let (customer, token) = shop.registered().await;
+    let trimmed = "ก".repeat(100);
+    let padded = format!("  {trimmed}  ");
+    let r = shop
+        .send(
+            profile(json!({ "displayName": padded }))
+                .by(&token)
+                .key("p-4397-row3"),
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.text);
+    assert_eq!(r.json()["displayName"], trimmed);
+    let saved: String = sqlx::query_scalar("SELECT display_name FROM customers WHERE id = $1")
+        .bind(&customer)
+        .fetch_one(shop.pool())
+        .await
+        .unwrap();
+    assert_eq!(saved, trimmed);
+    shop.finish().await;
+}
+
+/// #4397 row 4: `POST /api/app/register` with 101 Thai characters → 400 `nameTooLong` (`field: displayName`); no customer row created.
+#[actix_web::test]
+async fn name_too_long_row4_register_refuses_101_thai_chars() {
+    let shop = Shop::start().await;
+    let mut body = register_body("th", &[]);
+    body["displayName"] = json!("ก".repeat(101));
+    let r = shop.register(body).await;
+    assert_eq!(r.status, 400, "{}", r.text);
+    assert_eq!(
+        r.refusal(),
+        ("nameTooLong".to_owned(), Some("displayName".to_owned()))
+    );
+    assert_eq!(shop.count("SELECT count(*) FROM customers").await, 0);
+    shop.finish().await;
+}
+
 // ── V: my_profile (red until #767) ────────────────────────────────────────
 
 /// V1 (§4.4, K8): the customer reads their own profile and current consents; no identity value, hash or last 4.
