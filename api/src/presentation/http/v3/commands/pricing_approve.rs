@@ -32,6 +32,9 @@ use xc_rate::application::publication::publish_service::PublishService;
 use xc_rate::domain::draft::rate_draft::{DraftLine, DraftStatus, LineSide};
 use xc_rate::domain::policy::currency_tier_override::{CurrencyTierOverride, TierMargin};
 use xc_rate::domain::policy::policy_tiers::PolicyTier;
+use xc_rate::domain::pricing::market_quote::{MarketQuote, MarketSource};
+use xc_rate::domain::pricing::pricing_suggestion::{SuggestionConfig, TierPrice};
+use xc_rate::domain::pricing::tier_check::{TierCheck, TierError};
 use xc_rate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 
 use super::commands::{make_approval_service, map_rate_engine_error};
@@ -308,6 +311,93 @@ impl CommandAction for PricingApproveCommand {
         let mut draft_lines = Vec::with_capacity(parsed_rows.len());
 
         for (currency, tier_prices) in &parsed_rows {
+            let cur_unit: Decimal =
+                sqlx::query_scalar("SELECT unit_size FROM currencies WHERE code = $1")
+                    .bind(currency.as_str())
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|_| server_error())?
+                    .unwrap_or(Decimal::ONE);
+
+            let market_rows = sqlx::query(
+                "SELECT DISTINCT ON (l.reference_type) \
+                     l.reference_type, \
+                     l.unit_size, \
+                     l.buy, \
+                     l.sell, \
+                     b.fetched_at \
+                 FROM rate_reference_lines l \
+                 JOIN rate_reference_batches b ON b.id = l.batch_id \
+                 WHERE trim(l.currency_code) = $1 \
+                   AND l.reference_type IN ('MARKET_TT', 'MARKET_SR') \
+                 ORDER BY l.reference_type, b.fetched_at DESC, b.id DESC",
+            )
+            .bind(currency.as_str())
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|_| server_error())?;
+
+            let mut domain_quotes = Vec::with_capacity(market_rows.len());
+            for r in market_rows {
+                let ref_type: String = r.get("reference_type");
+                let unit_size: Decimal = r.get("unit_size");
+                let buy: Option<Decimal> = r.get("buy");
+                let sell: Option<Decimal> = r.get("sell");
+                let fetched_at: chrono::DateTime<chrono::Utc> = r.get("fetched_at");
+                let market_source = match ref_type.as_str() {
+                    "MARKET_TT" => MarketSource::Tt,
+                    "MARKET_SR" => MarketSource::SuperRich,
+                    _ => continue,
+                };
+                domain_quotes.push(MarketQuote {
+                    source: market_source,
+                    buy: buy.and_then(|d| Rate::parse(&d.to_string()).ok()),
+                    sell: sell.and_then(|d| Rate::parse(&d.to_string()).ok()),
+                    unit_size,
+                    fetched_at,
+                    stale: false,
+                });
+            }
+
+            let (anchor, _) = MarketQuote::anchor_for(&domain_quotes);
+            let check_tiers: [TierPrice; 4] = std::array::from_fn(|idx| TierPrice {
+                tier_no: (idx + 1) as u8,
+                buy: Some(tier_prices[idx].0),
+                sell: Some(tier_prices[idx].1),
+            });
+            let tier_errors = TierCheck::validate(
+                &check_tiers,
+                cur_unit,
+                anchor,
+                &SuggestionConfig::v9_default(),
+            );
+            if let Some(first_err) = tier_errors.first() {
+                let msg = match first_err {
+                    TierError::Count => "tier count must be 4 (Count)".to_string(),
+                    TierError::NotPositive { tier } => {
+                        format!("tier {tier}: buy and sell must be positive (NotPositive)")
+                    }
+                    TierError::SellNotAboveBuy { tier } => {
+                        format!("tier {tier}: sell must be above buy (SellNotAboveBuy)")
+                    }
+                    TierError::BuyBelowPrevious { tier } => {
+                        format!("tier {tier}: buy is below previous tier (BuyBelowPrevious)")
+                    }
+                    TierError::SellAbovePrevious { tier } => {
+                        format!("tier {tier}: sell is above previous tier (SellAbovePrevious)")
+                    }
+                    TierError::FarFromAnchor { source, limit_pct } => format!(
+                        "tier 1: more than {limit_pct}% from {source:?} anchor (FarFromAnchor)"
+                    ),
+                };
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("tiers"),
+                    &msg,
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+
             let ref_id = ReferenceBase::newest_in(tx, branch, currency)
                 .await
                 .map_err(map_rate_engine_error)?
@@ -346,14 +436,6 @@ impl CommandAction for PricingApproveCommand {
                     StatusCode::BAD_REQUEST,
                 ));
             };
-
-            let cur_unit: Decimal =
-                sqlx::query_scalar("SELECT unit_size FROM currencies WHERE code = $1")
-                    .bind(currency.as_str())
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|_| server_error())?
-                    .unwrap_or(Decimal::ONE);
 
             if ref_unit <= Decimal::ZERO || cur_unit <= Decimal::ZERO {
                 return Err(V3Error::new(
