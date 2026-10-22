@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 const FACTORY_SUFFIX: &str = "xc-booking/src/infrastructure/lifecycle_factory.rs";
 /// The 6th production call site is `api/src/presentation/http/v3/commands/cash.rs` (#4136
 /// `queue-day-close.md` §3.5), where the routes' day-close hook tells bookings `dayClosed`.
-const EXPECTED_FACTORY_CALL_SITES: usize = 6;
+/// The 7th is `api/src/infrastructure/kiosk/web_request_wiring.rs` (kiosk web queue slice c,
+/// `kiosk-shared-phone.md` §4.2 D8): the member's web-request cancel ends its walk-in ticket through
+/// the same queue issuer, so bookings hear about it as at the desk.
+const EXPECTED_FACTORY_CALL_SITES: usize = 7;
 
 fn api_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -713,6 +713,24 @@ impl KioskRepository for PgKioskRepository {
         Ok(customer_id)
     }
 
+    async fn open_web_request_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        customer_id: &str,
+    ) -> AppResult<Option<String>> {
+        let id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM kiosk_requests \
+             WHERE branch_id = $1 AND customer_id = $2 AND status IN ('QUOTED', 'WAITING') \
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+        )
+        .bind(branch.as_str())
+        .bind(customer_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        Ok(id)
+    }
+
     async fn branch_timezone_in(
         &self,
         tx: Tx<'_, '_>,
