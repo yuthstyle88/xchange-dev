@@ -2,6 +2,8 @@
 //!
 //! SKELETON (XC-PRICING PX-0): `headline` and `is_stale` are PX-1's. Types, constants and signatures stay.
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
 
@@ -33,7 +35,28 @@ impl MarketSnapshot {
     /// V.9's `headline` (`market.mjs:65-75`): one row per currency, the large-note quote. TT ranks bands
     /// `L`, `""`, `M`, `S` (anything else last); Super Rich ranks by its list index (lowest first). Sorted by code.
     pub fn headline(&self) -> Vec<MarketRow> {
-        todo!("PX-1: MarketSnapshot::headline")
+        let mut best: BTreeMap<&str, (u32, &MarketRow)> = BTreeMap::new();
+        for row in &self.rows {
+            let rank = match self.source {
+                MarketSource::Tt => match row.band.as_str() {
+                    "L" => 0,
+                    "" => 1,
+                    "M" => 2,
+                    "S" => 3,
+                    _ => 9,
+                },
+                MarketSource::SuperRich | MarketSource::Bot => {
+                    row.band.parse::<u32>().unwrap_or(u32::MAX)
+                }
+            };
+            if best
+                .get(row.code.as_str())
+                .is_none_or(|(cur_rank, _)| rank < *cur_rank)
+            {
+                best.insert(row.code.as_str(), (rank, row));
+            }
+        }
+        best.into_values().map(|(_, row)| row.clone()).collect()
     }
 }
 
@@ -51,7 +74,6 @@ impl MarketStaleness {
 
     /// True when there is no good snapshot, or the newest one is older than 30 minutes (`market.mjs:133`).
     pub fn is_stale(fetched_at: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
-        let _ = (fetched_at, now);
-        todo!("PX-1: MarketStaleness::is_stale")
+        fetched_at.is_none_or(|t| now - t > Self::stale_after())
     }
 }
