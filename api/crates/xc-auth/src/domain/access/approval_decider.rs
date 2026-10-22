@@ -16,6 +16,7 @@
 //! Skeleton (AP-0, BE lane controller): the bodies are AP-1's.
 use super::actor::Actor;
 use super::permission::Permission;
+use super::role_grants::RoleGrants;
 
 /// The shared core of the eight approval policies' role test (§11.9).
 pub struct ApprovalDecider;
@@ -24,14 +25,16 @@ impl ApprovalDecider {
     /// True iff some row `r` of `who` has `RoleGrants::holds(r.group_code(), p)`, whatever its branch.
     /// The row's base role is not read.
     pub fn holds_anywhere(who: &Actor, p: Permission) -> bool {
-        let _ = (who, p);
-        todo!("AP-1")
+        who.roles
+            .iter()
+            .any(|r| RoleGrants::holds(r.group_code(), p))
     }
 
     /// True iff some row `r` of `who` has `RoleGrants::holds(r.group_code(), p)` and `r.covers(branch)`
     /// (`ScopedRole::covers`: an organisation-wide row covers every branch). The row's base role is not read.
     pub fn holds_on(who: &Actor, p: Permission, branch: Option<&str>) -> bool {
-        let _ = (who, p, branch);
-        todo!("AP-1")
+        who.roles
+            .iter()
+            .any(|r| r.covers(branch) && RoleGrants::holds(r.group_code(), p))
     }
 }
