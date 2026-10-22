@@ -20,12 +20,11 @@ use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::Side;
 use xc_kiosk::application::kiosk::request_issue::RequestIssueService;
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
-use xc_kiosk::domain::kiosk::commands::quote_input::QuoteInput;
 use xc_kiosk::domain::kiosk::entities::kiosk_settings::KioskSettings;
 use xc_kiosk::domain::kiosk::repositories::kiosk_settings_repository::KioskSettingsRepository;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
@@ -58,6 +57,7 @@ use crate::presentation::extractors::actor::{
 };
 use crate::presentation::http::client_address::client_address;
 use crate::presentation::http::rpc::RpcClock;
+use crate::presentation::http::v3::web_request_create::parse_quote_input;
 use crate::presentation::pages;
 use crate::presentation::pages::Callers;
 
@@ -402,33 +402,12 @@ async fn handle_kiosk(
             Err(err) => handle_service_error(err),
         },
         KioskAction::Quote => {
-            let quote_type = payload.get("type").and_then(Value::as_str);
-            let side = match quote_type {
-                Some("BUY") => Some(Side::Buy),
-                Some("SELL") => Some(Side::Sell),
-                _ => None,
-            };
-            let currency = payload
-                .get("currency")
-                .and_then(Value::as_str)
-                .and_then(|s| CurrencyCode::parse(s).ok());
-            let amount = match payload.get("amount") {
-                Some(Value::Number(n)) => Money::parse(&n.to_string()).ok(),
-                Some(Value::String(s)) => Money::parse(s).ok(),
-                _ => None,
-            };
-            let payment_method = match payload.get("paymentMethod") {
-                Some(Value::String(s)) => Some(s.clone()),
-                Some(Value::Null) | None => None,
-                Some(_) => Some("invalid".to_string()),
-            };
-
-            let input = QuoteInput {
-                side,
-                currency,
-                amount,
-                payment_method,
-            };
+            let input = parse_quote_input(
+                payload.get("type").and_then(Value::as_str),
+                payload.get("currency").and_then(Value::as_str),
+                payload.get("amount"),
+                payload.get("paymentMethod"),
+            );
 
             let default_ids = RandomKioskIds;
             let ids: &dyn KioskIds = req
