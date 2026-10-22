@@ -247,7 +247,7 @@ describe('HomeScreen after a later poll failure (R4-2)', () => {
     expect(branchSection(host).textContent).not.toContain(text('loadBranchesFailed'));
   });
 
-  it('(e) a failed first branch read with ?branch shows the branch error and its Retry, while the rate board shows its lines', async () => {
+  it('(e) a failed first branch read with ?branch shows the branch error and its Retry, nothing in the rate section, then the rate board after Retry', async () => {
     const server = scriptedServer();
     server.state.failBranches = true;
     const host = mount(server, { search: '?branch=XC-B01' });
@@ -260,9 +260,20 @@ describe('HomeScreen after a later poll failure (R4-2)', () => {
     expect(retry!.textContent?.trim()).toBe(text('retry'));
 
     const rates = ratesSection(host);
+    expect(rates.textContent, 'no loading rates').not.toContain(text('loadingRates'));
+    expect(rates.querySelector('.xc-home-loading'), 'no rate spinner').toBeNull();
+    expect(rates.textContent, 'no rate error').not.toContain(text('loadRatesFailed'));
+    expect(rates.querySelector('.xc-home-error'), 'no rate error box').toBeNull();
+    expect(rates.querySelector('.xc-home-retry-btn'), 'no rate Retry').toBeNull();
+    expect(rates.querySelector('.xc-home-table'), 'no rate board').toBeNull();
+    expect(rateRows(host).length, 'no rate lines yet').toBe(0);
+    expect(server.calls.rates, 'no rate read while branch unresolved').toBe(0);
+
+    server.state.failBranches = false;
+    retry!.click();
+    await settle();
+
     expect(rateRows(host).length, 'the rate board shows the rate poller lines').toBe(3);
     expect(rates.textContent).toContain('USD');
-    expect(rates.textContent, 'no rate error').not.toContain(text('loadRatesFailed'));
-    expect(rates.textContent, 'no loading rates').not.toContain(text('loadingRates'));
   });
 });
