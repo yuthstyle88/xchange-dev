@@ -140,8 +140,7 @@ async fn store(
 async fn upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
     let callers = pages::get_callers(&req).await;
     let now = Utc::now();
-    let is_staff = callers.owner_standing().is_none()
-        && (callers.staff_standing().is_some() || callers.staff_user.is_some());
+    let is_staff = callers.owner_standing().is_none() && callers.staff_standing().is_some();
 
     if callers.user.is_none() {
         let allowed = Policy::authorize(None, EntryPath::Upload, &Action::new("upload"), None, now);
@@ -271,9 +270,7 @@ async fn file(req: HttpRequest, path: web::Path<String>) -> HttpResponse {
         return server_error(&AppError::Internal("no FileService".into()));
     };
     let is_owner = callers.owner_standing().is_some()
-        || (callers.user.is_some()
-            && callers.staff_standing().is_none()
-            && callers.staff_user.is_none());
+        || (callers.user.is_some() && callers.staff_standing().is_none());
     if is_owner {
         let actor_id = callers
             .user

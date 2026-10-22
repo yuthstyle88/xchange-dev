@@ -2,6 +2,7 @@
 pub mod app_session_claim;
 pub mod compat;
 
+pub mod copy_by_email;
 pub mod custody;
 pub mod customer_binder;
 pub mod customer_otp_sign_in;

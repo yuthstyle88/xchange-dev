@@ -21,16 +21,31 @@ use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_customer::application::consent_service::ConsentService;
+use xc_customer::domain::email_sender::EmailSender;
 use xc_kernel::ids::BranchId;
 
+use crate::application::copy_by_email::member_email::{MemberEmails, PgMemberEmails};
 use crate::bootstrap::AppState;
+use crate::infrastructure::notify::NotifyEmailSender;
 use crate::presentation::dto::v3::common::ViewAnswer;
-use crate::presentation::dto::v3::my_profile::{MyConsent, MyProfileData, MyProfileFilter};
+use crate::presentation::dto::v3::my_profile::{
+    EmailCopy, MyConsent, MyProfileData, MyProfileFilter,
+};
 use crate::presentation::http::v3::command::{out_of_scope, server_error};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{
     BranchView, authenticate_and_authorize, parse_branch, require_branch,
 };
+
+fn mask_email(address: &str) -> String {
+    match address.split_once('@') {
+        Some((local, domain)) => {
+            let first = local.chars().next().unwrap_or('*');
+            format!("{first}***@{domain}")
+        }
+        None => "***".to_owned(),
+    }
+}
 
 pub struct MyProfileView {
     db: PgPool,
@@ -66,6 +81,14 @@ impl MyProfileView {
         .await
         .map_err(AppError::Database)?;
         tx.commit().await.map_err(AppError::Database)?;
+        let to = match xc_customer::get_pii_keys() {
+            Ok(keys) => PgMemberEmails::new(self.db.clone(), keys)
+                .verified_email(customer)
+                .await?
+                .map(|v| mask_email(&v.address)),
+            Err(_) => None,
+        };
+        let available = to.is_some() && NotifyEmailSender::from_env().is_configured();
         Ok(MyProfileData {
             customer_id,
             customer_no,
@@ -86,6 +109,7 @@ impl MyProfileView {
                     },
                 )
                 .collect(),
+            email_copy: EmailCopy { available, to },
         })
     }
 }

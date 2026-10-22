@@ -20,6 +20,15 @@ pub struct MyProfileData {
     pub offered_languages: Vec<String>,
     /// The newest row per (purpose, channel), ordered by purpose, then channel.
     pub consents: Vec<MyConsent>,
+    pub email_copy: EmailCopy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "my_profile.ts")]
+pub struct EmailCopy {
+    pub available: bool,
+    pub to: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

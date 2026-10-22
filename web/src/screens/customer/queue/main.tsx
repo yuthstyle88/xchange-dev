@@ -11,7 +11,7 @@ const root = document.getElementById('root');
 if (root) {
   render(
     () => (
-      <CustomerShell route="/app/queue">
+      <CustomerShell route="/app/queue" tabletFlow>
         <QueueRequestScreen />
       </CustomerShell>
     ),

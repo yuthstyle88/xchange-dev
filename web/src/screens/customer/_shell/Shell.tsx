@@ -2,10 +2,11 @@
 // issuecomment-6137816294). It composes AppShell, as AdminShell does, and adds the customer's bottom navigation and
 // sign-in state. AppShell's header carries LangSwitch, which shows TH / EN / 中文 for the customer audience.
 // A screen never reads my_profile or the language itself.
-import { createResource, For, Show, type JSX } from 'solid-js';
+import { createResource, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type { MyProfileData } from '../../../shared/api/generated/my_profile';
 import { screenT } from '../../../shared/i18n';
+import { readTabletMode } from '../../../shared/session/tablet';
 import { AppShell } from '../../../shared/ui/AppShell';
 import * as table from './i18n';
 import './shell.css';
@@ -66,69 +67,83 @@ async function loadProfile(): Promise<Profile | undefined> {
   }
 }
 
-export function CustomerShell(props: { route: CustomerRoute; children?: JSX.Element }): JSX.Element {
+export function CustomerShell(props: {
+  route: CustomerRoute;
+  tabletFlow?: boolean;
+  children?: JSX.Element;
+}): JSX.Element {
   const [profile] = createResource(loadProfile);
+  const [paired, setPaired] = createSignal(false);
+  if (props.tabletFlow) {
+    void readTabletMode(fetch).then((mode) => {
+      if (mode.paired) setPaired(true);
+    });
+  }
   const current = () => NAV_OF[props.route];
 
   return (
     <AppShell title={tr('title')} ownsMain staffSession={false}>
       <div class="xc-customer-bar">
-        <Show when={profile()}>
-          {(p) => (
-            <Show
-              when={p().signedIn ? (p() as { signedIn: true; name: string }) : undefined}
-              fallback={
-                <a class="xc-customer-signin" href="/app/sign-in">
-                  {tr('signIn')}
-                </a>
-              }
-            >
-              {(signedIn) => (
-                <>
-                  <a
-                    class="xc-customer-name"
-                    href="/app/profile"
-                    aria-current={props.route === '/app/profile' ? 'page' : undefined}
-                  >
-                    {tr('signedInAs', { name: signedIn().name })}
+        <Show when={!paired()}>
+          <Show when={profile()}>
+            {(p) => (
+              <Show
+                when={p().signedIn ? (p() as { signedIn: true; name: string }) : undefined}
+                fallback={
+                  <a class="xc-customer-signin" href="/app/sign-in">
+                    {tr('signIn')}
                   </a>
-                  <a
-                    class="xc-customer-member"
-                    href="/app/member"
-                    aria-current={props.route === '/app/member' ? 'page' : undefined}
-                  >
-                    {tr('member')}
-                  </a>
-                  <a
-                    class="xc-customer-rate-alerts"
-                    href="/app/rate-alerts"
-                    aria-current={props.route === '/app/rate-alerts' ? 'page' : undefined}
-                  >
-                    {tr('rateAlerts')}
-                  </a>
-                </>
-              )}
-            </Show>
-          )}
+                }
+              >
+                {(signedIn) => (
+                  <>
+                    <a
+                      class="xc-customer-name"
+                      href="/app/profile"
+                      aria-current={props.route === '/app/profile' ? 'page' : undefined}
+                    >
+                      {tr('signedInAs', { name: signedIn().name })}
+                    </a>
+                    <a
+                      class="xc-customer-member"
+                      href="/app/member"
+                      aria-current={props.route === '/app/member' ? 'page' : undefined}
+                    >
+                      {tr('member')}
+                    </a>
+                    <a
+                      class="xc-customer-rate-alerts"
+                      href="/app/rate-alerts"
+                      aria-current={props.route === '/app/rate-alerts' ? 'page' : undefined}
+                    >
+                      {tr('rateAlerts')}
+                    </a>
+                  </>
+                )}
+              </Show>
+            )}
+          </Show>
+          <a
+            class="xc-customer-notifications"
+            href="/app/notifications"
+            aria-current={props.route === '/app/notifications' ? 'page' : undefined}
+          >
+            {tr('notifications')}
+          </a>
         </Show>
-        <a
-          class="xc-customer-notifications"
-          href="/app/notifications"
-          aria-current={props.route === '/app/notifications' ? 'page' : undefined}
-        >
-          {tr('notifications')}
-        </a>
       </div>
       <main class="xc-shell-main xc-customer-main">{props.children}</main>
-      <nav class="xc-customer-nav" aria-label={tr('nav')}>
-        <For each={NAV}>
-          {(item) => (
-            <a href={item.href} aria-current={current() === item.href ? 'page' : undefined}>
-              {tr(item.key)}
-            </a>
-          )}
-        </For>
-      </nav>
+      <Show when={!paired()}>
+        <nav class="xc-customer-nav" aria-label={tr('nav')}>
+          <For each={NAV}>
+            {(item) => (
+              <a href={item.href} aria-current={current() === item.href ? 'page' : undefined}>
+                {tr(item.key)}
+              </a>
+            )}
+          </For>
+        </nav>
+      </Show>
     </AppShell>
   );
 }

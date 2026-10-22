@@ -69,7 +69,8 @@ use crate::presentation::extractors::actor::{
     identity_session, identity_session_actor, same_origin, server_error,
 };
 use crate::presentation::pages;
-use xc_auth::domain::access::Standing;
+use xc_auth::domain::access::standing::FALLBACK_BRANCH;
+use xc_auth::domain::access::{Standing, StandingKind, is_staff_caller};
 
 /// The most bytes a body of 120,000 UTF-16 units can be: three per unit, and a
 /// byte-order mark that is not counted. Anything longer is over v2's limit
@@ -273,8 +274,8 @@ pub(crate) async fn caller_of_rpc(
     }))
 }
 
-/// Who `/api/staff/rpc` is answering: a Blueprint session whose standing is not the owner's.
-/// Anyone else is not signed in.
+/// Who `/api/staff/rpc` is answering: any Blueprint session for which `is_staff_caller` is true
+/// (§11.8). Anyone else is not signed in.
 async fn caller_of_staff_rpc(
     req: &HttpRequest,
     now: DateTime<Utc>,
@@ -283,14 +284,26 @@ async fn caller_of_staff_rpc(
     let Some((user, access_actor)) = identity_session_actor(req, now).await else {
         return Err(RpcRefusal::not_signed_in(route).into());
     };
-    match Standing::of(&access_actor, now) {
-        Some(standing) if !standing.is_owner() => Ok(RpcCaller {
-            standing,
-            username: user.name.clone(),
-            name: user.name,
-        }),
-        _ => Err(RpcRefusal::not_signed_in(route).into()),
+    if !is_staff_caller(&access_actor, now) {
+        return Err(RpcRefusal::not_signed_in(route).into());
     }
+    let standing = match Standing::of(&access_actor, now) {
+        Some(standing) if !standing.is_owner() => standing,
+        _ => Standing {
+            user_id: access_actor.user_id,
+            kind: StandingKind::Owner,
+            branch: Some(
+                access_actor
+                    .branch
+                    .unwrap_or_else(|| xc_kernel::ids::BranchId::new(FALLBACK_BRANCH)),
+            ),
+        },
+    };
+    Ok(RpcCaller {
+        standing,
+        username: user.name.clone(),
+        name: user.name,
+    })
 }
 
 /// The shift service of the shift-open/close routes, with the queue's `CounterService` as its

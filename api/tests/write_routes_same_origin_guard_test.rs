@@ -21,10 +21,16 @@ const V3_CENTRAL_FILES: &[&str] = &[
     "src/presentation/http/v3/action.rs",
 ];
 
-const ALLOWLIST: &[(&str, &str)] = &[(
-    "src/presentation/http/device_agent.rs",
-    "machine endpoint with no cookie session, browsers refused by check_browser in agent_auth.rs:42, authenticated by bearer token or pairing code",
-)];
+const ALLOWLIST: &[(&str, &str)] = &[
+    (
+        "src/presentation/http/device_agent.rs",
+        "machine endpoint with no cookie session, browsers refused by check_browser in agent_auth.rs:42, authenticated by bearer token or pairing code",
+    ),
+    (
+        "src/presentation/http/public/copy_link.rs",
+        "public read-only view of a signed 1-day link (kiosk-shared-phone.md D22): no cookie session, the signed link is the credential, it cannot cancel, reissue or sign in; the /c page sends no X-Xchange-Request header",
+    ),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ScanReport {
@@ -346,7 +352,8 @@ fn fixture_4_allowlisted_file_passes() {
         }
         "#,
     )];
-    let report = scan_sources(&files, ALLOWLIST);
+    // only the device_agent entry: these fixtures scan that one file
+    let report = scan_sources(&files, &ALLOWLIST[..1]);
     assert!(report.is_ok(), "expected clean report, got: {report:?}");
 }
 
@@ -360,7 +367,8 @@ fn fixture_5_stale_allowlist_entry_is_flagged() {
         }
         "#,
     )];
-    let report = scan_sources(&files, ALLOWLIST);
+    // only the device_agent entry: these fixtures scan that one file
+    let report = scan_sources(&files, &ALLOWLIST[..1]);
     assert!(report.missing_same_origin.is_empty());
     assert_eq!(
         report.stale_allowlist,
