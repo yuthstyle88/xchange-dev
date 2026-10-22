@@ -12,7 +12,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 use xc_cash::domain::reservation::port::StockReservations;
 use xc_cash::domain::reservation::stock_reservation::ReleaseReason;
 use xc_cash::infrastructure::stock_reservations::PgStockReservations;
@@ -165,15 +165,11 @@ impl ApprovalSubject for ExchangeTransactionSubject {
 impl ApprovalPolicy for ExchangeApprovalPolicy {
     /// BRANCH_MANAGER of the exchange's branch only (§5.1). The EXECUTIVE is not named by T2.
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        let req_branch = request.branch_id.as_deref();
-        let is_bm_of_branch = who.roles.iter().any(|r| {
-            r.role == Role::BranchManager
-                && (match (r.branch.as_ref(), req_branch) {
-                    (Some(b), Some(rb)) => b.as_str() == rb,
-                    _ => false,
-                })
-        });
-        if is_bm_of_branch {
+        if ApprovalDecider::holds_on(
+            who,
+            Permission::ApproveExchangeTransaction,
+            request.branch_id.as_deref(),
+        ) {
             Ok(())
         } else {
             Err(Refusal::new(

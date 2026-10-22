@@ -42,11 +42,13 @@ export const th: Record<string, string> = {
   'error.validationFailed': 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบค่าที่กรอก',
   'error.roleNotAllowed': 'ไม่มีสิทธิ์ดำเนินการนี้',
   'error.roleNotAllowedHere': 'ไม่มีสิทธิ์ดำเนินการที่สาขานี้',
+  'error.outOfScope': 'ไม่มีสิทธิ์ดำเนินการสำหรับทั้งองค์กร',
   'err.capacityBelowReserved': 'ความจุที่ระบุต่ำกว่าจำนวนที่จองแล้ว',
   'err.slotHasBookings': 'ช่วงเวลานี้มีการจองอยู่ ไม่สามารถปิดได้',
   'err.validationFailed': 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบค่าที่กรอก',
   'err.roleNotAllowed': 'ไม่มีสิทธิ์ดำเนินการนี้',
   'err.roleNotAllowedHere': 'ไม่มีสิทธิ์ดำเนินการที่สาขานี้',
+  'err.outOfScope': 'ไม่มีสิทธิ์ดำเนินการสำหรับทั้งองค์กร',
 };
 
 export const en: Record<string, string> = {
@@ -92,9 +94,11 @@ export const en: Record<string, string> = {
   'error.validationFailed': 'Validation failed. Please check inputs.',
   'error.roleNotAllowed': 'Role not allowed to perform this action',
   'error.roleNotAllowedHere': 'Role not allowed for this branch',
+  'error.outOfScope': 'No permission for the whole organisation',
   'err.capacityBelowReserved': 'Capacity cannot be below reserved bookings',
   'err.slotHasBookings': 'Slot has bookings and cannot be closed',
   'err.validationFailed': 'Validation failed. Please check inputs.',
   'err.roleNotAllowed': 'Role not allowed to perform this action',
   'err.roleNotAllowedHere': 'Role not allowed for this branch',
+  'err.outOfScope': 'No permission for the whole organisation',
 };

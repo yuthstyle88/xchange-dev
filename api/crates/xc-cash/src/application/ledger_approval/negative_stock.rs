@@ -8,7 +8,7 @@ use sqlx::{Postgres, Transaction};
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 
 /// The type name callers send.
 pub const NEGATIVE_STOCK: &str = "NEGATIVE_STOCK";
@@ -66,17 +66,13 @@ pub struct NegativeStockPolicy;
 
 impl ApprovalPolicy for NegativeStockPolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        let req_branch = request.branch_id.as_deref();
-        let is_bm_of_branch = who.roles.iter().any(|r| {
-            r.role == Role::BranchManager
-                && (match (r.branch.as_ref(), req_branch) {
-                    (Some(b), Some(rb)) => b.as_str() == rb,
-                    _ => false,
-                })
-        });
-        if is_bm_of_branch {
+        if ApprovalDecider::holds_on(
+            who,
+            Permission::ApproveNegativeStock,
+            request.branch_id.as_deref(),
+        ) {
             Ok(())
-        } else if !who.roles.iter().any(|r| r.role == Role::BranchManager) {
+        } else if !ApprovalDecider::holds_anywhere(who, Permission::ApproveNegativeStock) {
             Err(Refusal::new(
                 "outOfScope",
                 "only branch manager may decide negative stock",

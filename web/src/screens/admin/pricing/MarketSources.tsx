@@ -10,6 +10,7 @@ export interface MarketSourcesProps {
   sources: readonly PricingSourceDto[];
   /** The caller holds `MarketRatesRefresh` (§8). */
   canRefresh: boolean;
+  disabledReason?: string;
   onRefresh(source: MarketSourceCode): void;
 }
 
@@ -31,12 +32,16 @@ export function MarketSources(props: MarketSourcesProps): JSX.Element {
             <Show when={s.error}>
               <span class="xc-source-error">{t('sourceError')}: {s.error}</span>
             </Show>
-            <Show when={props.canRefresh && s.source !== 'BOT'}>
+            <Show when={(props.canRefresh || Boolean(props.disabledReason)) && s.source !== 'BOT'}>
               <button
                 type="button"
                 class="xc-source-refresh-btn"
                 name={`refresh-${s.source}`}
-                onClick={() => props.onRefresh(s.source as MarketSourceCode)}
+                disabled={Boolean(props.disabledReason)}
+                title={props.disabledReason}
+                onClick={() => {
+                  if (!props.disabledReason) props.onRefresh(s.source as MarketSourceCode);
+                }}
               >
                 {t('refresh')}
               </button>
