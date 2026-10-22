@@ -141,56 +141,7 @@ describe('ReferralCodeField permission gate (DK-R2 #1355)', () => {
     expect(mockApiEmpty.command).not.toHaveBeenCalled();
   });
 
-  it('when me fails, the field is hidden', async () => {
-    // Network TypeError
-    const mockApiNetworkErr = {
-      view: vi.fn(async () => {
-        throw new TypeError('Failed to fetch');
-      }),
-      command: vi.fn(),
-    } as unknown as ApiClient;
-
-    dispose = render(() => <ReferralCodeField transactionId="tx-103" api={mockApiNetworkErr} />, host);
-    await flush();
-
-    expect(host.querySelector('.desk-referral-field')).toBeNull();
-    expect(host.innerHTML).toBe('');
-    expect(mockApiNetworkErr.command).not.toHaveBeenCalled();
-
-    // 401 ApiError
-    dispose();
-    host.innerHTML = '';
-
-    const mockApi401 = {
-      view: vi.fn(async () => {
-        throw new ApiError({ status: 401, code: 'unauthorized', message: 'unauthorized' });
-      }),
-      command: vi.fn(),
-    } as unknown as ApiClient;
-
-    dispose = render(() => <ReferralCodeField transactionId="tx-104" api={mockApi401} />, host);
-    await flush();
-
-    expect(host.querySelector('.desk-referral-field')).toBeNull();
-    expect(host.innerHTML).toBe('');
-    expect(mockApi401.command).not.toHaveBeenCalled();
-
-    // 500 ApiError
-    dispose();
-    host.innerHTML = '';
-
-    const mockApi500 = {
-      view: vi.fn(async () => {
-        throw new ApiError({ status: 500, code: 'internalError', message: 'internal error' });
-      }),
-      command: vi.fn(),
-    } as unknown as ApiClient;
-
-    dispose = render(() => <ReferralCodeField transactionId="tx-105" api={mockApi500} />, host);
-    await flush();
-
-    expect(host.querySelector('.desk-referral-field')).toBeNull();
-    expect(host.innerHTML).toBe('');
-    expect(mockApi500.command).not.toHaveBeenCalled();
-  });
+  // Retired by G-ME (docs/design/web-silent-failures.md §5, the #1719 standard): "when me fails, the field is hidden"
+  // was the silent hide. A failed `me` read is now worded and the field is shown disabled with the reason; see
+  // ReferralCodeField.me-error.test.tsx.
 });
