@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 use xc_kernel::money::{ExchangeArithmetic, Money, Rate, Side};
 
 use crate::domain::benefit::calculator::{
-    BenefitCalculator, BenefitEffect, ParamError, decimal_param,
+    BenefitCalculator, BenefitEffect, ParamError, RATE_SCALE, decimal_param,
 };
 use crate::domain::benefit::rule::BenefitClass;
 use crate::domain::engine::engine::QuoteLineInput;
@@ -16,7 +16,7 @@ enum RateImprovementParams {
 }
 
 fn parse_params(params: &serde_json::Value) -> Result<RateImprovementParams, ParamError> {
-    if let Some(delta) = decimal_param(params, "delta", "delta")? {
+    if let Some(delta) = decimal_param(params, "delta", "delta", RATE_SCALE)? {
         if delta <= Decimal::ZERO {
             return Err(ParamError {
                 field: "delta",
@@ -25,7 +25,7 @@ fn parse_params(params: &serde_json::Value) -> Result<RateImprovementParams, Par
         }
         return Ok(RateImprovementParams::Delta(delta));
     }
-    if let Some(pct) = decimal_param(params, "percent", "percent")? {
+    if let Some(pct) = decimal_param(params, "percent", "percent", RATE_SCALE)? {
         if pct <= Decimal::ZERO || pct >= Decimal::ONE {
             return Err(ParamError {
                 field: "percent",

@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 use xc_kernel::money::Money;
 
 use crate::domain::benefit::calculator::{
-    BenefitCalculator, BenefitEffect, ParamError, decimal_param,
+    BenefitCalculator, BenefitEffect, MONEY_SCALE, ParamError, RATE_SCALE, decimal_param,
 };
 use crate::domain::benefit::rule::BenefitClass;
 use crate::domain::engine::engine::QuoteLineInput;
@@ -16,7 +16,7 @@ enum FeeWaiverParams {
 }
 
 fn parse_params(params: &serde_json::Value) -> Result<FeeWaiverParams, ParamError> {
-    if let Some(pct) = decimal_param(params, "percent", "percent")? {
+    if let Some(pct) = decimal_param(params, "percent", "percent", RATE_SCALE)? {
         if pct <= Decimal::ZERO || pct > Decimal::ONE {
             return Err(ParamError {
                 field: "percent",
@@ -25,7 +25,7 @@ fn parse_params(params: &serde_json::Value) -> Result<FeeWaiverParams, ParamErro
         }
         return Ok(FeeWaiverParams::Percent(pct));
     }
-    if let Some(amount) = decimal_param(params, "amount", "amount")? {
+    if let Some(amount) = decimal_param(params, "amount", "amount", MONEY_SCALE)? {
         if amount <= Decimal::ZERO {
             return Err(ParamError {
                 field: "amount",
@@ -34,7 +34,7 @@ fn parse_params(params: &serde_json::Value) -> Result<FeeWaiverParams, ParamErro
         }
         return Ok(FeeWaiverParams::Fixed(amount));
     }
-    if let Some(fixed) = decimal_param(params, "fixed", "fixed")? {
+    if let Some(fixed) = decimal_param(params, "fixed", "fixed", MONEY_SCALE)? {
         if fixed <= Decimal::ZERO {
             return Err(ParamError {
                 field: "fixed",
