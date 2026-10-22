@@ -70,7 +70,12 @@ use xc_loyalty::domain::summary_source::{LoyaltySummarySource, UnavailableLoyalt
 use xc_loyalty::infrastructure::http_rule_writer::HttpLoyaltyRuleWriter;
 
 use crate::application::passport_read::{PassportReader, UnconfiguredReader};
+use xc_rate::application::market::market_refresh::{MarketRefresh, MarketRefreshConfig};
+use xc_rate::domain::pricing::market_quote::MarketSource;
 use xc_rate::domain::rate::entities::rate_source::RateSource;
+use xc_rate::infrastructure::market::market_rate_source::MarketRateSource;
+use xc_rate::infrastructure::market::superrich_feed::SuperRichFeed;
+use xc_rate::infrastructure::market::tt_feed::TtFeed;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
 
@@ -475,6 +480,23 @@ impl Application {
             )),
             RateFeedConfig::from_env(),
         );
+        // pricing-tiers.md §4: TT and Super Rich every 5 minutes, only when MARKET_FEED_ENABLED=true (the api tests
+        // build this Application and must not reach the internet).
+        let market_config = MarketRefreshConfig::from_env();
+        if market_config.enabled {
+            let sources: Vec<(MarketSource, Arc<dyn RateSource>)> = vec![
+                (
+                    MarketSource::Tt,
+                    Arc::new(MarketRateSource::new(Arc::new(TtFeed::live()))),
+                ),
+                (
+                    MarketSource::SuperRich,
+                    Arc::new(MarketRateSource::new(Arc::new(SuperRichFeed::live()))),
+                ),
+            ];
+            let market_refresh = MarketRefresh::new(state.db.clone(), sources);
+            tokio::spawn(Arc::new(market_refresh).run(market_config.interval, stop_rx.clone()));
+        }
         let rate_feed = tokio::spawn(Arc::new(rate_feed_loop).run(stop_rx));
 
         let server = actix_web::HttpServer::new(move || {

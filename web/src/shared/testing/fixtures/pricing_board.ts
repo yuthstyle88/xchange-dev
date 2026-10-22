@@ -60,6 +60,8 @@ export function makePricingRowDto(o: Partial<PricingRowDto> = {}): PricingRowDto
     margins: [],
     overridden: false,
     minSpreadPct: null,
+    betterPct: [],
+    betterPctFrom: 'betterPctFrom',
     suggestion: null,
     flags: [],
     selectable: false,

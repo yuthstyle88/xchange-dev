@@ -32,14 +32,25 @@ impl MarketQuote {
     /// `NoTtQuote`; else no anchor, with `NoAnchor`. A stale anchor also adds `StaleSource`. BoT quotes are never an
     /// anchor here (they are the draft path's base, not the market).
     pub fn anchor_for(quotes: &[MarketQuote]) -> (Option<&MarketQuote>, Vec<PricingFlag>) {
-        let (anchor, mut flags) =
-            if let Some(tt) = quotes.iter().find(|q| q.source == MarketSource::Tt) {
-                (Some(tt), Vec::new())
-            } else if let Some(sr) = quotes.iter().find(|q| q.source == MarketSource::SuperRich) {
-                (Some(sr), vec![PricingFlag::NoTtQuote])
-            } else {
-                return (None, vec![PricingFlag::NoAnchor]);
-            };
+        let valid = |q: &MarketQuote| {
+            matches!(
+                (q.buy, q.sell),
+                (Some(buy), Some(sell)) if buy.value() > Decimal::ZERO && sell.value() > buy.value()
+            )
+        };
+        let (anchor, mut flags) = if let Some(tt) = quotes
+            .iter()
+            .find(|q| q.source == MarketSource::Tt && valid(q))
+        {
+            (Some(tt), Vec::new())
+        } else if let Some(sr) = quotes
+            .iter()
+            .find(|q| q.source == MarketSource::SuperRich && valid(q))
+        {
+            (Some(sr), vec![PricingFlag::NoTtQuote])
+        } else {
+            return (None, vec![PricingFlag::NoAnchor]);
+        };
         if let Some(q) = anchor
             && q.stale
         {
