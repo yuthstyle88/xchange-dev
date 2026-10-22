@@ -5,3 +5,4 @@ pub mod app_session;
 pub mod origin;
 pub mod request_host;
 pub mod session_actor;
+pub mod tablet_cookie;

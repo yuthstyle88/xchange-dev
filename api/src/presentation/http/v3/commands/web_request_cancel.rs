@@ -19,6 +19,7 @@ use xc_kiosk::application::kiosk::web_request::WebRequestService;
 
 use super::web_request_qr::WebRequestRef;
 use crate::bootstrap::AppState;
+use crate::infrastructure::branch_tablets::pg_tablet_store::PgBranchTabletStore;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::kiosk::web_request_wiring::web_request_service;
 use crate::presentation::http::v3::command::{
@@ -33,7 +34,7 @@ pub struct WebRequestCancelled {
     pub status: String,
 }
 
-pub struct WebRequestCancel(pub WebRequestService);
+pub struct WebRequestCancel(pub WebRequestService, PgBranchTabletStore);
 
 fn refusal(err: AppError) -> V3Error {
     match err {
@@ -68,6 +69,10 @@ impl CommandAction for WebRequestCancel {
             .cancel_in(tx, branch, customer, &input.id, Utc::now())
             .await
             .map_err(refusal)?;
+        self.1
+            .end_for_member_in(tx, branch, customer)
+            .await
+            .map_err(refusal)?;
         Ok(WebRequestCancelled {
             request_id: input.id,
             status: "CANCELLED".to_owned(),
@@ -78,7 +83,10 @@ impl CommandAction for WebRequestCancel {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(
         cfg,
-        std::sync::Arc::new(WebRequestCancel(web_request_service(&state.db))),
+        std::sync::Arc::new(WebRequestCancel(
+            web_request_service(&state.db),
+            PgBranchTabletStore::new(state.db.clone()),
+        )),
     );
 }
 

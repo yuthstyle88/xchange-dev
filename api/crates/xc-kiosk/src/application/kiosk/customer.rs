@@ -9,6 +9,7 @@ use rust_decimal::Decimal;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::ForeignAmount;
 use xc_kernel::queue_tickets::{QueueTicketSource, QueueTickets};
+use xc_kernel::tablet_sessions::{NoTabletSessions, TabletSessions};
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::new_quote::NewQuote;
@@ -235,6 +236,18 @@ impl KioskService {
         now: DateTime<Utc>,
         queue: Arc<dyn QueueTickets>,
     ) -> AppResult<IssuedRequest> {
+        self.issue_by_token_with_sessions(branch, token, now, queue, Arc::new(NoTabletSessions))
+            .await
+    }
+
+    pub async fn issue_by_token_with_sessions(
+        &self,
+        branch: &BranchId,
+        token: &str,
+        now: DateTime<Utc>,
+        queue: Arc<dyn QueueTickets>,
+        sessions: Arc<dyn TabletSessions>,
+    ) -> AppResult<IssuedRequest> {
         let branch_name = self.branch_name(branch).await?;
         let at = cut_to_millis(now);
         let now = time(now);
@@ -272,6 +285,7 @@ impl KioskService {
                         queue
                             .link_kiosk_customer_in(tx, &b, &id, &customer_id)
                             .await?;
+                        sessions.end_for_member_in(tx, &b, &customer_id).await?;
                     }
                     let timezone = repo
                         .branch_timezone_in(tx, &b)

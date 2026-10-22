@@ -15,6 +15,7 @@ pub mod payment;
 pub mod pii;
 pub mod queue_tickets;
 pub mod shift_hook;
+pub mod tablet_sessions;
 pub mod time;
 
 pub use mode::Mode;
