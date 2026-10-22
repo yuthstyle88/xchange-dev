@@ -166,6 +166,43 @@
   color: var(--xc-text-muted, #64748b);
 }
 
+/* RequestStatus when a read fails (SF-2): the worded unavailable / last-updated line and the sign-in link */
+.xc-queue-status-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: #92400e;
+}
+
+.xc-queue-status-signin {
+  display: inline-block;
+  margin: 0.5rem 0 0;
+  color: var(--xc-primary, #2563eb);
+  font-weight: 600;
+}
+
+/* The reload's reissue failed (SF-3): the worded error and its retry */
+.xc-queue-reissue-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.xc-queue-retry {
+  padding: 0.625rem 1rem;
+  font-size: 1rem;
+  border: 1px solid var(--xc-border, #cbd5e1);
+  border-radius: 0.5rem;
+  background: var(--xc-surface, #ffffff);
+  color: inherit;
+  cursor: pointer;
+}
+
+.xc-queue-retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* RequestActions */
 .xc-queue-actions {
   display: flex;
