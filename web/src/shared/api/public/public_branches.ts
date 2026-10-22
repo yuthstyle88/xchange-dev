@@ -3,7 +3,12 @@
 /**
  * One branch as anyone may see it. No customer field.
  */
-export type PublicBranchDto = { code: string, name: string, address: string | null, 
+export type PublicBranchDto = { 
+/**
+ * The branch's stable key (`branches.id`); send this as `branch`. `code` is a display label
+ * and can change.
+ */
+id: string, code: string, name: string, address: string | null, 
 /**
  * `branches.opening_hours`, as `BranchHours::new` accepts it.
  */

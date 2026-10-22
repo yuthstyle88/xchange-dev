@@ -41,6 +41,7 @@ interface RecordedCall {
 const SAMPLE_BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       address: '991 ถ.พระราม 1',
@@ -50,6 +51,7 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาสนามบินดอนเมือง',
       address: null,

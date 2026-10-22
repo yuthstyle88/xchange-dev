@@ -69,6 +69,7 @@ const RATES = makePublishedRatesData({
 const BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยาม',
       address: null,

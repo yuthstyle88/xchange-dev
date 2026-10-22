@@ -25,6 +25,7 @@ function text(key: string): string {
 const BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       address: 'ชั้น G สยามพารากอน',
@@ -34,6 +35,7 @@ const BRANCHES: PublicBranchesData = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาสนามบินสุวรรณภูมิ',
       address: 'ชั้น 2 อาคารผู้โดยสาร',

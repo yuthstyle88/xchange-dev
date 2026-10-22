@@ -14,6 +14,7 @@ import { RateAlertsScreen } from './RateAlerts';
 const SAMPLE_BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'Silom Branch',
       address: null,
@@ -23,6 +24,7 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'Don Mueang Branch',
       address: null,
