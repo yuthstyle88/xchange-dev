@@ -19,6 +19,8 @@ export const th = {
   'shell.session.expired': 'เซสชันสิ้นสุด กรุณาเข้าสู่ระบบใหม่',
   'shell.session.switched': 'บัญชีเปลี่ยนในหน้าต่างอื่น กรุณาเข้าสู่ระบบใหม่ก่อนทำรายการ',
   'shell.session.branchChanged': 'สาขาเปลี่ยนในหน้าต่างอื่น กรุณารีเฟรชก่อนทำรายการ',
+  'shell.permissions.unavailable': 'โหลดสิทธิ์การใช้งานไม่สำเร็จ ปุ่มที่ต้องใช้สิทธิ์จึงถูกปิดไว้',
+  'shell.permissions.retry': 'โหลดสิทธิ์อีกครั้ง',
   'error.signIn': 'กรุณาเข้าสู่ระบบ',
   'error.ownerOnly': 'เฉพาะเจ้าของระบบเท่านั้น',
   'error.invalidRequest': 'คำขอไม่ถูกต้อง',

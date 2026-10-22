@@ -10,6 +10,7 @@ import type {
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import type { AdminMenuProps } from '../menus';
 import { BulkApprove } from './BulkApprove';
 import * as table from './i18n';
@@ -55,6 +56,8 @@ export function Pricing(props: PricingProps): JSX.Element {
   const api = new ApiClient();
   const [board, setBoard] = createSignal<PricingBoardData | null>(null);
   const [me, setMe] = createSignal<MeView | null>(null);
+  const [meError, setMeError] = createSignal<unknown>(null);
+  const [meBusy, setMeBusy] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [filter, setFilter] = createSignal<PricingFilter>('all');
@@ -77,13 +80,22 @@ export function Pricing(props: PricingProps): JSX.Element {
     }
   }
 
+  async function loadMe(): Promise<void> {
+    setMeBusy(true);
+    try {
+      const ans = await api.view<MeView>('me');
+      if (ans.data !== undefined) setMe(ans.data);
+      setMeError(null);
+    } catch (err: unknown) {
+      setMe(null);
+      setMeError(err);
+    } finally {
+      setMeBusy(false);
+    }
+  }
+
   onMount(() => {
-    void api
-      .view<MeView>('me')
-      .then((ans) => {
-        if (ans.changed && ans.data !== undefined) setMe(ans.data);
-      })
-      .catch(() => {});
+    void loadMe();
   });
 
   createEffect(() => {
@@ -142,7 +154,10 @@ export function Pricing(props: PricingProps): JSX.Element {
     ROUTE_RATE_REFERENCE_FETCH,
   );
 
+  const disabledReason = () => (meError() !== null ? permissionsUnavailableText(meError()) : undefined);
+
   function handleRefreshSource(_provider: MarketSourceCode): void {
+    if (meError() !== null || !canRefresh()) return;
     void refreshWrite
       .send({})
       .then(() => loadBoard())
@@ -182,12 +197,18 @@ export function Pricing(props: PricingProps): JSX.Element {
         </button>
       </div>
 
+      <PermissionsUnavailable error={meError()} onRetry={() => void loadMe()} busy={meBusy()} />
       <Show when={error()}>{(msg) => <p class="pricing-error">{msg()}</p>}</Show>
       <Show when={loading() && !board()}>
         <p class="pricing-loading">{t('loading')}</p>
       </Show>
 
-      <MarketSources sources={board()?.sources ?? []} canRefresh={canRefresh()} onRefresh={handleRefreshSource} />
+      <MarketSources
+        sources={board()?.sources ?? []}
+        canRefresh={canRefresh()}
+        disabledReason={disabledReason()}
+        onRefresh={handleRefreshSource}
+      />
 
       <PricingGrid
         rows={filteredRows()}
@@ -221,6 +242,7 @@ export function Pricing(props: PricingProps): JSX.Element {
               policyVersionId={board()?.policyVersionId ?? ''}
               row={row()}
               mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
               onSaved={() => void loadBoard()}
             />
           </div>

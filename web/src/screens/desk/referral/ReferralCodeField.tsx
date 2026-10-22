@@ -5,6 +5,7 @@ import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { AttachReferralInput, AttachReferralOutput } from '../../../shared/api/generated/attach_referral';
 import type { MeView } from '../../../shared/api/generated/me';
+import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import { can } from '../../staff/parts/can';
 import * as texts from './i18n';
 import './referral.css';
@@ -37,24 +38,30 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   const defaultApi = new ApiClient();
   const getApi = () => props.api ?? defaultApi;
   const [me, setMe] = createSignal<MeView | undefined>(undefined);
+  const [meError, setMeError] = createSignal<unknown>(null);
   const [code, setCode] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
   const [locked, setLocked] = createSignal(false);
   const [savedCode, setSavedCode] = createSignal<string | null>(null);
   const [error, setError] = createSignal<unknown>(null);
 
-  onMount(async () => {
-    const api = getApi();
+  const loadMe = async () => {
     try {
-      const res = await api.view<MeView>('me');
+      const res = await getApi().view<MeView>('me');
       const meData =
         res && typeof res === 'object' && 'data' in res && res.data
           ? res.data
           : (res as unknown as MeView);
       setMe(meData);
+      setMeError(null);
     } catch (err: unknown) {
       setMe(undefined);
+      setMeError(err);
     }
+  };
+
+  onMount(() => {
+    void loadMe();
   });
 
   const handleSubmit = async () => {
@@ -84,7 +91,7 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   };
 
   return (
-    <Show when={can(me(), 'ReferralAttach')}>
+    <Show when={can(me(), 'ReferralAttach') || meError() !== null}>
       <div class="desk-referral-field">
         <label class="desk-referral-label">
           <span>{t('label')}</span>
@@ -95,18 +102,21 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
               placeholder={t('placeholder')}
               value={code()}
               onInput={(e) => setCode(e.currentTarget.value)}
-              disabled={locked() || submitting()}
+              disabled={locked() || submitting() || meError() !== null}
             />
             <button
               type="button"
               class="desk-referral-btn"
               onClick={() => void handleSubmit()}
-              disabled={locked() || submitting()}
+              disabled={locked() || submitting() || meError() !== null}
+              title={meError() !== null ? permissionsUnavailableText(meError()) : undefined}
             >
               {submitting() ? t('saving') : t('save')}
             </button>
           </div>
         </label>
+
+        <PermissionsUnavailable error={meError()} onRetry={() => void loadMe()} />
 
         <Show when={error()}>
           <p class="desk-referral-error" role="alert">

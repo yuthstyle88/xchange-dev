@@ -21,6 +21,8 @@ export const en: Record<Key, string> = {
   'shell.session.expired': 'Session expired. Please sign in again.',
   'shell.session.switched': 'The account changed in another window. Please sign in again before making a transaction.',
   'shell.session.branchChanged': 'The branch changed in another window. Please refresh before making a transaction.',
+  'shell.permissions.unavailable': 'Permissions could not be loaded, so actions that need a permission are disabled.',
+  'shell.permissions.retry': 'Load permissions again',
   'error.signIn': 'Please sign in',
   'error.ownerOnly': 'Owner access required',
   'error.invalidRequest': 'Invalid request',
