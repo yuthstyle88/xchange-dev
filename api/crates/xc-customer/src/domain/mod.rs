@@ -1,6 +1,7 @@
 pub mod consent;
 pub mod consent_text;
 pub mod customer;
+pub mod email_sender;
 pub mod phone_otp_policy;
 pub mod phone_verification;
 pub mod retention;
