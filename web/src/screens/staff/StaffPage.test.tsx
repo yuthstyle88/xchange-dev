@@ -325,9 +325,10 @@ describe("S6 reads", () => {
 
 describe("B2 report link", () => {
   const cases: [string[], boolean][] = [
+    [["ShiftCloseCertify"], true],
     [["FinanceReconcile"], true],
-    [["BranchDayOperate"], true],
-    [["FinanceReconcile", "BranchDayOperate"], true],
+    [["OverviewRead"], true],
+    [["BranchDayOperate"], false],
     [["AttendanceClock", "ShiftOperate", "CashManage", "CompatRead"], false],
     [[], false],
   ];
