@@ -175,8 +175,9 @@ impl PricingSuggestion {
             let buy_adj = input.buy_adjust_pct.value();
             let sell_adj = input.sell_adjust_pct.value();
 
-            let arr = std::array::from_fn(|idx| {
-                let (unit_buy, unit_sell) = unit_tiers[idx];
+            let mut margins_ok = true;
+            let mut list = Vec::with_capacity(4);
+            for (idx, &(unit_buy, unit_sell)) in unit_tiers.iter().enumerate() {
                 let price_buy = unit_buy * input.unit_size;
                 let price_sell = unit_sell * input.unit_size;
 
@@ -187,10 +188,13 @@ impl PricingSuggestion {
                     - sell_adj)
                     .round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero);
 
-                let buy_margin_pct =
-                    RatePercent::parse(&raw_buy_margin.to_string()).unwrap_or(RatePercent::ZERO);
-                let sell_margin_pct =
-                    RatePercent::parse(&raw_sell_margin.to_string()).unwrap_or(RatePercent::ZERO);
+                let (Ok(buy_margin_pct), Ok(sell_margin_pct)) = (
+                    RatePercent::parse(&raw_buy_margin.to_string()),
+                    RatePercent::parse(&raw_sell_margin.to_string()),
+                ) else {
+                    margins_ok = false;
+                    break;
+                };
 
                 let repro_buy = round_d(
                     base_buy_val * (Decimal::ONE + (buy_adj + buy_margin_pct.value()) / hundred)
@@ -204,13 +208,18 @@ impl PricingSuggestion {
                     precision_hit = true;
                 }
 
-                TierMargin {
+                list.push(TierMargin {
                     tier_no: (idx + 1) as u8,
                     buy_margin_pct,
                     sell_margin_pct,
-                }
-            });
-            Some(arr)
+                });
+            }
+            if margins_ok {
+                list.try_into().ok()
+            } else {
+                precision_hit = true;
+                None
+            }
         } else {
             None
         };
@@ -240,7 +249,9 @@ impl PricingSuggestion {
             }
         }
 
-        if margins.is_none() && !flags.contains(&PricingFlag::NoAnchor) {
+        if (input.base_buy.is_none() || input.base_sell.is_none())
+            && !flags.contains(&PricingFlag::NoAnchor)
+        {
             flags.push(PricingFlag::NoAnchor);
         }
 
