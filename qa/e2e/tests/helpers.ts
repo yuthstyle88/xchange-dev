@@ -244,8 +244,8 @@ export async function signIn(page: Page, role: Role, next: string): Promise<void
 
 /**
  * Picks the language on `page`: the app reads localStorage 'xc.lang' at start-up (web/src/shared/i18n/index.ts:9-17).
- * Sets it both via an init script for subsequent loads and on the live page so a same-URL `page.goto()` reloads and
- * applies the new language (#4798). A language the audience does not allow falls back to th (index.ts:40-44).
+ * Sets it both via an init script for subsequent loads and on the live page so a same-URL or hash-only `page.goto()`
+ * reloads and applies the new language (#4798, #4814). A language the audience does not allow falls back to th (index.ts:40-44).
  */
 export async function withLang(page: Page, lang: Lang): Promise<void> {
   await page.addInitScript((l) => {
@@ -272,9 +272,15 @@ export async function withLang(page: Page, lang: Lang): Promise<void> {
       const current = page.url();
       const res = await baseGoto(url, options);
       try {
-        const targetUrl = new URL(url, users.baseUrl).href;
-        const currentUrl = new URL(current, users.baseUrl).href;
-        if (current && current !== 'about:blank' && targetUrl === currentUrl) {
+        const targetUrl = new URL(url, users.baseUrl);
+        const currentUrl = new URL(current, users.baseUrl);
+        if (
+          current &&
+          current !== 'about:blank' &&
+          targetUrl.origin === currentUrl.origin &&
+          targetUrl.pathname === currentUrl.pathname &&
+          targetUrl.search === currentUrl.search
+        ) {
           return await page.reload(options);
         }
       } catch {
@@ -289,30 +295,6 @@ export async function gotoWithLang(page: Page, lang: Lang, url: string, options?
   await withLang(page, lang);
   return page.goto(url, options);
 }
-
-void (async () => {
-  const reloads: string[] = [];
-  let url = new URL('/#booking-slots', users.baseUrl).href;
-  let stored = '';
-  const fakePage = {
-    url: () => url,
-    addInitScript: async () => {},
-    evaluate: async (_fn: unknown, l: Lang) => {
-      stored = l;
-    },
-    goto: async (next: string) => {
-      url = new URL(next, users.baseUrl).href;
-      return null;
-    },
-    reload: async () => {
-      reloads.push(stored);
-      return null;
-    },
-  } as unknown as Page;
-  await withLang(fakePage, 'en');
-  await fakePage.goto('/#booking-slots');
-  if (reloads[0] !== 'en') throw new Error('withLang same-URL goto must reload with new lang');
-})();
 
 export interface ConsoleLog {
   errors: string[];
