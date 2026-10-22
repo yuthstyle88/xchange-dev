@@ -9,6 +9,7 @@ import { th as screenTh } from './i18n';
 const BRANCHES = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       timezone: 'Asia/Bangkok',

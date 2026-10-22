@@ -27,6 +27,7 @@ describe('SF-4 / B4: /app/book slots read error and parse handling (#4694)', () 
   const SAMPLE_BRANCHES = {
     branches: [
       {
+        id: 'XC-B01',
         code: 'XC-B01',
         name: 'สาขาสยามพารากอน',
         timezone: 'Asia/Bangkok',

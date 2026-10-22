@@ -6,12 +6,14 @@ import { BookScreen } from './Book';
 const BRANCHES = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       timezone: 'Asia/Bangkok',
       bookingEnabled: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาอารีย์',
       timezone: 'Asia/Bangkok',

@@ -35,6 +35,7 @@ beforeAll(async () => {
 const SAMPLE_BRANCHES = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       address: 'ชั้น G สยามพารากอน 991 ถ.พระราม 1 แขวงปทุมวัน เขตปทุมวัน กรุงเทพฯ 10330',
@@ -44,6 +45,7 @@ const SAMPLE_BRANCHES = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาสนามบินดอนเมือง',
       address: null,

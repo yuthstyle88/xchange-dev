@@ -28,6 +28,7 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
   const SAMPLE_BRANCHES = {
     branches: [
       {
+        id: 'XC-B01',
         code: 'XC-B01',
         name: 'สาขาสยามพารากอน',
         timezone: 'Asia/Bangkok',
@@ -453,6 +454,7 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
     const BRANCHES_WITH_TZ = {
       branches: [
         {
+          id: 'XC-B01',
           code: 'XC-B01',
           name: 'สาขาสยามพารากอน',
           timezone: 'Asia/Bangkok',
@@ -662,7 +664,7 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
       if (url === '/api/public/host') {
         return new Response(
           JSON.stringify({
-            branches: [{ code: 'XC-B01', name: 'สาขาสยามพารากอน', timezone: 'Asia/Bangkok' }],
+            branches: [{ id: 'XC-B01', code: 'XC-B01', name: 'สาขาสยามพารากอน', timezone: 'Asia/Bangkok' }],
           }),
           { status: 200 },
         );
@@ -671,7 +673,7 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
         orgCalls.push(url);
         return new Response(
           JSON.stringify({
-            branches: [{ code: 'XC-B01', name: 'สาขาสยามพารากอน', timezone: 'Asia/Bangkok' }],
+            branches: [{ id: 'XC-B01', code: 'XC-B01', name: 'สาขาสยามพารากอน', timezone: 'Asia/Bangkok' }],
           }),
           { status: 200 },
         );
@@ -694,6 +696,7 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
     const BRANCHES_INVALID_TZ = {
       branches: [
         {
+          id: 'XC-INV',
           code: 'XC-INV',
           name: 'สาขาผิดพลาด',
           timezone: 'Invalid/NonExistentZone',
@@ -724,12 +727,14 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
     const BRANCHES_MIXED = {
       branches: [
         {
+          id: 'XC-OK',
           code: 'XC-OK',
           name: 'สาขาปกติ',
           timezone: 'Asia/Bangkok',
           bookingEnabled: true,
         },
         {
+          id: 'XC-BAD',
           code: 'XC-BAD',
           name: 'สาขาผิด',
           timezone: 'Invalid/NonExistentZone',
@@ -851,6 +856,7 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
     const BRANCHES_BANGKOK = {
       branches: [
         {
+          id: 'XC-BKK',
           code: 'XC-BKK',
           name: 'สาขากรุงเทพ',
           timezone: 'Asia/Bangkok',
@@ -913,6 +919,7 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
     const BRANCHES = {
       branches: [
         {
+          id: 'XC-TYO',
           code: 'XC-TYO',
           name: 'สาขาโตเกียว',
           timezone: 'Asia/Tokyo',
