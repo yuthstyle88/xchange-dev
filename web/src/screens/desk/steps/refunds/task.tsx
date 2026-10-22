@@ -1,8 +1,8 @@
-import { createSignal, Show, type JSX } from 'solid-js';
+import { createEffect, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../../shared/api/client';
-import type { MeView } from '../../../../shared/api/generated/me';
 import { screenT } from '../../../../shared/i18n';
-import { can } from '../../../staff/parts/can';
+import { sharedSession } from '../../../../shared/session/session';
+import { PermissionsUnavailable, permissionsUnavailableText } from '../../../../shared/ui/PermissionsUnavailable';
 import * as texts from './i18n';
 import { createRefundsStore, type RefundsStore } from './refunds-store';
 import { RefundsStep } from './RefundsStep';
@@ -30,39 +30,43 @@ export function createTask<S>(props: { store: S }): TaskHandle {
   }
 
   const api: ApiClient = storeAny?.api ?? new ApiClient();
-  const [visible, setVisible] = createSignal(false);
+  const session = sharedSession();
   const refundsStore: RefundsStore = createRefundsStore(api);
 
-  api
-    .view<MeView>('me')
-    .then((res) => {
-      if (can(res.data, 'ReversalRequest')) {
-        setVisible(true);
-        void refundsStore.readRefunds();
-      }
-    })
-    .catch(() => {
-      // me failed: step stays hidden, desk_refunds is never called
-    });
+  const permitted = () => session.me()?.permissions?.includes('ReversalRequest') ?? false;
+  const unavailableError = () => (session.me() === undefined ? session.meError() : null);
+
+  let readOnce = false;
+  createEffect(() => {
+    if (!readOnce && permitted()) {
+      readOnce = true;
+      void refundsStore.readRefunds();
+    }
+  });
 
   return {
     nav: () => (
-      <Show when={visible()}>
-        <button
-          type="button"
-          data-desk-task="refunds"
-          class="desk-task-nav-btn"
-          onClick={() => refundsStore.setOpen(true)}
-        >
-          {t('nav')} ({refundsStore.rows().length})
-        </button>
-      </Show>
+      <>
+        <Show when={permitted() || unavailableError() !== null}>
+          <button
+            type="button"
+            data-desk-task="refunds"
+            class="desk-task-nav-btn"
+            disabled={!permitted()}
+            title={unavailableError() ? permissionsUnavailableText(unavailableError()) : ''}
+            onClick={() => permitted() && refundsStore.setOpen(true)}
+          >
+            {t('nav')} ({refundsStore.rows().length})
+          </button>
+        </Show>
+        <PermissionsUnavailable error={unavailableError()} onRetry={() => session.retryMe()} />
+      </>
     ),
     panel: () => (
-      <Show when={visible() && refundsStore.open()}>
+      <Show when={permitted() && refundsStore.open()}>
         <RefundsStep store={refundsStore} />
       </Show>
     ),
-    isOpen: () => visible() && refundsStore.open(),
+    isOpen: () => permitted() && refundsStore.open(),
   };
 }

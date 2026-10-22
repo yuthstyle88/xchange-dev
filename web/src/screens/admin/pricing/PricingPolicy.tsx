@@ -20,6 +20,7 @@ export interface PricingPolicyProps {
   row: PricingRowDto;
   /** EXECUTIVE frame (pricing-tiers.md §3: override margins are frame); the editor is hidden otherwise. */
   mayEdit: boolean;
+  disabledReason?: string;
   onSaved(out: PricingConfigureOutput): void;
 }
 
@@ -170,6 +171,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
                   name={`buy-margin-${tierNo}`}
                   type="text"
                   disabled={!props.mayEdit || saving()}
+                  title={props.disabledReason}
                   value={margins()[`buy-${tierNo}`] ?? ''}
                   onInput={(e) => updateMargin(`buy-${tierNo}`, e.currentTarget.value)}
                 />
@@ -184,6 +186,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
                   name={`sell-margin-${tierNo}`}
                   type="text"
                   disabled={!props.mayEdit || saving()}
+                  title={props.disabledReason}
                   value={margins()[`sell-${tierNo}`] ?? ''}
                   onInput={(e) => updateMargin(`sell-${tierNo}`, e.currentTarget.value)}
                 />
@@ -203,6 +206,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
           name="minSpreadPct"
           type="text"
           disabled={!props.mayEdit || saving()}
+          title={props.disabledReason}
           value={minSpread()}
           onInput={(e) => setMinSpread(e.currentTarget.value)}
         />
@@ -219,6 +223,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
           type="text"
           required
           disabled={!props.mayEdit || saving()}
+          title={props.disabledReason}
           value={reason()}
           onInput={(e) => setReason(e.currentTarget.value)}
         />
@@ -230,6 +235,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
           class="pricing-policy-btn-save"
           name="save"
           disabled={!props.mayEdit || saving()}
+          title={props.disabledReason}
         >
           {t('save')}
         </button>
@@ -238,6 +244,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
           class="pricing-policy-btn-clear"
           name="clearOverride"
           disabled={!props.mayEdit || saving()}
+          title={props.disabledReason}
           onClick={handleClearOverride}
         >
           {t('cancel')}

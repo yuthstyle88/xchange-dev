@@ -1,5 +1,15 @@
+// SF-1 (docs/design/web-silent-failures.md §2, B1): the poller reports its own failures. Skeleton by the SF
+// skeleton commit; the bodies of `error()` and `lastOkAt()` are SF-a's.
+//
+// - `error()`: the last failed read as an `ApiError` (a thrown `ApiError` as is; anything else, e.g. a network
+//   `TypeError`, as `ApiError {code: 'network', status: 0}`), or null before any failure. The next good read clears
+//   it. A 401 is kept as `error()` with status 401, like any other failure. Reactive (a signal).
+// - `lastOkAt()`: `Date.now()` at the last good read (`changed: true` or `false`), or null before the first one.
+//   A failed read leaves it as it is. Reactive (a signal). Same meaning as `PublicPoller.lastOkAt()`.
+// - Backoff and polling do not change: an error doubles the interval up to `maxIntervalMs`, a good read goes back to
+//   `intervalMs` (pinned by view-poller.test.ts and view-poller.error.test.ts).
 import { createSignal, type Accessor } from 'solid-js';
-import type { ApiClient, ViewParams } from '../api/client';
+import { ApiError, type ApiClient, type ViewParams } from '../api/client';
 
 export interface ViewPollerOptions {
   params?: ViewParams;
@@ -15,6 +25,10 @@ export class ViewPoller<T> {
   private readonly setData: (v: T | undefined | ((prev: T | undefined) => T | undefined)) => void;
   private readonly _version: Accessor<number | undefined>;
   private readonly setVersion: (v: number | undefined) => void;
+  private readonly _error: Accessor<ApiError | null>;
+  private readonly setError: (v: ApiError | null) => void;
+  private readonly _lastOkAt: Accessor<number | null>;
+  private readonly setLastOkAt: (v: number | null) => void;
 
   private running = false;
   private currentInterval: number;
@@ -30,10 +44,16 @@ export class ViewPoller<T> {
 
     const [data, setData] = createSignal<T | undefined>(undefined);
     const [version, setVersion] = createSignal<number | undefined>(undefined);
+    const [error, setError] = createSignal<ApiError | null>(null);
+    const [lastOkAt, setLastOkAt] = createSignal<number | null>(null);
     this._data = data;
     this.setData = setData;
     this._version = version;
     this.setVersion = setVersion;
+    this._error = error;
+    this.setError = setError;
+    this._lastOkAt = lastOkAt;
+    this.setLastOkAt = setLastOkAt;
   }
 
   get data(): Accessor<T | undefined> {
@@ -42,6 +62,16 @@ export class ViewPoller<T> {
 
   get version(): Accessor<number | undefined> {
     return this._version;
+  }
+
+  /** The last failed read, cleared by the next good read; null before any failure. SF-a. */
+  error(): ApiError | null {
+    return this._error();
+  }
+
+  /** `Date.now()` at the last good read; null before the first one. SF-a. */
+  lastOkAt(): number | null {
+    return this._lastOkAt();
   }
 
   start(): void {
@@ -107,9 +137,20 @@ export class ViewPoller<T> {
       if (answer.changed && answer.data !== undefined) {
         this.setData(() => answer.data);
       }
+      this.setError(null);
+      this.setLastOkAt(Date.now());
       this.scheduleTick(this.currentInterval);
-    } catch {
+    } catch (err) {
       if (!this.running) return;
+      this.setError(
+        err instanceof ApiError
+          ? err
+          : new ApiError({
+              code: 'network',
+              message: err instanceof Error ? err.message : 'network',
+              status: 0,
+            }),
+      );
       this.currentInterval = Math.min(this.currentInterval * 2, this.opts.maxIntervalMs);
       this.scheduleTick(this.currentInterval);
     }

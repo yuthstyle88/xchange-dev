@@ -74,6 +74,10 @@ export function QueueRequestScreen(props: QueueRequestScreenProps = {}): JSX.Ele
     const p = state().phase();
     return p.kind === 'failed' ? p : undefined;
   };
+  const reissueFailed = () => {
+    const p = state().phase();
+    return p.kind === 'reissueFailed' ? p : undefined;
+  };
   const form = () => {
     const p = state().phase();
     return p.kind === 'form' ? p : undefined;
@@ -106,6 +110,23 @@ export function QueueRequestScreen(props: QueueRequestScreenProps = {}): JSX.Ele
               </p>
             )}
           </Match>
+          <Match when={reissueFailed()}>
+            {(f) => (
+              <div class="xc-queue-reissue-failed">
+                <p class="xc-queue-error" role="alert">
+                  {f().message}
+                </p>
+                <button
+                  type="button"
+                  class="xc-queue-retry"
+                  data-reissue-retry
+                  onClick={() => void state().retryReissue().then((r) => setSignedOut(r.signedOut))}
+                >
+                  {t('retry')}
+                </button>
+              </div>
+            )}
+          </Match>
           <Match when={form()}>
             {(f) => (
               <>
@@ -129,6 +150,7 @@ export function QueueRequestScreen(props: QueueRequestScreenProps = {}): JSX.Ele
                   expiresAt={o().request.expiresAt}
                   intervalMs={props.intervalMs ?? POLL_MS}
                   status={o().status}
+                  signInHref={signInHref()}
                   onExpired={() => {
                     state().expire();
                     tablet.requestEnded();

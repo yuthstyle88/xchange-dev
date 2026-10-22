@@ -33,12 +33,19 @@ export const th = {
   status_NO_SHOW: 'ไม่มาตามคิว',
   number: 'หมายเลขคิว',
   ahead: 'มีคิวก่อนหน้า {count} คิว',
+  // RequestStatus when a read fails (SF-2)
+  statusUnavailable: 'ยังดูสถานะไม่ได้ กำลังลองใหม่...',
+  statusStale: 'อัปเดตล่าสุด {time} กำลังเชื่อมต่อใหม่...',
+  statusSignIn: 'เข้าสู่ระบบอีกครั้งเพื่อดูสถานะคิว',
   // RequestActions
   cancel: 'ยกเลิกคิว',
   done: 'เสร็จ',
   emailCopy: 'ส่งเข้าอีเมล',
   emailTo: 'ส่งไปที่ {to}',
   emailSent: 'ส่งเข้าอีเมลแล้ว',
+  // the reload's reissue failed (SF-3)
+  reissueFailed: 'เปิดคำขอคิวเดิมไม่ได้ กรุณาลองใหม่',
+  retry: 'ลองใหม่',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -70,11 +77,16 @@ export const en: Record<keyof typeof th, string> = {
   status_NO_SHOW: 'No show',
   number: 'Queue number',
   ahead: '{count} ahead of you',
+  statusUnavailable: 'Status unavailable. Retrying...',
+  statusStale: 'Last updated {time}. Reconnecting...',
+  statusSignIn: 'Sign in again to see your queue status',
   cancel: 'Cancel request',
   done: 'Done',
   emailCopy: 'Send to my e-mail',
   emailTo: 'Sends to {to}',
   emailSent: 'Sent to your e-mail',
+  reissueFailed: 'Could not reopen your request. Please try again.',
+  retry: 'Try again',
 };
 
 export const zh: Record<keyof typeof th, string> = {
@@ -106,9 +118,14 @@ export const zh: Record<keyof typeof th, string> = {
   status_NO_SHOW: '未到场',
   number: '排队号',
   ahead: '前面还有 {count} 位',
+  statusUnavailable: '暂时无法获取状态，正在重试…',
+  statusStale: '最后更新于 {time}，正在重新连接…',
+  statusSignIn: '请重新登录以查看排队状态',
   cancel: '取消申请',
   done: '完成',
   emailCopy: '发送到我的邮箱',
   emailTo: '发送至 {to}',
   emailSent: '已发送到您的邮箱',
+  reissueFailed: '无法重新打开您的申请，请重试',
+  retry: '重试',
 };

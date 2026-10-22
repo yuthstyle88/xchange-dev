@@ -32,5 +32,76 @@
 ## 4. Not in this round
 - **B3, the sign-up terms text** (`TermsText.tsx:37-39` returns null, so sign-up records TERMS consent to a text the person never saw). This waits on an **owner decision**: block sign-up until the text loads, or only warn.
 - **B5, pricing `me` failure** (`Pricing.tsx:80-87`: `api.view('me')…catch(() => {})`, the #1719 pattern). Not fixed in this round. The admin pricing screen is under the pricing work of #4324 (its body names `web/src/screens/admin/pricing/TierEditor.tsx` in the same folder). No File scope at fa4163ab claims `Pricing.tsx` yet.
-- **G-ME:** three staff screens pin a silent hide when `me` fails (`TransactionScreen.test.tsx:363`, `ReferralCodeField.permission.test.tsx:144`, `refunds.test.tsx:295`), against #1719's "worded, disabled with the reason". Fixing it needs a design of its own (a shared `meError` in the session store), and none exists at fa4163ab.
+- **G-ME:** three staff screens pin a silent hide when `me` fails. Designed in §5.
 - **Already decided as "not a bug"** (so they are not re-audited): `BranchLive.tsx:33,45`, `save.ts:213,275`, `ReceiptFrame.tsx:47`, `tablet.ts:48`, `Shell.tsx:65`, `DeskBookingsScreen.tsx:212`, and the `UsersScreen` and `VerificationScreen` fallbacks pinned by their designs.
+
+## 5. G-ME: a failed `me` read is worded, never a silent hide
+
+> designed-by: claude/e8020026 (XC FE lane controller), through a sub-agent, 2026-10-22 ICT, re-measured on main
+> `210987c1`. Skeleton and up-front tests: branch `feat/gme` (from `210987c1`).
+
+### 5.1 Bug and root cause
+
+| Screen | What the person sees when `me` fails | Where the hide is made | Pinned by (retired in the skeleton) |
+|---|---|---|---|
+| B04 `/desk/transactions/{id}` | The receipts and the transaction show, but **no reprint and no reversal-request button**, with no word. A teller thinks they lack the permission. | `TransactionScreen.tsx:85-90` `.catch(() => undefined)`, then `can(undefined, …)` is false (`:169`, `ReceiptsSection.tsx:34`, `TransactionScreen.tsx:213`) | `TransactionScreen.test.tsx` "me failing still shows the data, with no action button" |
+| Desk receipt step, referral field | The referral field is gone (`innerHTML === ''`). | `ReferralCodeField.tsx:46-58` (`setMe(undefined)`), `:87` | `ReferralCodeField.permission.test.tsx` "when me fails, the field is hidden" |
+| `/desk` pending refunds (OWNER_DESK) | The "refunds to record" nav item is gone. | `steps/refunds/task.tsx:36-46` `.catch(() => {})` | `refunds.test.tsx` RF-9 "when me fails: no nav item" |
+
+Root cause (♻️): each screen reads `me` itself and turns any failure into "no permission". The page's session store
+(`shared/session/session.ts`, a `ViewPoller` on `me`) already reads `me` on every staff page, and its wrapper sees each
+failure (`session.ts` `wrappedApi.view` catch) but exposes none. #1719 fixed one screen (`CashFlows.tsx:88-98`;
+`Rates.tsx:169-183` is the same) with its own copy; there is no shared "me failed" state and no shared worded line.
+
+Re-checked and **not** this bug: `VerificationScreen.tsx:270-290` (a failed `me` falls through to the queue read, which
+the server gates; fail-closed on the role codes, pinned by its design) and `DeskBookingsScreen.tsx:192-213` (`me` only
+prefills the branch; no action is gated on it).
+
+### 5.2 Decisions
+
+| # | Decision |
+|---|---|
+| GM-1 | **The session store knows when `me` failed.** `SessionStore.meError?(): ApiError \| null` and `retryMe?(): void`; `EndingSessionStore` (the real store) has both. `meError()` is the last failure of the store's own `me` read: a thrown `ApiError` as is, anything else as `ApiError{code:'network', status:0}` (SF-1's mapping), cleared by the next good read (`changed` true or false). `retryMe()` re-reads `me` at once **through the same poller** (no second request path; the next scheduled read is one interval after it); it does nothing after `signOut()` or once the session has ended. Nothing else about polling, `ended` or `me()` changes. Optional on `SessionStore` only so the many test fakes stay valid. |
+| GM-2 | **One shared worded line.** `shared/ui/PermissionsUnavailable.tsx`: `PermissionsUnavailable({ error, onRetry, busy? })` renders nothing for a null/undefined error, else `<p role="alert" class="xc-perm-unavailable" data-permissions-unavailable>` with `permissionsUnavailableText(error)` and a `button[data-action="permissions-retry"]` (`t('shell.permissions.retry')`, disabled while `busy`). `permissionsUnavailableText(error)` = `t('shell.permissions.unavailable')` + ' ' + `wordedError(error)`; it is also the `title` of every disabled action. Keys `shell.permissions.unavailable` / `.retry` (th, en, zh) and `permissions-unavailable.css` are in the skeleton. |
+| GM-3 | **"Permissions unknown" ≠ "no permission".** While the permissions are unknown (the `me` read failed and no good answer is held), a screen shows the shared line, and each permission-gated action is **on screen, disabled, with the reason as `title`**. Non-permission conditions still decide whether an action exists (e.g. a request button needs COMPLETED and no active reversal). Nothing gated is sent or read (e.g. `desk_refunds`). Once `me` loads, behaviour is exactly today's (table 5.3). A failed poll **after** a good `me` keeps today's behaviour: `me()` holds the last answer, so the permissions are known and no line shows. |
+| GM-4 | **Who reads `me`.** The refunds task moves to the session store (`sharedSession().me()/.meError()/.retryMe()`): its tests boot the real page, which already reads `me` through the session. B04 and the referral field **keep their own `me` read**, because other kept rows pin it: B04's D2 (`desk-transaction-detail.md`) reads `me` on open and on refresh, with no timer (`TransactionScreen.test.tsx` rows "opens with exactly me, transaction and transaction_audit" (3 calls), "owner … gets('me') = 1", "makes no request in 10 minutes", "refresh reads the same three views once more"); the referral field reads it through its `api` prop (`ReferralCodeField.permission.test.tsx` rows 1-3 `toHaveBeenCalledWith('me')`, `ReferralCodeField.test.tsx` stub store, `ReferralCodeField.keyed.test.tsx` fetch stub). Those two keep the failure in their own state, and use GM-2's line and text; their retry re-reads `me` the way they already read it. Moving them onto the store is in 5.5. |
+
+### 5.3 Behaviour per screen
+
+| Screen | `me` loaded, permission missing (kept) | `me` failed (new) | Retry |
+|---|---|---|---|
+| B04 | reprint **hidden** (`ReceiptsSection.tsx:34`); request-reversal **hidden** (`TransactionScreen.tsx:213` via `:169`) | data shows (`ready`); line at the top of the ready view; one reprint per receipt + request-reversal (if COMPLETED, no pending/active reversal) **disabled**, `title` = reason; no GET/POST/print on click | `permissions-retry` reads `me` once more (the refresh button also re-reads it, D2) |
+| Referral field | whole field **hidden** (`ReferralCodeField.tsx:87`, `innerHTML ''`) | `.desk-referral-field` shows with the line inside; input and `.desk-referral-btn` **disabled**, button `title` = reason; nothing sent | `permissions-retry` calls `api.view('me')` once more |
+| Refunds task (OWNER_DESK) | nav item **hidden** (`task.tsx:50`), `desk_refunds` never read | nav item `button[data-desk-task="refunds"]` **disabled**, `title` = reason, outside `ol.steps`; line in `nav.desk-nav`; `desk_refunds` never read; step cannot open | `permissions-retry` → `retryMe()`; on a good answer the task reads `desk_refunds` once, as today. STAFF_DESK unchanged (O-8) |
+
+### 5.4 Tickets (File scopes disjoint)
+
+| Ticket | File scope | Class | Needs |
+|---|---|---|---|
+| GME-0 (store + shared line) | `web/src/shared/session/session.ts`<br>`web/src/shared/ui/PermissionsUnavailable.tsx` | logic | — |
+| GME-T (B04) | `web/src/screens/desk-transaction/TransactionScreen.tsx`<br>`web/src/screens/desk-transaction/ReceiptsSection.tsx` | logic | GME-0 |
+| GME-F (referral field) | `web/src/screens/desk/referral/ReferralCodeField.tsx` | logic | GME-0 |
+| GME-R (refunds task) | `web/src/screens/desk/steps/refunds/task.tsx` | logic | GME-0 |
+
+Up-front tests (on `feat/gme`, do not edit): GME-0 `shared/session/session.meError.test.ts` (14: 10 red, 4 guards) and
+`shared/ui/PermissionsUnavailable.test.tsx` (9: 8 red, 1 guard); GME-T `desk-transaction/TransactionScreen.me-error.test.tsx`
+(15: 10 red, 5 guards); GME-F `desk/referral/ReferralCodeField.me-error.test.tsx` (10: 8 red, 2 guards); GME-R
+`desk/steps/refunds/refunds.me-error.test.tsx` (9: 5 red, 4 guards). The screen tickets' tests import GME-0's component
+for real, so they turn green only on a base that holds GME-0.
+
+Notes for the implementers:
+- GME-0: record the failure in the existing `wrappedApi.view` catch for `name === 'me'` and clear it on its success
+  path; `retryMe` may restart the poller (`stop()` then `start()` keeps its `since` version). When `feat/silent-failures`
+  (SF-1, `ViewPoller.error()`) is on the base, `meError` may read `poller.error()` instead; the tests pin the behaviour,
+  not the source.
+- GME-T: `ReceiptsSection` gains an optional reason prop for the `title`; keep `can()` from `staff/parts/can.ts` (D8).
+- GME-R: derive visibility with a boolean memo and read `desk_refunds` once when it first becomes true: the session
+  answers `me` again every 60 s, and RF-10 pins one read. `steps/receipt/page-flow.test.tsx` feeds a `me` without
+  `permissions`; the task must not throw on it (`can()` does), so read `me()?.permissions ?? []`.
+
+### 5.5 Not in this ticket set
+- **B5, `Pricing.tsx:80-87`** (`.catch(() => {})`): the same bug. #4324 (another controller) owns `Pricing.tsx`; it should
+  take GM-1/GM-2 there after GME-0 lands.
+- **B04 and the referral field still read `me` themselves** (GM-4). Moving them onto the session store needs the rows named
+  in GM-4 retired or rewritten (B04's D2 changes from "the screen reads me" to "the session reads me"). That is a
+  controller decision; the shared line and text do not change either way.

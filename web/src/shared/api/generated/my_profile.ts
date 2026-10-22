@@ -23,6 +23,8 @@ export type ConsentRecordOutput = { purpose: string, channel: string | null, gra
  */
 effectiveAt: string, };
 
+export type EmailCopy = { available: boolean, to: string | null, };
+
 export type MyConsent = { 
 /**
  * `TERMS` or `MARKETING`.
@@ -49,7 +51,7 @@ offeredLanguages: Array<string>,
 /**
  * The newest row per (purpose, channel), ordered by purpose, then channel.
  */
-consents: Array<MyConsent>, };
+consents: Array<MyConsent>, emailCopy: EmailCopy, };
 
 /**
  * `?customer=`: the customer whose profile is asked for. Only the caller's own answers; any other is

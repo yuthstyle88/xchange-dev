@@ -21,6 +21,8 @@ export const zh: Record<Key, string> = {
   'shell.session.expired': '会话已过期，请重新登录',
   'shell.session.switched': '账户已在其他窗口中切换，请在操作前重新登录',
   'shell.session.branchChanged': '分店已在其他窗口中更改，请在操作前刷新页面',
+  'shell.permissions.unavailable': '无法加载权限，需要权限的操作已停用。',
+  'shell.permissions.retry': '重新加载权限',
   'error.signIn': '请登录',
   'error.ownerOnly': '仅限系统所有者访问',
   'error.invalidRequest': '无效请求',
