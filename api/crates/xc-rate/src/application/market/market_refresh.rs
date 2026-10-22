@@ -4,16 +4,21 @@
 //! SKELETON (XC-PRICING PX-0): `tick` and `run` are PX-5's. `run` returns at once until then, so the spawn in
 //! `bootstrap/mod.rs` is inert. `MarketRefreshConfig` is final.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use tokio::sync::watch;
+use tokio::time::MissedTickBehavior;
 use uuid::Uuid;
 
+use crate::application::reference::reference_batch_writer::ReferenceBatchWriter;
 use crate::domain::pricing::market_quote::MarketSource;
 use crate::domain::rate::entities::rate_source::RateSource;
+use crate::infrastructure::market::market_feed_status_store::MarketFeedStatusStore;
+use crate::infrastructure::market::market_provider::MarketProvider;
 use crate::infrastructure::reference::pg_reference_batch_store::PgReferenceBatchStore;
 
 /// `MARKET_FEED_ENABLED=true` turns the loop on (anything else: off); `MARKET_FEED_INTERVAL_SECS`, default 300.
@@ -47,7 +52,6 @@ pub struct MarketTickReport {
     pub results: Vec<(MarketSource, Result<Uuid, String>)>,
 }
 
-#[allow(dead_code)] // the fields are read by PX-5; remove this line with the stub bodies
 pub struct MarketRefresh {
     pub(crate) pool: PgPool,
     pub(crate) sources: Vec<(MarketSource, Arc<dyn RateSource>)>,
@@ -68,13 +72,67 @@ impl MarketRefresh {
     /// .with_provider(MarketProvider::new(source, known))` in its own transaction, commit, and record the attempt with
     /// `MarketFeedStatusStore::record` (`now`, the error if any). One source failing never stops the next.
     pub async fn tick(&self, now: DateTime<Utc>) -> MarketTickReport {
-        let _ = now;
-        todo!("PX-5: MarketRefresh::tick")
+        let mut results = Vec::with_capacity(self.sources.len());
+        for (source, rate_source) in &self.sources {
+            let source = *source;
+            let outcome: Result<Uuid, String> = async {
+                let codes: Vec<String> = sqlx::query_scalar("SELECT trim(code) FROM currencies")
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let known: HashSet<String> = codes.into_iter().collect();
+
+                let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
+                let writer = ReferenceBatchWriter::new(rate_source.clone(), self.store.clone())
+                    .with_provider(Arc::new(MarketProvider::new(source, known)));
+                match writer.fetch_and_write(&mut tx).await {
+                    Ok(batch_id) => {
+                        tx.commit().await.map_err(|e| e.to_string())?;
+                        Ok(batch_id)
+                    }
+                    Err(e) => {
+                        let _ = tx.rollback().await;
+                        Err(e.to_string())
+                    }
+                }
+            }
+            .await;
+
+            let err_ref = outcome.as_ref().err().map(String::as_str);
+            if let Err(e) = MarketFeedStatusStore::record(&self.pool, source, now, err_ref).await {
+                tracing::warn!(?source, error = %e, "failed to record market feed status");
+            }
+            results.push((source, outcome));
+        }
+        MarketTickReport { results }
     }
 
     /// `tick(Utc::now())` every `interval` until `stop` turns true.
-    pub async fn run(self: Arc<Self>, interval: Duration, stop: watch::Receiver<bool>) {
-        let _ = (interval, stop);
-        // PX-5: the loop. Until then the spawn is inert.
+    pub async fn run(self: Arc<Self>, interval: Duration, mut stop: watch::Receiver<bool>) {
+        if *stop.borrow() {
+            return;
+        }
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                changed = stop.changed() => {
+                    if changed.is_err() || *stop.borrow() {
+                        break;
+                    }
+                }
+                _ = ticker.tick() => {
+                    if *stop.borrow() {
+                        break;
+                    }
+                    let report = self.tick(Utc::now()).await;
+                    for (source, result) in report.results {
+                        if let Err(err) = result {
+                            tracing::warn!(?source, error = %err, "market refresh source failed");
+                        }
+                    }
+                }
+            }
+        }
     }
 }
