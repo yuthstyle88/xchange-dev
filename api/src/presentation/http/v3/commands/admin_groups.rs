@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::application::user::account_auditor::AccountAuditor;
-use xc_auth::domain::access::permission_module::PermissionModule;
+use xc_auth::domain::access::permission_module::{APPROVAL_KINDS, PermissionModule};
 use xc_auth::domain::access::{
     Actor, Group, GuardrailBreach, MatrixGuardrails, Permission, Role, RoleGrantStore,
     RoleGrantStoreError, RoleGrants,
@@ -302,6 +302,7 @@ fn check_and_build_full_set(
     requested: &[Permission],
 ) -> Result<Vec<Permission>, V3Error> {
     let req_set: BTreeSet<Permission> = requested.iter().copied().collect();
+    let has_approval_kind = req_set.iter().any(|p| APPROVAL_KINDS.contains(p));
     let seed_no_module: BTreeSet<Permission> = RoleGrants::seed(group.base)
         .into_iter()
         .filter(|p| PermissionModule::module(*p).is_none())
@@ -309,18 +310,21 @@ fn check_and_build_full_set(
     let full: Vec<Permission> = Permission::ALL
         .into_iter()
         .filter(|p| {
-            if PermissionModule::module(*p).is_some() {
+            if PermissionModule::module(*p).is_some() || APPROVAL_KINDS.contains(p) {
                 req_set.contains(p)
+            } else if *p == Permission::ApprovalsDecide {
+                has_approval_kind
             } else {
                 seed_no_module.contains(p)
             }
         })
         .collect();
     MatrixGuardrails::check(group, &full).map_err(guardrail_error)?;
-    if requested
-        .iter()
-        .any(|p| PermissionModule::module(*p).is_none())
-    {
+    if requested.iter().any(|p| {
+        PermissionModule::module(*p).is_none()
+            && !APPROVAL_KINDS.contains(p)
+            && *p != Permission::ApprovalsDecide
+    }) {
         return Err(guardrail_error(GuardrailBreach::NoModuleEdited));
     }
     Ok(full)
