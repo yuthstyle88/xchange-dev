@@ -29,6 +29,7 @@ use chrono::{DateTime, Duration, Utc};
 use pos_infra::transactions::Transactor;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use ts_rs::TS;
 use uuid::Uuid;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -38,6 +39,7 @@ use xc_queue::domain::repository::QueueRepository;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
+use crate::presentation::dto::v3::my_web_request::{MyWebRequestBranch, MyWebRequestData};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::require_branch;
 use crate::presentation::pages;
@@ -190,24 +192,21 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
         _ => None,
     };
 
-    answer(json!({
-        "version": version,
-        "changed": true,
-        "data": {
-            "requestId": row.id,
-            "status": status,
-            "expiresAt": expires_at,
-            "branch": {
-                "code": row.branch_code,
-                "name": row.branch_name,
-            },
-            "type": row.side,
-            "currency": row.currency,
-            "amount": row.foreign_amount,
-            "displayNumber": row.display_number,
-            "ticketsAhead": tickets_ahead,
-        }
-    }))
+    let data = MyWebRequestData {
+        request_id: row.id,
+        status: status.to_string(),
+        expires_at,
+        branch: MyWebRequestBranch {
+            code: row.branch_code,
+            name: row.branch_name,
+        },
+        kind: row.side,
+        currency: row.currency,
+        amount: row.foreign_amount,
+        display_number: row.display_number,
+        tickets_ahead,
+    };
+    answer(json!({ "version": version, "changed": true, "data": data }))
 }
 
 async fn ticket_wait(
@@ -237,6 +236,8 @@ pub fn register(cfg: &mut web::ServiceConfig, _state: &AppState) {
     cfg.route(PUBLIC_ROUTE, web::get().to(handle));
 }
 
-pub fn export_types(_dir: &Path) -> Result<(), ts_rs::ExportError> {
+pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
+    let cfg = ts_rs::Config::new().with_out_dir(dir);
+    MyWebRequestData::export_all(&cfg)?;
     Ok(())
 }
