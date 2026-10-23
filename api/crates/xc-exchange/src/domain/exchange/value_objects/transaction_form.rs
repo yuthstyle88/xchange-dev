@@ -3,7 +3,10 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use xc_kernel::input;
-use xc_kernel::money::{CompatRate, Money, NumberError, Quote, Rate, Side};
+use xc_kernel::money::{
+    CompatRate, CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, Money, NumberError, Quote,
+    Rate, Side, UnitSize,
+};
 
 use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
@@ -30,7 +33,7 @@ pub struct TransactionForm {
     pub customer_id: String,
     pub side: Side,
     pub currency: String,
-    pub amount: Money,
+    pub amount: ForeignAmount,
     pub rate: Rate,
     pub client_rate: Decimal,
     pub fee: Money,
@@ -87,7 +90,7 @@ impl TransactionForm {
             customer_id: t.customer_id.clone(),
             side: line.shop_side,
             currency: line.currency.as_str().to_owned(),
-            amount: money_of(t.id.0, line.quantity.value())?,
+            amount: amount_of(t.id.0, line.quantity.value())?,
             rate: per_one_rate(t.id.0, client_rate)?,
             client_rate,
             fee: line.fee_thb,
@@ -111,6 +114,11 @@ impl TransactionForm {
     }
 
     pub fn parse(cmd: &SaveTransaction) -> AppResult<Self> {
+        let units = CurrencyUnits::new(CurrencyCode::THB, UnitSize::ONE, MinorUnit::TWO);
+        Self::parse_with_units(cmd, &units)
+    }
+
+    pub fn parse_with_units(cmd: &SaveTransaction, units: &CurrencyUnits) -> AppResult<Self> {
         // Step 1: Customer details
         let customer = CustomerDetails::parse(&cmd.customer)?;
 
@@ -127,10 +135,9 @@ impl TransactionForm {
         let currency_str = input::text(&cmd.currency, 3, true)?;
 
         // Step 6: Amount
-        let amount = Money::parse(&cmd.amount).map_err(input::number_error)?;
-        if amount.is_zero() {
-            return Err(AppError::Domain(BAD_NUMBER.to_owned()));
-        }
+        let amount = ForeignAmount::parse(&cmd.amount, units)
+            .map(rescale_at_least_two)
+            .map_err(input::number_error)?;
 
         // Step 7: Rate
         let client_rate = CompatRate::parse_per_one(&cmd.rate).map_err(rate_refusal)?;
@@ -205,8 +212,7 @@ impl TransactionForm {
         }
 
         // Step 20: Principal limit check
-        let amount_dec = Decimal::from_i128_with_scale(amount.minor_i128(), 2);
-        let raw_principal = amount_dec * client_rate;
+        let raw_principal = amount.value() * client_rate;
         let mut principal_dec =
             raw_principal.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
         principal_dec.rescale(2);
@@ -308,14 +314,28 @@ fn per_one_rate(id: uuid::Uuid, per_one: Decimal) -> AppResult<Rate> {
         })
 }
 
-/// A stored quantity as the form's amount (two places, half up, as `parse` reads it).
-fn money_of(id: uuid::Uuid, value: Decimal) -> AppResult<Money> {
-    let rounded = value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    Money::parse(&rounded.normalize().to_string()).map_err(|_| {
-        AppError::Internal(format!(
-            "transaction {id} stored quantity {value} is out of range for TransactionForm"
-        ))
-    })
+/// A stored quantity as the form's amount (up to three places, at least two printed).
+fn amount_of(id: uuid::Uuid, value: Decimal) -> AppResult<ForeignAmount> {
+    let units = CurrencyUnits::new(
+        CurrencyCode::THB,
+        UnitSize::ONE,
+        MinorUnit::new(3).expect("3 <= 3"),
+    );
+    ForeignAmount::parse(&value.normalize().to_string(), &units)
+        .map(rescale_at_least_two)
+        .map_err(|_| {
+            AppError::Internal(format!(
+                "transaction {id} stored quantity {value} is out of range for TransactionForm"
+            ))
+        })
+}
+
+fn rescale_at_least_two(amount: ForeignAmount) -> ForeignAmount {
+    let mut d = amount.value();
+    if d.scale() < 2 {
+        d.rescale(2);
+    }
+    ForeignAmount::from_decimal(d)
 }
 
 /// The form's sentence for a per-1 rate `CompatRate::parse_per_one` refuses (#770).
