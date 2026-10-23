@@ -643,7 +643,7 @@ async fn verify_in_writes_the_count_exception_on_the_caller_tx_and_rolls_back_wi
     let exc = &exc_data.0;
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("COUNT {close}"));
-    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert_eq!(exc["cashVariance"]["THB"], "-100.00");
     assert!(exc["safeVariance"].is_null());
     assert_eq!(exc["at"], at(660).timestamp_millis());
     tx.rollback().await.expect("the caller rolls back");

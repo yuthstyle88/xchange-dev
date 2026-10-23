@@ -1312,6 +1312,11 @@ fn v2_moved(movements: &Value, k: usize, direction: &str) -> (Vec<(String, i64)>
 async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
     let fixture = read_fixture("v2_shift_cases.json");
     let (pool, branch) = db().await;
+    // v2_shift_cases.json and v2_stock_cases.json are v2's answers (v2 held JPY at 2 places); JPY at minor_unit 0 is covered by three_decimal_counts_test L1.
+    sqlx::query("UPDATE currencies SET minor_unit = 2 WHERE code = 'JPY'")
+        .execute(&pool)
+        .await
+        .expect("v2 held JPY at two places");
     let ledger = LedgerCashPostings::new();
     let sb = PgLedgerShiftBalances::new(pool.clone());
     fund_replay_branch(&pool, &ledger, &branch).await;

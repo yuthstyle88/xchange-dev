@@ -159,7 +159,7 @@ impl Room {
         let data = json!({
             "requestId": unique("REQ"),
             "status": status,
-            "cashVariance": { "USD": -10000 },
+            "cashVariance": { "USD": "-100.00" },
             "note": "short at close",
             "at": at,
             "reviewedBy": if reviewed { json!("finance-1") } else { Value::Null },

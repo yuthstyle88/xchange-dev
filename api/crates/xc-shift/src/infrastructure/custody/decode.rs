@@ -55,21 +55,13 @@ pub(crate) fn currency_from_json(table: &str, field: &str, v: &Value) -> AppResu
     }
 }
 
-pub(crate) fn minor_from_json(v: &Value) -> Option<i128> {
-    match v {
-        Value::Number(n) => n.as_i64().map(i128::from),
-        Value::String(text) => text
-            .parse::<i128>()
-            .ok()
-            .filter(|minor| i64::try_from(*minor).is_err()),
-        _ => None,
-    }
+fn decimal_from_json(table: &str, field: &str, v: &Value) -> AppResult<Decimal> {
+    let text = v.as_str().ok_or_else(|| undecodable(table, field, v))?;
+    Decimal::from_str_exact(text).map_err(|_| undecodable(table, field, v))
 }
 
 pub(crate) fn money_from_json(table: &str, field: &str, v: &Value) -> AppResult<ForeignAmount> {
-    let minor = minor_from_json(v).ok_or_else(|| undecodable(table, field, v))?;
-    let dec =
-        Decimal::try_from_i128_with_scale(minor, 2).map_err(|_| undecodable(table, field, v))?;
+    let dec = decimal_from_json(table, field, v)?;
     ForeignAmount::checked_from_decimal(dec).map_err(|_| undecodable(table, field, v))
 }
 
@@ -107,9 +99,7 @@ pub(crate) fn delta_from_json(table: &str, field: &str, v: &Value) -> AppResult<
     let mut pairs = Vec::with_capacity(map.len());
     for (k, val) in map {
         let code = CurrencyCode::parse(k).map_err(|_| undecodable(table, field, k))?;
-        let minor = minor_from_json(val).ok_or_else(|| undecodable(table, field, val))?;
-        let dec = Decimal::try_from_i128_with_scale(minor, 2)
-            .map_err(|_| undecodable(table, field, val))?;
+        let dec = decimal_from_json(table, field, val)?;
         let d = QuantityDelta::from_decimal(dec).map_err(|_| undecodable(table, field, val))?;
         if !d.is_zero() {
             pairs.push((code, d));

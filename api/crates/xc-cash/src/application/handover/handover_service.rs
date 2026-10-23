@@ -414,7 +414,7 @@ impl HandoverService {
                 AppError::Internal(format!("currency not found in register: {curr}"))
             })?;
 
-            let max_scale = (minor as u32).min(2);
+            let max_scale = minor as u32;
             if counted.normalize().scale() > max_scale {
                 return Err(CashError::TooManyDecimals.into());
             }
@@ -552,8 +552,10 @@ impl HandoverService {
             let diff = t.counted - t.expected.unwrap_or(Decimal::ZERO);
             let code = CurrencyCode::parse(t.currency.trim()).map_err(dom)?;
             if !diff.is_zero() {
-                let mut d = diff;
-                d.rescale(2);
+                let mut d = diff.normalize();
+                if d.scale() < 2 {
+                    d.rescale(2);
+                }
                 let qd = QuantityDelta::from_decimal(d)
                     .map_err(|e| AppError::Internal(format!("invalid handover diff {d}: {e}")))?;
                 delta_pairs.push((code, qd));

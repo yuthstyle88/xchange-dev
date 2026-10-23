@@ -134,11 +134,7 @@ impl CashCountService {
         Ok(held
             .non_zero()
             .into_iter()
-            .map(|(c, m)| {
-                let mut d = m.value();
-                d.rescale(2);
-                (c.as_str().trim().to_owned(), d)
-            })
+            .map(|(c, m)| (c.as_str().trim().to_owned(), m.value()))
             .collect())
     }
 
@@ -478,37 +474,19 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 10, 12, 3, 0, 0).unwrap();
-        let res = service.submit(&teller, open_cmd, now).await;
-        assert!(
-            res.is_err(),
-            "3-decimal-place total must be refused with TooManyDecimals"
-        );
-        match res {
-            Err(AppError::Domain(msg)) => {
-                assert_eq!(msg, CashError::TooManyDecimals.to_string());
-            }
-            other => panic!("expected TooManyDecimals domain error, got {other:?}"),
-        }
-
-        let count_rows: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM cash_counts WHERE branch_id = $1")
-                .bind(branch.as_str())
-                .fetch_one(&db.pool)
-                .await
-                .expect("count rows");
-        assert_eq!(count_rows, 0, "nothing written to cash_counts");
-
-        let line_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM cash_count_lines")
-            .fetch_one(&db.pool)
+        let count = service
+            .submit(&teller, open_cmd, now)
             .await
-            .expect("count lines");
-        assert_eq!(line_rows, 0, "nothing written to cash_count_lines");
+            .expect("3-decimal-place KWD total is accepted");
 
-        let total_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM cash_count_totals")
-            .fetch_one(&db.pool)
-            .await
-            .expect("count totals");
-        assert_eq!(total_rows, 0, "nothing written to cash_count_totals");
+        let counted: Decimal = sqlx::query_scalar(
+            "SELECT counted FROM cash_count_totals WHERE count_id = $1::uuid AND currency = 'KWD'",
+        )
+        .bind(&count.id)
+        .fetch_one(&db.pool)
+        .await
+        .expect("count total");
+        assert_eq!(counted.normalize(), Decimal::from_str("1.505").unwrap());
     }
 
     #[tokio::test]
@@ -813,7 +791,7 @@ mod tests {
         let exc = &exceptions[0].1;
         assert_eq!(exc["status"], "OPEN");
         assert_eq!(exc["note"], format!("COUNT {}", close_count.id));
-        assert_eq!(exc["cashVariance"]["THB"], -100000);
+        assert_eq!(exc["cashVariance"]["THB"], "-1000.00");
         assert!(exc["safeVariance"].is_null());
         assert!(exc["targetDifference"].is_null());
         assert_eq!(exc["at"], now.timestamp_millis());
@@ -959,7 +937,7 @@ impl CashCountService {
                 AppError::Internal(format!("currency not found in register: {curr}"))
             })?;
 
-            let max_scale = (minor as u32).min(2);
+            let max_scale = minor as u32;
             if counted.normalize().scale() > max_scale {
                 return Err(CashError::TooManyDecimals.into());
             }
@@ -1229,8 +1207,10 @@ impl CashCountService {
                             t.currency
                         ))
                     })?;
-                    let mut d = diff;
-                    d.rescale(2);
+                    let mut d = diff.normalize();
+                    if d.scale() < 2 {
+                        d.rescale(2);
+                    }
                     let qd = QuantityDelta::from_decimal(d).map_err(|e| {
                         AppError::Internal(format!("invalid count difference {d}: {e}"))
                     })?;

@@ -882,7 +882,7 @@ async fn the_rate_bounds_are_inclusive() {
         &a,
         json!({
             "currencies": [
-                currency("JPY", "2.00", "2.00"),
+                currency("JPY", "2", "2"),
                 currency("USD", "1.00", "1.00"),
             ],
             "result": {
