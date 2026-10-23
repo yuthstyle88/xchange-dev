@@ -51,6 +51,9 @@ while IFS= read -r f; do
   esac
   [ -f "$f" ] || continue
   in_scope=0
+  case "$f" in
+    api/tests/*|api/crates/*/tests/*) in_scope=1 ;;
+  esac
   for k in "${KNOWN[@]}"; do
     case "$f" in
       "$k"/*) in_scope=1; break ;;
