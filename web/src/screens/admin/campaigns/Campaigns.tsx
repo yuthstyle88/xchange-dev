@@ -82,8 +82,10 @@ function campaignFieldError(err: unknown): FieldMessage {
     startsAt: t('fieldStartsAt'),
     endsAt: t('fieldEndsAt'),
     budgetThb: t('fieldBudgetThb'),
+    priority: t('fieldPriority'),
     branches: t('fieldBranches'),
     rules: t('rulesTitle'),
+    count: t('couponCount'),
     expiresAt: t('couponExpiresAt'),
     amount: t('simAmount'),
   };
@@ -535,6 +537,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       setCreateFieldErrors(fieldErrs);
       return;
     }
+    const rawPriority = createPriority().trim();
+    if (/^-?\d+$/.test(rawPriority) && (BigInt(rawPriority) < 0n || BigInt(rawPriority) > 2147483647n)) {
+      setCreateFieldErrors({ priority: localFieldError('priority') });
+      return;
+    }
     const priority = parseInteger(createPriority());
     if (priority === null) {
       setCreateError(t('error.validationFailed'));
@@ -608,6 +615,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       return;
     }
     if (errs.some((e) => e.calculation || e.caps)) {
+      return;
+    }
+    const rawPriority = formPriority().trim();
+    if (/^-?\d+$/.test(rawPriority) && (BigInt(rawPriority) < 0n || BigInt(rawPriority) > 2147483647n)) {
+      setDetailFieldErrors({ priority: localFieldError('priority') });
       return;
     }
     const priority = parseInteger(formPriority());
@@ -764,6 +776,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     const expiresAt = toBangkokEnd(couponExpiresAt().trim());
     if (!expiresAt || Number.isNaN(Date.parse(expiresAt))) {
       setDetailFieldErrors({ expiresAt: localFieldError('expiresAt') });
+      return;
+    }
+    const rawCount = couponCount().trim();
+    if (/^\d+$/.test(rawCount) && BigInt(rawCount) > 1000n) {
+      setDetailFieldErrors({ count: localFieldError('count') });
       return;
     }
     const count = parseInteger(couponCount());
@@ -1020,10 +1037,19 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   name="priority"
                   data-field="priority"
                   class="xc-input"
+                  min="0"
+                  max="2147483647"
                   value={createPriority()}
                   onInput={(e) => setCreatePriority(e.currentTarget.value)}
                   onChange={(e) => setCreatePriority(e.currentTarget.value)}
                 />
+                <Show when={createFieldErrors().priority}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="priority">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="xc-form-group">
@@ -1302,10 +1328,19 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 name="priority"
                 data-field="priority"
                 class="xc-input"
+                min="0"
+                max="2147483647"
                 value={formPriority()}
                 onInput={(e) => handleInputEdit(setFormPriority, e.currentTarget.value)}
                 onChange={(e) => handleInputEdit(setFormPriority, e.currentTarget.value)}
               />
+              <Show when={detailFieldErrors().priority}>
+                {(msg) => (
+                  <div class="xc-field-error" data-field-error="priority">
+                    {msg()}
+                  </div>
+                )}
+              </Show>
             </div>
 
             <Show when={detailFieldErrors().branches}>
@@ -1357,12 +1392,21 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 <input
                   type="number"
                   name="count"
+                  data-field="count"
                   class="xc-input"
                   min="1"
+                  max="1000"
                   value={couponCount()}
                   onInput={(e) => setCouponCount(e.currentTarget.value)}
                   onChange={(e) => setCouponCount(e.currentTarget.value)}
                 />
+                <Show when={detailFieldErrors().count}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="count">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="xc-form-group">
