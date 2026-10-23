@@ -210,7 +210,8 @@ describe('A05 users (#3329): grant period, ended roles, employeeCode column, pag
 
   it('row 3: grant refused 400 on validTo shows the worded error in the dialog and keeps it open', async () => {
     const msg = 'Valid-until date must be after valid-from date';
-    grantResponder = () => json(400, { error: { code: 'invalidGrantPeriod', message: msg } });
+    grantResponder = () =>
+      json(400, { error: { code: 'validationFailed', field: 'validTo', message: msg } });
 
     const { container } = mountScreen();
     await settle();
@@ -224,7 +225,7 @@ describe('A05 users (#3329): grant period, ended roles, employeeCode column, pag
 
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
-    expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain(msg);
+    expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain('Valid Until is not valid');
   });
 
   it('row 4: a user with one current and one ended role shows both; ended has data-role-ended and ended date; only current has revoke', async () => {

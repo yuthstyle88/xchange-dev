@@ -8,7 +8,10 @@ export function PasswordField(props: {
   label: string;
   autocomplete?: string;
   required?: boolean;
+  minLength?: number;
   maxLength?: number;
+  hint?: string;
+  error?: string;
 }): JSX.Element {
   const id = `field-${props.field.name}`;
   const [visible, setVisible] = createSignal(false);
@@ -50,13 +53,14 @@ export function PasswordField(props: {
           type="password"
           autocomplete={props.autocomplete}
           required={props.required ? true : undefined}
+          minlength={props.minLength}
           maxlength={props.maxLength}
           ref={(el) => {
             inputEl = el;
             props.field.ref(el);
           }}
-          aria-invalid={props.field.invalid() ? 'true' : undefined}
-          aria-describedby={props.field.invalid() ? props.field.errorId : undefined}
+          aria-invalid={props.error || props.field.invalid() ? 'true' : undefined}
+          aria-describedby={props.error || props.field.invalid() ? props.field.errorId : undefined}
         />
         <button
           type="button"
@@ -70,9 +74,10 @@ export function PasswordField(props: {
           </span>
         </button>
       </div>
-      {props.field.invalid() && props.field.error() && (
+      {props.hint && <small>{props.hint}</small>}
+      {(props.error || (props.field.invalid() && props.field.error())) && (
         <span id={props.field.errorId} role="alert">
-          {props.field.error()}
+          {props.error || props.field.error()}
         </span>
       )}
     </div>

@@ -18,7 +18,7 @@ import type {
 } from '../../../shared/api/generated/admin_permission_matrix';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError } from '../../../shared/i18n/field-error';
 import {
   ADMIN_BASE,
   ApprovalsEditor,
@@ -49,6 +49,8 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
   const [addName, setAddName] = createSignal<string>('');
   const [addBase, setAddBase] = createSignal<string>('');
   const [addPerms, setAddPerms] = createSignal<Set<string>>(new Set());
+  const [addCodeError, setAddCodeError] = createSignal<string | null>(null);
+  const [addNameError, setAddNameError] = createSignal<string | null>(null);
 
   let loadSeq = 0;
   let activeBranch = '';
@@ -72,9 +74,11 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
           return t('matrixBuiltIn');
         case 'inUse':
           return t('matrixInUse');
+        case 'codeTaken':
+          return t('matrixCodeTaken');
       }
     }
-    return wordedError(err);
+    return fieldError(err, { code: t('matrixGroupCode'), name: t('matrixGroupName') }).message;
   };
 
   const loadMatrix = async () => {
@@ -174,6 +178,8 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
     setEditingCode(null);
     setAddCode('');
     setAddName('');
+    setAddCodeError(null);
+    setAddNameError(null);
     setAddBase(baseOptions()[0]?.code ?? '');
     setAddPerms(new Set<string>());
     setAdding(true);
@@ -198,17 +204,41 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
 
   const handleAdd = async () => {
     setError(null);
+    setAddCodeError(null);
+    setAddNameError(null);
+    const code = addCode().trim();
+    const name = addName().trim();
+    const codeOk = /^[A-Z0-9_]{2,40}$/.test(code);
+    const nameOk = name.length >= 1 && name.length <= 80;
+    if (!codeOk) setAddCodeError(t('matrixInvalidCode'));
+    if (!nameOk) setAddNameError(t('matrixInvalidName'));
+    if (!codeOk || !nameOk) return;
     try {
       await addWrite.send({
-        code: addCode().trim(),
-        name: addName().trim(),
+        code,
+        name,
         base: addBase(),
         permissions: orderedPermissions(addPerms()),
       });
       setAdding(false);
       await loadMatrix();
     } catch (err: unknown) {
-      setError(matrixError(err));
+      if (err instanceof ApiError && err.code === 'codeTaken') {
+        setAddCodeError(t('matrixCodeTaken'));
+        setError(t('matrixCodeTaken'));
+        return;
+      }
+      if (
+        err instanceof ApiError &&
+        (err.code.startsWith('guardrail:') || err.code === 'builtIn' || err.code === 'inUse')
+      ) {
+        setError(matrixError(err));
+        return;
+      }
+      const fe = fieldError(err, { code: t('matrixGroupCode'), name: t('matrixGroupName') });
+      if (fe.field === 'code') setAddCodeError(fe.message);
+      else if (fe.field === 'name') setAddNameError(fe.message);
+      else setError(fe.message);
     }
   };
 
@@ -394,9 +424,18 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
                 type="text"
                 class="users-input"
                 data-matrix-add-code=""
+                maxLength={40}
                 value={addCode()}
-                onInput={(e) => setAddCode(e.currentTarget.value)}
+                onInput={(e) => {
+                  const upper = e.currentTarget.value.toUpperCase();
+                  e.currentTarget.value = upper;
+                  setAddCode(upper);
+                  setAddCodeError(null);
+                }}
               />
+              <Show when={addCodeError()}>
+                <div role="alert" class="users-form-error">{addCodeError()}</div>
+              </Show>
             </div>
             <div class="users-field">
               <label class="users-label">{t('matrixGroupName')}</label>
@@ -404,9 +443,16 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
                 type="text"
                 class="users-input"
                 data-matrix-add-name=""
+                maxLength={80}
                 value={addName()}
-                onInput={(e) => setAddName(e.currentTarget.value)}
+                onInput={(e) => {
+                  setAddName(e.currentTarget.value);
+                  setAddNameError(null);
+                }}
               />
+              <Show when={addNameError()}>
+                <div role="alert" class="users-form-error">{addNameError()}</div>
+              </Show>
             </div>
             <div class="users-field">
               <label class="users-label">{t('matrixGroupBase')}</label>

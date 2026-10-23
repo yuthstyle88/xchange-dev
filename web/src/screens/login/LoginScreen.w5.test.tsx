@@ -219,7 +219,7 @@ describe('W5: changing the password (F11 POST /api/auth/password)', () => {
     const { host, navigate } = await mount();
     await signInMustChange(host);
     await fillChange(host, 'Temp-Pass-16char', 'My-New-Pass-2026');
-    expect(changeMessage(host)).toBe(tx(key));
+    expect(changeMessage(host)).toBe(key === 'changeErr_validationFailed' ? `${tx('newPassword')} ไม่ถูกต้อง` : tx(key));
     expect(changeMessage(host)).not.toContain('SERVER-TEXT');
     expect(navigate).not.toHaveBeenCalled();
     page(host);
