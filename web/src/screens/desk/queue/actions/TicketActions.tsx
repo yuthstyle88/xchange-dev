@@ -3,7 +3,7 @@
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiError } from '../../../../shared/api/client';
 import { screenT } from '../../../../shared/i18n';
-import { wordedError } from '../../../../shared/i18n/worded-error';
+import { fieldError } from '../../../../shared/i18n/field-error';
 import type { QueueCommands, TicketVerb } from '../queue-commands';
 import type { QueueMe } from '../QueueScreen';
 import { en, th } from './i18n';
@@ -21,7 +21,7 @@ function refusalMessage(err: unknown): string {
   if (err instanceof ApiError && err.code in OWN_ERROR_KEYS) {
     return t(OWN_ERROR_KEYS[err.code as keyof typeof OWN_ERROR_KEYS]);
   }
-  return wordedError(err);
+  return fieldError(err, { cancelReason: t('cancelReason'), reason: t('cancelReason') }).message;
 }
 
 /** The board row a set of actions acts on: a WAITING, CALLED or SERVING ticket. */
@@ -126,6 +126,7 @@ export function TicketActions(props: TicketActionsProps): JSX.Element {
             <input
               type="text"
               name="cancelReason"
+              maxLength={200}
               value={reason()}
               disabled={busy()}
               onInput={(e) => setReason(e.currentTarget.value)}

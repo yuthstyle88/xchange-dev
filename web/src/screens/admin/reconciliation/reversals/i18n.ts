@@ -4,6 +4,7 @@ export const th = {
   reject: 'ปฏิเสธ',
   reason: 'เหตุผล',
   reasonRequired: 'กรุณาระบุเหตุผลในการปฏิเสธ',
+  reasonTooLong: 'เหตุผลยาวได้ไม่เกิน 500 ตัวอักษร',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -11,4 +12,5 @@ export const en: Record<keyof typeof th, string> = {
   reject: 'Reject',
   reason: 'Reason',
   reasonRequired: 'A reason is required to reject',
+  reasonTooLong: 'Reason can be at most 500 characters',
 };

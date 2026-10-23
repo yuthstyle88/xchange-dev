@@ -25,7 +25,10 @@ export function decideWrite(
 export function decideRefusal(
   outcome: DecideOutcome,
   reason: string,
-): 'reasonRequired' | null {
+): 'reasonRequired' | 'reasonTooLong' | null {
+  if (reason.length > 500) {
+    return 'reasonTooLong';
+  }
   if (outcome === 'REJECTED' && reason.trim() === '') {
     return 'reasonRequired';
   }
