@@ -451,7 +451,7 @@ async fn upload_route_delegates_to_case_service_add_document() {
         "ชนิดไฟล์ไม่รองรับ"
     );
 
-    // (1b) Empty file (0 bytes) must be refused with TOO_LARGE sentence
+    // (1b) Empty file (0 bytes) is refused with its own sentence, not the 15 MB one
     let empty_payload = make_multipart(
         boundary,
         &[("documentType", "PASSPORT")],
@@ -475,7 +475,7 @@ async fn upload_route_delegates_to_case_service_add_document() {
     assert_eq!(ans_empty.code(), "validationFailed");
     assert_eq!(
         ans_empty.body["error"]["message"].as_str().unwrap_or(""),
-        "ไฟล์ใหญ่เกิน 15 MB"
+        "the file is empty"
     );
 
     // (1d & 1e) Valid PNG upload records customer's linked user_id and CaseService audit shape
