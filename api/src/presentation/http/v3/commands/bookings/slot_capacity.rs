@@ -12,11 +12,15 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::slot::slot_error::SlotError;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::IntBound;
 
 use super::BookingServices;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
+
+const CAPACITY: IntBound = IntBound::integer(1, i32::MAX as i64);
 
 pub struct SlotCapacitySet {
     services: Arc<BookingServices>,
@@ -34,7 +38,8 @@ impl SlotCapacitySet {
 pub struct SlotCapacitySetInput {
     #[ts(type = "string")]
     pub id: Uuid,
-    pub capacity: i32,
+    #[ts(type = "number")]
+    pub capacity: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -65,6 +70,7 @@ impl CommandAction for SlotCapacitySet {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
+        let capacity = input::integer("capacity", input.capacity, CAPACITY)? as i32;
 
         let row: Option<(String, i32)> =
             sqlx::query_as("SELECT branch_id, reserved FROM booking_slots WHERE id = $1")
@@ -97,7 +103,7 @@ impl CommandAction for SlotCapacitySet {
             return Err(out_of_scope());
         }
 
-        if input.capacity < reserved {
+        if capacity < reserved {
             return Err(V3Error::new(
                 "capacityBelowReserved",
                 None,
@@ -117,7 +123,7 @@ impl CommandAction for SlotCapacitySet {
 
         let updated = services
             .slot_service
-            .set_capacity_in(tx, input.id, input.capacity)
+            .set_capacity_in(tx, input.id, capacity)
             .await
             .map_err(|err| match err {
                 SlotError::CapacityBelowReserved => V3Error::new(

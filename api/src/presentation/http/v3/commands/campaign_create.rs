@@ -11,7 +11,7 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{Bound, Sign};
+use xc_kernel::money::{Bound, IntBound, Sign};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -101,6 +101,11 @@ impl CommandAction for CampaignCreateCommand {
             "budgetThb",
             &input.budget_thb,
             Bound::numeric(20, 2, Sign::NonNegative),
+        )?;
+        v3::input::integer(
+            "priority",
+            i64::from(input.priority),
+            IntBound::integer(0, i32::MAX as i64),
         )?;
 
         if ends_at <= starts_at {

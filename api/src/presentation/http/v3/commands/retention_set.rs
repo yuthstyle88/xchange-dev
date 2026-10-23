@@ -16,11 +16,13 @@ use xc_customer::application::retention_job::RetentionJob;
 use xc_customer::domain::consent::ConsentError;
 use xc_customer::domain::retention::DataType;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::IntBound;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +66,9 @@ impl CommandAction for RetentionSetCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
+        if let Some(days) = input.period_days {
+            input::integer("periodDays", i64::from(days), IntBound::integer(1, 3_650))?;
+        }
 
         let org_id: Option<Uuid> =
             sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
