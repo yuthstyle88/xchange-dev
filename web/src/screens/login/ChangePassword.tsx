@@ -1,23 +1,13 @@
 import { createSignal, type JSX } from 'solid-js';
 import { ApiError } from '../../shared/api/client';
 import { screenT } from '../../shared/i18n';
+import { fieldError } from '../../shared/i18n/field-error';
 import { PasswordField } from '../../shared/ui/PasswordField';
 import { useForm } from '../../shared/ui/form';
 import type { PasswordApi } from './auth-api';
 import * as loginI18n from './i18n';
 
 const t = screenT('login', loginI18n);
-
-function toChangeErrorKey(err: unknown): keyof typeof loginI18n.th {
-  if (err instanceof ApiError) {
-    const key = `changeErr_${err.code}` as keyof typeof loginI18n.th;
-    if (key in loginI18n.th) {
-      return key;
-    }
-    return 'errUnknown';
-  }
-  return 'errNetwork';
-}
 
 export function ChangePassword(props: {
   auth: Partial<PasswordApi>;
@@ -26,7 +16,8 @@ export function ChangePassword(props: {
   const form = useForm();
   let formEl: HTMLFormElement | undefined;
   const [pending, setPending] = createSignal(false);
-  const [errorKey, setErrorKey] = createSignal<keyof typeof loginI18n.th | undefined>(undefined);
+  const [errorMsg, setErrorMsg] = createSignal<string>('');
+  const [newPasswordError, setNewPasswordError] = createSignal<string | undefined>(undefined);
 
   const onSubmit = form.submit(async () => {
     if (pending()) return;
@@ -37,13 +28,20 @@ export function ChangePassword(props: {
     const newPassword = String(data.get('newPassword') ?? '');
     const confirmPassword = String(data.get('confirmPassword') ?? '');
 
+    setNewPasswordError(undefined);
+    setErrorMsg('');
+
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      setNewPasswordError(t('newPasswordHint'));
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
-      setErrorKey('changeErrMismatch');
+      setErrorMsg(t('changeErrMismatch'));
       return;
     }
 
     setPending(true);
-    setErrorKey(undefined);
 
     try {
       if (!props.auth.changePassword) {
@@ -52,7 +50,18 @@ export function ChangePassword(props: {
       await props.auth.changePassword({ currentPassword, newPassword });
       props.onDone();
     } catch (err) {
-      setErrorKey(toChangeErrorKey(err));
+      if (err instanceof ApiError) {
+        if (err.code === 'validationFailed' || err.field === 'newPassword') {
+          const fe = fieldError(err, { newPassword: t('newPassword') });
+          if (fe.field === 'newPassword') setNewPasswordError(fe.message);
+          setErrorMsg(fe.message);
+        } else {
+          const key = `changeErr_${err.code}` as keyof typeof loginI18n.th;
+          setErrorMsg(key in loginI18n.th ? t(key) : t('errUnknown'));
+        }
+      } else {
+        setErrorMsg(t('errNetwork'));
+      }
     } finally {
       setPending(false);
     }
@@ -66,11 +75,6 @@ export function ChangePassword(props: {
       return;
     }
     return onSubmit(e);
-  };
-
-  const message = () => {
-    const k = errorKey();
-    return k ? t(k) : '';
   };
 
   return (
@@ -90,7 +94,10 @@ export function ChangePassword(props: {
           label={t('newPassword')}
           autocomplete="new-password"
           required
+          minLength={12}
           maxLength={128}
+          hint={t('newPasswordHint')}
+          error={newPasswordError()}
         />
         <PasswordField
           field={form.field('confirmPassword')}
@@ -105,7 +112,7 @@ export function ChangePassword(props: {
           </button>
         </div>
         <p data-change-message="" role="alert">
-          {message()}
+          {errorMsg()}
         </p>
       </form>
     </section>

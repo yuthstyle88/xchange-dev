@@ -13,6 +13,9 @@ export const th = {
   noFloors: 'ไม่มีเกณฑ์สต็อกขั้นต่ำ',
   floorsHeading: 'เกณฑ์สต็อกขั้นต่ำรายสกุลเงิน',
   saved: 'บันทึกสำเร็จ',
+  invalidMinutes: 'กรุณาระบุจำนวนนาทีเป็นจำนวนเต็มบวกไม่เกิน 2,147,483,647',
+  invalidFloorQuantity: 'กรุณาระบุสต็อกขั้นต่ำไม่ติดลบ ทศนิยมไม่เกิน 4 ตำแหน่ง',
+  invalidCurrencyCode: 'รหัสสกุลเงินต้องเป็นตัวอักษรภาษาอังกฤษ 3 ตัว',
 };
 
 export const en = {
@@ -30,4 +33,7 @@ export const en = {
   noFloors: 'No stock floors configured',
   floorsHeading: 'Currency Stock Floors',
   saved: 'Saved successfully',
+  invalidMinutes: 'Enter a positive integer up to 2,147,483,647',
+  invalidFloorQuantity: 'Enter a non-negative number with up to 4 decimal places',
+  invalidCurrencyCode: 'Currency code must be 3 letters',
 };

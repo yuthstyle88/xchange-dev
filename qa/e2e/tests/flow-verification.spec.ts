@@ -27,12 +27,40 @@ const TINY_PNG = Buffer.from(
 interface CaseAnswer {
   id?: string;
   status?: string;
+  version?: number;
   decisionReasonCode?: string | null;
 }
 
 interface MyVerificationAnswer {
   readiness?: string;
   case?: (CaseAnswer & { documents?: Array<{ id?: string }> }) | null;
+}
+
+async function revokeVerifiedCase(customer: Page, admin: Page): Promise<{ ok: boolean; text: string }> {
+  const myVerRes = await customer.request.get('/api/v3/views/my_verification');
+  const myVer = (await myVerRes.json().catch(() => ({}))) as MyVerificationAnswer;
+  const id = String(myVer.case?.id ?? '');
+  if (!id) return { ok: false, text: 'missing case id from my_verification' };
+  const expectedVersion = myVer.case?.version ?? 1;
+  if (admin.url() === 'about:blank') {
+    await signIn(admin, 'admin', '/operations/verification');
+  }
+  const res = await admin.request.post(`/api/operations/verification/cases/${encodeURIComponent(id)}/revoke`, {
+    headers: {
+      'x-xchange-request': '1',
+      origin: new URL(users.baseUrl).origin,
+      'idempotency-key': `f9-revoke-${id}-${expectedVersion}-${Date.now()}`,
+    },
+    data: {
+      id,
+      expectedVersion,
+      reasonCode: 'DOCUMENT_EXPIRED',
+    },
+  });
+  const body = await res.text().catch(() => '');
+  const text = `${res.status()} ${body.slice(0, 300)}`;
+  console.log(`[F9] POST /api/operations/verification/cases/${id}/revoke ${text}`);
+  return { ok: res.ok(), text };
 }
 
 async function uploadPassportPng(customer: Page, caseId: string): Promise<void> {
@@ -101,7 +129,10 @@ test.describe.serial('F9 customer verification', () => {
       let caseId = '';
 
       if (initialState === 'VERIFIED') {
-        throw new Error('customer verification case is VERIFIED; cannot open a new case without changing shared data');
+        const rev = await revokeVerifiedCase(customer, admin);
+        expect(rev.ok, `revoke leftover VERIFIED case: ${rev.text}`).toBeTruthy();
+        await customer.reload();
+        await expect(customer.locator('section[data-case-state="REVOKED"]')).toBeVisible({ timeout: 20_000 });
       }
 
       // If an earlier interrupted run left an open case in SUBMITTED / UNDER_REVIEW / NEEDS_UPDATE,
@@ -168,7 +199,7 @@ test.describe.serial('F9 customer verification', () => {
         expect(openRes.ok, `POST /api/app/verification/cases: ${openRes.text}`).toBeTruthy();
         const opened = JSON.parse(openRes.body) as CaseAnswer;
         caseId = String(opened.id ?? '');
-      } else if (currentState === 'REJECTED' || currentState === 'EXPIRED') {
+      } else if (currentState === 'REJECTED' || currentState === 'EXPIRED' || currentState === 'REVOKED') {
         const openRes = await posted(customer, /^\/api\/app\/verification\/cases$/, () =>
           customer.locator('button[data-action="update-and-resubmit"]').click(),
         );

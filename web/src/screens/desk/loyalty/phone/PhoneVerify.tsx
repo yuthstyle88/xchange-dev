@@ -49,6 +49,7 @@ const PHONE_ERROR_CODES = new Set([
   'rateLimited',
   'phoneInUse',
   'smsUnavailable',
+  'superseded',
 ] as const);
 
 function phoneRefusal(err: unknown): string {
@@ -79,7 +80,15 @@ export function PhoneVerify(props: PhoneVerifyProps): JSX.Element {
 
   async function handleSend(): Promise<void> {
     const trimmed = phone().trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setError(t('phoneRequired'));
+      return;
+    }
+    const cleaned = trimmed.replace(/[\s-]/g, '');
+    if (!/^[+0][0-9]{8,15}$/.test(cleaned)) {
+      setError(t('invalidPhone'));
+      return;
+    }
     setError(undefined);
     try {
       const out = await startWrite.send({
@@ -97,13 +106,18 @@ export function PhoneVerify(props: PhoneVerifyProps): JSX.Element {
   async function handleConfirm(): Promise<void> {
     const cid = challengeId();
     if (!cid) return;
+    const trimmedCode = code().trim();
+    if (!trimmedCode) {
+      setError(t('codeRequired'));
+      return;
+    }
     setError(undefined);
     try {
       const out = await confirmWrite.send({
         id: props.customerId,
         challengeId: cid,
         branch: props.branch,
-        code: code(),
+        code: trimmedCode,
       });
       if (out.verified) {
         setVerified(true);

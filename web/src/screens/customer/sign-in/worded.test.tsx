@@ -58,6 +58,17 @@ describe('SignUp worded error handling (#1779)', () => {
     return { navigate };
   }
 
+  function fillValid(): void {
+    const set = (sel: string, val: string) => {
+      const el = host.querySelector<HTMLInputElement>(sel)!;
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    set('input[name="displayName"]', 'Somchai');
+    set('input[name="identifier"]', '0812345678');
+    set('input[name="password"]', 'pass-1234');
+  }
+
   function getErrorText(): string | null {
     const el = host.querySelector('.xc-sign-in-error');
     return el ? (el.textContent ?? '').trim() : null;
@@ -74,6 +85,7 @@ describe('SignUp worded error handling (#1779)', () => {
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtn).not.toBeNull();
       await waitForTerms(host);
+      fillValid();
       submitBtn!.click();
 
       await vi.waitFor(() => {
@@ -89,6 +101,7 @@ describe('SignUp worded error handling (#1779)', () => {
       const submitBtnEn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtnEn).not.toBeNull();
       await waitForTerms(host);
+      fillValid();
       submitBtnEn!.click();
 
       await vi.waitFor(() => {
@@ -111,6 +124,7 @@ describe('SignUp worded error handling (#1779)', () => {
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtn).not.toBeNull();
       await waitForTerms(host);
+      fillValid();
       submitBtn!.click();
 
       await vi.waitFor(() => {
@@ -133,6 +147,7 @@ describe('SignUp worded error handling (#1779)', () => {
       const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
       expect(submitBtn).not.toBeNull();
       await waitForTerms(host);
+      fillValid();
       submitBtn!.click();
 
       await vi.waitFor(() => {

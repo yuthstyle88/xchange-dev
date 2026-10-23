@@ -29,12 +29,16 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
     '/api/v3/commands/branch_alert_settings_save',
   );
 
-  const [staleDataMinutes, setStaleDataMinutes] = createSignal<number | null>(null);
+  const [staleDataMinutes, setStaleDataMinutes] = createSignal<string>('');
+  const [minutesError, setMinutesError] = createSignal<string | null>(null);
   const [floors, setFloors] = createSignal<StockFloorDto[]>([]);
+  const [floorErrors, setFloorErrors] = createSignal<Record<string, string>>({});
   const [newCurrency, setNewCurrency] = createSignal<string>('');
+  const [addCurrencyError, setAddCurrencyError] = createSignal<string | null>(null);
   const [version, setVersion] = createSignal<number | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [saving, setSaving] = createSignal<boolean>(false);
+  const [firstLoaded, setFirstLoaded] = createSignal<boolean>(false);
 
   let activeBranch = '';
   let lastTick: number | undefined;
@@ -50,20 +54,30 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
       });
       if (activeBranch !== branch || seq !== readSeq) return;
       if (res.data) {
-        setStaleDataMinutes(res.data.staleDataMinutes);
+        setStaleDataMinutes(
+          res.data.staleDataMinutes === null ? '' : String(res.data.staleDataMinutes),
+        );
         setFloors(res.data.floors ? res.data.floors.map((f) => ({ ...f })) : []);
         setVersion(res.data.version ?? null);
       } else {
-        setStaleDataMinutes(null);
+        setStaleDataMinutes('');
         setFloors([]);
         setVersion(null);
       }
+      setMinutesError(null);
+      setFloorErrors({});
+      setAddCurrencyError(null);
+      setFirstLoaded(true);
     } catch (err: unknown) {
       if (activeBranch !== branch || seq !== readSeq) return;
-      setStaleDataMinutes(null);
+      setStaleDataMinutes('');
       setFloors([]);
       setVersion(null);
+      setMinutesError(null);
+      setFloorErrors({});
+      setAddCurrencyError(null);
       setError(wordedError(err));
+      setFirstLoaded(true);
     }
   };
 
@@ -73,10 +87,14 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
     const tick = refreshTick();
     if (!shown) return;
     if (branch !== activeBranch) {
-      setStaleDataMinutes(null);
+      setStaleDataMinutes('');
       setFloors([]);
       setVersion(null);
+      setMinutesError(null);
+      setFloorErrors({});
+      setAddCurrencyError(null);
       setSaving(false);
+      setFirstLoaded(false);
       saveWrite.reset();
       lastTick = tick;
       setError(null);
@@ -92,11 +110,21 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
     setFloors((prev) =>
       prev.map((f) => (f.currency === currency ? { ...f, minQuantity } : f)),
     );
+    setFloorErrors((prev) => {
+      if (!(currency in prev)) return prev;
+      const next = { ...prev };
+      delete next[currency];
+      return next;
+    });
   };
 
   const handleAddFloor = () => {
+    setAddCurrencyError(null);
     const code = newCurrency().trim().toUpperCase();
-    if (!code) return;
+    if (!/^[A-Z]{3}$/.test(code)) {
+      setAddCurrencyError(t('invalidCurrencyCode'));
+      return;
+    }
     if (floors().some((f) => f.currency === code)) {
       return;
     }
@@ -106,10 +134,46 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
 
   const handleRemoveFloor = (currency: string) => {
     setFloors((prev) => prev.filter((f) => f.currency !== currency));
+    setFloorErrors((prev) => {
+      if (!(currency in prev)) return prev;
+      const next = { ...prev };
+      delete next[currency];
+      return next;
+    });
   };
 
   const handleSave = async () => {
     setError(null);
+    setMinutesError(null);
+    setFloorErrors({});
+
+    let hasError = false;
+    const rawMinutes = staleDataMinutes().trim();
+    let parsedMinutes: number | null = null;
+    if (rawMinutes !== '') {
+      if (
+        !/^[1-9][0-9]*$/.test(rawMinutes) ||
+        BigInt(rawMinutes) > 2147483647n
+      ) {
+        setMinutesError(t('invalidMinutes'));
+        hasError = true;
+      } else {
+        parsedMinutes = Number(rawMinutes);
+      }
+    }
+
+    const nextFloorErrors: Record<string, string> = {};
+    for (const f of floors()) {
+      if (!/^[0-9]+(\.[0-9]{1,4})?$/.test(f.minQuantity)) {
+        nextFloorErrors[f.currency] = t('invalidFloorQuantity');
+        hasError = true;
+      }
+    }
+    if (hasError) {
+      setFloorErrors(nextFloorErrors);
+      return;
+    }
+
     setSaving(true);
     const seq = ++readSeq;
 
@@ -117,7 +181,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
     const isStale = () => props.branch() !== branch || seq !== readSeq;
     const input: BranchAlertSettingsSaveInput = {
       branch,
-      staleDataMinutes: staleDataMinutes(),
+      staleDataMinutes: parsedMinutes,
       floors: floors().map((f) => ({
         currency: f.currency,
         minQuantity: f.minQuantity,
@@ -129,7 +193,9 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
       const res = await saveWrite.send(input);
       if (isStale()) return;
       setVersion(res.version ?? null);
-      setStaleDataMinutes(res.staleDataMinutes);
+      setStaleDataMinutes(
+        res.staleDataMinutes === null ? '' : String(res.staleDataMinutes),
+      );
       setFloors(res.floors ? res.floors.map((f) => ({ ...f })) : []);
     } catch (err: unknown) {
       if (isStale()) return;
@@ -158,19 +224,21 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
             {t('staleDataMinutes')}
             <input
               id="stale-data-minutes"
-              type="number"
-              value={staleDataMinutes() === null ? '' : String(staleDataMinutes())}
+              type="text"
+              inputMode="numeric"
+              disabled={!firstLoaded()}
+              value={staleDataMinutes()}
               onInput={(e) => {
-                const val = e.currentTarget.value.trim();
-                if (val === '') {
-                  setStaleDataMinutes(null);
-                } else {
-                  const num = Number(val);
-                  setStaleDataMinutes(isNaN(num) ? null : num);
-                }
+                setStaleDataMinutes(e.currentTarget.value);
+                setMinutesError(null);
               }}
             />
           </label>
+          <Show when={minutesError()}>
+            <div class="alert-settings-error" role="alert">
+              {minutesError()}
+            </div>
+          </Show>
         </div>
 
         <div class="floors-section">
@@ -185,16 +253,23 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
                   <span class="floor-currency">{floor().currency}</span>
                   <input
                     type="text"
+                    disabled={!firstLoaded()}
                     value={floor().minQuantity}
                     onInput={(e) => updateFloor(floor().currency, e.currentTarget.value)}
                   />
                   <button
                     type="button"
                     class="remove-floor-button"
+                    disabled={!firstLoaded()}
                     onClick={() => handleRemoveFloor(floor().currency)}
                   >
                     {t('removeFloor')}
                   </button>
+                  <Show when={floorErrors()[floor().currency]}>
+                    <div class="alert-settings-error" role="alert">
+                      {floorErrors()[floor().currency]}
+                    </div>
+                  </Show>
                 </div>
               )}
             </Index>
@@ -206,24 +281,34 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
               <input
                 id="add-currency"
                 type="text"
+                disabled={!firstLoaded()}
                 value={newCurrency()}
-                onInput={(e) => setNewCurrency(e.currentTarget.value)}
+                onInput={(e) => {
+                  setNewCurrency(e.currentTarget.value);
+                  setAddCurrencyError(null);
+                }}
               />
             </label>
             <button
               type="button"
               class="add-floor-button"
+              disabled={!firstLoaded()}
               onClick={handleAddFloor}
             >
               {t('addFloor')}
             </button>
+            <Show when={addCurrencyError()}>
+              <div class="alert-settings-error" role="alert">
+                {addCurrencyError()}
+              </div>
+            </Show>
           </div>
         </div>
 
         <div class="alert-settings-actions">
           <button
             type="button"
-            disabled={saving()}
+            disabled={!firstLoaded() || saving()}
             onClick={handleSave}
           >
             {t('save')}

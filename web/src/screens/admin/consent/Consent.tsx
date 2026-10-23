@@ -40,7 +40,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
 
     if (raw === '') {
       periodDays = null;
-    } else if (/^[1-9]\d*$/.test(raw)) {
+    } else if (/^[1-9]\d*$/.test(raw) && parseInt(raw, 10) <= 2147483647) {
       periodDays = parseInt(raw, 10);
     } else {
       const msg = t('periodInvalid');

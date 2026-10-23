@@ -64,6 +64,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
   let reading = 0;
 
   const day = () => props.period().to || today();
+  const singleDay = () => !props.period().from || props.period().from === day();
 
   const read = async (branch: string, date: string) => {
     if (!branch) return;
@@ -94,7 +95,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
 
   const certify = async () => {
     const shown = sheet();
-    if (!shown) return;
+    if (!shown || !singleDay()) return;
     setError(null);
     setBusy(true);
     const input: ReconciliationCertifyInput = {
@@ -130,6 +131,12 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
       <Show when={sheet()}>
         {(s) => (
           <>
+            <header>
+              <strong>{t('sheetDay', { date: s().date || day() })}</strong>
+              <Show when={!singleDay()}>
+                <p class="warning">{t('pickOneDay')}</p>
+              </Show>
+            </header>
             <PartBox name="transactions" part={s().transactions}>
               {(tx) => (
                 <>
@@ -233,7 +240,12 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
                   onInput={(e) => setNote(e.currentTarget.value)}
                 />
               </label>
-              <button type="button" disabled={busy()} onClick={() => void certify()}>
+              <button
+                type="button"
+                disabled={busy() || !singleDay()}
+                title={!singleDay() ? t('pickOneDay') : undefined}
+                onClick={() => void certify()}
+              >
                 {t('certify')}
               </button>
             </section>

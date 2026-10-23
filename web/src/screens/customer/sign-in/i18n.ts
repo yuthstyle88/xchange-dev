@@ -31,6 +31,7 @@ export const th = {
   termsLoading: 'กำลังโหลดข้อกำหนดการใช้บริการ…',
   termsFailed: 'โหลดข้อกำหนดการใช้บริการไม่สำเร็จ จึงยังสมัครสมาชิกไม่ได้ กรุณาลองอีกครั้ง',
   termsRetry: 'ลองอีกครั้ง',
+  codeRequired: 'กรุณากรอกรหัสยืนยัน',
 };
 
 export const en = {
@@ -61,6 +62,7 @@ export const en = {
   termsLoading: 'Loading the terms of service…',
   termsFailed: 'The terms of service could not be loaded, so sign-up is not available yet. Please try again',
   termsRetry: 'Try again',
+  codeRequired: 'Verification code is required',
 };
 
 export const zh = {
@@ -91,4 +93,5 @@ export const zh = {
   termsLoading: '正在加载服务条款…',
   termsFailed: '服务条款加载失败，暂时无法注册，请重试',
   termsRetry: '重试',
+  codeRequired: '请输入验证码',
 };

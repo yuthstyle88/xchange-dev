@@ -15,6 +15,7 @@ import type { AdminUserRole, AdminUserRow } from '../../../shared/api/generated/
 import type { UserChangeOutput } from '../../../shared/api/generated/user_disable';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { TempPasswordNotice } from '../../../shared/ui/TempPasswordNotice';
 import type { AdminMenuProps } from '../menus';
@@ -115,15 +116,20 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [createEmail, setCreateEmail] = createSignal('');
   const [createRole, setCreateRole] = createSignal<string>('TELLER');
   const [createBranch, setCreateBranch] = createSignal<string>('');
+  const [createNameError, setCreateNameError] = createSignal<string | null>(null);
+  const [createPhoneError, setCreatePhoneError] = createSignal<string | null>(null);
 
   // Activate form state
   const [activatePhone, setActivatePhone] = createSignal('');
+  const [activatePhoneError, setActivatePhoneError] = createSignal<string | null>(null);
 
   // Grant form state
   const [grantRole, setGrantRole] = createSignal<string>('TELLER');
   const [grantBranch, setGrantBranch] = createSignal<string>('');
   const [grantValidFrom, setGrantValidFrom] = createSignal<string>('');
   const [grantValidTo, setGrantValidTo] = createSignal<string>('');
+  const [grantValidFromError, setGrantValidFromError] = createSignal<string | null>(null);
+  const [grantValidToError, setGrantValidToError] = createSignal<string | null>(null);
   const [grantGroups, setGrantGroups] = createSignal<MatrixGroup[] | null>(null);
 
   const grantOptions = () => {
@@ -278,6 +284,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     return null;
   };
 
+  const PHONE_RE = /^[+0][0-9 ()-]+$/;
+
   const openCreateDialog = () => {
     dialogOpening++;
     setCreateName('');
@@ -286,6 +294,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setCreateEmail('');
     setCreateRole('TELLER');
     setCreateBranch(props.branch());
+    setCreateNameError(null);
+    setCreatePhoneError(null);
     setDialogError(null);
     setShowCreate(true);
   };
@@ -293,15 +303,24 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const handleCreateSubmit = async (e: Event) => {
     e.preventDefault();
     const sentFrom = openDialogKey();
+    setCreateNameError(null);
+    setCreatePhoneError(null);
     setDialogError(null);
     setPageSuccess(null);
+
+    const phone = createPhone().trim();
+    if (!PHONE_RE.test(phone)) {
+      setCreatePhoneError(t('invalidPhone'));
+      return;
+    }
+
     setDialogSubmitting(true);
 
     try {
       const res = (await api.post('/api/users', {
         name: createName().trim(),
         username: createUsername().trim() || null,
-        phone: createPhone().trim(),
+        phone,
         email: createEmail().trim() || null,
         roles: [
           {
@@ -315,7 +334,12 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       setPageSuccess(t('successCreated'));
       await reloadShown();
     } catch (err: unknown) {
-      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
+      if (openDialogKey() === sentFrom) {
+        const fe = fieldError(err, { phone: t('phone'), name: t('name') });
+        if (fe.field === 'phone') setCreatePhoneError(fe.message);
+        else if (fe.field === 'name') setCreateNameError(fe.message);
+        else setDialogError(fe.message);
+      }
     } finally {
       setDialogSubmitting(false);
     }
@@ -325,6 +349,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     dialogOpening++;
     setActivatingUser(user);
     setActivatePhone('');
+    setActivatePhoneError(null);
     setDialogError(null);
   };
 
@@ -334,8 +359,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     if (!user) return;
     const sentFrom = openDialogKey();
 
+    setActivatePhoneError(null);
     setDialogError(null);
     setPageSuccess(null);
+
+    const phone = activatePhone().trim();
+    if (!PHONE_RE.test(phone)) {
+      setActivatePhoneError(t('invalidPhone'));
+      return;
+    }
+
     setDialogSubmitting(true);
 
     const roles = user.roles.map((r) => ({
@@ -346,7 +379,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     try {
       const res = (await api.post('/api/users', {
         name: user.name,
-        phone: activatePhone().trim(),
+        phone,
         roles: roles,
         userId: user.userId,
       })) as { temporaryPassword?: string };
@@ -355,7 +388,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       setPageSuccess(t('successActivated'));
       await reloadShown();
     } catch (err: unknown) {
-      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
+      if (openDialogKey() === sentFrom) {
+        const fe = fieldError(err, { phone: t('phone') });
+        if (fe.field === 'phone') setActivatePhoneError(fe.message);
+        else setDialogError(fe.message);
+      }
     } finally {
       setDialogSubmitting(false);
     }
@@ -368,6 +405,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setGrantBranch(props.branch());
     setGrantValidFrom('');
     setGrantValidTo('');
+    setGrantValidFromError(null);
+    setGrantValidToError(null);
     setDialogError(null);
     setGrantGroups(null);
     const sentFrom = openDialogKey();
@@ -394,12 +433,20 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     if (!user) return;
     const sentFrom = openDialogKey();
 
+    setGrantValidFromError(null);
+    setGrantValidToError(null);
     setDialogError(null);
     setPageSuccess(null);
-    setDialogSubmitting(true);
 
     const validFrom = grantValidFrom().trim();
     const validTo = grantValidTo().trim();
+    const fromFloor = validFrom || formatBkkDate(new Date(Date.now()).toISOString());
+    if (validTo && validTo <= fromFloor) {
+      setGrantValidToError(t('invalidGrantPeriod'));
+      return;
+    }
+
+    setDialogSubmitting(true);
 
     try {
       await grantWrite.send({
@@ -413,7 +460,12 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       setPageSuccess(t('successGranted'));
       await reloadShown();
     } catch (err: unknown) {
-      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
+      if (openDialogKey() === sentFrom) {
+        const fe = fieldError(err, { validFrom: t('grantValidFrom'), validTo: t('grantValidTo') });
+        if (fe.field === 'validFrom') setGrantValidFromError(fe.message);
+        else if (fe.field === 'validTo') setGrantValidToError(fe.message);
+        else setDialogError(fe.message);
+      }
     } finally {
       setDialogSubmitting(false);
     }
@@ -821,9 +873,15 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                   name="name"
                   class="users-input"
                   value={createName()}
-                  onInput={(e) => setCreateName(e.currentTarget.value)}
+                  onInput={(e) => {
+                    setCreateName(e.currentTarget.value);
+                    setCreateNameError(null);
+                  }}
                   required
                 />
+                <Show when={createNameError()}>
+                  <div role="alert" class="users-form-error">{createNameError()}</div>
+                </Show>
               </div>
 
               <div class="users-field">
@@ -842,11 +900,19 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                 <input
                   id="create-phone"
                   name="phone"
+                  type="tel"
+                  inputmode="tel"
                   class="users-input"
                   value={createPhone()}
-                  onInput={(e) => setCreatePhone(e.currentTarget.value)}
+                  onInput={(e) => {
+                    setCreatePhone(e.currentTarget.value);
+                    setCreatePhoneError(null);
+                  }}
                   required
                 />
+                <Show when={createPhoneError()}>
+                  <div role="alert" class="users-form-error">{createPhoneError()}</div>
+                </Show>
               </div>
 
               <div class="users-field">
@@ -929,11 +995,19 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                   <input
                     id="activate-phone"
                     name="activatePhone"
+                    type="tel"
+                    inputmode="tel"
                     class="users-input"
                     value={activatePhone()}
-                    onInput={(e) => setActivatePhone(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setActivatePhone(e.currentTarget.value);
+                      setActivatePhoneError(null);
+                    }}
                     required
                   />
+                  <Show when={activatePhoneError()}>
+                    <div role="alert" class="users-form-error">{activatePhoneError()}</div>
+                  </Show>
                 </div>
 
                 <div class="users-dialog-actions">
@@ -1011,8 +1085,14 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     type="date"
                     class="users-input"
                     value={grantValidFrom()}
-                    onInput={(e) => setGrantValidFrom(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setGrantValidFrom(e.currentTarget.value);
+                      setGrantValidFromError(null);
+                    }}
                   />
+                  <Show when={grantValidFromError()}>
+                    <div role="alert" class="users-form-error">{grantValidFromError()}</div>
+                  </Show>
                 </div>
 
                 <div class="users-field">
@@ -1021,10 +1101,17 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     id="grant-valid-to"
                     name="grantValidTo"
                     type="date"
+                    min={grantValidFrom().trim() || formatBkkDate(new Date(Date.now() + 86_400_000).toISOString())}
                     class="users-input"
                     value={grantValidTo()}
-                    onInput={(e) => setGrantValidTo(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setGrantValidTo(e.currentTarget.value);
+                      setGrantValidToError(null);
+                    }}
                   />
+                  <Show when={grantValidToError()}>
+                    <div role="alert" class="users-form-error">{grantValidToError()}</div>
+                  </Show>
                 </div>
 
                 <div class="users-dialog-actions">

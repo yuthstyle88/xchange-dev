@@ -7,7 +7,11 @@ import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th } from '../../../shared/i18n/th';
 import { en } from '../../../shared/i18n/en';
-import { makeMyRateAlertItem } from '../../../shared/testing/fixtures';
+import {
+  makeMyRateAlertItem,
+  makePublishedLineDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { RateAlertsScreen } from './RateAlerts';
 
@@ -87,6 +91,10 @@ describe('RateAlerts worded error handling (#1778)', () => {
     if (url === '/api/public/host') {
       if (hostReply) return hostReply();
       return json({ org: 'XC-ORG' });
+    }
+
+    if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) {
+      return json(makePublishedRatesData({ lines: [makePublishedLineDto({ currency: 'USD' })] }));
     }
 
     if (url.includes('/api/public/orgs/')) {

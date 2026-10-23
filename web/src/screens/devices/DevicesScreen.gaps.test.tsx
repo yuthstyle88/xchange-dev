@@ -317,6 +317,11 @@ describe('DevicesScreen gaps (#488)', () => {
     await settle();
     await loaded();
 
+    const picker = host.querySelector<HTMLSelectElement>('.picker-group select')!;
+    picker.value = 'TX-1';
+    picker.dispatchEvent(new Event('input', { bubbles: true }));
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+
     server.onPost = () => Promise.reject(new ApiError({ code: 'refused', message: REFUSED, status: 400 }));
     const before = server.counts();
 

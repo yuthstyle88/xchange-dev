@@ -23,6 +23,7 @@ export const th = {
   changeErrMismatch: 'รหัสผ่านใหม่และยืนยันรหัสผ่านไม่ตรงกัน',
   changeErr_invalidCredentials: 'รหัสผ่านปัจจุบันไม่ถูกต้อง',
   changeErr_validationFailed: 'รหัสผ่านใหม่ไม่ผ่านเงื่อนไขที่กำหนด',
+  newPasswordHint: 'รหัสผ่านต้องมีความยาว 12–128 ตัวอักษร',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -50,4 +51,5 @@ export const en: Record<keyof typeof th, string> = {
   changeErrMismatch: 'New password and confirmation do not match.',
   changeErr_invalidCredentials: 'Current password is incorrect.',
   changeErr_validationFailed: 'New password does not meet the requirements.',
+  newPasswordHint: 'Password must be 12–128 characters.',
 };

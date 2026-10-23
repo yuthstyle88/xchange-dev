@@ -4,12 +4,16 @@
 // `onSubmit`; it is disabled while `busy`.
 // Classes: xc-queue-form, xc-queue-field, xc-queue-label, xc-queue-select, xc-queue-input, xc-queue-submit.
 // Texts (i18n.ts): type, buy, sell, currency, amount, submit, submitting.
-import { createSignal, For, type JSX } from 'solid-js';
+import { createSignal, For, Show, type JSX } from 'solid-js';
+import { ApiError } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
+import { atMost, checkDecimal, MONEY } from '../../../shared/ui/bounded';
 import * as table from './i18n';
 import type { QueueRate, RequestFormValue, TradeType } from './queue-api';
 
 const t = screenT('customer.queue', table);
+const QUEUE_AMOUNT_BOUND = atMost(MONEY, '10000000');
 
 export interface RequestFormProps {
   rates: QueueRate[];
@@ -21,6 +25,15 @@ export function RequestForm(props: RequestFormProps): JSX.Element {
   const [type, setType] = createSignal<TradeType>('BUY');
   const [selectedCurrency, setSelectedCurrency] = createSignal<string>('');
   const [amount, setAmount] = createSignal<string>('');
+  const [amountInvalid, setAmountInvalid] = createSignal(false);
+
+  const amountError = () =>
+    amountInvalid()
+      ? fieldError(
+          new ApiError({ status: 400, code: 'validationFailed', field: 'amount', message: '' }),
+          { amount: t('amount') },
+        ).message
+      : null;
 
   const currentCurrency = () => {
     const cur = selectedCurrency();
@@ -40,10 +53,17 @@ export function RequestForm(props: RequestFormProps): JSX.Element {
     queueMicrotask(() => {
       inTick = false;
     });
+    const rawAmount = amount();
+    const checked = checkDecimal(rawAmount, QUEUE_AMOUNT_BOUND);
+    if (!checked.ok || /^0(?:\.0*)?$/.test(rawAmount)) {
+      setAmountInvalid(true);
+      return;
+    }
+    setAmountInvalid(false);
     props.onSubmit({
       type: type(),
       currency: currentCurrency(),
-      amount: amount(),
+      amount: rawAmount,
     });
   };
 
@@ -110,6 +130,9 @@ export function RequestForm(props: RequestFormProps): JSX.Element {
           onInput={(e) => setAmount(e.currentTarget.value)}
           onChange={(e) => setAmount(e.currentTarget.value)}
         />
+        <Show when={amountError()}>
+          {(msg) => <span data-field-error="amount">{msg()}</span>}
+        </Show>
       </div>
 
       <button

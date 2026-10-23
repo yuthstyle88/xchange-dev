@@ -1,6 +1,11 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeMyRateAlertItem, type MyRateAlertItem } from '../../../shared/testing/fixtures';
+import {
+  makeMyRateAlertItem,
+  makePublishedLineDto,
+  makePublishedRatesData,
+  type MyRateAlertItem,
+} from '../../../shared/testing/fixtures';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { RateAlertsScreen } from './RateAlerts';
@@ -63,6 +68,10 @@ function makeAlert(overrides: Partial<MyRateAlertItem> = {}) {
   });
 }
 
+const SAMPLE_RATES = makePublishedRatesData({
+  lines: [makePublishedLineDto({ currency: 'USD' })],
+});
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -117,6 +126,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
       calls.push({ method, url, headers, body });
 
       if (url === '/api/public/host') return jsonResponse({ org: 'XC-ORG' });
+      if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) return jsonResponse(SAMPLE_RATES);
       if (url.includes('/branches')) return jsonResponse(SAMPLE_BRANCHES);
       if (url.includes('/api/v3/views/my_rate_alerts')) {
         return jsonResponse({ version: 1, changed: true, data: { alerts } });
@@ -173,6 +183,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
     const fetchFn = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
       const method = init?.method ?? 'GET';
       if (url === '/api/public/host') return jsonResponse({ org: 'XC-ORG' });
+      if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) return jsonResponse(SAMPLE_RATES);
       if (url.includes('/branches')) return jsonResponse(SAMPLE_BRANCHES);
       if (url.includes('/api/v3/views/my_rate_alerts')) {
         viewCallCount++;
@@ -244,6 +255,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
       calls.push({ method, url, headers, body });
 
       if (url === '/api/public/host') return jsonResponse({ org: 'XC-ORG' });
+      if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) return jsonResponse(SAMPLE_RATES);
       if (url.includes('/branches')) return jsonResponse(SAMPLE_BRANCHES);
       if (url.includes('/api/v3/views/my_rate_alerts')) {
         return jsonResponse({
@@ -309,6 +321,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
       calls.push({ method, url, headers, body });
 
       if (url === '/api/public/host') return jsonResponse({ org: 'XC-ORG' });
+      if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) return jsonResponse(SAMPLE_RATES);
       if (url.includes('/branches')) return jsonResponse(SAMPLE_BRANCHES);
       if (url.includes('/api/v3/views/my_rate_alerts')) {
         return jsonResponse({ version: alerts[0]?.version ?? 8, changed: true, data: { alerts } });
@@ -371,6 +384,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
       calls.push({ method, url, headers: {}, body });
 
       if (url === '/api/public/host') return jsonResponse({ org: 'XC-ORG' });
+      if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) return jsonResponse(SAMPLE_RATES);
       if (url.includes('/branches')) return jsonResponse(SAMPLE_BRANCHES);
       if (url.includes('/api/v3/views/my_rate_alerts')) {
         return jsonResponse({
@@ -424,6 +438,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
     const fetchFn = vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
       const method = init?.method ?? 'GET';
       if (url === '/api/public/host') return jsonResponse({ org: 'XC-ORG' });
+      if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) return jsonResponse(SAMPLE_RATES);
       if (url.includes('/branches')) return jsonResponse(SAMPLE_BRANCHES);
       if (url.includes('/api/v3/views/my_rate_alerts')) {
         viewCallCount++;
@@ -484,6 +499,7 @@ describe('RateAlerts in-flight action guard and loadSeq poll guard (#2278)', () 
       const method = init?.method ?? 'GET';
       calls.push({ method, url, headers: {}, body: undefined });
       if (url === '/api/public/host') return jsonResponse({ org: 'XC-ORG' });
+      if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) return jsonResponse(SAMPLE_RATES);
       if (url.includes('/branches')) return jsonResponse(SAMPLE_BRANCHES);
       if (url.includes('/api/v3/views/my_rate_alerts')) {
         return jsonResponse({

@@ -31,10 +31,11 @@ function startingPricesError(err: unknown): string {
 }
 
 export function isValidPositiveDecimal(val: string): boolean {
-  if (!/^\d+(\.\d+)?$/.test(val)) return false;
+  if (!/^\d+(\.\d{1,8})?$/.test(val)) return false;
   const [intPart, fracPart = ''] = val.split('.');
   const allZeros = /^0+$/.test(intPart) && (fracPart === '' || /^0+$/.test(fracPart));
-  return !allZeros;
+  if (allZeros) return false;
+  return !isBuyGreaterThanSell(val, '100000000');
 }
 
 export function isBuyGreaterThanSell(buy: string, sell: string): boolean {
@@ -165,8 +166,12 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
   function handleAddCurrency(e?: Event) {
     e?.preventDefault();
     setAddCodeError(null);
-    const code = addCode().trim().toUpperCase();
-    if (!code) return;
+    const raw = addCode().trim();
+    if (!/^[A-Za-z]{3}$/.test(raw)) {
+      setAddCodeError(t('validation.invalidCurrencyCode'));
+      return;
+    }
+    const code = raw.toUpperCase();
 
     if (allCurrencies().includes(code)) {
       setAddCode('');
@@ -300,6 +305,18 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
             rErrors[p.currency] = t('error.currency');
           }
           setRowErrors(rErrors);
+        } else if (err.field === 'buy') {
+          const bErrors: Record<string, string> = {};
+          for (const p of changedPrices) {
+            if (p.buy !== null) bErrors[p.currency] = t('validation.positiveDecimal');
+          }
+          setBuyErrors(bErrors);
+        } else if (err.field === 'sell') {
+          const sErrors: Record<string, string> = {};
+          for (const p of changedPrices) {
+            if (p.sell !== null) sErrors[p.currency] = t('validation.positiveDecimal');
+          }
+          setSellErrors(sErrors);
         } else if (err.field === 'reason') {
           setReasonError(t('error.reason'));
         } else {

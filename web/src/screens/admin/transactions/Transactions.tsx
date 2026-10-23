@@ -34,6 +34,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
   const [search, setSearch] = createSignal(initHash.get('q') ?? '');
   const [type, setType] = createSignal(initHash.get('type') ?? '');
   const [status, setStatus] = createSignal(initHash.get('status') ?? '');
+  const [currency, setCurrency] = createSignal(initHash.get('currency') ?? '');
+  const [channel, setChannel] = createSignal(initHash.get('channel') ?? '');
 
   const [rows, setRows] = createSignal<TransactionRow[]>([]);
   const [hasMore, setHasMore] = createSignal(false);
@@ -47,12 +49,44 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
   let activePeriodTo = '';
   let currentFetchId = 0;
 
+  function clearCurrency() {
+    setCurrency('');
+    try {
+      const h = hashParams();
+      if (h.has('currency')) {
+        h.delete('currency');
+        const qs = h.toString();
+        const base = (typeof location !== 'undefined' ? location.hash.split('?')[0] : '') || '#transactions';
+        if (typeof location !== 'undefined') location.hash = qs ? `${base}?${qs}` : base;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function clearChannel() {
+    setChannel('');
+    try {
+      const h = hashParams();
+      if (h.has('channel')) {
+        h.delete('channel');
+        const qs = h.toString();
+        const base = (typeof location !== 'undefined' ? location.hash.split('?')[0] : '') || '#transactions';
+        if (typeof location !== 'undefined') location.hash = qs ? `${base}?${qs}` : base;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   onMount(() => {
     const onHashChange = () => {
       const h = hashParams();
       if (h.has('q')) setSearch(h.get('q') ?? '');
       if (h.has('type')) setType(h.get('type') ?? '');
       if (h.has('status')) setStatus(h.get('status') ?? '');
+      setCurrency(h.get('currency') ?? '');
+      setChannel(h.get('channel') ?? '');
     };
     window.addEventListener('hashchange', onHashChange);
     onCleanup(() => window.removeEventListener('hashchange', onHashChange));
@@ -66,6 +100,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     q: string;
     typ: string;
     stat: string;
+    currency?: string;
+    channel?: string;
   }) {
     const fetchId = ++currentFetchId;
     setLoadingMore(false);
@@ -75,6 +111,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     if (opts.q) filter.q = opts.q;
     if (opts.typ) filter.type = opts.typ;
     if (opts.stat) filter.status = opts.stat;
+    if (opts.currency) filter.currency = opts.currency;
+    if (opts.channel) filter.channel = opts.channel;
 
     const since = opts.isRefresh ? heldVersion : undefined;
 
@@ -109,6 +147,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     const q = search().trim();
     const typ = type();
     const stat = status();
+    const curr = currency();
+    const ch = channel();
 
     const branchChanged = branch !== activeBranch;
     const periodChanged =
@@ -130,6 +170,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
       q,
       typ,
       stat,
+      currency: curr,
+      channel: ch,
     });
   });
 
@@ -151,6 +193,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
           q,
           typ,
           stat,
+          currency: currency(),
+          channel: channel(),
         });
       }
     }
@@ -176,6 +220,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     if (q) filter.q = q;
     if (typ) filter.type = typ;
     if (stat) filter.status = stat;
+    if (currency()) filter.currency = currency();
+    if (channel()) filter.channel = channel();
 
     setLoadingMore(true);
     try {
@@ -227,6 +273,8 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
     if (q) filter.q = q;
     if (typ) filter.type = typ;
     if (stat) filter.status = stat;
+    if (currency()) filter.currency = currency();
+    if (channel()) filter.channel = channel();
 
     try {
       const allRows = await walkPages<TransactionRow>(
@@ -272,6 +320,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
           <span>{t('searchLabel')}</span>
           <input
             type="search"
+            maxLength={100}
             placeholder={t('searchPlaceholder')}
             value={search()}
             onInput={(e) => setSearch(e.currentTarget.value)}
@@ -314,6 +363,43 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
           <NewTransactionButton api={api} branch={props.branch()} />
         </div>
       </div>
+
+      <Show when={currency() || channel()}>
+        <div style="display: flex; gap: 8px; padding: 0 24px 12px; align-items: center; flex-wrap: wrap;">
+          <Show when={currency()}>
+            {(c) => (
+              <span data-filter="currency" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: var(--bg-subtle, #f3f4f6); font-size: 13px;">
+                <span>{t('filterCurrency')}: {c()}</span>
+                <button
+                  type="button"
+                  data-clear="currency"
+                  aria-label={`${t('clearFilter')} ${t('filterCurrency')}`}
+                  style="border: none; background: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px;"
+                  onClick={clearCurrency}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </Show>
+          <Show when={channel()}>
+            {(ch) => (
+              <span data-filter="channel" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: var(--bg-subtle, #f3f4f6); font-size: 13px;">
+                <span>{t('filterChannel')}: {ch()}</span>
+                <button
+                  type="button"
+                  data-clear="channel"
+                  aria-label={`${t('clearFilter')} ${t('filterChannel')}`}
+                  style="border: none; background: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px;"
+                  onClick={clearChannel}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </Show>
+        </div>
+      </Show>
 
       <Show when={error()}>
         {(err) => (

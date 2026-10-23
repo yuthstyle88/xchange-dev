@@ -60,6 +60,18 @@ function mount(fetchFn: typeof fetch): void {
 const submitBtn = () => host.querySelector<HTMLButtonElement>('button[type="submit"]')!;
 const q = (id: string) => host.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
+function fillValid(): void {
+  for (const [name, val] of [
+    ['displayName', 'Somchai'],
+    ['identifier', '0812345678'],
+    ['password', 'pass-1234'],
+  ] as const) {
+    const el = host.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+    el.value = val;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
 /** Every way a person can try to submit: the button, and the form's own submit (Enter in a field). */
 async function trySubmit(): Promise<void> {
   submitBtn().click();
@@ -88,6 +100,7 @@ describe('SF-5: sign-up waits for the TERMS text', () => {
     mount(s.fetchFn);
     await flush();
     expect(q('terms-body')).not.toBeNull();
+    fillValid();
     submitBtn().click();
     await flush();
     expect(s.registers).toHaveLength(1);
@@ -138,6 +151,7 @@ describe('SF-5: sign-up waits for the TERMS text', () => {
     expect(q('terms-body')?.textContent).toContain('Terms body, version three.');
     expect(submitBtn().disabled).toBe(false);
 
+    fillValid();
     submitBtn().click();
     await flush();
     expect(s.registers).toHaveLength(1);

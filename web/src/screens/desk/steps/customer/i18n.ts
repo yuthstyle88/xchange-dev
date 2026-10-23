@@ -24,6 +24,9 @@ export const th = {
   tooBig: 'กรุณาใช้ไฟล์ที่มีข้อมูลและขนาดไม่เกิน 15 MB',
   noServer: 'สร้างรหัสลูกค้าไม่ได้ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่',
   sending: 'กำลังสร้างรหัสลูกค้า…',
+  nameTooLong: 'ชื่อตามพาสปอร์ตยาวได้ไม่เกิน 100 ตัวอักษร',
+  passportNoTooLong: 'เลขพาสปอร์ตยาวได้ไม่เกิน 30 ตัวอักษร',
+  dateTooEarly: 'วันที่ต้องไม่ก่อน 1920-04-02',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -50,4 +53,7 @@ export const en: Record<keyof typeof th, string> = {
   tooBig: 'Please use a non-empty file of at most 15 MB',
   noServer: 'Could not create the customer ID: no connection to the server. Please try again',
   sending: 'Creating the customer ID…',
+  nameTooLong: 'Name must be at most 100 characters',
+  passportNoTooLong: 'Passport number must be at most 30 characters',
+  dateTooEarly: 'Date must not be before 1920-04-02',
 };

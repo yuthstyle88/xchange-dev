@@ -211,7 +211,7 @@ for (const [which, path] of Object.entries(PATHS)) {
     });
 
     it("R9 a quote refused on amount: the server's message shows at the amount field", async () => {
-      const store = stubStore(path, { quote: undefined, quoteError: { field: "amount", message: "จำนวนต้องมากกว่าศูนย์" } });
+      const store = stubStore(path, { quote: undefined, quoteError: { field: "quantity", message: "จำนวนต้องมากกว่าศูนย์" } });
       await mount(store);
       const amount = control("amount") as HTMLInputElement;
       const field = amount.closest("label, .field, [data-field]") ?? amount.parentElement!;

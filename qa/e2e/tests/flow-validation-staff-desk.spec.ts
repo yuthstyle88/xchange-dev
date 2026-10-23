@@ -49,7 +49,7 @@ import {
 //   - web/src/screens/staff/parts/ReasonDialog.tsx:32-50 (`dialog.xc-dialog`, `input[type="text"]`, `.xc-dialog-actions button`)
 //   - web/src/screens/desk/steps/refunds/task.tsx:53 (`button[data-desk-task="refunds"]`)
 //   - web/src/screens/desk/steps/refunds/RefundsStep.tsx:14,54-55,76,87-96,128-136 (`[data-section="refunds"]`, `.desk-refunds-error-msg`, `[data-reversal]`, `button[data-action="post"]`, `dialog.xc-dialog`)
-//   - web/src/screens/staff/shift/ShiftCard.tsx:382-485,558-585 (`.xc-shift-card`, `[data-testid="shift-error"]`, `[data-testid="shift-open-count"]`, `[data-testid="shift-count-form"]`, `[data-denomination-row]`, `input[data-denomination-id]`, `[data-testid="shift-count-save"]`, `[data-testid="shift-count-cancel"]`, `[data-testid="shift-verify"]`)
+//   - web/src/screens/staff/shift/ShiftCard.tsx:382-485,558-585 (`.xc-shift-card`, `[data-testid="shift-error"]`, `[data-testid="shift-open-count"]`, `[data-testid="shift-count-form"]`, `[data-denomination-row]`, `input[data-denomination-id]`, `[data-testid="shift-count-save"]`, `button.xc-shift-cancel-btn`, `[data-testid="shift-verify"]`)
 //   - web/src/screens/staff/holds/HoldsCard.tsx:153-208 (`[data-card="holds"]`, `[data-testid="holds-error"]`, `[data-testid="holds-form"]`, `[data-testid="holds-key"]`, `[data-testid="holds-find"]`, `[data-customer-id]`, `[data-testid="holds-reason"]`, `[data-testid="holds-place"]`, `[data-hold-id]`)
 //   - web/src/screens/staff/transfers/TransfersCard.tsx:361-493 (`[data-card="transfers"]`, `[data-testid="transfer-new"]`, `[data-testid="transfer-error"]`, `[data-testid="transfer-form"]`, `[data-testid="transfer-kind"]`, `[data-testid="transfer-note"]`, `[data-denomination-row]`, `input[data-denomination-id]`, `[data-testid="transfer-save"]`)
 //   - web/src/screens/staff/floor/FloorCard.tsx:242-248,293-326 (`.xc-floor-card`, `[data-testid="floor-error"]`, `[data-testid="floor-target-form"]`, `input[data-currency="USD"]`, `[data-testid="floor-target-save"]`)
@@ -150,7 +150,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
 
           const openCountBtn = teller.locator('[data-testid="shift-open-count"]');
           await expect(openCountBtn, 'shift-open-count visible (ShiftCard.tsx:419)').toBeVisible({ timeout: 15_000 });
-          await openCountBtn.click();
+          await openCountBtn.click({ timeout: 15_000 });
 
           const countForm = teller.locator('[data-testid="shift-count-form"]');
           await expect(countForm, 'shift-count-form open (ShiftCard.tsx:464)').toBeVisible({ timeout: 15_000 });
@@ -161,10 +161,11 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           expect(inputCount, 'at least one denomination input on shift-count-form').toBeGreaterThan(0);
 
           // Case 1: all denomination inputs empty ('') -> count is submitted and the server refuses it with 400 validationFailed (#4790). The refusal shows in shift-error.
+          console.log(`[V-staff] shift-count empty (${lang})`);
           for (let i = 0; i < inputCount; i++) {
-            await denomInputs.nth(i).fill('');
+            await denomInputs.nth(i).fill('', { timeout: 15_000 });
           }
-          await teller.locator('[data-testid="shift-count-save"]').click();
+          await teller.locator('[data-testid="shift-count-save"]').click({ timeout: 15_000 });
           const shiftErr = teller.locator('[data-testid="shift-error"]');
           await expect(shiftErr, `shift-error visible on empty count (${lang}, ShiftCard.tsx:386)`).toBeVisible({
             timeout: 10_000,
@@ -176,9 +177,10 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           // Cases 2–4: negative ('-1'), not a number ('abc'), decimal ('1.5') -> `countSubmit` 400 validationFailed.
           const firstInput = denomInputs.first();
           for (const badQty of ['-1', 'abc', '1.5']) {
-            await firstInput.fill(badQty);
+            console.log(`[V-staff] shift-count ${badQty} (${lang})`);
+            await firstInput.fill(badQty, { timeout: 15_000 });
             const countRes = await posted(teller, /^\/api\/cash-counts$/, () =>
-              teller.locator('[data-testid="shift-count-save"]').click(),
+              teller.locator('[data-testid="shift-count-save"]').click({ timeout: 15_000 }),
             );
             expect(countRes.ok, `POST /api/cash-counts (${badQty}, ${lang}) must be refused`).toBe(false);
             expect(countRes.text, `POST /api/cash-counts (${badQty}, ${lang}) status`).toMatch(/^400\b/);
@@ -192,7 +194,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             ).toHaveCount(0);
           }
 
-          await teller.locator('[data-testid="shift-count-cancel"]').click();
+          await countForm.locator('button.xc-shift-cancel-btn').click({ timeout: 15_000 });
         }
         await shot(teller, 'staff', 'validation-shift-count');
 

@@ -574,6 +574,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
               <input
                 id="employee-search"
                 type="search"
+                maxLength={100}
                 placeholder={t('staffSearchPlaceholder')}
                 value={searchStaff()}
                 onInput={(e) => setSearchStaff(e.currentTarget.value)}

@@ -22,6 +22,9 @@ export const th = {
   noTransactionsToExport: 'ไม่มีรายการให้ส่งออก',
   dialogTitle: 'รายละเอียดรายการ',
   outOfScope: 'สาขานี้อยู่นอกขอบเขตของบัญชีนี้',
+  filterCurrency: 'สกุลเงิน',
+  filterChannel: 'ช่องทาง',
+  clearFilter: 'ล้าง',
 };
 
 export const en = {
@@ -46,4 +49,7 @@ export const en = {
   noTransactionsToExport: 'No transactions to export',
   dialogTitle: 'Transaction details',
   outOfScope: 'This branch is outside the scope of this account',
+  filterCurrency: 'Currency',
+  filterChannel: 'Channel',
+  clearFilter: 'Clear',
 };

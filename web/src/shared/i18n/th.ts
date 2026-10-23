@@ -130,6 +130,19 @@ export const th = {
   'kioskCancel.reason.customerChangedMind': 'ลูกค้าเปลี่ยนใจ',
   'kioskCancel.reason.duplicate': 'คำขอซ้ำ',
   'kioskCancel.reason.other': 'อื่น ๆ',
+  'kioskCancel.noteRequired': 'กรุณาระบุหมายเหตุสำหรับ "อื่น ๆ"',
+  'kioskCancel.noteTooLong': 'หมายเหตุยาวได้ไม่เกิน {max} ตัวอักษร',
+  'input.invalid': '{field} ไม่ถูกต้อง',
+  'input.invalidNoField': 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบค่าที่กรอก',
+  'input.code.invalidPhone': 'เบอร์โทรศัพท์ไม่ถูกต้อง',
+  'input.code.phoneRequired': 'กรุณากรอกเบอร์โทรศัพท์',
+  'input.code.invalidCode': 'รหัสยืนยันไม่ถูกต้อง',
+  'input.code.codeExpired': 'รหัสยืนยันหมดอายุ กรุณาขอรหัสใหม่',
+  'input.code.tooManyAttempts': 'ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่',
+  'input.code.invalidCredentials': 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+  'input.code.nameTooLong': 'ชื่อที่แสดงยาวได้ไม่เกิน 100 ตัวอักษร',
+  'input.code.quoteRefused': 'ทำคำขอด้วยข้อมูลนี้ไม่ได้ กรุณาตรวจสอบค่าที่กรอก',
+  'input.code.expiresAtNotInFuture': 'วันหมดอายุต้องเป็นเวลาในอนาคต',
 } as const;
 
 export type Key = keyof typeof th;

@@ -15,6 +15,7 @@ export interface CampaignRulesEditorProps {
   rules: RuleForm[];
   readOnly: boolean;
   errors: RuleError[];
+  rulesError?: string | null;
   onChange(rules: RuleForm[]): void;
 }
 
@@ -67,6 +68,14 @@ export function CampaignRulesEditor(props: CampaignRulesEditorProps): JSX.Elemen
           </button>
         </Show>
       </div>
+
+      <Show when={props.rulesError}>
+        {(msg) => (
+          <div class="xc-field-error" data-field-error="rules">
+            {msg()}
+          </div>
+        )}
+      </Show>
 
       <Index each={props.rules}>
         {(rule, idx) => {

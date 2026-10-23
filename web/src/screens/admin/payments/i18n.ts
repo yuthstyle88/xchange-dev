@@ -69,6 +69,8 @@ export const th: Record<string, string> = {
   // confirms
   confirmReload: 'โหลดล่าสุดและทิ้งการแก้ไขที่ยังไม่บันทึก?',
   confirmBranch: 'เปลี่ยนสาขาและทิ้งการแก้ไขวิธีชำระเงินที่ยังไม่บันทึก?',
+  channelDirectionRequired: 'ช่องทางที่เปิดต้องเลือกการรับเงินหรือจ่ายเงินอย่างน้อยหนึ่งประเภท',
+  buyAndSellRequired: 'ต้องเปิดช่องทางสำหรับการซื้อและขายอย่างน้อยประเภทละหนึ่งช่องทาง',
 };
 
 export const en: Record<string, string> = {
@@ -140,4 +142,6 @@ export const en: Record<string, string> = {
   // confirms
   confirmReload: 'Reload latest and discard unsaved edits?',
   confirmBranch: 'Change branch and discard unsaved payment method edits?',
+  channelDirectionRequired: 'Each enabled channel must select at least one direction (receive or pay).',
+  buyAndSellRequired: 'Enable at least one channel for buying and at least one for selling.',
 };

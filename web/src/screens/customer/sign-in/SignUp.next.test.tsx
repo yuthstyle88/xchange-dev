@@ -70,9 +70,22 @@ describe('APP-7d (#4648): sign-up returns to ?next= and keeps next on the sign-i
     return navigate;
   }
 
+  function fillValid(): void {
+    for (const [name, val] of [
+      ['displayName', 'Somchai'],
+      ['identifier', '0812345678'],
+      ['password', 'pass-1234'],
+    ] as const) {
+      const el = host.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
   async function landsOn(search: string, expected: string): Promise<void> {
     const navigate = renderSignUp(search);
     await waitForTerms(host);
+    fillValid();
     host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
     expect(navigate).toHaveBeenCalledWith(expected);
@@ -125,6 +138,7 @@ describe('APP-7d (#4648): sign-up returns to ?next= and keeps next on the sign-i
     registerStatus = 409;
     const navigate = renderSignUp('?next=%2Fapp%2Fqueue%3Fbranch%3DMAIN%26from%3Dsign-in');
     await waitForTerms(host);
+    fillValid();
     host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
     await vi.waitFor(() =>
       expect(fetchFn.mock.calls.filter((c) => String(c[0]) === '/api/app/register').length).toBeGreaterThan(0),

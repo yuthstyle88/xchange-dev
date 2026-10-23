@@ -117,6 +117,18 @@ describe('customer sign-in and sign-up (APP-7 #998)', () => {
         host.querySelector<HTMLButtonElement>('button');
       expect(submitBtn, 'sign-up submit button').not.toBeNull();
       await waitForTerms(host);
+      const fillValid = () => {
+        for (const [name, val] of [
+          ['displayName', 'Somchai'],
+          ['identifier', '0812345678'],
+          ['password', 'pass-1234'],
+        ] as const) {
+          const el = host.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      };
+      fillValid();
       submitBtn!.click();
 
       await vi.waitFor(() => {
