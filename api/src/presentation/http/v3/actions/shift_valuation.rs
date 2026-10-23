@@ -114,6 +114,13 @@ impl ComputeAction for ShiftValuationAction {
                 }
             });
 
+            let fmt_amount = |mut d: Decimal| {
+                d = d.normalize();
+                if d.scale() < 2 {
+                    d.rescale(2);
+                }
+                d.to_string()
+            };
             let currencies: Vec<ShiftValuationCurrency> = codes
                 .iter()
                 .map(|&code| {
@@ -122,8 +129,8 @@ impl ComputeAction for ShiftValuationAction {
                     let needs_rate = code.as_str() != "THB";
                     ShiftValuationCurrency {
                         currency: code.as_str().to_string(),
-                        opening: MoneyDto(format!("{:.2}", o_c.value())),
-                        current: MoneyDto(format!("{:.2}", e_c.value())),
+                        opening: MoneyDto(fmt_amount(o_c.value())),
+                        current: MoneyDto(fmt_amount(e_c.value())),
                         needs_rate,
                     }
                 })

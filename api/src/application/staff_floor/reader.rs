@@ -103,7 +103,11 @@ impl StaffFloorReader {
                 .map(|target| {
                     let mut amounts = HashMap::new();
                     for (code, money) in target.amounts.non_zero() {
-                        amounts.insert(code.as_str().to_string(), format!("{:.2}", money.value()));
+                        let mut d = money.value().normalize();
+                        if d.scale() < 2 {
+                            d.rescale(2);
+                        }
+                        amounts.insert(code.as_str().to_string(), d.to_string());
                     }
                     StaffFloorTarget {
                         amounts,
@@ -119,7 +123,11 @@ impl StaffFloorReader {
                 .map(|safe| {
                     let mut map = HashMap::new();
                     for (code, money) in safe.non_zero() {
-                        map.insert(code.as_str().to_string(), format!("{:.2}", money.value()));
+                        let mut d = money.value().normalize();
+                        if d.scale() < 2 {
+                            d.rescale(2);
+                        }
+                        map.insert(code.as_str().to_string(), d.to_string());
                     }
                     map
                 });

@@ -1240,12 +1240,14 @@ impl CashPostings for LedgerCashPostings {
     ) -> BoxFuture<'a, AppResult<Balances>> {
         Box::pin(async move {
             let kind = kind_of(place);
-            let rows: Vec<(String, Decimal)> = match place {
+            let rows: Vec<(String, Decimal, Option<i16>)> = match place {
                 CashPlace::Drawer(shift) => {
                     sqlx::query_as(
-                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                        "SELECT a.currency::text, SUM(e.quantity_signed), c.minor_unit \
+                         FROM ledger_entries e \
                          JOIN cash_accounts a ON a.id = e.account_id \
-                         WHERE a.kind = $1 AND a.shift_id = $2 GROUP BY a.currency",
+                         LEFT JOIN currencies c ON c.code = a.currency \
+                         WHERE a.kind = $1 AND a.shift_id = $2 GROUP BY a.currency, c.minor_unit",
                     )
                     .bind(kind.as_str())
                     .bind(shift)
@@ -1255,9 +1257,11 @@ impl CashPostings for LedgerCashPostings {
                 CashPlace::Safe(_) | CashPlace::InTransit(_) | CashPlace::Variance(_) => {
                     let branch = branch_of(tx, place).await?;
                     sqlx::query_as(
-                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                        "SELECT a.currency::text, SUM(e.quantity_signed), c.minor_unit \
+                         FROM ledger_entries e \
                          JOIN cash_accounts a ON a.id = e.account_id \
-                         WHERE a.kind = $1 AND a.branch_id = $2 GROUP BY a.currency",
+                         LEFT JOIN currencies c ON c.code = a.currency \
+                         WHERE a.kind = $1 AND a.branch_id = $2 GROUP BY a.currency, c.minor_unit",
                     )
                     .bind(kind.as_str())
                     .bind(branch)
@@ -1266,9 +1270,11 @@ impl CashPostings for LedgerCashPostings {
                 }
                 CashPlace::Customer | CashPlace::Bank => {
                     sqlx::query_as(
-                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                        "SELECT a.currency::text, SUM(e.quantity_signed), c.minor_unit \
+                         FROM ledger_entries e \
                          JOIN cash_accounts a ON a.id = e.account_id \
-                         WHERE a.kind = $1 GROUP BY a.currency",
+                         LEFT JOIN currencies c ON c.code = a.currency \
+                         WHERE a.kind = $1 GROUP BY a.currency, c.minor_unit",
                     )
                     .bind(kind.as_str())
                     .fetch_all(&mut **tx)
@@ -1276,19 +1282,30 @@ impl CashPostings for LedgerCashPostings {
                 }
             };
             let mut pairs = Vec::new();
-            for (code, sum) in rows {
-                let sum = sum.normalize();
-                if sum <= Decimal::ZERO || sum.scale() > 2 {
+            for (code, sum, minor_unit) in rows {
+                let code = CurrencyCode::parse(code.trim()).map_err(|e| {
+                    AppError::Internal(format!("invalid currency code in cash_accounts: {e}"))
+                })?;
+                let max_scale = minor_unit.unwrap_or(2).max(0) as u32;
+                let mut d = sum.normalize();
+                if d.scale() > max_scale {
+                    return Err(AppError::Internal(format!(
+                        "ledger sum for {code} at {place:?} has scale {} > minor_unit {max_scale}: {sum}",
+                        d.scale()
+                    )));
+                }
+                if d <= Decimal::ZERO {
                     continue;
                 }
-                let Ok(code) = CurrencyCode::parse(code.trim()) else {
-                    continue;
-                };
-                if let Ok(d) = Decimal::try_from_i128_with_scale(minor(sum)?, 2)
-                    && let Ok(m) = ForeignAmount::checked_from_decimal(d)
-                {
-                    pairs.push((code, m));
+                if d.scale() < 2 {
+                    d.rescale(2);
                 }
+                let m = ForeignAmount::checked_from_decimal(d).map_err(|_| {
+                    AppError::Internal(format!(
+                        "ledger sum for {code} at {place:?} is out of range: {sum}"
+                    ))
+                })?;
+                pairs.push((code, m));
             }
             Ok(Balances::of(&pairs))
         })
@@ -1301,13 +1318,15 @@ impl CashPostings for LedgerCashPostings {
     ) -> BoxFuture<'a, AppResult<Option<PlaceActivity>>> {
         Box::pin(async move {
             let kind = kind_of(place);
-            let rows: Vec<(String, Decimal)> = match place {
+            let rows: Vec<(String, Decimal, Option<i16>)> = match place {
                 CashPlace::Drawer(shift) => {
                     sqlx::query_as(
-                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                        "SELECT a.currency::text, SUM(e.quantity_signed), c.minor_unit \
+                         FROM ledger_entries e \
                          JOIN cash_accounts a ON a.id = e.account_id \
+                         LEFT JOIN currencies c ON c.code = a.currency \
                          WHERE a.kind = $1 AND a.shift_id = $2 \
-                         GROUP BY a.currency ORDER BY a.currency",
+                         GROUP BY a.currency, c.minor_unit ORDER BY a.currency",
                     )
                     .bind(kind.as_str())
                     .bind(shift)
@@ -1317,10 +1336,12 @@ impl CashPostings for LedgerCashPostings {
                 CashPlace::Safe(_) | CashPlace::InTransit(_) | CashPlace::Variance(_) => {
                     let branch = branch_of(tx, place).await?;
                     sqlx::query_as(
-                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                        "SELECT a.currency::text, SUM(e.quantity_signed), c.minor_unit \
+                         FROM ledger_entries e \
                          JOIN cash_accounts a ON a.id = e.account_id \
+                         LEFT JOIN currencies c ON c.code = a.currency \
                          WHERE a.kind = $1 AND a.branch_id = $2 \
-                         GROUP BY a.currency ORDER BY a.currency",
+                         GROUP BY a.currency, c.minor_unit ORDER BY a.currency",
                     )
                     .bind(kind.as_str())
                     .bind(branch)
@@ -1329,10 +1350,12 @@ impl CashPostings for LedgerCashPostings {
                 }
                 CashPlace::Customer | CashPlace::Bank => {
                     sqlx::query_as(
-                        "SELECT a.currency::text, SUM(e.quantity_signed) FROM ledger_entries e \
+                        "SELECT a.currency::text, SUM(e.quantity_signed), c.minor_unit \
+                         FROM ledger_entries e \
                          JOIN cash_accounts a ON a.id = e.account_id \
+                         LEFT JOIN currencies c ON c.code = a.currency \
                          WHERE a.kind = $1 \
-                         GROUP BY a.currency ORDER BY a.currency",
+                         GROUP BY a.currency, c.minor_unit ORDER BY a.currency",
                     )
                     .bind(kind.as_str())
                     .fetch_all(&mut **tx)
@@ -1343,14 +1366,26 @@ impl CashPostings for LedgerCashPostings {
                 return Ok(None);
             }
             let mut pairs = Vec::with_capacity(rows.len());
-            for (code, sum) in rows {
+            for (code, sum, minor_unit) in rows {
                 let code = CurrencyCode::parse(code.trim()).map_err(|e| {
                     AppError::Internal(format!("invalid currency code in cash_accounts: {e}"))
                 })?;
-                let d = Decimal::try_from_i128_with_scale(minor(sum)?, 2)
-                    .map_err(|_| AppError::Internal("ledger amount out of range".into()))?;
-                let qd = QuantityDelta::from_decimal(d)
-                    .map_err(|_| AppError::Internal("ledger amount out of range".into()))?;
+                let max_scale = minor_unit.unwrap_or(2).max(0) as u32;
+                let mut d = sum.normalize();
+                if d.scale() > max_scale {
+                    return Err(AppError::Internal(format!(
+                        "ledger sum for {code} at {place:?} has scale {} > minor_unit {max_scale}: {sum}",
+                        d.scale()
+                    )));
+                }
+                if d.scale() < 2 {
+                    d.rescale(2);
+                }
+                let qd = QuantityDelta::from_decimal(d).map_err(|_| {
+                    AppError::Internal(format!(
+                        "ledger sum for {code} at {place:?} is out of range: {sum}"
+                    ))
+                })?;
                 pairs.push((code, qd));
             }
             pairs.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
