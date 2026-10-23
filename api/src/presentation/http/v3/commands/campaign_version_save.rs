@@ -13,7 +13,7 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{Bound, Sign};
+use xc_kernel::money::{Bound, Money, Sign};
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
 
 use crate::bootstrap::AppState;
@@ -244,19 +244,60 @@ impl CommandAction for CampaignVersionSaveCommand {
             let registry = CalculatorRegistry::new();
             let mut checked = Vec::with_capacity(rules.len());
             for (idx, rule) in rules.iter().enumerate() {
-                if rule
-                    .eligibility
-                    .as_object()
-                    .is_some_and(|obj| obj.contains_key("requiresCoupon"))
-                {
-                    return Err(V3Error::new(
-                        "validationFailed",
-                        Some("rules.eligibility.requiresCoupon"),
-                        format!(
-                            "rules[{idx}]: requiresCoupon must be set on the rule, not in eligibility"
-                        ),
-                        StatusCode::BAD_REQUEST,
-                    ));
+                if let Some(obj) = rule.eligibility.as_object() {
+                    if obj.contains_key("requiresCoupon") {
+                        return Err(V3Error::new(
+                            "validationFailed",
+                            Some("rules.eligibility.requiresCoupon"),
+                            format!(
+                                "rules[{idx}]: requiresCoupon must be set on the rule, not in eligibility"
+                            ),
+                            StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                    if let Some(currencies) = obj.get("currencies").filter(|v| !v.is_null()) {
+                        let Some(list) = currencies.as_array() else {
+                            return Err(V3Error::new(
+                                "validationFailed",
+                                Some("rules.eligibility.currencies"),
+                                format!("rules[{idx}]: currencies must be an array"),
+                                StatusCode::BAD_REQUEST,
+                            ));
+                        };
+                        for item in list {
+                            let code = item.as_str().unwrap_or("");
+                            v3::input::must_exist(
+                                tx,
+                                "rules.eligibility.currencies",
+                                v3::input::RowRef::Currency,
+                                code,
+                            )
+                            .await
+                            .map_err(|mut err| {
+                                if err.code == "validationFailed" {
+                                    err.message = format!("rules[{idx}]: {}", err.message);
+                                }
+                                err
+                            })?;
+                        }
+                    }
+                    if let Some(min_thb) = obj.get("minThb").filter(|v| !v.is_null()) {
+                        let text = match min_thb {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            _ => String::new(),
+                        };
+                        v3::input::decimal(
+                            "rules.eligibility.minThb",
+                            &text,
+                            Bound::numeric(20, 2, Sign::NonNegative)
+                                .at_most(Money::MAX_INPUT_UNITS),
+                        )
+                        .map_err(|mut err| {
+                            err.message = format!("rules[{idx}]: {}", err.message);
+                            err
+                        })?;
+                    }
                 }
                 let Some(calc) = registry.get(&rule.benefit_type) else {
                     return Err(V3Error::new(
