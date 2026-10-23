@@ -42,6 +42,7 @@ const RATES = makePublishedRatesData({
 const BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยาม',
       address: null,
@@ -114,8 +115,8 @@ function unmount() {
 
 async function settle(ms = 0) {
   await vi.advanceTimersByTimeAsync(ms);
-  for (let i = 0; i < 5; i += 1) {
-    await vi.advanceTimersByTimeAsync(0);
+  for (let i = 0; i < 10; i += 1) {
+    await vi.advanceTimersByTimeAsync(20);
   }
 }
 

@@ -7,6 +7,7 @@ import { en, th, zh } from './i18n';
 const t = screenT('customer.rate-display', { th, en, zh });
 
 export interface BookingQrProps {
+  /** The branch's current code. /app/queue resolves it through the code-keyed queue-rates (CB-7). */
   branchCode?: string;
   bookingEnabled?: boolean;
 }

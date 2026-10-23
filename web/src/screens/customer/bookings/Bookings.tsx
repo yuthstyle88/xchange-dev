@@ -136,8 +136,8 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
           throw new Error('missing branch timezone');
         }
         getTodayInTimezone(b.timezone);
-        names.set(b.code, b.name);
-        timezones.set(b.code, b.timezone);
+        names.set(b.id, b.name);
+        timezones.set(b.id, b.timezone);
       }
       setBranchNames(names);
       setBranchTimezones(timezones);

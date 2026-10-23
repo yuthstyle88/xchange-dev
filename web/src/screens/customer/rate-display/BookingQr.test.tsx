@@ -68,6 +68,7 @@ const RATES = makePublishedRatesData({
 const BRANCHES_ENABLED: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยาม',
       address: null,
@@ -77,6 +78,7 @@ const BRANCHES_ENABLED: PublicBranchesData = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาชิดลม',
       address: null,
@@ -91,6 +93,7 @@ const BRANCHES_ENABLED: PublicBranchesData = {
 const BRANCHES_DISABLED: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยาม',
       address: null,

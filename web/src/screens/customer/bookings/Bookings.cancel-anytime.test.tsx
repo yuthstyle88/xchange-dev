@@ -28,6 +28,7 @@ function makeFetch() {
       return jsonResponse(200, {
         branches: [
           {
+            id: BRANCH_ID,
             code: BRANCH_ID,
             name: 'Bangkok HQ',
             address: null,

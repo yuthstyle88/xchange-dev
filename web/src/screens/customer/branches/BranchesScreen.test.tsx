@@ -49,6 +49,7 @@ interface Call {
 const SAMPLE_BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสยามพารากอน',
       address: 'ชั้น G สยามพารากอน 991 ถ.พระราม 1 แขวงปทุมวัน เขตปทุมวัน กรุงเทพฯ 10330',
@@ -61,6 +62,7 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาสนามบินดอนเมือง',
       address: null,
@@ -464,6 +466,7 @@ describe('BranchesScreen (C08 / APP-12)', () => {
           body: {
             branches: [
               {
+                id: 'XC-B03',
                 code: 'XC-B03',
                 name: 'สาขาทองหล่อ',
                 address: 'ทองหล่อ',

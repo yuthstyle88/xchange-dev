@@ -832,3 +832,28 @@ async fn lg4_exchange_for_teller(
         .await
         .expect("the exchange posts to the teller's drawer");
 }
+
+#[tokio::test]
+async fn a_count_with_no_lines_is_refused_and_writes_nothing() {
+    let db = Db::fresh().await;
+    let main = db.branch("main").await;
+    let teller = db.person("Ploy", &[Role::Teller]).await;
+    let counts = db.counts();
+    let before = db.count("SELECT count(*) FROM cash_counts").await;
+
+    let res = counts
+        .submit(&teller, cmd(&main, None, CountKind::Open, vec![]), at(0))
+        .await;
+    assert!(
+        matches!(res, Err(AppError::Validation(_))),
+        "expected AppError::Validation(_), got {res:?}"
+    );
+    assert_eq!(db.count("SELECT count(*) FROM cash_counts").await, before);
+
+    let zero_lines = vec![CountLine::new("THB", db.denomination("THB", "1000").await, 0)];
+    counts
+        .submit(&teller, cmd(&main, None, CountKind::Open, zero_lines), at(1))
+        .await
+        .expect("an explicit 0 line is accepted");
+}
+

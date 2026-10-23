@@ -50,3 +50,10 @@ Each ticket's tests use a fixture branch whose `code` differs from its `id`. The
 that labels show the code, and (where the screen reads `?branch=`) that both an id and a code in the URL resolve.
 Existing tests that pin `?branch=<code>` or a request `branch: <code>` are listed in each ticket's scope, where the
 fixture makes them differ.
+
+## 5. Added after the CB-Home and CB-Board blocks (claude/e8020026, 2026-10-23 ICT)
+
+| # | Rule |
+|---|---|
+| CB-8 | **Home with `?branch=` set and a failed first branch-list read:** the branch cannot be resolved (CB-2 needs the matched entry's current code), so the rate section **shows nothing** (no rates, rate error, rate Retry or "Loading rates…"), the same as `web-silent-failures.md` §8.2 R4-2's no-branch case. The branch error and its Retry show; when the Retry loads the list, the branch resolves and the rates read runs. This **supersedes** the `?branch` row R4-2 implied and #4783 pinned (row (e) of `HomeScreen.later-failure.test.tsx`); #4833 rewrites that row. |
+| CB-9 | **Rate board tests:** the rates read now waits one more async step (the branch list, CB-6). Tests that settle with a fixed tick count get more ticks, or await the list request. No assertion changes (#4835). |

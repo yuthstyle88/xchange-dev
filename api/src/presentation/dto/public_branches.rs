@@ -15,6 +15,9 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "public_branches.ts")]
 pub struct PublicBranchDto {
+    /// The branch's stable key (`branches.id`); send this as `branch`. `code` is a display label
+    /// and can change.
+    pub id: String,
     pub code: String,
     pub name: String,
     pub address: Option<String>,

@@ -9,6 +9,7 @@ const disposers: Array<() => void> = [];
 const SAMPLE_BRANCHES: PublicBranchesData = {
   branches: [
     {
+      id: 'XC-B01',
       code: 'XC-B01',
       name: 'สาขาสีลม คอมเพล็กซ์',
       address: null,
@@ -18,6 +19,7 @@ const SAMPLE_BRANCHES: PublicBranchesData = {
       queueOpen: true,
     },
     {
+      id: 'XC-B02',
       code: 'XC-B02',
       name: 'สาขาสนามบินดอนเมือง',
       address: null,

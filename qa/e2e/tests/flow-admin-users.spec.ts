@@ -400,7 +400,9 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
 
       // 2. adminGroupSave (POST /api/admin/groups/save, PermissionMatrix.tsx:31,171,293,321-361)
       await groupRow.locator(`button[data-matrix-edit="${groupCode}"]`).click(); // PermissionMatrix.tsx:293
-      const editor = matrixPanel.locator('.users-matrix-panel:not([data-matrix-add-form])'); // PermissionMatrix.tsx:321
+      const editor = matrixPanel.locator(
+        '.users-matrix-panel:not([data-matrix-add-form]):not([data-matrix-approvals])',
+      ); // PermissionMatrix.tsx:339, ApprovalsSection.tsx:77
       await expect(editor).toBeVisible({ timeout: 10_000 });
 
       const reportsPerm = editor.locator('input[type="checkbox"][data-matrix-perm="MarketingPerformance"]'); // PermissionMatrix.tsx:332
@@ -586,7 +588,9 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
         const ownRow = matrixPanel.locator(`tr[data-matrix-group="${ownCode}"]`); // PermissionMatrix.tsx:267
         await expect(ownRow).toBeVisible({ timeout: 15_000 });
         await ownRow.locator(`button[data-matrix-edit="${ownCode}"]`).click(); // PermissionMatrix.tsx:293
-        const editor = matrixPanel.locator('.users-matrix-panel:not([data-matrix-add-form])'); // PermissionMatrix.tsx:321
+        const editor = matrixPanel.locator(
+          '.users-matrix-panel:not([data-matrix-add-form]):not([data-matrix-approvals])',
+        ); // PermissionMatrix.tsx:339, ApprovalsSection.tsx:77
         await expect(editor).toBeVisible({ timeout: 10_000 });
 
         const sysSettingsEditCb = editor.locator('input[type="checkbox"][data-matrix-perm="SystemSettings"]'); // PermissionMatrix.tsx:332

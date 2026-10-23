@@ -329,3 +329,31 @@
   font-size: 0.8125rem;
   color: var(--color-danger-text, #991b1b);
 }
+
+/* #4842 SIM-1/SIM-2: the Simulate scenario row (branch, currency, amount) beside the Simulate button. */
+.xc-campaign-sim-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.xc-campaign-sim-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-secondary, #475569);
+}
+
+.xc-campaign-sim-field .xc-input,
+.xc-campaign-sim-field .xc-select {
+  min-width: 7rem;
+}
+
+.xc-campaign-sim-note {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary, #475569);
+}

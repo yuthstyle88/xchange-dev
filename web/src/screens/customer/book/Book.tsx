@@ -28,6 +28,7 @@ export interface BookScreenProps {
 }
 
 export interface PublicBranch {
+  id: string;
   code: string;
   name: string;
   timezone: string;
@@ -161,10 +162,11 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       setBranchesLoading(false);
 
       const qBranch = new URLSearchParams(window.location.search).get('branch') ?? (typeof props.branchId === 'string' ? props.branchId : '');
-      const activeBranch = qBranch && list.some((b) => b.code === qBranch) ? qBranch : branchId();
-      if (activeBranch && list.some((b) => b.code === activeBranch)) {
+      const matchedBranch = qBranch ? (list.find((b) => b.id === qBranch) ?? list.find((b) => b.code === qBranch)) : undefined;
+      const activeBranch = matchedBranch ? matchedBranch.id : (list.some((b) => b.id === branchId()) ? branchId() : '');
+      if (activeBranch) {
         setBranchId(activeBranch);
-        const br = list.find((b) => b.code === activeBranch);
+        const br = list.find((b) => b.id === activeBranch);
         if (!br?.timezone) {
           throw new Error('missing branch timezone');
         }
@@ -192,6 +194,15 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
 
   let slotsSeq = 0;
   let slotSelectEl: HTMLSelectElement | undefined;
+  let branchSelectEl: HTMLSelectElement | undefined;
+
+  createEffect(() => {
+    branches();
+    const id = branchId();
+    if (branchSelectEl) {
+      branchSelectEl.value = id;
+    }
+  });
 
   createEffect(() => {
     slots();
@@ -418,6 +429,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           </Show>
 
           <select
+            ref={branchSelectEl}
             id="branchId"
             name="branchId"
             class="xc-book-select"
@@ -430,7 +442,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               setSlotId('');
               void updatePreview();
               if (val) {
-                const br = branches().find((b) => b.code === val);
+                const br = branches().find((b) => b.id === val);
                 try {
                   if (!br?.timezone) {
                     throw new Error('missing branch timezone');
@@ -456,7 +468,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             <option value="">{branches().length === 0 ? t('noBranches') : t('selectBranch')}</option>
             <For each={branches()}>
               {(b) => (
-                <option value={b.code}>
+                <option value={b.id}>
                   {b.name} ({b.code})
                 </option>
               )}
@@ -545,9 +557,9 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             }}
           >
             <option value="">{slotsLoading() ? t('loading') : (slots().length === 0 ? t('noSlots') : t('selectSlot'))}</option>
-            <For each={branches().find((b) => b.code === branchId()) ? slots() : []}>
+            <For each={branches().find((b) => b.id === branchId()) ? slots() : []}>
               {(slot) => {
-                const br = branches().find((b) => b.code === branchId())!;
+                const br = branches().find((b) => b.id === branchId())!;
                 return (
                   <option
                     data-testid="slot-option"

@@ -92,6 +92,7 @@ function makeHarness(steps: StepAnswer[]) {
       return jsonResponse(200, {
         branches: [
           {
+            id: 'bkk-1',
             code: 'bkk-1',
             name: 'bkk-1',
             address: null,
