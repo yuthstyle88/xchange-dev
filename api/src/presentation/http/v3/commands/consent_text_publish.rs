@@ -75,7 +75,14 @@ impl CommandAction for ConsentTextPublishCommand {
             ));
         }
 
-        input::text("body", &input.body, TextBound { min: 1, max: 20_000 })?;
+        input::text(
+            "body",
+            &input.body,
+            TextBound {
+                min: 1,
+                max: 20_000,
+            },
+        )?;
 
         let org_id: Option<Uuid> =
             sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
