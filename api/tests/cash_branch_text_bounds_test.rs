@@ -180,13 +180,7 @@ impl TestDb {
     }
 }
 
-async fn lg4_fund(
-    pool: &PgPool,
-    from: CashPlace,
-    to: CashPlace,
-    currency: &str,
-    amount: &str,
-) {
+async fn lg4_fund(pool: &PgPool, from: CashPlace, to: CashPlace, currency: &str, amount: &str) {
     use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
     use xc_cash::domain::posting::{CashPostings, PostingRequest};
     let mut tx = pool.begin().await.expect("begin");
