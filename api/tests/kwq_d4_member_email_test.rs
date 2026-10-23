@@ -28,8 +28,13 @@ fn keys() -> Arc<PiiKeys> {
 
 /// An EMAIL identity of `customer`, sealed as the service seals it.
 async fn email(pool: &PgPool, customer: &str, address: &str, status: &str, verified: bool, n: u8) {
-    let sealed = PiiCipher::new(keys()).encrypt(format!("{customer}EMAIL").as_bytes(), address.as_bytes());
-    let verified_at = if verified { "now() - interval '1 day'" } else { "NULL" };
+    let sealed =
+        PiiCipher::new(keys()).encrypt(format!("{customer}EMAIL").as_bytes(), address.as_bytes());
+    let verified_at = if verified {
+        "now() - interval '1 day'"
+    } else {
+        "NULL"
+    };
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO customer_identities (id, organization_id, customer_id, type, encrypted_value, \
          key_id, lookup_hash, verified_at, status) \
@@ -54,11 +59,22 @@ async fn the_verified_active_email_is_answered_decrypted_with_the_members_langua
         .execute(&db.pool)
         .await
         .unwrap();
-    email(&db.pool, CUSTOMER_ALICE_CUST_ID, "alice@example.com", "ACTIVE", true, 1).await;
+    email(
+        &db.pool,
+        CUSTOMER_ALICE_CUST_ID,
+        "alice@example.com",
+        "ACTIVE",
+        true,
+        1,
+    )
+    .await;
 
     let emails = PgMemberEmails::new(db.pool.clone(), keys());
     assert_eq!(
-        emails.verified_email(CUSTOMER_ALICE_CUST_ID).await.expect("read"),
+        emails
+            .verified_email(CUSTOMER_ALICE_CUST_ID)
+            .await
+            .expect("read"),
         Some(VerifiedEmail {
             address: "alice@example.com".to_owned(),
             lang: "en".to_owned(),
@@ -70,26 +86,68 @@ async fn the_verified_active_email_is_answered_decrypted_with_the_members_langua
 #[tokio::test(flavor = "multi_thread")]
 async fn revoked_unverified_phone_only_and_unknown_members_have_none() {
     let db = TestDb::start().await;
-    email(&db.pool, CUSTOMER_BOB_CUST_ID, "bob-old@example.com", "REVOKED", true, 2).await;
-    email(&db.pool, CUSTOMER_BOB_CUST_ID, "bob-new@example.com", "ACTIVE", false, 3).await;
+    email(
+        &db.pool,
+        CUSTOMER_BOB_CUST_ID,
+        "bob-old@example.com",
+        "REVOKED",
+        true,
+        2,
+    )
+    .await;
+    email(
+        &db.pool,
+        CUSTOMER_BOB_CUST_ID,
+        "bob-new@example.com",
+        "ACTIVE",
+        false,
+        3,
+    )
+    .await;
     seed_customer_phone(&db.pool, CUSTOMER_ALICE_CUST_ID, "+66812345678").await;
 
     let emails = PgMemberEmails::new(db.pool.clone(), keys());
-    assert_eq!(emails.verified_email(CUSTOMER_BOB_CUST_ID).await.expect("read"), None);
     assert_eq!(
-        emails.verified_email(CUSTOMER_ALICE_CUST_ID).await.expect("read"),
+        emails
+            .verified_email(CUSTOMER_BOB_CUST_ID)
+            .await
+            .expect("read"),
+        None
+    );
+    assert_eq!(
+        emails
+            .verified_email(CUSTOMER_ALICE_CUST_ID)
+            .await
+            .expect("read"),
         None,
         "a phone is not an e-mail"
     );
-    assert_eq!(emails.verified_email("CUST-NOBODY").await.expect("read"), None);
+    assert_eq!(
+        emails.verified_email("CUST-NOBODY").await.expect("read"),
+        None
+    );
     db.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn one_members_email_is_never_answered_for_another() {
     let db = TestDb::start().await;
-    email(&db.pool, CUSTOMER_ALICE_CUST_ID, "alice@example.com", "ACTIVE", true, 4).await;
+    email(
+        &db.pool,
+        CUSTOMER_ALICE_CUST_ID,
+        "alice@example.com",
+        "ACTIVE",
+        true,
+        4,
+    )
+    .await;
     let emails = PgMemberEmails::new(db.pool.clone(), keys());
-    assert_eq!(emails.verified_email(CUSTOMER_BOB_CUST_ID).await.expect("read"), None);
+    assert_eq!(
+        emails
+            .verified_email(CUSTOMER_BOB_CUST_ID)
+            .await
+            .expect("read"),
+        None
+    );
     db.finish().await;
 }

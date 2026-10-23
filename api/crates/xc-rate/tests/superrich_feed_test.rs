@@ -32,7 +32,10 @@ fn page() -> String {
 }
 
 fn body(html: &str) -> Vec<MarketBody> {
-    vec![MarketBody { url: SR_URL.to_string(), body: Some(html.to_string()) }]
+    vec![MarketBody {
+        url: SR_URL.to_string(),
+        body: Some(html.to_string()),
+    }]
 }
 
 #[test]
@@ -41,7 +44,10 @@ fn live_feed_asks_for_the_exchange_rate_page() {
     assert_eq!(feed.source(), MarketSource::SuperRich);
     let req = feed.requests();
     assert_eq!(req.len(), 1);
-    assert_eq!(req[0].url, "https://www.superrichthailand.com/exchange-rate");
+    assert_eq!(
+        req[0].url,
+        "https://www.superrichthailand.com/exchange-rate"
+    );
     assert!(!req[0].optional);
 }
 
@@ -50,10 +56,25 @@ fn reads_the_list_across_two_flight_chunks() {
     let snap = SuperRichFeed::live().parse(&body(&page())).expect("parsed");
     assert_eq!(snap.source, MarketSource::SuperRich);
     assert_eq!(snap.source_updated_at.as_deref(), Some("2026-10-18"));
-    assert_eq!(snap.rows.len(), 3, "USD ×2 and GBP; LKR has zero prices and is dropped");
-    let usd0 = snap.rows.iter().find(|r| r.code == "USD" && r.band == "0").unwrap();
-    assert_eq!((usd0.buy, usd0.sell, usd0.denoms.as_str()), (Some(d("33.33")), Some(d("33.40")), "100"));
-    let usd1 = snap.rows.iter().find(|r| r.code == "USD" && r.band == "1").unwrap();
+    assert_eq!(
+        snap.rows.len(),
+        3,
+        "USD ×2 and GBP; LKR has zero prices and is dropped"
+    );
+    let usd0 = snap
+        .rows
+        .iter()
+        .find(|r| r.code == "USD" && r.band == "0")
+        .unwrap();
+    assert_eq!(
+        (usd0.buy, usd0.sell, usd0.denoms.as_str()),
+        (Some(d("33.33")), Some(d("33.40")), "100")
+    );
+    let usd1 = snap
+        .rows
+        .iter()
+        .find(|r| r.code == "USD" && r.band == "1")
+        .unwrap();
     assert_eq!(usd1.buy, Some(d("32.10")));
     assert!(snap.rows.iter().all(|r| r.decimals.is_none()));
     assert!(!snap.rows.iter().any(|r| r.code == "LKR"));
@@ -61,8 +82,13 @@ fn reads_the_list_across_two_flight_chunks() {
 
 #[test]
 fn a_page_without_the_list_is_an_error() {
-    let err = SuperRichFeed::live().parse(&body("<html>maintenance</html>")).unwrap_err();
-    assert!(err.to_string().contains("SR: exchangeList not found"), "{err}");
+    let err = SuperRichFeed::live()
+        .parse(&body("<html>maintenance</html>"))
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("SR: exchangeList not found"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -72,14 +98,20 @@ fn a_list_cut_off_mid_object_is_an_error() {
         serde_json::to_string(r#"5:[{"exchangeList":{"USD":[{"buyText":"33.3""#).unwrap()
     );
     let err = SuperRichFeed::live().parse(&body(&cut)).unwrap_err();
-    assert!(err.to_string().contains("SR: exchangeList is cut off"), "{err}");
+    assert!(
+        err.to_string().contains("SR: exchangeList is cut off"),
+        "{err}"
+    );
 }
 
 #[test]
 fn a_list_with_only_zero_prices_has_no_rates() {
     let only_zero = format!(
         "<html><script>self.__next_f.push([1,{}])</script></html>",
-        serde_json::to_string(r#"5:[{"exchangeList":{"LKR":[{"denomRem":"5000","buyText":"0","sellText":"0"}]}}]"#).unwrap()
+        serde_json::to_string(
+            r#"5:[{"exchangeList":{"LKR":[{"denomRem":"5000","buyText":"0","sellText":"0"}]}}]"#
+        )
+        .unwrap()
     );
     let err = SuperRichFeed::live().parse(&body(&only_zero)).unwrap_err();
     assert!(err.to_string().contains("SR: no rates"), "{err}");

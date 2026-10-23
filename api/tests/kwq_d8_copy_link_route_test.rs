@@ -41,24 +41,64 @@ fn signer() -> CopyLink {
 async fn alices_booking(db: &TestDb) {
     let slot = Uuid::new_v4();
     let start = Utc::now() + Duration::hours(3);
-    seed_slot(&db.pool, slot, B01, bangkok_today(), start, start + Duration::minutes(30), 5, 1, "OPEN").await;
-    seed_booking(&db.pool, "BK-ALICE", "B261022-0001", CUSTOMER_ALICE_CUST_ID, B01, slot, "APP", "CONFIRMED", &sha("alice-qr")).await;
+    seed_slot(
+        &db.pool,
+        slot,
+        B01,
+        bangkok_today(),
+        start,
+        start + Duration::minutes(30),
+        5,
+        1,
+        "OPEN",
+    )
+    .await;
+    seed_booking(
+        &db.pool,
+        "BK-ALICE",
+        "B261022-0001",
+        CUSTOMER_ALICE_CUST_ID,
+        B01,
+        slot,
+        "APP",
+        "CONFIRMED",
+        &sha("alice-qr"),
+    )
+    .await;
 }
 
 async fn view(db: &TestDb, link: &str) -> Answer {
-    call(db, None, Method::POST, ROUTE, Some(json!({ "link": link })), None).await
+    call(
+        db,
+        None,
+        Method::POST,
+        ROUTE,
+        Some(json!({ "link": link })),
+        None,
+    )
+    .await
 }
 
 fn expired(a: &Answer, what: &str) {
     assert_eq!(a.status, StatusCode::GONE, "{what}: {}", a.text);
-    assert_eq!(a.body["error"]["code"], json!("linkExpired"), "{what}: {}", a.text);
+    assert_eq!(
+        a.body["error"]["code"],
+        json!("linkExpired"),
+        "{what}: {}",
+        a.text
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_good_link_answers_the_details_status_and_qr_and_nothing_private() {
     let db = TestDb::start().await;
     alices_booking(&db).await;
-    let link = signer().sign(CopySubjectKind::Booking, "BK-ALICE", "alice-qr", Utc::now() + Duration::hours(23));
+    let link = signer().sign(
+        CopySubjectKind::Booking,
+        "BK-ALICE",
+        "alice-qr",
+        Utc::now() + Duration::hours(23),
+    );
     let a = view(&db, &link).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["subject"], json!("booking"));
@@ -69,7 +109,8 @@ async fn a_good_link_answers_the_details_status_and_qr_and_nothing_private() {
     assert!(a.body["expiresAt"].is_string(), "{}", a.text);
     let rows = a.body["rows"].as_array().expect("rows");
     assert!(
-        rows.iter().any(|r| r["field"] == "bookingNo" && r["value"] == "B261022-0001"),
+        rows.iter()
+            .any(|r| r["field"] == "bookingNo" && r["value"] == "B261022-0001"),
         "{}",
         a.text
     );
@@ -84,20 +125,52 @@ async fn every_failure_is_one_link_expired() {
     let db = TestDb::start().await;
     alices_booking(&db).await;
     let s = signer();
-    let good = s.sign(CopySubjectKind::Booking, "BK-ALICE", "alice-qr", Utc::now() + Duration::hours(23));
+    let good = s.sign(
+        CopySubjectKind::Booking,
+        "BK-ALICE",
+        "alice-qr",
+        Utc::now() + Duration::hours(23),
+    );
 
     expired(&view(&db, "garbage").await, "malformed");
     expired(&view(&db, "").await, "empty");
     expired(
-        &view(&db, &s.sign(CopySubjectKind::Booking, "BK-ALICE", "alice-qr", Utc::now() - Duration::minutes(1))).await,
+        &view(
+            &db,
+            &s.sign(
+                CopySubjectKind::Booking,
+                "BK-ALICE",
+                "alice-qr",
+                Utc::now() - Duration::minutes(1),
+            ),
+        )
+        .await,
         "past its day",
     );
     expired(
-        &view(&db, &CopyLink::new([1; 32]).sign(CopySubjectKind::Booking, "BK-ALICE", "alice-qr", Utc::now() + Duration::hours(1))).await,
+        &view(
+            &db,
+            &CopyLink::new([1; 32]).sign(
+                CopySubjectKind::Booking,
+                "BK-ALICE",
+                "alice-qr",
+                Utc::now() + Duration::hours(1),
+            ),
+        )
+        .await,
         "another key",
     );
     expired(
-        &view(&db, &s.sign(CopySubjectKind::Booking, "BK-NOPE", "alice-qr", Utc::now() + Duration::hours(1))).await,
+        &view(
+            &db,
+            &s.sign(
+                CopySubjectKind::Booking,
+                "BK-NOPE",
+                "alice-qr",
+                Utc::now() + Duration::hours(1),
+            ),
+        )
+        .await,
         "no such booking",
     );
     sqlx::query("UPDATE bookings SET qr_token_hash = $1, qr_version = 2 WHERE id = 'BK-ALICE'")
@@ -139,7 +212,10 @@ async fn one_address_gets_twenty_a_minute() {
         statuses.push(resp.status());
         let _: Value = serde_json::from_slice(&atest::read_body(resp).await).unwrap_or(Value::Null);
     }
-    assert!(statuses[..20].iter().all(|s| *s == StatusCode::GONE), "{statuses:?}");
+    assert!(
+        statuses[..20].iter().all(|s| *s == StatusCode::GONE),
+        "{statuses:?}"
+    );
     assert_eq!(statuses[20], StatusCode::TOO_MANY_REQUESTS, "{statuses:?}");
     db.finish().await;
 }

@@ -24,7 +24,9 @@ use serde_json::json;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_cash::application::ledger_approval::count_difference::CountDifferencePolicy;
 use xc_kernel::ids::BranchId;
 
@@ -166,10 +168,18 @@ fn ap5_a1_the_seed_decides_as_today() {
     seeded_plus(vec![]);
     let fin = actor(vec![row("FINANCE", Role::Finance, Some("B1"))]);
 
-    assert_eq!(CountDifferencePolicy.may_decide(&fin, &count_difference("B1")), Ok(()));
+    assert_eq!(
+        CountDifferencePolicy.may_decide(&fin, &count_difference("B1")),
+        Ok(())
+    );
     refused_with(&fin, "B2", OWN_BRANCH, "FINANCE@B1 on B2");
     let bm = actor(vec![row("BRANCH_MANAGER", Role::BranchManager, Some("B1"))]);
-    refused_with(&bm, "B1", ONLY, "BRANCH_MANAGER holds no count-difference kind");
+    refused_with(
+        &bm,
+        "B1",
+        ONLY,
+        "BRANCH_MANAGER holds no count-difference kind",
+    );
 }
 
 /// §11.9 A3: built-in FINANCE with `ApproveCountDifference` removed. A FINANCE@B1 user is refused a B1 count
@@ -181,7 +191,12 @@ fn ap5_a3_finance_with_the_kind_removed_is_refused() {
     seeded_without(Role::Finance, P::ApproveCountDifference);
     let fin = actor(vec![row("FINANCE", Role::Finance, Some("B1"))]);
 
-    refused_with(&fin, "B1", ONLY, "FINANCE@B1 without ApproveCountDifference");
+    refused_with(
+        &fin,
+        "B1",
+        ONLY,
+        "FINANCE@B1 without ApproveCountDifference",
+    );
 }
 
 /// §11.9: a custom group (base TELLER) granted `ApproveCountDifference`, with a row at B1, decides a B1 count

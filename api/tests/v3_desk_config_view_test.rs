@@ -377,10 +377,8 @@ const STAFF: [(&str, &[Role]); 9] = [
 /// too, since the owner is a staff caller there (RBAC §11.8 S10, #4528).
 fn callers() -> Vec<(String, Option<Actor>)> {
     let owner = || Some(test_callers::owner("owner"));
-    let mut out: Vec<(String, Option<Actor>)> = vec![
-        (String::new(), None),
-        ("OWNER".to_string(), owner()),
-    ];
+    let mut out: Vec<(String, Option<Actor>)> =
+        vec![(String::new(), None), ("OWNER".to_string(), owner())];
     for (name, roles) in STAFF {
         let staff = Some(test_callers::staff("employee", roles, BranchId::new(MAIN)));
         out.push((name.to_string(), staff));

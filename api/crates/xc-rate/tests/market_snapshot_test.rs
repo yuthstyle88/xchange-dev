@@ -11,7 +11,14 @@ fn d(text: &str) -> Decimal {
     text.parse().expect("decimal")
 }
 
-fn row(code: &str, band: &str, denoms: &str, buy: &str, sell: &str, decimals: Option<u32>) -> MarketRow {
+fn row(
+    code: &str,
+    band: &str,
+    denoms: &str,
+    buy: &str,
+    sell: &str,
+    decimals: Option<u32>,
+) -> MarketRow {
     MarketRow {
         code: code.to_string(),
         band: band.to_string(),
@@ -65,15 +72,30 @@ fn super_rich_headline_takes_the_first_list_entry() {
     };
     let h = snap.headline();
     let usd = h.iter().find(|r| r.code == "USD").unwrap();
-    assert_eq!((usd.buy, usd.sell, usd.denoms.as_str()), (Some(d("33.33")), Some(d("33.40")), "100"));
+    assert_eq!(
+        (usd.buy, usd.sell, usd.denoms.as_str()),
+        (Some(d("33.33")), Some(d("33.40")), "100")
+    );
     assert_eq!(h.len(), 2);
 }
 
 #[test]
 fn stale_with_no_snapshot_or_after_thirty_minutes() {
     let now = Utc.with_ymd_and_hms(2026, 10, 18, 3, 31, 0).unwrap();
-    assert!(MarketStaleness::is_stale(None, now), "no good snapshot is stale");
-    assert!(!MarketStaleness::is_stale(Some(now - Duration::minutes(6)), now));
-    assert!(!MarketStaleness::is_stale(Some(now - Duration::minutes(30)), now), "30 minutes exactly is not yet stale");
-    assert!(MarketStaleness::is_stale(Some(now - Duration::minutes(31)), now));
+    assert!(
+        MarketStaleness::is_stale(None, now),
+        "no good snapshot is stale"
+    );
+    assert!(!MarketStaleness::is_stale(
+        Some(now - Duration::minutes(6)),
+        now
+    ));
+    assert!(
+        !MarketStaleness::is_stale(Some(now - Duration::minutes(30)), now),
+        "30 minutes exactly is not yet stale"
+    );
+    assert!(MarketStaleness::is_stale(
+        Some(now - Duration::minutes(31)),
+        now
+    ));
 }

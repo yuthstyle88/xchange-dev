@@ -39,7 +39,8 @@ struct Harness {
 impl Harness {
     async fn start() -> Self {
         let desk = Desk::start().await;
-        for (id, code, name) in [(B1, "A01", "สาขาหนึ่ง"), (B2, "Z02", "สาขาสอง")] {
+        for (id, code, name) in [(B1, "A01", "สาขาหนึ่ง"), (B2, "Z02", "สาขาสอง")]
+        {
             sqlx::query(
                 "INSERT INTO branches (id, name, organization_id, code) \
                  VALUES ($1, $2, $3::uuid, $4)",
@@ -52,8 +53,7 @@ impl Harness {
             .await
             .expect("insert branch");
         }
-        let upload_dir =
-            std::env::temp_dir().join(xc_testdb::unique_schema_name("st1-uploads"));
+        let upload_dir = std::env::temp_dir().join(xc_testdb::unique_schema_name("st1-uploads"));
         let dir_str = upload_dir.to_str().expect("UTF-8 temp dir");
         let state = AppState::new(
             Arc::new(common::settings(&[("APP_FILES__DIR", dir_str)])),
@@ -215,7 +215,11 @@ async fn s1_s2_s5_s6_staff_me_entry_and_permissions() {
     assert_eq!(s5.json()["error"]["code"], json!("employeeAuthRequired"));
 
     // S6: no cookie gets 401 employeeAuthRequired
-    let s6 = send(&h.app, get_with_session("/api/v3/views/staff_me?branch=B1", None)).await;
+    let s6 = send(
+        &h.app,
+        get_with_session("/api/v3/views/staff_me?branch=B1", None),
+    )
+    .await;
     assert_eq!(s6.status, 401, "S6 no cookie staff_me: {}", s6.text);
     assert_eq!(s6.json()["error"]["code"], json!("employeeAuthRequired"));
 
@@ -549,4 +553,3 @@ async fn s5_customer_only_staff_rpc_admin_snapshot_gets_401_employee_auth_requir
     assert_eq!(resp.error(), PolicyError::EmployeeAuthRequired.to_string());
     h.finish().await;
 }
-

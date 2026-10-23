@@ -29,7 +29,11 @@ fn char_lit_end(b: &[u8], i: usize) -> Option<usize> {
         }
         None
     } else if after != b'\'' && after != b'\n' && after != b'\r' {
-        let clen = std::str::from_utf8(&b[q + 1..]).ok()?.chars().next()?.len_utf8();
+        let clen = std::str::from_utf8(&b[q + 1..])
+            .ok()?
+            .chars()
+            .next()?
+            .len_utf8();
         (b.get(q + 1 + clen) == Some(&b'\'')).then_some(q + 1 + clen + 1)
     } else {
         None

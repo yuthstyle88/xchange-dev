@@ -43,7 +43,10 @@ fn answer(source: &str, buy: &str) -> ReferenceRates {
     }
 }
 
-async fn status(db: &TestDb) -> HashMap<MarketSource, xc_rate::infrastructure::market::market_feed_status_store::MarketAttempt> {
+async fn status(
+    db: &TestDb,
+) -> HashMap<MarketSource, xc_rate::infrastructure::market::market_feed_status_store::MarketAttempt>
+{
     let mut conn = db.pool.acquire().await.unwrap();
     MarketFeedStatusStore::all(&mut conn).await.expect("status")
 }
@@ -62,21 +65,38 @@ async fn one_tick_writes_each_source_and_records_its_attempt() {
     let refresh = MarketRefresh::new(
         db.pool.clone(),
         vec![
-            (MarketSource::Tt, Arc::new(Fixed(Ok(answer("TT", "33.2")))) as Arc<dyn RateSource>),
-            (MarketSource::SuperRich, Arc::new(Fixed(Ok(answer("SR", "33.33")))) as Arc<dyn RateSource>),
+            (
+                MarketSource::Tt,
+                Arc::new(Fixed(Ok(answer("TT", "33.2")))) as Arc<dyn RateSource>,
+            ),
+            (
+                MarketSource::SuperRich,
+                Arc::new(Fixed(Ok(answer("SR", "33.33")))) as Arc<dyn RateSource>,
+            ),
         ],
     );
     let now = Utc.with_ymd_and_hms(2026, 10, 18, 3, 0, 0).unwrap();
     let report = refresh.tick(now).await;
     assert_eq!(report.results.len(), 2);
     assert!(report.results.iter().all(|(_, r)| r.is_ok()), "{report:?}");
-    assert_eq!(lines(&db, "MARKET_TT").await, 1, "SCOT is not in `currencies`");
+    assert_eq!(
+        lines(&db, "MARKET_TT").await,
+        1,
+        "SCOT is not in `currencies`"
+    );
     assert_eq!(lines(&db, "MARKET_SR").await, 1);
-    let tt = status(&db).await.remove(&MarketSource::Tt).expect("attempt");
+    let tt = status(&db)
+        .await
+        .remove(&MarketSource::Tt)
+        .expect("attempt");
     assert_eq!((tt.at, tt.error), (now, None));
 
     refresh.tick(now).await;
-    assert_eq!(lines(&db, "MARKET_TT").await, 1, "an unchanged answer writes no new batch");
+    assert_eq!(
+        lines(&db, "MARKET_TT").await,
+        1,
+        "an unchanged answer writes no new batch"
+    );
 }
 
 #[tokio::test]
@@ -85,8 +105,15 @@ async fn a_failing_source_records_its_error_and_the_other_is_still_written() {
     let refresh = MarketRefresh::new(
         db.pool.clone(),
         vec![
-            (MarketSource::Tt, Arc::new(Fixed(Err(AppError::Domain("TT: HTTP 503".into())))) as Arc<dyn RateSource>),
-            (MarketSource::SuperRich, Arc::new(Fixed(Ok(answer("SR", "33.33")))) as Arc<dyn RateSource>),
+            (
+                MarketSource::Tt,
+                Arc::new(Fixed(Err(AppError::Domain("TT: HTTP 503".into()))))
+                    as Arc<dyn RateSource>,
+            ),
+            (
+                MarketSource::SuperRich,
+                Arc::new(Fixed(Ok(answer("SR", "33.33")))) as Arc<dyn RateSource>,
+            ),
         ],
     );
     let now = Utc.with_ymd_and_hms(2026, 10, 18, 3, 6, 0).unwrap();
@@ -106,13 +133,32 @@ async fn status_keeps_the_last_attempt_and_cuts_errors_to_200_characters() {
     let db = TestDb::start().await;
     let t0 = Utc.with_ymd_and_hms(2026, 10, 18, 3, 0, 0).unwrap();
     assert!(status(&db).await.is_empty());
-    MarketFeedStatusStore::record(&db.pool, MarketSource::Tt, t0, Some(&"x".repeat(500))).await.unwrap();
-    assert_eq!(status(&db).await[&MarketSource::Tt].error.clone().unwrap().chars().count(), 200);
+    MarketFeedStatusStore::record(&db.pool, MarketSource::Tt, t0, Some(&"x".repeat(500)))
+        .await
+        .unwrap();
+    assert_eq!(
+        status(&db).await[&MarketSource::Tt]
+            .error
+            .clone()
+            .unwrap()
+            .chars()
+            .count(),
+        200
+    );
     let t1 = t0 + chrono::Duration::minutes(5);
-    MarketFeedStatusStore::record(&db.pool, MarketSource::Tt, t1, None).await.unwrap();
+    MarketFeedStatusStore::record(&db.pool, MarketSource::Tt, t1, None)
+        .await
+        .unwrap();
     let last = status(&db).await.remove(&MarketSource::Tt).unwrap();
-    assert_eq!((last.at, last.error), (t1, None), "one row per source, replaced");
-    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM market_feed_status").fetch_one(&db.pool).await.unwrap();
+    assert_eq!(
+        (last.at, last.error),
+        (t1, None),
+        "one row per source, replaced"
+    );
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM market_feed_status")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
     assert_eq!(rows, 1);
 }
 

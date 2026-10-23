@@ -38,12 +38,25 @@ async fn world() -> World {
 }
 
 impl World {
-    async fn create(&self, customer: &str, id: &str, token: &str, ms: i64) -> Result<String, AppError> {
+    async fn create(
+        &self,
+        customer: &str,
+        id: &str,
+        token: &str,
+        ms: i64,
+    ) -> Result<String, AppError> {
         let mut tx = self.db.begin().await;
         let ip = format!("198.51.100.{}", id.len() + token.len());
         let out = self
             .web
-            .create_in(&mut tx, &branch(MAIN), customer, from_ip(buy100(id), &ip), token, at(ms))
+            .create_in(
+                &mut tx,
+                &branch(MAIN),
+                customer,
+                from_ip(buy100(id), &ip),
+                token,
+                at(ms),
+            )
             .await;
         match out {
             Ok(created) => {
@@ -61,7 +74,9 @@ impl World {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_request_past_its_window_does_not_block_a_new_one() {
     let w = world().await;
-    w.create("cust-1", "web-1", "tok-1", 0).await.expect("first");
+    w.create("cust-1", "web-1", "tok-1", 0)
+        .await
+        .expect("first");
 
     // inside the window: still the open request (B4)
     match w.create("cust-1", "web-2", "tok-2", 59 * MINUTE).await {
@@ -77,12 +92,17 @@ async fn a_request_past_its_window_does_not_block_a_new_one() {
     assert_eq!(id, "web-3");
     let main = branch(MAIN);
     assert_eq!(
-        w.kiosk.find_by_token(&main, "tok-3", at(PAST_WINDOW + MINUTE)).await.expect("new token"),
+        w.kiosk
+            .find_by_token(&main, "tok-3", at(PAST_WINDOW + MINUTE))
+            .await
+            .expect("new token"),
         "web-3"
     );
     assert!(
         matches!(
-            w.kiosk.find_by_token(&main, "tok-1", at(PAST_WINDOW + MINUTE)).await,
+            w.kiosk
+                .find_by_token(&main, "tok-1", at(PAST_WINDOW + MINUTE))
+                .await,
             Err(AppError::NotFound { .. })
         ),
         "the expired token stays dead"
@@ -93,12 +113,21 @@ async fn a_request_past_its_window_does_not_block_a_new_one() {
 async fn a_request_past_its_window_gets_no_fresh_qr() {
     let w = world().await;
     let main = branch(MAIN);
-    w.create("cust-1", "web-1", "tok-old", 0).await.expect("created");
+    w.create("cust-1", "web-1", "tok-old", 0)
+        .await
+        .expect("created");
 
     let mut tx = w.db.begin().await;
     let r = w
         .web
-        .reissue_qr_in(&mut tx, &main, "cust-1", "web-1", "tok-new", at(PAST_WINDOW))
+        .reissue_qr_in(
+            &mut tx,
+            &main,
+            "cust-1",
+            "web-1",
+            "tok-new",
+            at(PAST_WINDOW),
+        )
         .await;
     tx.rollback().await.expect("rollback");
     assert!(
@@ -107,7 +136,9 @@ async fn a_request_past_its_window_gets_no_fresh_qr() {
     );
     assert!(
         matches!(
-            w.kiosk.find_by_token(&main, "tok-new", at(PAST_WINDOW)).await,
+            w.kiosk
+                .find_by_token(&main, "tok-new", at(PAST_WINDOW))
+                .await,
             Err(AppError::NotFound { .. })
         ),
         "no live token was made"

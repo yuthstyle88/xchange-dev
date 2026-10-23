@@ -37,7 +37,14 @@ fn quoted(id: &str) -> KioskRequest {
 }
 
 /// A request `id` of `branch_id` in `status`, of `customer` (or a kiosk request).
-async fn add(db: &TestDb, repo: &PgKioskRepository, branch_id: &str, id: &str, status: &str, customer: Option<&str>) {
+async fn add(
+    db: &TestDb,
+    repo: &PgKioskRepository,
+    branch_id: &str,
+    id: &str,
+    status: &str,
+    customer: Option<&str>,
+) {
     let mut tx = db.begin().await;
     repo.insert_in(&mut tx, &branch(branch_id), &quoted(id), "10.0.0.1")
         .await
@@ -63,7 +70,12 @@ async fn add(db: &TestDb, repo: &PgKioskRepository, branch_id: &str, id: &str, s
     .expect("put the request in its state");
 }
 
-async fn open(db: &TestDb, repo: &PgKioskRepository, branch_id: &str, customer: &str) -> Option<String> {
+async fn open(
+    db: &TestDb,
+    repo: &PgKioskRepository,
+    branch_id: &str,
+    customer: &str,
+) -> Option<String> {
     let mut tx = db.begin().await;
     repo.open_web_request_in(&mut tx, &branch(branch_id), customer)
         .await
@@ -95,7 +107,13 @@ async fn finished_requests_other_members_other_branches_and_kiosk_requests_are_n
     add(&db, &repo, MAIN, "kiosk", "QUOTED", None).await;
 
     assert_eq!(open(&db, &repo, MAIN, "cust-1").await, None);
-    assert_eq!(open(&db, &repo, B2, "cust-1").await.as_deref(), Some("elsewhere"));
-    assert_eq!(open(&db, &repo, MAIN, "cust-2").await.as_deref(), Some("theirs"));
+    assert_eq!(
+        open(&db, &repo, B2, "cust-1").await.as_deref(),
+        Some("elsewhere")
+    );
+    assert_eq!(
+        open(&db, &repo, MAIN, "cust-2").await.as_deref(),
+        Some("theirs")
+    );
     assert_eq!(open(&db, &repo, MAIN, "").await, None);
 }

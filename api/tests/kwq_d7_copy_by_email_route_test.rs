@@ -32,13 +32,39 @@ fn sha(qr: &str) -> [u8; 32] {
 async fn alices_booking(db: &TestDb) {
     let slot = Uuid::new_v4();
     let start = Utc::now() + Duration::hours(3);
-    seed_slot(&db.pool, slot, B01, bangkok_today(), start, start + Duration::minutes(30), 5, 1, "OPEN").await;
-    seed_booking(&db.pool, "BK-ALICE", "B261022-0001", CUSTOMER_ALICE_CUST_ID, B01, slot, "APP", "CONFIRMED", &sha("alice-qr")).await;
+    seed_slot(
+        &db.pool,
+        slot,
+        B01,
+        bangkok_today(),
+        start,
+        start + Duration::minutes(30),
+        5,
+        1,
+        "OPEN",
+    )
+    .await;
+    seed_booking(
+        &db.pool,
+        "BK-ALICE",
+        "B261022-0001",
+        CUSTOMER_ALICE_CUST_ID,
+        B01,
+        slot,
+        "APP",
+        "CONFIRMED",
+        &sha("alice-qr"),
+    )
+    .await;
 }
 
 async fn alices_email(db: &TestDb) {
-    let keys = Arc::new(PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=").unwrap());
-    let sealed = PiiCipher::new(keys).encrypt(format!("{CUSTOMER_ALICE_CUST_ID}EMAIL").as_bytes(), b"alice@example.com");
+    let keys =
+        Arc::new(PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=").unwrap());
+    let sealed = PiiCipher::new(keys).encrypt(
+        format!("{CUSTOMER_ALICE_CUST_ID}EMAIL").as_bytes(),
+        b"alice@example.com",
+    );
     sqlx::query(
         "INSERT INTO customer_identities (id, organization_id, customer_id, type, encrypted_value, \
          key_id, lookup_hash, verified_at, status) \
@@ -74,16 +100,36 @@ async fn the_refusals_come_in_the_cores_order() {
         json!({ "subject": "webRequest", "id": "BK-ALICE", "qr": "alice-qr" }),
     ] {
         let a = copy(&db, Some(ALICE), body.clone()).await;
-        assert_eq!((a.status, code(&a)), (StatusCode::NOT_FOUND, "notFound"), "{body}: {}", a.text);
+        assert_eq!(
+            (a.status, code(&a)),
+            (StatusCode::NOT_FOUND, "notFound"),
+            "{body}: {}",
+            a.text
+        );
     }
 
     // B22: the right QR, but no verified e-mail yet
-    let a = copy(&db, Some(ALICE), json!({ "subject": "booking", "id": "BK-ALICE", "qr": "alice-qr" })).await;
-    assert_eq!((a.status, code(&a)), (StatusCode::CONFLICT, "noVerifiedEmail"), "{}", a.text);
+    let a = copy(
+        &db,
+        Some(ALICE),
+        json!({ "subject": "booking", "id": "BK-ALICE", "qr": "alice-qr" }),
+    )
+    .await;
+    assert_eq!(
+        (a.status, code(&a)),
+        (StatusCode::CONFLICT, "noVerifiedEmail"),
+        "{}",
+        a.text
+    );
 
     // B23: with a verified e-mail and no Notify configured
     alices_email(&db).await;
-    let a = copy(&db, Some(ALICE), json!({ "subject": "booking", "id": "BK-ALICE", "qr": "alice-qr" })).await;
+    let a = copy(
+        &db,
+        Some(ALICE),
+        json!({ "subject": "booking", "id": "BK-ALICE", "qr": "alice-qr" }),
+    )
+    .await;
     assert_eq!(
         (a.status, code(&a)),
         (StatusCode::SERVICE_UNAVAILABLE, "emailUnavailable"),
@@ -97,12 +143,18 @@ async fn the_refusals_come_in_the_cores_order() {
 async fn a_bad_body_is_validation_failed_naming_the_field() {
     let db = TestDb::start().await;
     for (body, field) in [
-        (json!({ "subject": "parcel", "id": "BK-1", "qr": "q" }), "subject"),
+        (
+            json!({ "subject": "parcel", "id": "BK-1", "qr": "q" }),
+            "subject",
+        ),
         (json!({ "id": "BK-1", "qr": "q" }), "subject"),
         (json!({ "subject": "booking", "qr": "q" }), "id"),
         (json!({ "subject": "booking", "id": "", "qr": "q" }), "id"),
         (json!({ "subject": "booking", "id": "BK-1" }), "qr"),
-        (json!({ "subject": "booking", "id": "BK-1", "qr": "" }), "qr"),
+        (
+            json!({ "subject": "booking", "id": "BK-1", "qr": "" }),
+            "qr",
+        ),
     ] {
         let a = copy(&db, Some(ALICE), body.clone()).await;
         assert_eq!(a.status, StatusCode::BAD_REQUEST, "{body}: {}", a.text);
@@ -124,6 +176,11 @@ async fn only_a_signed_in_member_may_ask() {
 
     let teller = copy(&db, Some(&format!("TELLER@{B01}")), body).await;
     assert!(teller.status.is_client_error(), "{}", teller.text);
-    assert_ne!(code(&teller), "noVerifiedEmail", "a teller never reaches the core: {}", teller.text);
+    assert_ne!(
+        code(&teller),
+        "noVerifiedEmail",
+        "a teller never reaches the core: {}",
+        teller.text
+    );
     db.finish().await;
 }

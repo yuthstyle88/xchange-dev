@@ -9,10 +9,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use actix_web::http::{header, Method, StatusCode};
-use actix_web::{test as atest, web, App, HttpRequest};
+use actix_web::http::{Method, StatusCode, header};
+use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
@@ -217,7 +217,11 @@ async fn test_campaign_create_empty_name_refused() {
         ans.status,
         ans.text
     );
-    assert_eq!(ans.code(), "validationFailed", "empty name: expected code validationFailed");
+    assert_eq!(
+        ans.code(),
+        "validationFailed",
+        "empty name: expected code validationFailed"
+    );
     assert_eq!(ans.field(), "name", "empty name: expected field name");
     assert_eq!(
         count_campaigns(&room.pool).await,
@@ -240,7 +244,11 @@ async fn test_campaign_create_whitespace_name_refused() {
         ans.status,
         ans.text
     );
-    assert_eq!(ans.code(), "validationFailed", "whitespace name: expected code validationFailed");
+    assert_eq!(
+        ans.code(),
+        "validationFailed",
+        "whitespace name: expected code validationFailed"
+    );
     assert_eq!(ans.field(), "name", "whitespace name: expected field name");
     assert_eq!(
         count_campaigns(&room.pool).await,

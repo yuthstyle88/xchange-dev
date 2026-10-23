@@ -37,9 +37,15 @@ fn the_ticket_carries_the_number_the_branch_the_local_time_and_the_qr() {
     let bytes = job().render();
     assert!(contains(&bytes, b"W007"), "the number");
     assert!(contains(&bytes, b"Silom Branch"), "the branch");
-    assert!(contains(&bytes, b"2026-10-22 01:05"), "the time in the job's own offset, to the minute");
     assert!(
-        contains(&bytes, b"https://xc-v3.example/q#4f1c2a9e-0d3b-4c7a-9e21-7b5d3c1a0f88"),
+        contains(&bytes, b"2026-10-22 01:05"),
+        "the time in the job's own offset, to the minute"
+    );
+    assert!(
+        contains(
+            &bytes,
+            b"https://xc-v3.example/q#4f1c2a9e-0d3b-4c7a-9e21-7b5d3c1a0f88"
+        ),
         "the request QR's data (native QR store command)"
     );
 }

@@ -85,7 +85,10 @@ async fn the_board_names_the_policy_it_was_built_on_and_the_branch_bands() {
         .iter()
         .map(|r| r["code"].as_str().unwrap())
         .collect();
-    assert!(codes.contains(&"TtStale") && codes.contains(&"SrStale"), "{codes:?}");
+    assert!(
+        codes.contains(&"TtStale") && codes.contains(&"SrStale"),
+        "{codes:?}"
+    );
     room.finish().await;
 }
 
@@ -191,7 +194,11 @@ async fn a_row_shows_its_market_quotes_and_its_effective_margins() {
         ],
         "the branch's margins"
     );
-    assert_eq!(eur["suggestion"], Value::Null, "EUR has no market quote: no anchor, no suggestion");
+    assert_eq!(
+        eur["suggestion"],
+        Value::Null,
+        "EUR has no market quote: no anchor, no suggestion"
+    );
     room.finish().await;
 }
 

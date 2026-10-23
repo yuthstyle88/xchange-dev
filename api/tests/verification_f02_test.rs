@@ -1424,8 +1424,15 @@ async fn view_verification_case_returns_case_audit_and_document_metadata_only() 
     )
     .await;
     let body = ans.ok("verification_case view");
-    assert_eq!(body["changed"], true, "the case view answers the v3 envelope: {body}");
-    assert_eq!(body["version"].as_i64(), Some(2), "version is the case's own version: {body}");
+    assert_eq!(
+        body["changed"], true,
+        "the case view answers the v3 envelope: {body}"
+    );
+    assert_eq!(
+        body["version"].as_i64(),
+        Some(2),
+        "version is the case's own version: {body}"
+    );
     let data = &body["data"];
 
     // Assert case metadata

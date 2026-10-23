@@ -106,7 +106,9 @@ async fn batches(db: &TestDb, provider: &str) -> Vec<(Uuid, DateTime<Utc>)> {
 }
 
 fn src() -> Arc<Scripted> {
-    Arc::new(Scripted { next: Mutex::new(("39".into(), at(0))) })
+    Arc::new(Scripted {
+        next: Mutex::new(("39".into(), at(0))),
+    })
 }
 
 #[tokio::test]
@@ -114,11 +116,31 @@ async fn the_same_answer_again_confirms_its_batch() {
     let db = TestDb::start().await;
     let s = src();
     s.set("39", at(0));
-    let first = write(&db, &s, OneLine { name: "PX12A", confirms: true }).await;
+    let first = write(
+        &db,
+        &s,
+        OneLine {
+            name: "PX12A",
+            confirms: true,
+        },
+    )
+    .await;
     s.set("39", at(35));
-    let again = write(&db, &s, OneLine { name: "PX12A", confirms: true }).await;
+    let again = write(
+        &db,
+        &s,
+        OneLine {
+            name: "PX12A",
+            confirms: true,
+        },
+    )
+    .await;
     assert_eq!(again, first, "no new batch");
-    assert_eq!(batches(&db, "PX12A").await, vec![(first, at(35))], "fetched_at = the last confirmation");
+    assert_eq!(
+        batches(&db, "PX12A").await,
+        vec![(first, at(35))],
+        "fetched_at = the last confirmation"
+    );
 }
 
 #[tokio::test]
@@ -126,13 +148,41 @@ async fn a_back_and_forth_answer_makes_the_old_batch_newest_again() {
     let db = TestDb::start().await;
     let s = src();
     s.set("39", at(0));
-    let a = write(&db, &s, OneLine { name: "PX12B", confirms: true }).await;
+    let a = write(
+        &db,
+        &s,
+        OneLine {
+            name: "PX12B",
+            confirms: true,
+        },
+    )
+    .await;
     s.set("38", at(5));
-    let b = write(&db, &s, OneLine { name: "PX12B", confirms: true }).await;
+    let b = write(
+        &db,
+        &s,
+        OneLine {
+            name: "PX12B",
+            confirms: true,
+        },
+    )
+    .await;
     s.set("39", at(10));
-    let a_again = write(&db, &s, OneLine { name: "PX12B", confirms: true }).await;
+    let a_again = write(
+        &db,
+        &s,
+        OneLine {
+            name: "PX12B",
+            confirms: true,
+        },
+    )
+    .await;
     assert_eq!(a_again, a);
-    assert_eq!(batches(&db, "PX12B").await, vec![(a, at(10)), (b, at(5))], "A is the newest line again; no third batch");
+    assert_eq!(
+        batches(&db, "PX12B").await,
+        vec![(a, at(10)), (b, at(5))],
+        "A is the newest line again; no third batch"
+    );
 }
 
 #[tokio::test]
@@ -140,8 +190,31 @@ async fn a_provider_that_does_not_confirm_is_unchanged() {
     let db = TestDb::start().await;
     let s = src();
     s.set("39", at(0));
-    let first = write(&db, &s, OneLine { name: "PX12C", confirms: false }).await;
+    let first = write(
+        &db,
+        &s,
+        OneLine {
+            name: "PX12C",
+            confirms: false,
+        },
+    )
+    .await;
     s.set("39", at(35));
-    assert_eq!(write(&db, &s, OneLine { name: "PX12C", confirms: false }).await, first);
-    assert_eq!(batches(&db, "PX12C").await, vec![(first, at(0))], "BoT's behaviour: fetched_at untouched");
+    assert_eq!(
+        write(
+            &db,
+            &s,
+            OneLine {
+                name: "PX12C",
+                confirms: false
+            }
+        )
+        .await,
+        first
+    );
+    assert_eq!(
+        batches(&db, "PX12C").await,
+        vec![(first, at(0))],
+        "BoT's behaviour: fetched_at untouched"
+    );
 }

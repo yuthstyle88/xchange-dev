@@ -20,7 +20,9 @@ use serde_json::json;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_kernel::ids::BranchId;
 use xchange::application::workflows::exchange::reversal_approval::ReversalPolicy;
 
@@ -184,7 +186,10 @@ fn ap10_a2_night_fin_decides_its_own_branch_only() {
         "NIGHT_FIN@B1 decides a B1 reversal"
     );
     refused(&night, "B2", "NIGHT_FIN@B1 on B2");
-    assert!(!ReversalPolicy.allows_self_decision(&night), "no self decision");
+    assert!(
+        !ReversalPolicy.allows_self_decision(&night),
+        "no self decision"
+    );
 }
 
 /// §11.9: the decision follows the permission. Built-in FINANCE with `ApproveTransactionReversal` removed is refused

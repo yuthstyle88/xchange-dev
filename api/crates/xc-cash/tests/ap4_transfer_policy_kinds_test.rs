@@ -24,7 +24,9 @@ use serde_json::json;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_cash::application::approval::TransferApprovalPolicy;
 use xc_kernel::ids::BranchId;
 
@@ -146,8 +148,18 @@ fn ap4_a4_a_branch_manager_decides_within_the_limit_and_not_above() {
         TransferApprovalPolicy::new().may_decide(&bm, &transfer(true, "B1")),
         Ok(())
     );
-    refused_with(&bm, &transfer(false, "B1"), "ABOVE_LIMIT", "BM@B1 above the limit");
-    refused_with(&bm, &transfer(true, "B2"), "WITHIN_LIMIT", "BM@B1 within the limit from B2");
+    refused_with(
+        &bm,
+        &transfer(false, "B1"),
+        "ABOVE_LIMIT",
+        "BM@B1 above the limit",
+    );
+    refused_with(
+        &bm,
+        &transfer(true, "B2"),
+        "WITHIN_LIMIT",
+        "BM@B1 within the limit from B2",
+    );
 }
 
 /// §11.9: the within-limit decision follows the permission. Built-in BRANCH_MANAGER with
@@ -257,7 +269,11 @@ fn ap4_a_branch_scoped_group_granted_above_limit_decides_only_from_its_branch() 
     let _r = Restore;
     seeded_plus(vec![(
         custom("BIG_TRANSFER", Role::BranchManager),
-        set_of(Role::BranchManager, &[P::ApproveCashTransferAboveLimit], &[]),
+        set_of(
+            Role::BranchManager,
+            &[P::ApproveCashTransferAboveLimit],
+            &[],
+        ),
     )]);
     let big = actor(vec![row("BIG_TRANSFER", Role::BranchManager, Some("B1"))]);
 

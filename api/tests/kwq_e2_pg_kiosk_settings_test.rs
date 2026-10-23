@@ -107,7 +107,10 @@ async fn the_table_refuses_an_out_of_range_value_and_keeps_the_row() {
         tx.rollback().await.expect("rollback");
     }
     assert_eq!(
-        repo.get(&main).await.expect("read").map(|s| (s.result_seconds, s.version)),
+        repo.get(&main)
+            .await
+            .expect("read")
+            .map(|s| (s.result_seconds, s.version)),
         Some((12, 1))
     );
     db.finish().await;

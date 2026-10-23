@@ -42,12 +42,26 @@ async fn world() -> World {
 }
 
 impl World {
-    async fn create(&self, b: &str, customer: &str, id: &str, token: &str, ms: i64) -> Result<String, AppError> {
+    async fn create(
+        &self,
+        b: &str,
+        customer: &str,
+        id: &str,
+        token: &str,
+        ms: i64,
+    ) -> Result<String, AppError> {
         let mut tx = self.db.begin().await;
         let ip = format!("198.51.100.{}", id.len() + token.len());
         let out = self
             .web
-            .create_in(&mut tx, &branch(b), customer, from_ip(buy100(id), &ip), token, at(ms))
+            .create_in(
+                &mut tx,
+                &branch(b),
+                customer,
+                from_ip(buy100(id), &ip),
+                token,
+                at(ms),
+            )
             .await;
         match out {
             Ok(created) => {
@@ -79,11 +93,16 @@ fn not_found<T: std::fmt::Debug>(r: &Result<T, AppError>) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn create_makes_a_quoted_request_with_no_ticket_and_one_per_member_per_branch() {
     let w = world().await;
-    w.create(MAIN, "cust-1", "web-1", "tok-1", 0).await.expect("created");
+    w.create(MAIN, "cust-1", "web-1", "tok-1", 0)
+        .await
+        .expect("created");
     assert_eq!(w.status("web-1").await, "QUOTED");
     assert!(w.queue.issues().is_empty(), "no ticket, no number (B3)");
     assert_eq!(
-        w.kiosk.find_by_token(&branch(MAIN), "tok-1", at(MINUTE)).await.expect("found"),
+        w.kiosk
+            .find_by_token(&branch(MAIN), "tok-1", at(MINUTE))
+            .await
+            .expect("found"),
         "web-1"
     );
 
@@ -100,15 +119,21 @@ async fn create_makes_a_quoted_request_with_no_ticket_and_one_per_member_per_bra
             == 0
     );
     // another branch, and another member, are not blocked
-    w.create(B2, "cust-1", "web-3", "tok-3", MINUTE).await.expect("another branch");
-    w.create(MAIN, "cust-2", "web-4", "tok-4", MINUTE).await.expect("another member");
+    w.create(B2, "cust-1", "web-3", "tok-3", MINUTE)
+        .await
+        .expect("another branch");
+    w.create(MAIN, "cust-2", "web-4", "tok-4", MINUTE)
+        .await
+        .expect("another member");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_fresh_qr_replaces_the_token_only_for_the_members_own_open_request() {
     let w = world().await;
     let main = branch(MAIN);
-    w.create(MAIN, "cust-1", "web-1", "tok-old", 0).await.expect("created");
+    w.create(MAIN, "cust-1", "web-1", "tok-old", 0)
+        .await
+        .expect("created");
 
     let mut tx = w.db.begin().await;
     let expires = w
@@ -117,25 +142,50 @@ async fn a_fresh_qr_replaces_the_token_only_for_the_members_own_open_request() {
         .await
         .expect("reissued");
     tx.commit().await.expect("commit");
-    assert_eq!(expires, exact(0) + Duration::minutes(60), "a reissue keeps the expiry");
-    assert!(not_found(&w.kiosk.find_by_token(&main, "tok-old", at(2 * MINUTE)).await));
     assert_eq!(
-        w.kiosk.find_by_token(&main, "tok-new", at(2 * MINUTE)).await.expect("new token"),
+        expires,
+        exact(0) + Duration::minutes(60),
+        "a reissue keeps the expiry"
+    );
+    assert!(not_found(
+        &w.kiosk
+            .find_by_token(&main, "tok-old", at(2 * MINUTE))
+            .await
+    ));
+    assert_eq!(
+        w.kiosk
+            .find_by_token(&main, "tok-new", at(2 * MINUTE))
+            .await
+            .expect("new token"),
         "web-1"
     );
 
     // another member's request, an unknown one, another branch: one answer, nothing changed
-    for (b, customer, id) in [(MAIN, "cust-2", "web-1"), (MAIN, "cust-1", "nope"), (B2, "cust-1", "web-1")] {
+    for (b, customer, id) in [
+        (MAIN, "cust-2", "web-1"),
+        (MAIN, "cust-1", "nope"),
+        (B2, "cust-1", "web-1"),
+    ] {
         let mut tx = w.db.begin().await;
         let r = w
             .web
-            .reissue_qr_in(&mut tx, &branch(b), customer, id, "tok-evil", at(2 * MINUTE))
+            .reissue_qr_in(
+                &mut tx,
+                &branch(b),
+                customer,
+                id,
+                "tok-evil",
+                at(2 * MINUTE),
+            )
             .await;
         tx.rollback().await.expect("rollback");
         assert!(not_found(&r), "{b} {customer} {id}: {r:?}");
     }
     assert_eq!(
-        w.kiosk.find_by_token(&main, "tok-new", at(3 * MINUTE)).await.expect("still the new token"),
+        w.kiosk
+            .find_by_token(&main, "tok-new", at(3 * MINUTE))
+            .await
+            .expect("still the new token"),
         "web-1"
     );
 }
@@ -144,7 +194,9 @@ async fn a_fresh_qr_replaces_the_token_only_for_the_members_own_open_request() {
 async fn the_member_cancels_before_and_after_the_scan_in_one_press() {
     let w = world().await;
     let main = branch(MAIN);
-    w.create(MAIN, "cust-1", "web-q", "tok-q", 0).await.expect("created");
+    w.create(MAIN, "cust-1", "web-q", "tok-q", 0)
+        .await
+        .expect("created");
 
     // before the scan: QUOTED → CANCELLED, no ticket to end
     let mut tx = w.db.begin().await;
@@ -169,16 +221,26 @@ async fn the_member_cancels_before_and_after_the_scan_in_one_press() {
     assert_eq!(lines, 1, "one KIOSK_CANCELLED line");
 
     // after the cancel the member may make a new request (D12 counts only open ones)
-    w.create(MAIN, "cust-1", "web-w", "tok-w", 2 * MINUTE).await.expect("a new request");
+    w.create(MAIN, "cust-1", "web-w", "tok-w", 2 * MINUTE)
+        .await
+        .expect("a new request");
     w.kiosk
-        .issue_by_token(&main, "tok-w", at(3 * MINUTE), w.queue.clone() as Arc<dyn QueueTickets>)
+        .issue_by_token(
+            &main,
+            "tok-w",
+            at(3 * MINUTE),
+            w.queue.clone() as Arc<dyn QueueTickets>,
+        )
         .await
         .expect("scanned");
     assert_eq!(w.status("web-w").await, "WAITING");
 
     // another member cannot cancel it
     let mut tx = w.db.begin().await;
-    let r = w.web.cancel_in(&mut tx, &main, "cust-2", "web-w", at(4 * MINUTE)).await;
+    let r = w
+        .web
+        .cancel_in(&mut tx, &main, "cust-2", "web-w", at(4 * MINUTE))
+        .await;
     tx.rollback().await.expect("rollback");
     assert!(not_found(&r), "{r:?}");
 
@@ -190,20 +252,30 @@ async fn the_member_cancels_before_and_after_the_scan_in_one_press() {
         .expect("cancel a WAITING request");
     tx.commit().await.expect("commit");
     assert_eq!(w.status("web-w").await, "CANCELLED");
-    assert_eq!(w.queue.cancels(), vec![(MAIN.to_owned(), "web-w".to_owned())]);
+    assert_eq!(
+        w.queue.cancels(),
+        vec![(MAIN.to_owned(), "web-w".to_owned())]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_request_at_the_counter_cannot_be_cancelled_by_the_member() {
     let w = world().await;
     let main = branch(MAIN);
-    w.create(MAIN, "cust-1", "web-a", "tok-a", 0).await.expect("created");
-    sqlx::query("UPDATE kiosk_requests SET status = 'ACCEPTED', staff = 'front1' WHERE id = 'web-a'")
-        .execute(&w.db.pool)
+    w.create(MAIN, "cust-1", "web-a", "tok-a", 0)
         .await
-        .expect("at the counter");
+        .expect("created");
+    sqlx::query(
+        "UPDATE kiosk_requests SET status = 'ACCEPTED', staff = 'front1' WHERE id = 'web-a'",
+    )
+    .execute(&w.db.pool)
+    .await
+    .expect("at the counter");
     let mut tx = w.db.begin().await;
-    let r = w.web.cancel_in(&mut tx, &main, "cust-1", "web-a", at(MINUTE)).await;
+    let r = w
+        .web
+        .cancel_in(&mut tx, &main, "cust-1", "web-a", at(MINUTE))
+        .await;
     tx.rollback().await.expect("rollback");
     assert!(matches!(r, Err(AppError::Domain(_))), "{r:?}");
     assert_eq!(w.status("web-a").await, "ACCEPTED");

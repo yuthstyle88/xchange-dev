@@ -460,12 +460,18 @@ async fn the_staff_scan_issues_the_ticket_with_the_member_and_answers_the_printe
 
     let ans = staff(&db, "TELLER_A", "issueByToken", scan("tok-1")).await;
     assert_eq!(ans.status, StatusCode::OK, "{}", ans.text);
-    let number = ans.body["displayNumber"].as_str().expect("displayNumber").to_owned();
+    let number = ans.body["displayNumber"]
+        .as_str()
+        .expect("displayNumber")
+        .to_owned();
     let ticket_id = ans.body["ticketId"].as_str().expect("ticketId").to_owned();
     let escpos = base64::engine::general_purpose::STANDARD
         .decode(ans.body["ticketEscpos"].as_str().expect("ticketEscpos"))
         .expect("standard base64");
-    assert!(contains(&escpos, number.as_bytes()), "the number is printed");
+    assert!(
+        contains(&escpos, number.as_bytes()),
+        "the number is printed"
+    );
     assert!(
         contains(&escpos, format!("{SAME_ORIGIN}/q#tok-1").as_bytes()),
         "the request QR is printed"
@@ -489,18 +495,23 @@ async fn the_staff_scan_issues_the_ticket_with_the_member_and_answers_the_printe
     .expect("the ticket of the request");
     assert_eq!(
         row,
-        (number.clone(), Some("cust-1".to_owned()), Some("WAITING".to_owned()))
+        (
+            number.clone(),
+            Some("cust-1".to_owned()),
+            Some("WAITING".to_owned())
+        )
     );
 
     // a repeat scan: the same ticket, the same bytes, no second number
     let again = staff(&db, "TELLER_B", "issueByToken", scan("tok-1")).await;
     assert_eq!(again.status, StatusCode::OK, "{}", again.text);
     assert_eq!(again.body, ans.body);
-    let tickets: i64 = sqlx::query_scalar("SELECT count(*) FROM queue_tickets WHERE kiosk_request_id = $1")
-        .bind(&id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("count");
+    let tickets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM queue_tickets WHERE kiosk_request_id = $1")
+            .bind(&id)
+            .fetch_one(&db.pool)
+            .await
+            .expect("count");
     assert_eq!(tickets, 1);
     db.finish().await;
 }

@@ -25,7 +25,6 @@
 
 #![allow(dead_code)]
 
-
 mod common;
 
 use std::collections::BTreeSet;
@@ -409,7 +408,6 @@ async fn changed(db: &TestDb, a: &Answer, want_code: &str, before: i64, what: &s
     version
 }
 
-
 // ------------------------------------------------------------ AP-12
 
 use Permission as P;
@@ -452,7 +450,14 @@ async fn ap12_a8_a_teller_based_group_with_a_kind_stores_it_and_approvals_decide
     sent.push(name(P::ApproveTransactionReversal));
 
     let a = add(&db, EXEC, "NIGHT_FIN", "TELLER", &sent).await;
-    changed(&db, &a, "NIGHT_FIN", before, "add NIGHT_FIN with the reversal kind").await;
+    changed(
+        &db,
+        &a,
+        "NIGHT_FIN",
+        before,
+        "add NIGHT_FIN with the reversal kind",
+    )
+    .await;
 
     let stored = db.stored("NIGHT_FIN").await;
     assert_eq!(
@@ -481,18 +486,35 @@ async fn ap12_a8_a_save_lets_the_kinds_through_as_sent() {
     sent.push(name(P::ApproveTransactionReversal));
     let before = db.grant_version().await;
     let s = save(&db, EXEC, "FINANCE", &sent).await;
-    changed(&db, &s, "FINANCE", before, "save FINANCE with the reversal kind only").await;
+    changed(
+        &db,
+        &s,
+        "FINANCE",
+        before,
+        "save FINANCE with the reversal kind only",
+    )
+    .await;
     let stored = db.stored("FINANCE").await;
     assert_eq!(
         stored,
         expected(Role::Finance, &module, &[P::ApproveTransactionReversal])
     );
-    assert!(!stored.contains(&name(P::ApproveCountDifference)), "the count-difference kind is dropped");
+    assert!(
+        !stored.contains(&name(P::ApproveCountDifference)),
+        "the count-difference kind is dropped"
+    );
     assert!(!RoleGrants::holds("FINANCE", P::ApproveCountDifference));
 
     let before = db.grant_version().await;
     let s = save(&db, EXEC, "FINANCE", &names(&module)).await;
-    changed(&db, &s, "FINANCE", before, "save FINANCE with none of the nine").await;
+    changed(
+        &db,
+        &s,
+        "FINANCE",
+        before,
+        "save FINANCE with none of the nine",
+    )
+    .await;
     let stored = db.stored("FINANCE").await;
     assert_eq!(stored, expected(Role::Finance, &module, &[]));
     assert!(
@@ -512,7 +534,14 @@ async fn ap12_a8_a_group_with_none_of_the_nine_stores_no_approvals_decide() {
     let module = module_part(Role::BranchManager);
 
     let a = add(&db, EXEC, "DESK_LEAD", "BRANCH_MANAGER", &names(&module)).await;
-    changed(&db, &a, "DESK_LEAD", before, "add DESK_LEAD with none of the nine").await;
+    changed(
+        &db,
+        &a,
+        "DESK_LEAD",
+        before,
+        "add DESK_LEAD with none of the nine",
+    )
+    .await;
 
     let stored = db.stored("DESK_LEAD").await;
     assert_eq!(stored, expected(Role::BranchManager, &module, &[]));
@@ -529,7 +558,14 @@ async fn ap12_a8_a_teller_based_group_with_none_of_the_nine_holds_no_approvals_d
     let module = night_set();
 
     let a = add(&db, EXEC, NIGHT, "TELLER", &names(&module)).await;
-    changed(&db, &a, NIGHT, before, "add NIGHT_TELLER with none of the nine").await;
+    changed(
+        &db,
+        &a,
+        NIGHT,
+        before,
+        "add NIGHT_TELLER with none of the nine",
+    )
+    .await;
 
     let stored = db.stored(NIGHT).await;
     assert!(!stored.contains(&name(P::ApprovalsDecide)));
@@ -554,13 +590,23 @@ async fn ap12_a7_an_admin_based_group_with_a_kind_is_guardrail_6() {
         &names(&[P::ApproveNegativeStock]),
     )
     .await;
-    refused(&a, StatusCode::CONFLICT, "guardrail:6", "add an ADMIN-based group with ApproveNegativeStock");
+    refused(
+        &a,
+        StatusCode::CONFLICT,
+        "guardrail:6",
+        "add an ADMIN-based group with ApproveNegativeStock",
+    );
     assert!(!db.group_exists("NIGHT_ADMIN").await, "nothing is added");
 
     let mut sent = names(&module_part(Role::Admin));
     sent.push(name(P::ApproveNegativeStock));
     let s = save(&db, EXEC, "ADMIN", &sent).await;
-    refused(&s, StatusCode::CONFLICT, "guardrail:6", "save ADMIN with ApproveNegativeStock");
+    refused(
+        &s,
+        StatusCode::CONFLICT,
+        "guardrail:6",
+        "save ADMIN with ApproveNegativeStock",
+    );
     assert_eq!(db.stored("ADMIN").await, admin_before, "ADMIN is unchanged");
     assert_eq!(db.grant_version().await, version, "no version bump");
     db.finish().await;

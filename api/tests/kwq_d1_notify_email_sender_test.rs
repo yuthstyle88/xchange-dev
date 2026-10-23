@@ -11,7 +11,9 @@ use std::collections::BTreeSet;
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use xc_customer::domain::email_sender::{EMAIL_UNAVAILABLE, EmailMessage, EmailOutcome, EmailSender};
+use xc_customer::domain::email_sender::{
+    EMAIL_UNAVAILABLE, EmailMessage, EmailOutcome, EmailSender,
+};
 use xchange::infrastructure::notify::NotifyEmailSender;
 
 fn message() -> EmailMessage {
@@ -42,7 +44,10 @@ async fn fake_notify(status: u16) -> (String, tokio::task::JoinHandle<String>) {
                 let head = String::from_utf8_lossy(&data[..pos]).to_ascii_lowercase();
                 let len = head
                     .lines()
-                    .find_map(|l| l.strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                    .find_map(|l| {
+                        l.strip_prefix("content-length:")
+                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                    })
                     .unwrap_or(0);
                 if data.len() >= pos + 4 + len {
                     break;
@@ -85,7 +90,10 @@ fn the_payload_carries_notifys_field_names_and_nothing_else() {
         })
     );
     let keys: BTreeSet<&str> = p.as_object().unwrap().keys().map(String::as_str).collect();
-    assert!(!keys.contains("phone") && !keys.contains("text"), "not the SMS shape");
+    assert!(
+        !keys.contains("phone") && !keys.contains("text"),
+        "not the SMS shape"
+    );
 }
 
 #[tokio::test]
@@ -93,7 +101,10 @@ async fn created_is_sent_and_the_request_is_notifys_shape_with_the_key_header() 
     let (base, server) = fake_notify(201).await;
     let sender = NotifyEmailSender::new(Some(base), Some("secret-key".to_owned()));
     assert!(sender.is_configured());
-    assert_eq!(sender.send(&message()).await.expect("sent"), EmailOutcome::Sent);
+    assert_eq!(
+        sender.send(&message()).await.expect("sent"),
+        EmailOutcome::Sent
+    );
     let req = server.await.expect("the fake saw one request");
     assert!(req.starts_with("POST /api/v1/notifications "), "{req}");
     assert!(
@@ -112,7 +123,10 @@ async fn ok_is_already_sent() {
         EmailOutcome::AlreadySent
     );
     let req = server.await.unwrap();
-    assert!(req.starts_with("POST /api/v1/notifications "), "a trailing slash is trimmed: {req}");
+    assert!(
+        req.starts_with("POST /api/v1/notifications "),
+        "a trailing slash is trimmed: {req}"
+    );
 }
 
 #[tokio::test]
@@ -126,7 +140,10 @@ async fn a_server_error_or_no_server_is_email_unavailable() {
     let dead = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = dead.local_addr().unwrap().port();
     drop(dead);
-    let sender = NotifyEmailSender::new(Some(format!("http://127.0.0.1:{port}")), Some("k".to_owned()));
+    let sender = NotifyEmailSender::new(
+        Some(format!("http://127.0.0.1:{port}")),
+        Some("k".to_owned()),
+    );
     let err = sender.send(&message()).await.unwrap_err();
     assert!(err.to_string().contains(EMAIL_UNAVAILABLE), "{err}");
 }
@@ -143,6 +160,9 @@ async fn unset_or_empty_settings_are_not_configured_and_send_nothing() {
         let sender = NotifyEmailSender::new(url.clone(), key.clone());
         assert!(!sender.is_configured(), "{url:?} {key:?}");
         let err = sender.send(&message()).await.unwrap_err();
-        assert!(err.to_string().contains(EMAIL_UNAVAILABLE), "{url:?} {key:?}: {err}");
+        assert!(
+            err.to_string().contains(EMAIL_UNAVAILABLE),
+            "{url:?} {key:?}: {err}"
+        );
     }
 }

@@ -81,13 +81,21 @@ async fn the_app_register_joins_a_desk_customer_with_the_verified_phone() {
                 .expect(sql)
         }
     };
-    assert_eq!(count("SELECT count(*) FROM customers").await, 1, "no second customer");
     assert_eq!(
-        count("SELECT count(*) FROM customers WHERE id = 'CX-DESK0001' AND user_id IS NOT NULL").await,
+        count("SELECT count(*) FROM customers").await,
+        1,
+        "no second customer"
+    );
+    assert_eq!(
+        count("SELECT count(*) FROM customers WHERE id = 'CX-DESK0001' AND user_id IS NOT NULL")
+            .await,
         1
     );
     assert_eq!(
-        count("SELECT count(*) FROM customer_identities WHERE type = 'PHONE' AND status = 'ACTIVE'").await,
+        count(
+            "SELECT count(*) FROM customer_identities WHERE type = 'PHONE' AND status = 'ACTIVE'"
+        )
+        .await,
         1,
         "the PHONE is not written twice"
     );
