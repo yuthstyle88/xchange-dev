@@ -170,6 +170,7 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
         <input
           name="ref"
           autocomplete="off"
+          maxLength={100}
           value={store.ref()}
           disabled={isCash()}
           onInput={(e) => store.setRef(e.currentTarget.value)}
@@ -177,7 +178,13 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
       </label>
       <label class="desk-field">
         <span>{t('account')}</span>
-        <input name="account" autocomplete="off" value={store.account()} onInput={(e) => store.setAccount(e.currentTarget.value)} />
+        <input
+          name="account"
+          autocomplete="off"
+          maxLength={100}
+          value={store.account()}
+          onInput={(e) => store.setAccount(e.currentTarget.value)}
+        />
       </label>
       <label class="desk-field">
         <span>{t('fee')}</span>
@@ -201,7 +208,8 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
       </label>
       <label class="desk-field">
         <span>{t('notes')}</span>
-        <textarea name="notes" value={store.notes()} onInput={(e) => store.setNotes(e.currentTarget.value)} />
+        <textarea name="notes" maxLength={500} value={store.notes()} onInput={(e) => store.setNotes(e.currentTarget.value)} />
+        <div>{store.notes().length} / 500</div>
       </label>
       <label class="desk-field">
         <span>{t('slip')}</span>
