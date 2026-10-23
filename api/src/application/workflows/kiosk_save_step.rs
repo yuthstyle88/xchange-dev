@@ -3,7 +3,7 @@
 use xc_auth::domain::access::{Role as AuthRole, StandingKind};
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, ForeignAmount};
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
@@ -75,7 +75,10 @@ impl SaveStep for KioskSaveStep {
                 live: ctx.form.customer.mode == Mode::Live,
                 side: ctx.form.side,
                 currency,
-                amount: ctx.form.amount,
+                amount: ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+                    ctx.form.amount.minor_i128(),
+                    2,
+                )),
                 method: ctx.form.method.as_str().to_owned(),
                 submission_id: ctx.form.submission_id.clone(),
             };

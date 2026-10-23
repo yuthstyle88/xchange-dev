@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use futures::future::BoxFuture;
 use pos_error::AppResult;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 
 /// A shift's id. `xc-cash::domain::posting::ShiftId` is the same alias; `xc-shift` cannot name it,
 /// because `xc-cash` depends on `xc-shift` (§4.2.1).
@@ -17,18 +17,18 @@ pub type ShiftId = String;
 pub struct ShiftBalance {
     pub currency: CurrencyCode,
     /// The OPENING posting, or the hand-over's, into DRAWER(shift).
-    pub opening: Money,
+    pub opening: ForeignAmount,
     /// Σ quantity_signed on DRAWER(shift), signed: negative after an approved NEGATIVE_STOCK sale.
     /// For a drawer ≥ 0 it equals `expected_in(Drawer(shift))`.
-    pub expected: MoneyDelta,
+    pub expected: QuantityDelta,
     /// Σ positive entries on DRAWER(shift) from postings whose source_type ∉ {EXCHANGE, OPENING}.
-    pub moved_in: Money,
+    pub moved_in: ForeignAmount,
     /// Σ |negative| entries on the same set.
-    pub moved_out: Money,
+    pub moved_out: ForeignAmount,
     /// The shift's verified CLOSE (or HANDOVER_OUT) count: `cash_count_totals.counted`.
-    pub counted: Option<Money>,
+    pub counted: Option<ForeignAmount>,
     /// The same row's difference.
-    pub difference: Option<MoneyDelta>,
+    pub difference: Option<QuantityDelta>,
 }
 
 /// Reads a shift's balances back from the ledger.

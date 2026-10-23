@@ -35,7 +35,7 @@ use xc_cash::domain::posting::{
 use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 
@@ -53,13 +53,18 @@ fn fa(s: &str) -> ForeignAmount {
     ForeignAmount::from_decimal(d(s))
 }
 
-fn money(s: &str) -> Money {
-    Money::parse(s).expect("a valid money")
+fn money(s: &str) -> ForeignAmount {
+    ForeignAmount::from_decimal(Decimal::new(
+        xc_kernel::money::Money::parse(s)
+            .expect("a valid money")
+            .try_minor()
+            .unwrap(),
+        2,
+    ))
 }
 
-fn delta(s: &str) -> MoneyDelta {
-    let minor = (d(s) * Decimal::from(100)).round().to_i128().expect("fits");
-    MoneyDelta::from_minor(minor)
+fn delta(s: &str) -> QuantityDelta {
+    QuantityDelta::from_decimal(d(s)).expect("fits")
 }
 
 fn code(s: &str) -> CurrencyCode {
@@ -1024,7 +1029,7 @@ async fn after_an_approved_negative_stock_sale_expected_is_negative_while_expect
     let place = expected_in(&pool, &ledger, &shift).await;
     assert_eq!(
         place.get(usd()),
-        Money::ZERO,
+        ForeignAmount::ZERO,
         "expected_in still reads 0 for the negative drawer (#924 ruling)"
     );
     assert_eq!(place.get(thb()), money("330"));
@@ -1091,10 +1096,6 @@ fn from_fixture(map: &Value) -> (Vec<(String, i64)>, bool) {
             .iter()
             .map(|(k, v)| (k.clone(), minor_of(jdec(v)))),
     )
-}
-
-fn i64_of(minor: i128) -> i64 {
-    i64::try_from(minor).expect("fits in i64")
 }
 
 fn read_fixture(name: &str) -> Value {
@@ -1424,16 +1425,18 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
                 let at = format!("{what}, shift {k}");
                 let rows = balances_of(&sb, s).await;
 
-                let (got_expected, _) = comparable(
-                    rows.iter()
-                        .map(|r| (r.currency.as_str().to_string(), i64_of(r.expected.minor()))),
-                );
+                let (got_expected, _) = comparable(rows.iter().map(|r| {
+                    (
+                        r.currency.as_str().to_string(),
+                        minor_of(r.expected.value()),
+                    )
+                }));
                 let (place, _) = comparable(
                     expected_in(&pool, &ledger, s)
                         .await
                         .non_zero()
                         .into_iter()
-                        .map(|(c, m)| (c.as_str().to_string(), m.try_minor().unwrap())),
+                        .map(|(c, m)| (c.as_str().to_string(), minor_of(m.value()))),
                 );
                 let (want_expected, dropped) = from_fixture(&after[k]["expected"]);
                 capped_expected += usize::from(dropped);
@@ -1446,12 +1449,10 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
                     "{at}: expected = v2's expected"
                 );
 
-                let (got_opening, _) = comparable(rows.iter().map(|r| {
-                    (
-                        r.currency.as_str().to_string(),
-                        r.opening.try_minor().unwrap(),
-                    )
-                }));
+                let (got_opening, _) = comparable(
+                    rows.iter()
+                        .map(|r| (r.currency.as_str().to_string(), minor_of(r.opening.value()))),
+                );
                 assert_eq!(
                     got_opening,
                     from_fixture(&after[k]["opening"]).0,
@@ -1461,7 +1462,7 @@ async fn the_v2_shift_cases_replay_gives_expected_in_and_the_v2_figures() {
                 for (direction, pick) in [("IN", true), ("OUT", false)] {
                     let (got, _) = comparable(rows.iter().map(|r| {
                         let m = if pick { r.moved_in } else { r.moved_out };
-                        (r.currency.as_str().to_string(), m.try_minor().unwrap())
+                        (r.currency.as_str().to_string(), minor_of(m.value()))
                     }));
                     assert_eq!(
                         got,

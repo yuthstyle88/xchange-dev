@@ -42,6 +42,8 @@ use std::str::FromStr;
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::AppError;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
@@ -200,7 +202,10 @@ impl Db {
             .await
             .expect("read the safe");
         tx.rollback().await.expect("rollback");
-        b.get(usd()).try_minor().unwrap()
+        (b.get(usd()).value() * Decimal::from(100))
+            .round()
+            .to_i64()
+            .unwrap()
     }
 
     async fn status(&self, id: &str) -> String {

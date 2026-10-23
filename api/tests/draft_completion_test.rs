@@ -311,7 +311,10 @@ fn draft(
         employee_id: employee_id.to_owned(),
         side,
         currency: code(currency),
-        amount: money(amount),
+        amount: xc_kernel::money::ForeignAmount::from_decimal(rust_decimal::Decimal::new(
+            money(amount).try_minor().unwrap(),
+            2,
+        )),
         at: CustodyTime::from_epoch_millis(at(-120).timestamp_millis()),
         status: DraftStatus::Open,
         document_ref: None,

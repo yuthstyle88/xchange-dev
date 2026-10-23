@@ -18,7 +18,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, MoneyDelta, QuantityDelta};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 
 use crate::application::ledger_approval::negative_stock::{NEGATIVE_STOCK, NegativeStockSource};
@@ -1284,7 +1284,9 @@ impl CashPostings for LedgerCashPostings {
                 let Ok(code) = CurrencyCode::parse(code.trim()) else {
                     continue;
                 };
-                if let Ok(m) = Money::try_from_minor_i128(minor(sum)?) {
+                if let Ok(d) = Decimal::try_from_i128_with_scale(minor(sum)?, 2)
+                    && let Ok(m) = ForeignAmount::checked_from_decimal(d)
+                {
                     pairs.push((code, m));
                 }
             }
@@ -1345,7 +1347,11 @@ impl CashPostings for LedgerCashPostings {
                 let code = CurrencyCode::parse(code.trim()).map_err(|e| {
                     AppError::Internal(format!("invalid currency code in cash_accounts: {e}"))
                 })?;
-                pairs.push((code, delta(sum)?));
+                let d = Decimal::try_from_i128_with_scale(minor(sum)?, 2)
+                    .map_err(|_| AppError::Internal("ledger amount out of range".into()))?;
+                let qd = QuantityDelta::from_decimal(d)
+                    .map_err(|_| AppError::Internal("ledger amount out of range".into()))?;
+                pairs.push((code, qd));
             }
             pairs.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
             Ok(Some(pairs))

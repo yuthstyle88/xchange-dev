@@ -417,7 +417,7 @@ fn from_balances(b: &Balances) -> Vec<(String, i64)> {
     comparable(
         b.non_zero()
             .into_iter()
-            .map(|(c, m)| (c.as_str().to_string(), m.try_minor().unwrap())),
+            .map(|(c, m)| (c.as_str().to_string(), minor_of(m.value()))),
     )
     .0
 }
@@ -1408,7 +1408,7 @@ async fn non_cash_thb_goes_to_bank_not_drawer() {
         .expect("bank expected");
     assert_eq!(
         bank_balances.get(thb()),
-        money("1600.00"),
+        fa("1600.00"),
         "positive assertion: Bank received THB 1,600.00"
     );
 
@@ -1419,12 +1419,12 @@ async fn non_cash_thb_goes_to_bank_not_drawer() {
         .expect("drawer expected");
     assert_eq!(
         drawer_balances.get(usd()),
-        money("50.00"),
+        fa("50.00"),
         "drawer has 50 USD remaining after sell"
     );
     assert_eq!(
         drawer_balances.get(thb()),
-        money("0.00"),
+        fa("0.00"),
         "non-cash THB does not enter drawer"
     );
 
