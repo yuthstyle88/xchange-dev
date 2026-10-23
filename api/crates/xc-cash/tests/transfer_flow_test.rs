@@ -583,7 +583,7 @@ async fn a_transfer_walks_the_five_states_moves_the_safes_and_a_short_receipt_is
     let exc = &exceptions[0].1;
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("TRANSFER {}", t.id));
-    assert_eq!(exc["safeVariance"]["USD"], -5000);
+    assert_eq!(exc["safeVariance"]["USD"], "-50.00");
     assert!(exc["cashVariance"].is_null());
     assert_eq!(exc["at"], at(40).timestamp_millis());
 

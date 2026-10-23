@@ -647,7 +647,7 @@ async fn a_non_zero_difference_writes_one_cash_exception_and_a_zero_one_writes_n
     let exc = &exceptions[0].1;
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("COUNT {}", close.id));
-    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert_eq!(exc["cashVariance"]["THB"], "-100.00");
     assert!(exc["safeVariance"].is_null());
     assert_eq!(exc["at"], at(660).timestamp_millis());
 

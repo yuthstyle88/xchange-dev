@@ -791,7 +791,7 @@ mod tests {
         let exc = &exceptions[0].1;
         assert_eq!(exc["status"], "OPEN");
         assert_eq!(exc["note"], format!("COUNT {}", close_count.id));
-        assert_eq!(exc["cashVariance"]["THB"], -100000);
+        assert_eq!(exc["cashVariance"]["THB"], "-1000.00");
         assert!(exc["safeVariance"].is_null());
         assert!(exc["targetDifference"].is_null());
         assert_eq!(exc["at"], now.timestamp_millis());
