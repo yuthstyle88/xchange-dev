@@ -300,7 +300,7 @@ describe('KW-6a: C02 BookScreen keyedWrite behaviour (#2103 §9)', () => {
     expect(key2).toBeTruthy();
     expect(key2).not.toBe(key1);
     expect(second!.rawBody).not.toBe(first!.rawBody);
-    expect(JSON.parse(second!.rawBody!).quantity).toBe(250);
+    expect(JSON.parse(second!.rawBody!).quantity).toBe('250');
   });
 
   it('row 5: submit -> 2xx -> submit the same input again sends a new key', async () => {

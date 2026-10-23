@@ -383,6 +383,9 @@ describe('Customer Book (C02) estimate preview error clearing and race ordering 
   it('Edge: A preview error and a create error at once — the create error wins and is not cleared by a later preview', async () => {
     const { qtyInput, submitBtn } = await selectBranchAndSlot();
 
+    qtyInput.value = '100';
+    qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+
     createResponder = async () =>
       json(400, {
         error: { code: 'capacityFull', message: 'Capacity full' },

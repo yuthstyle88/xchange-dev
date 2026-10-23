@@ -48,6 +48,10 @@ export const th = {
   documentsMissing: 'กรุณาอัปโหลดเอกสารอย่างน้อย 1 รายการก่อนส่งข้อมูล',
   caseLocked: 'ไม่สามารถแก้ไขเคสนี้ได้ในสถานะปัจจุบัน',
   uploadFailed: 'อัปโหลดเอกสารไม่สำเร็จ กรุณาลองใหม่',
+  fileRequired: 'กรุณาเลือกไฟล์เอกสาร',
+  fileEmpty: 'ไฟล์เอกสารว่างเปล่า',
+  fileTooLarge: 'ไฟล์ใหญ่เกิน 15 MB',
+  fileTypeNotAccepted: 'รองรับเฉพาะไฟล์ JPEG, PNG หรือ PDF เท่านั้น',
 };
 
 export const en = {
@@ -100,6 +104,10 @@ export const en = {
   documentsMissing: 'Please upload at least one document before submitting',
   caseLocked: 'This verification case is locked and cannot be modified',
   uploadFailed: 'Document upload failed. Please try again.',
+  fileRequired: 'Please choose a document file',
+  fileEmpty: 'Document file is empty',
+  fileTooLarge: 'Document file exceeds 15 MB',
+  fileTypeNotAccepted: 'Only JPEG, PNG, or PDF files are accepted',
 };
 
 export const zh = {
@@ -152,4 +160,8 @@ export const zh = {
   documentsMissing: '提交前请至少上传一份证件',
   caseLocked: '当前申请已锁定，无法修改',
   uploadFailed: '证件上传失败，请重试',
+  fileRequired: '请选择证件文件',
+  fileEmpty: '证件文件为空',
+  fileTooLarge: '证件文件超过 15 MB',
+  fileTypeNotAccepted: '仅支持 JPEG、PNG 或 PDF 文件',
 };
