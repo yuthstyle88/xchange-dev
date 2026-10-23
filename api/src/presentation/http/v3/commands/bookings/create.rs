@@ -46,7 +46,7 @@ pub struct BookingCreateInput {
     pub slot_id: Uuid,
     pub shop_side: String,
     pub currency: String,
-    #[ts(type = "number")]
+    #[ts(type = "string | number")]
     pub quantity: Value,
     #[ts(type = "string")]
     pub quote_id: Option<Uuid>,
@@ -211,9 +211,9 @@ impl CommandAction for BookingCreate {
                     StatusCode::BAD_REQUEST,
                 ),
                 BookingError::SlotUnavailable => V3Error::new(
-                    "capacityFull",
+                    "slotUnavailable",
                     None,
-                    "CAPACITY_FULL",
+                    "SLOT_UNAVAILABLE",
                     StatusCode::BAD_REQUEST,
                 ),
                 BookingError::ValidationFailed { field } => V3Error::new(
