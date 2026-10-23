@@ -13,8 +13,6 @@ import { fieldError } from '../../shared/i18n/field-error';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { checkDecimal, MONEY } from '../../shared/ui/bounded';
 import * as screenI18n from './i18n';
-import * as paymentI18n from './steps/payment/i18n';
-import * as rateI18n from './steps/rate/i18n';
 import { createSaver, newKey, type SaveAnswer } from './save';
 
 export type { SaveAnswer } from './save';
@@ -153,8 +151,6 @@ function pageBranch(path: DeskPath, me: Me | undefined): string {
 }
 
 const t = screenT('desk', screenI18n);
-const rateT = screenT('desk.steps.rate', rateI18n);
-const paymentT = screenT('desk.steps.payment', paymentI18n);
 
 function quoteErrorOf(e: unknown, fallback: string): { field?: string; message: string } {
   if (e instanceof ApiError) {
@@ -162,7 +158,7 @@ function quoteErrorOf(e: unknown, fallback: string): { field?: string; message: 
       return { field: 'couponCode', message: t('couponInvalid') };
     }
     if (e.field === 'quantity' || e.field === 'feeThb') {
-      return fieldError(e, { quantity: rateT('amount'), feeThb: paymentT('fee') });
+      return fieldError(e, { quantity: t('fieldLabel.amount'), feeThb: t('fieldLabel.fee') });
     }
     const message = wordedError(e);
     return e.field ? { field: e.field, message } : { message };
