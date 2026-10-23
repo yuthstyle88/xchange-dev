@@ -16,11 +16,14 @@ use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_infra::transactions::Transactor;
+use rust_decimal::Decimal;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{
+    CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, Money, Side, UnitSize,
+};
 use xc_shift::application::branch_day::service::{
     BeginDraft, BranchDayService, ClockDirection, StartService,
 };
@@ -450,7 +453,54 @@ impl CommandAction for DraftBeginCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
-        let amount = Money::parse(&input.amount).map_err(|e| {
+        let (unit_size_dec, minor_unit_i16): (Decimal, i16) =
+            sqlx::query_as("SELECT unit_size, minor_unit FROM currencies WHERE code = $1")
+                .bind(currency.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    V3Error::new(
+                        "serverError",
+                        None,
+                        e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                })?
+                .ok_or_else(|| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("currency"),
+                        "unknown currency",
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?;
+        let unit_size = UnitSize::from_decimal(unit_size_dec).map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        let minor_unit = MinorUnit::new(minor_unit_i16 as u8).map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        let units = CurrencyUnits::new(currency, unit_size, minor_unit);
+        let foreign_amount = ForeignAmount::parse(&input.amount, &units).map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("amount"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+        // shortcut: BeginDraft still takes 2-decimal Money, upgrade when M1 widens xc-shift draft amount type
+        let amount = Money::parse(&foreign_amount.to_string()).map_err(|e| {
             V3Error::new(
                 "validationFailed",
                 Some("amount"),
