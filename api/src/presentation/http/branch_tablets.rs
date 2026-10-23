@@ -96,6 +96,7 @@ fn tablet_json(tablet: &ListedTablet) -> Value {
 fn pairing_failure(error: PairingError) -> HttpResponse {
     match error {
         PairingError::NameRequired => refuse(400, SPECIFY_TABLET_NAME),
+        PairingError::NameTooLong => refuse(400, TABLET_NAME_TOO_LONG),
         PairingError::BranchHasOne | PairingError::NoSuchDevice => refuse(400, NO_SUCH_TABLET),
         PairingError::App(e) => failure(e),
     }
@@ -192,9 +193,6 @@ pub async fn branch_tablets_handler(req: HttpRequest, bytes: web::Bytes) -> Http
             let branch = BranchId::new(branch_id);
             match service.pairing().issue(&branch, name, actor_id, now).await {
                 Ok(added) => answer(200, pairing_code_json(&added), true),
-                Err(PairingError::NameRequired) if name.trim().encode_utf16().count() > 60 => {
-                    refuse(400, TABLET_NAME_TOO_LONG)
-                }
                 Err(e) => pairing_failure(e),
             }
         }
