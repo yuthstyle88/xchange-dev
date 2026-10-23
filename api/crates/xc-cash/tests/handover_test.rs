@@ -213,11 +213,10 @@ impl Db {
             .into_iter()
             .find(|b| b.currency.as_str() == currency)
             .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
-        let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
         (
-            to_dec(row.opening.minor_i128()),
-            to_dec(row.expected.minor()),
-            row.counted.map(|m| to_dec(m.minor_i128())),
+            row.opening.value().normalize(),
+            row.expected.value().normalize(),
+            row.counted.map(|m| m.value().normalize()),
         )
     }
 
@@ -623,7 +622,7 @@ async fn a_short_handover_count_opens_b_on_the_counted_lines_and_writes_one_exce
     let exc = &exceptions[0].1;
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("HANDOVER {}", h.id));
-    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert_eq!(exc["cashVariance"]["THB"], "-100.00");
     assert!(exc["safeVariance"].is_null());
     assert_eq!(exc["at"], at(660).timestamp_millis());
 }
@@ -868,7 +867,7 @@ async fn a_currency_a_holds_but_the_handover_count_omits_reads_as_zero() {
     let exc = &exceptions[0].1;
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("HANDOVER {}", h.id));
-    assert_eq!(exc["cashVariance"]["USD"], -10000);
+    assert_eq!(exc["cashVariance"]["USD"], "-100.00");
     assert!(exc["safeVariance"].is_null());
     assert_eq!(exc["at"], at(660).timestamp_millis());
 }

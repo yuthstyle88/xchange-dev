@@ -6,7 +6,6 @@ use std::sync::Arc;
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::ids::BranchId;
@@ -97,6 +96,20 @@ impl StaffFloorReader {
                 || Authorizer::check(Some(actor), Permission::CashManage, &target, now).is_ok();
 
         let (target_dto, safe_dto) = if has_cash_permission {
+            let minor_units: HashMap<String, i16> =
+                sqlx::query_as("SELECT trim(code), minor_unit FROM currencies")
+                    .fetch_all(&self.pool)
+                    .await?
+                    .into_iter()
+                    .collect();
+            let fmt = |code: &str, mut d: rust_decimal::Decimal| {
+                d = d.normalize();
+                let scale = minor_units.get(code).copied().unwrap_or(2).max(0) as u32;
+                if d.scale() < scale {
+                    d.rescale(scale);
+                }
+                d.to_string()
+            };
             let t = facts
                 .ops
                 .as_ref()
@@ -104,13 +117,8 @@ impl StaffFloorReader {
                 .map(|target| {
                     let mut amounts = HashMap::new();
                     for (code, money) in target.amounts.non_zero() {
-                        amounts.insert(
-                            code.as_str().to_string(),
-                            format!(
-                                "{:.2}",
-                                Decimal::from_i128_with_scale(money.minor_i128(), 2)
-                            ),
-                        );
+                        amounts
+                            .insert(code.as_str().to_string(), fmt(code.as_str(), money.value()));
                     }
                     StaffFloorTarget {
                         amounts,
@@ -126,13 +134,7 @@ impl StaffFloorReader {
                 .map(|safe| {
                     let mut map = HashMap::new();
                     for (code, money) in safe.non_zero() {
-                        map.insert(
-                            code.as_str().to_string(),
-                            format!(
-                                "{:.2}",
-                                Decimal::from_i128_with_scale(money.minor_i128(), 2)
-                            ),
-                        );
+                        map.insert(code.as_str().to_string(), fmt(code.as_str(), money.value()));
                     }
                     map
                 });

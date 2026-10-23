@@ -114,6 +114,21 @@ impl ComputeAction for ShiftValuationAction {
                 }
             });
 
+            let minor_units: HashMap<String, i16> =
+                sqlx::query_as("SELECT trim(code), minor_unit FROM currencies")
+                    .fetch_all(repo.pool())
+                    .await
+                    .map_err(|_| server_error())?
+                    .into_iter()
+                    .collect();
+            let fmt_amount = |code: &str, mut d: Decimal| {
+                d = d.normalize();
+                let scale = minor_units.get(code).copied().unwrap_or(2).max(0) as u32;
+                if d.scale() < scale {
+                    d.rescale(scale);
+                }
+                d.to_string()
+            };
             let currencies: Vec<ShiftValuationCurrency> = codes
                 .iter()
                 .map(|&code| {
@@ -122,8 +137,8 @@ impl ComputeAction for ShiftValuationAction {
                     let needs_rate = code.as_str() != "THB";
                     ShiftValuationCurrency {
                         currency: code.as_str().to_string(),
-                        opening: MoneyDto(fixed2(o_c.minor_i128())),
-                        current: MoneyDto(fixed2(e_c.minor_i128())),
+                        opening: MoneyDto(fmt_amount(code.as_str(), o_c.value())),
+                        current: MoneyDto(fmt_amount(code.as_str(), e_c.value())),
                         needs_rate,
                     }
                 })
@@ -168,13 +183,8 @@ impl ComputeAction for ShiftValuationAction {
             for c in &currencies {
                 let r_c = rate_by_currency[&c.currency];
                 let code = CurrencyCode::parse(&c.currency).map_err(|_| server_error())?;
-                let o_c = shift.opening.get(code);
-                let e_c = shift.expected.get(code);
-
-                let o_dec = Decimal::try_from_i128_with_scale(o_c.minor_i128(), 2)
-                    .map_err(|_| server_error())?;
-                let e_dec = Decimal::try_from_i128_with_scale(e_c.minor_i128(), 2)
-                    .map_err(|_| server_error())?;
+                let o_dec = shift.opening.get(code).value();
+                let e_dec = shift.expected.get(code).value();
 
                 let val_o = round_cents(o_dec * r_c).ok_or_else(server_error)?;
                 let val_e = round_cents(e_dec * r_c).ok_or_else(server_error)?;

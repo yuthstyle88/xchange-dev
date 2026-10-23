@@ -5,10 +5,9 @@ use std::collections::BTreeMap;
 
 use futures::future::BoxFuture;
 use pos_error::{AppError, AppResult};
-use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use sqlx::{FromRow, PgPool};
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances, ShiftId};
 
 /// `ShiftBalances` read from `cash_accounts`, `ledger_postings`, `ledger_entries`, `cash_counts` and
@@ -23,27 +22,43 @@ impl PgLedgerShiftBalances {
     }
 }
 
-fn minor(v: Decimal) -> AppResult<i128> {
-    (v * Decimal::from(100))
-        .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
-        .to_i128()
-        .ok_or_else(|| AppError::Internal("ledger amount out of range".into()))
+fn to_money(v: Decimal, currency: CurrencyCode, max_scale: u32) -> AppResult<ForeignAmount> {
+    let mut d = v.normalize();
+    if d.scale() > max_scale {
+        return Err(AppError::Internal(format!(
+            "ledger balance for {currency} has scale {} > minor_unit {max_scale}: {v}",
+            d.scale()
+        )));
+    }
+    if d.scale() < 2 {
+        d.rescale(2);
+    }
+    ForeignAmount::checked_from_decimal(d).map_err(|_| {
+        AppError::Internal(format!(
+            "ledger balance for {currency} is not a money amount: {v}"
+        ))
+    })
 }
 
-fn to_money(v: Decimal) -> AppResult<Money> {
-    let m = minor(v)?;
-    Money::try_from_minor_i128(m)
-        .map_err(|_| AppError::Internal(format!("ledger cost is not a money amount: {v}")))
-}
-
-fn to_delta(v: Decimal) -> AppResult<MoneyDelta> {
-    let m = minor(v)?;
-    Ok(MoneyDelta::from_minor(m))
+fn to_delta(v: Decimal, currency: CurrencyCode, max_scale: u32) -> AppResult<QuantityDelta> {
+    let mut d = v.normalize();
+    if d.scale() > max_scale {
+        return Err(AppError::Internal(format!(
+            "ledger balance for {currency} has scale {} > minor_unit {max_scale}: {v}",
+            d.scale()
+        )));
+    }
+    if d.scale() < 2 {
+        d.rescale(2);
+    }
+    QuantityDelta::from_decimal(d)
+        .map_err(|_| AppError::Internal(format!("ledger balance for {currency} out of range: {v}")))
 }
 
 #[derive(FromRow)]
 struct ShiftBalanceRow {
     currency: String,
+    minor_unit: Option<i16>,
     opening: Decimal,
     expected: Decimal,
     moved_in: Decimal,
@@ -56,6 +71,7 @@ struct ShiftBalanceRow {
 struct ShiftBalanceManyRow {
     shift_id: String,
     currency: String,
+    minor_unit: Option<i16>,
     opening: Decimal,
     expected: Decimal,
     moved_in: Decimal,
@@ -64,8 +80,10 @@ struct ShiftBalanceManyRow {
     difference: Option<Decimal>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn into_shift_balance(
     currency: &str,
+    minor_unit: Option<i16>,
     opening: Decimal,
     expected: Decimal,
     moved_in: Decimal,
@@ -75,12 +93,17 @@ fn into_shift_balance(
 ) -> AppResult<ShiftBalance> {
     let currency = CurrencyCode::parse(currency)
         .map_err(|_| AppError::Internal(format!("invalid currency code: {currency}")))?;
-    let opening = to_money(opening)?;
-    let expected = to_delta(expected)?;
-    let moved_in = to_money(moved_in)?;
-    let moved_out = to_money(moved_out)?;
-    let counted = counted.map(to_money).transpose()?;
-    let difference = difference.map(to_delta).transpose()?;
+    let max_scale = minor_unit.unwrap_or(2).max(0) as u32;
+    let opening = to_money(opening, currency, max_scale)?;
+    let expected = to_delta(expected, currency, max_scale)?;
+    let moved_in = to_money(moved_in, currency, max_scale)?;
+    let moved_out = to_money(moved_out, currency, max_scale)?;
+    let counted = counted
+        .map(|v| to_money(v, currency, max_scale))
+        .transpose()?;
+    let difference = difference
+        .map(|v| to_delta(v, currency, max_scale))
+        .transpose()?;
 
     Ok(ShiftBalance {
         currency,
@@ -126,6 +149,7 @@ count_balances AS (
 )
 SELECT
     trim(coalesce(d.currency, c.currency))::text AS currency,
+    cur.minor_unit AS minor_unit,
     coalesce(d.opening, 0) AS opening,
     coalesce(d.expected, 0) AS expected,
     coalesce(d.moved_in, 0) AS moved_in,
@@ -134,6 +158,7 @@ SELECT
     c.difference
 FROM drawer_balances d
 FULL OUTER JOIN count_balances c ON c.currency = d.currency
+LEFT JOIN currencies cur ON cur.code = coalesce(d.currency, c.currency)
 ORDER BY
     CASE WHEN coalesce(d.currency, c.currency) = 'THB' THEN 0 ELSE 1 END,
     coalesce(d.currency, c.currency) ASC
@@ -176,6 +201,7 @@ count_balances AS (
 SELECT
     coalesce(d.shift_id, c.shift_id) AS shift_id,
     trim(coalesce(d.currency, c.currency))::text AS currency,
+    cur.minor_unit AS minor_unit,
     coalesce(d.opening, 0) AS opening,
     coalesce(d.expected, 0) AS expected,
     coalesce(d.moved_in, 0) AS moved_in,
@@ -185,6 +211,7 @@ SELECT
 FROM drawer_balances d
 FULL OUTER JOIN count_balances c
     ON c.shift_id = d.shift_id AND c.currency = d.currency
+LEFT JOIN currencies cur ON cur.code = coalesce(d.currency, c.currency)
 ORDER BY
     coalesce(d.shift_id, c.shift_id) ASC,
     CASE WHEN coalesce(d.currency, c.currency) = 'THB' THEN 0 ELSE 1 END,
@@ -207,6 +234,7 @@ impl ShiftBalances for PgLedgerShiftBalances {
             for r in rows {
                 balances.push(into_shift_balance(
                     &r.currency,
+                    r.minor_unit,
                     r.opening,
                     r.expected,
                     r.moved_in,
@@ -240,6 +268,7 @@ impl ShiftBalances for PgLedgerShiftBalances {
             for r in rows {
                 let balance = into_shift_balance(
                     &r.currency,
+                    r.minor_unit,
                     r.opening,
                     r.expected,
                     r.moved_in,
@@ -435,35 +464,59 @@ mod tests {
         assert_eq!(balances.len(), 1);
         let thb_row = &balances[0];
         assert_eq!(thb_row.currency, CurrencyCode::THB);
-        assert_eq!(thb_row.counted, Some(Money::parse("4995.00").unwrap()));
-        assert_eq!(thb_row.difference, Some(MoneyDelta::from_minor(-500)));
+        assert_eq!(
+            thb_row.counted,
+            Some(ForeignAmount::from_decimal(Decimal::new(499_500, 2)))
+        );
+        assert_eq!(
+            thb_row.difference,
+            Some(QuantityDelta::from_decimal(Decimal::new(-500, 2)).unwrap())
+        );
 
         pool.close().await;
     }
 
     #[tokio::test]
-    async fn half_away_from_zero_rounds_third_decimal_away_from_zero_never_bankers() {
+    async fn three_decimal_currency_is_kept_and_excess_places_are_refused() {
         let (pool, branch) = db().await;
         let sb = PgLedgerShiftBalances::new(pool.clone());
         let shift = create_shift(&pool, &branch).await;
 
-        // 0.0250 count line (even second decimal 2; banker's rounds to 0.02, half away from zero to 0.03)
-        // -0.0250 difference (banker's rounds to -0.02, half away from zero to -0.03)
         seed_verified_close_count(
             &pool,
             &branch,
             &shift,
             0,
-            ("THB", "0.0250", "0.0000", "-0.0250"),
+            ("KWD", "0.0250", "0.0000", "-0.0250"),
         )
         .await;
 
         let balances = sb.shift_balances(&shift).await.expect("shift_balances");
         assert_eq!(balances.len(), 1);
-        let thb_row = &balances[0];
-        assert_eq!(thb_row.currency, CurrencyCode::THB);
-        assert_eq!(thb_row.counted, Some(Money::parse("0.03").unwrap()));
-        assert_eq!(thb_row.difference, Some(MoneyDelta::from_minor(-3)));
+        let kwd_row = &balances[0];
+        assert_eq!(kwd_row.currency, CurrencyCode::parse("KWD").unwrap());
+        assert_eq!(
+            kwd_row.counted,
+            Some(ForeignAmount::from_decimal(Decimal::new(25, 3)))
+        );
+        assert_eq!(
+            kwd_row.difference,
+            Some(QuantityDelta::from_decimal(Decimal::new(-25, 3)).unwrap())
+        );
+
+        let shift_bad = create_shift(&pool, &branch).await;
+        seed_verified_close_count(
+            &pool,
+            &branch,
+            &shift_bad,
+            0,
+            ("THB", "0.0250", "0.0000", "-0.0250"),
+        )
+        .await;
+        assert!(matches!(
+            sb.shift_balances(&shift_bad).await,
+            Err(AppError::Internal(ref msg)) if msg.contains("THB")
+        ));
 
         pool.close().await;
     }

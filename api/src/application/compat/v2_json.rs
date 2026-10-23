@@ -31,7 +31,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
 use xc_customer::domain::customer::entities::customer::Customer;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, QuantityDelta, Rate, Side};
 use xc_rate::domain::branch::entities::branch::Branch;
 use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_rate::domain::rate::entities::rate_change::RateChange;
@@ -227,13 +227,17 @@ pub fn money_json(amount: Money) -> V2Json {
     V2Json::Number(shortest(&amount.to_string()))
 }
 
+pub fn foreign_json(amount: ForeignAmount) -> V2Json {
+    V2Json::Number(shortest(&amount.to_string()))
+}
+
 /// A rate as the JSON number v2 printed: `32.1000` → `32.1`, `0.2105` → `0.2105`.
 pub fn rate_json(rate: Rate) -> V2Json {
     V2Json::Number(shortest(&rate.to_string()))
 }
 
 /// A signed amount as the JSON number v2 printed: `-0.50` → `-0.5`, zero → `0`.
-pub fn delta_json(delta: MoneyDelta) -> V2Json {
+pub fn delta_json(delta: QuantityDelta) -> V2Json {
     V2Json::Number(shortest(&delta.to_string()))
 }
 
@@ -245,7 +249,7 @@ pub fn balances_json(balances: &Balances) -> V2Json {
     V2Json::Object(
         CurrencyCode::all()
             .iter()
-            .map(|code| (code.as_str().to_string(), money_json(balances.get(*code))))
+            .map(|code| (code.as_str().to_string(), foreign_json(balances.get(*code))))
             .collect(),
     )
 }
@@ -666,7 +670,7 @@ fn draft_json(draft: &TxDraft) -> V2Json {
         ("employeeId", V2Json::text(draft.employee_id.as_str())),
         ("type", V2Json::text(side)),
         ("currency", V2Json::text(draft.currency.as_str())),
-        ("amount", money_json(draft.amount)),
+        ("amount", foreign_json(draft.amount)),
         ("at", custody_time_json(draft.at)),
         ("status", V2Json::text(status)),
     ];

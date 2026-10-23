@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
@@ -414,7 +414,7 @@ impl HandoverService {
                 AppError::Internal(format!("currency not found in register: {curr}"))
             })?;
 
-            let max_scale = (minor as u32).min(2);
+            let max_scale = minor as u32;
             if counted.normalize().scale() > max_scale {
                 return Err(CashError::TooManyDecimals.into());
             }
@@ -552,9 +552,13 @@ impl HandoverService {
             let diff = t.counted - t.expected.unwrap_or(Decimal::ZERO);
             let code = CurrencyCode::parse(t.currency.trim()).map_err(dom)?;
             if !diff.is_zero() {
-                let mut d = diff;
-                d.rescale(2);
-                delta_pairs.push((code, MoneyDelta::from_minor(d.mantissa())));
+                let mut d = diff.normalize();
+                if d.scale() < 2 {
+                    d.rescale(2);
+                }
+                let qd = QuantityDelta::from_decimal(d)
+                    .map_err(|e| AppError::Internal(format!("invalid handover diff {d}: {e}")))?;
+                delta_pairs.push((code, qd));
             }
             if !t.counted.is_zero() {
                 counted.push((t.currency.clone(), t.counted));

@@ -51,7 +51,7 @@ use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CashCount, CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money};
+use xc_kernel::money::{CurrencyCode, ForeignAmount};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
@@ -216,11 +216,10 @@ impl Db {
             .into_iter()
             .find(|b| b.currency.as_str() == currency)
             .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
-        let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
         (
-            to_dec(row.opening.minor_i128()),
-            to_dec(row.expected.minor()),
-            row.counted.map(|m| to_dec(m.minor_i128())),
+            row.opening.value().normalize(),
+            row.expected.value().normalize(),
+            row.counted.map(|m| m.value().normalize()),
         )
     }
 
@@ -648,7 +647,7 @@ async fn a_non_zero_difference_writes_one_cash_exception_and_a_zero_one_writes_n
     let exc = &exceptions[0].1;
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("COUNT {}", close.id));
-    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert_eq!(exc["cashVariance"]["THB"], "-100.00");
     assert!(exc["safeVariance"].is_null());
     assert_eq!(exc["at"], at(660).timestamp_millis());
 
@@ -689,7 +688,7 @@ async fn an_exchange_posts_to_the_savers_shift_only() {
     let thb_in = StockDelta::for_movement(
         CurrencyCode::parse("THB").unwrap(),
         Direction::In,
-        Money::parse("500").unwrap(),
+        ForeignAmount::from_decimal(Decimal::new(50000, 2)),
     );
 
     let mut tx = db.pool.begin().await.expect("begin");
