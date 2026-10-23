@@ -35,6 +35,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
   const [version, setVersion] = createSignal<number | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [saving, setSaving] = createSignal<boolean>(false);
+  const [firstLoaded, setFirstLoaded] = createSignal<boolean>(false);
 
   let activeBranch = '';
   let lastTick: number | undefined;
@@ -58,12 +59,14 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
         setFloors([]);
         setVersion(null);
       }
+      setFirstLoaded(true);
     } catch (err: unknown) {
       if (activeBranch !== branch || seq !== readSeq) return;
       setStaleDataMinutes(null);
       setFloors([]);
       setVersion(null);
       setError(wordedError(err));
+      setFirstLoaded(true);
     }
   };
 
@@ -77,6 +80,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
       setFloors([]);
       setVersion(null);
       setSaving(false);
+      setFirstLoaded(false);
       saveWrite.reset();
       lastTick = tick;
       setError(null);
@@ -159,6 +163,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
             <input
               id="stale-data-minutes"
               type="number"
+              disabled={!firstLoaded()}
               value={staleDataMinutes() === null ? '' : String(staleDataMinutes())}
               onInput={(e) => {
                 const val = e.currentTarget.value.trim();
@@ -185,12 +190,14 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
                   <span class="floor-currency">{floor().currency}</span>
                   <input
                     type="text"
+                    disabled={!firstLoaded()}
                     value={floor().minQuantity}
                     onInput={(e) => updateFloor(floor().currency, e.currentTarget.value)}
                   />
                   <button
                     type="button"
                     class="remove-floor-button"
+                    disabled={!firstLoaded()}
                     onClick={() => handleRemoveFloor(floor().currency)}
                   >
                     {t('removeFloor')}
@@ -206,6 +213,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
               <input
                 id="add-currency"
                 type="text"
+                disabled={!firstLoaded()}
                 value={newCurrency()}
                 onInput={(e) => setNewCurrency(e.currentTarget.value)}
               />
@@ -213,6 +221,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
             <button
               type="button"
               class="add-floor-button"
+              disabled={!firstLoaded()}
               onClick={handleAddFloor}
             >
               {t('addFloor')}
@@ -223,7 +232,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
         <div class="alert-settings-actions">
           <button
             type="button"
-            disabled={saving()}
+            disabled={!firstLoaded() || saving()}
             onClick={handleSave}
           >
             {t('save')}
