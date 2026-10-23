@@ -22,7 +22,7 @@ export const th = {
   onStaleNone: 'ไม่จำกัด (แสดงป้ายเตือน)',
   staleLimitThbLabel: 'วงเงินสูงสุดเมื่อเรทอ้างอิงเก่า (THB)',
   guardRangeInvalid: 'กรอบเรทต้องเป็นทศนิยมไม่เกิน 4 ตำแหน่ง และค่าต่ำสุดต้องไม่เกินค่าสูงสุด',
-  maxReferenceAgeInvalid: 'อายุเรทอ้างอิงสูงสุดต้องเป็นจำนวนเต็มบวก (ชั่วโมง)',
+  maxReferenceAgeInvalid: 'อายุเรทอ้างอิงสูงสุดต้องเป็นจำนวนเต็ม 1–168 ชั่วโมง',
   staleLimitRequired: 'กรุณาระบุวงเงินมากกว่า 0 (ทศนิยมไม่เกิน 2 ตำแหน่ง)',
 };
 
@@ -50,6 +50,6 @@ export const en = {
   onStaleNone: 'No restriction (badge only)',
   staleLimitThbLabel: 'Stale reference limit (THB)',
   guardRangeInvalid: 'Each guard side needs min <= max with at most 4 decimal places',
-  maxReferenceAgeInvalid: 'Max reference age must be a whole number of hours above 0',
+  maxReferenceAgeInvalid: 'Max reference age must be a whole number of 1–168 hours',
   staleLimitRequired: 'Enter a stale limit above 0 with at most 2 decimal places',
 };

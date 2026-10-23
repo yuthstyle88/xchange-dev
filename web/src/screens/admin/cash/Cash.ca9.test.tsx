@@ -482,7 +482,7 @@ describe('transfer actions', () => {
     await click(action(el, 'receive', 'tr-dispatched'));
     const d = dialog();
     type(control<HTMLInputElement>(d, 'input[data-denomination="11"]'), '3');
-    type(control<HTMLInputElement>(d, 'input[data-denomination="12"]'), '6.50');
+    type(control<HTMLInputElement>(d, 'input[data-denomination="12"]'), '6');
     await click(action(d, 'confirm'));
     const w = server.writes();
     expect(w).toHaveLength(1);
@@ -492,7 +492,7 @@ describe('transfer actions', () => {
       id: 'tr-dispatched',
       lines: [
         { currency: 'USD', denominationId: 11, qtyReceived: '3' },
-        { currency: 'USD', denominationId: 12, qtyReceived: '6.50' },
+        { currency: 'USD', denominationId: 12, qtyReceived: '6' },
       ],
     });
     expect(w[0]!.key).toBeTruthy();
@@ -530,7 +530,7 @@ describe('new transfer (transferCreate)', () => {
     choose(control<HTMLSelectElement>(s, 'select[name="kind"]'), 'EXTERNAL_OUT');
     await settle();
     type(control<HTMLInputElement>(s, 'input[data-denomination="12"]'), '4');
-    type(control<HTMLInputElement>(s, 'input[data-denomination="21"]'), '10.5');
+    type(control<HTMLInputElement>(s, 'input[data-denomination="21"]'), '10');
     type(control<HTMLInputElement>(s, 'input[name="note"]'), 'ส่งธนาคาร');
     await click(action(s, 'create'));
     const w = server.writes();
@@ -545,7 +545,7 @@ describe('new transfer (transferCreate)', () => {
       toShiftId: null,
       lines: [
         { currency: 'USD', denominationId: 12, qty: '4' },
-        { currency: 'EUR', denominationId: 21, qty: '10.5' },
+        { currency: 'EUR', denominationId: 21, qty: '10' },
       ],
       note: 'ส่งธนาคาร',
     });

@@ -98,7 +98,8 @@ function isValidGuardSide(minRaw: string, maxRaw: string): boolean {
 function parsePositiveWholeHours(raw: string): number | null {
   const trimmed = raw.trim();
   if (!/^\d+$/.test(trimmed)) return null;
-  if (BigInt(trimmed) <= 0n) return null;
+  const n = BigInt(trimmed);
+  if (n <= 0n || n > 168n) return null;
   return +trimmed;
 }
 
@@ -218,6 +219,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
   const [staleLimitThb, setStaleLimitThb] = createSignal<string>('');
   const [frameErrs, setFrameErrs] = createSignal<Partial<Record<FrameErrorField, keyof typeof table.th>>>({});
   const [sharpMoveErr, setSharpMoveErr] = createSignal<string | null>(null);
+  const [maxReferenceAgeErr, setMaxReferenceAgeErr] = createSignal<string | null>(null);
 
   const syncDomPubCurrencies = () => {
     const scope = sectionRef?.closest('.admin-rates-screen') ?? document;
@@ -256,6 +258,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       setStaleLimitThb(policy.staleLimitThb ?? '');
       setFrameErrs({});
       setSharpMoveErr(null);
+      setMaxReferenceAgeErr(null);
     } else {
       setGuardMap({});
       setMaxReferenceAgeHours('');
@@ -263,6 +266,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       setStaleLimitThb('');
       setFrameErrs({});
       setSharpMoveErr(null);
+      setMaxReferenceAgeErr(null);
     }
   });
 
@@ -384,6 +388,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       staleLimitThb: staleLimitThb(),
     });
     setFrameErrs(errs);
+    setMaxReferenceAgeErr(null);
     const sharpTrim = props.sharpMoveAlertPct().trim();
     if (sharpTrim !== '' && !checkDecimal(sharpTrim, SHARP_MOVE_BOUND).ok) {
       setSharpMoveErr(props.t('sharpMoveInvalid'));
@@ -458,6 +463,9 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       if (fe.field === 'sharpMoveAlertPct') {
         setSharpMoveErr(fe.message);
       }
+      if (fe.field === 'maxReferenceAgeHours') {
+        setMaxReferenceAgeErr(fe.message);
+      }
       props.toast(fe.message);
     }
   });
@@ -514,10 +522,15 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             </div>
           )}
         </Show>
-        <Show when={frameErrs().maxReferenceAgeHours}>
-          {(key) => (
+        <Show
+          when={
+            maxReferenceAgeErr() ??
+            (frameErrs().maxReferenceAgeHours ? props.t(frameErrs().maxReferenceAgeHours!) : null)
+          }
+        >
+          {(msg) => (
             <div class="form-error" role="alert" data-field-error="maxReferenceAgeHours">
-              {props.t(key())}
+              {msg()}
             </div>
           )}
         </Show>
@@ -567,12 +580,16 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
           <input
             type="text"
             name="maxReferenceAgeHours"
+            data-field="maxReferenceAgeHours"
+            min="1"
+            max="168"
             value={maxReferenceAgeHours()}
             disabled={!props.canSavePolicy()}
             title={props.disabledReason}
             onInput={(e) => {
               setMaxReferenceAgeHours(e.currentTarget.value);
               setFrameErrs((prev) => ({ ...prev, maxReferenceAgeHours: undefined }));
+              setMaxReferenceAgeErr(null);
             }}
           />
         </Field>

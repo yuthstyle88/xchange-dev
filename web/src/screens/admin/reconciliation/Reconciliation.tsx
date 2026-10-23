@@ -3,9 +3,9 @@
 // screen: certify sends the shown sheet's branch, day and `figuresHash`, so a sheet that moved since
 // is refused `staleVersion` by the server.
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
-import { ApiClient } from '../../../shared/api/client';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError } from '../../../shared/i18n/field-error';
 import type {
   CertificationRow,
   FinanceReconciliationFilter,
@@ -97,6 +97,10 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
     const shown = sheet();
     if (!shown || !singleDay()) return;
     setError(null);
+    if (note().length > 500) {
+      setError(new ApiError({ status: 400, code: 'validationFailed', field: 'note', message: '' }));
+      return;
+    }
     setBusy(true);
     const input: ReconciliationCertifyInput = {
       branch: shown.branch,
@@ -121,11 +125,18 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const resolvedError = () => {
+    const err = error();
+    if (err === null || err === undefined) return null;
+    if (typeof err === 'string') return { message: err };
+    return fieldError(err, { note: t('note') });
+  };
+
   return (
     <div class="reconciliation">
-      <Show when={error()}>
+      <Show when={resolvedError() && !resolvedError()?.field}>
         <div class="reconciliation-error" role="alert">
-          {typeof error() === 'string' ? (error() as string) : wordedError(error())}
+          {resolvedError()?.message}
         </div>
       </Show>
       <Show when={sheet()}>
@@ -236,10 +247,18 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
                 {t('note')}
                 <input
                   type="text"
+                  name="note"
+                  maxLength={500}
                   value={note()}
                   onInput={(e) => setNote(e.currentTarget.value)}
                 />
               </label>
+              <div>{note().length} / 500</div>
+              <Show when={resolvedError()?.field === 'note'}>
+                <div class="reconciliation-error" role="alert" data-field-error="note">
+                  {resolvedError()?.message}
+                </div>
+              </Show>
               <button
                 type="button"
                 disabled={busy() || !singleDay()}

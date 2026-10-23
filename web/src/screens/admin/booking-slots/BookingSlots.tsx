@@ -3,6 +3,7 @@ import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { locale, screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
@@ -157,9 +158,35 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     setFieldErrors({});
   }
 
+  function boundedFieldLabels(): Record<string, string> {
+    return {
+      reason: t('reason'),
+      cancelCutoffMinutes: t('cancelCutoffMinutes'),
+      noShowGraceMinutes: t('noShowGraceMinutes'),
+      confirmExpiryMinutes: t('confirmExpiryMinutes'),
+    };
+  }
+
+  function localBoundedFieldError(field: string): string {
+    return fieldError(
+      new ApiError({ status: 400, code: 'validationFailed', field, message: '' }),
+      boundedFieldLabels(),
+    ).message;
+  }
+
   function handleApiError(err: unknown) {
     let msg: string;
     if (err instanceof ApiError) {
+      const mappedField = err.field ? FIELD_MAP[err.field] : undefined;
+      const labels = boundedFieldLabels();
+      if (mappedField && Object.prototype.hasOwnProperty.call(labels, mappedField) && !isServerFailure(err)) {
+        const fe = fieldError(
+          new ApiError({ status: err.status, code: err.code, field: mappedField, message: err.message }),
+          labels,
+        );
+        setFieldErrors({ [mappedField]: fe.message });
+        return;
+      }
       const code = err.code;
       const errorKey = `error.${code}`;
       const errKey = `err.${code}`;
@@ -172,7 +199,6 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       } else {
         msg = wordedError(err);
       }
-      const mappedField = err.field ? FIELD_MAP[err.field] : undefined;
       if (mappedField) {
         setFieldErrors({ [mappedField]: msg });
         return;
@@ -236,6 +262,10 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
     if (!closedOn || !reason) {
       setErrorMessage(t('closureValidationFailed'));
+      return;
+    }
+    if (newReason().length > 200) {
+      setFieldErrors({ reason: localBoundedFieldError('reason') });
       return;
     }
 
@@ -366,26 +396,27 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     const cutRaw = cutoff().trim();
     const grcRaw = grace().trim();
     const expRaw = expiry().trim();
-    if (!/^\d+$/.test(cutRaw) || !/^\d+$/.test(grcRaw) || !/^\d+$/.test(expRaw)) {
+    if (!/^\d+$/.test(cutRaw) || !/^\d+$/.test(grcRaw) || !/^\d+$/.test(expRaw) || BigInt(expRaw) <= 0n) {
       setErrorMessage(t('policyValidationFailed'));
+      return;
+    }
+    const overMaxErrs: Record<string, string> = {};
+    if (BigInt(cutRaw) > 129600n) {
+      overMaxErrs.cancelCutoffMinutes = localBoundedFieldError('cancelCutoffMinutes');
+    }
+    if (BigInt(grcRaw) > 129600n) {
+      overMaxErrs.noShowGraceMinutes = localBoundedFieldError('noShowGraceMinutes');
+    }
+    if (BigInt(expRaw) > 129600n) {
+      overMaxErrs.confirmExpiryMinutes = localBoundedFieldError('confirmExpiryMinutes');
+    }
+    if (Object.keys(overMaxErrs).length > 0) {
+      setFieldErrors(overMaxErrs);
       return;
     }
     const cut = Number(cutRaw);
     const grc = Number(grcRaw);
     const exp = Number(expRaw);
-
-    // Boundary checks: cutoff >= 0, grace >= 0, expiry > 0
-    if (
-      !Number.isInteger(cut) ||
-      cut < 0 ||
-      !Number.isInteger(grc) ||
-      grc < 0 ||
-      !Number.isInteger(exp) ||
-      exp <= 0
-    ) {
-      setErrorMessage(t('policyValidationFailed'));
-      return;
-    }
 
     const payload = {
       cancelCutoffMinutes: cut,
@@ -520,13 +551,15 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="reason"
               data-field="reason"
               type="text"
+              maxLength={200}
               aria-invalid={fieldErrors().reason ? 'true' : undefined}
               value={newReason()}
               onInput={(e) => setNewReason(e.currentTarget.value)}
             />
+            <div>{newReason().length} / 200</div>
             <Show when={fieldErrors().reason}>
               {(msg) => (
-                <div role="alert" class="error field-error" data-error-for="reason">
+                <div role="alert" class="error field-error" data-error-for="reason" data-field-error="reason">
                   {msg()}
                 </div>
               )}
@@ -607,13 +640,20 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="cancelCutoffMinutes"
               data-field="cancelCutoffMinutes"
               type="number"
+              min="0"
+              max="129600"
               aria-invalid={fieldErrors().cancelCutoffMinutes ? 'true' : undefined}
               value={cutoff()}
               onInput={(e) => setCutoff(e.currentTarget.value)}
             />
             <Show when={fieldErrors().cancelCutoffMinutes}>
               {(msg) => (
-                <div role="alert" class="error field-error" data-error-for="cancelCutoffMinutes">
+                <div
+                  role="alert"
+                  class="error field-error"
+                  data-error-for="cancelCutoffMinutes"
+                  data-field-error="cancelCutoffMinutes"
+                >
                   {msg()}
                 </div>
               )}
@@ -626,13 +666,20 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="noShowGraceMinutes"
               data-field="noShowGraceMinutes"
               type="number"
+              min="0"
+              max="129600"
               aria-invalid={fieldErrors().noShowGraceMinutes ? 'true' : undefined}
               value={grace()}
               onInput={(e) => setGrace(e.currentTarget.value)}
             />
             <Show when={fieldErrors().noShowGraceMinutes}>
               {(msg) => (
-                <div role="alert" class="error field-error" data-error-for="noShowGraceMinutes">
+                <div
+                  role="alert"
+                  class="error field-error"
+                  data-error-for="noShowGraceMinutes"
+                  data-field-error="noShowGraceMinutes"
+                >
                   {msg()}
                 </div>
               )}
@@ -645,13 +692,20 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="confirmExpiryMinutes"
               data-field="confirmExpiryMinutes"
               type="number"
+              min="1"
+              max="129600"
               aria-invalid={fieldErrors().confirmExpiryMinutes ? 'true' : undefined}
               value={expiry()}
               onInput={(e) => setExpiry(e.currentTarget.value)}
             />
             <Show when={fieldErrors().confirmExpiryMinutes}>
               {(msg) => (
-                <div role="alert" class="error field-error" data-error-for="confirmExpiryMinutes">
+                <div
+                  role="alert"
+                  class="error field-error"
+                  data-error-for="confirmExpiryMinutes"
+                  data-field-error="confirmExpiryMinutes"
+                >
                   {msg()}
                 </div>
               )}

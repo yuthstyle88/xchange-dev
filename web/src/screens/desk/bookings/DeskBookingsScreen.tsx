@@ -99,6 +99,7 @@ export function DeskBookingsScreen(): JSX.Element {
   // Cancel dialog state
   const [cancellingBookingId, setCancellingBookingId] = createSignal<string | null>(null);
   const [cancelReason, setCancelReason] = createSignal('');
+  const [cancelReasonError, setCancelReasonError] = createSignal<string | null>(null);
 
   // Reschedule dialog state
   const [reschedulingBookingId, setReschedulingBookingId] = createSignal<string | null>(null);
@@ -417,6 +418,7 @@ export function DeskBookingsScreen(): JSX.Element {
     }
     setCancellingBookingId(bookingId);
     setCancelReason('');
+    setCancelReasonError(null);
     readErrorActive = false;
     setErrorMessage(null);
     setRetryAction(null);
@@ -427,9 +429,11 @@ export function DeskBookingsScreen(): JSX.Element {
     const bookingId = cancellingBookingId();
     if (!bookingId) return;
     const reason = cancelReason().trim();
-    if (!reason) {
+    if (!reason || reason.length > 200) {
       readErrorActive = false;
-      setErrorMessage(t('reasonRequired'));
+      const msg = !reason ? t('reasonRequired') : t('error.validationFailed');
+      setCancelReasonError(msg);
+      setErrorMessage(msg);
       setRetryAction(null);
       return;
     }
@@ -446,6 +450,7 @@ export function DeskBookingsScreen(): JSX.Element {
     }
 
     readErrorActive = false;
+    setCancelReasonError(null);
     setErrorMessage(null);
     setRetryAction(null);
 
@@ -467,11 +472,20 @@ export function DeskBookingsScreen(): JSX.Element {
       if (cancellingBookingId() === bookingId) {
         setCancellingBookingId(null);
         setCancelReason('');
+        setCancelReasonError(null);
       }
     } catch (err) {
       readErrorActive = false;
-      setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => submitCancel(bookingId, reason));
+      const fe = fieldError(err, { reason: t('reasonLabel') });
+      if (fe.field === 'reason') {
+        setCancelReasonError(fe.message);
+        setErrorMessage(null);
+        setRetryAction(null);
+      } else {
+        setCancelReasonError(null);
+        setErrorMessage(deskBookingError(err));
+        setRetryAction(() => () => submitCancel(bookingId, reason));
+      }
     } finally {
       setWriting(false);
     }
@@ -868,10 +882,22 @@ export function DeskBookingsScreen(): JSX.Element {
                     id="cancel-reason-input"
                     name="reason"
                     class="xc-cancel-reason"
+                    maxLength={200}
                     value={cancelReason()}
-                    onInput={(e) => setCancelReason(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setCancelReason(e.currentTarget.value);
+                      setCancelReasonError(null);
+                    }}
                     placeholder={t('reasonRequired')}
                   />
+                  <div>{cancelReason().length} / 200</div>
+                  <Show when={cancelReasonError()}>
+                    {(msg) => (
+                      <div role="alert" class="field-error">
+                        {msg()}
+                      </div>
+                    )}
+                  </Show>
                 </div>
                 <div class="xc-modal-actions">
                   <button
@@ -1101,6 +1127,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     <input
                       id="new-booking-display-name"
                       name="displayName"
+                      maxLength={100}
                       value={formDisplayName()}
                       onInput={(e) => {
                         setFormDisplayName(e.currentTarget.value);
