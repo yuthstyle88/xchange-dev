@@ -15,11 +15,27 @@ use super::money::{Money, NumberError};
 pub struct ForeignAmount(Decimal);
 
 impl ForeignAmount {
+    pub const ZERO: ForeignAmount = ForeignAmount(Decimal::ZERO);
+
     pub fn parse(text: &str, units: &CurrencyUnits) -> Result<ForeignAmount, NumberError> {
         let val = Bound::numeric(20, units.minor_unit().get(), Sign::Positive)
             .at_most(Money::MAX_INPUT_UNITS)
             .parse(text)?;
         Ok(ForeignAmount(val))
+    }
+
+    pub fn checked_from_decimal(val: Decimal) -> Result<ForeignAmount, NumberError> {
+        if val.is_sign_negative() && !val.is_zero() {
+            return Err(NumberError::Invalid);
+        }
+        let mut d = val;
+        if d.scale() > 4 {
+            d = d.normalize();
+            if d.scale() > 4 {
+                return Err(NumberError::TooManyDecimals);
+            }
+        }
+        Ok(ForeignAmount(d))
     }
 
     pub fn from_decimal(val: Decimal) -> Self {
@@ -28,6 +44,32 @@ impl ForeignAmount {
 
     pub fn value(self) -> Decimal {
         self.0
+    }
+
+    pub fn is_zero(self) -> bool {
+        self.0.is_zero()
+    }
+
+    pub fn checked_plus(self, other: ForeignAmount) -> Result<ForeignAmount, NumberError> {
+        let r = self.0.checked_add(other.0).ok_or(NumberError::Invalid)?;
+        if r.scale() < self.0.scale().max(other.0.scale()) || r.checked_sub(other.0) != Some(self.0)
+        {
+            return Err(NumberError::Invalid);
+        }
+        Self::checked_from_decimal(r)
+    }
+
+    pub fn checked_minus(self, other: ForeignAmount) -> Result<ForeignAmount, NumberError> {
+        let r = self.0.checked_sub(other.0).ok_or(NumberError::Invalid)?;
+        if r.scale() < self.0.scale().max(other.0.scale()) || r.checked_add(other.0) != Some(self.0)
+        {
+            return Err(NumberError::Invalid);
+        }
+        Self::checked_from_decimal(r)
+    }
+
+    pub fn fits(self, units: &CurrencyUnits) -> bool {
+        self.0.normalize().scale() <= u32::from(units.minor_unit().get())
     }
 }
 

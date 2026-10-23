@@ -245,12 +245,7 @@ async fn balances(db: &TestDb, place: CashPlace) -> BTreeMap<String, Decimal> {
     tx.rollback().await.unwrap();
     b.non_zero()
         .into_iter()
-        .map(|(c, m)| {
-            (
-                c.as_str().to_owned(),
-                Decimal::new(m.try_minor().unwrap(), 2),
-            )
-        })
+        .map(|(c, m)| (c.as_str().to_owned(), m.value()))
         .collect()
 }
 

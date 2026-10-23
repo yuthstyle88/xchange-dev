@@ -17,7 +17,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, IntBound, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, IntBound, Money, QuantityDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
@@ -375,9 +375,11 @@ fn compute_exception(
     for (cur, sent_minor) in sent_totals {
         let recv_minor = recv_totals.get(&cur).copied().unwrap_or(0);
         if recv_minor != sent_minor {
+            let dec =
+                Decimal::from_i128_with_scale(i128::from(recv_minor) - i128::from(sent_minor), 2);
             delta_pairs.push((
                 cur,
-                MoneyDelta::from_minor(i128::from(recv_minor) - i128::from(sent_minor)),
+                QuantityDelta::from_decimal(dec).expect("scale 2 fits in QuantityDelta"),
             ));
         }
     }
@@ -655,10 +657,7 @@ impl TransferFlow {
             match &r.from {
                 CashPlace::Drawer(_) | CashPlace::Safe(_) => {
                     let balances = parts.postings.expected_in(tx, &r.from).await?;
-                    let balance_minor = balances.get(r.currency).try_minor().map_err(|e| {
-                        AppError::Internal(format!("expected balance overflows i64: {e}"))
-                    })?;
-                    if Decimal::new(balance_minor, 2) < r.quantity.value() {
+                    if balances.get(r.currency).value() < r.quantity.value() {
                         return Err(AppError::Domain(
                             TransferError::StockInsufficient.to_string(),
                         ));

@@ -477,7 +477,10 @@ impl SaveTransactionWorkflow {
                         let delta = StockDelta::for_tx(
                             form.side,
                             code,
-                            form.amount,
+                            ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
+                                form.amount.minor_i128(),
+                                2,
+                            )),
                             &form.quote,
                             form.method.is_cash(),
                         )

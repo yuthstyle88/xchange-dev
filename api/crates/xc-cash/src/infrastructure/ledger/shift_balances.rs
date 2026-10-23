@@ -8,7 +8,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::{FromRow, PgPool};
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances, ShiftId};
 
 /// `ShiftBalances` read from `cash_accounts`, `ledger_postings`, `ledger_entries`, `cash_counts` and
@@ -30,15 +30,20 @@ fn minor(v: Decimal) -> AppResult<i128> {
         .ok_or_else(|| AppError::Internal("ledger amount out of range".into()))
 }
 
-fn to_money(v: Decimal) -> AppResult<Money> {
+fn to_money(v: Decimal) -> AppResult<ForeignAmount> {
     let m = minor(v)?;
-    Money::try_from_minor_i128(m)
+    let d = Decimal::try_from_i128_with_scale(m, 2)
+        .map_err(|_| AppError::Internal(format!("ledger cost is not a money amount: {v}")))?;
+    ForeignAmount::checked_from_decimal(d)
         .map_err(|_| AppError::Internal(format!("ledger cost is not a money amount: {v}")))
 }
 
-fn to_delta(v: Decimal) -> AppResult<MoneyDelta> {
+fn to_delta(v: Decimal) -> AppResult<QuantityDelta> {
     let m = minor(v)?;
-    Ok(MoneyDelta::from_minor(m))
+    let d = Decimal::try_from_i128_with_scale(m, 2)
+        .map_err(|_| AppError::Internal("ledger amount out of range".into()))?;
+    QuantityDelta::from_decimal(d)
+        .map_err(|_| AppError::Internal("ledger amount out of range".into()))
 }
 
 #[derive(FromRow)]
@@ -435,8 +440,14 @@ mod tests {
         assert_eq!(balances.len(), 1);
         let thb_row = &balances[0];
         assert_eq!(thb_row.currency, CurrencyCode::THB);
-        assert_eq!(thb_row.counted, Some(Money::parse("4995.00").unwrap()));
-        assert_eq!(thb_row.difference, Some(MoneyDelta::from_minor(-500)));
+        assert_eq!(
+            thb_row.counted,
+            Some(ForeignAmount::from_decimal(Decimal::new(499_500, 2)))
+        );
+        assert_eq!(
+            thb_row.difference,
+            Some(QuantityDelta::from_decimal(Decimal::new(-500, 2)).unwrap())
+        );
 
         pool.close().await;
     }
@@ -462,8 +473,14 @@ mod tests {
         assert_eq!(balances.len(), 1);
         let thb_row = &balances[0];
         assert_eq!(thb_row.currency, CurrencyCode::THB);
-        assert_eq!(thb_row.counted, Some(Money::parse("0.03").unwrap()));
-        assert_eq!(thb_row.difference, Some(MoneyDelta::from_minor(-3)));
+        assert_eq!(
+            thb_row.counted,
+            Some(ForeignAmount::from_decimal(Decimal::new(3, 2)))
+        );
+        assert_eq!(
+            thb_row.difference,
+            Some(QuantityDelta::from_decimal(Decimal::new(-3, 2)).unwrap())
+        );
 
         pool.close().await;
     }

@@ -31,7 +31,7 @@ use xc_cash::domain::posting::{CashPlace, CashPostings};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_customer::application::customer::service::CustomerService;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CompatRate, CurrencyCode, MoneyDelta, Side};
+use xc_kernel::money::{CompatRate, CurrencyCode, QuantityDelta, Side};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::rate::entities::counter_rate::CounterRate;
@@ -206,14 +206,14 @@ pub async fn ledger_safe(pool: &sqlx::PgPool, branch: &BranchId) -> AppResult<Op
     activity.map(safe_balances).transpose()
 }
 
-fn safe_balances(rows: Vec<(CurrencyCode, MoneyDelta)>) -> AppResult<Balances> {
+fn safe_balances(rows: Vec<(CurrencyCode, QuantityDelta)>) -> AppResult<Balances> {
     let mut pairs = Vec::with_capacity(rows.len());
     for (code, delta) in rows {
-        let money = delta.to_money().map_err(|_| {
+        let money = delta.to_amount().map_err(|_| {
             AppError::Internal(format!(
                 "ledger safe balance for {} is not a money amount: {} minor",
                 code.as_str(),
-                delta.minor()
+                (delta.value() * Decimal::from(100)).trunc()
             ))
         })?;
         pairs.push((code, money));
@@ -526,34 +526,32 @@ pub(crate) fn uri_component(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xc_kernel::money::Money;
+    use xc_kernel::money::ForeignAmount;
 
     fn code(s: &str) -> CurrencyCode {
         CurrencyCode::parse(s).expect("valid currency code")
+    }
+
+    fn amt(minor: i128) -> ForeignAmount {
+        ForeignAmount::from_decimal(Decimal::from_i128_with_scale(minor, 2))
+    }
+
+    fn delta(minor: i128) -> QuantityDelta {
+        QuantityDelta::from_decimal(Decimal::from_i128_with_scale(minor, 2)).unwrap()
     }
 
     #[test]
     fn safe_balances_positive_keeps_figures() {
         let thb = code("THB");
         let usd = code("USD");
-        let balances = safe_balances(vec![
-            (thb, MoneyDelta::from_minor(12_345)),
-            (usd, MoneyDelta::from_minor(50_00)),
-        ])
-        .expect("positive safe balances succeed");
+        let balances = safe_balances(vec![(thb, delta(12_345)), (usd, delta(50_00))])
+            .expect("positive safe balances succeed");
         assert_eq!(
             balances,
-            Balances::of(&[
-                (thb, Money::parse("123.45").unwrap()),
-                (usd, Money::parse("50.00").unwrap()),
-            ])
+            Balances::of(&[(thb, amt(12_345)), (usd, amt(50_00))])
         );
         assert!(
-            safe_balances(vec![
-                (thb, MoneyDelta::from_minor(12_345)),
-                (usd, MoneyDelta::from_minor(-1)),
-            ])
-            .is_err(),
+            safe_balances(vec![(thb, delta(12_345)), (usd, delta(-1)),]).is_err(),
             "a negative currency alongside a positive one must not clamp to zero"
         );
     }
@@ -563,15 +561,11 @@ mod tests {
         let thb = code("THB");
         let usd = code("USD");
         let balances =
-            safe_balances(vec![(thb, MoneyDelta::ZERO)]).expect("zero safe balance succeeds");
-        assert_eq!(balances, Balances::of(&[(thb, Money::ZERO)]));
-        assert_eq!(balances.get(thb), Money::ZERO);
+            safe_balances(vec![(thb, QuantityDelta::ZERO)]).expect("zero safe balance succeeds");
+        assert_eq!(balances, Balances::of(&[(thb, ForeignAmount::ZERO)]));
+        assert_eq!(balances.get(thb), ForeignAmount::ZERO);
         assert!(
-            safe_balances(vec![
-                (thb, MoneyDelta::ZERO),
-                (usd, MoneyDelta::from_minor(-1))
-            ])
-            .is_err(),
+            safe_balances(vec![(thb, QuantityDelta::ZERO), (usd, delta(-1))]).is_err(),
             "a negative delta is not treated as zero"
         );
     }
@@ -579,7 +573,7 @@ mod tests {
     #[test]
     fn safe_balances_negative_refuses_naming_currency() {
         let usd = code("USD");
-        let err = safe_balances(vec![(usd, MoneyDelta::from_minor(-500))])
+        let err = safe_balances(vec![(usd, delta(-500))])
             .expect_err("negative safe balance must be refused");
         match err {
             AppError::Internal(msg) => {
@@ -594,10 +588,10 @@ mod tests {
     }
 
     #[test]
-    fn safe_balances_out_of_range_refuses() {
+    fn safe_balances_refuses_a_negative_place() {
         let thb = code("THB");
-        let err = safe_balances(vec![(thb, MoneyDelta::from_minor(i128::MAX))])
-            .expect_err("out-of-range safe balance must be refused");
+        let err = safe_balances(vec![(thb, delta(-1))])
+            .expect_err("negative safe balance must be refused");
         assert!(
             matches!(err, AppError::Internal(_)),
             "expected AppError::Internal, got {err}"

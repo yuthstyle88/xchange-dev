@@ -30,6 +30,8 @@ export const th = {
   saveFailed: 'บันทึกไม่สำเร็จ กรุณาลองใหม่',
   newUnsaved: 'รายการนี้ยังไม่บันทึกลง เซิร์ฟเวอร์ ต้องการเริ่มรายการใหม่หรือไม่?',
   couponInvalid: 'คูปองใช้ไม่ได้',
+  'fieldLabel.amount': 'จำนวนเงิน',
+  'fieldLabel.fee': 'ค่าบริการ THB',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -62,4 +64,6 @@ export const en: Record<keyof typeof th, string> = {
   saveFailed: 'Save failed. Please try again',
   newUnsaved: 'This transaction has not been saved to the server. Start a new one?',
   couponInvalid: 'Invalid coupon code',
+  'fieldLabel.amount': 'Amount',
+  'fieldLabel.fee': 'Fee THB',
 };

@@ -276,13 +276,14 @@ describe('CashFlows: branch switch (#2417)', () => {
     expect(root.querySelector<HTMLSelectElement>('#transfer-to-branch')!.value).toBe('');
     expect(root.querySelector<HTMLInputElement>('#transfer-line-1')!.value).toBe('');
 
+    choose('#transfer-to-branch', 'Y');
     root.querySelector<HTMLButtonElement>('[data-action="create"]')!.click();
     await vi.waitFor(() => expect(server.posts.length).toBe(1));
 
     const body = server.posts[0]!.body;
     expect(body.branch).toBe('B');
     expect(body.toBranchId).not.toBe('X');
-    expect(body.toBranchId).toBeNull();
+    expect(body.toBranchId).toBe('Y');
     expect(body.lines).toEqual([]);
   });
 

@@ -22,7 +22,9 @@ import type { Me } from '../../../shared/api/generated/common';
 import type { DenominationRow, Denominations } from '../../../shared/api/generated/denominations';
 import type { TransferBranchRow, TransferBranches } from '../../../shared/api/generated/transfer_branches';
 import { screenT } from '../../../shared/i18n';
+import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { checkInteger } from '../../../shared/ui/bounded';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import { closeDialog, openDialog } from '../parts/Dialog';
@@ -173,6 +175,8 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     setFromShift('');
     setToShift('');
     setLineQty({});
+    setCreateFieldErrors({});
+    setCreateLineErrors({});
     setNote('');
     setRefusal(null);
     setAwaiting(null);
@@ -216,14 +220,24 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     return w as { send(body: B): Promise<R>; reset(): void };
   }
 
-  function message(err: unknown): string {
-    if (err instanceof ApiError && err.code in table.th) {
-      return t(err.code as keyof typeof table.th);
-    }
-    return wordedError(err);
+  function message(err: unknown, labels?: Record<string, string>): string {
+    return resolveError(err, labels).message;
   }
 
-  async function send<B, R>(action: string, path: string, body: B, done: (answer: R) => void): Promise<void> {
+  function resolveError(err: unknown, labels?: Record<string, string>): FieldMessage {
+    if (err instanceof ApiError && err.code in table.th) {
+      return { field: err.field, message: t(err.code as keyof typeof table.th) };
+    }
+    return labels ? fieldError(err, labels) : { message: wordedError(err) };
+  }
+
+  async function send<B, R>(
+    action: string,
+    path: string,
+    body: B,
+    done: (answer: R) => void,
+    options?: { labels?: Record<string, string>; onFieldError?: (fe: FieldMessage) => boolean },
+  ): Promise<void> {
     if (busy()) return;
     const branch = props.branch();
     setBusy(true);
@@ -235,9 +249,12 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
       done(answer);
     } catch (err: unknown) {
       if (props.branch() !== branch) return;
-      const text = message(err);
-      setRefusal(text);
-      toast(text);
+      const fe = resolveError(err, options?.labels);
+      const handled = options?.onFieldError ? options.onFieldError(fe) : false;
+      if (!handled) {
+        setRefusal(fe.message);
+      }
+      toast(fe.message);
     } finally {
       setBusy(false);
     }
@@ -272,20 +289,65 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     const [qty, setQty] = createSignal<Record<number, string>>(
       Object.fromEntries(row.lines.map((l) => [l.denominationId, l.qtySent])),
     );
+    const [lineErrors, setLineErrors] = createSignal<Record<number, string>>({});
     const onSubmit = (e: Event) => {
       e.preventDefault();
-      const lines: CashReceivedLineInput[] = row.lines.map((l) => ({
-        currency: l.currency,
-        denominationId: l.denominationId,
-        qtyReceived: qty()[l.denominationId] ?? '',
-      }));
+      const nextErrors: Record<number, string> = {};
+      const labels: Record<string, string> = {};
+      const lines: CashReceivedLineInput[] = [];
+      for (let i = 0; i < row.lines.length; i++) {
+        const l = row.lines[i]!;
+        const raw = (qty()[l.denominationId] ?? '').trim();
+        labels[`lines[${i}].qty`] = denominationText(l.denominationId);
+        labels[`lines[${i}].qtyReceived`] = denominationText(l.denominationId);
+        if (raw !== '') {
+          const check = checkInteger(raw, 0, 2147483647);
+          if (!check.ok) {
+            nextErrors[l.denominationId] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+            continue;
+          }
+          lines.push({
+            currency: l.currency,
+            denominationId: l.denominationId,
+            qtyReceived: check.text,
+          });
+        } else {
+          lines.push({
+            currency: l.currency,
+            denominationId: l.denominationId,
+            qtyReceived: '',
+          });
+        }
+      }
+      if (Object.keys(nextErrors).length > 0) {
+        setLineErrors(nextErrors);
+        return;
+      }
+      setLineErrors({});
       const body: TransferReceiveInput = { branch: props.branch(), id: row.id, lines };
-      void send<TransferReceiveInput, CashRecordOutput>(`receive:${row.id}`, `/api/cash-transfers/${row.id}/receive`, body, () => {
-        ownDialog = false;
-        closeDialog();
-        toast(t('actionSaved'));
-        void readTransfers();
-      });
+      void send<TransferReceiveInput, CashRecordOutput>(
+        `receive:${row.id}`,
+        `/api/cash-transfers/${row.id}/receive`,
+        body,
+        () => {
+          ownDialog = false;
+          closeDialog();
+          toast(t('actionSaved'));
+          void readTransfers();
+        },
+        {
+          labels,
+          onFieldError: (fe) => {
+            const match = fe.field?.match(/^lines\[(\d+)\]\.(?:qty|qtyReceived)$/);
+            const line = match ? row.lines[+match[1]!] : undefined;
+            if (line) {
+              setLineErrors({ [line.denominationId]: fe.message });
+              return true;
+            }
+            return false;
+          },
+        },
+      );
     };
     ownDialog = true;
     openDialog(t('receiveTitle', { id: row.id }), () => (
@@ -306,8 +368,17 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                 onInput={(e) => {
                   const value = e.currentTarget.value;
                   setQty((prev) => ({ ...prev, [line.denominationId]: value }));
+                  setLineErrors((prev) => {
+                    if (!(line.denominationId in prev)) return prev;
+                    const next = { ...prev };
+                    delete next[line.denominationId];
+                    return next;
+                  });
                 }}
               />
+              <Show when={lineErrors()[line.denominationId]}>
+                {(msg) => <span data-field-error={`lines.${line.denominationId}.qty`}>{msg()}</span>}
+              </Show>
             </div>
           )}
         </For>
@@ -387,6 +458,12 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   const [fromShift, setFromShift] = createSignal('');
   const [toShift, setToShift] = createSignal('');
   const [lineQty, setLineQty] = createSignal<Record<number, string>>({});
+  const [createFieldErrors, setCreateFieldErrors] = createSignal<{
+    toBranch?: string;
+    fromShift?: string;
+    toShift?: string;
+  }>({});
+  const [createLineErrors, setCreateLineErrors] = createSignal<Record<number, string>>({});
   const [note, setNote] = createSignal('');
 
   const openShifts = () => props.shifts().filter((s) => s.status === 'OPEN');
@@ -395,10 +472,46 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
     e.preventDefault();
     const k = kind();
     if (!k) return;
+    const nextFieldErrors: { toBranch?: string; fromShift?: string; toShift?: string } = {};
+    if (k === 'BRANCH' && !toBranch()) {
+      nextFieldErrors.toBranch = t('toBranchRequired');
+    }
+    if (k === 'DRAWER_TO_SAFE' && !fromShift()) {
+      nextFieldErrors.fromShift = t('fromShiftRequired');
+    }
+    if (k === 'SAFE_TO_DRAWER' && !toShift()) {
+      nextFieldErrors.toShift = t('toShiftRequired');
+    }
     const typed = lineQty();
-    const lines: CashLineInput[] = denominations()
-      .filter((d) => (typed[d.id] ?? '').trim() !== '')
-      .map((d) => ({ currency: d.currency, denominationId: d.id, qty: typed[d.id]! }));
+    const lines: CashLineInput[] = [];
+    const nextLineErrors: Record<number, string> = {};
+    const labels: Record<string, string> = {
+      toBranch: t('toBranchLabel'),
+      fromShift: t('fromShiftLabel'),
+      toShift: t('toShiftLabel'),
+    };
+    const lineDenomIds: number[] = [];
+    for (const d of denominations()) {
+      const raw = (typed[d.id] ?? '').trim();
+      if (raw === '') continue;
+      const check = checkInteger(raw, 1, 2147483647);
+      if (!check.ok) {
+        nextLineErrors[d.id] =
+          check.error === 'outOfRange' && !/^-?0+$/.test(raw) ? t('qtyTooLarge') : t('qtyWholeMin1');
+        continue;
+      }
+      const idx = lines.length;
+      labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
+      lineDenomIds.push(d.id);
+      lines.push({ currency: d.currency, denominationId: d.id, qty: check.text });
+    }
+    if (Object.keys(nextFieldErrors).length > 0 || Object.keys(nextLineErrors).length > 0) {
+      setCreateFieldErrors(nextFieldErrors);
+      setCreateLineErrors(nextLineErrors);
+      return;
+    }
+    setCreateFieldErrors({});
+    setCreateLineErrors({});
     const body: TransferCreateInput = {
       branch: props.branch(),
       kind: k,
@@ -408,12 +521,35 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
       lines,
       note: note(),
     };
-    void send<TransferCreateInput, CashRecordOutput>('create', '/api/cash-transfers', body, () => {
-      setLineQty({});
-      setNote('');
-      toast(t('actionSaved'));
-      void readTransfers();
-    });
+    void send<TransferCreateInput, CashRecordOutput>(
+      'create',
+      '/api/cash-transfers',
+      body,
+      () => {
+        setLineQty({});
+        setCreateFieldErrors({});
+        setCreateLineErrors({});
+        setNote('');
+        toast(t('actionSaved'));
+        void readTransfers();
+      },
+      {
+        labels,
+        onFieldError: (fe) => {
+          const match = fe.field?.match(/^lines\[(\d+)\]\.qty$/);
+          const denomId = match ? lineDenomIds[+match[1]!] : undefined;
+          if (denomId !== undefined) {
+            setCreateLineErrors({ [denomId]: fe.message });
+            return true;
+          }
+          if (fe.field === 'toBranch' || fe.field === 'fromShift' || fe.field === 'toShift') {
+            setCreateFieldErrors({ [fe.field]: fe.message });
+            return true;
+          }
+          return false;
+        },
+      },
+    );
   }
 
   // ── the sections ────────────────────────────────────────────────────────────
@@ -591,7 +727,15 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
               <form class="cash-new-transfer" onSubmit={create}>
                 <div>
                   <label for="transfer-kind">{t('headerKind')}</label>
-                  <select id="transfer-kind" name="kind" value={kind()} onChange={(e) => setKind(e.currentTarget.value)}>
+                  <select
+                    id="transfer-kind"
+                    name="kind"
+                    value={kind()}
+                    onChange={(e) => {
+                      setKind(e.currentTarget.value);
+                      setCreateFieldErrors({});
+                    }}
+                  >
                     <option value="">{t('chooseKind')}</option>
                     <For each={KINDS}>{(k) => <option value={k}>{kindText(k)}</option>}</For>
                   </select>
@@ -604,11 +748,17 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                       id="transfer-to-branch"
                       name="toBranch"
                       value={toBranch()}
-                      onChange={(e) => setToBranch(e.currentTarget.value)}
+                      onChange={(e) => {
+                        setToBranch(e.currentTarget.value);
+                        setCreateFieldErrors((prev) => ({ ...prev, toBranch: undefined }));
+                      }}
                     >
                       <option value="">{t('chooseBranch')}</option>
                       <For each={branches()}>{(b) => <option value={b.branchId}>{b.name}</option>}</For>
                     </select>
+                    <Show when={createFieldErrors().toBranch}>
+                      {(msg) => <span data-field-error="toBranch">{msg()}</span>}
+                    </Show>
                   </div>
                 </Show>
 
@@ -619,11 +769,17 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                       id="transfer-from-shift"
                       name="fromShift"
                       value={fromShift()}
-                      onChange={(e) => setFromShift(e.currentTarget.value)}
+                      onChange={(e) => {
+                        setFromShift(e.currentTarget.value);
+                        setCreateFieldErrors((prev) => ({ ...prev, fromShift: undefined }));
+                      }}
                     >
                       <option value="">{t('chooseShift')}</option>
                       <For each={openShifts()}>{(s) => <option value={s.id}>{`${s.id} · ${s.staff}`}</option>}</For>
                     </select>
+                    <Show when={createFieldErrors().fromShift}>
+                      {(msg) => <span data-field-error="fromShift">{msg()}</span>}
+                    </Show>
                   </div>
                 </Show>
 
@@ -634,11 +790,17 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                       id="transfer-to-shift"
                       name="toShift"
                       value={toShift()}
-                      onChange={(e) => setToShift(e.currentTarget.value)}
+                      onChange={(e) => {
+                        setToShift(e.currentTarget.value);
+                        setCreateFieldErrors((prev) => ({ ...prev, toShift: undefined }));
+                      }}
                     >
                       <option value="">{t('chooseShift')}</option>
                       <For each={openShifts()}>{(s) => <option value={s.id}>{`${s.id} · ${s.staff}`}</option>}</For>
                     </select>
+                    <Show when={createFieldErrors().toShift}>
+                      {(msg) => <span data-field-error="toShift">{msg()}</span>}
+                    </Show>
                   </div>
                 </Show>
 
@@ -658,8 +820,17 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           onInput={(e) => {
                             const value = e.currentTarget.value;
                             setLineQty((prev) => ({ ...prev, [d.id]: value }));
+                            setCreateLineErrors((prev) => {
+                              if (!(d.id in prev)) return prev;
+                              const next = { ...prev };
+                              delete next[d.id];
+                              return next;
+                            });
                           }}
                         />
+                        <Show when={createLineErrors()[d.id]}>
+                          {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
+                        </Show>
                       </div>
                     )}
                   </For>
