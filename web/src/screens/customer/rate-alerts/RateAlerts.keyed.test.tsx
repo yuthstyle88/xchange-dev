@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient, type Fetch } from '../../../shared/api/client';
-import { makeMyRateAlertsData } from '../../../shared/testing/fixtures';
+import {
+  makeMyRateAlertsData,
+  makePublishedLineDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { RateAlertsScreen } from './RateAlerts';
 
@@ -41,6 +45,12 @@ function makeHarness(steps: StepAnswer[]) {
     }
     if (method === 'GET' && u.pathname === '/api/public/orgs/tk/branches') {
       return jsonResponse(200, { branches: [{ id: 'MAIN', code: 'MAIN', name: 'Siam Head Office' }] });
+    }
+    if (method === 'GET' && /^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(u.pathname)) {
+      return jsonResponse(
+        200,
+        makePublishedRatesData({ lines: [makePublishedLineDto({ currency: 'USD' })] }),
+      );
     }
     if (method === 'GET' && u.pathname === '/api/v3/views/my_rate_alerts') {
       return jsonResponse(200, { version: 1, changed: true, data: ALERTS_DATA });

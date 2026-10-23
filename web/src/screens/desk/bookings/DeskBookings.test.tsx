@@ -736,7 +736,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
       const referralInput = host.querySelector('input[name="referralCode"], .xc-referral-input') as HTMLInputElement;
       expect(referralInput, 'referralCode input exists in new booking form').not.toBeNull();
 
-      referralInput.value = 'BROKER-REF-789';
+      referralInput.value = 'BROKER789';
       referralInput.dispatchEvent(new Event('input', { bubbles: true }));
 
       const submitBtn = host.querySelector(
@@ -758,7 +758,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
         quantity: 250,
         displayName: 'Charlie Customer',
         phone: '+66812345678',
-        referralCode: 'BROKER-REF-789',
+        referralCode: 'BROKER789',
       });
     });
 

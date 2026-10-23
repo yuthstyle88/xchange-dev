@@ -142,6 +142,8 @@ export function Executive(props: AdminMenuProps): JSX.Element {
   const [definitions, setDefinitions] = createSignal<DefinitionDto[]>([]);
   const [known, setKnown] = createSignal<{ id: string; name: string }[]>([]);
   const [filters, setFilters] = createSignal<Filters>({ branches: [], channel: '', currency: '' });
+  const [currencyInput, setCurrencyInput] = createSignal('');
+  const [currencyError, setCurrencyError] = createSignal<string | null>(null);
   const [refusal, setRefusal] = createSignal<string | null>(null);
   const [loaded, setLoaded] = createSignal(false);
   const [buyReversed, setBuyReversed] = createSignal<string | null>(null);
@@ -281,6 +283,25 @@ export function Executive(props: AdminMenuProps): JSX.Element {
     setFilters({ ...f, branches: chosen });
   };
 
+  const onCurrencyInput = (raw: string) => {
+    const val = raw.toUpperCase();
+    setCurrencyInput(val);
+    const trimmed = val.trim();
+    if (trimmed === '') {
+      setCurrencyError(null);
+      if (filters().currency !== '') {
+        setFilters({ ...filters(), currency: '' });
+      }
+    } else if (/^[A-Z]{3}$/.test(trimmed)) {
+      setCurrencyError(null);
+      if (filters().currency !== trimmed) {
+        setFilters({ ...filters(), currency: trimmed });
+      }
+    } else {
+      setCurrencyError(t('invalidCurrency'));
+    }
+  };
+
   return (
     <div class="executive">
       <header class="executive-header">
@@ -315,9 +336,23 @@ export function Executive(props: AdminMenuProps): JSX.Element {
           <input
             name="currency"
             maxLength={3}
-            value={filters().currency}
-            onChange={(e) => setFilters({ ...filters(), currency: e.currentTarget.value.trim().toUpperCase() })}
+            value={currencyInput()}
+            onInput={(e) => {
+              e.currentTarget.value = e.currentTarget.value.toUpperCase();
+              onCurrencyInput(e.currentTarget.value);
+            }}
+            onChange={(e) => {
+              e.currentTarget.value = e.currentTarget.value.toUpperCase();
+              onCurrencyInput(e.currentTarget.value);
+            }}
           />
+          <Show when={currencyError()}>
+            {(err) => (
+              <span class="field-error" data-field-error="currency" role="alert">
+                {err()}
+              </span>
+            )}
+          </Show>
         </label>
         <label class="executive-field">
           {t('filterChannel')}

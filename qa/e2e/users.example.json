@@ -8,6 +8,10 @@
     "phone": "+66800000101",
     "password": "<from seed-test-booking.sh>"
   },
+  "teller2": {
+    "phone": "+66800000111",
+    "password": "<from seed-test-booking.sh>"
+  },
   "branchManager": {
     "phone": "+66800000103",
     "password": "<from seed-test-booking.sh>"

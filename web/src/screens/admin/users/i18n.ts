@@ -179,6 +179,11 @@ export const th = {
   roleEnded: 'สิ้นสุด {date}',
   roleUntil: 'ถึง {date}',
   more: 'ดูเพิ่มเติม',
+  invalidPhone: 'เบอร์โทรศัพท์ต้องขึ้นต้นด้วย 0 หรือ + ตามด้วยตัวเลข',
+  invalidGrantPeriod: 'วันสิ้นสุดต้องอยู่หลังวันเริ่มมีผล',
+  matrixInvalidCode: 'รหัสกลุ่มต้องเป็น A-Z, 0-9 หรือ _ ความยาว 2–40 ตัวอักษร',
+  matrixInvalidName: 'กรุณาระบุชื่อกลุ่ม (1–80 ตัวอักษร)',
+  matrixCodeTaken: 'รหัสกลุ่มนี้ถูกใช้งานแล้ว',
 };
 
 export const en = {
@@ -362,4 +367,9 @@ export const en = {
   roleEnded: 'ended {date}',
   roleUntil: 'until {date}',
   more: 'Load more',
+  invalidPhone: 'Phone number must start with 0 or + followed by digits',
+  invalidGrantPeriod: 'Valid-until date must be after valid-from date',
+  matrixInvalidCode: 'Group code must be 2–40 characters of A–Z, 0–9, or _',
+  matrixInvalidName: 'Group name is required (1–80 characters)',
+  matrixCodeTaken: 'This group code is already in use.',
 };

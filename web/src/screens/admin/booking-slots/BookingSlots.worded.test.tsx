@@ -75,6 +75,7 @@ describe('BookingSlots wordedError presentation (#2182)', () => {
 
   let commandStatus = 200;
   let commandErrorCode: string | undefined = undefined;
+  let commandErrorField: string | undefined = undefined;
   let commandNetworkError: Error | null = null;
 
   beforeEach(() => {
@@ -88,6 +89,7 @@ describe('BookingSlots wordedError presentation (#2182)', () => {
 
     commandStatus = 200;
     commandErrorCode = undefined;
+    commandErrorField = undefined;
     commandNetworkError = null;
 
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -124,6 +126,7 @@ describe('BookingSlots wordedError presentation (#2182)', () => {
             error: {
               code: commandErrorCode ?? 'error',
               message: 'Command failed',
+              ...(commandErrorField ? { field: commandErrorField } : {}),
             },
           }),
           { status: commandStatus, headers: { 'content-type': 'application/json' } },
@@ -271,5 +274,22 @@ describe('BookingSlots wordedError presentation (#2182)', () => {
     expect(container.querySelector('[role="alert"], .error, .field-error')?.textContent).toBe(
       sharedT('error.network'),
     );
+  });
+
+  it('places a server refusal with err.field at that field instead of only in the top banner (#4919)', async () => {
+    commandStatus = 400;
+    commandErrorCode = 'validationFailed';
+    commandErrorField = 'slotMinutes';
+    mountComponent();
+    await settle();
+
+    clickSaveRule();
+    await settle();
+
+    const slotGroup = container.querySelector('input[name="slotMinutes"]')?.closest('.form-group');
+    expect(slotGroup?.querySelector('[role="alert"]')?.textContent).toBe(
+      table.th['error.validationFailed'],
+    );
+    expect(container.querySelector('.booking-slots-screen > [role="alert"]')).toBeNull();
   });
 });

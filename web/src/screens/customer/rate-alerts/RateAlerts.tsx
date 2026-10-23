@@ -1,5 +1,6 @@
 // AL-5 customer rate-alerts screen (design rate-alerts.md §4.4, §9.1 C11).
 import {
+  createEffect,
   createSignal,
   onCleanup,
   onMount,
@@ -15,18 +16,22 @@ import type {
   MyRateAlertItem,
   MyRateAlertsData,
 } from '../../../shared/api/generated/my_rate_alerts';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type {
   PublicBranchDto,
   PublicBranchesData,
 } from '../../../shared/api/public/public_branches';
 import { fill, locale, screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { checkDecimal, numeric } from '../../../shared/ui/bounded';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import * as table from './i18n';
 import { AlertFacts } from './AlertFacts';
 import './rate-alerts.css';
 
 const t = screenT('customer.rate-alerts', table);
+const TARGET_BOUND = numeric(20, 8, 'positive');
 
 export interface RateAlertsScreenProps {
   /** Injected ApiClient */
@@ -92,9 +97,11 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   const [loadError, setLoadError] = createSignal<string | null>(null);
 
   // Branches list from public API
+  const [resolvedOrg, setResolvedOrg] = createSignal(props.org ?? '');
   const [branches, setBranches] = createSignal<PublicBranchDto[]>([]);
   const [branchesError, setBranchesError] = createSignal<string | null>(null);
   const [branch, setBranch] = createSignal(props.defaultBranch ?? '');
+  const [currencies, setCurrencies] = createSignal<string[]>([]);
 
   // Create form state
   const [currency, setCurrency] = createSignal('USD');
@@ -104,6 +111,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   const [expiresAt, setExpiresAt] = createSignal('');
   const [isCreating, setIsCreating] = createSignal(false);
   const [createError, setCreateError] = createSignal<string | null>(null);
+  const [createFieldErrors, setCreateFieldErrors] = createSignal<Record<string, string>>({});
 
   // Action status/error
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -128,6 +136,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   let sinceVersion: number | undefined = undefined;
   let timerId: ReturnType<typeof setInterval> | undefined = undefined;
   let loadSeq = 0;
+  let ratesSeq = 0;
 
   const ALERT_ERROR_KEYS: Record<string, keyof typeof table.th> = {
     alertLimitReached: 'alertLimitReached',
@@ -136,6 +145,47 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     staleVersion: 'staleVersion',
     validationFailed: 'validationFailed',
   };
+
+  const fieldLabels = () => ({
+    target: t('target'),
+    currency: t('currency'),
+    expiresAt: t('expiresAt'),
+    branch: t('branch'),
+  });
+
+  const createFieldError = (err: unknown): FieldMessage => {
+    const labels = fieldLabels();
+    if (err instanceof ApiError && !isServerFailure(err)) {
+      if (err.code === 'expiresAtNotInFuture') {
+        return { field: 'expiresAt', message: fieldError(err, labels).message };
+      }
+      if (err.code !== 'validationFailed') {
+        const mapped = ALERT_ERROR_KEYS[err.code];
+        if (mapped) {
+          const text = t(mapped);
+          if (text && text !== mapped) return { message: text };
+        }
+      }
+    } else if (
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      typeof (err as { code: unknown }).code === 'string'
+    ) {
+      const mapped = ALERT_ERROR_KEYS[(err as { code: string }).code];
+      if (mapped) {
+        const text = t(mapped);
+        if (text && text !== mapped) return { message: text };
+      }
+    }
+    return fieldError(err, labels);
+  };
+
+  const localFieldError = (field: string): string =>
+    fieldError(
+      new ApiError({ status: 400, code: 'validationFailed', field, message: '' }),
+      fieldLabels(),
+    ).message;
 
   const rateAlertsError = (err: unknown): string => {
     if (err instanceof ApiError) {
@@ -162,6 +212,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   const loadBranches = async () => {
     try {
       const org = props.org || (await readHostOrg(api));
+      setResolvedOrg(org);
       const bJson = await api.publicGet<PublicBranchesData>(
         `/api/public/orgs/${encodeURIComponent(org)}/branches`,
       );
@@ -175,6 +226,32 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       setBranchesError(wordedError(err));
     }
   };
+
+  createEffect(() => {
+    const org = resolvedOrg();
+    const bId = branch();
+    const list = branches();
+    const code = list.find((b) => b.id === bId)?.code;
+    if (!org || !code) return;
+    const seq = ++ratesSeq;
+    void (async () => {
+      try {
+        const rJson = await api.publicGet<PublishedRatesData>(
+          `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(code)}/rates`,
+        );
+        if (seq !== ratesSeq) return;
+        const codes = Array.from(new Set((rJson.lines ?? []).map((l) => l.currency)));
+        setCurrencies(codes);
+        if (!codes.includes(currency())) {
+          setCurrency(codes[0] ?? '');
+        }
+      } catch {
+        if (seq !== ratesSeq) return;
+        setCurrencies([]);
+        setCurrency('');
+      }
+    })();
+  });
 
   const loadAlerts = async (forceFull = false) => {
     const seq = ++loadSeq;
@@ -231,15 +308,25 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
     e.preventDefault();
     if (isCreating()) return;
 
+    setCreateError(null);
+    setCreateFieldErrors({});
+
     const trimmedBranch = branch().trim();
-    const trimmedTarget = target().trim();
-    if (!trimmedBranch || !trimmedTarget) {
-      setCreateError(t('validationFailed'));
+    const rawTarget = target();
+    if (!trimmedBranch) {
+      setCreateFieldErrors({ branch: localFieldError('branch') });
+      return;
+    }
+    if (!currency()) {
+      setCreateFieldErrors({ currency: localFieldError('currency') });
+      return;
+    }
+    if (!checkDecimal(rawTarget, TARGET_BOUND).ok) {
+      setCreateFieldErrors({ target: localFieldError('target') });
       return;
     }
 
     setIsCreating(true);
-    setCreateError(null);
     setActionError(null);
 
     const input: CreateRateAlertInput = {
@@ -247,7 +334,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       currency: currency().trim().toUpperCase(),
       customerSide: customerSide(),
       condition: condition(),
-      target: trimmedTarget,
+      target: rawTarget,
     };
     if (expiresAt().trim()) {
       input.expiresAt = expiresAt().trim();
@@ -261,7 +348,12 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       await loadAlerts(true);
     } catch (err: unknown) {
       // On error (including alertLimitReached): keep form inputs
-      setCreateError(rateAlertsError(err));
+      const fe = createFieldError(err);
+      if (fe.field) {
+        setCreateFieldErrors({ [fe.field]: fe.message });
+      } else {
+        setCreateError(fe.message);
+      }
       if (err instanceof ApiError && err.code === 'staleVersion') {
         void loadAlerts(true);
       }
@@ -368,18 +460,32 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
                 {branchesError()}
               </div>
             </Show>
+            <Show when={createFieldErrors().branch}>
+              {(msg) => <span data-field-error="branch">{msg()}</span>}
+            </Show>
           </div>
 
           <div class="xc-form-group">
             <label class="xc-form-label" for="alert-currency">{t('currency')}</label>
-            <input
+            <select
               id="alert-currency"
-              class="xc-form-input"
-              type="text"
+              class="xc-form-select"
               value={currency()}
-              onInput={(e) => setCurrency(e.currentTarget.value.toUpperCase())}
+              onChange={(e) => setCurrency(e.currentTarget.value)}
               required
-            />
+            >
+              <For each={currencies()}>
+                {(code) => (
+                  // `selected` keeps the shown option equal to `currency()`: the options arrive after the value is set.
+                  <option value={code} selected={code === currency()}>
+                    {code}
+                  </option>
+                )}
+              </For>
+            </select>
+            <Show when={createFieldErrors().currency}>
+              {(msg) => <span data-field-error="currency">{msg()}</span>}
+            </Show>
           </div>
 
           <div class="xc-form-group">
@@ -420,6 +526,9 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
               onInput={(e) => setTarget(e.currentTarget.value)}
               required
             />
+            <Show when={createFieldErrors().target}>
+              {(msg) => <span data-field-error="target">{msg()}</span>}
+            </Show>
           </div>
 
           <div class="xc-form-group">
@@ -431,6 +540,9 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
               value={expiresAt()}
               onInput={(e) => setExpiresAt(e.currentTarget.value)}
             />
+            <Show when={createFieldErrors().expiresAt}>
+              {(msg) => <span data-field-error="expiresAt">{msg()}</span>}
+            </Show>
           </div>
 
           <Show when={createError()}>

@@ -1,6 +1,11 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeMyRateAlertItem, makeMyRateAlertsData } from '../../../shared/testing/fixtures';
+import {
+  makeMyRateAlertItem,
+  makeMyRateAlertsData,
+  makePublishedLineDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { RateAlertsScreen } from './RateAlerts';
 
@@ -36,6 +41,18 @@ function mockBackend(options: { alerts?: ReturnType<typeof makeMyRateAlertItem>[
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+
+    if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) {
+      return new Response(
+        JSON.stringify(
+          makePublishedRatesData({ lines: [makePublishedLineDto({ currency: 'USD' })] }),
+        ),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
     }
 
     if (url.includes('/branches')) {

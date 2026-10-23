@@ -8,13 +8,16 @@ export interface ReasonDialogProps {
   placeholder?: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  onConfirm: (reason: string) => void;
+  required?: boolean;
+  maxLength?: number;
+  onConfirm: (reason: string) => void | Promise<void>;
   onCancel: () => void;
 }
 
 export function ReasonDialog(props: ReasonDialogProps): JSX.Element {
   const t = screenT('staff', { th, en });
   const [reason, setReason] = createSignal('');
+  const [error, setError] = createSignal<string | null>(null);
 
   // Each open starts with an empty reason so a note typed for one item is
   // never pre-filled into the next one (#2248).
@@ -22,10 +25,21 @@ export function ReasonDialog(props: ReasonDialogProps): JSX.Element {
     on(
       () => props.open,
       (open) => {
-        if (open) setReason('');
+        if (open) {
+          setReason('');
+          setError(null);
+        }
       },
     ),
   );
+
+  const handleConfirm = async () => {
+    if (props.required && reason().trim().length === 0) {
+      setError(t('reasonRequired'));
+      return;
+    }
+    await props.onConfirm(reason());
+  };
 
   return (
     <Show when={props.open}>
@@ -35,14 +49,26 @@ export function ReasonDialog(props: ReasonDialogProps): JSX.Element {
           <input
             type="text"
             value={reason()}
+            maxLength={props.maxLength}
             placeholder={props.placeholder ?? t('reasonPlaceholder')}
-            onInput={(e) => setReason(e.currentTarget.value)}
+            onInput={(e) => {
+              setReason(e.currentTarget.value);
+              if (error() && e.currentTarget.value.trim().length > 0) {
+                setError(null);
+              }
+            }}
           />
+          <Show when={props.maxLength !== undefined}>
+            <div>{reason().length} / {props.maxLength}</div>
+          </Show>
+          <Show when={error()}>
+            <div role="alert">{error()}</div>
+          </Show>
           <div class="xc-dialog-actions">
             <button type="button" onClick={() => props.onCancel()}>
               {props.cancelLabel ?? t('cancel')}
             </button>
-            <button type="button" onClick={() => props.onConfirm(reason())}>
+            <button type="button" onClick={handleConfirm}>
               {props.confirmLabel ?? t('confirm')}
             </button>
           </div>

@@ -75,6 +75,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   const [transactions, setTransactions] = createSignal<DeviceTransactionRow[] | undefined>(undefined);
   const [selectedTx, setSelectedTx] = createSignal<string>('');
   const [reason, setReason] = createSignal<string>('');
+  const [reasonError, setReasonError] = createSignal<boolean>(false);
   const [busy, setBusy] = createSignal<boolean>(false);
   const [loadingMoreEvents, setLoadingMoreEvents] = createSignal<boolean>(false);
   const [loadingMoreTransactions, setLoadingMoreTransactions] = createSignal<boolean>(false);
@@ -363,6 +364,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   }
 
   async function handlePrint(): Promise<void> {
+    if (selectedTx().trim() === '') return;
     await runAction(async () => {
       await deviceWrite.send({
         action: 'queue',
@@ -376,6 +378,11 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
   }
 
   async function handleDrawer(): Promise<void> {
+    if (reason().trim() === '') {
+      setReasonError(true);
+      return;
+    }
+    setReasonError(false);
     await runAction(async () => {
       await deviceWrite.send({
         action: 'queue',
@@ -648,19 +655,34 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
               </button>
             </div>
 
-            <label>
-              {t('reason')}
-              <input
-                type="text"
-                maxLength={200}
-                placeholder={t('reasonPlaceholder')}
-                value={reason()}
-                onInput={(e) => setReason(e.currentTarget.value)}
-                disabled={busy()}
-              />
-            </label>
+            <div class="reason-group">
+              <label>
+                {t('reason')}
+                <input
+                  type="text"
+                  maxLength={200}
+                  placeholder={t('reasonPlaceholder')}
+                  value={reason()}
+                  onInput={(e) => {
+                    setReason(e.currentTarget.value);
+                    setReasonError(false);
+                  }}
+                  disabled={busy()}
+                />
+              </label>
+              <Show when={reasonError()}>
+                <p role="alert" class="field-error">
+                  {t('reasonRequired')}
+                </p>
+              </Show>
+            </div>
 
-            <button type="button" onClick={handlePrint} disabled={busy()}>
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={busy() || selectedTx().trim() === ''}
+              title={selectedTx().trim() === '' ? t('printTxRequired') : undefined}
+            >
               {t('print')}
             </button>
             <button type="button" onClick={handleDrawer} disabled={busy()}>

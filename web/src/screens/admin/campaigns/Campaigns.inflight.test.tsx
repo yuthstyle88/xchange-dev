@@ -346,6 +346,19 @@ describe('#2426 Campaigns: write buttons while a write is in flight', () => {
     await settle();
     expect(root.querySelector('.xc-campaign-create'), 'create view is open').not.toBeNull();
 
+    for (const [name, value] of [
+      ['name', 'New Campaign'],
+      ['startsAt', '2026-11-01'],
+      ['endsAt', '2026-11-30'],
+      ['budgetThb', '50000.00'],
+      ['branches', 'MAIN'],
+    ] as const) {
+      const el = root.querySelector<HTMLInputElement>(`.xc-campaign-create input[name="${name}"]`)!;
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await settle();
+
     expect(button('create').disabled, 'create before').toBe(false);
     button('create').click();
     await settle();

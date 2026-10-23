@@ -176,11 +176,12 @@ describe('KioskCurrenciesScreen result_seconds setting (QW-6 #4373)', () => {
     await vi.waitFor(() => {
       const err = getFieldError();
       expect(err, 'error must show beside the field').not.toBeNull();
-      expect(err!.textContent).toBeTruthy();
+      expect(err!.textContent).toContain('3–120');
     });
 
-    // Input keeps the typed input value upon refusal (not reset)
+    // Input keeps the typed input value upon refusal (not reset), and out-of-range is blocked before POST
     expect(input.value).toBe('999');
     expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(fake.posts.filter((p) => (p.body as { action?: string })?.action === 'configureSettings')).toEqual([]);
   });
 });

@@ -289,8 +289,8 @@ describe('#4842 Campaigns: Simulate sends one scenario (SIM-1..SIM-6)', () => {
       scenarios: [{ branchId: 'B1', currency: 'USD', amount: '100' }],
     });
 
-    const error = container.querySelector('.xc-campaigns-error')?.textContent?.trim();
-    expect(error, 'SIM-5: the existing campaignError wording shows').toBe(table.en['error.validationFailed']);
+    const error = container.querySelector('[data-field-error="amount"]')?.textContent?.trim();
+    expect(error, 'SIM-5: the existing campaignError wording shows').toBe(`${table.en.simAmount} is not valid`);
     expect(valueOf('sim-amount'), 'the typed amount stays after the refusal').toBe('100');
   });
 

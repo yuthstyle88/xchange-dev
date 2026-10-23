@@ -64,6 +64,12 @@ const baseTh = {
   // Draft section headers
   currentPublicationTitle: 'เรทที่เผยแพร่อยู่ปัจจุบัน',
   noPublication: 'ยังไม่มีการเผยแพร่เรท',
+
+  // #4912 input bounds & tier errors
+  adjustPctInvalid: 'เปอร์เซ็นต์ปรับเรทต้องเป็นตัวเลขทศนิยมไม่เกิน 4 ตำแหน่ง',
+  sharpMoveInvalid: 'เกณฑ์แจ้งเตือนต้องเป็นตัวเลขมากกว่า 0 (ทศนิยมไม่เกิน 4 ตำแหน่ง)',
+  tierUpperInvalidSuffix: ' ต้องระบุเพดานมูลค่ามากกว่า 0 และทศนิยมไม่เกิน 2 ตำแหน่ง',
+  tierMarginInvalidSuffix: ' ต้องระบุส่วนต่างรับซื้อและขายเป็นตัวเลขทศนิยมไม่เกิน 4 ตำแหน่ง',
 };
 
 const baseEn = {
@@ -128,6 +134,12 @@ const baseEn = {
   // Draft section headers
   currentPublicationTitle: 'Current Published Rates',
   noPublication: 'No published rates yet',
+
+  // #4912 input bounds & tier errors
+  adjustPctInvalid: 'Adjustment percentage must be a number with at most 4 decimal places',
+  sharpMoveInvalid: 'Sharp-move threshold must be a positive number with at most 4 decimal places',
+  tierUpperInvalidSuffix: ' upper limit must be above 0 with at most 2 decimal places',
+  tierMarginInvalidSuffix: ' requires valid buy and sell margins with at most 4 decimal places',
 };
 
 export const th = {

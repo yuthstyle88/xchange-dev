@@ -28,6 +28,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
   const [customers, setCustomers] = createSignal<StaffCustomerRow[]>([]);
   const [selectedCustomer, setSelectedCustomer] = createSignal<StaffCustomerRow | null>(null);
   const [reason, setReason] = createSignal<string>('');
+  const [reasonError, setReasonError] = createSignal<string | null>(null);
   let findSeq = 0;
 
   const [releaseTarget, setReleaseTarget] = createSignal<StaffHoldRow | null>(null);
@@ -102,6 +103,12 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
       setError(t('pickCustomer'));
       return;
     }
+    if (!reason().trim()) {
+      setNotice(null);
+      setReasonError(t('reasonRequired'));
+      return;
+    }
+    setReasonError(null);
     setBusy(true);
     try {
       await placeCmd.send({
@@ -195,9 +202,18 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
           <input
             type="text"
             data-testid="holds-reason"
+            maxLength={500}
             value={reason()}
-            onInput={(e) => setReason(e.currentTarget.value)}
+            onInput={(e) => {
+              setReason(e.currentTarget.value);
+              if (reasonError() && e.currentTarget.value.trim().length > 0) {
+                setReasonError(null);
+              }
+            }}
           />
+          <Show when={reasonError()}>
+            <div role="alert">{reasonError()}</div>
+          </Show>
           <button
             type="button"
             data-testid="holds-place"
@@ -233,6 +249,8 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
       <ReasonDialog
         open={!!releaseTarget()}
         title={t('releaseTitle')}
+        required
+        maxLength={500}
         onConfirm={handleReleaseConfirm}
         onCancel={() => setReleaseTarget(null)}
       />

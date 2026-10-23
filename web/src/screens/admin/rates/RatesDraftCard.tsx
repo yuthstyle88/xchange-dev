@@ -9,8 +9,9 @@ import type {
 } from '../../../shared/api/generated/rate_draft';
 import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
 import type { RatesReferenceData } from '../../../shared/api/generated/rates_reference';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { Field } from '../../../shared/ui/Field';
+import { checkDecimal, RATE, RATE_PERCENT } from '../../../shared/ui/bounded';
 import { formatRate } from '../../../shared/ui/rate';
 import './rates-draft.css';
 
@@ -26,8 +27,7 @@ interface LineFieldErrors {
 }
 
 function isValidManualDecimal(val: string | null | undefined): boolean {
-  const trimmed = (val ?? '').trim();
-  return /^\d+(\.\d{1,8})?$/.test(trimmed) && /[1-9]/.test(trimmed);
+  return checkDecimal((val ?? '').trim(), RATE).ok;
 }
 
 function validateLine(line: RateDraftLineDto): LineFieldErrors {
@@ -85,6 +85,26 @@ export interface RatesDraftCardProps {
 export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
   const [editLines, setEditLines] = createSignal<RateDraftLineDto[]>([]);
   const [lineErrors, setLineErrors] = createSignal<Record<string, LineFieldErrors>>({});
+  const [adjustErrors, setAdjustErrors] = createSignal<{
+    buyAdjustPct?: string;
+    sellAdjustPct?: string;
+  }>({});
+
+  const reportError = (err: unknown): void => {
+    const fe = fieldError(err, {
+      buyAdjustPct: props.t('adjustBuyPct'),
+      sellAdjustPct: props.t('adjustSellPct'),
+      manualBuy: props.t('headerBuy'),
+      manualSell: props.t('headerSell'),
+      reason: props.t('reasonLabel'),
+    });
+    if (fe.field === 'buyAdjustPct') {
+      setAdjustErrors((prev) => ({ ...prev, buyAdjustPct: fe.message }));
+    } else if (fe.field === 'sellAdjustPct') {
+      setAdjustErrors((prev) => ({ ...prev, sellAdjustPct: fe.message }));
+    }
+    props.toast(fe.message);
+  };
 
   createEffect(() => {
     const src = props.draftDetail()?.lines ?? [];
@@ -171,7 +191,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
       props.setSimulateResult(null);
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      props.toast(wordedError(err));
+      reportError(err);
     }
   });
 
@@ -194,7 +214,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
       props.setSimulateResult(res);
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      props.toast(wordedError(err));
+      reportError(err);
     }
   });
 
@@ -217,7 +237,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
       }
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      props.toast(wordedError(err));
+      reportError(err);
     }
   });
 
@@ -240,7 +260,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
       await props.readDrafts(branch, gen);
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      props.toast(wordedError(err));
+      reportError(err);
     }
   });
 
@@ -266,9 +286,9 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
       currency: l.currency,
       buyMode: l.buyMode,
       sellMode: l.sellMode,
-      manualBuy: l.buyMode === 'MANUAL' ? l.manualBuy : null,
-      manualSell: l.sellMode === 'MANUAL' ? l.manualSell : null,
-      reason: l.reason && l.reason.trim() !== '' ? l.reason : null,
+      manualBuy: l.buyMode === 'MANUAL' && l.manualBuy != null ? l.manualBuy.trim() : null,
+      manualSell: l.sellMode === 'MANUAL' && l.manualSell != null ? l.manualSell.trim() : null,
+      reason: l.reason && l.reason.trim() !== '' ? l.reason.trim() : null,
     }));
 
     try {
@@ -294,7 +314,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
       );
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      props.toast(wordedError(err));
+      reportError(err);
     }
   });
 
@@ -302,15 +322,24 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
     const draft = props.draftDetail()?.draft;
     const lines = props.draftDetail()?.lines ?? [];
     if (!draft) return;
-    const branch = props.branch();
-    const gen = props.readGen();
     const policy = props.policyData()?.policy;
     if (!policy) return;
+
+    const buyChk = checkDecimal(props.adjustBuyPct().trim(), RATE_PERCENT);
+    const sellChk = checkDecimal(props.adjustSellPct().trim(), RATE_PERCENT);
+    const nextAdjustErrs: { buyAdjustPct?: string; sellAdjustPct?: string } = {};
+    if (!buyChk.ok) nextAdjustErrs.buyAdjustPct = props.t('adjustPctInvalid');
+    if (!sellChk.ok) nextAdjustErrs.sellAdjustPct = props.t('adjustPctInvalid');
+    setAdjustErrors(nextAdjustErrs);
+    if (!buyChk.ok || !sellChk.ok) return;
+
+    const branch = props.branch();
+    const gen = props.readGen();
     try {
       await props.writeFor('adjustPolicy', 'POST', '/api/rate-policies').send({
         branch,
-        buyAdjustPct: props.adjustBuyPct(),
-        sellAdjustPct: props.adjustSellPct(),
+        buyAdjustPct: buyChk.text,
+        sellAdjustPct: sellChk.text,
         guards: policy.guards,
         maxReferenceAgeHours: policy.maxReferenceAgeHours,
         onStale: policy.onStale,
@@ -322,8 +351,8 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
         currency: l.currency,
         buyMode: l.buyMode,
         sellMode: l.sellMode,
-        manualBuy: l.manualBuy,
-        manualSell: l.manualSell,
+        manualBuy: l.manualBuy != null ? l.manualBuy.trim() : null,
+        manualSell: l.manualSell != null ? l.manualSell.trim() : null,
         reason: l.reason,
       }));
 
@@ -346,7 +375,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
       }
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      props.toast(wordedError(err));
+      reportError(err);
     }
   });
 
@@ -431,15 +460,31 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
               <input
                 type="text"
                 value={props.adjustBuyPct()}
-                onInput={(e) => props.setAdjustBuyPct(e.currentTarget.value)}
+                onInput={(e) => {
+                  props.setAdjustBuyPct(e.currentTarget.value);
+                  setAdjustErrors((prev) => ({ ...prev, buyAdjustPct: undefined }));
+                }}
               />
+              <Show when={adjustErrors().buyAdjustPct}>
+                <span class="field-error" data-field-error="buyAdjustPct">
+                  {adjustErrors().buyAdjustPct}
+                </span>
+              </Show>
             </Field>
             <Field label={props.t('adjustSellPct')} class="adjust-field-label">
               <input
                 type="text"
                 value={props.adjustSellPct()}
-                onInput={(e) => props.setAdjustSellPct(e.currentTarget.value)}
+                onInput={(e) => {
+                  props.setAdjustSellPct(e.currentTarget.value);
+                  setAdjustErrors((prev) => ({ ...prev, sellAdjustPct: undefined }));
+                }}
               />
+              <Show when={adjustErrors().sellAdjustPct}>
+                <span class="field-error" data-field-error="sellAdjustPct">
+                  {adjustErrors().sellAdjustPct}
+                </span>
+              </Show>
             </Field>
             <button
               type="button"
@@ -501,7 +546,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
                                 onInput={(e) => updateLine(currency, { manualBuy: e.currentTarget.value })}
                               />
                               <Show when={isValidManualDecimal(line()?.manualBuy)}>
-                                <span>{formatRate(line()!.manualBuy!, getUnitSize(currency), currency)}</span>
+                                <span>{formatRate(line()!.manualBuy!.trim(), getUnitSize(currency), currency)}</span>
                               </Show>
                             </Show>
                             <Show when={errs()?.manualBuy}>
@@ -543,7 +588,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
                                 onInput={(e) => updateLine(currency, { manualSell: e.currentTarget.value })}
                               />
                               <Show when={isValidManualDecimal(line()?.manualSell)}>
-                                <span>{formatRate(line()!.manualSell!, getUnitSize(currency), currency)}</span>
+                                <span>{formatRate(line()!.manualSell!.trim(), getUnitSize(currency), currency)}</span>
                               </Show>
                             </Show>
                             <Show when={errs()?.manualSell}>

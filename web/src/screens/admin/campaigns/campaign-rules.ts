@@ -1,5 +1,6 @@
 import type { CampaignRuleDetail } from '../../../shared/api/generated/campaign';
 import type { CampaignRuleInput as WireRuleInput } from '../../../shared/api/generated/campaign_version_save';
+import { MONEY, checkDecimal } from '../../../shared/ui/bounded';
 
 export type BenefitType = 'RATE_IMPROVEMENT' | 'FEE_WAIVER';
 
@@ -188,6 +189,12 @@ function isValidCalculation(form: RuleForm): boolean {
     return true;
   }
   const raw = form.calcValue.trim();
+  if (
+    form.benefitType === 'FEE_WAIVER' &&
+    (form.calcMode === 'amount' || form.calcMode === 'fixed')
+  ) {
+    return checkDecimal(raw, MONEY).ok && Number(raw) > 0;
+  }
   if (!DECIMAL_8_RE.test(raw)) {
     return false;
   }
@@ -202,7 +209,6 @@ function isValidCalculation(form: RuleForm): boolean {
   }
   if (form.benefitType === 'FEE_WAIVER') {
     if (form.calcMode === 'percent') return n > 0 && n <= 1;
-    if (form.calcMode === 'amount' || form.calcMode === 'fixed') return n > 0;
     return false;
   }
   return false;

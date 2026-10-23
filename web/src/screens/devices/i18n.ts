@@ -41,7 +41,9 @@ export const th = {
   noTransactions: 'ยังไม่มีรายการ',
   reason: 'เหตุผลเปิดลิ้นชัก',
   reasonPlaceholder: 'เช่น ส่งมอบเงินให้ลูกค้าตามรายการ',
+  reasonRequired: 'กรุณาระบุเหตุผลในการเปิดลิ้นชัก',
   print: 'เพิ่มงานพิมพ์',
+  printTxRequired: 'กรุณาเลือกรายการแลกเงินก่อนเพิ่มงานพิมพ์',
   drawer: 'เพิ่มคำสั่งเปิดลิ้นชัก',
   // D12
   colJobTime: 'เวลา / เลขงาน',
@@ -118,7 +120,9 @@ export const en: Record<keyof typeof th, string> = {
   noTransactions: 'No transactions yet',
   reason: 'Reason for opening drawer',
   reasonPlaceholder: 'e.g. Hand cash to customer for transaction',
+  reasonRequired: 'Enter a reason for opening the drawer',
   print: 'Add Print Job',
+  printTxRequired: 'Select a transaction before adding a print job',
   drawer: 'Add Drawer Command',
   // D12
   colJobTime: 'Time / Job No.',

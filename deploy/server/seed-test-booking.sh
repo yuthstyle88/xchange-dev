@@ -16,6 +16,7 @@
 #   5d. rate_alert_settings for org XC (cooldown 3600s, max 10 active, 30 days, ALL_FRESH), only when none.
 #   5e. A published MARKETING consent text in th, en and zh, so consent toggles do not answer consentTextMissing.
 #   6. A test teller: an Identity account (password login) bound to an ACTIVE users row with TELLER on MAIN.
+#   6a. A second test teller: an Identity account (password login) bound to an ACTIVE users row with TELLER on MAIN.
 #   7. A test customer: an Identity account, then POST /api/app/register (creates the CUSTOMER user and customer).
 #
 # Passwords are generated here and printed once, on this terminal only. They are written to no file.
@@ -40,6 +41,7 @@ if [ "${1:-}" = "--json" ]; then
   exec 3>&1 1>&2
   rnd() { printf '%04d' $(( $(od -An -N2 -tu2 /dev/urandom) % 10000 )); }
   TELLER_PHONE="${TELLER_PHONE:-+6680001$(rnd)}"
+  TELLER2_PHONE="${TELLER2_PHONE:-+6680011$(rnd)}"
   MANAGER_PHONE="${MANAGER_PHONE:-+6680003$(rnd)}"
   FINANCE_PHONE="${FINANCE_PHONE:-+6680004$(rnd)}"
   MARKETING_PHONE="${MARKETING_PHONE:-+6680005$(rnd)}"
@@ -59,6 +61,7 @@ fi
 BASE="$1"
 HOST="${BASE#https://}"
 TELLER_PHONE="${TELLER_PHONE:-+66800000101}"
+TELLER2_PHONE="${TELLER2_PHONE:-+66800000111}"
 MANAGER_PHONE="${MANAGER_PHONE:-+66800000103}"
 FINANCE_PHONE="${FINANCE_PHONE:-+66800000104}"
 MARKETING_PHONE="${MARKETING_PHONE:-+66800000105}"
@@ -227,6 +230,21 @@ else
   TELLER_PW="(unchanged: $TELLER_PHONE was already registered)"
 fi
 
+say "6a. test teller 2 $TELLER2_PHONE (TELLER on $BRANCH)"
+TELLER2_PW="$(new_password)"
+TELLER2_SUB="$(identity_register "$TELLER2_PHONE" "$TELLER2_PW")"
+if [ -n "$TELLER2_SUB" ]; then
+  q "WITH u AS (
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$TELLER2_SUB', 'Test Teller 2', 'ACTIVE', 1, now(), '$OWNER_ID')
+       ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
+     INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
+     SELECT id, 'TELLER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
+  [ "$JSON" = 1 ] || echo "    teller 2 created: $TELLER2_PHONE  password $TELLER2_PW"
+else
+  TELLER2_PW="(unchanged: $TELLER2_PHONE was already registered)"
+fi
+
 say "6b. test branch manager $MANAGER_PHONE (BRANCH_MANAGER on $BRANCH: certifies shift counts)"
 MANAGER_PW="$(new_password)"
 MANAGER_SUB="$(identity_register "$MANAGER_PHONE" "$MANAGER_PW")"
@@ -321,12 +339,13 @@ else
 fi
 
 if [ "$JSON" = 1 ]; then
-  case "$TELLER_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW$MARKETING_PW$MANAGER2_PW$FINANCE2_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
+  case "$TELLER_PW$TELLER2_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW$MARKETING_PW$MANAGER2_PW$FINANCE2_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
   cat >&3 <<JSON
 {
   "baseUrl": "$BASE",
   "customer": { "phone": "$CUSTOMER_PHONE", "password": "$CUSTOMER_PW" },
   "teller":   { "phone": "$TELLER_PHONE", "password": "$TELLER_PW" },
+  "teller2":  { "phone": "$TELLER2_PHONE", "password": "$TELLER2_PW" },
   "branchManager": { "phone": "$MANAGER_PHONE", "password": "$MANAGER_PW" },
   "finance":  { "phone": "$FINANCE_PHONE", "password": "$FINANCE_PW" },
   "marketing": { "phone": "$MARKETING_PHONE", "password": "$MARKETING_PW" },

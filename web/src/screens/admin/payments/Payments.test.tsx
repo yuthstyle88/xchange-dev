@@ -860,17 +860,15 @@ describe("V2-payments Y3: v2's save bar", () => {
     expect(versions).toEqual([3, 4]);
   });
 
-  it("sends a channel on with neither direction and shows the server's sentence: no client rule of its own (§9)", async () => {
-    server.saveRefusal = { status: 400, sentence: NO_DIRECTION };
+  it('refuses a channel on with neither direction before Save with a worded line on that card (§2)', async () => {
     await mount();
     untick(control(card('Cash'), T.buy));
     untick(control(card('Cash'), T.sell));
     await settle();
     button(page(), T.save).click();
     await settle();
-    const sent = onlySave().payload.methods.find((r) => r.id === 'Cash');
-    expect(sent).toEqual({ id: 'Cash', enabled: true, buy: false, sell: false, account: 'Counter 1', instruction: 'Pay at counter 1' });
-    expect(feedback()).toContain(errorText('refused', NO_DIRECTION));
+    expect(server.posts).toEqual([]);
+    expect(card('Cash').textContent ?? '').toContain(NO_DIRECTION);
     expect(feedback()).toContain(NO_DIRECTION);
   });
 

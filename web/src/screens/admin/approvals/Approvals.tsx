@@ -5,6 +5,7 @@ import type {
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
 import { locale, screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardActions } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
@@ -96,18 +97,25 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
   const handleApprove = async () => {
     setError(null);
+    const r = reason();
+    if (decideRefusal('APPROVED', r) === 'reasonTooLong') {
+      const msg = t('reasonTooLong');
+      setError(msg);
+      toast(msg);
+      return;
+    }
     setBusy(true);
     try {
       await props.decideWrite.send({
         outcome: 'APPROVED',
-        reason: reason(),
+        reason: r,
         branch: props.branch,
       });
       if (!alive) return;
       await props.onDecided();
     } catch (err: unknown) {
       if (!alive) return;
-      const message = wordedError(err);
+      const message = fieldError(err, { reason: t('decisionReason') }).message;
       setError(message);
       toast(message);
     } finally {
@@ -120,10 +128,17 @@ function RequestCard(props: RequestCardProps): JSX.Element {
   const handleReject = async () => {
     setError(null);
     const r = reason();
-    if (decideRefusal('REJECTED', r) === 'reasonRequired') {
+    const refusal = decideRefusal('REJECTED', r);
+    if (refusal === 'reasonRequired') {
       const reqMsg = t('reasonRequired');
       setError(reqMsg);
       toast(reqMsg);
+      return;
+    }
+    if (refusal === 'reasonTooLong') {
+      const msg = t('reasonTooLong');
+      setError(msg);
+      toast(msg);
       return;
     }
 
@@ -138,7 +153,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
       await props.onDecided();
     } catch (err: unknown) {
       if (!alive) return;
-      const message = wordedError(err);
+      const message = fieldError(err, { reason: t('decisionReason') }).message;
       setError(message);
       toast(message);
     } finally {
@@ -216,10 +231,12 @@ function RequestCard(props: RequestCardProps): JSX.Element {
               <input
                 type="text"
                 value={reason()}
+                maxLength={500}
                 onInput={(e) => setReason(e.currentTarget.value)}
                 disabled={busy()}
               />
             </label>
+            <div>{reason().length} / 500</div>
 
             <Show when={error()}>
               <div class="error" role="alert">{error()}</div>

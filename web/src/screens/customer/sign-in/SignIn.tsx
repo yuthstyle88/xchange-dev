@@ -3,14 +3,17 @@
 // `POST /api/auth/otp/verify` (after the code request has answered), and only a `200` from verify navigates to `/app`.
 // The server claims this browser's anonymous drafts at verify (P6). No demo login and no fixed code.
 import { createSignal, Show, type JSX } from 'solid-js';
-import { ApiClient } from '../../../shared/api/client';
-import { screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { ApiClient, ApiError } from '../../../shared/api/client';
+import { screenT, t } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
+import { isServerFailure } from '../../../shared/i18n/worded-error';
 import { safeNext } from '../../login/home';
 import * as table from './i18n';
 import './sign-in.css';
 
 const tr = screenT('customer.sign-in', table);
+const PHONE_CODES = new Set(['invalidPhone', 'phoneRequired', 'tooManyAttempts', 'invalidCredentials']);
+const CODE_CODES = new Set(['invalidCode', 'codeExpired']);
 
 /** A Thai number typed with its leading 0 becomes E.164 (+66…); anything else is sent as typed. */
 export function e164(phone: string): string {
@@ -42,6 +45,8 @@ export function SignIn(props: {
   const next = () => nextTarget(props.search);
   const [challenge, setChallenge] = createSignal<string | undefined>();
   const [error, setError] = createSignal('');
+  const [phoneError, setPhoneError] = createSignal('');
+  const [codeError, setCodeError] = createSignal('');
   const [pending, setPending] = createSignal(false);
   const [sending, setSending] = createSignal(false);
   const [hasCode, setHasCode] = createSignal(false);
@@ -49,9 +54,32 @@ export function SignIn(props: {
   let codeInput: HTMLInputElement | undefined;
   let requesting: Promise<void> | undefined;
 
+  const showError = (err: unknown, defaultCodeTarget: 'phone' | 'code') => {
+    const fe = fieldError(err, { phone: tr('phone'), code: tr('code') });
+    let target = fe.field;
+    if (!target && err instanceof ApiError && !isServerFailure(err)) {
+      if (CODE_CODES.has(err.code)) target = 'code';
+      else if (PHONE_CODES.has(err.code)) target = defaultCodeTarget === 'code' && err.code === 'tooManyAttempts' ? 'code' : 'phone';
+    }
+    if (target === 'phone') {
+      setPhoneError(fe.message);
+    } else if (target === 'code') {
+      setCodeError(fe.message);
+    } else {
+      setError(fe.message);
+    }
+  };
+
   const requestCode = (): Promise<void> => {
     if (requesting) return requesting;
+    const rawPhone = (phoneInput?.value ?? '').trim();
+    if (!rawPhone) {
+      setPhoneError(t('input.code.phoneRequired'));
+      return Promise.resolve();
+    }
     setError('');
+    setPhoneError('');
+    setCodeError('');
     setSending(true);
     const run = (async () => {
       try {
@@ -59,7 +87,7 @@ export function SignIn(props: {
           { destination: string; channel: string },
           { challengeId?: string }
         >('/api/auth/otp/request', {
-          destination: e164(phoneInput?.value ?? ''),
+          destination: e164(rawPhone),
           channel: 'sms',
         });
         if (json?.challengeId) {
@@ -68,7 +96,7 @@ export function SignIn(props: {
           setError(tr('requestFailed'));
         }
       } catch (err: unknown) {
-        setError(wordedError(err));
+        showError(err, 'phone');
       } finally {
         requesting = undefined;
         setSending(false);
@@ -86,10 +114,12 @@ export function SignIn(props: {
       const challengeId = challenge();
       if (!challengeId) return;
       setError('');
+      setPhoneError('');
+      setCodeError('');
       await api.post('/api/auth/otp/verify', { challengeId, code });
       props.navigate(next() ?? '/app');
     } catch (err: unknown) {
-      setError(wordedError(err));
+      showError(err, 'code');
     } finally {
       setPending(false);
     }
@@ -98,7 +128,11 @@ export function SignIn(props: {
   const submit = (e: Event) => {
     e.preventDefault();
     const code = (codeInput?.value ?? '').trim();
-    if (code && (challenge() || requesting)) {
+    if (challenge() || requesting) {
+      if (!code) {
+        setCodeError(tr('codeRequired'));
+        return;
+      }
       void verify(code);
     } else {
       void requestCode();
@@ -111,7 +145,21 @@ export function SignIn(props: {
       <form class="xc-sign-in-form" onSubmit={submit}>
         <label>
           {tr('phone')}
-          <input ref={phoneInput} type="tel" name="phone" autocomplete="tel" inputmode="tel" />
+          <input
+            ref={phoneInput}
+            type="tel"
+            name="phone"
+            autocomplete="tel"
+            inputmode="tel"
+            aria-invalid={phoneError() ? 'true' : undefined}
+            aria-describedby={phoneError() ? 'phone-error' : undefined}
+            onInput={() => setPhoneError('')}
+          />
+          <Show when={phoneError()}>
+            <span id="phone-error" role="alert" class="xc-sign-in-error" data-field-error="phone">
+              {phoneError()}
+            </span>
+          </Show>
         </label>
         <Show when={challenge()}>
           <p>{tr('codeSent')}</p>
@@ -124,8 +172,18 @@ export function SignIn(props: {
             name="code"
             autocomplete="one-time-code"
             inputmode="numeric"
-            onInput={(e) => setHasCode(e.currentTarget.value.trim().length > 0)}
+            aria-invalid={codeError() ? 'true' : undefined}
+            aria-describedby={codeError() ? 'code-error' : undefined}
+            onInput={(e) => {
+              setHasCode(e.currentTarget.value.trim().length > 0);
+              setCodeError('');
+            }}
           />
+          <Show when={codeError()}>
+            <span id="code-error" role="alert" class="xc-sign-in-error" data-field-error="code">
+              {codeError()}
+            </span>
+          </Show>
         </label>
         <button type="submit" disabled={pending() || (sending() && !hasCode())}>
           {challenge() ? tr('verify') : tr('requestCode')}

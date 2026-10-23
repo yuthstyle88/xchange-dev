@@ -45,6 +45,12 @@ function makeCtx(perms?: string[]): StaffCtx {
   } as unknown as StaffCtx;
 }
 
+// #4903: the hold reason and the release note are required, so a send needs text in the field.
+function typeInto(input: HTMLInputElement, value: string): void {
+  input.value = value;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -362,6 +368,8 @@ describe('HoldsCard: wordedError on failed calls (WE-41 #1790)', () => {
       host!.querySelector<HTMLDivElement>('[data-customer-id="cust-456"]')!.click();
       await flush();
 
+      typeInto(host!.querySelector<HTMLInputElement>('[data-testid="holds-reason"]')!, 'Hold test reason');
+
       host!.querySelector<HTMLButtonElement>('[data-testid="holds-place"]')!.click();
       await flush();
 
@@ -404,6 +412,8 @@ describe('HoldsCard: wordedError on failed calls (WE-41 #1790)', () => {
       host!.querySelector<HTMLDivElement>('[data-customer-id="cust-456"]')!.click();
       await flush();
 
+      typeInto(host!.querySelector<HTMLInputElement>('[data-testid="holds-reason"]')!, 'Hold test reason');
+
       host!.querySelector<HTMLButtonElement>('[data-testid="holds-place"]')!.click();
       await flush();
 
@@ -437,6 +447,7 @@ describe('HoldsCard: wordedError on failed calls (WE-41 #1790)', () => {
 
       const dialog = host!.querySelector('dialog')!;
       const buttons = dialog.querySelectorAll('button');
+      typeInto(dialog.querySelector<HTMLInputElement>('input')!, 'Release note');
       buttons[1]!.click();
       await flush();
 
@@ -449,6 +460,7 @@ describe('HoldsCard: wordedError on failed calls (WE-41 #1790)', () => {
       await flush();
       const dialogEn = host!.querySelector('dialog')!;
       const buttonsEn = dialogEn.querySelectorAll('button');
+      typeInto(dialogEn.querySelector<HTMLInputElement>('input')!, 'Release note');
       buttonsEn[1]!.click();
       await flush();
 
@@ -484,6 +496,7 @@ describe('HoldsCard: wordedError on failed calls (WE-41 #1790)', () => {
 
       const dialog = host!.querySelector('dialog')!;
       const buttons = dialog.querySelectorAll('button');
+      typeInto(dialog.querySelector<HTMLInputElement>('input')!, 'Release note');
       buttons[1]!.click();
       await flush();
 
@@ -520,6 +533,7 @@ describe('HoldsCard: wordedError on failed calls (WE-41 #1790)', () => {
 
       const dialog = host!.querySelector('dialog')!;
       const buttons = dialog.querySelectorAll('button');
+      typeInto(dialog.querySelector<HTMLInputElement>('input')!, 'Release note');
       buttons[1]!.click();
       await flush();
 

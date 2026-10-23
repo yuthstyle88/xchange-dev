@@ -490,7 +490,7 @@ describe('EX-5 A01 thresholds form (#1075; design §6.1, §8.2, §11.1)', () => 
         return fakeFetch(input, init);
       }),
     );
-    type(field(m.el, say('staleDataMinutes')), '0');
+    type(field(m.el, say('staleDataMinutes')), '10');
     await save(m.el);
     expect(saves().length).toBe(1);
     expect(pageText()).toContain('Minutes must be above zero (test)');

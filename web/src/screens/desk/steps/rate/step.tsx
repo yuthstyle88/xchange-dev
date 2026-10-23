@@ -1,26 +1,33 @@
 // Step 0, rate and amount (design xchange-v3-wave3-desk.md §3.2 row 0, D-4, D-12; #539 Part 2 §7–§9).
 // The rate is the server's quote, shown as answered beside its unit size; it is never typed (D-12). No arithmetic (W7).
 import { createSignal, For, Show, type JSX } from 'solid-js';
-import { screenT } from '../../../../shared/i18n';
+import { screenT, t as sharedT } from '../../../../shared/i18n';
+import { checkDecimal, foreignAmount } from '../../../../shared/ui/bounded';
 import type { DeskStore, DeskType } from '../../desk-store';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
 
 const t = screenT('desk.steps.rate', texts);
+// shortcut: DeskRate has no minorUnit so client checks max scale 3, upgrade when desk_config exposes minorUnit
+const AMOUNT_BOUND = foreignAmount(3);
 
 function RateStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
   const [refusal, setRefusal] = createSignal<string | undefined>();
+  const [badAmount, setBadAmount] = createSignal(false);
   const locked = () => store.entry()?.locked === true;
   const shiftOpen = () => store.config()?.shiftOpen === true;
   const line = () => store.quote()?.lines[0];
   const amountError = () => {
+    if (badAmount() && store.amount() === '') {
+      return sharedT('input.invalid', { field: t('amount') });
+    }
     const e = store.quoteError();
-    return e?.field === 'amount' ? e.message : undefined;
+    return e?.field === 'quantity' ? e.message : undefined;
   };
   const otherError = () => {
     const e = store.quoteError();
-    return e && e.field !== 'amount' && e.field !== 'currency' && e.field !== 'couponCode'
+    return e && e.field !== 'quantity' && e.field !== 'currency' && e.field !== 'couponCode' && e.field !== 'feeThb'
       ? e.message
       : undefined;
   };
@@ -44,7 +51,7 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
       return;
     }
     if (!store.quote()) {
-      if (!err) setRefusal(t('needShiftAndRate'));
+      if (!err && !badAmount()) setRefusal(t('needShiftAndRate'));
       return;
     }
     store.go(1);
@@ -90,7 +97,17 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
           autocomplete="off"
           value={store.amount()}
           readOnly={locked()}
-          onInput={(e) => store.setAmount(e.currentTarget.value)}
+          onInput={(e) => {
+            const v = e.currentTarget.value;
+            if (v !== '' && !checkDecimal(v, AMOUNT_BOUND).ok) {
+              setBadAmount(true);
+              store.setAmount('');
+              e.currentTarget.value = v;
+              return;
+            }
+            setBadAmount(false);
+            store.setAmount(v);
+          }}
         />
         <Show when={amountError()}>
           <span class="desk-error">{amountError()}</span>

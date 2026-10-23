@@ -461,7 +461,10 @@ function actionButtons(): HTMLButtonElement[] {
 async function settled(server: FakeServer, devicesReads: number): Promise<void> {
   await vi.waitFor(() => expect(server.readsOf('devices').length).toBeGreaterThan(devicesReads));
   await vi.waitFor(() => {
-    for (const b of actionButtons()) expect(b.disabled, textOf(b)).toBe(false);
+    const print = button(th.print);
+    for (const b of actionButtons()) {
+      expect(b.disabled, textOf(b)).toBe(b === print && picker().value === '');
+    }
   });
 }
 
@@ -594,7 +597,9 @@ describe('DevicesScreen reading (#404 §7 Reading, V2, V5)', () => {
     expect(reason.placeholder).toBe(th.reasonPlaceholder);
 
     expect(actionButtons()).toHaveLength(8);
-    for (const b of actionButtons()) expect(b.disabled, textOf(b)).toBe(false);
+    const print = button(th.print);
+    for (const b of actionButtons()) expect(b.disabled, textOf(b)).toBe(b === print);
+    expect(print.title).not.toBe('');
   });
 
   it('the nav links carry the branch (D3)', async () => {
@@ -938,6 +943,8 @@ describe('DevicesScreen actions (#404 §7 Writing, §8, §9)', () => {
     server.onPost = () => Promise.reject(new ApiError({ code: 'refused', message: REFUSED, status: 400 }));
     mount(server, 'B1');
     await loaded();
+    await vi.waitFor(() => expect(options(picker())).toHaveLength(3));
+    choose(picker(), 'TX-1');
     button(th.print).click();
     await vi.waitFor(() => expect(textOf(message())).toBe(errorText('refused', REFUSED)));
     await vi.waitFor(() => {
@@ -946,6 +953,7 @@ describe('DevicesScreen actions (#404 §7 Writing, §8, §9)', () => {
 
     const pending = deferred<unknown>();
     server.onPost = () => pending.promise;
+    type(control<HTMLInputElement>(th.reason), 'ส่งมอบเงินให้ลูกค้า');
     button(th.drawer).click();
     await vi.waitFor(() => expect(textOf(message())).toBe(''));
     pending.resolve({ saved: true });
@@ -957,6 +965,8 @@ describe('DevicesScreen actions (#404 §7 Writing, §8, §9)', () => {
     server.onPost = () => pending.promise;
     mount(server, 'B1');
     await loaded();
+    await vi.waitFor(() => expect(options(picker())).toHaveLength(3));
+    choose(picker(), 'TX-1');
     button(th.print).click();
     await vi.waitFor(() => {
       for (const b of actionButtons()) expect(b.disabled, textOf(b)).toBe(true);
@@ -1004,9 +1014,9 @@ describe('DevicesScreen actions (#404 §7 Writing, §8, §9)', () => {
 
     // what is sent is what is shown: the dropped row is not sent either
     await settled(server, server.readsOf('devices').length - 1);
+    expect(button(th.print).disabled).toBe(true);
     button(th.print).click();
-    await vi.waitFor(() => expect(server.posts).toHaveLength(1));
-    expect((server.posts[0]!.body as { payload: { ref: string } }).payload.ref).toBe('');
+    expect(server.posts).toEqual([]);
   });
 });
 

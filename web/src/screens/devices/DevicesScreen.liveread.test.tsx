@@ -190,6 +190,10 @@ describe('DevicesScreen live read failures and recovery (#2190)', () => {
 
     mount(server);
     await settle();
+    const picker1 = host.querySelector<HTMLSelectElement>('.picker-group select')!;
+    picker1.value = 'TX-1';
+    picker1.dispatchEvent(new Event('input', { bubbles: true }));
+    picker1.dispatchEvent(new Event('change', { bubbles: true }));
 
     expect(messageText()).toBe('');
     expect(button(th.refresh).disabled).toBe(false);
@@ -251,6 +255,10 @@ describe('DevicesScreen live read failures and recovery (#2190)', () => {
 
     mount(server);
     await settle();
+    const picker3 = host.querySelector<HTMLSelectElement>('.picker-group select')!;
+    picker3.value = 'TX-1';
+    picker3.dispatchEvent(new Event('input', { bubbles: true }));
+    picker3.dispatchEvent(new Event('change', { bubbles: true }));
 
     // Press Refresh while device_events keeps failing
     button(th.refresh).click();
@@ -317,6 +325,10 @@ describe('DevicesScreen live read failures and recovery (#2190)', () => {
 
     mount(server);
     await settle();
+    const picker4b = host.querySelector<HTMLSelectElement>('.picker-group select')!;
+    picker4b.value = 'TX-1';
+    picker4b.dispatchEvent(new Event('input', { bubbles: true }));
+    picker4b.dispatchEvent(new Event('change', { bubbles: true }));
     expect(messageText()).toBe('');
 
     // Start Print action (held in flight)
@@ -460,6 +472,10 @@ describe('DevicesScreen live read failures and recovery (#2190)', () => {
     const server = new FakeServer();
     mount(server);
     await settle();
+    const picker6 = host.querySelector<HTMLSelectElement>('.picker-group select')!;
+    picker6.value = 'TX-1';
+    picker6.dispatchEvent(new Event('input', { bubbles: true }));
+    picker6.dispatchEvent(new Event('change', { bubbles: true }));
 
     server.onPost = () =>
       Promise.reject(
