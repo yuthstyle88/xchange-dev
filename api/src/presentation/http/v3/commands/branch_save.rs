@@ -18,6 +18,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::{BranchProfile, BranchService};
+use xc_rate::domain::branch::branch_hours::BranchHours;
 use xc_rate::domain::branch::contact_channel::{BranchStatus, ContactChannel};
 
 use crate::bootstrap::AppState;
@@ -125,6 +126,8 @@ impl CommandAction for BranchSaveCommand {
             None => None,
         };
         let branches = BranchService::new(BranchTx::new(Transactor::new(self.0.clone())));
+        let profile_field =
+            bad_profile_field(&input.code, &input.timezone, input.opening_hours.as_ref());
         let profile = BranchProfile {
             code: input.code,
             address: input.address,
@@ -136,9 +139,12 @@ impl CommandAction for BranchSaveCommand {
             .save_profile_with_contact_in(tx, branch, profile, contact_channels, status)
             .await
             .map_err(|e| match e {
-                AppError::Validation(message) | AppError::Domain(message) => {
-                    V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
-                }
+                AppError::Validation(message) | AppError::Domain(message) => V3Error::new(
+                    "validationFailed",
+                    profile_field,
+                    message,
+                    StatusCode::BAD_REQUEST,
+                ),
                 AppError::Conflict(message) => {
                     V3Error::new("conflict", Some("code"), message, StatusCode::CONFLICT)
                 }
@@ -166,6 +172,34 @@ impl CommandAction for BranchSaveCommand {
             status: saved.status.as_str().to_owned(),
         })
     }
+}
+
+fn bad_profile_field(
+    code: &str,
+    timezone: &str,
+    opening_hours: Option<&serde_json::Value>,
+) -> Option<&'static str> {
+    if code.trim().is_empty() || BranchHours::new(timezone, opening_hours).is_ok() {
+        return None;
+    }
+    if BranchHours::new(timezone, None).is_err() {
+        return Some("timezone");
+    }
+    for (day, val) in opening_hours?.as_object()? {
+        if BranchHours::new(timezone, Some(&serde_json::json!({ day: val }))).is_err() {
+            return match day.as_str() {
+                "mon" => Some("hours.mon"),
+                "tue" => Some("hours.tue"),
+                "wed" => Some("hours.wed"),
+                "thu" => Some("hours.thu"),
+                "fri" => Some("hours.fri"),
+                "sat" => Some("hours.sat"),
+                "sun" => Some("hours.sun"),
+                _ => None,
+            };
+        }
+    }
+    None
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
