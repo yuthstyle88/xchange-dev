@@ -160,7 +160,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           const inputCount = await denomInputs.count();
           expect(inputCount, 'at least one denomination input on shift-count-form').toBeGreaterThan(0);
 
-          // Case 1: all denomination inputs empty ('') -> client-side refusal (`noCountLines`), nothing submitted.
+          // Case 1: all denomination inputs empty ('') -> count is submitted and the server refuses it with 400 validationFailed (#4790). The refusal shows in shift-error.
           for (let i = 0; i < inputCount; i++) {
             await denomInputs.nth(i).fill('');
           }
