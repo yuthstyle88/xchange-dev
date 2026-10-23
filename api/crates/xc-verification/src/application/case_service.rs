@@ -23,6 +23,7 @@ use crate::domain::document::access_class::AccessClass;
 use crate::domain::document::verification_document::VerificationDocument;
 
 const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;
+const EMPTY_FILE: &str = "the file is empty";
 const TOO_LARGE: &str = "ไฟล์ใหญ่เกิน 15 MB";
 const UNSUPPORTED: &str = "ชนิดไฟล์ไม่รองรับ";
 
@@ -192,7 +193,10 @@ impl CaseService {
         bytes: &[u8],
         idempotency_key: &str,
     ) -> Result<VerificationDocument, CaseError> {
-        if bytes.is_empty() || bytes.len() > MAX_UPLOAD_BYTES {
+        if bytes.is_empty() {
+            return Err(CaseError::File(EMPTY_FILE));
+        }
+        if bytes.len() > MAX_UPLOAD_BYTES {
             return Err(CaseError::File(TOO_LARGE));
         }
 

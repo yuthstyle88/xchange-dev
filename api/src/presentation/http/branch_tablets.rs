@@ -43,6 +43,7 @@ const RATE_LIMITED: &str = "RATE_LIMITED";
 const TOO_LARGE: &str = "ข้อมูลมากเกินไป";
 const MAX_BODY_UNITS: usize = 20_000;
 const SPECIFY_TABLET_NAME: &str = "ระบุชื่อเครื่อง";
+const TABLET_NAME_TOO_LONG: &str = "ชื่อเครื่องยาวได้ไม่เกิน 60 ตัวอักษร";
 const NO_SUCH_TABLET: &str = "ไม่พบแท็บเล็ต";
 
 /// Routes of this module; registered through the one route table.
@@ -95,6 +96,7 @@ fn tablet_json(tablet: &ListedTablet) -> Value {
 fn pairing_failure(error: PairingError) -> HttpResponse {
     match error {
         PairingError::NameRequired => refuse(400, SPECIFY_TABLET_NAME),
+        PairingError::NameTooLong => refuse(400, TABLET_NAME_TOO_LONG),
         PairingError::BranchHasOne | PairingError::NoSuchDevice => refuse(400, NO_SUCH_TABLET),
         PairingError::App(e) => failure(e),
     }

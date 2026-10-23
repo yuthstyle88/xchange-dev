@@ -397,7 +397,7 @@ async fn a_line_quantity_of_zero_is_refused_on_qty() {
     let fifty = room.fifty().await;
     let a = create(&room, &who, &[(fifty, "0")]).await;
     assert_validation_failed(&a, "qty 0");
-    assert_eq!(a.body["error"]["field"], "qty", "{}", a.text);
+    assert_eq!(a.body["error"]["field"], "lines[0].qty", "{}", a.text);
     assert_eq!(room.stored().await, (0, 0), "nothing stored");
     room.finish().await;
 }

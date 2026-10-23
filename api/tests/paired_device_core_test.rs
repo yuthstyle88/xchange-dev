@@ -520,7 +520,7 @@ async fn t1_issue_stores_a_pending_device_with_a_ten_minute_code_kept_only_as_it
 async fn issue_refusals<const TABLET: bool>(room: &Room) {
     let kind = kind_of::<TABLET>();
     let (store, pairing) = room.pairing::<TABLET>();
-    for name in ["", "   ", &"ก".repeat(61)] {
+    for name in ["", "   "] {
         assert!(
             matches!(
                 pairing.issue(&main_branch(), name, "admin-1", at(0)).await,
@@ -529,6 +529,15 @@ async fn issue_refusals<const TABLET: bool>(room: &Room) {
             "{kind:?}: name {name:?}"
         );
     }
+    assert!(
+        matches!(
+            pairing
+                .issue(&main_branch(), &"ก".repeat(61), "admin-1", at(0))
+                .await,
+            Err(PairingError::NameTooLong)
+        ),
+        "{kind:?}: 61 UTF-16 units is refused as too long"
+    );
     assert!(
         pairing
             .issue(&main_branch(), &"ก".repeat(60), "admin-1", at(0))

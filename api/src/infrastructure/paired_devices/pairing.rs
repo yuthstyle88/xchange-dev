@@ -69,8 +69,10 @@ pub enum AuthOutcome<D> {
 /// `agent_admin.rs:16-18`).
 #[derive(Debug)]
 pub enum PairingError {
-    /// The trimmed name is empty or longer than 60 UTF-16 units.
+    /// The trimmed name is empty.
     NameRequired,
+    /// The trimmed name is longer than 60 UTF-16 units.
+    NameTooLong,
     /// `PerBranch::One` and the branch already has a device that is not revoked.
     BranchHasOne,
     /// The id is not a UUID, names no device, or names a revoked one.
@@ -135,8 +137,11 @@ impl<S: PairedDeviceStore> DevicePairing<S> {
 
         let trimmed_name = name.trim();
         let units = trimmed_name.encode_utf16().count();
-        if units == 0 || units > 60 {
+        if units == 0 {
             return Err(PairingError::NameRequired);
+        }
+        if units > 60 {
+            return Err(PairingError::NameTooLong);
         }
 
         let id = Uuid::new_v4().to_string();

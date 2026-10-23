@@ -12,7 +12,7 @@ export type BookingConfirmInput = { id: string, };
 
 export type BookingConfirmOutput = { id: string, status: string, bookingNo: string, };
 
-export type BookingCreateInput = { branchId: string, slotId: string, shopSide: string, currency: string, quantity: number, quoteId: string, referralCode: string | null, customerId: string | null, displayName: string | null, phone: string | null, };
+export type BookingCreateInput = { branchId: string, slotId: string, shopSide: string, currency: string, quantity: string | number, quoteId: string, referralCode: string | null, customerId: string | null, displayName: string | null, phone: string | null, };
 
 export type BookingCreateOutput = { id: string, bookingNo: string, status: string, sourceChannel: string, branchId: string, slotId: string, customerId: string, shopSide: string, currency: string, quantity: number, qrToken: string | null, };
 

@@ -140,9 +140,9 @@ impl CommandAction for BookingReschedule {
                     StatusCode::BAD_REQUEST,
                 ),
                 BookingError::SlotUnavailable => V3Error::new(
-                    "capacityFull",
+                    "slotUnavailable",
                     None,
-                    "CAPACITY_FULL",
+                    "SLOT_UNAVAILABLE",
                     StatusCode::BAD_REQUEST,
                 ),
                 BookingError::NotFound => {

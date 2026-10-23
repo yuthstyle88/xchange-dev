@@ -56,7 +56,7 @@ impl BookingSlotsView {
         let rows: Vec<SlotRow> = sqlx::query_as(
             "SELECT id, start_at, end_at, capacity, reserved \
              FROM booking_slots \
-             WHERE branch_id = $1 AND service_date = $2 AND status = 'OPEN' \
+             WHERE branch_id = $1 AND service_date = $2 AND status = 'OPEN' AND start_at > now() \
              ORDER BY start_at ASC",
         )
         .bind(branch.as_str())

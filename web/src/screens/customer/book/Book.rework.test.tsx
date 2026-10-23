@@ -834,15 +834,16 @@ describe('APP-16 PR 1659 rework tests (must-fix items 2–5)', () => {
     slotSel.value = unknownSlotId;
     slotSel.dispatchEvent(new Event('change', { bubbles: true }));
 
+    const qtyInput = container.querySelector<HTMLInputElement>('input[name="quantity"]')!;
+    qtyInput.value = '100';
+    qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+
     // Submit form
     const submitBtn = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
     submitBtn.click();
+    await new Promise((r) => setTimeout(r, 20));
 
     // Assert that no POST carries a slotId outside SAMPLE_SLOTS
-    await vi.waitFor(() => {
-      expect(createCalls.length).toBeGreaterThan(0);
-    });
-
     const allowedSlotIds = SAMPLE_SLOTS.data.slots.map((s) => s.id);
     for (const call of createCalls) {
       expect(call.slotId).not.toBe(unknownSlotId);

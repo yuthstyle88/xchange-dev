@@ -37,8 +37,7 @@ use crate::infrastructure::ledger_postings::LedgerCashPostings;
 use crate::infrastructure::transfer_repository::PgTransferRepository;
 
 /// Validation message when a transfer line or currency total exceeds `ledger_entries.quantity_signed numeric(20,4)`.
-pub const TRANSFER_TOTAL_EXCEEDS_COLUMN: &str =
-    "transfer total exceeds ledger_entries.quantity_signed numeric(20,4)";
+pub const TRANSFER_TOTAL_EXCEEDS_COLUMN: &str = "the transfer total is too large";
 
 pub struct TransferFlow {
     pool: PgPool,

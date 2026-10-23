@@ -19,6 +19,7 @@ use crate::infrastructure::paired_devices::pairing::{
 const NO_SUCH_AGENT: &str = "ไม่พบเครื่องคุมลิ้นชัก";
 const BRANCH_HAS_AGENT: &str = "สาขานี้มีเครื่องคุมลิ้นชักแล้ว";
 const SPECIFY_AGENT_NAME: &str = "ระบุชื่อเครื่อง";
+const AGENT_NAME_TOO_LONG: &str = "ชื่อเครื่องยาวได้ไม่เกิน 60 ตัวอักษร";
 
 /// A pairing code returned by `add` or `new_code`. Shown once.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +43,7 @@ impl From<PairingError> for AppError {
     fn from(err: PairingError) -> Self {
         match err {
             PairingError::NameRequired => AppError::Domain(SPECIFY_AGENT_NAME.to_owned()),
+            PairingError::NameTooLong => AppError::Domain(AGENT_NAME_TOO_LONG.to_owned()),
             PairingError::BranchHasOne => AppError::Domain(BRANCH_HAS_AGENT.to_owned()),
             PairingError::NoSuchDevice => AppError::Domain(NO_SUCH_AGENT.to_owned()),
             PairingError::App(e) => e,
