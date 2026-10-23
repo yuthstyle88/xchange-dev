@@ -44,6 +44,7 @@ import {
   watchConsole,
   withLang,
 } from './helpers';
+import * as ratePolicyTable from '../../../web/src/screens/admin/rates/i18n.policy';
 
 type StaffLang = 'th' | 'en';
 const STAFF_LANG_LIST = STAFF_LANGS as readonly StaffLang[];
@@ -82,14 +83,14 @@ const RATE_POLICY_MESSAGES: Record<
 > = {
   // web/src/screens/admin/rates/i18n.policy.ts:24-26, :52-54
   th: {
-    guardInvalid: 'กรอบเรทต้องเป็นทศนิยมไม่เกิน 4 ตำแหน่ง และค่าต่ำสุดต้องไม่เกินค่าสูงสุด',
-    maxAgeInvalid: 'อายุเรทอ้างอิงสูงสุดต้องเป็นจำนวนเต็มบวก (ชั่วโมง)',
-    staleLimitRequired: 'กรุณาระบุวงเงินมากกว่า 0 (ทศนิยมไม่เกิน 2 ตำแหน่ง)',
+    guardInvalid: ratePolicyTable.th.guardRangeInvalid,
+    maxAgeInvalid: ratePolicyTable.th.maxReferenceAgeInvalid,
+    staleLimitRequired: ratePolicyTable.th.staleLimitRequired,
   },
   en: {
-    guardInvalid: 'Each guard side needs min <= max with at most 4 decimal places',
-    maxAgeInvalid: 'Max reference age must be a whole number of hours above 0',
-    staleLimitRequired: 'Enter a stale limit above 0 with at most 2 decimal places',
+    guardInvalid: ratePolicyTable.en.guardRangeInvalid,
+    maxAgeInvalid: ratePolicyTable.en.maxReferenceAgeInvalid,
+    staleLimitRequired: ratePolicyTable.en.staleLimitRequired,
   },
 };
 
