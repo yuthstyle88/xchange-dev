@@ -353,7 +353,7 @@ for (const [which, path] of [
         if (refuseThird) {
           return {
             status: 400,
-            body: { error: { code: 'validationFailed', field: 'amount', message: 'bad amount' } },
+            body: { error: { code: 'validationFailed', field: 'quantity', message: 'bad amount' } },
           };
         }
         if (holdSecond) await secondHeld;

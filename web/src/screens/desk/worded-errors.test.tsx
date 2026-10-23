@@ -5,10 +5,11 @@ import { ApiClient, ApiError } from '../../shared/api/client';
 import { makeQuoteDto, makeQuoteLineDto, makeQuotePublicationDto } from '../../shared/testing/fixtures';
 import { setLang } from '../../shared/i18n';
 import { en as sharedEn } from '../../shared/i18n/en';
+import { fieldError } from '../../shared/i18n/field-error';
 import { th as sharedTh } from '../../shared/i18n/th';
-import { wordedError } from '../../shared/i18n/worded-error';
 import { OWNER_DESK } from './desk-path';
 import { createDeskStore, type DeskStore } from './desk-store';
+import { en as rateEn } from './steps/rate/i18n';
 import { step as rateStep } from './steps/rate/step';
 import { step as receiptStep } from './steps/receipt/step';
 
@@ -185,13 +186,13 @@ describe('Desk worded errors (#2157)', () => {
     expect(host.textContent).not.toContain('Bad Gateway');
   });
 
-  it('row 3: quote refused 400 validationFailed (and mapped refusal code), field amount in EN shows the EN worded text and keeps field "amount" under the amount input', async () => {
+  it('row 3: quote refused 400 validationFailed (and mapped refusal code), field quantity in EN shows the EN worded text and keeps field "quantity" under the amount input', async () => {
     setLang('en');
     const s = fakeServer();
     let refusalBody: { code: string; message: string; field: string } = {
       code: 'validationFailed',
       message: 'validationFailed',
-      field: 'amount',
+      field: 'quantity',
     };
     s.on('POST', '/api/quotes', () => ({
       status: 400,
@@ -206,14 +207,15 @@ describe('Desk worded errors (#2157)', () => {
     store.setAmount('abc');
     await store.requote();
 
-    const expectedValidationText = wordedError(
-      new ApiError({ status: 400, code: 'validationFailed', message: 'validationFailed', field: 'amount' }),
-    );
+    const expectedValidationText = fieldError(
+      new ApiError({ status: 400, code: 'validationFailed', message: 'validationFailed', field: 'quantity' }),
+      { quantity: rateEn.amount },
+    ).message;
     expect(store.quoteError()).toEqual({
-      field: 'amount',
+      field: 'quantity',
       message: expectedValidationText,
     });
-    expect(store.quoteError()?.message).toBe(sharedEn['error.serverError']);
+    expect(store.quoteError()?.message).toBe(sharedEn['input.invalid']!.replace('{field}', rateEn.amount));
     expect(store.quoteError()?.message).not.toBe('validationFailed');
 
     const amountInput = host.querySelector<HTMLInputElement>('input[name="amount"]');
@@ -221,15 +223,15 @@ describe('Desk worded errors (#2157)', () => {
     const amountLabel = amountInput!.closest('label');
     expect(amountLabel?.querySelector('.desk-error')?.textContent).toBe(expectedValidationText);
 
-    // Also verify a mapped 400 refusal code on field "amount" translates to EN and stays under the amount input
+    // Also verify a mapped 400 refusal code on field "quantity" translates to EN and stays under the amount input
     refusalBody = {
       code: 'invalidRequest',
       message: 'คำขอไม่ถูกต้องจากเซิร์ฟเวอร์',
-      field: 'amount',
+      field: 'quantity',
     };
     await store.requote();
     expect(store.quoteError()).toEqual({
-      field: 'amount',
+      field: 'quantity',
       message: sharedEn['error.invalidRequest'],
     });
     expect(amountLabel?.querySelector('.desk-error')?.textContent).toBe(sharedEn['error.invalidRequest']);
@@ -252,21 +254,21 @@ describe('Desk worded errors (#2157)', () => {
 
     s.on('POST', '/api/quotes', () => ({
       status: 400,
-      body: { error: { code: 'unmappedDeskCode', message: fallbackMsg, field: 'amount' } },
+      body: { error: { code: 'unmappedDeskCode', message: fallbackMsg, field: 'quantity' } },
     }));
     for (const l of ['th', 'en'] as const) {
       setLang(l);
       await store.requote();
-      expect(store.quoteError()).toEqual({ field: 'amount', message: fallbackMsg });
+      expect(store.quoteError()).toEqual({ field: 'quantity', message: fallbackMsg });
     }
 
     // And when the server echoes the unmapped code itself as message, wordedError's guard prevents leaking the raw code
     s.on('POST', '/api/quotes', () => ({
       status: 400,
-      body: { error: { code: 'unmappedDeskCode', message: 'unmappedDeskCode', field: 'amount' } },
+      body: { error: { code: 'unmappedDeskCode', message: 'unmappedDeskCode', field: 'quantity' } },
     }));
     setLang('th');
     await store.requote();
-    expect(store.quoteError()).toEqual({ field: 'amount', message: sharedTh['error.serverError'] });
+    expect(store.quoteError()).toEqual({ field: 'quantity', message: sharedTh['error.serverError'] });
   });
 });

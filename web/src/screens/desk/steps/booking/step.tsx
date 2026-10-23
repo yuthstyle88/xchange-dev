@@ -1,7 +1,7 @@
 // Step 2, booking (design xchange-v3-wave3-desk.md §3.2 row "2 Booking", §3.9 case 5, D-10; #543 Part 1).
 // `staff` is the signed-in name, read-only. No client-made booking reference: the server numbers the exchange (D-10).
 import { createSignal, Show, type JSX } from 'solid-js';
-import { screenT } from '../../../../shared/i18n';
+import { screenT, t as sharedT } from '../../../../shared/i18n';
 import type { DeskStore } from '../../desk-store';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
@@ -16,6 +16,10 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
     ev.preventDefault();
     if (store.fields().name.trim() === '' || store.staff().trim() === '') {
       setError(t('needNameStaff'));
+      return;
+    }
+    if (store.valueDate().trim() === '') {
+      setError(sharedT('input.invalid', { field: t('valueDate') }));
       return;
     }
     setError(undefined);
@@ -38,6 +42,7 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
         <input
           name="valueDate"
           type="date"
+          required
           value={store.valueDate()}
           onInput={(e) => store.setValueDate(e.currentTarget.value)}
         />

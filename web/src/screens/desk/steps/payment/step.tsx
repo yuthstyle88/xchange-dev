@@ -1,7 +1,8 @@
 // Step 3, payment (design xchange-v3-wave3-desk.md §3.2 rows "3 Payment", "3 payments", "3 cash count", §3.6 B2–B3,
 // D-4, D-7, §5.4; #543 Part 1). The net is the quote line's `settleThb` as answered (D-4); the save is `store.submit()`.
 import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
-import { screenT } from '../../../../shared/i18n';
+import { screenT, t as sharedT } from '../../../../shared/i18n';
+import { checkDecimal, MONEY } from '../../../../shared/ui/bounded';
 import type { DeskStore } from '../../desk-store';
 import type { DeskStep } from '../../steps';
 import { isOpen, METHODS, ruleFor } from './channels';
@@ -36,6 +37,17 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
   const net = () => store.quote()?.lines[0]?.settleThb ?? '';
   const instruction = () => ruleFor(rules(), store.method())?.instruction ?? '';
   const entry = () => store.entry();
+  const feeError = () => {
+    if (store.fee() !== '' && !checkDecimal(store.fee(), MONEY).ok) {
+      return sharedT('input.invalid', { field: t('fee') });
+    }
+    const e = store.quoteError?.();
+    return e && (e.field === 'feeThb' || e.field === undefined) ? e.message : undefined;
+  };
+  const bankFeeError = () =>
+    store.bankFee() !== '' && !checkDecimal(store.bankFee(), MONEY).ok
+      ? sharedT('input.invalid', { field: t('bankFee') })
+      : undefined;
 
   function choose(method: string): void {
     store.setMethod(method);
@@ -88,7 +100,7 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
       setError(t('channelOff'));
       return;
     }
-    if (!store.paymentChecked()) return;
+    if (!store.paymentChecked() || feeError() || bankFeeError()) return;
     const refusal = entry()?.refusal();
     if (refusal) {
       setError(refusal);
@@ -170,6 +182,9 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
       <label class="desk-field">
         <span>{t('fee')}</span>
         <input name="fee" inputMode="decimal" autocomplete="off" value={store.fee()} onInput={(e) => store.setFee(e.currentTarget.value)} />
+        <Show when={feeError()}>
+          <span class="desk-error">{feeError()}</span>
+        </Show>
       </label>
       <label class="desk-field">
         <span>{t('bankFee')}</span>
@@ -180,6 +195,9 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
           value={store.bankFee()}
           onInput={(e) => store.setBankFee(e.currentTarget.value)}
         />
+        <Show when={bankFeeError()}>
+          <span class="desk-error">{bankFeeError()}</span>
+        </Show>
       </label>
       <label class="desk-field">
         <span>{t('notes')}</span>
