@@ -21,6 +21,9 @@ export const th = {
   kind_EXTERNAL_IN: 'เงินเข้าภายนอก',
   kind_EXTERNAL_OUT: 'เงินออกภายนอก',
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
+  qtyWholeMin1: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป',
+  qtyWholeMin0: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป',
+  qtyTooLarge: 'จำนวนเกินค่าสูงสุดที่กำหนด',
 };
 
 export const en = {
@@ -46,4 +49,7 @@ export const en = {
   kind_EXTERNAL_IN: 'External In',
   kind_EXTERNAL_OUT: 'External Out',
   connectionError: 'Connection error',
+  qtyWholeMin1: 'Quantity must be a whole number of at least 1',
+  qtyWholeMin0: 'Quantity must be a whole number of at least 0',
+  qtyTooLarge: 'Quantity exceeds the maximum allowed',
 };

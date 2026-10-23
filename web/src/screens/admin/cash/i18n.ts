@@ -160,6 +160,12 @@ export const th = {
   toShiftLabel: 'เข้าลิ้นชักของกะ',
   chooseShift: 'เลือกกะที่เปิดอยู่',
   btnCreateTransfer: 'สร้างการโอนย้าย',
+  qtyWholeMin1: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป',
+  qtyWholeMin0: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป',
+  qtyTooLarge: 'จำนวนเกินค่าสูงสุดที่กำหนด',
+  toBranchRequired: 'กรุณาเลือกสาขาปลายทาง',
+  fromShiftRequired: 'กรุณาเลือกกะต้นทาง',
+  toShiftRequired: 'กรุณาเลือกกะปลายทาง',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -324,4 +330,10 @@ export const en: Record<keyof typeof th, string> = {
   toShiftLabel: "Into the shift's drawer",
   chooseShift: 'Choose an open shift',
   btnCreateTransfer: 'Create transfer',
+  qtyWholeMin1: 'Quantity must be a whole number of at least 1',
+  qtyWholeMin0: 'Quantity must be a whole number of at least 0',
+  qtyTooLarge: 'Quantity exceeds the maximum allowed',
+  toBranchRequired: 'Destination branch is required',
+  fromShiftRequired: 'From shift is required',
+  toShiftRequired: 'To shift is required',
 };
