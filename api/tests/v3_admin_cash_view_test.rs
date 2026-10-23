@@ -611,10 +611,21 @@ impl Room {
                     _ => panic!("unexpected counted value type for {curr}: {amt_val:?}"),
                 };
 
+                let (face_val, qty) = if amt.fract().is_zero() {
+                    (
+                        Decimal::ONE,
+                        amt.to_i32()
+                            .expect("amount as integer quantity with face_value 1"),
+                    )
+                } else {
+                    (amt, 1)
+                };
+
                 let denom_id: i64 = match sqlx::query_scalar(
-                    "SELECT id FROM denominations WHERE currency_code = $1 AND face_value = 1",
+                    "SELECT id FROM denominations WHERE currency_code = $1 AND face_value = $2",
                 )
                 .bind(curr)
+                .bind(face_val)
                 .fetch_optional(&self.desk.db.pool)
                 .await
                 .expect("query denomination")
@@ -622,18 +633,16 @@ impl Room {
                     Some(id) => id,
                     None => {
                         sqlx::query_scalar(
-                            "INSERT INTO denominations (currency_code, face_value, group_code) VALUES ($1, 1, 'ALL') RETURNING id",
+                            "INSERT INTO denominations (currency_code, face_value, group_code) VALUES ($1, $2, 'ALL') RETURNING id",
                         )
                         .bind(curr)
+                        .bind(face_val)
                         .fetch_one(&self.desk.db.pool)
                         .await
                         .expect("insert denomination")
                     }
                 };
 
-                let qty = amt
-                    .to_i32()
-                    .expect("amount as integer quantity with face_value 1");
                 lines.push(CountLine::new(curr, denom_id, qty));
             }
         }
@@ -1269,6 +1278,26 @@ async fn last_counted_is_the_last_closed_shifts_count_thb_always_then_the_non_ze
         room.cash("branch=B9").await["lastCounted"],
         Value::Null,
         "another branch's shifts are not B9's"
+    );
+    room.finish().await;
+}
+
+/// F1 (#5022): admin cash lastCounted formats foreign quantity with 3 decimals (KWD 1.125) without truncation.
+#[actix_web::test]
+async fn last_counted_formats_three_decimal_currencies_such_as_kwd() {
+    let room = Room::open().await;
+    room.open_shift_with(MAIN, json!({ "THB": "500", "KWD": "1.125" }))
+        .await;
+    room.close_shift_by_count(MAIN, json!({ "THB": "500", "KWD": "1.125" }))
+        .await;
+    let data = room.cash("branch=MAIN").await;
+    assert_eq!(
+        data["lastCounted"],
+        json!([
+            { "code": "THB", "amount": "500.00" },
+            { "code": "KWD", "amount": "1.125" }
+        ]),
+        "KWD 1.125 is not truncated to 1.12: {data}"
     );
     room.finish().await;
 }
