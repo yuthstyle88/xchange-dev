@@ -259,7 +259,14 @@ impl CommandAction for DayTargetCommand {
                     StatusCode::BAD_REQUEST,
                 )
             })?;
-            pairs.push((code, money));
+            pairs.push((
+                code,
+                ForeignAmount::checked_from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+                    money.minor_i128(),
+                    2,
+                ))
+                .expect("Money fits in ForeignAmount"),
+            ));
         }
         let balances = Balances::of(&pairs);
 
@@ -483,7 +490,7 @@ impl CommandAction for DraftBeginCommand {
                     StatusCode::BAD_REQUEST,
                 )
             })?;
-        let foreign_amount = ForeignAmount::parse(&input.amount, &units).map_err(|e| {
+        let amount = ForeignAmount::parse(&input.amount, &units).map_err(|e| {
             V3Error::new(
                 "validationFailed",
                 Some("amount"),
@@ -491,8 +498,9 @@ impl CommandAction for DraftBeginCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
-        // shortcut: BeginDraft still takes 2-decimal Money, upgrade when M1 widens xc-shift draft amount type
-        let amount = Money::parse(&foreign_amount.to_string()).map_err(|e| {
+        // Until Q6 (#4998) lifts it, a draft holds at most 2 decimals, as before: the custody JSON still
+        // stores hundredths (Q3), so a third decimal would be rounded away.
+        Money::parse(&amount.to_string()).map_err(|e| {
             V3Error::new(
                 "validationFailed",
                 Some("amount"),

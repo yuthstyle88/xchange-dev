@@ -1,10 +1,11 @@
 //! Row decoders for custody entities and value objects.
 
 use pos_error::{AppError, AppResult};
+use rust_decimal::Decimal;
 use serde_json::Value;
 use sqlx::Row;
 use sqlx::postgres::PgRow;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 
 use crate::domain::custody::entities::attendance::Attendance;
 use crate::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
@@ -65,11 +66,11 @@ pub(crate) fn minor_from_json(v: &Value) -> Option<i128> {
     }
 }
 
-pub(crate) fn money_from_json(table: &str, field: &str, v: &Value) -> AppResult<Money> {
+pub(crate) fn money_from_json(table: &str, field: &str, v: &Value) -> AppResult<ForeignAmount> {
     let minor = minor_from_json(v).ok_or_else(|| undecodable(table, field, v))?;
-    MoneyDelta::from_minor(minor)
-        .to_money()
-        .map_err(|_| undecodable(table, field, v))
+    let dec =
+        Decimal::try_from_i128_with_scale(minor, 2).map_err(|_| undecodable(table, field, v))?;
+    ForeignAmount::checked_from_decimal(dec).map_err(|_| undecodable(table, field, v))
 }
 
 pub(crate) fn time_from_json(table: &str, field: &str, v: &Value) -> AppResult<CustodyTime> {
@@ -90,10 +91,7 @@ pub(crate) fn balances_from_json(table: &str, field: &str, v: &Value) -> AppResu
     let mut pairs = Vec::with_capacity(map.len());
     for (k, val) in map {
         let code = CurrencyCode::parse(k).map_err(|_| undecodable(table, field, k))?;
-        let minor = minor_from_json(val).ok_or_else(|| undecodable(table, field, val))?;
-        let m = MoneyDelta::from_minor(minor)
-            .to_money()
-            .map_err(|_| undecodable(table, field, val))?;
+        let m = money_from_json(table, field, val)?;
         if !m.is_zero() {
             pairs.push((code, m));
         }
@@ -110,7 +108,9 @@ pub(crate) fn delta_from_json(table: &str, field: &str, v: &Value) -> AppResult<
     for (k, val) in map {
         let code = CurrencyCode::parse(k).map_err(|_| undecodable(table, field, k))?;
         let minor = minor_from_json(val).ok_or_else(|| undecodable(table, field, val))?;
-        let d = MoneyDelta::from_minor(minor);
+        let dec = Decimal::try_from_i128_with_scale(minor, 2)
+            .map_err(|_| undecodable(table, field, val))?;
+        let d = QuantityDelta::from_decimal(dec).map_err(|_| undecodable(table, field, val))?;
         if !d.is_zero() {
             pairs.push((code, d));
         }

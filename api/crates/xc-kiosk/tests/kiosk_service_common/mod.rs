@@ -62,7 +62,7 @@ use sqlx::{AssertSqlSafe, PgPool, Row};
 use tokio::sync::Semaphore;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MinorUnit, Money, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, MinorUnit, Money, Rate, Side, UnitSize};
 
 pub use xc_kiosk::application::kiosk::service::KioskService;
 pub use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
@@ -911,11 +911,15 @@ pub fn configure_of(c: &str, enabled: bool, buy: &str, sell: &str) -> ConfigureC
 
 /// The save of the transaction that `buy100` asks for.
 pub fn save100(submission_id: &str) -> SaveAttempt {
+    let m = Money::parse("100").expect("100");
     SaveAttempt {
         live: true,
         side: Side::Buy,
         currency: code("USD"),
-        amount: Money::parse("100").expect("100"),
+        amount: ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+            m.minor_i128(),
+            2,
+        )),
         method: "Cash".to_owned(),
         submission_id: submission_id.to_owned(),
     }
@@ -1197,11 +1201,14 @@ pub async fn play(name: &str) -> Vec<String> {
                 out.map(|()| Value::Null)
             }
             "checkSave" | "complete" => {
+                let m = Money::parse(&text(&step["amount"])).expect("amount");
                 let save = SaveAttempt {
                     live: step["live"].as_bool().unwrap_or(true),
                     side: side(&step["type"]).expect("type"),
                     currency: code(&text(&step["currency"])),
-                    amount: Money::parse(&text(&step["amount"])).expect("amount"),
+                    amount: ForeignAmount::from_decimal(
+                        rust_decimal::Decimal::from_i128_with_scale(m.minor_i128(), 2),
+                    ),
                     method: text(&step["method"]),
                     submission_id: text(&step["submissionId"]),
                 };

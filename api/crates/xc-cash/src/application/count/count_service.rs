@@ -15,7 +15,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
@@ -135,10 +135,9 @@ impl CashCountService {
             .non_zero()
             .into_iter()
             .map(|(c, m)| {
-                (
-                    c.as_str().trim().to_owned(),
-                    Decimal::from_i128_with_scale(m.minor_i128(), 2),
-                )
+                let mut d = m.value();
+                d.rescale(2);
+                (c.as_str().trim().to_owned(), d)
             })
             .collect())
     }
@@ -200,7 +199,6 @@ mod tests {
     use sqlx::{AssertSqlSafe, PgPool};
     use xc_auth::domain::access::{Actor, Role, ScopedRole};
     use xc_kernel::ids::BranchId;
-    use xc_kernel::money::Money;
     use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 
     use super::*;
@@ -354,12 +352,11 @@ mod tests {
                 .into_iter()
                 .find(|b| b.currency.as_str() == currency)
                 .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
-            let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
             (
-                to_dec(row.opening.minor_i128()),
-                to_dec(row.expected.minor()),
-                row.counted.map(|m| to_dec(m.minor_i128())),
-                row.difference.map(|d| to_dec(d.minor())),
+                row.opening.value().normalize(),
+                row.expected.value().normalize(),
+                row.counted.map(|m| m.value().normalize()),
+                row.difference.map(|d| d.value().normalize()),
             )
         }
     }
@@ -562,7 +559,7 @@ mod tests {
         let delta_plus_100 = StockDelta::for_movement(
             CurrencyCode::parse("KRW").unwrap(),
             Direction::In,
-            Money::parse("100").unwrap(),
+            xc_kernel::money::ForeignAmount::from_decimal(Decimal::from(100)),
         );
         let mut tx = db.pool.begin().await.unwrap();
         let res_plus = service
@@ -603,7 +600,7 @@ mod tests {
         let delta_minus_1000 = StockDelta::for_movement(
             CurrencyCode::parse("KRW").unwrap(),
             Direction::Out,
-            Money::parse("1000").unwrap(),
+            xc_kernel::money::ForeignAmount::from_decimal(Decimal::from(1000)),
         );
         let mut tx = db.pool.begin().await.unwrap();
         let res_minus = service
@@ -1234,7 +1231,10 @@ impl CashCountService {
                     })?;
                     let mut d = diff;
                     d.rescale(2);
-                    delta_pairs.push((code, MoneyDelta::from_minor(d.mantissa())));
+                    let qd = QuantityDelta::from_decimal(d).map_err(|e| {
+                        AppError::Internal(format!("invalid count difference {d}: {e}"))
+                    })?;
+                    delta_pairs.push((code, qd));
                 }
                 close_balances.push((t.currency.clone(), t.counted, diff));
             }

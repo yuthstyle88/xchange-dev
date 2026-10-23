@@ -6,7 +6,6 @@ use std::sync::Arc;
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_kernel::ids::BranchId;
@@ -104,13 +103,7 @@ impl StaffFloorReader {
                 .map(|target| {
                     let mut amounts = HashMap::new();
                     for (code, money) in target.amounts.non_zero() {
-                        amounts.insert(
-                            code.as_str().to_string(),
-                            format!(
-                                "{:.2}",
-                                Decimal::from_i128_with_scale(money.minor_i128(), 2)
-                            ),
-                        );
+                        amounts.insert(code.as_str().to_string(), format!("{:.2}", money.value()));
                     }
                     StaffFloorTarget {
                         amounts,
@@ -126,13 +119,7 @@ impl StaffFloorReader {
                 .map(|safe| {
                     let mut map = HashMap::new();
                     for (code, money) in safe.non_zero() {
-                        map.insert(
-                            code.as_str().to_string(),
-                            format!(
-                                "{:.2}",
-                                Decimal::from_i128_with_scale(money.minor_i128(), 2)
-                            ),
-                        );
+                        map.insert(code.as_str().to_string(), format!("{:.2}", money.value()));
                     }
                     map
                 });
