@@ -19,6 +19,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -74,14 +75,7 @@ impl CommandAction for ConsentTextPublishCommand {
             ));
         }
 
-        if input.body.trim().is_empty() {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("body"),
-                "body cannot be empty",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
+        input::text("body", &input.body, TextBound { min: 1, max: 20_000 })?;
 
         let org_id: Option<Uuid> =
             sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")

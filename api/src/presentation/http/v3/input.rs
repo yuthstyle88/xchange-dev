@@ -41,6 +41,24 @@ pub fn integer(field: &'static str, v: i64, bound: IntBound) -> Result<i64, V3Er
     bound.check(v).map_err(|_| validation_failed(field))
 }
 
+/// Inclusive character-count bound (`min ..= max`) measured after `trim()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextBound {
+    pub min: usize,
+    pub max: usize,
+}
+
+/// Checks that `text.trim().chars().count()` lies in `bound.min ..= bound.max`, returning `400 validationFailed` on
+/// `field` when outside.
+pub fn text<'a>(field: &'static str, text: &'a str, bound: TextBound) -> Result<&'a str, V3Error> {
+    let trimmed = text.trim();
+    let len = trimmed.chars().count();
+    if len < bound.min || len > bound.max {
+        return Err(validation_failed(field));
+    }
+    Ok(trimmed)
+}
+
 /// Checks inside `tx` that `value` names an existing row of `table_key`, returning `400 validationFailed` on `field`
 /// when missing or `500 serverError` on a database error.
 pub async fn must_exist(
