@@ -10,7 +10,19 @@
 // - kiosk-cancel.ts:12-25          POST /api/kiosk { action: 'cancel', payload: { id, branchId, reason, note } }
 // - kiosk.rs:382-476,660-715       POST /api/kiosk actions: quote, confirm, status, cancel, customerCancel
 import { expect, type Page, test } from '@playwright/test';
-import { posted, shot, signIn, users } from './helpers';
+import {
+  closeShift,
+  ensureShiftClosed,
+  hasAccount,
+  openShift,
+  posted,
+  shot,
+  signIn,
+  users,
+  type Role,
+} from './helpers';
+
+const REQUIRED_ROLES: readonly Role[] = ['teller', 'branchManager'];
 
 interface KioskQuoteAnswer {
   id: string;
@@ -198,15 +210,33 @@ async function cleanupKioskRequest(
 
 test.describe.serial('QA-F19 kiosk cancel', () => {
   test('staff cancels a waiting kiosk request from the queue panel', async ({ browser, page }) => {
+    const missing = REQUIRED_ROLES.filter((role) => !hasAccount(role));
+    if (missing.length > 0) {
+      const reason = `missing account in users.json for: ${missing.join(', ')} (run scripts/reseed.sh)`;
+      console.log(`[F19] skip: ${reason}`);
+      test.skip(true, reason);
+    }
+
     const manager = await browser.newPage({
       baseURL: users.baseUrl,
       viewport: { width: 1280, height: 900 },
     });
+    const teller = await browser.newPage({
+      baseURL: users.baseUrl,
+      viewport: { width: 1280, height: 900 },
+    });
+    let shiftOpened = false;
     let openedQueue = false;
     let createdId: string | null = null;
     let tellerSignedIn = false;
 
     try {
+      await signIn(manager, 'branchManager', '/staff');
+      await signIn(teller, 'teller', '/staff');
+      await ensureShiftClosed(teller, manager);
+      await openShift(teller, manager);
+      shiftOpened = true;
+
       openedQueue = await ensureQueueOpen(manager);
 
       await signIn(page, 'teller', '/kiosk-queue.html');
@@ -262,9 +292,21 @@ test.describe.serial('QA-F19 kiosk cancel', () => {
         await cleanupKioskRequest(page, createdId, tellerSignedIn);
       } finally {
         try {
-          await closeQueueIfOpened(manager, openedQueue);
+          if (shiftOpened) {
+            await teller.goto('/staff');
+            await manager.goto('/staff');
+            await closeShift(teller, manager);
+          }
         } finally {
-          await manager.close().catch(() => {});
+          try {
+            await closeQueueIfOpened(manager, openedQueue);
+          } finally {
+            try {
+              await manager.close().catch(() => {});
+            } finally {
+              await teller.close().catch(() => {});
+            }
+          }
         }
       }
     }
@@ -274,6 +316,13 @@ test.describe.serial('QA-F19 kiosk cancel', () => {
     browser,
     page,
   }) => {
+    const missing = REQUIRED_ROLES.filter((role) => !hasAccount(role));
+    if (missing.length > 0) {
+      const reason = `missing account in users.json for: ${missing.join(', ')} (run scripts/reseed.sh)`;
+      console.log(`[F19] skip: ${reason}`);
+      test.skip(true, reason);
+    }
+
     const manager = await browser.newPage({
       baseURL: users.baseUrl,
       viewport: { width: 1280, height: 900 },
@@ -282,12 +331,18 @@ test.describe.serial('QA-F19 kiosk cancel', () => {
       baseURL: users.baseUrl,
       viewport: { width: 1280, height: 900 },
     });
+    let shiftOpened = false;
     let openedQueue = false;
     let createdId: string | null = null;
 
     try {
-      openedQueue = await ensureQueueOpen(manager);
+      await signIn(manager, 'branchManager', '/staff');
       await signIn(teller, 'teller', '/staff');
+      await ensureShiftClosed(teller, manager);
+      await openShift(teller, manager);
+      shiftOpened = true;
+
+      openedQueue = await ensureQueueOpen(manager);
 
       const created = await createWaitingKioskRequest(page, teller);
       createdId = created.id;
@@ -342,12 +397,20 @@ test.describe.serial('QA-F19 kiosk cancel', () => {
         await cleanupKioskRequest(page, createdId, false);
       } finally {
         try {
-          await closeQueueIfOpened(manager, openedQueue);
+          if (shiftOpened) {
+            await teller.goto('/staff');
+            await manager.goto('/staff');
+            await closeShift(teller, manager);
+          }
         } finally {
           try {
-            await manager.close().catch(() => {});
+            await closeQueueIfOpened(manager, openedQueue);
           } finally {
-            await teller.close().catch(() => {});
+            try {
+              await manager.close().catch(() => {});
+            } finally {
+              await teller.close().catch(() => {});
+            }
           }
         }
       }
