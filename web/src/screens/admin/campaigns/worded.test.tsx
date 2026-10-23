@@ -274,6 +274,18 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
         nameInput.value = 'My New Campaign';
         nameInput.dispatchEvent(new Event('input', { bubbles: true }));
       }
+      for (const [field, val] of [
+        ['startsAt', '2026-11-01'],
+        ['endsAt', '2026-11-30'],
+        ['budgetThb', '50000.00'],
+        ['branches', 'MAIN'],
+      ] as const) {
+        const el = container.querySelector<HTMLInputElement>(`.xc-campaign-create input[data-field="${field}"]`);
+        if (el) {
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
     }
 
     it('(1) network TypeError on create shows error.network in TH and EN', async () => {

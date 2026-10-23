@@ -29,8 +29,15 @@ describe('M02 campaign-rules behaviour table (new rows)', () => {
       calcMode: 'fixed',
       calcValue: '-5',
     };
+    const threeDpAmount = {
+      ...emptyRuleForm(),
+      benefitType: 'FEE_WAIVER' as const,
+      calcMode: 'amount',
+      calcValue: '10.123',
+    };
     expect(ruleErrors(zeroAmount)).toEqual({ calculation: true });
     expect(ruleErrors(negFixed)).toEqual({ calculation: true });
+    expect(ruleErrors(threeDpAmount)).toEqual({ calculation: true });
   });
 
   it('refuses calculation values with more than 8 decimal places', () => {

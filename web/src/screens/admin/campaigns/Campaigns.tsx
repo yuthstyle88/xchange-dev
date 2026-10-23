@@ -46,7 +46,9 @@ import type {
   IssuedCouponDto,
 } from '../../../shared/api/generated/coupon_issue';
 import { screenT } from '../../../shared/i18n';
-import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error';
+import { isServerFailure } from '../../../shared/i18n/worded-error';
+import { checkDecimal, numeric } from '../../../shared/ui/bounded';
 import type { AdminMenuProps } from '../menus';
 import { CampaignRulesEditor } from './CampaignRulesEditor';
 import {
@@ -62,6 +64,8 @@ import './campaigns.css';
 
 const t = screenT('admin.campaigns', table);
 
+const BUDGET_BOUND = numeric(20, 2, 'nonNegative');
+
 const ERROR_KEYS: Record<string, string> = {
   simulationRequired: 'error.simulationRequired',
   staleVersion: 'error.staleVersion',
@@ -72,18 +76,44 @@ const ERROR_KEYS: Record<string, string> = {
   couponInvalid: 'error.couponInvalid',
 };
 
-function campaignError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (isServerFailure(err)) {
-      return wordedError(err);
+function campaignFieldError(err: unknown): FieldMessage {
+  const labels = {
+    name: t('fieldName'),
+    startsAt: t('fieldStartsAt'),
+    endsAt: t('fieldEndsAt'),
+    budgetThb: t('fieldBudgetThb'),
+    branches: t('fieldBranches'),
+    rules: t('rulesTitle'),
+    expiresAt: t('couponExpiresAt'),
+    amount: t('simAmount'),
+  };
+  if (err instanceof ApiError && !isServerFailure(err)) {
+    if (err.code === 'validationFailed' && err.field === 'rules') {
+      const msg = err.message.trim();
+      return {
+        field: 'rules',
+        message: msg !== '' ? msg : fieldError(err, labels).message,
+      };
     }
-    const mapped = ERROR_KEYS[err.code];
-    if (mapped) {
-      const text = t(mapped as Parameters<typeof t>[0]);
-      if (text && text !== mapped) return text;
+    if (err.code !== 'validationFailed') {
+      const mapped = ERROR_KEYS[err.code];
+      if (mapped) {
+        const text = t(mapped as Parameters<typeof t>[0]);
+        if (text && text !== mapped) return { message: text };
+      }
     }
   }
-  return wordedError(err);
+  return fieldError(err, labels);
+}
+
+function campaignError(err: unknown): string {
+  return campaignFieldError(err).message;
+}
+
+function localFieldError(field: string): string {
+  return campaignFieldError(
+    new ApiError({ status: 400, code: 'validationFailed', field, message: '' }),
+  ).message;
 }
 
 function formatMoney(value: string | null | undefined): string {
@@ -232,12 +262,14 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [createPriority, setCreatePriority] = createSignal('10');
   const [createBranches, setCreateBranches] = createSignal<string[]>(['MAIN']);
   const [createError, setCreateError] = createSignal<string | null>(null);
+  const [createFieldErrors, setCreateFieldErrors] = createSignal<Record<string, string>>({});
 
   // M02 Detail state
   const [selectedCampaignId, setSelectedCampaignId] = createSignal<string | null>(null);
   const [campaignDetail, setCampaignDetail] = createSignal<CampaignDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = createSignal(false);
   const [detailError, setDetailError] = createSignal<string | null>(null);
+  const [detailFieldErrors, setDetailFieldErrors] = createSignal<Record<string, string>>({});
   // #2441: id of the campaign whose detail fills the form; null until its read answers.
   const [loadedDetailId, setLoadedDetailId] = createSignal<string | null>(null);
 
@@ -328,6 +360,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
           setRulesSupported(supported);
           setFormRules(supported ? storedRules.map(ruleFormOf) : []);
           setRuleRowErrors([]);
+          setDetailFieldErrors({});
           setIsEditedAfterSimulation(false);
         }
         if (v?.rules && v.rules.length > 0) {
@@ -365,6 +398,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setFormBranches([]);
     setFormRules([]);
     setRuleRowErrors([]);
+    setDetailFieldErrors({});
     setRulesSupported(true);
     setIsEditedAfterSimulation(false);
     setSimBranch('');
@@ -425,6 +459,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setCreatePriority('10');
     setCreateBranches(['MAIN']);
     setCreateError(null);
+    setCreateFieldErrors({});
     resetWrites();
   }
 
@@ -447,22 +482,68 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setIsEditedAfterSimulation(true);
   }
 
-  async function handleCreate() {
-    const priority = parseInteger(createPriority());
-    if (priority === null) {
-      setCreateError(t('error.validationFailed'));
-      return;
+  function applyCreateError(err: unknown) {
+    const fe = campaignFieldError(err);
+    if (fe.field) {
+      setCreateFieldErrors({ [fe.field]: fe.message });
+    } else {
+      setCreateError(fe.message);
     }
+  }
+
+  function applyDetailError(err: unknown) {
+    const fe = campaignFieldError(err);
+    if (fe.field) {
+      setDetailFieldErrors({ [fe.field]: fe.message });
+    } else {
+      setDetailError(fe.message);
+    }
+  }
+
+  async function handleCreate() {
+    setCreateError(null);
+    setCreateFieldErrors({});
     const rawBranches = createBranches() as unknown;
     const branches: string[] = Array.isArray(rawBranches)
       ? rawBranches.map(String)
       : typeof rawBranches === 'string' && rawBranches.length > 0
         ? [rawBranches]
         : [];
+    const fieldErrs: Record<string, string> = {};
+    if (createName().trim() === '') {
+      fieldErrs.name = localFieldError('name');
+    }
+    const startsAt = toBangkokStart(createStartsAt());
+    const endsAt = toBangkokEnd(createEndsAt());
+    const startMs = startsAt ? Date.parse(startsAt) : Number.NaN;
+    const endMs = endsAt ? Date.parse(endsAt) : Number.NaN;
+    if (Number.isNaN(startMs)) {
+      fieldErrs.startsAt = localFieldError('startsAt');
+    }
+    if (Number.isNaN(endMs)) {
+      fieldErrs.endsAt = localFieldError('endsAt');
+    } else if (!Number.isNaN(startMs) && endMs <= startMs) {
+      fieldErrs.endsAt = localFieldError('endsAt');
+    }
+    if (!checkDecimal(createBudgetThb(), BUDGET_BOUND).ok) {
+      fieldErrs.budgetThb = localFieldError('budgetThb');
+    }
+    if (branches.length === 0) {
+      fieldErrs.branches = localFieldError('branches');
+    }
+    if (Object.keys(fieldErrs).length > 0) {
+      setCreateFieldErrors(fieldErrs);
+      return;
+    }
+    const priority = parseInteger(createPriority());
+    if (priority === null) {
+      setCreateError(t('error.validationFailed'));
+      return;
+    }
     const body: CampaignCreateInput = {
       name: createName(),
-      startsAt: toBangkokStart(createStartsAt()),
-      endsAt: toBangkokEnd(createEndsAt()),
+      startsAt,
+      endsAt,
       budgetThb: createBudgetThb(),
       stackGroup: createStackGroup() || 'DEFAULT',
       priority,
@@ -470,7 +551,6 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     };
     if (writing()) return;
     setWriting(true);
-    setCreateError(null);
     try {
       const res = await createWrite.send(body);
       setIsCreating(false);
@@ -480,7 +560,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
         void loadList(props.branch?.(), props.period().from, props.period().to);
       }
     } catch (err: unknown) {
-      setCreateError(campaignError(err));
+      applyCreateError(err);
     } finally {
       setWriting(false);
     }
@@ -492,28 +572,53 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   async function handleSave() {
     const campaignId = selectedCampaignId();
     if (!campaignId || !detailReady()) return;
-    const priority = parseInteger(formPriority());
-    if (priority === null) {
-      setDetailError(t('error.validationFailed'));
-      return;
-    }
+    setDetailError(null);
+    setDetailFieldErrors({});
     const rawBranches = formBranches() as unknown;
     const branches: string[] = Array.isArray(rawBranches)
       ? rawBranches.map(String)
       : typeof rawBranches === 'string' && rawBranches.length > 0
         ? [rawBranches]
         : [];
+    const fieldErrs: Record<string, string> = {};
+    const startsAt = toBangkokStart(formStartsAt());
+    const endsAt = toBangkokEnd(formEndsAt());
+    const startMs = startsAt ? Date.parse(startsAt) : Number.NaN;
+    const endMs = endsAt ? Date.parse(endsAt) : Number.NaN;
+    if (Number.isNaN(startMs)) {
+      fieldErrs.startsAt = localFieldError('startsAt');
+    }
+    if (Number.isNaN(endMs)) {
+      fieldErrs.endsAt = localFieldError('endsAt');
+    } else if (!Number.isNaN(startMs) && endMs <= startMs) {
+      fieldErrs.endsAt = localFieldError('endsAt');
+    }
+    if (!checkDecimal(formBudgetThb(), BUDGET_BOUND).ok) {
+      fieldErrs.budgetThb = localFieldError('budgetThb');
+    }
+    if (branches.length === 0) {
+      fieldErrs.branches = localFieldError('branches');
+    }
+    const errs = rulesSupported() ? formRules().map(ruleErrors) : [];
     if (rulesSupported()) {
-      const errs = formRules().map(ruleErrors);
       setRuleRowErrors(errs);
-      if (errs.some((e) => e.calculation || e.caps)) {
-        return;
-      }
+    }
+    if (Object.keys(fieldErrs).length > 0) {
+      setDetailFieldErrors(fieldErrs);
+      return;
+    }
+    if (errs.some((e) => e.calculation || e.caps)) {
+      return;
+    }
+    const priority = parseInteger(formPriority());
+    if (priority === null) {
+      setDetailError(t('error.validationFailed'));
+      return;
     }
     const body: CampaignVersionSaveInput = {
       campaignId,
-      startsAt: toBangkokStart(formStartsAt()),
-      endsAt: toBangkokEnd(formEndsAt()),
+      startsAt,
+      endsAt,
       budgetThb: formBudgetThb(),
       stackGroup: formStackGroup(),
       priority,
@@ -522,7 +627,6 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     };
     if (writing()) return;
     setWriting(true);
-    setDetailError(null);
     try {
       await saveWrite.send(body);
       if (!stillShowing(campaignId)) return;
@@ -533,7 +637,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       if (err instanceof ApiError && err.code === 'staleVersion') {
         await loadCampaignDetail(campaignId, true);
       }
-      setDetailError(campaignError(err));
+      applyDetailError(err);
     } finally {
       setWriting(false);
     }
@@ -550,6 +654,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     if (writing()) return;
     setWriting(true);
     setDetailError(null);
+    setDetailFieldErrors({});
     try {
       await simulateWrite.send(body);
       if (!stillShowing(campaignId)) return;
@@ -557,7 +662,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       if (!stillShowing(campaignId)) return;
-      setDetailError(campaignError(err));
+      applyDetailError(err);
     } finally {
       setWriting(false);
     }
@@ -572,13 +677,14 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     if (writing()) return;
     setWriting(true);
     setDetailError(null);
+    setDetailFieldErrors({});
     try {
       await submitWrite.send(body);
       if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       if (!stillShowing(campaignId)) return;
-      setDetailError(campaignError(err));
+      applyDetailError(err);
     } finally {
       setWriting(false);
     }
@@ -593,13 +699,14 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     if (writing()) return;
     setWriting(true);
     setDetailError(null);
+    setDetailFieldErrors({});
     try {
       await pauseWrite.send(body);
       if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       if (!stillShowing(campaignId)) return;
-      setDetailError(campaignError(err));
+      applyDetailError(err);
     } finally {
       setWriting(false);
     }
@@ -614,13 +721,14 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     if (writing()) return;
     setWriting(true);
     setDetailError(null);
+    setDetailFieldErrors({});
     try {
       await resumeWrite.send(body);
       if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       if (!stillShowing(campaignId)) return;
-      setDetailError(campaignError(err));
+      applyDetailError(err);
     } finally {
       setWriting(false);
     }
@@ -635,13 +743,14 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     if (writing()) return;
     setWriting(true);
     setDetailError(null);
+    setDetailFieldErrors({});
     try {
       await newVersionWrite.send(body);
       if (!stillShowing(campaignId)) return;
       await loadCampaignDetail(campaignId, false);
     } catch (err: unknown) {
       if (!stillShowing(campaignId)) return;
-      setDetailError(campaignError(err));
+      applyDetailError(err);
     } finally {
       setWriting(false);
     }
@@ -650,13 +759,19 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   async function handleIssueCoupons() {
     const campaignId = selectedCampaignId();
     if (!campaignId || !detailReady()) return;
+    setDetailError(null);
+    setDetailFieldErrors({});
+    const expiresAt = toBangkokEnd(couponExpiresAt().trim());
+    if (!expiresAt || Number.isNaN(Date.parse(expiresAt))) {
+      setDetailFieldErrors({ expiresAt: localFieldError('expiresAt') });
+      return;
+    }
     const count = parseInteger(couponCount());
     if (count === null || count < 1) {
       setDetailError(t('error.validationFailed'));
       return;
     }
     const ruleId = couponRuleId() || currentVersion()?.rules?.[0]?.id || '';
-    const expiresAt = toBangkokEnd(couponExpiresAt());
     const body = {
       ruleId,
       count,
@@ -664,14 +779,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     };
     if (writing()) return;
     setWriting(true);
-    setDetailError(null);
     try {
       const res = await issueCouponsWriteFor(campaignId).send(body);
       if (!stillShowing(campaignId)) return;
       setIssuedCoupons(res?.coupons ?? []);
     } catch (err: unknown) {
       if (!stillShowing(campaignId)) return;
-      setDetailError(campaignError(err));
+      applyDetailError(err);
     } finally {
       setWriting(false);
     }
@@ -817,6 +931,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   onInput={(e) => setCreateName(e.currentTarget.value)}
                   onChange={(e) => setCreateName(e.currentTarget.value)}
                 />
+                <Show when={createFieldErrors().name}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="name">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="xc-form-group">
@@ -830,6 +951,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   onInput={(e) => setCreateStartsAt(e.currentTarget.value)}
                   onChange={(e) => setCreateStartsAt(e.currentTarget.value)}
                 />
+                <Show when={createFieldErrors().startsAt}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="startsAt">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="xc-form-group">
@@ -843,6 +971,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   onInput={(e) => setCreateEndsAt(e.currentTarget.value)}
                   onChange={(e) => setCreateEndsAt(e.currentTarget.value)}
                 />
+                <Show when={createFieldErrors().endsAt}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="endsAt">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="xc-form-group">
@@ -856,6 +991,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   onInput={(e) => setCreateBudgetThb(e.currentTarget.value)}
                   onChange={(e) => setCreateBudgetThb(e.currentTarget.value)}
                 />
+                <Show when={createFieldErrors().budgetThb}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="budgetThb">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="xc-form-group">
@@ -903,6 +1045,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                     setCreateBranches(parts.length > 0 ? parts : (raw ? [raw] : []));
                   }}
                 />
+                <Show when={createFieldErrors().branches}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="branches">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
             </div>
           </div>
@@ -982,6 +1131,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                     onInput={(e) => setSimAmount(e.currentTarget.value)}
                     onChange={(e) => setSimAmount(e.currentTarget.value)}
                   />
+                  <Show when={detailFieldErrors().amount}>
+                    {(msg) => (
+                      <div class="xc-field-error" data-field-error="amount">
+                        {msg()}
+                      </div>
+                    )}
+                  </Show>
                 </label>
               </div>
 
@@ -1061,6 +1217,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 value={formName()}
                 onInput={(e) => handleInputEdit(setFormName, e.currentTarget.value)}
               />
+              <Show when={detailFieldErrors().name}>
+                {(msg) => (
+                  <div class="xc-field-error" data-field-error="name">
+                    {msg()}
+                  </div>
+                )}
+              </Show>
             </div>
 
             <div class="xc-form-group">
@@ -1073,6 +1236,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 value={formBudgetThb()}
                 onInput={(e) => handleInputEdit(setFormBudgetThb, e.currentTarget.value)}
               />
+              <Show when={detailFieldErrors().budgetThb}>
+                {(msg) => (
+                  <div class="xc-field-error" data-field-error="budgetThb">
+                    {msg()}
+                  </div>
+                )}
+              </Show>
             </div>
 
             <div class="xc-form-group">
@@ -1085,6 +1255,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 value={formStartsAt()}
                 onInput={(e) => handleInputEdit(setFormStartsAt, e.currentTarget.value)}
               />
+              <Show when={detailFieldErrors().startsAt}>
+                {(msg) => (
+                  <div class="xc-field-error" data-field-error="startsAt">
+                    {msg()}
+                  </div>
+                )}
+              </Show>
             </div>
 
             <div class="xc-form-group">
@@ -1097,6 +1274,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 value={formEndsAt()}
                 onInput={(e) => handleInputEdit(setFormEndsAt, e.currentTarget.value)}
               />
+              <Show when={detailFieldErrors().endsAt}>
+                {(msg) => (
+                  <div class="xc-field-error" data-field-error="endsAt">
+                    {msg()}
+                  </div>
+                )}
+              </Show>
             </div>
 
             <div class="xc-form-group">
@@ -1123,12 +1307,21 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 onChange={(e) => handleInputEdit(setFormPriority, e.currentTarget.value)}
               />
             </div>
+
+            <Show when={detailFieldErrors().branches}>
+              {(msg) => (
+                <div class="xc-field-error" data-field-error="branches">
+                  {msg()}
+                </div>
+              )}
+            </Show>
           </div>
 
           <CampaignRulesEditor
             rules={formRules()}
             readOnly={currentStatus() !== 'DRAFT' || !rulesSupported()}
             errors={ruleRowErrors()}
+            rulesError={detailFieldErrors().rules}
             onChange={(next) => {
               setFormRules(next);
               setRuleRowErrors([]);
@@ -1182,6 +1375,13 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                   onInput={(e) => setCouponExpiresAt(e.currentTarget.value)}
                   onChange={(e) => setCouponExpiresAt(e.currentTarget.value)}
                 />
+                <Show when={detailFieldErrors().expiresAt}>
+                  {(msg) => (
+                    <div class="xc-field-error" data-field-error="expiresAt">
+                      {msg()}
+                    </div>
+                  )}
+                </Show>
               </div>
             </div>
 
