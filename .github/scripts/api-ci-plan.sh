@@ -91,7 +91,11 @@ fi
 
 if [ "$EVENT" = "pull_request" ]; then
   run_tests="false"
-  guards="false"
+  if [ -n "$packages" ]; then
+    guards="true"
+  else
+    guards="false"
+  fi
   if has_pkg "xchange"; then
     release_check="true"
   else

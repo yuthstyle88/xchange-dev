@@ -75,34 +75,34 @@ PR_ALL="packages=--workspace|run_tests=false"
 
 # ── pull_request: compile only the changed crates and what depends on them; no tests ─────────────────────────────
 check "pr: a leaf crate's source => that crate and its dependents; no tests" pull_request feat/x \
-  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=false|device_agent=false|release_check=true" \
+  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
   api/crates/xc-shift/src/application/shift/service.rs
 check "pr: the device agent alone => only it; no release check" pull_request feat/x \
-  "packages=-p xc-device-agent|run_tests=false|guards=false|device_agent=true|release_check=false" \
+  "packages=-p xc-device-agent|run_tests=false|guards=true|device_agent=true|release_check=false" \
   api/crates/xc-device-agent/src/main.rs
 check "pr: a root-package test => xchange only" pull_request feat/x \
-  "packages=-p xchange|run_tests=false|guards=false|device_agent=false|release_check=true" \
+  "packages=-p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
   api/tests/open_of_teller_view_test.rs
 check "pr: a web screen => xchange (it embeds the screens)" pull_request feat/x \
-  "packages=-p xchange|run_tests=false|guards=false|device_agent=false|release_check=true" \
+  "packages=-p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
   web/src/screens/admin/overview/Overview.tsx
 check "pr: docs only => nothing to build or test" pull_request docs/x \
   "packages=|run_tests=false|guards=false|device_agent=false|release_check=false" \
   docs/design/cash-shift-transfer.md README.md
 check "pr: Cargo.lock => compile everything, still no tests on a PR" pull_request feat/x \
-  "$PR_ALL|guards=false|device_agent=true|release_check=true" \
+  "$PR_ALL|guards=true|device_agent=true|release_check=true" \
   api/Cargo.lock
 check "pr: api/Cargo.toml => everything" pull_request feat/x \
-  "$PR_ALL|guards=false|device_agent=true|release_check=true" \
+  "$PR_ALL|guards=true|device_agent=true|release_check=true" \
   api/Cargo.toml
 check "pr: a migration => everything" pull_request feat/x \
-  "$PR_ALL|guards=false|device_agent=true|release_check=true" \
+  "$PR_ALL|guards=true|device_agent=true|release_check=true" \
   api/migrations/20261017120000_x.sql
 check "pr: xc-kernel => everything" pull_request feat/x \
-  "$PR_ALL|guards=false|device_agent=true|release_check=true" \
+  "$PR_ALL|guards=true|device_agent=true|release_check=true" \
   api/crates/xc-kernel/src/money.rs
 check "pr: api.yml itself => everything" pull_request ci/x \
-  "$PR_ALL|guards=false|device_agent=true|release_check=true" \
+  "$PR_ALL|guards=true|device_agent=true|release_check=true" \
   .github/workflows/api.yml
 
 # ── push to main: changed crates + dependents, plus the guard tests ─────────────────────────────
@@ -124,7 +124,7 @@ check "batch PR: one small change => the full suite and the guards" pull_request
   "$ALL|guards=true|device_agent=true|release_check=true" \
   api/crates/xc-shift/src/application/shift/service.rs
 check "a branch that only starts like batch is not a batch" pull_request batchy/merge \
-  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=false|device_agent=false|release_check=true" \
+  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
   api/crates/xc-shift/src/application/shift/service.rs
 
 # ── any other event plans everything (fail safe) ───────────────────────────────────────────────
@@ -185,7 +185,7 @@ dcheck "dispatch: naming the device agent turns its job on" workflow_dispatch "x
 dcheck "schedule ignores the input => everything" schedule "xc-cash" \
   "$ALL|guards=true|device_agent=true|release_check=true"
 dcheck "pull_request ignores the input" pull_request "xc-cash" \
-  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=false|device_agent=false|release_check=true"
+  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=true|device_agent=false|release_check=true"
 # an unknown package fails, naming it
 printf '%s\n' api/crates/xc-shift/src/application/shift/service.rs > "$TMP_DIR/changed.txt"
 if out=$(DISPATCH_PACKAGES="xc-cash xc-nope" "$PLAN" workflow_dispatch "" "$TMP_DIR/changed.txt" "$TMP_DIR/metadata.json" 2>&1); then
@@ -195,6 +195,10 @@ elif printf '%s' "$out" | grep -q 'xc-nope'; then
 else
   echo "FAIL dispatch: the failure does not name xc-nope: $out"; fail=$((fail + 1))
 fi
+
+check "PR: an api change runs the guards" pull_request feat/4883 \
+  "packages=-p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
+  api/src/presentation/http/auth.rs
 
 echo "passed: $pass, failed: $fail"
 [ "$fail" = 0 ]
