@@ -309,13 +309,19 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
                 refuse(400, "branchReviewNotAllowed", "branchReviewNotAllowed")
             }
             BranchIntakeError::OutOfScope => refuse(403, "outOfScope", "outOfScope"),
-            BranchIntakeError::DocumentTypeNotAccepted => {
-                refuse(400, "documentTypeNotAccepted", "documentTypeNotAccepted")
+            BranchIntakeError::DocumentTypeNotAccepted
+            | BranchIntakeError::Case(CaseError::DocumentTypeNotAccepted) => {
+                refuse(400, "documentTypeNotAccepted", "document type not accepted")
             }
-            BranchIntakeError::NoVerificationPolicy => {
-                refuse(400, "noVerificationPolicy", "noVerificationPolicy")
+            BranchIntakeError::NoVerificationPolicy
+            | BranchIntakeError::Case(CaseError::NoVerificationPolicy) => refuse(
+                400,
+                "noVerificationPolicy",
+                "no verification policy for organization",
+            ),
+            BranchIntakeError::CaseLocked | BranchIntakeError::Case(CaseError::CaseLocked) => {
+                refuse(400, "caseLocked", "case is locked")
             }
-            BranchIntakeError::CaseLocked => refuse(400, "caseLocked", "caseLocked"),
             BranchIntakeError::IdempotencyConflict => {
                 refuse(409, "idempotencyConflict", "idempotencyConflict")
             }
