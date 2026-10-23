@@ -111,7 +111,7 @@ describe('KW-3: AlertSettings idempotency key lifecycle (#2021 §9)', () => {
   }
 
   function minutesInput(): HTMLInputElement {
-    const input = root.querySelector('input[type="number"]') as HTMLInputElement | null;
+    const input = root.querySelector('#stale-data-minutes') as HTMLInputElement | null;
     expect(input, 'staleDataMinutes input exists').not.toBeNull();
     return input!;
   }
