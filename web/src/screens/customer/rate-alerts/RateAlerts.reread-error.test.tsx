@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import { makeMyRateAlertItem } from '../../../shared/testing/fixtures';
+import {
+  makeMyRateAlertItem,
+  makePublishedLineDto,
+  makePublishedRatesData,
+} from '../../../shared/testing/fixtures';
 import { errorText, setLang } from '../../../shared/i18n';
 import { RateAlertsScreen } from './RateAlerts';
 import * as table from './i18n';
@@ -64,6 +68,10 @@ async function fakeFetch(url: string, init?: RequestInit): Promise<Response> {
 
   if (url === '/api/public/host') {
     return json({ org: 'XC-ORG' });
+  }
+
+  if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(url)) {
+    return json(makePublishedRatesData({ lines: [makePublishedLineDto({ currency: 'USD' })] }));
   }
 
   if (url.includes('/api/public/orgs/')) {
