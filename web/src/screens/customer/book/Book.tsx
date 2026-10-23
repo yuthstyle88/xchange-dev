@@ -8,10 +8,12 @@ import {
   type JSX,
 } from 'solid-js';
 import { fill, screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { readHostOrg } from '../../../shared/api/public-host';
+import { checkDecimal, numeric } from '../../../shared/ui/bounded';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { QrCode } from '../../../shared/ui/QrCode';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
@@ -47,7 +49,11 @@ export interface PlannerPreviewResult {
   [key: string]: unknown;
 }
 
-export type BookingCreateBody = Partial<BookingCreateInput> & Record<string, unknown>;
+export type BookingCreateBody = Omit<Partial<BookingCreateInput>, 'quantity'> & {
+  quantity?: string | number;
+} & Record<string, unknown>;
+
+const QUANTITY_BOUND = numeric(20, 4, 'positive');
 
 export type BookingCreateResult = Partial<BookingCreateOutput> & {
   id: string;
@@ -128,9 +134,26 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   const [preview, setPreview] = createSignal<PlannerPreviewResult | null>(null);
 
   const [submitting, setSubmitting] = createSignal(false);
-  const [referralError, setReferralError] = createSignal<string | null>(null);
+  const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
   const [globalError, setGlobalError] = createSignal<string | null>(null);
   const [successData, setSuccessData] = createSignal<BookingCreateResult | null>(null);
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors((prev) => {
+      if (!(field in prev)) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const fieldLabels = () => ({
+    quantity: t('quantity'),
+    slotId: t('slot'),
+    branchId: t('branch'),
+    currency: t('currency'),
+    referralCode: t('referralCode'),
+  });
 
   const createBooking = keyedWrite<BookingCreateBody, BookingCreateResult>(
     api,
@@ -255,15 +278,29 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   const updatePreview = async () => {
     const seq = ++previewSeq;
     const b = branchId();
-    if (!b) {
+    const c = currency();
+    const q = quantity().trim();
+    const s = shopSide();
+
+    if (!q) {
       setPreview(null);
       return;
     }
-    const c = currency();
-    const q = quantity();
-    const s = shopSide();
 
-    if (!q || isNaN(Number(q)) || Number(q) <= 0) {
+    const checked = checkDecimal(q, QUANTITY_BOUND);
+    if (!checked.ok) {
+      setPreview(null);
+      setFieldErrors((prev) => ({
+        ...prev,
+        quantity: fieldError(
+          new ApiError({ status: 400, code: 'validationFailed', field: 'quantity', message: '' }),
+          fieldLabels(),
+        ).message,
+      }));
+      return;
+    }
+
+    if (!b) {
       setPreview(null);
       return;
     }
@@ -273,15 +310,15 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         {
           branch: string;
           currency: string;
-          customerSide: 'Buy' | 'Sell';
+          customerSide: 'CUSTOMER_BUY' | 'CUSTOMER_SELL';
           amount: { quantity: string };
         },
         PlannerPreviewResult
       >('compute', 'planner_preview', {
         branch: b,
         currency: c,
-        customerSide: s === 'BUY' ? 'Buy' : 'Sell',
-        amount: { quantity: String(Number(q)) },
+        customerSide: s === 'BUY' ? 'CUSTOMER_BUY' : 'CUSTOMER_SELL',
+        amount: { quantity: checked.text },
       });
       if (seq !== previewSeq) return;
       setPreview(data);
@@ -302,11 +339,9 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   const handleSubmit = async (e?: Event) => {
     if (e) e.preventDefault();
     if (submitting()) return;
-    const seq = ++submitSeq;
-    setSubmitting(true);
     createFailed = false;
     setGlobalError(null);
-    setReferralError(null);
+    setFieldErrors({});
     setSuccessData(null);
 
     // Read current form values from signals or DOM
@@ -320,12 +355,29 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       'BUY';
     const currentCurrency =
       currency() || (document.querySelector('select[name="currency"]') as HTMLSelectElement)?.value || 'USD';
-    const currentQtyStr =
-      quantity() || (document.querySelector('input[name="quantity"]') as HTMLInputElement)?.value || '0';
+    const currentQtyStr = (
+      quantity() ||
+      (document.querySelector('input[name="quantity"]') as HTMLInputElement)?.value ||
+      ''
+    ).trim();
     const currentRef =
       referralCode() !== undefined
         ? referralCode()
         : (document.querySelector('input[name="referralCode"]') as HTMLInputElement)?.value ?? '';
+
+    const checkedQty = checkDecimal(currentQtyStr, QUANTITY_BOUND);
+    if (!checkedQty.ok) {
+      setFieldErrors({
+        quantity: fieldError(
+          new ApiError({ status: 400, code: 'validationFailed', field: 'quantity', message: '' }),
+          fieldLabels(),
+        ).message,
+      });
+      return;
+    }
+
+    const seq = ++submitSeq;
+    setSubmitting(true);
 
     const payload: BookingCreateBody = {
       branch: currentBranch,
@@ -333,7 +385,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       slotId: currentSlot,
       shopSide: currentSide,
       currency: currentCurrency,
-      quantity: Number(currentQtyStr),
+      quantity: checkedQty.text,
     };
 
     if (currentRef !== '') {
@@ -351,11 +403,18 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           err.code === 'invalidReferralCode' ||
           (err.code === 'validationFailed' && err.field === 'referralCode')
         ) {
-          setReferralError(t('error.invalidReferralCode'));
+          setFieldErrors({ referralCode: t('error.invalidReferralCode') });
           return;
         }
         if (err.code === 'slotUnavailable' || err.code === 'capacityFull') {
           void loadSlots(currentBranch, serviceDate());
+        }
+        const fe = fieldError(err, fieldLabels());
+        if (fe.field) {
+          setFieldErrors({
+            [fe.field]: fe.field === 'referralCode' ? t('error.invalidReferralCode') : fe.message,
+          });
+          return;
         }
       }
       createFailed = true;
@@ -432,6 +491,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             ref={branchSelectEl}
             id="branchId"
             name="branchId"
+            required
             class="xc-book-select"
             data-testid="branch-select"
             value={branchId()}
@@ -440,6 +500,8 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               const val = e.currentTarget.value;
               setBranchId(val);
               setSlotId('');
+              clearFieldError('branchId');
+              clearFieldError('slotId');
               void updatePreview();
               if (val) {
                 const br = branches().find((b) => b.id === val);
@@ -474,6 +536,11 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               )}
             </For>
           </select>
+          <Show when={fieldErrors().branchId}>
+            <div class="field-error xc-book-error" data-field-error="branchId" role="alert">
+              {fieldErrors().branchId}
+            </div>
+          </Show>
         </div>
 
         <div class="xc-book-field field" data-field="serviceDate">
@@ -548,12 +615,14 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             ref={slotSelectEl}
             id="slotId"
             name="slotId"
+            required
             class="xc-book-select"
             data-testid="slot-select"
             value={slotId()}
             disabled={slotsLoading() || slots().length === 0}
             onChange={(e) => {
               setSlotId(e.currentTarget.value);
+              clearFieldError('slotId');
             }}
           >
             <option value="">{slotsLoading() ? t('loading') : (slots().length === 0 ? t('noSlots') : t('selectSlot'))}</option>
@@ -572,6 +641,11 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               }}
             </For>
           </select>
+          <Show when={fieldErrors().slotId}>
+            <div class="field-error xc-book-error" data-field-error="slotId" role="alert">
+              {fieldErrors().slotId}
+            </div>
+          </Show>
         </div>
 
         <div class="xc-book-field field">
@@ -585,7 +659,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             value={shopSide()}
             onChange={(e) => {
               setShopSide(e.currentTarget.value as 'BUY' | 'SELL');
-              updatePreview();
+              void updatePreview();
             }}
           >
             <option value="BUY">{t('buy')}</option>
@@ -593,7 +667,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
           </select>
         </div>
 
-        <div class="xc-book-field field">
+        <div class="xc-book-field field" data-field="currency">
           <label class="xc-book-label" for="currency">
             {t('currency')}
           </label>
@@ -605,7 +679,8 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             value={currency()}
             onChange={(e) => {
               setCurrency(e.currentTarget.value);
-              updatePreview();
+              clearFieldError('currency');
+              void updatePreview();
             }}
           >
             <option value="USD">USD</option>
@@ -614,9 +689,14 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             <option value="GBP">GBP</option>
             <option value="SGD">SGD</option>
           </select>
+          <Show when={fieldErrors().currency}>
+            <div class="field-error xc-book-error" data-field-error="currency" role="alert">
+              {fieldErrors().currency}
+            </div>
+          </Show>
         </div>
 
-        <div class="xc-book-field field">
+        <div class="xc-book-field field" data-field="quantity">
           <label class="xc-book-label" for="quantity">
             {t('quantity')}
           </label>
@@ -632,9 +712,16 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             value={quantity()}
             onInput={(e) => {
               setQuantity(e.currentTarget.value);
-              updatePreview();
+              clearFieldError('quantity');
+              void updatePreview();
             }}
+            aria-invalid={fieldErrors().quantity ? 'true' : undefined}
           />
+          <Show when={fieldErrors().quantity}>
+            <div class="field-error xc-book-error" data-field-error="quantity" role="alert">
+              {fieldErrors().quantity}
+            </div>
+          </Show>
         </div>
 
         <div class="xc-book-field field" data-field="referralCode">
@@ -651,13 +738,13 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
             value={referralCode()}
             onInput={(e) => {
               setReferralCode(e.currentTarget.value);
-              setReferralError(null);
+              clearFieldError('referralCode');
             }}
-            aria-invalid={referralError() ? 'true' : undefined}
+            aria-invalid={fieldErrors().referralCode ? 'true' : undefined}
           />
-          <Show when={referralError()}>
-            <div class="field-error xc-book-error" role="alert">
-              {referralError()}
+          <Show when={fieldErrors().referralCode}>
+            <div class="field-error xc-book-error" data-field-error="referralCode" role="alert">
+              {fieldErrors().referralCode}
             </div>
           </Show>
         </div>

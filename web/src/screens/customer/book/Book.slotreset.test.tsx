@@ -164,12 +164,11 @@ describe('Customer Book (C02) slot reset on date, branch, and slot reload (#2192
     await vi.waitFor(() => {
       expect(container.querySelector('option[value="slot-b1"]')).not.toBeNull();
     });
+    expect(slotSel.value).toBe('');
 
     submitBtn.click();
-    await vi.waitFor(() => {
-      expect(createBodies.length).toBe(2);
-    });
-    expect(createBodies[1]!.slotId).toBe('');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(createBodies.length).toBe(1);
   });
 
   it('Row 2: Slot S1 on date A -> change date to B -> Book without choosing sends slotId "" (not S1)', async () => {
@@ -241,12 +240,9 @@ describe('Customer Book (C02) slot reset on date, branch, and slot reload (#2192
 
     const submitBtn = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
     submitBtn.click();
+    await new Promise((r) => setTimeout(r, 20));
 
-    await vi.waitFor(() => {
-      expect(createBodies.length).toBe(1);
-    });
-    expect(createBodies[0]!.slotId).toBe('');
-    expect(createBodies[0]!.slotId).not.toBe('slot-a1');
+    expect(createBodies.length).toBe(0);
   });
 
   it('Row 3: Slot chosen -> change branch -> Book carries no slot of the old branch', async () => {
@@ -409,12 +405,10 @@ describe('Customer Book (C02) slot reset on date, branch, and slot reload (#2192
       expect(slotSel.value).toBe('');
     });
 
-    // Submitting again without picking a new slot sends '' instead of stale slot-a1
+    // Submitting again without picking a new slot sends nothing (native required stops it)
     submitBtn.click();
-    await vi.waitFor(() => {
-      expect(createBodies.length).toBe(2);
-    });
-    expect(createBodies[1]!.slotId).toBe('');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(createBodies.length).toBe(1);
   });
 
   it('Edge: The date changes to B and back to A — the user must pick a slot again (no restore)', async () => {

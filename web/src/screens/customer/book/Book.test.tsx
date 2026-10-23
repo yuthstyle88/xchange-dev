@@ -372,8 +372,8 @@ describe('APP-16 customer C02 book screen (/app/book) up-front tests (#985)', ()
     expect(createCall.body.slotId, 'create body must contain slotId').toBe('00000000-0000-4000-8000-000000000001');
     expect(createCall.body.shopSide, 'create body must contain shopSide BUY').toBe('BUY');
     expect(createCall.body.currency, 'create body must contain currency USD').toBe('USD');
-    expect(typeof createCall.body.quantity, 'quantity must be sent as a JSON number').toBe('number');
-    expect(createCall.body.quantity, 'quantity must match typed value 100').toBe(100);
+    expect(typeof createCall.body.quantity, 'quantity must be sent as a string').toBe('string');
+    expect(createCall.body.quantity, 'quantity must match typed value 100').toBe('100');
 
     // Contract: optional referral field - empty sends NO referralCode property
     expect(
@@ -485,7 +485,7 @@ describe('APP-16 customer C02 book screen (/app/book) up-front tests (#985)', ()
     expect(createCall.body.branchId).toBe('XC-B01');
     expect(createCall.body.branch, '#1913: every booking command names its branch').toBe('XC-B01');
     expect(createCall.body.slotId).toBe('00000000-0000-4000-8000-000000000001');
-    expect(typeof createCall.body.quantity).toBe('number');
+    expect(createCall.body.quantity).toBe('100');
   });
 
   it('stores nothing for referral code: no localStorage, sessionStorage, or cookie storage API is used', async () => {
