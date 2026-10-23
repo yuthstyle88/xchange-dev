@@ -2,7 +2,7 @@
 
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::{CurrencyCode, ForeignAmount};
+use xc_kernel::money::CurrencyCode;
 use xc_shift::application::custody::service::CustodyService;
 use xc_shift::domain::custody::value_objects::custody_actor::CustodyActor;
 use xc_shift::domain::custody::value_objects::save_attempt::{PriorSave, SaveAttempt};
@@ -94,10 +94,7 @@ fn attempt_of(ctx: &SaveContext<'_>) -> Option<SaveAttempt> {
         draft_id: ctx.extras.staff_draft_id.clone(),
         side: ctx.form.side,
         currency,
-        amount: ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
-            ctx.form.amount.minor_i128(),
-            2,
-        )),
+        amount: ctx.form.amount,
         prior,
     })
 }

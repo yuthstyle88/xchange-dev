@@ -354,7 +354,7 @@ async fn verify_count_difference_within_branch_limit_verifies_without_approval_r
     let exc = &exceptions[0];
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("COUNT {}", close.id));
-    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert_eq!(exc["cashVariance"]["THB"], "-100.00");
     assert!(exc["safeVariance"].is_null());
     assert_eq!(exc["at"], at(660).timestamp_millis());
 
@@ -640,7 +640,7 @@ async fn verify_count_after_finance_approves_succeeds_and_closes_shift() {
     let exc = &exceptions[0];
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("COUNT {}", close.id));
-    assert_eq!(exc["cashVariance"]["THB"], -10000);
+    assert_eq!(exc["cashVariance"]["THB"], "-100.00");
     assert!(exc["safeVariance"].is_null());
     assert_eq!(exc["at"], at(700).timestamp_millis());
 

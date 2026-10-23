@@ -114,6 +114,21 @@ impl ComputeAction for ShiftValuationAction {
                 }
             });
 
+            let minor_units: HashMap<String, i16> =
+                sqlx::query_as("SELECT trim(code), minor_unit FROM currencies")
+                    .fetch_all(repo.pool())
+                    .await
+                    .map_err(|_| server_error())?
+                    .into_iter()
+                    .collect();
+            let fmt_amount = |code: &str, mut d: Decimal| {
+                d = d.normalize();
+                let scale = minor_units.get(code).copied().unwrap_or(2).max(0) as u32;
+                if d.scale() < scale {
+                    d.rescale(scale);
+                }
+                d.to_string()
+            };
             let currencies: Vec<ShiftValuationCurrency> = codes
                 .iter()
                 .map(|&code| {
@@ -122,8 +137,8 @@ impl ComputeAction for ShiftValuationAction {
                     let needs_rate = code.as_str() != "THB";
                     ShiftValuationCurrency {
                         currency: code.as_str().to_string(),
-                        opening: MoneyDto(format!("{:.2}", o_c.value())),
-                        current: MoneyDto(format!("{:.2}", e_c.value())),
+                        opening: MoneyDto(fmt_amount(code.as_str(), o_c.value())),
+                        current: MoneyDto(fmt_amount(code.as_str(), e_c.value())),
                         needs_rate,
                     }
                 })

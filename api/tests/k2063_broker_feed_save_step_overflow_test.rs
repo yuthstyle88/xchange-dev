@@ -20,7 +20,7 @@ use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::{Money, Quote, Rate, Side};
+use xc_kernel::money::{ForeignAmount, Money, Quote, Rate, Side};
 use xchange::application::workflows::broker_feed_save_step::BrokerFeedSaveStep;
 use xchange::application::workflows::save_step::{SaveActor, SaveContext, SaveExtras, SaveStep};
 
@@ -38,7 +38,7 @@ fn dummy_form(_branch: &BranchId, customer_id: &str) -> TransactionForm {
         customer_id: customer_id.to_string(),
         side: Side::Buy,
         currency: "USD".to_string(),
-        amount: Money::parse("100").unwrap(),
+        amount: ForeignAmount::from_decimal(Decimal::from_str("100.00").unwrap()),
         rate: Rate::parse("32.2").unwrap(),
         client_rate: Decimal::from_str("32.2").unwrap(),
         fee: Money::ZERO,
