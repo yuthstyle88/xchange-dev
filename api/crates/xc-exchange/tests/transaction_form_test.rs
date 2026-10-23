@@ -18,7 +18,7 @@
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use serde::Deserialize;
-use xc_kernel::money::{Money, Rate, Side};
+use xc_kernel::money::{ForeignAmount, Money, Rate, Side};
 
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
@@ -416,7 +416,10 @@ fn a_parsed_form_holds_typed_values() {
     assert_eq!(form.side, Side::Sell);
     assert_eq!(form.method, PaymentMethod::ScbTransfer);
     assert_eq!(form.payment_ref, "TRX-1");
-    assert_eq!(form.amount, Money::parse("100").unwrap());
+    assert_eq!(
+        form.amount,
+        ForeignAmount::from_decimal("100.00".parse().unwrap())
+    );
     assert_eq!(form.rate, Rate::parse("32.1").unwrap());
     assert_eq!(form.fee, Money::parse("25.5").unwrap());
     assert_eq!(form.bank_fee, Money::ZERO);

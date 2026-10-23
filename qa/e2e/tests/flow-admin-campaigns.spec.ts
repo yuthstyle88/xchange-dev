@@ -303,15 +303,24 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         await form.locator('input[name="endsAt"][data-field="endsAt"]').fill(endsAt);
         await form.locator('input[name="budgetThb"][data-field="budgetThb"]').fill('25000.00');
 
-        const postRes = await posted(page, /^\/api\/campaigns$/, () =>
-          form.locator('.xc-detail-actions button.xc-btn-primary').click(),
-        );
-        expect(postRes.ok, `POST /api/campaigns refused (${lang}): ${postRes.text}`).toBe(false);
+        let createPosts = 0;
+        const onCreateReq = (req: { method(): string; url(): string }) => {
+          if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/campaigns') {
+            createPosts++;
+          }
+        };
+        page.on('request', onCreateReq);
+        try {
+          await form.locator('.xc-detail-actions button.xc-btn-primary').click();
+        } finally {
+          page.off('request', onCreateReq);
+        }
+        expect(createPosts, `end-before-start sends no POST /api/campaigns (${lang})`).toBe(0);
 
-        // Error banner .xc-campaign-create .xc-campaigns-error (Campaigns.tsx:777-783).
-        const errBanner = form.locator('.xc-campaigns-error');
-        await expect(errBanner, `end-before-start error banner (${lang})`).toBeVisible({ timeout: 15_000 });
-        assertWordedRefusal(await errBanner.innerText(), lang, 'end-before-start');
+        // Field error .xc-campaign-create [data-field-error="endsAt"] (Campaigns.tsx:527-529, 991-997).
+        const endsAtErr = form.locator('[data-field-error="endsAt"]');
+        await expect(endsAtErr, `end-before-start field error (${lang})`).toBeVisible({ timeout: 15_000 });
+        assertWordedRefusal(await endsAtErr.innerText(), lang, 'end-before-start');
 
         // Form keeps what the user typed (qa-e2e.md §9.1).
         await expect(form.locator('input[name="name"][data-field="name"]')).toHaveValue(typedName);

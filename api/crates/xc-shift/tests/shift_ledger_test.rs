@@ -8,7 +8,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use common::{balances, code, delta, fixture, money, shown_balances, shown_delta, signed};
-use xc_kernel::money::{CurrencyCode, Money, Rate, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side};
 use xc_shift::domain::shift::entities::shift_ledger::ShiftLedger;
 use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta, StockError};
@@ -17,18 +17,11 @@ use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta,
 /// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
 fn per_one(
     side: xc_kernel::money::Side,
-    amount: xc_kernel::money::Money,
+    amount: ForeignAmount,
     rate: xc_kernel::money::Rate,
     fee: xc_kernel::money::Money,
 ) -> Result<xc_kernel::money::Quote, xc_kernel::money::QuoteError> {
-    let amount: rust_decimal::Decimal = amount.to_string().parse().expect("a decimal amount");
-    xc_kernel::money::Quote::per_unit(
-        side,
-        xc_kernel::money::ForeignAmount::from_decimal(amount),
-        rate,
-        xc_kernel::money::UnitSize::ONE,
-        fee,
-    )
+    xc_kernel::money::Quote::per_unit(side, amount, rate, xc_kernel::money::UnitSize::ONE, fee)
 }
 
 fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -41,8 +34,8 @@ fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[test]
 fn an_empty_till_holds_nothing_of_anything() {
     let b = Balances::empty();
-    assert_eq!(b.get(CurrencyCode::THB), Money::ZERO);
-    assert_eq!(b.get(code("USD")), Money::ZERO);
+    assert_eq!(b.get(CurrencyCode::THB), ForeignAmount::ZERO);
+    assert_eq!(b.get(code("USD")), ForeignAmount::ZERO);
     assert!(b.non_zero().is_empty());
 }
 
@@ -51,10 +44,13 @@ fn a_later_pair_for_the_same_currency_replaces_the_earlier_one() {
     let b = Balances::of(&[(code("USD"), money("5")), (code("USD"), money("7.50"))]);
     assert_eq!(b.get(code("USD")), money("7.50"));
     assert_eq!(b.non_zero().len(), 1);
-    let zeroed = Balances::of(&[(code("USD"), money("5")), (code("USD"), Money::ZERO)]);
+    let zeroed = Balances::of(&[
+        (code("USD"), money("5")),
+        (code("USD"), ForeignAmount::ZERO),
+    ]);
     assert_eq!(zeroed, Balances::empty());
     assert_eq!(
-        Balances::of(&[(code("USD"), Money::ZERO)]),
+        Balances::of(&[(code("USD"), ForeignAmount::ZERO)]),
         Balances::empty()
     );
 }
@@ -62,10 +58,13 @@ fn a_later_pair_for_the_same_currency_replaces_the_earlier_one() {
 #[test]
 fn an_explicit_zero_equals_empty() {
     assert_eq!(
-        Balances::of(&[(code("USD"), Money::ZERO)]),
+        Balances::of(&[(code("USD"), ForeignAmount::ZERO)]),
         Balances::empty()
     );
-    let replaced = Balances::of(&[(code("USD"), money("5.00")), (code("USD"), Money::ZERO)]);
+    let replaced = Balances::of(&[
+        (code("USD"), money("5.00")),
+        (code("USD"), ForeignAmount::ZERO),
+    ]);
     assert_eq!(replaced, Balances::empty());
     let opening = balances(&map(&[("USD", "5.00")]));
     let out = StockDelta::for_movement(code("USD"), Direction::Out, money("5.00"));
@@ -103,7 +102,7 @@ fn a_shift_with_no_activity_expects_its_opening() {
 #[test]
 fn a_balance_may_be_larger_than_a_person_may_type() {
     // 99,999,999.99 USD sold at 32.1 for cash: 3,209,999,999.68 baht comes in.
-    let amount = Money::parse("99999999.99").unwrap();
+    let amount = money("99999999.99");
     let q = per_one(
         Side::Sell,
         amount,
@@ -141,7 +140,7 @@ fn every_shift_v2_summed_gets_the_same_balances() {
             } else {
                 Side::Sell
             };
-            let amount = Money::parse(&t.amount).unwrap();
+            let amount = money(&t.amount);
             let q = per_one(
                 side,
                 amount,

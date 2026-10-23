@@ -29,7 +29,7 @@
 mod kiosk_common;
 
 use kiosk_common::*;
-use xc_kernel::money::{Side, UnitSize};
+use xc_kernel::money::{ForeignAmount, Side, UnitSize};
 
 use KioskCommand as Cmd;
 use KioskError as E;
@@ -137,12 +137,20 @@ fn completed() -> KioskRequest {
         .request
 }
 
+fn foreign(text: &str) -> ForeignAmount {
+    let m = money(text);
+    ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+        m.minor_i128(),
+        2,
+    ))
+}
+
 fn matching_save() -> SaveAttempt {
     SaveAttempt {
         live: true,
         side: Side::Buy,
         currency: code("USD"),
-        amount: money("100"),
+        amount: foreign("100"),
         method: "Cash".into(),
         submission_id: "SUB-1".into(),
     }
@@ -868,11 +876,11 @@ fn a_save_must_be_the_holders_real_and_what_the_customer_was_quoted() {
         Err(E::SaveDiffersFromQueue)
     );
     assert_eq!(
-        judge(&|s| s.amount = money("100.01")),
+        judge(&|s| s.amount = foreign("100.01")),
         Err(E::SaveDiffersFromQueue)
     );
     assert_eq!(
-        judge(&|s| s.amount = money("3210")),
+        judge(&|s| s.amount = foreign("3210")),
         Err(E::SaveDiffersFromQueue),
         "the baht figure is not the amount"
     );

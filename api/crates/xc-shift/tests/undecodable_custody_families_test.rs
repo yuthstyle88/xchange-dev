@@ -37,7 +37,7 @@ async fn a_branch_with_history(db: &TestDb) -> Desk {
     let at = custody_common::NOON;
     for sql in [
         "INSERT INTO ops_state (branch_id, phase, target) VALUES ($1, 'OPEN', \
-         jsonb_build_object('amounts', '{\"THB\": 10000000, \"USD\": 200000}'::jsonb, \
+         jsonb_build_object('amounts', '{\"THB\": \"100000.00\", \"USD\": \"2000.00\"}'::jsonb, \
            'by', 'FIN1', 'at', $2::bigint)) \
          ON CONFLICT (branch_id) DO UPDATE SET phase = EXCLUDED.phase, \
            target = EXCLUDED.target",
@@ -47,12 +47,12 @@ async fn a_branch_with_history(db: &TestDb) -> Desk {
            'note', NULL))",
         "INSERT INTO tx_drafts (id, branch_id, position, data) \
          SELECT 'draft-' || n, $1, n - 1, jsonb_build_object('shiftId', 'S1', 'employeeId', 'F1', \
-           'side', 'BUY', 'currency', 'USD', 'amount', n * 100, 'at', $2::bigint, \
+           'side', 'BUY', 'currency', 'USD', 'amount', n || '.00', 'at', $2::bigint, \
            'status', 'OPEN', 'documentRef', NULL) \
          FROM generate_series(1, 3) AS n",
         "INSERT INTO cash_exceptions (id, branch_id, position, data) VALUES ('exception-1', $1, 0, \
          jsonb_build_object('requestId', 'count-1', 'status', 'OPEN', \
-           'targetDifference', '{\"USD\": -1000}'::jsonb, 'cashVariance', NULL, \
+           'targetDifference', '{\"USD\": \"-10.00\"}'::jsonb, 'cashVariance', NULL, \
            'safeVariance', NULL, 'note', 'ten dollars short of the target', 'at', $2::bigint, \
            'reviewedBy', NULL, 'reviewedAt', NULL))",
     ] {
@@ -222,7 +222,7 @@ async fn a_draft_amount_stored_as_text_that_fits_64_bits_is_a_fault() {
     let d = a_branch_with_history(&db).await;
     spoil(
         &db,
-        "UPDATE tx_drafts SET data = jsonb_set(data, '{amount}', '\"5\"') \
+        "UPDATE tx_drafts SET data = jsonb_set(data, '{amount}', '5') \
          WHERE branch_id = $1",
         &d,
     )

@@ -29,7 +29,7 @@ use rpc_common::{App, Call, Cookies, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, QuantityDelta};
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances, ShiftId};
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -103,22 +103,32 @@ fn shift_balance(
     counted: Option<&str>,
     difference: Option<&str>,
 ) -> ShiftBalance {
+    let fa = |s: &str| {
+        ForeignAmount::from_decimal(rust_decimal::Decimal::new(
+            Money::parse(s).expect("valid money").try_minor().unwrap(),
+            2,
+        ))
+    };
     ShiftBalance {
         currency: CurrencyCode::parse(currency).expect("valid currency"),
-        opening: Money::parse(opening).expect("valid opening"),
-        expected: MoneyDelta::from_minor(
+        opening: fa(opening),
+        expected: QuantityDelta::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
             Money::parse(expected).expect("valid expected").minor_i128(),
-        ),
-        moved_in: Money::parse(moved_in).expect("valid moved_in"),
-        moved_out: Money::parse(moved_out).expect("valid moved_out"),
-        counted: counted.map(|c| Money::parse(c).expect("valid counted")),
+            2,
+        ))
+        .expect("valid expected"),
+        moved_in: fa(moved_in),
+        moved_out: fa(moved_out),
+        counted: counted.map(fa),
         difference: difference.map(|d| {
             let m = Money::parse(d.trim_start_matches('-')).expect("valid difference");
-            if d.starts_with('-') {
-                MoneyDelta::from_minor(-m.minor_i128())
+            let minor = if d.starts_with('-') {
+                -m.minor_i128()
             } else {
-                MoneyDelta::from_minor(m.minor_i128())
-            }
+                m.minor_i128()
+            };
+            QuantityDelta::from_decimal(rust_decimal::Decimal::from_i128_with_scale(minor, 2))
+                .expect("valid difference")
         }),
     }
 }

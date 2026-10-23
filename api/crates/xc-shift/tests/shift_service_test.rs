@@ -29,7 +29,7 @@ use pos_error::AppError;
 use shift_service_common::{TestDb, at, code, fixture, money, refusal, shown_balances, within};
 use tokio::sync::Barrier;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 
@@ -222,8 +222,11 @@ async fn a_saved_transaction_changes_the_open_shift_or_is_refused() {
     );
     // both legs of a cash purchase land together, or neither does
     let both = StockDelta::of(&[
-        (code("USD"), MoneyDelta::ZERO.plus(money("3"))),
-        (CurrencyCode::THB, MoneyDelta::ZERO.minus(money("100.01"))),
+        (code("USD"), QuantityDelta::from(money("3"))),
+        (
+            CurrencyCode::THB,
+            QuantityDelta::ZERO.checked_minus(money("100.01")).unwrap(),
+        ),
     ]);
     assert_eq!(
         refusal(db.apply_delta(&branch, &teller, both).await),

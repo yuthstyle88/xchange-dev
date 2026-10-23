@@ -6,7 +6,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{Money, MoneyDelta};
+use xc_kernel::money::ForeignAmount;
 
 use crate::domain::shift::entities::open_shift_row::OpenShiftRow;
 use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
@@ -40,7 +40,11 @@ fn undecodable(table: &str, column: &str, value: &str) -> AppError {
     AppError::Internal(format!("undecodable {table}.{column}: {value}"))
 }
 
-pub(crate) fn parse_money_unbounded(table: &str, column: &str, s: &str) -> Result<Money, AppError> {
+pub(crate) fn parse_money_unbounded(
+    table: &str,
+    column: &str,
+    s: &str,
+) -> Result<ForeignAmount, AppError> {
     let trimmed = s.trim();
     if trimmed.starts_with('-') {
         return Err(undecodable(table, column, s));
@@ -51,10 +55,7 @@ pub(crate) fn parse_money_unbounded(table: &str, column: &str, s: &str) -> Resul
     }
     let mut d = d.normalize();
     d.rescale(2);
-    let minor = d.mantissa();
-    MoneyDelta::from_minor(minor)
-        .to_money()
-        .map_err(|_| undecodable(table, column, s))
+    ForeignAmount::checked_from_decimal(d).map_err(|_| undecodable(table, column, s))
 }
 
 fn parse_shift_status(s: &str) -> Result<ShiftStatus, AppError> {
@@ -156,7 +157,7 @@ fn fold_ledger(
         }
         let m = r
             .expected
-            .to_money()
+            .to_amount()
             .map_err(|_| AppError::Internal(format!("shift {shift_id}: expected out of range")))?;
         if !m.is_zero() {
             e.push((r.currency, m));

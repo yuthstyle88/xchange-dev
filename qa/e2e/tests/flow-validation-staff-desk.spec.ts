@@ -174,19 +174,24 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(denomInputs.first(), 'first denomination input stays empty').toHaveValue('');
           await expect(teller.locator('[data-testid="shift-verify"]')).toHaveCount(0);
 
-          // Cases 2–4: negative ('-1'), not a number ('abc'), decimal ('1.5') -> `countSubmit` 400 validationFailed.
+          // Cases 2–4: negative ('-1'), not a number ('abc'), decimal ('1.5') -> refused at the row, no POST sent.
           const firstInput = denomInputs.first();
+          const firstRow = countForm.locator('[data-denomination-row]').first();
           for (const badQty of ['-1', 'abc', '1.5']) {
             console.log(`[V-staff] shift-count ${badQty} (${lang})`);
             await firstInput.fill(badQty, { timeout: 15_000 });
-            const countRes = await posted(teller, /^\/api\/cash-counts$/, () =>
-              teller.locator('[data-testid="shift-count-save"]').click({ timeout: 15_000 }),
-            );
-            expect(countRes.ok, `POST /api/cash-counts (${badQty}, ${lang}) must be refused`).toBe(false);
-            expect(countRes.text, `POST /api/cash-counts (${badQty}, ${lang}) status`).toMatch(/^400\b/);
+            let countCalls = 0;
+            await teller.route('**/api/cash-counts', (route) => {
+              countCalls++;
+              return route.abort();
+            });
+            await teller.locator('[data-testid="shift-count-save"]').click({ timeout: 15_000 });
+            expect(countCalls, `[${lang}] no request sent for ${badQty} count`).toBe(0);
+            await teller.unroute('**/api/cash-counts');
 
-            await expect(shiftErr, `shift-error visible for ${badQty} (${lang})`).toBeVisible({ timeout: 10_000 });
-            expectWordedRefusal(await shiftErr.innerText(), `shift count ${badQty} (${lang})`);
+            const rowErr = firstRow.locator('[data-field-error]');
+            await expect(rowErr, `row error visible for ${badQty} (${lang})`).toBeVisible({ timeout: 10_000 });
+            expectWordedRefusal(await rowErr.innerText(), `shift count ${badQty} (${lang})`);
             await expect(firstInput, `shift count input keeps '${badQty}' (${lang})`).toHaveValue(badQty);
             await expect(
               teller.locator('[data-testid="shift-verify"]'),

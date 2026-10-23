@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
-use xc_kernel::money::{CurrencyCode, MinorUnit, Money, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, MinorUnit, Money, Rate, Side, UnitSize};
 
 // Every kiosk path the tests name is in this one block.
 pub use xc_kiosk::domain::kiosk::commands::kiosk_command::KioskCommand;
@@ -408,11 +408,15 @@ pub fn quote_input(i: &InputJson) -> QuoteInput {
 }
 
 pub fn save(s: &SaveJson) -> SaveAttempt {
+    let m = money(&s.amount);
     SaveAttempt {
         live: s.live,
         side: side(&s.side),
         currency: code(&s.currency),
-        amount: money(&s.amount),
+        amount: ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+            m.minor_i128(),
+            2,
+        )),
         method: s.method.clone(),
         submission_id: s.submission_id.clone(),
     }

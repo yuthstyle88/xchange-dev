@@ -18,7 +18,7 @@ use serde_json::{Map, Value, json};
 use xc_customer::domain::customer::entities::customer::Customer;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, QuantityDelta, Rate, Side};
 use xc_rate::domain::branch::entities::branch::{Branch, BranchStatus};
 use xc_rate::domain::rate::entities::counter_rate::CounterRate;
 use xc_rate::domain::rate::entities::rate_change::RateChange;
@@ -71,15 +71,33 @@ fn custody_at(text: &str) -> CustodyTime {
 }
 
 fn balances(pairs: &[(&str, &str)]) -> Balances {
-    let pairs: Vec<(CurrencyCode, Money)> =
-        pairs.iter().map(|(c, m)| (code(c), money(m))).collect();
+    let pairs: Vec<(CurrencyCode, xc_kernel::money::ForeignAmount)> = pairs
+        .iter()
+        .map(|(c, m)| {
+            (
+                code(c),
+                xc_kernel::money::ForeignAmount::from_decimal(rust_decimal::Decimal::new(
+                    money(m).try_minor().unwrap(),
+                    2,
+                )),
+            )
+        })
+        .collect();
     Balances::of(&pairs)
 }
 
 fn delta(pairs: &[(&str, i128)]) -> StockDelta {
-    let pairs: Vec<(CurrencyCode, MoneyDelta)> = pairs
+    let pairs: Vec<(CurrencyCode, xc_kernel::money::QuantityDelta)> = pairs
         .iter()
-        .map(|(c, minor)| (code(c), MoneyDelta::from_minor(*minor)))
+        .map(|(c, minor)| {
+            (
+                code(c),
+                xc_kernel::money::QuantityDelta::from_decimal(
+                    rust_decimal::Decimal::from_i128_with_scale(*minor, 2),
+                )
+                .unwrap(),
+            )
+        })
         .collect();
     StockDelta::of(&pairs)
 }
@@ -262,15 +280,26 @@ fn delta_prints_its_sign_and_the_shortest_decimal() {
         (-320_999_999_968, "-3209999999.68"),
     ];
     for (minor, printed) in cases {
-        let json = delta_json(MoneyDelta::from_minor(minor));
+        let json = delta_json(
+            QuantityDelta::from_decimal(rust_decimal::Decimal::from_i128_with_scale(minor, 2))
+                .unwrap(),
+        );
         assert_eq!(json.to_text(), printed, "{minor}");
     }
     assert_eq!(
-        delta_json(MoneyDelta::from_minor(-50)).to_value(),
+        delta_json(
+            QuantityDelta::from_decimal(rust_decimal::Decimal::from_i128_with_scale(-50, 2))
+                .unwrap()
+        )
+        .to_value(),
         json!(-0.5)
     );
     assert_eq!(
-        delta_json(MoneyDelta::from_minor(-10_000)).to_value(),
+        delta_json(
+            QuantityDelta::from_decimal(rust_decimal::Decimal::from_i128_with_scale(-10_000, 2))
+                .unwrap()
+        )
+        .to_value(),
         json!(-100)
     );
 }
@@ -1255,90 +1284,95 @@ fn every_custody_role_and_status_is_printed_in_v2s_word() {
 
 #[test]
 fn holds_drafts_and_exceptions_gain_their_keys_once_reviewed_or_saved() {
-    let state = CustodyState {
-        holds: vec![
-            CustomerHold {
-                id: "H-1".to_string(),
-                customer_id: "CX-00000002".to_string(),
-                reason: "asked to wait".to_string(),
-                by: "E-MON".to_string(),
-                at: custody_at("2026-10-06T06:00:00.000Z"),
-                status: HoldStatus::Open,
-                reviewed_by: None,
-                reviewed_at: None,
-                note: None,
-            },
-            CustomerHold {
-                id: "H-2".to_string(),
-                customer_id: "CX-00000001".to_string(),
-                reason: "passport looks altered".to_string(),
-                by: "E-FRONT".to_string(),
-                at: custody_at("2026-10-06T05:59:00.000Z"),
-                status: HoldStatus::Released,
-                reviewed_by: Some("E-MON".to_string()),
-                reviewed_at: Some(custody_at("2026-10-06T06:03:00.000Z")),
-                note: Some("fine".to_string()),
-            },
-        ],
-        drafts: vec![
-            TxDraft {
-                id: "D-1".to_string(),
+    let state =
+        CustodyState {
+            holds: vec![
+                CustomerHold {
+                    id: "H-1".to_string(),
+                    customer_id: "CX-00000002".to_string(),
+                    reason: "asked to wait".to_string(),
+                    by: "E-MON".to_string(),
+                    at: custody_at("2026-10-06T06:00:00.000Z"),
+                    status: HoldStatus::Open,
+                    reviewed_by: None,
+                    reviewed_at: None,
+                    note: None,
+                },
+                CustomerHold {
+                    id: "H-2".to_string(),
+                    customer_id: "CX-00000001".to_string(),
+                    reason: "passport looks altered".to_string(),
+                    by: "E-FRONT".to_string(),
+                    at: custody_at("2026-10-06T05:59:00.000Z"),
+                    status: HoldStatus::Released,
+                    reviewed_by: Some("E-MON".to_string()),
+                    reviewed_at: Some(custody_at("2026-10-06T06:03:00.000Z")),
+                    note: Some("fine".to_string()),
+                },
+            ],
+            drafts: vec![
+                TxDraft {
+                    id: "D-1".to_string(),
+                    shift_id: "SH-1".to_string(),
+                    employee_id: "E-FRONT".to_string(),
+                    side: Side::Sell,
+                    currency: code("USD"),
+                    amount: xc_kernel::money::ForeignAmount::from_decimal(
+                        rust_decimal::Decimal::new(money("100").try_minor().unwrap(), 2),
+                    ),
+                    at: custody_at("2026-10-06T05:28:00.000Z"),
+                    status: DraftStatus::Open,
+                    document_ref: None,
+                },
+                TxDraft {
+                    id: "D-2".to_string(),
+                    shift_id: "SH-1".to_string(),
+                    employee_id: "E-FRONT".to_string(),
+                    side: Side::Buy,
+                    currency: code("EUR"),
+                    amount: xc_kernel::money::ForeignAmount::from_decimal(
+                        rust_decimal::Decimal::new(money("250.50").try_minor().unwrap(), 2),
+                    ),
+                    at: custody_at("2026-10-06T05:24:00.000Z"),
+                    status: DraftStatus::Completed,
+                    document_ref: Some("XC-20261006-000001".to_string()),
+                },
+            ],
+            exceptions: vec![
+                CashException {
+                    id: "X-1".to_string(),
+                    request_id: "R-1".to_string(),
+                    status: ExceptionStatus::Open,
+                    target_difference: Some(delta(&[("USD", -1000)])),
+                    cash_variance: None,
+                    safe_variance: None,
+                    note: "ten dollars short".to_string(),
+                    at: custody_at("2026-10-06T05:22:00.000Z"),
+                    reviewed_by: None,
+                    reviewed_at: None,
+                },
+                CashException {
+                    id: "X-2".to_string(),
+                    request_id: "R-2".to_string(),
+                    status: ExceptionStatus::Reviewed,
+                    target_difference: None,
+                    cash_variance: Some(delta(&[("THB", -10_000)])),
+                    safe_variance: Some(delta(&[("EUR", 100)])),
+                    note: String::new(),
+                    at: custody_at("2026-10-06T06:19:00.000Z"),
+                    reviewed_by: Some("E-FINANCE".to_string()),
+                    reviewed_at: Some(custody_at("2026-10-06T06:20:00.000Z")),
+                },
+            ],
+            cutoff: Some(Cutoff {
+                at: custody_at("2026-10-06T06:04:00.000Z"),
+                by: "E-BACK".to_string(),
                 shift_id: "SH-1".to_string(),
-                employee_id: "E-FRONT".to_string(),
-                side: Side::Sell,
-                currency: code("USD"),
-                amount: money("100"),
-                at: custody_at("2026-10-06T05:28:00.000Z"),
-                status: DraftStatus::Open,
-                document_ref: None,
-            },
-            TxDraft {
-                id: "D-2".to_string(),
-                shift_id: "SH-1".to_string(),
-                employee_id: "E-FRONT".to_string(),
-                side: Side::Buy,
-                currency: code("EUR"),
-                amount: money("250.50"),
-                at: custody_at("2026-10-06T05:24:00.000Z"),
-                status: DraftStatus::Completed,
-                document_ref: Some("XC-20261006-000001".to_string()),
-            },
-        ],
-        exceptions: vec![
-            CashException {
-                id: "X-1".to_string(),
-                request_id: "R-1".to_string(),
-                status: ExceptionStatus::Open,
-                target_difference: Some(delta(&[("USD", -1000)])),
-                cash_variance: None,
-                safe_variance: None,
-                note: "ten dollars short".to_string(),
-                at: custody_at("2026-10-06T05:22:00.000Z"),
-                reviewed_by: None,
-                reviewed_at: None,
-            },
-            CashException {
-                id: "X-2".to_string(),
-                request_id: "R-2".to_string(),
-                status: ExceptionStatus::Reviewed,
-                target_difference: None,
-                cash_variance: Some(delta(&[("THB", -10_000)])),
-                safe_variance: Some(delta(&[("EUR", 100)])),
-                note: String::new(),
-                at: custody_at("2026-10-06T06:19:00.000Z"),
-                reviewed_by: Some("E-FINANCE".to_string()),
-                reviewed_at: Some(custody_at("2026-10-06T06:20:00.000Z")),
-            },
-        ],
-        cutoff: Some(Cutoff {
-            at: custody_at("2026-10-06T06:04:00.000Z"),
-            by: "E-BACK".to_string(),
-            shift_id: "SH-1".to_string(),
-            last_ref: None,
-            pending: vec!["XC-20261006-000004".to_string()],
-        }),
-        ..CustodyState::initial()
-    };
+                last_ref: None,
+                pending: vec!["XC-20261006-000004".to_string()],
+            }),
+            ..CustodyState::initial()
+        };
     let printed = operations_json(&state, &[], &hand_people());
 
     assert_eq!(

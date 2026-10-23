@@ -417,7 +417,7 @@ fn from_balances(b: &Balances) -> Vec<(String, i64)> {
     comparable(
         b.non_zero()
             .into_iter()
-            .map(|(c, m)| (c.as_str().to_string(), m.try_minor().unwrap())),
+            .map(|(c, m)| (c.as_str().to_string(), minor_of(m.value()))),
     )
     .0
 }
@@ -708,6 +708,11 @@ async fn v2_parity_shift_and_stock_cases() {
     let stock_json = read_fixture("v2_stock_cases.json");
 
     let (pool, branch) = db().await;
+    // v2_shift_cases.json and v2_stock_cases.json are v2's answers (v2 held JPY at 2 places); JPY at minor_unit 0 is covered by three_decimal_counts_test L1.
+    sqlx::query("UPDATE currencies SET minor_unit = 2 WHERE code = 'JPY'")
+        .execute(&pool)
+        .await
+        .expect("v2 held JPY at two places");
     let ledger = LedgerCashPostings::new();
     let mut tx = pool.begin().await.expect("begin");
     fund_parity_branch(&mut tx, &pool, &ledger, &branch).await;
@@ -1408,7 +1413,7 @@ async fn non_cash_thb_goes_to_bank_not_drawer() {
         .expect("bank expected");
     assert_eq!(
         bank_balances.get(thb()),
-        money("1600.00"),
+        fa("1600.00"),
         "positive assertion: Bank received THB 1,600.00"
     );
 
@@ -1419,12 +1424,12 @@ async fn non_cash_thb_goes_to_bank_not_drawer() {
         .expect("drawer expected");
     assert_eq!(
         drawer_balances.get(usd()),
-        money("50.00"),
+        fa("50.00"),
         "drawer has 50 USD remaining after sell"
     );
     assert_eq!(
         drawer_balances.get(thb()),
-        money("0.00"),
+        fa("0.00"),
         "non-cash THB does not enter drawer"
     );
 

@@ -218,7 +218,7 @@ describe('108-Plaza/xchange#1692: BranchesScreen rework requirements', () => {
       const { container } = mount();
       await flush();
 
-      const timezoneInput = container.querySelector<HTMLInputElement>('input[name="timezone"]');
+      const timezoneInput = container.querySelector<HTMLInputElement>('[name="timezone"]');
       expect(timezoneInput).not.toBeNull();
       expect(timezoneInput?.value).toBe('');
     });
@@ -230,7 +230,7 @@ describe('108-Plaza/xchange#1692: BranchesScreen rework requirements', () => {
       const { container } = mount();
       await flush();
 
-      const timezoneInput = container.querySelector<HTMLInputElement>('input[name="timezone"]')!;
+      const timezoneInput = container.querySelector<HTMLInputElement>('[name="timezone"]')!;
       timezoneInput.value = '';
       timezoneInput.dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -255,7 +255,7 @@ describe('108-Plaza/xchange#1692: BranchesScreen rework requirements', () => {
       const { container } = mount();
       await flush();
 
-      const timezoneInput = container.querySelector<HTMLInputElement>('input[name="timezone"]')!;
+      const timezoneInput = container.querySelector<HTMLInputElement>('[name="timezone"]')!;
       timezoneInput.value = '   ';
       timezoneInput.dispatchEvent(new Event('input', { bubbles: true }));
 

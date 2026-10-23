@@ -589,7 +589,7 @@ async fn staff_floor_shows_target_and_safe_only_to_cash_permissions() {
     let f = Floor::start().await;
     f.ops(
         "OPEN",
-        Some(json!({ "amounts": { "THB": 230000, "USD": 50000 }, "by": "fin", "at": T0 })),
+        Some(json!({ "amounts": { "THB": "2300.00", "USD": "500.00" }, "by": "fin", "at": T0 })),
         None,
         None,
     )

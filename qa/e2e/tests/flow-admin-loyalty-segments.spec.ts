@@ -47,6 +47,13 @@ const MEMBERS_VALIDATION_ERR: Record<'th' | 'en', string> = {
   en: 'Please fill in all required fields correctly',
 };
 
+// Field error text for #segment-name on /#members (web/src/screens/admin/members/Members.tsx:44,105-112;
+// web/src/screens/admin/members/i18n.ts:11,47; web/src/shared/i18n/th.ts:135, en.ts:137).
+const MEMBERS_NAME_ERR: Record<'th' | 'en', string> = {
+  th: 'ชื่อกลุ่มสมาชิก ไม่ถูกต้อง',
+  en: 'Segment Name is not valid',
+};
+
 // Shared invalidRequest refusal text (web/src/shared/i18n/th.ts:24, en.ts:26).
 const INVALID_REQUEST_ERR: Record<'th' | 'en', string> = {
   th: 'คำขอไม่ถูกต้อง',
@@ -253,15 +260,28 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
 
       await expect(nameInput, `/#members (${lang}) #segment-name visible`).toBeVisible({ timeout: 20_000 });
 
-      // Case 1: Empty segment name (segment_define.rs:60-67 -> 400 validationFailed; Members.tsx:35,45-48).
+      // Case 1: Empty segment name (Members.tsx:104-112,257-259 -> [data-field-error="name"], no POST).
       await nameInput.fill('');
       await recencyInput.fill('30');
       await freqInput.fill('');
       await valueInput.fill('');
       await tierInput.fill('');
-      const emptyNameRes = await posted(page, /^\/api\/segments$/, () => defineBtn.click());
-      expect(emptyNameRes.ok, `case 1 empty name refused (${lang})`).toBe(false);
-      await expect(alert, `case 1 worded refusal (${lang})`).toHaveText(MEMBERS_VALIDATION_ERR[langKey]);
+      let emptyNamePosts = 0;
+      const onEmptyNameReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/segments') {
+          emptyNamePosts++;
+        }
+      };
+      page.on('request', onEmptyNameReq);
+      try {
+        await defineBtn.click();
+      } finally {
+        page.off('request', onEmptyNameReq);
+      }
+      expect(emptyNamePosts, `case 1 empty name sends no POST /api/segments (${lang})`).toBe(0);
+      const nameErr = membersScreen.locator('[data-field-error="name"]');
+      await expect(nameErr, `case 1 worded field error (${lang})`).toBeVisible();
+      await expect(nameErr, `case 1 worded refusal (${lang})`).toHaveText(MEMBERS_NAME_ERR[langKey]);
       await expect(nameInput, 'case 1 keeps empty name').toHaveValue('');
       await expect(recencyInput, 'case 1 keeps recency_days 30').toHaveValue('30');
       await expect(snapshotBtn, 'snapshot stays disabled without a valid segment definition').toBeDisabled();

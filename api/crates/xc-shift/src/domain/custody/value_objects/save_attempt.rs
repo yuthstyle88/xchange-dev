@@ -1,6 +1,6 @@
 //! Save attempt value object for live transactions.
 
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PriorSave {
@@ -16,6 +16,6 @@ pub struct SaveAttempt {
     pub draft_id: Option<String>,
     pub side: Side,
     pub currency: CurrencyCode,
-    pub amount: Money,
+    pub amount: ForeignAmount,
     pub prior: PriorSave,
 }

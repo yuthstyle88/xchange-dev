@@ -10,6 +10,7 @@ import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/gen
 import type { AdminBranchProfileData } from '../../../shared/api/generated/admin_branches_profile';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
@@ -21,6 +22,8 @@ const t = screenT('admin.branches', table);
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 type DayKey = (typeof DAYS)[number];
+
+const IANA_TIMEZONES = Intl.supportedValuesOf('timeZone');
 
 const DAY_LABELS: Record<DayKey, () => string> = {
   mon: () => t('dayMon'),
@@ -52,6 +55,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
   const [loading, setLoading] = createSignal<boolean>(false);
   const [saving, setSaving] = createSignal<boolean>(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [fieldErr, setFieldErr] = createSignal<{ field: string; message: string } | null>(null);
   const [listError, setListError] = createSignal<string | null>(null);
   const [success, setSuccess] = createSignal<string | null>(null);
 
@@ -103,6 +107,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
     const isStale = () => seq !== profileSeq || branchId !== selectedBranch();
     setLoading(true);
     setError(null);
+    setFieldErr(null);
     setSuccess(null);
     if (branchId !== lastLoadedBranch) {
       setProfile(null);
@@ -194,6 +199,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
     }
 
     setError(null);
+    setFieldErr(null);
     setSuccess(null);
     setSaving(true);
 
@@ -231,7 +237,20 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
       if (err instanceof ApiError && err.code === 'conflict') {
         setError(t('codeConflict'));
       } else {
-        setError(wordedError(err));
+        const labels: Record<string, string> = {
+          code: t('code'),
+          address: t('address'),
+          timezone: t('timezone'),
+        };
+        for (const day of DAYS) {
+          labels[`hours.${day}`] = DAY_LABELS[day]();
+        }
+        const fe = fieldError(err, labels);
+        if (fe.field) {
+          setFieldErr({ field: fe.field, message: fe.message });
+        } else {
+          setError(fe.message);
+        }
       }
     } finally {
       setSaving(false);
@@ -302,6 +321,13 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
                     onInput={(e) => setCode(e.currentTarget.value)}
                     required
                   />
+                  <Show when={fieldErr()?.field === 'code' ? fieldErr()!.message : null}>
+                    {(msg) => (
+                      <div role="alert" class="branches-form-error" data-field-error="code">
+                        {msg()}
+                      </div>
+                    )}
+                  </Show>
                 </div>
 
                 <div class="branches-field">
@@ -313,18 +339,47 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
                     value={address()}
                     onInput={(e) => setAddress(e.currentTarget.value)}
                   />
+                  <Show when={fieldErr()?.field === 'address' ? fieldErr()!.message : null}>
+                    {(msg) => (
+                      <div role="alert" class="branches-form-error" data-field-error="address">
+                        {msg()}
+                      </div>
+                    )}
+                  </Show>
                 </div>
 
                 <div class="branches-field">
                   <label class="branches-label" for="branch-timezone">{t('timezone')}</label>
-                  <input
+                  <select
                     id="branch-timezone"
                     name="timezone"
-                    class="branches-input"
+                    class="branches-select"
                     value={timezone()}
                     onInput={(e) => setTimezone(e.currentTarget.value)}
+                    onChange={(e) => setTimezone(e.currentTarget.value)}
                     required
-                  />
+                  >
+                    <For
+                      each={
+                        IANA_TIMEZONES.includes(timezone())
+                          ? IANA_TIMEZONES
+                          : [timezone(), ...IANA_TIMEZONES]
+                      }
+                    >
+                      {(tz) => (
+                        <option value={tz} selected={tz === timezone()}>
+                          {tz}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                  <Show when={fieldErr()?.field === 'timezone' ? fieldErr()!.message : null}>
+                    {(msg) => (
+                      <div role="alert" class="branches-form-error" data-field-error="timezone">
+                        {msg()}
+                      </div>
+                    )}
+                  </Show>
                 </div>
 
                 <div class="branches-field">
@@ -366,18 +421,29 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
                                   type="time"
                                   class="branches-time-input"
                                   value={h().open}
+                                  onInput={(e) => handleTimeChange(day, 'open', e.currentTarget.value)}
                                   onChange={(e) => handleTimeChange(day, 'open', e.currentTarget.value)}
                                   aria-label={`${DAY_LABELS[day]()} ${t('openTime')}`}
+                                  required
                                 />
                                 <span>–</span>
                                 <input
                                   type="time"
                                   class="branches-time-input"
                                   value={h().close}
+                                  onInput={(e) => handleTimeChange(day, 'close', e.currentTarget.value)}
                                   onChange={(e) => handleTimeChange(day, 'close', e.currentTarget.value)}
                                   aria-label={`${DAY_LABELS[day]()} ${t('closeTime')}`}
+                                  required
                                 />
                               </div>
+                            </Show>
+                            <Show when={fieldErr()?.field === `hours.${day}` ? fieldErr()!.message : null}>
+                              {(msg) => (
+                                <div role="alert" class="branches-form-error" data-field-error={`hours.${day}`}>
+                                  {msg()}
+                                </div>
+                              )}
                             </Show>
                           </div>
                         );

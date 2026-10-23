@@ -17,7 +17,7 @@ use chrono::{Duration, Utc};
 use pos_error::AppResult;
 use rpc_common::{App, Call, Desk, one_of_each_role, sign_in};
 use serde_json::{Value, json};
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances, ShiftId};
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -73,12 +73,18 @@ fn cur(code: &str) -> CurrencyCode {
     CurrencyCode::parse(code).expect("valid currency")
 }
 
-fn money(amount: &str) -> Money {
-    Money::parse(amount).expect("valid money")
+fn money(amount: &str) -> ForeignAmount {
+    ForeignAmount::from_decimal(rust_decimal::Decimal::new(
+        xc_kernel::money::Money::parse(amount)
+            .expect("valid money")
+            .try_minor()
+            .unwrap(),
+        2,
+    ))
 }
 
-fn delta(minor: i128) -> MoneyDelta {
-    MoneyDelta::from_minor(minor)
+fn delta(minor: i128) -> QuantityDelta {
+    QuantityDelta::from_decimal(rust_decimal::Decimal::from_i128_with_scale(minor, 2)).unwrap()
 }
 
 fn shift_balance(
@@ -92,8 +98,8 @@ fn shift_balance(
         currency: cur(code),
         opening: money(opening),
         expected: delta(expected_minor),
-        moved_in: Money::ZERO,
-        moved_out: Money::ZERO,
+        moved_in: ForeignAmount::ZERO,
+        moved_out: ForeignAmount::ZERO,
         counted: counted.map(money),
         difference: difference_minor.map(delta),
     }

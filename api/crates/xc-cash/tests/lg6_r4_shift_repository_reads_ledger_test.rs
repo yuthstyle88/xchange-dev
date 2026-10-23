@@ -47,7 +47,7 @@ use xc_cash::infrastructure::ledger::shift_balances::PgLedgerShiftBalances;
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::entities::shift::{Shift, ShiftStatus};
 use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
@@ -67,8 +67,14 @@ fn d(s: &str) -> Decimal {
     Decimal::from_str(s).expect("a valid decimal")
 }
 
-fn money(s: &str) -> Money {
-    Money::parse(s).expect("a valid money")
+fn money(s: &str) -> ForeignAmount {
+    ForeignAmount::from_decimal(Decimal::new(
+        xc_kernel::money::Money::parse(s)
+            .expect("a valid money")
+            .try_minor()
+            .unwrap(),
+        2,
+    ))
 }
 
 fn code(s: &str) -> CurrencyCode {
@@ -353,8 +359,7 @@ struct Opened {
 }
 
 fn usd_out(amount: &str) -> StockDelta {
-    let minor = (d(amount) * Decimal::from(100)).round().mantissa();
-    StockDelta::of(&[(usd(), MoneyDelta::from_minor(-minor))])
+    StockDelta::of(&[(usd(), QuantityDelta::from_decimal(-d(amount)).unwrap())])
 }
 
 fn insufficient(c: CurrencyCode) -> String {
@@ -362,7 +367,8 @@ fn insufficient(c: CurrencyCode) -> String {
 }
 
 fn balances(pairs: &[(CurrencyCode, &str)]) -> Balances {
-    let pairs: Vec<(CurrencyCode, Money)> = pairs.iter().map(|(c, a)| (*c, money(a))).collect();
+    let pairs: Vec<(CurrencyCode, ForeignAmount)> =
+        pairs.iter().map(|(c, a)| (*c, money(a))).collect();
     Balances::of(&pairs)
 }
 
@@ -548,7 +554,10 @@ async fn a_closed_shifts_counted_and_difference_come_from_its_verified_close_cou
     );
     assert_eq!(
         closed.difference,
-        Some(StockDelta::of(&[(usd(), MoneyDelta::from_minor(-500))])),
+        Some(StockDelta::of(&[(
+            usd(),
+            QuantityDelta::from_decimal(Decimal::new(-500, 2)).unwrap()
+        )])),
         "difference comes from the verified CLOSE count"
     );
 

@@ -14,7 +14,7 @@ use serde_json::json;
 use sqlx::{Postgres, Transaction};
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Refusal, Target};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
 
 use crate::application::shift::service::ShiftService;
 use crate::domain::custody::branch_day::BranchDay;
@@ -53,7 +53,7 @@ pub struct StartService {
 pub struct BeginDraft {
     pub side: Side,
     pub currency: CurrencyCode,
-    pub amount: Money,
+    pub amount: ForeignAmount,
 }
 
 fn map_custody_error(err: CustodyError) -> pos_error::AppError {

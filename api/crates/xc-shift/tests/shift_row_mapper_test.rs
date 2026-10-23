@@ -9,7 +9,7 @@ mod shift_service_common;
 
 use pos_error::{AppError, AppResult};
 use shift_service_common::{TestDb, at, code, money};
-use xc_kernel::money::MoneyDelta;
+use xc_kernel::money::QuantityDelta;
 use xc_shift::domain::shift::entities::shift::ShiftStatus;
 use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
@@ -178,7 +178,10 @@ async fn a_closed_shift_reads_the_same_by_id_and_in_the_list() {
         .difference
         .as_ref()
         .expect("difference is Some on closed shift");
-    assert_eq!(diff.get(usd), MoneyDelta::ZERO.minus(money("5.00")));
+    assert_eq!(
+        diff.get(usd),
+        QuantityDelta::ZERO.checked_minus(money("5.00")).unwrap()
+    );
     assert_eq!(by_id.note, "short 5");
     assert_eq!(
         by_id.close_request_id.as_deref(),

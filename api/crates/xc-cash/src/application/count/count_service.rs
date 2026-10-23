@@ -15,7 +15,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
@@ -134,12 +134,7 @@ impl CashCountService {
         Ok(held
             .non_zero()
             .into_iter()
-            .map(|(c, m)| {
-                (
-                    c.as_str().trim().to_owned(),
-                    Decimal::from_i128_with_scale(m.minor_i128(), 2),
-                )
-            })
+            .map(|(c, m)| (c.as_str().trim().to_owned(), m.value()))
             .collect())
     }
 
@@ -200,7 +195,6 @@ mod tests {
     use sqlx::{AssertSqlSafe, PgPool};
     use xc_auth::domain::access::{Actor, Role, ScopedRole};
     use xc_kernel::ids::BranchId;
-    use xc_kernel::money::Money;
     use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 
     use super::*;
@@ -354,12 +348,11 @@ mod tests {
                 .into_iter()
                 .find(|b| b.currency.as_str() == currency)
                 .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
-            let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
             (
-                to_dec(row.opening.minor_i128()),
-                to_dec(row.expected.minor()),
-                row.counted.map(|m| to_dec(m.minor_i128())),
-                row.difference.map(|d| to_dec(d.minor())),
+                row.opening.value().normalize(),
+                row.expected.value().normalize(),
+                row.counted.map(|m| m.value().normalize()),
+                row.difference.map(|d| d.value().normalize()),
             )
         }
     }
@@ -481,37 +474,19 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 10, 12, 3, 0, 0).unwrap();
-        let res = service.submit(&teller, open_cmd, now).await;
-        assert!(
-            res.is_err(),
-            "3-decimal-place total must be refused with TooManyDecimals"
-        );
-        match res {
-            Err(AppError::Domain(msg)) => {
-                assert_eq!(msg, CashError::TooManyDecimals.to_string());
-            }
-            other => panic!("expected TooManyDecimals domain error, got {other:?}"),
-        }
-
-        let count_rows: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM cash_counts WHERE branch_id = $1")
-                .bind(branch.as_str())
-                .fetch_one(&db.pool)
-                .await
-                .expect("count rows");
-        assert_eq!(count_rows, 0, "nothing written to cash_counts");
-
-        let line_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM cash_count_lines")
-            .fetch_one(&db.pool)
+        let count = service
+            .submit(&teller, open_cmd, now)
             .await
-            .expect("count lines");
-        assert_eq!(line_rows, 0, "nothing written to cash_count_lines");
+            .expect("3-decimal-place KWD total is accepted");
 
-        let total_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM cash_count_totals")
-            .fetch_one(&db.pool)
-            .await
-            .expect("count totals");
-        assert_eq!(total_rows, 0, "nothing written to cash_count_totals");
+        let counted: Decimal = sqlx::query_scalar(
+            "SELECT counted FROM cash_count_totals WHERE count_id = $1::uuid AND currency = 'KWD'",
+        )
+        .bind(&count.id)
+        .fetch_one(&db.pool)
+        .await
+        .expect("count total");
+        assert_eq!(counted.normalize(), Decimal::from_str("1.505").unwrap());
     }
 
     #[tokio::test]
@@ -562,7 +537,7 @@ mod tests {
         let delta_plus_100 = StockDelta::for_movement(
             CurrencyCode::parse("KRW").unwrap(),
             Direction::In,
-            Money::parse("100").unwrap(),
+            xc_kernel::money::ForeignAmount::from_decimal(Decimal::from(100)),
         );
         let mut tx = db.pool.begin().await.unwrap();
         let res_plus = service
@@ -603,7 +578,7 @@ mod tests {
         let delta_minus_1000 = StockDelta::for_movement(
             CurrencyCode::parse("KRW").unwrap(),
             Direction::Out,
-            Money::parse("1000").unwrap(),
+            xc_kernel::money::ForeignAmount::from_decimal(Decimal::from(1000)),
         );
         let mut tx = db.pool.begin().await.unwrap();
         let res_minus = service
@@ -816,7 +791,7 @@ mod tests {
         let exc = &exceptions[0].1;
         assert_eq!(exc["status"], "OPEN");
         assert_eq!(exc["note"], format!("COUNT {}", close_count.id));
-        assert_eq!(exc["cashVariance"]["THB"], -100000);
+        assert_eq!(exc["cashVariance"]["THB"], "-1000.00");
         assert!(exc["safeVariance"].is_null());
         assert!(exc["targetDifference"].is_null());
         assert_eq!(exc["at"], now.timestamp_millis());
@@ -962,7 +937,7 @@ impl CashCountService {
                 AppError::Internal(format!("currency not found in register: {curr}"))
             })?;
 
-            let max_scale = (minor as u32).min(2);
+            let max_scale = minor as u32;
             if counted.normalize().scale() > max_scale {
                 return Err(CashError::TooManyDecimals.into());
             }
@@ -1232,9 +1207,14 @@ impl CashCountService {
                             t.currency
                         ))
                     })?;
-                    let mut d = diff;
-                    d.rescale(2);
-                    delta_pairs.push((code, MoneyDelta::from_minor(d.mantissa())));
+                    let mut d = diff.normalize();
+                    if d.scale() < 2 {
+                        d.rescale(2);
+                    }
+                    let qd = QuantityDelta::from_decimal(d).map_err(|e| {
+                        AppError::Internal(format!("invalid count difference {d}: {e}"))
+                    })?;
+                    delta_pairs.push((code, qd));
                 }
                 close_balances.push((t.currency.clone(), t.counted, diff));
             }

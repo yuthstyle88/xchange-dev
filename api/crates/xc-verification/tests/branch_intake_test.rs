@@ -659,6 +659,36 @@ async fn file_larger_than_15mb_is_refused_with_validation_failed() {
     db.finish().await;
 }
 
+/// BI1 (branch-intake empty file): a 0-byte upload is told the file is empty, as the customer route says since
+/// #4925, not the 15 MB sentence.
+#[tokio::test]
+async fn bi1_an_empty_file_is_refused_as_empty_not_as_too_large() {
+    let db = Db::start().await;
+    let (reviewer, _) = db.branch_reviewer(ORG_1).await;
+    let customer = db.customer(ORG_1).await;
+    let intake = db.intake();
+
+    let doc = BranchDocument::new(IdentityType::Passport, Vec::new(), "k-empty");
+
+    let err = intake
+        .open(&reviewer, &customer.id, doc)
+        .await
+        .expect_err("BI1: an empty upload must be refused");
+
+    assert!(matches!(err, BranchIntakeError::File(_)));
+    assert_eq!(err.code(), "validationFailed");
+    assert!(
+        err.to_string().contains("the file is empty"),
+        "BI1: an empty file is told it is empty: {err}"
+    );
+    assert!(
+        !err.to_string().contains("15 MB"),
+        "BI1: an empty file is not told it is over 15 MB: {err}"
+    );
+    assert_eq!(db.cases_count().await, 0);
+    db.finish().await;
+}
+
 #[tokio::test]
 async fn unsupported_file_content_is_refused_with_validation_failed() {
     // Design §4.3, file_service.rs content check: non-image/pdf content judged by content.

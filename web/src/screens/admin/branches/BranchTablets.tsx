@@ -18,6 +18,7 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { QrCode } from '../../../shared/ui/QrCode';
 import * as table from './i18n';
@@ -131,7 +132,7 @@ export function BranchTablets(props: BranchTabletsProps): JSX.Element {
     } catch (err: unknown) {
       if (seq !== branchSeq) return;
       setIssued(null);
-      setError(wordedError(err));
+      setError(fieldError(err, { name: t('tabletName'), tabletName: t('tabletName') }).message);
     }
   };
 
@@ -153,7 +154,7 @@ export function BranchTablets(props: BranchTabletsProps): JSX.Element {
     } catch (err: unknown) {
       if (seq !== branchSeq) return;
       setIssued(null);
-      setError(wordedError(err));
+      setError(fieldError(err, { name: t('tabletName'), tabletName: t('tabletName') }).message);
     }
   };
 
@@ -176,7 +177,7 @@ export function BranchTablets(props: BranchTabletsProps): JSX.Element {
     } catch (err: unknown) {
       if (seq !== branchSeq) return;
       setIssued(null);
-      setError(wordedError(err));
+      setError(fieldError(err, { name: t('tabletName'), tabletName: t('tabletName') }).message);
     }
   };
 
@@ -199,6 +200,7 @@ export function BranchTablets(props: BranchTabletsProps): JSX.Element {
             id="tablet-name-input"
             name="tabletName"
             class="branches-input"
+            maxLength={60}
             value={name()}
             onInput={(e) => setName(e.currentTarget.value)}
           />

@@ -52,7 +52,7 @@ use xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repos
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, MoneyDelta, fixed2, fixed6, round_cents};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, fixed2, fixed6, round_cents};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta};
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
@@ -354,9 +354,17 @@ impl TestDb {
     /// signed hundredths. CA-10: through the kept per-teller seam `apply_delta_for_teller_in` (the teller is the
     /// shift's opener), where v2's `apply_delta_in` is deleted, followed by the `EXCHANGE` ledger posting.
     async fn trade(&self, branch: &str, pairs: &[(&str, i128)]) {
-        let delta_pairs: Vec<(CurrencyCode, MoneyDelta)> = pairs
+        let delta_pairs: Vec<(CurrencyCode, xc_kernel::money::QuantityDelta)> = pairs
             .iter()
-            .map(|(c, m)| (cur(c), MoneyDelta::from_minor(*m)))
+            .map(|(c, m)| {
+                (
+                    cur(c),
+                    xc_kernel::money::QuantityDelta::from_decimal(Decimal::from_i128_with_scale(
+                        *m, 2,
+                    ))
+                    .unwrap(),
+                )
+            })
             .collect();
         let delta = StockDelta::of(&delta_pairs);
         let service = self.service();
@@ -874,7 +882,7 @@ async fn the_rate_bounds_are_inclusive() {
         &a,
         json!({
             "currencies": [
-                currency("JPY", "2.00", "2.00"),
+                currency("JPY", "2", "2"),
                 currency("USD", "1.00", "1.00"),
             ],
             "result": {

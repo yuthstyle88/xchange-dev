@@ -4,8 +4,9 @@
 
 use std::collections::BTreeMap;
 
+use rust_decimal::Decimal;
 use serde::Deserialize;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, QuantityDelta};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
@@ -105,24 +106,25 @@ pub fn minor(text: &str) -> i128 {
     if negative { -scaled } else { scaled }
 }
 
-pub fn signed(text: &str) -> MoneyDelta {
-    MoneyDelta::from_minor(minor(text))
+pub fn signed(text: &str) -> QuantityDelta {
+    QuantityDelta::from_decimal(Decimal::from_i128_with_scale(minor(text), 2)).unwrap()
 }
 
 /// A balance may be larger than a person may type, so it does not go through `Money::parse`.
-pub fn money(text: &str) -> Money {
+pub fn money(text: &str) -> ForeignAmount {
     signed(text)
-        .to_money()
+        .to_amount()
         .unwrap_or_else(|_| panic!("{text} is not negative"))
 }
 
 pub fn balances(map: &BTreeMap<String, String>) -> Balances {
-    let pairs: Vec<(CurrencyCode, Money)> = map.iter().map(|(c, v)| (code(c), money(v))).collect();
+    let pairs: Vec<(CurrencyCode, ForeignAmount)> =
+        map.iter().map(|(c, v)| (code(c), money(v))).collect();
     Balances::of(&pairs)
 }
 
 pub fn delta(map: &BTreeMap<String, String>) -> StockDelta {
-    let pairs: Vec<(CurrencyCode, MoneyDelta)> =
+    let pairs: Vec<(CurrencyCode, QuantityDelta)> =
         map.iter().map(|(c, v)| (code(c), signed(v))).collect();
     StockDelta::of(&pairs)
 }

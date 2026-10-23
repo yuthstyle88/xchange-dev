@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use pos_error::AppResult;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use rust_decimal::Decimal;
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, QuantityDelta};
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances, ShiftId};
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
@@ -14,16 +15,19 @@ fn parse_code(text: &str) -> CurrencyCode {
     CurrencyCode::parse(text.trim()).unwrap_or_else(|_| panic!("{text} is not in the register"))
 }
 
-fn parse_money(text: &str) -> Money {
-    Money::parse(text.trim()).unwrap_or_else(|e| panic!("{text}: {e}"))
+fn parse_money(text: &str) -> ForeignAmount {
+    let m = Money::parse(text.trim()).unwrap_or_else(|e| panic!("{text}: {e}"));
+    ForeignAmount::from_decimal(Decimal::from_i128_with_scale(m.minor_i128(), 2))
 }
 
-fn parse_delta(text: &str) -> MoneyDelta {
+fn parse_delta(text: &str) -> QuantityDelta {
     let trimmed = text.trim();
     if let Some(rest) = trimmed.strip_prefix('-') {
-        MoneyDelta::ZERO.minus(parse_money(rest))
+        QuantityDelta::ZERO
+            .checked_minus(parse_money(rest))
+            .unwrap()
     } else {
-        MoneyDelta::ZERO.plus(parse_money(trimmed))
+        QuantityDelta::from(parse_money(trimmed))
     }
 }
 
@@ -53,7 +57,7 @@ impl ShiftBalancesDouble {
         for (code, amount) in opening {
             let currency = parse_code(code);
             let m = parse_money(amount);
-            let exp = MoneyDelta::from_minor(m.minor_i128());
+            let exp = QuantityDelta::from(m);
             if let Some(existing) = rows.iter_mut().find(|r| r.currency == currency) {
                 existing.opening = m;
                 existing.expected = exp;
@@ -62,8 +66,8 @@ impl ShiftBalancesDouble {
                     currency,
                     opening: m,
                     expected: exp,
-                    moved_in: Money::ZERO,
-                    moved_out: Money::ZERO,
+                    moved_in: ForeignAmount::ZERO,
+                    moved_out: ForeignAmount::ZERO,
                     counted: None,
                     difference: None,
                 });
@@ -78,31 +82,29 @@ impl ShiftBalancesDouble {
         let currency = parse_code(code);
         let m = parse_money(amount);
         let signed = if direction.trim() == "IN" {
-            MoneyDelta::ZERO.plus(m)
+            QuantityDelta::from(m)
         } else {
-            MoneyDelta::ZERO.minus(m)
+            QuantityDelta::ZERO.checked_minus(m).unwrap()
         };
         let row = if let Some(existing) = rows.iter_mut().find(|r| r.currency == currency) {
             existing
         } else {
             rows.push(ShiftBalance {
                 currency,
-                opening: Money::ZERO,
-                expected: MoneyDelta::ZERO,
-                moved_in: Money::ZERO,
-                moved_out: Money::ZERO,
+                opening: ForeignAmount::ZERO,
+                expected: QuantityDelta::ZERO,
+                moved_in: ForeignAmount::ZERO,
+                moved_out: ForeignAmount::ZERO,
                 counted: None,
                 difference: None,
             });
             rows.last_mut().expect("just pushed")
         };
-        row.expected = MoneyDelta::from_minor(row.expected.minor() + signed.minor());
+        row.expected = row.expected.checked_add(signed).unwrap();
         if direction.trim() == "IN" {
-            row.moved_in =
-                Money::try_from_minor_i128(row.moved_in.minor_i128() + m.minor_i128()).unwrap();
+            row.moved_in = ForeignAmount::from_decimal(row.moved_in.value() + m.value());
         } else {
-            row.moved_out =
-                Money::try_from_minor_i128(row.moved_out.minor_i128() + m.minor_i128()).unwrap();
+            row.moved_out = ForeignAmount::from_decimal(row.moved_out.value() + m.value());
         }
         sort_rows(rows);
     }
@@ -115,18 +117,18 @@ impl ShiftBalancesDouble {
             let c = parse_money(amount);
             if let Some(existing) = rows.iter_mut().find(|r| r.currency == currency) {
                 existing.counted = Some(c);
-                existing.difference = Some(MoneyDelta::from_minor(
-                    c.minor_i128() - existing.expected.minor(),
-                ));
+                existing.difference = Some(
+                    QuantityDelta::from_decimal(c.value() - existing.expected.value()).unwrap(),
+                );
             } else {
                 rows.push(ShiftBalance {
                     currency,
-                    opening: Money::ZERO,
-                    expected: MoneyDelta::ZERO,
-                    moved_in: Money::ZERO,
-                    moved_out: Money::ZERO,
+                    opening: ForeignAmount::ZERO,
+                    expected: QuantityDelta::ZERO,
+                    moved_in: ForeignAmount::ZERO,
+                    moved_out: ForeignAmount::ZERO,
                     counted: Some(c),
-                    difference: Some(MoneyDelta::from_minor(c.minor_i128())),
+                    difference: Some(QuantityDelta::from(c)),
                 });
             }
         }
@@ -138,14 +140,14 @@ impl ShiftBalancesDouble {
         let rows = guard.entry(shift_id.to_owned()).or_default();
         for (currency, d) in delta.non_zero() {
             if let Some(existing) = rows.iter_mut().find(|r| r.currency == currency) {
-                existing.expected = MoneyDelta::from_minor(existing.expected.minor() + d.minor());
+                existing.expected = existing.expected.checked_add(d).unwrap();
             } else {
                 rows.push(ShiftBalance {
                     currency,
-                    opening: Money::ZERO,
+                    opening: ForeignAmount::ZERO,
                     expected: d,
-                    moved_in: Money::ZERO,
-                    moved_out: Money::ZERO,
+                    moved_in: ForeignAmount::ZERO,
+                    moved_out: ForeignAmount::ZERO,
                     counted: None,
                     difference: None,
                 });
@@ -170,8 +172,8 @@ impl ShiftBalancesDouble {
             currency,
             opening: parse_money(opening),
             expected: parse_delta(expected),
-            moved_in: Money::ZERO,
-            moved_out: Money::ZERO,
+            moved_in: ForeignAmount::ZERO,
+            moved_out: ForeignAmount::ZERO,
             counted: counted.map(parse_money),
             difference: difference.map(parse_delta),
         };

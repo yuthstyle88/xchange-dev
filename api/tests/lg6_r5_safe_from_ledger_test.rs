@@ -49,8 +49,15 @@ fn money(text: &str) -> Money {
 
 /// `"safe"` as v2 prints these balances: every register code, zero where none.
 fn printed(pairs: &[(&str, &str)]) -> Value {
-    let pairs: Vec<(CurrencyCode, Money)> =
-        pairs.iter().map(|(c, a)| (code(c), money(a))).collect();
+    let pairs: Vec<(CurrencyCode, ForeignAmount)> = pairs
+        .iter()
+        .map(|(c, a)| {
+            (
+                code(c),
+                ForeignAmount::from_decimal(Decimal::new(money(a).try_minor().unwrap(), 2)),
+            )
+        })
+        .collect();
     balances_json(&Balances::of(&pairs)).to_value()
 }
 

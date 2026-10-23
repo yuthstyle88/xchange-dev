@@ -8,31 +8,24 @@
 mod common;
 
 use common::{code, fixture, money, shown_delta, signed};
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Quote, Rate, Side};
+use xc_kernel::money::{CurrencyCode, Money, QuantityDelta, Quote, Rate, Side};
 use xc_shift::domain::shift::value_objects::stock_delta::{Direction, StockDelta, StockError};
 
 /// RE-7 #604 retires `Quote::compute`; a quote per 1 unit is `Quote::per_unit` at `UnitSize::ONE`
 /// (re-expected by the ticket author, claude/07d3765f; the figures this test pins are unchanged).
 fn per_one(
     side: xc_kernel::money::Side,
-    amount: xc_kernel::money::Money,
+    amount: xc_kernel::money::ForeignAmount,
     rate: xc_kernel::money::Rate,
     fee: xc_kernel::money::Money,
 ) -> Result<xc_kernel::money::Quote, xc_kernel::money::QuoteError> {
-    let amount: rust_decimal::Decimal = amount.to_string().parse().expect("a decimal amount");
-    xc_kernel::money::Quote::per_unit(
-        side,
-        xc_kernel::money::ForeignAmount::from_decimal(amount),
-        rate,
-        xc_kernel::money::UnitSize::ONE,
-        fee,
-    )
+    xc_kernel::money::Quote::per_unit(side, amount, rate, xc_kernel::money::UnitSize::ONE, fee)
 }
 
 fn quote(side: Side, amount: &str, rate: &str, fee: &str) -> Quote {
     per_one(
         side,
-        Money::parse(amount).unwrap(),
+        money(amount),
         Rate::parse(rate).unwrap(),
         Money::parse(fee).unwrap(),
     )
@@ -45,7 +38,7 @@ fn buying_for_cash_takes_foreign_in_and_pays_baht_out() {
     let d = StockDelta::for_tx(Side::Buy, code("USD"), money("100"), &q, true).unwrap();
     assert_eq!(d.get(code("USD")), signed("100.00"));
     assert_eq!(d.get(CurrencyCode::THB), signed("-3200.00")); // principal − fee
-    assert_eq!(d.get(code("EUR")), MoneyDelta::ZERO);
+    assert_eq!(d.get(code("EUR")), QuantityDelta::ZERO);
 }
 
 #[test]
@@ -61,7 +54,7 @@ fn when_the_customer_does_not_pay_in_cash_the_baht_in_the_till_does_not_move() {
     let q = quote(Side::Sell, "100", "32.1", "10");
     let d = StockDelta::for_tx(Side::Sell, code("USD"), money("100"), &q, false).unwrap();
     assert_eq!(d.get(code("USD")), signed("-100.00"));
-    assert_eq!(d.get(CurrencyCode::THB), MoneyDelta::ZERO);
+    assert_eq!(d.get(CurrencyCode::THB), QuantityDelta::ZERO);
     assert_eq!(d.non_zero().len(), 1);
 }
 
@@ -86,7 +79,7 @@ fn a_movement_adds_or_removes_one_currency_and_baht_is_allowed() {
 #[test]
 fn nothing_is_a_delta_too() {
     assert!(StockDelta::none().non_zero().is_empty());
-    assert_eq!(StockDelta::none().get(code("USD")), MoneyDelta::ZERO);
+    assert_eq!(StockDelta::none().get(code("USD")), QuantityDelta::ZERO);
 }
 
 #[test]
@@ -97,10 +90,10 @@ fn pairs_for_the_same_currency_add_up_and_zeros_are_not_listed() {
         (code("EUR"), signed("1.50")),
         (code("EUR"), signed("1.50")),
     ]);
-    assert_eq!(d.get(code("USD")), MoneyDelta::ZERO);
+    assert_eq!(d.get(code("USD")), QuantityDelta::ZERO);
     assert_eq!(d.non_zero(), vec![(code("EUR"), signed("3.00"))]);
     assert_eq!(
-        StockDelta::of(&[(code("USD"), MoneyDelta::ZERO)]),
+        StockDelta::of(&[(code("USD"), QuantityDelta::ZERO)]),
         StockDelta::none()
     );
     assert_eq!(
@@ -115,7 +108,7 @@ fn pairs_for_the_same_currency_add_up_and_zeros_are_not_listed() {
 #[test]
 fn an_explicit_zero_equals_none() {
     assert_eq!(
-        StockDelta::of(&[(code("USD"), MoneyDelta::ZERO)]),
+        StockDelta::of(&[(code("USD"), QuantityDelta::ZERO)]),
         StockDelta::none()
     );
     assert_eq!(
@@ -164,7 +157,7 @@ fn every_transaction_v2_computed_a_delta_for_gets_the_same_delta() {
         } else {
             Side::Sell
         };
-        let amount = Money::parse(&c.amount).unwrap();
+        let amount = money(&c.amount);
         let q = per_one(
             side,
             amount,

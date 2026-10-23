@@ -164,7 +164,7 @@ async fn expected(shop: &Shop, shift: &str, currency: &str) -> Decimal {
         .expect("read a balance")
         .into_iter()
         .find(|b| b.currency.as_str() == currency)
-        .map(|b| Decimal::from_i128_with_scale(b.expected.minor(), 2))
+        .map(|b| b.expected.value())
         .unwrap_or(Decimal::ZERO)
 }
 
@@ -275,7 +275,10 @@ fn draft(id: &str, shift: &str, owner: &str) -> TxDraft {
         employee_id: owner.to_owned(),
         side: Side::Buy,
         currency: code("USD"),
-        amount: money("100"),
+        amount: xc_kernel::money::ForeignAmount::from_decimal(Decimal::new(
+            money("100").try_minor().unwrap(),
+            2,
+        )),
         at: CustodyTime::from_epoch_millis(at(-120).timestamp_millis()),
         status: DraftStatus::Open,
         document_ref: None,

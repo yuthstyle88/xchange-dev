@@ -5,7 +5,7 @@ use pos_error::AppResult;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, MoneyDelta, QuantityDelta};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 
 pub use crate::domain::ledger::posting::{PostingId, SourceRef};
@@ -113,7 +113,7 @@ pub struct ReversedCost {
 }
 
 /// One signed net per currency that ever had an entry in a place, sorted by currency code.
-pub type PlaceActivity = Vec<(CurrencyCode, MoneyDelta)>;
+pub type PlaceActivity = Vec<(CurrencyCode, QuantityDelta)>;
 
 pub trait CashPostings: Send + Sync {
     /// Posts `req` as one posting inside `tx`. `allow_negative` names the approved `NEGATIVE_STOCK`

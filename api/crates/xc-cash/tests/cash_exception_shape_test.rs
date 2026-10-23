@@ -29,7 +29,8 @@ use xc_cash::domain::count::{CountKind, CountLine};
 use xc_cash::domain::transfer::cash_transfer::{NewTransfer, NewTransferLine, TransferKind};
 use xc_kernel::ids::BranchId;
 
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use rust_decimal::Decimal;
+use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
 use xc_shift::domain::custody::repositories::custody_repository::CustodyRepository;
@@ -328,13 +329,13 @@ async fn count_verify_writes_one_row_holding_both_currencies() {
         .cash_variance
         .expect("cash_variance must be present for a drawer count");
     assert_eq!(
-        cv.get(CurrencyCode::THB).minor(),
-        -100000,
+        cv.get(CurrencyCode::THB).value(),
+        Decimal::new(-100000, 2),
         "THB difference is -1000.00 (-100000 minor)"
     );
     assert_eq!(
-        cv.get(code("USD")).minor(),
-        10000,
+        cv.get(code("USD")).value(),
+        Decimal::new(10000, 2),
         "USD difference is +100.00 (10000 minor)"
     );
 }
@@ -411,7 +412,7 @@ async fn safe_count_fills_safe_variance() {
         cash_variance: None,
         safe_variance: Some(StockDelta::of(&[(
             CurrencyCode::THB,
-            MoneyDelta::from_minor(-50000),
+            QuantityDelta::from_decimal(Decimal::new(-50000, 2)).unwrap(),
         )])),
         note: format!("COUNT {count_id}"),
         at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
@@ -440,7 +441,7 @@ async fn safe_count_fills_safe_variance() {
         "cash_variance must be None for safe count"
     );
     let sv = decoded.safe_variance.expect("safe_variance must be filled");
-    assert_eq!(sv.get(CurrencyCode::THB).minor(), -50000);
+    assert_eq!(sv.get(CurrencyCode::THB).value(), Decimal::new(-50000, 2));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -461,7 +462,7 @@ async fn position_is_dense_and_zero_based() {
         target_difference: None,
         cash_variance: Some(StockDelta::of(&[(
             code("USD"),
-            MoneyDelta::from_minor(1000),
+            QuantityDelta::from_decimal(Decimal::new(1000, 2)).unwrap(),
         )])),
         safe_variance: None,
         note: "COUNT 0".to_string(),
@@ -490,7 +491,7 @@ async fn position_is_dense_and_zero_based() {
         target_difference: None,
         cash_variance: Some(StockDelta::of(&[(
             code("USD"),
-            MoneyDelta::from_minor(2000),
+            QuantityDelta::from_decimal(Decimal::new(2000, 2)).unwrap(),
         )])),
         safe_variance: None,
         note: "COUNT 1".to_string(),
@@ -519,7 +520,7 @@ async fn position_is_dense_and_zero_based() {
         target_difference: None,
         cash_variance: Some(StockDelta::of(&[(
             code("USD"),
-            MoneyDelta::from_minor(3000),
+            QuantityDelta::from_decimal(Decimal::new(3000, 2)).unwrap(),
         )])),
         safe_variance: None,
         note: "COUNT 2".to_string(),
@@ -559,7 +560,7 @@ async fn v2_custody_completion_saves_afterwards() {
         target_difference: None,
         cash_variance: Some(StockDelta::of(&[(
             CurrencyCode::THB,
-            MoneyDelta::from_minor(-10000),
+            QuantityDelta::from_decimal(Decimal::new(-10000, 2)).unwrap(),
         )])),
         safe_variance: None,
         note: "COUNT 0".to_string(),
@@ -587,7 +588,7 @@ async fn v2_custody_completion_saves_afterwards() {
         target_difference: None,
         cash_variance: Some(StockDelta::of(&[(
             code("USD"),
-            MoneyDelta::from_minor(-5000),
+            QuantityDelta::from_decimal(Decimal::new(-5000, 2)).unwrap(),
         )])),
         safe_variance: None,
         note: "v2 completion".to_string(),
@@ -683,7 +684,7 @@ async fn handover_writes_same_shape_with_count_id() {
     assert!(exc.reviewed_at.is_none());
 
     let cv = exc.cash_variance.expect("cash_variance must be present");
-    assert_eq!(cv.get(CurrencyCode::THB).minor(), -100000);
+    assert_eq!(cv.get(CurrencyCode::THB).value(), Decimal::new(-100000, 2));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -783,7 +784,7 @@ async fn receipt_writes_by_destination_with_transfer_id() {
     let sv = exc_safe
         .safe_variance
         .expect("safe_variance must be filled when destination is Safe");
-    assert_eq!(sv.get(code("USD")).minor(), -5000);
+    assert_eq!(sv.get(code("USD")).value(), Decimal::new(-5000, 2));
 
     // Subcase 7B: SAFE_TO_DRAWER transfer -> destination is Drawer (to_shift is Some) -> fills cash_variance
     let teller_b1 = db.person("teller_b1", &[(Role::Teller, Some(&b1))]).await;
@@ -861,5 +862,5 @@ async fn receipt_writes_by_destination_with_transfer_id() {
     let cv = exc_drawer
         .cash_variance
         .expect("cash_variance must be filled when destination is Drawer");
-    assert_eq!(cv.get(code("USD")).minor(), -5000);
+    assert_eq!(cv.get(code("USD")).value(), Decimal::new(-5000, 2));
 }

@@ -252,9 +252,14 @@ impl AlertFacts for PgAlertFacts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xc_kernel::money::MoneyDelta;
+    use rust_decimal::Decimal;
+    use xc_kernel::money::QuantityDelta;
     use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
     use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
+
+    fn qd(minor: i128) -> QuantityDelta {
+        QuantityDelta::from_decimal(Decimal::from_i128_with_scale(minor, 2)).unwrap()
+    }
 
     fn sample_exception(delta: StockDelta) -> CashException {
         CashException {
@@ -273,83 +278,90 @@ mod tests {
 
     #[test]
     fn row_1_minor_1250() {
-        let ex = sample_exception(StockDelta::of(&[(
-            CurrencyCode::THB,
-            MoneyDelta::from_minor(1250),
-        )]));
+        let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(1250))]));
         assert_eq!(exception_detail(&ex), "ex-1: THB 12.50");
     }
 
     #[test]
     fn row_2_minor_neg_300() {
-        let ex = sample_exception(StockDelta::of(&[(
-            CurrencyCode::THB,
-            MoneyDelta::from_minor(-300),
-        )]));
+        let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(-300))]));
         assert_eq!(exception_detail(&ex), "ex-1: THB -3.00");
     }
 
     #[test]
     fn row_3_minor_5() {
-        let ex = sample_exception(StockDelta::of(&[(
-            CurrencyCode::THB,
-            MoneyDelta::from_minor(5),
-        )]));
+        let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(5))]));
         assert_eq!(exception_detail(&ex), "ex-1: THB 0.05");
     }
 
     #[test]
     fn row_4_minor_neg_5() {
-        let ex = sample_exception(StockDelta::of(&[(
-            CurrencyCode::THB,
-            MoneyDelta::from_minor(-5),
-        )]));
+        let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(-5))]));
         assert_eq!(exception_detail(&ex), "ex-1: THB -0.05");
     }
 
     #[test]
-    fn row_5_minor_1_shl_100() {
+    fn row_5_largest_representable_delta() {
         let ex = sample_exception(StockDelta::of(&[(
             CurrencyCode::THB,
-            MoneyDelta::from_minor(1i128 << 100),
+            QuantityDelta::from_decimal(Decimal::from_i128_with_scale(
+                79_228_162_514_264_337_593_543_950_335,
+                2,
+            ))
+            .unwrap(),
         )]));
         assert_eq!(
             exception_detail(&ex),
-            "ex-1: THB 12676506002282294014967032053.76"
+            "ex-1: THB 792281625142643375935439503.35"
         );
     }
 
     #[test]
-    fn row_6_minor_neg_1_shl_100() {
+    fn row_6_largest_negative_delta() {
         let ex = sample_exception(StockDelta::of(&[(
             CurrencyCode::THB,
-            MoneyDelta::from_minor(-(1i128 << 100)),
+            QuantityDelta::from_decimal(Decimal::from_i128_with_scale(
+                -79_228_162_514_264_337_593_543_950_335,
+                2,
+            ))
+            .unwrap(),
         )]));
         assert_eq!(
             exception_detail(&ex),
-            "ex-1: THB -12676506002282294014967032053.76"
+            "ex-1: THB -792281625142643375935439503.35"
         );
     }
 
     #[test]
     fn row_7_minor_0() {
-        let ex = sample_exception(StockDelta::of(&[(
-            CurrencyCode::THB,
-            MoneyDelta::from_minor(0),
-        )]));
+        let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(0))]));
         assert_eq!(exception_detail(&ex), "ex-1");
     }
 
     #[test]
-    fn section_4_multi_currency_overflow() {
+    fn section_4_multi_currency_largest() {
         let usd = CurrencyCode::parse("USD").expect("USD");
         let ex = sample_exception(StockDelta::of(&[
-            (CurrencyCode::THB, MoneyDelta::from_minor(1i128 << 100)),
-            (usd, MoneyDelta::from_minor(-(1i128 << 100))),
+            (
+                CurrencyCode::THB,
+                QuantityDelta::from_decimal(Decimal::from_i128_with_scale(
+                    79_228_162_514_264_337_593_543_950_335,
+                    2,
+                ))
+                .unwrap(),
+            ),
+            (
+                usd,
+                QuantityDelta::from_decimal(Decimal::from_i128_with_scale(
+                    -79_228_162_514_264_337_593_543_950_335,
+                    2,
+                ))
+                .unwrap(),
+            ),
         ]));
         assert_eq!(
             exception_detail(&ex),
-            "ex-1: THB 12676506002282294014967032053.76: USD -12676506002282294014967032053.76"
+            "ex-1: THB 792281625142643375935439503.35: USD -792281625142643375935439503.35"
         );
     }
 }

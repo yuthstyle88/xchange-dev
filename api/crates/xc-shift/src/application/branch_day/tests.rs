@@ -14,7 +14,7 @@ use sqlx::{AssertSqlSafe, PgPool, Postgres, Transaction};
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
 
 use crate::application::branch_day::service::{
     BeginDraft, BranchDayService, ClockDirection, StartService,
@@ -353,7 +353,7 @@ async fn test_ops_events_pinned_one_row_per_step() {
     // 2. set_target -> CASH_TARGET
     let amounts = Balances::of(&[(
         CurrencyCode::parse("USD").unwrap(),
-        Money::parse("500.00").unwrap(),
+        ForeignAmount::from_decimal(rust_decimal::Decimal::new(50_000, 2)),
     )]);
     service
         .set_target(&mut tx, &fin, &branch, amounts, now())
@@ -424,7 +424,7 @@ async fn test_ops_events_pinned_one_row_per_step() {
     let draft_input = BeginDraft {
         side: Side::Buy,
         currency: CurrencyCode::parse("USD").unwrap(),
-        amount: Money::parse("100.00").unwrap(),
+        amount: ForeignAmount::from_decimal(rust_decimal::Decimal::new(10_000, 2)),
     };
     let total_before: i64 =
         sqlx::query_scalar("SELECT count(*) FROM ops_events WHERE branch_id = $1")
@@ -532,7 +532,7 @@ async fn test_begin_draft_refusals_phase_and_service_window() {
     let draft_input = BeginDraft {
         side: Side::Buy,
         currency: CurrencyCode::parse("USD").unwrap(),
-        amount: Money::parse("50.00").unwrap(),
+        amount: ForeignAmount::from_decimal(rust_decimal::Decimal::new(50_00, 2)),
     };
 
     // 1. Refuse when phase is READY

@@ -130,7 +130,7 @@ function pickBranch(container: HTMLElement, id: string): void {
 }
 
 function field(container: HTMLElement, name: string): HTMLInputElement {
-  const input = container.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+  const input = container.querySelector<HTMLInputElement>(`[name="${name}"]`);
   expect(input, `${name} input`).not.toBeNull();
   return input!;
 }

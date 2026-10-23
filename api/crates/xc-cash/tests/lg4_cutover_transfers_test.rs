@@ -226,7 +226,7 @@ impl Db {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        Decimal::new(b.get(usd()).try_minor().unwrap(), 2)
+        b.get(usd()).value()
     }
 
     async fn scalar_dec(&self, sql: &str) -> Decimal {

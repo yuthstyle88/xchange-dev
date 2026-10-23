@@ -12,6 +12,7 @@ import {
   users,
   withLang,
 } from './helpers';
+import * as startingPricesTable from '../../../web/src/screens/admin/starting-prices/i18n';
 
 const RUN_MARKER = `qa-r9-6-${Date.now()}`;
 const STAFF_TH_EN = STAFF_LANGS as readonly ('th' | 'en')[];
@@ -66,16 +67,16 @@ const PRICING_APPROVE_REFUSALS = {
 // - web/src/screens/admin/starting-prices/i18n.ts:34-44 (th), :78-88 (en)
 const STARTING_PRICES_I18N = {
   th: {
-    reasonRequired: 'กรุณาระบุเหตุผล',
-    positiveDecimal: 'ต้องเป็นตัวเลขทศนิยมบวก',
-    buyAboveSell: 'ราคาซื้อต้องไม่เกินราคาขาย',
-    validationFailed: 'ข้อมูลไม่ถูกต้อง',
+    reasonRequired: startingPricesTable.th['validation.reasonRequired'],
+    positiveDecimal: startingPricesTable.th['validation.positiveDecimal'],
+    buyAboveSell: startingPricesTable.th['validation.buyGreaterThanSell'],
+    validationFailed: startingPricesTable.th['error.validationFailed'],
   },
   en: {
-    reasonRequired: 'Reason is required',
-    positiveDecimal: 'Must be a positive decimal number',
-    buyAboveSell: 'Buy price cannot be greater than sell price',
-    validationFailed: 'Validation failed',
+    reasonRequired: startingPricesTable.en['validation.reasonRequired'],
+    positiveDecimal: startingPricesTable.en['validation.positiveDecimal'],
+    buyAboveSell: startingPricesTable.en['validation.buyGreaterThanSell'],
+    validationFailed: startingPricesTable.en['error.validationFailed'],
   },
 } as const;
 
@@ -783,11 +784,28 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
         const reasonInput = screen.locator('input#xc-sp-reason[name="reason"]');
         const saveBtn = screen.locator('button.xc-sp-save-btn[data-action="save"]');
 
+        const countSavePosts = async (act: () => Promise<void>) => {
+          let posts = 0;
+          const onReq = (req: { method(): string; url(): string }) => {
+            if (req.method() === 'POST' && ROUTE_ORG_STARTING_PRICE_SAVE.test(new URL(req.url()).pathname)) {
+              posts++;
+            }
+          };
+          page.on('request', onReq);
+          try {
+            await act();
+          } finally {
+            page.off('request', onReq);
+          }
+          return posts;
+        };
+
         // Case 1: empty reason -> .xc-sp-reason-error
         await buyInput.fill('32.10');
         await sellInput.fill('32.60');
         await reasonInput.fill('');
-        await saveBtn.click();
+        expect(await countSavePosts(() => saveBtn.click())).toBe(0);
+        await expect(screen.locator('.xc-sp-reason-error')).toBeVisible();
         await expect(screen.locator('.xc-sp-reason-error')).toHaveText(i18n.reasonRequired);
         await expect(buyInput).toHaveValue('32.10');
         await expect(sellInput).toHaveValue('32.60');
@@ -796,32 +814,34 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
         await buyInput.fill('-5');
         await sellInput.fill('32.60');
         await reasonInput.fill(`${RUN_MARKER}-neg-buy`);
-        await saveBtn.click();
+        expect(await countSavePosts(() => saveBtn.click())).toBe(0);
+        await expect(usdRow.locator('.xc-sp-buy-error[data-error-for="buy"]')).toBeVisible();
         await expect(usdRow.locator('.xc-sp-buy-error[data-error-for="buy"]')).toHaveText(i18n.positiveDecimal);
         await expect(buyInput).toHaveValue('-5');
 
         // Case 3: zero sell price ("0") -> .xc-sp-sell-error
         await buyInput.fill('32.10');
         await sellInput.fill('0');
-        await saveBtn.click();
+        expect(await countSavePosts(() => saveBtn.click())).toBe(0);
+        await expect(usdRow.locator('.xc-sp-sell-error[data-error-for="sell"]')).toBeVisible();
         await expect(usdRow.locator('.xc-sp-sell-error[data-error-for="sell"]')).toHaveText(i18n.positiveDecimal);
         await expect(sellInput).toHaveValue('0');
 
         // Case 4: buy > sell ("40.00" > "30.00") -> .xc-sp-row-error
         await buyInput.fill('40.00');
         await sellInput.fill('30.00');
-        await saveBtn.click();
+        expect(await countSavePosts(() => saveBtn.click())).toBe(0);
+        await expect(usdRow.locator('.xc-sp-row-error.xc-sp-currency-error')).toBeVisible();
         await expect(usdRow.locator('.xc-sp-row-error.xc-sp-currency-error')).toHaveText(i18n.buyAboveSell);
         await expect(buyInput).toHaveValue('40.00');
         await expect(sellInput).toHaveValue('30.00');
 
-        // Case 5: too many decimals ("32.123456789", >8 decimals) -> server 400 validationFailed -> .xc-sp-form-error[role="alert"]
+        // Case 5: too many decimals ("32.123456789", >8 decimals) -> .xc-sp-buy-error, no POST
         await buyInput.fill('32.123456789');
         await sellInput.fill('32.60');
-        const res = await posted(page, ROUTE_ORG_STARTING_PRICE_SAVE, () => saveBtn.click());
-        expect(res.ok).toBeFalsy();
-        expect(res.text).toMatch(/^400\b/);
-        await expect(screen.locator('.xc-sp-form-error[role="alert"]')).toHaveText(i18n.validationFailed);
+        expect(await countSavePosts(() => saveBtn.click())).toBe(0);
+        await expect(usdRow.locator('.xc-sp-buy-error[data-error-for="buy"]')).toBeVisible();
+        await expect(usdRow.locator('.xc-sp-buy-error[data-error-for="buy"]')).toHaveText(i18n.positiveDecimal);
         await expect(buyInput).toHaveValue('32.123456789');
       }
     } finally {

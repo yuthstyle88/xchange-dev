@@ -11,6 +11,7 @@ use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_kernel::document_store::DocumentStore;
 use xc_kernel::pii::identity_type::IdentityType;
 
+use crate::application::upload_check::check_upload;
 use crate::domain::case::case_actor::CaseActor;
 use crate::domain::case::case_error::CaseError;
 use crate::domain::case::case_machine::CaseMachine;
@@ -21,11 +22,6 @@ use crate::domain::case::verification_case::VerificationCase;
 use crate::domain::case_repository::CaseRepository;
 use crate::domain::document::access_class::AccessClass;
 use crate::domain::document::verification_document::VerificationDocument;
-
-const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;
-const EMPTY_FILE: &str = "the file is empty";
-const TOO_LARGE: &str = "ไฟล์ใหญ่เกิน 15 MB";
-const UNSUPPORTED: &str = "ชนิดไฟล์ไม่รองรับ";
 
 pub struct CaseService {
     pool: PgPool,
@@ -193,24 +189,7 @@ impl CaseService {
         bytes: &[u8],
         idempotency_key: &str,
     ) -> Result<VerificationDocument, CaseError> {
-        if bytes.is_empty() {
-            return Err(CaseError::File(EMPTY_FILE));
-        }
-        if bytes.len() > MAX_UPLOAD_BYTES {
-            return Err(CaseError::File(TOO_LARGE));
-        }
-
-        let mime = if bytes.len() >= 8
-            && bytes[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-        {
-            "image/png"
-        } else if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 {
-            "image/jpeg"
-        } else if bytes.len() >= 5 && &bytes[0..5] == b"%PDF-" {
-            "application/pdf"
-        } else {
-            return Err(CaseError::File(UNSUPPORTED));
-        };
+        let mime = check_upload(bytes)?;
 
         let doc_ref =
             xc_kernel::document_store::document_ref(&case_id.to_string(), idempotency_key)?;

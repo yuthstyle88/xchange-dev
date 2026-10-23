@@ -72,20 +72,10 @@ fn str_to_event_kind(table: &str, field: &str, s: &str) -> AppResult<EventKind> 
     }
 }
 
-/// An amount in the smallest unit, as it is stored: a JSON integer while it
-/// fits 64 bits, its decimal text beyond that (JSON numbers of that size do
-/// not survive every reader).
-fn minor_to_json(minor: i128) -> Value {
-    match i64::try_from(minor) {
-        Ok(n) => json!(n),
-        Err(_) => Value::String(minor.to_string()),
-    }
-}
-
 fn balances_to_json(b: &Balances) -> Value {
     let mut map = serde_json::Map::new();
     for (code, money) in b.non_zero() {
-        map.insert(code.as_str().to_string(), minor_to_json(money.minor_i128()));
+        map.insert(code.as_str().to_string(), Value::String(money.to_string()));
     }
     Value::Object(map)
 }
@@ -93,8 +83,7 @@ fn balances_to_json(b: &Balances) -> Value {
 fn delta_to_json(d: &StockDelta) -> Value {
     let mut map = serde_json::Map::new();
     for (code, delta) in d.non_zero() {
-        // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2856).
-        map.insert(code.as_str().to_string(), minor_to_json(delta.minor()));
+        map.insert(code.as_str().to_string(), Value::String(delta.to_string()));
     }
     Value::Object(map)
 }
@@ -161,7 +150,7 @@ fn draft_data(draft: &TxDraft) -> Value {
             Side::Sell => "SELL",
         },
         "currency": draft.currency.as_str(),
-        "amount": minor_to_json(draft.amount.minor_i128()),
+        "amount": draft.amount.to_string(),
         "at": draft.at.epoch_millis(),
         "status": match draft.status {
             DraftStatus::Open => "OPEN",

@@ -578,7 +578,7 @@ export async function startService(manager: Page): Promise<'started' | 'alreadyO
  * (`branch_day.rs:58-64`).
  */
 export async function cutOff(manager: Page): Promise<void> {
-  if (!new URL(manager.url(), users.baseUrl).pathname.startsWith('/staff')) {
+  if (!/^\/staff\/?$/.test(new URL(manager.url(), users.baseUrl).pathname)) {
     await manager.goto('/staff');
   } else {
     await manager.reload();

@@ -397,7 +397,8 @@ impl KioskMachine {
 
         if save.currency != req.quote.currency
             || save.side != req.quote.side
-            || save.amount != req.quote.foreign
+            || save.amount.value()
+                != rust_decimal::Decimal::from_i128_with_scale(req.quote.foreign.minor_i128(), 2)
         {
             return Err(KioskError::SaveDiffersFromQueue);
         }

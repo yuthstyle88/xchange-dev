@@ -1511,7 +1511,14 @@ impl<'f> Replay<'f> {
                             c.direction,
                             xc_shift::domain::shift::value_objects::stock_delta::Direction::In
                         )
-                        .then(|| vec![(c.currency, c.amount)])
+                        .then(|| {
+                            vec![(
+                                c.currency,
+                                xc_kernel::money::ForeignAmount::from_decimal(
+                                    c.amount.to_string().parse().unwrap(),
+                                ),
+                            )]
+                        })
                     })
                 }
                 _ => None,
@@ -2695,7 +2702,10 @@ async fn jit_post(
     pool: &sqlx::PgPool,
     from: xc_cash::domain::posting::CashPlace,
     to: xc_cash::domain::posting::CashPlace,
-    amounts: &[(xc_kernel::money::CurrencyCode, xc_kernel::money::Money)],
+    amounts: &[(
+        xc_kernel::money::CurrencyCode,
+        xc_kernel::money::ForeignAmount,
+    )],
 ) {
     use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
     use xc_cash::domain::posting::{CashPostings, PostingRequest};
@@ -2713,9 +2723,7 @@ async fn jit_post(
                     from: from.clone(),
                     to: to.clone(),
                     currency: *code,
-                    quantity: xc_kernel::money::ForeignAmount::from_decimal(
-                        amount.to_string().parse().unwrap(),
-                    ),
+                    quantity: *amount,
                     source: SourceRef {
                         source_type: SourceType::Opening,
                         source_id: format!("jit:{nanos}:{n}"),
@@ -2736,7 +2744,10 @@ async fn jit_post(
 pub async fn fund_exact(
     pool: &sqlx::PgPool,
     branch: &BranchId,
-    amounts: &[(xc_kernel::money::CurrencyCode, xc_kernel::money::Money)],
+    amounts: &[(
+        xc_kernel::money::CurrencyCode,
+        xc_kernel::money::ForeignAmount,
+    )],
 ) {
     use xc_cash::domain::posting::CashPlace;
     jit_post(

@@ -17,7 +17,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Refusal, Target};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, QuantityDelta};
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
@@ -107,10 +107,15 @@ fn parse_differences(items: &[CashExceptionDifferenceInput]) -> Result<StockDelt
             ));
         }
 
+        let amt = ForeignAmount::checked_from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+            money.minor_i128(),
+            2,
+        ))
+        .expect("Money fits in ForeignAmount");
         let delta = if negative {
-            MoneyDelta::ZERO.minus(money)
+            QuantityDelta::ZERO.checked_minus(amt).unwrap()
         } else {
-            MoneyDelta::from(money)
+            QuantityDelta::from(amt)
         };
         pairs.push((code, delta));
     }
