@@ -88,7 +88,6 @@ impl CommandAction for CouponIssueCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
-        input::integer("count", i64::from(input.count), IntBound::integer(1, 1_000))?;
         let rule_id = Uuid::parse_str(&input.rule_id).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -167,6 +166,8 @@ impl CommandAction for CouponIssueCommand {
                 ));
             }
         }
+        // After the customer check: an unknown customer answers 404 first (coupon_issue_customer_scope_test edge 5).
+        input::integer("count", i64::from(input.count), IntBound::integer(1, 1_000))?;
 
         let expires_at = chrono::DateTime::parse_from_rfc3339(&input.expires_at)
             .map_err(|e| {
