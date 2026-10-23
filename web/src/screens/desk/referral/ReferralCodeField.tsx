@@ -67,8 +67,15 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
   const handleSubmit = async () => {
     if (!can(me(), 'ReferralAttach')) return;
     if (submitting() || locked()) return;
-    const c = code();
-    if (!c.trim()) return;
+    const c = code().trim();
+    if (!c) {
+      setError('codeRequired');
+      return;
+    }
+    if (!/^[A-Za-z0-9]{6,12}$/.test(c)) {
+      setError('invalidCode');
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -82,6 +89,8 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
       if (err instanceof ApiError && (err.status === 409 || err.code === 'referralAlreadyCaptured')) {
         setError('alreadyCaptured');
         setLocked(true);
+      } else if (err instanceof ApiError && err.code === 'validationFailed' && err.field === 'referralCode') {
+        setError('invalidCode');
       } else {
         setError(err);
       }
@@ -122,9 +131,13 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
           <p class="desk-referral-error" role="alert">
             {error() === 'alreadyCaptured'
               ? t('alreadyCaptured')
-              : typeof error() === 'string'
-                ? (error() as string)
-                : wordedError(error())}
+              : error() === 'codeRequired'
+                ? t('codeRequired')
+                : error() === 'invalidCode'
+                  ? t('invalidCode')
+                  : typeof error() === 'string'
+                    ? (error() as string)
+                    : wordedError(error())}
           </p>
         </Show>
 

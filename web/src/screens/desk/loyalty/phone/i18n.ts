@@ -5,12 +5,16 @@ export const th = {
   code: 'รหัส OTP',
   confirmCode: 'ยืนยันรหัส',
   verified: 'ยืนยันเบอร์โทรศัพท์แล้ว',
+  phoneRequired: 'กรุณากรอกเบอร์โทรศัพท์',
+  invalidPhone: 'เบอร์โทรศัพท์ไม่ถูกต้อง',
+  codeRequired: 'กรุณากรอกรหัส OTP',
   'error.wrongCode': 'รหัส OTP ไม่ถูกต้อง',
   'error.codeExpired': 'รหัส OTP หมดอายุ กรุณาขอรหัสใหม่',
   'error.tooManyAttempts': 'กรอกรหัสผิดเกินจำนวนครั้งที่กำหนด กรุณาขอรหัสใหม่',
   'error.rateLimited': 'ขอรหัสถี่เกินไป กรุณารอสักครู่แล้วลองใหม่',
   'error.phoneInUse': 'เบอร์โทรศัพท์นี้ผูกกับลูกค้ารายอื่นแล้ว',
   'error.smsUnavailable': 'ระบบส่ง SMS ขัดข้องชั่วคราว กรุณาลองใหม่',
+  'error.superseded': 'รหัส OTP นี้ถูกยกเลิกแล้ว กรุณาขอรหัสใหม่',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -19,10 +23,14 @@ export const en: Record<keyof typeof th, string> = {
   code: 'OTP code',
   confirmCode: 'Confirm code',
   verified: 'Phone verified',
+  phoneRequired: 'Please enter a phone number',
+  invalidPhone: 'Invalid phone number',
+  codeRequired: 'Please enter OTP code',
   'error.wrongCode': 'Incorrect OTP code',
   'error.codeExpired': 'OTP code has expired. Please request a new code',
   'error.tooManyAttempts': 'Too many incorrect attempts. Please request a new code',
   'error.rateLimited': 'Too many requests. Please wait and try again',
   'error.phoneInUse': 'This phone number is already linked to another customer',
   'error.smsUnavailable': 'SMS service is temporarily unavailable. Please try again',
+  'error.superseded': 'OTP code has been superseded. Please request a new code',
 };

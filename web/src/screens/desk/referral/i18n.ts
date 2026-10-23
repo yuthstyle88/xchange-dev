@@ -7,6 +7,7 @@ export const th = {
   saved: 'บันทึกแล้ว',
   alreadyCaptured: 'รายการนี้มีโค้ดแนะนำแล้ว',
   invalidCode: 'รหัสแนะนำไม่ถูกต้อง',
+  codeRequired: 'กรุณากรอกโค้ดแนะนำ',
 };
 
 export const en = {
@@ -17,4 +18,5 @@ export const en = {
   saved: 'Saved',
   alreadyCaptured: 'This transaction already has a referral code',
   invalidCode: 'Invalid referral code',
+  codeRequired: 'Enter a code',
 };
