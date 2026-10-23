@@ -43,6 +43,7 @@ const RATE_LIMITED: &str = "RATE_LIMITED";
 const TOO_LARGE: &str = "ข้อมูลมากเกินไป";
 const MAX_BODY_UNITS: usize = 20_000;
 const SPECIFY_TABLET_NAME: &str = "ระบุชื่อเครื่อง";
+const TABLET_NAME_TOO_LONG: &str = "ชื่อเครื่องยาวได้ไม่เกิน 60 ตัวอักษร";
 const NO_SUCH_TABLET: &str = "ไม่พบแท็บเล็ต";
 
 /// Routes of this module; registered through the one route table.
@@ -191,6 +192,9 @@ pub async fn branch_tablets_handler(req: HttpRequest, bytes: web::Bytes) -> Http
             let branch = BranchId::new(branch_id);
             match service.pairing().issue(&branch, name, actor_id, now).await {
                 Ok(added) => answer(200, pairing_code_json(&added), true),
+                Err(PairingError::NameRequired) if name.trim().encode_utf16().count() > 60 => {
+                    refuse(400, TABLET_NAME_TOO_LONG)
+                }
                 Err(e) => pairing_failure(e),
             }
         }
