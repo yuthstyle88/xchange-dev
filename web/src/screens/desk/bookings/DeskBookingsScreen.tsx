@@ -2,6 +2,7 @@ import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { DeskBookingItemDto, DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
+import type { DeskConfig } from '../../../shared/api/generated/desk_config';
 import type {
   BookingCancelOutput,
   BookingCheckInOutput,
@@ -11,6 +12,7 @@ import type {
 } from '../../../shared/api/generated/bookings';
 import type { MeView } from '../../../shared/api/generated/me';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { parseRequestQr } from '../../../shared/queue/request-qr';
 import { QrCode } from '../../../shared/ui/QrCode';
@@ -107,6 +109,7 @@ export function DeskBookingsScreen(): JSX.Element {
 
   // New booking modal state
   const [showNewBookingModal, setShowNewBookingModal] = createSignal(false);
+  const [currencies, setCurrencies] = createSignal<string[]>(['USD']);
   const [formBranchId, setFormBranchId] = createSignal('');
   const [formSlotId, setFormSlotId] = createSignal('');
   const [formShopSide, setFormShopSide] = createSignal('SELL');
@@ -116,6 +119,16 @@ export function DeskBookingsScreen(): JSX.Element {
   const [formDisplayName, setFormDisplayName] = createSignal('');
   const [formPhone, setFormPhone] = createSignal('');
   const [formReferralCode, setFormReferralCode] = createSignal('');
+  const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
+
+  function clearFieldError(field: string) {
+    setFieldErrors((prev) => {
+      if (!(field in prev)) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
 
   const allSlots = () => groupBookingsBySlot(items());
   let readErrorActive = false;
@@ -209,6 +222,20 @@ export function DeskBookingsScreen(): JSX.Element {
         setBranchId(resolvedBranch);
         setFormBranchId(resolvedBranch);
       }
+      void api
+        .view<DeskConfig>('desk_config', resolvedBranch ? { branch: resolvedBranch } : undefined)
+        .then((cfgEnv) => {
+          const codes = (cfgEnv.data?.rates ?? []).map((r) => r.code).filter(Boolean);
+          if (codes.length > 0) {
+            setCurrencies(codes);
+            if (!codes.includes(formCurrency())) {
+              setFormCurrency(codes[0]!);
+            }
+          }
+        })
+        .catch(() => {
+          // ignore
+        });
     } catch {
       // ignore
     }
@@ -533,6 +560,7 @@ export function DeskBookingsScreen(): JSX.Element {
     setFormDisplayName('');
     setFormPhone('');
     setFormReferralCode('');
+    setFieldErrors({});
   }
 
   let isSubmittingBooking = false;
@@ -552,6 +580,8 @@ export function DeskBookingsScreen(): JSX.Element {
   async function handleCreateBooking() {
     if (writing()) return;
 
+    setFieldErrors({});
+
     const rawQty = formQuantity().trim();
     const qty = Number(rawQty);
     if (!/^\d+$/.test(rawQty) || !Number.isSafeInteger(qty) || qty <= 0) {
@@ -563,6 +593,23 @@ export function DeskBookingsScreen(): JSX.Element {
     }
     setQuantityInvalid(false);
 
+    const phone = formPhone().trim();
+    const ref = formReferralCode().trim();
+    const nextErrors: Record<string, string> = {};
+    if (!phone || !/^[+0][0-9 -]{8,}$/.test(phone)) {
+      nextErrors.phone = t('error.invalidPhone');
+    }
+    if (ref && !/^[A-Za-z0-9]{6,12}$/.test(ref)) {
+      nextErrors.referralCode = t('error.invalidReferralCode');
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      readErrorActive = false;
+      setErrorMessage(null);
+      setRetryAction(null);
+      return;
+    }
+
     const targetBranch = formBranchId() || branchId();
     const payload: Record<string, unknown> = {
       branch: targetBranch,
@@ -572,9 +619,10 @@ export function DeskBookingsScreen(): JSX.Element {
       currency: formCurrency(),
       quantity: qty,
       displayName: formDisplayName(),
-      phone: formPhone(),
     };
-    const ref = formReferralCode().trim();
+    if (phone) {
+      payload.phone = phone;
+    }
     if (ref) {
       payload.referralCode = ref;
     }
@@ -590,8 +638,29 @@ export function DeskBookingsScreen(): JSX.Element {
       await fetchBookings();
     } catch (err) {
       readErrorActive = false;
-      setErrorMessage(deskBookingError(err));
-      setRetryAction(() => () => handleCreateBooking());
+      const fe = fieldError(err, {
+        currency: t('field.currency'),
+        phone: t('field.phone'),
+        referralCode: t('field.referralCode'),
+        quantity: t('field.quantity'),
+        slotId: t('field.slotId'),
+        displayName: t('field.displayName'),
+      });
+      if (fe.field) {
+        setErrorMessage(null);
+        setRetryAction(null);
+        setFieldErrors({ [fe.field]: fe.message });
+      } else {
+        setErrorMessage(
+          err instanceof ApiError &&
+            !isServerFailure(err) &&
+            err.code !== 'validationFailed' &&
+            Object.prototype.hasOwnProperty.call(th, `error.${err.code}`)
+            ? t(`error.${err.code}` as keyof typeof th)
+            : fe.message,
+        );
+        setRetryAction(() => () => handleCreateBooking());
+      }
     } finally {
       setWriting(false);
     }
@@ -928,8 +997,14 @@ export function DeskBookingsScreen(): JSX.Element {
                       id="new-booking-slot"
                       name="slotId"
                       value={formSlotId()}
-                      onInput={(e) => setFormSlotId(e.currentTarget.value)}
-                      onChange={(e) => setFormSlotId(e.currentTarget.value)}
+                      onInput={(e) => {
+                        setFormSlotId(e.currentTarget.value);
+                        clearFieldError('slotId');
+                      }}
+                      onChange={(e) => {
+                        setFormSlotId(e.currentTarget.value);
+                        clearFieldError('slotId');
+                      }}
                     >
                       <For each={allSlots()}>
                         {(s) => (
@@ -942,6 +1017,13 @@ export function DeskBookingsScreen(): JSX.Element {
                         <option value={formSlotId()}>{formSlotId()}</option>
                       </Show>
                     </select>
+                    <Show when={fieldErrors().slotId}>
+                      {(msg) => (
+                        <div role="alert" class="field-error">
+                          {msg()}
+                        </div>
+                      )}
+                    </Show>
                   </div>
 
                   <div class="xc-form-group">
@@ -960,13 +1042,30 @@ export function DeskBookingsScreen(): JSX.Element {
 
                   <div class="xc-form-group">
                     <label for="new-booking-currency">Currency</label>
-                    <input
+                    <select
                       id="new-booking-currency"
                       name="currency"
                       value={formCurrency()}
-                      onInput={(e) => setFormCurrency(e.currentTarget.value)}
-                      onChange={(e) => setFormCurrency(e.currentTarget.value)}
-                    />
+                      onInput={(e) => {
+                        setFormCurrency(e.currentTarget.value);
+                        clearFieldError('currency');
+                      }}
+                      onChange={(e) => {
+                        setFormCurrency(e.currentTarget.value);
+                        clearFieldError('currency');
+                      }}
+                    >
+                      <For each={currencies()}>
+                        {(code) => <option value={code}>{code}</option>}
+                      </For>
+                    </select>
+                    <Show when={fieldErrors().currency}>
+                      {(msg) => (
+                        <div role="alert" class="field-error">
+                          {msg()}
+                        </div>
+                      )}
+                    </Show>
                   </div>
 
                   <div class="xc-form-group" data-field="quantity">
@@ -976,20 +1075,24 @@ export function DeskBookingsScreen(): JSX.Element {
                       type="number"
                       name="quantity"
                       value={formQuantity()}
-                      aria-invalid={quantityInvalid() ? 'true' : undefined}
+                      aria-invalid={quantityInvalid() || Boolean(fieldErrors().quantity) ? 'true' : undefined}
                       onInput={(e) => {
                         setFormQuantity(e.currentTarget.value);
                         setQuantityInvalid(false);
+                        clearFieldError('quantity');
                       }}
                       onChange={(e) => {
                         setFormQuantity(e.currentTarget.value);
                         setQuantityInvalid(false);
+                        clearFieldError('quantity');
                       }}
                     />
-                    <Show when={quantityInvalid()}>
-                      <div role="alert" class="field-error">
-                        {t('error.validationFailed')}
-                      </div>
+                    <Show when={quantityInvalid() ? t('error.validationFailed') : fieldErrors().quantity}>
+                      {(msg) => (
+                        <div role="alert" class="field-error">
+                          {msg()}
+                        </div>
+                      )}
                     </Show>
                   </div>
 
@@ -999,9 +1102,22 @@ export function DeskBookingsScreen(): JSX.Element {
                       id="new-booking-display-name"
                       name="displayName"
                       value={formDisplayName()}
-                      onInput={(e) => setFormDisplayName(e.currentTarget.value)}
-                      onChange={(e) => setFormDisplayName(e.currentTarget.value)}
+                      onInput={(e) => {
+                        setFormDisplayName(e.currentTarget.value);
+                        clearFieldError('displayName');
+                      }}
+                      onChange={(e) => {
+                        setFormDisplayName(e.currentTarget.value);
+                        clearFieldError('displayName');
+                      }}
                     />
+                    <Show when={fieldErrors().displayName}>
+                      {(msg) => (
+                        <div role="alert" class="field-error">
+                          {msg()}
+                        </div>
+                      )}
+                    </Show>
                   </div>
 
                   <div class="xc-form-group">
@@ -1011,9 +1127,22 @@ export function DeskBookingsScreen(): JSX.Element {
                       type="tel"
                       name="phone"
                       value={formPhone()}
-                      onInput={(e) => setFormPhone(e.currentTarget.value)}
-                      onChange={(e) => setFormPhone(e.currentTarget.value)}
+                      onInput={(e) => {
+                        setFormPhone(e.currentTarget.value);
+                        clearFieldError('phone');
+                      }}
+                      onChange={(e) => {
+                        setFormPhone(e.currentTarget.value);
+                        clearFieldError('phone');
+                      }}
                     />
+                    <Show when={fieldErrors().phone}>
+                      {(msg) => (
+                        <div role="alert" class="field-error">
+                          {msg()}
+                        </div>
+                      )}
+                    </Show>
                   </div>
 
                   <div class="xc-form-group">
@@ -1023,9 +1152,22 @@ export function DeskBookingsScreen(): JSX.Element {
                       name="referralCode"
                       class="xc-referral-input"
                       value={formReferralCode()}
-                      onInput={(e) => setFormReferralCode(e.currentTarget.value)}
-                      onChange={(e) => setFormReferralCode(e.currentTarget.value)}
+                      onInput={(e) => {
+                        setFormReferralCode(e.currentTarget.value);
+                        clearFieldError('referralCode');
+                      }}
+                      onChange={(e) => {
+                        setFormReferralCode(e.currentTarget.value);
+                        clearFieldError('referralCode');
+                      }}
                     />
+                    <Show when={fieldErrors().referralCode}>
+                      {(msg) => (
+                        <div role="alert" class="field-error">
+                          {msg()}
+                        </div>
+                      )}
+                    </Show>
                   </div>
 
                   <div class="xc-modal-actions">
