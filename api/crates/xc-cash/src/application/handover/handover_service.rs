@@ -397,7 +397,21 @@ impl HandoverService {
             });
         }
 
-        let currency_codes: Vec<String> = totals_map.keys().cloned().collect();
+        let drawer_rows: Vec<(String, Decimal)> = sqlx::query_as(
+            "SELECT trim(a.currency::text), SUM(e.quantity_signed) \
+             FROM ledger_entries e \
+             JOIN cash_accounts a ON a.id = e.account_id \
+             WHERE a.kind = 'DRAWER' AND a.shift_id = $1 GROUP BY a.currency",
+        )
+        .bind(&cmd.from_shift_id)
+        .fetch_all(&mut **tx)
+        .await?;
+
+        let currency_codes: Vec<String> = totals_map
+            .keys()
+            .chain(drawer_rows.iter().map(|(c, _)| c))
+            .cloned()
+            .collect();
         let currency_rows: Vec<(String, i16)> = if currency_codes.is_empty() {
             Vec::new()
         } else {
@@ -420,7 +434,21 @@ impl HandoverService {
             }
         }
 
-        let held = self.counts.drawer_in(tx, &cmd.from_shift_id).await?;
+        let mut held = Vec::new();
+        for (curr, sum) in drawer_rows {
+            let max_scale = minor_units.get(&curr).copied().unwrap_or(2).max(0) as u32;
+            let d = sum.normalize();
+            if d.scale() > max_scale {
+                return Err(AppError::Internal(format!(
+                    "ledger sum for {curr} at Drawer({:?}) has scale {} > minor_unit {max_scale}: {sum}",
+                    cmd.from_shift_id,
+                    d.scale()
+                )));
+            }
+            if d > Decimal::ZERO {
+                held.push((curr, d));
+            }
+        }
         let mut totals = Vec::new();
         for (curr, counted) in totals_map {
             let exp = held_of(&held, &curr);

@@ -114,10 +114,18 @@ impl ComputeAction for ShiftValuationAction {
                 }
             });
 
-            let fmt_amount = |mut d: Decimal| {
+            let minor_units: HashMap<String, i16> =
+                sqlx::query_as("SELECT trim(code), minor_unit FROM currencies")
+                    .fetch_all(repo.pool())
+                    .await
+                    .map_err(|_| server_error())?
+                    .into_iter()
+                    .collect();
+            let fmt_amount = |code: &str, mut d: Decimal| {
                 d = d.normalize();
-                if d.scale() < 2 {
-                    d.rescale(2);
+                let scale = minor_units.get(code).copied().unwrap_or(2).max(0) as u32;
+                if d.scale() < scale {
+                    d.rescale(scale);
                 }
                 d.to_string()
             };
@@ -129,8 +137,8 @@ impl ComputeAction for ShiftValuationAction {
                     let needs_rate = code.as_str() != "THB";
                     ShiftValuationCurrency {
                         currency: code.as_str().to_string(),
-                        opening: MoneyDto(fmt_amount(o_c.value())),
-                        current: MoneyDto(fmt_amount(e_c.value())),
+                        opening: MoneyDto(fmt_amount(code.as_str(), o_c.value())),
+                        current: MoneyDto(fmt_amount(code.as_str(), e_c.value())),
                         needs_rate,
                     }
                 })
