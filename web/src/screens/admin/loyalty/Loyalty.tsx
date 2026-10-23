@@ -54,12 +54,7 @@ function toBangkokRfc3339(raw: string): string | null {
   return trimmed;
 }
 
-function parseOptionalInt(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const n = Number.parseInt(trimmed, 10);
-  return Number.isNaN(n) ? null : n;
-}
+const EXPIRY_MONTHS_RE = /^[1-9][0-9]*$/;
 
 export function Loyalty(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
@@ -85,6 +80,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
   const [rounding, setRounding] = createSignal('FLOOR');
   const [minimumBasisAmount, setMinimumBasisAmount] = createSignal('');
   const [expiryMonths, setExpiryMonths] = createSignal('');
+  const [expiryMonthsError, setExpiryMonthsError] = createSignal<string | null>(null);
   const [validFrom, setValidFrom] = createSignal('');
   const [validTo, setValidTo] = createSignal('');
 
@@ -116,6 +112,13 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
   });
 
   async function handleSavePointDraft() {
+    const rawExpiry = expiryMonths().trim();
+    if (rawExpiry && !EXPIRY_MONTHS_RE.test(rawExpiry)) {
+      setExpiryMonthsError(t('expiryMonthsInvalid'));
+      return;
+    }
+    setExpiryMonthsError(null);
+
     const nextVersion = pointVersions().reduce((max, v) => Math.max(max, v.version), 0) + 1;
     const fields: Record<string, unknown> = {
       version: nextVersion,
@@ -123,7 +126,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
       pointsRatio: pointsRatio().trim(),
       rounding: rounding(),
       minimumBasisAmount: minimumBasisAmount().trim() || null,
-      expiryMonths: parseOptionalInt(expiryMonths()),
+      expiryMonths: rawExpiry ? Number(rawExpiry) : null,
       validFrom: toBangkokRfc3339(validFrom()) ?? '',
       validTo: toBangkokRfc3339(validTo()),
     };
@@ -272,9 +275,19 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
               type="text"
               name="expiryMonths"
               value={expiryMonths()}
-              onInput={(e) => setExpiryMonths(e.currentTarget.value)}
-              onChange={(e) => setExpiryMonths(e.currentTarget.value)}
+              aria-invalid={expiryMonthsError() ? 'true' : undefined}
+              onInput={(e) => {
+                setExpiryMonths(e.currentTarget.value);
+                setExpiryMonthsError(null);
+              }}
+              onChange={(e) => {
+                setExpiryMonths(e.currentTarget.value);
+                setExpiryMonthsError(null);
+              }}
             />
+            <Show when={expiryMonthsError()}>
+              {(msg) => <div role="alert">{msg()}</div>}
+            </Show>
           </div>
 
           <div class="xc-form-group">
