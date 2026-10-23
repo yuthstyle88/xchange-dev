@@ -71,6 +71,18 @@ describe('SignUp registration through ApiClient.post (RW-6 #2014)', () => {
     return el ? (el.textContent ?? '').trim() : null;
   }
 
+  function fillValid(): void {
+    for (const [name, val] of [
+      ['displayName', 'Somchai'],
+      ['identifier', '0812345678'],
+      ['password', 'pass-1234'],
+    ] as const) {
+      const el = host.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
   it('(1) the register POST carries x-xchange-request: 1', async () => {
     const navigate = vi.fn();
     const mockFetch = vi.fn().mockImplementation(async () => {
@@ -88,6 +100,7 @@ describe('SignUp registration through ApiClient.post (RW-6 #2014)', () => {
     const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(submitBtn).not.toBeNull();
     await waitForTerms(host);
+    fillValid();
     submitBtn!.click();
 
     await vi.waitFor(() => {
@@ -123,6 +136,7 @@ describe('SignUp registration through ApiClient.post (RW-6 #2014)', () => {
     const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(submitBtn).not.toBeNull();
     await waitForTerms(host);
+    fillValid();
     submitBtn!.click();
 
     await vi.waitFor(() => {
@@ -154,6 +168,7 @@ describe('SignUp registration through ApiClient.post (RW-6 #2014)', () => {
     const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(submitBtn).not.toBeNull();
     await waitForTerms(host);
+    fillValid();
     submitBtn!.click();
 
     await vi.waitFor(() => {
@@ -175,6 +190,7 @@ describe('SignUp registration through ApiClient.post (RW-6 #2014)', () => {
     const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(submitBtn).not.toBeNull();
     await waitForTerms(host);
+    fillValid();
     submitBtn!.click();
 
     await vi.waitFor(() => {
@@ -192,6 +208,7 @@ describe('SignUp registration through ApiClient.post (RW-6 #2014)', () => {
     const submitBtnEn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(submitBtnEn).not.toBeNull();
     await waitForTerms(host);
+    fillValid();
     submitBtnEn!.click();
 
     await vi.waitFor(() => {
@@ -218,6 +235,7 @@ describe('SignUp registration through ApiClient.post (RW-6 #2014)', () => {
     const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(submitBtn).not.toBeNull();
     await waitForTerms(host);
+    fillValid();
     submitBtn!.click();
 
     await vi.waitFor(() => {
