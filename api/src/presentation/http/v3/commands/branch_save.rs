@@ -30,6 +30,7 @@ use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +89,10 @@ impl CommandAction for BranchSaveCommand {
         .map_err(|_| server_error())?;
         if !ours {
             return Err(out_of_scope());
+        }
+        input::text("code", &input.code, TextBound { min: 1, max: 40 })?;
+        if let Some(ref addr) = input.address {
+            input::text("address", addr, TextBound { min: 0, max: 200 })?;
         }
         let contact_channels = match input.contact_channels {
             Some(raw) => {
