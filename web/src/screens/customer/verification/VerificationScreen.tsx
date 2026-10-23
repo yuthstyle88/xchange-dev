@@ -19,6 +19,15 @@ import './verification.css';
 
 const t = screenT('customer.verification', table);
 
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+const ACCEPTED_MIMES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+
+function isAcceptedUploadFile(file: File): boolean {
+  const mime = file.type.trim().toLowerCase();
+  if (mime) return ACCEPTED_MIMES.has(mime);
+  return /\.(jpe?g|png|pdf)$/i.test(file.name);
+}
+
 const bangkokDateFmt = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Bangkok',
   year: 'numeric',
@@ -177,7 +186,22 @@ export function VerificationScreen(): JSX.Element {
     if (!c) return;
     if (!isRetry && uploading()) return;
     const file = selectedFile() ?? fileInputEl?.files?.[0] ?? null;
-    if (!file) return;
+    if (!file) {
+      setUploadError(t('fileRequired'));
+      return;
+    }
+    if (file.size <= 0) {
+      setUploadError(t('fileEmpty'));
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadError(t('fileTooLarge'));
+      return;
+    }
+    if (!isAcceptedUploadFile(file)) {
+      setUploadError(t('fileTypeNotAccepted'));
+      return;
+    }
 
     let key = pendingUploadKey();
     if (!key) {
@@ -448,6 +472,7 @@ export function VerificationScreen(): JSX.Element {
                             <div
                               class="xc-verification-upload-error"
                               data-upload-error="true"
+                              data-field-error="file"
                               role="alert"
                             >
                               <p class="xc-verification-error-message">{errText()}</p>

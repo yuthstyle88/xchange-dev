@@ -47,6 +47,14 @@ import './verification.css';
 const REVIEW_PERMISSION = 'VerificationReview';
 const QUEUE_POLL_MS = 30_000;
 const ROUTE_BRANCH_CASES = '/api/operations/verification/branch-cases';
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+const ACCEPTED_MIMES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+
+function isAcceptedUploadFile(file: File): boolean {
+  const mime = file.type.trim().toLowerCase();
+  if (mime) return ACCEPTED_MIMES.has(mime);
+  return /\.(jpe?g|png|pdf)$/i.test(file.name);
+}
 
 export const S5_REASON_CODES = [
   'DOCUMENT_UNREADABLE',
@@ -149,6 +157,7 @@ export function VerificationScreen(): JSX.Element {
   const [branchCustomerId, setBranchCustomerId] = createSignal<string>('');
   const [branchDocType, setBranchDocType] = createSignal<'PASSPORT' | 'NATIONAL_ID'>('PASSPORT');
   const [branchFile, setBranchFile] = createSignal<File | null>(null);
+  const [branchFileError, setBranchFileError] = createSignal<string | null>(null);
   const [branchSuccessMsg, setBranchSuccessMsg] = createSignal<string | null>(null);
   // #2412: a second send while the first is in flight reuses the idempotency key,
   // gets 409 idempotencyConflict and drops the key; block it instead.
@@ -183,7 +192,23 @@ export function VerificationScreen(): JSX.Element {
       if (err.code === 'staleVersion') return st('errStaleVersion');
       if (err.code === 'idempotencyConflict') return st('errIdempotencyConflict');
       if (err.code === 'outOfScope') return st('errOutOfScope');
-      if (err.code === 'validationFailed') return st('errValidationFailed');
+      if (err.code === 'validationFailed') {
+        const msg = err.message?.trim() ?? '';
+        if (err.field === 'file' && msg && msg !== err.code) return msg;
+        return st('errValidationFailed');
+      }
+      if (err.code === 'documentTypeNotAccepted') {
+        const msg = err.message?.trim() ?? '';
+        return msg && msg !== err.code ? msg : st('errDocumentTypeNotAccepted');
+      }
+      if (err.code === 'noVerificationPolicy') {
+        const msg = err.message?.trim() ?? '';
+        return msg && msg !== err.code ? msg : st('errNoVerificationPolicy');
+      }
+      if (err.code === 'caseLocked') {
+        const msg = err.message?.trim() ?? '';
+        return msg && msg !== err.code ? msg : st('errCaseLocked');
+      }
       if (err.code === 'linkExpired') return st('errLinkExpired');
       if (err.code === 'linkRefused') return st('errLinkRefused');
       if (err.code === 'branchReviewNotAllowed') return st('errBranchReviewNotAllowed');
@@ -619,6 +644,7 @@ export function VerificationScreen(): JSX.Element {
     e?.preventDefault();
     if (branchSubmitting()) return;
     setBranchSuccessMsg(null);
+    setBranchFileError(null);
     queueErrorActive = false;
     setErrorMessage(null);
 
@@ -627,9 +653,23 @@ export function VerificationScreen(): JSX.Element {
       branchDocTypeSelectRef ? branchDocTypeSelectRef.value : branchDocType()
     ) as 'PASSPORT' | 'NATIONAL_ID';
     const file = branchFileInputRef?.files?.[0] ?? branchFile();
+    if (!file) {
+      setBranchFileError(st('fileRequired'));
+    } else if (file.size <= 0) {
+      setBranchFileError(st('fileEmpty'));
+    } else if (file.size > MAX_UPLOAD_BYTES) {
+      setBranchFileError(st('fileTooLarge'));
+    } else if (!isAcceptedUploadFile(file)) {
+      setBranchFileError(st('fileTypeNotAccepted'));
+    }
     if (!custId || !file) {
       queueErrorActive = false;
       setErrorMessage(st('errBranchFormIncomplete'));
+      return;
+    }
+    if (branchFileError()) {
+      queueErrorActive = false;
+      setErrorMessage(branchFileError());
       return;
     }
 
@@ -1076,9 +1116,19 @@ export function VerificationScreen(): JSX.Element {
                     type="file"
                     name="file"
                     accept="image/jpeg,image/png,application/pdf"
-                    onChange={(e) => setBranchFile(e.currentTarget.files?.[0] ?? null)}
+                    onChange={(e) => {
+                      setBranchFile(e.currentTarget.files?.[0] ?? null);
+                      setBranchFileError(null);
+                    }}
                   />
                 </label>
+                <Show when={branchFileError()}>
+                  {(errText) => (
+                    <p data-field-error="file" role="alert">
+                      {errText()}
+                    </p>
+                  )}
+                </Show>
               </div>
               <button
                 type="submit"
