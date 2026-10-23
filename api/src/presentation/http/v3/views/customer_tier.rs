@@ -14,7 +14,7 @@ use crate::presentation::dto::v3::customer_tier::CustomerTierData;
 use crate::presentation::http::v3::command::out_of_scope;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{
-    authenticate_and_authorize, parse_branch, require_branch,
+    ViewAnswer, authenticate_and_authorize, parse_branch, require_branch,
 };
 
 pub const PUBLIC_ROUTE: &str = "/api/v3/views/customer_tier";
@@ -145,7 +145,11 @@ async fn handle(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/json"))
         .insert_header((header::CACHE_CONTROL, "no-store"))
-        .json(CustomerTierData { tier: tier_code })
+        .json(ViewAnswer {
+            version: 0,
+            changed: true,
+            data: Some(CustomerTierData { tier: tier_code }),
+        })
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, _state: &AppState) {
