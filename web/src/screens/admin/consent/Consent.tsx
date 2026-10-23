@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type {
   ConsentTextsData,
@@ -40,7 +41,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
 
     if (raw === '') {
       periodDays = null;
-    } else if (/^[1-9]\d*$/.test(raw) && parseInt(raw, 10) <= 2147483647) {
+    } else if (/^[1-9]\d*$/.test(raw) && parseInt(raw, 10) <= 3650) {
       periodDays = parseInt(raw, 10);
     } else {
       const msg = t('periodInvalid');
@@ -58,7 +59,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
       toast(t('saved'));
     } catch (err: unknown) {
       setError(err);
-      toast(wordedError(err));
+      toast(fieldError(err, { periodDays: t('periodDays') }).message);
     } finally {
       setBusy(false);
     }
@@ -73,6 +74,7 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
         {t('periodDays')}
         <input
           type="text"
+          max="3650"
           value={days()}
           onInput={(e) => setDays(e.currentTarget.value)}
           onChange={(e) => setDays(e.currentTarget.value)}
@@ -80,7 +82,11 @@ function RetentionRow(props: RetentionRowProps): JSX.Element {
         />
       </label>
       <Show when={error()}>
-        <div class="error">{typeof error() === 'string' ? (error() as string) : wordedError(error())}</div>
+        <div class="error" role="alert" data-field-error="periodDays">
+          {typeof error() === 'string'
+            ? (error() as string)
+            : fieldError(error(), { periodDays: t('periodDays') }).message}
+        </div>
       </Show>
       <button
         type="button"
@@ -159,6 +165,12 @@ export function Consent(props: AdminMenuProps): JSX.Element {
       toast(msg);
       return;
     }
+    if (textBody.length > 20000) {
+      const msg = t('bodyTooLong');
+      setPublishError(msg);
+      toast(msg);
+      return;
+    }
 
     const sent = props.branch();
     setPublishing(true);
@@ -176,7 +188,7 @@ export function Consent(props: AdminMenuProps): JSX.Element {
     } catch (err: unknown) {
       if (props.branch() === sent) {
         setPublishError(err);
-        toast(wordedError(err));
+        toast(fieldError(err, { body: t('body'), purpose: t('purpose'), lang: t('language') }).message);
       }
     } finally {
       setPublishing(false);
@@ -232,18 +244,20 @@ export function Consent(props: AdminMenuProps): JSX.Element {
           <label>
             {t('body')}
             <textarea
+              maxLength={20000}
               value={body()}
               onInput={(e) => setBody(e.currentTarget.value)}
               onChange={(e) => setBody(e.currentTarget.value)}
               disabled={publishing()}
             />
           </label>
+          <div>{body().length} / 20000</div>
 
           <Show when={publishError()}>
-            <div class="error">
+            <div class="error" role="alert" data-field-error="body">
               {typeof publishError() === 'string'
                 ? (publishError() as string)
-                : wordedError(publishError())}
+                : fieldError(publishError(), { body: t('body'), purpose: t('purpose'), lang: t('language') }).message}
             </div>
           </Show>
 
