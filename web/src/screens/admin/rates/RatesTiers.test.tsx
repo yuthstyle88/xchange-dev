@@ -713,7 +713,7 @@ describe('VT-5 value tiers and sharp-move threshold (#1650)', () => {
     const saveBtn = savePolicyButton(el);
     await click(saveBtn);
 
-    expect(pageText(el), 'worded validationFailed message is shown').toContain('margin exceeds tier guard');
+    expect(pageText(el), 'worded validationFailed message is shown').toContain('ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบค่าที่กรอก');
 
     // Server returns staleVersion
     savePolicyReply = {

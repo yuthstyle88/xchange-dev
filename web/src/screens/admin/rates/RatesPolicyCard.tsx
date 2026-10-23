@@ -3,9 +3,13 @@ import type * as table from './i18n';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { RatePolicyData, ValueTierDto } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { Field } from '../../../shared/ui/Field';
+import { checkDecimal, MONEY, numeric, RATE_PERCENT } from '../../../shared/ui/bounded';
 import './rates-policy.css';
+
+const STALE_LIMIT_BOUND = numeric(20, 2, 'nonNegative');
+const SHARP_MOVE_BOUND = numeric(9, 4, 'positive');
 
 export interface TierFormRow {
   tierNo: 1 | 2 | 3 | 4;
@@ -42,12 +46,18 @@ export function emptyValueTiers(): TierFormRow[] {
 
 function parsePositiveDecimalParts(raw: string): { intPart: string; fracPart: string } | null {
   const trimmed = raw.trim();
-  const m = /^\+?(\d+)(?:\.(\d+))?$/.exec(trimmed);
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(trimmed);
   if (!m) return null;
   const intPart = m[1]!.replace(/^0+/, '') || '0';
   const fracPart = (m[2] ?? '').replace(/0+$/, '');
   if (intPart === '0' && fracPart === '') return null;
   return { intPart, fracPart };
+}
+
+function parseTierUpper(raw: string): { intPart: string; fracPart: string } | null {
+  const trimmed = raw.trim();
+  if (!checkDecimal(trimmed, MONEY).ok) return null;
+  return parsePositiveDecimalParts(trimmed);
 }
 
 function isDecimalLessThan(
@@ -93,10 +103,9 @@ function parsePositiveWholeHours(raw: string): number | null {
 }
 
 function isValidStaleLimit(raw: string): boolean {
-  const m = /^\+?(\d+)(?:\.(\d{1,2}))?$/.exec(raw.trim());
-  if (!m) return false;
-  const scaled = BigInt(m[1]! + (m[2] ?? '').padEnd(2, '0'));
-  return scaled > 0n;
+  const trimmed = raw.trim();
+  if (!checkDecimal(trimmed, STALE_LIMIT_BOUND).ok) return false;
+  return parsePositiveDecimalParts(trimmed) !== null;
 }
 
 export function frameErrors(
@@ -208,6 +217,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
   const [onStale, setOnStale] = createSignal<string>('STOP');
   const [staleLimitThb, setStaleLimitThb] = createSignal<string>('');
   const [frameErrs, setFrameErrs] = createSignal<Partial<Record<FrameErrorField, keyof typeof table.th>>>({});
+  const [sharpMoveErr, setSharpMoveErr] = createSignal<string | null>(null);
 
   const syncDomPubCurrencies = () => {
     const scope = sectionRef?.closest('.admin-rates-screen') ?? document;
@@ -245,12 +255,14 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       setOnStale(policy.onStale ?? '');
       setStaleLimitThb(policy.staleLimitThb ?? '');
       setFrameErrs({});
+      setSharpMoveErr(null);
     } else {
       setGuardMap({});
       setMaxReferenceAgeHours('');
       setOnStale('STOP');
       setStaleLimitThb('');
       setFrameErrs({});
+      setSharpMoveErr(null);
     }
   });
 
@@ -285,37 +297,68 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
     setFrameErrs((prev) => ({ ...prev, guards: undefined }));
   };
 
-  const nonRisingTierNo = (): 1 | 2 | 3 | null => {
+  const tierIssue = (): { tierNo: 1 | 2 | 3 | 4; kind: 'nonRising' | 'upper' | 'margin' } | null => {
     if (!props.valueTiersOn()) return null;
     const rows = props.valueTiers();
+    if (rows.length !== 4) return { tierNo: 1, kind: 'upper' };
     const u1Raw = rows[0]?.upperInclusiveThb ?? '';
     const u2Raw = rows[1]?.upperInclusiveThb ?? '';
     const u3Raw = rows[2]?.upperInclusiveThb ?? '';
-    const u1 = parsePositiveDecimalParts(u1Raw);
-    const u2 = parsePositiveDecimalParts(u2Raw);
-    const u3 = parsePositiveDecimalParts(u3Raw);
+    const u1 = parseTierUpper(u1Raw);
+    const u2 = parseTierUpper(u2Raw);
+    const u3 = parseTierUpper(u3Raw);
 
-    if (u1Raw.trim() !== '' && u1 === null) return 1;
-    if (u2Raw.trim() !== '' && u2 === null) return 2;
-    if (u1 !== null && u2 !== null && !isDecimalLessThan(u1, u2)) return 2;
-    if (u3Raw.trim() !== '' && u3 === null) return 3;
-    if (u2 !== null && u3 !== null && !isDecimalLessThan(u2, u3)) return 3;
-    if (u1 !== null && u3 !== null && !isDecimalLessThan(u1, u3)) return 3;
+    if (u1Raw.trim() !== '' && u1 === null) return { tierNo: 1, kind: 'upper' };
+    if (u2Raw.trim() !== '' && u2 === null) return { tierNo: 2, kind: 'upper' };
+    if (u1 !== null && u2 !== null && !isDecimalLessThan(u1, u2)) return { tierNo: 2, kind: 'nonRising' };
+    if (u3Raw.trim() !== '' && u3 === null) return { tierNo: 3, kind: 'upper' };
+    if (u2 !== null && u3 !== null && !isDecimalLessThan(u2, u3)) return { tierNo: 3, kind: 'nonRising' };
+    if (u1 !== null && u3 !== null && !isDecimalLessThan(u1, u3)) return { tierNo: 3, kind: 'nonRising' };
+
+    for (const r of rows) {
+      const buyTrim = r.buyMarginPct.trim();
+      const sellTrim = r.sellMarginPct.trim();
+      if (
+        (buyTrim !== '' && !checkDecimal(buyTrim, RATE_PERCENT).ok) ||
+        (sellTrim !== '' && !checkDecimal(sellTrim, RATE_PERCENT).ok)
+      ) {
+        return { tierNo: r.tierNo, kind: 'margin' };
+      }
+    }
+
+    if (!u1) return { tierNo: 1, kind: 'upper' };
+    if (!u2) return { tierNo: 2, kind: 'upper' };
+    if (!u3) return { tierNo: 3, kind: 'upper' };
+    if (rows[3]!.upperInclusiveThb.trim() !== '') return { tierNo: 4, kind: 'upper' };
+
+    for (const r of rows) {
+      if (
+        !checkDecimal(r.buyMarginPct.trim(), RATE_PERCENT).ok ||
+        !checkDecimal(r.sellMarginPct.trim(), RATE_PERCENT).ok
+      ) {
+        return { tierNo: r.tierNo, kind: 'margin' };
+      }
+    }
     return null;
   };
 
-  const areValueTiersValid = (): boolean => {
-    if (!props.valueTiersOn()) return true;
-    const rows = props.valueTiers();
-    if (rows.length !== 4) return false;
-    const u1 = parsePositiveDecimalParts(rows[0]!.upperInclusiveThb);
-    const u2 = parsePositiveDecimalParts(rows[1]!.upperInclusiveThb);
-    const u3 = parsePositiveDecimalParts(rows[2]!.upperInclusiveThb);
-    if (!u1 || !u2 || !u3) return false;
-    if (!isDecimalLessThan(u1, u2) || !isDecimalLessThan(u2, u3)) return false;
-    if (rows[3]!.upperInclusiveThb !== '') return false;
-    return rows.every((r) => r.buyMarginPct.trim() !== '' && r.sellMarginPct.trim() !== '');
+  const tierIssueMessage = (issue: { tierNo: 1 | 2 | 3 | 4; kind: 'nonRising' | 'upper' | 'margin' }): string => {
+    if (issue.kind === 'nonRising') {
+      return `${props.t('tierNonRisingPrefix')}${issue.tierNo}${props.t('tierNonRisingSuffix')}`;
+    }
+    if (issue.kind === 'upper') {
+      return `${props.t('tierLabelPrefix')}${issue.tierNo}${props.t('tierUpperInvalidSuffix')}`;
+    }
+    return `${props.t('tierLabelPrefix')}${issue.tierNo}${props.t('tierMarginInvalidSuffix')}`;
   };
+
+  const nonRisingTierNo = (): 1 | 2 | 3 | null => {
+    const issue = tierIssue();
+    if (!issue || issue.tierNo === 4 || issue.kind === 'margin') return null;
+    return issue.tierNo;
+  };
+
+  const areValueTiersValid = (): boolean => tierIssue() === null;
 
   const updateTierField = (
     tierNo: 1 | 2 | 3 | 4,
@@ -341,7 +384,20 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       staleLimitThb: staleLimitThb(),
     });
     setFrameErrs(errs);
+    const sharpTrim = props.sharpMoveAlertPct().trim();
+    if (sharpTrim !== '' && !checkDecimal(sharpTrim, SHARP_MOVE_BOUND).ok) {
+      setSharpMoveErr(props.t('sharpMoveInvalid'));
+      return;
+    }
+    setSharpMoveErr(null);
     if (Object.keys(errs).length > 0) return;
+
+    const buyAdjChk = checkDecimal(props.adjustBuyPct().trim(), RATE_PERCENT);
+    const sellAdjChk = checkDecimal(props.adjustSellPct().trim(), RATE_PERCENT);
+    if (!buyAdjChk.ok || !sellAdjChk.ok) {
+      props.toast(props.t('adjustPctInvalid'));
+      return;
+    }
 
     const parsedAge = parsePositiveWholeHours(maxReferenceAgeHours())!;
     const staleMode = onStale() === '' ? null : onStale();
@@ -351,23 +407,28 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
     const gen = props.readGen();
     const rows = props.valueTiers();
     const hasAnyTierInput = rows.some(
-      (r) => r.upperInclusiveThb !== '' || r.buyMarginPct !== '' || r.sellMarginPct !== '',
+      (r) =>
+        r.upperInclusiveThb.trim() !== '' ||
+        r.buyMarginPct.trim() !== '' ||
+        r.sellMarginPct.trim() !== '',
     );
     const tiersPayload: ValueTierDto[] =
       !props.valueTiersOn() && !hasAnyTierInput
         ? []
-        : rows.map((r) => ({
-            tierNo: r.tierNo,
-            upperInclusiveThb:
-              r.tierNo === 4 ? null : r.upperInclusiveThb === '' ? null : r.upperInclusiveThb,
-            buyMarginPct: r.buyMarginPct,
-            sellMarginPct: r.sellMarginPct,
-          }));
+        : rows.map((r) => {
+            const upper = r.upperInclusiveThb.trim();
+            return {
+              tierNo: r.tierNo,
+              upperInclusiveThb: r.tierNo === 4 || upper === '' ? null : upper,
+              buyMarginPct: r.buyMarginPct.trim(),
+              sellMarginPct: r.sellMarginPct.trim(),
+            };
+          });
 
     const payload: RatePolicySaveInput & { branch: string } = {
       branch,
-      buyAdjustPct: props.adjustBuyPct(),
-      sellAdjustPct: props.adjustSellPct(),
+      buyAdjustPct: buyAdjChk.text,
+      sellAdjustPct: sellAdjChk.text,
       guards: buildGuardsPayload(guardRows),
       maxReferenceAgeHours: parsedAge,
       onStale: staleMode,
@@ -375,7 +436,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       reason: policy.reason || props.t('savePolicy'),
       valueTiersOn: props.valueTiersOn(),
       valueTiers: tiersPayload,
-      sharpMoveAlertPct: props.sharpMoveAlertPct() === '' ? null : props.sharpMoveAlertPct(),
+      sharpMoveAlertPct: sharpTrim === '' ? null : sharpTrim,
     };
 
     try {
@@ -384,7 +445,20 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       props.setSimulateResult(null);
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      props.toast(wordedError(err));
+      const fe = fieldError(err, {
+        buyAdjustPct: props.t('adjustBuyPct'),
+        sellAdjustPct: props.t('adjustSellPct'),
+        guards: props.t('guardsTitle'),
+        maxReferenceAgeHours: props.t('maxReferenceAgeHoursLabel'),
+        onStale: props.t('onStaleLabel'),
+        staleLimitThb: props.t('staleLimitThbLabel'),
+        sharpMoveAlertPct: props.t('sharpMoveThresholdLabel'),
+        valueTiers: props.t('valueTiersSwitchLabel'),
+      });
+      if (fe.field === 'sharpMoveAlertPct') {
+        setSharpMoveErr(fe.message);
+      }
+      props.toast(fe.message);
     }
   });
 
@@ -415,14 +489,23 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             </button>
           </div>
         </div>
-        <Show when={nonRisingTierNo() !== null}>
-          <div
-            class="form-error"
-            role="alert"
-            data-field-error={`tier-${nonRisingTierNo()}`}
-          >
-            {`${props.t('tierNonRisingPrefix')}${nonRisingTierNo()}${props.t('tierNonRisingSuffix')}`}
-          </div>
+        <Show when={tierIssue()}>
+          {(issue) => (
+            <div
+              class="form-error"
+              role="alert"
+              data-field-error={`tier-${issue().tierNo}`}
+            >
+              {tierIssueMessage(issue())}
+            </div>
+          )}
+        </Show>
+        <Show when={sharpMoveErr()}>
+          {(msg) => (
+            <div class="form-error" role="alert" data-field-error="sharpMoveAlertPct">
+              {msg()}
+            </div>
+          )}
         </Show>
         <Show when={frameErrs().guards}>
           {(key) => (
@@ -475,6 +558,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             title={props.disabledReason}
             onInput={(e) => {
               props.setSharpMoveAlertPct(e.currentTarget.value);
+              setSharpMoveErr(null);
             }}
           />
         </Field>
