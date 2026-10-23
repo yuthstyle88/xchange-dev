@@ -96,11 +96,11 @@ impl CommandAction for CustomerPhoneConfirmCommand {
 fn map_phone_error(err: PhoneVerificationError) -> V3Error {
     let status =
         StatusCode::from_u16(err.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let field = match &err {
-        PhoneVerificationError::ValidationFailed(_) => Some("phone"),
-        _ => None,
+    let (field, message) = match &err {
+        PhoneVerificationError::ValidationFailed(reason) => (Some("phone"), reason.clone()),
+        _ => (None, err.to_string()),
     };
-    V3Error::new(err.code(), field, err.to_string(), status)
+    V3Error::new(err.code(), field, message, status)
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
