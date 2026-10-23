@@ -341,9 +341,7 @@ impl Shop {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        b.get(CurrencyCode::parse(currency).unwrap())
-            .value()
-            .round_dp(2)
+        b.get(CurrencyCode::parse(currency).unwrap()).value()
     }
 
     async fn reversal(&self, id: ReversalId, column: &str) -> String {

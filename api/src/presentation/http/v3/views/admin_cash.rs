@@ -29,10 +29,8 @@ use crate::presentation::dto::v3::common::OpenShiftDto;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 fn checked_add_money(a: ForeignAmount, b: ForeignAmount) -> AppResult<ForeignAmount> {
-    a.value()
-        .checked_add(b.value())
-        .map(ForeignAmount::from_decimal)
-        .ok_or_else(|| AppError::Internal("money sum overflow in admin_cash".into()))
+    a.checked_plus(b)
+        .map_err(|_| AppError::Internal("money sum overflow in admin_cash".into()))
 }
 
 /// Computes the reference principal and spread for a transaction with a reference rate.
