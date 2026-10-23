@@ -214,8 +214,8 @@ impl CommandAction for PricingApproveCommand {
                 let rate_bound =
                     Bound::numeric(20, 8, Sign::Positive).at_most(Money::MAX_INPUT_UNITS);
                 v3::input::decimal(TIER_BUY_FIELDS[idx], t.buy.trim(), rate_bound)?;
-                let buy =
-                    Rate::parse(t.buy.trim()).map_err(|_| validation_failed(TIER_BUY_FIELDS[idx]))?;
+                let buy = Rate::parse(t.buy.trim())
+                    .map_err(|_| validation_failed(TIER_BUY_FIELDS[idx]))?;
                 v3::input::decimal(TIER_SELL_FIELDS[idx], t.sell.trim(), rate_bound)?;
                 let sell = Rate::parse(t.sell.trim())
                     .map_err(|_| validation_failed(TIER_SELL_FIELDS[idx]))?;
