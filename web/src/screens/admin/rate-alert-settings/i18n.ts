@@ -33,8 +33,11 @@ export const th = {
 
   errorRequired: 'กรุณากรอกข้อมูลให้ครบถ้วน',
   errorCooldownInvalid: 'ระยะเวลา Cooldown ต้องเป็นตัวเลขบวกที่มากกว่า 0',
+  errorCooldownMax: 'ระยะเวลา Cooldown ต้องไม่เกิน 720 ชั่วโมง',
   errorMaxActiveInvalid: 'จำนวนการแจ้งเตือนสูงสุดต้องเป็นตัวเลขจำนวนเต็มบวกที่มากกว่า 0',
+  errorMaxActiveMax: 'จำนวนการแจ้งเตือนสูงสุดต้องไม่เกิน 100 รายการ',
   errorLifetimeInvalid: 'อายุการแจ้งเตือนต้องเป็นตัวเลขจำนวนเต็มบวกที่มากกว่า 0 หรือเว้นว่างไว้',
+  errorLifetimeMax: 'อายุการแจ้งเตือนต้องไม่เกิน 365 วัน',
   errorPolicyRequired: 'กรุณาเลือกนโยบายการเฝ้าดูเรท (Observe Policy)',
 };
 
@@ -73,7 +76,10 @@ export const en = {
 
   errorRequired: 'Please fill in all required fields',
   errorCooldownInvalid: 'Cooldown must be a positive number greater than 0',
+  errorCooldownMax: 'Cooldown must be at most 720 hours',
   errorMaxActiveInvalid: 'Max active alerts must be a positive integer greater than 0',
+  errorMaxActiveMax: 'Max active alerts must be at most 100',
   errorLifetimeInvalid: 'Lifetime must be a positive integer greater than 0 or left blank',
+  errorLifetimeMax: 'Lifetime must be at most 365 days',
   errorPolicyRequired: 'Please select a rate observation policy',
 };

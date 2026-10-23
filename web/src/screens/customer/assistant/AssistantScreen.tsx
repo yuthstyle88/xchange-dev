@@ -17,6 +17,7 @@ import type {
   MyAssistantConversationFilter,
 } from '../../../shared/api/generated/my_assistant_conversation';
 import { lang, locale, screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { AnswerPreview } from './AnswerPreview';
@@ -199,7 +200,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
       if (isFromInput) {
         setInputText(textToSend);
       }
-      setSendError(wordedError(err));
+      setSendError(fieldError(err, { text: t('messageLabel') }).message);
     } finally {
       if (mine === sendSeq) setSending(false);
     }
@@ -343,6 +344,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
             type="text"
             class="assistant-input"
             value={inputText()}
+            maxLength={500}
             onInput={(e) => setInputText(e.currentTarget.value)}
             placeholder={t('inputPlaceholder')}
             disabled={sending()}

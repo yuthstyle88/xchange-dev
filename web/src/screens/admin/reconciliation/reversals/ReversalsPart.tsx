@@ -4,7 +4,7 @@ import { createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../../shared/api/client';
 import type { ReversalPendingRow } from '../../../../shared/api/generated/finance_reconciliation';
 import { screenT } from '../../../../shared/i18n';
-import { wordedError } from '../../../../shared/i18n/worded-error';
+import { fieldError } from '../../../../shared/i18n/field-error';
 import { decideRefusal, decideWrite, type DecideOutcome } from '../../parts/decide';
 import { Empty, stamp } from '../parts';
 import * as table from './i18n';
@@ -34,8 +34,13 @@ function ReversalRow(props: {
   async function decide(outcome: DecideOutcome) {
     if (busy()) return;
     const text = reason();
-    if (decideRefusal(outcome, text) === 'reasonRequired') {
+    const refusal = decideRefusal(outcome, text);
+    if (refusal === 'reasonRequired') {
       setError(t('reasonRequired'));
+      return;
+    }
+    if (refusal === 'reasonTooLong') {
+      setError(t('reasonTooLong'));
       return;
     }
     setError(null);
@@ -48,7 +53,7 @@ function ReversalRow(props: {
       });
       await props.onDecided();
     } catch (err: unknown) {
-      setError(wordedError(err));
+      setError(fieldError(err, { reason: t('reason') }).message);
     } finally {
       setBusy(false);
     }
@@ -63,9 +68,11 @@ function ReversalRow(props: {
         type="text"
         name="reason"
         placeholder={t('reason')}
+        maxLength={500}
         value={reason()}
         onInput={(e) => setReason(e.currentTarget.value)}
       />
+      <div>{reason().length} / 500</div>
       <button
         type="button"
         data-action="approve"
