@@ -51,17 +51,21 @@ impl ForeignAmount {
     }
 
     pub fn checked_plus(self, other: ForeignAmount) -> Result<ForeignAmount, NumberError> {
-        self.0
-            .checked_add(other.0)
-            .ok_or(NumberError::Invalid)
-            .and_then(Self::checked_from_decimal)
+        let r = self.0.checked_add(other.0).ok_or(NumberError::Invalid)?;
+        if r.scale() < self.0.scale().max(other.0.scale()) || r.checked_sub(other.0) != Some(self.0)
+        {
+            return Err(NumberError::Invalid);
+        }
+        Self::checked_from_decimal(r)
     }
 
     pub fn checked_minus(self, other: ForeignAmount) -> Result<ForeignAmount, NumberError> {
-        self.0
-            .checked_sub(other.0)
-            .ok_or(NumberError::Invalid)
-            .and_then(Self::checked_from_decimal)
+        let r = self.0.checked_sub(other.0).ok_or(NumberError::Invalid)?;
+        if r.scale() < self.0.scale().max(other.0.scale()) || r.checked_add(other.0) != Some(self.0)
+        {
+            return Err(NumberError::Invalid);
+        }
+        Self::checked_from_decimal(r)
     }
 
     pub fn fits(self, units: &CurrencyUnits) -> bool {

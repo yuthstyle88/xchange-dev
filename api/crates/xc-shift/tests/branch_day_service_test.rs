@@ -33,7 +33,7 @@ use pos_error::AppResult;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_auth::domain::access::{Actor, Refusal, Role, ScopedRole};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xc_shift::application::branch_day::service::{
     BeginDraft, BranchDayService, ClockDirection, StartService,
 };
@@ -270,6 +270,14 @@ fn assert_refused_for_permission<T: std::fmt::Debug>(result: AppResult<T>, what:
     }
 }
 
+fn amt(text: &str) -> ForeignAmount {
+    let m = Money::parse(text).unwrap();
+    ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+        m.minor_i128(),
+        2,
+    ))
+}
+
 /// 1. Each method refuses an actor without its §3.2 permission (no role literal in code under test).
 #[tokio::test]
 async fn each_method_refuses_an_actor_without_its_permission() {
@@ -297,12 +305,9 @@ async fn each_method_refuses_an_actor_without_its_permission() {
     let draft_input = BeginDraft {
         side: Side::Buy,
         currency: CurrencyCode::parse("USD").unwrap(),
-        amount: Money::parse("100.00").unwrap(),
+        amount: amt("100.00"),
     };
-    let target_bal = Balances::of(&[(
-        CurrencyCode::parse("USD").unwrap(),
-        Money::parse("1000.00").unwrap(),
-    )]);
+    let target_bal = Balances::of(&[(CurrencyCode::parse("USD").unwrap(), amt("1000.00"))]);
 
     let repo = PgCustodyRepository::new(db.pool.clone());
 
@@ -590,10 +595,7 @@ async fn target_attendance_hold_and_draft_rows_are_written_on_the_branch_transac
     let shift_id = seed_open_shift_for_teller(&db.pool, &branch, TELLER_ID).await;
 
     // 1. set_target writes to ops_state
-    let amounts = Balances::of(&[(
-        CurrencyCode::parse("USD").unwrap(),
-        Money::parse("7500.00").unwrap(),
-    )]);
+    let amounts = Balances::of(&[(CurrencyCode::parse("USD").unwrap(), amt("7500.00"))]);
     in_tx!(db, branch, |tx| service.set_target(
         tx,
         &fin,
@@ -663,7 +665,7 @@ async fn target_attendance_hold_and_draft_rows_are_written_on_the_branch_transac
     let draft_input = BeginDraft {
         side: Side::Buy,
         currency: CurrencyCode::parse("EUR").unwrap(),
-        amount: Money::parse("250.00").unwrap(),
+        amount: amt("250.00"),
     };
     let draft_id = in_tx!(db, branch, |tx| service.begin_draft(
         tx,
@@ -911,7 +913,7 @@ async fn begin_draft_needs_shift_operate_and_only_works_on_tellers_own_open_shif
     let draft_input = BeginDraft {
         side: Side::Buy,
         currency: CurrencyCode::parse("USD").unwrap(),
-        amount: Money::parse("150.00").unwrap(),
+        amount: amt("150.00"),
     };
 
     // Role without ShiftOperate is refused. Finance has an OPEN shift of its own here, so the
@@ -1003,7 +1005,7 @@ async fn begin_draft_needs_shift_operate_and_only_works_on_tellers_own_open_shif
     assert_eq!(draft.employee_id, TELLER_ID);
     assert_eq!(draft.side, Side::Buy);
     assert_eq!(draft.currency, CurrencyCode::parse("USD").unwrap());
-    assert_eq!(draft.amount, Money::parse("150.00").unwrap());
+    assert_eq!(draft.amount, amt("150.00"));
     assert_eq!(draft.status, DraftStatus::Open);
 }
 
@@ -1063,10 +1065,7 @@ async fn every_method_finishes_on_the_callers_locked_transaction_with_no_self_wa
     .expect("start_service");
     assert_eq!(phase, Phase::Open);
 
-    let amounts = Balances::of(&[(
-        CurrencyCode::parse("USD").unwrap(),
-        Money::parse("500.00").unwrap(),
-    )]);
+    let amounts = Balances::of(&[(CurrencyCode::parse("USD").unwrap(), amt("500.00"))]);
     on_tx!(
         "set_target",
         service.set_target(&mut tx, &fin, &branch, amounts, now())
@@ -1085,7 +1084,7 @@ async fn every_method_finishes_on_the_callers_locked_transaction_with_no_self_wa
     let draft = BeginDraft {
         side: Side::Sell,
         currency: CurrencyCode::parse("USD").unwrap(),
-        amount: Money::parse("50.00").unwrap(),
+        amount: amt("50.00"),
     };
     let draft_id = on_tx!(
         "begin_draft",
@@ -1167,10 +1166,7 @@ async fn rolling_back_the_callers_transaction_leaves_no_rows() {
     seed_open_shift_for_teller(&db.pool, &branch, TELLER_ID).await;
 
     let mut tx = locked_tx(&db.pool, &branch).await;
-    let amounts = Balances::of(&[(
-        CurrencyCode::parse("USD").unwrap(),
-        Money::parse("500.00").unwrap(),
-    )]);
+    let amounts = Balances::of(&[(CurrencyCode::parse("USD").unwrap(), amt("500.00"))]);
     on_tx!(
         "set_target",
         service.set_target(&mut tx, &fin, &branch, amounts, now())
@@ -1189,7 +1185,7 @@ async fn rolling_back_the_callers_transaction_leaves_no_rows() {
     let draft = BeginDraft {
         side: Side::Buy,
         currency: CurrencyCode::parse("USD").unwrap(),
-        amount: Money::parse("20.00").unwrap(),
+        amount: amt("20.00"),
     };
     on_tx!(
         "begin_draft",

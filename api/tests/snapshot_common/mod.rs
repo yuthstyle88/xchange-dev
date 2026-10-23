@@ -47,7 +47,7 @@ use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_customer::domain::customer::value_objects::customer_details::CustomerDetails;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 use xc_rate::application::branch::service::BranchService;
 use xc_rate::application::rate::service::RateService;
 use xc_rate::domain::branch::commands::create_branch::CreateBranch;
@@ -1347,8 +1347,17 @@ fn balances_of(object: &Value) -> Balances {
         .as_object()
         .unwrap_or_else(|| panic!("{object} is not an object"));
     assert_eq!(map.len(), 153, "v2 prints every register code");
-    let pairs: Vec<(CurrencyCode, Money)> =
-        map.iter().map(|(c, n)| (code(c), money_of(n))).collect();
+    let pairs: Vec<(CurrencyCode, xc_kernel::money::ForeignAmount)> = map
+        .iter()
+        .map(|(c, n)| {
+            (
+                code(c),
+                xc_kernel::money::ForeignAmount::from_decimal(
+                    rust_decimal::Decimal::from_i128_with_scale(minor_of(n), 2),
+                ),
+            )
+        })
+        .collect();
     Balances::of(&pairs)
 }
 
@@ -1357,9 +1366,17 @@ fn delta_of(object: &Value) -> StockDelta {
         .as_object()
         .unwrap_or_else(|| panic!("{object} is not an object"));
     assert_eq!(map.len(), 153, "v2 prints every register code");
-    let pairs: Vec<(CurrencyCode, MoneyDelta)> = map
+    let pairs: Vec<(CurrencyCode, xc_kernel::money::QuantityDelta)> = map
         .iter()
-        .map(|(c, n)| (code(c), MoneyDelta::from_minor(minor_of(n))))
+        .map(|(c, n)| {
+            (
+                code(c),
+                xc_kernel::money::QuantityDelta::from_decimal(
+                    rust_decimal::Decimal::from_i128_with_scale(minor_of(n), 2),
+                )
+                .unwrap(),
+            )
+        })
         .collect();
     StockDelta::of(&pairs)
 }
@@ -1503,7 +1520,9 @@ pub fn state_of(ops: &Value) -> CustodyState {
                     other => panic!("no side {other}"),
                 },
                 currency: code(&text_of(d, "currency")),
-                amount: money_of(&d["amount"]),
+                amount: xc_kernel::money::ForeignAmount::from_decimal(
+                    rust_decimal::Decimal::from_i128_with_scale(minor_of(&d["amount"]), 2),
+                ),
                 at: custody_at(&text_of(d, "at")),
                 status: match text_of(d, "status").as_str() {
                     "OPEN" => DraftStatus::Open,

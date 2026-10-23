@@ -35,26 +35,32 @@ impl QuantityDelta {
 
     /// Adds a non-negative [`ForeignAmount`] to this delta; `Err(NumberError::Invalid)` on overflow.
     pub fn checked_plus(self, amount: ForeignAmount) -> Result<QuantityDelta, NumberError> {
-        self.0
-            .checked_add(amount.value())
-            .ok_or(NumberError::Invalid)
-            .and_then(Self::from_decimal)
+        let b = amount.value();
+        let r = self.0.checked_add(b).ok_or(NumberError::Invalid)?;
+        if r.scale() < self.0.scale().max(b.scale()) || r.checked_sub(b) != Some(self.0) {
+            return Err(NumberError::Invalid);
+        }
+        Self::from_decimal(r)
     }
 
     /// Subtracts a non-negative [`ForeignAmount`] from this delta; `Err(NumberError::Invalid)` on overflow.
     pub fn checked_minus(self, amount: ForeignAmount) -> Result<QuantityDelta, NumberError> {
-        self.0
-            .checked_sub(amount.value())
-            .ok_or(NumberError::Invalid)
-            .and_then(Self::from_decimal)
+        let b = amount.value();
+        let r = self.0.checked_sub(b).ok_or(NumberError::Invalid)?;
+        if r.scale() < self.0.scale().max(b.scale()) || r.checked_add(b) != Some(self.0) {
+            return Err(NumberError::Invalid);
+        }
+        Self::from_decimal(r)
     }
 
     /// Adds another [`QuantityDelta`]; `Err(NumberError::Invalid)` on overflow.
     pub fn checked_add(self, other: QuantityDelta) -> Result<QuantityDelta, NumberError> {
-        self.0
-            .checked_add(other.0)
-            .ok_or(NumberError::Invalid)
-            .and_then(Self::from_decimal)
+        let b = other.0;
+        let r = self.0.checked_add(b).ok_or(NumberError::Invalid)?;
+        if r.scale() < self.0.scale().max(b.scale()) || r.checked_sub(b) != Some(self.0) {
+            return Err(NumberError::Invalid);
+        }
+        Self::from_decimal(r)
     }
 
     /// True if the delta is negative.

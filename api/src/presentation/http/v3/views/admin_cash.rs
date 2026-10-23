@@ -14,7 +14,7 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
-    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, MoneyDelta, Rate, UnitSize, fixed2,
+    CurrencyCode, ExchangeArithmetic, ForeignAmount, QuantityDelta, Rate, UnitSize, fixed2,
     round_cents,
 };
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
@@ -28,13 +28,11 @@ use crate::presentation::dto::v3::admin_cash::{
 use crate::presentation::dto::v3::common::OpenShiftDto;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
-fn checked_add_money(a: Money, b: Money) -> AppResult<Money> {
-    let sum = a
-        .minor_i128()
-        .checked_add(b.minor_i128())
-        .ok_or_else(|| AppError::Internal("money sum overflow in admin_cash".into()))?;
-    Money::try_from_minor_i128(sum)
-        .map_err(|_| AppError::Internal("money sum overflow in admin_cash".into()))
+fn checked_add_money(a: ForeignAmount, b: ForeignAmount) -> AppResult<ForeignAmount> {
+    a.value()
+        .checked_add(b.value())
+        .map(ForeignAmount::from_decimal)
+        .ok_or_else(|| AppError::Internal("money sum overflow in admin_cash".into()))
 }
 
 /// Computes the reference principal and spread for a transaction with a reference rate.
@@ -175,13 +173,13 @@ impl BranchView for AdminCashBranchView {
             .map_err(AppError::Database)?;
 
             let last_counted = if !closed_ids.is_empty() {
-                let mut counted_map: BTreeMap<String, Money> = BTreeMap::new();
+                let mut counted_map: BTreeMap<String, ForeignAmount> = BTreeMap::new();
                 for closed_id in &closed_ids {
                     let closed_balances = shift_balances.shift_balances(closed_id).await?;
                     for r in closed_balances {
                         if let Some(c) = r.counted {
                             let code = r.currency.as_str().to_string();
-                            let slot = counted_map.entry(code).or_insert(Money::ZERO);
+                            let slot = counted_map.entry(code).or_insert(ForeignAmount::ZERO);
                             *slot = checked_add_money(*slot, c)?;
                         }
                     }
@@ -189,10 +187,13 @@ impl BranchView for AdminCashBranchView {
 
                 let mut items = Vec::new();
                 // THB always (even at zero)
-                let thb_amount = counted_map.get("THB").copied().unwrap_or(Money::ZERO);
+                let thb_amount = counted_map
+                    .get("THB")
+                    .copied()
+                    .unwrap_or(ForeignAmount::ZERO);
                 items.push(AdminCashCountedItem {
                     code: "THB".to_string(),
-                    amount: format!("{thb_amount}"),
+                    amount: format!("{:.2}", thb_amount.value()),
                 });
 
                 // Other currencies counted > 0, sorted A-Z
@@ -207,7 +208,7 @@ impl BranchView for AdminCashBranchView {
                     let amt = counted_map[&code];
                     items.push(AdminCashCountedItem {
                         code,
-                        amount: format!("{amt}"),
+                        amount: format!("{:.2}", amt.value()),
                     });
                 }
 
@@ -298,7 +299,7 @@ impl BranchView for AdminCashBranchView {
                         .expected
                         .checked_minus(b.opening)
                         .map_err(|_| AppError::Internal("net balance overflow".into()))?;
-                    if !b.opening.is_zero() || !b.expected.is_zero() || net != MoneyDelta::ZERO {
+                    if !b.opening.is_zero() || !b.expected.is_zero() || net != QuantityDelta::ZERO {
                         candidates.insert(code.clone());
                     }
                 }
@@ -336,7 +337,7 @@ impl BranchView for AdminCashBranchView {
             // 4. Stats (cash flow in THB)
             let thb_balance = balance_map.get("THB");
             let thb_opening = thb_balance
-                .map(|b| Decimal::from_i128_with_scale(b.opening.minor_i128(), 2))
+                .map(|b| b.opening.value())
                 .unwrap_or(Decimal::ZERO);
 
             let cash_received: Decimal = sqlx::query_scalar(
@@ -355,7 +356,7 @@ impl BranchView for AdminCashBranchView {
             .map_err(AppError::Database)?;
 
             let thb_in = thb_balance
-                .map(|b| Decimal::from_i128_with_scale(b.moved_in.minor_i128(), 2))
+                .map(|b| b.moved_in.value())
                 .unwrap_or(Decimal::ZERO);
 
             let incoming = cash_received + thb_in;
@@ -376,7 +377,7 @@ impl BranchView for AdminCashBranchView {
             .map_err(AppError::Database)?;
 
             let thb_out = thb_balance
-                .map(|b| Decimal::from_i128_with_scale(b.moved_out.minor_i128(), 2))
+                .map(|b| b.moved_out.value())
                 .unwrap_or(Decimal::ZERO);
 
             let outgoing = cash_paid + thb_out;
