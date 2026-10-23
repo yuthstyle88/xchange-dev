@@ -85,6 +85,7 @@ interface HandoverStartAnswer {
 interface CaseAnswer {
   id?: string;
   status?: string;
+  version?: number;
   decisionReasonCode?: string | null;
   expiresAt?: string | null;
 }
@@ -92,6 +93,37 @@ interface CaseAnswer {
 interface MyVerificationAnswer {
   readiness?: string;
   case?: (CaseAnswer & { documents?: Array<{ id?: string }> }) | null;
+}
+
+async function revokeVerifiedCase(
+  customer: Page,
+  admin: Page,
+  fallbackCaseId: string = '',
+): Promise<{ ok: boolean; text: string }> {
+  const myVerRes = await customer.request.get('/api/v3/views/my_verification');
+  const myVer = (await myVerRes.json().catch(() => ({}))) as MyVerificationAnswer;
+  const id = String(myVer.case?.id || fallbackCaseId);
+  if (!id) return { ok: false, text: 'missing case id from my_verification' };
+  const expectedVersion = myVer.case?.version ?? 1;
+  if (admin.url() === 'about:blank') {
+    await signIn(admin, 'admin', '/operations/verification');
+  }
+  const res = await admin.request.post(`/api/operations/verification/cases/${encodeURIComponent(id)}/revoke`, {
+    headers: {
+      'x-xchange-request': '1',
+      origin: new URL(users.baseUrl).origin,
+      'idempotency-key': `${RUN_MARKER}-revoke-${id}-${expectedVersion}-${Date.now()}`,
+    },
+    data: {
+      id,
+      expectedVersion,
+      reasonCode: 'DOCUMENT_EXPIRED',
+    },
+  });
+  const body = await res.text().catch(() => '');
+  const text = `${res.status()} ${body.slice(0, 300)}`;
+  console.log(`[R9-8] POST /api/operations/verification/cases/${id}/revoke (${RUN_MARKER}) ${text}`);
+  return { ok: res.ok(), text };
 }
 
 /** Today's YYYY-MM-DD in Asia/Bangkok (matches VerificationScreen.tsx:167-177 todayBangkokIso). */
@@ -508,6 +540,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
     const customer = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 430, height: 932 } });
     const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
     const admin = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
+    let approvedCaseId = '';
+    let happyPathRevoked = false;
 
     try {
       // ---- (c) Permission check: teller lacks VerificationReview on /operations/verification ----
@@ -544,7 +578,10 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       console.log(`[R9-8] marker=${RUN_MARKER} initial customer verification state: ${initialState}`);
 
       if (initialState === 'VERIFIED') {
-        throw new Error('customer verification case is already VERIFIED; cannot open a new case without changing shared data');
+        const rev = await revokeVerifiedCase(customer, admin);
+        expect(rev.ok, `revoke leftover VERIFIED case: ${rev.text}`).toBeTruthy();
+        await customer.reload();
+        await expect(customer.locator('section[data-case-state="REVOKED"]')).toBeVisible({ timeout: 20_000 });
       }
 
       // If a previous run left an open case in SUBMITTED / UNDER_REVIEW / NEEDS_UPDATE, reject it first so we start fresh.
@@ -744,6 +781,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       );
       console.log(`[R9-8] POST /api/operations/verification/cases/${caseId}/approve (${RUN_MARKER}) ${approveRes.text}`);
       expect(approveRes.ok, `verificationCaseApprove: ${approveRes.text}`).toBeTruthy();
+      approvedCaseId = caseId;
 
       await expect(
         admin.getByTestId('case-status'),
@@ -805,6 +843,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         () => reasonPanel.locator('button[data-action="confirm-revoke"]').click(),
       );
       console.log(`[R9-8] POST /api/operations/verification/cases/${caseId}/revoke (${RUN_MARKER}) ${revokeRes.text}`);
+      if (revokeRes.ok) happyPathRevoked = true;
       expect(revokeRes.ok, `verificationCaseRevoke: ${revokeRes.text}`).toBeTruthy();
 
       await expect(
@@ -843,6 +882,11 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       expect(reopenRes.ok, `reopen DRAFT after REVOKED: ${reopenRes.text}`).toBeTruthy();
       await expect(customer.locator('section[data-case-state="DRAFT"]')).toBeVisible({ timeout: 20_000 });
     } finally {
+      if (approvedCaseId && !happyPathRevoked) {
+        await revokeVerifiedCase(customer, admin, approvedCaseId).catch((e) =>
+          console.log(`[R9-8] cleanup revoke warning: ${e instanceof Error ? e.message : String(e)}`),
+        );
+      }
       await customer.close();
       await teller.close();
       await admin.close();
