@@ -555,10 +555,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         cfg,
         Arc::new(CustomerHoldReleaseCommand::new(service.clone())),
     );
-    CommandEndpoint::register(
-        cfg,
-        Arc::new(DraftBeginCommand::with_units(service, units)),
-    );
+    CommandEndpoint::register(cfg, Arc::new(DraftBeginCommand::with_units(service, units)));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
