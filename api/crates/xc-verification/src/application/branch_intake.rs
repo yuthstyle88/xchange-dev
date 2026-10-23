@@ -16,6 +16,7 @@ use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_kernel::document_store::{DocumentStore, DocumentStoreError};
 use xc_kernel::pii::identity_type::IdentityType;
 
+use crate::application::upload_check::check_upload;
 use crate::domain::case::case_actor::CaseActor;
 use crate::domain::case::case_error::CaseError;
 use crate::domain::case::case_machine::CaseMachine;
@@ -137,25 +138,10 @@ impl BranchIntake {
             ReviewerScope::Organization { .. } => return Err(BranchIntakeError::OutOfScope),
         };
 
-        const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;
-        const TOO_LARGE: &str = "ไฟล์ใหญ่เกิน 15 MB";
-        const UNSUPPORTED: &str = "ชนิดไฟล์ไม่รองรับ";
-
-        if document.bytes.is_empty() || document.bytes.len() > MAX_UPLOAD_BYTES {
-            return Err(BranchIntakeError::File(TOO_LARGE));
-        }
-
-        let mime = if document.bytes.len() >= 8
-            && document.bytes[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-        {
-            "image/png"
-        } else if document.bytes.len() >= 3 && document.bytes[0..3] == [0xFF, 0xD8, 0xFF] {
-            "image/jpeg"
-        } else if document.bytes.len() >= 5 && &document.bytes[0..5] == b"%PDF-" {
-            "application/pdf"
-        } else {
-            return Err(BranchIntakeError::File(UNSUPPORTED));
-        };
+        let mime = check_upload(&document.bytes).map_err(|e| match e {
+            CaseError::File(msg) => BranchIntakeError::File(msg),
+            other => BranchIntakeError::Case(other),
+        })?;
 
         let mut tx = self
             .pool
