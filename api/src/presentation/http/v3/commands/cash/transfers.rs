@@ -16,9 +16,7 @@ use xc_cash::domain::transfer::cash_transfer::{
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, IntBound};
 
-use super::{
-    caller_in, from_cash_error, validation_failed, validation_failed_path, whole_number,
-};
+use super::{caller_in, from_cash_error, validation_failed, validation_failed_path, whole_number};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::cash::{
     CashRecordInput, CashRecordOutput, TransferCreateInput, TransferReceiveInput,
