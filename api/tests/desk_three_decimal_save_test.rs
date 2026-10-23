@@ -10,7 +10,8 @@
 //! - K5. `USD 10.50` / `JPY 1500` / `JPY 1.5` → accepted / accepted / refused, as today.
 //!
 //! Today K1 is refused: `TransactionForm::parse` reads the amount with `Money::parse`, 2 places
-//! (`transaction_form.rs:130`). K3 and K5 hold today and must still hold after Q4.
+//! (`transaction_form.rs:130`). K3 and K5 hold today and must still hold after Q4. Submission ids are 16+ characters
+//! (`input::request_id`), so no row is refused as an incomplete form.
 //!
 //! The save is the desk's `saveTransaction` (`POST /api/staff/rpc` → `SaveTransactionWorkflow::save`), driven through
 //! `save_common`'s shop: a LIVE cash exchange of the owner on `MAIN`'s open shift, priced at the current publication
@@ -26,6 +27,8 @@ use save_common::rates_re4c_common::{d, publish};
 use save_common::*;
 
 const TOO_MANY_DECIMALS: &str = "ทศนิยมเกินกำหนด";
+/// Today's refusal of a quantity with more places than its currency's minor unit (`quote.rs`).
+const QUANTITY_DOES_NOT_FIT: &str = "validationFailed: quantity does not fit minor unit";
 
 /// A LIVE cash exchange of `amount` `currency` on `side`, at the per-1 `rate` the desk sends, fee 0.
 fn exchange(
@@ -101,7 +104,7 @@ async fn k1_a_kwd_buy_of_1_125_is_saved_with_three_places() {
         .save(
             MAIN,
             exchange(
-                "k1-kwd-buy-1125",
+                "uft4996-k1-kwd-buy-1125",
                 &customer,
                 &passport,
                 "BUY",
@@ -146,7 +149,7 @@ async fn k3_a_kwd_amount_with_four_places_is_refused_and_nothing_is_stored() {
         .save(
             MAIN,
             exchange(
-                "k3-kwd-buy-11255",
+                "uft4996-k3-kwd-buy-11255",
                 &customer,
                 &passport,
                 "BUY",
@@ -181,7 +184,7 @@ async fn k5_a_usd_amount_with_two_places_is_accepted_as_today() {
         .save(
             MAIN,
             exchange(
-                "k5-usd-buy-1050",
+                "uft4996-k5-usd-buy-1050",
                 &customer,
                 &passport,
                 "BUY",
@@ -213,7 +216,7 @@ async fn k5_a_whole_jpy_amount_is_accepted_as_today() {
         .save(
             MAIN,
             exchange(
-                "k5-jpy-buy-1500",
+                "uft4996-k5-jpy-buy-1500",
                 &customer,
                 &passport,
                 "BUY",
@@ -246,7 +249,7 @@ async fn k5_a_jpy_amount_with_a_place_is_refused_as_today() {
         .save(
             MAIN,
             exchange(
-                "k5-jpy-buy-15",
+                "uft4996-k5-jpy-buy-15",
                 &customer,
                 &passport,
                 "BUY",
@@ -257,9 +260,12 @@ async fn k5_a_jpy_amount_with_a_place_is_refused_as_today() {
             at(0),
         )
         .await;
+    // Today the quote refuses the place (`quote.rs`); after Q4 the form refuses it first. Either sentence is the
+    // place being refused, and no other refusal (an incomplete form, a rate mismatch) counts.
+    let sentence = refusal(refused);
     assert!(
-        refused.is_err(),
-        "K5: the desk save of JPY 1.5 is refused; got {refused:?}"
+        [TOO_MANY_DECIMALS, QUANTITY_DOES_NOT_FIT].contains(&sentence.as_str()),
+        "K5: the desk save of JPY 1.5 is refused for its place; got {sentence:?}"
     );
     assert_eq!(
         shop.everything().await,
