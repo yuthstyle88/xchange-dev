@@ -21,6 +21,7 @@ use crate::bootstrap::approval_subjects::ApprovalSubjectDeps;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -73,9 +74,9 @@ impl CommandAction for ApprovalDecideCommand {
             )
         })?;
 
-        let outcome = match input.outcome.as_str() {
-            "APPROVED" => Outcome::Approved,
-            "REJECTED" => Outcome::Rejected,
+        let (outcome, min) = match input.outcome.as_str() {
+            "APPROVED" => (Outcome::Approved, 0),
+            "REJECTED" => (Outcome::Rejected, 1),
             _ => {
                 return Err(V3Error::new(
                     "validationFailed",
@@ -85,6 +86,7 @@ impl CommandAction for ApprovalDecideCommand {
                 ));
             }
         };
+        input::text("reason", &input.reason, TextBound { min, max: 500 })?;
 
         self.service
             .decide(

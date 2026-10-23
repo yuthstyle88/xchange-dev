@@ -9,6 +9,7 @@ import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error';
 import { isServerFailure } from '../../../shared/i18n/worded-error';
+import { checkDecimal, MONEY } from '../../../shared/ui/bounded';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 
 
@@ -42,9 +43,19 @@ function memberError(err: unknown): FieldMessage {
   const r = fieldError(err, {
     name: t('fieldName'),
     'rule.recencyDays': t('fieldRecencyDays'),
+    'rule.recency_days': t('fieldRecencyDays'),
     'rule.frequency': t('fieldFrequency'),
     'rule.valueThb': t('fieldValueThb'),
+    'rule.value_thb': t('fieldValueThb'),
+    value_thb: t('fieldValueThb'),
+    valueThb: t('fieldValueThb'),
   });
+  if (r.field === 'rule.recency_days') {
+    return { ...r, field: 'rule.recencyDays' };
+  }
+  if (r.field === 'rule.value_thb' || r.field === 'value_thb' || r.field === 'valueThb') {
+    return { ...r, field: 'rule.valueThb' };
+  }
   if (!r.field && err instanceof ApiError && !isServerFailure(err)) {
     const mapped = ERROR_KEYS[err.code];
     if (mapped) {
@@ -91,7 +102,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
     try {
       const nameTrimmed = name().trim();
-      if (nameTrimmed === '') {
+      if (nameTrimmed === '' || nameTrimmed.length > 80) {
         setError(
           memberError(
             new ApiError({ status: 400, code: 'validationFailed', field: 'name', message: '' }),
@@ -145,8 +156,23 @@ export function Members(_props: AdminMenuProps): JSX.Element {
         }
         rule.frequency = n;
       }
-      if (valueThb().trim() !== '') {
-        rule.value_thb = valueThb().trim();
+      const valTrimmed = valueThb().trim();
+      if (valTrimmed !== '') {
+        const checked = checkDecimal(valTrimmed, MONEY);
+        if (!checked.ok) {
+          setError(
+            memberError(
+              new ApiError({
+                status: 400,
+                code: 'validationFailed',
+                field: 'rule.valueThb',
+                message: '',
+              }),
+            ),
+          );
+          return;
+        }
+        rule.value_thb = checked.text;
       }
       if (tier().trim() !== '') {
         rule.tier = tier().trim();
@@ -222,6 +248,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
                 name="name"
                 data-field="name"
                 type="text"
+                maxLength={80}
                 required
                 class="xc-input"
                 value={name()}
@@ -271,6 +298,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
                 name="value_thb"
                 data-field="value_thb"
                 type="text"
+                max="100000000"
                 class="xc-input"
                 value={valueThb()}
                 onInput={(e) => setValueThb(e.currentTarget.value)}

@@ -24,7 +24,7 @@ use crate::presentation::http::v3::input;
 
 /// `booking_slot_rules` column `CHECK`s (`migrations/20261205131000_booking_slots.sql:36-38`).
 const SLOT_MINUTES: IntBound = IntBound::integer(5, 240);
-const CAPACITY: IntBound = IntBound::integer(1, i64::MAX);
+const CAPACITY: IntBound = IntBound::integer(1, i32::MAX as i64);
 const HORIZON_DAYS: IntBound = IntBound::integer(1, 90);
 
 pub struct SlotRuleSet {
@@ -43,7 +43,8 @@ impl SlotRuleSet {
 pub struct SlotRuleSetInput {
     pub id: String,
     pub slot_minutes: i32,
-    pub capacity: i32,
+    #[ts(type = "number")]
+    pub capacity: i64,
     pub horizon_days: i32,
 }
 
@@ -69,7 +70,7 @@ impl CommandAction for SlotRuleSet {
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
         input::integer("slotMinutes", input.slot_minutes as i64, SLOT_MINUTES)?;
-        input::integer("capacity", input.capacity as i64, CAPACITY)?;
+        input::integer("capacity", input.capacity, CAPACITY)?;
         input::integer("horizonDays", input.horizon_days as i64, HORIZON_DAYS)?;
         let user_uuid = Uuid::parse_str(&who.user_id).unwrap_or_else(|_| Uuid::new_v4());
 
@@ -85,7 +86,7 @@ impl CommandAction for SlotRuleSet {
 
         let rule = SlotRule {
             slot_minutes: input.slot_minutes,
-            capacity: input.capacity,
+            capacity: input.capacity as i32,
             horizon_days: input.horizon_days,
         };
 

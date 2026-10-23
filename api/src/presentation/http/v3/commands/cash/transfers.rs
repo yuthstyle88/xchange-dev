@@ -24,6 +24,7 @@ use crate::presentation::dto::v3::cash::{
 };
 use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 fn answer(t: CashTransfer) -> CashRecordOutput {
     CashRecordOutput {
@@ -87,6 +88,7 @@ impl CommandAction for TransferCreate {
     ) -> Result<Self::Output, V3Error> {
         let kind = TransferKind::parse(&input.kind)
             .ok_or_else(|| validation_failed("kind", "unknown transfer kind"))?;
+        input::text("note", &input.note, TextBound { min: 0, max: 200 })?;
         let lines = input
             .lines
             .iter()
@@ -276,6 +278,7 @@ impl CommandAction for TransferReconcile {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        input::text("note", &input.note, TextBound { min: 0, max: 200 })?;
         let now = Utc::now();
         let user = caller_in(tx, who, now).await?;
         let t = self

@@ -65,6 +65,7 @@ use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 // ------------------------------------------------------------ inputs
 
@@ -331,6 +332,17 @@ impl CommandAction for TransactionCreateCommand {
             .map_err(|_| invalid("payment.paidAt", "invalid paidAt"))?;
         let value_date = NaiveDate::parse_from_str(&input.value_date, "%Y-%m-%d")
             .map_err(|_| invalid("valueDate", "invalid valueDate"))?;
+        input::text(
+            "payment.reference",
+            &input.payment.reference,
+            TextBound { min: 0, max: 100 },
+        )?;
+        input::text(
+            "payment.account",
+            &input.payment.account,
+            TextBound { min: 0, max: 100 },
+        )?;
+        input::text("notes", &input.notes, TextBound { min: 0, max: 500 })?;
         let req = CreateRequest {
             branch_id: branch.clone(),
             quote_id,

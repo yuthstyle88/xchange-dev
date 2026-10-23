@@ -19,6 +19,7 @@ use super::{BookingOkOutput, BookingServices};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, Locks};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 pub struct ClosureAdd {
     services: Arc<BookingServices>,
@@ -62,6 +63,8 @@ impl CommandAction for ClosureAdd {
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
         let user_uuid = Uuid::parse_str(&who.user_id).unwrap_or_else(|_| Uuid::new_v4());
+
+        input::text("reason", &input.reason, TextBound { min: 1, max: 200 })?;
 
         let branch = BranchId::new(&input.id);
         BranchTx::lock_also(tx, &branch).await.map_err(|e| {

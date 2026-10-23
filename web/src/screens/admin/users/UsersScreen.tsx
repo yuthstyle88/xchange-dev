@@ -5,7 +5,7 @@ import {
   Show,
   type JSX,
 } from 'solid-js';
-import { ApiClient } from '../../../shared/api/client';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { AdminBranchItem, AdminBranchesData } from '../../../shared/api/generated/admin_branches';
 import type {
   AdminPermissionMatrixData,
@@ -148,6 +148,9 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [profileDepartment, setProfileDepartment] = createSignal('');
   const [profilePosition, setProfilePosition] = createSignal('');
   const [profileTellCode, setProfileTellCode] = createSignal('');
+  const [profileFieldErrors, setProfileFieldErrors] = createSignal<
+    Partial<Record<'employeeCode' | 'department' | 'position' | 'tellCode', string>>
+  >({});
 
   let branchesSeq = 0;
   let usersSeq = 0;
@@ -308,6 +311,17 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setDialogError(null);
     setPageSuccess(null);
 
+    const name = createName().trim();
+    if (!name || name.length > 100) {
+      setCreateNameError(
+        fieldError(
+          new ApiError({ status: 400, code: 'validationFailed', field: 'name', message: '' }),
+          { name: t('name') },
+        ).message,
+      );
+      return;
+    }
+
     const phone = createPhone().trim();
     if (!PHONE_RE.test(phone)) {
       setCreatePhoneError(t('invalidPhone'));
@@ -318,7 +332,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
     try {
       const res = (await api.post('/api/users', {
-        name: createName().trim(),
+        name,
         username: createUsername().trim() || null,
         phone,
         email: createEmail().trim() || null,
@@ -478,6 +492,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     setProfileDepartment(user.department ?? '');
     setProfilePosition(user.position ?? '');
     setProfileTellCode(user.tellCode ?? '');
+    setProfileFieldErrors({});
     setDialogError(null);
   };
 
@@ -487,28 +502,68 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     if (!user) return;
     const sentFrom = openDialogKey();
 
+    setProfileFieldErrors({});
     setDialogError(null);
     setPageSuccess(null);
-    setDialogSubmitting(true);
 
     const trimOrNull = (val: string): string | null => {
       const trimmed = val.trim();
       return trimmed === '' ? null : trimmed;
     };
 
+    const emp = trimOrNull(profileEmployeeCode());
+    const dept = trimOrNull(profileDepartment());
+    const pos = trimOrNull(profilePosition());
+    const tell = trimOrNull(profileTellCode());
+    const profileLabels = {
+      employeeCode: t('profileEmployeeCode'),
+      department: t('profileDepartment'),
+      position: t('profilePosition'),
+      tellCode: t('profileTellCode'),
+    };
+    for (const [field, val, max] of [
+      ['employeeCode', emp, 40],
+      ['department', dept, 80],
+      ['position', pos, 80],
+      ['tellCode', tell, 40],
+    ] as const) {
+      if (val !== null && val.length > max) {
+        const fe = fieldError(
+          new ApiError({ status: 400, code: 'validationFailed', field, message: '' }),
+          profileLabels,
+        );
+        setProfileFieldErrors({ [field]: fe.message });
+        return;
+      }
+    }
+
+    setDialogSubmitting(true);
+
     try {
       await profileWrite.send({
         userId: user.userId,
-        employeeCode: trimOrNull(profileEmployeeCode()),
-        department: trimOrNull(profileDepartment()),
-        position: trimOrNull(profilePosition()),
-        tellCode: trimOrNull(profileTellCode()),
+        employeeCode: emp,
+        department: dept,
+        position: pos,
+        tellCode: tell,
       });
       if (openDialogKey() === sentFrom) setProfilingUser(null);
       setPageSuccess(t('successProfileSaved'));
       await reloadShown();
     } catch (err: unknown) {
-      if (openDialogKey() === sentFrom) setDialogError(wordedError(err));
+      if (openDialogKey() === sentFrom) {
+        const fe = fieldError(err, profileLabels);
+        if (
+          fe.field === 'employeeCode' ||
+          fe.field === 'department' ||
+          fe.field === 'position' ||
+          fe.field === 'tellCode'
+        ) {
+          setProfileFieldErrors({ [fe.field]: fe.message });
+        } else {
+          setDialogError(fe.message);
+        }
+      }
     } finally {
       setDialogSubmitting(false);
     }
@@ -872,6 +927,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                   id="create-name"
                   name="name"
                   class="users-input"
+                  maxLength={100}
                   value={createName()}
                   onInput={(e) => {
                     setCreateName(e.currentTarget.value);
@@ -880,7 +936,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                   required
                 />
                 <Show when={createNameError()}>
-                  <div role="alert" class="users-form-error">{createNameError()}</div>
+                  <div role="alert" class="users-form-error" data-field-error="name">{createNameError()}</div>
                 </Show>
               </div>
 
@@ -1152,9 +1208,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     id="profile-employee-code"
                     name="employeeCode"
                     class="users-input"
+                    maxLength={40}
                     value={profileEmployeeCode()}
-                    onInput={(e) => setProfileEmployeeCode(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setProfileEmployeeCode(e.currentTarget.value);
+                      setProfileFieldErrors((prev) => ({ ...prev, employeeCode: undefined }));
+                    }}
                   />
+                  <Show when={profileFieldErrors().employeeCode}>
+                    {(msg) => <div role="alert" class="users-form-error" data-field-error="employeeCode">{msg()}</div>}
+                  </Show>
                 </div>
 
                 <div class="users-field">
@@ -1163,9 +1226,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     id="profile-department"
                     name="department"
                     class="users-input"
+                    maxLength={80}
                     value={profileDepartment()}
-                    onInput={(e) => setProfileDepartment(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setProfileDepartment(e.currentTarget.value);
+                      setProfileFieldErrors((prev) => ({ ...prev, department: undefined }));
+                    }}
                   />
+                  <Show when={profileFieldErrors().department}>
+                    {(msg) => <div role="alert" class="users-form-error" data-field-error="department">{msg()}</div>}
+                  </Show>
                 </div>
 
                 <div class="users-field">
@@ -1174,9 +1244,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     id="profile-position"
                     name="position"
                     class="users-input"
+                    maxLength={80}
                     value={profilePosition()}
-                    onInput={(e) => setProfilePosition(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setProfilePosition(e.currentTarget.value);
+                      setProfileFieldErrors((prev) => ({ ...prev, position: undefined }));
+                    }}
                   />
+                  <Show when={profileFieldErrors().position}>
+                    {(msg) => <div role="alert" class="users-form-error" data-field-error="position">{msg()}</div>}
+                  </Show>
                 </div>
 
                 <div class="users-field">
@@ -1185,9 +1262,16 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     id="profile-tell-code"
                     name="tellCode"
                     class="users-input"
+                    maxLength={40}
                     value={profileTellCode()}
-                    onInput={(e) => setProfileTellCode(e.currentTarget.value)}
+                    onInput={(e) => {
+                      setProfileTellCode(e.currentTarget.value);
+                      setProfileFieldErrors((prev) => ({ ...prev, tellCode: undefined }));
+                    }}
                   />
+                  <Show when={profileFieldErrors().tellCode}>
+                    {(msg) => <div role="alert" class="users-form-error" data-field-error="tellCode">{msg()}</div>}
+                  </Show>
                 </div>
 
                 <div class="users-dialog-actions">

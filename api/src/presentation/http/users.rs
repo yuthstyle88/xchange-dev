@@ -28,6 +28,7 @@ use crate::bootstrap::AppState;
 use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::http::client_address::CLIENT_ADDRESS_HEADER;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 use crate::presentation::http::v3::view::authenticate_and_authorize;
 
 const INHERITS: (EntryPath, &str) = (EntryPath::Rpc, "userCreate");
@@ -140,6 +141,9 @@ async fn user_create(
             .error_response();
         }
     };
+    if let Err(e) = input::text("name", &input.name, TextBound { min: 1, max: 100 }) {
+        return e.error_response();
+    }
     let phone = match input.phone.as_deref().map(str::trim) {
         Some(p) if !p.is_empty() => p.to_string(),
         _ => return invalid("phone", "กรุณากรอกเบอร์โทรศัพท์"),

@@ -1,6 +1,6 @@
 // §9 TierEditor: 4 tiers buy/sell prefilled from the suggestion, the margin each makes, approve one currency (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { For, Show, createSignal, type JSX } from 'solid-js';
-import type { ApiClient } from '../../../shared/api/client';
+import { ApiError, type ApiClient } from '../../../shared/api/client';
 import type {
   PricingApproveInput,
   PricingApproveOutput,
@@ -9,7 +9,8 @@ import type {
 import type { PricingBandDto, PricingRowDto } from '../../../shared/api/generated/pricing_board';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError } from '../../../shared/i18n/field-error';
+import { RATE, checkDecimal } from '../../../shared/ui/bounded';
 import { en, th } from './i18n';
 import { ROUTE_PRICING_APPROVE, type TierNo } from './pricing-labels';
 import './tier-editor.css';
@@ -32,6 +33,23 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
   const [reason, setReason] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
+  const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
+
+  const labels = (): Record<string, string> => {
+    const out: Record<string, string> = { reason: tr('reason') };
+    for (const tierNo of TIER_NOS) {
+      const idx = tierNo - 1;
+      out[`tiers[${idx}].buy`] = `${tr('tier', { n: tierNo })} ${tr('buy')}`;
+      out[`tiers[${idx}].sell`] = `${tr('tier', { n: tierNo })} ${tr('sell')}`;
+    }
+    return out;
+  };
+
+  const localError = (field: string): string =>
+    fieldError(
+      new ApiError({ status: 400, code: 'validationFailed', field, message: '' }),
+      labels(),
+    ).message;
 
   const approveCmd = keyedWrite<PricingApproveInput, PricingApproveOutput>(
     props.api,
@@ -76,22 +94,45 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
   const handleApprove = async () => {
     if (!props.row.suggestion || submitting()) return;
     setErrorMsg(null);
-    setSubmitting(true);
+    setFieldErrors({});
 
-    const tiers: PricingTierPriceInput[] = TIER_NOS.map((tierNo) => ({
-      tierNo,
-      buy: buyValue(tierNo),
-      sell: sellValue(tierNo),
-    }));
+    const nextFieldErrors: Record<string, string> = {};
+    const tiers: PricingTierPriceInput[] = TIER_NOS.map((tierNo) => {
+      const idx = tierNo - 1;
+      const buy = buyValue(tierNo).trim();
+      const sell = sellValue(tierNo).trim();
+      if (!checkDecimal(buy, RATE).ok) {
+        nextFieldErrors[`tiers[${idx}].buy`] = localError(`tiers[${idx}].buy`);
+      }
+      if (!checkDecimal(sell, RATE).ok) {
+        nextFieldErrors[`tiers[${idx}].sell`] = localError(`tiers[${idx}].sell`);
+      }
+      return { tierNo, buy, sell };
+    });
+    const trimmedReason = reason().trim();
+    if (trimmedReason === '') {
+      nextFieldErrors.reason = localError('reason');
+    }
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const out = await approveCmd.send({
         policyVersionId: props.policyVersionId,
         rows: [{ currency: props.row.currency, tiers }],
-        reason: reason().trim(),
+        reason: trimmedReason,
       });
       props.onApproved(out);
     } catch (err: unknown) {
-      setErrorMsg(wordedError(err));
+      const fe = fieldError(err, labels());
+      if (fe.field) {
+        setFieldErrors({ [fe.field]: fe.message });
+      } else {
+        setErrorMsg(fe.message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -147,6 +188,9 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
                       setEditedBuy((prev) => ({ ...prev, [tierNo]: val }));
                     }}
                   />
+                  <Show when={fieldErrors()[`tiers[${tierNo - 1}].buy`]}>
+                    {(msg) => <span data-field-error={`tiers[${tierNo - 1}].buy`}>{msg()}</span>}
+                  </Show>
                 </td>
                 <td class="tier-editor-margin" data-margin={`buy-${tierNo}`}>
                   {buyMarginText(tierNo)}
@@ -164,6 +208,9 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
                       setEditedSell((prev) => ({ ...prev, [tierNo]: val }));
                     }}
                   />
+                  <Show when={fieldErrors()[`tiers[${tierNo - 1}].sell`]}>
+                    {(msg) => <span data-field-error={`tiers[${tierNo - 1}].sell`}>{msg()}</span>}
+                  </Show>
                 </td>
                 <td class="tier-editor-margin" data-margin={`sell-${tierNo}`}>
                   {sellMarginText(tierNo)}
@@ -175,17 +222,22 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
       </table>
 
       <div class="tier-editor-actions">
-        <input
-          type="text"
-          name="reason"
-          class="tier-editor-input"
-          placeholder={tr('reason')}
-          aria-label={tr('reason')}
-          required
-          disabled={!props.row.suggestion || submitting()}
-          value={reason()}
-          onInput={(e) => setReason(e.currentTarget.value)}
-        />
+        <div>
+          <input
+            type="text"
+            name="reason"
+            class="tier-editor-input"
+            placeholder={tr('reason')}
+            aria-label={tr('reason')}
+            required
+            disabled={!props.row.suggestion || submitting()}
+            value={reason()}
+            onInput={(e) => setReason(e.currentTarget.value)}
+          />
+          <Show when={fieldErrors().reason}>
+            {(msg) => <span data-field-error="reason">{msg()}</span>}
+          </Show>
+        </div>
         <button
           type="button"
           name="approve"
