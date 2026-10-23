@@ -181,6 +181,30 @@ impl TestDb {
              VALUES ('{id}', '{B01}', 'OPEN', now(), 'test', '{id}-open', '{TELLER_ID}')"
         ))
         .await;
+        let mut tx = self.pool.begin().await.expect("begin");
+        xc_cash::domain::posting::CashPostings::post_in(
+            &xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new(),
+            &mut tx,
+            &[xc_cash::domain::posting::PostingRequest {
+                from: xc_cash::domain::posting::CashPlace::Bank,
+                to: xc_cash::domain::posting::CashPlace::Drawer(id.clone()),
+                currency: xc_kernel::money::CurrencyCode::THB,
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    "100000".parse().expect("an amount"),
+                ),
+                source: xc_cash::domain::ledger::posting::SourceRef {
+                    source_type: xc_cash::domain::ledger::posting::SourceType::Opening,
+                    source_id: format!("fund:{id}"),
+                    source_key: "fund".to_owned(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("fund drawer");
+        tx.commit().await.expect("commit");
     }
 
     /// Every stored draft of B01: (id, `data->'amount'` as JSON text, status, documentRef).
@@ -310,7 +334,7 @@ async fn begin(db: &TestDb, currency: &str, amount: &str) -> Answer {
     .await
 }
 
-/// The v3 desk save of BUY `quantity` `currency`, naming `staff_draft_id`: quote, create, confirm. The confirm's answer.
+/// The v3 desk save of BUY `quantity` `currency`, naming `staff_draft_id`: quote, create, confirm, complete.
 async fn save(db: &TestDb, currency: &str, quantity: &str, staff_draft_id: &str) -> Answer {
     let quote = post(
         db,
@@ -358,10 +382,21 @@ async fn save(db: &TestDb, currency: &str, quantity: &str, staff_draft_id: &str)
         .as_str()
         .unwrap_or_else(|| panic!("transaction id: {}", created.text));
 
-    post(
+    let confirmed = post(
         db,
         &format!("/api/transactions/{tx_id}/confirm"),
         json!({ "branch": B01 }),
+    )
+    .await;
+    ok(
+        &confirmed,
+        &format!("POST /api/transactions/{tx_id}/confirm"),
+    );
+
+    post(
+        db,
+        &format!("/api/transactions/{tx_id}/complete"),
+        json!({}),
     )
     .await
 }
@@ -394,7 +429,7 @@ async fn k2_a_kwd_draft_of_1_125_is_stored_as_typed_and_the_matching_save_comple
 
     let saved = save(&db, "KWD", "1.125", &draft_id).await;
     ok(&saved, "K2: the matching save of BUY KWD 1.125");
-    assert_eq!(saved.body["status"], "CONFIRMED", "K2: {}", saved.text);
+    assert_eq!(saved.body["status"], "COMPLETED", "K2: {}", saved.text);
 
     let after = db.drafts().await;
     assert_eq!(after.len(), 1, "K2: one draft: {after:?}");
