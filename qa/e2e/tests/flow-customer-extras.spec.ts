@@ -290,26 +290,21 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       });
 
       // (b) Invalid inputs (4 cases: negative, zero, >8 decimals, whitespace) in th and en.
-      // Reload before each case so .xc-form-error starts absent (RateAlerts.tsx:292,487), wait for
-      // that case's POST response (or prove none was sent on whitespace), and read the list back.
-      const invalidThresholds = [
-        { value: '-15.50', hitsServer: true },
-        { value: '0', hitsServer: true },
-        { value: '34.123456789', hitsServer: true },
-        { value: '   ', hitsServer: false },
-      ];
+      // Reload before each case so [data-field-error="target"] starts absent (RateAlerts.tsx:529-531),
+      // prove no POST was sent, and read the list back.
+      const invalidThresholds = ['-15.50', '0', '34.123456789', '   '];
       for (const lang of ['th', 'en'] as const) {
         await withLang(page, lang);
-        for (const { value: badValue, hitsServer } of invalidThresholds) {
+        for (const badValue of invalidThresholds) {
           console.log(`[customer-extras] rateAlert (b) lang=${lang} value=${JSON.stringify(badValue)}`);
           await page.goto('/app/rate-alerts');
-          // #alert-target: web/src/screens/customer/rate-alerts/RateAlerts.tsx:464
+          // #alert-target: web/src/screens/customer/rate-alerts/RateAlerts.tsx:520
           const targetInput = page.locator('#alert-target');
-          // .xc-create-alert-form button[type="submit"]: web/src/screens/customer/rate-alerts/RateAlerts.tsx:398,494
+          // .xc-create-alert-form button[type="submit"]: web/src/screens/customer/rate-alerts/RateAlerts.tsx:440,556
           const submitBtn = page.locator('.xc-create-alert-form button[type="submit"]');
-          // .xc-form-error[role="alert"]: web/src/screens/customer/rate-alerts/RateAlerts.tsx:487
-          const formError = page.locator('.xc-form-error[role="alert"]');
-          // article.xc-alert-card: web/src/screens/customer/rate-alerts/RateAlerts.tsx:548
+          // [data-field-error="target"]: web/src/screens/customer/rate-alerts/RateAlerts.tsx:530
+          const targetError = page.locator('[data-field-error="target"]');
+          // article.xc-alert-card: web/src/screens/customer/rate-alerts/RateAlerts.tsx:620
           const alertCards = page.locator('article.xc-alert-card');
 
           await expect(targetInput, `(${lang}) #alert-target visible`).toBeVisible({ timeout: 15_000 });
@@ -317,7 +312,11 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
             page.locator('#alert-branch option'),
             `(${lang}) #alert-branch options loaded`,
           ).not.toHaveCount(0, { timeout: 15_000 });
-          await expect(formError, `(${lang}) .xc-form-error absent before submit`).toHaveCount(0);
+          await expect(
+            page.locator('#alert-currency option'),
+            `(${lang}) #alert-currency options loaded`,
+          ).not.toHaveCount(0, { timeout: 15_000 });
+          await expect(targetError, `(${lang}) [data-field-error="target"] absent before submit`).toHaveCount(0);
           await expect(
             page.locator('.xc-alerts-empty, .xc-alerts-list').first(),
             `(${lang}) alerts list or empty state loaded`,
@@ -325,46 +324,30 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           const countBefore = await alertCards.count();
 
           await targetInput.fill(badValue);
-          if (hitsServer) {
-            const badRespPromise = page.waitForResponse(
-              (r) => r.url().includes('/api/app/rate-alerts') && r.request().method() === 'POST',
-              { timeout: 15_000 },
-            );
-            await submitBtn.click();
-            const badResp = await badRespPromise;
-            expect(
-              badResp.status(),
-              `(${lang}) POST /api/app/rate-alerts refused target="${badValue}" with 400`,
-            ).toBe(400);
-          } else {
-            let postSent = false;
-            const onReq = (req: import('@playwright/test').Request) => {
-              if (req.url().includes('/api/app/rate-alerts') && req.method() === 'POST') {
-                postSent = true;
-              }
-            };
-            page.on('request', onReq);
-            try {
-              await submitBtn.click();
-              await expect(formError, `(${lang}) client refusal shown for whitespace`).toBeVisible({
-                timeout: 10_000,
-              });
-              expect(postSent, `(${lang}) no POST sent for client-rejected whitespace`).toBe(false);
-            } finally {
-              page.off('request', onReq);
+          let postCount = 0;
+          const onReq = (req: import('@playwright/test').Request) => {
+            if (req.url().includes('/api/app/rate-alerts') && req.method() === 'POST') {
+              postCount++;
             }
+          };
+          page.on('request', onReq);
+          try {
+            await submitBtn.click();
+            await expect(targetError, `(${lang}) refusal shown at target for "${badValue}"`).toBeVisible({
+              timeout: 10_000,
+            });
+            expect(postCount, `(${lang}) no POST sent for target="${badValue}"`).toBe(0);
+          } finally {
+            page.off('request', onReq);
           }
 
-          await expect(formError, `(${lang}) refusal alert shown for target="${badValue}"`).toBeVisible({
-            timeout: 10_000,
-          });
-          const errText = (await formError.innerText()).trim();
+          const errText = (await targetError.innerText()).trim();
           expect(errText.length, `(${lang}) refusal message non-empty for "${badValue}"`).toBeGreaterThan(0);
           expect(
             errText,
             `(${lang}) refusal message "${errText}" is worded, not raw error code`,
           ).not.toMatch(RAW_ERROR_CODE);
-          // Form keeps what was typed (RateAlerts.tsx:313-314)
+          // Form keeps what was typed
           await expect(targetInput, `(${lang}) #alert-target keeps "${badValue}"`).toHaveValue(badValue);
 
           // Reload and verify no alert was created
@@ -386,7 +369,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       // (a) Happy path: create alert, pause + reload, resume + reload (never delete rows not created by this spec, §9.2)
       await withLang(page, 'en');
       await page.goto('/app/rate-alerts');
-      // #alert-branch: web/src/screens/customer/rate-alerts/RateAlerts.tsx:351-365
+      // #alert-branch: web/src/screens/customer/rate-alerts/RateAlerts.tsx:444
       const branchSelect = page.locator('#alert-branch');
       await expect(branchSelect, '#alert-branch visible').toBeVisible({ timeout: 15_000 });
       await expect(branchSelect.locator('option'), '#alert-branch options loaded').not.toHaveCount(0, {
@@ -395,8 +378,12 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       if ((await branchSelect.locator(`option[value="${users.branch}"]`).count()) > 0) {
         await branchSelect.selectOption(users.branch);
       }
-      // #alert-currency: web/src/screens/customer/rate-alerts/RateAlerts.tsx:375
-      await page.locator('#alert-currency').fill('USD');
+      // #alert-currency: web/src/screens/customer/rate-alerts/RateAlerts.tsx:471
+      await expect(page.locator('#alert-currency option'), '#alert-currency options loaded').not.toHaveCount(
+        0,
+        { timeout: 15_000 },
+      );
+      await page.locator('#alert-currency').selectOption('USD');
       // #alert-side: web/src/screens/customer/rate-alerts/RateAlerts.tsx:387-395
       await page.locator('#alert-side').selectOption('CUSTOMER_BUY');
       // #alert-condition: web/src/screens/customer/rate-alerts/RateAlerts.tsx:400-408

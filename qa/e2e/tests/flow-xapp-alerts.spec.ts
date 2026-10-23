@@ -54,7 +54,7 @@ test.describe('QA-F14a flow: customer rate alert create and delete', () => {
     const selectedBranch = await branchSelect.inputValue();
 
     const currency = (users.currency || 'USD').toUpperCase();
-    await page.locator('#alert-currency').fill(currency);
+    await page.locator('#alert-currency').selectOption(currency);
     await page.locator('#alert-condition').selectOption('ABOVE');
     await page.locator('#alert-target').fill(MARKER_TARGET);
 

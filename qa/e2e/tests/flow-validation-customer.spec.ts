@@ -104,24 +104,33 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       const qtyInput = page.locator('input[data-testid="quantity-input"]');
       const slotSelect = page.locator('select[data-testid="slot-select"]');
       const submitBtn = page.locator('button[data-testid="book-submit"]');
-      const errorAlert = page.locator('.alert.alert-error');
-      const expectedValidationMsg =
-        lang === 'th' ? 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง' : 'Validation failed, please check your input';
+      const qtyFieldError = page.locator('[data-field-error="quantity"]');
+      const expectedQtyMsg = lang === 'th' ? 'จำนวนเงิน ไม่ถูกต้อง' : 'Amount is not valid';
 
-      // Case 1: no slot selected (server 400 refusal)
+      // Case 1: no slot selected (client refusal via required and valueMissing)
       console.log(`[r9-11] book ${lang} case 1`);
+      await expect(page.locator('.xc-book-slots-loading')).toHaveCount(0, { timeout: 15_000 });
       await qtyInput.fill('100', { timeout: 10_000 });
-      if (await slotSelect.isVisible()) {
+      if ((await slotSelect.isVisible()) && (await slotSelect.isEnabled())) {
         await slotSelect.selectOption('', { timeout: 10_000 });
       }
-      const noSlotResPromise = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/bookings$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
+      const isSlotMissing = await slotSelect.evaluate(
+        (el: HTMLSelectElement) => el.required && (el.disabled || el.validity.valueMissing),
       );
-      await submitBtn.click({ timeout: 10_000 });
-      const noSlotRes = await noSlotResPromise;
-      expect(noSlotRes.status(), `${lang}: no slot selected refused with 400`).toBe(400);
-      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
+      expect(isSlotMissing, `${lang}: no slot selected triggers required check`).toBe(true);
+      let noSlotPosts = 0;
+      const onNoSlotReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/bookings$/.test(new URL(req.url()).pathname)) {
+          noSlotPosts++;
+        }
+      };
+      page.on('request', onNoSlotReq);
+      try {
+        await submitBtn.click({ timeout: 10_000 });
+        expect(noSlotPosts, `${lang}: no request sent without slot`).toBe(0);
+      } finally {
+        page.off('request', onNoSlotReq);
+      }
       await expect(qtyInput, `${lang}: quantity retains input`).toHaveValue('100');
 
       // Case 2: amount 0 (client refusal via min="1" and rangeUnderflow)
@@ -147,18 +156,24 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(noNegReq, `${lang}: no request sent for negative amount`).rejects.toThrow();
       await expect(qtyInput, `${lang}: quantity retains -50`).toHaveValue('-50');
 
-      // Case 4: too many decimals (>4 decimals; server 400 refusal)
+      // Case 4: too many decimals (>4 decimals; refused at quantity field before sending)
       console.log(`[r9-11] book ${lang} case 4`);
-      await qtyInput.fill('10.12345', { timeout: 10_000 });
-      const decResPromise = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/bookings$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
-      await submitBtn.click({ timeout: 10_000 });
-      const decRes = await decResPromise;
-      expect(decRes.status(), `${lang}: too many decimals refused with 400`).toBe(400);
-      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-      await expect(errorAlert).toContainText(expectedValidationMsg);
+      let decPosts = 0;
+      const onDecReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/bookings$/.test(new URL(req.url()).pathname)) {
+          decPosts++;
+        }
+      };
+      page.on('request', onDecReq);
+      try {
+        await qtyInput.fill('10.12345', { timeout: 10_000 });
+        await submitBtn.click({ timeout: 10_000 });
+        await expect(qtyFieldError).toBeVisible({ timeout: 10_000 });
+        await expect(qtyFieldError).toContainText(expectedQtyMsg);
+        expect(decPosts, `${lang}: no request sent for too many decimals`).toBe(0);
+      } finally {
+        page.off('request', onDecReq);
+      }
       await expect(qtyInput, `${lang}: quantity retains 10.12345`).toHaveValue('10.12345');
 
       // Case 5: past date (client refusal via min attribute, rejected submit request)
@@ -306,17 +321,18 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       const initialAlertCards = await page.locator('article.xc-alert-card').count();
 
       const branchSelect = page.locator('#alert-branch');
-      if ((await branchSelect.locator('option').count()) > 0) {
-        await branchSelect.selectOption({ index: 0 });
-      }
+      await expect(branchSelect.locator('option')).not.toHaveCount(0, { timeout: 15_000 });
+      await branchSelect.selectOption({ index: 0 });
 
-      const currencyInput = page.locator('#alert-currency');
-      await currencyInput.fill('USD');
+      const currencySelect = page.locator('#alert-currency');
+      await expect(currencySelect.locator('option')).not.toHaveCount(0, { timeout: 15_000 });
+      await currencySelect.selectOption('USD');
 
       const targetInput = page.locator('#alert-target');
       const submitBtn = page.locator('.xc-create-alert-form button[type="submit"]');
-      const errorMsg = page.locator('.xc-create-alert-form .xc-form-error');
-      const expectedAlertMsg = lang === 'th' ? 'ข้อมูลไม่ถูกต้อง' : 'Validation failed';
+      const targetError = page.locator('[data-field-error="target"]');
+      const expectedTargetMsg =
+        lang === 'th' ? 'เรทเป้าหมาย (THB) ไม่ถูกต้อง' : 'Target Rate (THB) is not valid';
 
       // Case 1: empty threshold -> HTML5 valueMissing blocks request
       await targetInput.fill('');
@@ -327,45 +343,63 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await expect(noReq, `${lang}: no request sent on valueMissing`).rejects.toThrow();
       expect(await page.locator('article.xc-alert-card').count()).toBe(initialAlertCards);
 
-      // Case 2: negative threshold
-      await targetInput.fill('-15.50');
-      const negAlertResPromise = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/app\/rate-alerts$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
-      await submitBtn.click();
-      const negAlertRes = await negAlertResPromise;
-      expect(negAlertRes.status(), `${lang}: negative threshold returns 400`).toBe(400);
-      await expect(errorMsg).toBeVisible({ timeout: 10_000 });
-      await expect(errorMsg).toContainText(expectedAlertMsg);
+      // Case 2: negative threshold (refused at target field before sending)
+      let negPosts = 0;
+      const onNegReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/app\/rate-alerts$/.test(new URL(req.url()).pathname)) {
+          negPosts++;
+        }
+      };
+      page.on('request', onNegReq);
+      try {
+        await targetInput.fill('-15.50');
+        await submitBtn.click();
+        await expect(targetError).toBeVisible({ timeout: 10_000 });
+        await expect(targetError).toContainText(expectedTargetMsg);
+        expect(negPosts, `${lang}: no request sent for negative threshold`).toBe(0);
+      } finally {
+        page.off('request', onNegReq);
+      }
       await expect(targetInput, `${lang}: target retains -15.50`).toHaveValue('-15.50');
       expect(await page.locator('article.xc-alert-card').count()).toBe(initialAlertCards);
 
-      // Case 3: zero threshold
-      await targetInput.fill('0');
-      const zeroAlertResPromise = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/app\/rate-alerts$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
-      await submitBtn.click();
-      const zeroAlertRes = await zeroAlertResPromise;
-      expect(zeroAlertRes.status(), `${lang}: zero threshold returns 400`).toBe(400);
-      await expect(errorMsg).toBeVisible({ timeout: 10_000 });
-      await expect(errorMsg).toContainText(expectedAlertMsg);
+      // Case 3: zero threshold (refused at target field before sending)
+      let zeroPosts = 0;
+      const onZeroReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/app\/rate-alerts$/.test(new URL(req.url()).pathname)) {
+          zeroPosts++;
+        }
+      };
+      page.on('request', onZeroReq);
+      try {
+        await targetInput.fill('0');
+        await submitBtn.click();
+        await expect(targetError).toBeVisible({ timeout: 10_000 });
+        await expect(targetError).toContainText(expectedTargetMsg);
+        expect(zeroPosts, `${lang}: no request sent for zero threshold`).toBe(0);
+      } finally {
+        page.off('request', onZeroReq);
+      }
       await expect(targetInput, `${lang}: target retains 0`).toHaveValue('0');
       expect(await page.locator('article.xc-alert-card').count()).toBe(initialAlertCards);
 
-      // Case 4: excess decimals (>8 decimals)
-      await targetInput.fill('34.123456789');
-      const decAlertResPromise = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/app\/rate-alerts$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
-      await submitBtn.click();
-      const decAlertRes = await decAlertResPromise;
-      expect(decAlertRes.status(), `${lang}: excess decimals returns 400`).toBe(400);
-      await expect(errorMsg).toBeVisible({ timeout: 10_000 });
-      await expect(errorMsg).toContainText(expectedAlertMsg);
+      // Case 4: excess decimals (>8 decimals; refused at target field before sending)
+      let decPosts = 0;
+      const onDecReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/app\/rate-alerts$/.test(new URL(req.url()).pathname)) {
+          decPosts++;
+        }
+      };
+      page.on('request', onDecReq);
+      try {
+        await targetInput.fill('34.123456789');
+        await submitBtn.click();
+        await expect(targetError).toBeVisible({ timeout: 10_000 });
+        await expect(targetError).toContainText(expectedTargetMsg);
+        expect(decPosts, `${lang}: no request sent for excess decimals`).toBe(0);
+      } finally {
+        page.off('request', onDecReq);
+      }
       expect(await page.locator('article.xc-alert-card').count()).toBe(initialAlertCards);
 
       // Read back: alert count unchanged
@@ -386,52 +420,72 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       const pwdInput = page.locator('input[name="password"]');
       const submitBtn = page.locator('form.xc-sign-in-form button[type="submit"]');
       const errorAlert = page.locator('p.xc-sign-in-error');
+      const nameError = page.locator('[data-field-error="displayName"]');
+      const idError = page.locator('[data-field-error="identifier"]');
 
-      const expectedInvalidRequest = lang === 'th' ? 'คำขอไม่ถูกต้อง' : 'Invalid request';
+      await expect(submitBtn).toBeEnabled({ timeout: 15_000 });
 
-      // Case 1: empty display name with valid fresh credentials
+      // Case 1: blank display name with valid fresh credentials (refused before sending)
       const freshPhone = '+6681' + Date.now().toString().slice(-7);
       await idInput.fill(freshPhone);
       await pwdInput.fill('ValidPass123!');
-      await nameInput.fill('');
-      const regResPromise1 = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/app\/register$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
-      await submitBtn.click();
-      const regRes1 = await regResPromise1;
-      expect(regRes1.status(), `${lang}: empty displayName returns 400`).toBe(400);
-      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-      await expect(errorAlert).not.toHaveText(/^(?:validationFailed|\s*)$/);
+      await nameInput.fill('   ');
+      let regPosts1 = 0;
+      const onRegReq1 = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/app\/register$/.test(new URL(req.url()).pathname)) {
+          regPosts1++;
+        }
+      };
+      page.on('request', onRegReq1);
+      try {
+        await submitBtn.click();
+        await expect(nameError).toBeVisible({ timeout: 10_000 });
+        await expect(nameError).not.toHaveText(/^(?:validationFailed|\s*)$/);
+        expect(regPosts1, `${lang}: blank displayName sends no POST`).toBe(0);
+      } finally {
+        page.off('request', onRegReq1);
+      }
       await expect(idInput, `${lang}: identifier retains value`).toHaveValue(freshPhone);
       await expect(pwdInput, `${lang}: password retains value`).toHaveValue('ValidPass123!');
 
-      // Case 2: empty identifier
+      // Case 2: blank identifier (refused before sending)
       await nameInput.fill('Test Customer');
-      await idInput.fill('');
-      const regResPromise2 = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/app\/register$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
-      await submitBtn.click();
-      const regRes2 = await regResPromise2;
-      expect(regRes2.status(), `${lang}: empty identifier returns 400`).toBe(400);
-      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-      await expect(errorAlert).toHaveText(expectedInvalidRequest);
+      await idInput.fill('   ');
+      let regPosts2 = 0;
+      const onRegReq2 = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/app\/register$/.test(new URL(req.url()).pathname)) {
+          regPosts2++;
+        }
+      };
+      page.on('request', onRegReq2);
+      try {
+        await submitBtn.click();
+        await expect(idError).toBeVisible({ timeout: 10_000 });
+        await expect(idError).not.toHaveText(/^(?:validationFailed|\s*)$/);
+        expect(regPosts2, `${lang}: blank identifier sends no POST`).toBe(0);
+      } finally {
+        page.off('request', onRegReq2);
+      }
       await expect(nameInput, `${lang}: displayName retains value`).toHaveValue('Test Customer');
 
-      // Case 3: empty password
+      // Case 3: empty password (native required blocks request)
       await idInput.fill(freshPhone);
       await pwdInput.fill('');
-      const regResPromise3 = page.waitForResponse(
-        (res) => res.request().method() === 'POST' && /\/api\/app\/register$/.test(new URL(res.url()).pathname),
-        { timeout: 15_000 },
-      );
-      await submitBtn.click();
-      const regRes3 = await regResPromise3;
-      expect(regRes3.status(), `${lang}: empty password returns 400`).toBe(400);
-      await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-      await expect(errorAlert).toHaveText(expectedInvalidRequest);
+      const isPwdMissing = await pwdInput.evaluate((el: HTMLInputElement) => el.validity.valueMissing);
+      expect(isPwdMissing, `${lang}: empty password triggers valueMissing`).toBe(true);
+      let regPosts3 = 0;
+      const onRegReq3 = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && /\/api\/app\/register$/.test(new URL(req.url()).pathname)) {
+          regPosts3++;
+        }
+      };
+      page.on('request', onRegReq3);
+      try {
+        await submitBtn.click();
+        expect(regPosts3, `${lang}: empty password sends no POST`).toBe(0);
+      } finally {
+        page.off('request', onRegReq3);
+      }
 
       // Case 4: already registered identifier (unconditional 409 check)
       const existingId = users.customer?.identifier ?? users.customer?.phone ?? '';
