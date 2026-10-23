@@ -9,6 +9,7 @@ use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 pub struct V3Error {
     pub code: &'static str,
     pub field: Option<&'static str>,
+    pub field_path: Option<String>,
     pub message: String,
     pub status: StatusCode,
 }
@@ -24,6 +25,23 @@ impl V3Error {
         Self {
             code,
             field,
+            field_path: None,
+            message: message.into(),
+            status,
+        }
+    }
+
+    /// Creates a new `V3Error` with an owned field path (e.g. `lines[0].qty`, `limits.JPY`).
+    pub fn with_field_path(
+        code: &'static str,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        status: StatusCode,
+    ) -> Self {
+        Self {
+            code,
+            field: None,
+            field_path: Some(field_path.into()),
             message: message.into(),
             status,
         }
@@ -53,7 +71,7 @@ impl ResponseError for V3Error {
             &self.message
         };
 
-        let body = if let Some(field) = self.field {
+        let body = if let Some(field) = self.field_path.as_deref().or(self.field) {
             serde_json::json!({
                 "error": {
                     "code": self.code,
@@ -85,6 +103,7 @@ impl From<PolicyError> for V3Error {
         Self {
             code,
             field: None,
+            field_path: None,
             message: err.to_string(),
             status,
         }

@@ -20,7 +20,9 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
+use xc_rate::domain::currency::currency_register::CurrencyRegister;
+use xc_rate::infrastructure::currency::currency_register::PgCurrencyRegister;
 use xc_shift::application::branch_day::service::{
     BeginDraft, BranchDayService, ClockDirection, StartService,
 };
@@ -406,11 +408,22 @@ impl CommandAction for CustomerHoldReleaseCommand {
 
 pub struct DraftBeginCommand {
     service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>,
+    units: Arc<PgCurrencyRegister>,
 }
 
 impl DraftBeginCommand {
     pub fn new(service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>) -> Self {
-        Self { service }
+        let units = Arc::new(PgCurrencyRegister::new(
+            service.shifts().repo().pool().clone(),
+        ));
+        Self::with_units(service, units)
+    }
+
+    pub fn with_units(
+        service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>,
+        units: Arc<PgCurrencyRegister>,
+    ) -> Self {
+        Self { service, units }
     }
 }
 
@@ -450,7 +463,36 @@ impl CommandAction for DraftBeginCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
-        let amount = Money::parse(&input.amount).map_err(|e| {
+        let units = self
+            .units
+            .units(currency)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "serverError",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
+            .ok_or_else(|| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("currency"),
+                    "unknown currency",
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
+        let foreign_amount = ForeignAmount::parse(&input.amount, &units).map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("amount"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+        // shortcut: BeginDraft still takes 2-decimal Money, upgrade when M1 widens xc-shift draft amount type
+        let amount = Money::parse(&foreign_amount.to_string()).map_err(|e| {
             V3Error::new(
                 "validationFailed",
                 Some("amount"),
@@ -493,9 +535,10 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         branch_tx,
     )
     .with_lifecycle_hook(super::cash::shift_lifecycle_hook(&pool));
-    let repo = Arc::new(PgCustodyRepository::new(pool));
+    let repo = Arc::new(PgCustodyRepository::new(pool.clone()));
     let ports = Arc::new(PgCustodyPorts);
     let service = Arc::new(BranchDayService::new(repo, shifts, ports.clone()));
+    let units = Arc::new(PgCurrencyRegister::new(pool));
 
     CommandEndpoint::register(
         cfg,
@@ -512,7 +555,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
         cfg,
         Arc::new(CustomerHoldReleaseCommand::new(service.clone())),
     );
-    CommandEndpoint::register(cfg, Arc::new(DraftBeginCommand::new(service)));
+    CommandEndpoint::register(cfg, Arc::new(DraftBeginCommand::with_units(service, units)));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

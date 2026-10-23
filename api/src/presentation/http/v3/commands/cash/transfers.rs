@@ -16,7 +16,7 @@ use xc_cash::domain::transfer::cash_transfer::{
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, IntBound};
 
-use super::{caller_in, from_cash_error, validation_failed, whole_number};
+use super::{caller_in, from_cash_error, validation_failed, validation_failed_path, whole_number};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::cash::{
     CashRecordInput, CashRecordOutput, TransferCreateInput, TransferReceiveInput,
@@ -24,7 +24,6 @@ use crate::presentation::dto::v3::cash::{
 };
 use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
-use crate::presentation::http::v3::input;
 
 fn answer(t: CashTransfer) -> CashRecordOutput {
     CashRecordOutput {
@@ -34,14 +33,21 @@ fn answer(t: CashTransfer) -> CashRecordOutput {
 }
 
 fn line(
+    index: usize,
     currency: &str,
     denomination_id: i64,
-    field: &'static str,
+    min: i64,
     qty: &str,
 ) -> Result<NewTransferLine, V3Error> {
-    let q = whole_number(field, qty)?;
-    if field == "qty" {
-        input::integer("qty", q.into(), IntBound::integer(1, i32::MAX.into()))?;
+    let q = whole_number(index, qty)?;
+    if IntBound::integer(min, i32::MAX.into())
+        .check(q.into())
+        .is_err()
+    {
+        return Err(validation_failed_path(
+            format!("lines[{index}].qty"),
+            format!("quantity must be at least {min}"),
+        ));
     }
     Ok(NewTransferLine {
         currency: CurrencyCode::parse(currency)
@@ -84,7 +90,8 @@ impl CommandAction for TransferCreate {
         let lines = input
             .lines
             .iter()
-            .map(|l| line(&l.currency, l.denomination_id, "qty", &l.qty))
+            .enumerate()
+            .map(|(i, l)| line(i, &l.currency, l.denomination_id, 1, &l.qty))
             .collect::<Result<Vec<_>, _>>()?;
         let now = Utc::now();
         let user = caller_in(tx, who, now).await?;
@@ -110,7 +117,7 @@ impl CommandAction for TransferCreate {
                 pos_error::AppError::Domain(ref m) | pos_error::AppError::Validation(ref m)
                     if m == TRANSFER_TOTAL_EXCEEDS_COLUMN || m.contains("overflows i64") =>
                 {
-                    validation_failed("lines", m.clone())
+                    validation_failed("lines", TRANSFER_TOTAL_EXCEEDS_COLUMN)
                 }
                 other => from_cash_error(other),
             })?;
@@ -227,14 +234,8 @@ impl CommandAction for TransferReceive {
         let counted = input
             .lines
             .iter()
-            .map(|l| {
-                line(
-                    &l.currency,
-                    l.denomination_id,
-                    "qtyReceived",
-                    &l.qty_received,
-                )
-            })
+            .enumerate()
+            .map(|(i, l)| line(i, &l.currency, l.denomination_id, 0, &l.qty_received))
             .collect::<Result<Vec<_>, _>>()?;
         let now = Utc::now();
         let user = caller_in(tx, who, now).await?;
