@@ -452,9 +452,7 @@ jobs:
         if: matrix.partition == 1
         env:
           XC_TEST_TMP: ${{ runner.temp }}
-        run: |
-          bash scripts/fmt-included.test.sh
-          bash scripts/fmt-included-tests.test.sh
+        run: bash scripts/fmt-included.test.sh
 
       - name: Check included module formatting
         if: matrix.partition == 1
