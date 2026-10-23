@@ -542,6 +542,24 @@ impl<'f> KioskReplay<'f> {
         let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
         let now = super::snapshot_common::time(&step.at);
         match step.action.as_deref() {
+            Some("confirm") => {
+                // D19 (owner R-8 Q12, kiosk-shared-phone.md §4.2 D19): anonymous confirm v2 accepted is refused on the route; apply it behind the routes.
+                let booking_events =
+                    xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle(
+                        pool.clone(),
+                    );
+                let queue: Arc<dyn QueueTickets> = Arc::new(
+                    TicketIssuer::new(
+                        BranchTx::new(Transactor::new(pool.clone())),
+                        Arc::new(PgQueueRepository::new(pool.clone())),
+                    )
+                    .with_booking_events(booking_events),
+                );
+                service
+                    .confirm_with_queue(&branch, id, now, queue)
+                    .await
+                    .unwrap_or_else(|e| panic!("{label}: applied behind the routes: {e:?}"));
+            }
             Some("accept") => {
                 // Blueprint: the owner cannot operate the queue (C8). The behind-the-routes accept starts the ticket as the branch's queue operator, as a teller's accept would.
                 let manager_id = self
@@ -1309,7 +1327,12 @@ impl Counter {
         self.desk
             .clock
             .set(self.now() + chrono::Duration::seconds(4));
-        let confirmed = self.ask(None, "confirm", json!({ "id": id })).await;
+        let staff = self
+            .cookies
+            .keys()
+            .find(|k| k.as_str() != "owner")
+            .map(String::as_str);
+        let confirmed = self.ask(staff, "confirm", json!({ "id": id })).await;
         assert_eq!(confirmed.status, 200, "confirm: {}", confirmed.text);
         id.to_string()
     }

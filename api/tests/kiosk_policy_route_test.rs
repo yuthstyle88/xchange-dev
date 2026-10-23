@@ -187,15 +187,32 @@ fn as_the_blueprint_answers(
     recorded.cloned()
 }
 
+/// D19 (owner rule R-8, Q12 *"เฉพาะพนักงาน (แนะนำ)"*; design `kiosk-shared-phone.md` §4.2 D19,
+/// §4.4 B27): only staff issue numbers, so `confirm` is answered as the same caller's `accept`
+/// (the R8 rule of `tools/policy-map.mjs`). Every other name keeps v2's answer. Restated by the
+/// slice controller (claude/mbp-xc-ks).
+fn as_r8_answers(rows: &[Recorded], actor: &str, action: &str) -> Option<(String, u16)> {
+    let row = |name: &str| {
+        rows.iter()
+            .find(|r| r.actor == actor && r.action == name)
+            .unwrap_or_else(|| panic!("{actor} has a recorded {name:?}"))
+    };
+    if action == "confirm" {
+        return as_the_blueprint_answers(actor, "accept", row("accept").refusal.as_ref());
+    }
+    as_the_blueprint_answers(actor, action, row(action).refusal.as_ref())
+}
+
 // ── 1. every caller, every name of the recording ─────────────────────────────
 
 #[actix_web::test]
 async fn every_caller_gets_v2s_answer_to_every_kiosk_name() {
     let room = Room::open().await;
-    for row in recorded() {
+    let rows = recorded();
+    for row in &rows {
         let answer = room.ask(&row.actor, &row.action).await;
-        // C8 for the owner's user
-        let expected = as_the_blueprint_answers(&row.actor, &row.action, row.refusal.as_ref());
+        // C8 for the owner's user; R8 for `confirm`
+        let expected = as_r8_answers(&rows, &row.actor, &row.action);
         assert_answered_as_recorded(
             &answer,
             expected.as_ref(),
@@ -277,11 +294,18 @@ async fn a_name_the_kiosk_does_not_answer_is_refused_by_what_the_caller_is() {
 #[actix_web::test]
 async fn an_employee_who_must_change_their_password_is_answered_as_nobody() {
     let room = Room::open().await;
-    for row in recorded().iter().filter(|r| r.actor == "ANON") {
+    let rows = recorded();
+    for row in rows.iter().filter(|r| r.actor == "ANON") {
         let answer = room.ask(MUST_CHANGE, &row.action).await;
+        // R8: `confirm` is answered as nobody's `accept`
+        let expected = if row.action == "confirm" {
+            as_r8_answers(&rows, "ANON", "confirm")
+        } else {
+            row.refusal.clone()
+        };
         assert_answered_as_recorded(
             &answer,
-            row.refusal.as_ref(),
+            expected.as_ref(),
             &format!(
                 "{:?} by a front-desk employee who must change the password",
                 row.action

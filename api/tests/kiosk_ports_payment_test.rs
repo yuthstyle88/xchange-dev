@@ -114,7 +114,8 @@ async fn a_quote_on_a_channel_the_owner_switched_off_is_refused() {
 
 #[actix_web::test]
 async fn a_confirm_after_the_switch_is_refused_and_passes_once_switched_back() {
-    let counter = Counter::open(&[]).await;
+    let fr1 = kiosk_http_common::person("FR1", "FRONT", 0x11);
+    let counter = Counter::open(&[fr1]).await;
     let id = quoted(
         &counter,
         "00000000-0000-4000-8000-0000000d0002",
@@ -124,12 +125,12 @@ async fn a_confirm_after_the_switch_is_refused_and_passes_once_switched_back() {
     owner_saves(&counter, "MAIN", 0, switched("Alipay", false)).await;
     later(&counter, 4);
     counter
-        .ask(None, "confirm", json!({ "id": id }))
+        .ask(Some("FR1"), "confirm", json!({ "id": id }))
         .await
         .assert_refused(400, UNAVAILABLE, "confirm after Alipay was switched off");
 
     owner_saves(&counter, "MAIN", 1, defaults()).await;
-    let confirmed = counter.ask(None, "confirm", json!({ "id": id })).await;
+    let confirmed = counter.ask(Some("FR1"), "confirm", json!({ "id": id })).await;
     assert_eq!(confirmed.status, 200, "{}", confirmed.text);
     assert_eq!(confirmed.json()["status"], json!("WAITING"));
     counter.finish().await;

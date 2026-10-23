@@ -437,7 +437,8 @@ async fn kiosk_untiered_branch_quotes_normally() {
 #[actix_web::test]
 async fn kiosk_tiered_quote_confirm_succeeds_under_same_publication_and_refuses_after_new_publication()
  {
-    let counter = Counter::open(&[]).await;
+    let fr1 = kiosk_http_common::person("FR1", "FRONT", 0x11);
+    let counter = Counter::open(&[fr1]).await;
     let pool = counter.desk.db.pool.clone();
     let (_pub_id_1, _usd_tier_ids_1) = publish_tiered_usd(&pool).await;
 
@@ -447,7 +448,9 @@ async fn kiosk_tiered_quote_confirm_succeeds_under_same_publication_and_refuses_
 
     // Under F7, check_stale_in uses line_by_id: the quoted line is current -> confirm succeeds
     counter.desk.clock.advance(Duration::seconds(4));
-    let confirmed = counter.ask(None, "confirm", json!({ "id": id1 })).await;
+    let confirmed = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": id1 }))
+        .await;
     assert_eq!(
         confirmed.status, 200,
         "confirm succeeds under current publication: {}",
@@ -469,7 +472,9 @@ async fn kiosk_tiered_quote_confirm_succeeds_under_same_publication_and_refuses_
     // Confirm id2: refused because line_by_id answers None for an obsolete line
     counter.desk.clock.advance(Duration::seconds(4));
     let mark = audit_mark(&counter).await;
-    let refused = counter.ask(None, "confirm", json!({ "id": id2 })).await;
+    let refused = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": id2 }))
+        .await;
     refused.assert_refused(400, RATE_CHANGED, "confirm refused after new publication");
 
     // Stays QUOTED and wrote no audit line

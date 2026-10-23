@@ -459,7 +459,7 @@ async fn the_kiosk_json_rate_is_per_one() {
     assert_eq!((rate, unit_size), (d("23.5"), d("100")), "R1: per 100");
 
     counter.desk.clock.advance(Duration::seconds(4));
-    let confirmed = counter.ask(None, "confirm", json!({ "id": id })).await;
+    let confirmed = counter.ask(Some("FR1"), "confirm", json!({ "id": id })).await;
     assert_eq!(confirmed.status, 200, "{}", confirmed.text);
 
     let list = counter.ask(Some("owner"), "list", json!({})).await;
@@ -534,7 +534,8 @@ async fn a_kiosk_sell_by_baht_truncates_to_whole_yen_then_rounds_half_up() {
 /// counter).
 #[actix_web::test]
 async fn a_publish_between_quote_and_confirm_refuses_the_confirm() {
-    let counter = Counter::open(&[]).await;
+    let fr1 = kiosk_http_common::person("FR1", "FRONT", 0x11);
+    let counter = Counter::open(&[fr1]).await;
     let pool = counter.desk.db.pool.clone();
     publish(&pool, "MAIN", &[("USD", "33", "34")]).await;
     let first = line(&pool, "MAIN", "USD").await;
@@ -549,7 +550,9 @@ async fn a_publish_between_quote_and_confirm_refuses_the_confirm() {
     assert_eq!(second.buy, first.buy, "at the same rate");
 
     counter.desk.clock.advance(Duration::seconds(4));
-    let refused = counter.ask(None, "confirm", json!({ "id": early })).await;
+    let refused = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": early }))
+        .await;
     refused.assert_refused(400, RATE_CHANGED, "confirm after a publish");
     let (line_id, rate, unit_size, _, thb, _, status) = stored(&counter, early).await;
     assert_eq!(status, "QUOTED", "the refused confirm moved nothing");
@@ -568,7 +571,9 @@ async fn a_publish_between_quote_and_confirm_refuses_the_confirm() {
     let late = "00000000-0000-4000-8000-00000004b007";
     quote(&counter, late, "BUY", "USD", json!(100)).await;
     counter.desk.clock.advance(Duration::seconds(4));
-    let confirmed = counter.ask(None, "confirm", json!({ "id": late })).await;
+    let confirmed = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": late }))
+        .await;
     assert_eq!(confirmed.status, 200, "{}", confirmed.text);
     let (line_id, _, _, _, _, _, status) = stored(&counter, late).await;
     assert_eq!(status, "WAITING");
@@ -579,7 +584,8 @@ async fn a_publish_between_quote_and_confirm_refuses_the_confirm() {
 /// R4, the same when version 2 changes the rate: refused, nothing written, the quoted rate kept.
 #[actix_web::test]
 async fn a_publish_that_changes_the_rate_refuses_the_confirm() {
-    let counter = Counter::open(&[]).await;
+    let fr1 = kiosk_http_common::person("FR1", "FRONT", 0x11);
+    let counter = Counter::open(&[fr1]).await;
     let pool = counter.desk.db.pool.clone();
     publish(&pool, "MAIN", &[("JPY", "23.1", "23.5")]).await;
     let first = line(&pool, "MAIN", "JPY").await;
@@ -590,7 +596,7 @@ async fn a_publish_that_changes_the_rate_refuses_the_confirm() {
     publish(&pool, "MAIN", &[("JPY", "23.2", "23.5")]).await;
 
     counter.desk.clock.advance(Duration::seconds(4));
-    let refused = counter.ask(None, "confirm", json!({ "id": id })).await;
+    let refused = counter.ask(Some("FR1"), "confirm", json!({ "id": id })).await;
     refused.assert_refused(400, RATE_CHANGED, "confirm after a new rate");
     let (line_id, rate, unit_size, _, thb, _, status) = stored(&counter, id).await;
     assert_eq!(status, "QUOTED");

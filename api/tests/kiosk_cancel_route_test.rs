@@ -344,7 +344,7 @@ async fn quoted(db: &TestDb) -> String {
 /// A confirmed (`WAITING`) request with its walk-in ticket: (id, cancel token).
 async fn waiting(db: &TestDb) -> (String, String) {
     let id = quoted(db).await;
-    let ans = kiosk(db, "confirm", json!({ "id": id, "branchId": B01 })).await;
+    let ans = staff(db, "TELLER_A", "confirm", json!({ "id": id, "branchId": B01 })).await;
     assert_eq!(ans.status, StatusCode::OK, "confirm: {}", ans.text);
     let token = ans.body["cancelToken"]
         .as_str()
@@ -423,7 +423,7 @@ async fn the_first_confirm_answers_a_cancel_token_and_stores_only_its_hash() {
     let db = TestDb::start().await;
     let id = quoted(&db).await;
 
-    let first = kiosk(&db, "confirm", json!({ "id": id, "branchId": B01 })).await;
+    let first = staff(&db, "TELLER_A", "confirm", json!({ "id": id, "branchId": B01 })).await;
     assert_eq!(first.status, StatusCode::OK, "{}", first.text);
     let token = first.body["cancelToken"].as_str().expect("cancelToken");
     assert!(
@@ -446,7 +446,7 @@ async fn the_first_confirm_answers_a_cancel_token_and_stores_only_its_hash() {
             .expect("hash");
     assert_eq!(stored, Some(expected));
 
-    let again = kiosk(&db, "confirm", json!({ "id": id, "branchId": B01 })).await;
+    let again = staff(&db, "TELLER_A", "confirm", json!({ "id": id, "branchId": B01 })).await;
     assert_eq!(again.status, StatusCode::OK, "{}", again.text);
     assert!(
         again.body.get("cancelToken").is_none(),
