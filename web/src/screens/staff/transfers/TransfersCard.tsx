@@ -13,7 +13,9 @@ import type { CashTransferRow } from '../../../shared/api/generated/cash_transfe
 import type { DenominationRow, Denominations } from '../../../shared/api/generated/denominations';
 import type { TransferBranchRow, TransferBranches } from '../../../shared/api/generated/transfer_branches';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { checkInteger } from '../../../shared/ui/bounded';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
@@ -49,6 +51,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const [toBranchId, setToBranchId] = createSignal('');
   const [note, setNote] = createSignal('');
   const [quantities, setQuantities] = createSignal<Record<number, string>>({});
+  const [createLineErrors, setCreateLineErrors] = createSignal<Record<number, string>>({});
+  const [toBranchError, setToBranchError] = createSignal<string | null>(null);
   const [submitting, setSubmitting] = createSignal(false);
 
   // Active command references for create/submit retry
@@ -63,6 +67,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   // Receive form state
   const [activeReceive, setActiveReceive] = createSignal<CashTransferRow | null>(null);
   const [receiveQuantities, setReceiveQuantities] = createSignal<Record<number, string>>({});
+  const [receiveLineErrors, setReceiveLineErrors] = createSignal<Record<number, string>>({});
   const receiveCmds = new Map<string, ReturnType<typeof command<TransferReceiveInput, CashRecordOutput>>>();
 
   // Reconcile dialog state
@@ -143,6 +148,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
 
   const handleOpenCreate = () => {
     setShowCreate(true);
+    setCreateLineErrors({});
+    setToBranchError(null);
     setNotice(null);
     setError(null);
   };
@@ -151,21 +158,43 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     e.preventDefault();
     if (isCreateSaveDisabled()) return;
 
+    const lines: CashLineInput[] = [];
+    const nextLineErrors: Record<number, string> = {};
+    const labels: Record<string, string> = {
+      toBranch: t('toBranch'),
+      fromShift: t('kind_DRAWER_TO_SAFE'),
+      toShift: t('kind_SAFE_TO_DRAWER'),
+    };
+    const lineDenomIds: number[] = [];
+    for (const d of denominations()) {
+      const qStr = (quantities()[d.id] ?? '').trim();
+      if (qStr === '') continue;
+      const check = checkInteger(qStr, 1, 2147483647);
+      if (!check.ok) {
+        nextLineErrors[d.id] =
+          check.error === 'outOfRange' && !/^-?0+$/.test(qStr) ? t('qtyTooLarge') : t('qtyWholeMin1');
+        continue;
+      }
+      const idx = lines.length;
+      labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
+      lineDenomIds.push(d.id);
+      lines.push({
+        currency: d.currency,
+        denominationId: d.id,
+        qty: check.text,
+      });
+    }
+    if (Object.keys(nextLineErrors).length > 0) {
+      setCreateLineErrors(nextLineErrors);
+      return;
+    }
+    setCreateLineErrors({});
+    setToBranchError(null);
+
     const api = new ApiClient();
     setSubmitting(true);
 
     try {
-      const lines: CashLineInput[] = [];
-      for (const d of denominations()) {
-        const qStr = quantities()[d.id];
-        if (qStr && qStr.trim() !== '') {
-          lines.push({
-            currency: d.currency,
-            denominationId: d.id,
-            qty: qStr.trim(),
-          });
-        }
-      }
       const createBody: TransferCreateInput = {
         branch: props.ctx.me.branchId,
         kind: kind(),
@@ -221,6 +250,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setShowCreate(false);
       setNote('');
       setQuantities({});
+      setCreateLineErrors({});
+      setToBranchError(null);
       setToBranchId('');
       setKind('BRANCH');
       setError(null);
@@ -229,7 +260,16 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       await loadTransfers();
     } catch (err: unknown) {
       setNotice(null);
-      setError(wordedError(err));
+      const fe = fieldError(err, labels);
+      const match = fe.field?.match(/^lines\[(\d+)\]\.qty$/);
+      const denomId = match ? lineDenomIds[+match[1]!] : undefined;
+      if (denomId !== undefined) {
+        setCreateLineErrors({ [denomId]: fe.message });
+      } else if (fe.field === 'toBranch') {
+        setToBranchError(fe.message);
+      } else {
+        setError(fe.message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -268,6 +308,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const handleOpenReceive = (row: CashTransferRow) => {
     setActiveReceive(row);
     setReceiveQuantities({});
+    setReceiveLineErrors({});
     setError(null);
   };
 
@@ -275,19 +316,35 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     e.preventDefault();
     const row = activeReceive();
     if (!row || isBusy(row.id)) return;
-    setRowBusy(row.id, true);
 
     const lines: CashReceivedLineInput[] = [];
+    const nextLineErrors: Record<number, string> = {};
+    const labels: Record<string, string> = {};
+    const lineDenomIds: number[] = [];
     for (const d of denominations()) {
-      const qStr = receiveQuantities()[d.id];
-      if (qStr && qStr.trim() !== '') {
-        lines.push({
-          currency: d.currency,
-          denominationId: d.id,
-          qtyReceived: qStr.trim(),
-        });
+      const qStr = (receiveQuantities()[d.id] ?? '').trim();
+      if (qStr === '') continue;
+      const check = checkInteger(qStr, 0, 2147483647);
+      if (!check.ok) {
+        nextLineErrors[d.id] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+        continue;
       }
+      const idx = lines.length;
+      labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
+      labels[`lines[${idx}].qtyReceived`] = `${d.currency} ${d.faceValue}`;
+      lineDenomIds.push(d.id);
+      lines.push({
+        currency: d.currency,
+        denominationId: d.id,
+        qtyReceived: check.text,
+      });
     }
+    if (Object.keys(nextLineErrors).length > 0) {
+      setReceiveLineErrors(nextLineErrors);
+      return;
+    }
+    setReceiveLineErrors({});
+    setRowBusy(row.id, true);
 
     const api = new ApiClient();
     let cmd = receiveCmds.get(row.id);
@@ -309,13 +366,21 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       receiveCmds.delete(row.id);
       setActiveReceive(null);
       setReceiveQuantities({});
+      setReceiveLineErrors({});
       setError(null);
       setNotice(t('saved'));
       await props.ctx.refresh();
       await loadTransfers();
     } catch (err: unknown) {
       setNotice(null);
-      setError(wordedError(err));
+      const fe = fieldError(err, labels);
+      const match = fe.field?.match(/^lines\[(\d+)\]\.(?:qty|qtyReceived)$/);
+      const denomId = match ? lineDenomIds[+match[1]!] : undefined;
+      if (denomId !== undefined) {
+        setReceiveLineErrors({ [denomId]: fe.message });
+      } else {
+        setError(fe.message);
+      }
     } finally {
       setRowBusy(row.id, false);
     }
@@ -420,13 +485,19 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
               <select
                 data-testid="transfer-to-branch"
                 value={toBranchId()}
-                onChange={(e) => setToBranchId(e.currentTarget.value)}
+                onChange={(e) => {
+                  setToBranchId(e.currentTarget.value);
+                  setToBranchError(null);
+                }}
               >
                 <option value="">{t('selectBranch')}</option>
                 <For each={transferBranches()}>
                   {(b) => <option value={b.branchId}>{b.name}</option>}
                 </For>
               </select>
+              <Show when={toBranchError()}>
+                {(msg) => <span data-field-error="toBranch">{msg()}</span>}
+              </Show>
             </div>
           </Show>
 
@@ -451,6 +522,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                   </span>
                   <input
                     type="text"
+                    inputMode="numeric"
                     data-denomination-id={String(d.id)}
                     value={quantities()[d.id] ?? ''}
                     onInput={(e) => {
@@ -458,6 +530,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                       setQuantities((prev) => ({ ...prev, [d.id]: val }));
                     }}
                   />
+                  <Show when={createLineErrors()[d.id]}>
+                    {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
+                  </Show>
                 </div>
               )}
             </For>
@@ -481,6 +556,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 currentSubmitCmd = null;
                 setNote('');
                 setQuantities({});
+                setCreateLineErrors({});
+                setToBranchError(null);
                 setToBranchId('');
                 setKind('BRANCH');
                 setError(null);
@@ -512,6 +589,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                     </span>
                     <input
                       type="text"
+                      inputMode="numeric"
                       data-denomination-id={String(d.id)}
                       value={receiveQuantities()[d.id] ?? ''}
                       onInput={(e) => {
@@ -519,6 +597,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                         setReceiveQuantities((prev) => ({ ...prev, [d.id]: val }));
                       }}
                     />
+                    <Show when={receiveLineErrors()[d.id]}>
+                      {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
+                    </Show>
                   </div>
                 )}
               </For>
@@ -536,6 +617,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 onClick={() => {
                   setActiveReceive(null);
                   setReceiveQuantities({});
+                  setReceiveLineErrors({});
                 }}
               >
                 {t('cancel')}

@@ -1,6 +1,8 @@
 import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { checkInteger } from '../../../shared/ui/bounded';
 import { ApiClient } from '../../../shared/api/client';
 import type {
   CountSubmitInput,
@@ -51,9 +53,11 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
 
   const [countKind, setCountKind] = createSignal<'OPEN' | 'CLOSE' | null>(null);
   const [countQuantities, setCountQuantities] = createSignal<Record<number, string>>({});
+  const [countLineErrors, setCountLineErrors] = createSignal<Record<number, string>>({});
   const [showHandover, setShowHandover] = createSignal<boolean>(false);
   const [selectedReceiver, setSelectedReceiver] = createSignal<string>('');
   const [handoverQuantities, setHandoverQuantities] = createSignal<Record<number, string>>({});
+  const [handoverLineErrors, setHandoverLineErrors] = createSignal<Record<number, string>>({});
 
   const canOperate = () => can(props.ctx.me, 'ShiftOperate');
   const canCertify = () => can(props.ctx.me, 'ShiftCloseCertify');
@@ -155,6 +159,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
 
   const handleOpenCount = (kind: 'OPEN' | 'CLOSE') => {
     setCountKind(kind);
+    setCountLineErrors({});
     setShowHandover(false);
     if (denominations().length === 0) {
       void loadDenominations();
@@ -163,6 +168,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
 
   const handleOpenHandover = () => {
     setShowHandover(true);
+    setHandoverLineErrors({});
     setCountKind(null);
     setSelectedReceiver('');
     void loadHandoverReceivers();
@@ -180,23 +186,40 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     const inputs = form.querySelectorAll<HTMLInputElement>('input[data-denomination-id]');
     const lines: CashLineInput[] = [];
     const nextQuantities: Record<number, string> = {};
+    const nextErrors: Record<number, string> = {};
+    const labels: Record<string, string> = {};
+    const lineDenomIds: number[] = [];
 
     inputs.forEach((input) => {
       const idStr = input.getAttribute('data-denomination-id');
       if (!idStr) return;
       const d = denominations().find((x) => String(x.id) === idStr);
+      const id = d ? d.id : +idStr;
       const qty = input.value.trim();
-      nextQuantities[d ? d.id : +idStr] = input.value;
+      nextQuantities[id] = input.value;
       if (qty !== '' && d) {
+        const check = checkInteger(qty, 0, 2147483647);
+        if (!check.ok) {
+          nextErrors[d.id] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+          return;
+        }
+        const idx = lines.length;
+        labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
+        lineDenomIds.push(d.id);
         lines.push({
           currency: d.currency,
           denominationId: d.id,
-          qty,
+          qty: check.text,
         });
       }
     });
 
     setCountQuantities(nextQuantities);
+    if (Object.keys(nextErrors).length > 0) {
+      setCountLineErrors(nextErrors);
+      return;
+    }
+    setCountLineErrors({});
 
     const body: CountSubmitInput = {
       branch: props.ctx.me.branchId,
@@ -215,12 +238,20 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       setError(null);
       setCountKind(null);
       setCountQuantities({});
+      setCountLineErrors({});
       await props.ctx.refresh();
       await loadCashCounts();
     } catch (err: unknown) {
       setNotice(null);
       errorFrom = null;
-      setError(wordedError(err));
+      const fe = fieldError(err, labels);
+      const match = fe.field?.match(/^lines\[(\d+)\]\.qty$/);
+      const denomId = match ? lineDenomIds[+match[1]!] : undefined;
+      if (denomId !== undefined) {
+        setCountLineErrors({ [denomId]: fe.message });
+      } else {
+        setError(fe.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -235,23 +266,40 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     const inputs = form.querySelectorAll<HTMLInputElement>('input[data-denomination-id]');
     const lines: CashLineInput[] = [];
     const nextQuantities: Record<number, string> = {};
+    const nextErrors: Record<number, string> = {};
+    const labels: Record<string, string> = { receiverId: t('receiver') };
+    const lineDenomIds: number[] = [];
 
     inputs.forEach((input) => {
       const idStr = input.getAttribute('data-denomination-id');
       if (!idStr) return;
       const d = denominations().find((x) => String(x.id) === idStr);
+      const id = d ? d.id : +idStr;
       const qty = input.value.trim();
-      nextQuantities[d ? d.id : +idStr] = input.value;
+      nextQuantities[id] = input.value;
       if (qty !== '' && d) {
+        const check = checkInteger(qty, 0, 2147483647);
+        if (!check.ok) {
+          nextErrors[d.id] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+          return;
+        }
+        const idx = lines.length;
+        labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
+        lineDenomIds.push(d.id);
         lines.push({
           currency: d.currency,
           denominationId: d.id,
-          qty,
+          qty: check.text,
         });
       }
     });
 
     setHandoverQuantities(nextQuantities);
+    if (Object.keys(nextErrors).length > 0) {
+      setHandoverLineErrors(nextErrors);
+      return;
+    }
+    setHandoverLineErrors({});
 
     const body: HandoverStartInput = {
       branch: props.ctx.me.branchId,
@@ -271,12 +319,20 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       setShowHandover(false);
       setSelectedReceiver('');
       setHandoverQuantities({});
+      setHandoverLineErrors({});
       await props.ctx.refresh();
       await loadPendingHandovers();
     } catch (err: unknown) {
       setNotice(null);
       errorFrom = null;
-      setError(wordedError(err));
+      const fe = fieldError(err, labels);
+      const match = fe.field?.match(/^lines\[(\d+)\]\.qty$/);
+      const denomId = match ? lineDenomIds[+match[1]!] : undefined;
+      if (denomId !== undefined) {
+        setHandoverLineErrors({ [denomId]: fe.message });
+      } else {
+        setError(fe.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -450,6 +506,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                     data-denomination-id={d.id}
                     class="xc-shift-denom-input"
                     type="text"
+                    inputMode="numeric"
                     value={countQuantities()[d.id] ?? ''}
                     onInput={(e) => {
                       const v = e.currentTarget.value;
@@ -460,6 +517,9 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       setCountQuantities((prev) => ({ ...prev, [d.id]: v }));
                     }}
                   />
+                  <Show when={countLineErrors()[d.id]}>
+                    {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
+                  </Show>
                 </div>
               )}
             </For>
@@ -479,6 +539,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
               onClick={() => {
                 setCountKind(null);
                 setCountQuantities({});
+                setCountLineErrors({});
               }}
             >
               {t('cancel')}
@@ -520,6 +581,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                     data-denomination-id={d.id}
                     class="xc-shift-denom-input"
                     type="text"
+                    inputMode="numeric"
                     value={handoverQuantities()[d.id] ?? ''}
                     onInput={(e) => {
                       const v = e.currentTarget.value;
@@ -530,6 +592,9 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       setHandoverQuantities((prev) => ({ ...prev, [d.id]: v }));
                     }}
                   />
+                  <Show when={handoverLineErrors()[d.id]}>
+                    {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
+                  </Show>
                 </div>
               )}
             </For>
@@ -550,6 +615,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                 setShowHandover(false);
                 setSelectedReceiver('');
                 setHandoverQuantities({});
+                setHandoverLineErrors({});
               }}
             >
               {t('cancel')}

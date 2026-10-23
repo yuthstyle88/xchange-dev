@@ -238,13 +238,14 @@ describe('CashFlows: branch switch form, banners and dialog ownership (#2432)', 
     expect(root.querySelector<HTMLSelectElement>('#transfer-from-shift')!.value).toBe('');
     expect(root.querySelector<HTMLInputElement>('#transfer-note')!.value).toBe('');
 
+    choose('#transfer-from-shift', 'S-B');
     root.querySelector<HTMLButtonElement>('[data-action="create"]')!.click();
     await vi.waitFor(() => expect(server.posts.length).toBe(1));
 
     expect(server.posts[0]!.body).toMatchObject({
       branch: 'B',
       kind: 'DRAWER_TO_SAFE',
-      fromShiftId: null,
+      fromShiftId: 'S-B',
       toShiftId: null,
       note: '',
     });
@@ -262,6 +263,7 @@ describe('CashFlows: branch switch form, banners and dialog ownership (#2432)', 
     expect(root.querySelector<HTMLSelectElement>('#transfer-to-shift')!.value).toBe('');
     expect(root.querySelector<HTMLInputElement>('#transfer-note')!.value).toBe('');
 
+    choose('#transfer-to-shift', 'S-A');
     root.querySelector<HTMLButtonElement>('[data-action="create"]')!.click();
     await vi.waitFor(() => expect(server.posts.length).toBe(2));
 
@@ -269,7 +271,7 @@ describe('CashFlows: branch switch form, banners and dialog ownership (#2432)', 
       branch: 'A',
       kind: 'SAFE_TO_DRAWER',
       fromShiftId: null,
-      toShiftId: null,
+      toShiftId: 'S-A',
       note: '',
     });
   });
