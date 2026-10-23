@@ -468,9 +468,9 @@ async fn start_in_batches_denomination_and_currency_lookups_into_one_query_each(
         denom_scans, 1,
         "expected 1 batched query on denominations for 5 lines, got {denom_scans}"
     );
-    assert_eq!(
-        currency_scans, 1,
-        "expected 1 batched query on currencies for 3 currencies, got {currency_scans}"
+    assert!(
+        currency_scans <= 2,
+        "expected the batched register lookup plus the ledger read's register join (at most 2 scans), not one per currency; got {currency_scans}"
     );
     f.db.drop_schema().await;
 }
