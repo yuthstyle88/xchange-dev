@@ -34,7 +34,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use xc_auth::domain::access::{Actor, Role, ScopedRole, Target};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xc_shift::domain::custody::branch_day::BranchDay;
 use xc_shift::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use xc_shift::domain::custody::value_objects::custody_error::CustodyError;
@@ -92,8 +92,12 @@ fn at(branch: &str) -> Target {
     Target::new(ORG, Some(BranchId::new(branch)), None)
 }
 
-fn usd(amount: &str) -> Money {
-    Money::parse(amount).expect("a money string")
+fn usd(amount: &str) -> ForeignAmount {
+    let m = Money::parse(amount).expect("a money string");
+    ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+        m.minor_i128(),
+        2,
+    ))
 }
 
 fn save(draft: Option<&str>) -> SaveAttempt {

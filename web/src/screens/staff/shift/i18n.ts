@@ -19,6 +19,8 @@ export const th: Record<string, string> = {
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
   countAwaitingFinance: 'ยอดต่างเกินเกณฑ์ ส่งให้ฝ่ายการเงินอนุมัติแล้ว ยังไม่ถือว่ารับรอง',
   approvalRequest: 'คำขออนุมัติ',
+  qtyWholeMin0: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป',
+  qtyTooLarge: 'จำนวนเกินค่าสูงสุดที่กำหนด',
 };
 
 export const en: Record<string, string> = {
@@ -41,4 +43,6 @@ export const en: Record<string, string> = {
   connectionError: 'Connection error',
   countAwaitingFinance: 'The difference is over the limit and went to finance for approval; the count is not verified yet',
   approvalRequest: 'Approval request',
+  qtyWholeMin0: 'Quantity must be a whole number of at least 0',
+  qtyTooLarge: 'Quantity exceeds the maximum allowed',
 };

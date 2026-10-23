@@ -1,7 +1,8 @@
 //! Payload reader helpers for shift commands.
 
+use rust_decimal::Decimal;
 use serde_json::Value;
-use xc_kernel::money::{CurrencyCode, Money};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money};
 
 use crate::domain::shift::value_objects::balances::Balances;
 use crate::domain::shift::value_objects::shift_error::ShiftError;
@@ -67,7 +68,13 @@ pub fn read_balances(p: &Value, key: &str) -> Result<Balances, ShiftError> {
             }
             let amount = read_amount_from_val(val, false)?;
             if !amount.is_zero() {
-                pairs.push((code, amount));
+                pairs.push((
+                    code,
+                    ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
+                        amount.minor_i128(),
+                        2,
+                    )),
+                ));
             }
         }
     }

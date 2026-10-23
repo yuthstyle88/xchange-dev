@@ -87,7 +87,7 @@ async fn without_an_own_shift(replay: &Replay<'_>) {
         .map(|b| {
             (
                 b.currency.as_str().to_owned(),
-                json!(xc_kernel::money::fixed2(b.expected.minor())),
+                json!(format!("{:.2}", b.expected.value())),
             )
         })
         .collect();

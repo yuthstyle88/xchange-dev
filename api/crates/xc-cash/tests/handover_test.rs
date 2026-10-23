@@ -213,11 +213,10 @@ impl Db {
             .into_iter()
             .find(|b| b.currency.as_str() == currency)
             .unwrap_or_else(|| panic!("the {currency} balance of {shift}: row not found"));
-        let to_dec = |minor: i128| Decimal::from_i128_with_scale(minor, 2).normalize();
         (
-            to_dec(row.opening.minor_i128()),
-            to_dec(row.expected.minor()),
-            row.counted.map(|m| to_dec(m.minor_i128())),
+            row.opening.value().normalize(),
+            row.expected.value().normalize(),
+            row.counted.map(|m| m.value().normalize()),
         )
     }
 

@@ -22,7 +22,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, MoneyDelta, Rate, Side};
+use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, QuantityDelta, Rate, Side};
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::entities::shift::{Shift, ShiftStatus};
 use xc_shift::domain::shift::entities::stock_movement::StockMovement;
@@ -326,8 +326,12 @@ pub fn code(text: &str) -> CurrencyCode {
     CurrencyCode::parse(text).unwrap_or_else(|_| panic!("{text} is not in the register"))
 }
 
-pub fn money(text: &str) -> Money {
-    Money::parse(text).unwrap_or_else(|e| panic!("{text}: {e}"))
+pub fn money(text: &str) -> ForeignAmount {
+    let m = Money::parse(text).unwrap_or_else(|e| panic!("{text}: {e}"));
+    ForeignAmount::from_decimal(rust_decimal::Decimal::from_i128_with_scale(
+        m.minor_i128(),
+        2,
+    ))
 }
 
 /// The sentence of a business refusal; panics on any other kind of error.
@@ -357,7 +361,7 @@ fn plain(minor: i128) -> String {
 pub fn shown_balances(b: &Balances) -> BTreeMap<String, String> {
     b.non_zero()
         .into_iter()
-        .map(|(c, m)| (c.as_str().to_owned(), plain(m.minor_i128())))
+        .map(|(c, m)| (c.as_str().to_owned(), format!("{:.2}", m.value())))
         .collect()
 }
 
@@ -365,7 +369,9 @@ pub fn shown_balances(b: &Balances) -> BTreeMap<String, String> {
 pub fn shown_delta(d: &StockDelta) -> BTreeMap<String, String> {
     d.non_zero()
         .into_iter()
-        .map(|(c, m): (CurrencyCode, MoneyDelta)| (c.as_str().to_owned(), plain(m.minor())))
+        .map(|(c, m): (CurrencyCode, QuantityDelta)| {
+            (c.as_str().to_owned(), format!("{:.2}", m.value()))
+        })
         .collect()
 }
 
@@ -410,9 +416,9 @@ pub fn tx_delta(t: &Tx) -> StockDelta {
     let amount = money(&t.amount);
     let quote = per_one(
         side,
-        amount,
+        Money::parse(&t.amount).expect("fixture amount"),
         Rate::parse(&t.rate).expect("fixture rate"),
-        money(&t.fee),
+        Money::parse(&t.fee).expect("fixture fee"),
     )
     .expect("fixture quote");
     StockDelta::for_tx(side, code(&t.currency), amount, &quote, t.method == "Cash")

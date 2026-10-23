@@ -1,6 +1,6 @@
 //! Shift ledger.
 
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, QuantityDelta};
 
 use crate::domain::shift::value_objects::balances::Balances;
 use crate::domain::shift::value_objects::stock_delta::{StockDelta, StockError};
@@ -18,7 +18,7 @@ impl ShiftLedger {
     pub fn expected(opening: &Balances, deltas: &[StockDelta]) -> Result<Balances, StockError> {
         let mut final_pairs = Vec::new();
         for &code in CurrencyCode::all() {
-            let mut current = MoneyDelta::from(opening.get(code));
+            let mut current = QuantityDelta::from(opening.get(code));
             for delta in deltas {
                 current = current
                     .checked_add(delta.get(code))
@@ -27,7 +27,7 @@ impl ShiftLedger {
             if current.is_negative() {
                 return Err(StockError::Insufficient(code));
             }
-            let money = current.to_money().map_err(|_| StockError::OutOfRange)?;
+            let money = current.to_amount().map_err(|_| StockError::OutOfRange)?;
             if !money.is_zero() {
                 final_pairs.push((code, money));
             }
@@ -41,7 +41,7 @@ impl ShiftLedger {
         for &code in CurrencyCode::all() {
             let bal = balance.get(code);
             let d = delta.get(code);
-            let sum = MoneyDelta::from(bal)
+            let sum = QuantityDelta::from(bal)
                 .checked_add(d)
                 .map_err(|_| StockError::OutOfRange)?;
             if sum.is_negative() {
@@ -57,7 +57,9 @@ impl ShiftLedger {
         for &code in CurrencyCode::all() {
             let exp = expected.get(code);
             let cnt = counted.get(code);
-            let diff = MoneyDelta::from(cnt).minus(exp);
+            let diff = QuantityDelta::from(cnt)
+                .checked_minus(exp)
+                .expect("difference of ForeignAmounts fits in QuantityDelta");
             if !diff.is_zero() {
                 pairs.push((code, diff));
             }
