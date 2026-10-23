@@ -465,7 +465,7 @@ describe('MK-8 M03: Members screen and segments (#1407)', () => {
       await vi.waitFor(() => {
         const text = root.textContent ?? '';
         // #1407 item 7: pinned i18n text, raw code must be absent
-        expect(text).toContain(table.th['error.validationFailed']);
+        expect(root.querySelector('[data-field-error="name"]')?.textContent).toBe(`${table.th.fieldName} ไม่ถูกต้อง`);
         expect(text).not.toContain('validationFailed');
       });
     });

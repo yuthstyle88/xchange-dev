@@ -7,7 +7,8 @@ import type {
 } from '../../../shared/api/generated/segment_preview';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
-import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error';
+import { isServerFailure } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 
 
@@ -37,17 +38,20 @@ const ERROR_KEYS: Record<string, keyof typeof table.th> = {
   roleNotAllowed: 'error.roleNotAllowed',
 };
 
-function memberError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (isServerFailure(err)) {
-      return wordedError(err);
-    }
+function memberError(err: unknown): FieldMessage {
+  const r = fieldError(err, {
+    name: t('fieldName'),
+    'rule.recencyDays': t('fieldRecencyDays'),
+    'rule.frequency': t('fieldFrequency'),
+    'rule.valueThb': t('fieldValueThb'),
+  });
+  if (!r.field && err instanceof ApiError && !isServerFailure(err)) {
     const mapped = ERROR_KEYS[err.code];
     if (mapped) {
-      return t(mapped);
+      return { message: t(mapped) };
     }
   }
-  return wordedError(err);
+  return r;
 }
 
 export function Members(_props: AdminMenuProps): JSX.Element {
@@ -61,7 +65,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
   const [defining, setDefining] = createSignal(false);
   const [snapshotting, setSnapshotting] = createSignal(false);
-  const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<FieldMessage | null>(null);
 
   const [definition, setDefinition] = createSignal<SegmentDefineOutput | null>(null);
   const [snapshotInfo, setSnapshotInfo] = createSignal<SegmentSnapshotOutput | null>(null);
@@ -74,29 +78,72 @@ export function Members(_props: AdminMenuProps): JSX.Element {
     (b) => `/api/segments/${b.id}/snapshots`,
   );
 
+  const fieldMessage = (field: string): string | null => {
+    const cur = error();
+    return cur?.field === field ? cur.message : null;
+  };
+
   async function handleDefine(e?: Event) {
     e?.preventDefault();
     if (defining()) return;
     setDefining(true);
-    setErrorMsg(null);
+    setError(null);
 
     try {
+      const nameTrimmed = name().trim();
+      if (nameTrimmed === '') {
+        setError(
+          memberError(
+            new ApiError({ status: 400, code: 'validationFailed', field: 'name', message: '' }),
+          ),
+        );
+        return;
+      }
+
       const rule: Record<string, unknown> = {};
       const recencyTrimmed = recencyDays().trim();
       if (recencyTrimmed !== '') {
         if (!/^\d+$/.test(recencyTrimmed)) {
-          setErrorMsg(t('error.validationFailed'));
+          setError({ message: t('error.validationFailed') });
           return;
         }
-        rule.recency_days = Number.parseInt(recencyTrimmed, 10);
+        const n = Number.parseInt(recencyTrimmed, 10);
+        if (n > 4294967295) {
+          setError(
+            memberError(
+              new ApiError({
+                status: 400,
+                code: 'validationFailed',
+                field: 'rule.recencyDays',
+                message: '',
+              }),
+            ),
+          );
+          return;
+        }
+        rule.recency_days = n;
       }
       const freqTrimmed = frequency().trim();
       if (freqTrimmed !== '') {
         if (!/^\d+$/.test(freqTrimmed)) {
-          setErrorMsg(t('error.validationFailed'));
+          setError({ message: t('error.validationFailed') });
           return;
         }
-        rule.frequency = Number.parseInt(freqTrimmed, 10);
+        const n = Number.parseInt(freqTrimmed, 10);
+        if (n > 4294967295) {
+          setError(
+            memberError(
+              new ApiError({
+                status: 400,
+                code: 'validationFailed',
+                field: 'rule.frequency',
+                message: '',
+              }),
+            ),
+          );
+          return;
+        }
+        rule.frequency = n;
       }
       if (valueThb().trim() !== '') {
         rule.value_thb = valueThb().trim();
@@ -106,7 +153,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
       }
 
       const body = {
-        name: name().trim(),
+        name: nameTrimmed,
         rule,
       };
 
@@ -115,7 +162,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
       setSnapshotInfo(null);
       setPreview(null);
     } catch (err) {
-      setErrorMsg(memberError(err));
+      setError(memberError(err));
     } finally {
       setDefining(false);
     }
@@ -135,7 +182,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
     const def = definition();
     if (!def) return;
     setSnapshotting(true);
-    setErrorMsg(null);
+    setError(null);
 
     try {
       const body = { id: def.id };
@@ -144,7 +191,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
       setPreview(null);
       await loadPreview(res.id);
     } catch (err) {
-      setErrorMsg(memberError(err));
+      setError(memberError(err));
     } finally {
       setSnapshotting(false);
     }
@@ -154,7 +201,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
   return (
     <div class="xc-campaigns-screen">
-      <Show when={errorMsg()}>
+      <Show when={error() && !error()!.field ? error()!.message : null}>
         {(msg) => (
           <div class="xc-campaigns-error" role="alert">
             <span>{msg()}</span>
@@ -166,7 +213,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
         <div class="xc-detail-header">
           <h3>{t('defineTitle')}</h3>
         </div>
-        <form onSubmit={(e) => void handleDefine(e)}>
+        <form noValidate onSubmit={(e) => void handleDefine(e)}>
           <div class="xc-form-grid">
             <div class="xc-form-group">
               <label for="segment-name">{t('fieldName')}</label>
@@ -175,10 +222,14 @@ export function Members(_props: AdminMenuProps): JSX.Element {
                 name="name"
                 data-field="name"
                 type="text"
+                required
                 class="xc-input"
                 value={name()}
                 onInput={(e) => setName(e.currentTarget.value)}
               />
+              <Show when={fieldMessage('name')}>
+                {(msg) => <span data-field-error="name">{msg()}</span>}
+              </Show>
             </div>
 
             <div class="xc-form-group">
@@ -192,6 +243,9 @@ export function Members(_props: AdminMenuProps): JSX.Element {
                 value={recencyDays()}
                 onInput={(e) => setRecencyDays(e.currentTarget.value)}
               />
+              <Show when={fieldMessage('rule.recencyDays')}>
+                {(msg) => <span data-field-error="rule.recencyDays">{msg()}</span>}
+              </Show>
             </div>
 
             <div class="xc-form-group">
@@ -205,6 +259,9 @@ export function Members(_props: AdminMenuProps): JSX.Element {
                 value={frequency()}
                 onInput={(e) => setFrequency(e.currentTarget.value)}
               />
+              <Show when={fieldMessage('rule.frequency')}>
+                {(msg) => <span data-field-error="rule.frequency">{msg()}</span>}
+              </Show>
             </div>
 
             <div class="xc-form-group">
@@ -218,6 +275,9 @@ export function Members(_props: AdminMenuProps): JSX.Element {
                 value={valueThb()}
                 onInput={(e) => setValueThb(e.currentTarget.value)}
               />
+              <Show when={fieldMessage('rule.valueThb')}>
+                {(msg) => <span data-field-error="rule.valueThb">{msg()}</span>}
+              </Show>
             </div>
 
             <div class="xc-form-group">
