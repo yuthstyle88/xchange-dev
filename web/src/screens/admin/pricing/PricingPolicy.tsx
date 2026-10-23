@@ -1,6 +1,6 @@
 // §9 PricingPolicy: one currency's override margins and min spread (pricingConfigure) (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
-import type { ApiClient } from '../../../shared/api/client';
+import { ApiError, type ApiClient } from '../../../shared/api/client';
 import type { PricingRowDto } from '../../../shared/api/generated/pricing_board';
 import type {
   PricingConfigureInput,
@@ -8,7 +8,8 @@ import type {
 } from '../../../shared/api/generated/pricing_configure';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { fieldError } from '../../../shared/i18n/field-error';
+import { RATE_PERCENT, atMost, checkDecimal, type Bound } from '../../../shared/ui/bounded';
 import * as table from './i18n';
 import { ROUTE_PRICING_CONFIGURE, type TierNo } from './pricing-labels';
 import './pricing-policy.css';
@@ -25,6 +26,7 @@ export interface PricingPolicyProps {
 }
 
 const TIERS: readonly TierNo[] = [1, 2, 3, 4];
+const MIN_SPREAD_BOUND: Bound = { ...atMost(RATE_PERCENT, '5'), sign: 'nonNegative' };
 
 export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
   const t = screenT('admin.pricing', table);
@@ -54,6 +56,34 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
   const [reason, setReason] = createSignal('');
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
+
+  const labels = (): Record<string, string> => {
+    const out: Record<string, string> = {
+      reason: t('reason'),
+      minSpreadPct: t('minSpread'),
+    };
+    for (const tierNo of TIERS) {
+      out[`margins.buy-${tierNo}`] = `${t('tier', { n: tierNo })} ${t('buy')} (${t('margin')})`;
+      out[`margins.sell-${tierNo}`] = `${t('tier', { n: tierNo })} ${t('sell')} (${t('margin')})`;
+    }
+    return out;
+  };
+
+  const localError = (field: string): string =>
+    fieldError(
+      new ApiError({ status: 400, code: 'validationFailed', field, message: '' }),
+      labels(),
+    ).message;
+
+  const applyError = (err: unknown) => {
+    const fe = fieldError(err, labels());
+    if (fe.field) {
+      setFieldErrors({ [fe.field]: fe.message });
+    } else {
+      setError(fe.message);
+    }
+  };
 
   createEffect(() => {
     setMargins({
@@ -69,6 +99,7 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
     setMinSpread(props.row.minSpreadPct ?? '');
     setReason('');
     setError(null);
+    setFieldErrors({});
   });
 
   const updateMargin = (key: string, value: string) => {
@@ -79,25 +110,51 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
     e.preventDefault();
     if (!props.mayEdit || saving()) return;
     setError(null);
+    setFieldErrors({});
+
+    const cur = margins();
+    const nextFieldErrors: Record<string, string> = {};
+    const tiers = TIERS.map((n) => {
+      const buyMarginPct = (cur[`buy-${n}`] ?? '').trim();
+      const sellMarginPct = (cur[`sell-${n}`] ?? '').trim();
+      if (!checkDecimal(buyMarginPct, RATE_PERCENT).ok) {
+        nextFieldErrors[`margins.buy-${n}`] = localError(`margins.buy-${n}`);
+      }
+      if (!checkDecimal(sellMarginPct, RATE_PERCENT).ok) {
+        nextFieldErrors[`margins.sell-${n}`] = localError(`margins.sell-${n}`);
+      }
+      return { tierNo: n, buyMarginPct, sellMarginPct };
+    });
+
+    const trimmedSpread = minSpread().trim();
+    if (trimmedSpread !== '' && !checkDecimal(trimmedSpread, MIN_SPREAD_BOUND).ok) {
+      nextFieldErrors.minSpreadPct = localError('minSpreadPct');
+    }
+
+    const trimmedReason = reason().trim();
+    if (trimmedReason === '') {
+      nextFieldErrors.reason = localError('reason');
+    }
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
     setSaving(true);
     try {
-      const cur = margins();
       const payload: PricingConfigureInput = {
         policyVersionId: props.policyVersionId,
         currency: props.row.currency,
-        tiers: TIERS.map((n) => ({
-          tierNo: n,
-          buyMarginPct: cur[`buy-${n}`] ?? '',
-          sellMarginPct: cur[`sell-${n}`] ?? '',
-        })),
-        minSpreadPct: minSpread().trim() === '' ? null : minSpread().trim(),
+        tiers,
+        minSpreadPct: trimmedSpread === '' ? null : trimmedSpread,
         anchorSource: null,
-        reason: reason().trim(),
+        reason: trimmedReason,
       };
       const out = await configureWrite.send(payload);
       props.onSaved(out);
     } catch (err: unknown) {
-      setError(wordedError(err));
+      applyError(err);
     } finally {
       setSaving(false);
     }
@@ -107,6 +164,14 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
     e.preventDefault();
     if (!props.mayEdit || saving()) return;
     setError(null);
+    setFieldErrors({});
+
+    const trimmedReason = reason().trim();
+    if (trimmedReason === '') {
+      setFieldErrors({ reason: localError('reason') });
+      return;
+    }
+
     setSaving(true);
     try {
       const payload: PricingConfigureInput = {
@@ -115,12 +180,12 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
         tiers: null,
         minSpreadPct: null,
         anchorSource: null,
-        reason: reason().trim(),
+        reason: trimmedReason,
       };
       const out = await configureWrite.send(payload);
       props.onSaved(out);
     } catch (err: unknown) {
-      setError(wordedError(err));
+      applyError(err);
     } finally {
       setSaving(false);
     }
@@ -175,6 +240,9 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
                   value={margins()[`buy-${tierNo}`] ?? ''}
                   onInput={(e) => updateMargin(`buy-${tierNo}`, e.currentTarget.value)}
                 />
+                <Show when={fieldErrors()[`margins.buy-${tierNo}`]}>
+                  {(msg) => <span data-field-error={`margins.buy-${tierNo}`}>{msg()}</span>}
+                </Show>
               </div>
               <div class="pricing-policy-field">
                 <label class="pricing-policy-label" for={`sell-margin-${tierNo}`}>
@@ -190,6 +258,9 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
                   value={margins()[`sell-${tierNo}`] ?? ''}
                   onInput={(e) => updateMargin(`sell-${tierNo}`, e.currentTarget.value)}
                 />
+                <Show when={fieldErrors()[`margins.sell-${tierNo}`]}>
+                  {(msg) => <span data-field-error={`margins.sell-${tierNo}`}>{msg()}</span>}
+                </Show>
               </div>
             </div>
           )}
@@ -210,6 +281,9 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
           value={minSpread()}
           onInput={(e) => setMinSpread(e.currentTarget.value)}
         />
+        <Show when={fieldErrors().minSpreadPct}>
+          {(msg) => <span data-field-error="minSpreadPct">{msg()}</span>}
+        </Show>
       </div>
 
       <div class="pricing-policy-field">
@@ -227,6 +301,9 @@ export function PricingPolicy(props: PricingPolicyProps): JSX.Element {
           value={reason()}
           onInput={(e) => setReason(e.currentTarget.value)}
         />
+        <Show when={fieldErrors().reason}>
+          {(msg) => <span data-field-error="reason">{msg()}</span>}
+        </Show>
       </div>
 
       <div class="pricing-policy-actions">

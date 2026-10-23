@@ -179,6 +179,10 @@ describe('PricingPolicy', () => {
       command: () => ({ status: 400, body: errPayload }),
     });
 
+    const reasonInput = host.querySelector<HTMLInputElement>('input[name="reason"]')!;
+    reasonInput.value = 'test refusal';
+    reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
+
     const saveBtn = host.querySelector<HTMLButtonElement>('button[name="save"]')!;
     expect(saveBtn).not.toBeNull();
     saveBtn.click();
