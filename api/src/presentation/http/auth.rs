@@ -402,9 +402,13 @@ async fn v3_otp_verify_inner(
                 if let Err(logout_err) = session
                     .logout(&signed_in.tail.session_token, Some(ip))
                     .await
+                    .map_err(|e| match e {
+                        SessionError::Database(msg) => msg,
+                        other => format!("{other:?}"),
+                    })
                 {
                     tracing::error!(
-                        error = ?logout_err,
+                        error = %logout_err,
                         "session logout after branch tablet bind failure failed"
                     );
                 }
