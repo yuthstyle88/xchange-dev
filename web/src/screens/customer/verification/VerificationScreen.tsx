@@ -19,6 +19,20 @@ import './verification.css';
 
 const t = screenT('customer.verification', table);
 
+const bangkokDateFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function formatExpiresAt(raw: string): string {
+  if (!raw || /^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return bangkokDateFmt.format(d);
+}
+
 function formatRefusalError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === 'outOfScope') {
@@ -575,8 +589,8 @@ export function VerificationScreen(): JSX.Element {
                       <p class="xc-verification-card-desc">{t('verifiedDesc')}</p>
                       <Show when={c().expiresAt}>
                         {(exp) => (
-                          <p class="xc-verification-card-desc" data-expires-at={exp()}>
-                            {t('expiresAtLabel', { date: exp() })}
+                          <p class="xc-verification-card-desc" data-expires-at={formatExpiresAt(exp())}>
+                            {t('expiresAtLabel', { date: formatExpiresAt(exp()) })}
                           </p>
                         )}
                       </Show>
@@ -656,8 +670,8 @@ export function VerificationScreen(): JSX.Element {
 
                       <Show when={c().expiresAt}>
                         {(exp) => (
-                          <p class="xc-verification-card-desc" data-expires-at={exp()}>
-                            {t('expiresAtLabel', { date: exp() })}
+                          <p class="xc-verification-card-desc" data-expires-at={formatExpiresAt(exp())}>
+                            {t('expiresAtLabel', { date: formatExpiresAt(exp()) })}
                           </p>
                         )}
                       </Show>
