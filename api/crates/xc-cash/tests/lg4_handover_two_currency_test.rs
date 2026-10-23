@@ -200,12 +200,7 @@ impl Db {
             .await
             .expect("expected_in");
         tx.rollback().await.unwrap();
-        Decimal::new(
-            b.get(CurrencyCode::parse(currency).unwrap())
-                .try_minor()
-                .unwrap(),
-            2,
-        )
+        b.get(CurrencyCode::parse(currency).unwrap()).value()
     }
 }
 

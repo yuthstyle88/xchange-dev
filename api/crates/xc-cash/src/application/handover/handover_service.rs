@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, MoneyDelta};
+use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
@@ -554,7 +554,9 @@ impl HandoverService {
             if !diff.is_zero() {
                 let mut d = diff;
                 d.rescale(2);
-                delta_pairs.push((code, MoneyDelta::from_minor(d.mantissa())));
+                let qd = QuantityDelta::from_decimal(d)
+                    .map_err(|e| AppError::Internal(format!("invalid handover diff {d}: {e}")))?;
+                delta_pairs.push((code, qd));
             }
             if !t.counted.is_zero() {
                 counted.push((t.currency.clone(), t.counted));

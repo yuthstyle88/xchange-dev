@@ -13,7 +13,7 @@ use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::MoneyDelta;
+use xc_kernel::money::QuantityDelta;
 use xc_shift::domain::shift::repositories::shift_balances::{ShiftBalance, ShiftBalances};
 
 use crate::bootstrap::AppState;
@@ -155,7 +155,7 @@ impl PagedView for AdminShiftsPagedView {
                     let diff_items: Vec<AdminShiftDifferenceItem> = sorted_diff_codes
                         .into_iter()
                         .map(|code| {
-                            let amt = b_map[&code].difference.unwrap_or(MoneyDelta::ZERO);
+                            let amt = b_map[&code].difference.unwrap_or(QuantityDelta::ZERO);
                             AdminShiftDifferenceItem {
                                 code,
                                 amount: format!("{amt}"),
@@ -182,13 +182,7 @@ impl PagedView for AdminShiftsPagedView {
                                 Some(b) => {
                                     let exp = match (b.counted, b.difference) {
                                         (Some(c), Some(d)) => {
-                                            format!(
-                                                "{}",
-                                                MoneyDelta::from_minor(
-                                                    // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2865).
-                                                    c.minor_i128() - d.minor()
-                                                )
-                                            )
+                                            format!("{}", c.value() - d.value())
                                         }
                                         _ => format!("{}", b.expected),
                                     };

@@ -122,8 +122,8 @@ impl ComputeAction for ShiftValuationAction {
                     let needs_rate = code.as_str() != "THB";
                     ShiftValuationCurrency {
                         currency: code.as_str().to_string(),
-                        opening: MoneyDto(fixed2(o_c.minor_i128())),
-                        current: MoneyDto(fixed2(e_c.minor_i128())),
+                        opening: MoneyDto(format!("{:.2}", o_c.value())),
+                        current: MoneyDto(format!("{:.2}", e_c.value())),
                         needs_rate,
                     }
                 })
@@ -168,13 +168,8 @@ impl ComputeAction for ShiftValuationAction {
             for c in &currencies {
                 let r_c = rate_by_currency[&c.currency];
                 let code = CurrencyCode::parse(&c.currency).map_err(|_| server_error())?;
-                let o_c = shift.opening.get(code);
-                let e_c = shift.expected.get(code);
-
-                let o_dec = Decimal::try_from_i128_with_scale(o_c.minor_i128(), 2)
-                    .map_err(|_| server_error())?;
-                let e_dec = Decimal::try_from_i128_with_scale(e_c.minor_i128(), 2)
-                    .map_err(|_| server_error())?;
+                let o_dec = shift.opening.get(code).value();
+                let e_dec = shift.expected.get(code).value();
 
                 let val_o = round_cents(o_dec * r_c).ok_or_else(server_error)?;
                 let val_e = round_cents(e_dec * r_c).ok_or_else(server_error)?;

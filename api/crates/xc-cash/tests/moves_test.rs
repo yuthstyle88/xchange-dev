@@ -35,6 +35,7 @@ use std::sync::Arc;
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::AppError;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
@@ -184,7 +185,10 @@ impl Db {
             .await
             .expect("read the safe");
         tx.rollback().await.expect("rollback");
-        b.get(usd()).try_minor().unwrap()
+        (b.get(usd()).value() * Decimal::from(100))
+            .round()
+            .to_i64()
+            .unwrap()
     }
 
     async fn scalar(&self, sql: &str) -> i64 {
@@ -246,7 +250,7 @@ impl Db {
             .await
             .expect("the drawer's USD");
         tx.rollback().await.expect("rollback");
-        Decimal::new(b.get(usd()).try_minor().unwrap(), 2)
+        b.get(usd()).value()
     }
 
     /// `(direction, amount)` of what a transfer moved on a shift's drawer. LG-4 (#929, 1:1): read from the drawer's

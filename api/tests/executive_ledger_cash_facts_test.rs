@@ -553,8 +553,8 @@ async fn available_cash_after_exchange_and_drawer_to_safe_move_equals_sum_expect
         .expect("expected_in safe");
     tx.rollback().await.unwrap();
 
-    let expected_drawer_thb = Decimal::new(drawer_bal.get(thb()).try_minor().unwrap(), 2);
-    let expected_safe_thb = Decimal::new(safe_bal.get(thb()).try_minor().unwrap(), 2);
+    let expected_drawer_thb = drawer_bal.get(thb()).value();
+    let expected_safe_thb = safe_bal.get(thb()).value();
     let expected_total = expected_drawer_thb + expected_safe_thb;
     assert_eq!(expected_drawer_thb, d("26500.00"));
     assert_eq!(expected_safe_thb, d("20000.00"));
