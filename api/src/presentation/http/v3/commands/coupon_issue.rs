@@ -12,12 +12,14 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::IntBound;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
 #[serde(rename_all = "camelCase")]
@@ -164,6 +166,8 @@ impl CommandAction for CouponIssueCommand {
                 ));
             }
         }
+        // After the customer check: an unknown customer answers 404 first (coupon_issue_customer_scope_test edge 5).
+        input::integer("count", i64::from(input.count), IntBound::integer(1, 1_000))?;
 
         let expires_at = chrono::DateTime::parse_from_rfc3339(&input.expires_at)
             .map_err(|e| {

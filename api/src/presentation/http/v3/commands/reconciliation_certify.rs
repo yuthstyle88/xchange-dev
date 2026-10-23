@@ -31,6 +31,7 @@ use crate::presentation::dto::v3::finance_reconciliation::{
 };
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 use crate::presentation::http::v3::me::me_roles;
 
 pub const AUDIT_ACTION: &str = "RECONCILIATION_CERTIFY";
@@ -73,6 +74,7 @@ impl CommandAction for ReconciliationCertifyCommand {
                 StatusCode::BAD_REQUEST,
             ));
         };
+        input::text("note", &input.note, TextBound { min: 0, max: 500 })?;
         let certifier = Uuid::parse_str(&who.user_id).map_err(|_| server_error())?;
         let note = (!input.note.is_empty()).then_some(input.note.as_str());
         let answer = self
