@@ -22,7 +22,7 @@ use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, Rate, RatePercent};
+use xc_kernel::money::{Bound, CurrencyCode, Money, Rate, RatePercent, Sign};
 use xc_rate::application::draft::rate_draft_service::RateDraftService;
 use xc_rate::application::draft::reference_base::ReferenceBase;
 use xc_rate::application::policy::policy_version_writer::{
@@ -40,8 +40,23 @@ use xc_rate::infrastructure::policy::currency_tier_override_store::CurrencyTierO
 use super::commands::{make_approval_service, map_rate_engine_error};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
+use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::org_view::validation_failed;
+
+const TIER_BUY_FIELDS: [&str; 4] = [
+    "tiers[0].buy",
+    "tiers[1].buy",
+    "tiers[2].buy",
+    "tiers[3].buy",
+];
+const TIER_SELL_FIELDS: [&str; 4] = [
+    "tiers[0].sell",
+    "tiers[1].sell",
+    "tiers[2].sell",
+    "tiers[3].sell",
+];
 
 /// One tier's approved prices (per the currency's unit size), as decimal strings. The server stores the margin that
 /// produces each price over the draft path's base (§2, §5.2).
@@ -126,12 +141,7 @@ impl CommandAction for PricingApproveCommand {
 
         let reason = input.reason.trim().to_string();
         if reason.is_empty() {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("reason"),
-                "reason must not be empty",
-                StatusCode::BAD_REQUEST,
-            ));
+            return Err(validation_failed("reason"));
         }
 
         if input.rows.is_empty() {
@@ -201,22 +211,14 @@ impl CommandAction for PricingApproveCommand {
                         StatusCode::BAD_REQUEST,
                     ));
                 }
-                let buy = Rate::parse(t.buy.trim()).map_err(|_| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("tiers"),
-                        "invalid tier buy rate",
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
-                let sell = Rate::parse(t.sell.trim()).map_err(|_| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("tiers"),
-                        "invalid tier sell rate",
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
+                let rate_bound =
+                    Bound::numeric(20, 8, Sign::Positive).at_most(Money::MAX_INPUT_UNITS);
+                v3::input::decimal(TIER_BUY_FIELDS[idx], t.buy.trim(), rate_bound)?;
+                let buy = Rate::parse(t.buy.trim())
+                    .map_err(|_| validation_failed(TIER_BUY_FIELDS[idx]))?;
+                v3::input::decimal(TIER_SELL_FIELDS[idx], t.sell.trim(), rate_bound)?;
+                let sell = Rate::parse(t.sell.trim())
+                    .map_err(|_| validation_failed(TIER_SELL_FIELDS[idx]))?;
                 by_tier[idx] = Some((buy, sell));
             }
 
@@ -372,28 +374,45 @@ impl CommandAction for PricingApproveCommand {
                 &SuggestionConfig::v9_default(),
             );
             if let Some(first_err) = tier_errors.first() {
-                let msg = match first_err {
-                    TierError::Count => "tier count must be 4 (Count)".to_string(),
+                let (field, msg) = match first_err {
+                    TierError::Count => ("tiers", "Must have 4 tiers.".to_string()),
                     TierError::NotPositive { tier } => {
-                        format!("tier {tier}: buy and sell must be positive (NotPositive)")
+                        let idx = usize::from(tier.saturating_sub(1)).min(3);
+                        (
+                            TIER_BUY_FIELDS[idx],
+                            format!("Tier {tier} buy and sell rates must be positive."),
+                        )
                     }
                     TierError::SellNotAboveBuy { tier } => {
-                        format!("tier {tier}: sell must be above buy (SellNotAboveBuy)")
+                        let idx = usize::from(tier.saturating_sub(1)).min(3);
+                        (
+                            TIER_SELL_FIELDS[idx],
+                            format!("Tier {tier} sell rate must be above the buy rate."),
+                        )
                     }
                     TierError::BuyBelowPrevious { tier } => {
-                        format!("tier {tier}: buy is below previous tier (BuyBelowPrevious)")
+                        let idx = usize::from(tier.saturating_sub(1)).min(3);
+                        (
+                            TIER_BUY_FIELDS[idx],
+                            format!("Tier {tier} buy rate must not be below the previous tier."),
+                        )
                     }
                     TierError::SellAbovePrevious { tier } => {
-                        format!("tier {tier}: sell is above previous tier (SellAbovePrevious)")
+                        let idx = usize::from(tier.saturating_sub(1)).min(3);
+                        (
+                            TIER_SELL_FIELDS[idx],
+                            format!("Tier {tier} sell rate must not be above the previous tier."),
+                        )
                     }
-                    TierError::FarFromAnchor { source, limit_pct } => format!(
-                        "tier 1: more than {limit_pct}% from {source:?} anchor (FarFromAnchor)"
+                    TierError::FarFromAnchor { limit_pct, .. } => (
+                        TIER_BUY_FIELDS[0],
+                        format!("Tier 1 rate is more than {limit_pct}% from the market anchor."),
                     ),
                 };
                 return Err(V3Error::new(
                     "validationFailed",
-                    Some("tiers"),
-                    &msg,
+                    Some(field),
+                    msg,
                     StatusCode::BAD_REQUEST,
                 ));
             }
@@ -467,24 +486,10 @@ impl CommandAction for PricingApproveCommand {
                     - sell_adjust_pct)
                     .round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero);
 
-                let buy_margin_pct =
-                    RatePercent::parse(&buy_margin_dec.to_string()).map_err(|_| {
-                        V3Error::new(
-                            "validationFailed",
-                            Some("tiers"),
-                            "computed buy margin out of range",
-                            StatusCode::BAD_REQUEST,
-                        )
-                    })?;
-                let sell_margin_pct =
-                    RatePercent::parse(&sell_margin_dec.to_string()).map_err(|_| {
-                        V3Error::new(
-                            "validationFailed",
-                            Some("tiers"),
-                            "computed sell margin out of range",
-                            StatusCode::BAD_REQUEST,
-                        )
-                    })?;
+                let buy_margin_pct = RatePercent::parse(&buy_margin_dec.to_string())
+                    .map_err(|_| validation_failed(TIER_BUY_FIELDS[idx]))?;
+                let sell_margin_pct = RatePercent::parse(&sell_margin_dec.to_string())
+                    .map_err(|_| validation_failed(TIER_SELL_FIELDS[idx]))?;
 
                 tier_margins.push(TierMargin {
                     tier_no,

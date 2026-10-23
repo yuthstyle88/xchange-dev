@@ -17,7 +17,7 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, Money, RatePercent, Side};
+use xc_kernel::money::{Bound, CurrencyCode, Money, RatePercent, Side, Sign};
 use xc_rate::application::policy::policy_version_writer::{
     PolicyVersionChange, PolicyVersionWriter,
 };
@@ -29,8 +29,31 @@ use xc_rate::domain::policy::rate_policy::RatePolicy;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
+use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::org_view::validation_failed;
+
+const BUY_MARGIN_FIELDS: [&str; 4] = [
+    "margins.buy-1",
+    "margins.buy-2",
+    "margins.buy-3",
+    "margins.buy-4",
+];
+const SELL_MARGIN_FIELDS: [&str; 4] = [
+    "margins.sell-1",
+    "margins.sell-2",
+    "margins.sell-3",
+    "margins.sell-4",
+];
+
+fn parse_rate_percent(field: &'static str, text: &str) -> Result<RatePercent, V3Error> {
+    match text.strip_prefix('+') {
+        Some(rest) => v3::input::decimal(field, rest, Bound::numeric(9, 4, Sign::NonNegative))?,
+        None => v3::input::decimal(field, text, Bound::numeric(9, 4, Sign::Signed))?,
+    };
+    RatePercent::parse(text).map_err(|_| validation_failed(field))
+}
 
 /// One tier's margins as decimal strings (signed, scale 4).
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -98,12 +121,7 @@ impl CommandAction for PricingConfigureCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         if input.reason.trim().is_empty() {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("reason"),
-                "reason cannot be empty",
-                StatusCode::BAD_REQUEST,
-            ));
+            return Err(validation_failed("reason"));
         }
 
         let policy_version_id = Uuid::parse_str(input.policy_version_id.trim()).map_err(|_| {
@@ -135,24 +153,15 @@ impl CommandAction for PricingConfigureCommand {
                     ));
                 }
                 let mut parsed = Vec::with_capacity(dtos.len());
-                for dto in dtos {
-                    let buy_margin_pct = RatePercent::parse(&dto.buy_margin_pct).map_err(|e| {
-                        V3Error::new(
-                            "validationFailed",
-                            Some("tiers"),
-                            format!("invalid buy margin in tier {}: {}", dto.tier_no, e),
-                            StatusCode::BAD_REQUEST,
-                        )
-                    })?;
+                for (i, dto) in dtos.iter().enumerate() {
+                    let idx = match dto.tier_no {
+                        1..=4 => usize::from(dto.tier_no - 1),
+                        _ => i.min(3),
+                    };
+                    let buy_margin_pct =
+                        parse_rate_percent(BUY_MARGIN_FIELDS[idx], &dto.buy_margin_pct)?;
                     let sell_margin_pct =
-                        RatePercent::parse(&dto.sell_margin_pct).map_err(|e| {
-                            V3Error::new(
-                                "validationFailed",
-                                Some("tiers"),
-                                format!("invalid sell margin in tier {}: {}", dto.tier_no, e),
-                                StatusCode::BAD_REQUEST,
-                            )
-                        })?;
+                        parse_rate_percent(SELL_MARGIN_FIELDS[idx], &dto.sell_margin_pct)?;
                     parsed.push(TierMargin {
                         tier_no: dto.tier_no,
                         buy_margin_pct,
@@ -165,14 +174,14 @@ impl CommandAction for PricingConfigureCommand {
         };
 
         let min_spread_pct = match input.min_spread_pct.as_deref() {
-            Some(s) => Some(RatePercent::parse(s).map_err(|e| {
-                V3Error::new(
-                    "validationFailed",
-                    Some("minSpreadPct"),
-                    format!("invalid minSpreadPct: {e}"),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?),
+            Some(s) => {
+                v3::input::decimal(
+                    "minSpreadPct",
+                    s.strip_prefix('+').unwrap_or(s),
+                    Bound::numeric(9, 4, Sign::NonNegative).at_most(5),
+                )?;
+                Some(RatePercent::parse(s).map_err(|_| validation_failed("minSpreadPct"))?)
+            }
             None => None,
         };
 
@@ -229,9 +238,7 @@ impl CommandAction for PricingConfigureCommand {
         let override_entry =
             CurrencyTierOverride::new(currency, margins, min_spread_pct, anchor_source).map_err(
                 |e| match e {
-                    RateEngineError::ValidationFailed(msg) => {
-                        V3Error::new("validationFailed", None, msg, StatusCode::BAD_REQUEST)
-                    }
+                    RateEngineError::ValidationFailed(_) => validation_failed("tiers"),
                     _ => server_error(),
                 },
             )?;
@@ -259,11 +266,12 @@ impl CommandAction for PricingConfigureCommand {
                 for tier in tiers {
                     let eff = cur.buy_adjust_pct + tier.buy_margin_pct.value();
                     if eff < guard.min_pct || eff > guard.max_pct {
+                        let idx = usize::from(tier.tier_no.saturating_sub(1)).min(3);
                         return Err(V3Error::new(
                             "validationFailed",
-                            Some("tiers"),
+                            Some(BUY_MARGIN_FIELDS[idx]),
                             format!(
-                                "tier {} buy margin outside {} guard [{}, {}]",
+                                "Tier {} buy margin is outside the {} guard [{}, {}].",
                                 tier.tier_no, code_str, guard.min_pct, guard.max_pct
                             ),
                             StatusCode::BAD_REQUEST,
@@ -275,11 +283,12 @@ impl CommandAction for PricingConfigureCommand {
                 for tier in tiers {
                     let eff = cur.sell_adjust_pct + tier.sell_margin_pct.value();
                     if eff < guard.min_pct || eff > guard.max_pct {
+                        let idx = usize::from(tier.tier_no.saturating_sub(1)).min(3);
                         return Err(V3Error::new(
                             "validationFailed",
-                            Some("tiers"),
+                            Some(SELL_MARGIN_FIELDS[idx]),
                             format!(
-                                "tier {} sell margin outside {} guard [{}, {}]",
+                                "Tier {} sell margin is outside the {} guard [{}, {}].",
                                 tier.tier_no, code_str, guard.min_pct, guard.max_pct
                             ),
                             StatusCode::BAD_REQUEST,
