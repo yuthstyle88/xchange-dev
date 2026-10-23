@@ -60,7 +60,10 @@ fn a_kiosk_quote_is_purged_after_ten_minutes_as_today() {
 #[test]
 fn a_web_request_waits_sixty_minutes() {
     let r = request(KioskStatus::Quoted);
-    assert!(!KioskMachine::is_purgeable_for(&r, true, at(600_001)), "not at the kiosk's 10 min");
+    assert!(
+        !KioskMachine::is_purgeable_for(&r, true, at(600_001)),
+        "not at the kiosk's 10 min"
+    );
     assert!(!KioskMachine::is_purgeable_for(&r, true, at(59 * 60_000)));
     assert!(!KioskMachine::is_purgeable_for(&r, true, at(3_600_000)));
     assert!(KioskMachine::is_purgeable_for(&r, true, at(3_600_001)));
@@ -76,7 +79,13 @@ fn only_a_quoted_request_is_ever_purgeable() {
         KioskStatus::Cancelled,
     ] {
         let r = request(status);
-        assert!(!KioskMachine::is_purgeable_for(&r, true, at(10 * 3_600_000)), "{status:?}");
-        assert!(!KioskMachine::is_purgeable_for(&r, false, at(10 * 3_600_000)), "{status:?}");
+        assert!(
+            !KioskMachine::is_purgeable_for(&r, true, at(10 * 3_600_000)),
+            "{status:?}"
+        );
+        assert!(
+            !KioskMachine::is_purgeable_for(&r, false, at(10 * 3_600_000)),
+            "{status:?}"
+        );
     }
 }

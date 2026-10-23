@@ -53,28 +53,53 @@ async fn quote_for_stores_the_member_and_the_token_hash_and_issues_nothing() {
         .expect("a kiosk quote");
     assert_eq!(kiosk.request.status, KioskStatus::Quoted);
     let web = service
-        .quote_for(&main, from_ip(buy100("web-1"), "198.51.100.2"), member("tok-1"), at(1))
+        .quote_for(
+            &main,
+            from_ip(buy100("web-1"), "198.51.100.2"),
+            member("tok-1"),
+            at(1),
+        )
         .await
         .expect("a web quote");
     assert_eq!(web.request.status, KioskStatus::Quoted);
 
     assert_eq!(
-        column(&db, "SELECT customer_id FROM kiosk_requests WHERE id = 'web-1'").await,
+        column(
+            &db,
+            "SELECT customer_id FROM kiosk_requests WHERE id = 'web-1'"
+        )
+        .await,
         Some("cust-1".to_owned())
     );
     assert_eq!(
-        column(&db, "SELECT customer_id FROM kiosk_requests WHERE id = 'kiosk-1'").await,
+        column(
+            &db,
+            "SELECT customer_id FROM kiosk_requests WHERE id = 'kiosk-1'"
+        )
+        .await,
         None
     );
     assert_eq!(
-        column(&db, "SELECT cancel_token_hash FROM kiosk_requests WHERE id = 'web-1'").await,
+        column(
+            &db,
+            "SELECT cancel_token_hash FROM kiosk_requests WHERE id = 'web-1'"
+        )
+        .await,
         column(&db, "SELECT encode(sha256('tok-1'::bytea), 'hex')").await
     );
     assert_eq!(
-        column(&db, "SELECT cancel_token_hash FROM kiosk_requests WHERE id = 'kiosk-1'").await,
+        column(
+            &db,
+            "SELECT cancel_token_hash FROM kiosk_requests WHERE id = 'kiosk-1'"
+        )
+        .await,
         None
     );
-    assert_eq!(db.count("queue_tickets").await, 0, "a web submit issues no ticket");
+    assert_eq!(
+        db.count("queue_tickets").await,
+        0,
+        "a web submit issues no ticket"
+    );
 }
 
 /// B6/B7: the scan confirms the QUOTED request, issues one kiosk ticket under the confirm's key,
@@ -91,19 +116,30 @@ async fn the_scan_issues_one_ticket_links_the_member_and_a_repeat_answers_the_sa
         .expect("a web quote");
 
     let first = service
-        .issue_by_token(&main, "tok-1", at(MINUTE), queue.clone() as Arc<dyn QueueTickets>)
+        .issue_by_token(
+            &main,
+            "tok-1",
+            at(MINUTE),
+            queue.clone() as Arc<dyn QueueTickets>,
+        )
         .await
         .expect("the scan issues");
     assert_eq!(first.request_id, "web-1");
     assert_eq!(first.ticket.display_number, "W001");
     assert_eq!(first.branch_name, service_branch_name(&service).await);
-    assert!(!first.timezone.is_empty(), "the branch's timezone travels with the ticket");
+    assert!(
+        !first.timezone.is_empty(),
+        "the branch's timezone travels with the ticket"
+    );
     assert_eq!(
         column(&db, "SELECT status FROM kiosk_requests WHERE id = 'web-1'").await,
         Some("WAITING".to_owned())
     );
     assert_eq!(
-        queue.issues().first().map(|(b, s, k)| (b.clone(), s.clone(), k.clone())),
+        queue
+            .issues()
+            .first()
+            .map(|(b, s, k)| (b.clone(), s.clone(), k.clone())),
         Some((
             MAIN.to_owned(),
             QueueTicketSource::Kiosk {
@@ -118,14 +154,26 @@ async fn the_scan_issues_one_ticket_links_the_member_and_a_repeat_answers_the_sa
     );
 
     let again = service
-        .issue_by_token(&main, "tok-1", at(2 * MINUTE), queue.clone() as Arc<dyn QueueTickets>)
+        .issue_by_token(
+            &main,
+            "tok-1",
+            at(2 * MINUTE),
+            queue.clone() as Arc<dyn QueueTickets>,
+        )
         .await
         .expect("a repeat scan answers");
-    assert_eq!(again, first, "the same ticket, the same time, the same branch");
+    assert_eq!(
+        again, first,
+        "the same ticket, the same time, the same branch"
+    );
     assert_eq!(queue.tickets().len(), 1, "never a second number");
     // the request token is still the request's key: the scan minted no cancel token over it
     assert_eq!(
-        column(&db, "SELECT cancel_token_hash FROM kiosk_requests WHERE id = 'web-1'").await,
+        column(
+            &db,
+            "SELECT cancel_token_hash FROM kiosk_requests WHERE id = 'web-1'"
+        )
+        .await,
         column(&db, "SELECT encode(sha256('tok-1'::bytea), 'hex')").await
     );
 }
@@ -154,7 +202,12 @@ async fn every_token_that_leads_nowhere_answers_the_same_not_found() {
         .await
         .expect("MAIN's web quote");
     service
-        .quote_for(&main, from_ip(buy100("web-old"), "198.51.100.3"), member("tok-old"), at(0))
+        .quote_for(
+            &main,
+            from_ip(buy100("web-old"), "198.51.100.3"),
+            member("tok-old"),
+            at(0),
+        )
         .await
         .expect("a quote whose token is replaced");
     sqlx::query(
@@ -166,17 +219,41 @@ async fn every_token_that_leads_nowhere_answers_the_same_not_found() {
     .expect("reissue the QR");
 
     // another branch
-    assert!(is_not_found(service.issue_by_token(&b2, "tok-main", at(MINUTE), q()).await));
-    assert!(is_not_found(service.find_by_token(&b2, "tok-main", at(MINUTE)).await));
+    assert!(is_not_found(
+        service
+            .issue_by_token(&b2, "tok-main", at(MINUTE), q())
+            .await
+    ));
+    assert!(is_not_found(
+        service.find_by_token(&b2, "tok-main", at(MINUTE)).await
+    ));
     // unknown
-    assert!(is_not_found(service.issue_by_token(&main, "nope", at(MINUTE), q()).await));
-    assert!(is_not_found(service.find_by_token(&main, "nope", at(MINUTE)).await));
+    assert!(is_not_found(
+        service.issue_by_token(&main, "nope", at(MINUTE), q()).await
+    ));
+    assert!(is_not_found(
+        service.find_by_token(&main, "nope", at(MINUTE)).await
+    ));
     // reissued-away
-    assert!(is_not_found(service.issue_by_token(&main, "tok-old", at(MINUTE), q()).await));
-    assert!(is_not_found(service.find_by_token(&main, "tok-old", at(MINUTE)).await));
+    assert!(is_not_found(
+        service
+            .issue_by_token(&main, "tok-old", at(MINUTE), q())
+            .await
+    ));
+    assert!(is_not_found(
+        service.find_by_token(&main, "tok-old", at(MINUTE)).await
+    ));
     // past the purge window, though not purged yet
-    assert!(is_not_found(service.issue_by_token(&main, "tok-main", at(61 * MINUTE), q()).await));
-    assert!(is_not_found(service.find_by_token(&main, "tok-main", at(61 * MINUTE)).await));
+    assert!(is_not_found(
+        service
+            .issue_by_token(&main, "tok-main", at(61 * MINUTE), q())
+            .await
+    ));
+    assert!(is_not_found(
+        service
+            .find_by_token(&main, "tok-main", at(61 * MINUTE))
+            .await
+    ));
     assert!(queue.issues().is_empty(), "nothing was issued");
 
     // a cancelled request
@@ -187,8 +264,14 @@ async fn every_token_that_leads_nowhere_answers_the_same_not_found() {
     .execute(&db.pool)
     .await
     .expect("cancel it");
-    assert!(is_not_found(service.issue_by_token(&main, "tok-new", at(MINUTE), q()).await));
-    assert!(is_not_found(service.find_by_token(&main, "tok-new", at(MINUTE)).await));
+    assert!(is_not_found(
+        service
+            .issue_by_token(&main, "tok-new", at(MINUTE), q())
+            .await
+    ));
+    assert!(is_not_found(
+        service.find_by_token(&main, "tok-new", at(MINUTE)).await
+    ));
     assert!(queue.issues().is_empty(), "nothing was issued");
 }
 
@@ -205,7 +288,10 @@ async fn the_desk_lookup_answers_the_request_id_before_and_after_the_scan() {
         .expect("a web quote");
 
     assert_eq!(
-        service.find_by_token(&main, "tok-1", at(MINUTE)).await.expect("found"),
+        service
+            .find_by_token(&main, "tok-1", at(MINUTE))
+            .await
+            .expect("found"),
         "web-1"
     );
     service
@@ -213,8 +299,15 @@ async fn the_desk_lookup_answers_the_request_id_before_and_after_the_scan() {
         .await
         .expect("issued");
     assert_eq!(
-        service.find_by_token(&main, "tok-1", at(2 * MINUTE)).await.expect("found"),
+        service
+            .find_by_token(&main, "tok-1", at(2 * MINUTE))
+            .await
+            .expect("found"),
         "web-1"
     );
-    assert_eq!(db.count("queue_tickets").await, 0, "the fake queue wrote no row");
+    assert_eq!(
+        db.count("queue_tickets").await,
+        0,
+        "the fake queue wrote no row"
+    );
 }

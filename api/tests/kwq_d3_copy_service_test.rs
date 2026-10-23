@@ -28,7 +28,9 @@ const BOB: &str = "CUST-BOB";
 const ALICE_MAIL: &str = "alice@example.com";
 
 fn now() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 10, 22, 1, 0, 0).single().unwrap()
+    Utc.with_ymd_and_hms(2026, 10, 22, 1, 0, 0)
+        .single()
+        .unwrap()
 }
 
 fn sha(qr: &str) -> [u8; 32] {
@@ -222,10 +224,28 @@ fn world() -> World {
 }
 
 /// Both subjects: (kind, Alice's id, its qr, Bob's id, Bob's qr).
-fn table() -> [(CopySubjectKind, &'static str, &'static str, &'static str, &'static str); 2] {
+fn table() -> [(
+    CopySubjectKind,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+); 2] {
     [
-        (CopySubjectKind::Booking, "BK-1", "bk-qr-1", "BK-2", "bk-qr-2"),
-        (CopySubjectKind::WebRequest, "WR-1", "wr-qr-1", "WR-2", "wr-qr-2"),
+        (
+            CopySubjectKind::Booking,
+            "BK-1",
+            "bk-qr-1",
+            "BK-2",
+            "bk-qr-2",
+        ),
+        (
+            CopySubjectKind::WebRequest,
+            "WR-1",
+            "wr-qr-1",
+            "WR-2",
+            "wr-qr-2",
+        ),
     ]
 }
 
@@ -248,7 +268,10 @@ async fn the_copy_goes_to_the_stored_address_with_one_key_per_qr_for_both_subjec
         let sent = w.sender.sent();
         assert_eq!(sent.len(), 1, "{kind:?}: one Notify call");
         let m = &sent[0];
-        assert_eq!(m.to, ALICE_MAIL, "{kind:?}: only the stored verified address");
+        assert_eq!(
+            m.to, ALICE_MAIL,
+            "{kind:?}: only the stored verified address"
+        );
         assert_eq!(
             m.idempotency_key,
             format!("copy:{}:{id}:{}", kind.as_str(), hex(&sha(qr))),
@@ -260,8 +283,14 @@ async fn the_copy_goes_to_the_stored_address_with_one_key_per_qr_for_both_subjec
             "{kind:?}: the QR is inline: {}",
             m.html
         );
-        assert!(m.text.contains("Silom") && m.html.contains("Silom"), "{kind:?}");
-        assert!(m.text.contains("USD") && m.text.contains("100.00"), "{kind:?}");
+        assert!(
+            m.text.contains("Silom") && m.html.contains("Silom"),
+            "{kind:?}"
+        );
+        assert!(
+            m.text.contains("USD") && m.text.contains("100.00"),
+            "{kind:?}"
+        );
 
         // the link in both bodies verifies and names this subject and QR, valid 24 h
         let prefix = format!("{ORIGIN}/c#");
@@ -270,11 +299,17 @@ async fn the_copy_goes_to_the_stored_address_with_one_key_per_qr_for_both_subjec
             .chars()
             .take_while(|c| !c.is_whitespace() && *c != '<' && *c != '"')
             .collect();
-        assert!(m.html.contains(&link), "{kind:?}: the same link in the HTML");
+        assert!(
+            m.html.contains(&link),
+            "{kind:?}: the same link in the HTML"
+        );
         let parts = CopyLink::new([9; 32])
             .verify(&link, now() + Duration::hours(23))
             .unwrap_or_else(|_| panic!("{kind:?}: the link verifies: {link}"));
-        assert_eq!((parts.kind, parts.id.as_str(), parts.qr.as_str()), (kind, id, qr));
+        assert_eq!(
+            (parts.kind, parts.id.as_str(), parts.qr.as_str()),
+            (kind, id, qr)
+        );
         assert!(
             CopyLink::new([9; 32])
                 .verify(&link, now() + Duration::hours(25))
@@ -283,9 +318,18 @@ async fn the_copy_goes_to_the_stored_address_with_one_key_per_qr_for_both_subjec
         );
 
         // B20: the same QR again ⇒ the same key, `again`
-        let second = w.service.send(ALICE, kind, id, qr, now()).await.expect("again");
+        let second = w
+            .service
+            .send(ALICE, kind, id, qr, now())
+            .await
+            .expect("again");
         assert!(second.again, "{kind:?}");
-        let keys: Vec<String> = w.sender.sent().iter().map(|m| m.idempotency_key.clone()).collect();
+        let keys: Vec<String> = w
+            .sender
+            .sent()
+            .iter()
+            .map(|m| m.idempotency_key.clone())
+            .collect();
         assert_eq!(keys[0], keys[1], "{kind:?}");
     }
 }
@@ -309,7 +353,9 @@ async fn the_email_qr_encodes_what_the_queue_machine_and_the_desk_read() {
         let b64 = base64::engine::general_purpose::STANDARD.encode(qr_png(&encoded));
         let sent = w.sender.sent();
         assert!(
-            sent[0].html.contains(&format!("data:image/png;base64,{b64}\"")),
+            sent[0]
+                .html
+                .contains(&format!("data:image/png;base64,{b64}\"")),
             "{kind:?}: the inline QR encodes {encoded}"
         );
     }
@@ -322,8 +368,14 @@ async fn the_subject_is_asked_with_the_sha256_of_the_qr_never_the_qr() {
         .send(ALICE, CopySubjectKind::Booking, "BK-1", "bk-qr-1", now())
         .await
         .expect("sent");
-    assert_eq!(w.booking.asked.lock().unwrap().as_slice(), &[sha("bk-qr-1")]);
-    assert!(w.web.asked.lock().unwrap().is_empty(), "only the named subject");
+    assert_eq!(
+        w.booking.asked.lock().unwrap().as_slice(),
+        &[sha("bk-qr-1")]
+    );
+    assert!(
+        w.web.asked.lock().unwrap().is_empty(),
+        "only the named subject"
+    );
 }
 
 // ── B21 / B22 / B23 ─────────────────────────────────────────────────────────
@@ -337,12 +389,24 @@ async fn another_members_id_an_unknown_id_or_a_reissued_qr_is_not_found_and_send
             (ALICE, "no-such", qr),
             (ALICE, id, "wrong-qr"),
         ] {
-            let err = w.service.send(who, kind, which, code, now()).await.unwrap_err();
+            let err = w
+                .service
+                .send(who, kind, which, code, now())
+                .await
+                .unwrap_err();
             assert!(same(&err, &not_found()), "{kind:?} {which}: {err:?}");
         }
-        let subject = if kind == CopySubjectKind::Booking { &w.booking } else { &w.web };
+        let subject = if kind == CopySubjectKind::Booking {
+            &w.booking
+        } else {
+            &w.web
+        };
         subject.reissue(id, "fresh-qr");
-        let err = w.service.send(ALICE, kind, id, qr, now()).await.unwrap_err();
+        let err = w
+            .service
+            .send(ALICE, kind, id, qr, now())
+            .await
+            .unwrap_err();
         assert!(same(&err, &not_found()), "{kind:?} reissued-away: {err:?}");
         assert!(w.sender.sent().is_empty(), "{kind:?}: nothing sent");
     }
@@ -352,7 +416,11 @@ async fn another_members_id_an_unknown_id_or_a_reissued_qr_is_not_found_and_send
 async fn a_member_with_no_verified_email_is_refused_and_nothing_is_sent() {
     for (kind, _, _, bobs_id, bobs_qr) in table() {
         let w = world();
-        let err = w.service.send(BOB, kind, bobs_id, bobs_qr, now()).await.unwrap_err();
+        let err = w
+            .service
+            .send(BOB, kind, bobs_id, bobs_qr, now())
+            .await
+            .unwrap_err();
         assert!(same(&err, &no_verified_email()), "{kind:?}: {err:?}");
         assert!(w.sender.sent().is_empty(), "{kind:?}");
     }
@@ -362,12 +430,20 @@ async fn a_member_with_no_verified_email_is_refused_and_nothing_is_sent() {
 async fn an_unconfigured_or_failing_sender_is_email_unavailable() {
     for (kind, id, qr, _, _) in table() {
         let off = world_with(FakeSender::new(false, false));
-        let err = off.service.send(ALICE, kind, id, qr, now()).await.unwrap_err();
+        let err = off
+            .service
+            .send(ALICE, kind, id, qr, now())
+            .await
+            .unwrap_err();
         assert!(same(&err, &email_unavailable()), "{kind:?}: {err:?}");
         assert!(off.sender.sent().is_empty(), "{kind:?}");
 
         let failing = world_with(FakeSender::new(true, true));
-        let err = failing.service.send(ALICE, kind, id, qr, now()).await.unwrap_err();
+        let err = failing
+            .service
+            .send(ALICE, kind, id, qr, now())
+            .await
+            .unwrap_err();
         assert!(same(&err, &email_unavailable()), "{kind:?}: {err:?}");
     }
 }
@@ -407,7 +483,11 @@ async fn a_good_link_shows_the_details_and_every_failure_is_link_expired() {
         assert_eq!(view.qr, qr);
         assert_eq!(view.expires_at, now() + Duration::hours(24));
 
-        let expired = w.service.view_link(&link, now() + Duration::hours(25)).await.unwrap_err();
+        let expired = w
+            .service
+            .view_link(&link, now() + Duration::hours(25))
+            .await
+            .unwrap_err();
         assert!(same(&expired, &link_expired()), "{kind:?}: {expired:?}");
         let forged = CopyLink::new([1; 32]).sign(kind, id, qr, now() + Duration::hours(24));
         let err = w.service.view_link(&forged, now()).await.unwrap_err();
@@ -415,7 +495,11 @@ async fn a_good_link_shows_the_details_and_every_failure_is_link_expired() {
         let err = w.service.view_link("garbage", now()).await.unwrap_err();
         assert!(same(&err, &link_expired()), "{kind:?}: {err:?}");
 
-        let subject = if kind == CopySubjectKind::Booking { &w.booking } else { &w.web };
+        let subject = if kind == CopySubjectKind::Booking {
+            &w.booking
+        } else {
+            &w.web
+        };
         subject.reissue(id, "fresh-qr");
         let err = w.service.view_link(&link, now()).await.unwrap_err();
         assert!(same(&err, &link_expired()), "{kind:?} reissued: {err:?}");
@@ -434,7 +518,9 @@ fn the_qr_picture_is_a_png_and_the_same_data_gives_the_same_bytes() {
     // what the HTML embeds decodes back to these bytes
     let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
     assert_eq!(
-        base64::engine::general_purpose::STANDARD.decode(b64).unwrap(),
+        base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .unwrap(),
         png
     );
 }

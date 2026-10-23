@@ -18,6 +18,9 @@ const t = screenT('desk.steps.customer', texts);
 const MAX_FILE_BYTES = 15_728_640;
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf';
+const MAX_NAME_LEN = 100;
+const MAX_PASSPORT_NO_LEN = 30;
+const MIN_DATE = '1920-04-02';
 
 /** The optional passport reader (DK-F, design §6): mounted when `ocr/PassportOcr.tsx` exists, skipped otherwise. */
 const ocrModules = import.meta.glob<{ PassportOcr?: Component<{ store: DeskStore }> }>('../../ocr/PassportOcr.tsx', {
@@ -69,6 +72,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
   const draftWrite = keyedWrite<DraftBeginInput, { id?: unknown }>(store.api, 'POST', '/api/tx-drafts');
   const [error, setError] = createSignal<string | undefined>();
   const [fileError, setFileError] = createSignal<string | undefined>();
+  const [fieldErrors, setFieldErrors] = createSignal<Partial<Record<keyof PassportFields, string>>>({});
   const [sending, setSending] = createSignal(false);
   let fileEl: HTMLInputElement | undefined;
   let alive = true;
@@ -77,8 +81,13 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
   });
 
   const field = (k: keyof PassportFields) => store.fields()[k];
-  const edit = (k: keyof PassportFields) => (e: { currentTarget: HTMLInputElement | HTMLSelectElement }) =>
-    store.setField(k, e.currentTarget.value, 'user');
+  const edit = (k: keyof PassportFields) => (e: { currentTarget: HTMLInputElement | HTMLSelectElement }) => {
+    setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+    const el = e.currentTarget;
+    const val = el instanceof HTMLInputElement && el.maxLength > 0 ? el.value.slice(0, el.maxLength) : el.value;
+    if (val !== el.value) el.value = val;
+    store.setField(k, val, 'user');
+  };
 
   function onFile(e: Event & { currentTarget: HTMLInputElement }): void {
     const file = e.currentTarget.files?.[0];
@@ -145,12 +154,26 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
     ev.preventDefault();
     if (sending()) return;
     setError(undefined);
+    setFieldErrors({});
     if (!store.passport()) {
       setError(t('noFile'));
       return;
     }
-    if (field('name').trim() === '' || field('passportNo').trim() === '' || field('nationality') === '') {
+    const name = field('name').trim();
+    const passportNo = field('passportNo').trim();
+    if (name === '' || passportNo === '' || field('nationality') === '') {
       setError(t('missing'));
+      return;
+    }
+    const nextFieldErrors: Partial<Record<keyof PassportFields, string>> = {};
+    if (name.length > MAX_NAME_LEN) nextFieldErrors.name = t('nameTooLong');
+    if (passportNo.length > MAX_PASSPORT_NO_LEN) nextFieldErrors.passportNo = t('passportNoTooLong');
+    const birthDate = field('birthDate').trim();
+    if (birthDate !== '' && birthDate < MIN_DATE) nextFieldErrors.birthDate = t('dateTooEarly');
+    const passportExpiry = field('passportExpiry').trim();
+    if (passportExpiry !== '' && passportExpiry < MIN_DATE) nextFieldErrors.passportExpiry = t('dateTooEarly');
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
       return;
     }
     void reserve();
@@ -208,11 +231,27 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
 
       <label class="desk-field">
         <span>{t('name')}</span>
-        <input name="name" autocomplete="off" value={field('name')} onInput={edit('name')} />
+        <input name="name" autocomplete="off" maxLength={MAX_NAME_LEN} value={field('name')} onInput={edit('name')} />
+        <Show when={fieldErrors().name}>
+          <span class="desk-error" role="alert">
+            {fieldErrors().name}
+          </span>
+        </Show>
       </label>
       <label class="desk-field">
         <span>{t('passportNo')}</span>
-        <input name="passportNo" autocomplete="off" value={field('passportNo')} onInput={edit('passportNo')} />
+        <input
+          name="passportNo"
+          autocomplete="off"
+          maxLength={MAX_PASSPORT_NO_LEN}
+          value={field('passportNo')}
+          onInput={edit('passportNo')}
+        />
+        <Show when={fieldErrors().passportNo}>
+          <span class="desk-error" role="alert">
+            {fieldErrors().passportNo}
+          </span>
+        </Show>
       </label>
       <label class="desk-field">
         <span>{t('nationality')}</span>
@@ -223,11 +262,27 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
       </label>
       <label class="desk-field">
         <span>{t('birthDate')}</span>
-        <input name="birthDate" type="date" value={field('birthDate')} onInput={edit('birthDate')} />
+        <input name="birthDate" type="date" min={MIN_DATE} value={field('birthDate')} onInput={edit('birthDate')} />
+        <Show when={fieldErrors().birthDate}>
+          <span class="desk-error" role="alert">
+            {fieldErrors().birthDate}
+          </span>
+        </Show>
       </label>
       <label class="desk-field">
         <span>{t('passportExpiry')}</span>
-        <input name="passportExpiry" type="date" value={field('passportExpiry')} onInput={edit('passportExpiry')} />
+        <input
+          name="passportExpiry"
+          type="date"
+          min={MIN_DATE}
+          value={field('passportExpiry')}
+          onInput={edit('passportExpiry')}
+        />
+        <Show when={fieldErrors().passportExpiry}>
+          <span class="desk-error" role="alert">
+            {fieldErrors().passportExpiry}
+          </span>
+        </Show>
       </label>
 
       <label class="desk-check">

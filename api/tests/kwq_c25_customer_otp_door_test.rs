@@ -219,7 +219,10 @@ async fn the_request_seals_the_destination_into_an_http_only_cookie() {
         json!({ "challengeId": CHALLENGE, "expiresAt": 4102444800u64 })
     );
     let cookie = reply.cookies.get(OTP_COOKIE).expect("the seal cookie");
-    assert_eq!(cookie.attributes, "Path=/; HttpOnly; Secure; SameSite=Strict");
+    assert_eq!(
+        cookie.attributes,
+        "Path=/; HttpOnly; Secure; SameSite=Strict"
+    );
     assert!(cookie.max_age > 0 && cookie.max_age <= 600, "{cookie:?}");
     assert_eq!(
         OtpChallengeSeal::open(&cookie.value, &keys()),
@@ -233,7 +236,11 @@ async fn the_request_seals_the_destination_into_an_http_only_cookie() {
     let fax = shop.request(PHONE, "fax").await;
     assert_eq!(fax.status, 400, "{}", fax.text);
     assert_eq!(fax.refusal().0, "invalidRequest");
-    assert_eq!(shop.identity.received("/auth/otp/request").len(), 1, "fax never reached Identity");
+    assert_eq!(
+        shop.identity.received("/auth/otp/request").len(),
+        1,
+        "fax never reached Identity"
+    );
     shop.finish().await;
 }
 
@@ -241,7 +248,9 @@ async fn the_request_seals_the_destination_into_an_http_only_cookie() {
 #[actix_web::test]
 async fn a_new_phone_with_register_signs_up_and_signs_in() {
     let shop = Shop::start().await;
-    let seal = shop.request(PHONE, "sms").await.cookies[OTP_COOKIE].value.clone();
+    let seal = shop.request(PHONE, "sms").await.cookies[OTP_COOKIE]
+        .value
+        .clone();
     shop.verify_answers(Some(PHONE), true);
     let reply = shop.verify(verify_body(true), Some(&seal)).await;
     assert_eq!(reply.status, 200, "{}", reply.text);
@@ -269,7 +278,9 @@ async fn a_new_phone_with_register_signs_up_and_signs_in() {
 #[actix_web::test]
 async fn an_email_sign_up_binds_the_sealed_address_and_ignores_one_in_the_body() {
     let shop = Shop::start().await;
-    let seal = shop.request(EMAIL, "email").await.cookies[OTP_COOKIE].value.clone();
+    let seal = shop.request(EMAIL, "email").await.cookies[OTP_COOKIE]
+        .value
+        .clone();
     shop.verify_answers(None, true);
     let mut body = verify_body(true);
     body["destination"] = json!("someone-else@example.com");
@@ -321,7 +332,10 @@ async fn a_known_customer_is_signed_in_with_its_customer_id() {
     assert_eq!(reply.json()["registered"], json!(false));
     assert_eq!(reply.json()["customerId"], json!(customer));
     let after = shop.written().await;
-    assert_eq!((after.0, after.1, after.2, after.3), (before.0, before.1, before.2, before.3));
+    assert_eq!(
+        (after.0, after.1, after.2, after.3),
+        (before.0, before.1, before.2, before.3)
+    );
     shop.finish().await;
 }
 
@@ -329,15 +343,18 @@ async fn a_known_customer_is_signed_in_with_its_customer_id() {
 #[actix_web::test]
 async fn a_phone_on_a_desk_customer_joins_it() {
     let shop = Shop::start().await;
-    shop.desk_customer("CX-DESK0001", IdentityType::Phone, PHONE).await;
+    shop.desk_customer("CX-DESK0001", IdentityType::Phone, PHONE)
+        .await;
     shop.verify_answers(Some(PHONE), true);
     let reply = shop.verify(verify_body(true), None).await;
     assert_eq!(reply.status, 200, "{}", reply.text);
     assert_eq!(reply.json()["customerId"], json!("CX-DESK0001"));
     assert_eq!(reply.json()["registered"], json!(true));
     assert_eq!(
-        shop.count("SELECT count(*) FROM customers WHERE id = 'CX-DESK0001' AND user_id IS NOT NULL")
-            .await,
+        shop.count(
+            "SELECT count(*) FROM customers WHERE id = 'CX-DESK0001' AND user_id IS NOT NULL"
+        )
+        .await,
         1
     );
     shop.finish().await;
@@ -388,9 +405,18 @@ async fn without_register_an_unknown_person_is_not_registered() {
 async fn a_bad_register_is_validation_failed_before_identity() {
     let shop = Shop::start().await;
     for (register, field) in [
-        (json!({ "displayName": "S", "lang": "xx", "marketing": [] }), "lang"),
-        (json!({ "displayName": "  ", "lang": "th", "marketing": [] }), "displayName"),
-        (json!({ "displayName": "S", "lang": "th", "marketing": ["FAX"] }), "marketing"),
+        (
+            json!({ "displayName": "S", "lang": "xx", "marketing": [] }),
+            "lang",
+        ),
+        (
+            json!({ "displayName": "  ", "lang": "th", "marketing": [] }),
+            "displayName",
+        ),
+        (
+            json!({ "displayName": "S", "lang": "th", "marketing": ["FAX"] }),
+            "marketing",
+        ),
     ] {
         let mut body = verify_body(false);
         body["register"] = register;

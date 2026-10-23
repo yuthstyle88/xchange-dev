@@ -35,7 +35,10 @@ fn a_seal_opens_to_what_was_sealed_for_both_channels() {
         let value = seal.seal(&k);
         assert!(value.starts_with("v1."), "{value}");
         assert_eq!(value.split('.').count(), 5, "{value}");
-        assert!(!value.contains("somchai@"), "the destination is not in the clear: {value}");
+        assert!(
+            !value.contains("somchai@"),
+            "the destination is not in the clear: {value}"
+        );
         assert_eq!(OtpChallengeSeal::open(&value, &k), Some(seal.clone()));
         assert_eq!(seal.seal(&k), value, "deterministic");
     }
@@ -65,7 +68,11 @@ fn another_key_a_foreign_value_and_a_swapped_channel_open_to_nothing() {
     let value = email().seal(&keys());
     assert_eq!(OtpChallengeSeal::open(&value, &other_keys()), None);
     for foreign in ["", "v1", "v1....", "v2.email.x.y.z", "garbage"] {
-        assert_eq!(OtpChallengeSeal::open(foreign, &keys()), None, "{foreign:?}");
+        assert_eq!(
+            OtpChallengeSeal::open(foreign, &keys()),
+            None,
+            "{foreign:?}"
+        );
     }
     let swapped = value.replacen("v1.email.", "v1.sms.", 1);
     assert_eq!(OtpChallengeSeal::open(&swapped, &keys()), None);

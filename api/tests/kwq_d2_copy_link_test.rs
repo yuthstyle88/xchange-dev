@@ -9,7 +9,9 @@ use xchange::application::copy_by_email::link::{CopyLink, LinkParts, LinkRejecte
 use xchange::application::copy_by_email::subject::CopySubjectKind;
 
 fn sent() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 10, 22, 1, 0, 0).single().unwrap()
+    Utc.with_ymd_and_hms(2026, 10, 22, 1, 0, 0)
+        .single()
+        .unwrap()
 }
 
 fn key(byte: u8) -> CopyLink {
@@ -106,7 +108,10 @@ fn another_keys_link_and_malformed_links_are_rejected() {
         assert_eq!(key(7).verify(bad, now), Err(LinkRejected), "{bad:?}");
     }
     // a link with a part appended or cut off
-    assert_eq!(key(7).verify(&format!("{}x", link()), now), Err(LinkRejected));
+    assert_eq!(
+        key(7).verify(&format!("{}x", link()), now),
+        Err(LinkRejected)
+    );
     let cut = &link()[..link().len() - 1];
     assert_eq!(key(7).verify(cut, now), Err(LinkRejected));
 }

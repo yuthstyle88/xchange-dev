@@ -19,7 +19,9 @@ use serde_json::json;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_kernel::ids::BranchId;
 use xchange::application::workflows::loyalty::rule_approval::LoyaltyRuleVersionPolicy;
 

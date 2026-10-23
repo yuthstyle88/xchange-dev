@@ -24,7 +24,9 @@ use sqlx::postgres::PgPoolOptions;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_kernel::ids::BranchId;
 use xc_rate::application::approval::rate_publication::RatePublicationPolicy;
 

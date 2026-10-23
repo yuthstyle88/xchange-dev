@@ -33,7 +33,11 @@ struct Answer {
 }
 
 fn ok(body: &str) -> Answer {
-    Answer { status: 200, body: body.to_string(), delay: Duration::ZERO }
+    Answer {
+        status: 200,
+        body: body.to_string(),
+        delay: Duration::ZERO,
+    }
 }
 
 struct Server {
@@ -67,7 +71,11 @@ fn serve(answers: Vec<(&'static str, Answer)>) -> Server {
                     .iter()
                     .find(|(p, _)| *p == path)
                     .map(|(_, a)| a.clone())
-                    .unwrap_or(Answer { status: 404, body: String::new(), delay: Duration::ZERO });
+                    .unwrap_or(Answer {
+                        status: 404,
+                        body: String::new(),
+                        delay: Duration::ZERO,
+                    });
                 std::thread::sleep(a.delay);
                 let mut s = stream;
                 let _ = write!(
@@ -102,12 +110,19 @@ impl MarketFeed for LineFeed {
     fn requests(&self) -> Vec<MarketRequest> {
         self.urls
             .iter()
-            .map(|(url, optional)| MarketRequest { url: url.clone(), accept: MarketAccept::Json, optional: *optional })
+            .map(|(url, optional)| MarketRequest {
+                url: url.clone(),
+                accept: MarketAccept::Json,
+                optional: *optional,
+            })
             .collect()
     }
 
     fn parse(&self, bodies: &[MarketBody]) -> Result<MarketSnapshot, MarketFeedError> {
-        let text = bodies[0].body.clone().ok_or_else(|| MarketFeedError("TT: no body".into()))?;
+        let text = bodies[0]
+            .body
+            .clone()
+            .ok_or_else(|| MarketFeedError("TT: no body".into()))?;
         let rows: Vec<MarketRow> = text
             .lines()
             .filter(|l| !l.trim().is_empty())
@@ -141,10 +156,21 @@ fn source(feed: LineFeed, timeout: Duration) -> MarketRateSource {
 
 #[tokio::test]
 async fn a_good_answer_gives_one_row_per_currency_with_decimal_strings() {
-    let srv = serve(vec![("/rates", ok("USD,33.2,33.9\nJPY,0.2085,0.2175\n")), ("/updated", ok("2026-10-17T18:17:40+07:00"))]);
-    let src = source(LineFeed { urls: vec![(srv.url("/rates"), false), (srv.url("/updated"), true)] }, Duration::from_secs(5));
+    let srv = serve(vec![
+        ("/rates", ok("USD,33.2,33.9\nJPY,0.2085,0.2175\n")),
+        ("/updated", ok("2026-10-17T18:17:40+07:00")),
+    ]);
+    let src = source(
+        LineFeed {
+            urls: vec![(srv.url("/rates"), false), (srv.url("/updated"), true)],
+        },
+        Duration::from_secs(5),
+    );
     let rates = src.fetch().await.expect("rates");
-    assert_eq!((rates.source.as_str(), rates.kind.as_str()), ("TT", "MARKET"));
+    assert_eq!(
+        (rates.source.as_str(), rates.kind.as_str()),
+        ("TT", "MARKET")
+    );
     assert_eq!(rates.fetched_at, "2026-10-18T03:00:00+00:00");
     assert_eq!(rates.rows.len(), 2);
     let usd = rates.rows.iter().find(|r| r["code"] == "USD").unwrap();
@@ -152,31 +178,77 @@ async fn a_good_answer_gives_one_row_per_currency_with_decimal_strings() {
     assert_eq!(usd["sell"], json!("33.9"));
     assert_eq!(usd["source_updated_at"], json!("2026-10-17T18:17:40+07:00"));
     let head = srv.seen.lock().unwrap()[0].clone();
-    assert!(head.contains(&format!("user-agent: {}", MARKET_USER_AGENT.to_lowercase())), "{head}");
+    assert!(
+        head.contains(&format!("user-agent: {}", MARKET_USER_AGENT.to_lowercase())),
+        "{head}"
+    );
     assert!(head.contains("accept: application/json"), "{head}");
 }
 
 #[tokio::test]
 async fn a_503_is_an_error_naming_the_status() {
-    let srv = serve(vec![("/rates", Answer { status: 503, body: "busy".into(), delay: Duration::ZERO })]);
-    let src = source(LineFeed { urls: vec![(srv.url("/rates"), false)] }, Duration::from_secs(5));
+    let srv = serve(vec![(
+        "/rates",
+        Answer {
+            status: 503,
+            body: "busy".into(),
+            delay: Duration::ZERO,
+        },
+    )]);
+    let src = source(
+        LineFeed {
+            urls: vec![(srv.url("/rates"), false)],
+        },
+        Duration::from_secs(5),
+    );
     let err = src.fetch().await.unwrap_err().to_string();
     assert!(err.contains("HTTP 503"), "{err}");
 }
 
 #[tokio::test]
 async fn a_source_slower_than_the_timeout_is_an_error_not_a_hang() {
-    let srv = serve(vec![("/rates", Answer { status: 200, body: "USD,1,2".into(), delay: Duration::from_secs(3) })]);
-    let src = source(LineFeed { urls: vec![(srv.url("/rates"), false)] }, Duration::from_millis(300));
+    let srv = serve(vec![(
+        "/rates",
+        Answer {
+            status: 200,
+            body: "USD,1,2".into(),
+            delay: Duration::from_secs(3),
+        },
+    )]);
+    let src = source(
+        LineFeed {
+            urls: vec![(srv.url("/rates"), false)],
+        },
+        Duration::from_millis(300),
+    );
     let started = std::time::Instant::now();
     assert!(src.fetch().await.is_err());
-    assert!(started.elapsed() < Duration::from_secs(2), "gave up after {:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "gave up after {:?}",
+        started.elapsed()
+    );
 }
 
 #[tokio::test]
 async fn a_failed_optional_request_does_not_fail_the_source() {
-    let srv = serve(vec![("/rates", ok("USD,33.2,33.9\n")), ("/updated", Answer { status: 500, body: String::new(), delay: Duration::ZERO })]);
-    let src = source(LineFeed { urls: vec![(srv.url("/rates"), false), (srv.url("/updated"), true)] }, Duration::from_secs(5));
+    let srv = serve(vec![
+        ("/rates", ok("USD,33.2,33.9\n")),
+        (
+            "/updated",
+            Answer {
+                status: 500,
+                body: String::new(),
+                delay: Duration::ZERO,
+            },
+        ),
+    ]);
+    let src = source(
+        LineFeed {
+            urls: vec![(srv.url("/rates"), false), (srv.url("/updated"), true)],
+        },
+        Duration::from_secs(5),
+    );
     let rates = src.fetch().await.expect("rates");
     assert_eq!(rates.rows[0]["source_updated_at"], json!(null));
 }
@@ -184,7 +256,12 @@ async fn a_failed_optional_request_does_not_fail_the_source() {
 #[tokio::test]
 async fn a_parse_error_is_the_feeds_text() {
     let srv = serve(vec![("/rates", ok(""))]);
-    let src = source(LineFeed { urls: vec![(srv.url("/rates"), false)] }, Duration::from_secs(5));
+    let src = source(
+        LineFeed {
+            urls: vec![(srv.url("/rates"), false)],
+        },
+        Duration::from_secs(5),
+    );
     let err = src.fetch().await.unwrap_err().to_string();
     assert!(err.contains("TT: no rates"), "{err}");
 }

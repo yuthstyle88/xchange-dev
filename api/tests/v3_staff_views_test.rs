@@ -747,7 +747,9 @@ async fn staff_floor_cutoff_answers_its_time_and_how_many_are_pending() {
         Some(json!({ "at": T0, "by": "bm", "shiftId": "s-1", "pending": ["r-1", "r-2"] })),
     )
     .await;
-    let floor = f.ok(&spec(teller, &teller_id, "MAIN"), "staff_floor", "").await;
+    let floor = f
+        .ok(&spec(teller, &teller_id, "MAIN"), "staff_floor", "")
+        .await;
     assert_eq!(floor["phase"], json!("CUT_OFF"));
     assert_eq!(instant(&floor["cutoff"]["at"], "cutoff.at"), millis(T0));
     assert_eq!(floor["cutoff"]["pendingCount"], json!(2));

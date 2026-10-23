@@ -20,7 +20,9 @@ use serde_json::json;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_kernel::ids::BranchId;
 use xchange::application::workflows::exchange::approval::ExchangeApprovalPolicy;
 
@@ -162,7 +164,10 @@ fn ap9_a1_a_branch_manager_decides_its_own_branch() {
     seeded_plus(vec![]);
     let bm = actor(vec![row("BRANCH_MANAGER", Role::BranchManager, Some("B1"))]);
 
-    assert_eq!(ExchangeApprovalPolicy.may_decide(&bm, &exchange("B1")), Ok(()));
+    assert_eq!(
+        ExchangeApprovalPolicy.may_decide(&bm, &exchange("B1")),
+        Ok(())
+    );
     refused(&bm, "B2", "BRANCH_MANAGER@B1 on B2");
 }
 
@@ -195,7 +200,11 @@ fn ap9_a_branch_manager_with_the_kind_removed_is_refused() {
     seeded_without(Role::BranchManager, P::ApproveExchangeTransaction);
     let bm = actor(vec![row("BRANCH_MANAGER", Role::BranchManager, Some("B1"))]);
 
-    refused(&bm, "B1", "BRANCH_MANAGER@B1 without ApproveExchangeTransaction");
+    refused(
+        &bm,
+        "B1",
+        "BRANCH_MANAGER@B1 without ApproveExchangeTransaction",
+    );
 }
 
 /// §11.9 "`covers` widens the branch kinds on purpose": an organisation-wide row of a group holding

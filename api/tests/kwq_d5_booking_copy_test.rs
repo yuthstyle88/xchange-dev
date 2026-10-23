@@ -25,13 +25,48 @@ fn sha(qr: &str) -> [u8; 32] {
 async fn seeded(db: &TestDb) {
     let slot = Uuid::new_v4();
     let start = Utc::now() + Duration::hours(3);
-    seed_slot(&db.pool, slot, B01, bangkok_today(), start, start + Duration::minutes(30), 5, 1, "OPEN").await;
-    seed_booking(&db.pool, "BK-ALICE", "B261022-0001", CUSTOMER_ALICE_CUST_ID, B01, slot, "APP", "CONFIRMED", &sha("alice-qr")).await;
-    seed_booking(&db.pool, "BK-BOB", "B261022-0002", CUSTOMER_BOB_CUST_ID, B01, slot, "APP", "CONFIRMED", &sha("bob-qr")).await;
+    seed_slot(
+        &db.pool,
+        slot,
+        B01,
+        bangkok_today(),
+        start,
+        start + Duration::minutes(30),
+        5,
+        1,
+        "OPEN",
+    )
+    .await;
+    seed_booking(
+        &db.pool,
+        "BK-ALICE",
+        "B261022-0001",
+        CUSTOMER_ALICE_CUST_ID,
+        B01,
+        slot,
+        "APP",
+        "CONFIRMED",
+        &sha("alice-qr"),
+    )
+    .await;
+    seed_booking(
+        &db.pool,
+        "BK-BOB",
+        "B261022-0002",
+        CUSTOMER_BOB_CUST_ID,
+        B01,
+        slot,
+        "APP",
+        "CONFIRMED",
+        &sha("bob-qr"),
+    )
+    .await;
 }
 
 fn row<'a>(rows: &'a [(String, String)], field: &str) -> Option<&'a str> {
-    rows.iter().find(|(f, _)| f == field).map(|(_, v)| v.as_str())
+    rows.iter()
+        .find(|(f, _)| f == field)
+        .map(|(_, v)| v.as_str())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -46,17 +81,34 @@ async fn the_members_booking_is_found_by_its_qr_with_its_details_and_status() {
         .await
         .expect("read")
         .expect("Alice's booking");
-    assert_eq!((d.kind, d.id.as_str()), (CopySubjectKind::Booking, "BK-ALICE"));
+    assert_eq!(
+        (d.kind, d.id.as_str()),
+        (CopySubjectKind::Booking, "BK-ALICE")
+    );
     assert_eq!(d.branch_name, "Branch 1");
     assert_eq!(d.status, "CONFIRMED");
     assert_eq!(row(&d.rows, "bookingNo"), Some("B261022-0001"));
-    assert_eq!(row(&d.rows, "date"), Some(bangkok_today().format("%Y-%m-%d").to_string().as_str()));
-    assert!(row(&d.rows, "slot").is_some_and(|s| s.contains(':')), "{:?}", d.rows);
+    assert_eq!(
+        row(&d.rows, "date"),
+        Some(bangkok_today().format("%Y-%m-%d").to_string().as_str())
+    );
+    assert!(
+        row(&d.rows, "slot").is_some_and(|s| s.contains(':')),
+        "{:?}",
+        d.rows
+    );
     assert_eq!(row(&d.rows, "currency"), Some("USD"));
-    assert!(row(&d.rows, "amount").is_some_and(|a| a.starts_with("100")), "{:?}", d.rows);
+    assert!(
+        row(&d.rows, "amount").is_some_and(|a| a.starts_with("100")),
+        "{:?}",
+        d.rows
+    );
     let all = format!("{d:?}");
     for secret in ["CUST-ALICE", "CN-001", "passport", "+66"] {
-        assert!(!all.contains(secret), "{secret} must never be in a copy: {all}");
+        assert!(
+            !all.contains(secret),
+            "{secret} must never be in a copy: {all}"
+        );
     }
 
     let by_link = subject
@@ -75,9 +127,21 @@ async fn another_members_booking_an_unknown_id_or_another_qr_finds_nothing() {
     let subject = BookingCopy::new(db.pool.clone());
     let none = |r: pos_error::AppResult<Option<_>>| r.expect("read").is_none();
 
-    assert!(none(subject.load_for(CUSTOMER_ALICE_CUST_ID, "BK-BOB", &sha("bob-qr")).await));
-    assert!(none(subject.load_for(CUSTOMER_ALICE_CUST_ID, "BK-NOPE", &sha("alice-qr")).await));
-    assert!(none(subject.load_for(CUSTOMER_ALICE_CUST_ID, "BK-ALICE", &sha("old-qr")).await));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_ALICE_CUST_ID, "BK-BOB", &sha("bob-qr"))
+            .await
+    ));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_ALICE_CUST_ID, "BK-NOPE", &sha("alice-qr"))
+            .await
+    ));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_ALICE_CUST_ID, "BK-ALICE", &sha("old-qr"))
+            .await
+    ));
     assert!(none(subject.load_by_link("BK-ALICE", &sha("bob-qr")).await));
 
     // a reissue replaces the hash: the old QR finds nothing, the new one does
@@ -87,8 +151,14 @@ async fn another_members_booking_an_unknown_id_or_another_qr_finds_nothing() {
         .execute(&db.pool)
         .await
         .unwrap();
-    assert!(none(subject.load_for(CUSTOMER_ALICE_CUST_ID, "BK-ALICE", &sha("alice-qr")).await));
-    assert!(none(subject.load_by_link("BK-ALICE", &sha("alice-qr")).await));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_ALICE_CUST_ID, "BK-ALICE", &sha("alice-qr"))
+            .await
+    ));
+    assert!(none(
+        subject.load_by_link("BK-ALICE", &sha("alice-qr")).await
+    ));
     assert!(
         subject
             .load_by_link("BK-ALICE", &sha("alice-qr-2"))

@@ -53,7 +53,10 @@ fn input(code: &str, quotes: Vec<MarketQuote>, tt_decimals: Option<u32>) -> Sugg
 fn usd() -> SuggestionInput {
     let mut i = input(
         "USD",
-        vec![quote(MarketSource::Tt, "33.2", "33.9"), quote(MarketSource::SuperRich, "33.33", "33.40")],
+        vec![
+            quote(MarketSource::Tt, "33.2", "33.9"),
+            quote(MarketSource::SuperRich, "33.33", "33.40"),
+        ],
         Some(2),
     );
     i.base_buy = Some(rate("33"));
@@ -78,7 +81,12 @@ fn usd_default_tiers_are_v9s() {
     let s = PricingSuggestion::of(&usd());
     assert_eq!(
         prices(&s),
-        pairs(&[("33.23", "33.87"), ("33.24", "33.86"), ("33.26", "33.84"), ("33.29", "33.80")]),
+        pairs(&[
+            ("33.23", "33.87"),
+            ("33.24", "33.86"),
+            ("33.26", "33.84"),
+            ("33.29", "33.80")
+        ]),
         "default +0.10/+0.14/+0.20/+0.30 %"
     );
     assert_eq!(s.flags, Vec::<PricingFlag>::new());
@@ -92,13 +100,22 @@ fn a_zero_tier_one_is_the_anchor_itself() {
     i.config.better = [d("0"), d("0.1"), d("0.2"), d("0.3")];
     assert_eq!(
         prices(&PricingSuggestion::of(&i)),
-        pairs(&[("33.2", "33.9"), ("33.23", "33.87"), ("33.26", "33.84"), ("33.29", "33.80")])
+        pairs(&[
+            ("33.2", "33.9"),
+            ("33.23", "33.87"),
+            ("33.26", "33.84"),
+            ("33.29", "33.80")
+        ])
     );
 }
 
 #[test]
 fn higher_tiers_are_never_worse() {
-    for better in [["0.1", "0.14", "0.2", "0.3"], ["0.3", "0.2", "0.1", "0"], ["0.5", "0.5", "0.5", "0.5"]] {
+    for better in [
+        ["0.1", "0.14", "0.2", "0.3"],
+        ["0.3", "0.2", "0.1", "0"],
+        ["0.5", "0.5", "0.5", "0.5"],
+    ] {
         let mut i = usd();
         i.config.better = better.map(d);
         let p = prices(&PricingSuggestion::of(&i));
@@ -118,9 +135,16 @@ fn half_a_percent_better_rounds_buy_down() {
 
 #[test]
 fn gbp_from_super_rich_keeps_the_minimum_spread() {
-    let s = PricingSuggestion::of(&input("GBP", vec![quote(MarketSource::SuperRich, "44.40", "44.55")], None));
+    let s = PricingSuggestion::of(&input(
+        "GBP",
+        vec![quote(MarketSource::SuperRich, "44.40", "44.55")],
+        None,
+    ));
     assert!(s.flags.contains(&PricingFlag::NoTtQuote));
-    assert!(s.flags.contains(&PricingFlag::MinSpread), "higher tiers would cut the spread below 0.3 %");
+    assert!(
+        s.flags.contains(&PricingFlag::MinSpread),
+        "higher tiers would cut the spread below 0.3 %"
+    );
     for (buy, sell) in prices(&s) {
         let spread = (sell - buy) / ((sell + buy) / d("2")) * d("100");
         assert!(spread >= d("0.3"), "spread {spread} %");
@@ -141,7 +165,10 @@ fn an_invalid_tt_quote_falls_back_to_super_rich() {
     // V.9 anchorFor (engine.mjs:33): a quote counts only with buy > 0 and sell > buy.
     let s = PricingSuggestion::of(&input(
         "USD",
-        vec![quote(MarketSource::Tt, "33.9", "33.2"), quote(MarketSource::SuperRich, "33.33", "33.40")],
+        vec![
+            quote(MarketSource::Tt, "33.9", "33.2"),
+            quote(MarketSource::SuperRich, "33.33", "33.40"),
+        ],
         Some(2),
     ));
     assert!(s.flags.contains(&PricingFlag::NoTtQuote));
@@ -151,52 +178,97 @@ fn an_invalid_tt_quote_falls_back_to_super_rich() {
 fn a_stale_anchor_is_flagged() {
     let mut i = usd();
     i.quotes[0].stale = true;
-    assert!(PricingSuggestion::of(&i).flags.contains(&PricingFlag::StaleSource));
+    assert!(
+        PricingSuggestion::of(&i)
+            .flags
+            .contains(&PricingFlag::StaleSource)
+    );
 }
 
 #[test]
 fn partner_cost_above_a_tier_sell_is_below_cost() {
     let mut i = usd();
     i.partner_cost = Some(d("33.85"));
-    assert!(PricingSuggestion::of(&i).flags.contains(&PricingFlag::BelowCost));
+    assert!(
+        PricingSuggestion::of(&i)
+            .flags
+            .contains(&PricingFlag::BelowCost)
+    );
     i.partner_cost = Some(d("33.5"));
-    assert!(!PricingSuggestion::of(&i).flags.contains(&PricingFlag::BelowCost), "33.29 ≤ 33.5 ≤ 33.80");
+    assert!(
+        !PricingSuggestion::of(&i)
+            .flags
+            .contains(&PricingFlag::BelowCost),
+        "33.29 ≤ 33.5 ≤ 33.80"
+    );
 }
 
 #[test]
 fn partner_cost_below_a_tier_buy_is_below_cost() {
     let mut i = usd();
     i.partner_cost = Some(d("33.25"));
-    assert!(PricingSuggestion::of(&i).flags.contains(&PricingFlag::BelowCost), "tier 3 buys at 33.26 > 33.25");
+    assert!(
+        PricingSuggestion::of(&i)
+            .flags
+            .contains(&PricingFlag::BelowCost),
+        "tier 3 buys at 33.26 > 33.25"
+    );
 }
 
 #[test]
 fn tier_one_moving_more_than_one_percent_is_a_large_move() {
     let mut i = usd();
     i.published_tier1_buy = Some(rate("32"));
-    assert!(PricingSuggestion::of(&i).flags.contains(&PricingFlag::LargeMove));
+    assert!(
+        PricingSuggestion::of(&i)
+            .flags
+            .contains(&PricingFlag::LargeMove)
+    );
     i.published_tier1_buy = Some(rate("33.1"));
-    assert!(!PricingSuggestion::of(&i).flags.contains(&PricingFlag::LargeMove), "33.23 vs 33.1 is 0.39 %");
+    assert!(
+        !PricingSuggestion::of(&i)
+            .flags
+            .contains(&PricingFlag::LargeMove),
+        "33.23 vs 33.1 is 0.39 %"
+    );
 }
 
 #[test]
 fn yen_keeps_four_decimals() {
-    let s = PricingSuggestion::of(&input("JPY", vec![quote(MarketSource::Tt, "0.2085", "0.2175")], Some(4)));
+    let s = PricingSuggestion::of(&input(
+        "JPY",
+        vec![quote(MarketSource::Tt, "0.2085", "0.2175")],
+        Some(4),
+    ));
     assert_eq!(prices(&s)[0], (d("0.2087"), d("0.2173")));
     assert!(!s.flags.contains(&PricingFlag::Precision));
 }
 
 #[test]
 fn yen_at_a_unit_size_of_100_is_the_per_unit_price_times_100() {
-    let mut i = input("JPY", vec![quote(MarketSource::Tt, "0.2085", "0.2175")], Some(4));
+    let mut i = input(
+        "JPY",
+        vec![quote(MarketSource::Tt, "0.2085", "0.2175")],
+        Some(4),
+    );
     i.unit_size = d("100");
-    assert_eq!(prices(&PricingSuggestion::of(&i))[0], (d("20.87"), d("21.73")));
+    assert_eq!(
+        prices(&PricingSuggestion::of(&i))[0],
+        (d("20.87"), d("21.73"))
+    );
 }
 
 #[test]
 fn rupiah_cannot_be_expressed_in_four_decimals() {
-    let s = PricingSuggestion::of(&input("IDR", vec![quote(MarketSource::Tt, "0.00178", "0.0021")], Some(5)));
-    assert!(s.flags.contains(&PricingFlag::Precision), "4 decimals cannot express IDR");
+    let s = PricingSuggestion::of(&input(
+        "IDR",
+        vec![quote(MarketSource::Tt, "0.00178", "0.0021")],
+        Some(5),
+    ));
+    assert!(
+        s.flags.contains(&PricingFlag::Precision),
+        "4 decimals cannot express IDR"
+    );
 }
 
 #[test]
@@ -204,8 +276,16 @@ fn margins_over_the_base_reproduce_the_tier_prices() {
     let s = PricingSuggestion::of(&usd());
     let m = s.margins.expect("margins");
     assert_eq!(m[0].tier_no, 1);
-    assert_eq!(m[0].buy_margin_pct.value(), d("0.6970"), "(33.23 ÷ 33 − 1) × 100, scale 4");
-    assert_eq!(m[0].sell_margin_pct.value(), d("-0.3824"), "(33.87 ÷ 34 − 1) × 100, scale 4");
+    assert_eq!(
+        m[0].buy_margin_pct.value(),
+        d("0.6970"),
+        "(33.23 ÷ 33 − 1) × 100, scale 4"
+    );
+    assert_eq!(
+        m[0].sell_margin_pct.value(),
+        d("-0.3824"),
+        "(33.87 ÷ 34 − 1) × 100, scale 4"
+    );
     assert!(!s.flags.contains(&PricingFlag::Precision));
     // Tier 4 sell: (33.80 ÷ 34 − 1) × 100 = −0.5882 → 34 × 0.994118 = 33.800012, which rounds half-up to 33.80.
     // Rounding it up (ceil) would give 33.81 and a false `Precision`.

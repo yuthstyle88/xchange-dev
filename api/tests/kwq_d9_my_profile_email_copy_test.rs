@@ -19,8 +19,10 @@ use serde_json::json;
 use xc_kernel::pii::{PiiCipher, PiiKeys};
 
 async fn email(db: &TestDb, customer: &str, address: &str, status: &str, n: u8) {
-    let keys = Arc::new(PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=").unwrap());
-    let sealed = PiiCipher::new(keys).encrypt(format!("{customer}EMAIL").as_bytes(), address.as_bytes());
+    let keys =
+        Arc::new(PiiKeys::parse("test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=").unwrap());
+    let sealed =
+        PiiCipher::new(keys).encrypt(format!("{customer}EMAIL").as_bytes(), address.as_bytes());
     sqlx::query(
         "INSERT INTO customer_identities (id, organization_id, customer_id, type, encrypted_value, \
          key_id, lookup_hash, verified_at, status) \
@@ -38,7 +40,15 @@ async fn email(db: &TestDb, customer: &str, address: &str, status: &str, n: u8) 
 }
 
 async fn profile(db: &TestDb, who: &str) -> serde_json::Value {
-    let a = call(db, Some(who), Method::GET, "/api/v3/views/my_profile", None, None).await;
+    let a = call(
+        db,
+        Some(who),
+        Method::GET,
+        "/api/v3/views/my_profile",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     a.body["data"].clone()
 }
@@ -46,14 +56,24 @@ async fn profile(db: &TestDb, who: &str) -> serde_json::Value {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_member_with_a_verified_email_sees_it_masked_and_unavailable_without_notify() {
     let db = TestDb::start().await;
-    email(&db, CUSTOMER_ALICE_CUST_ID, "alice@example.com", "ACTIVE", 1).await;
+    email(
+        &db,
+        CUSTOMER_ALICE_CUST_ID,
+        "alice@example.com",
+        "ACTIVE",
+        1,
+    )
+    .await;
     let data = profile(&db, "CUSTOMER@customer-alice").await;
     assert_eq!(
         data["emailCopy"],
         json!({ "available": false, "to": "a***@example.com" }),
         "{data}"
     );
-    assert!(!data.to_string().contains("alice@example.com"), "never the clear address: {data}");
+    assert!(
+        !data.to_string().contains("alice@example.com"),
+        "never the clear address: {data}"
+    );
     db.finish().await;
 }
 
@@ -62,6 +82,10 @@ async fn a_member_without_one_has_no_address_and_no_copy() {
     let db = TestDb::start().await;
     email(&db, CUSTOMER_BOB_CUST_ID, "bob@example.com", "REVOKED", 2).await;
     let data = profile(&db, "CUSTOMER@customer-bob").await;
-    assert_eq!(data["emailCopy"], json!({ "available": false, "to": null }), "{data}");
+    assert_eq!(
+        data["emailCopy"],
+        json!({ "available": false, "to": null }),
+        "{data}"
+    );
     db.finish().await;
 }

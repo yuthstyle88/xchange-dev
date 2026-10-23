@@ -115,7 +115,14 @@ impl Shop {
 
     /// A customer that already has a user (CI-6), with one ACTIVE identity of `t` = `raw`.
     async fn customer_with_user(&self, subject: &str, t: IdentityType, raw: &str) -> String {
-        let user = bound_user(self.pool(), subject, "ACTIVE", "Other", &[("CUSTOMER", None)]).await;
+        let user = bound_user(
+            self.pool(),
+            subject,
+            "ACTIVE",
+            "Other",
+            &[("CUSTOMER", None)],
+        )
+        .await;
         let customer = ConsentService::pg(self.pool().clone())
             .register(
                 &self.org,
@@ -297,7 +304,12 @@ async fn a_contact_on_a_customer_with_a_user_is_refused_and_writes_nothing() {
         shop.customer_with_user(SUB_B, t, raw).await;
         let before = shop.written().await;
         assert_eq!(shop.bind(SUB_A, &[proof], vec![], "th").await, Err(refusal));
-        assert_eq!(shop.written().await, before, "{}: nothing written", t.as_str());
+        assert_eq!(
+            shop.written().await,
+            before,
+            "{}: nothing written",
+            t.as_str()
+        );
         shop.finish().await;
     }
 }
@@ -305,7 +317,14 @@ async fn a_contact_on_a_customer_with_a_user_is_refused_and_writes_nothing() {
 #[actix_web::test]
 async fn a_subject_that_already_has_a_user_is_already_registered() {
     let shop = Shop::start().await;
-    bound_user(shop.pool(), SUB_A, "ACTIVE", "Staff", &[("TELLER", Some("MAIN"))]).await;
+    bound_user(
+        shop.pool(),
+        SUB_A,
+        "ACTIVE",
+        "Staff",
+        &[("TELLER", Some("MAIN"))],
+    )
+    .await;
     let before = shop.written().await;
     assert_eq!(
         shop.bind(SUB_A, &[phone()], vec![], "th").await,

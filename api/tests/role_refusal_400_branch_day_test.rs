@@ -276,8 +276,7 @@ async fn branch_day_role_refusals_answer_400_per_route_and_command() {
             "{name} ({uri}) as {lacking_role} must answer 400, got {status}: {payload}"
         );
         assert_eq!(
-            payload["error"]["code"],
-            "roleNotAllowedHere",
+            payload["error"]["code"], "roleNotAllowedHere",
             "{name} ({uri}) error.code: {payload}"
         );
     }
@@ -457,8 +456,7 @@ async fn branch_day_out_of_scope_answers_403() {
         "dayCutoff outOfScope must answer 403, got {status}: {payload}"
     );
     assert_eq!(
-        payload["error"]["code"],
-        "outOfScope",
+        payload["error"]["code"], "outOfScope",
         "dayCutoff error.code: {payload}"
     );
 
@@ -492,7 +490,10 @@ async fn branch_day_out_of_scope_answers_403() {
         )
         .await
         .expect_err("dayTarget as finance@XC-B09");
-    assert_eq!((err.status, err.code), (StatusCode::FORBIDDEN, "outOfScope"));
+    assert_eq!(
+        (err.status, err.code),
+        (StatusCode::FORBIDDEN, "outOfScope")
+    );
     drop(tx);
 
     db.finish().await;

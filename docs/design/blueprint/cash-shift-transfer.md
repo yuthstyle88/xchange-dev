@@ -19,7 +19,6 @@
 | A7 | (was Q1) The face values to seed per currency | **"Current series"**: every note and coin of each central bank's current series, for the seven seeded currencies; the list is checked in CA-1's review |
 | A8 | (was Q2) May a teller hold OPEN shifts at two branches on the same day? | **"No"**: one OPEN shift per teller across all branches |
 | A9 | Carry v3's old `custody_requests` into counts and transfers when the request model is retired? | **"Don't carry"**: CA-10 drops them unconverted; count and back up first, the owner orders that deploy |
-| A10 | (2026-10-23, added by claude/7ca80c) A shift whose teller is gone (left, sick, account disabled) has no way to close: only its own teller may submit its CLOSE count (`count_service.rs:878`). May a manager close it? | **"ทำ B ตามที่แนะนำ"** (owner, 2026-10-23, in the FE lane's session claude/e8020026, recorded on #564), then in this lane's session: *"ให้ ผมทำไร ดาต้ามันแค่ เทส เคลียร์ได้"*. B = a BRANCH_MANAGER may count and close another person's abandoned shift, **a second person verifies the count**, and the close is **logged as a forced close** with a reason. Designed in §4.10 |
 
 Standing owner rules this design obeys: *"follow the Blueprint fully"* (PR 527, issuecomment-6073063976) and
 *"logic ห้ามแก้ไข — ปรับได้แค่หน้าตา"* (recorded on #564). §11 checks every Blueprint item against this design.
@@ -74,7 +73,6 @@ one `role_permissions.rs` table (OR-2), so this design edits no permission file 
 | Hand-over: count | outgoing **TELLER** | `ShiftOperate`; the shift's own teller |
 | Hand-over: verify (accept) or reject | the **receiving TELLER** | `ShiftOperate`; is `handovers.receiver_id`, not the counter. Done with `handoverAccept` / `handoverReject` (§4.4), never `countVerify`: `countVerify` refuses a HANDOVER_OUT count (`OnlyThroughHandover`, `xc-cash/src/application/count/count_service.rs:294-297`) |
 | Close a shift: count / verify | **TELLER** / **BRANCH_MANAGER** (B01 *"ปิดและรับรอง"*) | `ShiftOperate` (own shift) / `ShiftCloseCertify`, not the counter |
-| Forced close of an abandoned shift: count / verify (A10, §4.10) | **BRANCH_MANAGER** / a **second BRANCH_MANAGER** | `ShiftCloseCertify` + not the shift's own teller + a reason / `ShiftCloseCertify`, not the counter (today's `countVerify`, unchanged) |
 | Transfer: create, dispatch | **BRANCH_MANAGER** or **FINANCE** of the source branch | `CashManage` on the source branch |
 | Transfer: approve | within limit → a BRANCH_MANAGER of the source branch; above → EXECUTIVE; never the creator (A5) | `ApprovalsDecide` + `TransferApprovalPolicy` (PR 570 §5.2-§5.4) |
 | Transfer: receive (*"ผู้รับรับรองยอดจริง"*) | a person of the destination | `CashManage` on the destination branch; not the creator |
@@ -682,94 +680,6 @@ pub async fn reconcile_in(&self, tx, who: &Actor, id: &str, note: &str, now: Dat
 - **No new behaviour.** No permission, table, column or route changes. CA-7b's `BranchDayService` (§4.8) follows
   the same rule from the start.
 
-### 4.10 Forced close of an abandoned shift (A10, added 2026-10-23 by claude/7ca80c)
-
-**The gap, measured on `main` at `0d13c5b0`.**
-- **Only the shift's own teller can close it.** `CashCountService::submit_in` refuses a CLOSE count from anyone else
-  (`PersonRules::teller_owns_shift`, `count_service.rs:878`). The only close is a verified CLOSE count
-  (`ShiftService::close_on_verified`, reached from `verify_in`, `count_service.rs:1258`).
-- **The direct close is gone.** v2's `adminCloseShift` is retired (`compat/rpc.rs:21-24`, CA-10).
-- **So a shift whose teller left, is sick, or lost `ShiftOperate` stays OPEN.** It holds the branch day at CUT_OFF
-  (§4.2), and only a hand-written SQL update closes it. That happened to `SH-8a121367` on xc-v3, closed by hand on
-  2026-10-23 (#4412).
-
-**The rule (A10).** A BRANCH_MANAGER counts the drawer of another person's OPEN shift and gives a reason. A second
-person with `ShiftCloseCertify` verifies that count, which closes the shift exactly as a normal CLOSE does. The
-count is recorded as forced.
-
-**Only the count step is new; the verify is today's.** `verify_in` never checks who counted a CLOSE count beyond
-`verifier ≠ counter` (`count_service.rs:1041`), so a forced CLOSE count verifies through today's `countVerify` and
-keeps everything today's close does:
-- the balance-change check (`balancesChanged`);
-- the per-currency differences;
-- the FINANCE gate on a difference over the limit (`AwaitingFinance`);
-- the exception row and the variance postings;
-- `close_on_verified`, and `close_day_if_last_in`.
-
-The forced count's reason is its `note`, so `close_on_verified` writes it to `shifts.close_note` (`:1264`).
-
-**New service method** `[required name; proposed signature]`, in `api/crates/xc-cash/src/application/count/count_service.rs`:
-
-```rust
-pub struct ForcedCloseCount {
-    pub branch: BranchId,
-    pub shift_id: String,
-    pub lines: Vec<CountLine>,
-    pub reason: String,
-    pub idempotency_key: String,
-}
-
-pub async fn submit_forced_close_in(
-    &self, tx, actor: &Actor, cmd: ForcedCloseCount, now: DateTime<Utc>,
-) -> AppResult<CashCount>;
-```
-
-In this order, on the caller's transaction (§4.9):
-1. `Authorizer::check(actor, ShiftCloseCertify, branch)`. A refusal is today's `Refused` error.
-2. **Replay**: an existing count with this idempotency key is returned as `submit_in` does (`replay_is_own`).
-3. The shift must be OPEN at `branch` (today's query at `:867-875`). Otherwise `NoOpenShift`.
-4. `PersonRules::not_own_shift(shift_teller, actor)` **new**: the shift's own teller is refused with the
-   **new** `CashError::OwnShiftUseCount` (`xc-cash/src/domain/error.rs`), code `ownShiftUseCount`, message
-   *"นี่เป็นกะของคุณเอง ใช้การนับปิดกะตามปกติ"*. A forced close is for someone else's shift only. On the wire it is
-   400 `validationFailed`, through `from_cash_error`'s default arm (`commands/cash.rs`), so no mapping changes.
-5. `reason.trim()` must be 1–500 characters. Otherwise `AppError::Validation` with field `reason`.
-6. From here on it is `submit_in`'s line handling, shared and not copied (♻️): no lines is refused (#4790), plus
-   duplicate denominations, negative quantities, the currency check, `expected` taken now, and the row and totals
-   written. The count is `kind = CLOSE`, `counted_by = actor`, `shift_id = cmd.shift_id`, `note = Some(reason)`.
-   `submit_in`'s body after its own checks (`:882` on: the line handling, which now starts with the #4790 empty-lines refusal) moves into one private `record_count_in(tx, actor, cmd, now)`
-   that both callers use; `submit_in` keeps its checks and its signature.
-7. **One audit row** on the same transaction, through `AuditLog::append` (`xc-approval/src/domain/audit_log.rs:31`,
-   table `audit_events`):
-   - `action = "cash_count.forced_close"`, `object_ref = shift_id`, `scope = "branch"`, `branch_id = branch`;
-   - `actor_id = actor.user_id`, `actor_role = "BRANCH_MANAGER"`;
-   - `after = {countId, shiftId, tellerId, reason}`, `before = null`.
-
-   `CashCountService` gains an `audit: Arc<dyn AuditLog>` field. Only `pg()` calls `new` (`count_service.rs:64`;
-   35 call sites use `pg()`), so `pg()` builds a `PgAuditLog` for it and no other caller changes.
-
-**Command** (CA-8's shape, §4.4 G6: appended to the one flat file `api/src/presentation/http/v3/commands/cash.rs`):
-- `countForcedClose`: `POST /api/shifts/{id}/forced-close-count`, body `{branch, lines, reason}`, answering
-  `{id}` like `countSubmit`.
-- Its area row goes in `api/crates/xc-auth/src/domain/policy/areas/cash.rs`: `(EntryPath::Rpc, "countForcedClose")` →
-  `Need::Permission(ShiftCloseCertify)`.
-- `Locks::One(branch)`, `Idempotency-Key` as every command has.
-
-**Not changed.** `countVerify`, `submit_in`'s rules for everyone else, the hand-over, and the views:
-`admin_shifts` already lists a branch's shifts with `status` and `opened_by` (`views/admin_shifts.rs:104-118`), so the
-screen can find the OPEN shift to close.
-
-**Edges, stated rather than guarded.**
-- **One-manager branch.** The verifier needs `ShiftCloseCertify` at that branch and must not be the counter, so a
-  branch with a single BRANCH_MANAGER needs a second one scoped to it. Only BRANCH_MANAGER holds `ShiftCloseCertify`
-  (`role_grants.rs:237`); EXECUTIVE does not. That is A10's "second person", not a defect.
-- **The absent teller is not involved.** The forced count is a CLOSE count like any other. If the teller comes back
-  before it is verified, a normal CLOSE count of theirs is newer and supersedes it (only the newest count of a
-  (shift, kind) verifies, `is_newest_count`, `:1044`).
-
-**Data migration: none.** No table, column, index or constraint is added. The reason is `cash_counts.note`, the
-forced mark is the `audit_events` row, and both tables exist (`20261010110000_approvals.sql:27`). No existing row is
-read or rewritten.
-
 ## 5. Class diagram
 
 ```mermaid
@@ -783,9 +693,7 @@ classDiagram
   class AdminShiftStateView { <<api presentation/http/v3/views/admin_shift_state.rs>> openShifts }
   class CashCount { <<xc-cash domain/count/cash_count.rs  state machine>> }
   class CountLine { <<xc-cash domain/count/count_line.rs>> }
-  class CashCountService { <<xc-cash application/count/count_service.rs>> +submit() +verify() +submit_in(tx) +verify_in(tx)  CA-7c +submit_forced_close_in(tx)  FC-1 -record_count_in(tx)  FC-1, shared by both submits }
-  class ForcedCloseCount { <<xc-cash application/count/count_service.rs  FC-1>> +branch +shift_id +lines +reason +idempotency_key }
-  class AuditLog { <<trait xc-approval domain/audit_log.rs  PgAuditLog in infrastructure>> +append(tx, AuditEvent) }
+  class CashCountService { <<xc-cash application/count/count_service.rs>> +submit() +verify() +submit_in(tx) +verify_in(tx)  CA-7c }
   class Handover { <<xc-cash domain/handover/handover.rs>> }
   class HandoverService { <<xc-cash application/handover/handover_service.rs>> +start_in(tx) +accept_in(tx) +reject_in(tx)  CA-7c }
   class ReceiverRule { <<xc-cash application/handover/handover_service.rs  module fns, #2846>> +receiver_candidates(ex, org, branch, only, now) Vec~ReceiverCandidate~ +may_receive(candidate, org, branch, now) bool }
@@ -808,7 +716,7 @@ classDiagram
   class InterimCashPostings { <<xc-cash infrastructure/interim_postings.rs>> }
   class CashRepository { <<trait xc-cash domain/repository.rs>> }
   class PgCashRepository { <<xc-cash infrastructure/repository.rs>> }
-  class PersonRules { <<xc-cash domain/person_rules.rs  counter≠verifier, receiver, own shift>> +not_own_shift(teller, actor)  FC-1 }
+  class PersonRules { <<xc-cash domain/person_rules.rs  counter≠verifier, receiver, own shift>> }
   class Authorizer { <<xc-auth  PR 589 §3.5>> +check(actor, permission, target) }
   class BranchDay { <<xc-shift domain/custody/branch_day.rs  phases, cut-off, drafts, target>> }
   class ApprovalService { <<xc-approval  PR 570>> }
@@ -826,9 +734,6 @@ classDiagram
   AdminShiftStateView --> OpenShiftDto
   CashCountService --> Authorizer
   CashCountService --> PersonRules
-  CashCountService --> ForcedCloseCount : submit_forced_close_in (FC-1)
-  CashCountService --> AuditLog : cash_count.forced_close (FC-1)
-  CashCommands --> CashCountService : countForcedClose → submit_forced_close_in (FC-2)
   TransferFlow --> Authorizer
   HandoverService --> CashCountService
   HandoverService --> Handover
@@ -1045,9 +950,6 @@ Each owns disjoint files. Up-front tests are written by the ticket author (claud
 | CA-10q | `admin_cash` answers the branch's totals (§4.7): `openShifts`, summed `stock`, `stats` / `reference` over every OPEN shift, `lastCounted` summed over each teller's newest CLOSED shift | `api/src/presentation/http/v3/views/admin_cash.rs`, `api/src/presentation/dto/v3/admin_cash.rs`, `web/src/shared/api/generated/admin_cash.ts`, its tests | CA-10p; merges before M3 is deployed (FE twin CA-10q-FE in the same batch) |
 | CA-10 | retire the request model (§6) | `custody_machine.rs` (request half), `request.rs`, `compat/actions/custody.rs`, `compat/rpc.rs` (direct shift actions), `employees.rs` (Enable), the custody rows of the compat route table (OR-4 merged before CA-8, so no open ticket holds it), the retired tests and fixtures, `api/migrations/20261216110000_retire_custody_requests.sql` (§8 M3: drops the request tables, `ops_state.custodian_id` and `ops_state.enabled`, and finishes M2's end state: drops `shifts.opened_by_count` and `shifts_one_open_per_branch_v2`, widens `shifts_one_open_per_teller` to every shift); **delete `xc-exchange`'s customer shims and the `Mode` re-export** (`xc-exchange/src/{domain,application,infrastructure}/customer/**`, #554 §9.2) and point their importers at `xc-customer` / `xc-kernel::mode` | CA-8, CA-8b, CA-9, and the `/staff` tickets moved to the new model; CA-7e; and the test splits CA-10a #1632, CA-10b #1633, CA-10c #1893 |
 | CA-10-FE | the admin employees screen stops sending the two `POST /api/employees` actions CA-10 retires (§6, Q7): no Enable control or dialog, no entity form, no enabled/not-enabled state line; the entity, if shown, read-only (Q5) | `web/src/screens/admin/employees/Employees.tsx`, `web/src/screens/admin/employees/i18n.ts`, `web/src/screens/admin/employees/Employees.test.tsx`, `web/src/screens/admin/employees/worded.test.tsx`, `web/src/screens/admin/employees/Employees.rework.test.tsx` (their `enable`/`entity` cases and the stale-operations checks, which now observe the read-only entity) | CA-10's design (§6 Q7, merged 08345970); **merges with or before CA-10's API change**, so the screen never posts an action the route no longer knows. FE lane (claude/e8020026) |
-| FC-1 | the forced-close service (§4.10, A10): `ForcedCloseCount`, `CashCountService::submit_forced_close_in`, the private `record_count_in` shared with `submit_in`, the `audit` field built in `pg()`, `PersonRules::not_own_shift`, `CashError::OwnShiftUseCount`. `class:logic` | `api/crates/xc-cash/src/application/count/count_service.rs`, `api/crates/xc-cash/src/domain/person_rules.rs`, `api/crates/xc-cash/src/domain/error.rs`, `api/crates/xc-cash/tests/forced_close_test.rs` (new; written up front by the ticket author) | this section merged |
-| FC-2 | the `countForcedClose` command (§4.10) and its area row | `api/src/presentation/http/v3/commands/cash.rs` (the one command and its `register` line, appended; G6), `api/src/presentation/dto/v3/cash.rs` (its input and output DTOs, beside `CountSubmitInput`; `ts(export_to = "cash.ts")`), `web/src/shared/api/generated/cash.ts` (regenerated), `api/crates/xc-auth/src/domain/policy/areas/cash.rs` (one row), `api/tests/v3_count_forced_close_test.rs` (new) | FC-1 merged |
-| FC-FE | the screen action: a BRANCH_MANAGER sees another teller's OPEN shift (from `admin_shifts`), counts it with a required reason through `countForcedClose`, and a second manager verifies it through the existing `countVerify` screen | the FE lane's files, cut by the FE lane controller (claude/e8020026) | FC-2 merged |
 
 **The `/staff` tickets** (#571, #572, #573–#580, `docs/design/xchange-v3-wave3-staff.md`) were cut against the request
 model. #572 is superseded (the new count commands take strings from the start). #571 keeps holds, attendance,
@@ -1077,8 +979,6 @@ design after it merges; the staff design gets a follow-up PR replacing its §3�
 | CA-9b | vitest: the form shows the current limits from `cash_transfer_policy` (and an empty form on `null`), saves through `transferPolicySave` with an `Idempotency-Key`, keeps amounts as strings, and the menu is hidden without `CashTransferPolicySet` |
 | CA-9c | vitest: a policy with `valid: false` lists each invalid entry's currency, stored value and reason, and still shows the parsed limits in the form; `valid: true` shows no such list; a save answered 400 `validationFailed` with field `currency` or `limits` shows its message beside the form (not `error.serverError`); a 5xx still goes through `wordedError` |
 | CA-10 | the workspace builds and passes with the old tables, `custodian_id`, `enabled`, actions and fixtures gone; `grep` finds no `opsPropose`/`custody_requests`/`custodian_id`/`opened_by_count` outside migrations; after M3, `shifts_one_open_per_teller` binds every OPEN shift and `shifts_one_open_per_branch_v2` is gone |
-| FC-1 | on a branch with teller T's OPEN shift and managers M1, M2: (1) M1's forced count with lines and a reason is written as a CLOSE count on T's shift with `counted_by = M1` and `note = reason`, plus exactly one `audit_events` row `cash_count.forced_close` whose `object_ref` is the shift and whose `after` holds `countId`, `shiftId`, `tellerId`, `reason`; (2) M2's `verify` of it closes T's shift with `close_note = reason`; (3) M1's own `verify` of it is refused (`SameCounter`); (4) T's forced count on T's own shift is refused `OwnShiftUseCount`; (5) a TELLER (no `ShiftCloseCertify`) is refused (`Refused`); (6) a blank or 501-character reason is refused (`Validation`); (7) no lines is refused (`Validation`); (8) a shift that is not OPEN, or OPEN at another branch, is `NoOpenShift`; (9) the same idempotency key twice returns the same count and writes one audit row; (10) a refused call writes no count and no audit row; (11) a difference over the limit leaves M2's verify `AwaitingFinance`, as for any CLOSE count. Today's `submit_in` tests stay unedited |
-| FC-2 | `POST /api/shifts/{id}/forced-close-count` as BRANCH_MANAGER answers 200 `{id}`; as TELLER answers the role refusal; the own shift answers 400 `validationFailed`; an `Idempotency-Key` replay returns the same `{id}`; the area row is `(Rpc, "countForcedClose")` → `ShiftCloseCertify` |
 | CA-10-FE | vitest: the screen renders no Enable control, no entity form and no enabled/not-enabled line; no user path posts `enable` or `entity`; the stored entity shows as read-only text `company · site` and in no field, and a failed read for another branch does not keep the previous branch's entity; create, reset and disable post as before |
 
 ## 10. Must ask the owner (not decided here; answered questions stay, marked)
@@ -1112,4 +1012,3 @@ Q1 and Q2 were answered as A7 and A8 (§0); A9 decided the old requests are not 
 | — (build mechanics, no Blueprint item) | each command group lives in one flat file under `commands/`, as `denomination_groups.rs` does (§4.4, G6); logic unchanged. **No schema change** |
 | §07 organization_id on every row; created_at/updated_at on every table | created by CA-1's M1 on every new table, with PR 589 D-1's composite FK (§4.1) |
 | §07 Shift.user_id | named `teller_id` here (look only); references `users(id)` |
-| — (owner's addition A10, 2026-10-23; the Blueprint names no forced close) | §4.10: a BRANCH_MANAGER's forced CLOSE count of another person's shift, verified by a second `ShiftCloseCertify` holder through today's `countVerify`, so §02's separation of preparer and verifier holds. **No schema change**: the reason is `cash_counts.note`, the mark is an `audit_events` row |

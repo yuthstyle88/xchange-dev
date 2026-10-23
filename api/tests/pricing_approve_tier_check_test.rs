@@ -73,6 +73,11 @@ async fn the_suggested_shape_still_approves() {
     let v1 = room.worked_example().await;
     room.tt_batch(&[("USD", "32.4000", "32.9500")], 0).await;
     let a = command(&room, &owner(), ROUTE, B01, body(v1, USD_PRICES), None).await;
-    assert_eq!(a.ok("approve")["draftState"], json!("PUBLISHED"), "{}", a.text);
+    assert_eq!(
+        a.ok("approve")["draftState"],
+        json!("PUBLISHED"),
+        "{}",
+        a.text
+    );
     room.finish().await;
 }

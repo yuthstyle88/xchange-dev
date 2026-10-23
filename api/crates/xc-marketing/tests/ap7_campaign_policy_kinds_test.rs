@@ -23,7 +23,9 @@ use sqlx::postgres::PgPoolOptions;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_kernel::ids::BranchId;
 use xc_marketing::application::approval::CampaignApprovalPolicy;
 
@@ -174,7 +176,10 @@ async fn ap7_a9_a_proposer_holding_the_kind_is_still_refused() {
         actor_as(PROPOSER, vec![row("CAMPAIGN_LEAD", Role::Marketing, None)]),
     ] {
         refused_with(&proposer, "proposerCannotDecide", "the proposer");
-        assert!(!policy().allows_self_decision(&proposer), "no self decision");
+        assert!(
+            !policy().allows_self_decision(&proposer),
+            "no self decision"
+        );
     }
 }
 
@@ -223,5 +228,9 @@ async fn ap7_an_executive_without_the_kind_is_refused_out_of_scope() {
     seeded_without(Role::Executive, P::ApproveCampaignVersion);
     let exec = actor(vec![row("EXECUTIVE", Role::Executive, None)]);
 
-    refused_with(&exec, "outOfScope", "EXECUTIVE without ApproveCampaignVersion");
+    refused_with(
+        &exec,
+        "outOfScope",
+        "EXECUTIVE without ApproveCampaignVersion",
+    );
 }

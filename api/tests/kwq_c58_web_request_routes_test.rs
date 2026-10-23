@@ -340,7 +340,15 @@ fn key() -> String {
 }
 
 async fn create(db: &TestDb, who: Option<&str>, body: Value, k: &str) -> Answer {
-    call(db, who, Method::POST, "/api/app/web-requests", Some(body), Some(k)).await
+    call(
+        db,
+        who,
+        Method::POST,
+        "/api/app/web-requests",
+        Some(body),
+        Some(k),
+    )
+    .await
 }
 
 fn usd100() -> Value {
@@ -351,7 +359,10 @@ fn usd100() -> Value {
 async fn alices_request(db: &TestDb) -> (String, String) {
     let ans = create(db, Some(ALICE), usd100(), &key()).await;
     assert_eq!(ans.status, StatusCode::OK, "create: {}", ans.text);
-    let id = ans.body["requestId"].as_str().expect("requestId").to_owned();
+    let id = ans.body["requestId"]
+        .as_str()
+        .expect("requestId")
+        .to_owned();
     let token = token_of(&ans.body);
     (id, token)
 }
@@ -453,23 +464,36 @@ async fn c5_creates_a_quoted_request_with_the_member_and_a_token_and_no_ticket()
     assert_eq!(ans.status, StatusCode::OK, "{}", ans.text);
     assert_eq!(
         keys(&ans.body),
-        ["expiresAt", "requestId", "requestQrUrl"].iter().map(|s| s.to_string()).collect()
+        ["expiresAt", "requestId", "requestQrUrl"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     );
     let id = ans.body["requestId"].as_str().unwrap().to_owned();
     let token = token_of(&ans.body);
-    assert_eq!(Uuid::parse_str(&token).map(|u| u.get_version_num()).ok(), Some(4), "a UUID v4 token");
-    assert!(token_matches(&db, &id, &token).await, "only the token's SHA-256 is stored");
-    let (status, customer, created): (String, Option<String>, DateTime<Utc>) = sqlx::query_as(
-        "SELECT status, customer_id, created_at FROM kiosk_requests WHERE id = $1",
-    )
-    .bind(&id)
-    .fetch_one(&db.pool)
-    .await
-    .expect("row");
+    assert_eq!(
+        Uuid::parse_str(&token).map(|u| u.get_version_num()).ok(),
+        Some(4),
+        "a UUID v4 token"
+    );
+    assert!(
+        token_matches(&db, &id, &token).await,
+        "only the token's SHA-256 is stored"
+    );
+    let (status, customer, created): (String, Option<String>, DateTime<Utc>) =
+        sqlx::query_as("SELECT status, customer_id, created_at FROM kiosk_requests WHERE id = $1")
+            .bind(&id)
+            .fetch_one(&db.pool)
+            .await
+            .expect("row");
     assert_eq!(status, "QUOTED");
     assert_eq!(customer.as_deref(), Some("customer-alice"));
-    let expires = DateTime::parse_from_rfc3339(ans.body["expiresAt"].as_str().unwrap()).expect("RFC 3339");
-    assert_eq!(expires.with_timezone(&Utc), created + chrono::Duration::minutes(60));
+    let expires =
+        DateTime::parse_from_rfc3339(ans.body["expiresAt"].as_str().unwrap()).expect("RFC 3339");
+    assert_eq!(
+        expires.with_timezone(&Utc),
+        created + chrono::Duration::minutes(60)
+    );
     let tickets: i64 = sqlx::query_scalar("SELECT count(*) FROM queue_tickets")
         .fetch_one(&db.pool)
         .await
@@ -511,7 +535,11 @@ async fn c5_a_refused_quote_is_400_quote_refused_and_a_replay_keeps_no_token() {
     let replay = create(&db, Some(ALICE), usd100(), &k).await;
     assert_eq!(replay.status, StatusCode::OK, "{}", replay.text);
     assert_eq!(replay.body["requestId"], first.body["requestId"]);
-    assert_eq!(replay.body["requestQrUrl"], Value::Null, "the stored answer keeps no token");
+    assert_eq!(
+        replay.body["requestQrUrl"],
+        Value::Null,
+        "the stored answer keeps no token"
+    );
     db.finish().await;
 }
 
@@ -532,7 +560,10 @@ async fn c6_a_fresh_qr_replaces_the_token_and_only_for_the_owner() {
 
     not_found(&reissue(&db, BOB, &id).await);
     not_found(&reissue(&db, ALICE, "no-such-request").await);
-    assert!(token_matches(&db, &id, &new).await, "Bob's attempt changed nothing");
+    assert!(
+        token_matches(&db, &id, &new).await,
+        "Bob's attempt changed nothing"
+    );
     db.finish().await;
 }
 
@@ -563,11 +594,12 @@ async fn c7_after_the_scan_the_cancel_ends_the_ticket() {
 
     let ans = cancel(&db, ALICE, &id).await;
     assert_eq!(ans.status, StatusCode::OK, "{}", ans.text);
-    let ticket: String = sqlx::query_scalar("SELECT status FROM queue_tickets WHERE kiosk_request_id = $1")
-        .bind(&id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("ticket");
+    let ticket: String =
+        sqlx::query_scalar("SELECT status FROM queue_tickets WHERE kiosk_request_id = $1")
+            .bind(&id)
+            .fetch_one(&db.pool)
+            .await
+            .expect("ticket");
     assert_ne!(ticket, "WAITING", "the ticket is ended with the request");
     db.finish().await;
 }
@@ -579,7 +611,10 @@ async fn c8_the_member_sees_no_number_before_the_scan_and_the_number_after() {
     let db = TestDb::start().await;
     let (id, token) = alices_request(&db).await;
 
-    assert_eq!(view(&db, None, &id, None).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        view(&db, None, &id, None).await.status,
+        StatusCode::UNAUTHORIZED
+    );
     not_found(&view(&db, Some(BOB), &id, None).await);
 
     let before = view(&db, Some(ALICE), &id, None).await;
@@ -589,8 +624,15 @@ async fn c8_the_member_sees_no_number_before_the_scan_and_the_number_after() {
     assert_eq!(
         keys(data),
         [
-            "amount", "branch", "currency", "displayNumber", "expiresAt", "requestId", "status",
-            "ticketsAhead", "type"
+            "amount",
+            "branch",
+            "currency",
+            "displayNumber",
+            "expiresAt",
+            "requestId",
+            "status",
+            "ticketsAhead",
+            "type"
         ]
         .iter()
         .map(|s| s.to_string())
@@ -603,7 +645,10 @@ async fn c8_the_member_sees_no_number_before_the_scan_and_the_number_after() {
     assert_eq!(data["currency"], json!("USD"));
     assert_eq!(data["branch"]["code"], json!(B01));
     assert!(data["expiresAt"].is_string());
-    let v0 = before.body["version"].as_str().expect("version is a string (W4a)").to_owned();
+    let v0 = before.body["version"]
+        .as_str()
+        .expect("version is a string (W4a)")
+        .to_owned();
 
     let same = view(&db, Some(ALICE), &id, Some(&v0)).await;
     assert_eq!(same.body, json!({ "version": v0, "changed": false }));
@@ -613,7 +658,10 @@ async fn c8_the_member_sees_no_number_before_the_scan_and_the_number_after() {
     let after = view(&db, Some(ALICE), &id, Some(&v0)).await;
     assert_eq!(after.body["changed"], json!(true), "{}", after.text);
     assert_eq!(after.body["data"]["status"], json!("WAITING"));
-    assert_eq!(after.body["data"]["displayNumber"], scanned.body["displayNumber"]);
+    assert_eq!(
+        after.body["data"]["displayNumber"],
+        scanned.body["displayNumber"]
+    );
     assert!(after.body["data"]["ticketsAhead"].is_number());
     assert_eq!(after.body["data"]["expiresAt"], Value::Null);
     db.finish().await;
@@ -630,13 +678,21 @@ async fn c8_a_cancel_or_a_fresh_qr_moves_the_version_and_a_purge_is_not_found() 
 
     assert_eq!(reissue(&db, ALICE, &id).await.status, StatusCode::OK);
     let after_qr = view(&db, Some(ALICE), &id, Some(&v0)).await;
-    assert_eq!(after_qr.body["changed"], json!(true), "B11a: a reissue moves the version");
+    assert_eq!(
+        after_qr.body["changed"],
+        json!(true),
+        "B11a: a reissue moves the version"
+    );
     let v1 = after_qr.body["version"].as_str().unwrap().to_owned();
     assert_ne!(v1, v0);
 
     assert_eq!(cancel(&db, ALICE, &id).await.status, StatusCode::OK);
     let after_cancel = view(&db, Some(ALICE), &id, Some(&v1)).await;
-    assert_eq!(after_cancel.body["changed"], json!(true), "B11a: a cancel moves the version");
+    assert_eq!(
+        after_cancel.body["changed"],
+        json!(true),
+        "B11a: a cancel moves the version"
+    );
     assert_eq!(after_cancel.body["data"]["status"], json!("CANCELLED"));
     let v2 = after_cancel.body["version"].as_str().unwrap().to_owned();
 
@@ -675,13 +731,30 @@ async fn c9_the_web_page_gets_the_kiosk_rates_and_unknown_is_the_public_404() {
     )
     .await;
     assert_eq!(web.status, StatusCode::OK, "{}", web.text);
-    assert_eq!(web.body, kiosk.body, "the same rates the kiosk core answers");
+    assert_eq!(
+        web.body, kiosk.body,
+        "the same rates the kiosk core answers"
+    );
 
-    let rates_404 = call(&db, None, Method::GET, "/api/public/orgs/XC/branches/NOPE/rates", None, None).await;
-    for uri in ["/api/public/orgs/XC/branches/NOPE/queue-rates", "/api/public/orgs/NOPE/branches/XC-B01/queue-rates"] {
+    let rates_404 = call(
+        &db,
+        None,
+        Method::GET,
+        "/api/public/orgs/XC/branches/NOPE/rates",
+        None,
+        None,
+    )
+    .await;
+    for uri in [
+        "/api/public/orgs/XC/branches/NOPE/queue-rates",
+        "/api/public/orgs/NOPE/branches/XC-B01/queue-rates",
+    ] {
         let ans = call(&db, None, Method::GET, uri, None, None).await;
-        assert_eq!((ans.status, ans.text.as_str()), (rates_404.status, rates_404.text.as_str()), "{uri}");
+        assert_eq!(
+            (ans.status, ans.text.as_str()),
+            (rates_404.status, rates_404.text.as_str()),
+            "{uri}"
+        );
     }
     db.finish().await;
 }
-

@@ -86,9 +86,18 @@ async fn link_href_escapes_quotes_and_ampersands_while_plain_text_keeps_raw_url(
         CopyLink::new([9; 32]),
         origin.to_owned(),
     );
-    let now = Utc.with_ymd_and_hms(2026, 10, 22, 1, 0, 0).single().unwrap();
+    let now = Utc
+        .with_ymd_and_hms(2026, 10, 22, 1, 0, 0)
+        .single()
+        .unwrap();
     service
-        .send("CUST-ALICE", CopySubjectKind::Booking, "BK-1", "bk-qr-1", now)
+        .send(
+            "CUST-ALICE",
+            CopySubjectKind::Booking,
+            "BK-1",
+            "bk-qr-1",
+            now,
+        )
         .await
         .expect("sent");
 

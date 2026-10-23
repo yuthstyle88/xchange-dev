@@ -850,10 +850,17 @@ async fn a_count_with_no_lines_is_refused_and_writes_nothing() {
     );
     assert_eq!(db.count("SELECT count(*) FROM cash_counts").await, before);
 
-    let zero_lines = vec![CountLine::new("THB", db.denomination("THB", "1000").await, 0)];
+    let zero_lines = vec![CountLine::new(
+        "THB",
+        db.denomination("THB", "1000").await,
+        0,
+    )];
     counts
-        .submit(&teller, cmd(&main, None, CountKind::Open, zero_lines), at(1))
+        .submit(
+            &teller,
+            cmd(&main, None, CountKind::Open, zero_lines),
+            at(1),
+        )
         .await
         .expect("an explicit 0 line is accepted");
 }
-

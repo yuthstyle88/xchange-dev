@@ -96,7 +96,10 @@ async fn a_token_that_leads_nowhere_is_not_found_and_the_desk_lookup_answers_the
     let refused = issue
         .issue_by_token(&branch(B2), "tok-1", ORIGIN, at(60_000))
         .await;
-    assert!(matches!(refused, Err(AppError::NotFound { .. })), "{refused:?}");
+    assert!(
+        matches!(refused, Err(AppError::NotFound { .. })),
+        "{refused:?}"
+    );
     assert!(queue.issues().is_empty());
 
     assert_eq!(
@@ -107,5 +110,8 @@ async fn a_token_that_leads_nowhere_is_not_found_and_the_desk_lookup_answers_the
         "web-1"
     );
     let unknown = issue.find_by_token(&branch(MAIN), "nope", at(60_000)).await;
-    assert!(matches!(unknown, Err(AppError::NotFound { .. })), "{unknown:?}");
+    assert!(
+        matches!(unknown, Err(AppError::NotFound { .. })),
+        "{unknown:?}"
+    );
 }

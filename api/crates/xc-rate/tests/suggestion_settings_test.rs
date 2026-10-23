@@ -27,8 +27,14 @@ fn currency_then_branch_then_v9s_default() {
         branch_default: Some(four(["0.05", "0.1", "0.1", "0.2"])),
         by_currency: HashMap::from([("USD".to_string(), four(["0", "0.1", "0.2", "0.3"]))]),
     };
-    assert_eq!(s.better_for("USD"), (four(["0", "0.1", "0.2", "0.3"]), BetterFrom::Currency));
-    assert_eq!(s.better_for("EUR"), (four(["0.05", "0.1", "0.1", "0.2"]), BetterFrom::Branch));
+    assert_eq!(
+        s.better_for("USD"),
+        (four(["0", "0.1", "0.2", "0.3"]), BetterFrom::Currency)
+    );
+    assert_eq!(
+        s.better_for("EUR"),
+        (four(["0.05", "0.1", "0.1", "0.2"]), BetterFrom::Branch)
+    );
     assert_eq!(
         SuggestionSettings::default().better_for("EUR"),
         (four(["0.1", "0.14", "0.2", "0.3"]), BetterFrom::Default),
@@ -38,12 +44,31 @@ fn currency_then_branch_then_v9s_default() {
 
 #[test]
 fn v9s_configure_checks() {
-    assert_eq!(SuggestionSettings::validate(&four(["0", "0.1", "0.1", "0.2"])).unwrap(), four(["0", "0.1", "0.1", "0.2"]));
-    assert_eq!(SuggestionSettings::validate(&four(["-2", "-1", "0", "2"])).unwrap()[0], d("-2"), "the bounds are inclusive");
-    assert!(SuggestionSettings::validate(&[d("0.1"), d("0.2"), d("0.3")]).is_err(), "exactly four");
-    assert!(SuggestionSettings::validate(&four(["0", "0.1", "0.2", "2.01"])).is_err(), "above 2");
-    assert!(SuggestionSettings::validate(&four(["-2.5", "0", "0", "0"])).is_err(), "below −2");
-    assert!(SuggestionSettings::validate(&four(["0.2", "0.1", "0.3", "0.4"])).is_err(), "a higher tier must not be worse");
+    assert_eq!(
+        SuggestionSettings::validate(&four(["0", "0.1", "0.1", "0.2"])).unwrap(),
+        four(["0", "0.1", "0.1", "0.2"])
+    );
+    assert_eq!(
+        SuggestionSettings::validate(&four(["-2", "-1", "0", "2"])).unwrap()[0],
+        d("-2"),
+        "the bounds are inclusive"
+    );
+    assert!(
+        SuggestionSettings::validate(&[d("0.1"), d("0.2"), d("0.3")]).is_err(),
+        "exactly four"
+    );
+    assert!(
+        SuggestionSettings::validate(&four(["0", "0.1", "0.2", "2.01"])).is_err(),
+        "above 2"
+    );
+    assert!(
+        SuggestionSettings::validate(&four(["-2.5", "0", "0", "0"])).is_err(),
+        "below −2"
+    );
+    assert!(
+        SuggestionSettings::validate(&four(["0.2", "0.1", "0.3", "0.4"])).is_err(),
+        "a higher tier must not be worse"
+    );
     let scaled = SuggestionSettings::validate(&four(["0.1", "0.14", "0.2", "0.3"])).unwrap();
     assert_eq!(scaled[1].scale(), 4, "stored at scale 4");
 }
@@ -57,17 +82,59 @@ async fn the_store_upserts_reads_and_deletes_rows() {
         .fetch_one(&mut *conn)
         .await
         .expect("a seeded branch");
-    assert_eq!(PricingSuggestionSettingsStore::for_branch(&mut conn, &branch).await.unwrap(), SuggestionSettings::default());
+    assert_eq!(
+        PricingSuggestionSettingsStore::for_branch(&mut conn, &branch)
+            .await
+            .unwrap(),
+        SuggestionSettings::default()
+    );
 
-    PricingSuggestionSettingsStore::save(&mut conn, &branch, "*", Some(four(["0.05", "0.1", "0.1", "0.2"])), "owner-1", at).await.unwrap();
-    PricingSuggestionSettingsStore::save(&mut conn, &branch, "USD", Some(four(["0", "0.1", "0.2", "0.3"])), "owner-1", at).await.unwrap();
-    PricingSuggestionSettingsStore::save(&mut conn, &branch, "USD", Some(four(["0", "0", "0", "0"])), "owner-1", at).await.unwrap();
-    let s = PricingSuggestionSettingsStore::for_branch(&mut conn, &branch).await.unwrap();
+    PricingSuggestionSettingsStore::save(
+        &mut conn,
+        &branch,
+        "*",
+        Some(four(["0.05", "0.1", "0.1", "0.2"])),
+        "owner-1",
+        at,
+    )
+    .await
+    .unwrap();
+    PricingSuggestionSettingsStore::save(
+        &mut conn,
+        &branch,
+        "USD",
+        Some(four(["0", "0.1", "0.2", "0.3"])),
+        "owner-1",
+        at,
+    )
+    .await
+    .unwrap();
+    PricingSuggestionSettingsStore::save(
+        &mut conn,
+        &branch,
+        "USD",
+        Some(four(["0", "0", "0", "0"])),
+        "owner-1",
+        at,
+    )
+    .await
+    .unwrap();
+    let s = PricingSuggestionSettingsStore::for_branch(&mut conn, &branch)
+        .await
+        .unwrap();
     assert_eq!(s.branch_default, Some(four(["0.05", "0.1", "0.1", "0.2"])));
-    assert_eq!(s.by_currency.get("USD"), Some(&four(["0", "0", "0", "0"])), "the second save replaced the first");
+    assert_eq!(
+        s.by_currency.get("USD"),
+        Some(&four(["0", "0", "0", "0"])),
+        "the second save replaced the first"
+    );
 
-    PricingSuggestionSettingsStore::save(&mut conn, &branch, "USD", None, "owner-1", at).await.unwrap();
-    let s = PricingSuggestionSettingsStore::for_branch(&mut conn, &branch).await.unwrap();
+    PricingSuggestionSettingsStore::save(&mut conn, &branch, "USD", None, "owner-1", at)
+        .await
+        .unwrap();
+    let s = PricingSuggestionSettingsStore::for_branch(&mut conn, &branch)
+        .await
+        .unwrap();
     assert!(s.by_currency.is_empty(), "None deletes the row");
     assert!(s.branch_default.is_some());
 }

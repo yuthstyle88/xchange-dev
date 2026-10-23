@@ -130,7 +130,9 @@ async fn a_confirm_after_the_switch_is_refused_and_passes_once_switched_back() {
         .assert_refused(400, UNAVAILABLE, "confirm after Alipay was switched off");
 
     owner_saves(&counter, "MAIN", 1, defaults()).await;
-    let confirmed = counter.ask(Some("FR1"), "confirm", json!({ "id": id })).await;
+    let confirmed = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": id }))
+        .await;
     assert_eq!(confirmed.status, 200, "{}", confirmed.text);
     assert_eq!(confirmed.json()["status"], json!("WAITING"));
     counter.finish().await;

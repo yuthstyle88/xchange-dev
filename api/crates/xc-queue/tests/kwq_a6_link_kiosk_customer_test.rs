@@ -84,9 +84,16 @@ async fn the_member_is_set_on_the_requests_ticket_and_a_repeat_is_harmless() {
 
     assert!(link(&db, port.clone(), "KR-1", "cust-1").await);
     assert_eq!(customer_of(&db, &t1).await.as_deref(), Some("cust-1"));
-    assert_eq!(customer_of(&db, &t2).await, None, "another request's ticket is untouched");
+    assert_eq!(
+        customer_of(&db, &t2).await,
+        None,
+        "another request's ticket is untouched"
+    );
 
-    assert!(link(&db, port.clone(), "KR-1", "cust-1").await, "a repeat answers true");
+    assert!(
+        link(&db, port.clone(), "KR-1", "cust-1").await,
+        "a repeat answers true"
+    );
     assert_eq!(customer_of(&db, &t1).await.as_deref(), Some("cust-1"));
     db.finish().await;
 }
@@ -103,7 +110,10 @@ async fn another_member_is_never_written_over_and_no_ticket_answers_false() {
     assert!(!link(&db, port.clone(), "KR-1", "cust-2").await);
     assert_eq!(customer_of(&db, &t1).await.as_deref(), Some("cust-1"));
 
-    assert!(!link(&db, port.clone(), "NO-SUCH", "cust-1").await, "no ticket");
+    assert!(
+        !link(&db, port.clone(), "NO-SUCH", "cust-1").await,
+        "no ticket"
+    );
     assert_eq!(
         db.count("SELECT count(*) FROM queue_tickets WHERE customer_id IS NOT NULL")
             .await,

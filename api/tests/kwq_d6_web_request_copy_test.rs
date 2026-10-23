@@ -28,7 +28,14 @@ fn sha(qr: &str) -> [u8; 32] {
 }
 
 /// A request of `XC-B01` in `status`, created `created`, with `member` and the hash of `token`.
-async fn request(db: &TestDb, id: &str, status: &str, member: Option<&str>, token: Option<&str>, created: DateTime<Utc>) {
+async fn request(
+    db: &TestDb,
+    id: &str,
+    status: &str,
+    member: Option<&str>,
+    token: Option<&str>,
+    created: DateTime<Utc>,
+) {
     sqlx::query(
         "INSERT INTO kiosk_requests (branch_id, id, status, created_at, side, currency, rate, \
              foreign_amount, thb, input_amount, payment_method, customer_id, cancel_token_hash) \
@@ -47,15 +54,33 @@ async fn request(db: &TestDb, id: &str, status: &str, member: Option<&str>, toke
 }
 
 fn row<'a>(rows: &'a [(String, String)], field: &str) -> Option<&'a str> {
-    rows.iter().find(|(f, _)| f == field).map(|(_, v)| v.as_str())
+    rows.iter()
+        .find(|(f, _)| f == field)
+        .map(|(_, v)| v.as_str())
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_members_web_request_is_found_by_its_token_with_its_details() {
     let db = TestDb::start().await;
     let created = Utc::now() - Duration::minutes(5);
-    request(&db, "WR-ALICE", "QUOTED", Some(CUSTOMER_ALICE_CUST_ID), Some("tok-a"), created).await;
-    request(&db, "WR-WAIT", "WAITING", Some(CUSTOMER_ALICE_CUST_ID), Some("tok-w"), created).await;
+    request(
+        &db,
+        "WR-ALICE",
+        "QUOTED",
+        Some(CUSTOMER_ALICE_CUST_ID),
+        Some("tok-a"),
+        created,
+    )
+    .await;
+    request(
+        &db,
+        "WR-WAIT",
+        "WAITING",
+        Some(CUSTOMER_ALICE_CUST_ID),
+        Some("tok-w"),
+        created,
+    )
+    .await;
     let subject = WebRequestCopy::new(db.pool.clone());
     assert_eq!(subject.kind(), CopySubjectKind::WebRequest);
 
@@ -64,22 +89,44 @@ async fn the_members_web_request_is_found_by_its_token_with_its_details() {
         .await
         .expect("read")
         .expect("Alice's request");
-    assert_eq!((d.kind, d.id.as_str()), (CopySubjectKind::WebRequest, "WR-ALICE"));
+    assert_eq!(
+        (d.kind, d.id.as_str()),
+        (CopySubjectKind::WebRequest, "WR-ALICE")
+    );
     assert_eq!(d.branch_name, "Branch 1");
     assert_eq!(d.status, "QUOTED", "W5: no ticket yet");
     assert_eq!(row(&d.rows, "currency"), Some("USD"));
-    assert!(row(&d.rows, "amount").is_some_and(|a| a.starts_with("100")), "{:?}", d.rows);
-    assert!(row(&d.rows, "rate").is_some_and(|r| r.starts_with("35.5")), "{:?}", d.rows);
+    assert!(
+        row(&d.rows, "amount").is_some_and(|a| a.starts_with("100")),
+        "{:?}",
+        d.rows
+    );
+    assert!(
+        row(&d.rows, "rate").is_some_and(|r| r.starts_with("35.5")),
+        "{:?}",
+        d.rows
+    );
     let expires = DateTime::parse_from_rfc3339(row(&d.rows, "expiresAt").expect("expiresAt"))
         .expect("RFC 3339")
         .with_timezone(&Utc);
-    assert!((expires - (created + Duration::minutes(60))).num_seconds().abs() <= 1);
+    assert!(
+        (expires - (created + Duration::minutes(60)))
+            .num_seconds()
+            .abs()
+            <= 1
+    );
     let all = format!("{d:?}");
     for secret in ["CUST-ALICE", "CN-001", "tok-a", "+66"] {
-        assert!(!all.contains(secret), "{secret} must never be in a copy: {all}");
+        assert!(
+            !all.contains(secret),
+            "{secret} must never be in a copy: {all}"
+        );
     }
     assert_eq!(
-        subject.load_by_link("WR-ALICE", &sha("tok-a")).await.expect("read"),
+        subject
+            .load_by_link("WR-ALICE", &sha("tok-a"))
+            .await
+            .expect("read"),
         Some(d)
     );
 
@@ -96,16 +143,43 @@ async fn the_members_web_request_is_found_by_its_token_with_its_details() {
 async fn another_member_a_kiosk_request_an_unknown_id_or_another_token_finds_nothing() {
     let db = TestDb::start().await;
     let now = Utc::now();
-    request(&db, "WR-BOB", "QUOTED", Some(CUSTOMER_BOB_CUST_ID), Some("tok-b"), now).await;
+    request(
+        &db,
+        "WR-BOB",
+        "QUOTED",
+        Some(CUSTOMER_BOB_CUST_ID),
+        Some("tok-b"),
+        now,
+    )
+    .await;
     request(&db, "KIOSK-1", "WAITING", None, Some("tok-k"), now).await;
     let subject = WebRequestCopy::new(db.pool.clone());
     let none = |r: pos_error::AppResult<Option<_>>| r.expect("read").is_none();
 
-    assert!(none(subject.load_for(CUSTOMER_ALICE_CUST_ID, "WR-BOB", &sha("tok-b")).await));
-    assert!(none(subject.load_for(CUSTOMER_ALICE_CUST_ID, "KIOSK-1", &sha("tok-k")).await));
-    assert!(none(subject.load_for(CUSTOMER_BOB_CUST_ID, "WR-NOPE", &sha("tok-b")).await));
-    assert!(none(subject.load_for(CUSTOMER_BOB_CUST_ID, "WR-BOB", &sha("tok-x")).await));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_ALICE_CUST_ID, "WR-BOB", &sha("tok-b"))
+            .await
+    ));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_ALICE_CUST_ID, "KIOSK-1", &sha("tok-k"))
+            .await
+    ));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_BOB_CUST_ID, "WR-NOPE", &sha("tok-b"))
+            .await
+    ));
+    assert!(none(
+        subject
+            .load_for(CUSTOMER_BOB_CUST_ID, "WR-BOB", &sha("tok-x"))
+            .await
+    ));
     assert!(none(subject.load_by_link("WR-BOB", &sha("tok-x")).await));
-    assert!(none(subject.load_by_link("WR-GONE", &sha("tok-b")).await), "a purged request has no row");
+    assert!(
+        none(subject.load_by_link("WR-GONE", &sha("tok-b")).await),
+        "a purged request has no row"
+    );
     db.finish().await;
 }

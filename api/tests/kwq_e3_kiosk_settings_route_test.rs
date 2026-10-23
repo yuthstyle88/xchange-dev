@@ -457,14 +457,31 @@ async fn settings_with_no_row_are_the_defaults_and_anyone_may_read_them() {
 async fn a_rates_draft_holder_saves_and_the_version_moves() {
     let db = TestDb::start().await;
     let configure = staff(&db, "RATE_MANAGER", "configure", json!({ "branchId": B01 })).await;
-    assert_ne!(configure.status, StatusCode::FORBIDDEN, "precondition: RATE_MANAGER holds RatesDraft: {}", configure.text);
+    assert_ne!(
+        configure.status,
+        StatusCode::FORBIDDEN,
+        "precondition: RATE_MANAGER holds RatesDraft: {}",
+        configure.text
+    );
 
-    let saved = staff(&db, "RATE_MANAGER", "configureSettings", json!({ "branchId": B01, "resultSeconds": 25 })).await;
+    let saved = staff(
+        &db,
+        "RATE_MANAGER",
+        "configureSettings",
+        json!({ "branchId": B01, "resultSeconds": 25 }),
+    )
+    .await;
     assert_eq!(settings_of(&saved), (25, 1));
     let read = kiosk(&db, "settings", json!({ "branchId": B01 })).await;
     assert_eq!(settings_of(&read), (25, 1));
 
-    let again = staff(&db, "RATE_MANAGER", "configureSettings", json!({ "branchId": B01, "resultSeconds": 30 })).await;
+    let again = staff(
+        &db,
+        "RATE_MANAGER",
+        "configureSettings",
+        json!({ "branchId": B01, "resultSeconds": 30 }),
+    )
+    .await;
     assert_eq!(settings_of(&again), (30, 2));
     assert_eq!(rows(&db).await, 1, "one row per branch");
     db.finish().await;
@@ -474,11 +491,27 @@ async fn a_rates_draft_holder_saves_and_the_version_moves() {
 async fn an_out_of_range_or_missing_value_is_refused_naming_the_field() {
     let db = TestDb::start().await;
     for bad in [json!(2), json!(121), json!("ten"), json!(null), json!(12.5)] {
-        let ans = staff(&db, "RATE_MANAGER", "configureSettings", json!({ "branchId": B01, "resultSeconds": bad })).await;
+        let ans = staff(
+            &db,
+            "RATE_MANAGER",
+            "configureSettings",
+            json!({ "branchId": B01, "resultSeconds": bad }),
+        )
+        .await;
         assert_eq!(ans.status, StatusCode::BAD_REQUEST, "{bad}: {}", ans.text);
-        assert_eq!(ans.body, json!({ "error": "validationFailed", "field": "resultSeconds" }), "{bad}");
+        assert_eq!(
+            ans.body,
+            json!({ "error": "validationFailed", "field": "resultSeconds" }),
+            "{bad}"
+        );
     }
-    let missing = staff(&db, "RATE_MANAGER", "configureSettings", json!({ "branchId": B01 })).await;
+    let missing = staff(
+        &db,
+        "RATE_MANAGER",
+        "configureSettings",
+        json!({ "branchId": B01 }),
+    )
+    .await;
     assert_eq!(missing.status, StatusCode::BAD_REQUEST, "{}", missing.text);
     assert_eq!(rows(&db).await, 0, "nothing saved");
     db.finish().await;
@@ -493,10 +526,30 @@ async fn without_rates_draft_the_answer_is_configures() {
             Some(w) => staff(&db, w, "configure", json!({ "branchId": B01 })).await,
         };
         let ans = match who {
-            None => kiosk(&db, "configureSettings", json!({ "branchId": B01, "resultSeconds": 20 })).await,
-            Some(w) => staff(&db, w, "configureSettings", json!({ "branchId": B01, "resultSeconds": 20 })).await,
+            None => {
+                kiosk(
+                    &db,
+                    "configureSettings",
+                    json!({ "branchId": B01, "resultSeconds": 20 }),
+                )
+                .await
+            }
+            Some(w) => {
+                staff(
+                    &db,
+                    w,
+                    "configureSettings",
+                    json!({ "branchId": B01, "resultSeconds": 20 }),
+                )
+                .await
+            }
         };
-        assert_eq!((ans.status, &ans.body), (configure.status, &configure.body), "{who:?}: {}", ans.text);
+        assert_eq!(
+            (ans.status, &ans.body),
+            (configure.status, &configure.body),
+            "{who:?}: {}",
+            ans.text
+        );
     }
     assert_eq!(rows(&db).await, 0);
     db.finish().await;

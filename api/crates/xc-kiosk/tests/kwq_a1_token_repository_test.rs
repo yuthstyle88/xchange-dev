@@ -38,7 +38,13 @@ fn quoted(id: &str) -> KioskRequest {
 }
 
 /// A QUOTED request `id` of `branch_id`, with the hash of `token` stored as its request token.
-async fn add(db: &TestDb, repo: &PgKioskRepository, branch_id: &str, id: &str, token: Option<&str>) {
+async fn add(
+    db: &TestDb,
+    repo: &PgKioskRepository,
+    branch_id: &str,
+    id: &str,
+    token: Option<&str>,
+) {
     let mut tx = db.begin().await;
     let b = branch(branch_id);
     repo.insert_in(&mut tx, &b, &quoted(id), "10.0.0.1")
@@ -134,11 +140,23 @@ async fn the_member_is_stored_and_read_back_and_a_kiosk_request_has_none() {
         repo.customer_in(&mut tx, &b, "web-1").await.expect("read"),
         Some("cust-1".to_owned())
     );
-    assert_eq!(repo.customer_in(&mut tx, &b, "kiosk-1").await.expect("read"), None);
-    assert_eq!(repo.customer_in(&mut tx, &b, "no-such").await.expect("read"), None);
+    assert_eq!(
+        repo.customer_in(&mut tx, &b, "kiosk-1")
+            .await
+            .expect("read"),
+        None
+    );
+    assert_eq!(
+        repo.customer_in(&mut tx, &b, "no-such")
+            .await
+            .expect("read"),
+        None
+    );
     // another branch's id reads nothing
     assert_eq!(
-        repo.customer_in(&mut tx, &branch(B2), "web-1").await.expect("read"),
+        repo.customer_in(&mut tx, &branch(B2), "web-1")
+            .await
+            .expect("read"),
         None
     );
 }
@@ -158,15 +176,21 @@ async fn the_branch_timezone_is_the_branch_row_and_none_for_no_branch() {
 
     let mut tx = db.begin().await;
     assert_eq!(
-        repo.branch_timezone_in(&mut tx, &branch(MAIN)).await.expect("read"),
+        repo.branch_timezone_in(&mut tx, &branch(MAIN))
+            .await
+            .expect("read"),
         Some(main_tz)
     );
     assert_eq!(
-        repo.branch_timezone_in(&mut tx, &branch(B2)).await.expect("read"),
+        repo.branch_timezone_in(&mut tx, &branch(B2))
+            .await
+            .expect("read"),
         Some("Asia/Tokyo".to_owned())
     );
     assert_eq!(
-        repo.branch_timezone_in(&mut tx, &branch("NOPE")).await.expect("read"),
+        repo.branch_timezone_in(&mut tx, &branch("NOPE"))
+            .await
+            .expect("read"),
         None
     );
 }

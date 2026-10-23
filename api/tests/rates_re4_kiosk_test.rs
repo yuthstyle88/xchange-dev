@@ -459,7 +459,9 @@ async fn the_kiosk_json_rate_is_per_one() {
     assert_eq!((rate, unit_size), (d("23.5"), d("100")), "R1: per 100");
 
     counter.desk.clock.advance(Duration::seconds(4));
-    let confirmed = counter.ask(Some("FR1"), "confirm", json!({ "id": id })).await;
+    let confirmed = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": id }))
+        .await;
     assert_eq!(confirmed.status, 200, "{}", confirmed.text);
 
     let list = counter.ask(Some("owner"), "list", json!({})).await;
@@ -596,7 +598,9 @@ async fn a_publish_that_changes_the_rate_refuses_the_confirm() {
     publish(&pool, "MAIN", &[("JPY", "23.2", "23.5")]).await;
 
     counter.desk.clock.advance(Duration::seconds(4));
-    let refused = counter.ask(Some("FR1"), "confirm", json!({ "id": id })).await;
+    let refused = counter
+        .ask(Some("FR1"), "confirm", json!({ "id": id }))
+        .await;
     refused.assert_refused(400, RATE_CHANGED, "confirm after a new rate");
     let (line_id, rate, unit_size, _, thb, _, status) = stored(&counter, id).await;
     assert_eq!(status, "QUOTED");

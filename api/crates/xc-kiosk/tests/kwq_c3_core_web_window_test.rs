@@ -48,7 +48,10 @@ async fn quote_for_in_writes_on_the_callers_transaction() {
         .expect("quoted inside the caller's transaction");
     assert_eq!(rolled.request.status, KioskStatus::Quoted);
     tx.rollback().await.expect("rollback");
-    assert!(ids(&db).await.is_empty(), "the caller's rollback takes the request with it");
+    assert!(
+        ids(&db).await.is_empty(),
+        "the caller's rollback takes the request with it"
+    );
 
     // committed by the caller: the request, its member and its token hash
     let mut tx = db.begin().await;
@@ -73,22 +76,44 @@ async fn the_next_quote_purges_a_kiosk_quote_after_ten_minutes_but_a_web_request
     let service = db.service(FakePorts::standard());
     let main = branch(MAIN);
     service
-        .quote_for(&main, from_ip(buy100("kiosk-1"), "198.51.100.1"), None, at(0))
+        .quote_for(
+            &main,
+            from_ip(buy100("kiosk-1"), "198.51.100.1"),
+            None,
+            at(0),
+        )
         .await
         .expect("kiosk quote");
     service
-        .quote_for(&main, from_ip(buy100("web-1"), "198.51.100.2"), member("tok-1"), at(0))
+        .quote_for(
+            &main,
+            from_ip(buy100("web-1"), "198.51.100.2"),
+            member("tok-1"),
+            at(0),
+        )
         .await
         .expect("web request");
 
     service
-        .quote(&main, from_ip(buy100("later-1"), "198.51.100.3"), at(11 * MINUTE))
+        .quote(
+            &main,
+            from_ip(buy100("later-1"), "198.51.100.3"),
+            at(11 * MINUTE),
+        )
         .await
         .expect("a quote 11 min later");
-    assert_eq!(ids(&db).await, vec!["later-1", "web-1"], "the kiosk quote went, the web request stays");
+    assert_eq!(
+        ids(&db).await,
+        vec!["later-1", "web-1"],
+        "the kiosk quote went, the web request stays"
+    );
 
     service
-        .quote(&main, from_ip(buy100("later-2"), "198.51.100.4"), at(61 * MINUTE))
+        .quote(
+            &main,
+            from_ip(buy100("later-2"), "198.51.100.4"),
+            at(61 * MINUTE),
+        )
         .await
         .expect("a quote 61 min later");
     assert!(
@@ -108,17 +133,30 @@ async fn the_scan_finds_a_web_request_for_sixty_minutes() {
         .await
         .expect("web request");
     service
-        .quote_for(&main, from_ip(buy100("web-2"), "198.51.100.9"), member("tok-2"), at(0))
+        .quote_for(
+            &main,
+            from_ip(buy100("web-2"), "198.51.100.9"),
+            member("tok-2"),
+            at(0),
+        )
         .await
         .expect("another web request");
 
     let issued = service
-        .issue_by_token(&main, "tok-1", at(59 * MINUTE), queue.clone() as Arc<dyn QueueTickets>)
+        .issue_by_token(
+            &main,
+            "tok-1",
+            at(59 * MINUTE),
+            queue.clone() as Arc<dyn QueueTickets>,
+        )
         .await
         .expect("59 minutes after the quote the scan still issues");
     assert_eq!(issued.request_id, "web-1");
     assert_eq!(
-        service.find_by_token(&main, "tok-2", at(59 * MINUTE)).await.expect("found"),
+        service
+            .find_by_token(&main, "tok-2", at(59 * MINUTE))
+            .await
+            .expect("found"),
         "web-2"
     );
     let late = service.find_by_token(&main, "tok-2", at(61 * MINUTE)).await;

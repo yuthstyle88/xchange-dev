@@ -89,7 +89,11 @@ fn every_route_and_action_names_its_permission() {
         (E::Kiosk, "accept", p(P::QueueOperate)),
         (E::Kiosk, "rates", Some(Need::Public)),
         (E::Kiosk, "quote", Some(Need::Public)),
-        (E::Kiosk, "confirm", Some(Need::Permission(Permission::QueueOperate))),
+        (
+            E::Kiosk,
+            "confirm",
+            Some(Need::Permission(Permission::QueueOperate)),
+        ),
         (E::Kiosk, "status", Some(Need::Public)),
         (E::Kiosk, "customerReceipt", Some(Need::Public)),
         (E::DrawerPassport, "drawer", p(P::DrawerPassport)),

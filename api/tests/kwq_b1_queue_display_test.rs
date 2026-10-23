@@ -103,7 +103,12 @@ fn numbers(list: &Value) -> Vec<String> {
     list.as_array()
         .expect("a list")
         .iter()
-        .map(|t| t["displayNumber"].as_str().expect("displayNumber").to_owned())
+        .map(|t| {
+            t["displayNumber"]
+                .as_str()
+                .expect("displayNumber")
+                .to_owned()
+        })
         .collect()
 }
 
@@ -131,7 +136,12 @@ async fn the_display_shows_todays_called_numbers_and_the_last_called_and_nothing
     let ans = display(&db, XC, "QD1", None).await;
     assert_eq!(ans.status, StatusCode::OK, "{}", ans.text);
     assert_eq!(ans.cache_control.as_deref(), Some("no-store"));
-    assert_eq!(keys(&ans.body), set(&["version", "changed", "data"]), "{}", ans.text);
+    assert_eq!(
+        keys(&ans.body),
+        set(&["version", "changed", "data"]),
+        "{}",
+        ans.text
+    );
     assert_eq!(ans.body["version"], json!(7));
     assert_eq!(ans.body["changed"], json!(true));
     assert_eq!(keys(&ans.body["data"]), set(&["called", "recent"]));
@@ -141,7 +151,11 @@ async fn the_display_shows_todays_called_numbers_and_the_last_called_and_nothing
     assert_eq!(called[0]["status"], json!("CALLED"));
     assert_eq!(called[1]["status"], json!("SERVING"));
     for item in called.as_array().unwrap() {
-        assert_eq!(keys(item), set(&["displayNumber", "status", "calledAt"]), "{item}");
+        assert_eq!(
+            keys(item),
+            set(&["displayNumber", "status", "calledAt"]),
+            "{item}"
+        );
         chrono::DateTime::parse_from_rfc3339(item["calledAt"].as_str().expect("calledAt"))
             .expect("RFC 3339");
     }

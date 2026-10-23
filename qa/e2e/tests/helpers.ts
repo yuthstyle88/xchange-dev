@@ -398,7 +398,7 @@ export async function smoke(page: Page, spec: ScreenSpec): Promise<void> {
 // ---- Shift steps shared by flow-cash (F3) and flow-queue (F2): a queue counter is a teller with an OPEN shift
 // (docs/design/blueprint/queue-tickets.md Q7). Lifted from PR 3838's shift.spec.ts.
 
-/** Ten of the first THB note at open and at close, so the shift balances. */
+/** Ten of the largest THB note at open and at close, so the shift balances. */
 export const SHIFT_QTY = '10';
 
 /** Waits for one response of `method` (default POST) whose path matches while `act` runs; returns `ok`, `<status> <body>` and the raw body. */
@@ -429,14 +429,16 @@ export async function clockIn(page: Page): Promise<string> {
   return `clocked in: POST /api/attendance ${res.text}`;
 }
 
-/** The teller fills the count form (first THB row, SHIFT_QTY) and saves it; returns POST /api/cash-counts's answer. */
+/** The teller fills the count form (the largest THB note, SHIFT_QTY) and saves it; returns POST /api/cash-counts's answer. */
 export async function submitCount(page: Page, kind: 'open' | 'close'): Promise<{ ok: boolean; text: string }> {
   await page.getByTestId(kind === 'open' ? 'shift-open-count' : 'shift-close-count').click();
   const form = page.getByTestId('shift-count-form');
   await expect(form).toBeVisible({ timeout: 15_000 });
-  const thb = form.locator('[data-denomination-row]').filter({ hasText: 'THB' }).first();
-  await expect(thb, 'a THB denomination row in the count form').toBeVisible({ timeout: 15_000 });
-  await thb.locator('input[data-denomination-id]').fill(SHIFT_QTY);
+  const rows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
+  await expect(rows.first(), 'a THB denomination row in the count form').toBeVisible({ timeout: 15_000 });
+  const vals = (await rows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+  const best = rows.nth(vals.indexOf(Math.max(...vals)));
+  await best.locator('input[data-denomination-id]').fill(SHIFT_QTY);
   return posted(page, /^\/api\/cash-counts$/, () => page.getByTestId('shift-count-save').click());
 }
 

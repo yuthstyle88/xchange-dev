@@ -32,12 +32,36 @@ async fn stored(room: &Room, scope: &str) -> Option<Vec<rust_decimal::Decimal>> 
 async fn the_owner_saves_a_currency_and_the_branch_default() {
     let room = Room::start().await;
     let v1 = room.worked_example().await;
-    let a = command(&room, &owner(), ROUTE, B01, body("USD", Some(["0", "0.1", "0.2", "0.3"])), None).await;
+    let a = command(
+        &room,
+        &owner(),
+        ROUTE,
+        B01,
+        body("USD", Some(["0", "0.1", "0.2", "0.3"])),
+        None,
+    )
+    .await;
     assert_eq!(a.ok("save USD")["saved"], json!(true));
-    assert_eq!(stored(&room, "USD").await, Some(vec![dec("0"), dec("0.1"), dec("0.2"), dec("0.3")]));
-    command(&room, &owner(), ROUTE, B01, body("*", Some(["0.05", "0.1", "0.1", "0.2"])), None).await.ok("save *");
+    assert_eq!(
+        stored(&room, "USD").await,
+        Some(vec![dec("0"), dec("0.1"), dec("0.2"), dec("0.3")])
+    );
+    command(
+        &room,
+        &owner(),
+        ROUTE,
+        B01,
+        body("*", Some(["0.05", "0.1", "0.1", "0.2"])),
+        None,
+    )
+    .await
+    .ok("save *");
     assert!(stored(&room, "*").await.is_some());
-    assert_eq!(room.current_version(B01).await, v1, "no policy version is written");
+    assert_eq!(
+        room.current_version(B01).await,
+        v1,
+        "no policy version is written"
+    );
     assert_eq!(room.count("rate_drafts").await, 0, "no draft");
     room.finish().await;
 }
@@ -46,8 +70,19 @@ async fn the_owner_saves_a_currency_and_the_branch_default() {
 async fn null_removes_the_row() {
     let room = Room::start().await;
     room.worked_example().await;
-    command(&room, &owner(), ROUTE, B01, body("USD", Some(["0", "0.1", "0.2", "0.3"])), None).await.ok("save");
-    command(&room, &owner(), ROUTE, B01, body("USD", None), None).await.ok("remove");
+    command(
+        &room,
+        &owner(),
+        ROUTE,
+        B01,
+        body("USD", Some(["0", "0.1", "0.2", "0.3"])),
+        None,
+    )
+    .await
+    .ok("save");
+    command(&room, &owner(), ROUTE, B01, body("USD", None), None)
+        .await
+        .ok("remove");
     assert_eq!(stored(&room, "USD").await, None);
     room.finish().await;
 }
@@ -58,12 +93,23 @@ async fn v9s_checks_refuse_and_write_nothing() {
     room.worked_example().await;
     for (what, b) in [
         ("above 2 %", body("USD", Some(["0", "0.1", "0.2", "2.5"]))),
-        ("a higher tier worse", body("USD", Some(["0.2", "0.1", "0.3", "0.4"]))),
-        ("three values", json!({ "currency": "USD", "betterPct": ["0", "0.1", "0.2"] })),
+        (
+            "a higher tier worse",
+            body("USD", Some(["0.2", "0.1", "0.3", "0.4"])),
+        ),
+        (
+            "three values",
+            json!({ "currency": "USD", "betterPct": ["0", "0.1", "0.2"] }),
+        ),
         ("not a number", body("USD", Some(["0", "x", "0.2", "0.3"]))),
-        ("unknown currency", body("ZZZ", Some(["0", "0.1", "0.2", "0.3"]))),
+        (
+            "unknown currency",
+            body("ZZZ", Some(["0", "0.1", "0.2", "0.3"])),
+        ),
     ] {
-        command(&room, &owner(), ROUTE, B01, b, None).await.refused(400, "validationFailed", what);
+        command(&room, &owner(), ROUTE, B01, b, None)
+            .await
+            .refused(400, "validationFailed", what);
     }
     assert_eq!(room.count("pricing_suggestion_settings").await, 0);
     room.finish().await;
@@ -73,10 +119,22 @@ async fn v9s_checks_refuse_and_write_nothing() {
 async fn a_rate_manager_may_not_change_it() {
     let room = Room::start().await;
     room.worked_example().await;
-    let a = command(&room, &rate_manager(), ROUTE, B01, body("USD", Some(["0", "0.1", "0.2", "0.3"])), None).await;
+    let a = command(
+        &room,
+        &rate_manager(),
+        ROUTE,
+        B01,
+        body("USD", Some(["0", "0.1", "0.2", "0.3"])),
+        None,
+    )
+    .await;
     let err = PolicyError::RoleNotAllowedHere;
     assert_eq!(a.status.as_u16(), err.status(), "{}", a.text);
-    assert_eq!(a.code(), json!(V3Error::from(err).code), "a frame change: EXECUTIVE only (V.9 pricing.mjs:201 owner only)");
+    assert_eq!(
+        a.code(),
+        json!(V3Error::from(err).code),
+        "a frame change: EXECUTIVE only (V.9 pricing.mjs:201 owner only)"
+    );
     assert_eq!(room.count("pricing_suggestion_settings").await, 0);
     room.finish().await;
 }
@@ -85,7 +143,15 @@ async fn a_rate_manager_may_not_change_it() {
 async fn a_caller_without_rate_policy_save_is_refused() {
     let room = Room::start().await;
     room.worked_example().await;
-    let a = command(&room, &teller(), ROUTE, B01, body("USD", Some(["0", "0.1", "0.2", "0.3"])), None).await;
+    let a = command(
+        &room,
+        &teller(),
+        ROUTE,
+        B01,
+        body("USD", Some(["0", "0.1", "0.2", "0.3"])),
+        None,
+    )
+    .await;
     let err = PolicyError::RoleNotAllowedHere;
     assert_eq!(a.status.as_u16(), err.status(), "{}", a.text);
     assert_eq!(a.code(), json!(V3Error::from(err).code), "{}", a.text);

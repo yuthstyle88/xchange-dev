@@ -28,8 +28,14 @@ fn fixture() -> String {
 
 fn bodies(rates: &str, updated: Option<&str>) -> Vec<MarketBody> {
     vec![
-        MarketBody { url: TT_RATES_URL.to_string(), body: Some(rates.to_string()) },
-        MarketBody { url: TT_UPDATED_URL.to_string(), body: updated.map(str::to_string) },
+        MarketBody {
+            url: TT_RATES_URL.to_string(),
+            body: Some(rates.to_string()),
+        },
+        MarketBody {
+            url: TT_UPDATED_URL.to_string(),
+            body: updated.map(str::to_string),
+        },
     ]
 }
 
@@ -39,20 +45,36 @@ fn live_feed_asks_for_the_rates_and_optionally_the_update_time() {
     assert_eq!(feed.source(), MarketSource::Tt);
     let req = feed.requests();
     assert_eq!(req.len(), 2);
-    assert_eq!(req[0].url, "https://api.software.ttexchange.com/currencies?is_main=false&branch_id=1");
+    assert_eq!(
+        req[0].url,
+        "https://api.software.ttexchange.com/currencies?is_main=false&branch_id=1"
+    );
     assert!(!req[0].optional);
-    assert_eq!(req[1].url, "https://api.software.ttexchange.com/currencies/updated_at?branch_id=1");
+    assert_eq!(
+        req[1].url,
+        "https://api.software.ttexchange.com/currencies/updated_at?branch_id=1"
+    );
     assert!(req[1].optional);
 }
 
 #[test]
 fn parses_the_fixture_into_four_rows_with_bands() {
     let snap = TtFeed::live()
-        .parse(&bodies(&fixture(), Some(r#"{"updated_at":"2026-10-17T18:17:40+07:00"}"#)))
+        .parse(&bodies(
+            &fixture(),
+            Some(r#"{"updated_at":"2026-10-17T18:17:40+07:00"}"#),
+        ))
         .expect("parsed");
     assert_eq!(snap.source, MarketSource::Tt);
-    assert_eq!(snap.source_updated_at.as_deref(), Some("2026-10-17T18:17:40+07:00"));
-    assert_eq!(snap.rows.len(), 4, "XXX (no price) and 'not a code' are skipped");
+    assert_eq!(
+        snap.source_updated_at.as_deref(),
+        Some("2026-10-17T18:17:40+07:00")
+    );
+    assert_eq!(
+        snap.rows.len(),
+        4,
+        "XXX (no price) and 'not a code' are skipped"
+    );
     assert!(snap.rows.contains(&MarketRow {
         code: "USD".into(),
         band: "L".into(),
@@ -62,19 +84,26 @@ fn parses_the_fixture_into_four_rows_with_bands() {
         decimals: Some(2),
     }));
     let jpy = snap.rows.iter().find(|r| r.code == "JPY").unwrap();
-    assert_eq!((jpy.band.as_str(), jpy.buy, jpy.decimals), ("", Some(d("0.2085")), Some(4)));
+    assert_eq!(
+        (jpy.band.as_str(), jpy.buy, jpy.decimals),
+        ("", Some(d("0.2085")), Some(4))
+    );
 }
 
 #[test]
 fn a_missing_update_time_does_not_fail_tt() {
-    let snap = TtFeed::live().parse(&bodies(&fixture(), None)).expect("parsed");
+    let snap = TtFeed::live()
+        .parse(&bodies(&fixture(), None))
+        .expect("parsed");
     assert_eq!(snap.source_updated_at, None);
     assert_eq!(snap.rows.len(), 4);
 }
 
 #[test]
 fn a_body_that_is_not_an_array_is_unexpected() {
-    let err = TtFeed::live().parse(&bodies(r#"{"error":"x"}"#, None)).unwrap_err();
+    let err = TtFeed::live()
+        .parse(&bodies(r#"{"error":"x"}"#, None))
+        .unwrap_err();
     assert!(err.to_string().contains("TT: unexpected response"), "{err}");
 }
 

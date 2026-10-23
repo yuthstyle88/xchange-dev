@@ -24,7 +24,9 @@ use serde_json::json;
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::{ApprovalRequest, RequestId};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
-use xc_auth::domain::access::{Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole};
+use xc_auth::domain::access::{
+    Actor, Group, Permission, Role, RoleGrants, RoleGrantsSnapshot, ScopedRole,
+};
 use xc_cash::application::ledger_approval::negative_stock::NegativeStockPolicy;
 use xc_kernel::ids::BranchId;
 
@@ -166,7 +168,10 @@ fn ap6_a1_the_seed_decides_as_today() {
     seeded_plus(vec![]);
     let bm = actor(vec![row("BRANCH_MANAGER", Role::BranchManager, Some("B1"))]);
 
-    assert_eq!(NegativeStockPolicy.may_decide(&bm, &negative_stock("B1")), Ok(()));
+    assert_eq!(
+        NegativeStockPolicy.may_decide(&bm, &negative_stock("B1")),
+        Ok(())
+    );
     refused_with(&bm, "B2", OWN_BRANCH, "BRANCH_MANAGER@B1 on B2");
     let fin = actor(vec![row("FINANCE", Role::Finance, Some("B1"))]);
     refused_with(&fin, "B1", ONLY, "FINANCE holds no negative-stock kind");
@@ -181,7 +186,12 @@ fn ap6_a_branch_manager_with_the_kind_removed_is_refused() {
     seeded_without(Role::BranchManager, P::ApproveNegativeStock);
     let bm = actor(vec![row("BRANCH_MANAGER", Role::BranchManager, Some("B1"))]);
 
-    refused_with(&bm, "B1", ONLY, "BRANCH_MANAGER@B1 without ApproveNegativeStock");
+    refused_with(
+        &bm,
+        "B1",
+        ONLY,
+        "BRANCH_MANAGER@B1 without ApproveNegativeStock",
+    );
 }
 
 /// §11.9: a custom group (base TELLER) granted `ApproveNegativeStock`, with a row at B1, decides a B1 request and is
