@@ -24,6 +24,8 @@ export const th = {
   note: 'หมายเหตุ',
   certify: 'รับรอง',
   certified: 'รับรองแล้ว',
+  sheetDay: 'วันที่รับรองยอด: {date}',
+  pickOneDay: 'กรุณาเลือกช่วงเวลาเพียงวันเดียวเพื่อรับรองยอด',
 };
 
 export const en = {
@@ -52,4 +54,6 @@ export const en = {
   note: 'Note',
   certify: 'Certify',
   certified: 'Certified',
+  sheetDay: 'Certifying date: {date}',
+  pickOneDay: 'Pick one day to certify',
 };

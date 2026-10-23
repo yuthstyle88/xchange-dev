@@ -60,6 +60,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
   const [edits, setEdits] = createSignal<PaymentMethodItem[] | null>(null);
   const [saving, setSaving] = createSignal<boolean>(false);
   const [feedback, setFeedback] = createSignal<string>('');
+  const [cardErrors, setCardErrors] = createSignal<Record<string, 'channelDirectionRequired' | 'buyAndSellRequired'>>({});
 
   let pendingBranchSwitch: string | null = null;
   let savePromise: Promise<void> | null = null;
@@ -233,6 +234,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
   );
 
   const updateMethod = (id: string, patch: Partial<PaymentMethodItem>) => {
+    setCardErrors({});
     const base = currentMethods();
     const next = base.map((m) => (m.id === id ? { ...m, ...patch } : { ...m }));
 
@@ -265,6 +267,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
   const handleDiscard = () => {
     if (saving()) return;
     setEdits(null);
+    setCardErrors({});
     setFeedback('');
     if (displayedBranch() !== props.branch()) {
       const nextBranch = props.branch();
@@ -288,6 +291,30 @@ export function Payments(props: AdminMenuProps): JSX.Element {
 
   const handleSave = async () => {
     if (saving() || !canEdit()) return;
+
+    const current = currentMethods();
+    const nextCardErrors: Record<string, 'channelDirectionRequired' | 'buyAndSellRequired'> = {};
+    for (const m of current) {
+      if (m.enabled && !m.buy && !m.sell) {
+        nextCardErrors[m.id] = 'channelDirectionRequired';
+      }
+    }
+    const anyBuy = current.some((m) => m.enabled && m.buy);
+    const anySell = current.some((m) => m.enabled && m.sell);
+    if (Object.keys(nextCardErrors).length > 0 || !anyBuy || !anySell) {
+      if (!anyBuy || !anySell) {
+        for (const c of CHANNELS) {
+          if ((!anyBuy && BUY_CHANNELS.includes(c.id)) || !anySell) {
+            nextCardErrors[c.id] ??= 'buyAndSellRequired';
+          }
+        }
+      }
+      setCardErrors(nextCardErrors);
+      const firstKey = Object.values(nextCardErrors)[0] ?? 'buyAndSellRequired';
+      setFeedback(t(firstKey));
+      return;
+    }
+    setCardErrors({});
 
     setSaving(true);
     setFeedback(t('saving'));
@@ -542,6 +569,13 @@ export function Payments(props: AdminMenuProps): JSX.Element {
                           <div class="xc-payment-evidence">
                             {c.id === 'Cash' ? t('evidenceCash') : t('evidenceOther')}
                           </div>
+                          <Show when={cardErrors()[c.id]}>
+                            {(errKey) => (
+                              <p role="alert" class="error">
+                                {t(errKey())}
+                              </p>
+                            )}
+                          </Show>
                         </CardBody>
                       </Card>
                     </div>

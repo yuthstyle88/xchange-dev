@@ -34,6 +34,7 @@ export const th = {
   kbankFailed: 'โหลดข้อมูลอ้างอิงกสิกรไทยไม่สำเร็จ กรุณาตรวจหน้าเว็บธนาคารโดยตรง',
   bankReference: 'ข้อมูลอ้างอิงกสิกรไทย',
   kbLoading: 'KB · กำลังโหลดข้อมูลอ้างอิง…',
+  resultSecondsRange: 'ระยะเวลาแสดงผลต้องเป็นจำนวนเต็มระหว่าง 3–120 วินาที',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -72,4 +73,5 @@ export const en: Record<keyof typeof th, string> = {
   kbankFailed: 'Failed to load KBank reference data. Please check bank website directly.',
   bankReference: 'KBank reference',
   kbLoading: 'KB · Loading reference…',
+  resultSecondsRange: 'Display duration must be a whole number between 3–120 seconds.',
 };

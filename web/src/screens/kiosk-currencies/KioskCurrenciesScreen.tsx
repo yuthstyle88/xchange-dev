@@ -347,19 +347,27 @@ export function KioskCurrenciesScreen(props: {
     e?.preventDefault();
     const branchId = props.branch;
     if (!branchId || !known()) return;
-    const raw = resultSecondsInput();
+    const raw = resultSecondsInput().trim();
+    if (!/^[0-9]+$/.test(raw)) {
+      setSettingsError(t('resultSecondsRange'));
+      return;
+    }
     const parsed = Number(raw);
+    if (!Number.isSafeInteger(parsed) || parsed < 3 || parsed > 120) {
+      setSettingsError(t('resultSecondsRange'));
+      return;
+    }
     setSavingSettings(true);
     setSettingsError(undefined);
     try {
       const res = await props.api.post<
-        { action: string; payload: { branchId: string; resultSeconds: number | string } },
+        { action: string; payload: { branchId: string; resultSeconds: number } },
         { resultSeconds: number; version: number }
       >('/api/kiosk', {
         action: 'configureSettings',
         payload: {
           branchId,
-          resultSeconds: Number.isFinite(parsed) ? parsed : raw,
+          resultSeconds: parsed,
         },
       });
       if (props.branch === branchId) {
@@ -383,7 +391,7 @@ export function KioskCurrenciesScreen(props: {
           ) {
             msg = errObj.message;
           } else {
-            msg = lang() === 'en' ? 'Validation failed' : 'ข้อมูลไม่ถูกต้อง';
+            msg = t('resultSecondsRange');
           }
         } else {
           msg = wordedError(err);

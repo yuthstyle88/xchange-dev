@@ -49,6 +49,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   const [loading, setLoading] = createSignal(false);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
+  const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
   // #2427: one write at a time, so a second click cannot resend the same idempotency key while the first is in flight.
   const [writing, setWriting] = createSignal(false);
 
@@ -80,12 +81,14 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     setClosures([]);
     setSlots([]);
     setSlotCapacities({});
+    setFieldErrors({});
   }
 
   async function loadView(branchId: string) {
     const readId = ++latestReadId;
     setLoading(true);
     setErrorMessage(null);
+    setFieldErrors({});
     try {
       const res = await api.view<AdminBookingSlotsData>('admin_booking_slots', { branch: branchId });
       if (readId !== latestReadId) return;
@@ -132,30 +135,57 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     }
   });
 
+  const FIELD_MAP: Record<string, string> = {
+    slotMinutes: 'slotMinutes',
+    slot_minutes: 'slotMinutes',
+    capacity: 'capacity',
+    horizonDays: 'horizonDays',
+    horizon_days: 'horizonDays',
+    closedOn: 'closedOn',
+    closed_on: 'closedOn',
+    reason: 'reason',
+    cancelCutoffMinutes: 'cancelCutoffMinutes',
+    cancel_cutoff_minutes: 'cancelCutoffMinutes',
+    noShowGraceMinutes: 'noShowGraceMinutes',
+    no_show_grace_minutes: 'noShowGraceMinutes',
+    confirmExpiryMinutes: 'confirmExpiryMinutes',
+    confirm_expiry_minutes: 'confirmExpiryMinutes',
+  };
+
+  function clearErrors() {
+    setErrorMessage(null);
+    setFieldErrors({});
+  }
+
   function handleApiError(err: unknown) {
+    let msg: string;
     if (err instanceof ApiError) {
       const code = err.code;
       const errorKey = `error.${code}`;
-      if (errorKey in table.th) {
-        setErrorMessage(t(errorKey as any));
-        return;
-      }
       const errKey = `err.${code}`;
-      if (errKey in table.th) {
-        setErrorMessage(t(errKey as any));
+      if (errorKey in table.th) {
+        msg = t(errorKey as any);
+      } else if (errKey in table.th) {
+        msg = t(errKey as any);
+      } else if (!isServerFailure(err)) {
+        msg = t('error.validationFailed');
+      } else {
+        msg = wordedError(err);
+      }
+      const mappedField = err.field ? FIELD_MAP[err.field] : undefined;
+      if (mappedField) {
+        setFieldErrors({ [mappedField]: msg });
         return;
       }
-      if (!isServerFailure(err)) {
-        setErrorMessage(t('error.validationFailed'));
-        return;
-      }
+    } else {
+      msg = wordedError(err);
     }
-    setErrorMessage(wordedError(err));
+    setErrorMessage(msg);
   }
 
   async function handleSaveRule() {
     if (writing()) return;
-    setErrorMessage(null);
+    clearErrors();
     const sMin = Number(slotMinutes());
     const cap = Number(capacity());
     const hDays = Number(horizonDays());
@@ -200,7 +230,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleAddClosure() {
     if (writing()) return;
-    setErrorMessage(null);
+    clearErrors();
     const closedOn = newClosedOn().trim();
     const reason = newReason().trim();
 
@@ -237,7 +267,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleRemoveClosure(closedOn: string) {
     if (writing()) return;
-    setErrorMessage(null);
+    clearErrors();
     const branch = props.branch();
     const payload = { branch };
     const actionId = `closureRemove:${branch}:${closedOn}`;
@@ -258,7 +288,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleUpdateSlotCapacity(slotId: string) {
     if (writing()) return;
-    setErrorMessage(null);
+    clearErrors();
     const capVal = slotCapacities()[slotId];
     const capNum = Number(capVal);
 
@@ -290,7 +320,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleCloseSlot(slotId: string) {
     if (writing()) return;
-    setErrorMessage(null);
+    clearErrors();
     const branch = props.branch();
     const payload = { branch };
     const actionId = `slotClose:${slotId}`;
@@ -311,7 +341,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleOpenSlot(slotId: string) {
     if (writing()) return;
-    setErrorMessage(null);
+    clearErrors();
     const branch = props.branch();
     const payload = { branch };
     const actionId = `slotOpen:${slotId}`;
@@ -332,7 +362,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
 
   async function handleSavePolicy() {
     if (writing()) return;
-    setErrorMessage(null);
+    clearErrors();
     const cutRaw = cutoff().trim();
     const grcRaw = grace().trim();
     const expRaw = expiry().trim();
@@ -405,9 +435,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
             name="slotMinutes"
             data-field="slotMinutes"
             type="number"
+            aria-invalid={fieldErrors().slotMinutes ? 'true' : undefined}
             value={slotMinutes()}
             onInput={(e) => setSlotMinutes(e.currentTarget.value)}
           />
+          <Show when={fieldErrors().slotMinutes}>
+            {(msg) => (
+              <div role="alert" class="error field-error" data-error-for="slotMinutes">
+                {msg()}
+              </div>
+            )}
+          </Show>
         </div>
         <div class="form-group">
           <label for="capacity">{t('capacity')}</label>
@@ -416,9 +454,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
             name="capacity"
             data-field="capacity"
             type="number"
+            aria-invalid={fieldErrors().capacity ? 'true' : undefined}
             value={capacity()}
             onInput={(e) => setCapacity(e.currentTarget.value)}
           />
+          <Show when={fieldErrors().capacity}>
+            {(msg) => (
+              <div role="alert" class="error field-error" data-error-for="capacity">
+                {msg()}
+              </div>
+            )}
+          </Show>
         </div>
         <div class="form-group">
           <label for="horizonDays">{t('horizonDays')}</label>
@@ -427,9 +473,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
             name="horizonDays"
             data-field="horizonDays"
             type="number"
+            aria-invalid={fieldErrors().horizonDays ? 'true' : undefined}
             value={horizonDays()}
             onInput={(e) => setHorizonDays(e.currentTarget.value)}
           />
+          <Show when={fieldErrors().horizonDays}>
+            {(msg) => (
+              <div role="alert" class="error field-error" data-error-for="horizonDays">
+                {msg()}
+              </div>
+            )}
+          </Show>
         </div>
         <button type="button" disabled={writing()} onClick={handleSaveRule}>
           {t('saveRule')}
@@ -447,9 +501,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="closedOn"
               data-field="closedOn"
               type="date"
+              aria-invalid={fieldErrors().closedOn ? 'true' : undefined}
               value={newClosedOn()}
               onInput={(e) => setNewClosedOn(e.currentTarget.value)}
             />
+            <Show when={fieldErrors().closedOn}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="closedOn">
+                  {msg()}
+                </div>
+              )}
+            </Show>
           </div>
           <div class="form-group">
             <label for="reason">{t('reason')}</label>
@@ -458,9 +520,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="reason"
               data-field="reason"
               type="text"
+              aria-invalid={fieldErrors().reason ? 'true' : undefined}
               value={newReason()}
               onInput={(e) => setNewReason(e.currentTarget.value)}
             />
+            <Show when={fieldErrors().reason}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="reason">
+                  {msg()}
+                </div>
+              )}
+            </Show>
           </div>
           <button type="button" disabled={writing()} onClick={handleAddClosure}>
             {t('addClosure')}
@@ -537,9 +607,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="cancelCutoffMinutes"
               data-field="cancelCutoffMinutes"
               type="number"
+              aria-invalid={fieldErrors().cancelCutoffMinutes ? 'true' : undefined}
               value={cutoff()}
               onInput={(e) => setCutoff(e.currentTarget.value)}
             />
+            <Show when={fieldErrors().cancelCutoffMinutes}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="cancelCutoffMinutes">
+                  {msg()}
+                </div>
+              )}
+            </Show>
           </div>
           <div class="form-group">
             <label for="noShowGraceMinutes">{t('noShowGraceMinutes')}</label>
@@ -548,9 +626,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="noShowGraceMinutes"
               data-field="noShowGraceMinutes"
               type="number"
+              aria-invalid={fieldErrors().noShowGraceMinutes ? 'true' : undefined}
               value={grace()}
               onInput={(e) => setGrace(e.currentTarget.value)}
             />
+            <Show when={fieldErrors().noShowGraceMinutes}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="noShowGraceMinutes">
+                  {msg()}
+                </div>
+              )}
+            </Show>
           </div>
           <div class="form-group">
             <label for="confirmExpiryMinutes">{t('confirmExpiryMinutes')}</label>
@@ -559,9 +645,17 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               name="confirmExpiryMinutes"
               data-field="confirmExpiryMinutes"
               type="number"
+              aria-invalid={fieldErrors().confirmExpiryMinutes ? 'true' : undefined}
               value={expiry()}
               onInput={(e) => setExpiry(e.currentTarget.value)}
             />
+            <Show when={fieldErrors().confirmExpiryMinutes}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="confirmExpiryMinutes">
+                  {msg()}
+                </div>
+              )}
+            </Show>
           </div>
           <button type="button" disabled={writing()} onClick={handleSavePolicy}>
             {t('savePolicy')}
