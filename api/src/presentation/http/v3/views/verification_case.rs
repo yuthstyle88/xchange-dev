@@ -21,7 +21,7 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{
-    BranchView, ViewFilter, authenticate_and_authorize, parse_branch, require_branch,
+    BranchView, ViewAnswer, ViewFilter, authenticate_and_authorize, parse_branch, require_branch,
 };
 
 const VIEW_NAME: &str = "verification_case";
@@ -412,7 +412,11 @@ async fn handle(req: HttpRequest, view: web::Data<Arc<VerificationCaseView>>) ->
         Ok(data) => HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, "application/json"))
             .insert_header((header::CACHE_CONTROL, "no-store"))
-            .json(data),
+            .json(ViewAnswer {
+                version: i64::from(data.case_detail.version),
+                changed: true,
+                data: Some(data),
+            }),
         Err(err) => match view.refusal(&err) {
             Some(refusal) => refusal.error_response(),
             None => V3Error::new(
