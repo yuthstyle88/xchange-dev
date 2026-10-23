@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
-use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor, Role as AccessRole, StandingKind};
@@ -21,9 +20,11 @@ use xc_exchange::infrastructure::exchange::transaction_repository::PgTransaction
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::{CompatRate, CurrencyCode, ForeignAmount, Rate, Side};
+use xc_kernel::money::{CompatRate, CurrencyCode, CurrencyUnits, MinorUnit, Rate, Side, UnitSize};
 use xc_rate::application::branch::service::BranchService;
+use xc_rate::domain::currency::currency_register::CurrencyRegister;
 use xc_rate::domain::currency::denomination_groups::GroupCode;
+use xc_rate::infrastructure::currency::currency_register::PgCurrencyRegister;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
@@ -66,6 +67,7 @@ pub struct SaveTransactionWorkflow {
     shifts: ShiftService,
     files: FileService,
     branches: BranchService,
+    units: Arc<PgCurrencyRegister>,
     transactions: TransactionService,
     steps: Vec<Arc<dyn SaveStep>>,
 }
@@ -169,12 +171,14 @@ fn answer_from_completed(completed: &CompletedExchange) -> SavedTransaction {
 
 impl SaveTransactionWorkflow {
     pub fn new(branch_tx: BranchTx, shifts: ShiftService, files: FileService) -> Self {
+        let pool = branch_tx.pool().clone();
         let transactions = TransactionService::new(
-            Arc::new(PgTransactionRepository::new(branch_tx.pool().clone())),
+            Arc::new(PgTransactionRepository::new(pool.clone())),
             branch_tx.clone(),
         );
         Self {
             branches: BranchService::new(branch_tx.clone()),
+            units: Arc::new(PgCurrencyRegister::new(pool)),
             branch_tx,
             shifts,
             files,
@@ -308,7 +312,12 @@ impl SaveTransactionWorkflow {
             None => None,
         };
         let _ = self.branches.require(branch).await?;
-        let form = TransactionForm::parse(&cmd)?;
+        let units = match CurrencyCode::parse(cmd.currency.trim()) {
+            Ok(code) => self.units.units(code).await?,
+            Err(_) => None,
+        }
+        .unwrap_or_else(|| CurrencyUnits::new(CurrencyCode::THB, UnitSize::ONE, MinorUnit::TWO));
+        let form = TransactionForm::parse_with_units(&cmd, &units)?;
         // a form that parsed names a passport file
         let Some(passport) = passport else {
             return refuse(FILE_MISSING);
@@ -420,10 +429,7 @@ impl SaveTransactionWorkflow {
                         lines: vec![QuoteRequestLine {
                             currency: code,
                             shop_side: form.side,
-                            quantity: ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
-                                form.amount.minor_i128(),
-                                2,
-                            )),
+                            quantity: form.amount,
                             fee_thb: Some(form.fee),
                             denomination_group: GroupCode::all(),
                         }],
@@ -477,10 +483,7 @@ impl SaveTransactionWorkflow {
                         let delta = StockDelta::for_tx(
                             form.side,
                             code,
-                            ForeignAmount::from_decimal(Decimal::from_i128_with_scale(
-                                form.amount.minor_i128(),
-                                2,
-                            )),
+                            form.amount,
                             &form.quote,
                             form.method.is_cash(),
                         )

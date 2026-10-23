@@ -166,7 +166,11 @@ fn every_field_a_save_step_reads_comes_from_the_stored_exchange() {
     assert_eq!(form.customer_id, "CU-000123", "the booking step reads it");
     assert_eq!(form.side, Side::Sell, "the line's shop side");
     assert_eq!(form.currency, "USD");
-    assert_eq!(form.amount, money("100.00"), "the line's quantity");
+    assert_eq!(
+        form.amount,
+        ForeignAmount::from_decimal(dec("100.00")),
+        "the line's quantity"
+    );
     assert_eq!(form.rate, rate("32.45"), "per 1: unit size 1");
     assert_eq!(form.client_rate, dec("32.45"));
     assert_eq!(form.method, PaymentMethod::BankTransfer);
@@ -213,7 +217,7 @@ fn a_rate_per_unit_size_becomes_the_forms_per_1_rate() {
     assert_eq!(form.customer.mode, Mode::Demo);
     assert_eq!(form.side, Side::Buy);
     assert_eq!(form.currency, "JPY");
-    assert_eq!(form.amount, money("1000.00"));
+    assert_eq!(form.amount, ForeignAmount::from_decimal(dec("1000.00")));
     assert_eq!(form.rate, rate("0.235"), "rate_snapshot ÷ unit_size");
     assert_eq!(form.client_rate, dec("0.235"), "the exact per-1 rate");
     assert_eq!(form.method, PaymentMethod::Cash);
