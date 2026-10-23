@@ -254,6 +254,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [rulesSupported, setRulesSupported] = createSignal(true);
   const [isEditedAfterSimulation, setIsEditedAfterSimulation] = createSignal(false);
 
+  // #4842 SIM-1..SIM-6: Simulate scenario inputs
+  const [simBranch, setSimBranch] = createSignal('');
+  const [simCurrency, setSimCurrency] = createSignal('USD');
+  const [simAmount, setSimAmount] = createSignal('100');
+
   // Coupon issue inputs
   const [couponRuleId, setCouponRuleId] = createSignal('');
   const [couponCount, setCouponCount] = createSignal('1');
@@ -313,7 +318,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
           setFormEndsAt(toBangkokWallClock(v?.endsAt));
           setFormStackGroup(v?.stackGroup ?? 'DEFAULT');
           setFormPriority(String(v?.priority ?? 0));
-          setFormBranches(v?.branches ? [...v.branches] : []);
+          const nextBranches = v?.branches ? [...v.branches] : [];
+          setFormBranches(nextBranches);
+          if (!nextBranches.includes(simBranch())) {
+            setSimBranch(nextBranches[0] ?? '');
+          }
           const storedRules = v?.rules ?? [];
           const supported = storedRules.every((r) => isKnownBenefitType(r.benefitType));
           setRulesSupported(supported);
@@ -358,6 +367,9 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
     setRuleRowErrors([]);
     setRulesSupported(true);
     setIsEditedAfterSimulation(false);
+    setSimBranch('');
+    setSimCurrency('USD');
+    setSimAmount('100');
     setCouponRuleId('');
     setCouponCount('1');
     setCouponExpiresAt('');
@@ -388,6 +400,16 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
   const isSubmitDisabled = () => {
     return currentStatus() !== 'SIMULATED' || isEditedAfterSimulation();
+  };
+
+  const validScenario = () => {
+    const branchId = simBranch();
+    if (!branchId || !formBranches().includes(branchId)) return null;
+    const currency = simCurrency().trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) return null;
+    const amount = simAmount().trim();
+    if (!/^\d+(?:\.\d+)?$/.test(amount) || !(Number(amount) > 0)) return null;
+    return { branchId, currency, amount };
   };
 
   function startCreate() {
@@ -519,10 +541,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
   async function handleSimulate() {
     const campaignId = selectedCampaignId();
-    if (!campaignId) return;
+    const scenario = validScenario();
+    if (!campaignId || !scenario) return;
     const body: CampaignSimulateInput = {
       campaignId,
-      scenarios: [],
+      scenarios: [scenario],
     };
     if (writing()) return;
     setWriting(true);
@@ -918,10 +941,54 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
                 {t('save')}
               </button>
 
+              <div class="xc-campaign-sim-row">
+                <Show
+                  when={formBranches().length > 0}
+                  fallback={<p class="xc-campaign-sim-note">{t('simNeedsBranch')}</p>}
+                >
+                  <label class="xc-campaign-sim-field">
+                    <span>{t('simBranch')}</span>
+                    <select
+                      data-testid="sim-branch"
+                      class="xc-select"
+                      value={simBranch()}
+                      onInput={(e) => setSimBranch(e.currentTarget.value)}
+                      onChange={(e) => setSimBranch(e.currentTarget.value)}
+                    >
+                      <For each={formBranches()}>
+                        {(b) => <option value={b}>{b}</option>}
+                      </For>
+                    </select>
+                  </label>
+                </Show>
+
+                <label class="xc-campaign-sim-field">
+                  <span>{t('simCurrency')}</span>
+                  <input
+                    data-testid="sim-currency"
+                    class="xc-input"
+                    value={simCurrency()}
+                    onInput={(e) => setSimCurrency(e.currentTarget.value.toUpperCase())}
+                    onChange={(e) => setSimCurrency(e.currentTarget.value.toUpperCase())}
+                  />
+                </label>
+
+                <label class="xc-campaign-sim-field">
+                  <span>{t('simAmount')}</span>
+                  <input
+                    data-testid="sim-amount"
+                    class="xc-input"
+                    value={simAmount()}
+                    onInput={(e) => setSimAmount(e.currentTarget.value)}
+                    onChange={(e) => setSimAmount(e.currentTarget.value)}
+                  />
+                </label>
+              </div>
+
               <button
                 type="button"
                 class="xc-btn-secondary"
-                disabled={writing()}
+                disabled={writing() || !validScenario()}
                 onClick={handleSimulate}
               >
                 {t('simulate')}

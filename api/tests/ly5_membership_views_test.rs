@@ -941,7 +941,12 @@ async fn customer_tier_viewed_by_teller_or_marketing() {
         "teller view cust1: {}",
         ans_teller.text
     );
-    assert_eq!(ans_teller.body["tier"], "GOLD");
+    assert_eq!(
+        ans_teller.body["changed"], true,
+        "customer_tier answers the v3 envelope: {}",
+        ans_teller.text
+    );
+    assert_eq!(ans_teller.body["data"]["tier"], "GOLD");
 
     // As MARKETING (MarketingMembers) -> 200 with mirror tier
     let ans_mkt = get(
@@ -957,7 +962,12 @@ async fn customer_tier_viewed_by_teller_or_marketing() {
         "marketing view cust1: {}",
         ans_mkt.text
     );
-    assert_eq!(ans_mkt.body["tier"], "GOLD");
+    assert_eq!(
+        ans_mkt.body["changed"], true,
+        "customer_tier answers the v3 envelope: {}",
+        ans_mkt.text
+    );
+    assert_eq!(ans_mkt.body["data"]["tier"], "GOLD");
 
     // As TELLER for customer without mirror row -> 200 with tier: null
     let ans_nomirror = get(
@@ -973,8 +983,13 @@ async fn customer_tier_viewed_by_teller_or_marketing() {
         "teller view cust2: {}",
         ans_nomirror.text
     );
+    assert_eq!(
+        ans_nomirror.body["changed"], true,
+        "customer_tier answers the v3 envelope: {}",
+        ans_nomirror.text
+    );
     assert!(
-        ans_nomirror.body["tier"].is_null(),
+        ans_nomirror.body["data"]["tier"].is_null(),
         "tier must be null when no mirror row"
     );
 

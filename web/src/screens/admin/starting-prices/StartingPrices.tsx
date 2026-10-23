@@ -69,6 +69,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
 
   const [items, setItems] = createSignal<OrgStartingPriceItem[]>([]);
   const [loading, setLoading] = createSignal(true);
+  const [firstLoaded, setFirstLoaded] = createSignal(false);
   const [loadError, setLoadError] = createSignal<string | null>(null);
 
   const [addedCurrencies, setAddedCurrencies] = createSignal<string[]>([]);
@@ -147,6 +148,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
       setLoadError(startingPricesError(err));
     } finally {
       setLoading(false);
+      setFirstLoaded(true);
     }
   }
 
@@ -429,6 +431,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
                             inputMode="decimal"
                             class="xc-sp-input"
                             data-field="buy"
+                            disabled={!firstLoaded()}
                             value={typedBuy()[cur] ?? ''}
                             onInput={(e) => {
                               const val = e.currentTarget.value;
@@ -445,6 +448,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
                             inputMode="decimal"
                             class="xc-sp-input"
                             data-field="sell"
+                            disabled={!firstLoaded()}
                             value={typedSell()[cur] ?? ''}
                             onInput={(e) => {
                               const val = e.currentTarget.value;
@@ -470,6 +474,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
             class="xc-sp-add-code-input"
             maxLength={3}
             placeholder={t('addPlaceholder')}
+            disabled={!firstLoaded()}
             value={addCode()}
             onInput={(e) => setAddCode(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -479,7 +484,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
               }
             }}
           />
-          <button type="button" class="xc-sp-add-code-btn" onClick={() => handleAddCurrency()}>
+          <button type="button" class="xc-sp-add-code-btn" disabled={!firstLoaded()} onClick={() => handleAddCurrency()}>
             {t('addCurrency')}
           </button>
           <Show when={addCodeError()}>
@@ -510,7 +515,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
             type="submit"
             class="xc-sp-save-btn"
             data-action="save"
-            disabled={busy()}
+            disabled={!firstLoaded() || busy()}
           >
             {busy() ? t('saving') : t('save')}
           </button>

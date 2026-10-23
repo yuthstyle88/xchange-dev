@@ -92,6 +92,7 @@ async function closeQueueIfOpened(manager: Page, openedQueue: boolean): Promise<
 
 async function createWaitingKioskRequest(
   page: Page,
+  staff: Page = page,
 ): Promise<{ id: string; queue: string; cancelToken: string }> {
   const currency = users.currency ?? 'USD';
   const quoteRes = await page.request.post('/api/kiosk', {
@@ -120,7 +121,7 @@ async function createWaitingKioskRequest(
   // KioskMachine::next(Confirm) requires age >= 3,000 ms (kiosk_machine.rs:163).
   await page.waitForTimeout(3_100);
 
-  const confirmRes = await page.request.post('/api/kiosk', {
+  const confirmRes = await staff.request.post('/api/kiosk', {
     headers: kioskHeaders,
     data: {
       action: 'confirm',
@@ -208,11 +209,13 @@ test.describe.serial('QA-F19 kiosk cancel', () => {
     try {
       openedQueue = await ensureQueueOpen(manager);
 
+      await signIn(page, 'teller', '/kiosk-queue.html');
+      tellerSignedIn = true;
+
       const created = await createWaitingKioskRequest(page);
       createdId = created.id;
 
-      await signIn(page, 'teller', '/kiosk-queue.html');
-      tellerSignedIn = true;
+      await page.reload();
 
       const row = page.locator('article.xc-queue-card', {
         has: page.locator('h3', { hasText: created.queue }),
@@ -275,13 +278,18 @@ test.describe.serial('QA-F19 kiosk cancel', () => {
       baseURL: users.baseUrl,
       viewport: { width: 1280, height: 900 },
     });
+    const teller = await browser.newPage({
+      baseURL: users.baseUrl,
+      viewport: { width: 1280, height: 900 },
+    });
     let openedQueue = false;
     let createdId: string | null = null;
 
     try {
       openedQueue = await ensureQueueOpen(manager);
+      await signIn(teller, 'teller', '/staff');
 
-      const created = await createWaitingKioskRequest(page);
+      const created = await createWaitingKioskRequest(page, teller);
       createdId = created.id;
 
       const wrongRes = await page.request.post('/api/kiosk', {
@@ -336,7 +344,11 @@ test.describe.serial('QA-F19 kiosk cancel', () => {
         try {
           await closeQueueIfOpened(manager, openedQueue);
         } finally {
-          await manager.close().catch(() => {});
+          try {
+            await manager.close().catch(() => {});
+          } finally {
+            await teller.close().catch(() => {});
+          }
         }
       }
     }

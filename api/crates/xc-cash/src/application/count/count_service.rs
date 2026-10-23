@@ -885,6 +885,12 @@ impl CashCountService {
         let mut seen_denominations: std::collections::HashSet<i64> =
             std::collections::HashSet::with_capacity(cmd.lines.len());
 
+        if cmd.lines.is_empty() {
+            return Err(AppError::Validation(
+                "a count needs at least one line; count an empty drawer as 0".into(),
+            ));
+        }
+
         for line in &cmd.lines {
             if !seen_denominations.insert(line.denomination_id) {
                 return Err(AppError::Validation(format!(
