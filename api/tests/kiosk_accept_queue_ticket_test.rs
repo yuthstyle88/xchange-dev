@@ -312,7 +312,7 @@ async fn kiosk_accept_on_waiting_request_calls_and_starts_queue_ticket() {
 
     let confirm_ans = call(
         &db,
-        None,
+        Some(&format!("TELLER@{B01}")),
         Method::POST,
         "/api/kiosk",
         Some(json!({

@@ -1199,7 +1199,7 @@ async fn kiosk_confirm_issues_exactly_one_walk_in_ticket_in_same_transaction_and
 
     let ans = call(
         &db,
-        None,
+        Some("TELLER@XC-B01"),
         Method::POST,
         "/api/kiosk",
         Some(json!({
@@ -1256,7 +1256,7 @@ async fn kiosk_confirm_issues_exactly_one_walk_in_ticket_in_same_transaction_and
 
     let ans = call(
         &db,
-        None,
+        Some("TELLER@XC-B01"),
         Method::POST,
         "/api/kiosk",
         Some(json!({
