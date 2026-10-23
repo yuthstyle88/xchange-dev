@@ -365,12 +365,15 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
             await expect(teller.locator('html')).toHaveAttribute('lang', lang);
           }
           await referralInput.fill('AB-12C');
-          const badRefRes = await posted(
-            teller,
-            new RegExp(`^/api/transactions/${encodeURIComponent(txId)}/referral$`),
-            () => referralBtn.click(),
-          );
-          expect(badRefRes.ok, `[${lang}] malformed referral code must be refused: ${badRefRes.text}`).toBe(false);
+          let referralCalls = 0;
+          const referralRoute = `**/api/transactions/${encodeURIComponent(txId)}/referral`;
+          await teller.route(referralRoute, (route) => {
+            referralCalls++;
+            return route.abort();
+          });
+          await referralBtn.click();
+          expect(referralCalls, `[${lang}] no request sent for malformed referral code`).toBe(0);
+          await teller.unroute(referralRoute);
           await expect(referralError, `[${lang}] referral error alert must be visible`).toBeVisible({
             timeout: 10_000,
           });

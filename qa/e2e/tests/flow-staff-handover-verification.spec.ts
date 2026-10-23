@@ -332,15 +332,20 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         await expect(receiverSelect, `form keeps receiver after self-handover refusal (${lang})`).toHaveValue(tellerUserId);
         await expect(thbInput, `form keeps quantity after self-handover refusal (${lang})`).toHaveValue(SHIFT_QTY);
 
-        // Invalid Case 3: negative quantity (`-5`) with valid receiver -> refused with worded message, form keeps `-5`.
+        // Invalid Case 3: negative quantity (`-5`) with valid receiver -> refused at the row, no POST sent, form keeps `-5`.
         await receiverSelect.selectOption(managerUserId);
         await thbInput.fill('-5');
-        // shift-error still holds case 2's message (ShiftCard.tsx:273-276 replaces it only on a refusal), so wait for
-        // this POST's own answer: a visible banner alone would pass on the stale text.
-        const negRes = await posted(teller, /^\/api\/handovers$/, () => saveBtn.click());
-        expect(negRes.ok, `negative quantity POST /api/handovers must be refused (${lang}): ${negRes.text}`).toBeFalsy();
-        await expect(errEl, `shift-error visible on negative quantity (${lang})`).toBeVisible({ timeout: 10_000 });
-        const negErrText = await errEl.innerText();
+        let handoverCalls = 0;
+        await teller.route('**/api/handovers', (route) => {
+          handoverCalls++;
+          return route.abort();
+        });
+        await saveBtn.click();
+        expect(handoverCalls, `[${lang}] no request sent for negative handover quantity`).toBe(0);
+        await teller.unroute('**/api/handovers');
+        const thbRowError = form.locator('[data-denomination-row]').filter({ hasText: 'THB' }).first().locator('[data-field-error]');
+        await expect(thbRowError, `row error visible on negative quantity (${lang})`).toBeVisible({ timeout: 10_000 });
+        const negErrText = await thbRowError.innerText();
         expectWordedRefusal(negErrText, `negative quantity (${lang})`);
         await expect(thbInput, `form keeps -5 after refusal (${lang})`).toHaveValue('-5');
         await expect(receiverSelect, `form keeps receiver after negative quantity refusal (${lang})`).toHaveValue(
