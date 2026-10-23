@@ -66,17 +66,17 @@ impl CommandAction for BookingPolicySet {
         input::integer(
             "cancelCutoffMinutes",
             i64::from(input.cancel_cutoff_minutes),
-            IntBound::integer(0, i64::MAX),
+            IntBound::integer(0, 129_600),
         )?;
         input::integer(
             "noShowGraceMinutes",
             i64::from(input.no_show_grace_minutes),
-            IntBound::integer(0, i64::MAX),
+            IntBound::integer(0, 129_600),
         )?;
         input::integer(
             "confirmExpiryMinutes",
             i64::from(input.confirm_expiry_minutes),
-            IntBound::integer(1, i64::MAX),
+            IntBound::integer(1, 129_600),
         )?;
 
         let services = self.services.services()?;

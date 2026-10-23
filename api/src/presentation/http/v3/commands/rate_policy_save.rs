@@ -23,7 +23,7 @@ use crate::presentation::dto::v3::rate_policy::ValueTierDto;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input;
-use xc_kernel::money::{Bound, Money, RatePercent, Side, Sign};
+use xc_kernel::money::{Bound, IntBound, Money, RatePercent, Side, Sign};
 use xc_rate::application::policy::policy_version_writer::{
     PolicyVersionChange, PolicyVersionWriter,
 };
@@ -140,6 +140,44 @@ impl CommandAction for RatePolicySaveCommand {
             &input.sell_adjust_pct,
             Bound::numeric(9, 4, Sign::Signed),
         )?;
+
+        if let Some(hours) = input.max_reference_age_hours {
+            input::integer(
+                "maxReferenceAgeHours",
+                i64::from(hours),
+                IntBound::integer(1, 168),
+            )?;
+        }
+
+        if let Some(guards_obj) = input.guards.as_object() {
+            let guard_bound = Bound::numeric(9, 4, Sign::Signed);
+            for currency_val in guards_obj.values() {
+                for side_key in ["buy", "sell"] {
+                    let Some(side_obj) = currency_val.get(side_key).and_then(Value::as_object)
+                    else {
+                        continue;
+                    };
+                    let min_str = side_obj
+                        .get("min_pct")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let min = input::decimal("guards.min_pct", min_str, guard_bound)?;
+                    let max_str = side_obj
+                        .get("max_pct")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let max = input::decimal("guards.max_pct", max_str, guard_bound)?;
+                    if min > max {
+                        return Err(V3Error::new(
+                            "validationFailed",
+                            Some("guards.min_pct"),
+                            "guards.min_pct must not exceed guards.max_pct",
+                            StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                }
+            }
+        }
 
         let stale_limit = match input.stale_limit_thb.as_deref() {
             Some(s) => Some(input::decimal(

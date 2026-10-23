@@ -76,7 +76,7 @@ async fn cancel_cutoff_accepts_0_and_refuses_minus_1() {
     let db = TestDb::start().await;
     accepted(&set_policy(&db, 0, 20, 30).await, "cancelCutoffMinutes 0");
     accepted(
-        &set_policy(&db, i32::MAX as i64, 20, 30).await,
+        &set_policy(&db, 129_600, 20, 30).await,
         "cancelCutoffMinutes i32::MAX",
     );
     let before = policy_of(&db).await;

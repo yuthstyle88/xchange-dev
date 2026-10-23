@@ -13,6 +13,7 @@ use xc_alert::domain::source_policy::ObservePolicy;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::IntBound;
 
 use super::rate_alert_create::{make_rate_alert_service, map_alert_error};
 use crate::bootstrap::AppState;
@@ -24,6 +25,7 @@ use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, role_not_allowed_here,
 };
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input;
 
 pub struct RateAlertSettingsSaveCommand {
     pool: PgPool,
@@ -53,6 +55,24 @@ impl CommandAction for RateAlertSettingsSaveCommand {
     ) -> Result<Self::Output, V3Error> {
         let org_id = Uuid::parse_str(&who.organization_id).map_err(|_| role_not_allowed_here())?;
         let updated_by = Uuid::parse_str(&who.user_id).map_err(|_| role_not_allowed_here())?;
+
+        input::integer(
+            "defaultCooldownSeconds",
+            i64::from(input.default_cooldown_seconds),
+            IntBound::integer(0, 2_592_000),
+        )?;
+        input::integer(
+            "maxActivePerCustomer",
+            i64::from(input.max_active_per_customer),
+            IntBound::integer(1, 100),
+        )?;
+        if let Some(days) = input.default_lifetime_days {
+            input::integer(
+                "defaultLifetimeDays",
+                i64::from(days),
+                IntBound::integer(1, 365),
+            )?;
+        }
 
         let observe_policy = ObservePolicy::parse(&input.observe_policy).ok_or_else(|| {
             V3Error::new(
