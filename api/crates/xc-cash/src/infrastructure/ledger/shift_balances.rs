@@ -51,9 +51,8 @@ fn to_delta(v: Decimal, currency: CurrencyCode, max_scale: u32) -> AppResult<Qua
     if d.scale() < 2 {
         d.rescale(2);
     }
-    QuantityDelta::from_decimal(d).map_err(|_| {
-        AppError::Internal(format!("ledger balance for {currency} out of range: {v}"))
-    })
+    QuantityDelta::from_decimal(d)
+        .map_err(|_| AppError::Internal(format!("ledger balance for {currency} out of range: {v}")))
 }
 
 #[derive(FromRow)]
@@ -99,7 +98,9 @@ fn into_shift_balance(
     let expected = to_delta(expected, currency, max_scale)?;
     let moved_in = to_money(moved_in, currency, max_scale)?;
     let moved_out = to_money(moved_out, currency, max_scale)?;
-    let counted = counted.map(|v| to_money(v, currency, max_scale)).transpose()?;
+    let counted = counted
+        .map(|v| to_money(v, currency, max_scale))
+        .transpose()?;
     let difference = difference
         .map(|v| to_delta(v, currency, max_scale))
         .transpose()?;
