@@ -66,6 +66,18 @@ pub(crate) fn validation_failed(field: &'static str, message: impl Into<String>)
     )
 }
 
+pub(crate) fn validation_failed_path(
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> V3Error {
+    V3Error::with_field_path(
+        "validationFailed",
+        field_path,
+        message,
+        StatusCode::BAD_REQUEST,
+    )
+}
+
 /// `user_roles`: role code, branch, valid from, valid to.
 type RoleRow = (String, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
 
@@ -119,16 +131,29 @@ pub(crate) async fn caller_in(
 }
 
 /// G1: a quantity is a decimal string of a whole number ≥ 0 (`"0"` included).
-pub(crate) fn whole_number(field: &'static str, text: &str) -> Result<i32, V3Error> {
+pub(crate) fn whole_number(index: usize, text: &str) -> Result<i32, V3Error> {
+    let field = format!("lines[{index}].qty");
     let t = text.trim();
     if t.is_empty() || !t.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(validation_failed(
+        return Err(validation_failed_path(
             field,
-            format!("{field} must be a whole number ≥ 0"),
+            "quantity must be a whole number ≥ 0",
         ));
     }
     t.parse::<i32>()
-        .map_err(|_| validation_failed(field, format!("{field} is too large")))
+        .map_err(|_| validation_failed_path(field, "quantity is too large"))
+}
+
+fn required_end_field(message: &str) -> Option<&'static str> {
+    match message {
+        "destination branch required"
+        | "destination branch missing"
+        | "destination branch cannot be source branch" => Some("toBranch"),
+        "drawer to safe requires from_shift and no to_shift" => Some("fromShift"),
+        "safe to drawer requires to_shift and no from_shift"
+        | "safe to drawer requires to_shift" => Some("toShift"),
+        _ => None,
+    }
 }
 
 /// An xc-cash service error on the wire. `Forbidden` (a transfer received at a branch that is not its destination,
@@ -152,12 +177,20 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
             {
                 V3Error::new("stockInsufficient", None, message, StatusCode::CONFLICT)
             } else {
-                V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
+                V3Error::new(
+                    "validationFailed",
+                    required_end_field(&message),
+                    message,
+                    StatusCode::BAD_REQUEST,
+                )
             }
         }
-        AppError::Validation(message) => {
-            V3Error::new("validationFailed", None, message, StatusCode::BAD_REQUEST)
-        }
+        AppError::Validation(message) => V3Error::new(
+            "validationFailed",
+            required_end_field(&message),
+            message,
+            StatusCode::BAD_REQUEST,
+        ),
         AppError::NotFound { entity, id } => V3Error::new(
             "notFound",
             None,
@@ -178,11 +211,12 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
 pub(crate) fn count_lines(lines: &[CashLineInput]) -> Result<Vec<CountLine>, V3Error> {
     lines
         .iter()
-        .map(|l| {
+        .enumerate()
+        .map(|(i, l)| {
             Ok(CountLine::new(
                 &l.currency,
                 l.denomination_id,
-                whole_number("qty", &l.qty)?,
+                whole_number(i, &l.qty)?,
             ))
         })
         .collect()
@@ -388,16 +422,20 @@ impl CommandAction for TransferPolicySave {
                 None => return Err(validation_failed("currency", "unknown currency")),
             };
 
+            let limit_field = format!("limits.{code}");
             let dec = Decimal::from_str(amount_str)
-                .map_err(|e| validation_failed("limits", e.to_string()))?;
+                .map_err(|e| validation_failed_path(&limit_field, e.to_string()))?;
 
             if dec < Decimal::ZERO {
-                return Err(validation_failed("limits", "amount must be non-negative"));
+                return Err(validation_failed_path(
+                    &limit_field,
+                    "amount must be non-negative",
+                ));
             }
 
             if dec.scale() > (minor as u32) {
-                return Err(validation_failed(
-                    "limits",
+                return Err(validation_failed_path(
+                    limit_field,
                     CashError::TooManyDecimals.to_string(),
                 ));
             }
