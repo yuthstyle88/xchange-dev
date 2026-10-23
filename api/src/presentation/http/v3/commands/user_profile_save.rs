@@ -22,6 +22,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, request_ip};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +66,16 @@ impl CommandAction for UserProfileSaveCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let user_id = user_in_organisation(tx, branch, &input.user_id).await?;
+        for (field, value, max) in [
+            ("employeeCode", input.employee_code.as_deref(), 40),
+            ("department", input.department.as_deref(), 80),
+            ("position", input.position.as_deref(), 80),
+            ("tellCode", input.tell_code.as_deref(), 40),
+        ] {
+            if let Some(v) = value {
+                input::text(field, v, TextBound { min: 0, max })?;
+            }
+        }
         let profile = UserProfile {
             employee_code: input.employee_code,
             department: input.department,

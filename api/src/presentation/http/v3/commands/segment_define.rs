@@ -12,12 +12,16 @@ use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{Bound, Money, Sign};
 use xc_marketing::domain::segment::rule::SegmentRule;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
+
+const MONEY: Bound = Bound::numeric(20, 2, Sign::NonNegative).at_most(Money::MAX_INPUT_UNITS);
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SegmentDefineInput {
@@ -57,13 +61,9 @@ impl CommandAction for SegmentDefineCommand {
             .map_err(|_| V3Error::from(PolicyError::RoleNotAllowed))?;
         let user_id = Uuid::parse_str(&who.user_id).unwrap_or_else(|_| Uuid::nil());
 
-        if input.name.trim().is_empty() {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("name"),
-                "name cannot be empty",
-                StatusCode::BAD_REQUEST,
-            ));
+        input::text("name", &input.name, TextBound { min: 1, max: 80 })?;
+        if let Some(value_thb) = input.rule.value_thb {
+            input::decimal("rule.value_thb", &value_thb.to_string(), MONEY)?;
         }
 
         let next_version: i32 = sqlx::query_scalar(

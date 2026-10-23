@@ -249,3 +249,64 @@ async fn must_exist_reads_inside_the_callers_transaction() {
     tx.rollback().await.expect("rollback");
     drop_schema(pool, schema).await;
 }
+
+// ---------------------------------------------------------------- text (#4970 T1)
+//
+// Written before the implementation by the ticket author's lane (claude/28619d18, for claude/7ca80c).
+// Do not edit, delete or weaken these tests; add your own in another file.
+//
+// #4970 §2.1: `input::text(field, text, TextBound { min, max })` counts chars after trim and refuses with
+// `validationFailed` naming the field. Rows (T1): at max ok · max+1 refused · min-1 refused · padded with spaces
+// is the trimmed count · chars, not bytes.
+
+#[test]
+fn text_at_max_is_accepted() {
+    let b = input::TextBound { min: 1, max: 5 };
+    assert!(input::text("name", "abcde", b).is_ok(), "5 chars at max 5");
+    assert!(input::text("name", "a", b).is_ok(), "1 char at min 1");
+}
+
+#[test]
+fn text_one_past_max_is_refused_on_the_field() {
+    let b = input::TextBound { min: 1, max: 5 };
+    refused(input::text("name", "abcdef", b), "name", "6 chars at max 5");
+}
+
+#[test]
+fn text_one_below_min_is_refused_on_the_field() {
+    let b = input::TextBound { min: 1, max: 5 };
+    refused(input::text("reason", "", b), "reason", "empty at min 1");
+    refused(input::text("reason", "   ", b), "reason", "blank at min 1");
+    assert!(
+        input::text("note", "", input::TextBound { min: 0, max: 5 }).is_ok(),
+        "empty at min 0"
+    );
+}
+
+#[test]
+fn text_counts_after_trim() {
+    let b = input::TextBound { min: 1, max: 5 };
+    assert!(
+        input::text("name", "   abcde   ", b).is_ok(),
+        "5 chars padded with spaces at max 5"
+    );
+    refused(
+        input::text("name", "  abcdef  ", b),
+        "name",
+        "6 chars padded with spaces at max 5",
+    );
+}
+
+#[test]
+fn text_counts_chars_not_bytes() {
+    let b = input::TextBound { min: 1, max: 5 };
+    assert!(
+        input::text("name", &"ก".repeat(5), b).is_ok(),
+        "5 Thai chars (15 bytes) at max 5"
+    );
+    refused(
+        input::text("name", &"ก".repeat(6), b),
+        "name",
+        "6 Thai chars at max 5",
+    );
+}
