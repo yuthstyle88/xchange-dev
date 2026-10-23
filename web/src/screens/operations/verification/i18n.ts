@@ -60,6 +60,13 @@ export const th = {
   errLinkExpired: 'ลิงก์เอกสารหมดอายุ กรุณาขอลิงก์ใหม่',
   errLinkRefused: 'ไม่สามารถเปิดลิงก์เอกสารนี้ได้ กรุณาขอลิงก์ใหม่',
   errBranchReviewNotAllowed: 'นโยบายปัจจุบันไม่อนุญาตให้เปิดเคสที่สาขา',
+  errDocumentTypeNotAccepted: 'ไม่รองรับประเภทเอกสารนี้',
+  errNoVerificationPolicy: 'ยังไม่ได้ตั้งค่านโยบายการยืนยันตัวตน',
+  errCaseLocked: 'ไม่สามารถแก้ไขเคสนี้ได้ในสถานะปัจจุบัน',
+  fileRequired: 'กรุณาเลือกไฟล์เอกสาร',
+  fileEmpty: 'ไฟล์เอกสารว่างเปล่า',
+  fileTooLarge: 'ไฟล์ใหญ่เกิน 15 MB',
+  fileTypeNotAccepted: 'รองรับเฉพาะไฟล์ JPEG, PNG หรือ PDF เท่านั้น',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -124,4 +131,11 @@ export const en: Record<keyof typeof th, string> = {
   errLinkExpired: 'Document link expired. Please ask for a new link.',
   errLinkRefused: 'Document link refused. Please ask for a new link.',
   errBranchReviewNotAllowed: 'Branch review is not allowed by current policy',
+  errDocumentTypeNotAccepted: 'Document type is not accepted',
+  errNoVerificationPolicy: 'Verification policy is not configured',
+  errCaseLocked: 'This verification case is locked and cannot be modified',
+  fileRequired: 'Please choose a document file',
+  fileEmpty: 'Document file is empty',
+  fileTooLarge: 'Document file exceeds 15 MB',
+  fileTypeNotAccepted: 'Only JPEG, PNG, or PDF files are accepted',
 };

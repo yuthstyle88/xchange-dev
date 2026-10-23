@@ -24,7 +24,7 @@ use super::BookingServices;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
-use crate::presentation::http::v3::input::{self, RowRef};
+use crate::presentation::http::v3::input::{self, RowRef, TextBound};
 
 pub struct BookingCreate {
     services: Arc<BookingServices>,
@@ -122,7 +122,11 @@ impl CommandAction for BookingCreate {
             if let Some(cid) = input.customer_id {
                 (SourceChannel::Desk, Some(cid), None)
             } else if let Some(phone) = input.phone {
-                let display_name = input.display_name.unwrap_or_else(|| "Customer".to_string());
+                let display_name = match input.display_name.as_deref() {
+                    Some(name) => input::text("displayName", name, TextBound { min: 1, max: 100 })?
+                        .to_string(),
+                    None => "Customer".to_string(),
+                };
                 (
                     SourceChannel::Desk,
                     None,

@@ -47,6 +47,7 @@ use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 // ------------------------------------------------------------ shared
 
@@ -376,15 +377,7 @@ impl CommandAction for Cancel {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let id = ticket_id(&input.id)?;
-        let reason = input.reason.trim();
-        if reason.is_empty() {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("reason"),
-                "ระบุเหตุผล",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
+        let reason = input::text("reason", &input.reason, TextBound { min: 1, max: 200 })?;
         let user = user_in(tx, branch, who).await?;
         self.0
             .desk
