@@ -498,16 +498,6 @@ impl CommandAction for DraftBeginCommand {
                 StatusCode::BAD_REQUEST,
             )
         })?;
-        // Until Q6 (#4998) lifts it, a draft holds at most 2 decimals, as before: the custody JSON still
-        // stores hundredths (Q3), so a third decimal would be rounded away.
-        Money::parse(&amount.to_string()).map_err(|e| {
-            V3Error::new(
-                "validationFailed",
-                Some("amount"),
-                e.to_string(),
-                StatusCode::BAD_REQUEST,
-            )
-        })?;
 
         let id = self
             .service
