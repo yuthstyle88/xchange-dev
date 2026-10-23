@@ -169,7 +169,6 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   }
 
   async function sendRequest(reason: string): Promise<void> {
-    setAsking(false);
     if (request === null || !can(me(), 'ReversalRequest')) return;
     setMessage(null);
     setBusy(true);
@@ -261,7 +260,15 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
       <ReasonDialog
         open={asking()}
         title={t('reasonTitle')}
-        onConfirm={(reason) => void sendRequest(reason)}
+        required
+        maxLength={500}
+        onConfirm={async (reason) => {
+          try {
+            await sendRequest(reason);
+          } finally {
+            setAsking(false);
+          }
+        }}
         onCancel={() => setAsking(false)}
       />
     </div>

@@ -50,6 +50,16 @@ export function CancelReasonDialog(props: CancelReasonDialogProps): JSX.Element 
     return true;
   };
 
+  const noteError = () => {
+    if (note().length > 200 || trimmedNote().length > 200) {
+      return t('kioskCancel.noteTooLong', { max: 200 });
+    }
+    if (reason() === 'OTHER' && trimmedNote().length === 0) {
+      return t('kioskCancel.noteRequired');
+    }
+    return null;
+  };
+
   const confirm = () => {
     if (!isValid()) return;
     const trimmed = trimmedNote();
@@ -77,9 +87,13 @@ export function CancelReasonDialog(props: CancelReasonDialogProps): JSX.Element 
           <textarea
             name="note"
             value={note()}
+            maxLength={200}
             placeholder={t('kioskCancel.note')}
             onInput={(e) => setNote(e.currentTarget.value)}
           />
+          <Show when={noteError()}>
+            <div role="alert">{noteError()}</div>
+          </Show>
           <div class="xc-dialog-actions">
             <button type="button" data-action="dismiss" onClick={() => props.onCancel()}>
               {t('kioskCancel.dismiss')}
