@@ -762,7 +762,7 @@ async fn a_short_receipt_of_a_move_writes_an_exception_on_its_branch() {
     let exc = &exceptions[0].1;
     assert_eq!(exc["status"], "OPEN");
     assert_eq!(exc["note"], format!("TRANSFER {}", t.id));
-    assert_eq!(exc["safeVariance"]["USD"], -5000);
+    assert_eq!(exc["safeVariance"]["USD"], "-50.00");
     assert!(exc["cashVariance"].is_null());
     assert_eq!(exc["at"], at(21).timestamp_millis());
 }
