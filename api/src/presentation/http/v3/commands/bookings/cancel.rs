@@ -16,6 +16,7 @@ use super::BookingServices;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{CommandAction, out_of_scope};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 pub struct BookingCancel {
     services: Arc<BookingServices>,
@@ -102,21 +103,16 @@ impl CommandAction for BookingCancel {
 
         let now = Utc::now();
         let reason = if is_staff {
-            let r = input.reason.as_deref().unwrap_or("").trim();
-            if r.is_empty() {
-                return Err(V3Error::new(
-                    "validationFailed",
-                    Some("reason"),
-                    "Staff cancellation requires a reason",
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
-            r
+            let r = input.reason.as_deref().unwrap_or("");
+            input::text("reason", r, TextBound { min: 1, max: 200 })?
         } else {
             if who.customer_id.as_deref() != Some(booking_cust_id.as_str()) {
                 return Err(out_of_scope());
             }
-            input.reason.as_deref().unwrap_or("customerCancelled")
+            match input.reason.as_deref() {
+                Some(r) => input::text("reason", r, TextBound { min: 1, max: 200 })?,
+                None => "customerCancelled",
+            }
         };
 
         let updated = services

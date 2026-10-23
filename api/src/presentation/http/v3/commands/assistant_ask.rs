@@ -7,7 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::{Method, StatusCode};
+use actix_web::http::Method;
 use actix_web::web;
 use ts_rs::TS;
 use uuid::Uuid;
@@ -24,6 +24,7 @@ use crate::presentation::http::v3::command::{
     AppSessionUse, CommandAction, CommandEndpoint, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 use crate::presentation::http::v3::planner_draft_save::{customer_app_error, draft_owner, sign_in};
 
 async fn organization_of(
@@ -74,15 +75,7 @@ impl CommandAction for AssistantAskCommand {
         key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let owner = draft_owner(caller).ok_or_else(sign_in)?;
-        let text = input.text.trim();
-        if text.is_empty() {
-            return Err(V3Error::new(
-                "validationFailed",
-                Some("text"),
-                "ข้อความต้องไม่ว่าง",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
+        let text = input::text("text", &input.text, TextBound { min: 1, max: 500 })?;
 
         let locale = match input.locale.as_deref() {
             Some("th") => "th",
