@@ -18,5 +18,6 @@ node -e '
   if (old.admin && old.admin.password && !String(old.admin.password).startsWith("<")) fresh.admin = old.admin;
   fs.writeFileSync(outPath, JSON.stringify(fresh, null, 2) + "\n", { mode: 0o600 });
   console.error("users.json written: customer " + fresh.customer.phone + ", teller " + fresh.teller.phone +
+    ", teller2 " + (fresh.teller2 || {}).phone +
     ", branch manager " + (fresh.branchManager || {}).phone + (fresh.admin.password.startsWith("<") ? ", admin NOT set" : ", admin kept"));
 ' "$NEW" "$HERE/users.json"

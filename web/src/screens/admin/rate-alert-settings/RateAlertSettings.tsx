@@ -11,6 +11,7 @@ import type {
   SaveRateAlertSettingsInput,
 } from '../../../shared/api/generated/rate_alert_settings';
 import { screenT } from '../../../shared/i18n';
+import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
@@ -139,30 +140,39 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
 
     let hasError = false;
 
-    // Validate Cooldown Hours (> 0 number)
+    // Validate Cooldown Hours (> 0 number, <= 720)
     const cdTrim = cooldownHours().trim();
     const cdNum = Number(cdTrim);
     const cdSeconds = Math.round(cdNum * 3600);
     if (!cdTrim || isNaN(cdNum) || cdSeconds < 1) {
       setCooldownError(t('errorCooldownInvalid'));
       hasError = true;
+    } else if (cdNum > 720) {
+      setCooldownError(t('errorCooldownMax'));
+      hasError = true;
     }
 
-    // Validate Max Active (> 0 integer)
+    // Validate Max Active (> 0 integer, <= 100)
     const maxTrim = maxActive().trim();
     const maxNum = Number(maxTrim);
     if (!maxTrim || isNaN(maxNum) || !Number.isInteger(maxNum) || maxNum <= 0) {
       setMaxActiveError(t('errorMaxActiveInvalid'));
       hasError = true;
+    } else if (maxNum > 100) {
+      setMaxActiveError(t('errorMaxActiveMax'));
+      hasError = true;
     }
 
-    // Validate Lifetime Days (optional, but if provided must be > 0 integer)
+    // Validate Lifetime Days (optional, but if provided must be > 0 integer and <= 365)
     const ltTrim = lifetimeDays().trim();
     let ltVal: number | undefined = undefined;
     if (ltTrim !== '') {
       const ltNum = Number(ltTrim);
       if (isNaN(ltNum) || !Number.isInteger(ltNum) || ltNum <= 0) {
         setLifetimeError(t('errorLifetimeInvalid'));
+        hasError = true;
+      } else if (ltNum > 365) {
+        setLifetimeError(t('errorLifetimeMax'));
         hasError = true;
       } else {
         ltVal = ltNum;
@@ -202,7 +212,26 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
       setObservePolicy(res.observePolicy);
       setSavedSuccess(t('saved'));
     } catch (err: unknown) {
-      setSaveError(wordedError(err));
+      const fe = fieldError(err, {
+        defaultCooldownSeconds: t('cooldownLabel'),
+        cooldownHours: t('cooldownLabel'),
+        maxActivePerCustomer: t('maxActiveLabel'),
+        maxActive: t('maxActiveLabel'),
+        defaultLifetimeDays: t('lifetimeLabel'),
+        lifetimeDays: t('lifetimeLabel'),
+        observePolicy: t('observePolicyLabel'),
+      });
+      if (fe.field === 'defaultCooldownSeconds' || fe.field === 'cooldownHours') {
+        setCooldownError(fe.message);
+      } else if (fe.field === 'maxActivePerCustomer' || fe.field === 'maxActive') {
+        setMaxActiveError(fe.message);
+      } else if (fe.field === 'defaultLifetimeDays' || fe.field === 'lifetimeDays') {
+        setLifetimeError(fe.message);
+      } else if (fe.field === 'observePolicy') {
+        setPolicyError(fe.message);
+      } else {
+        setSaveError(fe.message);
+      }
     } finally {
       setSaving(false);
     }
@@ -262,6 +291,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
                   class="rate-alert-input"
                   type="number"
                   min="0.001"
+                  max="720"
                   step="any"
                   placeholder={SUGGESTED.cooldownHours}
                   value={cooldownHours()}
@@ -293,6 +323,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
                   class="rate-alert-input"
                   type="number"
                   min="1"
+                  max="100"
                   step="1"
                   placeholder={SUGGESTED.maxActive}
                   value={maxActive()}
@@ -324,6 +355,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
                   class="rate-alert-input"
                   type="number"
                   min="1"
+                  max="365"
                   step="1"
                   placeholder={SUGGESTED.lifetimeDays}
                   value={lifetimeDays()}
