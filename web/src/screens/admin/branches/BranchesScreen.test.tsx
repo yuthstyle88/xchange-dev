@@ -140,7 +140,7 @@ describe('A04 BranchesScreen', () => {
     const addressInput = container.querySelector<HTMLInputElement>('input[name="address"]');
     expect(addressInput?.value).toBe('1 Silom Rd');
 
-    const timezoneInput = container.querySelector<HTMLInputElement>('input[name="timezone"]');
+    const timezoneInput = container.querySelector<HTMLInputElement | HTMLSelectElement>('[name="timezone"]');
     expect(timezoneInput?.value).toBe('Asia/Bangkok');
 
     const bookingInput = container.querySelector<HTMLInputElement>('input[name="bookingEnabled"]');
