@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import * as holdsI18n from '../../../web/src/screens/staff/holds/i18n';
+import * as transfersI18n from '../../../web/src/screens/staff/transfers/i18n';
 import {
   clockIn,
   closeShift,
@@ -309,22 +310,35 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           }
 
           const firstDenomInput = denomInputs.first();
-          const transferErr = transfersCard.locator('[data-testid="transfer-error"]');
+          const firstRow = transferForm.locator('[data-denomination-row]').first();
+          const rowErr = firstRow.locator('[data-field-error]');
 
-          // Cases 1–4: '0' (zero), '-5' (negative), 'abc' (not a number), '999999999999' (over the limit).
+          // Cases 1–4: '0' (zero), '-5' (negative), 'abc' (not a number), '999999999999' (over the limit) -> client refuses at row, 0 POST /api/cash-transfers.
           for (const badQty of ['0', '-5', 'abc', '999999999999']) {
             await firstDenomInput.fill(badQty);
-            const txRes = await posted(manager, /^\/api\/cash-transfers$/, () =>
-              transferForm.locator('[data-testid="transfer-save"]').click(),
-            );
-            expect(txRes.ok, `POST /api/cash-transfers (${badQty}, ${lang}) must be refused`).toBe(false);
-            expect(txRes.text, `POST /api/cash-transfers (${badQty}, ${lang}) status`).toMatch(/^400\b/);
+            let txPosts = 0;
+            const onTxReq = (req: { method(): string; url(): string }) => {
+              if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/cash-transfers') {
+                txPosts++;
+              }
+            };
+            manager.on('request', onTxReq);
+            try {
+              await transferForm.locator('[data-testid="transfer-save"]').click();
+            } finally {
+              manager.off('request', onTxReq);
+            }
+            expect(txPosts, `bad quantity sends no POST /api/cash-transfers (${badQty}, ${lang})`).toBe(0);
 
-            await expect(
-              transferErr,
-              `transfer-error visible for ${badQty} (${lang}, TransfersCard.tsx:373)`,
-            ).toBeVisible({ timeout: 10_000 });
-            expectWordedRefusal(await transferErr.innerText(), `transfer ${badQty} (${lang})`);
+            const expectedErr =
+              badQty === '999999999999'
+                ? transfersI18n[lang === 'th' ? 'th' : 'en'].qtyTooLarge
+                : transfersI18n[lang === 'th' ? 'th' : 'en'].qtyWholeMin1;
+            await expect(rowErr, `transfer row error visible for ${badQty} (${lang})`).toBeVisible({
+              timeout: 10_000,
+            });
+            await expect(rowErr, `transfer row error text for ${badQty} (${lang})`).toHaveText(expectedErr);
+            expectWordedRefusal(await rowErr.innerText(), `transfer ${badQty} (${lang})`);
             await expect(firstDenomInput, `transfer input keeps '${badQty}' (${lang})`).toHaveValue(badQty);
             await expect(noteInput, `transfer-note keeps '${runMarker}' (${lang})`).toHaveValue(runMarker);
             await expect(
