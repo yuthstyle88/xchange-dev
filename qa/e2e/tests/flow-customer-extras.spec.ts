@@ -312,6 +312,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
             page.locator('#alert-branch option'),
             `(${lang}) #alert-branch options loaded`,
           ).not.toHaveCount(0, { timeout: 15_000 });
+          await page.locator('#alert-branch').selectOption(users.branch);
           await expect(
             page.locator('#alert-currency option'),
             `(${lang}) #alert-currency options loaded`,
@@ -375,9 +376,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       await expect(branchSelect.locator('option'), '#alert-branch options loaded').not.toHaveCount(0, {
         timeout: 15_000,
       });
-      if ((await branchSelect.locator(`option[value="${users.branch}"]`).count()) > 0) {
-        await branchSelect.selectOption(users.branch);
-      }
+      await branchSelect.selectOption(users.branch);
       // #alert-currency: web/src/screens/customer/rate-alerts/RateAlerts.tsx:471
       await expect(page.locator('#alert-currency option'), '#alert-currency options loaded').not.toHaveCount(
         0,

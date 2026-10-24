@@ -322,7 +322,7 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
 
       const branchSelect = page.locator('#alert-branch');
       await expect(branchSelect.locator('option')).not.toHaveCount(0, { timeout: 15_000 });
-      await branchSelect.selectOption({ index: 0 });
+      await branchSelect.selectOption(users.branch);
 
       const currencySelect = page.locator('#alert-currency');
       await expect(currencySelect.locator('option')).not.toHaveCount(0, { timeout: 15_000 });
