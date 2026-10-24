@@ -148,6 +148,26 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
         tracing::error!(error = %e, "transaction command failed");
         return server_error();
     };
+    if let Some((field, _)) = m
+        .strip_prefix("validationFailed:")
+        .and_then(|rest| rest.split_once(':'))
+        .filter(|(f, _)| !f.is_empty() && !f.chars().any(char::is_whitespace))
+    {
+        return match field {
+            "bookingId" => V3Error::new(
+                "validationFailed",
+                Some("bookingId"),
+                m,
+                StatusCode::BAD_REQUEST,
+            ),
+            _ => V3Error::with_field_path(
+                "validationFailed",
+                field.to_owned(),
+                m,
+                StatusCode::BAD_REQUEST,
+            ),
+        };
+    }
     let (code, status) = if m == ShiftError::NoOpenShift.to_string() {
         ("noOpenShift", StatusCode::CONFLICT)
     } else if m == COUNT_FIRST {
