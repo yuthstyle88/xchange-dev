@@ -27,6 +27,7 @@ use xc_shift::infrastructure::custody::custody_repository::{
 };
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
+use crate::application::denominations::face_values_in;
 use crate::application::ledger_approval::count_difference::{
     COUNT_DIFFERENCE, CountDifferenceGate, GateResult,
 };
@@ -866,6 +867,14 @@ impl CashCountService {
             ));
         }
 
+        let denom_ids: Vec<i64> = cmd
+            .lines
+            .iter()
+            .take_while(|l| l.qty >= 0)
+            .map(|l| l.denomination_id)
+            .collect();
+        let denoms = face_values_in(tx, &denom_ids).await?;
+
         for line in &cmd.lines {
             if !seen_denominations.insert(line.denomination_id) {
                 return Err(AppError::Validation(format!(
@@ -880,13 +889,7 @@ impl CashCountService {
                 )));
             }
 
-            let row: Option<(Decimal, String)> =
-                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
-                    .bind(line.denomination_id)
-                    .fetch_optional(&mut **tx)
-                    .await?;
-
-            let (face_value, denom_currency) = match row {
+            let &(face_value, ref denom_currency) = match denoms.get(&line.denomination_id) {
                 Some(r) => r,
                 None => {
                     return Err(AppError::NotFound {
