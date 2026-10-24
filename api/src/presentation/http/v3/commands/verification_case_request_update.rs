@@ -22,9 +22,7 @@ use xc_verification::infrastructure::pg_case_repository::PgCaseRepository;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, Locks, server_error,
-};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, Locks, server_error};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::verification_reviewer::reviewer_actor;
 
