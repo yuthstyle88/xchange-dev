@@ -669,6 +669,307 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
     }
   });
 
+  test('shift handover: over the limit (accept 200 AWAITING_FINANCE, finance approves, accept again ACCEPTED)', async ({
+    browser,
+  }) => {
+    const required: readonly Role[] = ['teller', 'branchManager', 'finance'];
+    for (const role of required) {
+      if (!hasAccount(role)) {
+        const reason = `no ${role} account in users.json: run scripts/reseed.sh`;
+        console.log(`[R9-8] skip handover over-limit test: ${reason}`);
+        test.skip(true, reason);
+      }
+    }
+
+    const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
+    const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
+    const finance = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
+    let shiftOpened = false;
+    let tellerUserId = '';
+    let managerUserId = '';
+    let handoverId = '';
+
+    try {
+      await signIn(teller, 'teller', '/staff');
+      await signIn(manager, 'branchManager', '/staff');
+      await signIn(finance, 'finance', `/?branch=${encodeURIComponent(users.branch)}#approvals`);
+
+      await expect(teller.locator('.xc-shift-card'), 'teller .xc-shift-card visible (ShiftCard.tsx:382)').toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(manager.locator('.xc-shift-card'), 'manager .xc-shift-card visible (ShiftCard.tsx:382)').toBeVisible({
+        timeout: 20_000,
+      });
+
+      tellerUserId = await meUserId(teller);
+      managerUserId = await meUserId(manager);
+      console.log(`[R9-8] over-limit test marker=${RUN_MARKER} teller=${tellerUserId} manager=${managerUserId}`);
+
+      // 1. Teller opens a shift with openShift (opening count = SHIFT_QTY, 10 × the largest THB note).
+      await openShift(teller, manager);
+      shiftOpened = true;
+      await expect(
+        teller.getByTestId('shift-handover'),
+        'shift-handover button visible when shift is OPEN (ShiftCard.tsx:422)',
+      ).toBeVisible({ timeout: 20_000 });
+
+      // 2. Teller starts a hand-over to the manager of 1 × the largest THB note (a 9 × note difference, like round 17). Assert handoverStart ok.
+      await teller.getByTestId('shift-handover').click();
+      const form = teller.getByTestId('shift-handover-form');
+      await expect(form, 'handover form open').toBeVisible({ timeout: 15_000 });
+      await form.getByTestId('shift-receiver').selectOption(managerUserId);
+
+      const thbRows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
+      await expect(thbRows.first(), 'a THB denomination row in the handover form').toBeVisible({ timeout: 15_000 });
+      const vals = (await thbRows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+      const maxVal = Math.max(...vals);
+      const bestRow = thbRows.nth(vals.indexOf(maxVal));
+      await bestRow.locator('input[data-denomination-id]').fill('1');
+
+      const startRes = await posted(teller, /^\/api\/handovers$/, () =>
+        form.getByTestId('shift-handover-save').click(),
+      );
+      console.log(`[R9-8] POST /api/handovers (over-limit, ${RUN_MARKER}) ${startRes.text}`);
+      expect(startRes.ok, `handoverStart ok: ${startRes.text}`).toBeTruthy();
+      const parsedStart = JSON.parse(startRes.body || '{}') as HandoverStartAnswer;
+      handoverId = String(
+        parsedStart.id ?? parsedStart.handoverId ?? parsedStart.data?.id ?? parsedStart.data?.handoverId ?? '',
+      );
+
+      // 3. Before accepting, as finance on /?branch=<users.branch>#approvals filtered to COUNT_DIFFERENCE
+      // ([data-type-filter="COUNT_DIFFERENCE"], as flow-admin-campaigns.spec.ts:214-231 does for its type), note the number of pending cards.
+      await finance.goto(`/?branch=${encodeURIComponent(users.branch)}#approvals`);
+      const approvalsScreen = finance.locator('.admin-approvals-screen');
+      await expect(approvalsScreen).toBeVisible({ timeout: 20_000 });
+      const countDiffFilter = approvalsScreen.locator('[data-type-filter="COUNT_DIFFERENCE"]');
+      await expect(countDiffFilter).toBeVisible({ timeout: 15_000 });
+      await countDiffFilter.click();
+
+      // Wait for queue view load to settle and record pending cards
+      await finance
+        .waitForResponse(
+          (res) => res.url().includes('approval_requests') && res.status() === 200,
+          { timeout: 15_000 },
+        )
+        .catch(() => null);
+      const cardsBefore = approvalsScreen.locator('[data-request]');
+      const beforeCount = await cardsBefore.count();
+      const beforeIds = new Set(
+        await cardsBefore.evaluateAll((els) =>
+          els.map((el) => el.getAttribute('data-request')).filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      // 4. Manager accepts on /staff. Assert the answer is 200 with status === "AWAITING_FINANCE",
+      // the notice shows handoverAwaitingFinance (th; en if the test already switches language),
+      // "saved" is not shown, and the hand-over row is still listed (PENDING).
+      await manager.reload();
+      const pendingItem = handoverId
+        ? manager.locator(`[data-handover-id="${handoverId}"]`)
+        : manager.locator('[data-handover-id]').first();
+      await expect(
+        pendingItem,
+        'initiated handover visible on manager /staff after reload (ShiftCard.tsx:593)',
+      ).toBeVisible({ timeout: 20_000 });
+      const resolvedHandoverId =
+        handoverId || ((await pendingItem.getAttribute('data-handover-id')) ?? '');
+      expect(resolvedHandoverId, 'resolved handoverId').not.toBe('');
+      handoverId = resolvedHandoverId;
+
+      const acceptRes = await posted(
+        manager,
+        new RegExp(`^/api/handovers/${encodeURIComponent(resolvedHandoverId)}/accept$`),
+        () => pendingItem.getByTestId('shift-accept').click(),
+      );
+      console.log(`[R9-8] POST /api/handovers/${resolvedHandoverId}/accept ${acceptRes.text}`);
+      expect(acceptRes.ok, `handoverAccept 200 ok: ${acceptRes.text}`).toBeTruthy();
+      const acceptJson = JSON.parse(acceptRes.body || '{}') as {
+        status?: string;
+        data?: { status?: string };
+      };
+      const acceptStatus = acceptJson.status ?? acceptJson.data?.status;
+      expect(acceptStatus, `handoverAccept status === "AWAITING_FINANCE": ${acceptRes.text}`).toBe('AWAITING_FINANCE');
+
+      const noticeEl = manager.getByTestId('shift-notice');
+      await expect(noticeEl, 'shift-notice visible on manager (ShiftCard.tsx:388)').toBeVisible({ timeout: 10_000 });
+      const noticeText = await noticeEl.innerText();
+      expect(noticeText, 'notice shows handoverAwaitingFinance').toMatch(
+        /ยอดส่งมอบต่างเกินเกณฑ์|hand-over difference is over the limit/i,
+      );
+      expect(noticeText, '"saved" is not shown in notice').not.toMatch(/บันทึกเรียบร้อย|Saved/i);
+
+      await expect(
+        manager.locator(`[data-handover-id="${resolvedHandoverId}"]`),
+        'hand-over row is still listed (PENDING) after AWAITING_FINANCE',
+      ).toBeVisible({ timeout: 10_000 });
+
+      // 5. Finance's pending COUNT_DIFFERENCE cards are exactly one more than in step 3.
+      // Approve that new card (POST /api/approvals/<id>/decide answers ok; a reason if the screen asks for one).
+      await finance.reload();
+      const approvalsScreenAfter = finance.locator('.admin-approvals-screen');
+      await expect(approvalsScreenAfter).toBeVisible({ timeout: 20_000 });
+      const countDiffFilterAfter = approvalsScreenAfter.locator('[data-type-filter="COUNT_DIFFERENCE"]');
+      await expect(countDiffFilterAfter).toBeVisible({ timeout: 15_000 });
+      await countDiffFilterAfter.click();
+
+      const cardsAfter = approvalsScreenAfter.locator('[data-request]');
+      await expect(
+        cardsAfter,
+        'finance pending COUNT_DIFFERENCE cards are exactly one more than in step 3',
+      ).toHaveCount(beforeCount + 1, { timeout: 20_000 });
+
+      const allAfterIds = await cardsAfter.evaluateAll((els) =>
+        els.map((e) => e.getAttribute('data-request')).filter((id): id is string => Boolean(id)),
+      );
+      const newApprovalId = allAfterIds.find((id) => id && !beforeIds.has(id));
+      expect(newApprovalId, 'new COUNT_DIFFERENCE approval request id resolved').toBeTruthy();
+
+      const newCard = approvalsScreenAfter.locator(`[data-request="${newApprovalId}"]`);
+      await expect(newCard, `new approval card ${newApprovalId} visible`).toBeVisible({ timeout: 10_000 });
+
+      const reasonInput = newCard.locator('input[type="text"]');
+      if (await reasonInput.isVisible().catch(() => false)) {
+        await reasonInput.fill('approved by finance');
+      }
+
+      const approveBtn = newCard.getByRole('button', { name: /^(อนุมัติ|Approve)$/ });
+      await expect(approveBtn, 'approve button visible on new card').toBeVisible({ timeout: 10_000 });
+      const decideRes = await posted(
+        finance,
+        new RegExp(`^/api/approvals/${encodeURIComponent(newApprovalId!)}/decide$`),
+        () => approveBtn.click(),
+      );
+      console.log(`[R9-8] POST /api/approvals/${newApprovalId}/decide -> ${decideRes.text}`);
+      expect(decideRes.ok, `finance approved COUNT_DIFFERENCE: ${decideRes.text}`).toBeTruthy();
+
+      // 6. Manager accepts the same hand-over again: answer 200 status === "ACCEPTED".
+      const acceptAgainRes = await posted(
+        manager,
+        new RegExp(`^/api/handovers/${encodeURIComponent(resolvedHandoverId)}/accept$`),
+        () => pendingItem.getByTestId('shift-accept').click(),
+      );
+      console.log(`[R9-8] POST /api/handovers/${resolvedHandoverId}/accept (2nd) ${acceptAgainRes.text}`);
+      expect(acceptAgainRes.ok, `second handoverAccept 200 ok: ${acceptAgainRes.text}`).toBeTruthy();
+      const acceptAgainJson = JSON.parse(acceptAgainRes.body || '{}') as {
+        status?: string;
+        data?: { status?: string };
+      };
+      const acceptAgainStatus = acceptAgainJson.status ?? acceptAgainJson.data?.status;
+      expect(acceptAgainStatus, `second handoverAccept status === "ACCEPTED": ${acceptAgainRes.text}`).toBe('ACCEPTED');
+
+      await teller.reload();
+      await manager.reload();
+    } finally {
+      // 7. finally: leave no OPEN shift and no PENDING hand-over behind, with the same pattern #5069 put in this file
+      // (reject a PENDING hand-over as its receiver; hand the drawer back with fillExpectedThbHandover + an accept
+      // that asserts ACCEPTED; closeShift(teller, manager); log cleanup: only after re-reading). Never closeShift(manager, teller).
+      if (shiftOpened) {
+        let managerShiftToClose = '';
+        try {
+          if (handoverId) {
+            await manager.reload().catch(() => null);
+            const pendingInitial = manager.locator(`[data-handover-id="${handoverId}"]`);
+            if (await pendingInitial.isVisible().catch(() => false)) {
+              const rejectBtn = pendingInitial.getByTestId('shift-reject');
+              if (await rejectBtn.isVisible().catch(() => false)) {
+                await posted(manager, new RegExp(`^/api/handovers/${encodeURIComponent(handoverId)}/reject$`), () =>
+                  rejectBtn.click(),
+                ).catch(() => null);
+                await manager.reload().catch(() => null);
+              }
+            }
+          }
+
+          const managerShift = await readMyShift(manager);
+          if (managerShift?.id) {
+            managerShiftToClose = managerShift.id;
+            // Manager holds the drawer. Reject any pending return handover, hand drawer back to teller, then close teller's shift.
+            await teller.reload();
+            for (let attempt = 0; attempt < 5; attempt++) {
+              const rejectBtn = teller.getByTestId('shift-reject').first();
+              if (!(await rejectBtn.isVisible().catch(() => false))) break;
+              await posted(teller, /^\/api\/handovers\/[^/]+\/reject$/, () => rejectBtn.click()).catch(() => null);
+              await teller.reload();
+            }
+
+            await clockIn(manager);
+            await manager.reload();
+            const mgrHandoverBtn = manager.getByTestId('shift-handover');
+            await expect(mgrHandoverBtn, 'manager shift-handover button visible for cleanup').toBeVisible({
+              timeout: 15_000,
+            });
+            await mgrHandoverBtn.click();
+            const cleanupForm = manager.getByTestId('shift-handover-form');
+            await expect(cleanupForm, 'manager cleanup handover form visible').toBeVisible({ timeout: 15_000 });
+            await cleanupForm.getByTestId('shift-receiver').selectOption(tellerUserId);
+            await fillExpectedThbHandover(manager, cleanupForm);
+            const startRes = await posted(manager, /^\/api\/handovers$/, () =>
+              cleanupForm.getByTestId('shift-handover-save').click(),
+            );
+            expect(startRes.ok, `cleanup return handoverStart: ${startRes.text}`).toBeTruthy();
+
+            await teller.reload();
+            const cleanupPending = teller.locator('[data-handover-id]').first();
+            await expect(cleanupPending, 'cleanup return handover visible to teller').toBeVisible({ timeout: 20_000 });
+            const acceptRes = await posted(teller, /^\/api\/handovers\/[^/]+\/accept$/, () =>
+              cleanupPending.getByTestId('shift-accept').click(),
+            );
+            expect(acceptRes.ok, `cleanup return handoverAccept: ${acceptRes.text}`).toBeTruthy();
+            const acceptJson = JSON.parse(acceptRes.body || '{}') as {
+              status?: string;
+              data?: { status?: string };
+            };
+            const acceptStatus = acceptJson.status ?? acceptJson.data?.status;
+            expect(acceptStatus, `cleanup return handoverAccept status: ${acceptRes.text}`).toBe('ACCEPTED');
+            await clockOutIfClockedIn(manager);
+
+            await closeShift(teller, manager);
+
+            const managerStillOpen = await hasOpenShift(manager);
+            const tellerStillOpen = await hasOpenShift(teller);
+            if (!managerStillOpen && !tellerStillOpen) {
+              console.log('[R9-8] cleanup: closed manager shift');
+            } else {
+              console.log(
+                `[R9-8] cleanup: FAILED to close manager shift ${managerShift.id}: shift still open (manager=${managerStillOpen}, teller=${tellerStillOpen})`,
+              );
+            }
+          } else {
+            const tellerShift = await readMyShift(teller);
+            if (tellerShift?.id) {
+              await closeShift(teller, manager);
+              const tellerStillOpen = await hasOpenShift(teller);
+              if (!tellerStillOpen) {
+                console.log('[R9-8] cleanup: closed teller shift');
+              } else {
+                console.log(
+                  `[R9-8] cleanup: FAILED to close teller shift ${tellerShift.id}: shift still open`,
+                );
+              }
+            } else {
+              console.log('[R9-8] cleanup: shifts already closed');
+            }
+          }
+        } catch (cleanupErr) {
+          if (managerShiftToClose) {
+            console.log(
+              `[R9-8] cleanup: FAILED to close manager shift ${managerShiftToClose}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            );
+          } else {
+            console.log(
+              `[R9-8] cleanup warning: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            );
+          }
+        }
+      } else {
+        console.log('[R9-8] cleanup: no shift opened by this test, skipping closeShift');
+      }
+      await teller.close();
+      await manager.close();
+      await finance.close();
+    }
+  });
+
   test('verification case approve & revoke: permission (c), invalid inputs (b) in th/en, and approve/revoke happy paths (a) with reload', async ({
     browser,
   }) => {
