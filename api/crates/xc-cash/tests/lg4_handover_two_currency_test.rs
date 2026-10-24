@@ -118,6 +118,15 @@ impl Db {
             .execute(&self.pool)
             .await
             .unwrap();
+        sqlx::query(
+            "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+             VALUES ($1::uuid, $2, 1000000, 'test', now())",
+        )
+        .bind(ORG)
+        .bind(&id)
+        .execute(&self.pool)
+        .await
+        .unwrap();
         let b = BranchId::new(id);
         let src = |key: &str, kind: SourceType| SourceRef {
             source_type: kind,
@@ -279,8 +288,13 @@ async fn a_two_currency_handover_is_one_opening_posting_with_an_entry_pair_per_c
     assert_eq!(db.at(CashPlace::Drawer(b_shift), "USD").await, d("100.00"));
     assert_eq!(
         db.at(CashPlace::Drawer(a_shift.clone()), "THB").await,
+        d("0.00"),
+        "A's drawer is emptied"
+    );
+    assert_eq!(
+        db.at(CashPlace::Variance(main), "THB").await,
         d("100.00"),
-        "exactly THB 2,200 left A's drawer"
+        "the THB 100 shortfall is on VARIANCE"
     );
     assert_eq!(
         db.at(CashPlace::Drawer(a_shift), "USD").await,
