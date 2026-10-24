@@ -14,7 +14,7 @@
 // - screens/desk/steps/receipt/step.tsx:34,40          section.desk-form strong, ReferralCodeField
 // - screens/desk/referral/ReferralCodeField.tsx:28,71,88,92,100,112,122,123 .desk-referral-field, input.desk-referral-input, button.desk-referral-btn, p.desk-referral-error[role="alert"], p.desk-referral-success, strong.desk-referral-code
 // - screens/desk/queue/counter/CounterBar.tsx:66,75,84,98 .desk-actions, button[name="callNext"], button[name="pause"], button[name="resume"]
-// - screens/desk/loyalty/CustomerLoyalty.tsx:13        .desk-loyalty
+// - screens/desk/loyalty/CustomerLoyalty.tsx:12-15     <Show when={customerId}> (bare div with TierBadge and PhoneVerify)
 // - screens/desk/loyalty/phone/PhoneVerify.tsx:71,74,86,104,125,133,140,150,162 input[name="phone"], button[name="sendCode"], input[name="code"], button[name="confirmCode"], p.desk-error[role="alert"]
 // - shared/i18n/LangSwitch.tsx:10-18                   .xc-shell-header button[type="button"] ("EN" / "TH")
 // - screens/desk-transaction/TransactionScreen.tsx:215 button[data-action="request-reversal"], dialog.xc-dialog (staff/parts/ReasonDialog.tsx:32)
@@ -532,14 +532,14 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
           }
           await expect(nameInput).toHaveValue(marker);
 
-          // Advance to Step 2 via skip customer so CustomerLoyalty & PhoneVerify mount in aside.desk-summary (Summary.tsx:61, CustomerLoyalty.tsx:13).
+          // Advance to Step 2 via skip customer so CustomerLoyalty & PhoneVerify mount in aside.desk-summary (Summary.tsx:61, CustomerLoyalty.tsx:12-15).
           const skipBtn = teller.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ }); // customer/step.tsx:256
           const reserveRes = await posted(teller, /^\/api\/rpc$/, () => skipBtn.click());
           expect(reserveRes.ok, `[${lang}] reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
 
-          const loyaltyBox = teller.locator('.desk-loyalty'); // CustomerLoyalty.tsx:13
-          await expect(loyaltyBox).toBeVisible({ timeout: 15_000 });
+          const loyaltyBox = teller.locator('aside'); // CustomerLoyalty.tsx:12-15
           const phoneInput = loyaltyBox.locator('input[name="phone"]'); // PhoneVerify.tsx:125
+          await expect(phoneInput).toBeVisible({ timeout: 15_000 });
           const sendCodeBtn = loyaltyBox.locator('button[name="sendCode"]'); // PhoneVerify.tsx:133
           const phoneAlert = loyaltyBox.locator('p.desk-error[role="alert"]'); // PhoneVerify.tsx:162
 
