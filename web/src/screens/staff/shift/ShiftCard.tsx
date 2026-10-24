@@ -377,8 +377,12 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       '/api/handovers/' + id + '/accept'
     );
     try {
-      await cmd.send({ id, branch: props.ctx.me.branchId });
-      setNotice(t('saved'));
+      const answer = await cmd.send({ id, branch: props.ctx.me.branchId });
+      if (answer?.status === 'AWAITING_FINANCE') {
+        setNotice(t('handoverAwaitingFinance'));
+      } else {
+        setNotice(t('saved'));
+      }
       errorFrom = null;
       setError(null);
       await props.ctx.refresh();
