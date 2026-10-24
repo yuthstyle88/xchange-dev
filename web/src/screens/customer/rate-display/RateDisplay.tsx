@@ -22,6 +22,8 @@ import { th, en, zh } from './i18n';
 import { branchFromSearch } from './location';
 import './rate-display.css';
 
+export const RATES_POLL_MS = 10_000;
+
 export interface RateDisplayProps {
   /** Injected so tests mock at the fetch level; `main.tsx` passes the browser's `fetch`. */
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -132,7 +134,7 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
     const rPoller = new PublicPoller<BoardRatesData>(
       ratesUrl,
       props.fetch,
-      props.ratesIntervalMs ?? 10_000,
+      props.ratesIntervalMs ?? RATES_POLL_MS,
       MAX_HOST_BACKOFF_MS,
     );
     setRatesPoller(rPoller);

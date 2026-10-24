@@ -203,7 +203,11 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         // ── 2. Holds form (`/staff` — `holdCreate`) ──
         // Citations: HoldsCard.tsx:97-123,153-208; holds/i18n.ts:7,16; commands/branch_day.rs:344-375.
         const reserveRes = await manager.request.post('/api/rpc', {
-          headers: { 'Idempotency-Key': `${runMarker}-reserve-hold-cust` },
+          headers: {
+            'Idempotency-Key': `${runMarker}-reserve-hold-cust`,
+            'x-xchange-request': '1',
+            Origin: new URL(users.baseUrl).origin,
+          },
           data: {
             action: 'reserveCustomer',
             payload: {

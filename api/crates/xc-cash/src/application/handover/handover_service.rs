@@ -301,6 +301,17 @@ pub fn may_receive(
     Authorizer::check(Some(&user), Permission::ShiftOperate, &at, now).is_ok()
 }
 
+/// What `accept_or_await_in` answers (P7 #5063, design §4.9): the hand-over accepted, or its count's difference
+/// waiting for FINANCE under the approval request it recorded. Awaiting FINANCE is a value, not an error, so the
+/// request commits with the caller's transaction.
+#[derive(Debug, Clone)]
+pub enum HandoverAccepted {
+    /// Boxed: `Handover` is larger than the other variant (`clippy::large_enum_variant`).
+    Accepted(Box<Handover>),
+    /// The approval request's id.
+    AwaitingFinance(String),
+}
+
 /// The CA-7c forms (design §4.9): all their work, reads included, on the caller's transaction. They open no
 /// transaction and take no lock; the caller (the CM-1 seam, or the wrapper above) holds both.
 impl HandoverService {
@@ -507,6 +518,19 @@ impl HandoverService {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Handover> {
+        match self.accept_or_await_in(tx, actor, id, now).await? {
+            HandoverAccepted::Accepted(h) => Ok(*h),
+            HandoverAccepted::AwaitingFinance(id) => Err(CashError::AwaitingFinance(id).into()),
+        }
+    }
+
+    pub async fn accept_or_await_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<HandoverAccepted> {
         let handover_uuid = handover_id(id)?;
         let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
@@ -635,7 +659,7 @@ impl HandoverService {
                     return Err(CashError::RejectedByFinance(req.id.to_string()).into());
                 }
                 "PENDING" => {
-                    return Err(CashError::AwaitingFinance(req.id.to_string()).into());
+                    return Ok(HandoverAccepted::AwaitingFinance(req.id.to_string()));
                 }
                 other => {
                     return Err(AppError::Internal(format!(
@@ -658,7 +682,7 @@ impl HandoverService {
             match self.gate.check_in(&mut *tx, &count, &by).await? {
                 GateResult::Clear => {}
                 GateResult::AwaitingFinance(req_id) => {
-                    return Err(CashError::AwaitingFinance(req_id.to_string()).into());
+                    return Ok(HandoverAccepted::AwaitingFinance(req_id.to_string()));
                 }
             }
         }
@@ -722,7 +746,9 @@ impl HandoverService {
         if res.rows_affected() == 0 {
             return Err(dom(HandoverError::NotPending));
         }
-        self.load_in(tx, id).await
+        Ok(HandoverAccepted::Accepted(Box::new(
+            self.load_in(tx, id).await?,
+        )))
     }
 
     pub async fn reject_in(

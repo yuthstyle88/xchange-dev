@@ -467,12 +467,24 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         await form.locator('input[name="budgetThb"][data-field="budgetThb"]').fill('15000.00');
 
         const submitBtn = form.locator('.xc-detail-actions button.xc-btn-primary');
-        if (!(await submitBtn.isDisabled())) {
+        let createPosts = 0;
+        const onCreateReq = (req: { method(): string; url(): string }) => {
+          if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/campaigns') {
+            createPosts++;
+          }
+        };
+        page.on('request', onCreateReq);
+        try {
           await submitBtn.click();
-          const errBanner = form.locator('.xc-campaigns-error');
-          await expect(errBanner, `empty-name refusal banner (${lang})`).toBeVisible({ timeout: 15_000 });
-          assertWordedRefusal(await errBanner.innerText(), lang, 'empty-name');
+        } finally {
+          page.off('request', onCreateReq);
         }
+        expect(createPosts, `empty-name sends no POST /api/campaigns (${lang})`).toBe(0);
+
+        // Field error .xc-campaign-create [data-field-error="name"] (Campaigns.tsx:515-517, 951-957).
+        const nameErr = form.locator('[data-field-error="name"]');
+        await expect(nameErr, `empty-name refusal field error (${lang})`).toBeVisible({ timeout: 10_000 });
+        assertWordedRefusal(await nameErr.innerText(), lang, 'empty-name');
         // Form keeps what was typed.
         await expect(form.locator('input[name="name"][data-field="name"]')).toHaveValue('');
         await expect(form.locator('input[name="budgetThb"][data-field="budgetThb"]')).toHaveValue('15000.00');

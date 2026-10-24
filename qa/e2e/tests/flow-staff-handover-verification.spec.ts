@@ -442,8 +442,30 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       const form2 = teller.getByTestId('shift-handover-form');
       await expect(form2, 'handover form 2 open').toBeVisible({ timeout: 15_000 });
       await form2.getByTestId('shift-receiver').selectOption(managerUserId);
-      const thbInput2 = form2.locator('[data-denomination-row]').filter({ hasText: 'THB' }).first().locator('input[data-denomination-id]');
-      await thbInput2.fill(SHIFT_QTY);
+
+      // Read the shift's expected THB from GET /api/v3/views/my_shift (field data.balances[code=THB].expected)
+      // to hand over the exact expected amount so the count-difference gate is clear on accept.
+      const myShiftRes = await teller.request.get(
+        `/api/v3/views/my_shift?branch=${encodeURIComponent(users.branch)}`,
+      );
+      expect(myShiftRes.ok(), `GET /api/v3/views/my_shift: ${myShiftRes.status()}`).toBeTruthy();
+      const myShiftJson = (await myShiftRes.json()) as {
+        data?: { balances?: Array<{ code: string; expected: string }> } | null;
+      };
+      const expectedThb = parseFloat(
+        myShiftJson.data?.balances?.find((b) => b.code === 'THB')?.expected ?? '0',
+      );
+      expect(expectedThb, 'shift expected THB is positive').toBeGreaterThan(0);
+
+      const thbRows2 = form2.locator('[data-denomination-row]').filter({ hasText: 'THB' });
+      await expect(thbRows2.first(), 'a THB denomination row in the handover form').toBeVisible({ timeout: 15_000 });
+      const vals2 = (await thbRows2.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+      const maxVal2 = Math.max(...vals2);
+      const bestRow2 = thbRows2.nth(vals2.indexOf(maxVal2));
+      const qty2 = Math.round(expectedThb / maxVal2);
+      // The accept happy path needs the handed-over THB to equal expected; otherwise the count-difference gate holds it.
+      expect(qty2 * maxVal2, `handed-over THB equals the shift's expected ${expectedThb}`).toBe(expectedThb);
+      await bestRow2.locator('input[data-denomination-id]').fill(String(qty2));
 
       const startAcceptRes = await posted(teller, /^\/api\/handovers$/, () =>
         form2.getByTestId('shift-handover-save').click(),
