@@ -4,7 +4,7 @@
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 //
 // Selectors cited from web/src/:
-// - screens/desk/DeskScreen.tsx:41                     .desk-shell
+// - screens/desk/DeskPage.tsx:31                       .desk-page
 // - screens/desk/Summary.tsx:61                        aside.desk-summary CustomerLoyalty
 // - screens/desk/steps/rate/step.tsx:62-94,104,136     select[name="type"], select[name="currency"], input[name="amount"], .desk-rate-line strong, button[type="submit"]
 // - screens/desk/steps/customer/step.tsx:69,101-110    draftBegin POST /api/tx-drafts on /staff/desk (desk-path.ts:43-56)
@@ -404,7 +404,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
 
         // Reload and verify both the completed draft (draftBegin -> COMPLETED) and referral attribution read back.
         await teller.reload();
-        await expect(teller.locator('.desk-shell')).toBeVisible({ timeout: 20_000 }); // DeskScreen.tsx:41
+        await expect(teller.locator('.desk-page')).toBeVisible({ timeout: 20_000 }); // DeskPage.tsx:31
 
         const draftsAfterSave = await readStaffDrafts(teller);
         const completedDraft = draftsAfterSave.find((d) => d.id === draftId);
@@ -615,7 +615,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
       await page.waitForLoadState('domcontentloaded');
       const pathname = new URL(page.url(), users.baseUrl).pathname;
       expect(pathname, `customer visiting ${deskPath} must be redirected to /login`).toBe('/login');
-      await expect(page.locator('.desk-shell')).toHaveCount(0); // DeskScreen.tsx:41
+      await expect(page.locator('.desk-page')).toHaveCount(0); // DeskPage.tsx:31
     }
 
     // Backend gate: direct POSTs as customer to all 6 commands in scope are refused with 401 or 403.
