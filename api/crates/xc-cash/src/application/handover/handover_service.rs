@@ -23,6 +23,7 @@ use xc_shift::infrastructure::custody::custody_repository::append_cash_exception
 
 use crate::application::count::CashCountService;
 use crate::application::count::count_service::{held_of, post_difference_in, post_opening_in};
+use crate::application::denominations::face_values_in;
 use crate::application::ledger_approval::count_difference::{
     COUNT_DIFFERENCE, CountDifferenceGate, GateResult,
 };
@@ -378,20 +379,7 @@ impl HandoverService {
             .take_while(|l| l.qty >= 0)
             .map(|l| l.denomination_id)
             .collect();
-        let denom_rows: Vec<(i64, Decimal, String)> = if denom_ids.is_empty() {
-            Vec::new()
-        } else {
-            sqlx::query_as(
-                "SELECT id, face_value, currency_code FROM denominations WHERE id = ANY($1)",
-            )
-            .bind(&denom_ids)
-            .fetch_all(&mut **tx)
-            .await?
-        };
-        let denoms: std::collections::HashMap<i64, (Decimal, String)> = denom_rows
-            .into_iter()
-            .map(|(id, face_value, currency_code)| (id, (face_value, currency_code)))
-            .collect();
+        let denoms = face_values_in(tx, &denom_ids).await?;
 
         for line in &cmd.lines {
             if !seen_denominations.insert(line.denomination_id) {
