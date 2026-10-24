@@ -84,14 +84,12 @@ interface QueueBoardViewAnswer {
 }
 
 interface ReferralAttributionsViewAnswer {
-  data?: {
-    rows?: Array<{
-      id?: string;
-      code?: string;
-      status?: string;
-      source?: string;
-    }>;
-  };
+  data?: Array<{
+    id?: string;
+    code?: string;
+    status?: string;
+    source?: string;
+  }>;
 }
 
 interface DraftItem {
@@ -417,7 +415,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
         );
         expect(attrRes.ok(), `GET /api/v3/views/referral_attributions status ${attrRes.status()}`).toBeTruthy();
         const attrBody = (await attrRes.json()) as ReferralAttributionsViewAnswer;
-        const activeCapture = (attrBody.data?.rows ?? []).find((r) => r.status === 'ACTIVE');
+        const activeCapture = (attrBody.data ?? []).find((r) => r.status === 'ACTIVE');
         expect(activeCapture, `ACTIVE referral attribution for ${txId} must read back after reload`).toBeTruthy();
         expect(activeCapture?.code).toBe(VALID_REFERRAL_CODE);
         expect(activeCapture?.source).toBe('DESK');
