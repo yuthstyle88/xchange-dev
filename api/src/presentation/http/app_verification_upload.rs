@@ -25,7 +25,9 @@ use xc_verification::infrastructure::pg_case_repository::PgCaseRepository;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::pg_store::PgIdempotencyStore;
-use crate::infrastructure::idempotency::store::{Claim, IdempotencyKey, IdempotencyStore};
+use crate::infrastructure::idempotency::store::{
+    Claim, IdempotencyKey, IdempotencyStore, idempotency_key_length_ok,
+};
 use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::pages;
@@ -244,7 +246,7 @@ async fn handle_upload(
         .and_then(|v| v.to_str().ok())
         .map(|k| k.trim())
     {
-        Some(k) if !k.is_empty() && key_shape_ok(k) => k.to_string(),
+        Some(k) if idempotency_key_length_ok(k) && key_shape_ok(k) => k.to_string(),
         _ => {
             return HttpResponse::BadRequest()
                 .insert_header((header::CACHE_CONTROL, "no-store"))

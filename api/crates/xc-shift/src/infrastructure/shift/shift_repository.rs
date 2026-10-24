@@ -50,11 +50,13 @@ pub(crate) fn parse_money_unbounded(
         return Err(undecodable(table, column, s));
     }
     let d = Decimal::from_str(trimmed).map_err(|_| undecodable(table, column, s))?;
-    if d < Decimal::ZERO || d.normalize().scale() > 2 {
+    if d < Decimal::ZERO {
         return Err(undecodable(table, column, s));
     }
     let mut d = d.normalize();
-    d.rescale(2);
+    if d.scale() < 2 {
+        d.rescale(2);
+    }
     ForeignAmount::checked_from_decimal(d).map_err(|_| undecodable(table, column, s))
 }
 
@@ -437,5 +439,30 @@ impl ShiftRepository for PgShiftRepository {
 
         let _ = (counted, difference);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_money_unbounded_accepts_up_to_four_places_and_rescales_to_two() {
+        assert_eq!(
+            parse_money_unbounded("shifts", "opening", "1.125")
+                .unwrap()
+                .value()
+                .to_string(),
+            "1.125"
+        );
+        assert_eq!(
+            parse_money_unbounded("shifts", "opening", "100")
+                .unwrap()
+                .value()
+                .to_string(),
+            "100.00"
+        );
+        assert!(parse_money_unbounded("shifts", "opening", "1.12345").is_err());
+        assert!(parse_money_unbounded("shifts", "opening", "-1").is_err());
     }
 }

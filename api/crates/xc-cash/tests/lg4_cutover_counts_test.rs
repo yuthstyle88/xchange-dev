@@ -465,8 +465,8 @@ async fn an_accepted_handover_moves_the_counted_cash_from_drawer_to_drawer() {
     );
     assert_eq!(
         db.at(CashPlace::Drawer(a_shift), "THB").await,
-        d("100.00"),
-        "exactly 2,200 left A's drawer"
+        d("0.00"),
+        "A's drawer is emptied and the 100 is on VARIANCE"
     );
     assert_eq!(
         db.int(&format!(
