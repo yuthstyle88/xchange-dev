@@ -215,6 +215,13 @@ impl Db {
             .await
             .expect("count cash_transfers")
     }
+
+    async fn count_rows(&self) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM cash_counts")
+            .fetch_one(&self.pool)
+            .await
+            .expect("count cash_counts")
+    }
 }
 
 struct Floor {
@@ -339,6 +346,36 @@ async fn n2_transfer_create_with_null_face_denomination_answers_not_found() {
     }
     assert_eq!(db.transfer_count().await, 0);
     db.drop_schema().await;
+}
+
+// ── N3: Count submit with a line naming a NULL-face denomination ───────────
+
+#[tokio::test]
+async fn n3_count_submit_with_null_face_denomination_answers_not_found() {
+    let f = floor().await;
+    let null_denom_id = f.db.null_face_denomination("THB").await;
+    let lines = vec![CountLine::new("THB", null_denom_id, 1)];
+
+    let cmd = SubmitCount {
+        branch: f.main.clone(),
+        shift_id: Some(f.a_shift.clone()),
+        kind: CountKind::Close,
+        lines,
+        note: None,
+        idempotency_key: unique("close"),
+    };
+
+    let res = f.db.counts().submit(&f.a, cmd, at(600)).await;
+
+    match res {
+        Err(AppError::NotFound { entity, id }) => {
+            assert_eq!(entity, "denomination");
+            assert_eq!(id, null_denom_id.to_string());
+        }
+        other => panic!("expected AppError::NotFound for {null_denom_id}, got {other:?}"),
+    }
+    assert_eq!(f.db.count_rows().await, 1);
+    f.db.drop_schema().await;
 }
 
 // ── N3: Real denominations succeed as today ─────────────────────────────────

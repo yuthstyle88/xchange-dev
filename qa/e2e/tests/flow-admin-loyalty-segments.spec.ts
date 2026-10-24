@@ -54,11 +54,13 @@ const MEMBERS_NAME_ERR: Record<'th' | 'en', string> = {
   en: 'Segment Name is not valid',
 };
 
-// Shared invalidRequest refusal text (web/src/shared/i18n/th.ts:24, en.ts:26).
-const INVALID_REQUEST_ERR: Record<'th' | 'en', string> = {
-  th: 'คำขอไม่ถูกต้อง',
-  en: 'Invalid request',
+// Field error text for #segment-value-thb on /#members (web/src/screens/admin/members/Members.tsx:48-52,160-174;
+// web/src/screens/admin/members/i18n.ts:14,50; web/src/shared/i18n/th.ts:135, en.ts:137).
+const MEMBERS_VALUE_ERR: Record<'th' | 'en', string> = {
+  th: 'มูลค่าสะสมขั้นต่ำ (THB) ไม่ถูกต้อง',
+  en: 'Minimum Value (THB) is not valid',
 };
+
 
 // Loyalty unavailable refusal text (web/src/shared/i18n/th.ts:41, en.ts:43).
 const LOYALTY_UNAVAILABLE_ERR: Record<'th' | 'en', string> = {
@@ -303,12 +305,25 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
       await expect(alert, `case 3 decimal frequency refused (${lang})`).toHaveText(MEMBERS_VALIDATION_ERR[langKey]);
       await expect(freqInput, 'case 3 keeps 2.5').toHaveValue('2.5');
 
-      // Case 4: Invalid decimal value_thb with too many decimal points ('10.12.34'; SegmentRule Decimal deserialization -> 400 invalidRequest).
+      // Case 4: Invalid decimal value_thb with too many decimal points ('10.12.34'; Members.tsx:160-174 -> [data-field-error="rule.valueThb"], no POST).
       await freqInput.fill('1');
       await valueInput.fill('10.12.34');
-      const badDecimalRes = await posted(page, /^\/api\/segments$/, () => defineBtn.click());
-      expect(badDecimalRes.ok, `case 4 invalid value_thb refused (${lang})`).toBe(false);
-      await expect(alert, `case 4 worded refusal (${lang})`).toHaveText(INVALID_REQUEST_ERR[langKey]);
+      let badDecimalPosts = 0;
+      const onBadDecimalReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/segments') {
+          badDecimalPosts++;
+        }
+      };
+      page.on('request', onBadDecimalReq);
+      try {
+        await defineBtn.click();
+      } finally {
+        page.off('request', onBadDecimalReq);
+      }
+      expect(badDecimalPosts, `case 4 invalid value_thb sends no POST /api/segments (${lang})`).toBe(0);
+      const valueErr = membersScreen.locator('[data-field-error="rule.valueThb"]');
+      await expect(valueErr, `case 4 worded field error (${lang})`).toBeVisible();
+      await expect(valueErr, `case 4 worded refusal (${lang})`).toHaveText(MEMBERS_VALUE_ERR[langKey]);
       await expect(valueInput, 'case 4 keeps 10.12.34').toHaveValue('10.12.34');
 
       // Case 5: Empty segment definition on /#members (blank name + all rule fields cleared -> refused, snapshot stays disabled)
