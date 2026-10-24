@@ -271,6 +271,7 @@ describe("#5064 ShiftCard handover accept: AWAITING_FINANCE vs ACCEPTED", () => 
   it("row 3: accept answers 400 => worded error, notice is cleared", async () => {
     stub();
     answers[`/api/handovers/${H_MINE}/accept`] = [
+      { status: 200, body: { id: H_MINE, status: "ACCEPTED" } },
       {
         status: 400,
         body: { error: { code: "roleNotAllowedHere", message: "refused by role" } },
@@ -279,6 +280,13 @@ describe("#5064 ShiftCard handover accept: AWAITING_FINANCE vs ACCEPTED", () => 
     const { refresh } = await mount(me(["ShiftOperate"]), floor());
     await vi.waitFor(() => expect(acceptOf(H_MINE)).not.toBeNull());
 
+    // a first accept leaves "saved" on screen, so the 400 below has a notice to clear
+    await click(acceptOf(H_MINE)!);
+    await vi.waitFor(() =>
+      expect(must(tid("shift-notice")).textContent?.trim()).toBe(th.saved),
+    );
+    expect(refresh).toHaveBeenCalledTimes(1);
+
     await click(acceptOf(H_MINE)!);
     await vi.waitFor(() => expect(q(tid("shift-error"))).not.toBeNull());
 
@@ -286,7 +294,7 @@ describe("#5064 ShiftCard handover accept: AWAITING_FINANCE vs ACCEPTED", () => 
     expect(must(tid("shift-error")).textContent?.trim()).toBe(
       errorText("roleNotAllowedHere", "refused by role"),
     );
-    expect(refresh).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it("row 4: after either 200 answer, pending handovers and the floor are re-read", async () => {
