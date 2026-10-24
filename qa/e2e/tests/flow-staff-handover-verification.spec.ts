@@ -462,7 +462,10 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       const vals2 = (await thbRows2.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
       const maxVal2 = Math.max(...vals2);
       const bestRow2 = thbRows2.nth(vals2.indexOf(maxVal2));
-      await bestRow2.locator('input[data-denomination-id]').fill(String(Math.round(expectedThb / maxVal2)));
+      const qty2 = Math.round(expectedThb / maxVal2);
+      // The accept happy path needs the handed-over THB to equal expected; otherwise the count-difference gate holds it.
+      expect(qty2 * maxVal2, `handed-over THB equals the shift's expected ${expectedThb}`).toBe(expectedThb);
+      await bestRow2.locator('input[data-denomination-id]').fill(String(qty2));
 
       const startAcceptRes = await posted(teller, /^\/api\/handovers$/, () =>
         form2.getByTestId('shift-handover-save').click(),
