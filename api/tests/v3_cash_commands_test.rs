@@ -927,6 +927,16 @@ async fn a_handover_started_over_http_is_pending_for_its_receiver() {
 
 /// A hand-over from an opened shift to a second teller: (outgoing teller, receiver, hand-over id).
 async fn started_handover(room: &Room) -> (Who, Who, String) {
+    sqlx::query(
+        "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+         VALUES ($1::uuid, $2, 1000000, 'test', now()) \
+         ON CONFLICT (organization_id, branch_id) DO NOTHING",
+    )
+    .bind(ORG)
+    .bind(B01)
+    .execute(&room.pool)
+    .await
+    .expect("a count-difference limit");
     let (teller, _, shift) = opened_shift(room).await;
     let receiver = room.person(Role::Teller, Some(B01)).await;
     let thb1000 = room.denomination("THB", "1000").await;

@@ -13,22 +13,18 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
-use xc_auth::domain::access::branch_scope::BranchScope;
-use xc_auth::domain::access::permission::Permission;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_verification::application::review_service::{ReviewError, ReviewService};
 use xc_verification::domain::case::decision_reason::DecisionReason;
-use xc_verification::domain::case::reviewer_actor::{ReviewerActor, ReviewerScope};
 use xc_verification::domain::case::verification_case::VerificationCase;
 use xc_verification::infrastructure::pg_case_repository::PgCaseRepository;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, Locks, out_of_scope, server_error,
-};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, Locks, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::verification_reviewer::reviewer_actor;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -88,33 +84,6 @@ impl VerificationCaseRejectCommand {
     }
 }
 
-fn reviewer_actor(who: &Actor) -> Result<ReviewerActor, V3Error> {
-    let user_id = Uuid::parse_str(&who.user_id).map_err(|_| out_of_scope())?;
-    let organization_id = Uuid::parse_str(&who.organization_id).map_err(|_| out_of_scope())?;
-    let now = Utc::now();
-    let scope = match BranchScope::of(who, Permission::VerificationReview, now) {
-        BranchScope::All => ReviewerScope::Organization { organization_id },
-        BranchScope::Branches(branches) => {
-            let branch = who
-                .branch
-                .clone()
-                .or_else(|| {
-                    if branches.len() == 1 {
-                        branches.first().cloned()
-                    } else {
-                        None
-                    }
-                })
-                .ok_or_else(out_of_scope)?;
-            ReviewerScope::Branch {
-                organization_id,
-                branch_id: branch,
-            }
-        }
-    };
-    Ok(ReviewerActor { user_id, scope })
-}
-
 fn map_review_error(err: ReviewError) -> V3Error {
     match err {
         ReviewError::StaleVersion => V3Error::new(
@@ -157,7 +126,7 @@ impl CommandAction for VerificationCaseRejectCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let reviewer = reviewer_actor(who)?;
+        let reviewer = reviewer_actor(who, Utc::now())?;
         let reason = DecisionReason::parse(&input.reason_code).ok_or_else(|| {
             V3Error::new(
                 "validationFailed",
