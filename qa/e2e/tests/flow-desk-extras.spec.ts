@@ -5,7 +5,7 @@
 //
 // Selectors cited from web/src/:
 // - screens/desk/DeskPage.tsx:31                       .desk-page
-// - screens/desk/Summary.tsx:61                        aside.desk-summary CustomerLoyalty
+// - screens/desk/Summary.tsx:29,61                     div.desk-summary CustomerLoyalty (inside aside.desk-aside, DeskPage.tsx:79)
 // - screens/desk/steps/rate/step.tsx:62-94,104,136     select[name="type"], select[name="currency"], input[name="amount"], .desk-rate-line strong, button[type="submit"]
 // - screens/desk/steps/customer/step.tsx:69,101-110    draftBegin POST /api/tx-drafts on /staff/desk (desk-path.ts:43-56)
 // - screens/desk/steps/customer/step.tsx:185,211,215,219,250,256,259 input[name="passport"], input[name="name"], input[name="passportNo"], select[name="nationality"], p.desk-error[role="alert"], skip button, button[type="submit"]
@@ -532,12 +532,16 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
           }
           await expect(nameInput).toHaveValue(marker);
 
-          // Advance to Step 2 via skip customer so CustomerLoyalty & PhoneVerify mount in aside.desk-summary (Summary.tsx:61, CustomerLoyalty.tsx:12-15).
+          // Advance to Step 2 via skip customer so CustomerLoyalty & PhoneVerify mount in the summary (aside.desk-aside > div.desk-summary, DeskPage.tsx:79, Summary.tsx:29,61, CustomerLoyalty.tsx:12-15).
           const skipBtn = teller.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ }); // customer/step.tsx:256
           const reserveRes = await posted(teller, /^\/api\/rpc$/, () => skipBtn.click());
           expect(reserveRes.ok, `[${lang}] reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
 
-          const loyaltyBox = teller.locator('aside'); // CustomerLoyalty.tsx:12-15
+          // The loyalty block is CustomerLoyalty's bare <div> (CustomerLoyalty.tsx:15), a direct child of div.desk-summary; filtering on
+          // the phone input keeps CouponField's own p.desk-error (coupon/CouponField.tsx:30), also in the summary, out of phoneAlert.
+          const loyaltyBox = teller
+            .locator('aside.desk-aside div.desk-summary > div')
+            .filter({ has: teller.locator('input[name="phone"]') });
           const phoneInput = loyaltyBox.locator('input[name="phone"]'); // PhoneVerify.tsx:125
           await expect(phoneInput).toBeVisible({ timeout: 15_000 });
           const sendCodeBtn = loyaltyBox.locator('button[name="sendCode"]'); // PhoneVerify.tsx:133
