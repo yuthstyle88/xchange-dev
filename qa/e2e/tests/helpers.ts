@@ -429,16 +429,74 @@ export async function clockIn(page: Page): Promise<string> {
   return `clocked in: POST /api/attendance ${res.text}`;
 }
 
-/** The teller fills the count form (the largest THB note, SHIFT_QTY) and saves it; returns POST /api/cash-counts's answer. */
+/** The teller fills the count form (SHIFT_QTY at open; expected balances at close) and saves it; returns POST /api/cash-counts's answer. */
 export async function submitCount(page: Page, kind: 'open' | 'close'): Promise<{ ok: boolean; text: string }> {
   await page.getByTestId(kind === 'open' ? 'shift-open-count' : 'shift-close-count').click();
   const form = page.getByTestId('shift-count-form');
   await expect(form).toBeVisible({ timeout: 15_000 });
-  const rows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
-  await expect(rows.first(), 'a THB denomination row in the count form').toBeVisible({ timeout: 15_000 });
-  const vals = (await rows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
-  const best = rows.nth(vals.indexOf(Math.max(...vals)));
-  await best.locator('input[data-denomination-id]').fill(SHIFT_QTY);
+  if (kind === 'open') {
+    const rows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
+    await expect(rows.first(), 'a THB denomination row in the count form').toBeVisible({ timeout: 15_000 });
+    const vals = (await rows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+    const best = rows.nth(vals.indexOf(Math.max(...vals)));
+    await best.locator('input[data-denomination-id]').fill(SHIFT_QTY);
+  } else {
+    const myShiftRes = await page.request.get(`/api/v3/views/my_shift?branch=${encodeURIComponent(users.branch)}`);
+    expect(myShiftRes.ok(), `GET /api/v3/views/my_shift: ${myShiftRes.status()}`).toBeTruthy();
+    const myShiftJson = (await myShiftRes.json()) as {
+      data?: { balances?: Array<{ code: string; expected: string }> } | null;
+    };
+    const remaining: Record<string, number> = {};
+    for (const b of myShiftJson.data?.balances ?? []) {
+      const amt = parseFloat(b.expected ?? '0');
+      if (amt > 0) remaining[b.code] = Math.round(amt * 100);
+    }
+
+    const rows = form.locator('[data-denomination-row]');
+    await expect(rows.first(), 'denomination rows loaded in count form').toBeVisible({ timeout: 15_000 });
+    const count = await rows.count();
+
+    const denomsByCurrency: Record<
+      string,
+      Array<{ denomMinor: number; input: ReturnType<typeof rows.nth> }>
+    > = {};
+
+    for (let i = 0; i < count; i++) {
+      const row = rows.nth(i);
+      const cur = ((await row.locator('.xc-shift-denom-currency').innerText().catch(() => '')) || '').trim();
+      const valStr = ((await row.locator('.xc-shift-denom-val').innerText().catch(() => '')) || '').trim();
+      const val = Number(valStr);
+      if (!cur || !Number.isFinite(val) || val <= 0) continue;
+      if (!denomsByCurrency[cur]) denomsByCurrency[cur] = [];
+      denomsByCurrency[cur].push({ denomMinor: Math.round(val * 100), input: row });
+    }
+
+    for (const cur of Object.keys(remaining)) {
+      expect(
+        denomsByCurrency[cur]?.length,
+        `cannot make amount for currency ${cur}: no denomination rows on count form`,
+      ).toBeGreaterThan(0);
+    }
+
+    for (const [cur, list] of Object.entries(denomsByCurrency)) {
+      list.sort((a, b) => b.denomMinor - a.denomMinor);
+      let rem = remaining[cur] ?? 0;
+      for (const item of list) {
+        const inputEl = item.input.locator('input[data-denomination-id]');
+        if (rem >= item.denomMinor && item.denomMinor > 0) {
+          const qty = Math.floor(rem / item.denomMinor);
+          rem -= qty * item.denomMinor;
+          await inputEl.fill(String(qty));
+        } else {
+          await inputEl.fill('');
+        }
+      }
+      expect(
+        rem,
+        `cannot make amount for currency ${cur} from denomination rows on count form (uncounted remainder: ${rem / 100})`,
+      ).toBe(0);
+    }
+  }
   return posted(page, /^\/api\/cash-counts$/, () => page.getByTestId('shift-count-save').click());
 }
 
