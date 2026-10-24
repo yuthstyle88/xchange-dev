@@ -1,5 +1,5 @@
 // QA-F21 — flow: booking reschedule to another date, then cancel at any time
-// (design docs/design/qa-e2e.md §4 row F21; blueprint/booking-slots.md Q-B1, Q-B2 revised; #4204).
+// (design docs/design/qa-e2e.md §4 row F21; blueprint/booking-slots.md Q-B1, Q-B2 revised; #4204, #5079).
 // Written by ticket #4239 (QA-F21); this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 //
@@ -15,8 +15,8 @@
 //   .xc-reschedule-dialog (:519), [data-field="serviceDate"] input[name="serviceDate"] (:527-537),
 //   .xc-slots-loading (:575), input[name="rescheduleSlot"] (:593-596),
 //   [data-action="confirm-reschedule"] (:628)
-import { expect, test, type Page } from '@playwright/test';
-import { posted, shot, signIn, users } from './helpers';
+import { expect, test, type Browser, type Page } from '@playwright/test';
+import { hasAccount, posted, shot, signIn, users } from './helpers';
 
 // Date in Asia/Bangkok offset by `daysAhead` days (yyyy-mm-dd), matching flow-booking.spec.ts:7-10.
 function bangkokDate(daysAhead: number): string {
@@ -52,43 +52,115 @@ async function cancelBookingCard(page: Page, bookingId: string): Promise<void> {
   ).toBeVisible({ timeout: 15_000 });
 }
 
+// Reads cancel cutoff minutes: from customer's existing booking in my_bookings, or from admin_booking_slots.rs:140.
+async function readCancelCutoffMinutes(page: Page, browser: Browser): Promise<number> {
+  try {
+    const myBookingsRes = await page.request.get('/api/v3/views/my_bookings');
+    if (myBookingsRes.ok()) {
+      const data = (await myBookingsRes.json()) as {
+        bookings?: Array<{ startAt?: string; cancelCutoffAt?: string | null }>;
+      };
+      const existing = (data?.bookings ?? []).find((b) => b.startAt && b.cancelCutoffAt);
+      if (existing?.startAt && existing?.cancelCutoffAt) {
+        const startMs = new Date(existing.startAt).getTime();
+        const cutoffMs = new Date(existing.cancelCutoffAt).getTime();
+        const diffMins = Math.round((startMs - cutoffMs) / 60_000);
+        if (diffMins >= 0) return diffMins;
+      }
+    }
+  } catch {
+    // try admin view below
+  }
+
+  if (hasAccount('admin')) {
+    const adminCtx = await browser.newContext();
+    try {
+      const adminPage = await adminCtx.newPage();
+      await signIn(adminPage, 'admin', '/');
+      const res = await adminPage.request.get(
+        `/api/v3/views/admin_booking_slots?branch=${encodeURIComponent(users.branch)}`,
+      );
+      if (res.ok()) {
+        const data = (await res.json()) as { policy?: { cancelCutoffMinutes?: number } };
+        if (typeof data?.policy?.cancelCutoffMinutes === 'number') {
+          return data.policy.cancelCutoffMinutes;
+        }
+      }
+    } catch {
+      // fallback to default
+    } finally {
+      await adminCtx.close().catch(() => {});
+    }
+  }
+
+  return 60;
+}
+
 test.use({ viewport: { width: 430, height: 932 } });
 
 test.describe.serial('F21 booking reschedule', () => {
-  test('customer books tomorrow, reschedules to the day after tomorrow, and cancels at any time', async ({ page }) => {
-    const tomorrow = bangkokDate(1);
-    const dayAfter = bangkokDate(2);
+  test('customer books tomorrow, reschedules to the day after tomorrow, and cancels at any time', async ({
+    page,
+    browser,
+  }) => {
     let bookingId = '';
     let bookingNo = '';
     let cancelled = false;
     const cleanupFailures: string[] = [];
 
     try {
-      // Step 1: book MAIN for tomorrow, as in flow-booking.spec.ts.
+      // Step 1: book MAIN for the first open slot whose start - cancel_cutoff_minutes > now + 10 min.
       await signIn(page, 'customer', '/app/book');
       await expect(page.getByTestId('book-screen')).toBeVisible({ timeout: 15_000 });
       await page.getByTestId('branch-select').selectOption(users.branch);
 
-      const slotsTomorrow = page
-        .waitForResponse(
-          (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${tomorrow}`),
-          { timeout: 15_000 },
-        )
-        .catch(() => null);
-      await page.getByTestId('date-input').fill(tomorrow);
-      await slotsTomorrow;
-      await expect(page.locator('.xc-book-slots-loading')).toBeHidden({ timeout: 15_000 });
+      const cancelCutoffMinutes = await readCancelCutoffMinutes(page, browser);
+      console.log(`[F21] cancel cutoff: ${cancelCutoffMinutes} min`);
 
-      const openTomorrow = page.locator('[data-testid="slot-option"]:not([disabled])');
-      if ((await openTomorrow.count()) === 0) {
-        const reason = `no open slot on ${tomorrow} (seed)`;
+      let bookedDayOffset = 1;
+      let bookedDate = '';
+      let bookedSlotId = '';
+
+      for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+        const candidateDate = bangkokDate(dayOffset);
+        const slotsPromise = page
+          .waitForResponse(
+            (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${candidateDate}`),
+            { timeout: 15_000 },
+          )
+          .catch(() => null);
+        await page.getByTestId('date-input').fill(candidateDate);
+        const slotsRes = await slotsPromise;
+        await expect(page.locator('.xc-book-slots-loading')).toBeHidden({ timeout: 15_000 });
+
+        if (slotsRes && slotsRes.ok()) {
+          const data = (await slotsRes.json().catch(() => ({}))) as {
+            slots?: Array<{ id: string; start: string; available: number }>;
+          };
+          const slots = data.slots ?? [];
+          const now = Date.now();
+          const qualifying = slots.find((s) => {
+            if (s.available <= 0) return false;
+            const startMs = new Date(s.start).getTime();
+            return startMs - cancelCutoffMinutes * 60_000 > now + 10 * 60_000;
+          });
+
+          if (qualifying) {
+            bookedDayOffset = dayOffset;
+            bookedDate = candidateDate;
+            bookedSlotId = qualifying.id;
+            break;
+          }
+        }
+      }
+
+      if (!bookedSlotId) {
+        const reason = `no qualifying open slot within 7 days (cutoff ${cancelCutoffMinutes} min)`;
         console.log(`[F21] skip: ${reason}`);
         test.skip(true, reason);
       }
 
-      const slotValue = await openTomorrow.first().getAttribute('value');
-      expect(slotValue, 'first open slot id on tomorrow').toBeTruthy();
-      await page.getByTestId('slot-select').selectOption(slotValue!);
+      await page.getByTestId('slot-select').selectOption(bookedSlotId);
       await page.getByTestId('currency-select').selectOption(users.currency ?? 'USD');
       await page.getByTestId('quantity-input').fill(users.quantity ?? '100');
 
@@ -110,7 +182,10 @@ test.describe.serial('F21 booking reschedule', () => {
         // read from /app/bookings below
       }
 
-      // Step 2: on /app/bookings, open the reschedule dialog and verify serviceDate defaults to tomorrow.
+      // Step 2: on /app/bookings, open the reschedule dialog and verify serviceDate defaults to booked date.
+      const myBookingsPromise = page
+        .waitForResponse((r) => r.url().includes('/api/v3/views/my_bookings'), { timeout: 15_000 })
+        .catch(() => null);
       await page.goto('/app/bookings');
       const card = bookingId
         ? page.locator(`.xc-booking-card[data-booking-id="${bookingId}"]`)
@@ -124,9 +199,39 @@ test.describe.serial('F21 booking reschedule', () => {
       expect(bookingNo, 'bookingNo on /app/bookings').not.toBe('');
       await shot(page, 'app', 'f21-1-booked');
 
+      // Before clicking reschedule, assert cancelCutoffAt is in the future, so a wrong pick fails at the cause, not by timeout.
+      let cancelCutoffAt: string | null = null;
+      const myBookingsRes = await myBookingsPromise;
+      if (myBookingsRes && myBookingsRes.ok()) {
+        const data = (await myBookingsRes.json().catch(() => ({}))) as {
+          bookings?: Array<{ id?: string; bookingNo?: string; cancelCutoffAt?: string | null }>;
+        };
+        const currentBooking = (data.bookings ?? []).find(
+          (b) => b.id === bookingId || (bookingNo && b.bookingNo === bookingNo),
+        );
+        cancelCutoffAt = currentBooking?.cancelCutoffAt ?? null;
+      }
+      if (!cancelCutoffAt) {
+        const viewRes = await page.request.get('/api/v3/views/my_bookings');
+        if (viewRes.ok()) {
+          const data = (await viewRes.json().catch(() => ({}))) as {
+            bookings?: Array<{ id?: string; bookingNo?: string; cancelCutoffAt?: string | null }>;
+          };
+          const currentBooking = (data.bookings ?? []).find(
+            (b) => b.id === bookingId || (bookingNo && b.bookingNo === bookingNo),
+          );
+          cancelCutoffAt = currentBooking?.cancelCutoffAt ?? null;
+        }
+      }
+      expect(cancelCutoffAt, `cancelCutoffAt for ${bookingId}`).toBeTruthy();
+      expect(
+        new Date(cancelCutoffAt!).getTime(),
+        `cancelCutoffAt (${cancelCutoffAt}) must be in the future before clicking reschedule`,
+      ).toBeGreaterThan(Date.now());
+
       const initialSlotsLoaded = page
         .waitForResponse(
-          (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${tomorrow}`),
+          (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${bookedDate}`),
           { timeout: 15_000 },
         )
         .catch(() => null);
@@ -134,24 +239,45 @@ test.describe.serial('F21 booking reschedule', () => {
       const dialog = page.locator('.xc-reschedule-dialog');
       await expect(dialog, 'reschedule dialog visible').toBeVisible({ timeout: 15_000 });
       const dateInput = dialog.locator('[data-field="serviceDate"] input[name="serviceDate"]');
-      await expect(dateInput, 'reschedule date input defaults to tomorrow').toHaveValue(tomorrow);
+      await expect(dateInput, 'reschedule date input defaults to booked date').toHaveValue(bookedDate);
       await initialSlotsLoaded;
       await expect(dialog.locator('.xc-slots-loading')).toBeHidden({ timeout: 15_000 });
 
-      // Step 3: change the date control to the day after tomorrow and pick an open slot.
+      // Step 3: change the date control to a subsequent date and pick an open slot.
+      let rescheduleDate = bangkokDate(bookedDayOffset + 1);
       const dayAfterSlotsLoaded = page
         .waitForResponse(
-          (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${dayAfter}`),
+          (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${rescheduleDate}`),
           { timeout: 15_000 },
         )
         .catch(() => null);
-      await dateInput.fill(dayAfter);
+      await dateInput.fill(rescheduleDate);
       await dayAfterSlotsLoaded;
       await expect(dialog.locator('.xc-slots-loading')).toBeHidden({ timeout: 15_000 });
 
-      const openRescheduleSlots = dialog.locator('input[name="rescheduleSlot"]:not([disabled])');
+      let openRescheduleSlots = dialog.locator('input[name="rescheduleSlot"]:not([disabled])');
       if ((await openRescheduleSlots.count()) === 0) {
-        const reason = `no open slot on ${dayAfter} (seed)`;
+        for (let nextOffset = bookedDayOffset + 2; nextOffset <= bookedDayOffset + 7; nextOffset++) {
+          const tryDate = bangkokDate(nextOffset);
+          const nextLoaded = page
+            .waitForResponse(
+              (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${tryDate}`),
+              { timeout: 15_000 },
+            )
+            .catch(() => null);
+          await dateInput.fill(tryDate);
+          await nextLoaded;
+          await expect(dialog.locator('.xc-slots-loading')).toBeHidden({ timeout: 15_000 });
+          openRescheduleSlots = dialog.locator('input[name="rescheduleSlot"]:not([disabled])');
+          if ((await openRescheduleSlots.count()) > 0) {
+            rescheduleDate = tryDate;
+            break;
+          }
+        }
+      }
+
+      if ((await openRescheduleSlots.count()) === 0) {
+        const reason = `no open slot on ${rescheduleDate} (seed)`;
         console.log(`[F21] skip: ${reason}`);
         await dialog.locator('button.xc-btn-secondary').click();
         await expect(dialog, 'reschedule dialog closed before skip').toBeHidden({ timeout: 15_000 });
@@ -179,7 +305,7 @@ test.describe.serial('F21 booking reschedule', () => {
       expect(rescheduleRes.ok, `POST /api/bookings/${bookingId}/reschedule: ${rescheduleRes.text}`).toBeTruthy();
       await expect(dialog, 'reschedule dialog closed after confirm').toBeHidden({ timeout: 15_000 });
 
-      // Assert the card shows the new slot time and its serviceDate is now the day after tomorrow.
+      // Assert the card shows the new slot time and its serviceDate is now rescheduleDate.
       await expect(card.locator('.xc-booking-time'), 'card shows new slot time').toHaveText(newSlotTime, {
         timeout: 15_000,
       });
@@ -187,8 +313,8 @@ test.describe.serial('F21 booking reschedule', () => {
       await expect(dialog, 'reschedule dialog reopened to check new date').toBeVisible({ timeout: 15_000 });
       await expect(
         dialog.locator('[data-field="serviceDate"] input[name="serviceDate"]'),
-        'booking serviceDate updated to day after tomorrow',
-      ).toHaveValue(dayAfter);
+        'booking serviceDate updated to rescheduleDate',
+      ).toHaveValue(rescheduleDate);
       await dialog.locator('button.xc-btn-secondary').click();
       await expect(dialog, 'reschedule dialog closed').toBeHidden({ timeout: 15_000 });
       await shot(page, 'app', 'f21-3-rescheduled');
@@ -198,13 +324,27 @@ test.describe.serial('F21 booking reschedule', () => {
       cancelled = true;
       await shot(page, 'app', 'f21-4-cancelled');
     } finally {
-      // finally: if step 1 created a booking and it is not yet CANCELLED, cancel it so reruns stay clean.
+      // finally: if step 1 created a booking and it is not yet CANCELLED, cancel it through a fresh page or API so reruns stay clean.
       try {
         if (bookingId && !cancelled) {
-          await signIn(page, 'customer', '/app/bookings');
-          await page.goto('/app/bookings');
-          await cancelBookingCard(page, bookingId);
-          cancelled = true;
+          const cleanContext = await browser.newContext();
+          try {
+            const cleanPage = await cleanContext.newPage();
+            await signIn(cleanPage, 'customer', '/app/bookings');
+            try {
+              await cancelBookingCard(cleanPage, bookingId);
+            } catch (cardErr) {
+              const res = await cleanPage.request.post(`/api/bookings/${encodeURIComponent(bookingId)}/cancel`, {
+                headers: { 'x-xchange-request': '1' },
+              });
+              if (!res.ok()) {
+                throw cardErr;
+              }
+            }
+            cancelled = true;
+          } finally {
+            await cleanContext.close().catch(() => {});
+          }
         }
       } catch (e) {
         cleanupFailures.push(e instanceof Error ? e.message : String(e));
