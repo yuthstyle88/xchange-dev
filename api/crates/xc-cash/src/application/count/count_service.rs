@@ -916,9 +916,17 @@ impl CashCountService {
             });
         }
 
-        let held = match cmd.shift_id {
-            Some(ref s_id) => self.drawer_in(tx, s_id).await?,
-            None => Vec::new(),
+        let held = match (&cmd.kind, &cmd.shift_id) {
+            (_, Some(s_id)) => self.drawer_in(tx, s_id).await?,
+            (CountKind::Safe | CountKind::SafeOpen, None) => self
+                .postings
+                .expected_in(tx, &CashPlace::Safe(cmd.branch.clone()))
+                .await?
+                .non_zero()
+                .into_iter()
+                .map(|(c, m)| (c.as_str().trim().to_owned(), m.value()))
+                .collect(),
+            _ => Vec::new(),
         };
         if cmd.kind == CountKind::Close {
             for (code, _) in &held {
@@ -943,15 +951,16 @@ impl CashCountService {
             }
         }
 
+        let is_safe = matches!(cmd.kind, CountKind::Safe | CountKind::SafeOpen);
         let mut totals = Vec::new();
         for (curr, counted) in totals_map {
-            let expected = held_of(&held, &curr);
+            let expected = held_of(&held, &curr).or_else(|| is_safe.then_some(Decimal::ZERO));
 
             totals.push(CountTotal {
                 currency: curr,
                 counted,
                 expected,
-                difference: None,
+                difference: is_safe.then(|| counted - expected.unwrap_or(Decimal::ZERO)),
             });
         }
 
@@ -1266,15 +1275,57 @@ impl CashCountService {
             return Ok(CountVerified::Verified(Box::new(verified_count)));
         }
 
-        // For other count kinds:
+        // For other count kinds (SAFE, SAFE_OPEN):
         let totals = self.repo.get_count_totals(&mut *tx, count_id).await?;
-        for t in &totals {
-            CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+        let mut updated_totals = Vec::with_capacity(totals.len());
+        let mut delta_pairs = Vec::new();
+        for t in totals {
+            let code = CurrencyCode::parse(t.currency.trim()).map_err(|_| {
                 AppError::Internal(format!("unknown currency code in count: {}", t.currency))
             })?;
+            let exp = t.expected.unwrap_or(Decimal::ZERO);
+            let diff = t.counted - exp;
+            if !diff.is_zero() {
+                let mut d = diff.normalize();
+                if d.scale() < 2 {
+                    d.rescale(2);
+                }
+                let qd = QuantityDelta::from_decimal(d).map_err(|e| {
+                    AppError::Internal(format!("invalid count difference {d}: {e}"))
+                })?;
+                delta_pairs.push((code, qd));
+            }
+            updated_totals.push(CountTotal {
+                currency: t.currency,
+                counted: t.counted,
+                expected: Some(exp),
+                difference: Some(diff),
+            });
+        }
+        if !delta_pairs.is_empty() {
+            let exc = CashException {
+                id: format!("EX-{}", uuid::Uuid::new_v4()),
+                request_id: count_id.to_string(),
+                status: ExceptionStatus::Open,
+                target_difference: None,
+                cash_variance: None,
+                safe_variance: Some(StockDelta::of(&delta_pairs)),
+                note: format!("COUNT {count_id}"),
+                at: CustodyTime::from_epoch_millis(now.timestamp_millis()),
+                reviewed_by: None,
+                reviewed_at: None,
+            };
+            append_cash_exception_in(tx, &count.branch_id, &exc).await?;
         }
         self.repo
-            .update_count_verified(&mut *tx, count_id, &actor.user_id, now, None, &totals)
+            .update_count_verified(
+                &mut *tx,
+                count_id,
+                &actor.user_id,
+                now,
+                None,
+                &updated_totals,
+            )
             .await?;
 
         let mut verified_count = count;
