@@ -245,14 +245,20 @@ async function fillExpectedThbHandover(page: Page, form: Locator): Promise<numbe
   return expectedThb;
 }
 
-/** Checks whether a staff page currently holds an OPEN shift in the active branch. */
-async function hasOpenShift(page: Page): Promise<boolean> {
+/** Reads the active OPEN shift for a staff page from GET /api/v3/views/my_shift. */
+async function readMyShift(page: Page): Promise<{ id?: string; status?: string } | null> {
   const res = await page.request
     .get(`/api/v3/views/my_shift?branch=${encodeURIComponent(users.branch)}`)
     .catch(() => null);
-  if (!res || !res.ok()) return false;
-  const json = (await res.json().catch(() => ({}))) as { data?: { id?: string } | null };
-  return Boolean(json.data?.id);
+  if (!res || !res.ok()) return null;
+  const json = (await res.json().catch(() => ({}))) as { data?: { id?: string; status?: string } | null };
+  return json.data ?? null;
+}
+
+/** Checks whether a staff page currently holds an OPEN shift in the active branch. */
+async function hasOpenShift(page: Page): Promise<boolean> {
+  const shift = await readMyShift(page);
+  return Boolean(shift?.id);
 }
 
 test.describe.serial('R9-8 shift handover & verification case approve/revoke', () => {
@@ -271,7 +277,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
     const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
     const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
     let shiftOpened = false;
-    let drawerHolder: 'teller' | 'manager' = 'teller';
+    let tellerUserId = '';
+    let managerUserId = '';
 
     try {
       // ---- (c) Permission check on /staff shift card ----
@@ -310,8 +317,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         timeout: 20_000,
       });
 
-      const tellerUserId = await meUserId(teller);
-      const managerUserId = await meUserId(manager);
+      tellerUserId = await meUserId(teller);
+      managerUserId = await meUserId(manager);
       console.log(`[R9-8] marker=${RUN_MARKER} teller=${tellerUserId} manager=${managerUserId}`);
 
       // Open teller's shift with SHIFT_QTY ('10') on the first THB denomination row.
@@ -515,7 +522,6 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       );
       console.log(`[R9-8] POST /api/handovers/${resolvedHandoverId2}/accept ${acceptRes.text}`);
       expect(acceptRes.ok, `handoverAccept: ${acceptRes.text}`).toBeTruthy();
-      drawerHolder = 'manager';
 
       // Reload both teller and manager to read back the accepted handover state:
       // 1) pending handover row is gone on both pages;
@@ -567,24 +573,93 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         `return handoverAccept must not be AWAITING_FINANCE: ${returnAcceptRes.text}`,
       ).not.toBe('AWAITING_FINANCE');
       expect(returnStatus, `return handoverAccept status: ${returnAcceptRes.text}`).toBe('ACCEPTED');
-      drawerHolder = 'teller';
       await teller.reload();
       await manager.reload();
       await clockOutIfClockedIn(manager);
     } finally {
       if (shiftOpened) {
-        const managerOpen = await hasOpenShift(manager);
-        const tellerOpen = await hasOpenShift(teller);
-        if (managerOpen || (drawerHolder === 'manager' && !tellerOpen)) {
-          await closeShift(manager, teller).catch((e) =>
-            console.log(`[R9-8] cleanup closeShift(manager) warning: ${e instanceof Error ? e.message : String(e)}`),
-          );
-          console.log('[R9-8] cleanup: closed manager shift');
-        } else if (tellerOpen || drawerHolder === 'teller') {
-          await closeShift(teller, manager).catch((e) =>
-            console.log(`[R9-8] cleanup closeShift(teller) warning: ${e instanceof Error ? e.message : String(e)}`),
-          );
-          console.log('[R9-8] cleanup: closed teller shift');
+        let managerShiftToClose = '';
+        try {
+          const managerShift = await readMyShift(manager);
+          if (managerShift?.id) {
+            managerShiftToClose = managerShift.id;
+            // Manager holds the drawer. Reject any pending return handover, hand drawer back to teller, then close teller's shift.
+            await teller.reload();
+            for (let attempt = 0; attempt < 5; attempt++) {
+              const rejectBtn = teller.getByTestId('shift-reject').first();
+              if (!(await rejectBtn.isVisible().catch(() => false))) break;
+              await posted(teller, /^\/api\/handovers\/[^/]+\/reject$/, () => rejectBtn.click()).catch(() => null);
+              await teller.reload();
+            }
+
+            await clockIn(manager);
+            await manager.reload();
+            const mgrHandoverBtn = manager.getByTestId('shift-handover');
+            await expect(mgrHandoverBtn, 'manager shift-handover button visible for cleanup').toBeVisible({
+              timeout: 15_000,
+            });
+            await mgrHandoverBtn.click();
+            const cleanupForm = manager.getByTestId('shift-handover-form');
+            await expect(cleanupForm, 'manager cleanup handover form visible').toBeVisible({ timeout: 15_000 });
+            await cleanupForm.getByTestId('shift-receiver').selectOption(tellerUserId);
+            await fillExpectedThbHandover(manager, cleanupForm);
+            const startRes = await posted(manager, /^\/api\/handovers$/, () =>
+              cleanupForm.getByTestId('shift-handover-save').click(),
+            );
+            expect(startRes.ok, `cleanup return handoverStart: ${startRes.text}`).toBeTruthy();
+
+            await teller.reload();
+            const cleanupPending = teller.locator('[data-handover-id]').first();
+            await expect(cleanupPending, 'cleanup return handover visible to teller').toBeVisible({ timeout: 20_000 });
+            const acceptRes = await posted(teller, /^\/api\/handovers\/[^/]+\/accept$/, () =>
+              cleanupPending.getByTestId('shift-accept').click(),
+            );
+            expect(acceptRes.ok, `cleanup return handoverAccept: ${acceptRes.text}`).toBeTruthy();
+            const acceptJson = JSON.parse(acceptRes.body || '{}') as {
+              status?: string;
+              data?: { status?: string };
+            };
+            const acceptStatus = acceptJson.status ?? acceptJson.data?.status;
+            expect(acceptStatus, `cleanup return handoverAccept status: ${acceptRes.text}`).toBe('ACCEPTED');
+            await clockOutIfClockedIn(manager);
+
+            await closeShift(teller, manager);
+
+            const managerStillOpen = await hasOpenShift(manager);
+            const tellerStillOpen = await hasOpenShift(teller);
+            if (!managerStillOpen && !tellerStillOpen) {
+              console.log('[R9-8] cleanup: closed manager shift');
+            } else {
+              console.log(
+                `[R9-8] cleanup: FAILED to close manager shift ${managerShift.id}: shift still open (manager=${managerStillOpen}, teller=${tellerStillOpen})`,
+              );
+            }
+          } else {
+            const tellerShift = await readMyShift(teller);
+            if (tellerShift?.id) {
+              await closeShift(teller, manager);
+              const tellerStillOpen = await hasOpenShift(teller);
+              if (!tellerStillOpen) {
+                console.log('[R9-8] cleanup: closed teller shift');
+              } else {
+                console.log(
+                  `[R9-8] cleanup: FAILED to close teller shift ${tellerShift.id}: shift still open`,
+                );
+              }
+            } else {
+              console.log('[R9-8] cleanup: shifts already closed');
+            }
+          }
+        } catch (cleanupErr) {
+          if (managerShiftToClose) {
+            console.log(
+              `[R9-8] cleanup: FAILED to close manager shift ${managerShiftToClose}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            );
+          } else {
+            console.log(
+              `[R9-8] cleanup warning: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            );
+          }
         }
       } else {
         console.log('[R9-8] cleanup: no shift opened by this test, skipping closeShift');
