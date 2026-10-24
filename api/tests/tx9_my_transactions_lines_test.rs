@@ -568,6 +568,45 @@ async fn a_one_line_sell_shows_its_line() {
     room.finish().await;
 }
 
+/// F2 (#5022): my transactions view formats foreign quantity with 3 decimals (KWD 1.125) without truncation.
+#[actix_web::test]
+async fn a_one_line_sell_kwd_three_decimals_shows_its_line() {
+    let room = Room::start().await;
+    let id = room
+        .seed(
+            &[L {
+                side: Side::Sell,
+                currency: "KWD",
+                quantity: "1.125",
+                rate: "115",
+                fee: "0",
+                line_no: 1,
+            }],
+            TransactionStatus::Completed,
+            1,
+        )
+        .await;
+
+    let items = room.history().await;
+    assert_eq!(items.len(), 1, "{items:?}");
+    let it = item(&items, id);
+    assert_eq!(
+        figures(it),
+        json!({
+            "type": "SELL",
+            "currency": "KWD",
+            "amount": "1.125",
+            "rate": "115.00000000",
+            "principal": "129.38",
+            "fee": "0.00",
+            "settlement": "129.38",
+            "status": "COMPLETED",
+        })
+    );
+
+    room.finish().await;
+}
+
 /// A one-line BUY (USD 100 at 33.50, principal 3,350.00, fee 50.00): the customer receives
 /// principal − fee, so the settlement is 3,300.00, the line's `settle_thb`.
 /// Red on main: `my_transactions.rs:79` computes principal + fee = 3,400.00 for both sides.
