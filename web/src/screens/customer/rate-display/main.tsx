@@ -12,7 +12,6 @@ if (root) {
       <RateDisplay
         fetch={(url, init) => fetch(url, init)}
         search={window.location.search}
-        ratesIntervalMs={60_000}
         branchesIntervalMs={600_000}
       />
     ),
