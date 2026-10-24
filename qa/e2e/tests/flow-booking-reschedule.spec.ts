@@ -58,9 +58,9 @@ async function readCancelCutoffMinutes(page: Page, browser: Browser): Promise<nu
     const myBookingsRes = await page.request.get('/api/v3/views/my_bookings');
     if (myBookingsRes.ok()) {
       const data = (await myBookingsRes.json()) as {
-        bookings?: Array<{ startAt?: string; cancelCutoffAt?: string | null }>;
+        data?: { bookings?: Array<{ startAt?: string; cancelCutoffAt?: string | null }> } | null;
       };
-      const existing = (data?.bookings ?? []).find((b) => b.startAt && b.cancelCutoffAt);
+      const existing = (data?.data?.bookings ?? []).find((b) => b.startAt && b.cancelCutoffAt);
       if (existing?.startAt && existing?.cancelCutoffAt) {
         const startMs = new Date(existing.startAt).getTime();
         const cutoffMs = new Date(existing.cancelCutoffAt).getTime();
@@ -81,10 +81,9 @@ async function readCancelCutoffMinutes(page: Page, browser: Browser): Promise<nu
         `/api/v3/views/admin_booking_slots?branch=${encodeURIComponent(users.branch)}`,
       );
       if (res.ok()) {
-        const data = (await res.json()) as { policy?: { cancelCutoffMinutes?: number } };
-        if (typeof data?.policy?.cancelCutoffMinutes === 'number') {
-          return data.policy.cancelCutoffMinutes;
-        }
+        const data = (await res.json()) as { data?: { policy?: { cancelCutoffMinutes?: number } | null } | null };
+        // No policy row: the app's own default, COALESCE(p.cancel_cutoff_minutes, 60) (my_bookings.rs:135).
+        return data?.data?.policy?.cancelCutoffMinutes ?? 60;
       }
     } catch {
       // fallback to default
@@ -93,7 +92,7 @@ async function readCancelCutoffMinutes(page: Page, browser: Browser): Promise<nu
     }
   }
 
-  return 60;
+  throw new Error('cancel cutoff unreadable: no my_bookings booking with cancelCutoffAt and no admin_booking_slots policy');
 }
 
 test.use({ viewport: { width: 430, height: 932 } });
@@ -135,9 +134,9 @@ test.describe.serial('F21 booking reschedule', () => {
 
         if (slotsRes && slotsRes.ok()) {
           const data = (await slotsRes.json().catch(() => ({}))) as {
-            slots?: Array<{ id: string; start: string; available: number }>;
+            data?: { slots?: Array<{ id: string; start: string; available: number }> } | null;
           };
-          const slots = data.slots ?? [];
+          const slots = data.data?.slots ?? [];
           const now = Date.now();
           const qualifying = slots.find((s) => {
             if (s.available <= 0) return false;
@@ -204,9 +203,9 @@ test.describe.serial('F21 booking reschedule', () => {
       const myBookingsRes = await myBookingsPromise;
       if (myBookingsRes && myBookingsRes.ok()) {
         const data = (await myBookingsRes.json().catch(() => ({}))) as {
-          bookings?: Array<{ id?: string; bookingNo?: string; cancelCutoffAt?: string | null }>;
+          data?: { bookings?: Array<{ id?: string; bookingNo?: string; cancelCutoffAt?: string | null }> } | null;
         };
-        const currentBooking = (data.bookings ?? []).find(
+        const currentBooking = (data.data?.bookings ?? []).find(
           (b) => b.id === bookingId || (bookingNo && b.bookingNo === bookingNo),
         );
         cancelCutoffAt = currentBooking?.cancelCutoffAt ?? null;
@@ -215,9 +214,9 @@ test.describe.serial('F21 booking reschedule', () => {
         const viewRes = await page.request.get('/api/v3/views/my_bookings');
         if (viewRes.ok()) {
           const data = (await viewRes.json().catch(() => ({}))) as {
-            bookings?: Array<{ id?: string; bookingNo?: string; cancelCutoffAt?: string | null }>;
+            data?: { bookings?: Array<{ id?: string; bookingNo?: string; cancelCutoffAt?: string | null }> } | null;
           };
-          const currentBooking = (data.bookings ?? []).find(
+          const currentBooking = (data.data?.bookings ?? []).find(
             (b) => b.id === bookingId || (bookingNo && b.bookingNo === bookingNo),
           );
           cancelCutoffAt = currentBooking?.cancelCutoffAt ?? null;
@@ -335,7 +334,8 @@ test.describe.serial('F21 booking reschedule', () => {
               await cancelBookingCard(cleanPage, bookingId);
             } catch (cardErr) {
               const res = await cleanPage.request.post(`/api/bookings/${encodeURIComponent(bookingId)}/cancel`, {
-                headers: { 'x-xchange-request': '1' },
+                // command.rs:259 same_origin needs the marker header and Origin (origin.rs:33-48).
+                headers: { 'x-xchange-request': '1', Origin: new URL(users.baseUrl).origin },
               });
               if (!res.ok()) {
                 throw cardErr;
