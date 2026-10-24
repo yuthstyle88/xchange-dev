@@ -33,6 +33,14 @@ fn checked_add_money(a: ForeignAmount, b: ForeignAmount) -> AppResult<ForeignAmo
         .map_err(|_| AppError::Internal("money sum overflow in admin_cash".into()))
 }
 
+fn format_quantity(d: Decimal) -> String {
+    let mut d = d.normalize();
+    if d.scale() < 2 {
+        d.rescale(2);
+    }
+    d.to_string()
+}
+
 /// Computes the reference principal and spread for a transaction with a reference rate.
 /// Rounds the reference value to cents using `xc_kernel::money::ExchangeArithmetic::try_thb`.
 pub fn compute_reference_exchange(
@@ -191,7 +199,7 @@ impl BranchView for AdminCashBranchView {
                     .unwrap_or(ForeignAmount::ZERO);
                 items.push(AdminCashCountedItem {
                     code: "THB".to_string(),
-                    amount: format!("{:.2}", thb_amount.value()),
+                    amount: format_quantity(thb_amount.value()),
                 });
 
                 // Other currencies counted > 0, sorted A-Z
@@ -206,7 +214,7 @@ impl BranchView for AdminCashBranchView {
                     let amt = counted_map[&code];
                     items.push(AdminCashCountedItem {
                         code,
-                        amount: format!("{:.2}", amt.value()),
+                        amount: format_quantity(amt.value()),
                     });
                 }
 

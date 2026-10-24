@@ -21,6 +21,14 @@ use crate::presentation::http::v3::view::{
     BranchView, authenticate_and_authorize, parse_branch, require_branch,
 };
 
+fn format_quantity(d: rust_decimal::Decimal) -> String {
+    let mut d = d.normalize();
+    if d.scale() < 2 {
+        d.rescale(2);
+    }
+    d.to_string()
+}
+
 pub struct MyTransactionsView {
     db: PgPool,
 }
@@ -112,7 +120,7 @@ impl MyTransactionsView {
                     branch_name,
                     r#type: tx_type,
                     currency,
-                    amount: format!("{:.2}", amount),
+                    amount: format_quantity(amount),
                     rate: rate.to_string(),
                     principal: format!("{:.2}", principal),
                     fee: format!("{:.2}", fee),

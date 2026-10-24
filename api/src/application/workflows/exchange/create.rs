@@ -12,6 +12,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
+use xc_exchange::domain::exchange::value_objects::transaction_form::{
+    FILE_MISSING, NO_PAYMENT_REF,
+};
 use xc_exchange::domain::quote::quote::{Quote, QuoteStatus};
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::transaction::line::TransactionLine;
@@ -225,6 +228,19 @@ impl CreateTransaction {
                 q.id
             )));
         }
+        let has_draft: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM transactions WHERE quote_id = $1 AND status = 'DRAFT')",
+        )
+        .bind(q.id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        if has_draft {
+            return Err(AppError::Domain(format!(
+                "staleVersion: quote {} already has a draft",
+                q.id
+            )));
+        }
         let Some(line) = q.lines.first() else {
             return Err(AppError::Internal(format!("quote {} has no line", q.id)));
         };
@@ -262,6 +278,21 @@ impl CreateTransaction {
                 }
             }
         }
+        if let Some(booking_id) = req.booking_id.as_deref() {
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM bookings WHERE branch_id = $1 AND id = $2)",
+            )
+            .bind(req.branch_id.as_str())
+            .bind(booking_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+            if !exists {
+                return Err(AppError::Domain(format!(
+                    "validationFailed:bookingId: booking {booking_id} does not exist"
+                )));
+            }
+        }
 
         // G6, Q1 = B: the customer's mode, name and nationality, read without decrypting
         let customer =
@@ -293,6 +324,14 @@ impl CreateTransaction {
         };
 
         // 3. The passport and slip files, as today
+        if !req.payment.method.is_cash() {
+            if req.payment.reference.trim().is_empty() {
+                return refuse(NO_PAYMENT_REF);
+            }
+            if req.payment.slip_key.is_none() {
+                return refuse(FILE_MISSING);
+            }
+        }
         self.attachment(tx, &req.passport_key, who, &req.branch_id)
             .await?;
         if let Some(slip) = req.payment.slip_key.as_deref() {
