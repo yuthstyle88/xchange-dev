@@ -40,7 +40,7 @@
 //   :406 #xc-verification-file, :422 button[data-action="upload"], :462 li.xc-verification-doc-item[data-doc-id]
 //   :513 button[data-action="submit"], :582 section[data-case-state="VERIFIED"], :587 [data-expires-at]
 //   :639 section[data-case-state="REVOKED"], :659 [data-decision-reason="true"], :678 button[data-action="update-and-resubmit"]
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   closeShift,
   clockIn,
@@ -217,6 +217,50 @@ async function selectCaseOnStaff(admin: Page, caseId: string): Promise<void> {
   });
 }
 
+/**
+ * Reads the shift's expected THB from GET /api/v3/views/my_shift and fills the largest THB
+ * denomination input so the handed-over THB equals expected and the accept gate is clear.
+ */
+async function fillExpectedThbHandover(page: Page, form: Locator): Promise<number> {
+  const myShiftRes = await page.request.get(
+    `/api/v3/views/my_shift?branch=${encodeURIComponent(users.branch)}`,
+  );
+  expect(myShiftRes.ok(), `GET /api/v3/views/my_shift: ${myShiftRes.status()}`).toBeTruthy();
+  const myShiftJson = (await myShiftRes.json()) as {
+    data?: { balances?: Array<{ code: string; expected: string }> } | null;
+  };
+  const expectedThb = parseFloat(
+    myShiftJson.data?.balances?.find((b) => b.code === 'THB')?.expected ?? '0',
+  );
+  expect(expectedThb, 'shift expected THB is positive').toBeGreaterThan(0);
+
+  const thbRows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
+  await expect(thbRows.first(), 'a THB denomination row in the handover form').toBeVisible({ timeout: 15_000 });
+  const vals = (await thbRows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+  const maxVal = Math.max(...vals);
+  const bestRow = thbRows.nth(vals.indexOf(maxVal));
+  const qty = Math.round(expectedThb / maxVal);
+  expect(qty * maxVal, `handed-over THB equals the shift's expected ${expectedThb}`).toBe(expectedThb);
+  await bestRow.locator('input[data-denomination-id]').fill(String(qty));
+  return expectedThb;
+}
+
+/** Reads the active OPEN shift for a staff page from GET /api/v3/views/my_shift. */
+async function readMyShift(page: Page): Promise<{ id?: string; status?: string } | null> {
+  const res = await page.request
+    .get(`/api/v3/views/my_shift?branch=${encodeURIComponent(users.branch)}`)
+    .catch(() => null);
+  if (!res || !res.ok()) return null;
+  const json = (await res.json().catch(() => ({}))) as { data?: { id?: string; status?: string } | null };
+  return json.data ?? null;
+}
+
+/** Checks whether a staff page currently holds an OPEN shift in the active branch. */
+async function hasOpenShift(page: Page): Promise<boolean> {
+  const shift = await readMyShift(page);
+  return Boolean(shift?.id);
+}
+
 test.describe.serial('R9-8 shift handover & verification case approve/revoke', () => {
   test('shift handover: permission (c), invalid inputs (b) in th/en, and start/reject/accept happy paths (a) with reload', async ({
     browser,
@@ -233,6 +277,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
     const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
     const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 800 } });
     let shiftOpened = false;
+    let tellerUserId = '';
+    let managerUserId = '';
 
     try {
       // ---- (c) Permission check on /staff shift card ----
@@ -271,8 +317,8 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         timeout: 20_000,
       });
 
-      const tellerUserId = await meUserId(teller);
-      const managerUserId = await meUserId(manager);
+      tellerUserId = await meUserId(teller);
+      managerUserId = await meUserId(manager);
       console.log(`[R9-8] marker=${RUN_MARKER} teller=${tellerUserId} manager=${managerUserId}`);
 
       // Open teller's shift with SHIFT_QTY ('10') on the first THB denomination row.
@@ -445,27 +491,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
       // Read the shift's expected THB from GET /api/v3/views/my_shift (field data.balances[code=THB].expected)
       // to hand over the exact expected amount so the count-difference gate is clear on accept.
-      const myShiftRes = await teller.request.get(
-        `/api/v3/views/my_shift?branch=${encodeURIComponent(users.branch)}`,
-      );
-      expect(myShiftRes.ok(), `GET /api/v3/views/my_shift: ${myShiftRes.status()}`).toBeTruthy();
-      const myShiftJson = (await myShiftRes.json()) as {
-        data?: { balances?: Array<{ code: string; expected: string }> } | null;
-      };
-      const expectedThb = parseFloat(
-        myShiftJson.data?.balances?.find((b) => b.code === 'THB')?.expected ?? '0',
-      );
-      expect(expectedThb, 'shift expected THB is positive').toBeGreaterThan(0);
-
-      const thbRows2 = form2.locator('[data-denomination-row]').filter({ hasText: 'THB' });
-      await expect(thbRows2.first(), 'a THB denomination row in the handover form').toBeVisible({ timeout: 15_000 });
-      const vals2 = (await thbRows2.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
-      const maxVal2 = Math.max(...vals2);
-      const bestRow2 = thbRows2.nth(vals2.indexOf(maxVal2));
-      const qty2 = Math.round(expectedThb / maxVal2);
-      // The accept happy path needs the handed-over THB to equal expected; otherwise the count-difference gate holds it.
-      expect(qty2 * maxVal2, `handed-over THB equals the shift's expected ${expectedThb}`).toBe(expectedThb);
-      await bestRow2.locator('input[data-denomination-id]').fill(String(qty2));
+      await fillExpectedThbHandover(teller, form2);
 
       const startAcceptRes = await posted(teller, /^\/api\/handovers$/, () =>
         form2.getByTestId('shift-handover-save').click(),
@@ -524,12 +550,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       const returnForm = manager.getByTestId('shift-handover-form');
       await expect(returnForm, 'manager return handover form visible').toBeVisible({ timeout: 15_000 });
       await returnForm.getByTestId('shift-receiver').selectOption(tellerUserId);
-      await returnForm
-        .locator('[data-denomination-row]')
-        .filter({ hasText: 'THB' })
-        .first()
-        .locator('input[data-denomination-id]')
-        .fill(SHIFT_QTY);
+      await fillExpectedThbHandover(manager, returnForm);
       const returnStartRes = await posted(manager, /^\/api\/handovers$/, () =>
         returnForm.getByTestId('shift-handover-save').click(),
       );
@@ -542,14 +563,104 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         returnPending.getByTestId('shift-accept').click(),
       );
       expect(returnAcceptRes.ok, `return handoverAccept (teller): ${returnAcceptRes.text}`).toBeTruthy();
+      const returnAcceptJson = JSON.parse(returnAcceptRes.body || '{}') as {
+        status?: string;
+        data?: { status?: string };
+      };
+      const returnStatus = returnAcceptJson.status ?? returnAcceptJson.data?.status;
+      expect(
+        returnStatus,
+        `return handoverAccept must not be AWAITING_FINANCE: ${returnAcceptRes.text}`,
+      ).not.toBe('AWAITING_FINANCE');
+      expect(returnStatus, `return handoverAccept status: ${returnAcceptRes.text}`).toBe('ACCEPTED');
       await teller.reload();
       await manager.reload();
       await clockOutIfClockedIn(manager);
     } finally {
       if (shiftOpened) {
-        await closeShift(teller, manager).catch((e) =>
-          console.log(`[R9-8] cleanup closeShift warning: ${e instanceof Error ? e.message : String(e)}`),
-        );
+        let managerShiftToClose = '';
+        try {
+          const managerShift = await readMyShift(manager);
+          if (managerShift?.id) {
+            managerShiftToClose = managerShift.id;
+            // Manager holds the drawer. Reject any pending return handover, hand drawer back to teller, then close teller's shift.
+            await teller.reload();
+            for (let attempt = 0; attempt < 5; attempt++) {
+              const rejectBtn = teller.getByTestId('shift-reject').first();
+              if (!(await rejectBtn.isVisible().catch(() => false))) break;
+              await posted(teller, /^\/api\/handovers\/[^/]+\/reject$/, () => rejectBtn.click()).catch(() => null);
+              await teller.reload();
+            }
+
+            await clockIn(manager);
+            await manager.reload();
+            const mgrHandoverBtn = manager.getByTestId('shift-handover');
+            await expect(mgrHandoverBtn, 'manager shift-handover button visible for cleanup').toBeVisible({
+              timeout: 15_000,
+            });
+            await mgrHandoverBtn.click();
+            const cleanupForm = manager.getByTestId('shift-handover-form');
+            await expect(cleanupForm, 'manager cleanup handover form visible').toBeVisible({ timeout: 15_000 });
+            await cleanupForm.getByTestId('shift-receiver').selectOption(tellerUserId);
+            await fillExpectedThbHandover(manager, cleanupForm);
+            const startRes = await posted(manager, /^\/api\/handovers$/, () =>
+              cleanupForm.getByTestId('shift-handover-save').click(),
+            );
+            expect(startRes.ok, `cleanup return handoverStart: ${startRes.text}`).toBeTruthy();
+
+            await teller.reload();
+            const cleanupPending = teller.locator('[data-handover-id]').first();
+            await expect(cleanupPending, 'cleanup return handover visible to teller').toBeVisible({ timeout: 20_000 });
+            const acceptRes = await posted(teller, /^\/api\/handovers\/[^/]+\/accept$/, () =>
+              cleanupPending.getByTestId('shift-accept').click(),
+            );
+            expect(acceptRes.ok, `cleanup return handoverAccept: ${acceptRes.text}`).toBeTruthy();
+            const acceptJson = JSON.parse(acceptRes.body || '{}') as {
+              status?: string;
+              data?: { status?: string };
+            };
+            const acceptStatus = acceptJson.status ?? acceptJson.data?.status;
+            expect(acceptStatus, `cleanup return handoverAccept status: ${acceptRes.text}`).toBe('ACCEPTED');
+            await clockOutIfClockedIn(manager);
+
+            await closeShift(teller, manager);
+
+            const managerStillOpen = await hasOpenShift(manager);
+            const tellerStillOpen = await hasOpenShift(teller);
+            if (!managerStillOpen && !tellerStillOpen) {
+              console.log('[R9-8] cleanup: closed manager shift');
+            } else {
+              console.log(
+                `[R9-8] cleanup: FAILED to close manager shift ${managerShift.id}: shift still open (manager=${managerStillOpen}, teller=${tellerStillOpen})`,
+              );
+            }
+          } else {
+            const tellerShift = await readMyShift(teller);
+            if (tellerShift?.id) {
+              await closeShift(teller, manager);
+              const tellerStillOpen = await hasOpenShift(teller);
+              if (!tellerStillOpen) {
+                console.log('[R9-8] cleanup: closed teller shift');
+              } else {
+                console.log(
+                  `[R9-8] cleanup: FAILED to close teller shift ${tellerShift.id}: shift still open`,
+                );
+              }
+            } else {
+              console.log('[R9-8] cleanup: shifts already closed');
+            }
+          }
+        } catch (cleanupErr) {
+          if (managerShiftToClose) {
+            console.log(
+              `[R9-8] cleanup: FAILED to close manager shift ${managerShiftToClose}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            );
+          } else {
+            console.log(
+              `[R9-8] cleanup warning: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            );
+          }
+        }
       } else {
         console.log('[R9-8] cleanup: no shift opened by this test, skipping closeShift');
       }
