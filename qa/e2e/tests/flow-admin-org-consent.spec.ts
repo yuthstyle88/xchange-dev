@@ -165,8 +165,9 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         const isRequired = await timezoneInput.evaluate((el: HTMLSelectElement) => el.required);
         expect(isRequired, `${lang}: #branch-timezone select is required`).toBe(true);
 
-        // Case 2: whitespace-only branch code (`#branch-code`, `BranchesScreen.tsx:205, 286`;
-        // `api/crates/xc-rate/src/application/branch/service.rs:237-239` refuses empty trimmed code).
+        // Case 2: whitespace-only branch code ("   " in `#branch-code`, `BranchesScreen.tsx:286, 316-323`).
+        // Passes client-side HTML5 required check (non-empty string); trimmed code is empty ->
+        // refused by server with 400 (api/crates/xc-rate/src/application/branch/service.rs:237-239).
         const emptyCodeResPromise = page.waitForResponse(
           (res) => res.request().method() === 'PUT' && new URL(res.url()).pathname === '/api/branches/profile',
           { timeout: 15_000 },
@@ -186,20 +187,30 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         await expect(timezoneInput.locator(`option[value="${badTz}"]`), `${lang}: unknown zone not offered`).toHaveCount(0);
         await expect(timezoneInput, `${lang}: #branch-timezone keeps the held zone`).toHaveValue(orig.timezone);
 
-        // Case 4: open day with cleared opening time (`BranchesScreen.tsx:198-200, 339-368`;
-        // `api/crates/xc-rate/src/domain/branch/branch_hours.rs:89-93` refuses non-HH:MM open/close).
+        // Case 4: open day with cleared opening time (`BranchesScreen.tsx:427-428` <input type="time" required />).
+        // HTML5 native validity blocks submission with valueMissing; sends 0 PUT requests.
         await firstDayCheckbox.setChecked(true);
         await expect(firstDayOpenInput).toBeVisible();
-        const badHoursResPromise = page.waitForResponse(
-          (res) => res.request().method() === 'PUT' && new URL(res.url()).pathname === '/api/branches/profile',
-          { timeout: 15_000 },
-        );
         await firstDayOpenInput.fill('');
-        await submitBtn.click();
-        const badHoursRes = await badHoursResPromise;
-        expect(badHoursRes.status(), `${lang}: malformed opening hours refused with 400`).toBe(400);
-        await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-        await expect(errorAlert).not.toHaveText(/^(?:validationFailed|\s*)$/);
+        let badHoursPuts = 0;
+        const onHoursReq = (req: { method(): string; url(): string }) => {
+          if (req.method() === 'PUT' && new URL(req.url()).pathname === '/api/branches/profile') {
+            badHoursPuts++;
+          }
+        };
+        page.on('request', onHoursReq);
+        try {
+          await submitBtn.click();
+        } finally {
+          page.off('request', onHoursReq);
+        }
+        expect(badHoursPuts, `${lang}: cleared opening time sends no PUT /api/branches/profile`).toBe(0);
+        const validity = await firstDayOpenInput.evaluate((el: HTMLInputElement) => ({
+          valueMissing: el.validity.valueMissing,
+          validationMessage: el.validationMessage,
+        }));
+        expect(validity.valueMissing, `${lang}: time input validity.valueMissing is true`).toBe(true);
+        expect(validity.validationMessage.length, `${lang}: time input validationMessage non-empty`).toBeGreaterThan(0);
         await expect(firstDayOpenInput, `${lang}: time input keeps cleared value`).toHaveValue('');
       }
     } finally {

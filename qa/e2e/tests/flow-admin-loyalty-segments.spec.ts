@@ -326,16 +326,29 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
       await expect(valueErr, `case 4 worded refusal (${lang})`).toHaveText(MEMBERS_VALUE_ERR[langKey]);
       await expect(valueInput, 'case 4 keeps 10.12.34').toHaveValue('10.12.34');
 
-      // Case 5: Empty segment definition on /#members (blank name + all rule fields cleared -> refused, snapshot stays disabled)
+      // Case 5: Empty segment definition on /#members (blank name + all rule fields cleared -> refused client-side at [data-field-error="name"], no POST, snapshot stays disabled)
       // and invalid negative pointsRatio on /#loyalty (Loyalty.tsx:217-309).
       await nameInput.fill('   ');
       await recencyInput.fill('');
       await freqInput.fill('');
       await valueInput.fill('');
       await tierInput.fill('');
-      const emptyDefRes = await posted(page, /^\/api\/segments$/, () => defineBtn.click());
-      expect(emptyDefRes.ok, `case 5a empty segment definition refused (${lang})`).toBe(false);
-      await expect(alert, `case 5a worded refusal (${lang})`).toHaveText(MEMBERS_VALIDATION_ERR[langKey]);
+      let emptyDefPosts = 0;
+      const onEmptyDefReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/segments') {
+          emptyDefPosts++;
+        }
+      };
+      page.on('request', onEmptyDefReq);
+      try {
+        await defineBtn.click();
+      } finally {
+        page.off('request', onEmptyDefReq);
+      }
+      expect(emptyDefPosts, `case 5a empty segment definition sends no POST /api/segments (${lang})`).toBe(0);
+      const emptyNameErr = membersScreen.locator('[data-field-error="name"]');
+      await expect(emptyNameErr, `case 5a worded field error (${lang})`).toBeVisible({ timeout: 10_000 });
+      await expect(emptyNameErr, `case 5a worded refusal (${lang})`).toHaveText(MEMBERS_NAME_ERR[langKey]);
       await expect(snapshotBtn, 'case 5a snapshot button remains disabled').toBeDisabled();
 
       if (perms.includes('LoyaltyRulesManage')) {
@@ -344,6 +357,7 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
         const draftSection = page.locator('section[data-form="point-draft"]');
         await expect(draftSection, `/#loyalty (${lang}) point-draft visible`).toBeVisible({ timeout: 20_000 });
 
+        // Case 5b: negative pointsRatio (-0.12345) and minimumBasisAmount (-50) pass client check; refused by server on POST.
         const ratioInput = draftSection.locator('input[name="pointsRatio"]');
         const minInput = draftSection.locator('input[name="minimumBasisAmount"]');
         await ratioInput.fill('-0.12345');
