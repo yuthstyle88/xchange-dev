@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import * as holdsI18n from '../../../web/src/screens/staff/holds/i18n';
 import {
   clockIn,
   closeShift,
@@ -250,17 +251,31 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(custBtn, 'customer search result visible (HoldsCard.tsx:180)').toBeVisible({ timeout: 15_000 });
           await custBtn.click();
 
-          // Cases 2–3: empty reason ('') and whitespace-only reason ('   ') -> `POST /api/customer-holds` 400.
+          // Cases 2–3: empty reason ('') and whitespace-only reason ('   ') -> client refuses at field, 0 POST /api/customer-holds.
           for (const badReason of ['', '   ']) {
             await holdsReason.fill(badReason);
-            const holdRes = await posted(manager, /^\/api\/customer-holds$/, () => holdsPlace.click());
-            expect(holdRes.ok, `POST /api/customer-holds (${JSON.stringify(badReason)}, ${lang}) refused`).toBe(false);
-            expect(holdRes.text, 'POST /api/customer-holds status').toMatch(/^400\b/);
+            let holdPosts = 0;
+            const onHoldReq = (req: { method(): string; url(): string }) => {
+              if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/customer-holds') {
+                holdPosts++;
+              }
+            };
+            manager.on('request', onHoldReq);
+            try {
+              await holdsPlace.click();
+            } finally {
+              manager.off('request', onHoldReq);
+            }
+            expect(holdPosts, `empty or blank reason sends no POST /api/customer-holds (${JSON.stringify(badReason)}, ${lang})`).toBe(0);
 
-            await expect(holdsErr, `holds-error visible for reason ${JSON.stringify(badReason)}`).toBeVisible({
+            const reasonErr = holdsCard.locator('form [role="alert"]');
+            await expect(reasonErr, `reasonRequired field error visible for ${JSON.stringify(badReason)} (${lang})`).toBeVisible({
               timeout: 10_000,
             });
-            expectWordedRefusal(await holdsErr.innerText(), `hold reason ${JSON.stringify(badReason)} (${lang})`);
+            await expect(reasonErr, `reasonRequired text for ${JSON.stringify(badReason)} (${lang})`).toHaveText(
+              holdsI18n[lang === 'th' ? 'th' : 'en'].reasonRequired,
+            );
+            expectWordedRefusal(await reasonErr.innerText(), `hold reason ${JSON.stringify(badReason)} (${lang})`);
             await expect(holdsReason, 'holds-reason keeps typed input').toHaveValue(badReason);
             await expect(
               holdsCard.locator('[data-hold-id]', { hasText: customerId }),
