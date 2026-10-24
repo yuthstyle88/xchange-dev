@@ -262,12 +262,7 @@ impl CommandAction for QuotesCommand {
                         StatusCode::BAD_REQUEST,
                     ));
                 } else if msg.starts_with("outOfScope") {
-                    return Err(V3Error::new(
-                        "outOfScope",
-                        None,
-                        msg,
-                        StatusCode::FORBIDDEN,
-                    ));
+                    return Err(V3Error::new("outOfScope", None, msg, StatusCode::FORBIDDEN));
                 } else if msg.starts_with("validationFailed: customerId") {
                     return Err(V3Error::new(
                         "validationFailed",
