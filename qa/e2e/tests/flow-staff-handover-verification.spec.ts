@@ -796,7 +796,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       expect(noticeText, 'notice shows handoverAwaitingFinance').toMatch(
         /ยอดส่งมอบต่างเกินเกณฑ์|hand-over difference is over the limit/i,
       );
-      expect(noticeText, '"saved" is not shown in notice').not.toMatch(/บันทึกเรียบร้อย|Saved/i);
+      expect(noticeText, '"saved" (i18n.ts:10,35) is not shown in notice').not.toMatch(/บันทึกแล้ว|Saved/i);
 
       await expect(
         manager.locator(`[data-handover-id="${resolvedHandoverId}"]`),
