@@ -19,6 +19,10 @@ ignore = [
     "RUSTSEC-2026-0192",
     # h2 0.3.27 queues empty DATA frames without limit.
     "RUSTSEC-2026-0258",
+    # Stopgap: secrets-crypto → p256 0.13 → elliptic-curve 0.13 → crypto-bigint 0.5.5.
+    # See https://github.com/108-Plaza/108-platform-services/issues/447.
+    # Remove this line in the PR that moves the 108-platform-services rev to a version without it.
+    "RUSTSEC-2026-0387",
 ]
 
 [licenses]
