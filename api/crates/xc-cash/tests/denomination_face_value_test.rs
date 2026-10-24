@@ -80,7 +80,9 @@ struct Db {
 impl Db {
     async fn fresh() -> Db {
         let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            panic!("TEST_DATABASE_URL is not set. Point it at an existing database ending in `_test`.");
+            panic!(
+                "TEST_DATABASE_URL is not set. Point it at an existing database ending in `_test`."
+            );
         });
         let options = PgConnectOptions::from_str(&url).expect("a PostgreSQL URL");
         assert!(
@@ -115,10 +117,13 @@ impl Db {
     }
 
     async fn drop_schema(self) {
-        sqlx::query(AssertSqlSafe(format!("DROP SCHEMA {} CASCADE", self.schema)))
-            .execute(&self.pool)
-            .await
-            .expect("drop schema");
+        sqlx::query(AssertSqlSafe(format!(
+            "DROP SCHEMA {} CASCADE",
+            self.schema
+        )))
+        .execute(&self.pool)
+        .await
+        .expect("drop schema");
     }
 
     async fn branch(&self, label: &str) -> BranchId {
@@ -282,11 +287,10 @@ async fn n1_handover_start_with_null_face_denomination_answers_not_found() {
     let null_denom_id = f.db.null_face_denomination("THB").await;
     let lines = vec![CountLine::new("THB", null_denom_id, 1)];
 
-    let res = f
-        .db
-        .handovers()
-        .start(&f.a, start_cmd(&f, lines), at(600))
-        .await;
+    let res =
+        f.db.handovers()
+            .start(&f.a, start_cmd(&f, lines), at(600))
+            .await;
 
     match res {
         Err(AppError::NotFound { entity, id }) => {
@@ -345,12 +349,11 @@ async fn n3_real_denomination_succeeds_as_today() {
     let thb_1000 = f.db.denomination("THB", "1000").await;
     let lines = vec![CountLine::new("THB", thb_1000, 2)];
 
-    let h = f
-        .db
-        .handovers()
-        .start(&f.a, start_cmd(&f, lines), at(600))
-        .await
-        .expect("handover start with real denomination succeeds");
+    let h =
+        f.db.handovers()
+            .start(&f.a, start_cmd(&f, lines), at(600))
+            .await
+            .expect("handover start with real denomination succeeds");
 
     assert_eq!(f.db.handover_rows().await, 1);
     assert_eq!(h.status, xc_cash::domain::handover::HandoverStatus::Pending);
