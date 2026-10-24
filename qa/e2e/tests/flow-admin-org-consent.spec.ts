@@ -165,7 +165,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         const isRequired = await timezoneInput.evaluate((el: HTMLSelectElement) => el.required);
         expect(isRequired, `${lang}: #branch-timezone select is required`).toBe(true);
 
-        // Case 2: whitespace-only branch code ("   " in `#branch-code`, `BranchesScreen.tsx:286, 316-323`).
+        // Case 2: whitespace-only branch code ("   " in `#branch-code`, `BranchesScreen.tsx:316-323`).
         // Passes client-side HTML5 required check (non-empty string); trimmed code is empty ->
         // refused by server with 400 (api/crates/xc-rate/src/application/branch/service.rs:237-239).
         const emptyCodeResPromise = page.waitForResponse(

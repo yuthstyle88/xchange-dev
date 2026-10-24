@@ -291,7 +291,19 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
       // Case 2: Negative rule value (recency_days = -5; Members.tsx:86-90 client-side integer guard).
       await nameInput.fill(marker);
       await recencyInput.fill('-5');
-      await defineBtn.click();
+      let negRecencyPosts = 0;
+      const onNegRecencyReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/segments') {
+          negRecencyPosts++;
+        }
+      };
+      page.on('request', onNegRecencyReq);
+      try {
+        await defineBtn.click();
+      } finally {
+        page.off('request', onNegRecencyReq);
+      }
+      expect(negRecencyPosts, `case 2 negative recency_days sends no POST /api/segments (${lang})`).toBe(0);
       await expect(alert, `case 2 negative recency_days refused (${lang})`).toHaveText(
         MEMBERS_VALIDATION_ERR[langKey],
       );
@@ -301,7 +313,19 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
       // Case 3: Decimal / non-integer frequency in segment rule (frequency = 2.5; Members.tsx:94-98).
       await recencyInput.fill('30');
       await freqInput.fill('2.5');
-      await defineBtn.click();
+      let decimalFreqPosts = 0;
+      const onDecimalFreqReq = (req: { method(): string; url(): string }) => {
+        if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/segments') {
+          decimalFreqPosts++;
+        }
+      };
+      page.on('request', onDecimalFreqReq);
+      try {
+        await defineBtn.click();
+      } finally {
+        page.off('request', onDecimalFreqReq);
+      }
+      expect(decimalFreqPosts, `case 3 decimal frequency sends no POST /api/segments (${lang})`).toBe(0);
       await expect(alert, `case 3 decimal frequency refused (${lang})`).toHaveText(MEMBERS_VALIDATION_ERR[langKey]);
       await expect(freqInput, 'case 3 keeps 2.5').toHaveValue('2.5');
 
