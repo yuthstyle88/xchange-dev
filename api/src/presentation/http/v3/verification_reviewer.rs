@@ -1,8 +1,5 @@
 //! Shared verification reviewer actor resolution (#5027).
 
-use std::path::Path;
-
-use actix_web::web;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
@@ -10,7 +7,6 @@ use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::access::permission::Permission;
 use xc_verification::domain::case::reviewer_actor::{ReviewerActor, ReviewerScope};
 
-use crate::bootstrap::AppState;
 use crate::presentation::http::v3::command::out_of_scope;
 use crate::presentation::http::v3::error::V3Error;
 
@@ -33,12 +29,4 @@ pub(crate) fn reviewer_actor(who: &Actor, now: DateTime<Utc>) -> Result<Reviewer
         }
     };
     Ok(ReviewerActor { user_id, scope })
-}
-
-pub fn register(_cfg: &mut web::ServiceConfig, _state: &AppState) {
-    let _ = "CommandEndpoint::register(";
-}
-
-pub fn export_types(_dir: &Path) -> Result<(), ts_rs::ExportError> {
-    Ok(())
 }

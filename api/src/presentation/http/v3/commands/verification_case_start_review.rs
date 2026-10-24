@@ -24,8 +24,8 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, Locks, out_of_scope, server_error,
 };
-use crate::presentation::http::v3::commands::verification_reviewer::reviewer_actor;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::verification_reviewer::reviewer_actor;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

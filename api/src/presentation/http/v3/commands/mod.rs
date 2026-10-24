@@ -1,7 +1,5 @@
 //! v3 commands module (§6).
 
-pub(crate) use super::verification_reviewer;
-
 use actix_web::http::StatusCode;
 use sqlx::PgPool;
 use std::sync::Arc;
