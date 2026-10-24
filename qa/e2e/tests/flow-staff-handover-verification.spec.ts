@@ -694,10 +694,10 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       await signIn(manager, 'branchManager', '/staff');
       await signIn(finance, 'finance', `/?branch=${encodeURIComponent(users.branch)}#approvals`);
 
-      await expect(teller.locator('.xc-shift-card'), 'teller .xc-shift-card visible (ShiftCard.tsx:382)').toBeVisible({
+      await expect(teller.locator('.xc-shift-card'), 'teller .xc-shift-card visible (ShiftCard.tsx:445)').toBeVisible({
         timeout: 20_000,
       });
-      await expect(manager.locator('.xc-shift-card'), 'manager .xc-shift-card visible (ShiftCard.tsx:382)').toBeVisible({
+      await expect(manager.locator('.xc-shift-card'), 'manager .xc-shift-card visible (ShiftCard.tsx:445)').toBeVisible({
         timeout: 20_000,
       });
 
@@ -710,7 +710,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       shiftOpened = true;
       await expect(
         teller.getByTestId('shift-handover'),
-        'shift-handover button visible when shift is OPEN (ShiftCard.tsx:422)',
+        'shift-handover button visible when shift is OPEN (ShiftCard.tsx:485)',
       ).toBeVisible({ timeout: 20_000 });
 
       // 2. Teller starts a hand-over to the manager of 1 × the largest THB note (a 9 × note difference, like round 17). Assert handoverStart ok.
@@ -769,7 +769,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
         : manager.locator('[data-handover-id]').first();
       await expect(
         pendingItem,
-        'initiated handover visible on manager /staff after reload (ShiftCard.tsx:593)',
+        'initiated handover visible on manager /staff after reload (ShiftCard.tsx:666)',
       ).toBeVisible({ timeout: 20_000 });
       const resolvedHandoverId =
         handoverId || ((await pendingItem.getAttribute('data-handover-id')) ?? '');
@@ -791,7 +791,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       expect(acceptStatus, `handoverAccept status === "AWAITING_FINANCE": ${acceptRes.text}`).toBe('AWAITING_FINANCE');
 
       const noticeEl = manager.getByTestId('shift-notice');
-      await expect(noticeEl, 'shift-notice visible on manager (ShiftCard.tsx:388)').toBeVisible({ timeout: 10_000 });
+      await expect(noticeEl, 'shift-notice visible on manager (ShiftCard.tsx:451)').toBeVisible({ timeout: 10_000 });
       const noticeText = await noticeEl.innerText();
       expect(noticeText, 'notice shows handoverAwaitingFinance').toMatch(
         /ยอดส่งมอบต่างเกินเกณฑ์|hand-over difference is over the limit/i,
