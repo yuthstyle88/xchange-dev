@@ -5,20 +5,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { hasAccount, mePermissions, shot, signIn, users, withLang } from './helpers';
 
-// Expected i18n copy for branch profile (`web/src/screens/admin/branches/i18n.ts:28-30, 75-77`).
-const BRANCH_TEXTS = {
-  th: {
-    timezoneRequired: 'กรุณากรอกเขตเวลา', // web/src/screens/admin/branches/i18n.ts:28
-    codeConflict: 'รหัสสาขาซ้ำกับสาขาอื่น', // web/src/screens/admin/branches/i18n.ts:29
-    saved: 'บันทึกข้อมูลสาขาเรียบร้อยแล้ว', // web/src/screens/admin/branches/i18n.ts
-  },
-  en: {
-    timezoneRequired: 'Timezone is required', // web/src/screens/admin/branches/i18n.ts:75
-    codeConflict: 'Branch code is already used by another branch', // web/src/screens/admin/branches/i18n.ts:76
-    saved: 'Branch profile saved successfully', // web/src/screens/admin/branches/i18n.ts
-  },
-} as const;
-
 // Expected i18n copy for consent and retention (`web/src/screens/admin/consent/i18n.ts:7, 10, 22, 25`).
 const CONSENT_TEXTS = {
   th: {
@@ -72,7 +58,7 @@ async function restoreBranchForm(page: Page, orig: StoredBranchProfile): Promise
 
   await codeInput.fill(orig.code);
   await addressInput.fill(orig.address);
-  await timezoneInput.fill(orig.timezone);
+  await timezoneInput.selectOption(orig.timezone);
   await bookingInput.setChecked(orig.bookingEnabled);
 
   const putPromise = page.waitForResponse(
@@ -170,14 +156,14 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         await page.reload();
         await openBranchesAsAdmin(page);
 
-        // Case 1: whitespace-only timezone (`#branch-timezone`, `BranchesScreen.tsx:185-189, 309`).
-        // Whitespace satisfies HTML5 `required` (`:315`) and triggers `handleSave`'s `!timezone().trim()` check (`:186`).
-        await timezoneInput.fill('   ');
-        await submitBtn.click();
-        await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-        await expect(errorAlert).toHaveText(BRANCH_TEXTS[lang].timezoneRequired);
-        await expect(timezoneInput, `${lang}: #branch-timezone keeps typed whitespace`).toHaveValue('   ');
-        await timezoneInput.fill(orig.timezone);
+        // Case 1: timezone is a <select> (#4939); holds a real zone and cannot be emptied.
+        const currentTz = await timezoneInput.inputValue();
+        expect(currentTz, `${lang}: #branch-timezone holds a zone`).not.toBe('');
+        await expect(timezoneInput.locator(`option[value="${currentTz}"]`), `${lang}: held zone is an option`).toHaveCount(1);
+        const hasEmptyOption = await timezoneInput.locator('option[value=""]').count();
+        expect(hasEmptyOption, `${lang}: #branch-timezone cannot be emptied`).toBe(0);
+        const isRequired = await timezoneInput.evaluate((el: HTMLSelectElement) => el.required);
+        expect(isRequired, `${lang}: #branch-timezone select is required`).toBe(true);
 
         // Case 2: whitespace-only branch code (`#branch-code`, `BranchesScreen.tsx:205, 286`;
         // `api/crates/xc-rate/src/application/branch/service.rs:237-239` refuses empty trimmed code).
@@ -194,21 +180,11 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         await expect(codeInput, `${lang}: #branch-code keeps typed whitespace`).toHaveValue('   ');
         await codeInput.fill(orig.code);
 
-        // Case 3: unknown IANA timezone (`#branch-timezone`, `BranchesScreen.tsx:207, 309`;
-        // `api/crates/xc-rate/src/domain/branch/branch_hours.rs:59-60` refuses unknown timezone).
+        // Case 3: unknown IANA timezone. The <select> (#4939, `BranchesScreen.tsx:353-375`) offers only
+        // `Intl.supportedValuesOf('timeZone')` plus the held zone, so an unknown zone cannot be chosen.
         const badTz = 'Not/A_Zone_qa_r9_7';
-        const badTzResPromise = page.waitForResponse(
-          (res) => res.request().method() === 'PUT' && new URL(res.url()).pathname === '/api/branches/profile',
-          { timeout: 15_000 },
-        );
-        await timezoneInput.fill(badTz);
-        await submitBtn.click();
-        const badTzRes = await badTzResPromise;
-        expect(badTzRes.status(), `${lang}: invalid IANA timezone refused with 400`).toBe(400);
-        await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-        await expect(errorAlert).not.toHaveText(/^(?:validationFailed|\s*)$/);
-        await expect(timezoneInput, `${lang}: #branch-timezone keeps typed invalid timezone`).toHaveValue(badTz);
-        await timezoneInput.fill(orig.timezone);
+        await expect(timezoneInput.locator(`option[value="${badTz}"]`), `${lang}: unknown zone not offered`).toHaveCount(0);
+        await expect(timezoneInput, `${lang}: #branch-timezone keeps the held zone`).toHaveValue(orig.timezone);
 
         // Case 4: open day with cleared opening time (`BranchesScreen.tsx:198-200, 339-368`;
         // `api/crates/xc-rate/src/domain/branch/branch_hours.rs:89-93` refuses non-HH:MM open/close).
