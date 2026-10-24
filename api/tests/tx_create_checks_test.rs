@@ -13,7 +13,7 @@
 //!   `FILE_MISSING`); design `blueprint/quote-transaction.md` §3 `transaction_payments.reference`
 //!   and `slip_file_key`: *"required unless Cash"*. Today both bodies are answered 200 DRAFT.
 //! - K2: create never reads the booking; `transactions.booking_id` references `bookings(id)`
-//!   (`migrations/20261218120000_retire_v2_bookings.sql`), so an unknown id fails at the insert
+//!   (the BK-11 M2 migration `20261218120000_*`), so an unknown id fails at the insert
 //!   and is answered 500 `serverError`.
 //! - K3: create checks only that the quote is ACTIVE; the quote is accepted at confirm, so while
 //!   the first exchange is DRAFT a second create with another key makes a second DRAFT of the same
