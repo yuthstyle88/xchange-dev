@@ -11,12 +11,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Once};
 
-use actix_web::http::{header, StatusCode};
-use actix_web::{test as atest, web, App, HttpRequest};
+use actix_web::http::{StatusCode, header};
+use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::Utc;
 use pos_infra::transactions::Transactor;
 use quote_common::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::*;
 use xc_auth::domain::access::Role;
@@ -184,7 +184,12 @@ async fn rc1_v3_create_live_no_open_shift_answers_409_no_open_shift() {
     let a = create_route(&desk, &body).await;
     assert_eq!(a.status, StatusCode::CONFLICT, "{}", a.text);
     assert_eq!(a.code(), "noOpenShift", "{}", a.text);
-    assert_eq!(a.message(), ShiftError::NoOpenShift.to_string(), "{}", a.text);
+    assert_eq!(
+        a.message(),
+        ShiftError::NoOpenShift.to_string(),
+        "{}",
+        a.text
+    );
 
     assert_eq!(
         desk.db.count("SELECT count(*) FROM transactions").await,
