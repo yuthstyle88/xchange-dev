@@ -9,7 +9,7 @@ use sqlx::PgPool;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_cash::application::handover::handover_service::INVALID_RECEIVER;
-use xc_cash::application::handover::{HandoverService, StartHandover};
+use xc_cash::application::handover::{HandoverAccepted, HandoverService, StartHandover};
 use xc_cash::domain::handover::Handover;
 use xc_kernel::ids::BranchId;
 
@@ -115,12 +115,19 @@ impl CommandAction for HandoverAccept {
     ) -> Result<Self::Output, V3Error> {
         let now = Utc::now();
         let user = caller_in(tx, who, now).await?;
-        let h = self
+        // §4.9: awaiting FINANCE is an answer, not an error, so its approval request commits with the seam
+        match self
             .handovers
-            .accept_in(tx, &user, &input.id, now)
+            .accept_or_await_in(tx, &user, &input.id, now)
             .await
-            .map_err(from_cash_error)?;
-        Ok(answer(h))
+            .map_err(from_cash_error)?
+        {
+            HandoverAccepted::Accepted(h) => Ok(answer(*h)),
+            HandoverAccepted::AwaitingFinance(_) => Ok(CashRecordOutput {
+                id: input.id,
+                status: "AWAITING_FINANCE".to_owned(),
+            }),
+        }
     }
 }
 
