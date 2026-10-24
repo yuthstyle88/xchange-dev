@@ -336,6 +336,35 @@ async fn safe_count_matching_the_ledger_writes_no_exception() {
     );
 }
 
+// ── S4: a currency the safe holds that the count omits ──────────────────────
+
+#[tokio::test]
+async fn safe_count_omitting_held_currency_stores_difference_and_safe_variance() {
+    let db = Db::fresh().await;
+    let branch = db.branch("safe_omit_kwd").await;
+    fund_safe(&db.pool, branch.as_str(), "KWD", "5.000").await;
+
+    // The safe holds USD 1,000 and KWD 5; the count finds USD 1,000 and leaves KWD out.
+    let count_id = count_the_safe(&db, &branch, CountKind::Safe, 10).await;
+
+    let (counted, expected, difference) = db.total(&count_id, "KWD").await;
+    assert_eq!(counted.normalize(), d("0"));
+    assert_eq!(expected.map(|e| e.normalize()), Some(d("5")));
+    assert_eq!(difference.map(|x| x.normalize()), Some(d("-5")));
+
+    let exceptions = db.cash_exceptions_for_count(&count_id).await;
+    assert_eq!(exceptions.len(), 1, "{exceptions:?}");
+    let exc = &exceptions[0];
+    assert_eq!(exc["safeVariance"]["KWD"], "-5.00", "{exc}");
+    assert_eq!(
+        exc["safeVariance"].as_object().map(|o| o.len()),
+        Some(1),
+        "{exc}"
+    );
+    assert!(exc["cashVariance"].is_null(), "{exc}");
+    assert!(exc["targetDifference"].is_null(), "{exc}");
+}
+
 /// Funds the branch's SAFE through the ledger (`BANK → SAFE`), as every LG-4 test funds a safe.
 static FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
