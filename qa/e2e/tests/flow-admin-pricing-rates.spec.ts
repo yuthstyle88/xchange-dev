@@ -122,7 +122,7 @@ const BRANCH_ALERT_REFUSALS = {
   unknownCurrency: (code: string) => `currency ${code} not in currencies`,
 } as const;
 
-// Field error for #stale-data-minutes (AlertSettings.tsx:158; alert-settings/i18n.ts:15,32).
+// Field error for #stale-data-minutes (AlertSettings.tsx:158; alert-settings/i18n.ts:16,36).
 const STALE_MINUTES_ERR = {
   th: 'กรุณาระบุจำนวนนาทีเป็นจำนวนเต็มบวกไม่เกิน 2,147,483,647',
   en: 'Enter a positive integer up to 2,147,483,647',

@@ -158,7 +158,8 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
 
         // Case 1: timezone is a <select> (#4939); holds a real zone and cannot be emptied.
         const currentTz = await timezoneInput.inputValue();
-        expect(currentTz, `${lang}: #branch-timezone holds a real zone`).toMatch(/^[A-Za-z_]+(?:\/[A-Za-z_]+)+$/);
+        expect(currentTz, `${lang}: #branch-timezone holds a zone`).not.toBe('');
+        await expect(timezoneInput.locator(`option[value="${currentTz}"]`), `${lang}: held zone is an option`).toHaveCount(1);
         const hasEmptyOption = await timezoneInput.locator('option[value=""]').count();
         expect(hasEmptyOption, `${lang}: #branch-timezone cannot be emptied`).toBe(0);
         const isRequired = await timezoneInput.evaluate((el: HTMLSelectElement) => el.required);
@@ -179,21 +180,11 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         await expect(codeInput, `${lang}: #branch-code keeps typed whitespace`).toHaveValue('   ');
         await codeInput.fill(orig.code);
 
-        // Case 3: unknown IANA timezone (`#branch-timezone`, `BranchesScreen.tsx:207, 309`;
-        // `api/crates/xc-rate/src/domain/branch/branch_hours.rs:59-60` refuses unknown timezone).
+        // Case 3: unknown IANA timezone. The <select> (#4939, `BranchesScreen.tsx:353-375`) offers only
+        // `Intl.supportedValuesOf('timeZone')` plus the held zone, so an unknown zone cannot be chosen.
         const badTz = 'Not/A_Zone_qa_r9_7';
-        const badTzResPromise = page.waitForResponse(
-          (res) => res.request().method() === 'PUT' && new URL(res.url()).pathname === '/api/branches/profile',
-          { timeout: 15_000 },
-        );
-        await timezoneInput.fill(badTz);
-        await submitBtn.click();
-        const badTzRes = await badTzResPromise;
-        expect(badTzRes.status(), `${lang}: invalid IANA timezone refused with 400`).toBe(400);
-        await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-        await expect(errorAlert).not.toHaveText(/^(?:validationFailed|\s*)$/);
-        await expect(timezoneInput, `${lang}: #branch-timezone keeps typed invalid timezone`).toHaveValue(badTz);
-        await timezoneInput.fill(orig.timezone);
+        await expect(timezoneInput.locator(`option[value="${badTz}"]`), `${lang}: unknown zone not offered`).toHaveCount(0);
+        await expect(timezoneInput, `${lang}: #branch-timezone keeps the held zone`).toHaveValue(orig.timezone);
 
         // Case 4: open day with cleared opening time (`BranchesScreen.tsx:198-200, 339-368`;
         // `api/crates/xc-rate/src/domain/branch/branch_hours.rs:89-93` refuses non-HH:MM open/close).

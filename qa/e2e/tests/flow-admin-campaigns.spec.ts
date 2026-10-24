@@ -392,7 +392,7 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         await expect(calcInput, 'negative benefit input preserved').toHaveValue('-0.10');
 
         // 2. Too-many-decimal benefit calculation value (10.255 in fee-waiver amount, > 2 decimals for THB money)
-        // -> refused client-side by checkDecimal (CampaignRulesEditor.tsx:263 [data-field-error="rules.calculation"], no PUT/POST).
+        // -> refused client-side by checkDecimal (campaign-rules.ts:196; CampaignRulesEditor.tsx:263 [data-field-error="rules.calculation"], no PUT/POST).
         await ruleRow.locator('select[name="benefitType"]').selectOption('FEE_WAIVER');
         await ruleRow.locator('select[name="calcMode"]').selectOption('amount');
         await calcInput.fill('10.255');
