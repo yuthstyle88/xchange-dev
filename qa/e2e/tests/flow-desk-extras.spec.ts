@@ -440,163 +440,186 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
   });
 
   test('(b) invalid inputs are refused with worded messages in th and en and form state is preserved', async ({
-    page,
+    browser,
   }) => {
-    test.skip(!hasAccount('teller'), 'no teller account in users.json: run scripts/reseed.sh');
-
-    const ts = Date.now();
-    const marker = `qa-r9-9-${ts}`;
-    const currency = users.currency ?? 'USD';
-
-    await signIn(page, 'teller', `/desk?branch=${encodeURIComponent(users.branch)}`);
-
-    for (const lang of STAFF_LANGS) {
-      await withLang(page, lang);
-      await page.goto(`/desk?branch=${encodeURIComponent(users.branch)}`);
-      await expect(
-        page.locator(`select[name="currency"] option[value="${currency}"]`),
-        `[${lang}] rate for ${currency} loaded in desk_config (rate/step.tsx:81)`,
-      ).toHaveCount(1, { timeout: 20_000 });
-
-      // Step 0 -> Step 1 (rate/step.tsx:62-94,136).
-      const quoteRes = await posted(page, /^\/api\/quotes$/, async () => {
-        await page.locator('select[name="type"]').selectOption('BUY');
-        await page.locator('select[name="currency"]').selectOption(currency);
-        await page.locator('input[name="amount"]').fill(EXCHANGE_AMOUNT);
-      });
-      expect(quoteRes.ok, `[${lang}] POST /api/quotes: ${quoteRes.text}`).toBeTruthy();
-      await expect(page.locator('.desk-rate-line strong')).toBeVisible({ timeout: 15_000 });
-      await page
-        .getByRole('button', { name: /ถัดไป · พาสปอร์ต \/ ลูกค้า|Next · Passport \/ customer/ })
-        .click();
-
-      const nameInput = page.locator('input[name="name"]'); // customer/step.tsx:211
-      const passportNoInput = page.locator('input[name="passportNo"]'); // customer/step.tsx:215
-      const nationalitySelect = page.locator('select[name="nationality"]'); // customer/step.tsx:219
-      const passportFileInput = page.locator('input[name="passport"]'); // customer/step.tsx:185
-      const customerSubmitBtn = page.locator('form.desk-form button[type="submit"]'); // customer/step.tsx:259
-      const customerError = page.locator('form.desk-form p.desk-error[role="alert"]'); // customer/step.tsx:250
-
-      await expect(nameInput).toBeVisible({ timeout: 15_000 });
-
-      // Case 1: Customer step submitted without a passport scan/photo (customer/step.tsx:148-150; customer/i18n.ts:21,47).
-      await nameInput.fill(marker);
-      await passportNoInput.fill('P1234567');
-      await nationalitySelect.selectOption('THA');
-      await customerSubmitBtn.click();
-
-      await expect(customerError, `[${lang}] missing passport file must show alert`).toBeVisible({ timeout: 10_000 });
-      const noPhotoText = (await customerError.innerText()).trim();
-      expect(noPhotoText.length).toBeGreaterThan(0);
-      expect(noPhotoText).not.toMatch(RAW_CODE);
-      if (lang === 'th') {
-        expect(noPhotoText).toContain('กรุณาแนบไฟล์สแกนหรือรูปพาสปอร์ตก่อน');
-      } else {
-        expect(noPhotoText).toContain('Please attach a passport scan or photo first');
-      }
-      await expect(nameInput).toHaveValue(marker);
-      await expect(passportNoInput).toHaveValue('P1234567');
-
-      // Case 2: Customer step submitted with passport image attached but missing required passportNo (customer/step.tsx:152-154; customer/i18n.ts:22,48).
-      await passportFileInput.setInputFiles({
-        name: 'passport.png',
-        mimeType: 'image/png',
-        buffer: ONE_PIXEL_PNG,
-      });
-      await passportNoInput.fill('');
-      await customerSubmitBtn.click();
-
-      await expect(customerError, `[${lang}] missing required customer field must show alert`).toBeVisible({
-        timeout: 10_000,
-      });
-      const incompleteText = (await customerError.innerText()).trim();
-      expect(incompleteText.length).toBeGreaterThan(0);
-      expect(incompleteText).not.toMatch(RAW_CODE);
-      if (lang === 'th') {
-        expect(incompleteText).toContain('กรุณากรอกชื่อ เลขพาสปอร์ต และสัญชาติ');
-      } else {
-        expect(incompleteText).toContain('Please fill in the name, passport number and nationality');
-      }
-      await expect(nameInput).toHaveValue(marker);
-
-      // Advance to Step 2 via skip customer so CustomerLoyalty & PhoneVerify mount in aside.desk-summary (Summary.tsx:61, CustomerLoyalty.tsx:13).
-      const skipBtn = page.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ }); // customer/step.tsx:256
-      const reserveRes = await posted(page, /^\/api\/rpc$/, () => skipBtn.click());
-      expect(reserveRes.ok, `[${lang}] reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
-
-      const loyaltyBox = page.locator('.desk-loyalty'); // CustomerLoyalty.tsx:13
-      await expect(loyaltyBox).toBeVisible({ timeout: 15_000 });
-      const phoneInput = loyaltyBox.locator('input[name="phone"]'); // PhoneVerify.tsx:125
-      const sendCodeBtn = loyaltyBox.locator('button[name="sendCode"]'); // PhoneVerify.tsx:133
-      const phoneAlert = loyaltyBox.locator('p.desk-error[role="alert"]'); // PhoneVerify.tsx:162
-
-      // Case 3: customerPhoneStart (POST /api/customers/{id}/phone-verifications) with malformed phone (PhoneVerify.tsx:71,86,125,133,162).
-      const badPhone = `bad-phone-${ts}`;
-      await phoneInput.fill(badPhone);
-      const badPhoneRes = await posted(
-        page,
-        /^\/api\/customers\/[^/]+\/phone-verifications$/,
-        () => sendCodeBtn.click(),
-      );
-      expect(badPhoneRes.ok, `[${lang}] malformed phone must be refused: ${badPhoneRes.text}`).toBe(false);
-      await expect(phoneAlert, `[${lang}] malformed phone alert must be visible`).toBeVisible({ timeout: 10_000 });
-      const badPhoneText = (await phoneAlert.innerText()).trim();
-      expect(badPhoneText.length).toBeGreaterThan(0);
-      expect(badPhoneText).not.toMatch(RAW_CODE);
-      if (lang === 'th') {
-        expect(badPhoneText).toMatch(/[\u0E00-\u0E7F]/);
-      } else {
-        expect(badPhoneText).toMatch(/[A-Za-z]/);
-      }
-      await expect(phoneInput, `[${lang}] phone input must keep typed value`).toHaveValue(badPhone);
-
-      // Case 4: customerPhoneStart then customerPhoneConfirm (POST /api/customers/{id}/phone-verifications/{challengeId}/confirm)
-      // with a wrong OTP code ('000000'), which must be refused (ticket #4293 §3; PhoneVerify.tsx:74,104,140,150,162; phone/i18n.ts:8,22).
-      const validPhone = TEST_PHONE;
-      await phoneInput.fill(validPhone);
-      const startRes = await posted(
-        page,
-        /^\/api\/customers\/[^/]+\/phone-verifications$/,
-        () => sendCodeBtn.click(),
-      );
-
-      if (startRes.ok) {
-        const codeInput = loyaltyBox.locator('input[name="code"]'); // PhoneVerify.tsx:140
-        const confirmCodeBtn = loyaltyBox.locator('button[name="confirmCode"]'); // PhoneVerify.tsx:150
-        await expect(codeInput, `[${lang}] OTP code input must appear after customerPhoneStart`).toBeVisible({
-          timeout: 10_000,
-        });
-        await codeInput.fill('000000');
-
-        const confirmRes = await posted(
-          page,
-          /^\/api\/customers\/[^/]+\/phone-verifications\/[^/]+\/confirm$/,
-          () => confirmCodeBtn.click(),
-        );
-        expect(confirmRes.ok, `[${lang}] wrong OTP code '000000' must be refused`).toBe(false);
-        await expect(phoneAlert, `[${lang}] wrong OTP alert must be visible`).toBeVisible({ timeout: 10_000 });
-        const wrongCodeText = (await phoneAlert.innerText()).trim();
-        expect(wrongCodeText.length).toBeGreaterThan(0);
-        expect(wrongCodeText).not.toMatch(RAW_CODE);
-        if (lang === 'th') {
-          expect(wrongCodeText).toContain('รหัส OTP ไม่ถูกต้อง');
-        } else {
-          expect(wrongCodeText).toContain('Incorrect OTP code');
-        }
-        await expect(codeInput, `[${lang}] code input must preserve wrong OTP`).toHaveValue('000000');
-      } else {
-        // If SMS service is unavailable on the host (503 smsUnavailable, phone/i18n.ts:11,25), assert worded alert and input preservation.
-        // Any other refusal is a failure, not a reason to skip the wrong-OTP case (phone_verification_service.rs:84).
-        expect(startRes.text, `[${lang}] customerPhoneStart refused for a reason other than smsUnavailable`).toMatch(/^503 .*smsUnavailable/s);
-        console.log(`[R9-9] [${lang}] SMS unavailable on this host: wrong-OTP confirm not reachable (${startRes.text})`);
-        await expect(phoneAlert, `[${lang}] SMS refusal alert must be visible`).toBeVisible({ timeout: 10_000 });
-        const smsErrText = (await phoneAlert.innerText()).trim();
-        expect(smsErrText.length).toBeGreaterThan(0);
-        expect(smsErrText).not.toMatch(RAW_CODE);
-        await expect(phoneInput).toHaveValue(validPhone);
-      }
+    const requiredRoles: readonly Role[] = ['teller', 'branchManager'];
+    for (const role of requiredRoles) {
+      test.skip(!hasAccount(role), `no ${role} account in users.json: run scripts/reseed.sh`);
     }
-    await shot(page, 'desk', 'r9-9-invalid-inputs');
+
+    const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+    const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+
+    try {
+      await signIn(teller, 'teller', '/staff');
+      await signIn(manager, 'branchManager', '/staff');
+      await openShift(teller, manager);
+      let started: 'started' | 'alreadyOpen' | undefined;
+
+      try {
+        started = await startService(manager);
+
+        const ts = Date.now();
+        const marker = `qa-r9-9-${ts}`;
+        const currency = users.currency ?? 'USD';
+
+        for (const lang of STAFF_LANGS) {
+          await withLang(teller, lang);
+          await teller.goto(`/desk?branch=${encodeURIComponent(users.branch)}`);
+          await expect(
+            teller.locator(`select[name="currency"] option[value="${currency}"]`),
+            `[${lang}] rate for ${currency} loaded in desk_config (rate/step.tsx:81)`,
+          ).toHaveCount(1, { timeout: 20_000 });
+
+          // Step 0 -> Step 1 (rate/step.tsx:62-94,136).
+          const quoteRes = await posted(teller, /^\/api\/quotes$/, async () => {
+            await teller.locator('select[name="type"]').selectOption('BUY');
+            await teller.locator('select[name="currency"]').selectOption(currency);
+            await teller.locator('input[name="amount"]').fill(EXCHANGE_AMOUNT);
+          });
+          expect(quoteRes.ok, `[${lang}] POST /api/quotes: ${quoteRes.text}`).toBeTruthy();
+          await expect(teller.locator('.desk-rate-line strong')).toBeVisible({ timeout: 15_000 });
+          await teller
+            .getByRole('button', { name: /ถัดไป · พาสปอร์ต \/ ลูกค้า|Next · Passport \/ customer/ })
+            .click();
+
+          const nameInput = teller.locator('input[name="name"]'); // customer/step.tsx:211
+          const passportNoInput = teller.locator('input[name="passportNo"]'); // customer/step.tsx:215
+          const nationalitySelect = teller.locator('select[name="nationality"]'); // customer/step.tsx:219
+          const passportFileInput = teller.locator('input[name="passport"]'); // customer/step.tsx:185
+          const customerSubmitBtn = teller.locator('form.desk-form button[type="submit"]'); // customer/step.tsx:259
+          const customerError = teller.locator('form.desk-form p.desk-error[role="alert"]'); // customer/step.tsx:250
+
+          await expect(nameInput).toBeVisible({ timeout: 15_000 });
+
+          // Case 1: Customer step submitted without a passport scan/photo (customer/step.tsx:148-150; customer/i18n.ts:21,47).
+          await nameInput.fill(marker);
+          await passportNoInput.fill('P1234567');
+          await nationalitySelect.selectOption('THA');
+          await customerSubmitBtn.click();
+
+          await expect(customerError, `[${lang}] missing passport file must show alert`).toBeVisible({ timeout: 10_000 });
+          const noPhotoText = (await customerError.innerText()).trim();
+          expect(noPhotoText.length).toBeGreaterThan(0);
+          expect(noPhotoText).not.toMatch(RAW_CODE);
+          if (lang === 'th') {
+            expect(noPhotoText).toContain('กรุณาแนบไฟล์สแกนหรือรูปพาสปอร์ตก่อน');
+          } else {
+            expect(noPhotoText).toContain('Please attach a passport scan or photo first');
+          }
+          await expect(nameInput).toHaveValue(marker);
+          await expect(passportNoInput).toHaveValue('P1234567');
+
+          // Case 2: Customer step submitted with passport image attached but missing required passportNo (customer/step.tsx:152-154; customer/i18n.ts:22,48).
+          await passportFileInput.setInputFiles({
+            name: 'passport.png',
+            mimeType: 'image/png',
+            buffer: ONE_PIXEL_PNG,
+          });
+          await passportNoInput.fill('');
+          await customerSubmitBtn.click();
+
+          await expect(customerError, `[${lang}] missing required customer field must show alert`).toBeVisible({
+            timeout: 10_000,
+          });
+          const incompleteText = (await customerError.innerText()).trim();
+          expect(incompleteText.length).toBeGreaterThan(0);
+          expect(incompleteText).not.toMatch(RAW_CODE);
+          if (lang === 'th') {
+            expect(incompleteText).toContain('กรุณากรอกชื่อ เลขพาสปอร์ต และสัญชาติ');
+          } else {
+            expect(incompleteText).toContain('Please fill in the name, passport number and nationality');
+          }
+          await expect(nameInput).toHaveValue(marker);
+
+          // Advance to Step 2 via skip customer so CustomerLoyalty & PhoneVerify mount in aside.desk-summary (Summary.tsx:61, CustomerLoyalty.tsx:13).
+          const skipBtn = teller.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ }); // customer/step.tsx:256
+          const reserveRes = await posted(teller, /^\/api\/rpc$/, () => skipBtn.click());
+          expect(reserveRes.ok, `[${lang}] reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
+
+          const loyaltyBox = teller.locator('.desk-loyalty'); // CustomerLoyalty.tsx:13
+          await expect(loyaltyBox).toBeVisible({ timeout: 15_000 });
+          const phoneInput = loyaltyBox.locator('input[name="phone"]'); // PhoneVerify.tsx:125
+          const sendCodeBtn = loyaltyBox.locator('button[name="sendCode"]'); // PhoneVerify.tsx:133
+          const phoneAlert = loyaltyBox.locator('p.desk-error[role="alert"]'); // PhoneVerify.tsx:162
+
+          // Case 3: customerPhoneStart (POST /api/customers/{id}/phone-verifications) with malformed phone (PhoneVerify.tsx:71,86,125,133,162).
+          const badPhone = `bad-phone-${ts}`;
+          await phoneInput.fill(badPhone);
+          const badPhoneRes = await posted(
+            teller,
+            /^\/api\/customers\/[^/]+\/phone-verifications$/,
+            () => sendCodeBtn.click(),
+          );
+          expect(badPhoneRes.ok, `[${lang}] malformed phone must be refused: ${badPhoneRes.text}`).toBe(false);
+          await expect(phoneAlert, `[${lang}] malformed phone alert must be visible`).toBeVisible({ timeout: 10_000 });
+          const badPhoneText = (await phoneAlert.innerText()).trim();
+          expect(badPhoneText.length).toBeGreaterThan(0);
+          expect(badPhoneText).not.toMatch(RAW_CODE);
+          if (lang === 'th') {
+            expect(badPhoneText).toMatch(/[\u0E00-\u0E7F]/);
+          } else {
+            expect(badPhoneText).toMatch(/[A-Za-z]/);
+          }
+          await expect(phoneInput, `[${lang}] phone input must keep typed value`).toHaveValue(badPhone);
+
+          // Case 4: customerPhoneStart then customerPhoneConfirm (POST /api/customers/{id}/phone-verifications/{challengeId}/confirm)
+          // with a wrong OTP code ('000000'), which must be refused (ticket #4293 §3; PhoneVerify.tsx:74,104,140,150,162; phone/i18n.ts:8,22).
+          const validPhone = TEST_PHONE;
+          await phoneInput.fill(validPhone);
+          const startRes = await posted(
+            teller,
+            /^\/api\/customers\/[^/]+\/phone-verifications$/,
+            () => sendCodeBtn.click(),
+          );
+
+          if (startRes.ok) {
+            const codeInput = loyaltyBox.locator('input[name="code"]'); // PhoneVerify.tsx:140
+            const confirmCodeBtn = loyaltyBox.locator('button[name="confirmCode"]'); // PhoneVerify.tsx:150
+            await expect(codeInput, `[${lang}] OTP code input must appear after customerPhoneStart`).toBeVisible({
+              timeout: 10_000,
+            });
+            await codeInput.fill('000000');
+
+            const confirmRes = await posted(
+              teller,
+              /^\/api\/customers\/[^/]+\/phone-verifications\/[^/]+\/confirm$/,
+              () => confirmCodeBtn.click(),
+            );
+            expect(confirmRes.ok, `[${lang}] wrong OTP code '000000' must be refused`).toBe(false);
+            await expect(phoneAlert, `[${lang}] wrong OTP alert must be visible`).toBeVisible({ timeout: 10_000 });
+            const wrongCodeText = (await phoneAlert.innerText()).trim();
+            expect(wrongCodeText.length).toBeGreaterThan(0);
+            expect(wrongCodeText).not.toMatch(RAW_CODE);
+            if (lang === 'th') {
+              expect(wrongCodeText).toContain('รหัส OTP ไม่ถูกต้อง');
+            } else {
+              expect(wrongCodeText).toContain('Incorrect OTP code');
+            }
+            await expect(codeInput, `[${lang}] code input must preserve wrong OTP`).toHaveValue('000000');
+          } else {
+            // If SMS service is unavailable on the host (503 smsUnavailable, phone/i18n.ts:11,25), assert worded alert and input preservation.
+            // Any other refusal is a failure, not a reason to skip the wrong-OTP case (phone_verification_service.rs:84).
+            expect(startRes.text, `[${lang}] customerPhoneStart refused for a reason other than smsUnavailable`).toMatch(/^503 .*smsUnavailable/s);
+            console.log(`[R9-9] [${lang}] SMS unavailable on this host: wrong-OTP confirm not reachable (${startRes.text})`);
+            await expect(phoneAlert, `[${lang}] SMS refusal alert must be visible`).toBeVisible({ timeout: 10_000 });
+            const smsErrText = (await phoneAlert.innerText()).trim();
+            expect(smsErrText.length).toBeGreaterThan(0);
+            expect(smsErrText).not.toMatch(RAW_CODE);
+            await expect(phoneInput).toHaveValue(validPhone);
+          }
+        }
+        await shot(teller, 'desk', 'r9-9-invalid-inputs');
+      } finally {
+        if (started === 'started') await cutOff(manager);
+        await teller.goto('/staff');
+        await manager.goto('/staff');
+        await closeShift(teller, manager);
+      }
+    } finally {
+      await teller.close().catch(() => {});
+      await manager.close().catch(() => {});
+    }
   });
 
   test('(c) permission: customer has no desk and cannot execute desk draft, referral, counter, or phone verification commands', async ({
