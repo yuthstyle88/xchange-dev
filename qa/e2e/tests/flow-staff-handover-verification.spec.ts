@@ -352,12 +352,18 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
           managerUserId,
         );
 
-        // Invalid Case 4: decimal quantity (`1.5`) with valid receiver -> refused with worded message, form keeps `1.5`.
+        // Invalid Case 4: decimal quantity (`1.5`) with valid receiver -> refused at the row, no POST sent, form keeps `1.5`.
         await thbInput.fill('1.5');
-        const decRes = await posted(teller, /^\/api\/handovers$/, () => saveBtn.click());
-        expect(decRes.ok, `decimal quantity POST /api/handovers must be refused (${lang}): ${decRes.text}`).toBeFalsy();
-        await expect(errEl, `shift-error visible on decimal quantity (${lang})`).toBeVisible({ timeout: 10_000 });
-        const decErrText = await errEl.innerText();
+        handoverCalls = 0;
+        await teller.route('**/api/handovers', (route) => {
+          handoverCalls++;
+          return route.abort();
+        });
+        await saveBtn.click();
+        expect(handoverCalls, `[${lang}] no request sent for decimal handover quantity`).toBe(0);
+        await teller.unroute('**/api/handovers');
+        await expect(thbRowError, `row error visible on decimal quantity (${lang})`).toBeVisible({ timeout: 10_000 });
+        const decErrText = await thbRowError.innerText();
         expectWordedRefusal(decErrText, `decimal quantity (${lang})`);
         await expect(thbInput, `form keeps 1.5 after refusal (${lang})`).toHaveValue('1.5');
 

@@ -56,9 +56,6 @@ import {
 //   - web/src/screens/desk/queue/counter/CounterBar.tsx:68-74,114-139,151-157 (`button[name="issueWalkIn"]`, `button[name="openQueue"]`, `button[name="closeQueue"]`, `.desk-error[role="alert"]`)
 //   - web/src/screens/desk/bookings/DeskBookingsScreen.tsx:368-380,522-535,601-615,618-860,863-1023 (`[data-screen="desk-bookings"]`, `input[name="date"]`, `[data-action="new-booking"]`, `.xc-modal-overlay`, `select[name="currency"]`, `input[name="quantity"]`, `[data-action="submit-booking"]`, `[role="alert"].field-error`, `[data-booking-id]`, `[data-action="cancel"]`, `input[name="reason"]`, `[data-action="confirm-cancel"]`, `[data-action="reschedule"]`, `select[name="targetSlotId"]`, `[data-action="confirm-reschedule"]`, `[role="alert"].xc-error-banner`)
 
-const TINY_PNG_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-
 const EXCHANGE_AMOUNT = '1';
 
 interface TransactionAnswer {
@@ -208,21 +205,20 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         const reserveRes = await manager.request.post('/api/rpc', {
           headers: { 'Idempotency-Key': `${runMarker}-reserve-hold-cust` },
           data: {
-            method: 'reserveCustomer',
-            params: {
-              branch: users.branch,
-              docType: 'PASSPORT',
-              identityKey: `WALK-IN-${runMarker}`,
-              fullName: `Hold Validation ${runMarker}`,
-              nationality: 'TH',
-              country: 'TH',
-              imageBase64: TINY_PNG_DATA_URL,
+            action: 'reserveCustomer',
+            payload: {
+              name: `Hold Validation ${runMarker}`,
+              passportNo: `WALK-IN-${runMarker}`,
+              nationality: 'THA',
+              birthDate: '1990-01-01',
+              passportExpiry: '2030-01-01',
+              mode: 'LIVE',
             },
           },
         });
         expect(reserveRes.ok(), `reserveCustomer for hold validation: ${reserveRes.status()}`).toBeTruthy();
-        const reservedJson = (await reserveRes.json()) as { result?: { id?: string }; id?: string };
-        const customerId = String(reservedJson.result?.id ?? reservedJson.id ?? '');
+        const reservedJson = (await reserveRes.json()) as { customerId?: string; result?: { id?: string }; id?: string };
+        const customerId = String(reservedJson.customerId ?? reservedJson.result?.id ?? reservedJson.id ?? '');
         expect(customerId, 'reserved customerId').not.toBe('');
 
         for (const lang of STAFF_LANGS) {
