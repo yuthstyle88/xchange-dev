@@ -128,6 +128,12 @@ const STALE_MINUTES_ERR = {
   en: 'Enter a positive integer up to 2,147,483,647',
 } as const;
 
+// Field error for minQuantity in floor-row (AlertSettings.tsx:168; alert-settings/i18n.ts:17,37).
+const FLOOR_QUANTITY_ERR = {
+  th: 'กรุณาระบุสต็อกขั้นต่ำไม่ติดลบ ทศนิยมไม่เกิน 4 ตำแหน่ง',
+  en: 'Enter a non-negative number with up to 4 decimal places',
+} as const;
+
 /** Waits for one PUT whose path matches while `act` runs; mirrors `posted` (`helpers.ts:365-371`) for PUT commands. */
 async function putted(
   page: Page,
@@ -1021,12 +1027,23 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
         await expect(minutesErr, `case 1 worded refusal (${lang})`).toHaveText(STALE_MINUTES_ERR[lang]);
         await expect(staleInput).toHaveValue('0');
 
-        // Case 2: negative staleDataMinutes ("-10") -> 400 validationFailed (branch_alert_settings_save.rs:60-66)
+        // Case 2: negative staleDataMinutes ("-10") -> refused at field (AlertSettings.tsx:155), no POST
         await staleInput.fill('-10');
-        const negStaleRes = await posted(page, ROUTE_BRANCH_ALERT_SETTINGS_SAVE, () => saveBtn.click());
-        expect(negStaleRes.ok).toBeFalsy();
-        expect(negStaleRes.text).toMatch(/^400\b/);
-        await expect(errorAlert).toHaveText(BRANCH_ALERT_REFUSALS.staleMinutesNonPositive);
+        let negPosts = 0;
+        const onNegReq = (req: { method(): string; url(): string }) => {
+          if (req.method() === 'POST' && ROUTE_BRANCH_ALERT_SETTINGS_SAVE.test(new URL(req.url()).pathname)) {
+            negPosts++;
+          }
+        };
+        page.on('request', onNegReq);
+        try {
+          await saveBtn.click();
+        } finally {
+          page.off('request', onNegReq);
+        }
+        expect(negPosts, `case 2 negative staleDataMinutes sends no POST (${lang})`).toBe(0);
+        await expect(minutesErr, `case 2 worded field error (${lang})`).toBeVisible({ timeout: 10_000 });
+        await expect(minutesErr, `case 2 worded refusal (${lang})`).toHaveText(STALE_MINUTES_ERR[lang]);
         await expect(staleInput).toHaveValue('-10');
         await staleInput.fill(origStale);
 
@@ -1038,24 +1055,48 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
         const usdFloorInput = screen.locator('[data-floor="USD"] input[type="text"]');
         await expect(screen.locator('[data-floor="USD"] button.remove-floor-button')).toHaveText(i18n.removeFloor);
 
-        // Case 3: negative floor minQuantity ("-50") -> 400 validationFailed (branch_alert_settings_save.rs:79-83, org_view.rs:98)
+        // Case 3: negative floor minQuantity ("-50") -> refused at field (AlertSettings.tsx:167), no POST
         await usdFloorInput.fill('-50');
-        const negFloorRes = await posted(page, ROUTE_BRANCH_ALERT_SETTINGS_SAVE, () => saveBtn.click());
-        expect(negFloorRes.ok).toBeFalsy();
-        expect(negFloorRes.text).toMatch(/^400\b/);
-        await expect(errorAlert).toHaveText(BRANCH_ALERT_REFUSALS.invalidFloorDecimal);
+        let negFloorPosts = 0;
+        const onNegFloorReq = (req: { method(): string; url(): string }) => {
+          if (req.method() === 'POST' && ROUTE_BRANCH_ALERT_SETTINGS_SAVE.test(new URL(req.url()).pathname)) {
+            negFloorPosts++;
+          }
+        };
+        page.on('request', onNegFloorReq);
+        try {
+          await saveBtn.click();
+        } finally {
+          page.off('request', onNegFloorReq);
+        }
+        expect(negFloorPosts, `case 3 negative floor minQuantity sends no POST (${lang})`).toBe(0);
+        const usdFloorErr = screen.locator('[data-floor="USD"] .alert-settings-error');
+        await expect(usdFloorErr, `case 3 floor worded error (${lang})`).toBeVisible({ timeout: 10_000 });
+        await expect(usdFloorErr, `case 3 floor worded refusal (${lang})`).toHaveText(FLOOR_QUANTITY_ERR[lang]);
         await expect(usdFloorInput).toHaveValue('-50');
 
-        // Case 4: too many decimals on floor minQuantity ("100.12345", scale > 4) -> 400 validationFailed (branch_alert_settings_save.rs:79-83)
+        // Case 4: too many decimals on floor minQuantity ("100.12345", scale > 4) -> refused at field (AlertSettings.tsx:167), no POST
         await usdFloorInput.fill('100.12345');
-        const scaleFloorRes = await posted(page, ROUTE_BRANCH_ALERT_SETTINGS_SAVE, () => saveBtn.click());
-        expect(scaleFloorRes.ok).toBeFalsy();
-        expect(scaleFloorRes.text).toMatch(/^400\b/);
-        await expect(errorAlert).toHaveText(BRANCH_ALERT_REFUSALS.invalidFloorDecimal);
+        let scaleFloorPosts = 0;
+        const onScaleFloorReq = (req: { method(): string; url(): string }) => {
+          if (req.method() === 'POST' && ROUTE_BRANCH_ALERT_SETTINGS_SAVE.test(new URL(req.url()).pathname)) {
+            scaleFloorPosts++;
+          }
+        };
+        page.on('request', onScaleFloorReq);
+        try {
+          await saveBtn.click();
+        } finally {
+          page.off('request', onScaleFloorReq);
+        }
+        expect(scaleFloorPosts, `case 4 too many decimals floor minQuantity sends no POST (${lang})`).toBe(0);
+        await expect(usdFloorErr, `case 4 floor worded error (${lang})`).toBeVisible({ timeout: 10_000 });
+        await expect(usdFloorErr, `case 4 floor worded refusal (${lang})`).toHaveText(FLOOR_QUANTITY_ERR[lang]);
         await expect(usdFloorInput).toHaveValue('100.12345');
         await usdFloorInput.fill(origFloors.find((f) => f.currency === 'USD')?.minQuantity ?? '1000');
 
-        // Case 5: unknown floor currency ("ZZZ") -> 400 validationFailed (branch_alert_settings_save.rs:96-102)
+        // Case 5: unknown floor currency ("ZZZ" with minQuantity "10") passes client check (/^[A-Z]{3}$/, valid decimal);
+        // refused by server -> 400 validationFailed (branch_alert_settings_save.rs:96-102)
         await addCurrencyInput.fill('ZZZ');
         await addFloorBtn.click();
         const zzzFloorInput = screen.locator('[data-floor="ZZZ"] input[type="text"]');
