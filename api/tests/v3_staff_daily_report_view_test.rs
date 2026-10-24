@@ -1426,8 +1426,17 @@ async fn the_safe_is_the_days_last_verified_safe_count() {
             None => assert!(got.is_null(), "USD {key}: {report}"),
         }
     }
-    for key in ["safeCounted", "safeExpected", "safeDifference"] {
-        assert!(row(&report, "EUR")[key].is_null(), "EUR {key}: {report}");
+    for (key, column) in [
+        ("safeCounted", "counted"),
+        ("safeExpected", "expected"),
+        ("safeDifference", "difference"),
+    ] {
+        let want = d.summed(column, &[last.as_str()], "EUR").await;
+        let got = &row(&report, "EUR")[key];
+        match want {
+            Some(want) => assert_eq!(number(got, key), want, "EUR {key}: {report}"),
+            None => assert!(got.is_null(), "EUR {key}: {report}"),
+        }
     }
     let other = d.report(&reader, Some(day().pred_opt().unwrap())).await;
     for key in ["safeCounted", "safeExpected", "safeDifference"] {

@@ -2,6 +2,7 @@
 
 pub mod approval;
 pub mod count;
+pub mod denominations;
 pub mod handover;
 pub mod ledger_approval;
 pub mod reconcile;

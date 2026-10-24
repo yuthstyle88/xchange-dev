@@ -25,6 +25,7 @@ use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 
 use crate::application::approval::{TransferApprovalPolicy, TransferApprovalSubject, policy_actor};
+use crate::application::denominations::face_values_in;
 use crate::domain::ledger::posting::{SourceRef, SourceType};
 use crate::domain::posting::{CashPlace, CashPostings, differences};
 use crate::domain::transfer::cash_transfer::{
@@ -478,6 +479,8 @@ impl TransferFlow {
         // `ledger_entries.quantity_signed numeric(20,4)` (`migrations/20261110120000_ledger.sql:34`):
         // |v| < 10^16 units = < 10^18 hundredths.
         const LEDGER_QUANTITY_MINOR_BOUND: IntBound = IntBound::integer(0, 999_999_999_999_999_999);
+        let denom_ids: Vec<i64> = cmd.lines.iter().map(|l| l.denomination_id).collect();
+        let denoms = face_values_in(tx, &denom_ids).await?;
         let mut seen_denominations: HashSet<i64> = HashSet::with_capacity(cmd.lines.len());
         let mut totals: HashMap<CurrencyCode, i64> = HashMap::new();
         for line in &cmd.lines {
@@ -488,13 +491,7 @@ impl TransferFlow {
                 )));
             }
 
-            let row: Option<(Decimal, String)> =
-                sqlx::query_as("SELECT face_value, currency_code FROM denominations WHERE id = $1")
-                    .bind(line.denomination_id)
-                    .fetch_optional(&mut **tx)
-                    .await?;
-
-            let (face_dec, denom_currency) = match row {
+            let &(face_dec, ref denom_currency) = match denoms.get(&line.denomination_id) {
                 Some(r) => r,
                 None => {
                     return Err(AppError::NotFound {
