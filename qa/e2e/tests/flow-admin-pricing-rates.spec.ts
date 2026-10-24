@@ -122,6 +122,12 @@ const BRANCH_ALERT_REFUSALS = {
   unknownCurrency: (code: string) => `currency ${code} not in currencies`,
 } as const;
 
+// Field error for #stale-data-minutes (AlertSettings.tsx:158; alert-settings/i18n.ts:15,32).
+const STALE_MINUTES_ERR = {
+  th: 'กรุณาระบุจำนวนนาทีเป็นจำนวนเต็มบวกไม่เกิน 2,147,483,647',
+  en: 'Enter a positive integer up to 2,147,483,647',
+} as const;
+
 /** Waits for one PUT whose path matches while `act` runs; mirrors `posted` (`helpers.ts:365-371`) for PUT commands. */
 async function putted(
   page: Page,
@@ -995,12 +1001,24 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
         await expect(addFloorBtn).toHaveText(i18n.addFloor);
         await expect(saveBtn).toHaveText(i18n.save);
 
-        // Case 1: zero staleDataMinutes ("0") -> 400 validationFailed (branch_alert_settings_save.rs:60-66)
+        // Case 1: zero staleDataMinutes ("0") -> refused at field (AlertSettings.tsx:158), no POST
         await staleInput.fill('0');
-        const zeroRes = await posted(page, ROUTE_BRANCH_ALERT_SETTINGS_SAVE, () => saveBtn.click());
-        expect(zeroRes.ok).toBeFalsy();
-        expect(zeroRes.text).toMatch(/^400\b/);
-        await expect(errorAlert).toHaveText(BRANCH_ALERT_REFUSALS.staleMinutesNonPositive);
+        let zeroPosts = 0;
+        const onZeroReq = (req: { method(): string; url(): string }) => {
+          if (req.method() === 'POST' && ROUTE_BRANCH_ALERT_SETTINGS_SAVE.test(new URL(req.url()).pathname)) {
+            zeroPosts++;
+          }
+        };
+        page.on('request', onZeroReq);
+        try {
+          await saveBtn.click();
+        } finally {
+          page.off('request', onZeroReq);
+        }
+        expect(zeroPosts, `case 1 zero staleDataMinutes sends no POST (${lang})`).toBe(0);
+        const minutesErr = screen.locator('.alert-settings-field .alert-settings-error');
+        await expect(minutesErr, `case 1 worded field error (${lang})`).toBeVisible({ timeout: 10_000 });
+        await expect(minutesErr, `case 1 worded refusal (${lang})`).toHaveText(STALE_MINUTES_ERR[lang]);
         await expect(staleInput).toHaveValue('0');
 
         // Case 2: negative staleDataMinutes ("-10") -> 400 validationFailed (branch_alert_settings_save.rs:60-66)

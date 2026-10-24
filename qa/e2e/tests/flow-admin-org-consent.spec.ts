@@ -5,20 +5,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { hasAccount, mePermissions, shot, signIn, users, withLang } from './helpers';
 
-// Expected i18n copy for branch profile (`web/src/screens/admin/branches/i18n.ts:28-30, 75-77`).
-const BRANCH_TEXTS = {
-  th: {
-    timezoneRequired: 'กรุณากรอกเขตเวลา', // web/src/screens/admin/branches/i18n.ts:28
-    codeConflict: 'รหัสสาขาซ้ำกับสาขาอื่น', // web/src/screens/admin/branches/i18n.ts:29
-    saved: 'บันทึกข้อมูลสาขาเรียบร้อยแล้ว', // web/src/screens/admin/branches/i18n.ts
-  },
-  en: {
-    timezoneRequired: 'Timezone is required', // web/src/screens/admin/branches/i18n.ts:75
-    codeConflict: 'Branch code is already used by another branch', // web/src/screens/admin/branches/i18n.ts:76
-    saved: 'Branch profile saved successfully', // web/src/screens/admin/branches/i18n.ts
-  },
-} as const;
-
 // Expected i18n copy for consent and retention (`web/src/screens/admin/consent/i18n.ts:7, 10, 22, 25`).
 const CONSENT_TEXTS = {
   th: {
@@ -72,7 +58,7 @@ async function restoreBranchForm(page: Page, orig: StoredBranchProfile): Promise
 
   await codeInput.fill(orig.code);
   await addressInput.fill(orig.address);
-  await timezoneInput.fill(orig.timezone);
+  await timezoneInput.selectOption(orig.timezone);
   await bookingInput.setChecked(orig.bookingEnabled);
 
   const putPromise = page.waitForResponse(
@@ -170,14 +156,13 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
         await page.reload();
         await openBranchesAsAdmin(page);
 
-        // Case 1: whitespace-only timezone (`#branch-timezone`, `BranchesScreen.tsx:185-189, 309`).
-        // Whitespace satisfies HTML5 `required` (`:315`) and triggers `handleSave`'s `!timezone().trim()` check (`:186`).
-        await timezoneInput.fill('   ');
-        await submitBtn.click();
-        await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-        await expect(errorAlert).toHaveText(BRANCH_TEXTS[lang].timezoneRequired);
-        await expect(timezoneInput, `${lang}: #branch-timezone keeps typed whitespace`).toHaveValue('   ');
-        await timezoneInput.fill(orig.timezone);
+        // Case 1: timezone is a <select> (#4939); holds a real zone and cannot be emptied.
+        const currentTz = await timezoneInput.inputValue();
+        expect(currentTz, `${lang}: #branch-timezone holds a real zone`).toMatch(/^[A-Za-z_]+(?:\/[A-Za-z_]+)+$/);
+        const hasEmptyOption = await timezoneInput.locator('option[value=""]').count();
+        expect(hasEmptyOption, `${lang}: #branch-timezone cannot be emptied`).toBe(0);
+        const isRequired = await timezoneInput.evaluate((el: HTMLSelectElement) => el.required);
+        expect(isRequired, `${lang}: #branch-timezone select is required`).toBe(true);
 
         // Case 2: whitespace-only branch code (`#branch-code`, `BranchesScreen.tsx:205, 286`;
         // `api/crates/xc-rate/src/application/branch/service.rs:237-239` refuses empty trimmed code).
