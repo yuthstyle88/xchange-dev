@@ -22,7 +22,9 @@ use super::error::V3Error;
 use super::view::{authenticate_caller, parse_branch, require_branch};
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::pg_store::PgIdempotencyStore;
-use crate::infrastructure::idempotency::store::{Claim, IdempotencyKey, IdempotencyStore};
+use crate::infrastructure::idempotency::store::{
+    Claim, IdempotencyKey, IdempotencyStore, idempotency_key_length_ok,
+};
 use crate::presentation::extractors::app_session::{
     AppSessionCookie, AppSessionGuard, DRAFT_WRITES_PER_MINUTE,
 };
@@ -267,7 +269,7 @@ async fn handle_command<C: CommandAction>(
     // Step 3: Check Idempotency-Key header
     let raw_key = match req.headers().get("idempotency-key") {
         Some(val) => match val.to_str() {
-            Ok(s) if !s.trim().is_empty() => s.to_string(),
+            Ok(s) if idempotency_key_length_ok(s) => s.to_string(),
             _ => {
                 return V3Error::new(
                     "validationFailed",

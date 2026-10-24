@@ -25,6 +25,7 @@ use xc_verification::domain::case::reviewer_actor::{ReviewerActor, ReviewerScope
 use xc_verification::infrastructure::pg_case_repository::PgCaseRepository;
 
 use crate::bootstrap::AppState;
+use crate::infrastructure::idempotency::store::idempotency_key_length_ok;
 use crate::presentation::extractors::origin::same_origin;
 use crate::presentation::pages;
 
@@ -179,7 +180,7 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
         .and_then(|v| v.to_str().ok())
         .map(|k| k.trim())
     {
-        Some(k) if !k.is_empty() && key_shape_ok(k) => k.to_string(),
+        Some(k) if idempotency_key_length_ok(k) && key_shape_ok(k) => k.to_string(),
         _ => return refuse(400, "badRequest", "Missing Idempotency-Key header"),
     };
 

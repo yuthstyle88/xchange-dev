@@ -9,6 +9,12 @@ use serde::{Deserialize, Serialize};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+pub const MAX_IDEMPOTENCY_KEY_BYTES: usize = 128;
+
+pub fn idempotency_key_length_ok(key: &str) -> bool {
+    !key.trim().is_empty() && key.len() <= MAX_IDEMPOTENCY_KEY_BYTES
+}
+
 /// An idempotency key identifying a unique command invocation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IdempotencyKey(String);
