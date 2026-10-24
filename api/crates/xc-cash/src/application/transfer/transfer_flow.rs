@@ -455,6 +455,26 @@ impl TransferFlow {
             return Ok(t);
         }
 
+        if let Some((shift_id, branch)) = cmd
+            .from_shift
+            .as_deref()
+            .map(|s| (s, &cmd.from_branch))
+            .or_else(|| {
+                cmd.to_shift
+                    .as_deref()
+                    .map(|s| (s, cmd.to_branch.as_ref().unwrap_or(&cmd.from_branch)))
+            })
+        {
+            let shift_teller: Option<String> = sqlx::query_scalar(
+                "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
+            )
+            .bind(shift_id)
+            .bind(branch.as_str())
+            .fetch_optional(&mut **tx)
+            .await?;
+            let _ = shift_teller.ok_or(ShiftError::NoOpenShift)?;
+        }
+
         // `ledger_entries.quantity_signed numeric(20,4)` (`migrations/20261110120000_ledger.sql:34`):
         // |v| < 10^16 units = < 10^18 hundredths.
         const LEDGER_QUANTITY_MINOR_BOUND: IntBound = IntBound::integer(0, 999_999_999_999_999_999);
