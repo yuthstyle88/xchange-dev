@@ -125,6 +125,15 @@ impl Db {
             .execute(&self.pool)
             .await
             .expect("insert a branch of the organisation");
+        sqlx::query(
+            "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+             VALUES ($1::uuid, $2, 1000000, 'test', now())",
+        )
+        .bind(ORG)
+        .bind(&id)
+        .execute(&self.pool)
+        .await
+        .expect("a count-difference limit");
         lg4_fund_safe(&self.pool, &id, "THB", "1000000.00").await;
         BranchId::new(id)
     }
@@ -974,29 +983,38 @@ async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str
     use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
     use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
     let mut tx = pool.begin().await.expect("begin");
+    let source = SourceRef {
+        source_type: SourceType::Opening,
+        source_id: format!(
+            "lg4-fund:{branch}:{currency}:{}",
+            LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ),
+        source_key: "fund".to_string(),
+    };
+    let mut reqs = vec![PostingRequest {
+        from: CashPlace::Customer,
+        to: CashPlace::Safe(BranchId::new(branch)),
+        currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+        quantity: xc_kernel::money::ForeignAmount::from_decimal(amount.parse().expect("an amount")),
+        source: source.clone(),
+        line: None,
+        reverses: None,
+    }];
+    if currency != "THB" {
+        reqs.push(PostingRequest {
+            from: CashPlace::Bank,
+            to: CashPlace::Customer,
+            currency: xc_kernel::money::CurrencyCode::THB,
+            quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                amount.parse::<Decimal>().expect("an amount") * d("32.10"),
+            ),
+            source,
+            line: None,
+            reverses: None,
+        });
+    }
     xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
-        .post_in(
-            &mut tx,
-            &[PostingRequest {
-                from: CashPlace::Bank,
-                to: CashPlace::Safe(BranchId::new(branch)),
-                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
-                quantity: xc_kernel::money::ForeignAmount::from_decimal(
-                    amount.parse().expect("an amount"),
-                ),
-                source: SourceRef {
-                    source_type: SourceType::Opening,
-                    source_id: format!(
-                        "lg4-fund:{branch}:{currency}:{}",
-                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                    ),
-                    source_key: "fund".to_string(),
-                },
-                line: None,
-                reverses: None,
-            }],
-            None,
-        )
+        .post_in(&mut tx, &reqs, None)
         .await
         .expect("fund the safe through the ledger");
     tx.commit().await.expect("commit");

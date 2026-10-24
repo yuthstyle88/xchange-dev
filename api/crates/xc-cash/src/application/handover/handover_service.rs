@@ -6,6 +6,11 @@ use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use xc_approval::application::approval_service::ApprovalService;
+use xc_approval::application::registry::ApprovalRegistry;
+use xc_approval::domain::approval_repository::ApprovalRepository;
+use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, QuantityDelta};
@@ -17,13 +22,17 @@ use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
 
 use crate::application::count::CashCountService;
-use crate::application::count::count_service::{held_of, post_opening_in};
+use crate::application::count::count_service::{held_of, post_difference_in, post_opening_in};
+use crate::application::ledger_approval::count_difference::{
+    COUNT_DIFFERENCE, CountDifferenceGate, GateResult,
+};
 use crate::domain::count::{CashCount, CountKind, CountLine};
 use crate::domain::error::CashError;
 use crate::domain::handover::{Handover, HandoverError, HandoverStatus};
 use crate::domain::person_rules::PersonRules;
 use crate::domain::posting::CashPlace;
 use crate::domain::repository::{CashRepository, CountTotal};
+use crate::infrastructure::inventory::repository::PgInventoryRepository;
 
 pub struct StartHandover {
     pub branch: BranchId,
@@ -37,6 +46,8 @@ pub struct StartHandover {
 pub struct HandoverService {
     pool: PgPool,
     counts: CashCountService,
+    gate: Arc<CountDifferenceGate>,
+    approvals_repo: Arc<PgApprovalRepository>,
 }
 
 fn dom(e: impl ToString) -> AppError {
@@ -62,9 +73,25 @@ type Row = (
 
 impl HandoverService {
     pub fn pg(pool: PgPool) -> Self {
+        let mut registry = ApprovalRegistry::new();
+        crate::application::ledger_approval::count_difference::register(
+            &mut registry,
+            pool.clone(),
+        );
+        let approvals_repo = Arc::new(PgApprovalRepository::new(pool.clone()));
+        let audit_log = Arc::new(PgAuditLog::new(pool.clone()));
+        let approvals = Arc::new(ApprovalService::new(
+            registry,
+            approvals_repo.clone(),
+            audit_log,
+        ));
+        let inventory = Arc::new(PgInventoryRepository::new(pool.clone()));
+        let gate = Arc::new(CountDifferenceGate::new(approvals, inventory));
         Self {
             counts: CashCountService::pg(pool.clone()),
             pool,
+            gate,
+            approvals_repo,
         }
     }
 
@@ -120,9 +147,23 @@ impl HandoverService {
 
     pub async fn accept(&self, actor: &Actor, id: &str, now: DateTime<Utc>) -> AppResult<Handover> {
         let mut tx = self.pool.begin().await?;
-        let handover = self.accept_in(&mut tx, actor, id, now).await?;
-        tx.commit().await?;
-        Ok(handover)
+        match self.accept_in(&mut tx, actor, id, now).await {
+            Ok(handover) => {
+                tx.commit().await?;
+                Ok(handover)
+            }
+            Err(AppError::Domain(ref msg))
+                if msg.starts_with(
+                    CashError::AwaitingFinance(String::new())
+                        .to_string()
+                        .as_str(),
+                ) =>
+            {
+                tx.commit().await?;
+                Err(AppError::Domain(msg.clone()))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Q3: true when the user holds an OPEN shift of their own, or is the
@@ -547,6 +588,7 @@ impl HandoverService {
         }
         let mut updated = Vec::new();
         let (mut counted, mut diffs, mut handed) = (Vec::new(), Vec::new(), Vec::new());
+        let mut diff_postings = Vec::new();
         let mut delta_pairs = Vec::new();
         for t in totals {
             let diff = t.counted - t.expected.unwrap_or(Decimal::ZERO);
@@ -564,12 +606,83 @@ impl HandoverService {
                 counted.push((t.currency.clone(), t.counted));
                 handed.push((code, t.counted));
             }
+            diff_postings.push((code, diff));
             diffs.push((t.currency.clone(), t.counted, diff));
             updated.push(CountTotal {
                 difference: Some(diff),
                 ..t
             });
         }
+        for t in &updated {
+            sqlx::query(
+                "INSERT INTO cash_count_totals (count_id, organization_id, currency, counted, expected, difference, created_at) \
+                 VALUES ($1::uuid, (SELECT organization_id FROM cash_counts WHERE id = $1::uuid), $2, $3::numeric, $4::numeric, $5::numeric, $6) \
+                 ON CONFLICT (count_id, currency) DO UPDATE SET expected = $4::numeric, difference = $5::numeric, counted = $3::numeric",
+            )
+            .bind(&h.count_id)
+            .bind(&t.currency)
+            .bind(t.counted)
+            .bind(t.expected)
+            .bind(t.difference)
+            .bind(now)
+            .execute(&mut **tx)
+            .await?;
+        }
+        let count = repo
+            .find_count_by_id(&mut *tx, &h.count_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound {
+                entity: "cash_count",
+                id: h.count_id.clone(),
+            })?;
+        let key = format!("count-difference:{}", h.count_id);
+        let existing_req = self
+            .approvals_repo
+            .find_by_type_and_key(&mut *tx, COUNT_DIFFERENCE, &key)
+            .await?;
+        if let Some(req) = existing_req {
+            match req.status.as_str() {
+                "APPROVED" => {}
+                "REJECTED" => {
+                    return Err(CashError::RejectedByFinance(req.id.to_string()).into());
+                }
+                "PENDING" => {
+                    return Err(CashError::AwaitingFinance(req.id.to_string()).into());
+                }
+                other => {
+                    return Err(AppError::Internal(format!(
+                        "unexpected approval request status: {other}"
+                    )));
+                }
+            }
+        } else {
+            let by = Actor::new(
+                &actor.user_id,
+                &count.organization_id,
+                vec![ScopedRole::new(
+                    Role::BranchManager,
+                    Some(count.branch_id.clone()),
+                    DateTime::<Utc>::UNIX_EPOCH,
+                    None,
+                )],
+                None,
+            );
+            match self.gate.check_in(&mut *tx, &count, &by).await? {
+                GateResult::Clear => {}
+                GateResult::AwaitingFinance(req_id) => {
+                    return Err(CashError::AwaitingFinance(req_id.to_string()).into());
+                }
+            }
+        }
+        post_difference_in(
+            self.counts.postings().as_ref(),
+            tx,
+            &h.from_shift_id,
+            &h.branch_id,
+            &diff_postings,
+            &h.count_id,
+        )
+        .await?;
         if !delta_pairs.is_empty() {
             let exc = CashException {
                 id: format!("EX-{}", uuid::Uuid::new_v4()),

@@ -303,6 +303,16 @@ async fn opened_shift(room: &Room) -> (Who, String, String) {
 }
 
 async fn started_handover_for(room: &Room, receiver_branch: &str) -> (Who, Who, String, String) {
+    sqlx::query(
+        "INSERT INTO cash_limits (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+         VALUES ($1::uuid, $2, 1000000, 'test', now()) \
+         ON CONFLICT (organization_id, branch_id) DO NOTHING",
+    )
+    .bind(ORG)
+    .bind(B01)
+    .execute(&room.pool)
+    .await
+    .expect("a count-difference limit");
     let (teller, _, shift) = opened_shift(room).await;
     let receiver = room.person(Role::Teller, Some(receiver_branch)).await;
     let thb1000 = room.denomination("THB", "1000").await;
