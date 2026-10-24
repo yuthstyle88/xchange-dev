@@ -34,6 +34,7 @@ use xc_kiosk::application::kiosk::service::KioskService;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
 use super::commands::make_approval_service;
 use crate::application::settings::PaymentSettingsService;
@@ -51,7 +52,7 @@ use crate::application::workflows::payment_save_step::PaymentSaveStep;
 use crate::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::custody_service::pg_custody_service;
-use crate::infrastructure::devices::device_service::DeviceService;
+use crate::infrastructure::devices::device_service::{COUNT_FIRST, DeviceService};
 use crate::infrastructure::devices::job_ids::UuidJobIds;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::devices::pg_saved_exchanges::PgSavedExchanges;
@@ -147,18 +148,24 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
         tracing::error!(error = %e, "transaction command failed");
         return server_error();
     };
-    let code = m
-        .split(|c: char| c == ':' || c.is_whitespace())
-        .next()
-        .unwrap_or("");
-    let (code, status) = match code {
-        "outOfScope" => ("outOfScope", StatusCode::FORBIDDEN),
-        "staleVersion" => ("staleVersion", StatusCode::CONFLICT),
-        "quoteExpired" => ("quoteExpired", StatusCode::CONFLICT),
-        "idempotencyConflict" => ("idempotencyConflict", StatusCode::CONFLICT),
-        "alreadyPending" => ("alreadyPending", StatusCode::CONFLICT),
-        "countFirst" => ("countFirst", StatusCode::CONFLICT),
-        _ => ("validationFailed", StatusCode::BAD_REQUEST),
+    let (code, status) = if m == ShiftError::NoOpenShift.to_string() {
+        ("noOpenShift", StatusCode::CONFLICT)
+    } else if m == COUNT_FIRST {
+        ("countFirst", StatusCode::CONFLICT)
+    } else {
+        let code = m
+            .split(|c: char| c == ':' || c.is_whitespace())
+            .next()
+            .unwrap_or("");
+        match code {
+            "outOfScope" => ("outOfScope", StatusCode::FORBIDDEN),
+            "staleVersion" => ("staleVersion", StatusCode::CONFLICT),
+            "quoteExpired" => ("quoteExpired", StatusCode::CONFLICT),
+            "idempotencyConflict" => ("idempotencyConflict", StatusCode::CONFLICT),
+            "alreadyPending" => ("alreadyPending", StatusCode::CONFLICT),
+            "countFirst" => ("countFirst", StatusCode::CONFLICT),
+            _ => ("validationFailed", StatusCode::BAD_REQUEST),
+        }
     };
     V3Error::new(code, None, m, status)
 }
