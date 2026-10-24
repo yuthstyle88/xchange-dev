@@ -13,6 +13,7 @@ use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_cash::domain::reservation::port::StockReservations;
 use xc_cash::domain::reservation::stock_reservation::ReleaseReason;
 use xc_cash::infrastructure::stock_reservations::PgStockReservations;
+use xc_exchange::domain::quote::quote::QuoteStatus;
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::transaction::repository::{StatusMove, TransactionStore};
 use xc_exchange::domain::transaction::transaction::{
@@ -101,7 +102,12 @@ impl CancelTransaction {
                 },
             )
             .await?;
-        if let Some(quote) = t.quote_id {
+        if let Some(quote) = t.quote_id
+            && let Some(q) = self.quotes.find_in(tx, quote).await?
+            && (q.status == QuoteStatus::Active
+                || (q.status == QuoteStatus::Accepted
+                    && q.accepted_by_transaction_id == Some(id.0)))
+        {
             self.quotes.cancel_in(tx, quote).await?;
             self.reservations
                 .release_for_quote_in(tx, quote, ReleaseReason::Cancelled)
