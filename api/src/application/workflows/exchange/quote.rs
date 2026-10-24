@@ -278,6 +278,28 @@ impl QuoteService {
             }
         };
 
+        if let Some(cid) = req.customer_id.as_deref() {
+            let customer_org_id: Option<Uuid> =
+                sqlx::query_scalar("SELECT organization_id FROM customers WHERE id = $1")
+                    .bind(cid)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+            match customer_org_id {
+                None => {
+                    return Err(AppError::Domain(format!(
+                        "validationFailed: customerId {cid} not found"
+                    )));
+                }
+                Some(c_org) if c_org != org_id => {
+                    return Err(AppError::Domain(format!(
+                        "outOfScope: customer {cid} is not this branch's organisation's"
+                    )));
+                }
+                Some(_) => {}
+            }
+        }
+
         let ttl_seconds = self.settings_repo.get_ttl_in(tx, org_id).await?;
         let expires_at = now + Duration::seconds(ttl_seconds as i64);
 
