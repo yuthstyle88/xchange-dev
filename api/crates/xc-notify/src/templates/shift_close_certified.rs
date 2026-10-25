@@ -1,7 +1,8 @@
-//! Notification template: shift_close_certified (#5096).
+//! Notification template: shift_close_certified (#5096, #5113).
 
 use std::collections::BTreeMap;
 
+use super::close_count_waiting::close_amount_suffix;
 use crate::domain::template::{Locale, NotificationTemplate, Rendered, TemplateKind};
 
 pub const KEY: &str = "shift_close_certified";
@@ -14,7 +15,7 @@ impl NotificationTemplate for Template {
     }
 
     fn version(&self) -> i32 {
-        1
+        2
     }
 
     fn kind(&self) -> TemplateKind {
@@ -25,21 +26,22 @@ impl NotificationTemplate for Template {
         let branch = params.get("branch").map(|s| s.as_str()).unwrap_or("");
         let shift = params.get("shift").map(|s| s.as_str()).unwrap_or("");
         let by = params.get("by").map(|s| s.as_str()).unwrap_or("");
+        let suffix = close_amount_suffix(locale, params);
 
         match locale {
             Locale::Th => Rendered {
                 title: "รับรองการปิดกะเรียบร้อยแล้ว".to_string(),
-                body: format!("การนับเงินปิดกะ {shift} ที่สาขา {branch} ได้รับการรับรองโดย {by}"),
+                body: format!("การนับเงินปิดกะ {shift} ที่สาขา {branch} ได้รับการรับรองโดย {by}{suffix}"),
             },
             Locale::En => Rendered {
                 title: "Shift close certified".to_string(),
                 body: format!(
-                    "Shift close for shift {shift} at branch {branch} was certified by {by}."
+                    "Shift close for shift {shift} at branch {branch} was certified by {by}.{suffix}"
                 ),
             },
             Locale::Zh => Rendered {
                 title: "交班清点已确认".to_string(),
-                body: format!("{branch} 分行班次 {shift} 的交班清点已由 {by} 确认。"),
+                body: format!("{branch} 分行班次 {shift} 的交班清点已由 {by} 确认。{suffix}"),
             },
         }
     }
