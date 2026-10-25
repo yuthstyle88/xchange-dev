@@ -7,6 +7,7 @@ pub enum HandoverStatus {
     Pending,
     Accepted,
     Rejected,
+    Cancelled,
 }
 
 impl HandoverStatus {
@@ -14,6 +15,7 @@ impl HandoverStatus {
         match s {
             "ACCEPTED" => Self::Accepted,
             "REJECTED" => Self::Rejected,
+            "CANCELLED" => Self::Cancelled,
             _ => Self::Pending,
         }
     }
@@ -23,6 +25,7 @@ impl HandoverStatus {
             Self::Pending => "PENDING",
             Self::Accepted => "ACCEPTED",
             Self::Rejected => "REJECTED",
+            Self::Cancelled => "CANCELLED",
         }
     }
 }
@@ -44,4 +47,6 @@ pub enum HandoverError {
     NotPending,
     #[error("การส่งมอบต้องรับรองผ่านการส่งมอบเท่านั้น")]
     OnlyThroughHandover,
+    #[error("กะนี้มีการส่งมอบที่รอรับอยู่แล้ว")]
+    AlreadyPending,
 }

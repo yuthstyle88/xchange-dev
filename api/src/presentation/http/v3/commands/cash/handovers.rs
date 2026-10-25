@@ -2,7 +2,7 @@
 //! hand-over's receiver decides it (`outOfScope`), and a decided hand-over is `staleVersion` (Q-B). There is no reason
 //! field on a reject.
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use chrono::Utc;
 use pos_error::AppError;
 use sqlx::PgPool;
@@ -10,7 +10,8 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_cash::application::handover::handover_service::INVALID_RECEIVER;
 use xc_cash::application::handover::{HandoverAccepted, HandoverService, StartHandover};
-use xc_cash::domain::handover::Handover;
+use xc_cash::domain::error::CashError;
+use xc_cash::domain::handover::{Handover, HandoverError};
 use xc_kernel::ids::BranchId;
 
 use super::{caller_in, count_lines, from_cash_error, shift_lifecycle_hook, validation_failed};
@@ -77,6 +78,9 @@ impl CommandAction for HandoverStart {
             .map_err(|e| match e {
                 AppError::Validation(ref msg) if msg == INVALID_RECEIVER => {
                     validation_failed("receiverId", msg.clone())
+                }
+                AppError::Domain(ref msg) if msg == &HandoverError::AlreadyPending.to_string() => {
+                    V3Error::new("handoverPending", None, msg.clone(), StatusCode::CONFLICT)
                 }
                 other => from_cash_error(other),
             })?;
@@ -167,6 +171,51 @@ impl CommandAction for HandoverReject {
             .reject_in(tx, &user, &input.id, now)
             .await
             .map_err(from_cash_error)?;
+        Ok(answer(h))
+    }
+}
+
+pub struct HandoverCancel {
+    handovers: HandoverService,
+}
+
+impl HandoverCancel {
+    pub fn new(pool: PgPool) -> Self {
+        let hook = shift_lifecycle_hook(&pool);
+        Self {
+            handovers: HandoverService::pg(pool).with_shift_lifecycle_hook(hook),
+        }
+    }
+}
+
+impl CommandAction for HandoverCancel {
+    const NAME: &'static str = "handoverCancel";
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "handoverReject");
+    type Input = CashRecordInput;
+    type Output = CashRecordOutput;
+    const ROUTE: &'static str = "/api/handovers/{id}/cancel";
+    const METHOD: Method = Method::POST;
+
+    async fn run(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        who: &Actor,
+        input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        let now = Utc::now();
+        let user = caller_in(tx, who, now).await?;
+        let h = self
+            .handovers
+            .cancel_in(tx, &user, &input.id, now)
+            .await
+            .map_err(|e| match e {
+                AppError::Domain(ref msg) if msg == &CashError::NotOwnShift.to_string() => {
+                    V3Error::new("outOfScope", None, msg.clone(), StatusCode::FORBIDDEN)
+                }
+                other => from_cash_error(other),
+            })?;
         Ok(answer(h))
     }
 }
