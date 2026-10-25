@@ -22,12 +22,12 @@ use xc_rate::domain::policy::anchor_source::AnchorSource;
 use xc_rate::domain::pricing::market_quote::{MarketQuote, MarketSource};
 use xc_rate::domain::pricing::market_snapshot::MarketStaleness;
 use xc_rate::domain::pricing::pricing_suggestion::{
-    PricingSuggestion, Suggestion, SuggestionConfig, SuggestionInput,
+    PricingSuggestion, Suggestion, SuggestionConfig, SuggestionInput, TierPrice,
 };
 use xc_rate::domain::pricing::recommendation::{
     CounterRate, Recommendation, RecommendationInput, RecommendationSide,
 };
-use xc_rate::domain::pricing::row_status::RowStatus;
+use xc_rate::domain::pricing::row_status::{RowFacts, RowStatus};
 use xc_rate::infrastructure::market::market_feed_status_store::MarketFeedStatusStore;
 use xc_rate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use xc_rate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
@@ -567,7 +567,25 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
                 .collect()
         });
         let selectable = !suggestion_obj.blocked();
-        let status = format!("{:?}", RowStatus::of(&suggestion_obj, enabled, enabled));
+        let published = published_by_currency.remove(&code).unwrap_or_default();
+        let published_tiers = (!published.is_empty()).then(|| {
+            published
+                .iter()
+                .map(|p| TierPrice {
+                    tier_no: p.tier_no,
+                    buy: p.buy.as_deref().and_then(|s| Rate::parse(s).ok()),
+                    sell: p.sell.as_deref().and_then(|s| Rate::parse(s).ok()),
+                })
+                .collect::<Vec<_>>()
+        });
+        let status = format!(
+            "{:?}",
+            RowStatus::of_row(&RowFacts {
+                suggestion: &suggestion_obj,
+                priceable: CurrencyCode::parse(&code).is_ok(),
+                published: published_tiers.as_deref(),
+            })
+        );
         let flags = suggestion_obj
             .flags
             .iter()
@@ -588,8 +606,6 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
                 anchor: MarketQuote::anchor_for(&domain_quotes).0.cloned(),
             });
         }
-
-        let published = published_by_currency.remove(&code).unwrap_or_default();
 
         rows.push(PricingRowDto {
             currency: code,
