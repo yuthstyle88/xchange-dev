@@ -45,7 +45,7 @@ interface Seen {
 }
 
 /** A fake `ApiClient` whose `view` answers from a script, one entry per call; the last entry repeats. */
-function fakeClient(script: Array<ViewAnswer<MyNotificationsData> | Error>) {
+function fakeClient(script: Array<ViewAnswer<MyNotificationsData | undefined> | Error>) {
   const seen: Seen[] = [];
   let i = 0;
   const client = {
@@ -54,13 +54,13 @@ function fakeClient(script: Array<ViewAnswer<MyNotificationsData> | Error>) {
       const next = script[Math.min(i, script.length - 1)]!;
       i += 1;
       if (next instanceof Error) throw next;
-      return { ...next } as unknown as ViewAnswer<U>;
+      return makeViewAnswer(next.data as unknown as U, { version: next.version, changed: next.changed });
     },
   };
   return { client, seen };
 }
 
-function item(seq: number, objectType: string | null, title = `title ${seq}`, body = `body ${seq}`): MyNotificationItem {
+function item(seq: number, objectType: string | null, title = `title ${seq}`, body = `body ${seq}`) {
   return makeMyNotificationItem({
     id: `n-${seq}`,
     seq,
@@ -70,12 +70,12 @@ function item(seq: number, objectType: string | null, title = `title ${seq}`, bo
   });
 }
 
-function answer(items: MyNotificationItem[], version: number): ViewAnswer<MyNotificationsData> {
-  return makeViewAnswer(makeMyNotificationsData({ items }), { version, changed: true });
+function answer(items: MyNotificationItem[], version: number) {
+  return makeViewAnswer<MyNotificationsData | undefined>(makeMyNotificationsData({ items }), { version, changed: true });
 }
 
-function unchanged(version: number): ViewAnswer<MyNotificationsData> {
-  return makeViewAnswer(undefined as unknown as MyNotificationsData, { version, changed: false, data: undefined });
+function unchanged(version: number) {
+  return makeViewAnswer<MyNotificationsData | undefined>(undefined, { version, changed: false });
 }
 
 function isShown(el: Element | null): boolean {

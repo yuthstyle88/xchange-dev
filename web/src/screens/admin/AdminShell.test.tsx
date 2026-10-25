@@ -1143,7 +1143,9 @@ describe('V2-shell: no polling (#460 S9; design §12.6)', () => {
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(world.reads.length, JSON.stringify(world.reads.slice(before))).toBe(before);
     expect(world.posts).toEqual([]);
-    // AppShell's /health/ready and the shared session's /api/v3/views/me are not the shell's
-    expect(ownFetches).toEqual([]);
+    // AppShell's /health/ready and the shared session's /api/v3/views/me are not the shell's; nor is
+    // my_notifications: the account bar's notice bell, like the session's me (controller ruling, PR 5105
+    // issuecomment-6397411411). Every other fetch still counts.
+    expect(ownFetches.filter((u) => !u.startsWith('/api/v3/views/my_notifications'))).toEqual([]);
   });
 });
