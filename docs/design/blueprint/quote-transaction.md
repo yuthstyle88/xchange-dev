@@ -1042,7 +1042,7 @@ So the THB that changes hands in cash is a whole number of the smallest coin, 0.
   - `thb_amount` (the principal, which drives cost, margin and benefits; `ledger_postings.rs:770-780`, `:836-838`) is unchanged;
   - `fee_thb` is unchanged;
   - the rate is unchanged.
-- **Rounding is not a fee.** It is its own figure, stored, so `settle_thb = thb_amount ∓ fee_thb + rounding_thb` holds on every row and a report can sum what rounding cost the shop.
+- **Rounding is not a fee.** It is its own figure, **derived, not stored**: `rounding_thb = settle_thb − (thb_amount ∓ fee_thb)`, from the three figures every line already stores. One method on each line computes it (`QuoteLine::rounding_thb()`, `TransactionLine::rounding_thb()`), and a report can sum it. A stored copy would be a second truth that could disagree, and adding a field to `TransactionLine` would break about 30 test literals for nothing. A CHECK (§13.6) keeps the identity within one coin.
 - **A cash SELL whose rounded settle would be 0.00 is refused** (`validationFailed`, field `quantity`, *"amount is below the smallest coin"*). The customer would otherwise receive currency for nothing.
 - **The step is the constant `THB_CASH_STEP = 0.25`** in `xc-kernel`, not a setting. The owner named one value, and the face table is per currency while only THB settles at the counter.
 
@@ -1059,8 +1059,8 @@ classDiagram
   class QuoteService { <<api workflows/exchange/quote.rs>> }
   class QuoteRequest { +payment_method: Option~PaymentMethod~ }
   class Quote { +cash_settlement: bool }
-  class QuoteLine { +rounding_thb }
-  class TransactionLine { +rounding_thb }
+  class QuoteLine { +rounding_thb() Decimal }
+  class TransactionLine { +rounding_thb() Decimal }
   QuoteService --> Settlement : of
   QuoteService --> QuoteRequest
   Quote --> QuoteLine
@@ -1074,11 +1074,13 @@ classDiagram
 ### 13.4 Who knows the payment method [required]
 
 - The quote needs to know whether it is cash, but today `QuoteRequest` (`quote.rs:58-73`) has no payment method. The desk picks the method on the payment step, which is also where it asks for the quote with the fee (`desk-store.ts:266,287`).
-- `QuoteRequest` therefore gains `payment_method: Option<PaymentMethod>`, sent on `POST /api/quotes` as an optional `paymentMethod` with the six names of `payment_method.rs` (`Cash`, `ScbTransfer`, `BankTransfer`, `CreditCard`, `Alipay`, `PromptPay`). An unknown name is `validationFailed`. The quote stores `cash_settlement = payment_method.is_some_and(is_cash)`.
+- `QuoteRequest` therefore gains `payment_method: Option<PaymentMethod>`, sent on `POST /api/quotes` as an optional `paymentMethod`. **Its spelling is the wire spelling `POST /api/transactions` already takes**, `PaymentMethod::as_str()`: `"Cash"`, `"SCB Transfer"`, `"Bank Transfer"`, `"Credit Card"`, `"Alipay"`, `"PromptPay"` (`payment_method.rs:14-23`). It is parsed by one `PaymentMethod::parse` in `payment_method.rs`, which replaces the private copy in `v3/commands/transactions.rs:195-206`. An unknown name is `validationFailed`, field `paymentMethod`. The answer's `QuoteDto` gains `cashSettlement: boolean`, and each line gains `roundingThb`. The quote stores `cash_settlement = payment_method.is_some_and(is_cash)`.
 - **The method is optional because the desk quotes before one is chosen.** The desk asks for a quote on step 0, as soon as currency and amount are typed (`desk-store.ts:245-256`, `:319-338`), while the method stays `''` until the payment step (`:202`, `payment/step.tsx:53`). An absent method is therefore an **unrounded preview** (`cash_settlement = false`, `rounding_thb = 0`). The mismatch check below forces a re-quote once Cash is picked, so a cash transaction never completes on an unrounded quote. Preselecting Cash at the desk would be a change of look, which is for the owner to decide. (FE review on PR 5115, claude/8be3a451.)
 - **`POST /api/transactions` refuses a mismatch:** when the body's payment method's `is_cash()` differs from the quote's `cash_settlement`, it answers `validationFailed`, field `paymentMethod`, *"re-quote for this payment method"*.
 - **Changing the method must trigger a re-quote, and today it does not.** Desk D-5 re-quotes on type, currency, amount and benefits only, and `setMethod` is a bare signal (`desk-store.ts:202`). CR-d adds the method as a re-quote trigger, on the desk's payment step and at kiosk entry, so the desk re-quotes before it creates the transaction instead of being refused (CR12).
-- **The kiosk port** (`kiosk_ports.rs:440-459`) passes the kiosk request's method, and **the compat save** (`save_transaction.rs:437-438`) passes `form.method`.
+- **The compat save** (`save_transaction.rs:425-438`) passes `form.method`, so a cash compat save is rounded like a desk one. Its v2 parity fixtures for cash steps whose settle is not a multiple of 0.25 change to the rounded figures; CR-b names each one.
+- **The kiosk's own quote stays an unrounded preview.** `KioskPorts::quote_in` (`xc-kiosk/.../kiosk_ports.rs:89-100`) takes no method, and the figure it stores, `kiosk_requests.thb`, is indicative: when the counter takes the request it prices it with a fresh desk quote (`create.rs:249-279`), which the desk sends with the method. Passing the kiosk's method would change a trait in `xc-kiosk`, whose `PaymentMethod` is its own type, and two test fakes. That is follow-up CR-e, not needed for a correct drawer.
+- **Overflow and fee refusals do not change.** `quote.rs:246-251` (fee above THB, both sides) stays ahead of `Settlement::of`. The `try_minor` checks that answer `invalid settle amount` stay too (pinned by `k2063_quote_overflow_test.rs`). `SettlementError::BelowSmallestCoin` maps to `validationFailed`, field `quantity`.
 
 ### 13.5 What reads it
 
@@ -1086,7 +1088,7 @@ classDiagram
 |---|---|---|
 | `complete.rs` `legs()` | posts `settle_thb` to DRAWER for cash | **no change**: the drawer now receives a multiple of 0.25 |
 | reversals (`reversal_post.rs:112,177`) | reverse `settle_thb` | no change |
-| `v3/transaction_row.rs:228-240` (admin list and export) | **recomputes** principal and settle from rate × quantity | read the stored `thb_amount`, `fee_thb`, `rounding_thb` and `settle_thb`; add `roundingThb` to the row |
+| `v3/transaction_row.rs:228-240` (admin list and export) | **recomputes** principal and settle from rate × quantity | read the stored `thb_amount`, `fee_thb` and `settle_thb` (CR-c1); add `roundingThb` (derived, CR-c2) |
 | `presentation/pages.rs:424-434` (`/devices/receipt`) | **recomputes** `try_thb ± fee` | read the stored figures |
 | `xc-exchange/.../receipt.rs` | rows Principal, Fee, Received, Paid | add a row *"ปัดเศษ / Rounding"* when `rounding_thb ≠ 0`; Received/Paid are already `settle_thb` |
 | `GET /api/quotes`, transaction views | `thbAmount`, `feeThb`, `settleThb` | add `roundingThb` |
@@ -1096,17 +1098,18 @@ The two recomputing readers break as soon as `settle_thb` is rounded at write ti
 
 ### 13.6 Data migration [required]
 
-- **One migration, additive:**
+- **One migration, additive.** It stores only what cannot be derived: whether the quote was priced for cash. A CHECK bounds the derived rounding on both line tables.
 
   ```sql
   ALTER TABLE quotes ADD COLUMN cash_settlement boolean NOT NULL DEFAULT false;
-  ALTER TABLE quote_lines ADD COLUMN rounding_thb numeric(20,2) NOT NULL DEFAULT 0
-      CHECK (rounding_thb > -0.25 AND rounding_thb < 0.25);
-  ALTER TABLE transaction_lines ADD COLUMN rounding_thb numeric(20,2) NOT NULL DEFAULT 0
-      CHECK (rounding_thb > -0.25 AND rounding_thb < 0.25);
+  ALTER TABLE quote_lines ADD CONSTRAINT quote_lines_rounding_within_a_coin CHECK (
+      abs(settle_thb - CASE shop_side WHEN 'BUY' THEN thb_amount - fee_thb ELSE thb_amount + fee_thb END) < 0.25);
+  ALTER TABLE transaction_lines ADD CONSTRAINT transaction_lines_rounding_within_a_coin CHECK (
+      abs(settle_thb - CASE shop_side WHEN 'BUY' THEN thb_amount - fee_thb ELSE thb_amount + fee_thb END) < 0.25);
   ```
 
-- **Existing rows** keep `rounding_thb = 0`, and their `settle_thb` is untouched, so the identity in §13.2 holds for them as it is. Nothing is backfilled.
+- **Existing rows** have rounding 0 (`settle_thb = thb_amount ∓ fee_thb`), so the CHECKs hold for them. Nothing is backfilled.
+  - Because a CHECK that fails stops the boot, the deploy prechecks both tables on the target with the CHECK's own expression first. Any row outside it stops the deploy for the owner.
 - **Drawers already closed with remainders** are not repaired. That would be a backfill, which the owner decides separately.
 - v3 migrations are approved until the first install (owner, 2026-10-06).
 
@@ -1122,7 +1125,7 @@ The two recomputing readers break as soon as `settle_thb` is rounded at write ti
 | CR6 | cash BUY with fee: thb 100.10, fee 5.00 | u 95.10 → settle 95.25, rounding +0.15 |
 | CR7 | `POST /api/quotes` without `paymentMethod` (the step-0 preview) | answers as today, with `cashSettlement` false, `roundingThb` 0.00, settle unrounded; an unknown name is `validationFailed` |
 | CR8 | quote with `Cash`, transaction body `PromptPay` | `validationFailed`, field `paymentMethod` |
-| CR9 | complete a cash BUY quoted CR1 | DRAWER THB −32.25; `transaction_lines.rounding_thb` +0.15 |
+| CR9 | complete a cash BUY quoted CR1 | DRAWER THB −32.25; the stored line's `rounding_thb()` is +0.15 |
 | CR10 | admin row and `/devices/receipt` for CR9 | show settle 32.25 and rounding 0.15, read from the stored row, not recomputed |
 | CR11 | close a shift after CR9 with an exact count | no difference, verifies without FINANCE |
 | CR12 | desk: quote on step 0 (no method), then pick Cash on the payment step | a new quote is asked for with `paymentMethod: "Cash"`, and the transaction is created on that quote (never refused by CR8) |
@@ -1132,8 +1135,9 @@ The two recomputing readers break as soon as `settle_thb` is rounded at write ti
 | # | Ticket | Scope | Class |
 |---|---|---|---|
 | CR-a | `Settlement::of` in `xc-kernel` + CR1–CR6 | `xc-kernel/src/money/{settlement.rs,mod.rs}` + its test | logic |
-| CR-b | migration + `QuoteRequest.payment_method` + both `QuoteService` blocks call `Settlement::of` + `POST /api/quotes` `paymentMethod`/`roundingThb` + create's mismatch check + kiosk port and compat save pass the method; CR7–CR9, CR11 | `quote.rs`, `create.rs`, `v3/commands/quotes.rs`, `kiosk_ports.rs`, `save_transaction.rs`, xc-exchange quote/transaction line + repositories, the migration, and the regenerated `web/src/shared/api/generated/**` files the new DTO fields change (listed by path in the ticket) | guarded, after CR-a |
+| CR-b | migration (`quotes.cash_settlement` + the two CHECKs) + `QuoteRequest.payment_method` + both `QuoteService` blocks call `Settlement::of` + one `PaymentMethod::parse` + `POST /api/quotes` `paymentMethod` / `cashSettlement` / `roundingThb` + create's mismatch check + the compat save passes `form.method` + `rounding_thb()` on both lines and `roundingThb` on the transaction DTOs; CR7–CR9, CR11 | `quote.rs`, `create.rs`, `save_transaction.rs`, `v3/commands/{quotes,transactions}.rs`, `dto/v3/{quote,transaction,transaction_detail}.rs`, `views/transaction.rs`, xc-exchange quote, quote line, transaction line, payment method and the two repositories, the migration, the regenerated `web/src/shared/api/generated/{quotes,quote,transactions,transaction}.ts`, and the tests it flips (listed by path in the ticket). Not the kiosk (CR-e) | guarded, after CR-a |
 | CR-c | the two readers read stored figures (CR10, also correct today); receipt rounding row | `v3/transaction_row.rs`, `presentation/pages.rs`, `receipt.rs` | logic; the readers half can start now |
+| CR-e | the kiosk's indicative quote passes the kiosk request's method (`KioskPorts::quote_in` gains it; xc-kiosk's `PaymentMethod` maps to cash) | `xc-kiosk/.../kiosk_ports.rs`, `customer.rs`, `api/src/infrastructure/kiosk/kiosk_ports.rs`, two test fakes | logic, after CR-b; optional |
 | CR-d (FE lane) | the desk sends `paymentMethod` with the quote, adds the method as a re-quote trigger (payment step and kiosk entry), and shows `roundingThb`; CR12 | the files are listed by path when the FE controller cuts it: at least `desk-store.ts`, `steps/payment/step.tsx` and `Summary.tsx` | FE controller, after CR-b's contract is merged |
 
 CR-b and CR-d change the quote contract together, so they deploy together.
