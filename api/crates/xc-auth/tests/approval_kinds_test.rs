@@ -79,7 +79,8 @@ fn seed_approvals_decide_iff_some_kind() {
 /// §11.9 data migration: `SEED_VERSION` 3 -> 4, and each kind is in `SEED_ADDITIONS` at version 4, exactly once.
 #[test]
 fn seed_version_4_adds_the_nine() {
-    assert_eq!(RoleGrants::SEED_VERSION, 4);
+    // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5.
+    assert_eq!(RoleGrants::SEED_VERSION, 5);
     for p in APPROVAL_KINDS {
         let at: Vec<i32> = RoleGrants::SEED_ADDITIONS
             .iter()
