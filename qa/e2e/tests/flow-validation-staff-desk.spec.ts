@@ -477,7 +477,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
               const fieldErr = teller.locator('.desk-error').first();
               await expect(
                 fieldErr,
-                `desk-error visible for amount '${badAmount}' (${lang}, steps/rate/step.tsx:96)`,
+                `desk-error visible for amount '${badAmount}' (${lang}, steps/rate/step.tsx:102-106,112-113)`,
               ).toBeVisible({ timeout: 10_000 });
               expectWordedRefusal(await fieldErr.innerText(), `desk amount ${badAmount} (${lang})`);
               await expect(amountInput, `amount input keeps '${badAmount}' (${lang})`).toHaveValue(badAmount);
