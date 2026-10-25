@@ -14,6 +14,8 @@ pub enum DisplayValueError {
     QueueLetter(char),
     #[error("invalid queue sequence: {0}")]
     QueueSequence(i32),
+    #[error("invalid server id: {0}")]
+    ServerId(String),
 }
 
 /// A server-produced value that is safe to display in a customer notification without free-text PII checks.
@@ -29,6 +31,18 @@ impl DisplayValue {
             return Err(DisplayValueError::QueueSequence(sequence));
         }
         Ok(Self(queue_number_text(letter, sequence)))
+    }
+
+    pub fn server_id(id: &str) -> Result<Self, DisplayValueError> {
+        if id.is_empty()
+            || id.len() > 64
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(DisplayValueError::ServerId(id.to_string()));
+        }
+        Ok(Self(id.to_string()))
     }
 
     pub fn count(n: u64) -> Self {
