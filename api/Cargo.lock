@@ -4099,6 +4099,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
  "xc-approval",
  "xc-auth",

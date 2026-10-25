@@ -57,15 +57,16 @@ async function putted(
   page: Page,
   path: RegExp,
   act: () => Promise<void>,
-): Promise<{ ok: boolean; text: string; body: string }> {
+): Promise<{ ok: boolean; text: string; body: string; sent: string }> {
   const res = page.waitForResponse(
     (r) => r.request().method() === 'PUT' && path.test(new URL(r.url()).pathname),
     { timeout: 15_000 },
   );
   await act();
   const r = await res;
+  const sent = r.request().postData() ?? '';
   const body = await r.text().catch(() => '');
-  return { ok: r.ok(), text: `${r.status()} ${body.slice(0, 300)}`, body };
+  return { ok: r.ok(), text: `${r.status()} ${body.slice(0, 300)}`, body, sent };
 }
 
 // Ensures the admin session is targeting XC-B (MAIN) on /#booking-slots, returning the initial branch label.
@@ -84,33 +85,65 @@ async function openBookingSlotsOnMain(page: Page): Promise<string> {
     await page.goto('/#booking-slots');
     await expect(branchButton, 'session branch switched to XC-B').toContainText('XC-B', { timeout: 20_000 });
   }
+  await expect(page.locator('.booking-slots-screen .loading')).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator('input[name="slotMinutes"]')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('input[name="slotMinutes"]')).not.toHaveValue('', { timeout: 15_000 });
   return startBranch;
 }
 
+// Wait for post-PUT loadView() (BookingSlots.tsx:247,432) and setWriting(false) so the view response cannot overwrite subsequent form fills.
 async function saveSlotRule(
   page: Page,
   rule: { slotMinutes: string; capacity: string; horizonDays: string },
-): Promise<{ ok: boolean; text: string }> {
-  await page.locator('input[name="slotMinutes"]').fill(rule.slotMinutes);
-  await page.locator('input[name="capacity"]').fill(rule.capacity);
-  await page.locator('input[name="horizonDays"]').fill(rule.horizonDays);
-  return putted(page, /^\/api\/branches\/[^/]+\/booking-slot-rule$/, () =>
-    page.getByRole('button', { name: SAVE_RULE_BTN }).click(),
-  );
+): Promise<{ ok: boolean; text: string; sent: string }> {
+  const saveBtn = page.getByRole('button', { name: SAVE_RULE_BTN });
+  const slotMinInput = page.locator('input[name="slotMinutes"]');
+  const capInput = page.locator('input[name="capacity"]');
+  const horizonInput = page.locator('input[name="horizonDays"]');
+  await expect(page.locator('.booking-slots-screen .loading')).toHaveCount(0, { timeout: 15_000 });
+  await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
+  await expect(slotMinInput).not.toHaveValue('', { timeout: 15_000 });
+  await slotMinInput.clear();
+  await slotMinInput.fill(rule.slotMinutes);
+  await capInput.clear();
+  await capInput.fill(rule.capacity);
+  await horizonInput.clear();
+  await horizonInput.fill(rule.horizonDays);
+  await expect(slotMinInput).toHaveValue(rule.slotMinutes);
+  await expect(capInput).toHaveValue(rule.capacity);
+  await expect(horizonInput).toHaveValue(rule.horizonDays);
+  const res = await putted(page, /^\/api\/branches\/[^/]+\/booking-slot-rule$/, () => saveBtn.click());
+  await expect(page.locator('.booking-slots-screen .loading')).toHaveCount(0, { timeout: 15_000 });
+  await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
+  return res;
 }
 
 async function saveBookingPolicy(
   page: Page,
   policy: { cutoff: string; grace: string; expiry: string },
-): Promise<{ ok: boolean; text: string }> {
-  await page.locator('input[name="cancelCutoffMinutes"]').fill(policy.cutoff);
-  await page.locator('input[name="noShowGraceMinutes"]').fill(policy.grace);
-  await page.locator('input[name="confirmExpiryMinutes"]').fill(policy.expiry);
-  return putted(page, /^\/api\/booking-policy$/, () =>
-    page.getByRole('button', { name: SAVE_POLICY_BTN }).click(),
-  );
+): Promise<{ ok: boolean; text: string; sent: string }> {
+  const saveBtn = page.getByRole('button', { name: SAVE_POLICY_BTN });
+  const cutoffInput = page.locator('input[name="cancelCutoffMinutes"]');
+  const graceInput = page.locator('input[name="noShowGraceMinutes"]');
+  const expiryInput = page.locator('input[name="confirmExpiryMinutes"]');
+  await expect(page.locator('.booking-slots-screen .loading')).toHaveCount(0, { timeout: 15_000 });
+  await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
+  await expect(cutoffInput).not.toHaveValue('', { timeout: 15_000 });
+  await expect(graceInput).not.toHaveValue('', { timeout: 15_000 });
+  await expect(expiryInput).not.toHaveValue('', { timeout: 15_000 });
+  await cutoffInput.clear();
+  await cutoffInput.fill(policy.cutoff);
+  await graceInput.clear();
+  await graceInput.fill(policy.grace);
+  await expiryInput.clear();
+  await expiryInput.fill(policy.expiry);
+  await expect(cutoffInput).toHaveValue(policy.cutoff);
+  await expect(graceInput).toHaveValue(policy.grace);
+  await expect(expiryInput).toHaveValue(policy.expiry);
+  const res = await putted(page, /^\/api\/booking-policy$/, () => saveBtn.click());
+  await expect(page.locator('.booking-slots-screen .loading')).toHaveCount(0, { timeout: 15_000 });
+  await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
+  return res;
 }
 
 test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, closures', () => {
@@ -127,6 +160,9 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
     test.skip(!perms.includes('BranchesManage'), 'signed-in admin lacks BranchesManage');
 
     const startBranch = await openBookingSlotsOnMain(page);
+    await expect(page.locator('input[name="cancelCutoffMinutes"]')).not.toHaveValue('', { timeout: 15_000 });
+    await expect(page.locator('input[name="noShowGraceMinutes"]')).not.toHaveValue('', { timeout: 15_000 });
+    await expect(page.locator('input[name="confirmExpiryMinutes"]')).not.toHaveValue('', { timeout: 15_000 });
 
     // Record the branch's current slot rule and organisation booking policy before any mutation (E-4).
     const origRule = {
@@ -282,6 +318,8 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
       // Restore slot open state, remove any leftover run-marker closure, and restore rule & policy (E-4).
       await page.goto('/#booking-slots').catch(() => {});
       await expect(page.locator('.booking-slots-screen')).toBeVisible({ timeout: 15_000 }).catch(() => {});
+      await expect(page.locator('.booking-slots-screen .loading')).toHaveCount(0, { timeout: 15_000 }).catch(() => {});
+      await expect(page.locator('input[name="slotMinutes"]')).not.toHaveValue('', { timeout: 15_000 }).catch(() => {});
 
       if (closedSlotId) {
         const slotEl = page.locator(`.slots-list .slot-item[data-slot-id="${closedSlotId}"]`);
@@ -300,17 +338,42 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
         await leftoverClosures.first().locator('button[type="button"]').click().catch(() => {});
       }
 
-      const ruleRestored = await saveSlotRule(page, origRule).catch((e) => ({ ok: false, text: String(e) }));
-      const policyRestored = await saveBookingPolicy(page, origPolicy).catch((e) => ({ ok: false, text: String(e) }));
-      console.log(`[R9-4 finally] restore rule=${ruleRestored.text} policy=${policyRestored.text}`);
-      expect(ruleRestored.ok, `slot rule restored: ${ruleRestored.text}`).toBeTruthy();
-      expect(policyRestored.ok, `booking policy restored: ${policyRestored.text}`).toBeTruthy();
+      const ruleRestored = await saveSlotRule(page, origRule).catch((e) => ({ ok: false, text: String(e), sent: '' }));
+      const policyRestored = await saveBookingPolicy(page, origPolicy).catch((e) => ({
+        ok: false,
+        text: String(e),
+        sent: '',
+      }));
+      console.log(
+        `[R9-4 finally] restore rule=${ruleRestored.text} policy=${policyRestored.text} sent=${policyRestored.sent}`,
+      );
+
+      await page.reload();
+      await expect(page.locator('.booking-slots-screen .loading')).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.locator('input[name="cancelCutoffMinutes"]')).not.toHaveValue('', { timeout: 15_000 });
+      await expect(page.locator('input[name="noShowGraceMinutes"]')).not.toHaveValue('', { timeout: 15_000 });
+      await expect(page.locator('input[name="confirmExpiryMinutes"]')).not.toHaveValue('', { timeout: 15_000 });
+      const restoredPolicy = {
+        cutoff: await page.locator('input[name="cancelCutoffMinutes"]').inputValue(),
+        grace: await page.locator('input[name="noShowGraceMinutes"]').inputValue(),
+        expiry: await page.locator('input[name="confirmExpiryMinutes"]').inputValue(),
+      };
 
       const original = startBranch.replace(/^สาขา\s*|^Branch\s*/i, '').trim();
       if (original && !/XC-B/.test(startBranch)) {
         await page.locator('.account-bar button[aria-haspopup="menu"]').click().catch(() => {});
         await page.getByRole('menuitemradio', { name: original }).click().catch(() => {});
       }
+
+      expect(ruleRestored.ok, `slot rule restored: ${ruleRestored.text}`).toBeTruthy();
+      expect(
+        policyRestored.ok,
+        `booking policy restored: ${policyRestored.text} (sent ${policyRestored.sent})`,
+      ).toBeTruthy();
+      expect(
+        restoredPolicy,
+        `booking policy after restore: expected ${JSON.stringify(origPolicy)}, actual ${JSON.stringify(restoredPolicy)} (PUT sent ${policyRestored.sent})`,
+      ).toEqual(origPolicy);
     }
   });
 
