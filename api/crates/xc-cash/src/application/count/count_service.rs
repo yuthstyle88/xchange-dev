@@ -1243,6 +1243,25 @@ impl CashCountService {
             )
             .await?;
 
+            // §4.4 / BE-1 (#5106): return counted cash from DRAWER(shift) to SAFE(branch).
+            for t in &updated_totals {
+                let code = CurrencyCode::parse(t.currency.trim()).map_err(|_| {
+                    AppError::Internal(format!("unknown currency code in count: {}", t.currency))
+                })?;
+                let source = SourceRef {
+                    source_type: SourceType::Count,
+                    source_id: count_id.to_owned(),
+                    source_key: format!("close-to-safe:{}", code.as_str()),
+                };
+                let reqs = moves(
+                    &CashPlace::Drawer(shift_id.to_owned()),
+                    &CashPlace::Safe(count.branch_id.clone()),
+                    &[(code, t.counted)],
+                    &source,
+                );
+                self.postings.post_in(tx, &reqs, None).await?;
+            }
+
             let mut close_balances = Vec::new();
             let mut delta_pairs = Vec::new();
             for t in &updated_totals {

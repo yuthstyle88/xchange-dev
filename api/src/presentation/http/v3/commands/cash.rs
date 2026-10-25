@@ -487,6 +487,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverStart::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverAccept::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverReject::new(pool.clone())));
+    CommandEndpoint::register(cfg, Arc::new(handovers::HandoverCancel::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferCreate::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(transfers::TransferSubmit::new(pool.clone())));
     CommandEndpoint::register(

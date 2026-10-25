@@ -397,6 +397,12 @@ async fn start_handover(
     id_of(&a, "handoverStart")
 }
 
+/// #5107: a shift may hold only one PENDING hand-over, so each hand-over here comes from its own shift.
+async fn fresh_handover(room: &Room, branch: &str, receiver: &Who) -> String {
+    let (teller, _, shift) = opened_shift_in(room, branch).await;
+    start_handover(room, branch, &teller, &shift, receiver).await
+}
+
 // =================================================================================================
 // Behaviour Table Tests (§8)
 // =================================================================================================
@@ -406,11 +412,10 @@ async fn start_handover(
 async fn c1_before_cursor_naming_pending_handover_of_other_branch_answers_empty() {
     let room = Room::start().await;
     let receiver_r = room.person(Role::Teller, Some(B01)).await;
-    let (teller_b1, _, shift_b1) = opened_shift_in(&room, B01).await;
 
     // R has two pending handovers at B1: h1 (older), then h2 (newer)
-    let _h1 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
-    let _h2 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
+    let _h1 = fresh_handover(&room, B01, &receiver_r).await;
+    let _h2 = fresh_handover(&room, B01, &receiver_r).await;
 
     // Branch B2 has a pending handover
     let receiver_b2 = room.person(Role::Teller, Some(B09)).await;
@@ -444,14 +449,13 @@ async fn c2_before_cursor_naming_handover_to_another_receiver_answers_empty() {
     let room = Room::start().await;
     let receiver_r = room.person(Role::Teller, Some(B01)).await;
     let receiver_other = room.person(Role::Teller, Some(B01)).await;
-    let (teller_b1, _, shift_b1) = opened_shift_in(&room, B01).await;
 
     // R has two pending handovers at B1
-    let _h1 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
-    let _h2 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
+    let _h1 = fresh_handover(&room, B01, &receiver_r).await;
+    let _h2 = fresh_handover(&room, B01, &receiver_r).await;
 
     // Another receiver at B1 has a pending handover
-    let h_other = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_other).await;
+    let h_other = fresh_handover(&room, B01, &receiver_other).await;
 
     // Receiver R queries with before = h_other (same branch, different receiver)
     let ans = view(
@@ -479,10 +483,9 @@ async fn c2_before_cursor_naming_handover_to_another_receiver_answers_empty() {
 async fn c3_before_cursor_naming_unknown_uuid_answers_empty() {
     let room = Room::start().await;
     let receiver_r = room.person(Role::Teller, Some(B01)).await;
-    let (teller_b1, _, shift_b1) = opened_shift_in(&room, B01).await;
 
-    let _h1 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
-    let _h2 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
+    let _h1 = fresh_handover(&room, B01, &receiver_r).await;
+    let _h2 = fresh_handover(&room, B01, &receiver_r).await;
 
     let unknown_id = Uuid::new_v4();
 
@@ -511,11 +514,10 @@ async fn c3_before_cursor_naming_unknown_uuid_answers_empty() {
 async fn c4_before_cursor_naming_own_pending_handover_answers_next_page() {
     let room = Room::start().await;
     let receiver_r = room.person(Role::Teller, Some(B01)).await;
-    let (teller_b1, _, shift_b1) = opened_shift_in(&room, B01).await;
 
     // R has h1 (older), then h2 (newer)
-    let h1 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
-    let h2 = start_handover(&room, B01, &teller_b1, &shift_b1, &receiver_r).await;
+    let h1 = fresh_handover(&room, B01, &receiver_r).await;
+    let h2 = fresh_handover(&room, B01, &receiver_r).await;
 
     // Query before = h2 should return h1 (the next page)
     let ans = view(

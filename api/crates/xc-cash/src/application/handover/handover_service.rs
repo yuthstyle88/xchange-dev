@@ -378,6 +378,16 @@ impl HandoverService {
         PersonRules::teller_owns_shift(&teller_id, actor)
             .map_err(|e| AppError::Domain(e.to_string()))?;
 
+        let has_pending: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM handovers WHERE from_shift_id = $1 AND status = 'PENDING')",
+        )
+        .bind(&cmd.from_shift_id)
+        .fetch_one(&mut **tx)
+        .await?;
+        if has_pending {
+            return Err(dom(HandoverError::AlreadyPending));
+        }
+
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
             std::collections::BTreeMap::new();
         let mut sanitized_lines = Vec::with_capacity(cmd.lines.len());
@@ -506,7 +516,16 @@ impl HandoverService {
         .bind(&count_id)
         .bind(&cmd.receiver_id)
         .fetch_one(&mut **tx)
-        .await?;
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::Database(ref db_err)
+                if db_err.code().as_deref() == Some("23505")
+                    && db_err.constraint() == Some("handovers_one_pending_per_shift") =>
+            {
+                dom(HandoverError::AlreadyPending)
+            }
+            other => AppError::Database(other),
+        })?;
 
         self.load_in(tx, &id).await
     }
@@ -797,6 +816,72 @@ impl HandoverService {
 
         let res = sqlx::query(
             "UPDATE handovers SET status = 'REJECTED', updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",
+        )
+        .bind(id)
+        .execute(&mut **tx)
+        .await?;
+
+        if res.rows_affected() == 0 {
+            return Err(dom(HandoverError::NotPending));
+        }
+
+        self.load_in(tx, id).await
+    }
+
+    pub async fn cancel_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Handover> {
+        let handover_uuid = handover_id(id)?;
+        let r: Option<Row> = sqlx::query_as(
+            "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
+             FROM handovers WHERE id = $1 FOR UPDATE",
+        )
+        .bind(handover_uuid)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        let r = r.ok_or_else(|| AppError::NotFound {
+            entity: "handover",
+            id: id.to_string(),
+        })?;
+
+        let h = Handover {
+            id: r.0,
+            branch_id: BranchId::new(r.1),
+            from_shift_id: r.2,
+            to_shift_id: r.3,
+            count_id: r.4,
+            receiver_id: r.5,
+            status: HandoverStatus::parse(&r.6),
+        };
+
+        if h.status != HandoverStatus::Pending {
+            return Err(dom(HandoverError::NotPending));
+        }
+
+        let counted_by: String =
+            sqlx::query_scalar("SELECT counted_by::text FROM cash_counts WHERE id = $1::uuid")
+                .bind(&h.count_id)
+                .fetch_one(&mut **tx)
+                .await?;
+        if counted_by != actor.user_id {
+            return Err(dom(CashError::NotOwnShift));
+        }
+
+        Authorizer::check(
+            Some(actor),
+            Permission::ShiftOperate,
+            &Target::new(&actor.organization_id, Some(h.branch_id.clone()), None),
+            now,
+        )
+        .map_err(|_| AppError::Forbidden)?;
+
+        let res = sqlx::query(
+            "UPDATE handovers SET status = 'CANCELLED', updated_at = now() WHERE id = $1::uuid AND status = 'PENDING'",
         )
         .bind(id)
         .execute(&mut **tx)

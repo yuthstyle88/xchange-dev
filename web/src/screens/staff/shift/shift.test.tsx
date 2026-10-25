@@ -633,6 +633,18 @@ async function openCountForm(
   return form;
 }
 
+/** #5114: a currency other than THB joins the count form through its search box first. */
+async function addCurrency(form: HTMLFormElement, code: string) {
+  const search = form.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+  expect(search, "the currency search box").not.toBeNull();
+  typeInto(search!, code.toLowerCase());
+  const option = `[data-testid="currency-option"][data-currency="${code}"]`;
+  await vi.waitFor(() => expect(form.querySelector(option), option).not.toBeNull());
+  await click(form.querySelector<HTMLButtonElement>(option)!);
+  const group = `[data-testid="currency-group"][data-currency="${code}"]`;
+  await vi.waitFor(() => expect(form.querySelector(group), group).not.toBeNull());
+}
+
 function qtyInput(form: HTMLFormElement, id: number): HTMLInputElement {
   const i = form.querySelector<HTMLInputElement>(
     `input[data-denomination-id="${id}"]`,
@@ -671,6 +683,8 @@ describe("S9 the count form: one row per face value from the denominations view"
       );
       return openCountForm("shift-open-count");
     })();
+    // #5114: only THB is on the form at first; USD is added through the search.
+    await addCurrency(form, "USD");
     for (const d of DENOMS) {
       const input = qtyInput(form, d.id);
       const row =
@@ -688,7 +702,10 @@ describe("S9 the count form: one row per face value from the denominations view"
     );
     const form = await openCountForm("shift-open-count");
     const faceIds = new Set(DENOMS.map((d) => String(d.id)));
-    for (const input of form.querySelectorAll<HTMLInputElement>("input")) {
+    // #5114: the currency search box is the one input that is not a face value.
+    for (const input of form.querySelectorAll<HTMLInputElement>(
+      'input:not([data-testid="currency-search"])',
+    )) {
       const id = input.getAttribute("data-denomination-id");
       expect(id, "every input names its denomination").not.toBeNull();
       expect(faceIds.has(id!), `input for a known denomination ${id}`).toBe(
@@ -728,6 +745,7 @@ describe("C5 open and close counts send countSubmit with one line per typed face
       floor({ myClockIn: CLOCKED_IN, myShift: MY_SHIFT }),
     );
     const form = await openCountForm("shift-close-count");
+    await addCurrency(form, "USD"); // #5114: the shift holds no USD, so it is added by hand
     typeInto(qtyInput(form, 21), "4");
     await saveCount(form);
     expect(sent.map((s) => `${s.method} ${s.url}`)).toEqual([

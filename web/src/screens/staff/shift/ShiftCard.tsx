@@ -16,6 +16,8 @@ import type { CashCountRow, CashCountsFilter } from '../../../shared/api/generat
 import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
+import type { MyShift } from '../../../shared/api/generated/my_shift';
+import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
@@ -52,6 +54,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const [handoverReceivers, setHandoverReceivers] = createSignal<HandoverReceiverRow[]>([]);
 
   const [countKind, setCountKind] = createSignal<'OPEN' | 'CLOSE' | null>(null);
+  const [myShift, setMyShift] = createSignal<MyShift | null>(null);
   const [countQuantities, setCountQuantities] = createSignal<Record<number, string>>({});
   const [countLineErrors, setCountLineErrors] = createSignal<Record<number, string>>({});
   const [showHandover, setShowHandover] = createSignal<boolean>(false);
@@ -157,13 +160,47 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     }
   });
 
+  const loadMyShift = async () => {
+    try {
+      const res = await api.view<MyShift | null>('my_shift');
+      setMyShift(res.data ?? null);
+    } catch {
+      setMyShift(null);
+    }
+  };
+
   const handleOpenCount = (kind: 'OPEN' | 'CLOSE') => {
     setCountKind(kind);
     setCountLineErrors({});
     setShowHandover(false);
+    setMyShift(null);
+    if (kind === 'CLOSE') {
+      void loadMyShift();
+    }
     if (denominations().length === 0) {
       void loadDenominations();
     }
+  };
+
+  const countLocked = (): string[] => {
+    const codes = ['THB'];
+    if (countKind() === 'CLOSE') {
+      for (const b of myShift()?.balances ?? []) {
+        if (/[1-9]/.test(b.expected) && !codes.includes(b.code)) {
+          codes.push(b.code);
+        }
+      }
+    }
+    return codes;
+  };
+
+  const countExpected = (): Record<string, string> | undefined => {
+    if (countKind() !== 'CLOSE') return undefined;
+    const shift = myShift();
+    if (!shift) return undefined;
+    const out: Record<string, string> = {};
+    for (const b of shift.balances) out[b.code] = b.expected;
+    return out;
   };
 
   const handleOpenHandover = () => {
@@ -498,36 +535,14 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
           class="xc-shift-count-form"
           onSubmit={handleCountSubmit}
         >
-          <div class="xc-shift-denoms">
-            <For each={denominations()}>
-              {(d) => (
-                <div data-denomination-row class="xc-shift-denom-row">
-                  <span class="xc-shift-denom-label">
-                    <span class="xc-shift-denom-currency">{d.currency}</span>{' '}
-                    <span class="xc-shift-denom-val">{d.faceValue}</span>
-                  </span>
-                  <input
-                    data-denomination-id={d.id}
-                    class="xc-shift-denom-input"
-                    type="text"
-                    inputMode="numeric"
-                    value={countQuantities()[d.id] ?? ''}
-                    onInput={(e) => {
-                      const v = e.currentTarget.value;
-                      setCountQuantities((prev) => ({ ...prev, [d.id]: v }));
-                    }}
-                    onChange={(e) => {
-                      const v = e.currentTarget.value;
-                      setCountQuantities((prev) => ({ ...prev, [d.id]: v }));
-                    }}
-                  />
-                  <Show when={countLineErrors()[d.id]}>
-                    {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
-                  </Show>
-                </div>
-              )}
-            </For>
-          </div>
+          <CurrencyCount
+            denominations={denominations()}
+            locked={countLocked()}
+            expected={countExpected()}
+            quantities={countQuantities()}
+            setQuantity={(id, v) => setCountQuantities((prev) => ({ ...prev, [id]: v }))}
+            lineErrors={countLineErrors()}
+          />
           <div class="xc-shift-form-actions">
             <button
               type="submit"
