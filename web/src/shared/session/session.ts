@@ -189,7 +189,7 @@ export function createSessionStore(api: Pick<ApiClient, 'view' | 'post'>): Endin
     ended,
     end,
     async switchBranch(branch: string): Promise<void> {
-      await api.post('/api/auth/session/branch', { branch });
+      store.updateMe(await api.post<{ branch: string }, Me>('/api/auth/session/branch', { branch }));
     },
     async signOut(): Promise<void> {
       await api.post('/api/auth/logout', {});
