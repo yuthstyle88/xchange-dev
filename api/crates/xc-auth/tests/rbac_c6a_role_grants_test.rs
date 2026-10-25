@@ -54,6 +54,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::BranchesManage,
             P::UsersManage,
             P::ApprovalsDecide,
+            P::ShiftCloseCertify,
             P::BookingsDesk,
             P::ExchangeTransact,
             P::TransactionRead,
@@ -108,6 +109,7 @@ const SEED: [(Role, &[Permission]); 9] = [
         &[
             P::BranchesManage,
             P::UsersManage,
+            P::ShiftCloseCertify,
             P::SystemSettings,
             P::CompatRead,
             P::DocumentsList,

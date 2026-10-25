@@ -181,8 +181,9 @@ fn finance_still_reads_the_staff_day_report_through_finance_reconcile() {
 #[test]
 fn groups_holding_no_day_sheet_reader_are_refused_the_staff_day_report() {
     // None of ShiftCloseCertify, FinanceReconcile, OverviewRead once OverviewRead is EXECUTIVE only.
+    // ADMIN left this list on 2026-10-25: it now holds ShiftCloseCertify (owner, #564 issuecomment-6392731530:
+    // "รับได้ (แนะนำ)" to Admin also reading the staff day report; shift_close_certify_roles_test.rs).
     for r in [
-        Role::Admin,
         Role::RateManager,
         Role::VerificationReviewer,
         Role::Marketing,

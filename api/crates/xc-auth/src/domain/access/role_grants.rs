@@ -209,6 +209,7 @@ impl RoleGrants {
                 P::ApproveRatePublication,
                 P::ApproveLoyaltyRuleVersion,
                 P::CashManage,
+                P::ShiftCloseCertify,
                 P::AttendanceClock,
                 P::CompatRead,
                 P::RequestAbandon,
@@ -220,7 +221,14 @@ impl RoleGrants {
                 P::DrawerPassport,
                 P::SignedIn,
             ],
-            Role::Admin | Role::RateManager | Role::VerificationReviewer => &[
+            Role::Admin => &[
+                P::ShiftCloseCertify,
+                P::AttendanceClock,
+                P::CompatRead,
+                P::DocumentsList,
+                P::SignedIn,
+            ],
+            Role::RateManager | Role::VerificationReviewer => &[
                 P::AttendanceClock,
                 P::CompatRead,
                 P::DocumentsList,
