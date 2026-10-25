@@ -22,6 +22,7 @@ function cleanUrl(): string {
 export function AccountBar(props: {
   session?: SessionStore;
   navigate?: (url: string) => void;
+  reload?: () => void;
 }): JSX.Element {
   const session = () => props.session ?? sharedSession();
   const navigate = (url: string) => {
@@ -29,6 +30,13 @@ export function AccountBar(props: {
       props.navigate(url);
     } else if (typeof window !== 'undefined') {
       window.location.assign(url);
+    }
+  };
+  const reload = () => {
+    if (props.reload) {
+      props.reload();
+    } else if (typeof window !== 'undefined') {
+      window.location.reload();
     }
   };
 
@@ -93,7 +101,15 @@ export function AccountBar(props: {
       if (sw) {
         await sw(branchId);
       }
-      navigate(cleanUrl());
+      const next = cleanUrl();
+      if (
+        typeof window !== 'undefined' &&
+        next === `${window.location.pathname}${window.location.search}${window.location.hash}`
+      ) {
+        reload();
+      } else {
+        navigate(next);
+      }
     } catch {
       setError(t('shell.account.switchFailed'));
     }
