@@ -547,10 +547,11 @@ async fn a_short_close_count_puts_the_difference_on_variance_and_adjusts_at_aver
         d("10"),
         "USD 10 short is on the branch's VARIANCE"
     );
+    // #5106 (owner, 2026-10-25): certifying the CLOSE returns the counted cash to the SAFE, so the drawer ends at 0.
     assert_eq!(
         db.at(CashPlace::Drawer(shift), "USD").await,
-        d("90.00"),
-        "the drawer holds what was counted"
+        d("0"),
+        "the drawer's counted USD 90 went to the SAFE"
     );
     let posting = format!(
         "SELECT p.id FROM ledger_postings p JOIN ledger_entries e ON e.posting_id = p.id \
@@ -611,5 +612,6 @@ async fn an_over_close_count_takes_the_difference_out_of_variance() {
         d("-100"),
         "THB 100 over came out of the branch's VARIANCE"
     );
-    assert_eq!(db.at(CashPlace::Drawer(shift), "THB").await, d("2400.00"));
+    // #5106 (owner, 2026-10-25): certifying the CLOSE returns the counted cash to the SAFE, so the drawer ends at 0.
+    assert_eq!(db.at(CashPlace::Drawer(shift), "THB").await, d("0"));
 }
