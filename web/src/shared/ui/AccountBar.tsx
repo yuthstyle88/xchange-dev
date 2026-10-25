@@ -1,8 +1,12 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { ApiClient } from '../api/client';
 import { t } from '../i18n';
 import { th, type Key } from '../i18n/th';
 import { sharedSession, type SessionStore } from '../session/session';
+import { NoticeBell } from './notice-bell/NoticeBell';
 import { QueueCard } from './QueueCard';
+
+const noticeClient = new ApiClient();
 
 /** A role code's label, `shell.account.role.<camelCase>`; a code with no key shows as itself. */
 function roleLabel(code: string): string {
@@ -22,6 +26,7 @@ function cleanUrl(): string {
 export function AccountBar(props: {
   session?: SessionStore;
   navigate?: (url: string) => void;
+  reload?: () => void;
 }): JSX.Element {
   const session = () => props.session ?? sharedSession();
   const navigate = (url: string) => {
@@ -29,6 +34,13 @@ export function AccountBar(props: {
       props.navigate(url);
     } else if (typeof window !== 'undefined') {
       window.location.assign(url);
+    }
+  };
+  const reload = () => {
+    if (props.reload) {
+      props.reload();
+    } else if (typeof window !== 'undefined') {
+      window.location.reload();
     }
   };
 
@@ -93,7 +105,15 @@ export function AccountBar(props: {
       if (sw) {
         await sw(branchId);
       }
-      navigate(cleanUrl());
+      const next = cleanUrl();
+      if (
+        typeof window !== 'undefined' &&
+        next === `${window.location.pathname}${window.location.search}${window.location.hash}`
+      ) {
+        reload();
+      } else {
+        navigate(next);
+      }
     } catch {
       setError(t('shell.account.switchFailed'));
     }
@@ -173,6 +193,7 @@ export function AccountBar(props: {
           <button type="button" disabled={pending()} onClick={handleSignOut}>
             {t('shell.account.signOut')}
           </button>
+          <NoticeBell client={noticeClient} branch={u().branch || null} />
           <QueueCard session={session()} />
         </div>
       )}
