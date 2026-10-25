@@ -33,6 +33,8 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money, NumberError};
 use xc_kernel::shift_hook::{ShiftLifecycleHook, ShiftLifecycleHooks};
+use xc_notify::application::notification_service::NotificationService;
+use xc_notify::application::template_registry::TemplateRegistry;
 use xc_queue::application::counter::counter_service::CounterService;
 use xc_queue::application::day::queue_day_hook::QueueDayHook;
 use xc_queue::application::status::status_service::StatusService;
@@ -273,7 +275,12 @@ impl CountSubmit {
     pub fn new(pool: PgPool) -> Self {
         let hook = shift_lifecycle_hook(&pool);
         Self {
-            counts: CashCountService::pg(pool).with_shift_lifecycle_hook(hook),
+            counts: CashCountService::pg(pool.clone())
+                .with_shift_lifecycle_hook(hook)
+                .with_notices(Arc::new(NotificationService::new(
+                    pool.clone(),
+                    Arc::new(TemplateRegistry::generated()),
+                ))),
         }
     }
 }
@@ -328,7 +335,12 @@ impl CountVerify {
     pub fn new(pool: PgPool) -> Self {
         let hook = shift_lifecycle_hook(&pool);
         Self {
-            counts: CashCountService::pg(pool).with_shift_lifecycle_hook(hook),
+            counts: CashCountService::pg(pool.clone())
+                .with_shift_lifecycle_hook(hook)
+                .with_notices(Arc::new(NotificationService::new(
+                    pool.clone(),
+                    Arc::new(TemplateRegistry::generated()),
+                ))),
         }
     }
 }

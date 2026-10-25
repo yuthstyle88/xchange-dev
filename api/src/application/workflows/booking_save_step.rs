@@ -7,6 +7,7 @@ use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_booking::domain::booking::booking_error::BookingError;
 use xc_exchange::domain::exchange::entities::transaction::Transaction as ExchangeTransaction;
 use xc_kernel::mode::Mode;
+use xc_referral::application::capture_service::{CaptureError, ReferralCaptureService};
 
 use crate::application::workflows::save_step::{SaveContext, SaveStep, StepFuture};
 
@@ -16,11 +17,20 @@ pub const FORM_MISMATCH: &str = "ข้อมูลรายการไม่�
 #[derive(Clone)]
 pub struct BookingSaveStep {
     lifecycle: Arc<BookingLifecycle>,
+    referral: Option<Arc<ReferralCaptureService>>,
 }
 
 impl BookingSaveStep {
     pub fn new(lifecycle: Arc<BookingLifecycle>) -> Self {
-        Self { lifecycle }
+        Self {
+            lifecycle,
+            referral: None,
+        }
+    }
+
+    pub fn with_referral_capture(mut self, referral: Arc<ReferralCaptureService>) -> Self {
+        self.referral = Some(referral);
+        self
     }
 }
 
@@ -99,6 +109,18 @@ impl SaveStep for BookingSaveStep {
                     ctx.now,
                 )
                 .await?;
+
+            if let Some(ref referral) = self.referral {
+                referral
+                    .link_transaction_in(tx, &claim.booking_id, tx_id)
+                    .await
+                    .map_err(|e| match e {
+                        CaptureError::Store(err) => BookingError::Store(err),
+                        _ => BookingError::ValidationFailed {
+                            field: "referralCode",
+                        },
+                    })?;
+            }
 
             Ok(())
         })

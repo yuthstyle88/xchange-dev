@@ -16,6 +16,7 @@ use xc_booking::application::lifecycle::BookingLifecycle;
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_exchange::domain::exchange::commands::save_transaction::SaveTransaction;
 use xc_kiosk::application::kiosk::service::KioskService;
+use xc_referral::application::capture_service::ReferralCaptureService;
 use xc_shift::application::custody::service::CustodyService;
 
 use crate::application::compat::actions::{ActionFuture, RpcAction, RpcCall};
@@ -66,8 +67,14 @@ impl SaveAction {
     }
 
     /// Appends the booking save step to redeem and use bookings at the desk (T15-h).
-    pub fn with_booking_check(mut self, lifecycle: Arc<BookingLifecycle>) -> Self {
-        self.steps.push(Arc::new(BookingSaveStep::new(lifecycle)));
+    pub fn with_booking_check(
+        mut self,
+        lifecycle: Arc<BookingLifecycle>,
+        referral: Arc<ReferralCaptureService>,
+    ) -> Self {
+        self.steps.push(Arc::new(
+            BookingSaveStep::new(lifecycle).with_referral_capture(referral),
+        ));
         self.workflow = self.workflow.with_steps(self.steps.clone());
         self
     }

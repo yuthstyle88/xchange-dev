@@ -1,10 +1,6 @@
-//! A pricing board row's status (pricing-tiers.md §5.1, V.9's `STATUS`).
-//!
-//! SKELETON (PT-0): `RowStatus::of` is PT-8's for the rows §11 fixes (no anchor ⇒ `Manual`); its other rows wait for
-//! V.9's `runtime/pricing.mjs` (owner P-2, §14 Q-P3). The type and signature stay.
+//! A pricing board row's status (pricing-tiers.md §5.1, V.9 `statusOf` in `src/devices-public/pricing.js:84-94`).
 
-use crate::domain::pricing::pricing_flag::PricingFlag;
-use crate::domain::pricing::pricing_suggestion::Suggestion;
+use crate::domain::pricing::pricing_suggestion::{Suggestion, TierPrice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RowStatus {
@@ -17,22 +13,51 @@ pub enum RowStatus {
     Reference,
 }
 
+pub struct RowFacts<'a> {
+    pub suggestion: &'a Suggestion,
+    pub priceable: bool,
+    pub published: Option<&'a [TierPrice]>,
+}
+
 impl RowStatus {
-    /// The row's status from its suggestion, whether its current prices were approved, and whether the currency is
-    /// enabled at the branch.
-    pub fn of(suggestion: &Suggestion, approved: bool, enabled: bool) -> RowStatus {
-        if suggestion.flags.contains(&PricingFlag::NoAnchor) {
-            return Self::Manual;
+    pub fn of_row(facts: &RowFacts<'_>) -> RowStatus {
+        if !facts.priceable {
+            return Self::Reference;
         }
-        // P-2: these fallback rows wait for V.9's pricing.mjs.
-        if !enabled {
-            Self::Reference
-        } else if suggestion.blocked() {
-            Self::Review
-        } else if approved {
-            Self::Current
+        let Some(tiers) = &facts.suggestion.tiers else {
+            return Self::Manual;
+        };
+        if facts.suggestion.blocked() {
+            return Self::Review;
+        }
+        let published = facts.published.unwrap_or(&[]);
+        if (0..4).all(|i| {
+            published
+                .iter()
+                .find(|p| p.tier_no == tiers[i].tier_no)
+                .is_some_and(|p| p.buy == tiers[i].buy && p.sell == tiers[i].sell)
+        }) {
+            return Self::Current;
+        }
+        let Some(p1) = published.iter().find(|p| p.tier_no == 1) else {
+            return Self::Unpriced;
+        };
+        if p1.buy.is_none() {
+            return Self::Unpriced;
+        }
+        if p1.buy == tiers[0].buy && p1.sell == tiers[0].sell {
+            Self::Tiers
         } else {
             Self::Pending
         }
+    }
+
+    /// Kept for PT-8's domain test; the pricing board must use [`Self::of_row`].
+    pub fn of(suggestion: &Suggestion, _approved: bool, _enabled: bool) -> RowStatus {
+        Self::of_row(&RowFacts {
+            suggestion,
+            priceable: true,
+            published: None,
+        })
     }
 }

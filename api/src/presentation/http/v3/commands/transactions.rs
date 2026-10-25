@@ -36,6 +36,7 @@ use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
+use super::attach_referral::capture_service_for_pool;
 use super::commands::make_approval_service;
 use crate::application::settings::PaymentSettingsService;
 use crate::application::workflows::booking_save_step::BookingSaveStep;
@@ -307,7 +308,10 @@ pub(crate) fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
         Arc::new(KioskSaveStep::new(kiosk)),
         Arc::new(CustodySaveStep::new(custody)),
         Arc::new(PaymentSaveStep::new(payments)),
-        Arc::new(BookingSaveStep::new(lifecycle)),
+        Arc::new(
+            BookingSaveStep::new(lifecycle)
+                .with_referral_capture(Arc::new(capture_service_for_pool(pool.clone()))),
+        ),
         Arc::new(BrokerFeedSaveStep::new()),
     ]
 }
