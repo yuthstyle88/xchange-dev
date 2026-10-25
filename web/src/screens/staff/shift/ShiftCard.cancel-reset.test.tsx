@@ -217,6 +217,18 @@ async function openCountForm(
   return form;
 }
 
+/** #5114: a currency other than THB joins the count form through its search box first. */
+async function addCurrency(form: HTMLFormElement, code: string) {
+  const search = form.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+  expect(search, "the currency search box").not.toBeNull();
+  typeInto(search!, code.toLowerCase());
+  const option = `[data-testid="currency-option"][data-currency="${code}"]`;
+  await vi.waitFor(() => expect(form.querySelector(option), option).not.toBeNull());
+  await click(form.querySelector<HTMLButtonElement>(option)!);
+  const group = `[data-testid="currency-group"][data-currency="${code}"]`;
+  await vi.waitFor(() => expect(form.querySelector(group), group).not.toBeNull());
+}
+
 function qtyInput(form: HTMLFormElement, id: number): HTMLInputElement {
   const i = form.querySelector<HTMLInputElement>(
     `input[data-denomination-id="${id}"]`,
@@ -366,6 +378,7 @@ describe("#2660 ShiftCard cancel resets count and handover forms", () => {
     await clickCancel(form);
 
     form = await openCountForm("shift-open-count");
+    await addCurrency(form, "USD"); // #5114: added again, since the reopened form starts from THB only
     typeInto(qtyInput(form, 21), "5");
     await saveCount(form);
 
