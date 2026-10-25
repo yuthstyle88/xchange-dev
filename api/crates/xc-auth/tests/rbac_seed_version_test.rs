@@ -450,15 +450,17 @@ fn every_permission_is_in_the_version_1_baseline_or_in_seed_additions() {
             RoleGrants::SEED_VERSION
         );
     }
-    // #4155 W/A1: SEED_VERSION is the newest of SEED_ADDITIONS and SEED_REMOVALS.
+    // #4155 W/A1, widened by #5095's seed fix: SEED_VERSION is the newest of SEED_ADDITIONS, SEED_ROLE_ADDITIONS
+    // and SEED_REMOVALS.
     assert_eq!(
         RoleGrants::SEED_ADDITIONS
             .iter()
             .chain(RoleGrants::SEED_REMOVALS.iter())
             .map(|&(v, _)| v)
+            .chain(RoleGrants::SEED_ROLE_ADDITIONS.iter().map(|&(v, _, _)| v))
             .max()
             .unwrap_or(1),
         RoleGrants::SEED_VERSION,
-        "SEED_VERSION is the newest of SEED_ADDITIONS and SEED_REMOVALS"
+        "SEED_VERSION is the newest of SEED_ADDITIONS, SEED_ROLE_ADDITIONS and SEED_REMOVALS"
     );
 }

@@ -240,6 +240,32 @@ impl RoleGrantStore for PgRoleGrantStore {
                     }
                 }
             }
+            for &(v, r, p) in RoleGrants::SEED_ROLE_ADDITIONS {
+                if r == role && v > current_version {
+                    let name = perm_name(p)?;
+                    let res = sqlx::query(
+                        "INSERT INTO role_permission_grants (role_code, permission) \
+                         VALUES ($1, $2) ON CONFLICT (role_code, permission) DO NOTHING",
+                    )
+                    .bind(code)
+                    .bind(&name)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
+                    inserted += res.rows_affected();
+                    let res = sqlx::query(
+                        "INSERT INTO role_permission_grants (role_code, permission) \
+                         SELECT code, $2 FROM roles WHERE base_role = $1 AND NOT built_in \
+                         ON CONFLICT (role_code, permission) DO NOTHING",
+                    )
+                    .bind(code)
+                    .bind(&name)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
+                    inserted += res.rows_affected();
+                }
+            }
             sqlx::query("UPDATE roles SET seed_version = $1 WHERE code = $2")
                 .bind(RoleGrants::SEED_VERSION)
                 .bind(code)

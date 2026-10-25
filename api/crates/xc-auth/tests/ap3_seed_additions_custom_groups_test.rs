@@ -217,8 +217,8 @@ async fn ap3_a10_a_branch_manager_based_custom_group_gains_its_base_s_kinds_at_b
     for role in RoleGrants::BUILT_IN {
         assert_eq!(
             seed_version(&db, role.as_str()).await,
-            4,
-            "{role:?} ends at seed version 4"
+            RoleGrants::SEED_VERSION,
+            "{role:?} ends at the current seed version (5 since #5095's seed fix)"
         );
         assert_eq!(
             stored_set(&db, role.as_str()).await,
