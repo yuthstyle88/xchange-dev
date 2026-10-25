@@ -68,6 +68,7 @@ use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::extractors::actor::{
     identity_session, identity_session_actor, same_origin, server_error,
 };
+use crate::presentation::http::v3::attach_referral::capture_service_for_pool;
 use crate::presentation::pages;
 use xc_auth::domain::access::standing::FALLBACK_BRANCH;
 use xc_auth::domain::access::{Standing, StandingKind, is_staff_caller};
@@ -370,12 +371,13 @@ pub fn registered_actions(state: &AppState) -> RpcActions {
         PgBranchRepository::new(pool.clone()),
     );
     let lifecycle = pg_booking_lifecycle(pool.clone());
+    let referral = Arc::new(capture_service_for_pool(pool.clone()));
     vec![
         Arc::new(DocumentsAction::new(documents)),
         Arc::new(
             SaveAction::new(save, devices, kiosk, custody)
                 .with_payment_check(payments)
-                .with_booking_check(lifecycle)
+                .with_booking_check(lifecycle, referral)
                 .with_broker_feed(),
         ),
     ]
