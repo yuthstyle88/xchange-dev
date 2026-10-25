@@ -113,10 +113,18 @@ impl CloseNotices {
 
         static SAVEPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
         let mut params = NotificationParams::new()
-            .text("branch", branch_str)
+            .display(
+                "branch",
+                DisplayValue::server_id(branch_str)
+                    .map_err(|e| AppError::Internal(e.to_string()))?,
+            )
             .text("by", &safe_by);
         if let Some(ref s_id) = count.shift_id {
-            params = params.text("shift", s_id.as_str());
+            params = params.display(
+                "shift",
+                DisplayValue::server_id(s_id.as_str())
+                    .map_err(|e| AppError::Internal(e.to_string()))?,
+            );
         }
         if let Some(thb) = totals
             .iter()
@@ -140,7 +148,15 @@ impl CloseNotices {
                 params.clone(),
             ) {
                 Ok(req) => req,
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::warn!(
+                        template = %template_key,
+                        recipient = %recipient_id,
+                        error = %e,
+                        "failed to build shift close notification request: {e}"
+                    );
+                    continue;
+                }
             };
 
             let sp_id = SAVEPOINT_COUNTER.fetch_add(1, Ordering::Relaxed);
