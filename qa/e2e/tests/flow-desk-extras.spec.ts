@@ -23,6 +23,7 @@
 // - screens/desk/steps/refunds/RefundsStep.tsx:87-96,128-136 button[data-action="post"][data-id="<reversalId>"], dialog.xc-dialog
 // - smoke-rbac-matrix.spec.ts:99-117                   customer has no desk (redirected to /login?next=…)
 import { expect, test, type Page } from '@playwright/test';
+import * as phoneI18n from '../../../web/src/screens/desk/loyalty/phone/i18n';
 import {
   closeShift,
   cutOff,
@@ -547,24 +548,29 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
           const sendCodeBtn = loyaltyBox.locator('button[name="sendCode"]'); // PhoneVerify.tsx:133
           const phoneAlert = loyaltyBox.locator('p.desk-error[role="alert"]'); // PhoneVerify.tsx:162
 
-          // Case 3: customerPhoneStart (POST /api/customers/{id}/phone-verifications) with malformed phone (PhoneVerify.tsx:71,86,125,133,162).
+          // Case 3: malformed phone refuses at the field (PhoneVerify.tsx:88-91) -> 0 POST /api/customers/{id}/phone-verifications.
           const badPhone = `bad-phone-${ts}`;
           await phoneInput.fill(badPhone);
-          const badPhoneRes = await posted(
-            teller,
-            /^\/api\/customers\/[^/]+\/phone-verifications$/,
-            () => sendCodeBtn.click(),
-          );
-          expect(badPhoneRes.ok, `[${lang}] malformed phone must be refused: ${badPhoneRes.text}`).toBe(false);
+          let phonePosts = 0;
+          const onPhoneReq = (req: { method(): string; url(): string }) => {
+            if (req.method() === 'POST' && /^\/api\/customers\/[^/]+\/phone-verifications$/.test(new URL(req.url()).pathname)) {
+              phonePosts++;
+            }
+          };
+          teller.on('request', onPhoneReq);
+          try {
+            await sendCodeBtn.click();
+          } finally {
+            teller.off('request', onPhoneReq);
+          }
+          expect(phonePosts, `[${lang}] malformed phone sends no POST /api/customers/{id}/phone-verifications`).toBe(0);
+
           await expect(phoneAlert, `[${lang}] malformed phone alert must be visible`).toBeVisible({ timeout: 10_000 });
+          const expectedPhoneErr = phoneI18n[lang === 'th' ? 'th' : 'en'].invalidPhone;
+          await expect(phoneAlert, `[${lang}] malformed phone alert text`).toHaveText(expectedPhoneErr);
           const badPhoneText = (await phoneAlert.innerText()).trim();
           expect(badPhoneText.length).toBeGreaterThan(0);
           expect(badPhoneText).not.toMatch(RAW_CODE);
-          if (lang === 'th') {
-            expect(badPhoneText).toMatch(/[\u0E00-\u0E7F]/);
-          } else {
-            expect(badPhoneText).toMatch(/[A-Za-z]/);
-          }
           await expect(phoneInput, `[${lang}] phone input must keep typed value`).toHaveValue(badPhone);
 
           // Case 4: customerPhoneStart then customerPhoneConfirm (POST /api/customers/{id}/phone-verifications/{challengeId}/confirm)
