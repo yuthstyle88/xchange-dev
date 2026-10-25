@@ -557,17 +557,17 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
               phonePosts++;
             }
           };
+          // Keep listening until the alert has rendered, so a request fired after click() returns is still counted.
           teller.on('request', onPhoneReq);
           try {
             await sendCodeBtn.click();
+            await expect(phoneAlert, `[${lang}] malformed phone alert must be visible`).toBeVisible({ timeout: 10_000 });
+            const expectedPhoneErr = phoneI18n[lang === 'th' ? 'th' : 'en'].invalidPhone;
+            await expect(phoneAlert, `[${lang}] malformed phone alert text`).toHaveText(expectedPhoneErr);
           } finally {
             teller.off('request', onPhoneReq);
           }
           expect(phonePosts, `[${lang}] malformed phone sends no POST /api/customers/{id}/phone-verifications`).toBe(0);
-
-          await expect(phoneAlert, `[${lang}] malformed phone alert must be visible`).toBeVisible({ timeout: 10_000 });
-          const expectedPhoneErr = phoneI18n[lang === 'th' ? 'th' : 'en'].invalidPhone;
-          await expect(phoneAlert, `[${lang}] malformed phone alert text`).toHaveText(expectedPhoneErr);
           const badPhoneText = (await phoneAlert.innerText()).trim();
           expect(badPhoneText.length).toBeGreaterThan(0);
           expect(badPhoneText).not.toMatch(RAW_CODE);
