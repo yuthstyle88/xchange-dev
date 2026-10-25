@@ -16,6 +16,7 @@ use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, T
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, QuantityDelta};
+use xc_kernel::notifications::Notifications;
 use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
@@ -27,6 +28,7 @@ use xc_shift::infrastructure::custody::custody_repository::{
 };
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 
+use crate::application::count::close_notices::CloseNotices;
 use crate::application::denominations::face_values_in;
 use crate::application::ledger_approval::count_difference::{
     COUNT_DIFFERENCE, CountDifferenceGate, GateResult,
@@ -59,6 +61,7 @@ pub struct CashCountService {
     shifts: ShiftService<PgShiftRepository>,
     gate: Arc<CountDifferenceGate>,
     approvals_repo: Arc<PgApprovalRepository>,
+    notices: Option<Arc<dyn Notifications>>,
 }
 
 impl CashCountService {
@@ -77,6 +80,7 @@ impl CashCountService {
             shifts,
             gate,
             approvals_repo,
+            notices: None,
         }
     }
 
@@ -113,6 +117,13 @@ impl CashCountService {
     pub fn with_shift_lifecycle_hook(self, hook: Arc<dyn ShiftLifecycleHook>) -> Self {
         Self {
             shifts: self.shifts.with_lifecycle_hook(hook),
+            ..self
+        }
+    }
+
+    pub fn with_notices(self, n: Arc<dyn Notifications>) -> Self {
+        Self {
+            notices: Some(n),
             ..self
         }
     }
@@ -1004,6 +1015,14 @@ impl CashCountService {
             .insert_count(&mut *tx, &cash_count, &sanitized_lines, &totals)
             .await?;
 
+        if cash_count.kind == CountKind::Close
+            && let Some(ref n) = self.notices
+        {
+            CloseNotices::new(n.clone())
+                .notify_waiting_in(tx, &cash_count, &totals, &actor.user_id)
+                .await?;
+        }
+
         Ok(cash_count)
     }
 
@@ -1291,6 +1310,13 @@ impl CashCountService {
             let mut verified_count = count;
             verified_count.verified_by = Some(actor.user_id.clone());
             verified_count.verified_at = Some(now);
+
+            if let Some(ref n) = self.notices {
+                CloseNotices::new(n.clone())
+                    .notify_certified_in(tx, &verified_count, &updated_totals, &actor.user_id)
+                    .await?;
+            }
+
             return Ok(CountVerified::Verified(Box::new(verified_count)));
         }
 
