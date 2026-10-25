@@ -114,6 +114,14 @@ function tomorrowBangkokIsoDate(): string {
   return next.toISOString().slice(0, 10);
 }
 
+/** Reads the active OPEN shift for a staff page from GET /api/v3/views/my_shift. */
+async function readMyShift(page: Page): Promise<{ id?: string; status?: string } | null> {
+  const res = await page.request.get(`/api/v3/views/my_shift?branch=${encodeURIComponent(users.branch)}`);
+  expect(res.ok(), `GET /api/v3/views/my_shift: ${res.status()}`).toBeTruthy();
+  const json = (await res.json().catch(() => ({}))) as { data?: { id?: string; status?: string } | null };
+  return json.data ?? null;
+}
+
 test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–§9.5)', () => {
   test('shift count, hold, transfer, and floor day-target forms refuse invalid input in th and en, keep input, and create nothing', async ({
     browser,
@@ -457,22 +465,31 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
 
           // Cases 2–5: '0' (zero), '-50' (negative), '10.12345' (too many decimals), '999999999999999' (over limit).
           for (const badAmount of ['0', '-50', '10.12345', '999999999999999']) {
-            const quoteRes = await posted(teller, /^\/api\/quotes$/, () => amountInput.fill(badAmount));
-            expect(quoteRes.ok, `POST /api/quotes (${badAmount}, ${lang}) must be refused`).toBe(false);
-            expect(quoteRes.text, `POST /api/quotes (${badAmount}, ${lang}) status`).toMatch(/^400\b/);
+            let quotePosts = 0;
+            const onQuoteReq = (req: { method(): string; url(): string }) => {
+              if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/quotes') {
+                quotePosts++;
+              }
+            };
+            teller.on('request', onQuoteReq);
+            try {
+              await amountInput.fill(badAmount);
+              const fieldErr = teller.locator('.desk-error').first();
+              await expect(
+                fieldErr,
+                `desk-error visible for amount '${badAmount}' (${lang}, steps/rate/step.tsx:96)`,
+              ).toBeVisible({ timeout: 10_000 });
+              expectWordedRefusal(await fieldErr.innerText(), `desk amount ${badAmount} (${lang})`);
+              await expect(amountInput, `amount input keeps '${badAmount}' (${lang})`).toHaveValue(badAmount);
 
-            const fieldErr = teller.locator('.desk-error').first();
-            await expect(
-              fieldErr,
-              `desk-error visible for amount '${badAmount}' (${lang}, steps/rate/step.tsx:96)`,
-            ).toBeVisible({ timeout: 10_000 });
-            expectWordedRefusal(await fieldErr.innerText(), `desk amount ${badAmount} (${lang})`);
-            await expect(amountInput, `amount input keeps '${badAmount}' (${lang})`).toHaveValue(badAmount);
-
-            // Submitting with an invalid quote stays on step 0; no customer/payment step or transactionCreate.
-            await submitBtn.click();
-            await expect(currencySelect, 'still on rate step 0 after invalid submit').toBeVisible();
-            await expect(teller.locator('button[name="skipCustomer"]')).toHaveCount(0);
+              // Submitting with an invalid quote stays on step 0; no customer/payment step or transactionCreate.
+              await submitBtn.click();
+              await expect(currencySelect, 'still on rate step 0 after invalid submit').toBeVisible();
+              await expect(teller.locator('button[name="skipCustomer"]')).toHaveCount(0);
+            } finally {
+              teller.off('request', onQuoteReq);
+            }
+            expect(quotePosts, `bad amount sends no POST /api/quotes (${badAmount}, ${lang})`).toBe(0);
           }
         }
         await shot(teller, 'desk', 'validation-desk-amount');
@@ -836,7 +853,12 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await cutOff(manager);
         }
         if (shiftOpened) {
+          await teller.goto('/staff');
+          await manager.goto('/staff');
           await closeShift(teller, manager);
+          const shift = await readMyShift(teller);
+          expect(shift, 'teller shift is closed in my_shift view').toBeNull();
+          console.log('[validation-staff-desk] cleanup: closed teller shift');
         }
       }
     } finally {
