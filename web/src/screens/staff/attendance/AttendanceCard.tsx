@@ -6,6 +6,7 @@ import type { StaffAttendanceRow } from '../../../shared/api/generated/staff_att
 import type { StaffCtx } from '../cards';
 import * as staffI18n from '../i18n';
 import { th, en } from './i18n';
+import './attendance.css';
 
 export interface AttendanceCardProps {
   ctx: StaffCtx;
@@ -42,25 +43,32 @@ export function AttendanceCard(_props: AttendanceCardProps): JSX.Element {
   });
 
   return (
-    <div data-testid="attendance-card">
+    <div data-testid="attendance-card" class="xc-attendance-card">
+      <div class="xc-attendance-header">
+        <h2 class="xc-attendance-title">{t('title')}</h2>
+      </div>
+
       <Show when={error() !== null}>
-        <div>
-          <div data-testid="attendance-error">{wordedError(error())}</div>
-          <button type="button" onClick={() => void load()}>
+        <div class="xc-attendance-error-panel">
+          <div data-testid="attendance-error" class="xc-attendance-error">{wordedError(error())}</div>
+          <button type="button" class="xc-attendance-btn" onClick={() => void load()}>
             {t('refresh')}
           </button>
         </div>
       </Show>
-      <For each={rows()}>
-        {(row) => (
-          <div data-attendance-id={row.id}>
-            <span>{row.name}</span>
-            <Show when={!row.out}>
-              <span> {t('stillIn')}</span>
-            </Show>
-          </div>
-        )}
-      </For>
+
+      <div class="xc-attendance-list">
+        <For each={rows()}>
+          {(row) => (
+            <div data-attendance-id={row.id} class="xc-attendance-row">
+              <span class="xc-attendance-name">{row.name}</span>
+              <Show when={!row.out}>
+                <span class="xc-attendance-status"> {t('stillIn')}</span>
+              </Show>
+            </div>
+          )}
+        </For>
+      </div>
     </div>
   );
 }

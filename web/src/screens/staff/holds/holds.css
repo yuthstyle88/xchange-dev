@@ -1,0 +1,183 @@
+.xc-holds-card {
+  padding: 1.5rem;
+  background: var(--xc-surface, #ffffff);
+  border-radius: 0.5rem;
+}
+
+.xc-holds-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.xc-holds-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--xc-text, #111827);
+}
+
+.xc-holds-notice {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: var(--xc-success-bg, #ecfdf5);
+  color: var(--xc-success, #059669);
+  border: 1px solid var(--xc-success-border, #a7f3d0);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.xc-holds-error {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: var(--xc-danger-bg, #fef2f2);
+  color: var(--xc-danger, #ef4444);
+  border: 1px solid var(--xc-danger-border, #fecaca);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.xc-holds-form {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--xc-border, #e5e7eb);
+  border-radius: 0.375rem;
+  background: var(--xc-surface-subtle, #f9fafb);
+}
+
+.xc-holds-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.xc-holds-form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--xc-text, #374151);
+}
+
+.xc-holds-search-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.xc-holds-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--xc-border, #d1d5db);
+  border-radius: 0.375rem;
+  background: var(--xc-surface, #ffffff);
+  color: var(--xc-text, #111827);
+  box-sizing: border-box;
+}
+
+.xc-holds-input:focus {
+  outline: none;
+  border-color: var(--xc-primary, #2563eb);
+}
+
+.xc-holds-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--xc-text, #111827);
+  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-border, #e5e7eb);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.xc-holds-btn:hover {
+  background: var(--xc-surface-hover, #f9fafb);
+}
+
+.xc-holds-save-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #ffffff;
+  background: var(--xc-primary, #2563eb);
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.xc-holds-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.xc-holds-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.xc-holds-customers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.xc-holds-customer-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--xc-border, #e5e7eb);
+  border-radius: 0.25rem;
+  background: var(--xc-surface, #ffffff);
+  cursor: pointer;
+}
+
+.xc-holds-customer-item:hover {
+  background: var(--xc-surface-hover, #f9fafb);
+}
+
+.xc-holds-field-error {
+  font-size: 0.75rem;
+  color: var(--xc-danger, #ef4444);
+  margin-top: 0.25rem;
+}
+
+.xc-holds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.xc-holds-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--xc-border, #e5e7eb);
+  border-radius: 0.375rem;
+  background: var(--xc-surface, #ffffff);
+  gap: 1rem;
+}
+
+.xc-holds-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--xc-text, #111827);
+}
+
+.xc-holds-reason {
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #6b7280);
+  flex: 1;
+}
+
+.xc-holds-status {
+  font-size: 0.875rem;
+  color: var(--xc-text, #111827);
+  font-weight: 500;
+}

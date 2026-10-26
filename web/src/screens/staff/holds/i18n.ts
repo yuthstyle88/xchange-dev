@@ -1,4 +1,5 @@
 export const th = {
+  title: 'พักบัญชีลูกค้า',
   find: 'ค้นหา',
   place: 'พักบัญชี',
   release: 'ปลดพัก',
@@ -6,9 +7,16 @@ export const th = {
   saved: 'บันทึกแล้ว',
   pickCustomer: 'กรุณาเลือกลูกค้าจากผลการค้นหาก่อน',
   reasonRequired: 'กรุณาระบุเหตุผล',
+  customer: 'ลูกค้า',
+  searchCustomerPlaceholder: 'ชื่อ รหัส หรือหนังสือเดินทาง',
+  reason: 'เหตุผล',
+  reasonPlaceholder: 'ระบุเหตุผลการพักบัญชี',
+  statusOpen: 'พักอยู่',
+  statusReleased: 'ปลดพักแล้ว',
 };
 
 export const en = {
+  title: 'Customer holds',
   find: 'Find',
   place: 'Place hold',
   release: 'Release',
@@ -16,4 +24,10 @@ export const en = {
   saved: 'Saved',
   pickCustomer: 'Pick a customer from the search results first.',
   reasonRequired: 'Reason is required',
+  customer: 'Customer',
+  searchCustomerPlaceholder: 'Name, customer ID or passport',
+  reason: 'Reason',
+  reasonPlaceholder: 'Enter reason for hold',
+  statusOpen: 'On hold',
+  statusReleased: 'Released',
 };
