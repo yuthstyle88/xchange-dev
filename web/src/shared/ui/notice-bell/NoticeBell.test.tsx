@@ -15,7 +15,7 @@
 // `{ branch, filter: { unread: true } }` (client.ts:99-109 turns `filter` into `unread=true`) and `since`.
 //
 // DOM it must render:
-//   - `<a data-testid="notice-bell" href="#notices">`: the link to the Notices page, always rendered while signed in.
+//   - `<a data-testid="notice-bell" href="/#notices">`: the link to the Notices page, always rendered while signed in.
 //   - `[data-testid="notice-bell-count"]` inside it: the unread count as its text. Hidden at 0 = not rendered,
 //     or `hidden` on it / an ancestor, or computed `display: none`.
 //   - `[data-testid="notice-toast"]`: one element per toast, holding the notice's `title` and `body`; gone within 30 s.
@@ -151,12 +151,19 @@ describe('NoticeBell (#5099)', () => {
     expect((seen[1]!.params.filter as { unread?: boolean } | undefined)?.unread).toBe(true);
   });
 
-  it('row 1: first poll with 3 unread shows badge 3 linking to #notices, and no toast (even for cash_count items)', async () => {
+  it('row 1 (#5125): bell rendered on any page has href="/#notices"', async () => {
+    const { client } = fakeClient([]);
+    mount(client, () => 'XC-B01', 1000);
+    expect(bell(), 'the bell link').not.toBeNull();
+    expect(bell()!.getAttribute('href')).toBe('/#notices');
+  });
+
+  it('row 1: first poll with 3 unread shows badge 3 linking to /#notices, and no toast (even for cash_count items)', async () => {
     const { client } = fakeClient([answer([item(1, 'cash_count'), item(2, 'cash_count'), item(3, 'other')], 1)]);
     mount(client, () => 'XC-B01', 1000);
     await vi.advanceTimersByTimeAsync(0);
     expect(bell(), 'the bell link').not.toBeNull();
-    expect(bell()!.getAttribute('href')).toBe('#notices');
+    expect(bell()!.getAttribute('href')).toBe('/#notices');
     expect(shownCount()).toBe('3');
     expect(toasts()).toHaveLength(0);
   });
