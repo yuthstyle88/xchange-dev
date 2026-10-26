@@ -674,7 +674,7 @@ function linesOf(body: Record<string, unknown>): unknown[] {
 }
 
 describe("S9 the count form: one row per face value from the denominations view", () => {
-  it("a quantity input per face value, each labelled with its faceValue exactly as the wire string", async () => {
+  it("a quantity input per face value, each labelled with its faceValue as money; the wire string stays as data-face-value (#5127)", async () => {
     stub();
     const form = await (async () => {
       await mount(
@@ -689,7 +689,13 @@ describe("S9 the count form: one row per face value from the denominations view"
       const input = qtyInput(form, d.id);
       const row =
         input.closest("[data-denomination-row]") ?? input.parentElement!;
-      expect(row.textContent, `denomination ${d.id}`).toContain(d.faceValue);
+      // #5127: shown as money ("1,000", "100", "50"); the exact wire string is the row's data-face-value.
+      const money: Record<string, string> = { "100.0000": "100", "1000.0000": "1,000", "50.0000": "50" };
+      expect(row.getAttribute("data-face-value"), `denomination ${d.id}`).toBe(d.faceValue);
+      expect(
+        row.querySelector(".xc-shift-denom-val")?.textContent?.trim(),
+        `denomination ${d.id}`,
+      ).toBe(money[d.faceValue]);
       expect(row.textContent, `denomination ${d.id}`).toContain(d.currency);
     }
   });

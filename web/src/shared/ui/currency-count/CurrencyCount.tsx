@@ -1,6 +1,7 @@
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import type { DenominationRow } from '../../api/generated/denominations';
 import { lang, screenT } from '../../i18n';
+import { formatAmount, formatFaceValue } from './face-value';
 import * as table from './i18n';
 import './currency-count.css';
 
@@ -123,7 +124,7 @@ export function CurrencyCount(props: CurrencyCountProps): JSX.Element {
                       data-expected={exp()}
                       class="xc-currency-count-expected"
                     >
-                      {t('expected', { amount: exp() })}
+                      {t('expected', { amount: formatAmount(exp()) })}
                     </span>
                   )}
                 </Show>
@@ -141,10 +142,10 @@ export function CurrencyCount(props: CurrencyCountProps): JSX.Element {
               <div class="xc-shift-denoms">
                 <For each={props.denominations.filter((d) => d.currency === code)}>
                   {(d) => (
-                    <div data-denomination-row class="xc-shift-denom-row">
+                    <div data-denomination-row data-face-value={d.faceValue} class="xc-shift-denom-row">
                       <span class="xc-shift-denom-label">
                         <span class="xc-shift-denom-currency">{d.currency}</span>{' '}
-                        <span class="xc-shift-denom-val">{d.faceValue}</span>
+                        <span class="xc-shift-denom-val">{formatFaceValue(d.faceValue)}</span>
                       </span>
                       <input
                         data-denomination-id={d.id}
