@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 /// Why a [`DisplayValue`] could not be built.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -50,7 +50,7 @@ impl DisplayValue {
     }
 
     pub fn amount(value: Decimal) -> Self {
-        Self(value.to_string())
+        Self(format_amount(value))
     }
 
     pub fn rate(value: Decimal) -> Self {
@@ -69,6 +69,45 @@ impl DisplayValue {
 /// Formats a queue number as `{letter}{sequence:03}`.
 pub fn queue_number_text(letter: char, sequence: i32) -> String {
     format!("{letter}{sequence:03}")
+}
+
+fn format_amount(value: Decimal) -> String {
+    let mut rounded = value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    rounded.rescale(2);
+    let s = rounded.to_string();
+    let (int_part, frac_part) = match s.split_once('.') {
+        Some((i, f)) => (i, f),
+        None => (s.as_str(), "00"),
+    };
+
+    let (is_negative, digits) = match int_part.strip_prefix('-') {
+        Some(stripped) => (!rounded.is_zero(), stripped),
+        None => (false, int_part),
+    };
+
+    let mut formatted = String::with_capacity(digits.len() + digits.len() / 3 + 4);
+    let rem = digits.len() % 3;
+    if rem > 0 {
+        formatted.push_str(&digits[..rem]);
+    }
+    for chunk in digits.as_bytes()[rem..].chunks(3) {
+        if !formatted.is_empty() {
+            formatted.push(',');
+        }
+        if let Ok(s) = std::str::from_utf8(chunk) {
+            formatted.push_str(s);
+        }
+    }
+    if is_negative {
+        formatted.insert(0, '-');
+    }
+    if formatted.is_empty() {
+        formatted.push('0');
+    }
+
+    formatted.push('.');
+    formatted.push_str(frac_part);
+    formatted
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

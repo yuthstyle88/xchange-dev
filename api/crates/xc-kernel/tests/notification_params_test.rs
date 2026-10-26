@@ -142,7 +142,7 @@ fn display_value_amount_and_rate_strings() {
     let rate = Decimal::from_str_exact("34.1250").unwrap();
 
     let amount_val = DisplayValue::amount(amount);
-    assert_eq!(amount_val.as_str(), "12500.50");
+    assert_eq!(amount_val.as_str(), "12,500.50");
 
     let rate_val = DisplayValue::rate(rate);
     assert_eq!(rate_val.as_str(), "34.1250");
@@ -154,12 +154,35 @@ fn display_value_amount_and_rate_strings() {
         .expect("amount and rate display values are accepted");
     assert_eq!(
         req.params().get("amount").map(String::as_str),
-        Some("12500.50")
+        Some("12,500.50")
     );
     assert_eq!(
         req.params().get("rate").map(String::as_str),
         Some("34.1250")
     );
+}
+
+#[test]
+fn display_value_amount_formatting() {
+    let cases = [
+        ("9839.5000", "9,839.50"),
+        ("9839.50", "9,839.50"),
+        ("12500.50", "12,500.50"),
+        ("0", "0.00"),
+        ("999.995", "1,000.00"),
+        ("1234567.891", "1,234,567.89"),
+        ("-1234.5", "-1,234.50"),
+        ("100", "100.00"),
+    ];
+
+    for (input, expected) in cases {
+        let dec = Decimal::from_str_exact(input).unwrap();
+        assert_eq!(
+            DisplayValue::amount(dec).as_str(),
+            expected,
+            "failed for input {input}"
+        );
+    }
 }
 
 #[test]
