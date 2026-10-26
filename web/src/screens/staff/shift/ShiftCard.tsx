@@ -1,8 +1,9 @@
-import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, onCleanup, onMount, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
+import { yieldQueueCard } from '../../../shared/ui/queue-card-yield';
 import { ApiClient } from '../../../shared/api/client';
 import type {
   CountSubmitInput,
@@ -62,6 +63,13 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const [selectedReceiver, setSelectedReceiver] = createSignal<string>('');
   const [handoverQuantities, setHandoverQuantities] = createSignal<Record<number, string>>({});
   const [handoverLineErrors, setHandoverLineErrors] = createSignal<Record<number, string>>({});
+
+  createEffect(() => {
+    if (countKind() !== null || showHandover()) {
+      const release = yieldQueueCard();
+      onCleanup(release);
+    }
+  });
 
   const canOperate = () => can(props.ctx.me, 'ShiftOperate');
   const canCertify = () => can(props.ctx.me, 'ShiftCloseCertify');
