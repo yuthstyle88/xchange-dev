@@ -4,6 +4,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient } from '../../../shared/api/client';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import { RateFreshness } from '../../../shared/ui/RateFreshness';
+import { formatRate } from '../../../shared/ui/rate';
 import type { StaffCtx } from '../cards';
 import { th, en } from './i18n';
 import './rates.css';
@@ -93,8 +94,8 @@ export function RatesCard(props: RatesCardProps): JSX.Element {
                     <tr class="xc-rates-row">
                       <td class="xc-rates-td-currency">{line.currency}</td>
                       <td class="xc-rates-td-unit">{line.unitSize}</td>
-                      <td class="xc-rates-td-buy">{line.buyRate !== null ? line.buyRate : t('unavailable')}</td>
-                      <td class="xc-rates-td-sell">{line.sellRate !== null ? line.sellRate : t('unavailable')}</td>
+                      <td class="xc-rates-td-buy">{line.buyRate !== null ? formatRate(line.buyRate, 1, line.currency) : t('unavailable')}</td>
+                      <td class="xc-rates-td-sell">{line.sellRate !== null ? formatRate(line.sellRate, 1, line.currency) : t('unavailable')}</td>
                     </tr>
                   )}
                 </For>

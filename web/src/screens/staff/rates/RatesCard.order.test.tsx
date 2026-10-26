@@ -11,6 +11,7 @@ import {
   type StaffMeView,
 } from '../../../shared/testing/fixtures';
 import { card } from './card';
+import { formatRate } from '../../../shared/ui/rate';
 
 const BRANCH = 'MAIN';
 
@@ -42,7 +43,11 @@ const RATES = makePublishedRatesData({
   bandHeadings: [],
 });
 
-const RATE_STRINGS = RATES.lines.flatMap((l) => [l.buyRate, l.sellRate]).filter((r): r is string => r !== null);
+// #5134: the card shows each rate through the one rate formatter (shared/ui/rate.ts), never the raw wire string.
+const RATE_STRINGS = RATES.lines
+  .flatMap((l) => [l.buyRate, l.sellRate])
+  .filter((r): r is string => r !== null)
+  .map((r) => formatRate(r, 1, ''));
 
 interface PendingRead {
   resolve: (res: Response) => void;
