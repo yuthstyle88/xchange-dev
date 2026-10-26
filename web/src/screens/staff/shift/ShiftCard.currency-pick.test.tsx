@@ -25,7 +25,6 @@ import {
   makeStaffFloorView,
   makeStaffMeView,
   type CountSubmitInput,
-  type StaffFloorView,
 } from '../../../shared/testing/fixtures';
 
 const BRANCH = 'MAIN';
@@ -63,7 +62,7 @@ function me() {
   });
 }
 
-function floor(open: boolean): StaffFloorView {
+function floor(open: boolean) {
   return makeStaffFloorView({
     phase: 'OPEN',
     hours: null,
