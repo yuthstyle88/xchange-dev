@@ -206,3 +206,9 @@ body:has(.xc-admin) .queue-card .queue-sound-controls button {
   color: #716572;
   font-size: 13px;
 }
+
+/* #5126: reserve bottom space on the page while the queue card is shown so inputs at the bottom can scroll clear */
+html {
+  padding-bottom: var(--xc-queue-card-space, 0px);
+}
+

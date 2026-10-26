@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { locale, t } from '../i18n';
 import { summarize } from '../queue/board';
@@ -35,6 +35,42 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
 function OperatorCard(props: { session: SessionStore }): JSX.Element {
   const [isFolded, setIsFolded] = createSignal(checkInitialFold());
   const toggleFold = () => setIsFolded((f) => !f);
+
+  let observer: ResizeObserver | undefined;
+
+  const updateSpace = (height: number) => {
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    document.documentElement.style.setProperty('--xc-queue-card-space', height > 0 ? `${height + 36}px` : '0px');
+  };
+
+  const observeCard = (el: HTMLElement) => {
+    const initialH = el.offsetHeight || el.getBoundingClientRect?.().height || 0;
+    if (initialH > 0) updateSpace(initialH);
+    if (typeof ResizeObserver === 'undefined') return;
+    observer?.disconnect();
+    observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const bSize = Array.isArray(entry.borderBoxSize)
+          ? entry.borderBoxSize[0]
+          : (entry.borderBoxSize as unknown as { blockSize?: number } | undefined);
+        const h =
+          bSize?.blockSize ??
+          (entry.contentRect && typeof entry.contentRect.height === 'number'
+            ? entry.contentRect.height
+            : (entry.target as HTMLElement)?.offsetHeight ?? 0);
+        updateSpace(h);
+      }
+    });
+    observer.observe(el);
+  };
+
+  onCleanup(() => {
+    observer?.disconnect();
+    observer = undefined;
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.style.removeProperty('--xc-queue-card-space');
+    }
+  });
 
   const store = useQueueStore(queueBranch);
   const [hasAnsweredAny, setHasAnsweredAny] = createSignal(false);
@@ -154,6 +190,7 @@ function OperatorCard(props: { session: SessionStore }): JSX.Element {
     <Show when={props.session.me()}>
       <Portal>
         <aside
+          ref={observeCard}
           aria-label={t('queue.card.aria')}
           class="queue-card"
           classList={{ waiting: isWaiting(), minimized: isFolded() }}
