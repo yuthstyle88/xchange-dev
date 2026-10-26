@@ -18,6 +18,7 @@ import type { DenominationRow } from '../../../shared/api/generated/denomination
 import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
 import type { MyShift } from '../../../shared/api/generated/my_shift';
 import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
+import { formatFaceValue } from '../../../shared/ui/currency-count/face-value';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
@@ -591,10 +592,10 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
           <div class="xc-shift-denoms">
             <For each={denominations()}>
               {(d) => (
-                <div data-denomination-row class="xc-shift-denom-row">
+                <div data-denomination-row data-face-value={d.faceValue} class="xc-shift-denom-row">
                   <span class="xc-shift-denom-label">
                     <span class="xc-shift-denom-currency">{d.currency}</span>{' '}
-                    <span class="xc-shift-denom-val">{d.faceValue}</span>
+                    <span class="xc-shift-denom-val">{formatFaceValue(d.faceValue)}</span>
                   </span>
                   <input
                     data-denomination-id={d.id}

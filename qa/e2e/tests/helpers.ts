@@ -437,7 +437,7 @@ export async function submitCount(page: Page, kind: 'open' | 'close'): Promise<{
   if (kind === 'open') {
     const rows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
     await expect(rows.first(), 'a THB denomination row in the count form').toBeVisible({ timeout: 15_000 });
-    const vals = (await rows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+    const vals = (await rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-face-value') ?? ''))).map((s) => parseFloat(s) || 0);
     const best = rows.nth(vals.indexOf(Math.max(...vals)));
     await best.locator('input[data-denomination-id]').fill(SHIFT_QTY);
   } else {
@@ -464,7 +464,7 @@ export async function submitCount(page: Page, kind: 'open' | 'close'): Promise<{
     for (let i = 0; i < count; i++) {
       const row = rows.nth(i);
       const cur = ((await row.locator('.xc-shift-denom-currency').innerText().catch(() => '')) || '').trim();
-      const valStr = ((await row.locator('.xc-shift-denom-val').innerText().catch(() => '')) || '').trim();
+      const valStr = ((await row.getAttribute('data-face-value').catch(() => '')) || '').trim();
       const val = Number(valStr);
       if (!cur || !Number.isFinite(val) || val <= 0) continue;
       if (!denomsByCurrency[cur]) denomsByCurrency[cur] = [];

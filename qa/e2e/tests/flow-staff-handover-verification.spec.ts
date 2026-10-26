@@ -236,7 +236,7 @@ async function fillExpectedThbHandover(page: Page, form: Locator): Promise<numbe
 
   const thbRows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
   await expect(thbRows.first(), 'a THB denomination row in the handover form').toBeVisible({ timeout: 15_000 });
-  const vals = (await thbRows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+  const vals = (await thbRows.evaluateAll((els) => els.map((el) => el.getAttribute('data-face-value') ?? ''))).map((s) => parseFloat(s) || 0);
   const maxVal = Math.max(...vals);
   const bestRow = thbRows.nth(vals.indexOf(maxVal));
   const qty = Math.round(expectedThb / maxVal);
@@ -721,7 +721,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
 
       const thbRows = form.locator('[data-denomination-row]').filter({ hasText: 'THB' });
       await expect(thbRows.first(), 'a THB denomination row in the handover form').toBeVisible({ timeout: 15_000 });
-      const vals = (await thbRows.locator('.xc-shift-denom-val').allTextContents()).map((s) => parseFloat(s) || 0);
+      const vals = (await thbRows.evaluateAll((els) => els.map((el) => el.getAttribute('data-face-value') ?? ''))).map((s) => parseFloat(s) || 0);
       const maxVal = Math.max(...vals);
       const bestRow = thbRows.nth(vals.indexOf(maxVal));
       await bestRow.locator('input[data-denomination-id]').fill('1');

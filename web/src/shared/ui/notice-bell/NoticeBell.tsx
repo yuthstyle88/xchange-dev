@@ -92,7 +92,7 @@ export function NoticeBell(props: {
       <a
         class="notice-bell"
         data-testid="notice-bell"
-        href="#notices"
+        href="/#notices"
         aria-label={label()}
         title={label()}
       >

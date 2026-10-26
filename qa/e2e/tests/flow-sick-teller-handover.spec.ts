@@ -249,7 +249,7 @@ async function fillDenominationsForBalances(
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
     const cur = ((await row.locator('.xc-shift-denom-currency').innerText().catch(() => '')) || '').trim();
-    const valStr = ((await row.locator('.xc-shift-denom-val').innerText().catch(() => '')) || '').trim();
+    const valStr = ((await row.getAttribute('data-face-value').catch(() => '')) || '').trim();
     const val = Number(valStr);
     if (!cur || !Number.isFinite(val) || val <= 0) continue;
     if (!denomsByCurrency[cur]) denomsByCurrency[cur] = [];
