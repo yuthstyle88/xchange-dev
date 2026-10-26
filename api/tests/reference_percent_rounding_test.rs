@@ -96,6 +96,7 @@ fn cash_no_reference_value_is_zero() {
 
 /// A BUY of `amount` USD at `rate`, reference 32 per 1.
 fn buy(amount: &str, rate: &str) -> TransactionRecord {
+    let principal = (d(amount) * d(rate)).round_dp(2);
     TransactionRecord {
         document_ref: "XC-PCT-1".into(),
         recorded_at: Utc.with_ymd_and_hms(2026, 10, 15, 3, 4, 5).unwrap(),
@@ -108,6 +109,8 @@ fn buy(amount: &str, rate: &str) -> TransactionRecord {
         unit_size: UnitSize::parse("1").expect("a valid unit size"),
         fee: d("0.00"),
         bank_fee: d("0.00"),
+        principal,
+        settlement: principal,
         method: "Cash".into(),
         payment_ref: String::new(),
         customer_id: "CU-PCT".into(),

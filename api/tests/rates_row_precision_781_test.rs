@@ -382,6 +382,7 @@ fn record(
     rate: &str,
     reference: Option<&str>,
     unit_size: &str,
+    principal: &str,
 ) -> TransactionRecord {
     TransactionRecord {
         document_ref: format!("XC-781-{currency}"),
@@ -395,6 +396,8 @@ fn record(
         unit_size: UnitSize::parse(unit_size).expect("a valid unit size"),
         fee: d("0.00"),
         bank_fee: d("0.00"),
+        principal: d(principal),
+        settlement: d(principal),
         method: "Cash".into(),
         payment_ref: String::new(),
         customer_id: "CU-781".into(),
@@ -423,6 +426,7 @@ fn a_row_sends_a_krw_rate_at_eight_places_with_its_unit_of_1000() {
         "25.12345678",
         Some("25.00000000"),
         "1000.0000",
+        "2512.35",
     ));
     assert_eq!(r["rate"], json!("25.12345678"), "{r}");
     assert_eq!(r["referenceRate"], json!("25.00000000"), "{r}");
@@ -439,7 +443,14 @@ fn a_row_sends_a_krw_rate_at_eight_places_with_its_unit_of_1000() {
 /// `referenceRate` is `null`.
 #[test]
 fn a_row_sends_a_usd_rate_at_eight_places_with_its_unit_of_1() {
-    let r = wire(&record("USD", "100", "32.10000000", None, "1.0000"));
+    let r = wire(&record(
+        "USD",
+        "100",
+        "32.10000000",
+        None,
+        "1.0000",
+        "3210.00",
+    ));
     assert_eq!(r["rate"], json!("32.10000000"), "{r}");
     assert_eq!(r["referenceRate"], Value::Null, "{r}");
     assert_eq!(r["unitSize"], json!("1"), "{r}");

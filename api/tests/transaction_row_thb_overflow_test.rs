@@ -96,13 +96,7 @@ fn assert_internal_error_naming_the_transaction(r: TxSqlRow, which: &str) {
 
 // ── Err rows ────────────────────────────────────────────────────────────────
 
-/// Site `transaction_row.rs:219` (principal): quantity max × rate cap ÷ 0.0001 ≈ 10^28 THB.
-/// No reference rate, so the reference site is never reached.
-#[test]
-fn a_row_whose_principal_is_too_wide_answers_an_internal_error() {
-    let r = row("BUY", MAX_QUANTITY, RATE_CAP, None, SMALLEST_UNIT);
-    assert_internal_error_naming_the_transaction(r, "principal site");
-}
+// Retired by CR-c1 (#5119): the principal is now read from the stored row, not computed.
 
 /// Site `transaction_row.rs:235` (reference value): the principal fits (rate 1 ⇒
 /// 99999999999999999999.00 THB) and only the reference rate at the cap is too wide.
@@ -136,9 +130,10 @@ fn from_record_never_returns_a_row_for_a_figure_too_wide_for_two_places() {
 /// computed exactly, at both sites. Green on `main`; must stay green.
 #[test]
 fn the_widest_figure_a_stored_row_holds_is_computed_exactly() {
-    let record = row("BUY", MAX_QUANTITY, "1", Some("1"), SMALLEST_UNIT)
-        .try_into_record()
-        .expect("every column reads");
+    let mut sql = row("BUY", MAX_QUANTITY, "1", Some("1"), SMALLEST_UNIT);
+    sql.principal = "99999999999999999999.00".into();
+    sql.settlement = "99999999999999999999.00".into();
+    let record = sql.clone().try_into_record().expect("every column reads");
     let r = TransactionRow::from_record(&record);
     assert_eq!(r.principal, "99999999999999999999.00");
     assert_eq!(r.settlement, "99999999999999999999.00");
@@ -149,9 +144,7 @@ fn the_widest_figure_a_stored_row_holds_is_computed_exactly() {
     assert_eq!(r.reference_spread.as_deref(), Some("0.00"));
     assert_eq!(r.reference_percent.as_deref(), Some("0.000000"));
 
-    let via_sql =
-        TransactionRow::from_sql_row(row("BUY", MAX_QUANTITY, "1", Some("1"), SMALLEST_UNIT))
-            .expect("a row that fits");
+    let via_sql = TransactionRow::from_sql_row(sql).expect("a row that fits");
     assert_eq!(
         via_sql.reference_value.as_deref(),
         Some("99999999999999999999.00")
@@ -165,6 +158,8 @@ fn the_widest_figure_a_stored_row_holds_is_computed_exactly() {
 fn an_ordinary_buy_row_keeps_every_figure() {
     let mut sql = row("BUY", "100.5", "32.123", Some("32.5"), "1");
     sql.fee = "10.00".into();
+    sql.principal = "3228.36".into();
+    sql.settlement = "3218.36".into();
     let record = sql.try_into_record().expect("every column reads");
     let r = TransactionRow::from_record(&record);
     assert_eq!(r.principal, "3228.36");
@@ -179,6 +174,8 @@ fn an_ordinary_buy_row_keeps_every_figure() {
 fn an_ordinary_sell_row_without_a_reference_rate_keeps_every_figure() {
     let mut sql = row("SELL", "250", "0.2345", None, "100");
     sql.fee = "1.50".into();
+    sql.principal = "0.59".into();
+    sql.settlement = "2.09".into();
     let record = sql.try_into_record().expect("every column reads");
     let r = TransactionRow::from_record(&record);
     // 250 × 0.2345 ÷ 100 = 0.58625 ⇒ 0.59 (HALF_UP).

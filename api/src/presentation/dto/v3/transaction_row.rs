@@ -55,6 +55,8 @@ pub struct TransactionRecord {
     pub unit_size: UnitSize,
     pub fee: Decimal,
     pub bank_fee: Decimal,
+    pub principal: Decimal,
+    pub settlement: Decimal,
     pub method: String,
     pub payment_ref: String,
     pub customer_id: String,
@@ -147,6 +149,18 @@ impl TryFrom<TxSqlRow> for TransactionRecord {
                 r.bank_fee, doc_ref
             ))
         })?;
+        let principal = r.principal.parse::<Decimal>().map_err(|e| {
+            AppError::Internal(format!(
+                "invalid principal {:?} in transaction {}: {e}",
+                r.principal, doc_ref
+            ))
+        })?;
+        let settlement = r.settlement.parse::<Decimal>().map_err(|e| {
+            AppError::Internal(format!(
+                "invalid settlement {:?} in transaction {}: {e}",
+                r.settlement, doc_ref
+            ))
+        })?;
 
         Ok(Self {
             document_ref: doc_ref,
@@ -160,6 +174,8 @@ impl TryFrom<TxSqlRow> for TransactionRecord {
             unit_size,
             fee,
             bank_fee,
+            principal,
+            settlement,
             method: r.method,
             payment_ref: r.payment_ref,
             customer_id: r.customer_id,
@@ -225,25 +241,13 @@ impl TransactionRow {
             ))
         };
 
-        // principal = amount * rate / unit_size, half up to satang (2 decimals) through ExchangeArithmetic::try_thb
-        let foreign = ForeignAmount::from_decimal(record.amount);
-        let principal = Decimal::from_i128_with_scale(
-            ExchangeArithmetic::try_thb(foreign, record.rate, record.unit_size)
-                .map_err(|_| overflow("principal"))?
-                .minor_i128(),
-            2,
-        );
-
-        // settlement = principal - fee (BUY), principal + fee (SELL)
-        let settlement = if is_buy {
-            principal - record.fee
-        } else {
-            principal + record.fee
-        };
+        let principal = record.principal.round_dp(2);
+        let settlement = record.settlement;
 
         // reference fields
         let (ref_rate_str, ref_val_str, ref_spread_str, ref_pct_str) =
             if let Some(ref_rate) = record.reference_rate {
+                let foreign = ForeignAmount::from_decimal(record.amount);
                 let ref_val = Decimal::from_i128_with_scale(
                     ExchangeArithmetic::try_thb(foreign, ref_rate, record.unit_size)
                         .map_err(|_| overflow("reference value"))?
@@ -336,18 +340,10 @@ impl TransactionRow {
     pub fn from_sql_row(r: TxSqlRow) -> Result<Self, AppError> {
         let status = r.status.clone();
         let cancel_reason = r.cancel_reason.clone();
-        let principal_str = r.principal.clone();
-        let settlement_str = r.settlement.clone();
         let record = TransactionRecord::try_from(r)?;
         let mut row = Self::try_from_record(&record)?;
         row.status = status;
         row.cancel_reason = cancel_reason;
-        if let Ok(p) = principal_str.parse::<Decimal>() {
-            row.principal = format!("{:.2}", p);
-        }
-        if let Ok(s) = settlement_str.parse::<Decimal>() {
-            row.settlement = format!("{:.2}", s);
-        }
         Ok(row)
     }
 }
