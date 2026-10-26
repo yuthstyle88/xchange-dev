@@ -26,6 +26,7 @@ import {
   type StaffMeView,
 } from '../../../shared/testing/fixtures';
 import { card } from './card';
+import { formatRate } from '../../../shared/ui/rate';
 
 const BRANCH = 'MAIN';
 const NO_SOURCE = t('rate.noSourceDate');
@@ -58,7 +59,11 @@ const RATES = makePublishedRatesData({
   ],
   bandHeadings: [],
 });
-const RATE_STRINGS = RATES.lines.flatMap((l) => [l.buyRate, l.sellRate]).filter((r): r is string => r !== null);
+// #5134: the card shows each rate through the one rate formatter (shared/ui/rate.ts), never the raw wire string.
+const RATE_STRINGS = RATES.lines
+  .flatMap((l) => [l.buyRate, l.sellRate])
+  .filter((r): r is string => r !== null)
+  .map((r) => formatRate(r, 1, ''));
 
 /** One answer of the view, in the order the card asks. */
 type Answer =

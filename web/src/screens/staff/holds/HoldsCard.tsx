@@ -10,6 +10,7 @@ import { can } from '../parts/can';
 import { command } from '../parts/command';
 import { ReasonDialog } from '../parts/ReasonDialog';
 import { th, en } from './i18n';
+import './holds.css';
 
 export interface HoldsCardProps {
   ctx: StaffCtx;
@@ -158,84 +159,120 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
   const mayPlace = () => can(props.ctx.me, 'CustomerHoldPlace');
   const mayRelease = () => can(props.ctx.me, 'VerificationReview');
 
+  const statusLabel = (status: string): string => {
+    if (status === 'OPEN') return t('statusOpen');
+    if (status === 'RELEASED') return t('statusReleased');
+    return status;
+  };
+
   return (
-    <div>
+    <div class="xc-holds-card">
+      <div class="xc-holds-header">
+        <h2 class="xc-holds-title">{t('title')}</h2>
+      </div>
+
       <Show when={notice()}>
-        <div data-testid="holds-notice">{notice()}</div>
+        <div data-testid="holds-notice" class="xc-holds-notice">{notice()}</div>
       </Show>
       <Show when={error()}>
-        <div data-testid="holds-error">{error()}</div>
+        <div data-testid="holds-error" class="xc-holds-error">{error()}</div>
       </Show>
 
       <Show when={mayPlace()}>
         <form
           data-testid="holds-form"
+          class="xc-holds-form"
           onSubmit={(e) => {
             e.preventDefault();
             void handlePlace();
           }}
         >
-          <input
-            type="text"
-            data-testid="holds-key"
-            value={searchKey()}
-            onInput={(e) => setSearchKey(e.currentTarget.value)}
-          />
-          <button type="button" data-testid="holds-find" onClick={handleFind}>
-            {t('find')}
-          </button>
-
-          <For each={customers()}>
-            {(cust) => (
-              <div
-                data-customer-id={cust.id}
-                aria-pressed={selectedCustomer()?.id === cust.id ? 'true' : 'false'}
-                data-selected={selectedCustomer()?.id === cust.id ? 'true' : undefined}
-                style={selectedCustomer()?.id === cust.id ? { 'font-weight': '600' } : undefined}
-                onClick={() => setSelectedCustomer(cust)}
+          <div class="xc-holds-form-group">
+            <label class="xc-holds-form-label">{t('customer')}</label>
+            <div class="xc-holds-search-group">
+              <input
+                type="text"
+                data-testid="holds-key"
+                class="xc-holds-input"
+                placeholder={t('searchCustomerPlaceholder')}
+                value={searchKey()}
+                onInput={(e) => setSearchKey(e.currentTarget.value)}
+              />
+              <button
+                type="button"
+                data-testid="holds-find"
+                class="xc-holds-btn"
+                onClick={handleFind}
               >
-                {cust.displayName}
-              </div>
-            )}
-          </For>
+                {t('find')}
+              </button>
+            </div>
+          </div>
 
-          <input
-            type="text"
-            data-testid="holds-reason"
-            maxLength={500}
-            value={reason()}
-            onInput={(e) => {
-              setReason(e.currentTarget.value);
-              if (reasonError() && e.currentTarget.value.trim().length > 0) {
-                setReasonError(null);
-              }
-            }}
-          />
-          <Show when={reasonError()}>
-            <div role="alert">{reasonError()}</div>
-          </Show>
-          <button
-            type="button"
-            data-testid="holds-place"
-            disabled={busy()}
-            onClick={handlePlace}
-          >
-            {t('place')}
-          </button>
+          <div class="xc-holds-customers">
+            <For each={customers()}>
+              {(cust) => (
+                <div
+                  class="xc-holds-customer-item"
+                  data-customer-id={cust.id}
+                  aria-pressed={selectedCustomer()?.id === cust.id ? 'true' : 'false'}
+                  data-selected={selectedCustomer()?.id === cust.id ? 'true' : undefined}
+                  style={selectedCustomer()?.id === cust.id ? { 'font-weight': '600' } : undefined}
+                  onClick={() => setSelectedCustomer(cust)}
+                >
+                  {cust.displayName}
+                </div>
+              )}
+            </For>
+          </div>
+
+          <div class="xc-holds-form-group">
+            <label class="xc-holds-form-label">{t('reason')}</label>
+            <input
+              type="text"
+              data-testid="holds-reason"
+              class="xc-holds-input"
+              placeholder={t('reasonPlaceholder')}
+              maxLength={500}
+              value={reason()}
+              onInput={(e) => {
+                setReason(e.currentTarget.value);
+                if (reasonError() && e.currentTarget.value.trim().length > 0) {
+                  setReasonError(null);
+                }
+              }}
+            />
+            <Show when={reasonError()}>
+              <div role="alert" class="xc-holds-field-error">{reasonError()}</div>
+            </Show>
+          </div>
+
+          <div class="xc-holds-form-actions">
+            <button
+              type="button"
+              data-testid="holds-place"
+              class="xc-holds-save-btn"
+              disabled={busy()}
+              onClick={handlePlace}
+            >
+              {t('place')}
+            </button>
+          </div>
         </form>
       </Show>
 
-      <div>
+      <div class="xc-holds-list">
         <For each={holds()}>
           {(hold) => (
-            <div data-hold-id={hold.id}>
-              <span>{hold.customerName ?? hold.customerId}</span>
-              <span>{hold.reason}</span>
-              <span>{hold.status}</span>
+            <div data-hold-id={hold.id} class="xc-holds-row">
+              <span class="xc-holds-name">{hold.customerName ?? hold.customerId}</span>
+              <span class="xc-holds-reason">{hold.reason}</span>
+              <span class="xc-holds-status">{statusLabel(hold.status)}</span>
               <Show when={hold.status === 'OPEN' && mayRelease()}>
                 <button
                   type="button"
                   data-testid="holds-release"
+                  class="xc-holds-btn"
                   onClick={() => setReleaseTarget(hold)}
                 >
                   {t('release')}

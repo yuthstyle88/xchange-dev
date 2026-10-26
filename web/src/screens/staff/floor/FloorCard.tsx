@@ -17,6 +17,7 @@ import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
 import { ConfirmDialog } from '../parts/ConfirmDialog';
+import { formatAmount } from '../../../shared/ui/currency-count/face-value';
 import { th, en } from './i18n';
 import './floor.css';
 
@@ -331,7 +332,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
             <For each={Object.entries(tg().amounts ?? {})}>
               {([cur, amount]) => (
                 <span class="xc-floor-target-amount">
-                  {cur}: {amount}
+                  {cur}: {formatAmount(amount)}
                 </span>
               )}
             </For>
@@ -345,7 +346,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
             <For each={Object.entries(sf())}>
               {([cur, amount]) => (
                 <span class="xc-floor-safe-amount">
-                  {cur}: {amount}
+                  {cur}: {formatAmount(amount)}
                 </span>
               )}
             </For>

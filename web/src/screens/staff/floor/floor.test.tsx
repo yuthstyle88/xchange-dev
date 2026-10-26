@@ -533,16 +533,17 @@ describe("B5 the target form with can(CashTargetSet); the figures when staff_flo
     expect(q("floor-target-form")).toBeNull();
   });
 
-  it("the target and safe figures show each amount exactly as the wire string", async () => {
+  it("the target and safe figures show each amount as money (#5134: grouped, 2 places)", async () => {
     stub();
     await mount(me(["AttendanceClock"]), floor({ target: TARGET, safe: SAFE }));
     const target = must("floor-target").textContent ?? "";
     expect(target).toContain("USD");
-    expect(target).toContain("1000.00");
+    expect(target).toContain("1,000.00");
     expect(target).toContain("500.50");
     const safe = must("floor-safe").textContent ?? "";
-    expect(safe).toContain("12500.00");
-    expect(safe).toContain("300000.00");
+    expect(safe).toContain("12,500.00");
+    expect(safe).toContain("300,000.00");
+    expect(safe, "never the raw wire string").not.toContain("300000.00");
   });
 
   it("no figures when staff_floor answers target and safe as null", async () => {

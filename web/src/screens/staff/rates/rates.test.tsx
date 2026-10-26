@@ -171,14 +171,24 @@ describe('the read: staff_published_rates for the actor\'s branch (S10, rates.md
     }
   });
 
-  it('shows every line with its currency and its rates exactly as the wire carries them (strings, not numbers)', async () => {
+  it('shows every line with its currency and its rates through formatRate (#5134: trailing zeros trimmed to 2-8 places)', async () => {
     const el = await mount(me(['CompatRead']));
     const text = el.textContent ?? '';
+    // #5134: the wire strings go through the one rate formatter (shared/ui/rate.ts, RE-5); never shown raw.
+    const shown: Record<string, string> = {
+      '32.4500': '32.45',
+      '32.9000': '32.90',
+      '21.0450': '21.045',
+      '21.5926': '21.5926',
+      '37.12000000': '37.12',
+    };
     for (const line of RATES.lines) {
       expect(text).toContain(line.currency);
-      if (line.buyRate) expect(text).toContain(line.buyRate);
-      if (line.sellRate) expect(text).toContain(line.sellRate);
+      if (line.buyRate) expect(text).toContain(shown[line.buyRate]);
+      if (line.sellRate) expect(text).toContain(shown[line.sellRate]);
     }
+    expect(text, 'never the raw wire string').not.toContain('32.4500');
+    expect(text, 'never the raw wire string').not.toContain('37.12000000');
     // a JPY rate is per its unit size: the 100 is shown for that line. Neither JPY rate contains
     // "100", and both are cut out of the row's text first, so only the unit size can satisfy this.
     const jpy = RATES.lines.find((l) => l.currency === 'JPY')!;
@@ -198,8 +208,8 @@ describe('the read: staff_published_rates for the actor\'s branch (S10, rates.md
     const text = el.textContent ?? '';
     // no boundary: a raw null next to a figure ("37.12000000null") must also be caught
     expect(text).not.toMatch(/null|undefined|NaN/);
-    // EUR has no sell rate: its buy rate is shown, nothing invents a sell figure such as 0
-    expect(text).toContain('37.12000000');
+    // EUR has no sell rate: its buy rate is shown (as formatted, #5134), nothing invents a sell figure such as 0
+    expect(text).toContain('37.12');
   });
 
   it('shows the publication version as given', async () => {
