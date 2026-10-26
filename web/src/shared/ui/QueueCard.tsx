@@ -6,6 +6,7 @@ import { queueBranch, useQueueStore } from '../queue/queue-store';
 import { announce, soundOn } from '../queue/queue-sound';
 import type { SessionStore } from '../session/session';
 import { QueueSoundControls } from './QueueSoundControls';
+import { queueCardYielding } from './queue-card-yield';
 import './queue-card.css';
 
 function checkInitialFold(): boolean {
@@ -34,7 +35,26 @@ export function QueueCard(props: { session: SessionStore }): JSX.Element {
 
 function OperatorCard(props: { session: SessionStore }): JSX.Element {
   const [isFolded, setIsFolded] = createSignal(checkInitialFold());
-  const toggleFold = () => setIsFolded((f) => !f);
+  let preYieldFolded = false;
+  let userTouchedDuringYield = false;
+  let wasYielding = false;
+
+  const toggleFold = () => {
+    if (queueCardYielding()) userTouchedDuringYield = true;
+    setIsFolded((f) => !f);
+  };
+
+  createEffect(() => {
+    const y = queueCardYielding();
+    if (y && !wasYielding) {
+      preYieldFolded = isFolded();
+      userTouchedDuringYield = false;
+      setIsFolded(true);
+    } else if (!y && wasYielding && !userTouchedDuringYield) {
+      setIsFolded(preYieldFolded);
+    }
+    wasYielding = y;
+  });
 
   let observer: ResizeObserver | undefined;
 

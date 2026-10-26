@@ -737,3 +737,361 @@ fetch; `feat/fe-pricing-board` merges to main only after the BE view and command
 | Q-P3 | V.9's `runtime/pricing.mjs`, `market-rates.mjs`, `pricing-store.mjs` (P-2) | **Answered 2026-10-22:** the owner supplied the V.9 source (§0 P-2); §4 and §5.2 are written from it |
 | Q-P4 | Per-currency `better` % (V.9 `configure`, `V9:pricing:204-211`) | **Answered 2026-10-22:** migration approved (#564 issuecomment-6323680134); built per §5.2 and §12.1 |
 | Q-P5 | Keep a fetch error after a restart (V.9 stores failed fetches, `V9:market:110`) | **Answered 2026-10-22:** same approval; `market_feed_status` (§4, §12.1) |
+
+---
+
+## 15. V.9 pricing handoff (2026-10-26): the approved price is the counter price
+
+> designed-by: claude/bc8fd29a (xchange BE lane controller), measured on `main` `76d2800be`. Source: the owner's
+> "XCHANGE Pricing — Current implementation / Developer handoff" (`PRICING-DESIGN.md`, sha256 `7845535987ebe5d6…`,
+> describing `Kammuay888/XC` `45fc33d7`, `xchange-desk-v9-20261015/src/pricing/*`). **`H:` below means that document**
+> and **`V9:` its source excerpt** (`store.mjs`, `engine.mjs`, `automatic.mjs`, `display.mjs`, `pricing.mjs`). Both
+> are kept out of the repo: they are on the MacBook, under `~/Downloads/XCHANGE_PRICING_สำหรับเงื่อนไขการตั้งราคา/`.
+> The comparison with v3 is #5055 issuecomment-6412885267. The code survey behind every `file:line` was done by
+> claude/bc8fd29a's survey of 2026-10-26.
+
+### 15.0 Rulings (verbatim) and what they replace
+
+| # | Ruling | Replaces |
+|---|---|---|
+| V-1 | *"แก้ให้ ตรงกับ เอกสารที่เค้าส่งมาล่า สุด"* (FE controller session, 2026-10-26): v3 matches `H:` | §2's model *"counter price = BoT base × (1 + (adjust + margin) ÷ 100)"* for every currency that has a pricing mode (§15.1); R-12 / R-12b / R-12c / R-12e / Q-T(a) (`rate-feed-connector.md` §11.0 `:801-807`) for those currencies |
+| V-2 | *"Follow the new pricing document for B2-B6 … Keep B1: rates per unit_size, same value."* (same session) | B2: manual prices take at most **5** decimals (was 8). B3: an approval that passes V.9's checks publishes with **no EXECUTIVE** step (was P-3's out-of-bound wait). B4: desk and kiosk quote at **tier 1** (reverses R-4, `rate-feed-connector.md:18`). B5: the board hides stale or blocked automatic prices; manual prices are never hidden. B6: `/pricing` refreshes every 60 s |
+| V-3 | *"เปิดชุดแรก + ออกแบบ 2/3/9 (แนะนำ)"* (claude/bc8fd29a session, 2026-10-26) | this section |
+| V-4 | *"เปิดบน xc-v3 (แนะนำ)"* (same) | `MARKET_FEED_ENABLED=true` on xc-v3 since 16:49 ICT; it will go into `deploy/README` |
+
+**Kept:** B1, which means every price, tier and band is per `unit_size` (JPY per 100), the same value as V.9's per-1 price × `unit_size`. Also kept: the TT-then-SR anchor and V.9's suggestion formula, already ported (§5.2, `pricing_suggestion_test.rs:79-93` pins `H:` §4.4). Branch scope, idempotency (`requestId`) and the stale-page guard (`policy_version_id` in place of V.9's `previousUpdated`) are unchanged.
+
+### 15.1 Three pricing modes per (branch, currency)
+
+| Mode | Where it lives | Who sets it | The counter price |
+|---|---|---|---|
+| **AUTO** (no row) | today | — | today's BoT draft path, §2, unchanged. Currencies nobody has priced on `/pricing` keep working |
+| **MANUAL** | the latest `pricing_tier_sets` row (§15.2) | an approve (§15.3) | the approved **tier 1**, fixed. BoT does not move it |
+| **FOLLOW** | `pricing_modes` at MAIN only (`H:` §6) | EXECUTIVE (V.9: OWNER) | the latest tier set the Follow publisher (§15.5) wrote; it moves only with the market |
+
+- `[required]` **Only one writer of publications stays.** MANUAL and FOLLOW prices reach the counter through the existing draft path, `RateDraftService` → `PublishService`, with a new kind of draft line (§15.2). Nothing writes `published_rate_lines` beside `PublishService`.
+- `[required]` **The BoT refresh leaves priced currencies alone.** `DraftBranchRefresh::do_refresh` (`api/src/infrastructure/rate_feed/branch_refresh.rs:24-114`) copies the current publication (`RateDraftService::copy`, `rate_draft_service.rs:667-738`). A currency whose effective mode at that branch is MANUAL or FOLLOW is copied as its current tier prices, not re-priced from BoT. A branch whose priced currencies would be its only changes writes no draft.
+- **"Effective mode at a branch":**
+  - MAIN: FOLLOW if `pricing_modes` says so, MANUAL if it has a tier set, otherwise AUTO.
+  - Any other branch: MANUAL (own) if `pricing_branch_policy.own` is set for the currency or the branch approved it itself; otherwise it mirrors MAIN's mode for that currency (MANUAL or FOLLOW) through §15.4; otherwise AUTO.
+
+### 15.2 Storage (one migration, additive) [required]
+
+```sql
+-- Approved and followed tier sets, append-only (V9:store pricing_tiers).
+CREATE TABLE pricing_tier_sets (
+    id            uuid PRIMARY KEY,
+    request_id    text NOT NULL UNIQUE,
+    branch_id     text NOT NULL REFERENCES branches(id),
+    currency_code char(3) NOT NULL REFERENCES currencies(code),
+    source        text NOT NULL CHECK (source IN ('MANUAL', 'MAIN_PUSH', 'FOLLOW')),
+    base_tier_set_id uuid NULL REFERENCES pricing_tier_sets(id),  -- MAIN's set a branch row was adjusted from
+    tiers         jsonb NOT NULL,          -- [{tier,buy,sell}] × 4, decimal strings, per unit_size
+    anchor        jsonb NULL,              -- {source, buy, sell, fetched_at, batch_id}
+    flags         text[] NOT NULL DEFAULT '{}',
+    draft_id      uuid NULL REFERENCES rate_drafts(id),
+    approved_by   text NOT NULL,
+    approved_at   timestamptz NOT NULL
+);
+CREATE INDEX pricing_tier_sets_latest ON pricing_tier_sets (branch_id, currency_code, approved_at DESC);
+
+-- FOLLOW per currency, MAIN only (V9:automation-ledger; absence = MANUAL/AUTO).
+CREATE TABLE pricing_modes (
+    currency_code char(3) PRIMARY KEY REFERENCES currencies(code),
+    mode          text NOT NULL CHECK (mode IN ('FOLLOW', 'MANUAL')),
+    revision      bigint NOT NULL,
+    updated_by    text NOT NULL,
+    updated_at    timestamptz NOT NULL
+);
+
+-- How a branch follows MAIN (V9:store pricing_branch_policy). currency_code '*' is the branch default.
+CREATE TABLE pricing_branch_policy (
+    branch_id     text NOT NULL REFERENCES branches(id),
+    currency_code text NOT NULL CHECK (currency_code = '*' OR currency_code ~ '^[A-Z]{3}$'),
+    buy_bp        integer NULL CHECK (buy_bp BETWEEN -300 AND 300),
+    sell_bp       integer NULL CHECK (sell_bp BETWEEN -300 AND 300),
+    own           boolean NOT NULL DEFAULT false,
+    follow        boolean NOT NULL DEFAULT false,  -- explicit FOLLOW enrolment (H: §7 last bullet)
+    updated_by    text NOT NULL,
+    updated_at    timestamptz NOT NULL,
+    PRIMARY KEY (branch_id, currency_code)
+);
+
+-- What the storefront shows (V9:store rate_display_settings): a branch row, else MAIN's, else the default.
+CREATE TABLE rate_display_settings (
+    branch_id   text PRIMARY KEY REFERENCES branches(id),
+    tiers       smallint[] NOT NULL CHECK (cardinality(tiers) BETWEEN 1 AND 4),
+    featured    char(3)[]  NOT NULL CHECK (cardinality(featured) <= 10),
+    highlight   boolean NOT NULL,
+    all_market  boolean NOT NULL,
+    updated_by  text NOT NULL,
+    updated_at  timestamptz NOT NULL
+);
+
+-- A draft line can carry four manual tier prices (§15.3).
+CREATE TABLE rate_draft_line_tiers (
+    draft_line_id uuid NOT NULL REFERENCES rate_draft_lines(id) ON DELETE CASCADE,
+    tier_no       smallint NOT NULL CHECK (tier_no BETWEEN 1 AND 4),
+    buy           numeric(20,8) NOT NULL CHECK (buy > 0),
+    sell          numeric(20,8) NOT NULL CHECK (sell > buy),
+    PRIMARY KEY (draft_line_id, tier_no)
+);
+
+-- The latest FOLLOW plan per currency at MAIN (§15.5), read by the board and the public projection.
+CREATE TABLE pricing_follow_results (
+    currency_code char(3) PRIMARY KEY REFERENCES currencies(code),
+    status        text NOT NULL CHECK (status IN ('CANDIDATE', 'BLOCKED', 'PUBLISHED')),
+    reasons       text[] NOT NULL DEFAULT '{}',
+    anchor_batch_id uuid NULL,
+    tier_set_id   uuid NULL REFERENCES pricing_tier_sets(id),
+    planned_at    timestamptz NOT NULL
+);
+
+-- minSpreadPct at the branch '*' level (gap 10).
+ALTER TABLE pricing_suggestion_settings ADD COLUMN min_spread_pct numeric(9,4) NULL
+    CHECK (min_spread_pct IS NULL OR min_spread_pct BETWEEN 0 AND 5);
+```
+
+- **Nothing is backfilled.** Every existing currency stays AUTO until someone approves it.
+- v3 migrations are approved until the first install (owner, 2026-10-06).
+
+### 15.2a Class diagram (new and changed)
+
+```mermaid
+classDiagram
+  class PricingTierSet { <<xc-rate domain/pricing/tier_set.rs>> +id +branch +currency +source: TierSetSource +tiers: [TierPrice; 4] +anchor: Option~MarketAnchor~ +flags }
+  class TierSetSource { <<enum>> Manual; MainPush; Follow }
+  class FollowVisibility { <<xc-rate domain/pricing/follow_visibility.rs>> +of(line_tier_set, branch_latest_follow, main_latest_follow, main_result, source_current) Visibility }
+  class TierPrice { <<xc-rate domain/pricing/tier_set.rs>> +buy: Rate +sell: Rate }
+  class BranchPricingPolicy { <<xc-rate domain/pricing/branch_policy.rs>> +resolve(branch, currency) ResolvedPolicy +adjust(base: [TierPrice;4], ResolvedPolicy) Result~[TierPrice;4], TierError~ }
+  class ResolvedPolicy { +buy_bp: i32 +sell_bp: i32 +own: bool +follow: bool }
+  class FollowPlan { <<xc-rate domain/pricing/follow_plan.rs>> +plan(currency, market, approved, published, settings, now) FollowOutcome }
+  class FollowOutcome { <<enum>> Candidate([TierPrice;4], MarketAnchor); Blocked(Vec~FollowReason~) }
+  class DisplaySettings { <<xc-rate domain/pricing/display_settings.rs>> +tiers +featured +highlight +all_market +validate() +default() }
+  class TierSetStore { <<trait>> +insert_in(tx, &PricingTierSet) +latest_in(tx, branch, currency) }
+  class BranchPolicyStore { <<trait>> +for_branch_in(tx, branch) +save_in(tx, ...) }
+  class DisplaySettingsStore { <<trait>> +effective_in(tx, branch) +save_in(tx, ...) +clear_in(tx, branch) }
+  class FollowResultStore { <<trait>> +record_in(tx, currency, outcome) +latest_in(tx, currency) }
+  class RateDraftLine { +tiers: Option~[TierPrice;4]~ }
+  class TierCheck { <<existing domain/pricing/tier_check.rs>> +validate(tiers, anchor) }
+  class BranchPush { <<xc-rate application/pricing/branch_push.rs>> +push_in(pool, main_request, currency, base) Vec~BranchResult~ }
+  class MarketPricingLoop { <<api infrastructure/rate_feed/market_pricing_loop.rs>> +run() +plan_once(now) }
+  class PublishService { <<existing>> +publish (tier rows → 4 tier lines) }
+  PricingTierSet --> TierSetSource
+  PricingTierSet --> TierPrice
+  BranchPricingPolicy --> ResolvedPolicy
+  FollowPlan --> FollowOutcome
+  FollowPlan --> TierCheck
+  BranchPush --> BranchPricingPolicy : adjust
+  BranchPush --> TierSetStore
+  MarketPricingLoop --> FollowPlan
+  MarketPricingLoop --> FollowResultStore
+  MarketPricingLoop --> BranchPush
+  RateDraftLine --> TierPrice
+  PublishService --> RateDraftLine
+```
+
+- One file per class set, as §10.1. Stores are traits in `domain/pricing/`, with Pg impls in `infrastructure/pricing/`, in the style of `PricingSuggestionSettingsStore`.
+
+### 15.3 Approve (MANUAL): the approved tiers are the price [required]
+
+`pricingApprove` (`api/src/presentation/http/v3/commands/pricing_approve.rs`) no longer turns prices into margins over BoT (`:468-515`). For each currency `{code, tiers: [{buy,sell}] × 4}`:
+
+1. **Parse** each price with `Bound::numeric(20, 5, Positive)`, at most 5 decimals (B2, `H:` §4.3; was 8 at `:214-215`). `Rate`'s storage scale of 8 does not change.
+2. **Check** with `TierCheck::validate` (`domain/pricing/tier_check.rs:41-98`) against the currency's market anchor (`MarketQuote::anchor_for`): 4 tiers, > 0, sell > buy, monotonic, tier 1 within 3 × `farFromAnchorPct` of the anchor (skipped with no anchor, `H:` §5). A failure answers `validationFailed`, and nothing is written. minSpread is not a hard stop (`H:` §5).
+3. **Write** a `pricing_tier_sets` row with `source='MANUAL'`, the anchor and its flags (`pricing_approve.rs:360,364` drop them today), keyed on `requestId`.
+4. **Draft:** `RateDraftService::copy` the branch's current publication. Replace that currency's line with buy and sell `MANUAL` at tier 1 (`manual_buy`/`manual_sell`) plus 4 `rate_draft_line_tiers` rows.
+5. **Submit:** a draft line with tier rows is **in bound when step 2 passed**, with no BoT guard and no reference needed (B3, and gap 7: a currency with no BoT line or starting price can be approved). `RateDraftService::submit`'s in-bound path then decides by policy (`rate_draft_service.rs:637-644`). Other lines in the same draft keep today's evaluation.
+6. **Publish:** `PublishService` writes a line with tier rows as **4 published tier lines**. The prices come from the tier rows, the bands are V.9's fixed `tierFor` bounds (≤ 10,000 / ≤ 50,000 / ≤ 200,000 / above; THB, `H:` §4.1), and `source_snapshot` gets `"pricing": {"tier_set_id", "source"}`. No `TierProposal`, no BoT, no margins.
+7. **The result:** at MAIN, the answer is `{currency, state, branches: [{branchId, state, error?}]}` (§15.4). At any other branch the answer has no `branches`, and the branch's `pricing_branch_policy` row for that currency gets `own = true` (`H:` §5: *"อนุมัติในสาขาอื่นตั้งสกุลนั้นเป็น own price"*).
+
+- `value_tiers_on` and the per-branch bands (`rate_policy_value_tiers`) stay for AUTO currencies only. A MANUAL or FOLLOW currency always publishes 4 tiers, so gap 1 needs no switch and no seeding.
+- **The stale-page guard stays.** `pricingApprove` still carries `policy_version_id` (`:256-265`). It also carries the latest `pricing_tier_sets.id` the page saw, and a newer one answers `conflict`.
+
+### 15.4 MAIN is the base; branches follow it in basis points [required]
+
+- **Resolution** (`V9:engine resolvePolicy`):
+  - `buyBp`/`sellBp` for (branch, currency) = the currency row's value if not NULL, else the branch `'*'` row's, else 0.
+  - `own` = the currency row's `own`.
+- **Adjustment** (`H:` §7, `V9:engine adjustTiers`):
+  - `buy[i] = floor_d(mainBuy[i] × (1 + buyBp/10000))` and `sell[i] = ceil_d(mainSell[i] × (1 + sellBp/10000))`, where `d` is the decimals of the base tiers, at most 5.
+  - Then monotonic: `buy[i] = max(buy[i], buy[i−1])`, `sell[i] = min(sell[i], sell[i−1])`.
+  - Then `TierCheck::validate` against the anchor.
+- **Manual push:** an approve at MAIN, after MAIN's own publication commits, runs one step per other active branch that is not `own` for the currency:
+  - adjust;
+  - write a `pricing_tier_sets` row with `source='MAIN_PUSH'` and `request_id = <main request>:<branch>`;
+  - publish through steps 4–6 of §15.3.
+  - **Each branch is its own transaction.** A failed branch does not roll back MAIN or the others (`H:` §5: *"สาขาลูกส่งไม่สำเร็จไม่ได้ยกเลิกราคาที่ MAIN สำเร็จแล้ว"*), and the answer lists each branch's result. Retrying with the same request id skips branches already written.
+- **Who sets the policy:**
+  - `pricingBranchPolicySave {branch, currency: '*' | code, buyBp?, sellBp?, own?, follow?}` sets it.
+  - It is an EXECUTIVE frame change, through `may_change_the_frame` (`rate_policy_save.rs:340-357`), V.9's OWNER.
+  - A bp outside −300..300 is `validationFailed`.
+- `H:` §7's example: base 33.23/33.87 with buyBp +5 / sellBp −5 gives tier 1 = 33.24/33.86 (PV-7).
+
+### 15.5 FOLLOW: automatic market pricing at MAIN [required]
+
+- **Turning it on:** `pricingModeSave {currency, mode: FOLLOW|MANUAL}`, MAIN only, as an EXECUTIVE frame change. It bumps `revision`.
+- **When it runs:** a new `MarketPricingLoop` in `api/src/infrastructure/rate_feed/` (the api crate, because `DraftBranchRefresh` lives there). After every `MarketRefresh::tick` (5 min, `market_refresh.rs:74-137`), and only when `MARKET_FEED_ENABLED=true`, it plans each FOLLOW currency under `RATE_FEED_LOCK_KEY` (`feed_loop.rs:82`). It does not depend on the BoT tick: gap 5, BoT failures no longer stop it.
+- **Plan** (`V9:automatic planAutomaticPricing`): the suggestion `PricingSuggestion::of` with the currency's settings. It is **blocked**, and nothing is published, when any of these holds:
+  - `NO_ANCHOR`;
+  - the anchor source is not current: the last fetch failed, `fetched_at ≠ last_attempt_at` in `market_feed_status`, it is more than 30 minutes old (`MarketStaleness::STALE_AFTER_MINUTES`), or it is in the future;
+  - `PRECISION`, `BELOW_COST` or `LARGE_MOVE` appears in the suggestion's flags;
+  - `LARGE_MOVE` against both the last tier set's tier 1 and the currently published tier 1, on **both** sides, at `largeMovePct` (default 1 %);
+  - the tiers are invalid (`TierCheck`, or not at 4 decimals).
+- **Publish:** an unblocked plan writes a `pricing_tier_sets` row with `source='FOLLOW'` and `request_id = follow:MAIN:<code>:<anchor batch id>`, so the same market answer never publishes twice. It then publishes through §15.3 steps 4–6, and pushes to branches that have `follow = true` and are not `own` (§15.4). **A followed branch's row is also `source='FOLLOW'`**, with `base_tier_set_id` = MAIN's set and `request_id = <MAIN's request>:<branch>`. (A manual push is `MAIN_PUSH`, which reads as MANUAL.) A branch's default never enrols it (`H:` §7). A MANUAL branch or currency is never changed by FOLLOW (`H:` §10.6).
+- **The result of every plan is stored:** a `pricing_follow_results` row, the latest one per currency, holding `{currency, status: CANDIDATE|BLOCKED|PUBLISHED, reasons[], planned_at, tier_set_id?}`. The board and §15.7 read it.
+- **The `/pricing` fetch button (gap 6):** a new `marketRatesRefresh` command, gated on the existing `MarketRatesRefresh` permission (`permission.rs:68`), which no endpoint uses today. It runs `MarketRefresh::tick` and then one plan for the branch. `AppState` gains the market sources, plus a test hook like `with_rate_source` (`bootstrap/mod.rs:206`). `rateReferenceFetch` stays BoT.
+- **The legacy AUTO path is unchanged** (BoT, 3 h, `max_reference_age_hours` at quote time). Gap 4's age and flag checks are what FOLLOW now does. AUTO currencies keep their existing guards.
+
+### 15.6 Quotes use tier 1 (B4) [required]
+
+- `PgPublishedRates::line_for` (`xc-rate/src/infrastructure/publication/published_rates.rs:135-335`) returns **tier 1** of a tiered publication, `tier_lower_exclusive_thb IS NULL`, whatever the quantity.
+- That one change covers the desk (`quote.rs:216-228`), the compat save, the kiosk (`kiosk_ports.rs:388-461`; the repricing loop in `customer.rs:119-149` settles in one round) and the planner (`planner_preview.rs:72-80`).
+- `quote.rs`, `customer.rs` and `kiosk_ports.rs` do not change, so this stays clear of CR-b and CR-e.
+- The tier a customer's amount falls in is still recorded for reference (`H:` §8 `orderReference`). The quote line's `published_rate_line_id` points at tier 1, and `source_snapshot.market` already holds the market.
+
+### 15.7 The public projection says what the board may show (B5) [required]
+
+`PublishedLineDto` (`api/src/presentation/dto/v3/published_rates.rs:36-55`) gains:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `pricingSource` | `"AUTO" \| "MANUAL" \| "FOLLOW"` | from `source_snapshot.pricing.source`; `AUTO` when absent. `MAIN_PUSH` reads as `MANUAL` |
+| `hidden` | `boolean` | see the rule below. **`MANUAL` is never hidden.** `AUTO` is never hidden by this rule (today's `Freshness` still sets the publication's `stale`) |
+| `hiddenReason` | `"STALE" \| "BLOCKED" \| "MISMATCH" \| null` | why |
+
+**The rule, `FollowVisibility::of`** (`V9:pricing automaticBoardProjection` `:443-472`). It is fail closed: a FOLLOW line, at MAIN or at a followed branch, is hidden when any of these holds:
+- `STALE`: the anchor source of the line's tier set is not current (§15.5's freshness: an error, `fetched_at ≠ last_attempt_at`, more than 30 min old, or in the future);
+- `BLOCKED`: MAIN's latest `pricing_follow_results` for the currency is `BLOCKED`;
+- `MISMATCH`: any of these:
+  - the line's `source_snapshot.pricing.tier_set_id` is not the branch's latest FOLLOW tier set for the currency;
+  - MAIN's latest result is not `PUBLISHED` with that same set, so a re-plan produced other tiers that did not publish;
+  - at a followed branch, the set's `base_tier_set_id` is not MAIN's latest FOLLOW set.
+
+**Where `hidden` applies** (`V9:rate-board.mjs:47`, the projection runs only in the board feed):
+- **The board and the public rates feed** drop a hidden line. They never fall back to another price for it (`H:` §6).
+- **The kiosk** (self-service) treats a hidden line as `quoteEnabled: false`, "contact staff". `H:` §10.6 says a stale FOLLOW price must never be shown as ready to use.
+- **The desk** still quotes the published line, under today's quote-time `StalePolicy::admits` (`quote.rs:254-262`). A teller is present to confirm, and `H:` gives the desk no hide rule. The desk's quote answer carries `pricingHidden: true` and the reason, so the FE can warn.
+
+**Other changes:**
+- The view computes these per line (`views/published_rates.rs:62-227`, which today keeps only the aggregate at `:212`).
+- `Freshness::of_side` (`domain/publication/freshness.rs:30-36`) no longer marks a MANUAL side stale.
+- **The public route's ETag** (`public/branch_rates.rs:49-54`, `"p<id>-s<0|1>"`) becomes a hash of the publication id, `stale`, the per-line `hidden` set, the effective display settings (§15.8) and the SR currency list behind `more`. A `rateDisplaySave`, or a new SR list, never answers 304.
+
+### 15.8 Display settings (gap 9) [required]
+
+- **Command:** `rateDisplaySave {branch, tiers: [1..4], featured: [code ≤ 10], highlight, allMarket}` or `{branch, clear: true}`. It is an EXECUTIVE frame change, and a branch with no row reads MAIN's (`V9:store displaySettings`).
+- **Defaults** (`V9:display DEFAULT_DISPLAY`):
+  - tiers `[1,2,3,4]`;
+  - featured `MYR, CNY, INR, RUB, KRW, JPY, GBP, USD, TWD, EUR`, a code default and not a statistic (`H:` §8);
+  - highlight on, `allMarket` on.
+- **The public projection adds a `display` block:**
+  - `{tiers, featured, highlight}`;
+  - an ordered currency list: featured first in their set order, then SR's market order, then by code;
+  - a `more` list when `allMarket`: currencies SR lists that the branch has no price for, which show "contact the counter", never 0.
+- **4 tiers or one price:** the board shows 4 tiers only when all 4 exist and tier 1 equals the counter price; otherwise one price (`H:` §8).
+- **The kiosk** lists board-only currencies with `quoteEnabled: false` ("contact staff") (`H:` §8, §10.8). Seeing a price never enables a quote (`xc-kiosk/.../counter_view.rs:30-36`).
+
+### 15.8a Read contracts for the FE [required]
+
+- **`pricing_board` row** (`dto/v3/pricing_board.rs`) gains:
+  - `mode: "AUTO" | "MANUAL" | "FOLLOW"`;
+  - `tierSet: {id, source: "MANUAL" | "MAIN_PUSH" | "FOLLOW", tiers: [{tier, buy, sell}] × 4, approvedBy, approvedAt} | null`;
+  - `followResult: {status: "CANDIDATE" | "BLOCKED" | "PUBLISHED", reasons: string[], plannedAt} | null`, for FOLLOW currencies, as MAIN's;
+  - `branchPolicy: {buyBp, sellBp, own, follow, from: "currency" | "*" | "default"}`.
+- **`pricing_board` top level** gains:
+  - `branchDefault: {buyBp, sellBp}` (the `'*'` row, or 0/0);
+  - `display: {tiers, featured, highlight, allMarket, from: "branch" | "MAIN" | "default"}`, which is also the display-settings read: there is no separate view;
+  - `isMain: boolean`.
+- **Kiosk:** `quoteEnabled: boolean` is on each currency of the kiosk counter view's DTO (`xc-kiosk/.../counter_view.rs`). It is true only when the currency is kiosk-enabled and its line is not `hidden`. Board-only currencies are listed with `false`.
+- **`pricingApprove` answer:**
+  - `{currencies: [{currency, state, tierSetId?, error?, branches?: [{branchId, state, tierSetId?, error?}]}]}`;
+  - currency `state`: `"PUBLISHED" | "REFUSED"` (with `error` = the v3 error code);
+  - branch `state`: `"PUBLISHED" | "SKIPPED_OWN" | "FAILED" | "ALREADY_DONE"`;
+  - `branches` is present only at MAIN.
+- **The other new commands** answer `{saved: true}`: `pricingBranchPolicySave`, `pricingModeSave`, `rateDisplaySave`. `marketRatesRefresh` answers `{sources: [{source, ok, error?}], followResults: [...]}`.
+- **Desk quote answer:** `QuoteLineDto` gains `pricingHidden: boolean` and `pricingHiddenReason: string | null` (§15.7). It is generated TS like the rest.
+
+### 15.9 `/pricing` is polled every 60 s (B6) [required]
+
+- `pricing_board` (`views/pricing_board.rs:57`, `VERSIONED = false`) becomes versioned through `own_version()` (`view.rs:41-53`).
+- **The version is a hash of:**
+  - the newest `fetched_at` per reference type (BOT, MARKET_TT, MARKET_SR, START);
+  - `market_feed_status.last_attempt_at` and its error;
+  - the branch's current `rate_policy_versions.version`;
+  - `pricing_suggestion_settings.updated_at`;
+  - `branches.current_publication_id`;
+  - `org_starting_prices.version`;
+  - the newest `pricing_tier_sets.approved_at`, `pricing_modes.revision`, `pricing_branch_policy.updated_at`, `pricing_follow_results.planned_at` and `rate_display_settings.updated_at`;
+  - **the stale booleans of TT and SR**, which flip at 30 minutes with no write;
+  - the 7-day volume's day bucket.
+- An unchanged read answers `{changed:false}` (`view.rs:626-660`).
+- FE polls it every 60 s while the page is visible and no editor is open (`H:` §8). That is the FE lane's ticket.
+
+### 15.10 Smaller items (gap 10)
+
+- **minSpreadPct:** the branch `'*'` level is `pricing_suggestion_settings.min_spread_pct` (§15.2). The resolution order is currency override, then branch `'*'`, then V.9's 0.3 (`pricing_board.rs:518-522`).
+- **Kiosk BUY:** a foreign amount with more decimals than the currency's minor unit is **rounded half up** to it (`H:` §8: `foreign = round(amount × 100) / 100`), not refused (`xc-kiosk/.../kiosk_machine.rs:52-57`). SELL keeps truncating.
+- **Band boundaries end to end:** 10,000 / 10,000.01 / 50,000 / 50,000.01 / 200,000 / 200,000.01 THB, BUY and SELL, through a published 4-tier set (`H:` §10.2). The domain test exists (`value_tier_test.rs:76-94`); the end-to-end one does not.
+
+### 15.11 Behaviour (up-front tests; `H:` is the oracle) [required]
+
+| # | Case | Expect (source) |
+|---|---|---|
+| PV-1 | suggestion, TT 33.20/33.90, d = 2, defaults | 33.23/33.87 · 33.24/33.86 · 33.26/33.84 · 33.29/33.80 (`H:` §4.4; already `pricing_suggestion_test.rs:79-93`) |
+| PV-2 | approve USD MANUAL with PV-1's tiers at MAIN | published tier 1 = 33.23/33.87 exactly; 4 tier lines; no EXECUTIVE wait (B3); a BoT refresh afterwards does not change them |
+| PV-3 | approve a price with 6 decimals | `validationFailed`; 5 decimals (VND 0.00127) is accepted and published in full (B2, `H:` §4.3) |
+| PV-4 | approve a currency with no BoT line and no starting price, TT present | publishes (gap 7) |
+| PV-5 | tier 1 more than 3 % from the TT anchor; buy tier 2 < tier 1; sell ≤ buy | each `validationFailed`, nothing written (`H:` §5) |
+| PV-6 | quote USD 300,000 THB worth at a branch with PV-2 published | priced at tier 1 (B4, `H:` §8) |
+| PV-7 | MAIN approve, branch B buyBp +5 / sellBp −5 | B's tier 1 = 33.24/33.86 (`H:` §7) |
+| PV-8 | branch C `own = true`; MAIN approves | C unchanged; the answer lists C as skipped |
+| PV-9 | branch D's publish fails | MAIN and the others stay published; the answer names D's error |
+| PV-10 | approve at branch B | B's row gets `own = true`; the next MAIN approve skips B |
+| PV-11 | FOLLOW USD at MAIN, TT fetched 31 minutes ago | BLOCKED `STALE_SOURCE`; nothing published; the public line is `hidden`, `STALE` |
+| PV-12 | FOLLOW, the new TT moves tier 1 buy by 1.2 % | BLOCKED `LARGE_MOVE` |
+| PV-13 | FOLLOW, a fresh TT within 1 % | published once; the same batch planned again publishes nothing |
+| PV-14 | FOLLOW, branch B `follow = true`, branch E not enrolled | B follows with its bp; E unchanged (`H:` §7, §10.7) |
+| PV-15 | MANUAL line with an old anchor | `hidden = false`, always (B5) |
+| PV-15b | branch B follows; MAIN's latest plan is BLOCKED | B's FOLLOW line is `hidden`, `BLOCKED`; the kiosk at B lists it `quoteEnabled:false`; a desk quote at B answers `pricingHidden:true` |
+| PV-15c | MAIN re-plans different tiers but the publish fails | MAIN's and B's lines are `hidden`, `MISMATCH` |
+| PV-15d | `rateDisplaySave` changes `featured` | the public feed's ETag changes; no 304 |
+| PV-16 | `rateDisplaySave` featured with 11 codes; tiers `[]` | `validationFailed` |
+| PV-17 | no display row at B, MAIN has one | B reads MAIN's |
+| PV-18 | `allMarket`, SR lists KHR, branch has no KHR price | KHR in `more` as "contact the counter", no price |
+| PV-19 | kiosk BUY JPY 1000.5 | rounded to the minor unit, quoted (gap 10) |
+| PV-20 | `pricing_board` read twice with nothing changed; then TT turns stale | `{changed:false}`; then a new version (B6) |
+| PV-21 | band boundaries 10,000 · 10,000.01 · 50,000 · 50,000.01 · 200,000 · 200,000.01, BUY and SELL | the recorded tier is 1·2·2·3·3·4 (`H:` §10.2) |
+
+### 15.12 Tickets (cut after this section merges; every new issue is proposed to the owner first)
+
+The shared files make two chains. The rest are disjoint.
+
+| # | Ticket | Files | Class | After |
+|---|---|---|---|---|
+| PV-a | migration §15.2 + `PricingTierSet` / `BranchPricingPolicy` / `DisplaySettings` domain + stores | migration, `xc-rate/src/domain/pricing/{tier_set,branch_policy,display_settings}.rs`, `xc-rate/src/infrastructure/pricing/{tier_set_store,branch_policy_store,display_settings_store}.rs` | guarded | — |
+| PV-b | draft lines with tier rows: `RateDraftLine` tiers, draft store, `evaluate` (in bound when `TierCheck` passed), `PublishService` writes 4 tier lines from them | `rate_draft_service.rs`, `draft_evaluation.rs`, draft store, `publish_service.rs` | guarded | PV-a |
+| PV-c | `pricingApprove` MANUAL (§15.3, B2, B3, gap 7) | `pricing_approve.rs` | guarded | PV-b |
+| PV-d | branch push + `own` (§15.4), `pricingBranchPolicySave` | `xc-rate/src/application/pricing/branch_push.rs`, `commands/pricing_branch_policy_save.rs` | guarded | PV-c |
+| PV-e | BoT refresh leaves MANUAL/FOLLOW alone (§15.1) | `branch_refresh.rs`, `RateDraftService::copy` | logic | PV-b |
+| PV-f | FOLLOW: `pricingModeSave`, `MarketPricingLoop`, plan + blocks, `pricing_follow_results` | `infrastructure/rate_feed/market_pricing_loop.rs`, `xc-rate/src/domain/pricing/follow_plan.rs`, `commands/pricing_mode_save.rs`, `bootstrap/mod.rs` | guarded | PV-d |
+| PV-g | `marketRatesRefresh` (gap 6) | `commands/market_rates_refresh.rs`, `AppState` | logic | PV-f |
+| PV-h | `line_for` returns tier 1 (B4) | `xc-rate/src/infrastructure/publication/published_rates.rs` + the 6 test files the survey lists | logic | — (after CR-b only because it flips `app_planner_quote_parity_test.rs`) |
+| PV-i | public projection `pricingSource` / `hidden` / `display` / `more` (B5, §15.8 view half) + `FollowVisibility` + ETag | `dto/v3/published_rates.rs`, `views/published_rates.rs`, `xc-rate/src/domain/pricing/follow_visibility.rs`, `freshness.rs`, `public/branch_rates.rs`, generated TS | logic | PV-a, PV-f |
+| PV-i2 | desk quote `pricingHidden` (§15.7) | `dto/v3/quote.rs` (after CR-b) | logic | PV-i, CR-b |
+| PV-j | `rateDisplaySave` | `commands/rate_display_save.rs` | logic | PV-a |
+| PV-k | `pricing_board` versioned (B6), plus the §15.8a row and top-level fields | `views/pricing_board.rs`, `dto/v3/pricing_board.rs`, generated TS | logic | PV-d, PV-f, PV-j |
+| PV-l | gap 10: minSpread `'*'`, kiosk BUY rounding, band boundary test | `pricing_board.rs` (after PV-k), `suggestion_settings_store.rs`, `kiosk_machine.rs`, a new test | mechanical | PV-a, PV-k |
+| PV-m | kiosk board-only currencies (`quoteEnabled:false`) | `xc-kiosk/.../counter_view.rs` | logic | PV-i |
+
+FE (FE lane): B6 polling, the B5 board hide, the display-settings screen, the kiosk "contact staff" row, `/pricing` FOLLOW and branch-policy editors, and `H:` §10.1's 5-decimal formatter.
+
+### 15.13 Verification against `H:` after deploy [required]
+
+This is the owner's order (2026-10-26): *"ทำเสร็จ ตรวจสอบ ว่าผลลัพธ์ ถูกต้อง ตาม ที่ เอกสารระบุ มาไหม"*. On xc-v3, with the live TT/SR feed:
+- recompute `H:` §4.2 by hand from the stored TT line of three currencies (one with d = 2, one with d = 3 and one with d = 4) and compare the `/pricing` suggestion;
+- approve one currency, then read `/api/v3/views/published_rates` and a desk quote at a large amount: tier 1, B4;
+- read a following branch's tier 1 against `H:` §7;
+- walk `H:` §10's nine acceptance items, one line of evidence each.
+
+The result is posted on #564 and #5055.
