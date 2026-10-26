@@ -9,7 +9,6 @@ use actix_web::http::Method;
 use actix_web::{HttpRequest, HttpResponse, web};
 use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Rate, UnitSize};
 
 use crate::bootstrap::{AppState, BuildInfo};
 
@@ -365,28 +364,46 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
             .body("ไม่พบรายการ");
     };
 
-    let tx_row: Option<(String, String, String, String, String, String, String)> =
-        match sqlx::query_as(
-            "SELECT t.customer_id, tl.shop_side, tl.currency, tl.quantity::text, \
-         tl.rate_snapshot::text, tl.fee_thb::text, tl.unit_size::text \
+    type ReceiptRow = (
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+    );
+    let tx_row: Option<ReceiptRow> = match sqlx::query_as(
+        "SELECT t.customer_id, tl.shop_side, tl.currency, tl.quantity::text, \
+         tl.rate_snapshot::text, tl.fee_thb::text, tl.thb_amount::text, tl.settle_thb::text \
          FROM transactions t \
          JOIN transaction_lines tl ON tl.transaction_id = t.id \
          WHERE t.branch_id = $1 AND t.document_ref = $2 AND t.mode = 'LIVE' AND t.status = 'COMPLETED' \
          ORDER BY tl.line_no LIMIT 1",
-        )
-        .bind(target_branch)
-        .bind(ref_str)
-        .fetch_optional(&state.db)
-        .await
-        {
-            Ok(row) => row,
-            Err(e) => {
-                tracing::error!("database error querying transaction {ref_str}: {e}");
-                return server_error();
-            }
-        };
+    )
+    .bind(target_branch)
+    .bind(ref_str)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("database error querying transaction {ref_str}: {e}");
+            return server_error();
+        }
+    };
 
-    let Some((customer_id, tx_type, code, amount_str, rate_str, fee_str, unit_size_str)) = tx_row
+    let Some((
+        customer_id,
+        tx_type,
+        code,
+        amount_str,
+        rate_str,
+        fee_str,
+        thb_amount_str,
+        settle_thb_str,
+    )) = tx_row
     else {
         return HttpResponse::NotFound()
             .content_type("text/plain; charset=utf-8")
@@ -405,34 +422,18 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
         Ok(v) => v,
         Err(r) => return r,
     };
-    let unit_val = match UnitSize::parse(unit_size_str.trim()) {
-        Ok(u) => u,
-        Err(e) => {
-            tracing::error!("invalid unit_size {unit_size_str:?} in transaction {ref_str}: {e}");
-            return server_error();
-        }
+    let _thb_amount = match stored_decimal("thb_amount", &thb_amount_str, ref_str) {
+        Ok(v) => v,
+        Err(r) => return r,
     };
-    let rate_val = match Rate::parse(&rate.normalize().to_string()) {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("invalid rate {rate:?} in transaction {ref_str}: {e}");
-            return server_error();
-        }
+    let thb = match stored_decimal("settle_thb", &settle_thb_str, ref_str) {
+        Ok(v) => v,
+        Err(r) => return r,
     };
-
-    let foreign = ForeignAmount::from_decimal(amount);
-    let base_money = match ExchangeArithmetic::try_thb(foreign, rate_val, unit_val) {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::error!("thb overflow in transaction {ref_str}: {e}");
-            return server_error();
-        }
-    };
-    let base = Decimal::from_i128_with_scale(base_money.minor_i128(), 2);
-    let (verb, thb) = if tx_type == "BUY" {
-        ("จ่าย", base - fee)
+    let verb = if tx_type == "BUY" {
+        "จ่าย"
     } else {
-        ("รับ", base + fee)
+        "รับ"
     };
 
     let amount_formatted = to_locale_string(amount);
