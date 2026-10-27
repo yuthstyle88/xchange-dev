@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use uuid::Uuid;
 use xc_customer::application::retention_job::RetentionPurger;
@@ -31,11 +31,39 @@ impl RetentionPurger for PgRateAlertPurger {
         &'a self,
         org: Uuid,
         cutoff: DateTime<Utc>,
-        now: DateTime<Utc>,
+        _now: DateTime<Utc>,
     ) -> Pin<Box<dyn Future<Output = AppResult<u64>> + Send + 'a>> {
-        let _ = (&self.pool, org, cutoff, now);
-        todo!(
-            "ticket 5: delete the org's alerts deleted or expired before cutoff, with their events"
-        )
+        Box::pin(async move {
+            let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+
+            sqlx::query(
+                "DELETE FROM rate_alert_events \
+                 WHERE alert_id IN ( \
+                     SELECT id FROM rate_alerts \
+                     WHERE organization_id = $1 \
+                       AND (deleted_at < $2 OR expires_at < $2) \
+                 )",
+            )
+            .bind(org)
+            .bind(cutoff)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+
+            let result = sqlx::query(
+                "DELETE FROM rate_alerts \
+                 WHERE organization_id = $1 \
+                   AND (deleted_at < $2 OR expires_at < $2)",
+            )
+            .bind(org)
+            .bind(cutoff)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+
+            tx.commit().await.map_err(AppError::Database)?;
+
+            Ok(result.rows_affected())
+        })
     }
 }
