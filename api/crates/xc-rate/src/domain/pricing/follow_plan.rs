@@ -29,6 +29,23 @@ pub struct SourceFreshness {
 }
 
 impl SourceFreshness {
+    /// Builds the freshness from v3's market feed (pricing-tiers.md §15.5; `H:` §6 "the last fetch succeeded"). v3's
+    /// `ReferenceBatchWriter` writes a new batch only when the answer changed, and `MarketRefresh::tick` records the
+    /// attempt at its own `now`, so the newest batch's `fetched_at` never equals `last_attempt_at` even when the last
+    /// fetch succeeded. Reading: when the last attempt has **no error** and a batch exists, that attempt is the last
+    /// successful fetch, so `fetched_at := last_attempt_at`; otherwise `fetched_at` is the newest batch's (and an error
+    /// keeps the source not current). Both FOLLOW readers (`MarketPricingLoop`, the public projection) build it here.
+    ///
+    /// SKELETON (XC-V9-PRICING): PV-g's.
+    pub fn of_feed(
+        newest_batch_fetched_at: Option<DateTime<Utc>>,
+        last_attempt_at: Option<DateTime<Utc>>,
+        error: Option<String>,
+    ) -> Self {
+        let _ = (newest_batch_fetched_at, last_attempt_at, error);
+        todo!("PV-g: SourceFreshness::of_feed")
+    }
+
     /// `H:` §6: the last fetch succeeded — no error, `fetched_at == last_attempt_at`, not in the future, and at most
     /// `MarketStaleness::STALE_AFTER_MINUTES` (30) old at `now`. Shared with `FollowVisibility` (§15.7 `STALE`).
     pub fn is_current(&self, now: DateTime<Utc>) -> bool {
