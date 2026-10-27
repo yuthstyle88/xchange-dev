@@ -30,8 +30,35 @@ export interface ShiftCardProps {
   ctx: StaffCtx;
 }
 
+const COUNT_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const COUNT_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Bangkok',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function formatCountTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const [, mm, dd] = COUNT_DAY_FMT.format(d).split('-');
+  const time = COUNT_TIME_FMT.format(d);
+  return `${dd}/${mm} ${time}`;
+}
+
+const COUNT_KINDS = ['OPEN', 'CLOSE', 'HANDOVER_OUT', 'HANDOVER_IN'] as const;
+type CountKind = (typeof COUNT_KINDS)[number];
+const isCountKind = (k: string): k is CountKind => (COUNT_KINDS as readonly string[]).includes(k);
+
 export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const t = screenT('staff.shift', { th, en });
+  const kindLabel = (kind: string): string => (isCountKind(kind) ? t(kind) : kind);
   const api = new ApiClient();
   const commandMap = new Map<string, { send(body: unknown): Promise<unknown> }>();
 
@@ -77,7 +104,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const hasOpenShift = () => !!props.ctx.floor?.myShift;
 
   const loadCashCounts = async () => {
-    if (!canCertify()) return;
+    if (!canCertify() && !hasOpenShift()) return;
     try {
       const res = await api.view<CashCountRow[] | { rows: CashCountRow[] }, Partial<CashCountsFilter>>('cash_counts', {
         branch: props.ctx.me.branchId,
@@ -160,7 +187,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   };
 
   onMount(() => {
-    if (canCertify()) {
+    if (canCertify() || hasOpenShift()) {
       void loadCashCounts();
     }
     if (canOperate()) {
@@ -476,6 +503,20 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     );
   };
 
+  const waitingCloseCount = () => {
+    const shiftId = props.ctx.floor?.myShift?.id;
+    if (!shiftId) return undefined;
+    return cashCounts().find(
+      (c) =>
+        c.kind === 'CLOSE' &&
+        c.countedBy === props.ctx.me.userId &&
+        c.verifiedBy === null &&
+        c.shiftId === shiftId
+    );
+  };
+
+  const myCloseWaiting = () => waitingCloseCount() !== undefined;
+
   const handoversToMe = () => {
     if (!canOperate()) return [];
     return pendingHandovers().filter(
@@ -518,14 +559,23 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
             </button>
           </Show>
           <Show when={hasOpenShift()}>
-            <button
-              type="button"
-              data-testid="shift-close-count"
-              class="xc-shift-action-btn"
-              onClick={() => handleOpenCount('CLOSE')}
+            <Show
+              when={!myCloseWaiting()}
+              fallback={
+                <div role="status" class="xc-shift-close-waiting" data-testid="shift-close-waiting">
+                  {t('closeWaiting')} ({formatCountTime(waitingCloseCount()!.countedAt)})
+                </div>
+              }
             >
-              {t('closeCount')}
-            </button>
+              <button
+                type="button"
+                data-testid="shift-close-count"
+                class="xc-shift-action-btn"
+                onClick={() => handleOpenCount('CLOSE')}
+              >
+                {t('closeCount')}
+              </button>
+            </Show>
             <button
               type="button"
               data-testid="shift-handover"
@@ -660,8 +710,15 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
               {(c) => (
                 <div data-count-id={c.id} class="xc-shift-count-item">
                   <div class="xc-shift-item-info">
-                    <span class="xc-shift-item-title">{c.kind}</span>
-                    <span class="xc-shift-item-sub">{c.countedBy}</span>
+                    <span class="xc-shift-item-title">{kindLabel(c.kind)}</span>
+                    <span class="xc-shift-item-sub">
+                      {formatCountTime(c.countedAt)}
+                      {' · '}
+                      <span title={c.id}>#{c.id.slice(0, 8)}</span>
+                      <For each={c.totals}>
+                        {(tot) => <> · {tot.currency} {tot.counted}</>}
+                      </For>
+                    </span>
                   </div>
                   <div class="xc-shift-item-actions">
                     <button

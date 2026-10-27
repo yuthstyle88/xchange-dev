@@ -14,6 +14,7 @@ pub struct StaffAttendanceRow {
     #[serde(rename = "in")]
     pub in_time: String,
     #[serde(rename = "out", skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub out_time: Option<String>,
 }
 

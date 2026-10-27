@@ -18,8 +18,6 @@ export function makeBranchPriceSourceOutput(o: Partial<BranchPriceSourceOutput> 
   return {
     branchId: 'branch_price_source_output-1',
     priceSource: 'BOT_DRAFT',
-    publicationId: null,
-    version: null,
     ...o,
   };
 }

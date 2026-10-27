@@ -18,10 +18,15 @@ export const th: Record<string, string> = {
   emptyHandovers: 'ไม่มีรายการส่งมอบ',
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
   countAwaitingFinance: 'ยอดต่างเกินเกณฑ์ ส่งให้ฝ่ายการเงินอนุมัติแล้ว ยังไม่ถือว่ารับรอง',
+  closeWaiting: 'ยอดนับปิดกะรอผู้มีสิทธิ์ตรวจรับรอง',
   handoverAwaitingFinance: 'ยอดส่งมอบต่างเกินเกณฑ์ ส่งให้ฝ่ายการเงินอนุมัติแล้ว ยังไม่ถือว่ารับมอบ',
   approvalRequest: 'คำขออนุมัติ',
   qtyWholeMin0: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป',
   qtyTooLarge: 'จำนวนเกินค่าสูงสุดที่กำหนด',
+  OPEN: 'เปิดกะ',
+  CLOSE: 'ปิดกะ',
+  HANDOVER_OUT: 'ส่งมอบเงินออก',
+  HANDOVER_IN: 'รับมอบเงินเข้า',
 };
 
 export const en: Record<string, string> = {
@@ -43,8 +48,13 @@ export const en: Record<string, string> = {
   emptyHandovers: 'No handovers to me',
   connectionError: 'Connection error',
   countAwaitingFinance: 'The difference is over the limit and went to finance for approval; the count is not verified yet',
+  closeWaiting: 'Close count waiting for certification',
   handoverAwaitingFinance: 'The hand-over difference is over the limit and went to finance for approval; it is not accepted yet',
   approvalRequest: 'Approval request',
   qtyWholeMin0: 'Quantity must be a whole number of at least 0',
   qtyTooLarge: 'Quantity exceeds the maximum allowed',
+  OPEN: 'Open',
+  CLOSE: 'Close',
+  HANDOVER_OUT: 'Hand Over Out',
+  HANDOVER_IN: 'Hand Over In',
 };

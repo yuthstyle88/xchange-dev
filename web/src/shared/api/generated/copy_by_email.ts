@@ -10,4 +10,4 @@ subject: string, id: string,
  */
 qr: string, };
 
-export type CopyByEmailOutput = { sent: boolean, again: boolean | null, };
+export type CopyByEmailOutput = { sent: boolean, again?: boolean | null, };

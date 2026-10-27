@@ -18,6 +18,7 @@ use crate::domain::customer::entities::customer_identity::CustomerIdentity;
 use crate::domain::customer::entities::reservation::Reservation;
 use crate::domain::customer::repositories::customer_repository::CustomerRepository;
 use crate::domain::customer::value_objects::customer_details::CustomerDetails;
+use crate::domain::customer::value_objects::customer_field::{CustomerField, CustomerRefusal};
 use crate::infrastructure::customer::customer_repository::PgCustomerRepository;
 use crate::pii_keys::get_pii_keys;
 
@@ -28,6 +29,22 @@ pub const NOT_THIS_PASSPORT: &str = "รหัสลูกค้าไม่ต�
 pub const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 pub const BAD_DATE: &str = "วันที่ไม่ถูกต้อง";
 pub const BAD_MODE: &str = "กรุณาเลือกประเภทรายการ";
+
+/// Why a reserve was refused: a fault in a named field, or anything else (`rpc-refusal-field.md` RF-D3).
+#[derive(Debug)]
+pub enum ReserveError {
+    Input(CustomerRefusal),
+    Other(AppError),
+}
+
+impl From<ReserveError> for AppError {
+    fn from(error: ReserveError) -> Self {
+        match error {
+            ReserveError::Input(refusal) => refusal.into(),
+            ReserveError::Other(other) => other,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReservedCustomerNumber {
@@ -96,30 +113,48 @@ impl CustomerService {
         })
     }
 
-    pub async fn reserve(
+    /// `reserve`, with a refusal of the customer's details naming its field (RF-D3).
+    pub async fn reserve_checked(
         &self,
         branch: &BranchId,
         cmd: ReserveCustomer,
         now: DateTime<Utc>,
-    ) -> AppResult<Reservation> {
-        if !self.repo.branch_exists(branch).await? {
-            return Err(AppError::Domain(NO_SUCH_BRANCH.to_owned()));
+    ) -> Result<Reservation, ReserveError> {
+        if !self
+            .repo
+            .branch_exists(branch)
+            .await
+            .map_err(ReserveError::Other)?
+        {
+            return Err(ReserveError::Other(AppError::Domain(
+                NO_SUCH_BRANCH.to_owned(),
+            )));
         }
 
-        let details = CustomerDetails::parse(&cmd)?;
-        let org_id = self.repo.organization_of_branch(branch).await?;
+        let details = CustomerDetails::check(&cmd).map_err(ReserveError::Input)?;
+        let org_id = self
+            .repo
+            .organization_of_branch(branch)
+            .await
+            .map_err(ReserveError::Other)?;
 
-        let keys = get_pii_keys()?;
+        let keys = get_pii_keys().map_err(ReserveError::Other)?;
         let normalized = xc_kernel::pii::normalize(
             IdentityType::Passport,
             &details.passport_no,
             Some(&details.nationality),
         )
-        .map_err(|e| match e {
-            xc_kernel::pii::PiiError::InvalidNationality => {
-                AppError::Domain(INVALID_NATIONALITY.to_owned())
-            }
-            _ => AppError::Domain(BAD_TEXT.to_owned()),
+        .map_err(|e| {
+            ReserveError::Input(match e {
+                xc_kernel::pii::PiiError::InvalidNationality => CustomerRefusal {
+                    field: CustomerField::Nationality,
+                    sentence: INVALID_NATIONALITY,
+                },
+                _ => CustomerRefusal {
+                    field: CustomerField::PassportNo,
+                    sentence: BAD_TEXT,
+                },
+            })
         })?;
 
         let lookup_hash = LookupHasher::new(&keys).hash(IdentityType::Passport, &normalized);
@@ -195,6 +230,18 @@ impl CustomerService {
                 })
             })
             .await
+            .map_err(ReserveError::Other)
+    }
+
+    pub async fn reserve(
+        &self,
+        branch: &BranchId,
+        cmd: ReserveCustomer,
+        now: DateTime<Utc>,
+    ) -> AppResult<Reservation> {
+        self.reserve_checked(branch, cmd, now)
+            .await
+            .map_err(AppError::from)
     }
 
     pub async fn find(&self, branch: &BranchId, id: &str) -> AppResult<Option<Customer>> {
