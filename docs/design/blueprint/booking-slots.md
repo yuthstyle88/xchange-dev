@@ -220,7 +220,7 @@ written; the others are [proposed] in the same style and may be renamed in revie
 |---|---|---|
 | `bookingCreate` (body: `branchId, slotId, shopSide, currency, quantity, quoteId?, referralCode?`; DESK adds `customerId` or `{displayName, phone}`) | `POST /api/bookings` (§10) | `CustomerSelf` (APP) or `BookingsDesk` (DESK) |
 | `bookingCheckIn` (body: `qrToken?`, `identityChecked?`; one of them) | `POST /api/bookings/{id}/check-in` (§10) | `BookingsDesk` |
-| `kioskBookingCheckIn` (body: `qrToken`) | `POST /api/kiosk/bookings/check-in` | kiosk path |
+| `kioskBookingCheckIn` (body: `branch`, `qrToken`) | `POST /api/kiosk/bookings/check-in` | `QueueOperate` (owner R2, 2026-10-27; was the public kiosk path) |
 | `bookingConfirm` | `POST /api/bookings/{id}/confirm` | `CustomerSelf` |
 | `bookingCancel` (body: `reason`, required for staff) | `POST /api/bookings/{id}/cancel` | `CustomerSelf` or `BookingsDesk` |
 | `bookingReschedule` (body: `slotId`) | `POST /api/bookings/{id}/reschedule` | `CustomerSelf` or `BookingsDesk` |
@@ -257,11 +257,18 @@ Measured on main `1eba5943`. Rule ♻️: one shared core, never a copy per vari
   It falls back to `MAIN` when none is named, so a public command must name its branch.
 - The command then gets the whole `Caller` through `CommandAction::run_as` (`command.rs:89-106`).
   APP-18 (#1373) added `run_as` for exactly this.
-- The row already exists: `kioskBookingCheckIn` is `Need::Public` (`api/crates/xc-auth/src/domain/policy/areas/bookings.rs:24-27`).
+- The row already exists: `kioskBookingCheckIn` is `Need::Public` (`api/crates/xc-auth/src/domain/policy/areas/bookings.rs:24-27`), until R2 below makes it `QueueOperate`.
 - The organisation comes from the granted branch for every caller (`command.rs`, "Resolve organisation from caller's
   branch"), which replaces the copy's `SELECT organization_id FROM branches` for a user-less call (`bookings.rs:368-380`).
 
 ⇒ **The kiosk check-in becomes an ordinary `CommandAction`** with `ROUTE = "/api/kiosk/bookings/check-in"`.
+
+**R2 (owner, 2026-10-27: "kioskBookingCheckIn becomes staff-only"; XC-BE-GAPS-A row 9).** The public row let anyone holding
+a booking QR take a BOOKING queue ticket with no staff scan, against `kiosk-shared-phone.md` R-1 (no customer kiosk at
+the branch) and R-8 (only staff issue numbers). The row becomes `Need::Permission(Permission::QueueOperate)`, the
+permission R-8 gives the kiosk `confirm` (D19), so the staff queue machine keeps the path. The command runs as an
+ordinary staff command for the body's `branch`. Measured on `main` `1998f955`: no web or app screen calls it
+(`git grep -n "kioskBookingCheckIn\|bookings/check-in" -- web app qa` is empty), so no FE change follows.
 - It overrides `run_as`, because there is no user.
 - Its input names the branch as `branch`, the field `CommandEndpoint` reads (`command.rs`, Step 5), instead of `branchId`.
 - No web screen calls this route yet (`git grep -n "kiosk/bookings/check-in" -- web` prints nothing), so the field
@@ -442,9 +449,12 @@ machine's own predicates (`sweeper.rs:82-147`, the day-ended query after it; `Bo
   (the slot's `start_at` and `service_date`, the organisation's `no_show_grace_minutes`, the branch's local date of
   `now`, whether an active ticket exists) and show `effective_status`; the QR is withheld when the effective status is
   `CANCELLED`, `COMPLETED`, `NO_SHOW` or `EXPIRED`. The stored row is not changed: writing stays the sweeper's.
-- **Out of BK-13, one core (♻️):** the sweeper's three queries, `CheckInService`'s window (`check_in.rs:171-181`), the
-  booking commands' `qr.rs` (QR re-issue), and `infrastructure/executive/booking_facts.rs` (EX-8 counts) each restate
-  part of this rule. They should call `effective_status` too, so the rule has one home. That is **BK-14**, a follow-up:
+- **Out of BK-13, one core (♻️):** the sweeper's three queries, `CheckInService`'s window (`check_in.rs:171-181`) and
+  the booking commands' `qr.rs` (QR re-issue) each restate part of this rule. They should call `effective_status` too,
+  so the rule has one home. `infrastructure/executive/booking_facts.rs` (EX-8) is **not** one of them (re-measured on
+  `main` `1998f955` by XC-BE-GAPS-A, 2026-10-27): it counts `COMPLETED` and bookings that ever *reached* `CONFIRMED`
+  (the stored status or a `booking_events.to_status = 'CONFIRMED'` row), and `effective_status` only re-labels an
+  overdue `PENDING`/`CONFIRMED`/`CHECKED_IN` row, which had or had not reached `CONFIRMED` either way. That is **BK-14**, a follow-up:
   the sweeper still has to write, but it can select with the same predicate. `admin_bookings.rs` reads `v2_bookings`
   (v2, retired by BK-11) and is not a reader of this rule.
 
@@ -570,7 +580,7 @@ start dependencies are merged (fleet rule 🧪).
 | BK-6-FE | (#1915) every booking command the web sends names its `branch` (FE twin of #1913); merges with or before #1913 | customer `book/Book.tsx`, `bookings/Bookings.tsx`, the desk screen, admin `booking-slots/BookingSlots.tsx` and their tests | BK-8b |
 | BK-9b | A04's booking-policy section (`BookingSlots.tsx` "Section 4: Booking Policy") is shown only to an organisation-wide ADMIN: `sharedSession().me()?.roles` has a row with `role === 'ADMIN'` and `branchId === null`, the same test as `web/src/screens/login/home.ts:8`. A branch-scoped ADMIN still sees the rule, closures and slots sections. FE twin of BE #2086, which makes `bookingPolicySet` answer 403 `outOfScope` to a branch-scoped ADMIN; it may land before #2086, since hiding the form from a branch-scoped ADMIN is right either way. Only ADMIN holds `BranchesManage` (`role_permissions.rs:40-41`), so no other role is checked | `web/src/screens/admin/booking-slots/BookingSlots.tsx`, `web/src/screens/admin/booking-slots/BookingSlots.policy-gate.test.tsx` | BK-9 |
 | BK-13 | B12's reader half (§5.2): `effective_status` and its readers | `api/crates/xc-booking/src/domain/booking/effective_status.rs` (+ one `pub mod` line), `api/src/presentation/http/v3/views/my_bookings.rs`, `api/src/presentation/http/v3/views/desk_bookings.rs`, their tests | — |
-| BK-14 | one core for the overdue rule (§5.2, ♻️): the sweeper's selections, `CheckInService`'s window, `qr.rs`, `booking_facts.rs` call `effective_status` | the files named in §5.2 | BK-13 |
+| BK-14 | one core for the overdue rule (§5.2, ♻️): the sweeper's selections, `CheckInService`'s window and `qr.rs` call `effective_status` (`booking_facts.rs` dropped, §5.2) | the files named in §5.2 | BK-13 |
 
 C02/C03/C08 customer screens are #558's and read BK-6's views. EX-8 (booking conversion) reads `bookings` after BK-3.
 
