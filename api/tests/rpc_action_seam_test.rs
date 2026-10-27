@@ -120,6 +120,7 @@ impl RpcAction for Family {
                         status,
                         sentence: sentence.to_string(),
                         no_store: true,
+                        field: None,
                     }));
                 }
                 Does::Breaks => {

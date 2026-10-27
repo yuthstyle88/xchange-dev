@@ -10,7 +10,7 @@ pub use application::customer::phone_verification_service::{
 };
 pub use application::customer::service::{
     BAD_DATE, BAD_MODE, BAD_TEXT, COUNTER_EXHAUSTED, CustomerService, INVALID_NATIONALITY,
-    NO_SUCH_BRANCH, NOT_THIS_PASSPORT,
+    NO_SUCH_BRANCH, NOT_THIS_PASSPORT, ReserveError,
 };
 pub use domain::customer::commands::reserve_customer::ReserveCustomer;
 pub use domain::customer::entities::customer::Customer;
@@ -18,6 +18,7 @@ pub use domain::customer::entities::customer_identity::CustomerIdentity;
 pub use domain::customer::entities::reservation::Reservation;
 pub use domain::customer::repositories::customer_repository::CustomerRepository;
 pub use domain::customer::value_objects::customer_details::CustomerDetails;
+pub use domain::customer::value_objects::customer_field::{CustomerField, CustomerRefusal};
 pub use domain::phone_otp_policy::PhoneOtpPolicy;
 pub use domain::phone_verification::{PhoneVerification, PhoneVerificationStatus};
 pub use domain::sms_sender::SmsSender;

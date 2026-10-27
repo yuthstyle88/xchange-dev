@@ -244,6 +244,9 @@ pub struct RpcRefusal {
     pub sentence: String,
     /// Whether the answer carries `Cache-Control: no-store`.
     pub no_store: bool,
+    /// The payload key the refusal is about, printed after `error` when there is one
+    /// (`docs/design/rpc-refusal-field.md` RF-D1, RF-D4).
+    pub field: Option<&'static str>,
 }
 
 impl RpcRefusal {
@@ -253,6 +256,17 @@ impl RpcRefusal {
             status: 400,
             sentence: sentence.into(),
             no_store: true,
+            field: None,
+        }
+    }
+
+    /// A refusal by a use case that names the payload key at fault: 400, `no-store`, `field` (RF-D4).
+    pub fn refused_at(field: &'static str, sentence: impl Into<String>) -> RpcRefusal {
+        RpcRefusal {
+            status: 400,
+            sentence: sentence.into(),
+            no_store: true,
+            field: Some(field),
         }
     }
 
@@ -289,11 +303,13 @@ impl RpcRefusal {
                 status: 401,
                 sentence: SIGN_IN.to_string(),
                 no_store: false,
+                field: None,
             },
             RpcRoute::StaffRpc => RpcRefusal {
                 status: 401,
                 sentence: EMPLOYEE_AUTH_REQUIRED.to_string(),
                 no_store: true,
+                field: None,
             },
         }
     }
@@ -315,10 +331,18 @@ impl RpcRefusal {
             headers.push(("cache-control", "no-store"));
         }
         headers.push(("content-type", "application/json"));
+        let error = Value::String(self.sentence.clone());
+        let body = match self.field {
+            None => format!("{{\"error\":{error}}}"),
+            Some(field) => format!(
+                "{{\"error\":{error},\"field\":{}}}",
+                Value::String(field.into())
+            ),
+        };
         RpcResponse {
             status: self.status,
             headers,
-            body: format!("{{\"error\":{}}}", Value::String(self.sentence.clone())),
+            body,
         }
     }
 }

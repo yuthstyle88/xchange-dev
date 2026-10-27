@@ -62,6 +62,7 @@ pub struct CopyByEmailInput {
 pub struct CopyByEmailOutput {
     pub sent: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub again: Option<bool>,
 }
 

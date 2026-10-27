@@ -17,7 +17,6 @@ export function makeCopyByEmailInput(o: Partial<CopyByEmailInput> = {}): CopyByE
 export function makeCopyByEmailOutput(o: Partial<CopyByEmailOutput> = {}): CopyByEmailOutput {
   return {
     sent: false,
-    again: null,
     ...o,
   };
 }
