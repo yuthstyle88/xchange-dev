@@ -15,7 +15,10 @@ import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
-import { makePricingApproveOutput } from '../../../shared/testing/fixtures/pricing_approve';
+import {
+  makePricingApproveCurrencyResult,
+  makePricingApproveOutput,
+} from '../../../shared/testing/fixtures/pricing_approve';
 import { makePricingConfigureOutput } from '../../../shared/testing/fixtures/pricing_configure';
 import type { PricingRowDto } from '../../../shared/testing/fixtures/pricing_board';
 import { BOARD, boardFetch } from './__fixtures__/pricing-board.fixture';
@@ -51,7 +54,9 @@ function mountHost(): HTMLDivElement {
 }
 
 function approveOk(): Command {
-  const out = makePricingApproveOutput({ policyVersionId: 'pv-7', version: 2, draftId: 'draft-9', draftState: 'PUBLISHED' });
+  const out = makePricingApproveOutput({
+    currencies: [makePricingApproveCurrencyResult({ currency: 'USD', state: 'PUBLISHED', tierSetId: 'ts-9' })],
+  });
   return (path) => (path === ROUTE_PRICING_APPROVE ? { status: 200, body: out } : { status: 404, body: {} });
 }
 

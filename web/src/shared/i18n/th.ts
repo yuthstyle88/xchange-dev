@@ -60,6 +60,7 @@ export const th = {
   'error.holdsCash': 'พนักงานคนนี้ยังถือเงินสดหรือมีการส่งมอบที่ยังไม่เสร็จ',
   'error.notBound': 'บัญชีนี้ยังเข้าระบบไม่ได้ ให้เปิดใช้งานก่อน',
   'error.userNotActive': 'บัญชีนี้ไม่ได้ใช้งานอยู่',
+  'error.approvalRequired': 'ต้องขออนุมัติก่อนประกาศราคานี้',
   'queue.state.waiting': 'รอรับเรื่อง',
   'queue.state.working': 'กำลังทำรายการ',
   'queue.state.completed': 'เสร็จสิ้น',
