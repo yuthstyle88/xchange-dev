@@ -15,6 +15,7 @@ pub mod infrastructure {
     pub mod pg_campaign_repository;
     pub mod pg_customer_benefits;
     pub mod pg_performance;
+    pub mod pg_version_labels;
 }
 
 pub mod application {

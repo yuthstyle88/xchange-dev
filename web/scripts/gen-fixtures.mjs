@@ -92,7 +92,8 @@ function readGenerated() {
     for (const m of src.matchAll(re)) {
       const rhs = m[3].trim();
       const generic = Boolean(m[2]);
-      if (rhs.startsWith('{') && rhs.endsWith('}')) {
+      // A top-level union (`{ … } | { … }`, a serde-tagged enum) is an alias: its first variant is the default.
+      if (rhs.startsWith('{') && rhs.endsWith('}') && splitTop(rhs, '|').length === 1) {
         types.push({ name: m[1], kind: 'object', generic, fields: parseFields(rhs.slice(1, -1)) });
       } else {
         types.push({ name: m[1], kind: 'alias', generic, rhs });

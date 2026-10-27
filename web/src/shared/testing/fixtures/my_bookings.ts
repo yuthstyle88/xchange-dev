@@ -24,6 +24,9 @@ export function makeMyBookingItemDto(o: Partial<MyBookingItemDto> = {}): MyBooki
     estimateHighSeconds: null,
     estimateAsOf: null,
     readiness: 'readiness',
+    currency: 'USD',
+    customerSide: 'CUSTOMER_BUY',
+    quantity: '0.00',
     ...o,
   };
 }

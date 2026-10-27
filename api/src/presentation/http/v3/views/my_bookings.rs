@@ -244,6 +244,11 @@ impl BranchView for MyBookingsView {
                     estimate_high_seconds: estimate.map(|e| e.high_seconds),
                     estimate_as_of,
                     readiness: readiness.to_string(),
+                    // BE-2 (§6.4 E-10): the booking's requested_currency, shop_side through
+                    // CustomerSide::from_shop, and requested_quantity. Skeleton placeholders.
+                    currency: String::new(),
+                    customer_side: String::new(),
+                    quantity: String::new(),
                 });
             }
             tx.rollback().await.map_err(AppError::Database)?;

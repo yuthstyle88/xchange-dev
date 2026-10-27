@@ -5,14 +5,14 @@ use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::money::{ExchangeArithmetic, Money, Rate, UnitSize};
 use xc_rate::domain::currency::denomination_groups::GroupCode;
-use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates};
+use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates, PublishedSide};
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use crate::domain::app_error::CustomerAppError;
 use crate::domain::planner::planner_draft::{DraftAmount, DraftPlan};
 
 /// An estimate. Never a commitment: the rate is fixed at the desk.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PlannerEstimate {
     /// `ExchangeArithmetic::try_thb(quantity, rate, unit_size)`, as the desk quote computes it.
     pub thb: Money,
@@ -22,6 +22,9 @@ pub struct PlannerEstimate {
     /// The published line is stale and its stale policy admitted the amount.
     pub stale: bool,
     pub source_date: Option<NaiveDate>,
+    /// The published line the estimate priced, so the benefit estimate prices the same line
+    /// (`marketing-campaigns.md` §6.4.4, BE-4).
+    pub published: PublishedSide,
 }
 
 pub struct PlannerPreview {
@@ -100,6 +103,7 @@ impl PlannerPreview {
             unit_size: line.unit_size,
             stale: line.stale,
             source_date: line.source_date,
+            published: line,
         })
     }
 }

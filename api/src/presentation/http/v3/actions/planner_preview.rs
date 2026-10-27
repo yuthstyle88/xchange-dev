@@ -14,7 +14,9 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::planner::{PlannerPreviewAnswer, PlannerPreviewRequest};
+use crate::presentation::dto::v3::planner::{
+    PlannerBenefitDto, PlannerBenefitItemDto, PlannerPreviewAnswer, PlannerPreviewRequest,
+};
 use crate::presentation::http::v3::action::{ComputeAction, ComputeEndpoint, server_error};
 use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::error::V3Error;
@@ -51,6 +53,14 @@ impl PlannerPreviewAction {
             unit_size: estimate.unit_size.to_string(),
             stale: estimate.stale,
             source_date: estimate.source_date.map(|d| d.to_string()),
+            // BE-4 (§6.4): `BenefitEstimator::estimate_in` in the same read transaction, for the caller's
+            // customer of this organisation (E-5). Skeleton placeholder.
+            benefit: PlannerBenefitDto::None {
+                basis: "INDICATIVE".to_owned(),
+                channel: "APP".to_owned(),
+                evaluated_at: chrono::Utc::now().to_rfc3339(),
+                reason: "noActiveRule".to_owned(),
+            },
         })
     }
 }
@@ -94,5 +104,7 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     PlannerPreviewRequest::export_all(&cfg)?;
     PlannerPreviewAnswer::export_all(&cfg)?;
+    PlannerBenefitDto::export_all(&cfg)?;
+    PlannerBenefitItemDto::export_all(&cfg)?;
     Ok(())
 }
