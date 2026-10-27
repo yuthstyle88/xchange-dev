@@ -104,7 +104,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const hasOpenShift = () => !!props.ctx.floor?.myShift;
 
   const loadCashCounts = async () => {
-    if (!canCertify()) return;
+    if (!canCertify() && !hasOpenShift()) return;
     try {
       const res = await api.view<CashCountRow[] | { rows: CashCountRow[] }, Partial<CashCountsFilter>>('cash_counts', {
         branch: props.ctx.me.branchId,
@@ -187,7 +187,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   };
 
   onMount(() => {
-    if (canCertify()) {
+    if (canCertify() || hasOpenShift()) {
       void loadCashCounts();
     }
     if (canOperate()) {
@@ -503,6 +503,20 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     );
   };
 
+  const waitingCloseCount = () => {
+    const shiftId = props.ctx.floor?.myShift?.id;
+    if (!shiftId) return undefined;
+    return cashCounts().find(
+      (c) =>
+        c.kind === 'CLOSE' &&
+        c.countedBy === props.ctx.me.userId &&
+        c.verifiedBy === null &&
+        c.shiftId === shiftId
+    );
+  };
+
+  const myCloseWaiting = () => waitingCloseCount() !== undefined;
+
   const handoversToMe = () => {
     if (!canOperate()) return [];
     return pendingHandovers().filter(
@@ -545,14 +559,23 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
             </button>
           </Show>
           <Show when={hasOpenShift()}>
-            <button
-              type="button"
-              data-testid="shift-close-count"
-              class="xc-shift-action-btn"
-              onClick={() => handleOpenCount('CLOSE')}
+            <Show
+              when={!myCloseWaiting()}
+              fallback={
+                <div role="status" class="xc-shift-close-waiting" data-testid="shift-close-waiting">
+                  {t('closeWaiting')} ({formatCountTime(waitingCloseCount()!.countedAt)})
+                </div>
+              }
             >
-              {t('closeCount')}
-            </button>
+              <button
+                type="button"
+                data-testid="shift-close-count"
+                class="xc-shift-action-btn"
+                onClick={() => handleOpenCount('CLOSE')}
+              >
+                {t('closeCount')}
+              </button>
+            </Show>
             <button
               type="button"
               data-testid="shift-handover"
