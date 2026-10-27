@@ -323,10 +323,16 @@ impl MarketPricingLoop {
                 let id: Uuid = r.get("id");
                 let buy_adj: Decimal = r.get("buy_adjust_pct");
                 let sell_adj: Decimal = r.get("sell_adjust_pct");
-                let buy_adjust_pct =
-                    RatePercent::parse(&buy_adj.to_string()).unwrap_or(RatePercent::ZERO);
-                let sell_adjust_pct =
-                    RatePercent::parse(&sell_adj.to_string()).unwrap_or(RatePercent::ZERO);
+                let buy_adjust_pct = RatePercent::parse(&buy_adj.to_string()).map_err(|_| {
+                    RateEngineError::Internal(format!(
+                        "rate_policy_versions.buy_adjust_pct {buy_adj} is not a percent"
+                    ))
+                })?;
+                let sell_adjust_pct = RatePercent::parse(&sell_adj.to_string()).map_err(|_| {
+                    RateEngineError::Internal(format!(
+                        "rate_policy_versions.sell_adjust_pct {sell_adj} is not a percent"
+                    ))
+                })?;
                 let ovrs = CurrencyTierOverrideStore::for_version(&mut tx, &id).await?;
                 let ovr_ms = ovrs
                     .into_iter()
