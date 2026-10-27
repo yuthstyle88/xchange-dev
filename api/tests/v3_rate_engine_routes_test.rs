@@ -828,6 +828,7 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
             "stale",
             "lines",
             "bandHeadings",
+            "display",
         ],
         "data",
     );
@@ -856,6 +857,7 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
         jpy,
         &[
             "currency", "group", "unitSize", "buyRate", "sellRate", "lineId", "bands",
+            "pricingSource", "hidden", "hiddenReason",
         ],
         "a line",
     );
