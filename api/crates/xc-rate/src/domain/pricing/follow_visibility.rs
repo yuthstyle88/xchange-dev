@@ -60,7 +60,29 @@ impl FollowVisibility {
     ///
     /// `Manual` and `Auto` lines: always `None`.
     pub fn of(input: &VisibilityInput) -> Option<HiddenReason> {
-        let _ = (input,);
-        todo!("PV-iv: FollowVisibility::of")
+        if input.line_source != PricingSource::Follow {
+            return None;
+        }
+        if !input.source_current {
+            return Some(HiddenReason::Stale);
+        }
+        if matches!(input.main_result, Some((FollowResultStatus::Blocked, _))) {
+            return Some(HiddenReason::Blocked);
+        }
+        let Some(main_set) = (if input.at_main {
+            input.line_tier_set_id
+        } else {
+            input.line_base_tier_set_id
+        }) else {
+            return Some(HiddenReason::Mismatch);
+        };
+        if input.line_tier_set_id.is_none()
+            || input.line_tier_set_id != input.branch_latest_follow
+            || input.main_result != Some((FollowResultStatus::Published, Some(main_set)))
+            || (!input.at_main && input.main_latest_follow != Some(main_set))
+        {
+            return Some(HiddenReason::Mismatch);
+        }
+        None
     }
 }
