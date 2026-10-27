@@ -186,3 +186,57 @@ async fn bq0_existing_rows_keep_their_meaning_and_every_organisation_starts_off(
     );
     db.finish().await;
 }
+
+/// D-20 (lane controller's order on PR #5281): `quotes.approval_request_id` names the APPROVED `BINDING_QUOTE`
+/// request a binding quote was issued under — nullable, a real request, and at most one quote per request.
+#[tokio::test]
+async fn bq0_a_quote_names_at_most_one_approval_request() {
+    let db = TestDb::start().await;
+    let row: (String, String) = sqlx::query_as(
+        "SELECT data_type::text, is_nullable::text FROM information_schema.columns \
+          WHERE table_schema = current_schema() AND table_name = 'quotes' \
+            AND column_name = 'approval_request_id'",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("quotes.approval_request_id exists");
+    assert_eq!(row, ("uuid".to_owned(), "YES".to_owned()));
+
+    let p = db.publish("MAIN", &[JPY]).await;
+    let request = uuid::Uuid::new_v4();
+    db.exec(&format!(
+        "INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id, object_version_hash, \
+             policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key) \
+         VALUES ('{request}', '{ORG_1}', 'BINDING_QUOTE', 'MAIN', 'p', 'p', '1', '{{}}'::jsonb, 't', now(), \
+             'APPROVED', '{request}')"
+    ))
+    .await;
+    let with = |id: &str, req: &str| {
+        format!(
+            "INSERT INTO quotes (id, organization_id, branch_id, customer_id, type, channel, status, \
+                 publication_id, expires_at, created_by, accepted_by_transaction_id, created_at, updated_at, \
+                 approval_request_id) \
+             VALUES ('{id}', '{ORG_1}', 'MAIN', NULL, 'BINDING', 'DESK', 'ACTIVE', '{pubid}', \
+                 now() + interval '300 seconds', 'employee-1', NULL, now(), now(), {req})",
+            pubid = p.id
+        )
+    };
+    let q1 = uuid::Uuid::new_v4().to_string();
+    let q2 = uuid::Uuid::new_v4().to_string();
+    let q3 = uuid::Uuid::new_v4().to_string();
+    let named = format!("'{request}'");
+    assert_eq!(db.outcome(&with(&q1, &named)).await, "ok", "first quote");
+    assert_eq!(
+        db.outcome(&with(&q2, &named)).await,
+        "23505",
+        "a second quote under the same request"
+    );
+    assert_eq!(
+        db.outcome(&with(&q3, &format!("'{}'", uuid::Uuid::new_v4())))
+            .await,
+        "23503",
+        "a request that does not exist"
+    );
+    assert_eq!(db.outcome(&with(&q3, "NULL")).await, "ok", "no request");
+    db.finish().await;
+}

@@ -23,3 +23,8 @@ END $$;
 
 ALTER TABLE exchange_settings
     ADD COLUMN binding_quote_ttl_seconds integer NULL CHECK (binding_quote_ttl_seconds > 0);
+
+-- D-20 (design §10): the APPROVED BINDING_QUOTE request a binding quote was issued under, once at most.
+-- The issue consumes the request (UNIQUE: one quote per request); confirm reads it as the T2 decision.
+ALTER TABLE quotes
+    ADD COLUMN approval_request_id uuid NULL UNIQUE REFERENCES approval_requests (id);

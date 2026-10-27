@@ -60,6 +60,19 @@ pub fn proposal_id(req: &QuoteRequest, coupon_code: Option<&str>) -> String {
     format!("{:x}", h.finalize())
 }
 
+/// D-20 (Q33–Q35): whether the quote's own approval stands for T2 at confirm. `true` only when quote `quote_id` is a
+/// `BINDING` quote whose `quotes.approval_request_id` names an `APPROVED` `BINDING_QUOTE` request whose
+/// `proposed_payload.settleThb` is at least `settle_thb`. Anything else (no request, another status or type, a smaller
+/// approved amount, an indicative quote) is `false`, and confirm asks T2 as today. Reads in the caller's transaction.
+pub async fn covers_in(
+    tx: &mut Transaction<'_, Postgres>,
+    quote_id: uuid::Uuid,
+    settle_thb: xc_kernel::money::Money,
+) -> AppResult<bool> {
+    let _ = (tx, quote_id, settle_thb);
+    todo!("BQ-9")
+}
+
 pub struct BindingQuoteSubject;
 
 pub struct BindingQuoteApprovalPolicy;

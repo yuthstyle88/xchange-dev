@@ -60,6 +60,7 @@
 | D-17 | **A binding quote names a verified customer** (O-8 A). `customer_id` is required, and `Readiness::of(pool, customer)` (`api/crates/xc-verification/src/application/readiness.rs:16`, V12) must answer `Verified { until }` with `until > now`. `None`, `Pending`, `NeedsUpdate`, `Expired`, or no customer ⇒ `validationFailed` on `customerId`, no quote. This is the one place readiness gates something (V12 says *"nothing refuses on it"* for bookings and the desk; O-8 A adds this gate for binding quotes only). | O-8 A (§9); `verification.md` V12 |
 | D-18 | **The new permission reaches existing built-in groups through #3976's seed versions, not a migration of its own.** The owner ruled option B on #3976 (2026-10-20: *"go with B, track the seed version per built-in group, one migration"*). BQ-7 adds `(6, Permission::BindingQuoteIssue)` to `RoleGrants::SEED_ADDITIONS` and raises `RoleGrants::SEED_VERSION` to **6** (re-measured 2026-10-27 on `1998f9551`: main is at 5 — 2 #3976's `MarketRatesRefresh`, 3 #4155's removals, 4 RBAC §11.9's nine approval kinds, 5 #5108's `ShiftCloseCertify`), next to the TELLER and BRANCH_MANAGER seed lists (D-13). At boot, `seed_additions` grants each permission newer than a built-in group's `roles.seed_version` that the group's `RoleGrants::seed` holds, once, then raises the group to `SEED_VERSION`. So TELLER and BRANCH_MANAGER gain `BindingQuoteIssue`; no other built-in group gains it (their seeds don't hold it); custom groups are never touched; and an owner who removed it later never gets it back. A fresh database gets it from `seed_missing`, which sets `seed_version = SEED_VERSION`. | #3976 §5 (the design), its ruling; `user-management-rbac.md` §11.5 item 2 |
 | D-19 | **The approval subject is registered like every AP-1 type.** One file per subject under `api/src/bootstrap/approval_subjects/`: `binding_quote.rs` with `pub const TYPE: &str = "BINDING_QUOTE"` and `register` forwarding to `workflows::exchange::binding_approval::register`, exactly as `exchange_transaction.rs` does. The registry is generated from that directory at build time (`approval_subjects/mod.rs` `include!(concat!(env!("OUT_DIR"), …))`), so no `mod.rs` line is needed. A type missing there is hidden from the `approval_requests` view, so no BRANCH_MANAGER could decide it (the `CASH_TRANSFER` bug fixed by #3858, PR 3862). | `api/src/bootstrap/approval_subjects/exchange_transaction.rs`; #3858 |
+| D-20 | **An approval is used once, and it is the T2 decision at confirm** (lane controller's order on PR #5281, within O-5 A). The issue that names an APPROVED `BINDING_QUOTE` request records it in `quotes.approval_request_id` (UNIQUE, a real request) in its own transaction, so a request issues at most one quote; a later issue naming it is refused `staleVersion` (`APPROVAL_USED`), whether or not the first quote is still ACTIVE. Confirm's T2 step (`confirm.rs` step 5) first asks `binding_approval::covers_in(quote, settle)`: a BINDING quote whose recorded request is APPROVED for a `settleThb` at least the exchange's settle is CONFIRMED with no second request; every other case asks T2 as today. | O-5 A (T2 reused at issue, decided once); §4.2 Q31–Q35 |
 
 ---
 
@@ -73,6 +74,10 @@ ALTER TABLE quotes DROP CONSTRAINT <name of CHECK (type = 'INDICATIVE')>;   -- t
 ALTER TABLE exchange_settings
   ADD COLUMN binding_quote_ttl_seconds integer NULL CHECK (binding_quote_ttl_seconds > 0);   -- NULL = off; no default
   -- range: owner-owed (O-3), no default; the bounds CHECK is added, by its own migration, when the owner gives them
+
+-- quotes: the APPROVED BINDING_QUOTE request a binding quote was issued under, once (D-20)
+ALTER TABLE quotes
+  ADD COLUMN approval_request_id uuid NULL UNIQUE REFERENCES approval_requests (id);
 ```
 
 - The CHECK's name is found from `pg_constraint` in the migration (it was declared inline, so Postgres named it). The migration asserts that exactly one such constraint exists before dropping it.
@@ -128,6 +133,11 @@ stateDiagram-v2
 | Q28 | a TELLER and a BRANCH_MANAGER built-in group at `seed_version` 5, then boot | each gains exactly `BindingQuoteIssue` from `seed_additions` and ends at `seed_version` 6; no other built-in group and no custom group gains it (D-18) |
 | Q29 | an owner removed `BindingQuoteIssue` from TELLER after it was granted, then boot | it is not re-added (D-18) |
 | Q30 | a fresh database: `seed_missing` | TELLER and BRANCH_MANAGER hold `BindingQuoteIssue`, at `seed_version` 6, with no duplicates (D-18) |
+| Q31 | O-5: the retry naming an APPROVED `BINDING_QUOTE` request issues | the quote records it: `quotes.approval_request_id` = that request (D-20); a quote issued with no approval records none |
+| Q32 | O-5: a second issue names the same APPROVED request (another `Idempotency-Key`), even after the first quote was cancelled | refused `staleVersion` (`APPROVAL_USED`); no quote, no reservation (D-20). A replay with the same key keeps its first answer (the command seam) |
+| Q33 | O-5 + T2: confirm an exchange from a binding quote whose issue was approved, settle over the branch limit | `CONFIRMED`; no `EXCHANGE_TRANSACTION` request — the issue's approval is the T2 decision for that amount (D-20) |
+| Q34 | T2: confirm over the limit from a binding quote issued with no approval (the limit dropped after issue), or from an indicative quote | `PENDING_APPROVAL` with an `EXCHANGE_TRANSACTION` request, as today (D-20) |
+| Q35 | `covers_in`: the request is not APPROVED, not `BINDING_QUOTE`, approved for less than the exchange's settle, or the quote names none | `false`, so T2 is asked as today (D-20) |
 
 O-3's range has no row: it is owner-owed, and its bounds CHECK and test come with the owner's numbers (D-10).
 
@@ -240,6 +250,7 @@ classDiagram
 1. **Existing rows.**
    - Every `quotes` row is `INDICATIVE` (the CHECK being dropped guarantees it) and keeps its meaning; validity for `Indicative` is unchanged (D-3).
    - Every `exchange_settings` row gets `binding_quote_ttl_seconds = NULL`, so binding quotes are off everywhere until someone enters a value (D-10).
+   - Every `quotes` row gets `approval_request_id = NULL` (no existing quote was issued under a `BINDING_QUOTE` request).
    - `role_permission_grants` is not changed by this migration: the grant comes from #3976's boot step (D-18).
 2. **Backfill: none.** No row needs a value the migration writes. Binding quotes stay off until ADMIN enters a lifetime, and the permission is granted at boot by #3976's `seed_additions`. After deploy, count it: `SELECT role_code FROM role_permission_grants WHERE permission = 'BindingQuoteIssue';` should list TELLER and BRANCH_MANAGER (those whose owner has not removed it since).
 3. **Deploy order: migration first, then the binary, after #3976.**

@@ -39,6 +39,10 @@ use crate::application::workflows::save_step::SaveActor;
 pub const STALE_PROPOSAL: &str = "staleVersion: the approval request names another binding quote";
 /// The named request was REJECTED (Q22).
 pub const APPROVAL_REJECTED: &str = "approvalRejected: the binding quote was rejected";
+/// The named APPROVED request has already issued a binding quote (D-20, Q32): a request is consumed by the one
+/// quote it issues (`quotes.approval_request_id`, UNIQUE).
+pub const APPROVAL_USED: &str =
+    "staleVersion: the approval request has already issued a binding quote";
 
 /// One binding-quote issue.
 #[derive(Debug, Clone)]
