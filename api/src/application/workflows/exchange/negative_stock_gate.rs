@@ -4,12 +4,12 @@
 //! completion (#3405), a reversal's post (row 2) and a transfer's dispatch (row 3, R1) share it.
 
 use pos_error::{AppError, AppResult};
-use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_approval::application::approval_service::{ApprovalError, ApprovalService};
 use xc_auth::domain::access::Actor;
 use xc_cash::application::ledger_approval::negative_stock::NEGATIVE_STOCK;
 use xc_cash::domain::posting::ApprovalRequestId;
+use xc_cash::domain::shortfall::StockShortfall;
 use xc_exchange::domain::reversal::reversal::ReversalId;
 use xc_exchange::domain::transaction::transaction::TransactionId;
 
@@ -77,9 +77,7 @@ impl NegativeStockGate {
         key: &str,
     ) -> AppResult<NegativeStockOutcome> {
         let object_id = object.object_id();
-        // XC-BE-GAPS-A row 1 fills this from `refusal` (`StockShortfall::from_refusal(..).payload()`).
-        let _ = refusal;
-        let payload = json!({ "shortfall": [] });
+        let payload = StockShortfall::from_refusal(refusal).payload();
         let mut tx = pool.begin().await.map_err(AppError::Database)?;
 
         match approvals

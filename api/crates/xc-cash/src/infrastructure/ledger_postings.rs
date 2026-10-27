@@ -30,6 +30,7 @@ use crate::domain::posting::{
     ApprovalRequestId, CashPlace, CashPostings, LineCost, PlaceActivity, PostingRequest,
     PostingResult, ReversedCost, TransactionLineId,
 };
+use crate::domain::shortfall::{ShortPlace, Shortfall, StockShortfall};
 use crate::infrastructure::stock_reservations::active_reserved_in;
 
 /// Who a posting is recorded as made by: the port carries no actor. `[proposed]`
@@ -46,10 +47,6 @@ impl LedgerCashPostings {
 
 fn validation(detail: &str) -> AppError {
     AppError::Domain(format!("validationFailed: {detail}"))
-}
-
-fn stock_insufficient(detail: &str) -> AppError {
-    AppError::Domain(format!("stockInsufficient: {detail}"))
 }
 
 fn stock_reserved(detail: &str) -> AppError {
@@ -874,17 +871,43 @@ impl LedgerCashPostings {
                 *moved.entry(key.clone()).or_insert(Decimal::ZERO) += *q;
             }
         }
+        let mut shortfall: HashMap<(CurrencyCode, ShortPlace), Decimal> = HashMap::new();
         for (key, change) in &moved {
-            if *change < Decimal::ZERO
-                && place_balance(tx, &organization_id, key).await? + *change < Decimal::ZERO
-            {
-                plan.goes_negative = true;
+            if *change < Decimal::ZERO {
+                let after = place_balance(tx, &organization_id, key).await? + *change;
+                if after < Decimal::ZERO {
+                    plan.goes_negative = true;
+                    let place = match key.kind {
+                        AccountKind::Drawer => ShortPlace::Drawer,
+                        AccountKind::Safe => ShortPlace::Safe,
+                        _ => unreachable!(),
+                    };
+                    *shortfall
+                        .entry((key.currency, place))
+                        .or_insert(Decimal::ZERO) += -after;
+                }
             }
         }
         if plan.goes_negative && !self.allows_negative(tx, source, allow_negative).await? {
-            return Err(stock_insufficient(
-                "the posting takes a drawer, a safe or a position below zero",
-            ));
+            for ((_, currency), pos) in &plan.positions {
+                if pos.now.quantity < Decimal::ZERO {
+                    *shortfall
+                        .entry((*currency, ShortPlace::Position))
+                        .or_insert(Decimal::ZERO) += -pos.now.quantity;
+                }
+            }
+            let mut lines: Vec<Shortfall> = shortfall
+                .into_iter()
+                .map(|((currency, place), short_by)| Shortfall {
+                    currency,
+                    place,
+                    short_by,
+                })
+                .collect();
+            lines.sort_by(|a, b| {
+                (a.currency.as_str(), a.place).cmp(&(b.currency.as_str(), b.place))
+            });
+            return Err(StockShortfall { lines }.refusal());
         }
         if let Some(err) = plan.missing_buy_rate {
             return Err(err);
@@ -1185,9 +1208,9 @@ async fn replayed(
     })
 }
 
-/// The source's state for a `NEGATIVE_STOCK` request: an exchange's status and lines, or a
-/// transfer's status and lines (design §5.1). Its cost and margin are left out: the posting writes
-/// them.
+/// The source's state for a `NEGATIVE_STOCK` request: an exchange's status and lines, a
+/// transfer's status and lines, or a reversal's status and original transaction (design §5.1). Its
+/// cost and margin are left out: the posting writes them.
 async fn source_hash(tx: &mut Transaction<'_, Postgres>, object_id: &str) -> AppResult<String> {
     let hash: String = sqlx::query_scalar(
         "SELECT md5( \
@@ -1202,7 +1225,9 @@ async fn source_hash(tx: &mut Transaction<'_, Postgres>, object_id: &str) -> App
                concat_ws(':', cl.currency, cl.denomination_id, cl.qty_sent, cl.qty_received), \
                ',' ORDER BY cl.currency, cl.denomination_id), '') \
              FROM cash_transfers ct LEFT JOIN cash_transfer_lines cl ON cl.transfer_id = ct.id \
-             WHERE ct.id::text = $1 GROUP BY ct.status), ''))",
+             WHERE ct.id::text = $1 GROUP BY ct.status), '') \
+           || coalesce((SELECT '#reversal:' || r.status || '|' || r.original_transaction_id::text \
+             FROM reversals r WHERE r.id::text = $1), ''))",
     )
     .bind(object_id)
     .fetch_one(&mut **tx)
