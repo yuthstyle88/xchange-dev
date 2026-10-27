@@ -588,3 +588,34 @@ async fn the_branch_min_spread_is_saved_on_the_star_row() {
         "clearing the min spread keeps the '*' row's better"
     );
 }
+
+/// PV-a4a: `set_draft_in` records the publishing draft on the row (§15.3 step 4; `PublishService` reads it back).
+#[tokio::test]
+async fn set_draft_records_the_publishing_draft() {
+    let db = db_with_branch().await;
+    let store = PgTierSetStore;
+    let mut conn = db.pool.acquire().await.expect("a connection");
+    let set = tier_set(MAIN, "USD", TierSetSource::Manual, "req-draft", at(0));
+    assert!(store.insert_in(&mut conn, &set).await.expect("insert"));
+    let draft = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO rate_drafts (id, branch_id, status, created_by, version) \
+         VALUES ($1, 'MAIN', 'DRAFT', 'owner-1', 1)",
+    )
+    .bind(draft)
+    .execute(&db.pool)
+    .await
+    .expect("a draft");
+    store
+        .set_draft_in(&mut conn, set.id, draft)
+        .await
+        .expect("set draft");
+    assert_eq!(
+        store
+            .get_in(&mut conn, set.id)
+            .await
+            .expect("get")
+            .and_then(|s| s.draft_id),
+        Some(draft)
+    );
+}

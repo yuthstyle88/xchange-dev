@@ -50,6 +50,16 @@ impl TierSetStore for PgTierSetStore {
         Box::pin(async move { todo!("PV-a4a: PgTierSetStore::get_in") })
     }
 
+    fn set_draft_in<'a>(
+        &'a self,
+        conn: &'a mut PgConnection,
+        id: Uuid,
+        draft_id: Uuid,
+    ) -> StoreFuture<'a, ()> {
+        let _ = (conn, id, draft_id);
+        Box::pin(async move { todo!("PV-a4a: PgTierSetStore::set_draft_in") })
+    }
+
     fn by_request_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
