@@ -48,8 +48,8 @@ fn pt14_permission_all_holds_market_rates_refresh_exactly_once() {
     // RBAC §11.9 (AP-0) appends the nine approval kinds after it: 52 -> 61.
     assert_eq!(
         Permission::ALL.len(),
-        61,
-        "Permission::ALL grows 51 -> 52 (PT-14), then 52 -> 61 (§11.9)"
+        62,
+        "Permission::ALL grows 51 -> 52 (PT-14), then 52 -> 61 (§11.9), then 62 (BQ-7)"
     );
 }
 
