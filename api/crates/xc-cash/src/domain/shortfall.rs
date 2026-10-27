@@ -6,10 +6,24 @@
 //! only a message, so the shortfall rides in the message after [`StockShortfall::MARKER`], written and read
 //! only here.
 
+use std::str::FromStr;
+
 use pos_error::AppError;
 use rust_decimal::Decimal;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use xc_kernel::money::CurrencyCode;
+
+const SENTENCE: &str =
+    "stockInsufficient: the posting takes a drawer, a safe or a position below zero";
+
+#[derive(Serialize, Deserialize)]
+struct WireShortfall {
+    currency: String,
+    place: String,
+    #[serde(rename = "shortBy")]
+    short_by: String,
+}
 
 /// The kind of place a posting would take below zero (§4.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -22,7 +36,11 @@ pub enum ShortPlace {
 impl ShortPlace {
     /// `DRAWER`, `SAFE` or `POSITION`.
     pub fn as_str(self) -> &'static str {
-        todo!("XC-BE-GAPS-A row 1")
+        match self {
+            Self::Drawer => "DRAWER",
+            Self::Safe => "SAFE",
+            Self::Position => "POSITION",
+        }
     }
 }
 
@@ -45,22 +63,59 @@ impl StockShortfall {
     /// What separates the refusal's sentence from the shortfall it carries.
     pub const MARKER: &'static str = "; shortfall=";
 
+    fn wire(&self) -> Vec<WireShortfall> {
+        self.lines
+            .iter()
+            .map(|l| WireShortfall {
+                currency: l.currency.as_str().to_owned(),
+                place: l.place.as_str().to_owned(),
+                short_by: l.short_by.normalize().to_string(),
+            })
+            .collect()
+    }
+
     /// The port's refusal: `stockInsufficient: <the §4.5 sentence>` + [`Self::MARKER`] + the lines as a
     /// compact JSON array of `{currency, place, shortBy}`, `shortBy` the normalized decimal as a string.
     pub fn refusal(&self) -> AppError {
-        todo!("XC-BE-GAPS-A row 1")
+        let json = serde_json::to_string(&self.wire()).expect("serialize shortfall");
+        AppError::Domain(format!("{SENTENCE}{}{json}", Self::MARKER))
     }
 
     /// The shortfall a `stockInsufficient` message carries; empty for a message without [`Self::MARKER`]
     /// or with an array it cannot read.
     pub fn from_refusal(message: &str) -> Self {
-        let _ = message;
-        todo!("XC-BE-GAPS-A row 1")
+        let Some((_, tail)) = message.split_once(Self::MARKER) else {
+            return Self::default();
+        };
+        let Ok(raw) = serde_json::from_str::<Vec<WireShortfall>>(tail) else {
+            return Self::default();
+        };
+        let mut lines = Vec::with_capacity(raw.len());
+        for w in raw {
+            let Ok(currency) = CurrencyCode::parse(&w.currency) else {
+                return Self::default();
+            };
+            let place = match w.place.as_str() {
+                "DRAWER" => ShortPlace::Drawer,
+                "SAFE" => ShortPlace::Safe,
+                "POSITION" => ShortPlace::Position,
+                _ => return Self::default(),
+            };
+            let Ok(short_by) = Decimal::from_str(&w.short_by) else {
+                return Self::default();
+            };
+            lines.push(Shortfall {
+                currency,
+                place,
+                short_by: short_by.normalize(),
+            });
+        }
+        Self { lines }
     }
 
     /// `proposed_payload` of the `NEGATIVE_STOCK` request:
     /// `{"shortfall": [{"currency": "USD", "place": "DRAWER", "shortBy": "50"}, …]}`.
     pub fn payload(&self) -> Value {
-        todo!("XC-BE-GAPS-A row 1")
+        json!({ "shortfall": self.wire() })
     }
 }
