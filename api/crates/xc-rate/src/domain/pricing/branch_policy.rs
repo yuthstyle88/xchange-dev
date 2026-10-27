@@ -4,12 +4,13 @@
 //! Types and signatures stay.
 
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::PgConnection;
+use xc_kernel::money::Rate;
 
 use crate::domain::pricing::market_quote::MarketQuote;
-use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
-use crate::domain::pricing::tier_check::TierError;
+use crate::domain::pricing::pricing_suggestion::{SuggestionConfig, TierPrice};
+use crate::domain::pricing::tier_check::{TierCheck, TierError};
 use crate::domain::pricing::tier_set::{StoreFuture, TierRate};
 
 /// One `pricing_branch_policy` row. `currency` is `"*"` (the branch default) or a code.
@@ -67,8 +68,33 @@ impl BranchPricingPolicy {
     /// Each of `buyBp`/`sellBp`: the currency row's if not NULL, else the `'*'` row's, else 0. `own` and `follow` are
     /// the currency row's only.
     pub fn resolve(&self, currency: &str) -> ResolvedPolicy {
-        let _ = (currency,);
-        todo!("PV-a2: BranchPricingPolicy::resolve")
+        let cur_row = self
+            .rows
+            .iter()
+            .find(|r| r.currency != "*" && r.currency == currency);
+        let star_row = self.rows.iter().find(|r| r.currency == "*");
+        let buy_bp = cur_row
+            .and_then(|r| r.buy_bp)
+            .or_else(|| star_row.and_then(|r| r.buy_bp))
+            .unwrap_or(0);
+        let sell_bp = cur_row
+            .and_then(|r| r.sell_bp)
+            .or_else(|| star_row.and_then(|r| r.sell_bp))
+            .unwrap_or(0);
+        let from = if cur_row.is_some_and(|r| r.buy_bp.is_some() || r.sell_bp.is_some()) {
+            PolicyFrom::Currency
+        } else if star_row.is_some_and(|r| r.buy_bp.is_some() || r.sell_bp.is_some()) {
+            PolicyFrom::Branch
+        } else {
+            PolicyFrom::Default
+        };
+        ResolvedPolicy {
+            buy_bp,
+            sell_bp,
+            own: cur_row.is_some_and(|r| r.own),
+            follow: cur_row.is_some_and(|r| r.follow),
+            from,
+        }
     }
 
     /// `buy[i] = floor_d(mainBuy[i] × (1 + buyBp/10000))`, `sell[i] = ceil_d(mainSell[i] × (1 + sellBp/10000))`, where
@@ -82,14 +108,59 @@ impl BranchPricingPolicy {
         anchor: Option<&MarketQuote>,
         config: &SuggestionConfig,
     ) -> Result<[TierRate; 4], Vec<TierError>> {
-        let _ = (base, policy, unit_size, anchor, config);
-        todo!("PV-a2: BranchPricingPolicy::adjust")
+        let d = base
+            .iter()
+            .flat_map(|t| {
+                [
+                    t.buy.value().normalize().scale(),
+                    t.sell.value().normalize().scale(),
+                ]
+            })
+            .max()
+            .unwrap_or(0)
+            .min(5);
+        let buy_factor = Decimal::ONE + Decimal::new(i64::from(policy.buy_bp), 4);
+        let sell_factor = Decimal::ONE + Decimal::new(i64::from(policy.sell_bp), 4);
+
+        let mut prev: Option<(Decimal, Decimal)> = None;
+        let check_tiers: [TierPrice; 4] = std::array::from_fn(|i| {
+            let mut buy = (base[i].buy.value() * buy_factor)
+                .round_dp_with_strategy(d, RoundingStrategy::ToNegativeInfinity);
+            let mut sell = (base[i].sell.value() * sell_factor)
+                .round_dp_with_strategy(d, RoundingStrategy::ToPositiveInfinity);
+            if let Some((prev_buy, prev_sell)) = prev {
+                buy = buy.max(prev_buy);
+                sell = sell.min(prev_sell);
+            }
+            prev = Some((buy, sell));
+            TierPrice {
+                tier_no: (i + 1) as u8,
+                buy: Rate::parse(&buy.to_string()).ok(),
+                sell: Rate::parse(&sell.to_string()).ok(),
+            }
+        });
+
+        let errors = TierCheck::validate(&check_tiers, unit_size, anchor, config);
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        Ok(check_tiers.map(|t| TierRate {
+            buy: t.buy.expect("validated"),
+            sell: t.sell.expect("validated"),
+        }))
     }
 
     /// `Err` with the reason when `bp` is outside −300..=300 (`validationFailed`).
     pub fn check_bp(bp: i32) -> Result<i32, String> {
-        let _ = (bp,);
-        todo!("PV-a2: BranchPricingPolicy::check_bp")
+        if (-Self::MAX_BP..=Self::MAX_BP).contains(&bp) {
+            Ok(bp)
+        } else {
+            Err(format!(
+                "bp must be between -{} and {}",
+                Self::MAX_BP,
+                Self::MAX_BP
+            ))
+        }
     }
 }
 
