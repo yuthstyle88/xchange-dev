@@ -66,7 +66,7 @@ All are v3 views (parent §4) declaring `REQUIRES: Permission` (#550 §4.1). The
 | `staff_me` | `SignedIn` (#550 §3.4, `org-roles-branches.md:232`: anyone signed in; it answers only the actor's own data) | `userId, name, roles[{role, branchId?}], branchId, branchName, permissions[]` (the actor's effective permissions on this branch, so the page decides what to show without a role literal) | `access::Actor`, `Authorizer` |
 | `staff_floor` | `AttendanceClock` | `phase, hours{open,close}?, myClockIn?, myShift{id, openedAt}?, cutoff{at, pendingCount}?`; and, **only** for an actor holding `BranchDayOperate`, `CashTargetSet` or `CashManage`: `target{amounts{CUR:str}, at}?, safe{CUR:str}?` | `CustodyPages::floor` (#571), `BranchHours` (OR-1), my open shift (`ShiftService`, CA-3) |
 | `staff_holds` | `CustomerHoldPlace` or `VerificationReview` | paged: `id, customerId, customerName?, reason, status, at` | `CustodyPages::holds` |
-| `staff_attendance` | `AttendanceClock` | paged: `id, name, in, out?` — **own rows only**, unless the actor holds `BranchDayOperate` (then the branch's) | `CustodyPages::attendance(only = …)` |
+| `staff_attendance` | `AttendanceClock` | paged: `id, name, in, out?` — **own rows only**, unless the actor holds `BranchDayOperate` (then the branch's); **only rows clocked in on the branch's current calendar day (`branches.timezone`, `Asia/Bangkok` when unset) plus rows still clocked in from any day** (owner 2026-10-27, #5220) | `CustodyPages::attendance_since(only = …, since = local day start)` |
 | `staff_customers` | `CustomerHoldPlace` | paged, filter `q` (required; empty → empty page): `[{id, displayName}]` | `xc-customer` search (#554 CI-5): name / customer id / passport hash |
 
 ### 3.2 `StaffFloorReader`
@@ -165,7 +165,7 @@ classDiagram
 | B7 | counts to verify; hand-overs to accept | open/close counts: `can(ShiftCloseCertify)`, never my own count (C7). A hand-over whose receiver I am: accept or reject it (C7b), never through `countVerify`, which refuses a HANDOVER_OUT count (`OnlyThroughHandover`, `xc-cash/src/application/count/count_service.rs:294-297`) |
 | B8 | transfers | list `can(CashManage)`; create/dispatch/receive `can(CashManage)`; reconcile `can(FinanceReconcile)`. **Open (§11 O5):** a teller may receive a SAFE_TO_DRAWER move into their own drawer (`ShiftOperate` + own shift, #582 §3.2), but holds no `CashManage`, so this row gives them no list to find that move in |
 | B9 | hold form; holds list; release | form `can(CustomerHoldPlace)`; list `can(CustomerHoldPlace) \|\| can(VerificationReview)`; release `can(VerificationReview)` |
-| B10 | attendance log | `can(AttendanceClock)` (own rows; all rows for `BranchDayOperate`, server-decided) |
+| B10 | attendance log | `can(AttendanceClock)` (own rows; all rows for `BranchDayOperate`; today's rows plus rows still clocked in — all server-decided, the card filters nothing and shows each row's times, #5204) |
 | B11 | RATES card | the permission `staff_published_rates` requires, so the card is shown exactly to those the view answers: today `can(CompatRead)` (#550 `org-roles-branches.md:219`, the StaffRpc `adminSnapshot` row: T, BM, RM, VR, F, A). `CompatRead` retires with V4; whatever permission V4 gives that view replaces it here in the same change (no narrower audience is wanted) |
 
 ### 6.2 Every control → what is sent
