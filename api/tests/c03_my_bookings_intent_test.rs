@@ -111,7 +111,10 @@ async fn c03_a_shop_sell_booking_carries_customer_buy_currency_and_quantity() {
     let row = alices(&db, &id).await;
     assert_eq!(row["customerSide"], "CUSTOMER_BUY", "{row}");
     assert_eq!(row["currency"], "USD", "{row}");
-    assert_eq!(row["quantity"], "100.0000", "as stored, numeric(20,4): {row}");
+    assert_eq!(
+        row["quantity"], "100.0000",
+        "as stored, numeric(20,4): {row}"
+    );
     assert_eq!(
         row["quoteSummary"], "เรทสุดท้ายยืนยันเมื่อทำรายการ",
         "quoteSummary stays as it is: {row}"
@@ -136,6 +139,9 @@ async fn c03_a_shop_buy_booking_carries_customer_sell_currency_and_quantity() {
     let row = alices(&db, &id).await;
     assert_eq!(row["customerSide"], "CUSTOMER_SELL", "{row}");
     assert_eq!(row["currency"], "EUR", "{row}");
-    assert_eq!(row["quantity"], "250.5000", "as stored, numeric(20,4): {row}");
+    assert_eq!(
+        row["quantity"], "250.5000",
+        "as stored, numeric(20,4): {row}"
+    );
     db.finish().await;
 }
