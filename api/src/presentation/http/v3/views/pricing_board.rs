@@ -849,9 +849,12 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
                 .is_some_and(|ts| ts.source == TierSetSource::Manual)
         {
             PricingSource::Manual
-        } else if main_mode != PricingSource::Auto {
-            main_mode
+        } else if main_mode == PricingSource::Follow && resolved_policy.follow {
+            // §15.5: only a branch whose currency row enrols it follows MAIN's FOLLOW (`H:` §7 last bullet).
+            PricingSource::Follow
         } else {
+            // Otherwise the branch shows what it publishes: a MAIN push reads as MANUAL, a FOLLOW row as FOLLOW,
+            // nothing as AUTO (reviewer fix, claude/451f0116).
             branch_ts
                 .as_ref()
                 .map(|ts| ts.source.pricing_source())
