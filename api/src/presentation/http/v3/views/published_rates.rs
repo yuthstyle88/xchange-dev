@@ -16,8 +16,17 @@ use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::Side;
+use xc_kernel::money::{CurrencyCode, Side};
+use xc_rate::domain::pricing::display_settings::DisplaySettingsStore;
+use xc_rate::domain::pricing::follow_plan::{FollowResultStore, SourceFreshness};
+use xc_rate::domain::pricing::follow_visibility::{FollowVisibility, VisibilityInput};
+use xc_rate::domain::pricing::market_quote::MarketSource;
+use xc_rate::domain::pricing::tier_set::{PricingSource, TierSetSource, TierSetStore};
 use xc_rate::domain::publication::freshness::Freshness;
+use xc_rate::infrastructure::market::market_feed_status_store::MarketFeedStatusStore;
+use xc_rate::infrastructure::pricing::display_settings_store::PgDisplaySettingsStore;
+use xc_rate::infrastructure::pricing::follow_result_store::PgFollowResultStore;
+use xc_rate::infrastructure::pricing::tier_set_store::PgTierSetStore;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
@@ -82,13 +91,14 @@ pub async fn published_rates_data(
     let pub_id = match current_pub_id {
         Some(id) => id,
         None => {
+            let display = load_display(pool, branch_id, &[]).await?;
             return Ok(PublishedRatesData {
                 publication: None,
                 source_date: None,
                 stale: false,
                 lines: vec![],
                 band_headings: vec![],
-                display: skeleton_display(&[]),
+                display,
             });
         }
     };
@@ -199,6 +209,20 @@ pub async fn published_rates_data(
             })
             .collect();
 
+        let line_source = snapshot
+            .get("pricing")
+            .and_then(|p| p.get("source"))
+            .and_then(|v| v.as_str())
+            .and_then(TierSetSource::parse)
+            .map(TierSetSource::pricing_source)
+            .unwrap_or(PricingSource::Auto);
+
+        let hidden_reason = if line_source == PricingSource::Follow {
+            follow_hidden_reason(pool, branch_id, &currency, &snapshot, now).await?
+        } else {
+            None
+        };
+
         lines.push(PublishedLineDto {
             currency,
             group,
@@ -207,15 +231,14 @@ pub async fn published_rates_data(
             sell_rate,
             line_id: line_id.to_string(),
             bands,
-            // SKELETON (XC-V9-PRICING): today's lines are all AUTO and visible; PV-i reads `source_snapshot.pricing`
-            // and `FollowVisibility::of`.
-            pricing_source: "AUTO".to_string(),
-            hidden: false,
-            hidden_reason: None,
+            pricing_source: line_source.as_str().to_string(),
+            hidden: hidden_reason.is_some(),
+            hidden_reason: hidden_reason.map(|r| r.to_string()),
         });
     }
 
     let pub_freshness = Freshness::of_publication(freshnesses);
+    let display = load_display(pool, branch_id, &lines).await?;
 
     Ok(PublishedRatesData {
         publication: Some(PublishedPublicationDto {
@@ -227,7 +250,7 @@ pub async fn published_rates_data(
             .source_date
             .map(|d| d.format("%Y-%m-%d").to_string()),
         stale: pub_freshness.stale,
-        display: skeleton_display(&lines),
+        display,
         lines,
         band_headings: headings,
     })
@@ -271,20 +294,164 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     Ok(())
 }
 
-/// SKELETON (XC-V9-PRICING): V.9's default tiers, no featured codes, the lines' own order and no `more`. PV-i replaces
-/// it with the effective `DisplaySettings` and `DisplaySettings::order`.
-fn skeleton_display(lines: &[PublishedLineDto]) -> PublishedDisplayDto {
-    let mut order: Vec<String> = Vec::new();
+async fn follow_hidden_reason(
+    pool: &PgPool,
+    branch_id: &str,
+    currency: &str,
+    snapshot: &Value,
+    now: DateTime<Utc>,
+) -> AppResult<Option<&'static str>> {
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(pos_error::AppError::Database)?;
+    let line_tier_set_id = snapshot
+        .get("pricing")
+        .and_then(|p| p.get("tier_set_id"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let line_tier_set = match line_tier_set_id {
+        Some(id) => PgTierSetStore
+            .get_in(&mut conn, id)
+            .await
+            .map_err(|e| pos_error::AppError::Internal(e.to_string()))?,
+        None => None,
+    };
+    let line_base_tier_set_id = line_tier_set.as_ref().and_then(|ts| ts.base_tier_set_id);
+
+    let anchor_source = match line_tier_set
+        .as_ref()
+        .and_then(|ts| ts.anchor.as_ref().map(|a| a.source))
+    {
+        Some(s) => Some(s),
+        None => match line_base_tier_set_id {
+            Some(base_id) => PgTierSetStore
+                .get_in(&mut conn, base_id)
+                .await
+                .map_err(|e| pos_error::AppError::Internal(e.to_string()))?
+                .and_then(|ts| ts.anchor.map(|a| a.source)),
+            None => None,
+        },
+    };
+
+    let source_current = match anchor_source {
+        Some(src) => {
+            let ref_type = match src {
+                MarketSource::Tt => "MARKET_TT",
+                MarketSource::SuperRich => "MARKET_SR",
+                MarketSource::Bot => "BOT",
+            };
+            let fetched_at: Option<DateTime<Utc>> = sqlx::query_scalar(
+                "SELECT MAX(b.fetched_at) \
+                 FROM rate_reference_lines l \
+                 JOIN rate_reference_batches b ON b.id = l.batch_id \
+                 WHERE l.reference_type = $1",
+            )
+            .bind(ref_type)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(pos_error::AppError::Database)?;
+            let feed_status = MarketFeedStatusStore::all(&mut conn)
+                .await
+                .map_err(|e| pos_error::AppError::Internal(e.to_string()))?;
+            let attempt = feed_status.get(&src);
+            SourceFreshness {
+                fetched_at,
+                last_attempt_at: attempt.map(|a| a.at),
+                error: attempt.and_then(|a| a.error.clone()),
+            }
+            .is_current(now)
+        }
+        None => false,
+    };
+
+    let cur_code = CurrencyCode::parse(currency).ok();
+    let branch_latest_follow = match cur_code {
+        Some(c) => PgTierSetStore
+            .latest_follow_in(&mut conn, branch_id, c)
+            .await
+            .map_err(|e| pos_error::AppError::Internal(e.to_string()))?
+            .map(|ts| ts.id),
+        None => None,
+    };
+    let main_latest_follow = if branch_id == "MAIN" {
+        branch_latest_follow
+    } else {
+        match cur_code {
+            Some(c) => PgTierSetStore
+                .latest_follow_in(&mut conn, "MAIN", c)
+                .await
+                .map_err(|e| pos_error::AppError::Internal(e.to_string()))?
+                .map(|ts| ts.id),
+            None => None,
+        }
+    };
+    let main_result = match cur_code {
+        Some(c) => PgFollowResultStore
+            .latest_in(&mut conn, c)
+            .await
+            .map_err(|e| pos_error::AppError::Internal(e.to_string()))?
+            .map(|fr| (fr.status, fr.tier_set_id)),
+        None => None,
+    };
+
+    Ok(FollowVisibility::of(&VisibilityInput {
+        line_source: PricingSource::Follow,
+        line_tier_set_id,
+        line_base_tier_set_id,
+        at_main: branch_id == "MAIN",
+        source_current,
+        branch_latest_follow,
+        main_latest_follow,
+        main_result,
+    })
+    .map(|r| r.as_str()))
+}
+
+async fn load_display(
+    pool: &PgPool,
+    branch_id: &str,
+    lines: &[PublishedLineDto],
+) -> AppResult<PublishedDisplayDto> {
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(pos_error::AppError::Database)?;
+    let (settings, _) = PgDisplaySettingsStore
+        .effective_in(&mut conn, branch_id)
+        .await
+        .map_err(|e| pos_error::AppError::Internal(e.to_string()))?;
+    let sr_order: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT trim(l.currency_code) \
+         FROM rate_reference_lines l \
+         WHERE l.reference_type = 'MARKET_SR' \
+           AND l.batch_id = ( \
+               SELECT b.id \
+               FROM rate_reference_batches b \
+               JOIN rate_reference_lines rl ON rl.batch_id = b.id \
+               WHERE rl.reference_type = 'MARKET_SR' \
+               ORDER BY b.fetched_at DESC, b.id DESC \
+               LIMIT 1 \
+           ) \
+         ORDER BY 1 ASC",
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(pos_error::AppError::Database)?;
+
+    let mut priced: Vec<String> = Vec::new();
     for line in lines {
-        if !order.contains(&line.currency) {
-            order.push(line.currency.clone());
+        if !priced.contains(&line.currency) {
+            priced.push(line.currency.clone());
         }
     }
-    PublishedDisplayDto {
-        tiers: vec![1, 2, 3, 4],
-        featured: vec![],
-        highlight: true,
-        order,
-        more: vec![],
-    }
+    let ordered = settings.order(&priced, &sr_order);
+    Ok(PublishedDisplayDto {
+        tiers: settings.tiers,
+        featured: settings.featured,
+        highlight: settings.highlight,
+        order: ordered.ordered,
+        more: ordered.more,
+    })
 }
