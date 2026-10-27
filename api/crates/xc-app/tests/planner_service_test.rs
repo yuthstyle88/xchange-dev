@@ -525,7 +525,11 @@ async fn a_session_cannot_read_another_sessions_draft() {
         .expect_err("another session");
     assert_eq!(refused.code(), "outOfScope");
     assert_eq!(
-        service.get(&owner, draft.id, at(1)).await.expect("its own").id,
+        service
+            .get(&owner, draft.id, at(1))
+            .await
+            .expect("its own")
+            .id,
         draft.id
     );
     db.finish().await;
@@ -645,13 +649,22 @@ async fn list_answers_only_the_owners_drafts() {
     let mut expected = vec![a.id, b.id];
     expected.sort();
     assert_eq!(ids, expected);
-    let of_f = service.list(&customer("cust-f"), at(1)).await.expect("listed");
+    let of_f = service
+        .list(&customer("cust-f"), at(1))
+        .await
+        .expect("listed");
     assert_eq!(of_f.len(), 1);
     assert_eq!(
         of_f[0].plan.currency,
         CurrencyCode::parse("GBP").expect("GBP")
     );
-    assert!(service.list(&session(), at(1)).await.expect("listed").is_empty());
+    assert!(
+        service
+            .list(&session(), at(1))
+            .await
+            .expect("listed")
+            .is_empty()
+    );
     db.finish().await;
 }
 
