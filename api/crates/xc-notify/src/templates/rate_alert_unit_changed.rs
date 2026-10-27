@@ -26,7 +26,26 @@ impl NotificationTemplate for Template {
     }
 
     fn render(&self, locale: Locale, params: &BTreeMap<String, String>) -> Rendered {
-        let _ = (locale, params);
-        todo!("R2a: TH/EN/ZH text naming the currency")
+        let currency = params.get("currency").map(|s| s.as_str()).unwrap_or("");
+        match locale {
+            Locale::Th => Rendered {
+                title: "แจ้งเตือนอัตราแลกเปลี่ยนถูกปิด".to_string(),
+                body: format!(
+                    "การแจ้งเตือนอัตราแลกเปลี่ยนสำหรับ {currency} ถูกปิดเนื่องจากสาขาเปลี่ยนหน่วยอัตราแลกเปลี่ยน กรุณาตั้งค่าใหม่อีกครั้ง"
+                ),
+            },
+            Locale::En => Rendered {
+                title: "Rate Alert Disabled".to_string(),
+                body: format!(
+                    "Your rate alert for {currency} was turned off because the branch changed the rate unit. Please set it again."
+                ),
+            },
+            Locale::Zh => Rendered {
+                title: "汇率提醒已关闭".to_string(),
+                body: format!(
+                    "由于网点更改了报价单位，您的 {currency} 汇率提醒已关闭，请重新设置。"
+                ),
+            },
+        }
     }
 }
