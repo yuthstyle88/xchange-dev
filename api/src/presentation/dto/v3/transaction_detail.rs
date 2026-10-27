@@ -28,6 +28,7 @@ pub struct TxLineDto {
     pub rate_snapshot: String,
     pub thb_amount: String,
     pub fee_thb: String,
+    pub rounding_thb: String,
     pub settle_thb: String,
 }
 

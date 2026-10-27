@@ -343,6 +343,7 @@ async fn save(db: &TestDb, currency: &str, quantity: &str, staff_draft_id: &str)
             "branch": B01,
             "customerId": db.customer,
             "channel": "DESK",
+            "paymentMethod": "Cash",
             "lines": [{ "currency": currency, "shopSide": "BUY", "quantity": quantity }],
         }),
     )

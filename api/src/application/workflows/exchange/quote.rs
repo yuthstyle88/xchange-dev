@@ -11,6 +11,7 @@ use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
+use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel, QuoteStatus};
 use xc_exchange::domain::quote::quote_line::QuoteLine;
 use xc_exchange::domain::quote::repository::QuoteRepository;
@@ -19,7 +20,8 @@ use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
-    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize,
+    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Settlement, SettlementError,
+    Side, UnitSize,
 };
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
 use xc_marketing::domain::coupon::benefit_error::BenefitError;
@@ -70,6 +72,7 @@ pub struct QuoteRequest {
     pub customer_id: Option<String>,
     pub channel: QuoteChannel,
     pub lines: Vec<QuoteRequestLine>,
+    pub payment_method: Option<PaymentMethod>,
 }
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -473,37 +476,46 @@ impl QuoteService {
             .evaluate(tx, &eval_ctx, std::slice::from_ref(&line_input))
             .await?;
 
+        let cash_settlement = req.payment_method.is_some_and(|m| m.is_cash());
+
         let mut final_rate = eval.lines[0].final_rate;
         let mut final_fee_thb = eval.lines[0].fee_thb;
         let mut final_thb_amount =
             thb_or_refuse(line_req.quantity, final_rate, published_side.unit_size)?;
-        let mut final_settle_thb = match line_req.shop_side {
-            Side::Buy => {
-                let thb_minor = final_thb_amount
-                    .try_minor()
-                    .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                let fee_minor = final_fee_thb
-                    .try_minor()
-                    .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                let settle_minor = thb_minor
+        let mut final_settle_thb = {
+            let thb_minor = final_thb_amount
+                .try_minor()
+                .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
+            let fee_minor = final_fee_thb
+                .try_minor()
+                .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
+            match line_req.shop_side {
+                Side::Buy => thb_minor
                     .checked_sub(fee_minor)
-                    .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?;
-                Money::from_minor(settle_minor)
-                    .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?
-            }
-            Side::Sell => {
-                let thb_minor = final_thb_amount
-                    .try_minor()
-                    .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                let fee_minor = final_fee_thb
-                    .try_minor()
-                    .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                let settle_minor = thb_minor
+                    .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?,
+                Side::Sell => thb_minor
                     .checked_add(fee_minor)
-                    .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?;
-                Money::from_minor(settle_minor)
-                    .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?
-            }
+                    .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?,
+            };
+            let settlement = Settlement::of(
+                line_req.shop_side,
+                final_thb_amount,
+                final_fee_thb,
+                cash_settlement,
+            )
+            .map_err(|e| match e {
+                SettlementError::BelowSmallestCoin => AppError::Domain(
+                    "validationFailed:quantity: amount is below the smallest coin".to_string(),
+                ),
+                SettlementError::FeeAbovePrincipal | SettlementError::Overflow => {
+                    AppError::Domain("invalid settle amount".to_string())
+                }
+            })?;
+            let settle = settlement.settle();
+            settle
+                .try_minor()
+                .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
+            settle
         };
 
         let quote_line = QuoteLine {
@@ -546,6 +558,7 @@ impl QuoteService {
             updated_at: now,
             lines: vec![quote_line],
             stale: published_side.stale,
+            cash_settlement,
         };
 
         // Write quote to DB first so benefit_reservations FK (quote_id -> quotes.id) is satisfied
@@ -621,33 +634,37 @@ impl QuoteService {
 
                 final_thb_amount =
                     thb_or_refuse(line_req.quantity, final_rate, published_side.unit_size)?;
-                final_settle_thb = match line_req.shop_side {
-                    Side::Buy => {
-                        let thb_minor = final_thb_amount
-                            .try_minor()
-                            .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                        let fee_minor = final_fee_thb
-                            .try_minor()
-                            .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                        let settle_minor = thb_minor
+                final_settle_thb = {
+                    let thb_minor = final_thb_amount
+                        .try_minor()
+                        .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
+                    let fee_minor = final_fee_thb
+                        .try_minor()
+                        .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
+                    match line_req.shop_side {
+                        Side::Buy => thb_minor
                             .checked_sub(fee_minor)
-                            .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?;
-                        Money::from_minor(settle_minor)
-                            .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?
-                    }
-                    Side::Sell => {
-                        let thb_minor = final_thb_amount
-                            .try_minor()
-                            .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                        let fee_minor = final_fee_thb
-                            .try_minor()
-                            .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?;
-                        let settle_minor = thb_minor
+                            .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?,
+                        Side::Sell => thb_minor
                             .checked_add(fee_minor)
-                            .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?;
-                        Money::from_minor(settle_minor)
-                            .map_err(|_| AppError::Domain("invalid settle amount".to_string()))?
-                    }
+                            .ok_or_else(|| AppError::Domain("invalid settle amount".to_string()))?,
+                    };
+                    let settlement = Settlement::of(
+                        line_req.shop_side,
+                        final_thb_amount,
+                        final_fee_thb,
+                        cash_settlement,
+                    )
+                    .map_err(|e| match e {
+                        SettlementError::BelowSmallestCoin => AppError::Domain(
+                            "validationFailed:quantity: amount is below the smallest coin"
+                                .to_string(),
+                        ),
+                        SettlementError::FeeAbovePrincipal | SettlementError::Overflow => {
+                            AppError::Domain("invalid settle amount".to_string())
+                        }
+                    })?;
+                    settlement.settle()
                 };
 
                 let bound_fee_minor = final_fee_thb

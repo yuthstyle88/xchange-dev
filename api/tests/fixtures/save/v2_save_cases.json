@@ -840,13 +840,13 @@
       "documentRef": "XC-20261006-000002",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-ae20c79addd9c5290aaa7bda871dfed2d59db3b8d36ee88afb33c7ce4c99df43",
-      "receiptSha256": "ae20c79addd9c5290aaa7bda871dfed2d59db3b8d36ee88afb33c7ce4c99df43",
+      "receiptUrl": "/files/receipt-53067d44263991099778e16c45629ef56778893d59dff066ff18a5bcbce78ec5",
+      "receiptSha256": "53067d44263991099778e16c45629ef56778893d59dff066ff18a5bcbce78ec5",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "96757.90",
+       "THB": "96757.75",
        "USD": "1101.00"
       },
       "live": [
@@ -923,13 +923,13 @@
       "documentRef": "TEST-XC-20261006-000002",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-9dd25a0f783d24e7c3e791d7b14eae73c3815ac40248a0e74f0b967c90fe0d82",
-      "receiptSha256": "9dd25a0f783d24e7c3e791d7b14eae73c3815ac40248a0e74f0b967c90fe0d82",
+      "receiptUrl": "/files/receipt-6ee8f58dc983052732ba87feaec616e4c491b593e38391e62a10abc091d2d861",
+      "receiptSha256": "6ee8f58dc983052732ba87feaec616e4c491b593e38391e62a10abc091d2d861",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "96757.90",
+       "THB": "96757.75",
        "USD": "1101.00"
       },
       "live": [
@@ -1353,13 +1353,13 @@
       "documentRef": "XC-20261006-000003",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-f3ee82ac66c050701bc9dbd8b5377a6d75c494452834d89209aa39b2ab480405",
-      "receiptSha256": "f3ee82ac66c050701bc9dbd8b5377a6d75c494452834d89209aa39b2ab480405",
+      "receiptUrl": "/files/receipt-0fa92a7ef880ec1421757e495f20b1908fae93533518516a4ee509c17dd2461d",
+      "receiptSha256": "0fa92a7ef880ec1421757e495f20b1908fae93533518516a4ee509c17dd2461d",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "96725.80",
+       "THB": "96725.75",
        "USD": "1102.00"
       },
       "live": [
@@ -1935,13 +1935,13 @@
       "documentRef": "XC-20261007-000001",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-b605b346853054411b810f0e77c3c08deb33e60ff9612261eb272da98b839457",
-      "receiptSha256": "b605b346853054411b810f0e77c3c08deb33e60ff9612261eb272da98b839457",
+      "receiptUrl": "/files/receipt-ee14a7f615454850af4332da43259b25d4891fd0c17b37228a69eb4071ae6110",
+      "receiptSha256": "ee14a7f615454850af4332da43259b25d4891fd0c17b37228a69eb4071ae6110",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "96757.90",
+       "THB": "96757.75",
        "USD": "1101.00"
       },
       "live": [
@@ -2008,13 +2008,13 @@
       "documentRef": "XC-20261007-000002",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-bf42f5c240a1e5b57d59400ac348b4640c296c63a35bd70a385e9d8690d6099e",
-      "receiptSha256": "bf42f5c240a1e5b57d59400ac348b4640c296c63a35bd70a385e9d8690d6099e",
+      "receiptUrl": "/files/receipt-34d6038d6cbeeae6bfab669124083e21b9fd680e2a24e29c192cd09df0144088",
+      "receiptSha256": "34d6038d6cbeeae6bfab669124083e21b9fd680e2a24e29c192cd09df0144088",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "96693.70",
+       "THB": "96693.50",
        "USD": "1103.00"
       },
       "live": [
@@ -6107,13 +6107,13 @@
       "documentRef": "XC-20261007-000002",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-1ced06a6a5d58b8ea06c0e3a4d80d7b753eac30a9e606cc4d5170df5296f55bd",
-      "receiptSha256": "1ced06a6a5d58b8ea06c0e3a4d80d7b753eac30a9e606cc4d5170df5296f55bd",
+      "receiptUrl": "/files/receipt-55c29172e200b62127330bb73b089b15e8aa844883ff13240207f490a6bd0ca9",
+      "receiptSha256": "55c29172e200b62127330bb73b089b15e8aa844883ff13240207f490a6bd0ca9",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "96757.90",
+       "THB": "96757.75",
        "USD": "1101.00"
       },
       "live": [
@@ -6176,7 +6176,7 @@
      "v2Error": "ยอด THB ไม่เพียงพอ กรุณาตรวจนับหรือบันทึกรับเงินเข้าก่อน",
      "after": {
       "balances": {
-       "THB": "96757.90",
+       "THB": "96757.75",
        "USD": "1101.00"
       },
       "live": [
@@ -6852,13 +6852,13 @@
       "documentRef": "XC-20261007-000002",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-1ced06a6a5d58b8ea06c0e3a4d80d7b753eac30a9e606cc4d5170df5296f55bd",
-      "receiptSha256": "1ced06a6a5d58b8ea06c0e3a4d80d7b753eac30a9e606cc4d5170df5296f55bd",
+      "receiptUrl": "/files/receipt-55c29172e200b62127330bb73b089b15e8aa844883ff13240207f490a6bd0ca9",
+      "receiptSha256": "55c29172e200b62127330bb73b089b15e8aa844883ff13240207f490a6bd0ca9",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "96757.90",
+       "THB": "96757.75",
        "USD": "1101.00"
       },
       "live": [
@@ -7038,13 +7038,13 @@
       "documentRef": "XC-20261007-000002",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-bf42f5c240a1e5b57d59400ac348b4640c296c63a35bd70a385e9d8690d6099e",
-      "receiptSha256": "bf42f5c240a1e5b57d59400ac348b4640c296c63a35bd70a385e9d8690d6099e",
+      "receiptUrl": "/files/receipt-34d6038d6cbeeae6bfab669124083e21b9fd680e2a24e29c192cd09df0144088",
+      "receiptSha256": "34d6038d6cbeeae6bfab669124083e21b9fd680e2a24e29c192cd09df0144088",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "49935.80",
+       "THB": "49935.75",
        "USD": "12.00"
       },
       "live": [
@@ -7364,13 +7364,13 @@
       "documentRef": "XC-20261007-000003",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-cf793cfc9291fcc3c8bc19d27f1ff9620a8f9c7cb6e8405b5d18fd33cf90cd5b",
-      "receiptSha256": "cf793cfc9291fcc3c8bc19d27f1ff9620a8f9c7cb6e8405b5d18fd33cf90cd5b",
+      "receiptUrl": "/files/receipt-e84eab6e90fce2bd13ec72c933bf8d1dd1ecf1e0666437dfce4aea4e78614f5b",
+      "receiptSha256": "e84eab6e90fce2bd13ec72c933bf8d1dd1ecf1e0666437dfce4aea4e78614f5b",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "73047.51",
+       "THB": "73047.50",
        "USD": "100.00",
        "EUR": "0.07"
       },
@@ -7439,13 +7439,13 @@
       "documentRef": "XC-20261007-000004",
       "passport": "P1",
       "slip": null,
-      "receiptUrl": "/files/receipt-672fd512f1dec92d51edf692ae66f3a7ec861ee4004808f64f486d29a5a78243",
-      "receiptSha256": "672fd512f1dec92d51edf692ae66f3a7ec861ee4004808f64f486d29a5a78243",
+      "receiptUrl": "/files/receipt-8ba58c95515d5294e41c5fb65c263022e7d5f057be3de790496d2307006a1547",
+      "receiptSha256": "8ba58c95515d5294e41c5fb65c263022e7d5f057be3de790496d2307006a1547",
       "wroteNothing": false
      },
      "after": {
       "balances": {
-       "THB": "73050.06",
+       "THB": "73050.00",
        "USD": "100.00"
       },
       "live": [

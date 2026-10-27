@@ -57,6 +57,7 @@ fn request(l: QuoteRequestLine) -> QuoteRequest {
         customer_id: None,
         channel: QuoteChannel::Desk,
         lines: vec![l],
+        payment_method: None,
     }
 }
 

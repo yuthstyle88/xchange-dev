@@ -102,16 +102,25 @@ impl BranchView for TransactionView {
             .await
             .map_err(AppError::Database)?
             .into_iter()
-            .map(|l| TxLineDto {
-                line_no: l.get(0),
-                currency: l.get::<String, _>(1).trim().to_string(),
-                side: l.get(2),
-                quantity: format!("{:.4}", l.get::<Decimal, _>(3)),
-                unit_size: format!("{:.4}", l.get::<Decimal, _>(4)),
-                rate_snapshot: format!("{:.8}", l.get::<Decimal, _>(5)),
-                thb_amount: format!("{:.2}", l.get::<Decimal, _>(6)),
-                fee_thb: format!("{:.2}", l.get::<Decimal, _>(7)),
-                settle_thb: format!("{:.2}", l.get::<Decimal, _>(8)),
+            .map(|l| {
+                let side: String = l.get(2);
+                let thb = l.get::<Decimal, _>(6);
+                let fee = l.get::<Decimal, _>(7);
+                let settle = l.get::<Decimal, _>(8);
+                let u = if side == "BUY" { thb - fee } else { thb + fee };
+                let rounding = settle - u;
+                TxLineDto {
+                    line_no: l.get(0),
+                    currency: l.get::<String, _>(1).trim().to_string(),
+                    side,
+                    quantity: format!("{:.4}", l.get::<Decimal, _>(3)),
+                    unit_size: format!("{:.4}", l.get::<Decimal, _>(4)),
+                    rate_snapshot: format!("{:.8}", l.get::<Decimal, _>(5)),
+                    thb_amount: format!("{:.2}", thb),
+                    fee_thb: format!("{:.2}", fee),
+                    rounding_thb: format!("{:.2}", rounding),
+                    settle_thb: format!("{:.2}", settle),
+                }
             })
             .collect();
             let payment = sqlx::query(

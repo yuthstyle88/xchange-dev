@@ -433,6 +433,7 @@ impl SaveTransactionWorkflow {
                             fee_thb: Some(form.fee),
                             denomination_group: GroupCode::all(),
                         }],
+                        payment_method: Some(form.method),
                     };
                     let quote_service = QuoteService::new(this.branch_tx.pool().clone());
                     let quote = match quote_service.quote_in(tx, quote_req, &save_actor, now).await {

@@ -913,7 +913,7 @@ async fn settlement_of_a_purchase_is_principal_less_fee() {
     let room = Room::open().await;
     let saved = room.save(Save::buy("10.05").fee("5.25")).await;
     let row = room.row(&saved.id).await;
-    assert_eq!(row["settlement"], json!("317.36"), "{row}");
+    assert_eq!(row["settlement"], json!("317.50"), "{row}");
     assert_eq!(row["fee"], json!("5.25"), "{row}");
     assert_eq!(row["principal"], json!("322.61"), "{row}");
     room.finish().await;
@@ -928,7 +928,7 @@ async fn settlement_of_a_sale_is_principal_plus_fee() {
     assert_eq!(row["type"], json!("SELL"), "{row}");
     assert_eq!(row["rate"], json!("32.60000000"), "{row}");
     assert_eq!(row["principal"], json!("327.63"), "{row}");
-    assert_eq!(row["settlement"], json!("332.88"), "{row}");
+    assert_eq!(row["settlement"], json!("332.75"), "{row}");
     room.finish().await;
 }
 
@@ -1816,7 +1816,7 @@ async fn reference_percent_padded_to_six_places_when_ending_early() {
             reference_rate: Some("8.0"),
             thb: "790.00",
             fee: "0",
-            settle: "0",
+            settle: "790.00",
             method: "Cash",
             reference: "",
             account: "Cash drawer",

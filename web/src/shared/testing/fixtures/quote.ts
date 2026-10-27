@@ -15,6 +15,7 @@ export function makeQuoteDto(o: Partial<QuoteDto> = {}): QuoteDto {
     lines: [],
     benefits: [],
     stale: false,
+    cashSettlement: false,
     ...o,
   };
 }
@@ -29,6 +30,7 @@ export function makeQuoteLineDto(o: Partial<QuoteLineDto> = {}): QuoteLineDto {
     finalRate: '0.00',
     thbAmount: '0.00',
     feeThb: '0.00',
+    roundingThb: '0.00',
     settleThb: '0.00',
     publishedRateLineId: 'quote_line_dto-1',
     ...o,

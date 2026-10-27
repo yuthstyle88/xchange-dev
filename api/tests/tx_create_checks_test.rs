@@ -236,7 +236,9 @@ async fn slip_of_main(desk: &Desk) -> String {
 #[actix_web::test]
 async fn k1a_a_bank_transfer_without_a_reference_is_refused_with_todays_sentence() {
     let (desk, cust) = desk_with_customer().await;
-    let q = desk.quote("MAIN", Side::Buy, "100", None, Utc::now()).await;
+    let q = desk
+        .quote_non_cash("MAIN", Side::Buy, "100", None, Utc::now())
+        .await;
     let mut payment = cash();
     payment["method"] = json!("Bank Transfer");
     payment["reference"] = json!("");
@@ -253,7 +255,9 @@ async fn k1a_a_bank_transfer_without_a_reference_is_refused_with_todays_sentence
 #[actix_web::test]
 async fn k1b_a_bank_transfer_with_a_reference_but_no_slip_is_refused_with_todays_sentence() {
     let (desk, cust) = desk_with_customer().await;
-    let q = desk.quote("MAIN", Side::Buy, "100", None, Utc::now()).await;
+    let q = desk
+        .quote_non_cash("MAIN", Side::Buy, "100", None, Utc::now())
+        .await;
     let mut payment = cash();
     payment["method"] = json!("Bank Transfer");
     let a = create_fresh(&desk, &body_with(&q.id.to_string(), &cust, payment)).await;
@@ -269,7 +273,9 @@ async fn k1b_a_bank_transfer_with_a_reference_but_no_slip_is_refused_with_todays
 #[actix_web::test]
 async fn k1c_a_bank_transfer_with_its_reference_and_slip_is_accepted() {
     let (desk, cust) = desk_with_customer().await;
-    let q = desk.quote("MAIN", Side::Buy, "100", None, Utc::now()).await;
+    let q = desk
+        .quote_non_cash("MAIN", Side::Buy, "100", None, Utc::now())
+        .await;
     let slip = slip_of_main(&desk).await;
     let mut payment = cash();
     payment["method"] = json!("Bank Transfer");

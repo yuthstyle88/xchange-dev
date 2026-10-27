@@ -363,6 +363,7 @@ async fn a_draft_answers_its_quote_line_and_payment_with_no_number_and_no_receip
             "thbAmount": "3210.00",
             "feeThb": "10.00",
             "settleThb": "3200.00",
+            "roundingThb": "0.00",
         }]),
         "the line, money and quantities as decimal strings at their stored scale"
     );

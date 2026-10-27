@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
@@ -56,6 +57,9 @@ pub struct QuotesCommandInput {
     #[serde(default)]
     #[ts(optional)]
     pub coupon_code: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub payment_method: Option<String>,
 }
 
 pub struct QuotesCommand {
@@ -218,6 +222,18 @@ impl CommandAction for QuotesCommand {
             _ => GroupCode::all(),
         };
 
+        let payment_method = match input.payment_method.as_deref() {
+            Some(m) => Some(PaymentMethod::parse(m).ok_or_else(|| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("paymentMethod"),
+                    "invalid payment method",
+                    StatusCode::BAD_REQUEST,
+                )
+            })?),
+            None => None,
+        };
+
         let req = QuoteRequest {
             branch_id: branch.clone(),
             customer_id: input.customer_id,
@@ -229,6 +245,7 @@ impl CommandAction for QuotesCommand {
                 fee_thb,
                 denomination_group,
             }],
+            payment_method,
         };
 
         let save_actor = SaveActor::from_actor(who).ok_or_else(role_not_allowed_here)?;
@@ -267,6 +284,13 @@ impl CommandAction for QuotesCommand {
                     return Err(V3Error::new(
                         "validationFailed",
                         Some("customerId"),
+                        msg,
+                        StatusCode::BAD_REQUEST,
+                    ));
+                } else if msg.starts_with("validationFailed:quantity:") {
+                    return Err(V3Error::new(
+                        "validationFailed",
+                        Some("quantity"),
                         msg,
                         StatusCode::BAD_REQUEST,
                     ));

@@ -449,6 +449,7 @@ impl KioskPorts for PgKioskPorts {
                     fee_thb: None,
                     denomination_group: GroupCode::all(),
                 }],
+                payment_method: None,
             };
             let who = SaveActor {
                 id: CUSTOMER_KIOSK.to_string(),

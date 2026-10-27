@@ -244,6 +244,11 @@ impl CreateTransaction {
         let Some(line) = q.lines.first() else {
             return Err(AppError::Internal(format!("quote {} has no line", q.id)));
         };
+        if req.payment.method.is_cash() != q.cash_settlement {
+            return Err(AppError::Domain(
+                "validationFailed:paymentMethod: re-quote for this payment method".to_owned(),
+            ));
+        }
         // G7 (#4113): a kiosk request reserves a queue place, never a rate; the quote must match
         // the request on side, currency and foreign amount.
         if let Some(request) = req.kiosk_request_id.as_deref() {

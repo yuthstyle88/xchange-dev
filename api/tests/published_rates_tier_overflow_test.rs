@@ -433,6 +433,7 @@ async fn row_7_quote_in_on_tiered_line_with_overflowing_quantity_refused() {
             fee_thb: None,
             denomination_group: group("ALL"),
         }],
+        payment_method: None,
     };
     let mut tx = db.pool.begin().await.expect("begin");
     let res: AppResult<Quote> = service
