@@ -27,8 +27,10 @@ impl CustomerSide {
     /// The customer's side of a stored shop side, the reverse of [`CustomerSide::to_shop`]:
     /// `Side::Sell → CUSTOMER_BUY`, `Side::Buy → CUSTOMER_SELL` (design `marketing-campaigns.md` §6.4 E-10).
     pub fn from_shop(side: Side) -> Self {
-        let _ = side;
-        todo!("BE-2: CustomerSide::from_shop")
+        match side {
+            Side::Sell => Self::CustomerBuy,
+            Side::Buy => Self::CustomerSell,
+        }
     }
 
     /// The wire value, `CUSTOMER_BUY` or `CUSTOMER_SELL` (the `planner_drafts.customer_side` CHECK).

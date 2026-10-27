@@ -9,6 +9,7 @@ use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
@@ -19,6 +20,7 @@ use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_stat
 use xc_booking::domain::booking::qr_token::QrToken;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{CustomerSide, Side};
 use xc_queue::application::status::status_service::{StatusService, TicketRef};
 use xc_queue::domain::repository::QueueRepository;
 use xc_queue::infrastructure::repository::PgQueueRepository;
@@ -66,6 +68,17 @@ struct MyBookingDbRow {
     service_date: NaiveDate,
     branch_today: NaiveDate,
     has_active_ticket: bool,
+    shop_side: String,
+    requested_currency: String,
+    requested_quantity: Decimal,
+}
+
+fn parse_shop_side(s: &str) -> AppResult<Side> {
+    match s {
+        "BUY" => Ok(Side::Buy),
+        "SELL" => Ok(Side::Sell),
+        other => Err(AppError::Internal(format!("invalid shop_side: {other}"))),
+    }
 }
 
 impl BranchView for MyBookingsView {
@@ -141,7 +154,8 @@ impl BranchView for MyBookingsView {
                             SELECT 1 FROM queue_tickets qt_active \
                             WHERE qt_active.booking_id = b.id \
                               AND qt_active.status IN ('WAITING', 'CALLED', 'SERVING') \
-                        ) AS has_active_ticket \
+                        ) AS has_active_ticket, \
+                        b.shop_side, b.requested_currency, b.requested_quantity \
                  FROM bookings b \
                  JOIN booking_slots s ON s.id = b.slot_id \
                  JOIN branches br ON br.id = b.branch_id \
@@ -226,6 +240,12 @@ impl BranchView for MyBookingsView {
                     _ => (None, None, None),
                 };
 
+                let customer_side = CustomerSide::from_shop(parse_shop_side(&row.shop_side)?)
+                    .as_str()
+                    .to_string();
+                let currency = row.requested_currency.trim().to_string();
+                let quantity = format!("{:.4}", row.requested_quantity);
+
                 bookings.push(MyBookingItemDto {
                     id: row.id,
                     booking_no: row.booking_no,
@@ -245,10 +265,10 @@ impl BranchView for MyBookingsView {
                     estimate_as_of,
                     readiness: readiness.to_string(),
                     // BE-2 (§6.4 E-10): the booking's requested_currency, shop_side through
-                    // CustomerSide::from_shop, and requested_quantity. Skeleton placeholders.
-                    currency: String::new(),
-                    customer_side: String::new(),
-                    quantity: String::new(),
+                    // CustomerSide::from_shop, and requested_quantity.
+                    currency,
+                    customer_side,
+                    quantity,
                 });
             }
             tx.rollback().await.map_err(AppError::Database)?;
