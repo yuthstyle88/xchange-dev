@@ -7,18 +7,26 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
+use pos_error::AppError;
+use pos_infra::transactions::Transactor;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_customer::application::customer::service::CustomerService;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, out_of_scope, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
 
 /// The longest `reason` accepted, in characters.
@@ -61,8 +69,10 @@ impl CommandAction for IdentityRevealCommand {
     const METHOD: Method = Method::POST;
 
     fn stored_output(&self, output: &Self::Output) -> serde_json::Value {
-        let _ = output;
-        todo!("K8: keep identityId and type only")
+        json!({
+            "identityId": output.identity_id,
+            "type": output.identity_type,
+        })
     }
 
     async fn run(
@@ -73,8 +83,42 @@ impl CommandAction for IdentityRevealCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (&self.pool, tx, branch, who, input);
-        todo!("K8: validate reason, CustomerService::reveal_in")
+        let reason = input.reason.trim();
+        if reason.is_empty() || reason.chars().count() > MAX_REASON_CHARS {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("reason"),
+                "กรุณาระบุเหตุผล",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        let service = CustomerService::new(BranchTx::new(Transactor::new(self.pool.clone())));
+        let revealed = service
+            .reveal_in(tx, who, branch, &input.id, input.identity_id, reason, Utc::now())
+            .await
+            .map_err(|err| match err {
+                AppError::NotFound { .. } => {
+                    V3Error::new("notFound", None, "notFound", StatusCode::NOT_FOUND)
+                }
+                AppError::Validation(msg) => V3Error::new(
+                    "validationFailed",
+                    Some("reason"),
+                    msg,
+                    StatusCode::BAD_REQUEST,
+                ),
+                AppError::Forbidden => out_of_scope(),
+                other => {
+                    tracing::error!(error = %other, "identityReveal failed");
+                    server_error()
+                }
+            })?;
+
+        Ok(IdentityRevealOutput {
+            identity_id: revealed.identity_id,
+            identity_type: revealed.identity_type,
+            value: revealed.value,
+        })
     }
 }
 
