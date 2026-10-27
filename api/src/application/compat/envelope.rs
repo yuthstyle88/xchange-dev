@@ -262,8 +262,12 @@ impl RpcRefusal {
 
     /// A refusal by a use case that names the payload key at fault: 400, `no-store`, `field` (RF-D4).
     pub fn refused_at(field: &'static str, sentence: impl Into<String>) -> RpcRefusal {
-        let sentence: String = sentence.into();
-        todo!("RF-2: a refusal naming {field}: {sentence}")
+        RpcRefusal {
+            status: 400,
+            sentence: sentence.into(),
+            no_store: true,
+            field: Some(field),
+        }
     }
 
     /// `คำขอไม่ถูกต้อง`: the same-origin headers, a body that cannot be read,
@@ -327,10 +331,18 @@ impl RpcRefusal {
             headers.push(("cache-control", "no-store"));
         }
         headers.push(("content-type", "application/json"));
+        let error = Value::String(self.sentence.clone());
+        let body = match self.field {
+            None => format!("{{\"error\":{error}}}"),
+            Some(field) => format!(
+                "{{\"error\":{error},\"field\":{}}}",
+                Value::String(field.into())
+            ),
+        };
         RpcResponse {
             status: self.status,
             headers,
-            body: format!("{{\"error\":{}}}", Value::String(self.sentence.clone())),
+            body,
         }
     }
 }

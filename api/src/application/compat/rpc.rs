@@ -49,7 +49,7 @@ use xc_auth::domain::policy::entities::policy::Policy;
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
-use xc_customer::application::customer::service::CustomerService;
+use xc_customer::application::customer::service::{CustomerService, ReserveError};
 use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
@@ -282,8 +282,9 @@ impl CompatRpc {
                 let reservation = self
                     .services
                     .customers
-                    .reserve(branch, reserve_command(&payload), now)
-                    .await?;
+                    .reserve_checked(branch, reserve_command(&payload), now)
+                    .await
+                    .map_err(reserve_failure)?;
                 V2Json::object(vec![
                     ("customerId", V2Json::text(reservation.customer_id)),
                     ("existing", V2Json::Bool(reservation.existing)),
@@ -426,6 +427,15 @@ fn reserve_command(payload: &Map<String, Value>) -> ReserveCustomer {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string(),
+    }
+}
+
+fn reserve_failure(error: ReserveError) -> RpcFailure {
+    match error {
+        ReserveError::Input(r) => {
+            RpcFailure::Refused(RpcRefusal::refused_at(r.field.wire(), r.sentence))
+        }
+        ReserveError::Other(e) => RpcFailure::from(e),
     }
 }
 

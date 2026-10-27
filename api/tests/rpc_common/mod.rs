@@ -653,7 +653,29 @@ impl Answer {
         field: &str,
         label: &str,
     ) {
-        todo!("RF-2: {route} {action} {status} {sentence} {field} {label}")
+        assert!(
+            V3_REFUSAL_FIELDS.contains(&(route, action)),
+            "{label}: ({route}, {action}) is not in V3_REFUSAL_FIELDS"
+        );
+        assert!(
+            REFUSAL_FIELD_NAMES.contains(&field),
+            "{label}: {field} is not in REFUSAL_FIELD_NAMES"
+        );
+        assert_eq!(self.status, status, "{label}: {:.300}", self.text);
+        assert_eq!(
+            self.text,
+            format!(
+                "{{\"error\":{},\"field\":{}}}",
+                Value::String(sentence.to_string()),
+                Value::String(field.to_string())
+            ),
+            "{label}"
+        );
+        assert_eq!(
+            self.header("content-type"),
+            Some("application/json"),
+            "{label}"
+        );
     }
 
     /// Fails unless this is the refusal `status` `{"error": sentence}`, byte
