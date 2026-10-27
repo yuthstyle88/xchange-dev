@@ -38,7 +38,11 @@ fn seed_approval_kinds_are_the_nine_in_permission_all_with_no_module() {
         SEEDED_ON.iter().map(|&(p, _)| p).collect::<BTreeSet<_>>(),
         "APPROVAL_KINDS is §11.9's nine"
     );
-    assert_eq!(Permission::ALL.len(), 62, "Permission::ALL grows 52 -> 61, then 62 (BQ-7)");
+    assert_eq!(
+        Permission::ALL.len(),
+        62,
+        "Permission::ALL grows 52 -> 61, then 62 (BQ-7)"
+    );
     for p in APPROVAL_KINDS {
         assert_eq!(
             Permission::ALL.iter().filter(|q| **q == p).count(),

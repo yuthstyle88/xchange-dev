@@ -327,8 +327,7 @@ async fn the_quotes_checks_admit_the_design_values_and_refuse_the_rest() {
         "type BINDING"
     );
     assert_eq!(
-        db.outcome(&f.quote(&new_id(), &[("type", "'FIRM'")]))
-            .await,
+        db.outcome(&f.quote(&new_id(), &[("type", "'FIRM'")])).await,
         CHECK,
         "type FIRM"
     );
