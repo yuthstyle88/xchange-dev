@@ -19,8 +19,12 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, RatePercent};
 use xc_rate::application::draft::reference_base::ReferenceBase;
 use xc_rate::domain::policy::anchor_source::AnchorSource;
+use xc_rate::domain::pricing::branch_policy::BranchPolicyStore;
+use xc_rate::domain::pricing::display_settings::DisplaySettingsStore;
+use xc_rate::domain::pricing::follow_plan::FollowResultStore;
 use xc_rate::domain::pricing::market_quote::{MarketQuote, MarketSource};
 use xc_rate::domain::pricing::market_snapshot::MarketStaleness;
+use xc_rate::domain::pricing::pricing_mode::{PricingMode, PricingModeStore};
 use xc_rate::domain::pricing::pricing_suggestion::{
     PricingSuggestion, Suggestion, SuggestionConfig, SuggestionInput, TierPrice,
 };
@@ -28,10 +32,17 @@ use xc_rate::domain::pricing::recommendation::{
     CounterRate, Recommendation, RecommendationInput, RecommendationSide,
 };
 use xc_rate::domain::pricing::row_status::{RowFacts, RowStatus};
+use xc_rate::domain::pricing::suggestion_settings::SuggestionSettings;
+use xc_rate::domain::pricing::tier_set::{PricingSource, TierSetSource, TierSetStore};
 use xc_rate::infrastructure::market::market_feed_status_store::MarketFeedStatusStore;
 use xc_rate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use xc_rate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
+use xc_rate::infrastructure::pricing::branch_policy_store::PgBranchPolicyStore;
+use xc_rate::infrastructure::pricing::display_settings_store::PgDisplaySettingsStore;
+use xc_rate::infrastructure::pricing::follow_result_store::PgFollowResultStore;
+use xc_rate::infrastructure::pricing::pricing_mode_store::PgPricingModeStore;
 use xc_rate::infrastructure::pricing::suggestion_settings_store::PricingSuggestionSettingsStore;
+use xc_rate::infrastructure::pricing::tier_set_store::PgTierSetStore;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
@@ -55,9 +66,19 @@ impl PricingBoardView {
 impl BranchView for PricingBoardView {
     const NAME: &'static str = "pricing_board";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::OwnerRoute, "/api/reference-rates");
-    const VERSIONED: bool = false;
+    const VERSIONED: bool = true;
     type Data = PricingBoardData;
     type Filter = NoFilter;
+
+    fn own_version(
+        &self,
+        branch: &BranchId,
+        _who: &Actor,
+    ) -> impl Future<Output = AppResult<Option<i64>>> + Send {
+        let pool = self.pool.clone();
+        let branch_id = branch.as_str().to_string();
+        async move { pricing_board_version(&pool, &branch_id).await.map(Some) }
+    }
 
     fn load(
         &self,
@@ -69,6 +90,161 @@ impl BranchView for PricingBoardView {
         let branch_id = branch.as_str().to_string();
         async move { load_pricing_board(&pool, &branch_id).await }
     }
+}
+
+async fn pricing_board_version(pool: &PgPool, branch_id: &str) -> AppResult<i64> {
+    let now = Utc::now();
+    let mut conn = pool.acquire().await.map_err(AppError::Database)?;
+
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET_BASIS;
+    let mut eat = |bytes: &[u8]| {
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    };
+    let eat_ts = |eat: &mut dyn FnMut(&[u8]), ts: Option<DateTime<Utc>>| match ts {
+        Some(t) => eat(&t.timestamp_micros().to_le_bytes()),
+        None => eat(&[0]),
+    };
+
+    let ref_rows: Vec<(String, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT l.reference_type, MAX(b.fetched_at) \
+         FROM rate_reference_lines l \
+         JOIN rate_reference_batches b ON b.id = l.batch_id \
+         WHERE l.reference_type IN ('BOT', 'MARKET_TT', 'MARKET_SR', 'START') \
+         GROUP BY l.reference_type \
+         ORDER BY l.reference_type",
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(AppError::Database)?;
+
+    let mut tt_ts = None;
+    let mut sr_ts = None;
+    for (rt, ts) in &ref_rows {
+        eat(rt.as_bytes());
+        eat_ts(&mut eat, Some(*ts));
+        if rt == "MARKET_TT" {
+            tt_ts = Some(*ts);
+        } else if rt == "MARKET_SR" {
+            sr_ts = Some(*ts);
+        }
+    }
+    eat(&[
+        u8::from(MarketStaleness::is_stale(tt_ts, now)),
+        u8::from(MarketStaleness::is_stale(sr_ts, now)),
+    ]);
+
+    let feed_rows: Vec<(String, DateTime<Utc>, Option<String>)> = sqlx::query_as(
+        "SELECT source, last_attempt_at, last_error FROM market_feed_status ORDER BY source",
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(AppError::Database)?;
+    for (src, at, err) in feed_rows {
+        eat(src.as_bytes());
+        eat_ts(&mut eat, Some(at));
+        eat(err.as_deref().unwrap_or("").as_bytes());
+    }
+
+    let policy_ver: Option<(Uuid, i32)> = sqlx::query_as(
+        "SELECT id, version FROM rate_policy_versions \
+         WHERE branch_id = $1 AND valid_to IS NULL \
+         ORDER BY version DESC LIMIT 1",
+    )
+    .bind(branch_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(AppError::Database)?;
+    match policy_ver {
+        Some((id, ver)) => {
+            eat(id.as_bytes());
+            eat(&ver.to_le_bytes());
+        }
+        None => eat(&[0]),
+    }
+
+    let (sug_cnt, sug_ts): (i64, Option<DateTime<Utc>>) = sqlx::query_as(
+        "SELECT COUNT(*), MAX(updated_at) FROM pricing_suggestion_settings WHERE branch_id = $1",
+    )
+    .bind(branch_id)
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(AppError::Database)?;
+    eat(&sug_cnt.to_le_bytes());
+    eat_ts(&mut eat, sug_ts);
+
+    let pub_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT current_publication_id FROM branches WHERE id = $1")
+            .bind(branch_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(AppError::Database)?
+            .flatten();
+    match pub_id {
+        Some(id) => eat(id.as_bytes()),
+        None => eat(&[0]),
+    }
+
+    let (start_cnt, start_ver): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), COALESCE(SUM(version)::bigint, 0) FROM org_starting_prices",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(AppError::Database)?;
+    eat(&start_cnt.to_le_bytes());
+    eat(&start_ver.to_le_bytes());
+
+    let (ts_cnt, ts_max): (i64, Option<DateTime<Utc>>) =
+        sqlx::query_as("SELECT COUNT(*), MAX(approved_at) FROM pricing_tier_sets")
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(AppError::Database)?;
+    eat(&ts_cnt.to_le_bytes());
+    eat_ts(&mut eat, ts_max);
+
+    let (mode_rev_sum, mode_max): (i64, Option<DateTime<Utc>>) = sqlx::query_as(
+        "SELECT COALESCE(SUM(revision)::bigint, 0), MAX(updated_at) FROM pricing_modes",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(AppError::Database)?;
+    eat(&mode_rev_sum.to_le_bytes());
+    eat_ts(&mut eat, mode_max);
+
+    let (bp_cnt, bp_max): (i64, Option<DateTime<Utc>>) =
+        sqlx::query_as("SELECT COUNT(*), MAX(updated_at) FROM pricing_branch_policy")
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(AppError::Database)?;
+    eat(&bp_cnt.to_le_bytes());
+    eat_ts(&mut eat, bp_max);
+
+    let follow_max = PgFollowResultStore
+        .newest_in(&mut conn)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    eat_ts(&mut eat, follow_max);
+
+    let disp_cnt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rate_display_settings")
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(AppError::Database)?;
+    let disp_max = PgDisplaySettingsStore
+        .newest_in(&mut conn)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    eat(&disp_cnt.to_le_bytes());
+    eat_ts(&mut eat, disp_max);
+
+    eat(now.date_naive().to_string().as_bytes());
+
+    Ok((hash & 0x001f_ffff_ffff_ffff) as i64)
 }
 
 fn parse_updated_at(s: &str) -> Option<DateTime<Utc>> {
@@ -380,13 +556,60 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
     let suggestion_settings = PricingSuggestionSettingsStore::for_branch(&mut tx, branch_id)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
+    let branch_min_spread = PricingSuggestionSettingsStore::branch_min_spread(&mut tx, branch_id)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let branch_policies = PgBranchPolicyStore
+        .for_branch_in(&mut tx, branch_id)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let (display_settings, display_from) = PgDisplaySettingsStore
+        .effective_in(&mut tx, branch_id)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let mut bases_by_currency: HashMap<String, (Option<Rate>, Option<Rate>)> = HashMap::new();
+    let mut branch_tier_sets = HashMap::new();
+    let mut main_tier_sets = HashMap::new();
+    let mut main_modes = HashMap::new();
+    let mut main_follow_results = HashMap::new();
     let b_id = BranchId::new(branch_id);
     for code in &all_codes {
         let Ok(cur_code) = CurrencyCode::parse(code) else {
             continue;
         };
+        if let Some(ts) = PgTierSetStore
+            .latest_in(&mut tx, branch_id, cur_code)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+        {
+            if branch_id == "MAIN" {
+                main_tier_sets.insert(code.clone(), ts.clone());
+            }
+            branch_tier_sets.insert(code.clone(), ts);
+        }
+        if branch_id != "MAIN"
+            && let Some(ts) = PgTierSetStore
+                .latest_in(&mut tx, "MAIN", cur_code)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?
+        {
+            main_tier_sets.insert(code.clone(), ts);
+        }
+        if let Some(m) = PgPricingModeStore
+            .get_in(&mut tx, cur_code)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+        {
+            main_modes.insert(code.clone(), m.mode);
+        }
+        if let Some(fr) = PgFollowResultStore
+            .latest_in(&mut tx, cur_code)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+        {
+            main_follow_results.insert(code.clone(), fr);
+        }
         let Some(ref_id) = ReferenceBase::newest_in(&mut tx, &b_id, &cur_code)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?
@@ -518,9 +741,10 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
         let better_pct_from = better_from.as_str().to_string();
         let mut config = SuggestionConfig::v9_default();
         config.better = better;
-        if let Some(ms) = ovr.and_then(|o| o.min_spread_pct) {
-            config.min_spread_pct = ms.value();
-        }
+        config.min_spread_pct = SuggestionSettings::min_spread_for(
+            ovr.and_then(|o| o.min_spread_pct).map(|p| p.value()),
+            branch_min_spread,
+        );
 
         let t1 = tier1_by_currency.get(&code);
         let (base_buy, base_sell) = bases_by_currency
@@ -608,6 +832,67 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             });
         }
 
+        let resolved_policy = branch_policies.resolve(&code);
+        let branch_ts = branch_tier_sets.remove(&code);
+        let main_mode = if main_modes.get(&code) == Some(&PricingMode::Follow) {
+            PricingSource::Follow
+        } else if main_tier_sets.contains_key(&code) {
+            PricingSource::Manual
+        } else {
+            PricingSource::Auto
+        };
+        let eff_mode = if branch_id == "MAIN" {
+            main_mode
+        } else if resolved_policy.own
+            || branch_ts
+                .as_ref()
+                .is_some_and(|ts| ts.source == TierSetSource::Manual)
+        {
+            PricingSource::Manual
+        } else if main_mode == PricingSource::Follow && resolved_policy.follow {
+            // §15.5: only a branch whose currency row enrols it follows MAIN's FOLLOW (`H:` §7 last bullet).
+            PricingSource::Follow
+        } else {
+            // Otherwise the branch shows what it publishes: a MAIN push reads as MANUAL, a FOLLOW row as FOLLOW,
+            // nothing as AUTO (reviewer fix, claude/451f0116).
+            branch_ts
+                .as_ref()
+                .map(|ts| ts.source.pricing_source())
+                .unwrap_or(PricingSource::Auto)
+        };
+        let tier_set = if eff_mode == PricingSource::Auto {
+            None
+        } else {
+            branch_ts.map(|ts| PricingTierSetDto {
+                id: ts.id.to_string(),
+                source: ts.source.as_str().to_string(),
+                tiers: ts
+                    .tiers
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| PricingTierRateDto {
+                        tier_no: (i + 1) as u8,
+                        buy: Some(t.buy.to_string()),
+                        sell: Some(t.sell.to_string()),
+                    })
+                    .collect(),
+                approved_by: ts.approved_by,
+                approved_at: ts.approved_at.to_rfc3339(),
+            })
+        };
+        let follow_result = if eff_mode == PricingSource::Follow {
+            main_follow_results
+                .remove(&code)
+                .map(|fr| PricingFollowResultDto {
+                    currency: fr.currency.as_str().to_string(),
+                    status: fr.status.as_str().to_string(),
+                    reasons: fr.reasons.iter().map(|r| r.as_str().to_string()).collect(),
+                    planned_at: fr.planned_at.to_rfc3339(),
+                })
+        } else {
+            None
+        };
+
         rows.push(PricingRowDto {
             currency: code,
             unit_size,
@@ -624,16 +909,15 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             flags,
             selectable,
             status,
-            // SKELETON (XC-V9-PRICING): every currency reads as today's AUTO; PV-k fills these (§15.8a).
-            mode: "AUTO".to_string(),
-            tier_set: None,
-            follow_result: None,
+            mode: eff_mode.as_str().to_string(),
+            tier_set,
+            follow_result,
             branch_policy: PricingBranchPolicyDto {
-                buy_bp: 0,
-                sell_bp: 0,
-                own: false,
-                follow: false,
-                from: "default".to_string(),
+                buy_bp: resolved_policy.buy_bp,
+                sell_bp: resolved_policy.sell_bp,
+                own: resolved_policy.own,
+                follow: resolved_policy.follow,
+                from: resolved_policy.from.as_str().to_string(),
             },
         });
     }
@@ -659,6 +943,8 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
     })
     .collect();
 
+    let star_policy = branch_policies.resolve("*");
+
     Ok(PricingBoardData {
         branch: branch_id.to_string(),
         policy_version_id,
@@ -668,19 +954,18 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
         sources,
         rows,
         recommendations,
-        // SKELETON (XC-V9-PRICING): PV-k reads the `'*'` row, the effective display settings and MAIN.
         branch_default: PricingBpDto {
-            buy_bp: 0,
-            sell_bp: 0,
+            buy_bp: star_policy.buy_bp,
+            sell_bp: star_policy.sell_bp,
         },
         display: PricingDisplayDto {
-            tiers: vec![1, 2, 3, 4],
-            featured: vec![],
-            highlight: true,
-            all_market: true,
-            from: "default".to_string(),
+            tiers: display_settings.tiers,
+            featured: display_settings.featured,
+            highlight: display_settings.highlight,
+            all_market: display_settings.all_market,
+            from: display_from.as_str().to_string(),
         },
-        is_main: false,
+        is_main: branch_id == "MAIN",
     })
 }
 
