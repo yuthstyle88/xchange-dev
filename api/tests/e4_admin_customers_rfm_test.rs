@@ -146,18 +146,28 @@ impl Db {
             "'{}'::timestamptz",
             at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
         );
-        let completed = if status == "COMPLETED" {
-            when.clone()
+        let (completed, doc) = if status == "COMPLETED" {
+            (when.clone(), format!("'DOC-{id}'"))
+        } else {
+            ("NULL".to_owned(), "NULL".to_owned())
+        };
+        let shift = if mode == "LIVE" {
+            format!("'SH-{branch}'")
         } else {
             "NULL".to_owned()
+        };
+        let (cancelled, cancelled_reason) = if status == "CANCELLED" {
+            (when.clone(), "'test'".to_owned())
+        } else {
+            ("NULL".to_owned(), "NULL".to_owned())
         };
         self.exec(&format!(
             "INSERT INTO transactions (id, document_ref, branch_id, mode, shift_id, submission_id, payload_hash, \
                 customer_id, customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, \
-                recorded_at, recorded_by, status, completed_at, organization_id) \
-             VALUES ('{id}', 'DOC-{id}', '{branch}', '{mode}', 'SH-{branch}', 'sub-{id}', 'hash-{id}', \
+                recorded_at, recorded_by, status, completed_at, cancelled_at, cancel_reason, organization_id) \
+             VALUES ('{id}', {doc}, '{branch}', '{mode}', {shift}, 'sub-{id}', 'hash-{id}', \
                 '{customer}', 'Customer', 'THA', 'teller-1', '', '', ({when})::date, \
-                {when}, {when}, 'teller-1', '{status}', {completed}, '{ORG}')"
+                {when}, {when}, 'teller-1', '{status}', {completed}, {cancelled}, {cancelled_reason}, '{ORG}')"
         ))
         .await;
         self.exec(&format!(
@@ -260,13 +270,13 @@ async fn e4_2_a_customer_with_nothing_in_the_window_answers_zero_and_null() {
 }
 
 #[actix_web::test]
-async fn e4_3_reversed_demo_and_other_branch_exchanges_never_count() {
+async fn e4_3_cancelled_demo_and_other_branch_exchanges_never_count() {
     let db = Db::start().await;
     let cx = db.customer("Mixed").await;
     let month_ago = days_ago(30);
     db.exchange(&cx, "MAIN", month_ago, "500.00", "LIVE", "COMPLETED")
         .await;
-    db.exchange(&cx, "MAIN", days_ago(60), "700.00", "LIVE", "REVERSED")
+    db.exchange(&cx, "MAIN", days_ago(60), "700.00", "LIVE", "CANCELLED")
         .await;
     db.exchange(&cx, "MAIN", days_ago(90), "900.00", "DEMO", "COMPLETED")
         .await;
