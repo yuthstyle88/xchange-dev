@@ -100,15 +100,16 @@ impl QuoteTerms {
 /// every other channel is its own. (`CustomerSelf` ⇒ `APP` has no caller yet: the customer-side estimate needs a
 /// design of its own.)
 pub fn benefit_channel(channel: QuoteChannel) -> QuoteChannel {
-    let _ = channel;
-    todo!("BQ-M3")
+    match channel {
+        QuoteChannel::Booking => QuoteChannel::Desk,
+        other => other,
+    }
 }
 
 /// `marketing-campaigns.md` O-3 A: a `Booking` quote shows its benefit with no reservation (no budget, no coupon
 /// lock); every other channel reserves as today. The completion's DESK quote is the one that reserves.
 pub fn reserves_benefits(channel: QuoteChannel) -> bool {
-    let _ = channel;
-    todo!("BQ-M3")
+    channel != QuoteChannel::Booking
 }
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -478,7 +479,7 @@ impl QuoteService {
         let eval_ctx = EvalContext {
             organization_id: org_id,
             branch: req.branch_id.as_str().to_string(),
-            channel: req.channel.as_str().to_string(),
+            channel: benefit_channel(req.channel).as_str().to_string(),
             customer_id: req.customer_id.clone(),
             coupon_code: coupon_code.map(str::to_string),
             now,
@@ -615,7 +616,7 @@ impl QuoteService {
         // Write quote to DB first so benefit_reservations FK (quote_id -> quotes.id) is satisfied
         self.quote_repo.insert_in(tx, &quote).await?;
 
-        if !eval.snapshot.applied.is_empty() {
+        if reserves_benefits(req.channel) && !eval.snapshot.applied.is_empty() {
             let mut reserved_applied = Vec::new();
             let mut recompute_needed = false;
 
