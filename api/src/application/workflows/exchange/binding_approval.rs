@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_approval::application::registry::ApprovalRegistry;
@@ -17,7 +17,7 @@ use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
 use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
-use xc_kernel::money::Side;
+use xc_kernel::money::{Money, Side};
 
 use super::quote::QuoteRequest;
 
@@ -67,10 +67,23 @@ pub fn proposal_id(req: &QuoteRequest, coupon_code: Option<&str>) -> String {
 pub async fn covers_in(
     tx: &mut Transaction<'_, Postgres>,
     quote_id: uuid::Uuid,
-    settle_thb: xc_kernel::money::Money,
+    settle_thb: Money,
 ) -> AppResult<bool> {
-    let _ = (tx, quote_id, settle_thb);
-    todo!("BQ-9")
+    let row: Option<Option<String>> = sqlx::query_scalar(
+        "SELECT r.proposed_payload->>'settleThb' \
+         FROM quotes q \
+         JOIN approval_requests r ON r.id = q.approval_request_id \
+         WHERE q.id = $1 AND q.type = 'BINDING' AND r.type = 'BINDING_QUOTE' AND r.status = 'APPROVED'",
+    )
+    .bind(quote_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    Ok(row
+        .flatten()
+        .and_then(|s| Money::parse(&s).ok())
+        .is_some_and(|approved| approved.minor_i128() >= settle_thb.minor_i128()))
 }
 
 pub struct BindingQuoteSubject;
