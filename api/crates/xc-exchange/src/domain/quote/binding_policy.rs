@@ -2,7 +2,7 @@
 //! organisation's binding quote is issued under. Pure: the caller reads the inputs.
 
 use chrono::{DateTime, Duration, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use xc_kernel::money::Money;
 
 use super::quote::QuoteChannel;
@@ -26,13 +26,17 @@ pub struct BindingQuotePolicy {
 impl BindingQuotePolicy {
     /// D-10: the lock's lifetime, or `Err(Domain(NOT_ENABLED))` when none is entered.
     pub fn enabled_ttl(&self) -> AppResult<Duration> {
-        todo!("BQ-1")
+        self.ttl.ok_or_else(|| AppError::Domain(NOT_ENABLED.into()))
     }
 
     /// D-14: `Desk` is `Ok`; `App`, `Kiosk` and `Booking` are `Err(Domain(DESK_ONLY))`.
     pub fn check_channel(&self, channel: QuoteChannel) -> AppResult<()> {
-        let _ = channel;
-        todo!("BQ-1")
+        match channel {
+            QuoteChannel::Desk => Ok(()),
+            QuoteChannel::App | QuoteChannel::Kiosk | QuoteChannel::Booking => {
+                Err(AppError::Domain(DESK_ONLY.into()))
+            }
+        }
     }
 
     /// D-17: `verified_until` is the customer's `Readiness::Verified { until }` (`None` for no customer and for
@@ -42,13 +46,14 @@ impl BindingQuotePolicy {
         verified_until: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        let _ = (verified_until, now);
-        todo!("BQ-1")
+        match verified_until {
+            Some(u) if u > now => Ok(()),
+            _ => Err(AppError::Domain(NOT_VERIFIED.into())),
+        }
     }
 
     /// D-15 (T2 at issue): `true` when the quote's total `settle_thb` exceeds the branch limit; `None` = no limit.
     pub fn needs_approval(&self, settle_thb: Money, limit: Option<Money>) -> bool {
-        let _ = (settle_thb, limit);
-        todo!("BQ-1")
+        limit.is_some_and(|l| settle_thb.minor_i128() > l.minor_i128())
     }
 }
