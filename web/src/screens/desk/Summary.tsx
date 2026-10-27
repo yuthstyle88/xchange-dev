@@ -46,6 +46,10 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
               <Show when={props.store.step() >= 3}>
                 <dt>{t('fee')}</dt>
                 <dd>{l().feeThb}</dd>
+                <Show when={l().roundingThb !== '0.00'}>
+                  <dt data-row="rounding">{t('rounding')}</dt>
+                  <dd data-row="rounding">{l().roundingThb} THB</dd>
+                </Show>
                 <dt>{t('net', { direction: direction() })}</dt>
                 <dd>{l().settleThb} THB</dd>
               </Show>

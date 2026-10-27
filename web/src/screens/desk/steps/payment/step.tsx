@@ -35,6 +35,7 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
   const isCash = () => store.method() === 'Cash';
   const channelOff = () => !noRules() && store.method() !== '' && !open(store.method());
   const net = () => store.quote()?.lines[0]?.settleThb ?? '';
+  const rounding = () => store.quote()?.lines[0]?.roundingThb ?? '0.00';
   const instruction = () => ruleFor(rules(), store.method())?.instruction ?? '';
   const entry = () => store.entry();
   const feeError = () => {
@@ -137,6 +138,12 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
       <h2>{t('heading')}</h2>
       <p>
         <strong>{t('net', { net: net() })}</strong>
+        <Show when={rounding() !== '0.00'}>
+          {' '}
+          <span data-row="rounding">
+            {t('rounding')} {rounding()} THB
+          </span>
+        </Show>
       </p>
       <Show when={noRules()}>
         <p class="desk-notice">{t('noRules')}</p>
