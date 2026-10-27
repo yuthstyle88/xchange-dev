@@ -52,7 +52,7 @@ impl QuoteDto {
     pub fn from_domain(quote: Quote, pub_version: i32) -> Self {
         Self {
             id: quote.id.to_string(),
-            quote_type: quote.quote_type,
+            quote_type: quote.quote_type.as_str().to_string(),
             channel: quote.channel.as_str().to_string(),
             expires_at: quote.expires_at.to_rfc3339(),
             publication: QuotePublicationDto {

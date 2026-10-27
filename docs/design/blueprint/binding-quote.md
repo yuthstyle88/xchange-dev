@@ -58,7 +58,7 @@
 | D-15 | **Over the branch limit ⇒ BRANCH_MANAGER approval before issue** (O-5 A: T2 reused at issue). If the quote's total `settle_thb` exceeds the branch's `approval_limit_thb` (`branch_exchange_limits`, read by `approval_limit_in`, `api/crates/xc-exchange/src/domain/settings/repository.rs:16`; `NULL` = no limit), the issue opens an AP-1 request of type `BINDING_QUOTE` and answers `409 approvalRequired` with no quote and no reservation. The retry that names the APPROVED request issues it. The decider is a BRANCH_MANAGER of the quote's branch, and the proposer never decides, as T2 (`quote-transaction.md` §5.1). The subject is registered under `approval_subjects/` (D-19). | O-5 A (§9); T2; owner 2026-10-20: A only |
 | D-16 | **A binding quote and a booking are independent** (O-7 A). A booking's quote stays indicative (D-8, B1); cancelling or moving a booking never touches a binding quote; a booked slot never extends a lock's `expires_at`. | O-7 A (§9); `booking-slots.md` B1 |
 | D-17 | **A binding quote names a verified customer** (O-8 A). `customer_id` is required, and `Readiness::of(pool, customer)` (`api/crates/xc-verification/src/application/readiness.rs:16`, V12) must answer `Verified { until }` with `until > now`. `None`, `Pending`, `NeedsUpdate`, `Expired`, or no customer ⇒ `validationFailed` on `customerId`, no quote. This is the one place readiness gates something (V12 says *"nothing refuses on it"* for bookings and the desk; O-8 A adds this gate for binding quotes only). | O-8 A (§9); `verification.md` V12 |
-| D-18 | **The new permission reaches existing built-in groups through #3976's seed versions, not a migration of its own.** The owner ruled option B on #3976 (2026-10-20: *"go with B, track the seed version per built-in group, one migration"*). BQ-7 adds `(3, Permission::BindingQuoteIssue)` to `RoleGrants::SEED_ADDITIONS` and raises `RoleGrants::SEED_VERSION` to **3** (version 2 is #3976's `MarketRatesRefresh`), next to the TELLER and BRANCH_MANAGER seed lists (D-13). At boot, `seed_additions` grants each permission newer than a built-in group's `roles.seed_version` that the group's `RoleGrants::seed` holds, once, then raises the group to `SEED_VERSION`. So TELLER and BRANCH_MANAGER gain `BindingQuoteIssue`; no other built-in group gains it (their seeds don't hold it); custom groups are never touched; and an owner who removed it later never gets it back. A fresh database gets it from `seed_missing`, which sets `seed_version = SEED_VERSION`. | #3976 §5 (the design), its ruling; `user-management-rbac.md` §11.5 item 2 |
+| D-18 | **The new permission reaches existing built-in groups through #3976's seed versions, not a migration of its own.** The owner ruled option B on #3976 (2026-10-20: *"go with B, track the seed version per built-in group, one migration"*). BQ-7 adds `(6, Permission::BindingQuoteIssue)` to `RoleGrants::SEED_ADDITIONS` and raises `RoleGrants::SEED_VERSION` to **6** (re-measured 2026-10-27 on `1998f9551`: main is at 5 — 2 #3976's `MarketRatesRefresh`, 3 #4155's removals, 4 RBAC §11.9's nine approval kinds, 5 #5108's `ShiftCloseCertify`), next to the TELLER and BRANCH_MANAGER seed lists (D-13). At boot, `seed_additions` grants each permission newer than a built-in group's `roles.seed_version` that the group's `RoleGrants::seed` holds, once, then raises the group to `SEED_VERSION`. So TELLER and BRANCH_MANAGER gain `BindingQuoteIssue`; no other built-in group gains it (their seeds don't hold it); custom groups are never touched; and an owner who removed it later never gets it back. A fresh database gets it from `seed_missing`, which sets `seed_version = SEED_VERSION`. | #3976 §5 (the design), its ruling; `user-management-rbac.md` §11.5 item 2 |
 | D-19 | **The approval subject is registered like every AP-1 type.** One file per subject under `api/src/bootstrap/approval_subjects/`: `binding_quote.rs` with `pub const TYPE: &str = "BINDING_QUOTE"` and `register` forwarding to `workflows::exchange::binding_approval::register`, exactly as `exchange_transaction.rs` does. The registry is generated from that directory at build time (`approval_subjects/mod.rs` `include!(concat!(env!("OUT_DIR"), …))`), so no `mod.rs` line is needed. A type missing there is hidden from the `approval_requests` view, so no BRANCH_MANAGER could decide it (the `CASH_TRANSFER` bug fixed by #3858, PR 3862). | `api/src/bootstrap/approval_subjects/exchange_transaction.rs`; #3858 |
 
 ---
@@ -125,9 +125,9 @@ stateDiagram-v2
 | Q25 | O-8: no `customer_id`; or a customer whose readiness is `None`, `Pending`, `NeedsUpdate`, `Expired`, or `Verified { until ≤ now }` | `validationFailed` on `customerId`; no quote (D-17) |
 | Q26 | O-8: a customer `Verified { until > now }` | issued (D-17) |
 | Q27 | O-5: a PENDING `BINDING_QUOTE` request | listed in the `approval_requests` view for a BRANCH_MANAGER of the quote's branch, and decidable there (D-19) |
-| Q28 | a TELLER and a BRANCH_MANAGER built-in group at `seed_version` 2, then boot | each gains exactly `BindingQuoteIssue` from `seed_additions` and ends at `seed_version` 3; no other built-in group and no custom group gains it (D-18) |
+| Q28 | a TELLER and a BRANCH_MANAGER built-in group at `seed_version` 5, then boot | each gains exactly `BindingQuoteIssue` from `seed_additions` and ends at `seed_version` 6; no other built-in group and no custom group gains it (D-18) |
 | Q29 | an owner removed `BindingQuoteIssue` from TELLER after it was granted, then boot | it is not re-added (D-18) |
-| Q30 | a fresh database: `seed_missing` | TELLER and BRANCH_MANAGER hold `BindingQuoteIssue`, at `seed_version` 3, with no duplicates (D-18) |
+| Q30 | a fresh database: `seed_missing` | TELLER and BRANCH_MANAGER hold `BindingQuoteIssue`, at `seed_version` 6, with no duplicates (D-18) |
 
 O-3's range has no row: it is owner-owed, and its bounds CHECK and test come with the owner's numbers (D-10).
 
@@ -224,7 +224,7 @@ classDiagram
 | `BindingQuotePolicy` (ttl, channel, customer, limit: D-10, D-14, D-15, D-17), trait `BindingSettingsRepository`, `PgBindingSettings` | BQ-1 (core) | BQ-2, BQ-3 |
 | `BindingQuoteSubject` (AP-1, D-15) and its registration file under `approval_subjects/` (D-19) | BQ-6 | BQ-3, the `approval_requests` view |
 | `Permission::BindingQuoteIssue` (no module) in `RoleGrants::seed` for TELLER and BRANCH_MANAGER (D-13) | BQ-7 | BQ-5 |
-| `(3, BindingQuoteIssue)` in `RoleGrants::SEED_ADDITIONS`, `SEED_VERSION` = 3 (D-18), granted at boot by #3976's `seed_additions` | BQ-7 | TELLER and BRANCH_MANAGER at runtime |
+| `(6, BindingQuoteIssue)` in `RoleGrants::SEED_ADDITIONS`, `SEED_VERSION` = 6 (D-18), granted at boot by #3976's `seed_additions` | BQ-7 | TELLER and BRANCH_MANAGER at runtime |
 | `QuoteService::price_in(…, QuoteType)` (writes the given type; today's callers pass `Indicative`) | BQ-2 | BQ-3 |
 | `IssueBindingQuote` (D-4, D-6, D-7) | BQ-3 | BQ-5 |
 | `check_valid_in` applies validity by type (D-3) | BQ-4 | confirm, complete |
@@ -244,14 +244,14 @@ classDiagram
 2. **Backfill: none.** No row needs a value the migration writes. Binding quotes stay off until ADMIN enters a lifetime, and the permission is granted at boot by #3976's `seed_additions`. After deploy, count it: `SELECT role_code FROM role_permission_grants WHERE permission = 'BindingQuoteIssue';` should list TELLER and BRANCH_MANAGER (those whose owner has not removed it since).
 3. **Deploy order: migration first, then the binary, after #3976.**
    - #3976's migration and `seed_additions` must already be deployed (BQ-7 waits on it).
-   - The new binary brings `SEED_VERSION` 3, so its boot step grants `BindingQuoteIssue`. An old binary refuses an unknown stored permission (`parse_perm`, `role_grant_store.rs:34-36`, *"invalid stored permission"*), so **once the new binary has granted it, a rollback to an older binary first deletes the `BindingQuoteIssue` rows** (and resets those groups' `seed_version` to 2).
+   - The new binary brings `SEED_VERSION` 6, so its boot step grants `BindingQuoteIssue`. An old binary refuses an unknown stored permission (`parse_perm`, `role_grant_store.rs:34-36`, *"invalid stored permission"*), so **once the new binary has granted it, a rollback to an older binary first deletes the `BindingQuoteIssue` rows** (and resets those groups' `seed_version` to 5).
    - The new binary on the old schema finds no `binding_quote_ttl_seconds` and so issues no binding quote.
-4. **`down`.**
-   - Drops `binding_quote_ttl_seconds`.
-   - Re-adds `CHECK (type = 'INDICATIVE')`. The CHECK cannot be re-added while a `BINDING` row exists, so `down` first sets every live binding quote `CANCELLED` and releases its reservations.
-   - **It loses** every binding quote issued (they become cancelled history) and the lifetime setting. It changes no grant row: the grants are ordinary rows from #3976's boot step, removed only by the rollback step in item 3.
+4. **`down`: none.** `api/migrations/` is forward-only (no `.down.sql` exists, measured 2026-10-27). Undoing it is a
+   new forward migration that cancels every live binding quote, releases its reservations, re-adds
+   `CHECK (type = 'INDICATIVE')` and drops `binding_quote_ttl_seconds`; it loses every binding quote issued and the
+   lifetime setting.
 
-**Owner approval needed before merge** (a schema change).
+**Owner approval:** given 2026-10-27 (#564 issuecomment-6439994453: *"BQ-0 to BQ-7, migration approved"*).
 
 ---
 
@@ -266,7 +266,7 @@ classDiagram
 | BQ-4 | validity by type at confirm and complete (D-3), Q8–Q11, Q17, Q18 | `api/src/application/workflows/exchange/create.rs` · `api/tests/binding_validity_test.rs` | BQ-1 skeleton |
 | BQ-5 | command `bindingQuoteIssue` + policy area (D-12, D-13), Q1, Q13–Q15 | `api/src/presentation/http/v3/commands/binding_quote_issue.rs` · `api/crates/xc-auth/src/domain/policy/areas/binding_quote.rs` · `api/tests/v3_binding_quote_issue_test.rs` | BQ-3; BQ-7 |
 | BQ-6 | `BindingQuoteSubject`: AP-1 subject `BINDING_QUOTE` (D-15), registered (D-19), Q22, Q27 | `api/src/application/workflows/exchange/binding_approval.rs` · `api/src/bootstrap/approval_subjects/binding_quote.rs` · `api/tests/binding_approval_test.rs` | BQ-1 skeleton |
-| BQ-7 | `Permission::BindingQuoteIssue`: a no-module permission, in `RoleGrants::seed` for `Role::Teller` and `Role::BranchManager` only (D-13), registered as `(3, BindingQuoteIssue)` in `RoleGrants::SEED_ADDITIONS` with `SEED_VERSION` = 3 (D-18), Q14, Q15, Q28–Q30. **Must stay green:** #3976's gate `api/crates/xc-auth/tests/rbac_seed_version_test.rs` (its anti-forget test `every_permission_is_in_the_version_1_baseline_or_in_seed_additions` goes red if the permission is added without its `SEED_ADDITIONS` entry) | `api/crates/xc-auth/src/domain/access/permission.rs` · `api/crates/xc-auth/src/domain/access/permission_module.rs` · `api/crates/xc-auth/src/domain/access/role_grants.rs` · `api/crates/xc-auth/tests/binding_quote_permission_test.rs` | **#3976 merged first**: it adds `SEED_VERSION`, `SEED_ADDITIONS` and `seed_additions`, and it also edits `role_grants.rs`, so BQ-7 follows it and rebases over it; without it the new permission reaches no existing group. ⚠️ the three xc-auth files are shared with the RBAC lane, so check open PRs on them at release (`gh pr list --json files`) |
+| BQ-7 | `Permission::BindingQuoteIssue`: a no-module permission, in `RoleGrants::seed` for `Role::Teller` and `Role::BranchManager` only (D-13), registered as `(6, BindingQuoteIssue)` in `RoleGrants::SEED_ADDITIONS` with `SEED_VERSION` = 6 (D-18), Q14, Q15, Q28–Q30. **Must stay green:** #3976's gate `api/crates/xc-auth/tests/rbac_seed_version_test.rs` (its anti-forget test `every_permission_is_in_the_version_1_baseline_or_in_seed_additions` goes red if the permission is added without its `SEED_ADDITIONS` entry) | `api/crates/xc-auth/src/domain/access/permission.rs` · `api/crates/xc-auth/src/domain/access/permission_module.rs` · `api/crates/xc-auth/src/domain/access/role_grants.rs` · `api/crates/xc-auth/tests/binding_quote_permission_test.rs` | **#3976 merged first**: it adds `SEED_VERSION`, `SEED_ADDITIONS` and `seed_additions`, and it also edits `role_grants.rs`, so BQ-7 follows it and rebases over it; without it the new permission reaches no existing group. ⚠️ the three xc-auth files are shared with the RBAC lane, so check open PRs on them at release (`gh pr list --json files`) |
 
 Registration lines (not locked): the approval subject needs none (build-generated, D-19); `xc-exchange/src/domain/quote/mod.rs`, `xc-exchange/src/infrastructure/mod.rs`, `api/src/application/workflows/exchange/mod.rs`, the commands registry, the policy areas registry.
 
@@ -296,3 +296,22 @@ Source (O-5's cap, 2026-10-20: in its row): the owner, 2026-10-19, verbatim (cla
 | O-8 | Must a binding quote name a customer? | **A.** Yes, a verified customer. | D-17; Q25, Q26 |
 
 **Class (proposed):** BQ-0 `class:guarded` (schema); BQ-1, BQ-3, BQ-4, BQ-6 `class:logic` (lock, stock and approval rules); BQ-2, BQ-5 `class:logic`; BQ-7 `class:guarded` (a permission).
+
+---
+
+## 10. Skeleton on `feat/binding-quote` (sub-controller claude/644b3958, 2026-10-27)
+
+Where the skeleton differs from §5 / §7, and why. Internal names; no rule above changes.
+
+| Item | §5 / §7 said | Skeleton | Why |
+|---|---|---|---|
+| `QuoteType` field | BQ-1 changes `quote_type: String` | the skeleton changes it, with `as_str`/`parse_db`, the repository and the DTO | a `todo!()` there would break every existing quote test |
+| `PgBindingSettings` | `xc-exchange/src/infrastructure/binding_settings_repository.rs` | `xc-exchange/src/infrastructure/quote/binding_settings.rs` | the crate's infrastructure is one folder per aggregate |
+| `BindingQuotePolicy::check_customer` | `(readiness, now)` | `(verified_until: Option<DateTime>, now)` | `xc-exchange` does not depend on `xc-verification`; BQ-3 maps `Readiness::Verified { until }` to `Some(until)` and every other answer to `None` |
+| `QuoteService::price_in` | `(tx, req, QuoteType)` | `(tx, req, who, now, coupon_code, QuoteTerms)`, `QuoteTerms::{Indicative, Binding { ttl }}` | a binding quote's `expires_at` is `now + binding ttl` (D-10), not the indicative TTL |
+| The approval's object | not said | `object_id` = `binding_approval::proposal_id(req, coupon)`, sha256 of the canonical request; `version_hash` = `object_id`; `on_decided` writes nothing | no quote exists while the request waits; a changed request is another proposal, so the retry that names a request of another proposal is `staleVersion` (Q22) |
+| Who decides | "BRANCH_MANAGER of the branch" | `Permission::ApproveExchangeTransaction` on a row covering the request's branch (RBAC §11.9) | O-5 A reuses T2, and T2's decider is that permission since RBAC §11.9 |
+| `Permission::BindingQuoteIssue` | BQ-7 adds it | the skeleton adds the variant and its no-module arm (the policy area needs it to compile); BQ-7 adds it to `ALL`, the seed and `SEED_ADDITIONS` | the area row and the command are in the skeleton |
+| Policy area, command file | BQ-5 | the skeleton (`areas/binding_quote.rs`, `commands/binding_quote_issue.rs` with `run` = `todo!()`) | every registry line lands in the skeleton; BQ-5 writes `run` |
+| D-6 replace | "a new quote … cancels the old one" | `BindingIssueRequest.replaces: Option<Uuid>` | the issuer names the quote it replaces |
+| D-15 retry | "names the APPROVED request" | `BindingIssueRequest.approval_request_id`; PENDING ⇒ `ApprovalRequired(id)`; REJECTED ⇒ `approvalRejected`; another proposal ⇒ `staleVersion` | Q22 |

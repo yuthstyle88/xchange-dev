@@ -5,6 +5,7 @@ use uuid::Uuid;
 use xc_kernel::ids::BranchId;
 
 use super::quote_line::QuoteLine;
+use super::quote_type::QuoteType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuoteStatus {
@@ -86,7 +87,7 @@ pub struct Quote {
     pub organization_id: Uuid,
     pub branch_id: BranchId,
     pub customer_id: Option<String>,
-    pub quote_type: String,
+    pub quote_type: QuoteType,
     pub channel: QuoteChannel,
     pub status: QuoteStatus,
     pub publication_id: Uuid,
@@ -102,6 +103,9 @@ pub struct Quote {
 }
 
 impl Quote {
+    /// D-3 (`binding-quote.md`): one rule chosen by type. `Indicative`: `now < expires_at` and the publication is
+    /// the branch's current one. `Binding`: `now < expires_at`, whatever is published since (O-4 A). BQ-1 adds
+    /// the `Binding` arm; until then every quote is judged as `Indicative`.
     pub fn is_valid(&self, now: DateTime<Utc>, current_publication: Uuid) -> bool {
         now < self.expires_at && self.publication_id == current_publication
     }
