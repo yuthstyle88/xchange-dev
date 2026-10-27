@@ -3,13 +3,12 @@
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::Transaction;
+use uuid::Uuid;
 use xc_auth::domain::access::actor::Actor;
-use xc_auth::domain::access::authorizer::{Authorizer, Target};
-use xc_auth::domain::access::permission::Permission;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher, Sealed};
+use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher};
 
 use crate::domain::customer::commands::reserve_customer::ReserveCustomer;
 use crate::domain::customer::entities::customer::Customer;
@@ -282,85 +281,32 @@ impl CustomerService {
             .await
     }
 
-    pub async fn reveal(
+    /// K8 (`customer-identity-consent.md` §4.3, §4.4): the plain value of one ACTIVE identity of `customer_id`, for
+    /// `reason`. Needs `IdentityDocumentRead` at `branch`; writes one `audit_events` row (`identityReveal`) in `tx`
+    /// holding the actor, customer id, identity id, identity type and reason, never the value, its last 4 or its hash.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn reveal_in(
         &self,
+        tx: &mut Transaction<'_, sqlx::Postgres>,
         actor: &Actor,
         branch: &BranchId,
         customer_id: &str,
+        identity_id: Uuid,
         reason: &str,
         now: DateTime<Utc>,
-    ) -> AppResult<String> {
-        let org_id = self.repo.organization_of_branch(branch).await?;
-
-        let target = Target::new(&org_id.to_string(), Some(branch.clone()), None);
-        let grant = Authorizer::check(Some(actor), Permission::IdentityDocumentRead, &target, now)
-            .map_err(|_| AppError::Forbidden)?;
-
-        let row: Option<(Vec<u8>, String)> = sqlx::query_as(
-            "SELECT encrypted_value, key_id FROM customer_identities \
-             WHERE organization_id = $1 AND customer_id = $2 AND type = 'PASSPORT' AND status = 'ACTIVE' \
-             LIMIT 1",
-        )
-        .bind(org_id)
-        .bind(customer_id)
-        .fetch_optional(self.repo.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        let (encrypted_value, key_id) = row.ok_or_else(|| AppError::NotFound {
-            entity: "customer_identity",
-            id: customer_id.to_string(),
-        })?;
-
-        let keys = get_pii_keys()?;
-        let cipher = PiiCipher::new(keys);
-        let aad = format!("{customer_id}PASSPORT");
-        let sealed = Sealed {
-            key_id,
-            bytes: encrypted_value,
-        };
-        let decrypted = cipher
-            .decrypt(aad.as_bytes(), &sealed)
-            .map_err(|e| AppError::Internal(format!("decrypt failed: {e}")))?;
-
-        let val: serde_json::Value = serde_json::from_slice(&decrypted)
-            .map_err(|e| AppError::Internal(format!("invalid JSON payload: {e}")))?;
-
-        let passport_number = val
-            .get("number")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                AppError::Internal("missing passport number in decrypted payload".to_string())
-            })?
-            .to_string();
-
-        let role_str = grant
-            .roles_used
-            .first()
-            .map(|r| r.as_str())
-            .unwrap_or("TELLER");
-
-        sqlx::query(
-            "INSERT INTO audit_events ( \
-                 actor_id, actor_role, scope, branch_id, action, \
-                 object_ref, before_redacted, after_redacted, at \
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-        )
-        .bind(&actor.user_id)
-        .bind(role_str)
-        .bind("BRANCH")
-        .bind(branch.as_str())
-        .bind("identityReveal")
-        .bind(customer_id)
-        .bind(Option::<serde_json::Value>::None)
-        .bind(Some(serde_json::json!({ "reason": reason })))
-        .bind(now)
-        .execute(self.repo.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(passport_number)
+    ) -> AppResult<RevealedIdentity> {
+        let _ = (tx, actor, branch, customer_id, identity_id, reason, now);
+        todo!("K8: reveal one identity by id (feat/be-gaps-b)")
     }
+}
+
+/// K8: what `reveal_in` answers. `identity_type` is the stored `customer_identities.type` (`PASSPORT`,
+/// `NATIONAL_ID`, `PHONE`, `EMAIL`); `value` is the plain document number, phone or e-mail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevealedIdentity {
+    pub identity_id: Uuid,
+    pub identity_type: String,
+    pub value: String,
 }
 
 /// TX-4 #672 Q1 = B: what create needs of a customer.

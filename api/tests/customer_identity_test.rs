@@ -461,16 +461,29 @@ async fn reveal_needs_identity_document_read_and_writes_one_audit_row_without_th
         )
         .await
         .expect("reserve");
+    // Restated for K8 (feat/be-gaps-b, claude/2ef7d5a6): `reveal` became `reveal_in(tx, …, identity_id, …)`,
+    // answering `RevealedIdentity`; the assertions are unchanged.
+    let identity_id: uuid::Uuid = sqlx::query_scalar(
+        "SELECT id FROM customer_identities WHERE customer_id = $1 AND type = 'PASSPORT'",
+    )
+    .bind(&reserved.customer_id)
+    .fetch_one(&db.pool)
+    .await
+    .expect("the passport identity");
     let marketing = db.actor(Role::Marketing).await;
+    let mut tx = db.pool.begin().await.expect("begin");
     let refused = s
-        .reveal(
+        .reveal_in(
+            &mut tx,
             &marketing,
             &BranchId::new("MAIN"),
             &reserved.customer_id,
+            identity_id,
             "checking",
             at(1),
         )
         .await;
+    tx.rollback().await.expect("rollback");
     assert!(
         refused.is_err(),
         "MARKETING never holds IdentityDocumentRead"
@@ -482,16 +495,21 @@ async fn reveal_needs_identity_document_read_and_writes_one_audit_row_without_th
     );
 
     let teller = db.actor(Role::Teller).await;
+    let mut tx = db.pool.begin().await.expect("begin");
     let value = s
-        .reveal(
+        .reveal_in(
+            &mut tx,
             &teller,
             &BranchId::new("MAIN"),
             &reserved.customer_id,
+            identity_id,
             "the customer asked",
             at(2),
         )
         .await
-        .expect("TELLER holds IdentityDocumentRead");
+        .expect("TELLER holds IdentityDocumentRead")
+        .value;
+    tx.commit().await.expect("commit");
     assert_eq!(value, "AA1234567", "the ACTIVE passport's number");
 
     assert_eq!(

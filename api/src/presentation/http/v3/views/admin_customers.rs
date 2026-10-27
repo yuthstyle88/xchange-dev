@@ -214,6 +214,10 @@ impl PagedView for AdminCustomersPagedView {
                     last_at: r
                         .last_at
                         .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+                    // Skeleton (feat/be-gaps-b): E-4 computes these from the 12 rolling months.
+                    rfm_completed: 0,
+                    rfm_volume: "0.00".to_string(),
+                    rfm_last_at: None,
                 });
             }
 
