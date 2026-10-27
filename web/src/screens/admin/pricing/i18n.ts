@@ -114,6 +114,8 @@ export const th = {
   'displayFrom.branch': 'ตั้งของสาขานี้',
   'displayFrom.MAIN': 'ใช้ของ MAIN',
   'displayFrom.default': 'ค่าเริ่มต้น',
+  closeDetail: 'ปิด',
+  marketRefreshFailed: 'ดึงราคา {source} ไม่สำเร็จ',
 };
 
 export const en: typeof th = {
@@ -226,4 +228,6 @@ export const en: typeof th = {
   'displayFrom.branch': 'Set for this branch',
   'displayFrom.MAIN': "MAIN's setting",
   'displayFrom.default': 'Default',
+  closeDetail: 'Close',
+  marketRefreshFailed: 'Could not fetch {source}',
 };
