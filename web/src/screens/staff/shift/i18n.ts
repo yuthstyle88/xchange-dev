@@ -22,6 +22,14 @@ export const th: Record<string, string> = {
   approvalRequest: 'คำขออนุมัติ',
   qtyWholeMin0: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป',
   qtyTooLarge: 'จำนวนเกินค่าสูงสุดที่กำหนด',
+  OPEN: 'เปิดกะ',
+  CLOSE: 'ปิดกะ',
+  HANDOVER_OUT: 'ส่งมอบเงินออก',
+  HANDOVER_IN: 'รับมอบเงินเข้า',
+  kind_OPEN: 'เปิดกะ',
+  kind_CLOSE: 'ปิดกะ',
+  kind_HANDOVER_OUT: 'ส่งมอบเงินออก',
+  kind_HANDOVER_IN: 'รับมอบเงินเข้า',
 };
 
 export const en: Record<string, string> = {
@@ -47,4 +55,12 @@ export const en: Record<string, string> = {
   approvalRequest: 'Approval request',
   qtyWholeMin0: 'Quantity must be a whole number of at least 0',
   qtyTooLarge: 'Quantity exceeds the maximum allowed',
+  OPEN: 'Open',
+  CLOSE: 'Close',
+  HANDOVER_OUT: 'Hand Over Out',
+  HANDOVER_IN: 'Hand Over In',
+  kind_OPEN: 'Open',
+  kind_CLOSE: 'Close',
+  kind_HANDOVER_OUT: 'Hand Over Out',
+  kind_HANDOVER_IN: 'Hand Over In',
 };
