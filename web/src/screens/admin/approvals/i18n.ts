@@ -30,6 +30,8 @@ export const th = {
   decidedAt: 'เวลาที่พิจารณา: ',
   noDecisionRecord: 'ไม่พบข้อมูลการตัดสินใจ',
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
+  withinLimit: 'อยู่ในวงเงิน',
+  aboveLimit: 'เกินวงเงิน — ผู้บริหารตัดสิน',
 };
 
 export const en = {
@@ -64,4 +66,6 @@ export const en = {
   decidedAt: 'Decided at: ',
   noDecisionRecord: 'No decision record',
   connectionError: 'Connection error',
+  withinLimit: 'Within the limit',
+  aboveLimit: 'Above the limit — an executive decides',
 };
