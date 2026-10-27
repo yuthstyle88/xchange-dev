@@ -34,13 +34,51 @@ pub async fn purge_round(
     sessions: &PgExpiredSessions,
     now: DateTime<Utc>,
 ) -> PurgeRound {
-    let _ = (retention, sessions, now);
-    todo!("ticket 4: run both purges")
+    let retention = retention.purge(now).await;
+    let sessions = sessions.purge_before(now).await;
+    PurgeRound {
+        retention,
+        sessions,
+    }
 }
 
 /// Runs `purge_round` at once and then every `every` with the time of that round, logging each result (a failed
 /// round is logged and waited out), until `stop` holds `true` or its sender is dropped.
-pub async fn run(pool: PgPool, every: Duration, stop: watch::Receiver<bool>) {
-    let _ = (pool, every, stop);
-    todo!("ticket 4: the timer loop")
+pub async fn run(pool: PgPool, every: Duration, mut stop: watch::Receiver<bool>) {
+    if *stop.borrow() {
+        return;
+    }
+    let retention = retention_job(pool.clone());
+    let sessions = PgExpiredSessions::new(pool);
+    let mut rounds = tokio::time::interval(every);
+    rounds.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            changed = stop.changed() => {
+                if changed.is_err() || *stop.borrow() {
+                    break;
+                }
+            }
+            _ = rounds.tick() => {
+                if *stop.borrow() {
+                    break;
+                }
+                let round = purge_round(&retention, &sessions, Utc::now()).await;
+                match round.retention {
+                    Ok(rows) => tracing::info!(rows, "purged expired customer data"),
+                    Err(error) => tracing::error!(
+                        error = %error,
+                        "the retention purge failed; the next round will try again"
+                    ),
+                }
+                match round.sessions {
+                    Ok(rows) => tracing::info!(rows, "purged expired user sessions"),
+                    Err(error) => tracing::error!(
+                        error = %error,
+                        "the purge of expired user sessions failed; the next round will try again"
+                    ),
+                }
+            }
+        }
+    }
 }
