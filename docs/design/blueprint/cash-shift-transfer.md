@@ -273,7 +273,7 @@ was the commit of a v2 OPEN request (`custody_machine.rs:533`), which CA-10 dele
 | an exchange posts to the saver's own OPEN shift; no open shift → `noOpenShift` | `save_transaction.rs` (C1) |
 | after cut-off, a save needs the saver's own OPEN draft (kept rule, `custody_machine.rs:1194-1214`) | `BranchDay::check_save` |
 | transfer: only §06's five states; a refused approval leaves it DRAFT; creator ≠ approver (core); dispatch only from APPROVED; receive only by the destination; reconcile only RECEIVED, by FINANCE, not the creator or the receiver | `TransferFlow` |
-| a move out of a drawer or the safe cannot exceed its expected balance (`stockInsufficient`) | `TransferFlow::dispatch` via the posting port |
+| a move out of a drawer or the safe beyond its expected balance is refused `stockInsufficient` unless the branch's BRANCH_MANAGER approved a `NEGATIVE_STOCK` request for this transfer (owner R1, 2026-10-27: `ledger-inventory.md` N-1 wins; §5.1 there) | `TransferFlow::dispatch_approved_in` via the posting port; `TransferDispatch` opens the request |
 
 ### 4.4 Commands (C8)
 

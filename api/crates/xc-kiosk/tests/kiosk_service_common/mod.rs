@@ -463,6 +463,13 @@ impl KioskPorts for FakePorts {
                     "reason": reason.as_str(),
                     "note": reason.note(),
                 }),
+                KioskAudit::CustomerDiffers {
+                    saved_customer,
+                    request_customer,
+                } => json!({
+                    "savedCustomerId": saved_customer,
+                    "requestCustomerId": request_customer,
+                }),
             };
             sqlx::query(
                 "INSERT INTO test_audit (branch_id, actor, kind, subject, detail, at) \

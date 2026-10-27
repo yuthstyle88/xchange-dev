@@ -206,9 +206,10 @@ async fn load(pool: &PgPool, branch: &BranchId) -> CustodyState {
 /// The seed every test below writes is what `load_state` reads back.
 #[tokio::test]
 async fn seed_is_what_load_state_answers() {
+    let db = TestDb::start().await;
+    let s = seeded(&db, "seed", 5).await;
+
     within("seed is what load_state answers", async {
-        let db = TestDb::start().await;
-        let s = seeded(&db, "seed", 5).await;
         let loaded = load(&db.pool, &s.branch).await;
         assert_eq!(loaded.holds.len(), 5);
         assert_eq!(loaded.attendance.len(), 5);
@@ -222,11 +223,11 @@ async fn seed_is_what_load_state_answers() {
 
 #[tokio::test]
 async fn t_p1_requests_holds_and_attendance_come_newest_first_by_position() {
-    within("T-P1", async {
-        let db = TestDb::start().await;
-        let s = seeded(&db, "tp1", 5).await;
-        let p = pages(&db);
+    let db = TestDb::start().await;
+    let s = seeded(&db, "tp1", 5).await;
+    let p = pages(&db);
 
+    within("T-P1", async {
         let holds = p.holds(&s.branch, None, 50).await.expect("holds");
         assert!(
             holds == newest_first(&s.state.holds),
@@ -250,18 +251,18 @@ async fn t_p1_requests_holds_and_attendance_come_newest_first_by_position() {
 /// position with an earlier time and a smaller id still comes first.
 #[tokio::test]
 async fn t_p1_position_decides_newest_not_time_or_id() {
-    within("T-P1 position", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("tp1pos").await;
-        let tag = unique("tp1pos");
-        let mut s = state();
-        s.holds = vec![
-            hold(&format!("{tag}-b"), 5 * MINUTE, HoldStatus::Open),
-            hold(&format!("{tag}-c"), 9 * MINUTE, HoldStatus::Open),
-            hold(&format!("{tag}-a"), MINUTE, HoldStatus::Open),
-        ];
-        store(&db.pool, &branch, &s).await;
+    let db = TestDb::start().await;
+    let branch = db.branch("tp1pos").await;
+    let tag = unique("tp1pos");
+    let mut s = state();
+    s.holds = vec![
+        hold(&format!("{tag}-b"), 5 * MINUTE, HoldStatus::Open),
+        hold(&format!("{tag}-c"), 9 * MINUTE, HoldStatus::Open),
+        hold(&format!("{tag}-a"), MINUTE, HoldStatus::Open),
+    ];
+    store(&db.pool, &branch, &s).await;
 
+    within("T-P1 position", async {
         let got = pages(&db).holds(&branch, None, 50).await.expect("holds");
         assert_eq!(
             ids(&got, |h| &h.id),
@@ -276,12 +277,12 @@ async fn t_p1_position_decides_newest_not_time_or_id() {
 
 #[tokio::test]
 async fn t_p2_before_resumes_strictly_after_the_given_id() {
-    within("T-P2", async {
-        let db = TestDb::start().await;
-        let s = seeded(&db, "tp2", 5).await;
-        let p = pages(&db);
-        let b = &s.branch;
+    let db = TestDb::start().await;
+    let s = seeded(&db, "tp2", 5).await;
+    let p = pages(&db);
+    let b = &s.branch;
 
+    within("T-P2", async {
         let h = &s.state.holds;
         let got = p.holds(b, Some(&h[3].id), 50).await.expect("holds");
         assert!(
@@ -306,12 +307,12 @@ async fn t_p2_before_resumes_strictly_after_the_given_id() {
 
 #[tokio::test]
 async fn t_p2_before_the_last_row_answers_an_empty_page() {
-    within("T-P2 last", async {
-        let db = TestDb::start().await;
-        let s = seeded(&db, "tp2last", 3).await;
-        let p = pages(&db);
-        let b = &s.branch;
+    let db = TestDb::start().await;
+    let s = seeded(&db, "tp2last", 3).await;
+    let p = pages(&db);
+    let b = &s.branch;
 
+    within("T-P2 last", async {
         let oldest_hold = &s.state.holds[0].id;
         let oldest_att = &s.state.attendance[0].id;
         assert!(
@@ -332,13 +333,13 @@ async fn t_p2_before_the_last_row_answers_an_empty_page() {
 
 #[tokio::test]
 async fn t_p2_an_unknown_before_id_answers_an_empty_page() {
-    within("T-P2 unknown", async {
-        let db = TestDb::start().await;
-        let s = seeded(&db, "tp2unknown", 3).await;
-        let p = pages(&db);
-        let b = &s.branch;
-        let unknown = unique("no-such-row");
+    let db = TestDb::start().await;
+    let s = seeded(&db, "tp2unknown", 3).await;
+    let p = pages(&db);
+    let b = &s.branch;
+    let unknown = unique("no-such-row");
 
+    within("T-P2 unknown", async {
         assert!(
             p.holds(b, Some(&unknown), 50)
                 .await
@@ -359,12 +360,12 @@ async fn t_p2_an_unknown_before_id_answers_an_empty_page() {
 
 #[tokio::test]
 async fn t_p3_limit_is_honoured() {
-    within("T-P3", async {
-        let db = TestDb::start().await;
-        let s = seeded(&db, "tp3", 5).await;
-        let p = pages(&db);
-        let b = &s.branch;
+    let db = TestDb::start().await;
+    let s = seeded(&db, "tp3", 5).await;
+    let p = pages(&db);
+    let b = &s.branch;
 
+    within("T-P3", async {
         let h = &s.state.holds;
         let holds = p.holds(b, None, 3).await.expect("holds");
         assert!(holds == vec![h[4].clone(), h[3].clone(), h[2].clone()]);
@@ -380,13 +381,13 @@ async fn t_p3_limit_is_honoured() {
 
 #[tokio::test]
 async fn t_p4_another_branchs_rows_are_never_answered() {
-    within("T-P4", async {
-        let db = TestDb::start().await;
-        let mine = seeded(&db, "tp4mine", 3).await;
-        let other = seeded(&db, "tp4other", 4).await;
-        let p = pages(&db);
-        let b = &mine.branch;
+    let db = TestDb::start().await;
+    let mine = seeded(&db, "tp4mine", 3).await;
+    let other = seeded(&db, "tp4other", 4).await;
+    let p = pages(&db);
+    let b = &mine.branch;
 
+    within("T-P4", async {
         let got = p.holds(b, None, 50).await.expect("holds");
         assert!(got == newest_first(&mine.state.holds));
         let got = p.attendance(b, None, None, 50).await.expect("attendance");
@@ -428,30 +429,30 @@ async fn t_p4_another_branchs_rows_are_never_answered() {
 
 #[tokio::test]
 async fn t_p4_floor_answers_only_its_own_branch() {
+    let db = TestDb::start().await;
+    let mine = db.branch("tp4floor").await;
+    let other = db.branch("tp4floorother").await;
+    let tag = unique("tp4floor");
+
+    let mut s = state();
+    s.phase = Phase::Ready;
+    s.attendance = vec![attendance(&format!("{tag}-mine"), "me", 0, Some(MINUTE))];
+    store(&db.pool, &mine, &s).await;
+
+    let mut o = state();
+    o.phase = Phase::CutOff;
+    o.attendance = vec![attendance(&format!("{tag}-other"), "me", 2 * MINUTE, None)];
+    store(&db.pool, &other, &o).await;
+    db.seed_open_shift(
+        &other,
+        "F1",
+        "req-other",
+        &[],
+        shift_service_common::at(0, 0),
+    )
+    .await;
+
     within("T-P4 floor", async {
-        let db = TestDb::start().await;
-        let mine = db.branch("tp4floor").await;
-        let other = db.branch("tp4floorother").await;
-        let tag = unique("tp4floor");
-
-        let mut s = state();
-        s.phase = Phase::Ready;
-        s.attendance = vec![attendance(&format!("{tag}-mine"), "me", 0, Some(MINUTE))];
-        store(&db.pool, &mine, &s).await;
-
-        let mut o = state();
-        o.phase = Phase::CutOff;
-        o.attendance = vec![attendance(&format!("{tag}-other"), "me", 2 * MINUTE, None)];
-        store(&db.pool, &other, &o).await;
-        db.seed_open_shift(
-            &other,
-            "F1",
-            "req-other",
-            &[],
-            shift_service_common::at(0, 0),
-        )
-        .await;
-
         let FloorFacts {
             ops,
             my_open_attendance,
@@ -483,12 +484,12 @@ async fn t_p4_floor_answers_only_its_own_branch() {
 
 #[tokio::test]
 async fn t_p5_attendance_only_e_answers_es_records_only() {
-    within("T-P5", async {
-        let db = TestDb::start().await;
-        let s = seeded(&db, "tp5", 7).await;
-        let p = pages(&db);
-        let b = &s.branch;
+    let db = TestDb::start().await;
+    let s = seeded(&db, "tp5", 7).await;
+    let p = pages(&db);
+    let b = &s.branch;
 
+    within("T-P5", async {
         let of = |e: &str| -> Vec<Attendance> {
             s.state
                 .attendance
@@ -544,29 +545,29 @@ async fn t_p5_attendance_only_e_answers_es_records_only() {
 
 #[tokio::test]
 async fn t_p7_between_includes_from_and_excludes_to() {
-    within("T-P7", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("tp7").await;
-        let tag = unique("tp7");
-        let from = 60 * MINUTE;
-        let to = 120 * MINUTE;
-        // (name, time after T0), stored in this order
-        let times = [
-            ("before-from", from - 1),
-            ("at-from", from),
-            ("inside", from + 1),
-            ("last-inside", to - 1),
-            ("at-to", to),
-            ("after-to", to + 1),
-        ];
-        let mut s = state();
-        s.exceptions = times
-            .iter()
-            .map(|(n, at)| exception(&format!("{tag}-x-{n}"), *at))
-            .collect();
-        store(&db.pool, &branch, &s).await;
-        let p = pages(&db);
+    let db = TestDb::start().await;
+    let branch = db.branch("tp7").await;
+    let tag = unique("tp7");
+    let from = 60 * MINUTE;
+    let to = 120 * MINUTE;
+    // (name, time after T0), stored in this order
+    let times = [
+        ("before-from", from - 1),
+        ("at-from", from),
+        ("inside", from + 1),
+        ("last-inside", to - 1),
+        ("at-to", to),
+        ("after-to", to + 1),
+    ];
+    let mut s = state();
+    s.exceptions = times
+        .iter()
+        .map(|(n, at)| exception(&format!("{tag}-x-{n}"), *at))
+        .collect();
+    store(&db.pool, &branch, &s).await;
+    let p = pages(&db);
 
+    within("T-P7", async {
         let got = p
             .exceptions_between(&branch, T0 + from, T0 + to)
             .await
@@ -592,19 +593,19 @@ async fn t_p7_between_includes_from_and_excludes_to() {
 /// comes after.
 #[tokio::test]
 async fn t_p7_between_comes_in_position_order() {
-    within("T-P7 order", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("tp7order").await;
-        let tag = unique("tp7order");
-        let mut s = state();
-        s.exceptions = vec![
-            exception(&format!("{tag}-x0"), 30 * MINUTE),
-            exception(&format!("{tag}-x1"), 10 * MINUTE),
-            exception(&format!("{tag}-x2"), 20 * MINUTE),
-        ];
-        store(&db.pool, &branch, &s).await;
-        let p = pages(&db);
+    let db = TestDb::start().await;
+    let branch = db.branch("tp7order").await;
+    let tag = unique("tp7order");
+    let mut s = state();
+    s.exceptions = vec![
+        exception(&format!("{tag}-x0"), 30 * MINUTE),
+        exception(&format!("{tag}-x1"), 10 * MINUTE),
+        exception(&format!("{tag}-x2"), 20 * MINUTE),
+    ];
+    store(&db.pool, &branch, &s).await;
+    let p = pages(&db);
 
+    within("T-P7 order", async {
         let got = p
             .exceptions_between(&branch, T0, T0 + DAY)
             .await
@@ -618,41 +619,41 @@ async fn t_p7_between_comes_in_position_order() {
 
 #[tokio::test]
 async fn t_p8_open_holds_counts_open_holds_of_every_day_and_no_released_one() {
+    let db = TestDb::start().await;
+    let branch = db.branch("tp8").await;
+    let other = db.branch("tp8other").await;
+    let tag = unique("tp8");
+
+    let mut s = state();
+    s.holds = vec![
+        hold(&format!("{tag}-open-day-1"), 0, HoldStatus::Open),
+        hold(
+            &format!("{tag}-released-day-1"),
+            MINUTE,
+            HoldStatus::Released,
+        ),
+        hold(&format!("{tag}-open-day-9"), 8 * DAY, HoldStatus::Open),
+        hold(
+            &format!("{tag}-released-day-30"),
+            29 * DAY,
+            HoldStatus::Released,
+        ),
+        hold(&format!("{tag}-open-day-40"), 39 * DAY, HoldStatus::Open),
+    ];
+    store(&db.pool, &branch, &s).await;
+
+    let mut o = state();
+    o.holds = vec![
+        hold(&format!("{tag}-other-open"), 0, HoldStatus::Open),
+        hold(&format!("{tag}-other-open-2"), DAY, HoldStatus::Open),
+    ];
+    store(&db.pool, &other, &o).await;
+    let empty = db.branch("tp8empty").await;
+    let p = pages(&db);
+
     within("T-P8", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("tp8").await;
-        let other = db.branch("tp8other").await;
-        let tag = unique("tp8");
-
-        let mut s = state();
-        s.holds = vec![
-            hold(&format!("{tag}-open-day-1"), 0, HoldStatus::Open),
-            hold(
-                &format!("{tag}-released-day-1"),
-                MINUTE,
-                HoldStatus::Released,
-            ),
-            hold(&format!("{tag}-open-day-9"), 8 * DAY, HoldStatus::Open),
-            hold(
-                &format!("{tag}-released-day-30"),
-                29 * DAY,
-                HoldStatus::Released,
-            ),
-            hold(&format!("{tag}-open-day-40"), 39 * DAY, HoldStatus::Open),
-        ];
-        store(&db.pool, &branch, &s).await;
-
-        let mut o = state();
-        o.holds = vec![
-            hold(&format!("{tag}-other-open"), 0, HoldStatus::Open),
-            hold(&format!("{tag}-other-open-2"), DAY, HoldStatus::Open),
-        ];
-        store(&db.pool, &other, &o).await;
-
-        let p = pages(&db);
         assert_eq!(p.open_holds(&branch).await.expect("open_holds"), 3);
         assert_eq!(p.open_holds(&other).await.expect("open_holds"), 2);
-        let empty = db.branch("tp8empty").await;
         assert_eq!(p.open_holds(&empty).await.expect("open_holds"), 0);
     })
     .await;
@@ -662,21 +663,21 @@ async fn t_p8_open_holds_counts_open_holds_of_every_day_and_no_released_one() {
 
 #[tokio::test]
 async fn floor_answers_the_ops_row_and_my_open_attendance() {
-    within("floor", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("floor").await;
-        let tag = unique("floor");
-        let mut s = state();
-        s.phase = Phase::CutOff;
-        s.cutoff = Some(cutoff("the-custodian"));
-        let mine = attendance(&format!("{tag}-me-open"), "me", 3 * MINUTE, None);
-        s.attendance = vec![
-            attendance(&format!("{tag}-me-old"), "me", 0, Some(MINUTE)),
-            mine.clone(),
-            attendance(&format!("{tag}-you"), "you", 4 * MINUTE, None),
-        ];
-        store(&db.pool, &branch, &s).await;
+    let db = TestDb::start().await;
+    let branch = db.branch("floor").await;
+    let tag = unique("floor");
+    let mut s = state();
+    s.phase = Phase::CutOff;
+    s.cutoff = Some(cutoff("the-custodian"));
+    let mine = attendance(&format!("{tag}-me-open"), "me", 3 * MINUTE, None);
+    s.attendance = vec![
+        attendance(&format!("{tag}-me-old"), "me", 0, Some(MINUTE)),
+        mine.clone(),
+        attendance(&format!("{tag}-you"), "you", 4 * MINUTE, None),
+    ];
+    store(&db.pool, &branch, &s).await;
 
+    within("floor", async {
         let facts = pages(&db).floor(&branch, "me").await.expect("floor");
         let ops = facts.ops.expect("the branch has its ops_state row");
         assert_eq!(ops.phase, Phase::CutOff);
@@ -699,14 +700,14 @@ async fn floor_answers_the_ops_row_and_my_open_attendance() {
 
 #[tokio::test]
 async fn floor_answers_no_cutoff_when_the_branch_has_none() {
-    within("floor no cutoff", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("floornocut").await;
-        let mut s = state();
-        s.phase = Phase::Ready;
-        s.cutoff = None;
-        store(&db.pool, &branch, &s).await;
+    let db = TestDb::start().await;
+    let branch = db.branch("floornocut").await;
+    let mut s = state();
+    s.phase = Phase::Ready;
+    s.cutoff = None;
+    store(&db.pool, &branch, &s).await;
 
+    within("floor no cutoff", async {
         let facts = pages(&db).floor(&branch, "me").await.expect("floor");
         let ops = facts.ops.expect("the branch has its ops_state row");
         assert_eq!(ops.phase, Phase::Ready);
@@ -718,9 +719,10 @@ async fn floor_answers_no_cutoff_when_the_branch_has_none() {
 
 #[tokio::test]
 async fn floor_with_no_ops_state_row_answers_ops_none() {
+    let db = TestDb::start().await;
+    let branch = db.branch("floornoops").await;
+
     within("floor no ops", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("floornoops").await;
         let facts = pages(&db).floor(&branch, "me").await.expect("floor");
         assert!(facts.ops.is_none(), "a branch never stored has no ops row");
         assert!(facts.my_open_attendance.is_none());
@@ -732,18 +734,18 @@ async fn floor_with_no_ops_state_row_answers_ops_none() {
 /// make me clocked in.
 #[tokio::test]
 async fn floor_when_my_latest_attendance_has_clock_out_answers_none() {
-    within("floor latest closed", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("floorclosed").await;
-        let tag = unique("floorclosed");
-        let mut s = state();
-        s.attendance = vec![
-            attendance(&format!("{tag}-me-never-closed"), "me", 0, None),
-            attendance(&format!("{tag}-me-latest"), "me", MINUTE, Some(2 * MINUTE)),
-            attendance(&format!("{tag}-you-open"), "you", 3 * MINUTE, None),
-        ];
-        store(&db.pool, &branch, &s).await;
+    let db = TestDb::start().await;
+    let branch = db.branch("floorclosed").await;
+    let tag = unique("floorclosed");
+    let mut s = state();
+    s.attendance = vec![
+        attendance(&format!("{tag}-me-never-closed"), "me", 0, None),
+        attendance(&format!("{tag}-me-latest"), "me", MINUTE, Some(2 * MINUTE)),
+        attendance(&format!("{tag}-you-open"), "you", 3 * MINUTE, None),
+    ];
+    store(&db.pool, &branch, &s).await;
 
+    within("floor latest closed", async {
         let facts = pages(&db).floor(&branch, "me").await.expect("floor");
         assert!(facts.ops.is_some());
         assert!(
@@ -757,22 +759,22 @@ async fn floor_when_my_latest_attendance_has_clock_out_answers_none() {
 /// A `clockOut` that is absent from `data` is open, like a null one.
 #[tokio::test]
 async fn floor_reads_an_absent_clock_out_as_open() {
-    within("floor absent clockOut", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("floorabsent").await;
-        store(&db.pool, &branch, &state()).await;
-        let id = unique("floorabsent");
-        sqlx::query(
-            "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
-             VALUES ($1, $2, 0, 'me', $3)",
-        )
-        .bind(&id)
-        .bind(branch.as_str())
-        .bind(json!({ "role": "FRONT", "clockIn": T0 }))
-        .execute(&db.pool)
-        .await
-        .expect("insert an attendance row without clockOut");
+    let db = TestDb::start().await;
+    let branch = db.branch("floorabsent").await;
+    store(&db.pool, &branch, &state()).await;
+    let id = unique("floorabsent");
+    sqlx::query(
+        "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
+         VALUES ($1, $2, 0, 'me', $3)",
+    )
+    .bind(&id)
+    .bind(branch.as_str())
+    .bind(json!({ "role": "FRONT", "clockIn": T0 }))
+    .execute(&db.pool)
+    .await
+    .expect("insert an attendance row without clockOut");
 
+    within("floor absent clockOut", async {
         let facts = pages(&db).floor(&branch, "me").await.expect("floor");
         assert!(
             facts.my_open_attendance == Some(attendance(&id, "me", 0, None)),
@@ -856,59 +858,60 @@ async fn rows_read(one: &PgPool, schema: &str) -> BTreeMap<String, i64> {
 
 #[tokio::test]
 async fn t_p10_floor_reads_one_ops_row_and_at_most_one_attendance_row() {
+    let db = TestDb::start().await;
+    let branch = db.branch("tp10").await;
+    let one = one_connection(&db.schema).await;
+    let tag = unique("tp10");
+
+    let mut s = state();
+    s.cutoff = Some(cutoff("custodian"));
+    store(&one, &branch, &s).await;
+
+    sqlx::query(
+        "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
+         SELECT $1 || '-a' || g, $2, g, 'me', \
+                jsonb_build_object('role', 'FRONT', 'clockIn', $3::bigint + g * 60000, \
+                                   'clockOut', $3::bigint + g * 60000 + 30000) \
+         FROM generate_series(0, 9999) AS g",
+    )
+    .bind(&tag)
+    .bind(branch.as_str())
+    .bind(T0)
+    .execute(&one)
+    .await
+    .expect("seed 10,000 closed attendance records");
+    let open = attendance(&format!("{tag}-open"), "me", 10_000 * MINUTE, None);
+    sqlx::query(
+        "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
+         VALUES ($1, $2, 10000, 'me', $3)",
+    )
+    .bind(&open.id)
+    .bind(branch.as_str())
+    .bind(json!({ "role": "FRONT", "clockIn": T0 + 10_000 * MINUTE, "clockOut": null }))
+    .execute(&one)
+    .await
+    .expect("seed me's open record at the newest position");
+
+    // the seed decodes: what load_state reads is what was written
+    let loaded = load(&one, &branch).await;
+    assert_eq!(loaded.attendance.len(), 10_001);
+    assert_eq!(loaded.attendance.last(), Some(&open));
+    assert!(
+        loaded.attendance[..10_000]
+            .iter()
+            .all(|a| a.clock_out.is_some())
+    );
+
+    for table in TABLES {
+        sqlx::query(sqlx::AssertSqlSafe(format!("ANALYZE {table}")))
+            .execute(&one)
+            .await
+            .expect("analyze");
+    }
+
+    let p = PgCustodyPages::new(one.clone());
+
     within("T-P10", async {
-        let db = TestDb::start().await;
-        let branch = db.branch("tp10").await;
-        let one = one_connection(&db.schema).await;
-        let tag = unique("tp10");
-
-        let mut s = state();
-        s.cutoff = Some(cutoff("custodian"));
-        store(&one, &branch, &s).await;
-
-        sqlx::query(
-            "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
-             SELECT $1 || '-a' || g, $2, g, 'me', \
-                    jsonb_build_object('role', 'FRONT', 'clockIn', $3::bigint + g * 60000, \
-                                       'clockOut', $3::bigint + g * 60000 + 30000) \
-             FROM generate_series(0, 9999) AS g",
-        )
-        .bind(&tag)
-        .bind(branch.as_str())
-        .bind(T0)
-        .execute(&one)
-        .await
-        .expect("seed 10,000 closed attendance records");
-        let open = attendance(&format!("{tag}-open"), "me", 10_000 * MINUTE, None);
-        sqlx::query(
-            "INSERT INTO attendance (id, branch_id, position, employee_id, data) \
-             VALUES ($1, $2, 10000, 'me', $3)",
-        )
-        .bind(&open.id)
-        .bind(branch.as_str())
-        .bind(json!({ "role": "FRONT", "clockIn": T0 + 10_000 * MINUTE, "clockOut": null }))
-        .execute(&one)
-        .await
-        .expect("seed me's open record at the newest position");
-
-        // the seed decodes: what load_state reads is what was written
-        let loaded = load(&one, &branch).await;
-        assert_eq!(loaded.attendance.len(), 10_001);
-        assert_eq!(loaded.attendance.last(), Some(&open));
-        assert!(
-            loaded.attendance[..10_000]
-                .iter()
-                .all(|a| a.clock_out.is_some())
-        );
-
-        for table in TABLES {
-            sqlx::query(sqlx::AssertSqlSafe(format!("ANALYZE {table}")))
-                .execute(&one)
-                .await
-                .expect("analyze");
-        }
-
-        let p = PgCustodyPages::new(one.clone());
         let before = rows_read(&one, &db.schema).await;
         let facts = p.floor(&branch, "me").await.expect("floor");
         let after = rows_read(&one, &db.schema).await;

@@ -16,7 +16,7 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 
-use crate::application::workflows::documents::DocumentsLookup;
+use crate::application::workflows::documents::{DocumentsLookup, ending};
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::FileService;
 use crate::presentation::dto::v3::transaction_documents::{
@@ -33,18 +33,6 @@ struct TransactionDocumentsBranchView {
 impl TransactionDocumentsBranchView {
     fn new(lookup: DocumentsLookup) -> Self {
         Self { lookup }
-    }
-}
-
-fn ending(mime: &str) -> &'static str {
-    match mime {
-        "image/svg+xml" => "svg",
-        "image/jpeg" => "jpg",
-        "image/png" => "png",
-        "image/webp" => "webp",
-        "application/pdf" => "pdf",
-        "text/html" => "html",
-        _ => "bin",
     }
 }
 

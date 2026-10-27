@@ -89,6 +89,8 @@ becomes a test (§A.6).
   twice as well. `DocumentLink` gains `kind()` and `file_name(document_ref)`, and the new view uses them.
   `transaction_documents.rs` belongs to V2-parts (#476, merged). Re-pointing it at the shared functions is a
   follow-up ticket, not this one (♻️: an existing caller keeps its contract and is re-pointed later).
+  That follow-up is XC-BE-GAPS-A row 4 (2026-10-27): `documents::ending` becomes `pub`, and the copies in
+  `http/files.rs` (which lacked `svg`) and `views/transaction_documents.rs` are removed.
 - **D-A6. The ticket retires `http/documents.rs`.** `http::configure` is registered **before** `ScreenTable`
   (`bootstrap/mod.rs:92-93`), so while `documents.rs` is in place it answers both paths and the screen is never served.
   The ticket deletes the file and its lines in `http/mod.rs:9` and `:33`, and moves the page tests to the views. The 39-step

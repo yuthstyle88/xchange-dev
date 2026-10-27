@@ -9,4 +9,5 @@ pub mod person_rules;
 pub mod posting;
 pub mod repository;
 pub mod reservation;
+pub mod shortfall;
 pub mod transfer;
