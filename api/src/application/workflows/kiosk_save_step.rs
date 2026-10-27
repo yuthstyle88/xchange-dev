@@ -1,14 +1,17 @@
 //! The kiosk's part in the save of an exchange.
 
+use pos_error::{AppError, AppResult};
 use xc_auth::domain::access::{Role as AuthRole, StandingKind};
 use xc_exchange::domain::exchange::entities::transaction::Transaction;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::CurrencyCode;
+use xc_kernel::pii::{self, IdentityType, LookupHasher};
 use xc_kiosk::application::kiosk::service::KioskService;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use xc_kiosk::domain::kiosk::value_objects::save_attempt::SaveAttempt;
 use xc_kiosk::domain::kiosk::value_objects::transaction_link::TransactionLink;
+use xc_kiosk::domain::kiosk::value_objects::walk_in_placeholder::WalkInPlaceholder;
 
 use crate::application::workflows::save_step::{SaveActor, SaveContext, SaveStep, StepFuture};
 
@@ -101,11 +104,63 @@ impl SaveStep for KioskSaveStep {
                 submission_id: saved.submission_id.clone(),
                 document_ref: saved.document_ref.clone(),
             };
+            // XC-BE-GAPS-A row 5: the saved customer, or `None` for the passport skip (D13, D20).
+            let saved_customer = if is_walk_in(tx, ctx, saved).await? {
+                None
+            } else {
+                Some(saved.customer_id.as_str())
+            };
             self.kiosk
-                .complete_in(tx, ctx.branch, id, &link, &kiosk_actor(ctx.actor), ctx.now)
+                .complete_saved_in(
+                    tx,
+                    ctx.branch,
+                    id,
+                    &link,
+                    saved_customer,
+                    &kiosk_actor(ctx.actor),
+                    ctx.now,
+                )
                 .await
         })
     }
+}
+
+async fn is_walk_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ctx: &SaveContext<'_>,
+    saved: &Transaction,
+) -> AppResult<bool> {
+    if WalkInPlaceholder::is(
+        &ctx.form.customer.passport_no,
+        &ctx.form.customer.nationality,
+    ) {
+        return Ok(true);
+    }
+    let keys = xc_customer::get_pii_keys()?;
+    let normalized = pii::normalize(
+        IdentityType::Passport,
+        WalkInPlaceholder::PASSPORT_NO,
+        Some(WalkInPlaceholder::NATIONALITY),
+    )
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+    let hash = LookupHasher::new(&keys).hash(IdentityType::Passport, &normalized);
+    sqlx::query_scalar(
+        "SELECT EXISTS ( \
+             SELECT 1 FROM customer_identities ci \
+             JOIN branches b ON b.organization_id = ci.organization_id \
+             WHERE b.id = $1 \
+               AND ci.customer_id = $2 \
+               AND ci.type = 'PASSPORT' \
+               AND ci.status = 'ACTIVE' \
+               AND ci.lookup_hash = $3 \
+         )",
+    )
+    .bind(ctx.branch.as_str())
+    .bind(&saved.customer_id)
+    .bind(hash.as_slice())
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::Database)
 }
 
 #[cfg(test)]

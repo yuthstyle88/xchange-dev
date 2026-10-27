@@ -32,6 +32,8 @@ pub struct QueueDesk {
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
     booking_events: Option<Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>>,
+    /// Told when staff skip or cancel a kiosk-linked ticket (`kiosk-cancel.md` §3.7).
+    kiosk_events: Option<Arc<dyn xc_kernel::kiosk_queue_events::KioskQueueEvents>>,
     notifications: Option<Arc<dyn Notifications>>,
 }
 
@@ -201,8 +203,19 @@ impl QueueDesk {
             repo,
             status,
             booking_events: None,
+            kiosk_events: None,
             notifications: None,
         }
+    }
+
+    /// `skip_in` and `cancel_in` close a kiosk-linked ticket's request through `kiosk_events`
+    /// (XC-BE-GAPS-A row 6).
+    pub fn with_kiosk_events(
+        mut self,
+        kiosk_events: Arc<dyn xc_kernel::kiosk_queue_events::KioskQueueEvents>,
+    ) -> Self {
+        self.kiosk_events = Some(kiosk_events);
+        self
     }
 
     pub fn with_booking_events(
@@ -594,6 +607,19 @@ impl QueueDesk {
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
 
+        if let (Some(request_id), Some(events)) = (&ticket.kiosk_request_id, &self.kiosk_events) {
+            events
+                .on_ticket_ended_in(
+                    tx,
+                    branch,
+                    request_id,
+                    &xc_kernel::kiosk_queue_events::KioskTicketEnd::Skipped,
+                    &actor.user_id,
+                    now,
+                )
+                .await?;
+        }
+
         Ok(QueueTicket {
             status: TicketStatus::NoShow,
             ..ticket
@@ -815,6 +841,21 @@ impl QueueDesk {
         };
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
+
+        if let (Some(request_id), Some(events)) = (&ticket.kiosk_request_id, &self.kiosk_events) {
+            events
+                .on_ticket_ended_in(
+                    tx,
+                    branch,
+                    request_id,
+                    &xc_kernel::kiosk_queue_events::KioskTicketEnd::Cancelled {
+                        reason: reason.to_owned(),
+                    },
+                    &actor.user_id,
+                    now,
+                )
+                .await?;
+        }
 
         Ok(QueueTicket {
             status: TicketStatus::Cancelled,

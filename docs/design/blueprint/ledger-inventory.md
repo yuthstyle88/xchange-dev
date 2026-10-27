@@ -418,12 +418,44 @@ Owned by **LG-2**, with the rest of the port's final shape (§10).
 ### 5.1 `NEGATIVE_STOCK` (N-1)
 
 `NegativeStockSubject` + `NegativeStockPolicy` (`xc-cash/src/application/ledger_approval/negative_stock.rs`):
-- requested by the caller that got `stockInsufficient` (the completion of #551, a transfer dispatch of #582) with the
-  shortfall per currency in `proposed_payload`;
+- requested by the caller that got `stockInsufficient` (the completion of #551, a reversal's post of #552, a transfer
+  dispatch of #582) with the shortfall per currency in `proposed_payload`;
 - `may_decide` ⇔ BRANCH_MANAGER of the branch; `allows_self_decision` = false;
 - `version_hash` = the source's state (the transaction's lines and status, or the transfer's lines and status);
 - `on_decided`: APPROVED does nothing by itself; the caller retries with `allow_negative = Some(request)` (an
   exchange: `complete` again with the same key's new attempt; the desk shows "waiting for approval").
+
+**The shortfall and the gate (XC-BE-GAPS-A rows 1–3, claude/491239fc, 2026-10-27; owner R1 the same day: a transfer
+dispatch follows N-1).** Measured on `main` `1998f955`: the gate sent `{"shortfall": []}`, a reversal posted with
+`None`, and a transfer dispatch refused on its own pre-check before the port.
+
+- **`StockShortfall`** (`xc-cash/src/domain/shortfall.rs`). `LedgerCashPostings` refuses with
+  `StockShortfall::refusal()`: the §4.5 sentence, then `; shortfall=` and a JSON array, in the one message `AppError`
+  carries. `StockShortfall::from_refusal(message)` reads it back; a message without it reads as empty. One line per
+  place the posting takes below zero:
+  - each drawer or safe account: `short_by` = −(balance + the posting's change);
+  - each position the posting leaves below zero: `short_by` = −the final quantity, place `POSITION`;
+  - sorted by currency code, then `DRAWER`, `SAFE`, `POSITION`; `short_by` normalized.
+- **`proposed_payload`** = `StockShortfall::payload()`:
+  `{"shortfall": [{"currency": "USD", "place": "DRAWER", "shortBy": "1000"}, …]}`; `shortBy` is a decimal string, as
+  every amount on the wire. With nothing to read it stays `{"shortfall": []}`.
+- **`NegativeStockGate`** (`api/src/application/workflows/exchange/negative_stock_gate.rs`) is keyed on
+  `NegativeStockObject::{Transaction, Reversal, Transfer}`, whose `object_id()` is the posting's `source_id`, which
+  `allows_negative` compares. `approved_for_in(tx, &object)` finds the APPROVED request to pass as `allow_negative`.
+  `open_after_refusal(pool, approvals, &object, refusal, actor, key)` opens or re-reads the request in its own
+  transaction. Every command answers through one helper, `presentation/http/v3/negative_stock.rs`
+  `stock_refusal_answer`: `409 approvalRequired`, or `409 stockInsufficient` after a rejection.
+- **Callers:**
+  - the exchange completion (#3405);
+  - the reversal post (`PostReversal::run_in` + `ReversalPostCommand`, row 2);
+  - the transfer dispatch (`TransferFlow::dispatch_approved_in` + `TransferDispatch`, row 3). The dispatch's own
+    pre-check against `expected_in` is removed, so the port is the one check and its refusal carries the shortfall.
+    `post_in` runs **before** `mark_dispatched`: the request was opened while the transfer was APPROVED, and the
+    transfer's `version_hash` covers its status, so posting after the status moves to DISPATCHED would never match an
+    approval. `mark_dispatched` keeps its `status = 'APPROVED'` guard, and the source branch's lock still orders two
+    dispatches.
+- **`version_hash`** of a reversal: `source_hash` gains a `reversal:` arm (the reversal's status and original
+  transaction), beside the exchange's and the transfer's.
 
 ### 5.2 `COUNT_DIFFERENCE` (V-1)
 
@@ -538,6 +570,10 @@ classDiagram
   class InventoryRepository { <<trait xc-cash domain/inventory/repository.rs>> +position_for_update_in() +record_in() }
   class PgInventoryRepository { <<xc-cash infrastructure/inventory/repository.rs>> }
   class NegativeStockSubject { <<xc-cash application/ledger_approval/negative_stock.rs>> }
+  class StockShortfall { <<xc-cash domain/shortfall.rs (XC-BE-GAPS-A)>> +lines Shortfall[] +refusal() AppError +from_refusal(msg)$ StockShortfall +payload() Value }
+  class NegativeStockGate { <<api application/workflows/exchange/negative_stock_gate.rs>> +approved_for_in(tx, object)$ Option~ApprovalRequestId~ +open_after_refusal(pool, approvals, object, refusal, actor, key)$ NegativeStockOutcome }
+  class NegativeStockObject { <<api negative_stock_gate.rs>> Transaction · Reversal · Transfer +object_id() String }
+  class StockRefusalAnswer { <<api presentation/http/v3/negative_stock.rs>> +stock_refusal_answer(...)$ V3Error }
   class CountDifferenceSubject { <<xc-cash application/ledger_approval/count_difference.rs>> }
   class CountDifferenceGate { <<xc-cash application/ledger_approval/count_difference.rs>> +check_in() }
   class Reconcile { <<xc-cash application/reconcile/mod.rs (LG-7.0)>> +run(pool, scope) Report +standard() }
@@ -566,6 +602,11 @@ classDiagram
   CashCountService --> CountDifferenceGate : check_in
   CountDifferenceGate --> ApprovalService
   NegativeStockSubject ..|> ApprovalSubject
+  LedgerCashPostings --> StockShortfall : refusal()
+  NegativeStockGate --> StockShortfall : from_refusal(..).payload()
+  NegativeStockGate --> NegativeStockObject
+  NegativeStockGate --> ApprovalService : request
+  StockRefusalAnswer --> NegativeStockGate : open_after_refusal
   CountDifferenceSubject ..|> ApprovalSubject
   Reconcile --> ReconcileCheck
   Reconcile --> Report : run

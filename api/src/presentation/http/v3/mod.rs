@@ -9,6 +9,7 @@ pub mod desk;
 pub mod error;
 pub mod export_gate;
 pub mod input;
+pub mod negative_stock;
 pub mod org_view;
 pub mod system;
 pub(crate) mod verification_reviewer;

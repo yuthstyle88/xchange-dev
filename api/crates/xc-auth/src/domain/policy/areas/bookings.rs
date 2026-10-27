@@ -24,7 +24,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "kioskBookingCheckIn",
-        need: Need::Public,
+        need: Need::Permission(Permission::QueueOperate),
     },
     AreaRow {
         path: EntryPath::Rpc,
