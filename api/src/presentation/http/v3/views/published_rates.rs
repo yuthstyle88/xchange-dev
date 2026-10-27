@@ -356,11 +356,11 @@ async fn follow_hidden_reason(
                 .await
                 .map_err(|e| pos_error::AppError::Internal(e.to_string()))?;
             let attempt = feed_status.get(&src);
-            SourceFreshness {
+            SourceFreshness::of_feed(
                 fetched_at,
-                last_attempt_at: attempt.map(|a| a.at),
-                error: attempt.and_then(|a| a.error.clone()),
-            }
+                attempt.map(|a| a.at),
+                attempt.and_then(|a| a.error.clone()),
+            )
             .is_current(now)
         }
         None => false,

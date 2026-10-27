@@ -404,17 +404,13 @@ impl MarketPricingLoop {
         let source = match anchor_quote {
             Some(q) => {
                 let attempt = feed_status.get(&q.source);
-                SourceFreshness {
-                    fetched_at: Some(q.fetched_at),
-                    last_attempt_at: attempt.map(|a| a.at),
-                    error: attempt.and_then(|a| a.error.clone()),
-                }
+                SourceFreshness::of_feed(
+                    Some(q.fetched_at),
+                    attempt.map(|a| a.at),
+                    attempt.and_then(|a| a.error.clone()),
+                )
             }
-            None => SourceFreshness {
-                fetched_at: None,
-                last_attempt_at: None,
-                error: None,
-            },
+            None => SourceFreshness::of_feed(None, None, None),
         };
 
         let main_branch = BranchId::new("MAIN");

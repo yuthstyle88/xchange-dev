@@ -42,8 +42,16 @@ impl SourceFreshness {
         last_attempt_at: Option<DateTime<Utc>>,
         error: Option<String>,
     ) -> Self {
-        let _ = (newest_batch_fetched_at, last_attempt_at, error);
-        todo!("PV-g: SourceFreshness::of_feed")
+        let fetched_at = if error.is_none() && newest_batch_fetched_at.is_some() {
+            last_attempt_at.or(newest_batch_fetched_at)
+        } else {
+            newest_batch_fetched_at
+        };
+        Self {
+            fetched_at,
+            last_attempt_at,
+            error,
+        }
     }
 
     /// `H:` §6: the last fetch succeeded — no error, `fetched_at == last_attempt_at`, not in the future, and at most
