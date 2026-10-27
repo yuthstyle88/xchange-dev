@@ -12,7 +12,10 @@ import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import type { AdminMenuProps } from '../menus';
+import { BranchDefault } from './BranchDefault';
+import { BranchPolicy } from './BranchPolicy';
 import { BulkApprove } from './BulkApprove';
+import { DisplaySettings } from './DisplaySettings';
 import * as table from './i18n';
 import { MarketSources } from './MarketSources';
 import {
@@ -24,6 +27,7 @@ import {
   type RowStatusCode,
 } from './pricing-labels';
 import { PricingGrid } from './PricingGrid';
+import { PricingMode } from './PricingMode';
 import { PricingPolicy } from './PricingPolicy';
 import { Recommendations } from './Recommendations';
 import { TierEditor } from './TierEditor';
@@ -241,6 +245,48 @@ export function Pricing(props: PricingProps): JSX.Element {
               branch={props.branch()}
               policyVersionId={board()?.policyVersionId ?? ''}
               row={row()}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+            <PricingMode
+              api={api}
+              branch={props.branch()}
+              row={row()}
+              isMain={board()?.isMain ?? false}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+            <BranchPolicy
+              api={api}
+              branch={props.branch()}
+              row={row()}
+              isMain={board()?.isMain ?? false}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+          </div>
+        )}
+      </Show>
+
+      <Show when={board()}>
+        {(b) => (
+          <div class="pricing-settings">
+            <BranchDefault
+              api={api}
+              branch={props.branch()}
+              value={b().branchDefault}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+            <DisplaySettings
+              api={api}
+              branch={props.branch()}
+              value={b().display}
+              currencies={b().rows.map((r) => r.currency)}
               mayEdit={mayEditPolicy()}
               disabledReason={disabledReason()}
               onSaved={() => void loadBoard()}
