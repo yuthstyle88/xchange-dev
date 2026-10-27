@@ -7,17 +7,24 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::CurrencyCode;
+use xc_rate::domain::pricing::branch_policy::{
+    BranchPolicyPatch, BranchPolicyStore, BranchPricingPolicy,
+};
+use xc_rate::infrastructure::pricing::branch_policy_store::PgBranchPolicyStore;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -64,8 +71,90 @@ impl CommandAction for PricingBranchPolicySaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (tx, branch, who, input);
-        todo!("PV-d2: pricingBranchPolicySave")
+        let trimmed = input.currency.trim();
+        let scope: &str = if trimmed == "*" {
+            "*"
+        } else {
+            CurrencyCode::parse(trimmed)
+                .map_err(|e| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("currency"),
+                        e.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?
+                .as_str()
+        };
+
+        if scope == "*" {
+            if input.own.is_some() {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("own"),
+                    "own is only allowed on a currency row",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+            if input.follow.is_some() {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("follow"),
+                    "follow is only allowed on a currency row",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+        }
+
+        let buy_bp = input
+            .buy_bp
+            .map(BranchPricingPolicy::check_bp)
+            .transpose()
+            .map_err(|msg| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("buyBp"),
+                    msg,
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
+        let sell_bp = input
+            .sell_bp
+            .map(BranchPricingPolicy::check_bp)
+            .transpose()
+            .map_err(|msg| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("sellBp"),
+                    msg,
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
+
+        let now = Utc::now();
+        if !crate::presentation::http::v3::rate_policy_save::may_change_the_frame(who, branch, now)
+        {
+            return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
+        }
+
+        PgBranchPolicyStore
+            .save_in(
+                tx,
+                branch.as_str(),
+                scope,
+                BranchPolicyPatch {
+                    buy_bp,
+                    sell_bp,
+                    own: input.own,
+                    follow: input.follow,
+                },
+                &who.user_id,
+                now,
+            )
+            .await
+            .map_err(|_| server_error())?;
+
+        Ok(PricingBranchPolicySaveOutput { saved: true })
     }
 }
 
