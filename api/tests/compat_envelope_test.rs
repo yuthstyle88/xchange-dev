@@ -221,6 +221,7 @@ fn refused_400(sentence: &str) -> RpcRefusal {
         status: 400,
         sentence: sentence.to_string(),
         no_store: true,
+        field: None,
     }
 }
 
@@ -498,7 +499,8 @@ fn the_401_of_api_rpc_is_the_only_refusal_without_no_store() {
         RpcRefusal {
             status: 401,
             sentence: SIGN_IN.to_string(),
-            no_store: false
+            no_store: false,
+            field: None,
         }
     );
     assert_eq!(
@@ -516,7 +518,8 @@ fn the_401_of_api_rpc_is_the_only_refusal_without_no_store() {
         RpcRefusal {
             status: 401,
             sentence: EMPLOYEE_AUTH.to_string(),
-            no_store: true
+            no_store: true,
+            field: None,
         }
     );
     assert_eq!(
@@ -609,6 +612,7 @@ fn a_refusal_of_another_status_keeps_it_in_the_response() {
         status: 500,
         sentence: "x".to_string(),
         no_store: true,
+        field: None,
     };
     let response = refusal.response();
     assert_eq!(response.status, 500);
@@ -999,5 +1003,89 @@ fn staff_route_a_text_payload_is_spread_per_utf16_unit_not_per_letter() {
         let body = format!("{{\"action\":\"adminSnapshot\",\"payload\":{written}}}");
         let request = parsed(RpcRoute::StaffRpc, &body, true);
         assert_eq!(request.payload(), Ok(&object(payload)), "{body}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RF-2: a refusal that names the field at fault (`docs/design/rpc-refusal-field.md` R14, R15)
+// Written before the implementation by the sub-controller (RF-0). Do not edit, delete or weaken.
+// ---------------------------------------------------------------------------
+
+// R14
+#[test]
+fn refusal_with_field_prints_error_then_field() {
+    let refusal = RpcRefusal::refused_at("passportNo", "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด");
+    assert_eq!(
+        refusal,
+        RpcRefusal {
+            status: 400,
+            sentence: "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด".to_string(),
+            no_store: true,
+            field: Some("passportNo"),
+        }
+    );
+    let response = refusal.response();
+    assert_eq!(response.status, 400);
+    assert_eq!(
+        response.headers,
+        vec![
+            ("cache-control", "no-store"),
+            ("content-type", "application/json")
+        ]
+    );
+    assert_eq!(
+        response.body,
+        "{\"error\":\"ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด\",\"field\":\"passportNo\"}"
+    );
+    // escaped as `error` is
+    let odd = RpcRefusal::refused_at("name", "a \"quoted\" line").response();
+    assert_eq!(
+        odd.body,
+        "{\"error\":\"a \\\"quoted\\\" line\",\"field\":\"name\"}"
+    );
+}
+
+// R15
+#[test]
+fn refusals_without_field_are_unchanged() {
+    let all = [
+        (RpcRefusal::refused("x"), "{\"error\":\"x\"}"),
+        (RpcRefusal::invalid_request(), "{\"error\":\"คำขอไม่ถูกต้อง\"}"),
+        (
+            RpcRefusal::too_large(RpcRoute::Rpc),
+            "{\"error\":\"ข้อมูลคำขอใหญ่เกินกำหนด\"}",
+        ),
+        (
+            RpcRefusal::too_large(RpcRoute::StaffRpc),
+            "{\"error\":\"ข้อมูลมากเกินไป\"}",
+        ),
+        (
+            RpcRefusal::role_not_allowed(RpcRoute::Rpc),
+            "{\"error\":\"บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้\"}",
+        ),
+        (
+            RpcRefusal::role_not_allowed(RpcRoute::StaffRpc),
+            "{\"error\":\"บทบาทนี้ไม่มีสิทธิ์ทำรายการ\"}",
+        ),
+        (
+            RpcRefusal::not_signed_in(RpcRoute::Rpc),
+            "{\"error\":\"กรุณาเข้าสู่ระบบ\"}",
+        ),
+        (
+            RpcRefusal::not_signed_in(RpcRoute::StaffRpc),
+            "{\"error\":\"EMPLOYEE_AUTH_REQUIRED\"}",
+        ),
+        (
+            RpcRefusal::first_password_unchanged(RpcRoute::Rpc),
+            "{\"error\":\"กรุณาเข้าสู่ระบบ\"}",
+        ),
+        (
+            RpcRefusal::first_password_unchanged(RpcRoute::StaffRpc),
+            "{\"error\":\"กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มงาน\"}",
+        ),
+    ];
+    for (refusal, body) in all {
+        assert_eq!(refusal.field, None, "{refusal:?}");
+        assert_eq!(refusal.response().body, body, "{refusal:?}");
     }
 }

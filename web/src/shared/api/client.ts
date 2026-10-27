@@ -74,6 +74,7 @@ export class ApiClient {
           throw new ApiError({
             code: 'refused',
             message: json.error,
+            field: typeof json.field === 'string' && json.field !== '' ? json.field : undefined,
             status: res.status,
           });
         }
