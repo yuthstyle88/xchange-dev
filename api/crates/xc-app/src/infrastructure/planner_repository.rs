@@ -92,12 +92,12 @@ impl PlannerRepository for PgPlannerRepository {
         id: Uuid,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Option<PlannerDraft>, CustomerAppError>> {
-        // Skeleton (feat/be-gaps-b): P13 #5237 filters `expires_at > now`.
-        let _ = now;
         Box::pin(async move {
-            let sql = format!("SELECT {COLUMNS} FROM planner_drafts WHERE id = $1");
+            let sql =
+                format!("SELECT {COLUMNS} FROM planner_drafts WHERE id = $1 AND expires_at > $2");
             let row = sqlx::query(sqlx::AssertSqlSafe(sql))
                 .bind(id)
+                .bind(now)
                 .fetch_optional(&mut **tx)
                 .await?;
             row.as_ref().map(draft_of).transpose()
@@ -109,19 +109,18 @@ impl PlannerRepository for PgPlannerRepository {
         owner: &'a DraftOwner,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Vec<PlannerDraft>, CustomerAppError>> {
-        // Skeleton (feat/be-gaps-b): P13 #5237 filters `expires_at > now`.
-        let _ = now;
         Box::pin(async move {
             let (column, value) = match owner {
                 DraftOwner::Customer(id) => ("customer_id", id.as_str()),
                 DraftOwner::Session(hash) => ("session_hash", hash.as_str()),
             };
             let sql = format!(
-                "SELECT {COLUMNS} FROM planner_drafts WHERE {column} = $1 \
+                "SELECT {COLUMNS} FROM planner_drafts WHERE {column} = $1 AND expires_at > $2 \
                  ORDER BY created_at DESC, id DESC"
             );
             let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
                 .bind(value)
+                .bind(now)
                 .fetch_all(&self.pool)
                 .await?;
             rows.iter().map(draft_of).collect()
