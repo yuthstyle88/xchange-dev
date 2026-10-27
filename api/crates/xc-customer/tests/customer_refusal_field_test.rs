@@ -13,9 +13,8 @@ use pos_error::AppError;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_customer::{
-    BAD_DATE, BAD_MODE, BAD_TEXT, CustomerDetails, CustomerField, CustomerRefusal,
-    CustomerService, INVALID_NATIONALITY, NO_SUCH_BRANCH, ReserveCustomer, ReserveError,
-    install_pii_keys,
+    BAD_DATE, BAD_MODE, BAD_TEXT, CustomerDetails, CustomerField, CustomerRefusal, CustomerService,
+    INVALID_NATIONALITY, NO_SUCH_BRANCH, ReserveCustomer, ReserveError, install_pii_keys,
 };
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -50,7 +49,11 @@ fn refusal_of(cmd: &ReserveCustomer) -> CustomerRefusal {
 }
 
 fn assert_names(cmd: &ReserveCustomer, field: CustomerField, sentence: &'static str) {
-    assert_eq!(refusal_of(cmd), CustomerRefusal { field, sentence }, "payload {cmd:?}");
+    assert_eq!(
+        refusal_of(cmd),
+        CustomerRefusal { field, sentence },
+        "payload {cmd:?}"
+    );
 }
 
 /// Every refusal case of R1–R11: (payload, field, sentence).
@@ -59,31 +62,101 @@ fn refused_cases() -> Vec<(ReserveCustomer, CustomerField, &'static str)> {
     let date = InputError::Date.sentence();
     vec![
         // R1 (#68: blank name, 2-letter nationality)
-        (with(|c| { c.name = String::new(); c.nationality = "DE".into() }), CustomerField::Name, BAD_TEXT),
-        (with(|c| c.name = "   ".into()), CustomerField::Name, BAD_TEXT),
+        (
+            with(|c| {
+                c.name = String::new();
+                c.nationality = "DE".into()
+            }),
+            CustomerField::Name,
+            BAD_TEXT,
+        ),
+        (
+            with(|c| c.name = "   ".into()),
+            CustomerField::Name,
+            BAD_TEXT,
+        ),
         // R2 (#69)
-        (with(|c| c.name = "n".repeat(101)), CustomerField::Name, BAD_TEXT),
+        (
+            with(|c| c.name = "n".repeat(101)),
+            CustomerField::Name,
+            BAD_TEXT,
+        ),
         // R3 (#70) and blank
-        (with(|c| c.passport_no = "P".repeat(31)), CustomerField::PassportNo, BAD_TEXT),
-        (with(|c| c.passport_no = String::new()), CustomerField::PassportNo, BAD_TEXT),
+        (
+            with(|c| c.passport_no = "P".repeat(31)),
+            CustomerField::PassportNo,
+            BAD_TEXT,
+        ),
+        (
+            with(|c| c.passport_no = String::new()),
+            CustomerField::PassportNo,
+            BAD_TEXT,
+        ),
         // R4 (#71: missing ⇒ empty after reserve_command) and 61 units
-        (with(|c| c.nationality = String::new()), CustomerField::Nationality, BAD_TEXT),
-        (with(|c| c.nationality = "N".repeat(61)), CustomerField::Nationality, BAD_TEXT),
+        (
+            with(|c| c.nationality = String::new()),
+            CustomerField::Nationality,
+            BAD_TEXT,
+        ),
+        (
+            with(|c| c.nationality = "N".repeat(61)),
+            CustomerField::Nationality,
+            BAD_TEXT,
+        ),
         // R5
-        (with(|c| c.nationality = "DE".into()), CustomerField::Nationality, INVALID_NATIONALITY),
+        (
+            with(|c| c.nationality = "DE".into()),
+            CustomerField::Nationality,
+            INVALID_NATIONALITY,
+        ),
         // R6 (#74)
-        (with(|c| c.birth_date = "01/02/1990".into()), CustomerField::BirthDate, date_format),
+        (
+            with(|c| c.birth_date = "01/02/1990".into()),
+            CustomerField::BirthDate,
+            date_format,
+        ),
         // R7 (#75) and > 10 units
-        (with(|c| c.birth_date = "1990-02-30".into()), CustomerField::BirthDate, date),
-        (with(|c| c.birth_date = "1990-02-011".into()), CustomerField::BirthDate, BAD_TEXT),
+        (
+            with(|c| c.birth_date = "1990-02-30".into()),
+            CustomerField::BirthDate,
+            date,
+        ),
+        (
+            with(|c| c.birth_date = "1990-02-011".into()),
+            CustomerField::BirthDate,
+            BAD_TEXT,
+        ),
         // R8 (#76) and before the floor
-        (with(|c| c.passport_expiry = "2031-13-01".into()), CustomerField::PassportExpiry, date),
-        (with(|c| c.passport_expiry = "1920-04-01".into()), CustomerField::PassportExpiry, date),
+        (
+            with(|c| c.passport_expiry = "2031-13-01".into()),
+            CustomerField::PassportExpiry,
+            date,
+        ),
+        (
+            with(|c| c.passport_expiry = "1920-04-01".into()),
+            CustomerField::PassportExpiry,
+            date,
+        ),
         // R9 (#72, #73)
-        (with(|c| c.mode = "REAL".into()), CustomerField::Mode, BAD_MODE),
-        (with(|c| c.mode = String::new()), CustomerField::Mode, BAD_MODE),
+        (
+            with(|c| c.mode = "REAL".into()),
+            CustomerField::Mode,
+            BAD_MODE,
+        ),
+        (
+            with(|c| c.mode = String::new()),
+            CustomerField::Mode,
+            BAD_MODE,
+        ),
         // R11
-        (with(|c| { c.name = String::new(); c.birth_date = "1990-02-30".into() }), CustomerField::Name, BAD_TEXT),
+        (
+            with(|c| {
+                c.name = String::new();
+                c.birth_date = "1990-02-30".into()
+            }),
+            CustomerField::Name,
+            BAD_TEXT,
+        ),
     ]
 }
 
@@ -92,37 +165,77 @@ fn refused_cases() -> Vec<(ReserveCustomer, CustomerField, &'static str)> {
 // R1
 #[test]
 fn blank_name_names_name() {
-    assert_names(&with(|c| { c.name = String::new(); c.nationality = "DE".into() }), CustomerField::Name, BAD_TEXT);
-    assert_names(&with(|c| c.name = "   ".into()), CustomerField::Name, BAD_TEXT);
+    assert_names(
+        &with(|c| {
+            c.name = String::new();
+            c.nationality = "DE".into()
+        }),
+        CustomerField::Name,
+        BAD_TEXT,
+    );
+    assert_names(
+        &with(|c| c.name = "   ".into()),
+        CustomerField::Name,
+        BAD_TEXT,
+    );
 }
 
 // R2
 #[test]
 fn long_name_names_name() {
-    assert_names(&with(|c| c.name = "n".repeat(101)), CustomerField::Name, BAD_TEXT);
-    let ok = CustomerDetails::check(&with(|c| c.name = "n".repeat(100))).expect("100 units is allowed");
+    assert_names(
+        &with(|c| c.name = "n".repeat(101)),
+        CustomerField::Name,
+        BAD_TEXT,
+    );
+    let ok =
+        CustomerDetails::check(&with(|c| c.name = "n".repeat(100))).expect("100 units is allowed");
     assert_eq!(ok.name.len(), 100);
 }
 
 // R3
 #[test]
 fn long_or_blank_passport_names_passport_no() {
-    assert_names(&with(|c| c.passport_no = "P".repeat(31)), CustomerField::PassportNo, BAD_TEXT);
-    assert_names(&with(|c| c.passport_no = String::new()), CustomerField::PassportNo, BAD_TEXT);
+    assert_names(
+        &with(|c| c.passport_no = "P".repeat(31)),
+        CustomerField::PassportNo,
+        BAD_TEXT,
+    );
+    assert_names(
+        &with(|c| c.passport_no = String::new()),
+        CustomerField::PassportNo,
+        BAD_TEXT,
+    );
 }
 
 // R4
 #[test]
 fn missing_nationality_names_nationality() {
-    assert_names(&with(|c| c.nationality = String::new()), CustomerField::Nationality, BAD_TEXT);
-    assert_names(&with(|c| c.nationality = "N".repeat(61)), CustomerField::Nationality, BAD_TEXT);
+    assert_names(
+        &with(|c| c.nationality = String::new()),
+        CustomerField::Nationality,
+        BAD_TEXT,
+    );
+    assert_names(
+        &with(|c| c.nationality = "N".repeat(61)),
+        CustomerField::Nationality,
+        BAD_TEXT,
+    );
 }
 
 // R5
 #[test]
 fn two_letter_nationality_names_nationality() {
-    assert_names(&with(|c| c.nationality = "DE".into()), CustomerField::Nationality, INVALID_NATIONALITY);
-    assert_names(&with(|c| c.nationality = "D3U".into()), CustomerField::Nationality, INVALID_NATIONALITY);
+    assert_names(
+        &with(|c| c.nationality = "DE".into()),
+        CustomerField::Nationality,
+        INVALID_NATIONALITY,
+    );
+    assert_names(
+        &with(|c| c.nationality = "D3U".into()),
+        CustomerField::Nationality,
+        INVALID_NATIONALITY,
+    );
 }
 
 // R6
@@ -138,15 +251,31 @@ fn birth_date_format_names_birth_date() {
 // R7
 #[test]
 fn bad_birth_date_names_birth_date() {
-    assert_names(&with(|c| c.birth_date = "1990-02-30".into()), CustomerField::BirthDate, BAD_DATE);
-    assert_names(&with(|c| c.birth_date = "1990-02-011".into()), CustomerField::BirthDate, BAD_TEXT);
+    assert_names(
+        &with(|c| c.birth_date = "1990-02-30".into()),
+        CustomerField::BirthDate,
+        BAD_DATE,
+    );
+    assert_names(
+        &with(|c| c.birth_date = "1990-02-011".into()),
+        CustomerField::BirthDate,
+        BAD_TEXT,
+    );
 }
 
 // R8
 #[test]
 fn bad_expiry_names_passport_expiry() {
-    assert_names(&with(|c| c.passport_expiry = "2031-13-01".into()), CustomerField::PassportExpiry, BAD_DATE);
-    assert_names(&with(|c| c.passport_expiry = "1920-04-01".into()), CustomerField::PassportExpiry, BAD_DATE);
+    assert_names(
+        &with(|c| c.passport_expiry = "2031-13-01".into()),
+        CustomerField::PassportExpiry,
+        BAD_DATE,
+    );
+    assert_names(
+        &with(|c| c.passport_expiry = "1920-04-01".into()),
+        CustomerField::PassportExpiry,
+        BAD_DATE,
+    );
     assert_names(
         &with(|c| c.passport_expiry = "11/06/2031".into()),
         CustomerField::PassportExpiry,
@@ -157,26 +286,43 @@ fn bad_expiry_names_passport_expiry() {
 // R9
 #[test]
 fn bad_mode_names_mode() {
-    assert_names(&with(|c| c.mode = "REAL".into()), CustomerField::Mode, BAD_MODE);
-    assert_names(&with(|c| c.mode = String::new()), CustomerField::Mode, BAD_MODE);
+    assert_names(
+        &with(|c| c.mode = "REAL".into()),
+        CustomerField::Mode,
+        BAD_MODE,
+    );
+    assert_names(
+        &with(|c| c.mode = String::new()),
+        CustomerField::Mode,
+        BAD_MODE,
+    );
 }
 
 // R11 (RF-D6: the first fault in payload order)
 #[test]
 fn first_fault_wins() {
     assert_names(
-        &with(|c| { c.name = String::new(); c.birth_date = "1990-02-30".into() }),
+        &with(|c| {
+            c.name = String::new();
+            c.birth_date = "1990-02-30".into()
+        }),
         CustomerField::Name,
         BAD_TEXT,
     );
     assert_names(
-        &with(|c| { c.passport_no = String::new(); c.mode = "REAL".into() }),
+        &with(|c| {
+            c.passport_no = String::new();
+            c.mode = "REAL".into()
+        }),
         CustomerField::PassportNo,
         BAD_TEXT,
     );
     // the 3-letter rule comes after every per-key rule
     assert_names(
-        &with(|c| { c.nationality = "DE".into(); c.mode = "REAL".into() }),
+        &with(|c| {
+            c.nationality = "DE".into();
+            c.mode = "REAL".into()
+        }),
         CustomerField::Mode,
         BAD_MODE,
     );
@@ -184,7 +330,11 @@ fn first_fault_wins() {
 
 #[test]
 fn check_accepts_what_parse_accepts() {
-    let cmd = with(|c| { c.name = "  Customer One  ".into(); c.passport_no = " p1000001 ".into(); c.nationality = "deu".into() });
+    let cmd = with(|c| {
+        c.name = "  Customer One  ".into();
+        c.passport_no = " p1000001 ".into();
+        c.nationality = "deu".into()
+    });
     assert_eq!(
         CustomerDetails::check(&cmd).expect("valid"),
         CustomerDetails::parse(&cmd).expect("valid"),
@@ -204,7 +354,17 @@ fn every_field_has_its_payload_key() {
     .into_iter()
     .map(CustomerField::wire)
     .collect();
-    assert_eq!(keys, ["name", "passportNo", "nationality", "birthDate", "passportExpiry", "mode"]);
+    assert_eq!(
+        keys,
+        [
+            "name",
+            "passportNo",
+            "nationality",
+            "birthDate",
+            "passportExpiry",
+            "mode"
+        ]
+    );
 }
 
 // ── DB rows: R10, R12, R13 ──────────────────────────────────────────────────
@@ -221,7 +381,11 @@ impl Db {
             panic!("TEST_DATABASE_URL must be set, e.g. postgres://postgres@localhost:5432/xchange_test")
         });
         let schema = xc_testdb::unique_schema_name("rf1");
-        let admin = PgPoolOptions::new().max_connections(1).connect(&url).await.expect("admin connect");
+        let admin = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .expect("admin connect");
         sqlx::raw_sql(AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
             .execute(&admin)
             .await
@@ -233,11 +397,12 @@ impl Db {
             .connect_with(options.options([("search_path", schema.as_str())]))
             .await
             .expect("connect schema pool");
-        let mut entries: Vec<_> = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations"))
-            .expect("read migrations dir")
-            .map(|r| r.expect("read entry").path())
-            .filter(|p| p.extension().is_some_and(|ext| ext == "sql"))
-            .collect();
+        let mut entries: Vec<_> =
+            std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations"))
+                .expect("read migrations dir")
+                .map(|r| r.expect("read entry").path())
+                .filter(|p| p.extension().is_some_and(|ext| ext == "sql"))
+                .collect();
         entries.sort();
         for path in entries {
             let sql = std::fs::read_to_string(&path).expect("read a migration");
@@ -246,16 +411,24 @@ impl Db {
                 .await
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         }
-        sqlx::query("INSERT INTO branches (id, name) VALUES ('MAIN', 'MAIN') ON CONFLICT (id) DO NOTHING")
-            .execute(&pool)
-            .await
-            .expect("insert MAIN");
+        sqlx::query(
+            "INSERT INTO branches (id, name) VALUES ('MAIN', 'MAIN') ON CONFLICT (id) DO NOTHING",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert MAIN");
         let _ = install_pii_keys(Arc::new(PiiKeys::parse(TEST_KEYS).expect("test keys")));
-        Db { pool, admin_url: url, schema }
+        Db {
+            pool,
+            admin_url: url,
+            schema,
+        }
     }
 
     fn service(&self) -> CustomerService {
-        CustomerService::new(BranchTx::new(pos_infra::transactions::Transactor::new(self.pool.clone())))
+        CustomerService::new(BranchTx::new(pos_infra::transactions::Transactor::new(
+            self.pool.clone(),
+        )))
     }
 
     async fn customers(&self) -> i64 {
@@ -267,11 +440,18 @@ impl Db {
 
     async fn stop(self) {
         self.pool.close().await;
-        let admin = PgPoolOptions::new().max_connections(1).connect(&self.admin_url).await.expect("admin connect");
-        sqlx::raw_sql(AssertSqlSafe(format!("DROP SCHEMA {} CASCADE", self.schema)))
-            .execute(&admin)
+        let admin = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.admin_url)
             .await
-            .expect("drop schema");
+            .expect("admin connect");
+        sqlx::raw_sql(AssertSqlSafe(format!(
+            "DROP SCHEMA {} CASCADE",
+            self.schema
+        )))
+        .execute(&admin)
+        .await
+        .expect("drop schema");
         admin.close().await;
     }
 }
@@ -290,10 +470,17 @@ fn passport_of_only_dashes_names_passport_no() {
     sqlx::test_block_on(async {
         let db = Db::start().await;
         let cmd = with(|c| c.passport_no = "---".into());
-        match db.service().reserve_checked(&main_branch(), cmd, now()).await {
+        match db
+            .service()
+            .reserve_checked(&main_branch(), cmd, now())
+            .await
+        {
             Err(ReserveError::Input(refusal)) => assert_eq!(
                 refusal,
-                CustomerRefusal { field: CustomerField::PassportNo, sentence: BAD_TEXT }
+                CustomerRefusal {
+                    field: CustomerField::PassportNo,
+                    sentence: BAD_TEXT
+                }
             ),
             other => panic!("expected Input(PassportNo, BAD_TEXT), got {other:?}"),
         }
@@ -307,8 +494,14 @@ fn passport_of_only_dashes_names_passport_no() {
 fn unknown_branch_has_no_field() {
     sqlx::test_block_on(async {
         let db = Db::start().await;
-        match db.service().reserve_checked(&BranchId::new("NOPE"), valid(), now()).await {
-            Err(ReserveError::Other(AppError::Domain(sentence))) => assert_eq!(sentence, NO_SUCH_BRANCH),
+        match db
+            .service()
+            .reserve_checked(&BranchId::new("NOPE"), valid(), now())
+            .await
+        {
+            Err(ReserveError::Other(AppError::Domain(sentence))) => {
+                assert_eq!(sentence, NO_SUCH_BRANCH)
+            }
             other => panic!("expected Other(Domain(NO_SUCH_BRANCH)), got {other:?}"),
         }
         let reserved = db
@@ -331,25 +524,48 @@ fn parse_and_reserve_answer_the_same_sentence() {
             other => panic!("parse of {cmd:?}: expected Domain({sentence}), got {other:?}"),
         }
         let refusal = refusal_of(&cmd);
-        assert_eq!(AppError::from(refusal).to_string(), AppError::Domain(sentence.to_owned()).to_string());
+        assert_eq!(
+            AppError::from(refusal).to_string(),
+            AppError::Domain(sentence.to_owned()).to_string()
+        );
     }
     sqlx::test_block_on(async {
         let db = Db::start().await;
         let mut cases = refused_cases();
-        cases.push((with(|c| c.passport_no = "---".into()), CustomerField::PassportNo, BAD_TEXT));
+        cases.push((
+            with(|c| c.passport_no = "---".into()),
+            CustomerField::PassportNo,
+            BAD_TEXT,
+        ));
         for (cmd, field, sentence) in cases {
-            match db.service().reserve(&main_branch(), cmd.clone(), now()).await {
+            match db
+                .service()
+                .reserve(&main_branch(), cmd.clone(), now())
+                .await
+            {
                 Err(AppError::Domain(got)) => assert_eq!(got, sentence, "reserve of {cmd:?}"),
                 other => panic!("reserve of {cmd:?}: expected Domain({sentence}), got {other:?}"),
             }
-            match db.service().reserve_checked(&main_branch(), cmd.clone(), now()).await {
+            match db
+                .service()
+                .reserve_checked(&main_branch(), cmd.clone(), now())
+                .await
+            {
                 Err(ReserveError::Input(refusal)) => {
-                    assert_eq!(refusal, CustomerRefusal { field, sentence }, "reserve_checked of {cmd:?}")
+                    assert_eq!(
+                        refusal,
+                        CustomerRefusal { field, sentence },
+                        "reserve_checked of {cmd:?}"
+                    )
                 }
                 other => panic!("reserve_checked of {cmd:?}: expected Input, got {other:?}"),
             }
         }
-        match db.service().reserve(&BranchId::new("NOPE"), valid(), now()).await {
+        match db
+            .service()
+            .reserve(&BranchId::new("NOPE"), valid(), now())
+            .await
+        {
             Err(AppError::Domain(got)) => assert_eq!(got, NO_SUCH_BRANCH),
             other => panic!("expected Domain(NO_SUCH_BRANCH), got {other:?}"),
         }

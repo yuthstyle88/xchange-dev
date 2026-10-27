@@ -1028,7 +1028,10 @@ fn refusal_with_field_prints_error_then_field() {
     assert_eq!(response.status, 400);
     assert_eq!(
         response.headers,
-        vec![("cache-control", "no-store"), ("content-type", "application/json")]
+        vec![
+            ("cache-control", "no-store"),
+            ("content-type", "application/json")
+        ]
     );
     assert_eq!(
         response.body,
@@ -1036,7 +1039,10 @@ fn refusal_with_field_prints_error_then_field() {
     );
     // escaped as `error` is
     let odd = RpcRefusal::refused_at("name", "a \"quoted\" line").response();
-    assert_eq!(odd.body, "{\"error\":\"a \\\"quoted\\\" line\",\"field\":\"name\"}");
+    assert_eq!(
+        odd.body,
+        "{\"error\":\"a \\\"quoted\\\" line\",\"field\":\"name\"}"
+    );
 }
 
 // R15
@@ -1045,8 +1051,14 @@ fn refusals_without_field_are_unchanged() {
     let all = [
         (RpcRefusal::refused("x"), "{\"error\":\"x\"}"),
         (RpcRefusal::invalid_request(), "{\"error\":\"คำขอไม่ถูกต้อง\"}"),
-        (RpcRefusal::too_large(RpcRoute::Rpc), "{\"error\":\"ข้อมูลคำขอใหญ่เกินกำหนด\"}"),
-        (RpcRefusal::too_large(RpcRoute::StaffRpc), "{\"error\":\"ข้อมูลมากเกินไป\"}"),
+        (
+            RpcRefusal::too_large(RpcRoute::Rpc),
+            "{\"error\":\"ข้อมูลคำขอใหญ่เกินกำหนด\"}",
+        ),
+        (
+            RpcRefusal::too_large(RpcRoute::StaffRpc),
+            "{\"error\":\"ข้อมูลมากเกินไป\"}",
+        ),
         (
             RpcRefusal::role_not_allowed(RpcRoute::Rpc),
             "{\"error\":\"บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้\"}",
@@ -1055,7 +1067,10 @@ fn refusals_without_field_are_unchanged() {
             RpcRefusal::role_not_allowed(RpcRoute::StaffRpc),
             "{\"error\":\"บทบาทนี้ไม่มีสิทธิ์ทำรายการ\"}",
         ),
-        (RpcRefusal::not_signed_in(RpcRoute::Rpc), "{\"error\":\"กรุณาเข้าสู่ระบบ\"}"),
+        (
+            RpcRefusal::not_signed_in(RpcRoute::Rpc),
+            "{\"error\":\"กรุณาเข้าสู่ระบบ\"}",
+        ),
         (
             RpcRefusal::not_signed_in(RpcRoute::StaffRpc),
             "{\"error\":\"EMPLOYEE_AUTH_REQUIRED\"}",
