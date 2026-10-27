@@ -4,12 +4,17 @@
 //! SKELETON (XC-V9-PRICING): `SourceFreshness::is_current` and `FollowPlan::plan` are PV-f1's; the wire strings are
 //! the contract and are written here. Types and signatures stay.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use rust_decimal::Decimal;
 use sqlx::PgConnection;
 use uuid::Uuid;
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{CurrencyCode, Rate};
 
-use crate::domain::pricing::pricing_suggestion::SuggestionInput;
+use crate::domain::pricing::market_quote::MarketQuote;
+use crate::domain::pricing::market_snapshot::MarketStaleness;
+use crate::domain::pricing::pricing_flag::PricingFlag;
+use crate::domain::pricing::pricing_suggestion::{PricingSuggestion, SuggestionInput};
+use crate::domain::pricing::tier_check::TierCheck;
 use crate::domain::pricing::tier_set::{MarketAnchor, StoreFuture, TierRate};
 
 /// The anchor source's last fetch (`market_feed_status` + the newest snapshot of that source).
@@ -27,8 +32,14 @@ impl SourceFreshness {
     /// `H:` §6: the last fetch succeeded — no error, `fetched_at == last_attempt_at`, not in the future, and at most
     /// `MarketStaleness::STALE_AFTER_MINUTES` (30) old at `now`. Shared with `FollowVisibility` (§15.7 `STALE`).
     pub fn is_current(&self, now: DateTime<Utc>) -> bool {
-        let _ = (now,);
-        todo!("PV-f1: SourceFreshness::is_current")
+        let (Some(fetched_at), Some(last_attempt_at)) = (self.fetched_at, self.last_attempt_at)
+        else {
+            return false;
+        };
+        self.error.is_none()
+            && fetched_at == last_attempt_at
+            && fetched_at <= now
+            && now - fetched_at <= Duration::minutes(MarketStaleness::STALE_AFTER_MINUTES)
     }
 }
 
@@ -109,8 +120,87 @@ impl FollowPlan {
     ///
     /// Otherwise `Candidate` with the suggested tiers and the anchor.
     pub fn plan(input: &FollowInput, now: DateTime<Utc>) -> FollowOutcome {
-        let _ = (input, now);
-        todo!("PV-f1: FollowPlan::plan")
+        let (anchor_quote, _) = MarketQuote::anchor_for(&input.suggestion.quotes);
+        let suggestion = PricingSuggestion::of(&input.suggestion);
+        let mut reasons = Vec::new();
+
+        if anchor_quote.is_none() {
+            reasons.push(FollowReason::NoAnchor);
+        }
+        if !input.source.is_current(now) {
+            reasons.push(FollowReason::StaleSource);
+        }
+        if suggestion.flags.contains(&PricingFlag::Precision) {
+            reasons.push(FollowReason::Precision);
+        }
+        if suggestion.flags.contains(&PricingFlag::BelowCost) {
+            reasons.push(FollowReason::BelowCost);
+        }
+
+        let moved = |cur: Rate, prev: Rate| {
+            prev.value() > Decimal::ZERO
+                && ((cur.value() - prev.value()) / prev.value() * Decimal::from(100)).abs()
+                    > input.suggestion.config.large_move_pct
+        };
+        let large_move = suggestion.flags.contains(&PricingFlag::LargeMove)
+            || suggestion
+                .tiers
+                .as_ref()
+                .and_then(|t| t[0].buy.zip(t[0].sell))
+                .is_some_and(|(t1_buy, t1_sell)| {
+                    [input.last_tier1, input.published_tier1]
+                        .into_iter()
+                        .flatten()
+                        .any(|prev| moved(t1_buy, prev.buy) || moved(t1_sell, prev.sell))
+                });
+        if large_move {
+            reasons.push(FollowReason::LargeMove);
+        }
+
+        if let Some(tiers) = &suggestion.tiers {
+            let valid_decimals = tiers.iter().all(|t| {
+                t.buy.is_some_and(|r| r.value().normalize().scale() <= 4)
+                    && t.sell.is_some_and(|r| r.value().normalize().scale() <= 4)
+            });
+            if !TierCheck::validate(
+                tiers,
+                input.suggestion.unit_size,
+                anchor_quote,
+                &input.suggestion.config,
+            )
+            .is_empty()
+                || !valid_decimals
+            {
+                reasons.push(FollowReason::InvalidTiers);
+            }
+        }
+
+        if !reasons.is_empty() {
+            return FollowOutcome::Blocked(reasons);
+        }
+
+        let Some(anchor) = anchor_quote else {
+            return FollowOutcome::Blocked(vec![FollowReason::NoAnchor]);
+        };
+        let (Some(anchor_buy), Some(anchor_sell), Some(tiers)) =
+            (anchor.buy, anchor.sell, suggestion.tiers)
+        else {
+            return FollowOutcome::Blocked(vec![FollowReason::NoAnchor]);
+        };
+        let tier_rates = std::array::from_fn(|i| TierRate {
+            buy: tiers[i].buy.expect("validated"),
+            sell: tiers[i].sell.expect("validated"),
+        });
+        FollowOutcome::Candidate(
+            tier_rates,
+            MarketAnchor {
+                source: anchor.source,
+                buy: anchor_buy,
+                sell: anchor_sell,
+                fetched_at: anchor.fetched_at,
+                batch_id: input.anchor_batch_id,
+            },
+        )
     }
 }
 
