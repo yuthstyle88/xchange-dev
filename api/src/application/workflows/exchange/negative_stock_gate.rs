@@ -1,4 +1,7 @@
 //! S2 #3405: `NegativeStockGate` (design `section-b-gaps.md` §S2, `ledger-inventory.md` §5.1).
+//!
+//! XC-BE-GAPS-A: the gate is keyed on the posting's source ([`NegativeStockObject`]), so an exchange's
+//! completion (#3405), a reversal's post (row 2) and a transfer's dispatch (row 3, R1) share it.
 
 use pos_error::{AppError, AppResult};
 use serde_json::json;
@@ -7,6 +10,7 @@ use xc_approval::application::approval_service::{ApprovalError, ApprovalService}
 use xc_auth::domain::access::Actor;
 use xc_cash::application::ledger_approval::negative_stock::NEGATIVE_STOCK;
 use xc_cash::domain::posting::ApprovalRequestId;
+use xc_exchange::domain::reversal::reversal::ReversalId;
 use xc_exchange::domain::transaction::transaction::TransactionId;
 
 /// Outcome of handling a `stockInsufficient` refusal at exchange completion.
@@ -16,13 +20,36 @@ pub enum NegativeStockOutcome {
     Rejected(ApprovalRequestId),
 }
 
+/// The source a `NEGATIVE_STOCK` request is about: the `source_id` of the posting that went short, which
+/// `LedgerCashPostings::allows_negative` compares with the request's `object_id` (§5.1). `[required]`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NegativeStockObject {
+    /// An exchange's completion (`source_type` `EXCHANGE`).
+    Transaction(TransactionId),
+    /// A reversal's post (`source_type` `REVERSAL`, `reversal.md` §4.3).
+    Reversal(ReversalId),
+    /// A cash transfer's dispatch (`source_type` `TRANSFER`, `cash_transfers.id` as text).
+    Transfer(String),
+}
+
+impl NegativeStockObject {
+    /// The request's `object_id`: the source's id as text.
+    pub fn object_id(&self) -> String {
+        match self {
+            Self::Transaction(id) => id.0.to_string(),
+            Self::Reversal(id) => id.0.to_string(),
+            Self::Transfer(id) => id.clone(),
+        }
+    }
+}
+
 pub struct NegativeStockGate;
 
 impl NegativeStockGate {
-    /// `[required]` (#3405 §7): the APPROVED `NEGATIVE_STOCK` request whose `object_id` is `transaction_id`.
+    /// `[required]` (#3405 §7): the APPROVED `NEGATIVE_STOCK` request whose `object_id` is `object`'s.
     pub async fn approved_for_in(
         tx: &mut Transaction<'_, Postgres>,
-        transaction_id: TransactionId,
+        object: &NegativeStockObject,
     ) -> AppResult<Option<ApprovalRequestId>> {
         let id: Option<String> = sqlx::query_scalar(
             "SELECT id::text FROM approval_requests \
@@ -31,23 +58,27 @@ impl NegativeStockGate {
              LIMIT 1",
         )
         .bind(NEGATIVE_STOCK)
-        .bind(transaction_id.0.to_string())
+        .bind(object.object_id())
         .fetch_optional(&mut **tx)
         .await
         .map_err(AppError::Database)?;
         Ok(id.map(ApprovalRequestId::from))
     }
 
-    /// Opens or re-reads the `NEGATIVE_STOCK` approval request in its own transaction after
-    /// `CompleteExchange::run_in` refuses with `stockInsufficient` (#3405 §7).
+    /// Opens or re-reads the `NEGATIVE_STOCK` approval request in its own transaction after the source's
+    /// posting refuses with `stockInsufficient` (#3405 §7). `refusal` is that refusal's message: the
+    /// shortfall it carries becomes the request's `proposed_payload` (`StockShortfall`, row 1).
     pub async fn open_after_refusal(
         pool: &PgPool,
         approvals: &ApprovalService,
-        transaction_id: TransactionId,
+        object: &NegativeStockObject,
+        refusal: &str,
         actor: &Actor,
         key: &str,
     ) -> AppResult<NegativeStockOutcome> {
-        let object_id = transaction_id.0.to_string();
+        let object_id = object.object_id();
+        // XC-BE-GAPS-A row 1 fills this from `refusal` (`StockShortfall::from_refusal(..).payload()`).
+        let _ = refusal;
         let payload = json!({ "shortfall": [] });
         let mut tx = pool.begin().await.map_err(AppError::Database)?;
 

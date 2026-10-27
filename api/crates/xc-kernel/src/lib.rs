@@ -7,6 +7,7 @@ pub mod document_store;
 pub mod ids;
 pub mod input;
 pub mod kiosk_day_close;
+pub mod kiosk_queue_events;
 pub mod mode;
 pub mod money;
 pub mod notification_params;

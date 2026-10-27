@@ -32,6 +32,8 @@ pub struct QueueDesk {
     repo: Arc<dyn QueueRepository>,
     status: StatusService,
     booking_events: Option<Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents>>,
+    /// Told when staff skip or cancel a kiosk-linked ticket (`kiosk-cancel.md` §3.7).
+    kiosk_events: Option<Arc<dyn xc_kernel::kiosk_queue_events::KioskQueueEvents>>,
     notifications: Option<Arc<dyn Notifications>>,
 }
 
@@ -201,8 +203,19 @@ impl QueueDesk {
             repo,
             status,
             booking_events: None,
+            kiosk_events: None,
             notifications: None,
         }
+    }
+
+    /// `skip_in` and `cancel_in` close a kiosk-linked ticket's request through `kiosk_events`
+    /// (XC-BE-GAPS-A row 6).
+    pub fn with_kiosk_events(
+        mut self,
+        kiosk_events: Arc<dyn xc_kernel::kiosk_queue_events::KioskQueueEvents>,
+    ) -> Self {
+        self.kiosk_events = Some(kiosk_events);
+        self
     }
 
     pub fn with_booking_events(

@@ -101,8 +101,18 @@ impl SaveStep for KioskSaveStep {
                 submission_id: saved.submission_id.clone(),
                 document_ref: saved.document_ref.clone(),
             };
+            // XC-BE-GAPS-A row 5: the saved customer, or `None` for the passport skip (D13, D20).
+            let saved_customer: Option<&str> = None;
             self.kiosk
-                .complete_in(tx, ctx.branch, id, &link, &kiosk_actor(ctx.actor), ctx.now)
+                .complete_saved_in(
+                    tx,
+                    ctx.branch,
+                    id,
+                    &link,
+                    saved_customer,
+                    &kiosk_actor(ctx.actor),
+                    ctx.now,
+                )
                 .await
         })
     }

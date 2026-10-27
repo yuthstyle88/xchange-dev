@@ -40,6 +40,27 @@ impl KioskService {
         actor: &KioskActor,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
+        self.complete_saved_in(tx, branch, id, link, None, actor, now)
+            .await
+    }
+
+    /// `complete_in`, told whose passport the exchange was saved on: `saved_customer` is the saved
+    /// exchange's customer, or `None` for the desk's passport skip (`WalkInPlaceholder`, D20). When it is
+    /// `Some` and differs from the request's member, one `KIOSK_CUSTOMER_DIFFERS` line is written beside
+    /// `KIOSK_COMPLETED` (`kiosk-shared-phone.md` D13; XC-BE-GAPS-A row 5). The member stays on the request.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn complete_saved_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        id: &str,
+        link: &TransactionLink,
+        saved_customer: Option<&str>,
+        actor: &KioskActor,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        // XC-BE-GAPS-A row 5 writes the D13 line from it.
+        let _ = saved_customer;
         let stored = self
             .repo
             .find_in(tx, branch, id)

@@ -31,7 +31,9 @@ use crate::presentation::dto::v3::transaction::TransactionDto;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
+use crate::application::workflows::exchange::negative_stock_gate::NegativeStockObject;
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::negative_stock::{stock_insufficient, stock_refusal_answer};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -160,35 +162,17 @@ impl CommandAction for TransactionCompleteCommand {
         let actor = save_actor(who)?;
         let done = match self.service.run_in(tx, id, &actor, Utc::now()).await {
             Ok(done) => done,
-            Err(AppError::Domain(m)) if m.starts_with("stockInsufficient") => {
-                use crate::application::workflows::exchange::negative_stock_gate::{
-                    NegativeStockGate, NegativeStockOutcome,
-                };
-                let outcome = NegativeStockGate::open_after_refusal(
+            Err(e) if stock_insufficient(&e).is_some() => {
+                let refusal = stock_insufficient(&e).unwrap_or_default();
+                return Err(stock_refusal_answer(
                     &self.pool,
                     &self.approvals,
-                    id,
+                    &NegativeStockObject::Transaction(id),
+                    refusal,
                     who,
                     key.as_str(),
                 )
-                .await
-                .map_err(|_| server_error())?;
-                return Err(match outcome {
-                    NegativeStockOutcome::ApprovalRequired(req_id) => V3Error::new(
-                        "approvalRequired",
-                        None,
-                        format!("approvalRequired: {req_id}"),
-                        StatusCode::CONFLICT,
-                    ),
-                    NegativeStockOutcome::Rejected(req_id) => V3Error::new(
-                        "stockInsufficient",
-                        None,
-                        format!(
-                            "stockInsufficient: negative stock approval request {req_id} was rejected"
-                        ),
-                        StatusCode::CONFLICT,
-                    ),
-                });
+                .await);
             }
             Err(e) => return Err(complete_refusal(e)),
         };

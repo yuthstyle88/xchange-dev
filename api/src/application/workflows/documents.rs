@@ -57,7 +57,8 @@ impl DocumentLink {
     }
 }
 
-fn ending(mime: &str) -> &'static str {
+/// A file's ending from its recorded mime type (design D-A5): the one table every download name uses.
+pub fn ending(mime: &str) -> &'static str {
     match mime {
         "image/svg+xml" => "svg",
         "image/jpeg" => "jpg",

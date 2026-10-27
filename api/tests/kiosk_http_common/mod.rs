@@ -192,6 +192,13 @@ fn detail_of(what: &KioskAudit) -> Value {
             "reason": reason.as_str(),
             "note": reason.note(),
         }),
+        KioskAudit::CustomerDiffers {
+            saved_customer,
+            request_customer,
+        } => json!({
+            "savedCustomerId": saved_customer,
+            "requestCustomerId": request_customer,
+        }),
     }
 }
 

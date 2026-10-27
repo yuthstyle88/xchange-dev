@@ -27,7 +27,7 @@ use xc_shift::infrastructure::custody::custody_repository::append_cash_exception
 use crate::application::approval::{TransferApprovalPolicy, TransferApprovalSubject, policy_actor};
 use crate::application::denominations::face_values_in;
 use crate::domain::ledger::posting::{SourceRef, SourceType};
-use crate::domain::posting::{CashPlace, CashPostings, differences};
+use crate::domain::posting::{ApprovalRequestId, CashPlace, CashPostings, differences};
 use crate::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, NewTransferLine, TransferError, TransferStatus, TransferStep,
     add_line_minor, checked_line_minor,
@@ -223,7 +223,9 @@ impl TransferFlow {
         self.branch_tx
             .run(&t.from_branch, move |tx| {
                 Box::pin(
-                    async move { Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now).await },
+                    async move {
+                        Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now, None).await
+                    },
                 )
             })
             .await
@@ -613,7 +615,23 @@ impl TransferFlow {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        Self::dispatch_on(&self.parts(), tx, branch, who, id, now).await
+        self.dispatch_approved_in(tx, branch, who, id, now, None)
+            .await
+    }
+
+    /// `dispatch_in` allowed to take a drawer or the safe below zero by the APPROVED `NEGATIVE_STOCK`
+    /// request `allow_negative`, keyed on this transfer (R1, `ledger-inventory.md` N-1 and §5.1;
+    /// XC-BE-GAPS-A row 3). `None` is `dispatch_in`.
+    pub async fn dispatch_approved_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        who: &Actor,
+        id: &str,
+        now: DateTime<Utc>,
+        allow_negative: Option<ApprovalRequestId>,
+    ) -> AppResult<CashTransfer> {
+        Self::dispatch_on(&self.parts(), tx, branch, who, id, now, allow_negative).await
     }
 
     /// `branch` is the caller's (the session) branch. A transfer whose destination is another branch is refused
@@ -650,7 +668,10 @@ impl TransferFlow {
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
+        allow_negative: Option<ApprovalRequestId>,
     ) -> AppResult<CashTransfer> {
+        // XC-BE-GAPS-A row 3 uses it: the pre-check below and `post_in(.., None)` ignore it today.
+        let _ = &allow_negative;
         let t = parts
             .repo
             .find_by_id_in(tx, id)
