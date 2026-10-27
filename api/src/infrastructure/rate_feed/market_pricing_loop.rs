@@ -61,6 +61,11 @@ impl MarketPricingLoop {
     /// `request_id = follow:MAIN:<code>:<anchor batch id>` (already there ⇒ nothing new, the result stays as it was),
     /// `TierSetPublisher::publish_in` at MAIN, record `PUBLISHED`, then `BranchPush::push(.., PushKind::Follow)`.
     /// A failed publish records `CANDIDATE`.
+    ///
+    /// [required] FOLLOW publishes as a SYSTEM actor that is **not** EXECUTIVE, the way the BoT feed does
+    /// (`branch_refresh.rs:76-85`, `SYSTEM:rate-feed:BOT`), e.g. `SYSTEM:pricing-follow`. `RateDraftService::submit`
+    /// self-approves an out-of-bound draft for an EXECUTIVE (`rate_draft_service.rs:645`), so an EXECUTIVE actor would
+    /// let another line of the copied publication publish unreviewed; PV-15c pins the refusal.
     pub async fn plan_currency(
         &self,
         currency: CurrencyCode,

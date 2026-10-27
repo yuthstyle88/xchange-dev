@@ -619,3 +619,31 @@ async fn set_draft_records_the_publishing_draft() {
         Some(draft)
     );
 }
+
+/// PV-a4b: a patch that names only one side keeps the other side's stored bp (added after the PV-a4b review showed
+/// the first test never pinned an unnamed bp).
+#[tokio::test]
+async fn a_patch_naming_only_sell_keeps_the_stored_buy() {
+    let db = db_with_branch().await;
+    let store = PgBranchPolicyStore;
+    let mut conn = db.pool.acquire().await.expect("a connection");
+    for patch in [
+        BranchPolicyPatch {
+            buy_bp: Some(7),
+            sell_bp: Some(-7),
+            ..BranchPolicyPatch::default()
+        },
+        BranchPolicyPatch {
+            sell_bp: Some(-2),
+            ..BranchPolicyPatch::default()
+        },
+    ] {
+        store
+            .save_in(&mut conn, B, "USD", patch, "owner-1", at(0))
+            .await
+            .expect("save");
+    }
+    let rows = store.for_branch_in(&mut conn, B).await.expect("read").rows;
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].buy_bp, rows[0].sell_bp), (Some(7), Some(-2)));
+}

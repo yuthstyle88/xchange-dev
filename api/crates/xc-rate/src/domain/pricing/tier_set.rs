@@ -161,8 +161,9 @@ pub trait TierSetStore: Send + Sync {
         id: Uuid,
     ) -> StoreFuture<'a, Option<PricingTierSet>>;
 
-    /// Records the draft that publishes the set (§15.3 step 4 runs after the row is written). `PublishService` finds
-    /// the set behind a draft line through `draft_id` to write `source_snapshot.pricing`.
+    /// Records the draft that first publishes the set (§15.3 step 4 runs after the row is written); a record only.
+    /// `PublishService` writes `source_snapshot.pricing` for a line with tiers from the **latest** set of (branch,
+    /// currency) (`latest_in`), which is the price in force, so a `copy` or a BoT refresh draft finds it too.
     fn set_draft_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
