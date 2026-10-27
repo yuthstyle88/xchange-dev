@@ -75,7 +75,7 @@ describe('#5197 ApproveResults', () => {
     expect(host.textContent ?? '', 'no branch heading without branches').not.toContain(th.branchPushTitle);
   });
 
-  it('R5 a REFUSED currency with error approvalRequired: its line reads "ไม่ผ่าน" + the worded error', () => {
+  it('R5 a REFUSED currency with error approvalRequired: its line reads "ไม่ผ่าน" + "ต้องขออนุมัติก่อนประกาศราคานี้"', () => {
     mount(
       makePricingApproveOutput({
         currencies: [
@@ -86,8 +86,25 @@ describe('#5197 ApproveResults', () => {
     );
     expect(th['approveState.REFUSED']).toBe('ไม่ผ่าน');
     const eur = expectLine('EUR', 'ไม่ผ่าน', ['USD']);
-    expect(eur, 'the REFUSED line shows the worded error').toContain(worded('approvalRequired'));
+    expect(eur, 'the REFUSED line shows the refusal text').toContain('ต้องขออนุมัติก่อนประกาศราคานี้');
     expect(eur, 'never the raw code').not.toContain('approvalRequired');
+    const usd = expectLine('USD', 'ประกาศแล้ว', ['EUR']);
+    expect(usd, 'the PUBLISHED line shows no refusal').not.toContain('ไม่ผ่าน');
+  });
+
+  it('R5b a REFUSED currency with error serverError: its line reads the wordedError text', () => {
+    mount(
+      makePricingApproveOutput({
+        currencies: [
+          makePricingApproveCurrencyResult({ currency: 'USD', state: 'PUBLISHED', tierSetId: 'ts-21' }),
+          makePricingApproveCurrencyResult({ currency: 'EUR', state: 'REFUSED', tierSetId: null, error: 'serverError' }),
+        ],
+      }),
+    );
+    expect(th['approveState.REFUSED']).toBe('ไม่ผ่าน');
+    const eur = expectLine('EUR', 'ไม่ผ่าน', ['USD']);
+    expect(eur, 'the REFUSED line shows the worded error').toContain(worded('serverError'));
+    expect(eur, 'never the raw code').not.toContain('serverError');
     const usd = expectLine('USD', 'ประกาศแล้ว', ['EUR']);
     expect(usd, 'the PUBLISHED line shows no refusal').not.toContain('ไม่ผ่าน');
   });

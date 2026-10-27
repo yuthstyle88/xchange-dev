@@ -18,6 +18,14 @@ function worded(code: string): string {
   return wordedError(new ApiError({ status: 409, code, message: '' }));
 }
 
+function refusedError(code: string): string {
+  const key = `approveRefused.${code}` as keyof typeof th;
+  if (key in th) {
+    return tr(key);
+  }
+  return worded(code);
+}
+
 export function ApproveResults(props: ApproveResultsProps): JSX.Element {
   return (
     <div class="approve-results">
@@ -29,7 +37,7 @@ export function ApproveResults(props: ApproveResultsProps): JSX.Element {
               <span>{c.currency}</span>
               <span>{approveStateLabel(c.state)}</span>
               <Show when={c.state === 'REFUSED' && c.error}>
-                {(code) => <span>{worded(code())}</span>}
+                {(code) => <span>{refusedError(code())}</span>}
               </Show>
             </div>
             <Show when={c.branches && c.branches.length > 0}>

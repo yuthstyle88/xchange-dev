@@ -13,9 +13,8 @@
 // - A row without a suggestion: empty inputs, approve disabled.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import { ApiClient, ApiError } from '../../../shared/api/client';
+import { ApiClient } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
-import { wordedError } from '../../../shared/i18n/worded-error';
 import {
   makePricingApproveCurrencyResult,
   makePricingApproveOutput,
@@ -211,7 +210,7 @@ describe('#5197 TierEditor approve answer', () => {
     await approve();
     expect(th['approveState.REFUSED']).toBe('ไม่ผ่าน');
     const line = lineOf('USD', 'ไม่ผ่าน');
-    expect(line, 'the worded error').toContain(wordedError(new ApiError({ status: 409, code: 'approvalRequired', message: '' })));
+    expect(line, 'the pricing refused text (#5215)').toContain(th['approveRefused.approvalRequired']);
     expect(line, 'never the raw code').not.toContain('approvalRequired');
     expect(onApproved).toHaveBeenCalledTimes(1);
     expect(onApproved).toHaveBeenCalledWith(answer.body);
