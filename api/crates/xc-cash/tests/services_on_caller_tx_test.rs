@@ -1111,7 +1111,9 @@ async fn dispatch_in_beyond_the_safe_is_refused_and_posts_nothing() {
     )
     .await;
     match result {
-        Err(AppError::Domain(m)) => assert_eq!(m, TransferError::StockInsufficient.to_string()),
+        // Restated by the sub-controller (claude/491239fc, XC-BE-GAPS-A row 3): owner R1 (2026-10-27, #564
+        // issuecomment-6439994453) makes the posting port the one check, so the refusal is its `stockInsufficient: …`.
+        Err(AppError::Domain(m)) => assert!(m.starts_with("stockInsufficient"), "{m}"),
         other => panic!("expected StockInsufficient, got {other:?}"),
     }
     assert_eq!(
