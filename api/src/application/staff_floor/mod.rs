@@ -1,5 +1,6 @@
 //! Staff floor application services (ticket #573, design §3.2).
 
+pub mod day;
 pub mod directory;
 pub mod reader;
 

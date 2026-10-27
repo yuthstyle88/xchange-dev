@@ -76,3 +76,18 @@
   font-size: 0.875rem;
   color: var(--xc-text-muted, #6b7280);
 }
+
+.xc-attendance-time {
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #6b7280);
+}
+
+.xc-attendance-row-earlier {
+  border-color: var(--xc-warning-border, #fde68a);
+}
+
+.xc-attendance-empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--xc-text-muted, #6b7280);
+}
