@@ -84,12 +84,13 @@ impl TierSetPublisher {
                     .await?;
                 (Some(version), edited)
             }
-            Some((None, version)) => {
-                let created = self
-                    .drafts
-                    .create(tx, &branch, who, vec![tier_line])
-                    .await?;
-                (Some(version), created)
+            Some((None, _)) => {
+                // A publication with no draft (only `FeedPublisher` writes one, and nothing wires it today) cannot be
+                // copied; a draft of this line alone would publish a board with every other currency gone.
+                return Err(RateEngineError::Internal(format!(
+                    "branch {} publishes a publication with no draft; it cannot be copied",
+                    branch.as_str()
+                )));
             }
             None => {
                 let created = self
