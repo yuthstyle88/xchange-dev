@@ -43,6 +43,9 @@ async fn the_kiosk_lists_a_hidden_follow_line_and_a_board_only_currency_as_not_q
     b_follows_and_main_blocks(&room, BR_B, now).await;
     room.kiosk_switch(BR_B, "USD", true).await;
     room.kiosk_switch(BR_B, "GBP", true).await;
+    // EUR is one of the kiosk's default codes (`kiosk_currencies.rs` `DEFAULT_CODES`), enabled unless switched off;
+    // switch it off so it is board-only. Restated by the sub-controller after gemini/studio-10's block on #5163.
+    room.kiosk_switch(BR_B, "EUR", false).await;
 
     let a = view(&room, &owner(), "kiosk_currencies", BR_B, None).await;
     let data = a.ok("kiosk_currencies")["data"].clone();
