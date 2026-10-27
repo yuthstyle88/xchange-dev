@@ -86,6 +86,11 @@
   text-align: left;
 }
 
+.xc-transfers-table th {
+  font-weight: 600;
+  color: #374151;
+}
+
 .xc-transfers-no-shift {
   font-size: 0.875rem;
   color: #6b7280;
