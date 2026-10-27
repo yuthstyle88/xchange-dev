@@ -26,6 +26,7 @@ use xc_exchange::infrastructure::reversal::repository::PgReversalRepository;
 use xc_kernel::ids::BranchId;
 
 use crate::application::workflows::exchange::complete::ExchangeEffects;
+use crate::application::workflows::exchange::negative_stock_gate::NegativeStockObject;
 use crate::application::workflows::exchange::reversal_post::PostReversal;
 use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
@@ -36,6 +37,7 @@ use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::negative_stock::{stock_insufficient, stock_refusal_answer};
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -120,12 +122,16 @@ async fn this_branchs(
 
 pub struct ReversalPostCommand {
     pool: PgPool,
+    approvals: Arc<xc_approval::application::approval_service::ApprovalService>,
     service: PostReversal,
 }
 
 impl ReversalPostCommand {
     pub fn new(pool: PgPool, files: FileService) -> Self {
+        let approvals =
+            crate::presentation::http::v3::commands::make_approval_service(pool.clone());
         Self {
+            approvals,
             service: PostReversal::new(
                 pool.clone(),
                 files,
@@ -151,14 +157,24 @@ impl CommandAction for ReversalPostCommand {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        _key: IdempotencyKey,
+        key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let id = this_branchs(tx, branch, &input.id).await?;
         let actor = save_actor(who)?;
-        self.service
-            .run_in(tx, id, &actor, Utc::now())
-            .await
-            .map_err(refusal)?;
+        if let Err(e) = self.service.run_in(tx, id, &actor, Utc::now()).await {
+            if let Some(refusal) = stock_insufficient(&e) {
+                return Err(stock_refusal_answer(
+                    &self.pool,
+                    &self.approvals,
+                    &NegativeStockObject::Reversal(id),
+                    refusal,
+                    who,
+                    key.as_str(),
+                )
+                .await);
+            }
+            return Err(refusal(e));
+        }
         let Some(reversal) = PgReversalRepository::new(self.pool.clone())
             .find_in(tx, id)
             .await
