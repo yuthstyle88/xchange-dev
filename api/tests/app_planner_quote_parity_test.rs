@@ -73,6 +73,7 @@ async fn desk(db: &TestDb, code: &str, side: CustomerSide, quantity: &str) -> Ap
             fee_thb: None,
             denomination_group: GroupCode::all(),
         }],
+        payment_method: None,
     };
     let mut tx = db.pool.begin().await.expect("begin");
     let answer = service

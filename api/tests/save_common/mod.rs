@@ -1008,6 +1008,9 @@ pub async fn kiosk_quote_in(
             fee_thb: None,
             denomination_group: xc_rate::domain::currency::denomination_groups::GroupCode::all(),
         }],
+        payment_method: Some(
+            xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod::Cash,
+        ),
     };
     let kiosk = xchange::application::workflows::save_step::SaveActor {
         id: xc_kiosk::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK.to_owned(),

@@ -49,6 +49,15 @@ pub trait CustodyPages: Send + Sync + 'static {
         limit: u16,
     ) -> BoxFuture<'a, AppResult<Vec<Attendance>>>;
 
+    fn attendance_since<'a>(
+        &'a self,
+        branch: &'a BranchId,
+        only: Option<&'a str>,
+        since: CustodyTime,
+        before: Option<&'a str>,
+        limit: u16,
+    ) -> BoxFuture<'a, AppResult<Vec<Attendance>>>;
+
     fn floor<'a>(
         &'a self,
         branch: &'a BranchId,

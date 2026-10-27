@@ -1010,7 +1010,7 @@ async fn two_branches_saving_at_once_share_one_run_of_numbers() {
         let balances = shop.balances(branch_id).await.unwrap();
         assert_eq!(
             (balances["THB"].as_str(), balances["USD"].as_str()),
-            ("99486.40", "1016.00"),
+            ("99484.00", "1016.00"),
             "{branch_id}"
         );
     }

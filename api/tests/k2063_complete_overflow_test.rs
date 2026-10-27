@@ -36,6 +36,14 @@ async fn complete_refuses_settle_thb_overflowing_i64() {
     let t = c.live(Side::Buy, PaymentMethod::Cash, true, now).await;
     let ledger = Ledger::new("3210.00", None);
 
+    // Drop the CHECK in this test's scratch schema because it would otherwise refuse the corrupt row this test needs.
+    sqlx::query(
+        "ALTER TABLE transaction_lines DROP CONSTRAINT transaction_lines_rounding_within_a_coin",
+    )
+    .execute(&c.desk.db.pool)
+    .await
+    .unwrap();
+
     // i64::MAX is 9,223,372,036,854,775,807 hundredths (92,233,720,368,547,758.07 THB).
     // An amount with 9,223,372,036,854,775,808 hundredths (92,233,720,368,547,758.08 THB)
     // fits in numeric(20,2) but overflows i64 hundredths.

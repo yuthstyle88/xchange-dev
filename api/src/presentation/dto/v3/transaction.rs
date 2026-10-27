@@ -19,6 +19,7 @@ pub struct TransactionLineDto {
     pub rate_snapshot: String,
     pub thb_amount: String,
     pub fee_thb: String,
+    pub rounding_thb: String,
     pub settle_thb: String,
 }
 
@@ -84,6 +85,7 @@ impl TransactionDto {
                     rate_snapshot: l.rate_snapshot.to_string(),
                     thb_amount: l.thb_amount.to_string(),
                     fee_thb: l.fee_thb.to_string(),
+                    rounding_thb: format!("{:.2}", l.rounding_thb()),
                     settle_thb: l.settle_thb.to_string(),
                 })
                 .collect(),

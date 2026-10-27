@@ -93,6 +93,41 @@ impl CustodyPages for PgCustodyPages {
         })
     }
 
+    fn attendance_since<'a>(
+        &'a self,
+        branch: &'a BranchId,
+        only: Option<&'a str>,
+        since: CustodyTime,
+        before: Option<&'a str>,
+        limit: u16,
+    ) -> BoxFuture<'a, AppResult<Vec<Attendance>>> {
+        Box::pin(async move {
+            let att_rows = sqlx::query(
+                "SELECT id, employee_id, data \
+                 FROM attendance \
+                 WHERE branch_id = $1 \
+                   AND ($2::text IS NULL OR employee_id = $2) \
+                   AND ($3::text IS NULL OR position < (SELECT position FROM attendance WHERE branch_id = $1 AND id = $3)) \
+                   AND ((data->>'clockIn')::bigint >= $5 OR data->>'clockOut' IS NULL) \
+                 ORDER BY position DESC \
+                 LIMIT $4",
+            )
+            .bind(branch.as_str())
+            .bind(only)
+            .bind(before)
+            .bind(limit as i64)
+            .bind(since.epoch_millis())
+            .fetch_all(&self.pool)
+            .await?;
+
+            let mut attendance = Vec::with_capacity(att_rows.len());
+            for r in &att_rows {
+                attendance.push(attendance_from_row(r)?);
+            }
+            Ok(attendance)
+        })
+    }
+
     fn floor<'a>(
         &'a self,
         branch: &'a BranchId,

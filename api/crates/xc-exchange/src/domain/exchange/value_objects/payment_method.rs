@@ -25,4 +25,16 @@ impl PaymentMethod {
     pub fn is_cash(self) -> bool {
         matches!(self, Self::Cash)
     }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "Cash" => Some(Self::Cash),
+            "SCB Transfer" => Some(Self::ScbTransfer),
+            "Bank Transfer" => Some(Self::BankTransfer),
+            "Credit Card" => Some(Self::CreditCard),
+            "Alipay" => Some(Self::Alipay),
+            "PromptPay" => Some(Self::PromptPay),
+            _ => None,
+        }
+    }
 }

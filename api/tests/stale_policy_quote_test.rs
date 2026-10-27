@@ -80,6 +80,7 @@ fn request(side: Side, quantity: &str) -> QuoteRequest {
             denomination_group: xc_rate::domain::currency::denomination_groups::GroupCode::all(),
             fee_thb: None,
         }],
+        payment_method: None,
     }
 }
 

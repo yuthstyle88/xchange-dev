@@ -33,8 +33,8 @@ impl QuoteRepository for PgQuoteRepository {
         sqlx::query(
             "INSERT INTO quotes (id, organization_id, branch_id, customer_id, type, channel, \
              status, publication_id, expires_at, benefit_snapshot, created_by, accepted_by_transaction_id, \
-             created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+             created_at, updated_at, cash_settlement) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
         )
         .bind(quote.id)
         .bind(quote.organization_id)
@@ -50,6 +50,7 @@ impl QuoteRepository for PgQuoteRepository {
         .bind(quote.accepted_by_transaction_id)
         .bind(quote.created_at)
         .bind(quote.updated_at)
+        .bind(quote.cash_settlement)
         .execute(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?;
@@ -121,7 +122,7 @@ impl QuoteRepository for PgQuoteRepository {
         let q_row = sqlx::query(
             "SELECT id, organization_id, branch_id, customer_id, type, channel, status, \
              publication_id, expires_at, benefit_snapshot, created_by, accepted_by_transaction_id, \
-             created_at, updated_at \
+             created_at, updated_at, cash_settlement \
              FROM quotes WHERE id = $1",
         )
         .bind(id)
@@ -148,6 +149,7 @@ impl QuoteRepository for PgQuoteRepository {
         let accepted_by_transaction_id: Option<Uuid> = q_row.get(11);
         let created_at: DateTime<Utc> = q_row.get(12);
         let updated_at: DateTime<Utc> = q_row.get(13);
+        let cash_settlement: bool = q_row.get(14);
 
         let channel = QuoteChannel::parse_db(&channel_str).ok_or_else(|| {
             pos_error::AppError::Domain(format!("invalid channel: {channel_str}"))
@@ -241,6 +243,7 @@ impl QuoteRepository for PgQuoteRepository {
             updated_at,
             lines,
             stale: false,
+            cash_settlement,
         }))
     }
 

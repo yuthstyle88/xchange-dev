@@ -73,7 +73,7 @@ async fn a_sale_whose_baht_is_past_the_input_cap_is_read_back_whole() {
     let stored = found(&shop, &saved.document_ref).await;
     assert_eq!(
         figures(&stored),
-        owned("3299999999.67", "3300000009.67", "0.00")
+        owned("3299999999.67", "3300000009.50", "0.00")
     );
     assert_eq!(stored.amount.to_string(), "99999999.99");
     assert_eq!(stored.fee.to_string(), "10.00");
@@ -126,6 +126,12 @@ async fn one_satang_past_the_input_cap_is_read_back() {
         "1",
     );
     cmd.fee = "0.01".to_owned();
+    // CR-b #5122: a cash sale rounds the received baht down to 0.25, which would hide the one satang this test reads
+    // back, so this sale is paid by bank transfer (never rounded, quote-transaction §13.2).
+    let slip = shop.upload(MAIN, OWNER, "application/pdf", PDF).await;
+    cmd.method = "Bank Transfer".to_owned();
+    cmd.payment_ref = "TRX-CAP-0003".to_owned();
+    cmd.slip = Some(slip);
     let saved = shop.save(MAIN, cmd, at(0)).await.expect("the save");
 
     let stored = found(&shop, &saved.document_ref).await;
@@ -164,7 +170,7 @@ async fn a_large_exchange_sent_again_is_answered_as_the_first() {
             balances["THB"].as_str(),
             balances.get("USD").map(String::as_str)
         ),
-        ("3299999999.67", Some("0.01"))
+        ("3299999999.50", Some("0.01"))
     );
     shop.finish().await;
 }
@@ -186,7 +192,7 @@ async fn a_large_demo_purchase_is_read_back_whole() {
     let stored = found(&shop, &saved.document_ref).await;
     assert_eq!(
         figures(&stored),
-        owned("3209999999.68", "0.00", "3209999999.68")
+        owned("3209999999.68", "0.00", "3209999999.75")
     );
     let listed = shop
         .transactions
@@ -209,6 +215,13 @@ async fn a_stored_figure_the_save_cannot_write_is_still_a_fault() {
         )
         .await
         .expect("the save");
+    // Drop the CHECK in this test's scratch schema because it would otherwise refuse the corrupt row this test needs.
+    sqlx::query(
+        "ALTER TABLE transaction_lines DROP CONSTRAINT transaction_lines_rounding_within_a_coin",
+    )
+    .execute(&shop.pool)
+    .await
+    .expect("drop rounding check in scratch schema");
     // a negative baht figure: nothing the save writes
     sqlx::query(
         "UPDATE transaction_lines l SET thb_amount = -1 FROM transactions t \

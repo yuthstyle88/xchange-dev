@@ -2,7 +2,8 @@
 //! is honoured by the server on a graceful stop.
 //!
 //! Follow-up of PR 185. Proves that application.shutdown_timeout_secs is wired to
-//! actix's .shutdown_timeout(..) and distinguishes it from constants and defaults.
+//! actix's .shutdown_timeout(..). The windows [0.8, 2.5] and [3.6, 6.0] don't
+//! overlap, so one constant can't pass both, and both are far below the 30 s default.
 
 mod common;
 mod routes_common;
@@ -16,10 +17,10 @@ use xchange::bootstrap::Application;
 
 /// The shutdown timeout this test configures.
 const SHUTDOWN_TIMEOUT_SECS: u64 = 4;
-/// The server must be gone no sooner than 3.6 s after SIGTERM ...
+/// The held connection must close no sooner than 3.6 s after SIGTERM ...
 const GONE_NOT_BEFORE: Duration = Duration::from_millis(3600);
-/// ... and no later than 5.5 s.
-const GONE_BY: Duration = Duration::from_millis(5500);
+/// ... and no later than 6.0 s.
+const GONE_BY: Duration = Duration::from_millis(6000);
 /// How long the test waits for the server at most before it fails.
 const GIVE_UP_AFTER: Duration = Duration::from_secs(12);
 
@@ -101,7 +102,7 @@ async fn a_graceful_stop_waits_for_the_long_timeout() {
     let port = application.port();
     let server = actix_web::rt::spawn(application.run_until_stopped());
 
-    let held = tokio::task::spawn_blocking(move || prepare_held_connection(port))
+    let mut held = tokio::task::spawn_blocking(move || prepare_held_connection(port))
         .await
         .expect("the client thread");
 
@@ -112,11 +113,16 @@ async fn a_graceful_stop_waits_for_the_long_timeout() {
         .expect("run kill");
     assert!(kill.success(), "kill -TERM failed: {kill}");
 
-    let outcome = tokio::time::timeout(GIVE_UP_AFTER, server).await;
-    let took = stopped_at.elapsed();
-    drop(held);
+    let took = tokio::task::spawn_blocking(move || {
+        let mut buf = [0u8; 64];
+        while matches!(held.read(&mut buf), Ok(1..)) {}
+        Instant::now() - stopped_at
+    })
+    .await
+    .expect("the client thread");
     println!("shutdown_timeout_long_test: took {took:?}");
 
+    let outcome = tokio::time::timeout(GIVE_UP_AFTER, server).await;
     let ended = outcome.unwrap_or_else(|_| {
         panic!(
             "the server was still running {GIVE_UP_AFTER:?} after SIGTERM; \
@@ -128,13 +134,13 @@ async fn a_graceful_stop_waits_for_the_long_timeout() {
         .expect("the server ends without an error");
     assert!(
         took >= GONE_NOT_BEFORE,
-        "the server was gone {took:?} after SIGTERM: the held request was not waited for, \
+        "the held connection was closed {took:?} after SIGTERM: the held request was not waited for, \
          so this test does not show the timeout"
     );
     assert!(
         took <= GONE_BY,
-        "the server was gone {took:?} after SIGTERM; with \
-         shutdown_timeout_secs = {SHUTDOWN_TIMEOUT_SECS} it must be gone by {GONE_BY:?}"
+        "the held connection was closed {took:?} after SIGTERM; with \
+         shutdown_timeout_secs = {SHUTDOWN_TIMEOUT_SECS} it must close by {GONE_BY:?}"
     );
 
     db.drop().await;

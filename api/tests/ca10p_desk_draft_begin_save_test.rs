@@ -292,6 +292,7 @@ async fn save_at_cutoff(db: &TestDb, staff_draft_id: Option<&str>) -> Answer {
             "branch": B01,
             "customerId": db.customer,
             "channel": "DESK",
+            "paymentMethod": "Cash",
             "lines": [{ "currency": "USD", "shopSide": "BUY", "quantity": "150.00" }],
         }),
     )

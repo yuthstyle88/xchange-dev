@@ -13,7 +13,7 @@ export type TxBenefitDto = { ruleId: string, versionId: string, benefitType: str
 
 export type TxBookingRefDto = { id: string, bookingNo: string, };
 
-export type TxLineDto = { lineNo: number, currency: string, side: string, quantity: string, unitSize: string, rateSnapshot: string, thbAmount: string, feeThb: string, settleThb: string, };
+export type TxLineDto = { lineNo: number, currency: string, side: string, quantity: string, unitSize: string, rateSnapshot: string, thbAmount: string, feeThb: string, roundingThb: string, settleThb: string, };
 
 export type TxPaymentDto = { method: string, reference: string, account: string, slipFileKey: string | null, amountThb: string, bankFeeThb: string, paidAt: string, };
 

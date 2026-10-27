@@ -220,6 +220,7 @@ async fn quote(
             fee_thb: None,
             denomination_group: group(grp),
         }],
+        payment_method: None,
     };
     let mut tx = db.pool.begin().await.expect("begin");
     let answer = service.quote_in(&mut tx, req, &teller(), now).await;

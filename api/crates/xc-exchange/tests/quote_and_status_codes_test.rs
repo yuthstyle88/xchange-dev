@@ -37,6 +37,7 @@ fn quote(status: QuoteStatus, expires_at: DateTime<Utc>, publication: Uuid) -> Q
         updated_at: created,
         lines: vec![],
         stale: false,
+        cash_settlement: false,
     }
 }
 

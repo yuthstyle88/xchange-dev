@@ -193,16 +193,7 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
 
 /// `PaymentMethod::as_str` read back.
 fn payment_method(text: &str) -> Option<PaymentMethod> {
-    [
-        PaymentMethod::Cash,
-        PaymentMethod::ScbTransfer,
-        PaymentMethod::BankTransfer,
-        PaymentMethod::CreditCard,
-        PaymentMethod::Alipay,
-        PaymentMethod::PromptPay,
-    ]
-    .into_iter()
-    .find(|m| m.as_str() == text)
+    PaymentMethod::parse(text)
 }
 
 /// The signed-in caller as the exchange workflows are told who acts.

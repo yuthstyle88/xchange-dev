@@ -25,6 +25,7 @@ pub struct QuoteLineDto {
     pub final_rate: String,
     pub thb_amount: String,
     pub fee_thb: String,
+    pub rounding_thb: String,
     pub settle_thb: String,
     pub published_rate_line_id: String,
 }
@@ -44,6 +45,7 @@ pub struct QuoteDto {
     #[ts(type = "Array<any>")]
     pub benefits: Vec<serde_json::Value>,
     pub stale: bool,
+    pub cash_settlement: bool,
 }
 
 impl QuoteDto {
@@ -60,20 +62,24 @@ impl QuoteDto {
             lines: quote
                 .lines
                 .into_iter()
-                .map(|line| QuoteLineDto {
-                    currency: line.currency.to_string(),
-                    shop_side: match line.shop_side {
-                        Side::Buy => "BUY".to_string(),
-                        Side::Sell => "SELL".to_string(),
-                    },
-                    quantity: line.quantity.to_string(),
-                    unit_size: line.unit_size.to_string(),
-                    base_rate: line.base_rate.to_string(),
-                    final_rate: line.final_rate.to_string(),
-                    thb_amount: line.thb_amount.to_string(),
-                    fee_thb: line.fee_thb.to_string(),
-                    settle_thb: line.settle_thb.to_string(),
-                    published_rate_line_id: line.published_rate_line_id.to_string(),
+                .map(|line| {
+                    let rounding_thb = format!("{:.2}", line.rounding_thb());
+                    QuoteLineDto {
+                        currency: line.currency.to_string(),
+                        shop_side: match line.shop_side {
+                            Side::Buy => "BUY".to_string(),
+                            Side::Sell => "SELL".to_string(),
+                        },
+                        quantity: line.quantity.to_string(),
+                        unit_size: line.unit_size.to_string(),
+                        base_rate: line.base_rate.to_string(),
+                        final_rate: line.final_rate.to_string(),
+                        thb_amount: line.thb_amount.to_string(),
+                        fee_thb: line.fee_thb.to_string(),
+                        rounding_thb,
+                        settle_thb: line.settle_thb.to_string(),
+                        published_rate_line_id: line.published_rate_line_id.to_string(),
+                    }
                 })
                 .collect(),
             benefits: quote
@@ -83,6 +89,7 @@ impl QuoteDto {
                 .cloned()
                 .unwrap_or_default(),
             stale: quote.stale,
+            cash_settlement: quote.cash_settlement,
         }
     }
 }

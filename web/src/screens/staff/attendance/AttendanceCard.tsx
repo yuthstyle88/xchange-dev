@@ -5,6 +5,7 @@ import { ApiClient } from '../../../shared/api/client';
 import type { StaffAttendanceRow } from '../../../shared/api/generated/staff_attendance';
 import type { StaffCtx } from '../cards';
 import * as staffI18n from '../i18n';
+import { attendanceLines } from './attendance-rows';
 import { th, en } from './i18n';
 import './attendance.css';
 
@@ -58,13 +59,26 @@ export function AttendanceCard(_props: AttendanceCardProps): JSX.Element {
       </Show>
 
       <div class="xc-attendance-list">
-        <For each={rows()}>
-          {(row) => (
-            <div data-attendance-id={row.id} class="xc-attendance-row">
-              <span class="xc-attendance-name">{row.name}</span>
-              <Show when={!row.out}>
-                <span class="xc-attendance-status"> {t('stillIn')}</span>
-              </Show>
+        <For
+          each={attendanceLines(rows(), new Date())}
+          fallback={<p class="xc-attendance-empty">{t('empty')}</p>}
+        >
+          {(line) => (
+            <div
+              data-attendance-id={line.id}
+              class="xc-attendance-row"
+              classList={{ 'xc-attendance-row-earlier': line.earlierDay }}
+            >
+              <span class="xc-attendance-name">{line.name}</span>
+              <span class="xc-attendance-time">
+                {line.stillIn ? (
+                  <>
+                    {line.inText} <span class="xc-attendance-status">{t('stillIn')}</span>
+                  </>
+                ) : (
+                  `${line.inText} – ${line.outText}`
+                )}
+              </span>
             </div>
           )}
         </For>

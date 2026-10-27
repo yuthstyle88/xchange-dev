@@ -265,13 +265,13 @@ async fn a_krw_buy_is_priced_per_1000_and_rounded_half_up_once() {
             amount: d("100000"),
             principal: d("2512.35"),
             received: d("0.00"),
-            paid: d("2512.35"),
+            paid: d("2512.50"),
         },
         "100000 × 25.12345 ÷ 1000 = 2512.345, HALF_UP; BUY: principal − fee 0"
     );
     assert_eq!(
         till(&shop, &["THB", "KRW"]).await,
-        ["97487.65", "100000.00"]
+        ["97487.50", "100000.00"]
     );
     shop.finish().await;
 }
@@ -302,9 +302,9 @@ async fn a_jpy_principal_at_a_midpoint_is_rounded_half_up() {
     let stored = row(&shop, &saved.document_ref).await;
     assert_eq!(
         (stored.rate, stored.unit_size, stored.principal, stored.paid),
-        (d("23.1"), d("100"), d("3.47"), d("3.47"))
+        (d("23.1"), d("100"), d("3.47"), d("3.50"))
     );
-    assert_eq!(till(&shop, &["THB", "JPY"]).await, ["99996.53", "15.00"]);
+    assert_eq!(till(&shop, &["THB", "JPY"]).await, ["99996.50", "15.00"]);
     shop.finish().await;
 }
 
@@ -691,12 +691,12 @@ async fn a_krw_line_of_eight_places_is_saved_at_its_eleven_place_per_1_rate() {
             amount: d("100000"),
             principal: d("2512.35"),
             received: d("0.00"),
-            paid: d("2512.35"),
+            paid: d("2512.50"),
         }
     );
     assert_eq!(
         till(&shop, &["THB", "KRW"]).await,
-        ["97487.65", "100000.00"]
+        ["97487.50", "100000.00"]
     );
     shop.finish().await;
 }
