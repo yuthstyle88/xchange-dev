@@ -1,8 +1,8 @@
 //! FOLLOW at MAIN: plan one currency's tiers from the market, or say why not (pricing-tiers.md §15.5; `H:` §6;
 //! V9:automatic `planAutomaticPricing`). Pure: no I/O, the caller passes `now`.
 //!
-//! SKELETON (XC-V9-PRICING): `SourceFreshness::is_current`, `FollowReason::as_str`, `FollowPlan::plan` and
-//! `FollowResultStatus::{as_str, parse}` are PV-f's. Types and signatures stay.
+//! SKELETON (XC-V9-PRICING): `SourceFreshness::is_current` and `FollowPlan::plan` are PV-f1's; the wire strings are
+//! the contract and are written here. Types and signatures stay.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -28,7 +28,7 @@ impl SourceFreshness {
     /// `MarketStaleness::STALE_AFTER_MINUTES` (30) old at `now`. Shared with `FollowVisibility` (§15.7 `STALE`).
     pub fn is_current(&self, now: DateTime<Utc>) -> bool {
         let _ = (now,);
-        todo!("PV-f: SourceFreshness::is_current")
+        todo!("PV-f1: SourceFreshness::is_current")
     }
 }
 
@@ -47,7 +47,27 @@ pub enum FollowReason {
 impl FollowReason {
     /// `"NO_ANCHOR"` · `"STALE_SOURCE"` · `"PRECISION"` · `"BELOW_COST"` · `"LARGE_MOVE"` · `"INVALID_TIERS"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-f: FollowReason::as_str")
+        match self {
+            FollowReason::NoAnchor => "NO_ANCHOR",
+            FollowReason::StaleSource => "STALE_SOURCE",
+            FollowReason::Precision => "PRECISION",
+            FollowReason::BelowCost => "BELOW_COST",
+            FollowReason::LargeMove => "LARGE_MOVE",
+            FollowReason::InvalidTiers => "INVALID_TIERS",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        [
+            FollowReason::NoAnchor,
+            FollowReason::StaleSource,
+            FollowReason::Precision,
+            FollowReason::BelowCost,
+            FollowReason::LargeMove,
+            FollowReason::InvalidTiers,
+        ]
+        .into_iter()
+        .find(|r| r.as_str() == text)
     }
 }
 
@@ -90,7 +110,7 @@ impl FollowPlan {
     /// Otherwise `Candidate` with the suggested tiers and the anchor.
     pub fn plan(input: &FollowInput, now: DateTime<Utc>) -> FollowOutcome {
         let _ = (input, now);
-        todo!("PV-f: FollowPlan::plan")
+        todo!("PV-f1: FollowPlan::plan")
     }
 }
 
@@ -107,12 +127,20 @@ pub enum FollowResultStatus {
 impl FollowResultStatus {
     /// `"CANDIDATE"` · `"BLOCKED"` · `"PUBLISHED"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-f: FollowResultStatus::as_str")
+        match self {
+            FollowResultStatus::Candidate => "CANDIDATE",
+            FollowResultStatus::Blocked => "BLOCKED",
+            FollowResultStatus::Published => "PUBLISHED",
+        }
     }
 
     pub fn parse(text: &str) -> Option<Self> {
-        let _ = (text,);
-        todo!("PV-f: FollowResultStatus::parse")
+        match text {
+            "CANDIDATE" => Some(FollowResultStatus::Candidate),
+            "BLOCKED" => Some(FollowResultStatus::Blocked),
+            "PUBLISHED" => Some(FollowResultStatus::Published),
+            _ => None,
+        }
     }
 }
 

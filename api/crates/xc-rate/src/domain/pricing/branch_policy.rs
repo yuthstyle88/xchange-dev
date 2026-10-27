@@ -1,6 +1,6 @@
 //! How a branch follows MAIN (pricing-tiers.md §15.4; `H:` §7; V9:engine `resolvePolicy`, `adjustTiers`).
 //!
-//! SKELETON (XC-V9-PRICING): `BranchPricingPolicy::{resolve, adjust, check_bp}` and `PolicyFrom::as_str` are PV-a's.
+//! SKELETON (XC-V9-PRICING): `BranchPricingPolicy::{resolve, adjust, check_bp}` are PV-a2's.
 //! Types and signatures stay.
 
 use chrono::{DateTime, Utc};
@@ -33,7 +33,11 @@ pub enum PolicyFrom {
 impl PolicyFrom {
     /// `"currency"` · `"*"` · `"default"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-a: PolicyFrom::as_str")
+        match self {
+            PolicyFrom::Currency => "currency",
+            PolicyFrom::Branch => "*",
+            PolicyFrom::Default => "default",
+        }
     }
 }
 
@@ -64,7 +68,7 @@ impl BranchPricingPolicy {
     /// the currency row's only.
     pub fn resolve(&self, currency: &str) -> ResolvedPolicy {
         let _ = (currency,);
-        todo!("PV-a: BranchPricingPolicy::resolve")
+        todo!("PV-a2: BranchPricingPolicy::resolve")
     }
 
     /// `buy[i] = floor_d(mainBuy[i] × (1 + buyBp/10000))`, `sell[i] = ceil_d(mainSell[i] × (1 + sellBp/10000))`, where
@@ -79,13 +83,13 @@ impl BranchPricingPolicy {
         config: &SuggestionConfig,
     ) -> Result<[TierRate; 4], Vec<TierError>> {
         let _ = (base, policy, unit_size, anchor, config);
-        todo!("PV-a: BranchPricingPolicy::adjust")
+        todo!("PV-a2: BranchPricingPolicy::adjust")
     }
 
     /// `Err` with the reason when `bp` is outside −300..=300 (`validationFailed`).
     pub fn check_bp(bp: i32) -> Result<i32, String> {
         let _ = (bp,);
-        todo!("PV-a: BranchPricingPolicy::check_bp")
+        todo!("PV-a2: BranchPricingPolicy::check_bp")
     }
 }
 

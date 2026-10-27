@@ -1,6 +1,7 @@
 //! What the storefront shows (pricing-tiers.md §15.8; V9:store `rate_display_settings`, V9:display `DEFAULT_DISPLAY`).
 //!
-//! SKELETON (XC-V9-PRICING): every body is PV-a's. Types and signatures stay.
+//! SKELETON (XC-V9-PRICING): `DisplaySettings::{validate, order}` are PV-a3's; the default and the wire strings are
+//! the contract and are written here. Types and signatures stay.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -30,7 +31,11 @@ pub enum DisplayFrom {
 impl DisplayFrom {
     /// `"branch"` · `"MAIN"` · `"default"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-a: DisplayFrom::as_str")
+        match self {
+            DisplayFrom::Branch => "branch",
+            DisplayFrom::Main => "MAIN",
+            DisplayFrom::Default => "default",
+        }
     }
 }
 
@@ -50,7 +55,17 @@ impl DisplaySettings {
     /// V.9's `DEFAULT_DISPLAY`: tiers `[1,2,3,4]`; featured `MYR, CNY, INR, RUB, KRW, JPY, GBP, USD, TWD, EUR`;
     /// highlight on; `all_market` on.
     pub fn v9_default() -> Self {
-        todo!("PV-a: DisplaySettings::v9_default")
+        Self {
+            tiers: vec![1, 2, 3, 4],
+            featured: [
+                "MYR", "CNY", "INR", "RUB", "KRW", "JPY", "GBP", "USD", "TWD", "EUR",
+            ]
+            .iter()
+            .map(|c| c.to_string())
+            .collect(),
+            highlight: true,
+            all_market: true,
+        }
     }
 
     /// `rateDisplaySave`'s checks: 1..=4 tiers, each 1..=4, no repeats; at most 10 featured, each a 3-letter
@@ -62,13 +77,13 @@ impl DisplaySettings {
         all_market: bool,
     ) -> Result<Self, String> {
         let _ = (tiers, featured, highlight, all_market);
-        todo!("PV-a: DisplaySettings::validate")
+        todo!("PV-a3: DisplaySettings::validate")
     }
 
     /// `priced` is every currency the branch has a published price for; `sr_order` is Super Rich's market order.
     pub fn order(&self, priced: &[String], sr_order: &[String]) -> DisplayOrder {
         let _ = (priced, sr_order);
-        todo!("PV-a: DisplaySettings::order")
+        todo!("PV-a3: DisplaySettings::order")
     }
 }
 

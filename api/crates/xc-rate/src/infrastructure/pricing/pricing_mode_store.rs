@@ -1,6 +1,6 @@
 //! `PgPricingModeStore`: `pricing_modes` (pricing-tiers.md §15.2, §15.5).
 //!
-//! SKELETON (XC-V9-PRICING): every body is PV-f's. Signatures stay.
+//! SKELETON (XC-V9-PRICING): every body is PV-f2b's. Signatures stay.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -21,7 +21,7 @@ impl PricingModeStore for PgPricingModeStore {
         at: DateTime<Utc>,
     ) -> StoreFuture<'a, i64> {
         let _ = (conn, currency, mode, by, at);
-        Box::pin(async move { todo!("PV-f: PgPricingModeStore::save_in") })
+        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::save_in") })
     }
 
     fn get_in<'a>(
@@ -30,7 +30,7 @@ impl PricingModeStore for PgPricingModeStore {
         currency: CurrencyCode,
     ) -> StoreFuture<'a, Option<PricingModeRow>> {
         let _ = (conn, currency);
-        Box::pin(async move { todo!("PV-f: PgPricingModeStore::get_in") })
+        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::get_in") })
     }
 
     fn following_in<'a>(
@@ -38,7 +38,7 @@ impl PricingModeStore for PgPricingModeStore {
         conn: &'a mut PgConnection,
     ) -> StoreFuture<'a, Vec<CurrencyCode>> {
         let _ = (conn,);
-        Box::pin(async move { todo!("PV-f: PgPricingModeStore::following_in") })
+        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::following_in") })
     }
 
     fn newest_revision_in<'a>(
@@ -46,6 +46,6 @@ impl PricingModeStore for PgPricingModeStore {
         conn: &'a mut PgConnection,
     ) -> StoreFuture<'a, Option<i64>> {
         let _ = (conn,);
-        Box::pin(async move { todo!("PV-f: PgPricingModeStore::newest_revision_in") })
+        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::newest_revision_in") })
     }
 }

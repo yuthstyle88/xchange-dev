@@ -1,6 +1,6 @@
 //! `PgDisplaySettingsStore`: `rate_display_settings` (pricing-tiers.md §15.2, §15.8).
 //!
-//! SKELETON (XC-V9-PRICING): every body is PV-a's. Signatures stay.
+//! SKELETON (XC-V9-PRICING): every body is PV-a4c's. Signatures stay.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -19,7 +19,7 @@ impl DisplaySettingsStore for PgDisplaySettingsStore {
         branch: &'a str,
     ) -> StoreFuture<'a, (DisplaySettings, DisplayFrom)> {
         let _ = (conn, branch);
-        Box::pin(async move { todo!("PV-a: PgDisplaySettingsStore::effective_in") })
+        Box::pin(async move { todo!("PV-a4c: PgDisplaySettingsStore::effective_in") })
     }
 
     fn save_in<'a>(
@@ -31,12 +31,12 @@ impl DisplaySettingsStore for PgDisplaySettingsStore {
         at: DateTime<Utc>,
     ) -> StoreFuture<'a, ()> {
         let _ = (conn, branch, settings, by, at);
-        Box::pin(async move { todo!("PV-a: PgDisplaySettingsStore::save_in") })
+        Box::pin(async move { todo!("PV-a4c: PgDisplaySettingsStore::save_in") })
     }
 
     fn clear_in<'a>(&'a self, conn: &'a mut PgConnection, branch: &'a str) -> StoreFuture<'a, ()> {
         let _ = (conn, branch);
-        Box::pin(async move { todo!("PV-a: PgDisplaySettingsStore::clear_in") })
+        Box::pin(async move { todo!("PV-a4c: PgDisplaySettingsStore::clear_in") })
     }
 
     fn newest_in<'a>(
@@ -44,6 +44,6 @@ impl DisplaySettingsStore for PgDisplaySettingsStore {
         conn: &'a mut PgConnection,
     ) -> StoreFuture<'a, Option<DateTime<Utc>>> {
         let _ = (conn,);
-        Box::pin(async move { todo!("PV-a: PgDisplaySettingsStore::newest_in") })
+        Box::pin(async move { todo!("PV-a4c: PgDisplaySettingsStore::newest_in") })
     }
 }

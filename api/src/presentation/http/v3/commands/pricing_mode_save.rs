@@ -2,7 +2,7 @@
 //! frame change (`may_change_the_frame`), V.9's OWNER. Bumps `pricing_modes.revision`. Another branch ⇒
 //! `validationFailed`.
 //!
-//! SKELETON (XC-V9-PRICING): `run` is PV-f's. Types, route and registration stay.
+//! SKELETON (XC-V9-PRICING): `run` is PV-f4's. Types, route and registration stay.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -55,7 +55,7 @@ impl CommandAction for PricingModeSaveCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let _ = (tx, branch, who, input);
-        todo!("PV-f: pricingModeSave")
+        todo!("PV-f4: pricingModeSave")
     }
 }
 

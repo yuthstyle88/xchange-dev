@@ -2,8 +2,8 @@
 //! (5 min, only when `MARKET_FEED_ENABLED=true`), plan each FOLLOW currency under `RATE_FEED_LOCK_KEY` and publish
 //! the unblocked plans. It does not depend on the BoT tick (gap 5).
 //!
-//! SKELETON (XC-V9-PRICING): `run`, `plan_once` and `plan_currency` are PV-f's; the spawn in `bootstrap/mod.rs` is
-//! PV-f's too. Types and signatures stay.
+//! SKELETON (XC-V9-PRICING): `run`, `plan_once` and `plan_currency` are PV-f3's; the spawn in `bootstrap/mod.rs` is
+//! PV-f3's too. Types and signatures stay.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,7 +43,7 @@ impl MarketPricingLoop {
     /// `refresh.tick(now)` then `plan_once(now)`, every `interval`, until `stop` turns true.
     pub async fn run(self: Arc<Self>, interval: Duration, stop: watch::Receiver<bool>) {
         let _ = (&self.refresh, interval, stop);
-        todo!("PV-f: MarketPricingLoop::run")
+        todo!("PV-f3: MarketPricingLoop::run")
     }
 
     /// Plans every currency whose `pricing_modes.mode` is `FOLLOW`, under `RATE_FEED_LOCK_KEY`, and returns each
@@ -53,7 +53,7 @@ impl MarketPricingLoop {
         now: DateTime<Utc>,
     ) -> Result<Vec<FollowResult>, RateEngineError> {
         let _ = now;
-        todo!("PV-f: MarketPricingLoop::plan_once")
+        todo!("PV-f3: MarketPricingLoop::plan_once")
     }
 
     /// One FOLLOW currency at MAIN: build `FollowInput`, `FollowPlan::plan`; blocked ⇒ record `BLOCKED` with the
@@ -67,6 +67,6 @@ impl MarketPricingLoop {
         now: DateTime<Utc>,
     ) -> Result<FollowResult, RateEngineError> {
         let _ = (&self.pool, &self.publisher, &self.push, currency, now);
-        todo!("PV-f: MarketPricingLoop::plan_currency")
+        todo!("PV-f3: MarketPricingLoop::plan_currency")
     }
 }

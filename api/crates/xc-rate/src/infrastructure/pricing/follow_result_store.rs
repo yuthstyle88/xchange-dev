@@ -1,6 +1,6 @@
 //! `PgFollowResultStore`: `pricing_follow_results` (pricing-tiers.md §15.2, §15.5).
 //!
-//! SKELETON (XC-V9-PRICING): every body is PV-f's. Signatures stay.
+//! SKELETON (XC-V9-PRICING): every body is PV-f2a's. Signatures stay.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -18,7 +18,7 @@ impl FollowResultStore for PgFollowResultStore {
         result: &'a FollowResult,
     ) -> StoreFuture<'a, ()> {
         let _ = (conn, result);
-        Box::pin(async move { todo!("PV-f: PgFollowResultStore::record_in") })
+        Box::pin(async move { todo!("PV-f2a: PgFollowResultStore::record_in") })
     }
 
     fn latest_in<'a>(
@@ -27,7 +27,7 @@ impl FollowResultStore for PgFollowResultStore {
         currency: CurrencyCode,
     ) -> StoreFuture<'a, Option<FollowResult>> {
         let _ = (conn, currency);
-        Box::pin(async move { todo!("PV-f: PgFollowResultStore::latest_in") })
+        Box::pin(async move { todo!("PV-f2a: PgFollowResultStore::latest_in") })
     }
 
     fn newest_in<'a>(
@@ -35,6 +35,6 @@ impl FollowResultStore for PgFollowResultStore {
         conn: &'a mut PgConnection,
     ) -> StoreFuture<'a, Option<DateTime<Utc>>> {
         let _ = (conn,);
-        Box::pin(async move { todo!("PV-f: PgFollowResultStore::newest_in") })
+        Box::pin(async move { todo!("PV-f2a: PgFollowResultStore::newest_in") })
     }
 }

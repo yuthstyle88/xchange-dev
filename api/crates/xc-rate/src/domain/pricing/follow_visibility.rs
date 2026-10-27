@@ -1,7 +1,7 @@
 //! Whether the board may show a published line (pricing-tiers.md §15.7, B5; V9:pricing `automaticBoardProjection`).
 //! Fail closed for FOLLOW; `MANUAL` is never hidden; `AUTO` is never hidden by this rule. Pure.
 //!
-//! SKELETON (XC-V9-PRICING): `FollowVisibility::of` and `HiddenReason::as_str` are PV-i's. Types and signatures stay.
+//! SKELETON (XC-V9-PRICING): `FollowVisibility::of` is PV-iv's; the wire strings are written here. Types and signatures stay.
 
 use uuid::Uuid;
 
@@ -19,7 +19,11 @@ pub enum HiddenReason {
 impl HiddenReason {
     /// `"STALE"` · `"BLOCKED"` · `"MISMATCH"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-i: HiddenReason::as_str")
+        match self {
+            HiddenReason::Stale => "STALE",
+            HiddenReason::Blocked => "BLOCKED",
+            HiddenReason::Mismatch => "MISMATCH",
+        }
     }
 }
 
@@ -57,6 +61,6 @@ impl FollowVisibility {
     /// `Manual` and `Auto` lines: always `None`.
     pub fn of(input: &VisibilityInput) -> Option<HiddenReason> {
         let _ = (input,);
-        todo!("PV-i: FollowVisibility::of")
+        todo!("PV-iv: FollowVisibility::of")
     }
 }

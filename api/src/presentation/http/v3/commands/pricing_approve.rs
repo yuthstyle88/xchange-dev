@@ -77,7 +77,7 @@ pub struct PricingApproveRowInput {
     /// Exactly four tiers 1..=4.
     pub tiers: Vec<PricingTierPriceInput>,
     /// pricing-tiers.md §15.3: the latest `pricing_tier_sets.id` the page saw for this currency (`tierSet.id` on the
-    /// board), or omitted when it saw none. A newer one ⇒ `conflict`, nothing written.
+    /// board), or omitted when it saw none. Not the latest ⇒ 409 `staleVersion`, nothing written.
     #[serde(default)]
     #[ts(optional)]
     pub tier_set_id: Option<String>,
@@ -114,7 +114,9 @@ pub struct PricingApproveOutput {
 #[ts(export_to = "pricing_approve.ts")]
 pub struct PricingApproveCurrencyResult {
     pub currency: String,
-    /// `PUBLISHED` · `REFUSED`.
+    /// `PUBLISHED` · `REFUSED`. A row that fails parsing or `TierCheck` answers the whole request 400
+    /// `validationFailed` and writes nothing (§15.3 step 2); `REFUSED` is a currency that passed the checks but whose
+    /// publish was refused (e.g. `approvalRequired` from another line of the copied publication).
     pub state: String,
     pub tier_set_id: Option<String>,
     /// The v3 error code when `REFUSED`.

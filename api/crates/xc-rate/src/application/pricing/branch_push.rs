@@ -1,6 +1,6 @@
 //! MAIN is the base; branches follow it in basis points (pricing-tiers.md §15.4; `H:` §5, §7).
 //!
-//! SKELETON (XC-V9-PRICING): `BranchPush::push`, `PushKind::row_source` and `BranchPushState::as_str` are PV-d's.
+//! SKELETON (XC-V9-PRICING): `BranchPush::push` is PV-d1's; the wire strings are written here.
 //! Types and signatures stay.
 
 use std::sync::Arc;
@@ -25,7 +25,10 @@ pub enum PushKind {
 impl PushKind {
     /// The branch row's source: `Manual` ⇒ `MainPush`; `Follow` ⇒ `Follow` (§15.5).
     pub fn row_source(self) -> TierSetSource {
-        todo!("PV-d: PushKind::row_source")
+        match self {
+            PushKind::Manual => TierSetSource::MainPush,
+            PushKind::Follow => TierSetSource::Follow,
+        }
     }
 }
 
@@ -42,7 +45,12 @@ pub enum BranchPushState {
 impl BranchPushState {
     /// `"PUBLISHED"` · `"SKIPPED_OWN"` · `"FAILED"` · `"ALREADY_DONE"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-d: BranchPushState::as_str")
+        match self {
+            BranchPushState::Published => "PUBLISHED",
+            BranchPushState::SkippedOwn => "SKIPPED_OWN",
+            BranchPushState::Failed => "FAILED",
+            BranchPushState::AlreadyDone => "ALREADY_DONE",
+        }
     }
 }
 
@@ -99,6 +107,6 @@ impl BranchPush {
             base,
             kind,
         );
-        todo!("PV-d: BranchPush::push")
+        todo!("PV-d1: BranchPush::push")
     }
 }

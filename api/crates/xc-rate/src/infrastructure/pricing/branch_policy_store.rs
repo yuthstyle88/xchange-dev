@@ -1,6 +1,6 @@
 //! `PgBranchPolicyStore`: `pricing_branch_policy` (pricing-tiers.md §15.2, §15.4).
 //!
-//! SKELETON (XC-V9-PRICING): every body is PV-a's. Signatures stay.
+//! SKELETON (XC-V9-PRICING): every body is PV-a4b's. Signatures stay.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -19,7 +19,7 @@ impl BranchPolicyStore for PgBranchPolicyStore {
         branch: &'a str,
     ) -> StoreFuture<'a, BranchPricingPolicy> {
         let _ = (conn, branch);
-        Box::pin(async move { todo!("PV-a: PgBranchPolicyStore::for_branch_in") })
+        Box::pin(async move { todo!("PV-a4b: PgBranchPolicyStore::for_branch_in") })
     }
 
     fn save_in<'a>(
@@ -32,6 +32,6 @@ impl BranchPolicyStore for PgBranchPolicyStore {
         at: DateTime<Utc>,
     ) -> StoreFuture<'a, ()> {
         let _ = (conn, branch, scope, patch, by, at);
-        Box::pin(async move { todo!("PV-a: PgBranchPolicyStore::save_in") })
+        Box::pin(async move { todo!("PV-a4b: PgBranchPolicyStore::save_in") })
     }
 }

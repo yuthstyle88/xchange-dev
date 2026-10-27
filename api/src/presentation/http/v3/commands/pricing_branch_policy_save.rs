@@ -2,7 +2,7 @@
 //! (−300..=300) for the branch default (`"*"`) or one currency, `own` and `follow` for one currency. An EXECUTIVE frame
 //! change (`may_change_the_frame`), V.9's OWNER.
 //!
-//! SKELETON (XC-V9-PRICING): `run` is PV-d's. Types, route and registration stay.
+//! SKELETON (XC-V9-PRICING): `run` is PV-d2's. Types, route and registration stay.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -65,7 +65,7 @@ impl CommandAction for PricingBranchPolicySaveCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let _ = (tx, branch, who, input);
-        todo!("PV-d: pricingBranchPolicySave")
+        todo!("PV-d2: pricingBranchPolicySave")
     }
 }
 

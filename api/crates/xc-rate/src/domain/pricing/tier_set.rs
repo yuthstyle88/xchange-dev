@@ -1,8 +1,8 @@
 //! An approved or followed tier set (pricing-tiers.md §15.1, §15.2; V9:store `pricing_tiers`): four tier prices at the
 //! currency's `unit_size` that **are** the counter price (V-1). Append-only: the latest row per (branch, currency) wins.
 //!
-//! SKELETON (XC-V9-PRICING): `TierRate::to_check`, `TierSetSource::{as_str, parse, pricing_source}` and
-//! `PricingSource::as_str` are PV-a's. Types and signatures stay.
+//! SKELETON (XC-V9-PRICING): `TierRate::to_check` is PV-a1's. The wire strings are the contract and are written here.
+//! Types and signatures stay.
 //!
 //! §15.2a names the per-tier pair `TierPrice`; that name is already `pricing_suggestion::TierPrice` (whose sides are
 //! `Option`, for a suggestion with no anchor), so the approved pair is `TierRate`: both sides present.
@@ -30,7 +30,7 @@ impl TierRate {
     /// The four tiers in `TierCheck::validate`'s shape (`tier_no` 1..=4, both sides `Some`).
     pub fn to_check(tiers: &[TierRate; 4]) -> [TierPrice; 4] {
         let _ = (tiers,);
-        todo!("PV-a: TierRate::to_check")
+        todo!("PV-a1: TierRate::to_check")
     }
 }
 
@@ -48,17 +48,28 @@ pub enum TierSetSource {
 impl TierSetSource {
     /// `"MANUAL"` · `"MAIN_PUSH"` · `"FOLLOW"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-a: TierSetSource::as_str")
+        match self {
+            TierSetSource::Manual => "MANUAL",
+            TierSetSource::MainPush => "MAIN_PUSH",
+            TierSetSource::Follow => "FOLLOW",
+        }
     }
 
     pub fn parse(text: &str) -> Option<Self> {
-        let _ = (text,);
-        todo!("PV-a: TierSetSource::parse")
+        match text {
+            "MANUAL" => Some(TierSetSource::Manual),
+            "MAIN_PUSH" => Some(TierSetSource::MainPush),
+            "FOLLOW" => Some(TierSetSource::Follow),
+            _ => None,
+        }
     }
 
     /// What the board and the public projection call it: `MAIN_PUSH` reads as `MANUAL` (§15.7).
     pub fn pricing_source(self) -> PricingSource {
-        todo!("PV-a: TierSetSource::pricing_source")
+        match self {
+            TierSetSource::Manual | TierSetSource::MainPush => PricingSource::Manual,
+            TierSetSource::Follow => PricingSource::Follow,
+        }
     }
 }
 
@@ -73,7 +84,11 @@ pub enum PricingSource {
 impl PricingSource {
     /// `"AUTO"` · `"MANUAL"` · `"FOLLOW"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-a: PricingSource::as_str")
+        match self {
+            PricingSource::Auto => "AUTO",
+            PricingSource::Manual => "MANUAL",
+            PricingSource::Follow => "FOLLOW",
+        }
     }
 }
 
@@ -92,7 +107,8 @@ pub struct MarketAnchor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PricingTierSet {
     pub id: Uuid,
-    /// Idempotency: the approve's `requestId`; `<main request>:<branch>` for a push; `follow:MAIN:<code>:<batch>`.
+    /// Idempotency, UNIQUE: an approve writes `<Idempotency-Key>:<currency>` (one key may approve several currencies);
+    /// a push writes `<MAIN row's request_id>:<branch>`; FOLLOW at MAIN writes `follow:MAIN:<code>:<anchor batch id>`.
     pub request_id: String,
     pub branch: String,
     pub currency: CurrencyCode,

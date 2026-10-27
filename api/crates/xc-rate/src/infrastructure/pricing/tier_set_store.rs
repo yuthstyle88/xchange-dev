@@ -1,7 +1,7 @@
 //! `PgTierSetStore`: `pricing_tier_sets` (pricing-tiers.md §15.2). `tiers` is jsonb `[{tier,buy,sell}]` with decimal
 //! strings; `anchor` is jsonb `{source,buy,sell,fetched_at,batch_id}`.
 //!
-//! SKELETON (XC-V9-PRICING): every body is PV-a's. Signatures stay.
+//! SKELETON (XC-V9-PRICING): every body is PV-a4a's. Signatures stay.
 
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -18,7 +18,7 @@ impl TierSetStore for PgTierSetStore {
         set: &'a PricingTierSet,
     ) -> StoreFuture<'a, bool> {
         let _ = (conn, set);
-        Box::pin(async move { todo!("PV-a: PgTierSetStore::insert_in") })
+        Box::pin(async move { todo!("PV-a4a: PgTierSetStore::insert_in") })
     }
 
     fn latest_in<'a>(
@@ -28,7 +28,7 @@ impl TierSetStore for PgTierSetStore {
         currency: CurrencyCode,
     ) -> StoreFuture<'a, Option<PricingTierSet>> {
         let _ = (conn, branch, currency);
-        Box::pin(async move { todo!("PV-a: PgTierSetStore::latest_in") })
+        Box::pin(async move { todo!("PV-a4a: PgTierSetStore::latest_in") })
     }
 
     fn latest_follow_in<'a>(
@@ -38,7 +38,7 @@ impl TierSetStore for PgTierSetStore {
         currency: CurrencyCode,
     ) -> StoreFuture<'a, Option<PricingTierSet>> {
         let _ = (conn, branch, currency);
-        Box::pin(async move { todo!("PV-a: PgTierSetStore::latest_follow_in") })
+        Box::pin(async move { todo!("PV-a4a: PgTierSetStore::latest_follow_in") })
     }
 
     fn get_in<'a>(
@@ -47,7 +47,7 @@ impl TierSetStore for PgTierSetStore {
         id: Uuid,
     ) -> StoreFuture<'a, Option<PricingTierSet>> {
         let _ = (conn, id);
-        Box::pin(async move { todo!("PV-a: PgTierSetStore::get_in") })
+        Box::pin(async move { todo!("PV-a4a: PgTierSetStore::get_in") })
     }
 
     fn by_request_in<'a>(
@@ -56,6 +56,6 @@ impl TierSetStore for PgTierSetStore {
         request_id: &'a str,
     ) -> StoreFuture<'a, Option<PricingTierSet>> {
         let _ = (conn, request_id);
-        Box::pin(async move { todo!("PV-a: PgTierSetStore::by_request_in") })
+        Box::pin(async move { todo!("PV-a4a: PgTierSetStore::by_request_in") })
     }
 }

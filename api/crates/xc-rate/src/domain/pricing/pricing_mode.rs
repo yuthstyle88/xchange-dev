@@ -1,6 +1,6 @@
 //! FOLLOW or MANUAL per currency, MAIN only (pricing-tiers.md §15.2 `pricing_modes`, §15.5; `H:` §6: absence = Manual).
 //!
-//! SKELETON (XC-V9-PRICING): `PricingMode::{as_str, parse}` are PV-f's. Types and signatures stay.
+//! The wire strings are the contract and are written in the skeleton (XC-V9-PRICING).
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -17,12 +17,18 @@ pub enum PricingMode {
 impl PricingMode {
     /// `"FOLLOW"` · `"MANUAL"`.
     pub fn as_str(self) -> &'static str {
-        todo!("PV-f: PricingMode::as_str")
+        match self {
+            PricingMode::Follow => "FOLLOW",
+            PricingMode::Manual => "MANUAL",
+        }
     }
 
     pub fn parse(text: &str) -> Option<Self> {
-        let _ = (text,);
-        todo!("PV-f: PricingMode::parse")
+        match text {
+            "FOLLOW" => Some(PricingMode::Follow),
+            "MANUAL" => Some(PricingMode::Manual),
+            _ => None,
+        }
     }
 }
 
