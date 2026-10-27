@@ -24,7 +24,7 @@ function makeRow(over: Partial<BoardRow> = {}): BoardRow {
 function mount(row: BoardRow, singleColumn = true) {
   host = document.createElement('tbody');
   document.body.appendChild(host);
-  dispose = render(() => <BoardRowView row={row} singleColumn={singleColumn} />, host);
+  dispose = render(() => <BoardRowView row={row} singleColumn={singleColumn} bandCount={4} />, host);
 }
 
 afterEach(() => {

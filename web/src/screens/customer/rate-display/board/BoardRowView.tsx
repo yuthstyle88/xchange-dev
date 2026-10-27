@@ -10,6 +10,7 @@ import './board-table.css';
 export interface BoardRowViewProps {
   row: BoardRow;
   singleColumn: boolean;
+  bandCount: number;
 }
 
 function createSideState(raw: () => string | null) {
@@ -45,7 +46,7 @@ export function BoardRowView(props: BoardRowViewProps): JSX.Element {
       <Show
         when={!props.row.contactOnly}
         fallback={
-          <td class="xc-rb-contact-cell" colSpan={props.singleColumn ? 1 : 4}>
+          <td class="xc-rb-contact-cell" colSpan={props.singleColumn ? 1 : props.bandCount}>
             {bilingual(BOARD_TEXT.contactCounter)}
           </td>
         }

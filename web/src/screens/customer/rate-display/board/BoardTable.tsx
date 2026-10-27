@@ -137,7 +137,7 @@ export function BoardTable(props: BoardTableProps): JSX.Element {
         <For each={rowKeys()}>
           {(key) => {
             const row = createMemo(() => rowsByKey().get(key)!);
-            return <BoardRowView row={row()} singleColumn={props.model.singleColumn} />;
+            return <BoardRowView row={row()} singleColumn={props.model.singleColumn} bandCount={props.model.headings.length} />;
           }}
         </For>
       </tbody>
