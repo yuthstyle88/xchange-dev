@@ -33,7 +33,12 @@ use xc_rate::infrastructure::reference::pg_reference_batch_store::PgReferenceBat
 use crate::config::Settings;
 use crate::infrastructure::rate_feed::branch_refresh::DraftBranchRefresh;
 use crate::infrastructure::rate_feed::feed_loop::{RateFeedConfig, RateFeedLoop};
+use crate::infrastructure::rate_feed::market_pricing_loop::MarketPricingLoop;
 use crate::presentation::http::v3::commands::make_approval_service;
+use xc_rate::application::pricing::branch_push::BranchPush;
+use xc_rate::application::pricing::tier_publish::TierSetPublisher;
+use xc_rate::infrastructure::pricing::branch_policy_store::PgBranchPolicyStore;
+use xc_rate::infrastructure::pricing::tier_set_store::PgTierSetStore;
 
 #[derive(Debug, Clone)]
 pub struct BuildInfo {
@@ -491,6 +496,11 @@ impl Application {
         });
 
         let (rate_feed_stop, stop_rx) = tokio::sync::watch::channel(false);
+        let draft_service = Arc::new(RateDraftService::new(
+            pool.clone(),
+            make_approval_service(pool.clone()),
+        ));
+        let publish_service = Arc::new(PublishService::new(pool.clone()));
         let rate_feed_loop = RateFeedLoop::new(
             pool.clone(),
             Arc::new(ReferenceBatchWriter::new(
@@ -498,20 +508,33 @@ impl Application {
                 Arc::new(PgReferenceBatchStore::new()),
             )),
             Arc::new(DraftBranchRefresh::new(
-                Arc::new(RateDraftService::new(
-                    pool.clone(),
-                    make_approval_service(pool.clone()),
-                )),
-                Arc::new(PublishService::new(pool)),
+                draft_service.clone(),
+                publish_service.clone(),
             )),
             RateFeedConfig::from_env(),
         );
-        // pricing-tiers.md §4: TT and Super Rich every 5 minutes, only when MARKET_FEED_ENABLED=true (the api tests
-        // build this Application and must not reach the internet).
+        // pricing-tiers.md §4, §15.5: TT and Super Rich every 5 minutes plus FOLLOW planning at MAIN, only when
+        // MARKET_FEED_ENABLED=true (the api tests build this Application and must not reach the internet).
         let market_config = MarketRefreshConfig::from_env();
         if market_config.enabled {
-            let market_refresh = MarketRefresh::new(state.db.clone(), state.market_sources.clone());
-            tokio::spawn(Arc::new(market_refresh).run(market_config.interval, stop_rx.clone()));
+            let market_refresh = Arc::new(MarketRefresh::new(
+                state.db.clone(),
+                state.market_sources.clone(),
+            ));
+            let tier_publisher = Arc::new(TierSetPublisher::new(draft_service, publish_service));
+            let branch_push = Arc::new(BranchPush::new(
+                state.db.clone(),
+                tier_publisher.clone(),
+                Arc::new(PgTierSetStore),
+                Arc::new(PgBranchPolicyStore),
+            ));
+            let market_pricing = MarketPricingLoop::new(
+                state.db.clone(),
+                market_refresh,
+                tier_publisher,
+                branch_push,
+            );
+            tokio::spawn(Arc::new(market_pricing).run(market_config.interval, stop_rx.clone()));
         }
         let rate_feed = tokio::spawn(Arc::new(rate_feed_loop).run(stop_rx));
 
