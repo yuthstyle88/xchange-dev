@@ -217,18 +217,6 @@ impl QuoteService {
         coupon_code: Option<&str>,
         terms: QuoteTerms,
     ) -> AppResult<Quote> {
-        let _ = (tx, req, who, now, coupon_code, terms);
-        todo!("BQ-2")
-    }
-
-    pub async fn quote_with_coupon_in(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        req: QuoteRequest,
-        who: &SaveActor,
-        now: DateTime<Utc>,
-        coupon_code: Option<&str>,
-    ) -> AppResult<Quote> {
         // Step 1: Exactly 1 line
         if req.lines.len() != 1 {
             return Err(AppError::Domain(
@@ -355,8 +343,13 @@ impl QuoteService {
             }
         }
 
-        let ttl_seconds = self.settings_repo.get_ttl_in(tx, org_id).await?;
-        let expires_at = now + Duration::seconds(ttl_seconds as i64);
+        let expires_at = match terms {
+            QuoteTerms::Indicative => {
+                let ttl_seconds = self.settings_repo.get_ttl_in(tx, org_id).await?;
+                now + Duration::seconds(ttl_seconds as i64)
+            }
+            QuoteTerms::Binding { ttl } => now + ttl,
+        };
 
         let quote_id = Uuid::new_v4();
         let line_id = Uuid::new_v4();
@@ -598,7 +591,7 @@ impl QuoteService {
             organization_id: org_id,
             branch_id: req.branch_id,
             customer_id: req.customer_id.clone(),
-            quote_type: QuoteType::Indicative,
+            quote_type: terms.quote_type(),
             channel: req.channel,
             status: QuoteStatus::Active,
             publication_id: published_side.publication.id.as_uuid(),
@@ -762,6 +755,18 @@ impl QuoteService {
         }
 
         Ok(quote)
+    }
+
+    pub async fn quote_with_coupon_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        req: QuoteRequest,
+        who: &SaveActor,
+        now: DateTime<Utc>,
+        coupon_code: Option<&str>,
+    ) -> AppResult<Quote> {
+        self.price_in(tx, req, who, now, coupon_code, QuoteTerms::Indicative)
+            .await
     }
 }
 
