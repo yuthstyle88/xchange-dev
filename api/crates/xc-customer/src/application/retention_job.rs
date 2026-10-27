@@ -179,7 +179,11 @@ impl RetentionJob {
                     total_deleted += result.rows_affected();
                 }
                 _ => {
-                    // CLOSED_CUSTOMER is ruled out of CI-6
+                    for purger in &self.purgers {
+                        if purger.data_type().as_str() == data_type.as_str() {
+                            total_deleted += purger.purge(org_id, cutoff, now).await?;
+                        }
+                    }
                 }
             }
         }
