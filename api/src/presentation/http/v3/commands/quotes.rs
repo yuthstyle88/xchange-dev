@@ -63,12 +63,13 @@ pub struct QuotesCommandInput {
 }
 
 pub struct QuotesCommand {
+    pool: sqlx::PgPool,
     service: Arc<QuoteService>,
 }
 
 impl QuotesCommand {
-    pub fn new(service: Arc<QuoteService>) -> Self {
-        Self { service }
+    pub fn new(pool: sqlx::PgPool, service: Arc<QuoteService>) -> Self {
+        Self { pool, service }
     }
 }
 
@@ -234,6 +235,8 @@ impl CommandAction for QuotesCommand {
             None => None,
         };
 
+        let group_code = denomination_group.as_str().to_string();
+
         let req = QuoteRequest {
             branch_id: branch.clone(),
             customer_id: input.customer_id,
@@ -327,13 +330,40 @@ impl CommandAction for QuotesCommand {
                     )
                 })?;
 
-        Ok(QuoteDto::from_domain(quote, pub_version))
+        let mut dto = QuoteDto::from_domain(quote, pub_version);
+        let published = crate::presentation::http::v3::published_rates::published_rates_data(
+            &self.pool, branch,
+        )
+        .await
+        .map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        for line in &mut dto.lines {
+            if let Some(pub_line) = published
+                .lines
+                .iter()
+                .find(|l| l.currency == line.currency && l.group == group_code)
+            {
+                line.pricing_hidden = pub_line.hidden;
+                line.pricing_hidden_reason = pub_line.hidden_reason.clone();
+            }
+        }
+
+        Ok(dto)
     }
 }
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let quote_service = Arc::new(QuoteService::new(state.db.clone()));
-    CommandEndpoint::register(cfg, Arc::new(QuotesCommand::new(quote_service)));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(QuotesCommand::new(state.db.clone(), quote_service)),
+    );
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
