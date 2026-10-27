@@ -7,10 +7,6 @@ export type { RateDisplaySaveInput, RateDisplaySaveOutput } from '../../api/gene
 
 export function makeRateDisplaySaveInput(o: Partial<RateDisplaySaveInput> = {}): RateDisplaySaveInput {
   return {
-    tiers: [],
-    featured: [],
-    highlight: false,
-    allMarket: false,
     ...o,
   };
 }

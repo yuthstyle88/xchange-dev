@@ -27,19 +27,25 @@ use crate::presentation::http::v3::error::V3Error;
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "rate_display_save.ts")]
 pub struct RateDisplaySaveInput {
-    /// `true` deletes the branch's row; the other fields are then ignored.
+    /// `true` deletes the branch's row; the other fields are then ignored and may be omitted. Without `clear`, all
+    /// four are required in practice: an omitted one reads as empty/false and fails `DisplaySettings::validate`
+    /// (`tiers`) or saves `false`.
     #[serde(default)]
     #[ts(optional)]
     pub clear: Option<bool>,
     /// 1 to 4 of `1..=4`, no repeats.
     #[serde(default)]
+    #[ts(optional, as = "Option<Vec<u8>>")]
     pub tiers: Vec<u8>,
     /// At most 10 currency codes, shown first in this order.
     #[serde(default)]
+    #[ts(optional, as = "Option<Vec<String>>")]
     pub featured: Vec<String>,
     #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
     pub highlight: bool,
     #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
     pub all_market: bool,
 }
 

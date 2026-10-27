@@ -2,16 +2,18 @@
 
 export type RateDisplaySaveInput = { 
 /**
- * `true` deletes the branch's row; the other fields are then ignored.
+ * `true` deletes the branch's row; the other fields are then ignored and may be omitted. Without `clear`, all
+ * four are required in practice: an omitted one reads as empty/false and fails `DisplaySettings::validate`
+ * (`tiers`) or saves `false`.
  */
 clear?: boolean, 
 /**
  * 1 to 4 of `1..=4`, no repeats.
  */
-tiers: Array<number>, 
+tiers?: Array<number>, 
 /**
  * At most 10 currency codes, shown first in this order.
  */
-featured: Array<string>, highlight: boolean, allMarket: boolean, };
+featured?: Array<string>, highlight?: boolean, allMarket?: boolean, };
 
 export type RateDisplaySaveOutput = { saved: boolean, };
