@@ -16,6 +16,7 @@ use xc_exchange::domain::exchange::value_objects::transaction_form::{
     FILE_MISSING, NO_PAYMENT_REF,
 };
 use xc_exchange::domain::quote::quote::{Quote, QuoteStatus};
+use xc_exchange::domain::quote::quote_type::QuoteType;
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::transaction::line::TransactionLine;
 use xc_exchange::domain::transaction::payment::TransactionPayment;
@@ -97,8 +98,11 @@ pub(crate) async fn check_valid_in(
     q: &Quote,
     now: DateTime<Utc>,
 ) -> AppResult<()> {
-    let current = current_publication_in(tx, &q.branch_id).await?;
-    if current.is_some_and(|c| q.is_valid(now, c)) {
+    let valid = match current_publication_in(tx, &q.branch_id).await? {
+        Some(c) => q.is_valid(now, c),
+        None => q.quote_type == QuoteType::Binding && now < q.expires_at,
+    };
+    if valid {
         Ok(())
     } else {
         Err(AppError::Domain(format!(
