@@ -76,14 +76,62 @@ impl DisplaySettings {
         highlight: bool,
         all_market: bool,
     ) -> Result<Self, String> {
-        let _ = (tiers, featured, highlight, all_market);
-        todo!("PV-a3: DisplaySettings::validate")
+        if !(1..=4).contains(&tiers.len()) {
+            return Err("tiers must have 1 to 4 entries".to_string());
+        }
+        for (i, &t) in tiers.iter().enumerate() {
+            if !(1..=4).contains(&t) {
+                return Err(format!("invalid tier {t}: must be 1..=4"));
+            }
+            if tiers[..i].contains(&t) {
+                return Err(format!("duplicate tier {t}"));
+            }
+        }
+        if featured.len() > Self::MAX_FEATURED {
+            return Err(format!("at most {} featured codes", Self::MAX_FEATURED));
+        }
+        for (i, code) in featured.iter().enumerate() {
+            if code.len() != 3 || !code.bytes().all(|b| b.is_ascii_uppercase()) {
+                return Err(format!(
+                    "invalid featured code {code}: must be 3 uppercase letters"
+                ));
+            }
+            if featured[..i].contains(code) {
+                return Err(format!("duplicate featured code {code}"));
+            }
+        }
+        Ok(Self {
+            tiers: tiers.to_vec(),
+            featured: featured.to_vec(),
+            highlight,
+            all_market,
+        })
     }
 
     /// `priced` is every currency the branch has a published price for; `sr_order` is Super Rich's market order.
     pub fn order(&self, priced: &[String], sr_order: &[String]) -> DisplayOrder {
-        let _ = (priced, sr_order);
-        todo!("PV-a3: DisplaySettings::order")
+        let mut ordered = priced.to_vec();
+        ordered.sort_by_key(|c| {
+            let feat_pos = self.featured.iter().position(|f| f == c);
+            let sr_pos = sr_order.iter().position(|s| s == c);
+            (
+                feat_pos.is_none(),
+                feat_pos,
+                sr_pos.is_none(),
+                sr_pos,
+                c.clone(),
+            )
+        });
+        let more = if self.all_market {
+            sr_order
+                .iter()
+                .filter(|c| !priced.contains(c))
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+        DisplayOrder { ordered, more }
     }
 }
 
