@@ -92,7 +92,8 @@ pub(crate) async fn current_publication_in(
     Ok(row.flatten())
 }
 
-/// D-5 on a stored quote: `now < expires_at` and its publication is the branch's current one.
+/// D-5 on a stored quote, by type (`binding-quote.md` D-3): `Quote::is_valid` against the branch's current
+/// publication; with none, only a binding quote before its `expires_at` is valid.
 pub(crate) async fn check_valid_in(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     q: &Quote,
