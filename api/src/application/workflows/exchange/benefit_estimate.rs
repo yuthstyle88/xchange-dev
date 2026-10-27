@@ -23,9 +23,10 @@ use super::benefit_pricing::BenefitPricing;
 /// Why no benefit is estimated (E-7). Skip reasons are never sent to the customer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoBenefitReason {
-    /// No ACTIVE rule survives the budget, coupon and channel filters.
+    /// No ACTIVE rule survives the budget and coupon filters: nothing runs for this branch now (row 5).
     NoActiveRule,
-    /// Rules exist; none applies to this caller and line.
+    /// Rules survive those filters; none applies to this caller and line. A rule that `also_admitted_on`
+    /// drops (an APP-only rule under OD-1 B, row 4) counts here: it runs, but not for this channel.
     NotEligible,
 }
 

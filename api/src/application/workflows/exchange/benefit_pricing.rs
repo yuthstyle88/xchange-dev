@@ -70,6 +70,9 @@ pub struct PricedBenefits {
     pub line_input: QuoteLineInput,
     /// The rules after the budget, coupon and `also_admitted_on` filters: what the engine judged.
     pub active_rules: Vec<ActiveRule>,
+    /// How many rules the `also_admitted_on` filter dropped (0 when it is `None`), so the estimate can tell
+    /// "nothing runs" (`noActiveRule`) from "runs, but not on this channel" (`notEligible`, row 4).
+    pub dropped_by_also_admitted_on: usize,
     pub sources: BenefitSources,
 }
 
