@@ -149,6 +149,7 @@ function quoteDto(over: Partial<QuoteDto> & { quantity?: string } = {}) {
     ],
     benefits: [],
     stale: false,
+    cashSettlement: over.cashSettlement ?? false,
   });
 }
 
@@ -205,9 +206,14 @@ function serverFor(flow: Flow = {}) {
   const s = fakeServer();
   for (const v of ["desk_config", "staff_desk_config"]) s.on("GET", `/api/v3/views/${v}`, () => view({ shiftOpen: true }));
   let quotes = 0;
-  s.on("POST", "/api/quotes", () => {
+  s.on("POST", "/api/quotes", (call) => {
     quotes += 1;
-    return { status: 200, body: quoteDto({ id: `q-${quotes}`, expiresAt: quotes === 1 && flow.quoteExpiresAt ? flow.quoteExpiresAt : undefined }) };
+    // As the server does (CR-b, quote.rs:479): a quote asked with paymentMethod "Cash" is cash-settled (#5229).
+    const cashSettlement = (JSON.parse(call.body || "{}") as { paymentMethod?: string }).paymentMethod === "Cash";
+    return {
+      status: 200,
+      body: quoteDto({ id: `q-${quotes}`, cashSettlement, expiresAt: quotes === 1 && flow.quoteExpiresAt ? flow.quoteExpiresAt : undefined }),
+    };
   });
   for (const up of ["/api/upload", "/api/staff/upload"]) {
     let n = 0;
