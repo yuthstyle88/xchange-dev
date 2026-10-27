@@ -12,17 +12,20 @@ use crate::domain::owner::DraftOwner;
 use crate::domain::planner::planner_draft::PlannerDraft;
 
 pub trait PlannerRepository: Send + Sync {
-    /// The draft, whoever owns it; `None` when there is no such row.
+    /// The draft, whoever owns it; `None` when there is no such row or it expired at or before `now`
+    /// (P13: an expired draft is gone; `now` is the caller's clock, the one that set `expires_at`).
     fn get_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         id: Uuid,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Option<PlannerDraft>, CustomerAppError>>;
 
-    /// Every draft of `owner`, newest first.
+    /// Every draft of `owner` not expired at `now`, newest first (P13).
     fn list<'a>(
         &'a self,
         owner: &'a DraftOwner,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Vec<PlannerDraft>, CustomerAppError>>;
 
     fn insert_in<'a>(

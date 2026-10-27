@@ -90,7 +90,10 @@ impl PlannerRepository for PgPlannerRepository {
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         id: Uuid,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Option<PlannerDraft>, CustomerAppError>> {
+        // Skeleton (feat/be-gaps-b): P13 #5237 filters `expires_at > now`.
+        let _ = now;
         Box::pin(async move {
             let sql = format!("SELECT {COLUMNS} FROM planner_drafts WHERE id = $1");
             let row = sqlx::query(sqlx::AssertSqlSafe(sql))
@@ -104,7 +107,10 @@ impl PlannerRepository for PgPlannerRepository {
     fn list<'a>(
         &'a self,
         owner: &'a DraftOwner,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Vec<PlannerDraft>, CustomerAppError>> {
+        // Skeleton (feat/be-gaps-b): P13 #5237 filters `expires_at > now`.
+        let _ = now;
         Box::pin(async move {
             let (column, value) = match owner {
                 DraftOwner::Customer(id) => ("customer_id", id.as_str()),

@@ -15,7 +15,9 @@
 //! - `PgRateAlertPurger`: deletes the org's `rate_alerts` with `deleted_at < cutoff` or `expires_at < cutoff`, and
 //!   their `rate_alert_events` first; answers the alerts deleted. A live alert (not deleted, not expired), or one
 //!   only disabled (`UNIT_CHANGED`), is kept whatever its age.
-//! - `PgPlannerRepository::{list, get_in}` answer no draft whose `expires_at <= now()`.
+//! - `PgPlannerRepository::{list(owner, now), get_in(tx, id, now)}` answer no draft whose `expires_at <= now`, `now`
+//!   being the caller's clock (the one the service set `expires_at` with), never the database's `now()` (restated
+//!   2026-10-27: `planner_service_test` runs on a fixed 2026-10-06 clock).
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; it fails without it, it does not skip.
 
@@ -542,7 +544,7 @@ async fn p13_8_list_and_get_answer_no_expired_draft() {
     let repo = PgPlannerRepository::new(db.pool.clone());
 
     let listed: Vec<Uuid> = repo
-        .list(&DraftOwner::Customer("CX-1".to_owned()))
+        .list(&DraftOwner::Customer("CX-1".to_owned()), Utc::now())
         .await
         .expect("list")
         .into_iter()
@@ -551,7 +553,10 @@ async fn p13_8_list_and_get_answer_no_expired_draft() {
     assert_eq!(listed, vec![live], "only the live draft");
 
     let listed: Vec<Uuid> = repo
-        .list(&DraftOwner::Session(SessionHash::from_stored(hash.clone())))
+        .list(
+            &DraftOwner::Session(SessionHash::from_stored(hash.clone())),
+            Utc::now(),
+        )
         .await
         .expect("list")
         .into_iter()
@@ -560,16 +565,60 @@ async fn p13_8_list_and_get_answer_no_expired_draft() {
     assert_eq!(listed, vec![live_session], "only the live session draft");
 
     let mut tx = db.pool.begin().await.expect("begin");
-    assert!(repo.get_in(&mut tx, live).await.expect("get").is_some());
     assert!(
-        repo.get_in(&mut tx, expired).await.expect("get").is_none(),
+        repo.get_in(&mut tx, live, Utc::now())
+            .await
+            .expect("get")
+            .is_some()
+    );
+    assert!(
+        repo.get_in(&mut tx, expired, Utc::now())
+            .await
+            .expect("get")
+            .is_none(),
         "an expired draft is gone"
     );
     assert!(
-        repo.get_in(&mut tx, expired_session)
+        repo.get_in(&mut tx, expired_session, Utc::now())
             .await
             .expect("get")
             .is_none()
     );
     tx.rollback().await.expect("rollback");
+}
+
+#[tokio::test]
+async fn p13_9_expiry_is_judged_by_the_callers_clock_not_the_databases() {
+    let db = Db::start().await;
+    let draft = db
+        .draft(
+            ORG,
+            "CX-1",
+            "now() - interval '1 day'",
+            "now() + interval '6 days'",
+        )
+        .await;
+    let repo = PgPlannerRepository::new(db.pool.clone());
+    let owner = DraftOwner::Customer("CX-1".to_owned());
+    let later = Utc::now() + chrono::Duration::days(7);
+    let earlier = Utc::now() - chrono::Duration::days(10);
+
+    let mut tx = db.pool.begin().await.expect("begin");
+    assert!(
+        repo.get_in(&mut tx, draft, later)
+            .await
+            .expect("get")
+            .is_none(),
+        "expired at the caller's `now` + 7 days, whatever the database clock says"
+    );
+    assert!(
+        repo.get_in(&mut tx, draft, earlier)
+            .await
+            .expect("get")
+            .is_some(),
+        "a caller clock before expiry still sees it"
+    );
+    tx.rollback().await.expect("rollback");
+    assert!(repo.list(&owner, later).await.expect("list").is_empty());
+    assert_eq!(repo.list(&owner, earlier).await.expect("list").len(), 1);
 }

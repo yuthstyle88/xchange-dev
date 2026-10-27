@@ -259,6 +259,10 @@ over `xc-customer` (§9.2).
   (♻️: one job, one small file per type), so `RetentionJob` writes no SQL against another crate's tables. `xc-app`
   and `xc-alert` depend on `xc-customer` for the port (no cycle: `xc-customer` depends on neither). A period set for a
   type with no registered purger is skipped.
+- P13 expiry on read (restated 2026-10-27 after the trial full suite): `PlannerRepository::get_in(tx, id, now)` and
+  `list(owner, now)`, and `PlannerService::{get, list, delete_in}`, take the caller's `now`. A draft is gone when
+  `expires_at <= now`, judged by the clock that set `expires_at` (the service's injected `now`), never the database's
+  `now()`: a database clock broke the 13 `planner_service_test` rows, which run on a fixed 2026-10-06 clock.
 - K6: `purge_timers::run` runs the retention purge and the expired-session purge every `auth.purge_interval_secs`
   (the verification sweeper's interval), started by one spawn line in `bootstrap/mod.rs`, stopped by
   `Application`'s stop channel.
