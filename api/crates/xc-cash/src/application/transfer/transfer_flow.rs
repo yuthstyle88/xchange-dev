@@ -222,11 +222,9 @@ impl TransferFlow {
         let at = t.from_branch.clone();
         self.branch_tx
             .run(&t.from_branch, move |tx| {
-                Box::pin(
-                    async move {
-                        Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now, None).await
-                    },
-                )
+                Box::pin(async move {
+                    Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now, None).await
+                })
             })
             .await
     }

@@ -23,6 +23,7 @@ use xc_kernel::ids::BranchId;
 
 use super::transactions::{refusal, save_steps};
 use crate::application::workflows::exchange::complete::{CompleteExchange, ExchangeEffects};
+use crate::application::workflows::exchange::negative_stock_gate::NegativeStockObject;
 use crate::application::workflows::save_step::{SaveActor, SaveStep};
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::FileService;
@@ -31,7 +32,6 @@ use crate::presentation::dto::v3::transaction::TransactionDto;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
-use crate::application::workflows::exchange::negative_stock_gate::NegativeStockObject;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::negative_stock::{stock_insufficient, stock_refusal_answer};
 
