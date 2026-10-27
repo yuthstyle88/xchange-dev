@@ -9,7 +9,6 @@ export function makeStaffHoldRow(o: Partial<StaffHoldRow> = {}): StaffHoldRow {
   return {
     id: 'staff_hold_row-1',
     customerId: 'staff_hold_row-1',
-    customerName: null,
     reason: 'reason',
     status: 'status',
     at: '2026-01-01T00:00:00Z',
