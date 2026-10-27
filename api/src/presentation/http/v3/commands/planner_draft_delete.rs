@@ -59,7 +59,7 @@ impl CommandAction for PlannerDraftDeleteCommand {
         let id = Uuid::parse_str(&input.id)
             .map_err(|_| customer_app_error(CustomerAppError::NotFound))?;
         self.service
-            .delete_in(tx, &owner, id)
+            .delete_in(tx, &owner, id, chrono::Utc::now())
             .await
             .map_err(customer_app_error)?;
         Ok(PlannerDraftDeleteOutput { id: input.id })

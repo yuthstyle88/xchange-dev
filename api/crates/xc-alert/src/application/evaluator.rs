@@ -151,6 +151,46 @@ impl RateAlertEvaluator {
                 .execute(&mut *tx)
                 .await
                 .map_err(AppError::Database)?;
+
+                let recipient_user_id: Option<Uuid> =
+                    sqlx::query_scalar("SELECT user_id FROM customers WHERE id = $1")
+                        .bind(&alert.customer_id)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(AppError::Database)?;
+
+                let user_id = recipient_user_id.ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "customer user_id not found for {}",
+                        alert.customer_id
+                    ))
+                })?;
+
+                let customer_side_str = match alert.shop_side {
+                    Side::Buy => CustomerSide::CustomerSell.as_str(),
+                    Side::Sell => CustomerSide::CustomerBuy.as_str(),
+                };
+
+                let mut params = BTreeMap::new();
+                params.insert("currency".to_string(), alert.currency.as_str().to_string());
+                params.insert("side".to_string(), customer_side_str.to_string());
+
+                let alert_id = alert.id.as_uuid();
+                let object = NotificationObject {
+                    object_type: "rate_alert".to_string(),
+                    object_id: alert_id.to_string(),
+                };
+
+                let req = NotificationRequest::new(
+                    user_id.to_string(),
+                    format!("rate_alert_unit_changed:{alert_id}"),
+                    "rate_alert_unit_changed",
+                    Some(object),
+                    params,
+                )
+                .map_err(|e| AppError::Internal(format!("notification request error: {e}")))?;
+
+                self.notifications.notify_in(&mut tx, &req).await?;
                 continue;
             }
 

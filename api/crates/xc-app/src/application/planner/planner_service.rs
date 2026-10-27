@@ -79,7 +79,7 @@ impl PlannerService {
                 Ok(draft)
             }
             Some(id) => {
-                let stored = Self::owned(self.drafts.get_in(tx, id).await?, owner)?;
+                let stored = Self::owned(self.drafts.get_in(tx, id, now).await?, owner)?;
                 if stored.organization_id != organization_id {
                     return Err(CustomerAppError::OutOfScope);
                 }
@@ -111,26 +111,32 @@ impl PlannerService {
         tx: &mut Transaction<'_, Postgres>,
         owner: &DraftOwner,
         id: Uuid,
+        now: DateTime<Utc>,
     ) -> Result<(), CustomerAppError> {
-        Self::owned(self.drafts.get_in(tx, id).await?, owner)?;
+        Self::owned(self.drafts.get_in(tx, id, now).await?, owner)?;
         self.drafts.delete_in(tx, id).await
     }
 
-    /// One draft of `owner`; another owner's → `outOfScope`, none → `notFound`.
+    /// One draft of `owner`; another owner's → `outOfScope`, none or expired at `now` → `notFound`.
     pub async fn get(
         &self,
         owner: &DraftOwner,
         id: Uuid,
+        now: DateTime<Utc>,
     ) -> Result<PlannerDraft, CustomerAppError> {
         let mut tx = self.pool.begin().await?;
-        let found = self.drafts.get_in(&mut tx, id).await?;
+        let found = self.drafts.get_in(&mut tx, id, now).await?;
         tx.rollback().await?;
         Self::owned(found, owner)
     }
 
-    /// Every draft of `owner` (the view `my_planner_drafts`), newest first.
-    pub async fn list(&self, owner: &DraftOwner) -> Result<Vec<PlannerDraft>, CustomerAppError> {
-        self.drafts.list(owner).await
+    /// Every draft of `owner` not expired at `now` (the view `my_planner_drafts`), newest first.
+    pub async fn list(
+        &self,
+        owner: &DraftOwner,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<PlannerDraft>, CustomerAppError> {
+        self.drafts.list(owner, now).await
     }
 
     /// Sign-in (P6): every draft of `session` becomes `customer_id`'s in one statement. Answers how

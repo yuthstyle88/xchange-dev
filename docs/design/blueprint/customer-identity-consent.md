@@ -195,12 +195,19 @@ classDiagram
   class IdentityType { <<enum xc-kernel pii/identity_type.rs  used by xc-customer, not copied>> PASSPORT; NATIONAL_ID; PHONE; EMAIL }
   class CustomerRepository { <<trait xc-customer domain/repository.rs>> }
   class PgCustomerRepository { <<xc-customer infrastructure/repository.rs>> }
-  class CustomerService { <<xc-customer application/customer_service.rs>> +reserve() +confirm_in() +reveal() +find() }
+  class CustomerService { <<xc-customer application/customer_service.rs>> +reserve() +confirm_in() +reveal_in(tx, actor, branch, customer_id, identity_id, reason, now) RevealedIdentity +find() }
+  class RevealedIdentity { <<xc-customer application/customer/service.rs  K8>> identity_id: Uuid; identity_type: String; value: String }
+  class IdentityRevealCommand { <<api/src/presentation/http/v3/commands/identity_reveal.rs  K8>> NAME identityReveal; INHERITS (Rpc, identityReveal); stored_output keeps identityId, type }
   class Consent { <<xc-customer domain/consent.rs>> }
   class ConsentText { <<xc-customer domain/consent_text.rs>> }
   class ConsentService { <<xc-customer application/consent_service.rs>> +register() +record() +publish() +marketing_allowed() +marketing_eligible_in(tx, customer_ids) HashSet~String~ }
   class RetentionPolicy { <<xc-customer domain/retention.rs>> }
-  class RetentionJob { <<xc-customer application/retention_job.rs>> }
+  class RetentionJob { <<xc-customer application/retention_job.rs>> +pg(pool) +with_purger(Arc~dyn RetentionPurger~) +set_period() +purge(now) u64 }
+  class RetentionPurger { <<trait xc-customer application/retention_job.rs  P13>> data_type() DataType; purge(org, cutoff, now) u64 }
+  class PgPlannerDraftPurger { <<xc-app infrastructure/planner_retention.rs  PLANNER_DRAFT>> }
+  class PgRateAlertPurger { <<xc-alert infrastructure/rate_alert_retention.rs  RATE_ALERT>> }
+  class PurgeTimers { <<api/src/bootstrap/purge_timers.rs  K6/P13>> retention_job(pool) RetentionJob; purge_round(retention, sessions, now) PurgeRound; run(pool, every, stop) }
+  class PgExpiredSessions { <<xc-auth infrastructure/expired_sessions.rs  K6>> +purge_before(now) u64 }
   class TokenVerifier { <<trait xc-auth domain/token/token_verifier.rs  I-2>> +verify(jwt) VerifiedToken }
   class JwksTokenVerifier { <<xc-auth infrastructure/token/jwks_verifier.rs>> }
   class Authorizer { <<xc-auth domain/access  #550>> }
@@ -219,6 +226,12 @@ classDiagram
   ConsentService --> ConsentText
   ConsentService --> CustomerService : register creates the customer
   RetentionJob --> RetentionPolicy
+  RetentionJob --> RetentionPurger : types owned by another crate
+  RetentionPurger <|.. PgPlannerDraftPurger
+  RetentionPurger <|.. PgRateAlertPurger
+  PurgeTimers --> RetentionJob : builds it with both purgers
+  PurgeTimers --> PgExpiredSessions
+  IdentityRevealCommand --> CustomerService
   PiiCipher --> PiiKeys
   LookupHasher --> PiiKeys
   TokenVerifier <|.. JwksTokenVerifier
@@ -234,6 +247,25 @@ concept: the exchange, bookings, devices and documents use it too (25 imports at
 `xc-exchange` depends on `xc-customer` (its transaction, receipt and booking types hold a customer reference);
 `xc-customer` never depends on `xc-exchange`. Until CA-10, `xc-exchange`'s old `customer` paths are `pub use` shims
 over `xc-customer` (§9.2).
+
+**XC-BE-GAPS-B additions (2026-10-27, claude/2ef7d5a6, #564).**
+- K8: `reveal` became `reveal_in` and takes the identity's id; any ACTIVE type is revealed (PASSPORT and NATIONAL_ID
+  through the payload's `number`, PHONE and EMAIL as stored). The audit row's `after_redacted` is exactly
+  `{customerId, identityId, identityType, reason}`; `object_ref` stays the customer id. The route answers
+  `{identityId, type, value}`; its idempotency record keeps only `{identityId, type}`, so the value is never stored
+  and a replay never answers it.
+- P13 / rate-alerts retention: `xc-customer` owns `DataType` and `RetentionJob`, but `planner_drafts` and
+  `rate_alerts` belong to `xc-app` and `xc-alert`. Each of those crates implements `RetentionPurger` for its own type
+  (♻️: one job, one small file per type), so `RetentionJob` writes no SQL against another crate's tables. `xc-app`
+  and `xc-alert` depend on `xc-customer` for the port (no cycle: `xc-customer` depends on neither). A period set for a
+  type with no registered purger is skipped.
+- P13 expiry on read (restated 2026-10-27 after the trial full suite): `PlannerRepository::get_in(tx, id, now)` and
+  `list(owner, now)`, and `PlannerService::{get, list, delete_in}`, take the caller's `now`. A draft is gone when
+  `expires_at <= now`, judged by the clock that set `expires_at` (the service's injected `now`), never the database's
+  `now()`: a database clock broke the 13 `planner_service_test` rows, which run on a fixed 2026-10-06 clock.
+- K6: `purge_timers::run` runs the retention purge and the expired-session purge every `auth.purge_interval_secs`
+  (the verification sweeper's interval), started by one spawn line in `bootstrap/mod.rs`, stopped by
+  `Application`'s stop channel.
 
 ### 5.1 Who provides, who uses
 

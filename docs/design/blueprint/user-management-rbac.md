@@ -524,10 +524,10 @@ Every ticket that changes a literal held by a golden or fixture test that compar
 
 ## 9. Not in scope
 
-- Purging expired `user_sessions`. The only deletes are per-token, in refresh and logout (`session_service.rs:568`,
-  `:576`, `:586`, `:598`, `:620`, `:669`). Nothing deletes by `expires`
-  (`git grep -n -i -E 'user_sessions.*expires *<|DELETE FROM user_sessions WHERE expires'` at `8dd9337d`: no match).
-  This is a separate bug for the BE controller.
+- Purging expired `user_sessions` was out of this design's scope; the owner approved it as K6/P13 on 2026-10-27
+  (#564 issuecomment-6439994453). It is `PgExpiredSessions::purge_before(now)`
+  (`xc-auth/src/infrastructure/expired_sessions.rs`), deleting rows with `expires < now`, run by
+  `api/src/bootstrap/purge_timers.rs` on the auth purge interval (`customer-identity-consent.md` §5).
 - The `MAIN` fallback that §14 meant to remove but `authorizer.rs:112-113` still has. Also a separate BE item.
 - Customer accounts and verification (#554, #557).
 

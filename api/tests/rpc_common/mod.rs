@@ -1058,7 +1058,8 @@ pub enum Rule {
 
 /// RF-D9: the (route, action) pairs whose refusals may name the payload key at fault. A `field` on any
 /// other refusal fails the replay; every other refusal is still held byte for byte.
-pub const V3_REFUSAL_FIELDS: &[(&str, &str)] = &[(RPC, "reserveCustomer"), (STAFF_RPC, "reserveCustomer")];
+pub const V3_REFUSAL_FIELDS: &[(&str, &str)] =
+    &[(RPC, "reserveCustomer"), (STAFF_RPC, "reserveCustomer")];
 
 /// RF-D5: the keys a listed refusal may name.
 pub const REFUSAL_FIELD_NAMES: [&str; 6] = [

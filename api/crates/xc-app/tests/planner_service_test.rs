@@ -1,6 +1,9 @@
 //! APP-4 (#994) — `PlannerService` against a real PostgreSQL: create, update with
 //! `expectedVersion`, a stale version, the owner check on writes and reads, the sign-in claim,
 //! and the draft lifetime (owner C4).
+//! Restated for P13 #5237 (feat/be-gaps-b, claude/2ef7d5a6): `get`, `list` and `delete_in` take the caller's
+//! `now`; the calls pass this file's fixed clock. The assertions are unchanged.
+//!
 //! Written before the implementation by the ticket author's delegate (claude/dell-claude-3). Do not
 //! edit, delete or weaken; add tests in a file of your own.
 //!
@@ -427,7 +430,7 @@ async fn delete_by_the_owner_removes_the_draft() {
 
     let mut tx = db.begin().await;
     service
-        .delete_in(&mut tx, &owner, draft.id)
+        .delete_in(&mut tx, &owner, draft.id, at(1))
         .await
         .expect("the owner deletes it");
     tx.commit().await.expect("commit");
@@ -457,7 +460,7 @@ async fn delete_by_another_owner_is_out_of_scope_and_keeps_the_draft() {
     for intruder in [session(), customer("cust-b")] {
         let mut tx = db.begin().await;
         let refused = service
-            .delete_in(&mut tx, &intruder, draft.id)
+            .delete_in(&mut tx, &intruder, draft.id, at(1))
             .await
             .expect_err("not the owner");
         tx.commit().await.expect("commit after the refusal");
@@ -486,12 +489,12 @@ async fn a_session_cannot_read_a_customers_draft() {
     tx.commit().await.expect("commit");
 
     let refused = service
-        .get(&session(), draft.id)
+        .get(&session(), draft.id, at(1))
         .await
         .expect_err("not the session's");
     assert_eq!(refused.code(), "outOfScope");
     let mine = service
-        .get(&customer("cust-c"), draft.id)
+        .get(&customer("cust-c"), draft.id, at(1))
         .await
         .expect("the customer reads it");
     assert_eq!(mine.id, draft.id);
@@ -517,12 +520,16 @@ async fn a_session_cannot_read_another_sessions_draft() {
     tx.commit().await.expect("commit");
 
     let refused = service
-        .get(&session(), draft.id)
+        .get(&session(), draft.id, at(1))
         .await
         .expect_err("another session");
     assert_eq!(refused.code(), "outOfScope");
     assert_eq!(
-        service.get(&owner, draft.id).await.expect("its own").id,
+        service
+            .get(&owner, draft.id, at(1))
+            .await
+            .expect("its own")
+            .id,
         draft.id
     );
     db.finish().await;
@@ -559,7 +566,7 @@ async fn a_customer_cannot_read_a_sessions_or_another_customers_draft() {
 
     for id in [of_session.id, of_d.id] {
         let refused = service
-            .get(&customer("cust-e"), id)
+            .get(&customer("cust-e"), id, at(1))
             .await
             .expect_err("not cust-e's");
         assert_eq!(refused.code(), "outOfScope");
@@ -573,7 +580,7 @@ async fn reading_a_missing_draft_is_not_found() {
     let service = PlannerService::new(db.pool.clone());
 
     let refused = service
-        .get(&session(), uuid::Uuid::new_v4())
+        .get(&session(), uuid::Uuid::new_v4(), at(1))
         .await
         .expect_err("none");
 
@@ -632,7 +639,7 @@ async fn list_answers_only_the_owners_drafts() {
     tx.commit().await.expect("commit");
 
     let mut ids: Vec<_> = service
-        .list(&mine)
+        .list(&mine, at(4))
         .await
         .expect("listed")
         .into_iter()
@@ -642,13 +649,22 @@ async fn list_answers_only_the_owners_drafts() {
     let mut expected = vec![a.id, b.id];
     expected.sort();
     assert_eq!(ids, expected);
-    let of_f = service.list(&customer("cust-f")).await.expect("listed");
+    let of_f = service
+        .list(&customer("cust-f"), at(1))
+        .await
+        .expect("listed");
     assert_eq!(of_f.len(), 1);
     assert_eq!(
         of_f[0].plan.currency,
         CurrencyCode::parse("GBP").expect("GBP")
     );
-    assert!(service.list(&session()).await.expect("listed").is_empty());
+    assert!(
+        service
+            .list(&session(), at(1))
+            .await
+            .expect("listed")
+            .is_empty()
+    );
     db.finish().await;
 }
 
@@ -711,13 +727,13 @@ async fn claim_moves_every_session_draft_to_the_customer_and_leaves_other_sessio
     assert!(untouched.session_hash.is_some());
     assert_eq!(
         service
-            .list(&customer("cust-g"))
+            .list(&customer("cust-g"), at(1))
             .await
             .expect("listed")
             .len(),
         2
     );
-    assert!(service.list(&mine).await.expect("listed").is_empty());
+    assert!(service.list(&mine, at(4)).await.expect("listed").is_empty());
     db.finish().await;
 }
 
