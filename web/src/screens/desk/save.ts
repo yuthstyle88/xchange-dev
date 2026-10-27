@@ -234,11 +234,13 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         s.slipKey = await slipUploadWrite.send(slipFile);
       }
 
-      // 2. a quote that has not expired (D-5), then the create
+      // 2. a quote that has not expired and matches the settlement kind (D-5, CR12), then the create
       if (!s.tx) {
         let q = store.quote();
-        if (!s.quoteId || !q || q.id !== s.quoteId || expired(q.expiresAt)) {
-          if (!q || expired(q.expiresAt)) q = await store.requote();
+        const unusable = (x: typeof q) =>
+          !x || expired(x.expiresAt) || x.cashSettlement !== (store.method() === 'Cash');
+        if (!s.quoteId || q?.id !== s.quoteId || unusable(q)) {
+          if (unusable(q)) q = await store.requote();
           if (!q) throw new Refused(store.quoteError()?.message ?? t('noQuote'), 'noQuote');
           s.quoteId = q.id;
         }
