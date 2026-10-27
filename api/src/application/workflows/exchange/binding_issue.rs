@@ -11,14 +11,27 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
-use sqlx::{PgPool, Postgres, Transaction};
+use pos_error::{AppError, AppResult};
+use serde_json::json;
+use sqlx::{Acquire, PgPool, Postgres, Transaction};
 use uuid::Uuid;
-use xc_approval::application::approval_service::ApprovalService;
-use xc_exchange::domain::quote::quote::Quote;
-use xc_kernel::money::ForeignAmount;
+use xc_approval::application::approval_service::{ApprovalError, ApprovalService};
+use xc_cash::domain::reservation::port::{ReserveLine, StockReservations};
+use xc_cash::domain::reservation::stock_reservation::ReleaseReason;
+use xc_cash::infrastructure::stock_reservations::PgStockReservations;
+use xc_exchange::domain::quote::binding_settings::BindingSettingsRepository;
+use xc_exchange::domain::quote::quote::{Quote, QuoteStatus};
+use xc_exchange::domain::quote::quote_type::QuoteType;
+use xc_exchange::domain::quote::repository::QuoteRepository;
+use xc_exchange::domain::settings::repository::SettingsRepository;
+use xc_exchange::infrastructure::quote::binding_settings::PgBindingSettings;
+use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
+use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
+use xc_kernel::money::{ForeignAmount, Money, Side};
+use xc_verification::application::readiness::Readiness;
 
-use super::quote::QuoteRequest;
+use super::binding_approval::{self, BINDING_QUOTE};
+use super::quote::{QuoteRequest, QuoteService, QuoteTerms};
 use crate::application::workflows::save_step::SaveActor;
 
 /// `stockInsufficient` refusals keep B05's text; the codes below are this workflow's own.
@@ -79,7 +92,190 @@ impl IssueBindingQuote {
         who: &SaveActor,
         now: DateTime<Utc>,
     ) -> AppResult<BindingIssueOutcome> {
-        let _ = (&self.pool, &self.approvals, tx, req, who, now);
-        todo!("BQ-3")
+        let org: Uuid = sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+            .bind(req.quote.branch_id.as_str())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::Domain("validationFailed: branch not found".to_owned()))?;
+
+        let policy = PgBindingSettings::new().load_in(tx, org).await?;
+        let ttl = policy.enabled_ttl()?;
+        policy.check_channel(req.quote.channel)?;
+
+        let verified_until = match req.quote.customer_id.as_deref() {
+            Some(cid) => match Readiness::of(&self.pool, cid)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?
+            {
+                Readiness::Verified { until } => Some(until),
+                _ => None,
+            },
+            None => None,
+        };
+        policy.check_customer(verified_until, now)?;
+
+        let proposal_id = binding_approval::proposal_id(&req.quote, req.coupon_code.as_deref());
+        let mut approved = false;
+        if let Some(ref req_id) = req.approval_request_id {
+            let req_uuid =
+                Uuid::parse_str(req_id).map_err(|_| AppError::Domain(STALE_PROPOSAL.to_owned()))?;
+            let row: Option<(String, String, String)> = sqlx::query_as(
+                "SELECT type, object_id, status FROM approval_requests WHERE id = $1",
+            )
+            .bind(req_uuid)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+
+            let Some((type_name, object_id, status)) = row else {
+                return Err(AppError::Domain(STALE_PROPOSAL.to_owned()));
+            };
+            if type_name != BINDING_QUOTE || object_id != proposal_id {
+                return Err(AppError::Domain(STALE_PROPOSAL.to_owned()));
+            }
+            match status.as_str() {
+                "REJECTED" => return Err(AppError::Domain(APPROVAL_REJECTED.to_owned())),
+                "PENDING" => {
+                    return Ok(BindingIssueOutcome::ApprovalRequired(req_id.clone()));
+                }
+                "APPROVED" => approved = true,
+                _ => return Err(AppError::Domain(STALE_PROPOSAL.to_owned())),
+            }
+        }
+
+        let mut sp = (**tx).begin().await.map_err(AppError::Database)?;
+
+        let quote = QuoteService::new(self.pool.clone())
+            .price_in(
+                &mut sp,
+                req.quote.clone(),
+                who,
+                now,
+                req.coupon_code.as_deref(),
+                QuoteTerms::Binding { ttl },
+            )
+            .await?;
+
+        let total_minor: i128 = quote.lines.iter().map(|l| l.settle_thb.minor_i128()).sum();
+        let total = Money::try_from_minor_i128(total_minor)
+            .map_err(|_| AppError::Domain("invalid settle amount".to_owned()))?;
+
+        let settings = PgSettingsRepository::new(self.pool.clone());
+        let limit = settings
+            .approval_limit_in(&mut sp, org, &req.quote.branch_id)
+            .await?;
+
+        if !approved && policy.needs_approval(total, limit) {
+            sp.rollback().await.map_err(AppError::Database)?;
+
+            let payload = json!({
+                "settleThb": total.to_string(),
+                "approvalLimitThb": limit.map(|l| l.to_string()),
+                "branch": req.quote.branch_id.as_str(),
+            });
+            let actor = who.access_actor_at(&org.to_string(), &req.quote.branch_id, now);
+            let key = format!("bindingQuote:{proposal_id}");
+            let mut own_tx = self.pool.begin().await.map_err(AppError::Database)?;
+
+            return match self
+                .approvals
+                .request(
+                    &mut own_tx,
+                    BINDING_QUOTE,
+                    &proposal_id,
+                    &payload,
+                    &actor,
+                    &key,
+                )
+                .await
+            {
+                Ok(ar) if ar.status == "REJECTED" => {
+                    Err(AppError::Domain(APPROVAL_REJECTED.to_owned()))
+                }
+                Ok(ar) => {
+                    own_tx.commit().await.map_err(AppError::Database)?;
+                    Ok(BindingIssueOutcome::ApprovalRequired(
+                        ar.id.as_str().to_owned(),
+                    ))
+                }
+                Err(ApprovalError::AlreadyPending(_)) => {
+                    let pending_id: Option<String> = sqlx::query_scalar(
+                        "SELECT id::text FROM approval_requests \
+                         WHERE type = $1 AND object_id = $2 AND status = 'PENDING' \
+                         ORDER BY requested_at DESC, id DESC LIMIT 1",
+                    )
+                    .bind(BINDING_QUOTE)
+                    .bind(&proposal_id)
+                    .fetch_optional(&mut *own_tx)
+                    .await
+                    .map_err(AppError::Database)?;
+                    let id = pending_id.ok_or_else(|| {
+                        AppError::Internal(format!(
+                            "AlreadyPending for {BINDING_QUOTE} {proposal_id} but no PENDING row found"
+                        ))
+                    })?;
+                    Ok(BindingIssueOutcome::ApprovalRequired(id))
+                }
+                Err(e) => Err(AppError::Internal(format!(
+                    "failed to open {BINDING_QUOTE} approval request: {e}"
+                ))),
+            };
+        }
+
+        let reservations = PgStockReservations::new();
+        let mut lines = Vec::with_capacity(quote.lines.len());
+        for line in &quote.lines {
+            let reserved_quantity = match line.shop_side {
+                Side::Sell => {
+                    reservations
+                        .reserve_in(
+                            &mut sp,
+                            &ReserveLine {
+                                quote_line_id: line.id,
+                                denomination_id: None,
+                            },
+                            now,
+                        )
+                        .await?;
+                    line.quantity
+                }
+                Side::Buy => ForeignAmount::ZERO,
+            };
+            lines.push(ReservedLine {
+                quote_line_id: line.id,
+                reserved_quantity,
+            });
+        }
+
+        if let Some(replaces_id) = req.replaces {
+            let quote_repo = PgQuoteRepository::new(self.pool.clone());
+            let old = quote_repo
+                .find_in(&mut sp, replaces_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Domain(format!(
+                        "validationFailed:replacesQuoteId: quote {replaces_id} does not exist"
+                    ))
+                })?;
+            if old.quote_type != QuoteType::Binding
+                || old.status != QuoteStatus::Active
+                || old.branch_id != req.quote.branch_id
+            {
+                return Err(AppError::Domain(format!(
+                    "validationFailed:replacesQuoteId: quote {replaces_id} is not an active binding quote of this branch"
+                )));
+            }
+            quote_repo.cancel_in(&mut sp, replaces_id).await?;
+            reservations
+                .release_for_quote_in(&mut sp, replaces_id, ReleaseReason::Cancelled)
+                .await?;
+        }
+
+        sp.commit().await.map_err(AppError::Database)?;
+        Ok(BindingIssueOutcome::Issued(Box::new(IssuedQuote {
+            quote,
+            lines,
+        })))
     }
 }
