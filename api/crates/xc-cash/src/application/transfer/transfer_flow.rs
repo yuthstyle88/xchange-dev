@@ -668,8 +668,6 @@ impl TransferFlow {
         now: DateTime<Utc>,
         allow_negative: Option<ApprovalRequestId>,
     ) -> AppResult<CashTransfer> {
-        // XC-BE-GAPS-A row 3 uses it: the pre-check below and `post_in(.., None)` ignore it today.
-        let _ = &allow_negative;
         let t = parts
             .repo
             .find_by_id_in(tx, id)
@@ -688,26 +686,9 @@ impl TransferFlow {
             .ok_or_else(|| AppError::Validation(format!("unknown kind: {:?}", t.kind)))?;
         let reqs = ends.on_dispatch(&t).map_err(from_transfer_error)?;
 
-        // A move out of a drawer or the safe cannot exceed its expected balance.
-        for r in &reqs {
-            match &r.from {
-                CashPlace::Drawer(_) | CashPlace::Safe(_) => {
-                    let balances = parts.postings.expected_in(tx, &r.from).await?;
-                    if balances.get(r.currency).value() < r.quantity.value() {
-                        return Err(AppError::Domain(
-                            TransferError::StockInsufficient.to_string(),
-                        ));
-                    }
-                }
-                CashPlace::InTransit(_)
-                | CashPlace::Customer
-                | CashPlace::Bank
-                | CashPlace::Variance(_) => {}
-            }
-        }
-
+        // Post while still APPROVED so `NegativeStockSource::version_hash` matches the approval request (§5.1).
+        parts.postings.post_in(tx, &reqs, allow_negative).await?;
         parts.repo.mark_dispatched(tx, id, who, now).await?;
-        parts.postings.post_in(tx, &reqs, None).await?;
         parts
             .repo
             .find_by_id_in(tx, id)
