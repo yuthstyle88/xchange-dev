@@ -36,10 +36,6 @@ export function makePricingApproveInput(o: Partial<PricingApproveInput> = {}): P
 
 export function makePricingApproveOutput(o: Partial<PricingApproveOutput> = {}): PricingApproveOutput {
   return {
-    policyVersionId: 'pricing_approve_output-1',
-    version: 0,
-    draftId: 'pricing_approve_output-1',
-    draftState: 'draftState',
     currencies: [],
     ...o,
   };

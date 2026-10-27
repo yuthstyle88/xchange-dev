@@ -38,14 +38,9 @@ policyVersionId: string,
  */
 rows: Array<PricingApproveRowInput>, reason: string, };
 
-export type PricingApproveOutput = { policyVersionId: string, version: number, draftId: string, 
+export type PricingApproveOutput = { 
 /**
- * The draft's state after submit: `PUBLISHED` when in bound, `PENDING_APPROVAL` when it waits in A06.
- */
-draftState: string, 
-/**
- * pricing-tiers.md §15.8a: one result per currency. SKELETON (XC-V9-PRICING): PV-c fills it and removes the four
- * fields above (the answer becomes `{currencies}`).
+ * pricing-tiers.md §15.8a: one result per currency.
  */
 currencies: Array<PricingApproveCurrencyResult>, };
 
