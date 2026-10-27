@@ -3,6 +3,7 @@
 pub mod approval_subjects;
 pub mod exchange_effects;
 pub mod outbox_handlers;
+pub mod purge_timers;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -465,6 +466,11 @@ impl Application {
         });
 
         let (rate_feed_stop, stop_rx) = tokio::sync::watch::channel(false);
+        tokio::spawn(purge_timers::run(
+            state.db.clone(),
+            purge_interval,
+            stop_rx.clone(),
+        ));
         let rate_feed_loop = RateFeedLoop::new(
             pool.clone(),
             Arc::new(ReferenceBatchWriter::new(

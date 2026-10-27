@@ -176,6 +176,26 @@ other files.
 | สต็อกต่ำ / เงินคงเหลือ | `admin_cash` | `branch` | `currency` |
 | a branch row | `admin_overview` (#461) | `branch`, `from`, `to` | `currency`, `channel` |
 
+### 4.4a The `rfm` figure lives on the `admin_customers` rows (E-4, decided 2026-10-27)
+
+Decided by the XC-BE-GAPS-B sub-controller (claude/2ef7d5a6) on the lane controller's order, recorded on #564. The
+ruling on #562 (claude/5edf7bb5, 2026-10-10) cut `customer_rfm` once EX-11's target filters existed; they do
+(`dto/v3/admin_customers.rs:14`, `DRILLDOWN_KEYS = q, from, to, repeat`).
+
+- **Where:** `admin_customers` (the drill-down target §3 names, "drill-down (customer list)"), not a new view and not
+  `ExchangeFacts::customer_rfm()`. `rfm` is not on A01's first screen (E-1), so no aggregate is needed; a second customer
+  list would copy `admin_customers`' query, its paging and its `q` search (♻️). `customer_rfm()` is removed from
+  `ExchangeFacts` in §9.
+- **What:** each `AdminCustomerRow` gains `rfmCompleted` (F), `rfmVolume` (THB value, 2-decimal string) and
+  `rfmLastAt` (R, RFC 3339 or `null`), over the **12 rolling months** before the read (E-4):
+  `transactions.recorded_at >= now() - interval '12 months'`, the lookback `PgCustomerMetrics` uses for segments
+  (`infrastructure/marketing/pg_customer_metrics.rs:72`). The rows counted are today's: LIVE, `COMPLETED`, at the
+  branch the view is read at.
+- **Unchanged:** `completed`, `volume`, `lastAt` stay all-time (the owner's "all company customers" row, §4.4 of
+  `customer-identity-consent.md`); the order and the keyset paging are unchanged. The contribution part of §3's value
+  stays unavailable until LG-4 + Broker.
+- **No migration:** computed at read time from `transactions` and `transaction_lines`.
+
 ### 4.5 Freshness and polling (D-4, D-5)
 
 - `as_of(branch)` = `branch_versions.changed_at`.
@@ -365,7 +385,8 @@ classDiagram
   class Channel { <<api/src/application/executive/channel.rs (EX-3)>> WalkIn; Booking; Kiosk; Referred; sql_condition(alias) }
   class Drilldown { <<api/src/application/executive/drilldown.rs (EX-3, merged)>> +view +filter +dropped; to(view, keys) Drilldown }
   class accepted_keys { <<free fn, drilldown.rs:9>> accepted_keys(view) &[&str] }
-  class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); customer_rfm(); unfinished(branch); unfinished_by_branch(branches) BTreeMap~BranchId, i64~ }
+  class ExchangeFacts { <<trait api/src/application/executive/ports.rs>> volumes(); repeat_customers(); unfinished(branch); unfinished_by_branch(branches) BTreeMap~BranchId, i64~ }
+  class AdminCustomersPagedView { <<api/src/presentation/http/v3/views/admin_customers.rs  E-4 §4.4a>> rfm_completed i64; rfm_volume String; rfm_last_at Option~String~ }
   class WideTransactionFacts { <<api/src/infrastructure/executive/wide_transaction_facts.rs>> }
   class LineFacts { <<api/src/infrastructure/executive/line_facts.rs (after TX-2, RV-1)>> }
   class CashFacts { <<trait ports.rs>> available_cash(); in_transit(); shift_status(); branch_cash(branches, filter) BTreeMap~BranchId, BranchCash~ }
