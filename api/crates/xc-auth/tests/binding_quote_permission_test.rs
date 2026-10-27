@@ -16,8 +16,11 @@
 //! - P3 (D-18): `SEED_ADDITIONS` has `(6, BindingQuoteIssue)` exactly once and `SEED_VERSION` is 6.
 //! - Q28: built-in groups at seed version 5 without it ⇒ after boot TELLER and BRANCH_MANAGER each gained exactly it,
 //!   no other built-in group gained it, every built-in group is at version 6; an EXECUTIVE-based custom group gains
-//!   nothing. (A TELLER- or BRANCH_MANAGER-based custom group is not pinned here: D-18 says custom groups are never
-//!   touched, while guardrail 5 asks a custom group's no-module set to equal its base's seed — the lane decides.)
+//!   nothing.
+//! - Q28b (sub-controller's ruling, design §10): a TELLER- or BRANCH_MANAGER-based custom group saved before BQ-7
+//!   gains it too, at boot. Guardrail 5 (`matrix_guardrails.rs`) asks a custom group's no-module set to equal its
+//!   base's seed, so without it such a group could no longer be saved. AP-3 gave the version-4 kinds to custom
+//!   groups for the same reason; BQ-7 widens that rule from "version 4" to "every no-module addition".
 //! - Q29: removed from TELLER after the version-6 boot ⇒ a later boot does not give it back.
 //! - Q30: a fresh database ⇒ TELLER and BRANCH_MANAGER hold it once each, at version 6.
 //!
@@ -207,6 +210,47 @@ async fn q28_a_version_5_database_grants_it_to_teller_and_branch_manager_only() 
     let mut want_holders: Vec<String> = HOLDERS.iter().map(|r| r.as_str().to_owned()).collect();
     want_holders.sort();
     assert_eq!(holders(&db).await, want_holders, "the holders after boot");
+    assert_eq!(boot(&db).await, 0, "a second boot inserts nothing");
+    db.drop_schema().await;
+}
+
+#[tokio::test]
+async fn q28b_a_teller_or_branch_manager_based_custom_group_gains_it_too() {
+    let db = database_at_version_5().await;
+    let mut customs = Vec::new();
+    for base in HOLDERS {
+        let group = Group {
+            code: unique("BQ7").to_uppercase(),
+            name: "กลุ่มกำหนดเอง".to_owned(),
+            base,
+            built_in: false,
+        };
+        let held: Vec<Permission> = RoleGrants::seed(base)
+            .into_iter()
+            .filter(|&p| p != P::BindingQuoteIssue)
+            .collect();
+        let mut tx = db.pool.begin().await.expect("begin");
+        PgRoleGrantStore::new()
+            .add_group(&mut tx, &group, &held)
+            .await
+            .expect("add_group");
+        tx.commit().await.expect("commit");
+        let before = stored_set(&db, &group.code).await;
+        customs.push((group, before));
+    }
+
+    boot(&db).await;
+
+    for (group, before) in &customs {
+        let mut want = before.clone();
+        want.insert(serde_name(P::BindingQuoteIssue));
+        assert_eq!(
+            stored_set(&db, &group.code).await,
+            want,
+            "a {:?}-based custom group gains exactly BindingQuoteIssue",
+            group.base
+        );
+    }
     assert_eq!(boot(&db).await, 0, "a second boot inserts nothing");
     db.drop_schema().await;
 }
