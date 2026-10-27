@@ -89,7 +89,7 @@ describe('#5306 ShiftCard waiting counts row display (§8, §9)', () => {
   }
 
   it('Row 1: one OPEN count in Thai shows worded OPEN, Bangkok time, short id with full id in title, and totals', async () => {
-    const countId = '37ba9f73-54a0-4b94-aac2-7b32f08ff33e';
+    const countId = '606bdfcc-faef-463a-b343-787b5389f142';
     const count = makeCashCountRow({
       id: countId,
       branchId: BRANCH,
@@ -110,13 +110,14 @@ describe('#5306 ShiftCard waiting counts row display (§8, §9)', () => {
 
     const sub = item!.querySelector('.xc-shift-item-sub');
     expect(sub?.textContent).toContain('28/10 03:16');
-    expect(sub?.textContent).toContain('#37ba9f73');
+    expect(sub?.textContent).toContain('#606bdfcc');
     expect(sub?.textContent).toContain('THB 5000');
     expect(sub?.textContent).not.toContain(COUNTER);
+    expect(sub?.textContent).not.toContain(COUNTER.slice(0, 8));
 
     const shortIdEl = sub!.querySelector(`[title="${countId}"]`);
     expect(shortIdEl, 'element has full id in title').not.toBeNull();
-    expect(shortIdEl?.textContent).toBe('#37ba9f73');
+    expect(shortIdEl?.textContent).toBe('#606bdfcc');
   });
 
   it('Row 2: two OPEN counts by the same user show different sub-lines', async () => {
@@ -174,23 +175,25 @@ describe('#5306 ShiftCard waiting counts row display (§8, §9)', () => {
     expect(title?.textContent).toBe(en.CLOSE ?? 'Close');
   });
 
-  it('Row 4: kind WEIRD shows WEIRD as it is', async () => {
-    const countId = 'c-weird-001';
-    const count = makeCashCountRow({
-      id: countId,
-      branchId: BRANCH,
-      kind: 'WEIRD',
-      countedBy: COUNTER,
-      countedAt: '2026-10-27T20:16:00Z',
-      totals: [],
-    });
-
-    renderCard([count]);
+  it('Row 4: only OPEN and CLOSE counts wait for verification (a HANDOVER_IN or unknown kind is not listed)', async () => {
+    const kinds = ['HANDOVER_IN', 'HANDOVER_OUT', 'WEIRD'];
+    renderCard(
+      kinds.map((kind, i) =>
+        makeCashCountRow({
+          id: `c-other-00${i}`,
+          branchId: BRANCH,
+          kind,
+          countedBy: COUNTER,
+          countedAt: '2026-10-27T20:16:00Z',
+          totals: [],
+        }),
+      ),
+    );
     await settle();
 
-    const item = host.querySelector(`[data-count-id="${countId}"]`);
-    const title = item?.querySelector('.xc-shift-item-title');
-    expect(title?.textContent).toBe('WEIRD');
+    for (let i = 0; i < kinds.length; i++) {
+      expect(host.querySelector(`[data-count-id="c-other-00${i}"]`), kinds[i]).toBeNull();
+    }
   });
 
   it('Edge case: empty totals has no stray separator', async () => {

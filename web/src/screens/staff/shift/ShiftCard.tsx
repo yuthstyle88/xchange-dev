@@ -52,11 +52,13 @@ function formatCountTime(iso: string): string {
   return `${dd}/${mm} ${time}`;
 }
 
-const COUNT_KINDS = new Set(['OPEN', 'CLOSE', 'HANDOVER_OUT', 'HANDOVER_IN']);
+const COUNT_KINDS = ['OPEN', 'CLOSE', 'HANDOVER_OUT', 'HANDOVER_IN'] as const;
+type CountKind = (typeof COUNT_KINDS)[number];
+const isCountKind = (k: string): k is CountKind => (COUNT_KINDS as readonly string[]).includes(k);
 
 export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const t = screenT('staff.shift', { th, en });
-  const kindLabel = (kind: string) => (COUNT_KINDS.has(kind) ? t(kind as any) : kind);
+  const kindLabel = (kind: string): string => (isCountKind(kind) ? t(kind) : kind);
   const api = new ApiClient();
   const commandMap = new Map<string, { send(body: unknown): Promise<unknown> }>();
 
@@ -496,7 +498,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     return cashCounts().filter(
       (c) =>
         c.verifiedBy === null &&
-        c.kind !== 'HANDOVER_OUT' &&
+        (c.kind === 'OPEN' || c.kind === 'CLOSE') &&
         c.countedBy !== props.ctx.me.userId
     );
   };
