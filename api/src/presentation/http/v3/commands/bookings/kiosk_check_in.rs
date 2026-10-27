@@ -16,7 +16,6 @@ use xc_kernel::ids::BranchId;
 
 use super::BookingServices;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
 
@@ -35,6 +34,7 @@ impl KioskBookingCheckIn {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
+        who: &Actor,
         input: KioskBookingCheckInInput,
     ) -> Result<KioskBookingCheckInOutput, V3Error> {
         let services = self.services.services()?;
@@ -94,7 +94,7 @@ impl KioskBookingCheckIn {
                 branch,
                 &booking_id,
                 CheckInBy::QrToken(input.qr_token),
-                "kiosk",
+                &who.user_id,
                 now,
             )
             .await
@@ -166,21 +166,10 @@ impl CommandAction for KioskBookingCheckIn {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        self.check_in(tx, branch, input).await
-    }
-
-    async fn run_as(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
-        _caller: &Caller,
-        input: Self::Input,
-        _key: IdempotencyKey,
-    ) -> Result<Self::Output, V3Error> {
-        self.check_in(tx, branch, input).await
+        self.check_in(tx, branch, who, input).await
     }
 }
