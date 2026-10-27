@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use sqlx::{PgConnection, Postgres, Transaction};
 
+use crate::domain::access::permission_module::PermissionModule;
 use crate::domain::access::{
     Group, Permission, Role, RoleGrantStore, RoleGrantStoreError, RoleGrants, RoleGrantsSnapshot,
 };
@@ -225,7 +226,7 @@ impl RoleGrantStore for PgRoleGrantStore {
                     .await
                     .map_err(db_err)?;
                     inserted += res.rows_affected();
-                    if v == 4 {
+                    if PermissionModule::module(p).is_none() {
                         let res = sqlx::query(
                             "INSERT INTO role_permission_grants (role_code, permission) \
                              SELECT code, $2 FROM roles WHERE base_role = $1 AND NOT built_in \
