@@ -10,7 +10,7 @@ impl WalkInPlaceholder {
 
     /// Whether `(passport_no, nationality)` is the desk's skip placeholder.
     pub fn is(passport_no: &str, nationality: &str) -> bool {
-        let _ = (passport_no, nationality);
-        todo!("XC-BE-GAPS-A row 5")
+        passport_no.trim().eq_ignore_ascii_case(Self::PASSPORT_NO)
+            && nationality.trim().eq_ignore_ascii_case(Self::NATIONALITY)
     }
 }

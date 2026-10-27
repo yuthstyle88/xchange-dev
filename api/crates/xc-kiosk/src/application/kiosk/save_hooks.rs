@@ -7,6 +7,7 @@ use xc_kernel::ids::BranchId;
 
 use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
+use crate::domain::kiosk::value_objects::audit_line::{AuditLine, KioskAudit};
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::save_attempt::SaveAttempt;
@@ -59,8 +60,6 @@ impl KioskService {
         actor: &KioskActor,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        // XC-BE-GAPS-A row 5 writes the D13 line from it.
-        let _ = saved_customer;
         let stored = self
             .repo
             .find_in(tx, branch, id)
@@ -69,14 +68,25 @@ impl KioskService {
         let moved = KioskMachine::complete(&stored, &link.submission_id, &link.document_ref)
             .map_err(refuse)?;
         if let Some(event) = moved.event {
+            let at = cut_to_millis(now);
             self.repo.update_in(tx, branch, &moved.request).await?;
-            self.repo
-                .mark_completed_in(tx, branch, id, cut_to_millis(now))
-                .await?;
+            self.repo.mark_completed_in(tx, branch, id, at).await?;
             let line = line_for(event, &moved.request, username(actor));
-            self.ports
-                .record_in(tx, branch, &line, cut_to_millis(now))
-                .await?;
+            self.ports.record_in(tx, branch, &line, at).await?;
+            if let Some(a) = saved_customer
+                && let Some(b) = self.repo.customer_in(tx, branch, id).await?
+                && a != b
+            {
+                let differs = AuditLine {
+                    actor: username(actor).to_owned(),
+                    subject: id.to_owned(),
+                    what: KioskAudit::CustomerDiffers {
+                        saved_customer: a.to_owned(),
+                        request_customer: b,
+                    },
+                };
+                self.ports.record_in(tx, branch, &differs, at).await?;
+            }
         }
         Ok(())
     }
