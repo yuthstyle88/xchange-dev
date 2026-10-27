@@ -29,8 +29,11 @@ pub struct TierRate {
 impl TierRate {
     /// The four tiers in `TierCheck::validate`'s shape (`tier_no` 1..=4, both sides `Some`).
     pub fn to_check(tiers: &[TierRate; 4]) -> [TierPrice; 4] {
-        let _ = (tiers,);
-        todo!("PV-a1: TierRate::to_check")
+        std::array::from_fn(|i| TierPrice {
+            tier_no: (i + 1) as u8,
+            buy: Some(tiers[i].buy),
+            sell: Some(tiers[i].sell),
+        })
     }
 }
 
