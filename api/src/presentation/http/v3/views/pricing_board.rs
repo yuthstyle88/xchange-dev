@@ -37,8 +37,8 @@ use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::pricing_board::{
     PricingBandDto, PricingBoardData, PricingBpDto, PricingBranchPolicyDto, PricingDisplayDto,
-    PricingFollowResultDto, PricingQuoteDto, PricingRecommendationDto, PricingRowDto, PricingSourceDto,
-    PricingTierMarginDto, PricingTierRateDto, PricingTierSetDto,
+    PricingFollowResultDto, PricingQuoteDto, PricingRecommendationDto, PricingRowDto,
+    PricingSourceDto, PricingTierMarginDto, PricingTierRateDto, PricingTierSetDto,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 

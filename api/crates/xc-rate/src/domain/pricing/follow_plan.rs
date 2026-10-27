@@ -78,7 +78,9 @@ pub struct FollowPlan;
 
 impl FollowPlan {
     /// `PricingSuggestion::of(&input.suggestion)`, then blocked (every reason found, in `FollowReason` order) when:
-    /// - `NoAnchor`: no anchor;
+    /// - `NoAnchor`: no **market** anchor (`MarketQuote::anchor_for`). The suggestion also flags `NoAnchor` when the
+    ///   draft path's BoT/START base is missing (`pricing_suggestion.rs:252-256`); FOLLOW never uses that base
+    ///   (§15.5, gap 7), so that flag alone does not block;
     /// - `StaleSource`: `!input.source.is_current(now)`;
     /// - `Precision` / `BelowCost` / `LargeMove`: that flag is in the suggestion's flags;
     /// - `LargeMove`: tier 1 moves more than `config.large_move_pct` against `last_tier1` **or** `published_tier1`,

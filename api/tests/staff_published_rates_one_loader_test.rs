@@ -141,7 +141,9 @@ async fn staff_view(app: &TestApp, staff: &str) -> Value {
 /// pricing-tiers.md §15.8: the `display` block is PV-17/PV-18's to pin; these tests pin the rest.
 fn without_display(mut data: Value) -> Value {
     assert!(
-        data.as_object_mut().and_then(|o| o.remove("display")).is_some(),
+        data.as_object_mut()
+            .and_then(|o| o.remove("display"))
+            .is_some(),
         "a display block"
     );
     data

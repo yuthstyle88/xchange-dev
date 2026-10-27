@@ -282,7 +282,9 @@ async fn a_branch_with_no_publication_answers_the_none_tag_and_then_304() {
     // pricing-tiers.md §15.8: the `display` block is PV-17/PV-18's to pin; the rest is unchanged.
     let mut body = first.json();
     assert!(
-        body.as_object_mut().and_then(|o| o.remove("display")).is_some(),
+        body.as_object_mut()
+            .and_then(|o| o.remove("display"))
+            .is_some(),
         "a display block"
     );
     assert_eq!(

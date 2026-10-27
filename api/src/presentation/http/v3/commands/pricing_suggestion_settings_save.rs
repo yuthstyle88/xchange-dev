@@ -35,6 +35,21 @@ pub struct PricingSuggestionSettingsSaveInput {
     /// Four decimal strings, % better than the market per tier (each in −2..=2, each ≥ the previous), or `null` to
     /// remove the row (back to the branch default, then V.9's).
     pub better_pct: Option<Vec<String>>,
+    /// pricing-tiers.md §15.10 (gap 10): the branch `'*'` min spread %, 0..=5, a decimal string; `null` clears it.
+    /// Only with `currency: "*"` (another currency ⇒ `validationFailed`). A request that carries the key changes only
+    /// the min spread and leaves `betterPct` as stored; omitted ⇒ today's `betterPct` save. SKELETON (XC-V9-PRICING):
+    /// PV-l1 reads it.
+    #[serde(default, deserialize_with = "some_or_null")]
+    #[ts(optional, type = "string | null")]
+    pub min_spread_pct: Option<Option<String>>,
+}
+
+/// `Some(None)` for an explicit `null`, `None` (via `default`) when the key is absent.
+fn some_or_null<'de, D>(d: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(d).map(Some)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

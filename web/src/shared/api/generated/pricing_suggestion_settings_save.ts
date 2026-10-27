@@ -9,6 +9,11 @@ currency: string,
  * Four decimal strings, % better than the market per tier (each in −2..=2, each ≥ the previous), or `null` to
  * remove the row (back to the branch default, then V.9's).
  */
-betterPct: Array<string> | null, };
+betterPct: Array<string> | null, 
+/**
+ * pricing-tiers.md §15.10 (gap 10): the branch `'*'` min spread %, 0..=5, a decimal string; `null` clears it.
+ * Only with `currency: "*"`; omitted leaves it as it is. SKELETON (XC-V9-PRICING): PV-l1 reads it.
+ */
+minSpreadPct?: string | null, };
 
 export type PricingSuggestionSettingsSaveOutput = { saved: boolean, };

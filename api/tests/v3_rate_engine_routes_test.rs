@@ -856,8 +856,16 @@ async fn published_rates_answers_eight_place_strings_with_unit_size_and_the_vers
     assert_keys(
         jpy,
         &[
-            "currency", "group", "unitSize", "buyRate", "sellRate", "lineId", "bands",
-            "pricingSource", "hidden", "hiddenReason",
+            "currency",
+            "group",
+            "unitSize",
+            "buyRate",
+            "sellRate",
+            "lineId",
+            "bands",
+            "pricingSource",
+            "hidden",
+            "hiddenReason",
         ],
         "a line",
     );
