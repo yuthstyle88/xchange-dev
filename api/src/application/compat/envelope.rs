@@ -244,6 +244,9 @@ pub struct RpcRefusal {
     pub sentence: String,
     /// Whether the answer carries `Cache-Control: no-store`.
     pub no_store: bool,
+    /// The payload key the refusal is about, printed after `error` when there is one
+    /// (`docs/design/rpc-refusal-field.md` RF-D1, RF-D4).
+    pub field: Option<&'static str>,
 }
 
 impl RpcRefusal {
@@ -253,7 +256,14 @@ impl RpcRefusal {
             status: 400,
             sentence: sentence.into(),
             no_store: true,
+            field: None,
         }
+    }
+
+    /// A refusal by a use case that names the payload key at fault: 400, `no-store`, `field` (RF-D4).
+    pub fn refused_at(field: &'static str, sentence: impl Into<String>) -> RpcRefusal {
+        let sentence: String = sentence.into();
+        todo!("RF-2: a refusal naming {field}: {sentence}")
     }
 
     /// `คำขอไม่ถูกต้อง`: the same-origin headers, a body that cannot be read,
@@ -289,11 +299,13 @@ impl RpcRefusal {
                 status: 401,
                 sentence: SIGN_IN.to_string(),
                 no_store: false,
+                field: None,
             },
             RpcRoute::StaffRpc => RpcRefusal {
                 status: 401,
                 sentence: EMPLOYEE_AUTH_REQUIRED.to_string(),
                 no_store: true,
+                field: None,
             },
         }
     }

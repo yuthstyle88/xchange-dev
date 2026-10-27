@@ -17,6 +17,7 @@ use crate::domain::customer::entities::customer_identity::CustomerIdentity;
 use crate::domain::customer::entities::reservation::Reservation;
 use crate::domain::customer::repositories::customer_repository::CustomerRepository;
 use crate::domain::customer::value_objects::customer_details::CustomerDetails;
+use crate::domain::customer::value_objects::customer_field::CustomerRefusal;
 use crate::infrastructure::customer::customer_repository::PgCustomerRepository;
 use crate::pii_keys::get_pii_keys;
 
@@ -27,6 +28,22 @@ pub const NOT_THIS_PASSPORT: &str = "รหัสลูกค้าไม่ต�
 pub const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 pub const BAD_DATE: &str = "วันที่ไม่ถูกต้อง";
 pub const BAD_MODE: &str = "กรุณาเลือกประเภทรายการ";
+
+/// Why a reserve was refused: a fault in a named field, or anything else (`rpc-refusal-field.md` RF-D3).
+#[derive(Debug)]
+pub enum ReserveError {
+    Input(CustomerRefusal),
+    Other(AppError),
+}
+
+impl From<ReserveError> for AppError {
+    fn from(error: ReserveError) -> Self {
+        match error {
+            ReserveError::Input(refusal) => refusal.into(),
+            ReserveError::Other(other) => other,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReservedCustomerNumber {
@@ -93,6 +110,16 @@ impl CustomerService {
             customer_id,
             created_at,
         })
+    }
+
+    /// `reserve`, with a refusal of the customer's details naming its field (RF-D3).
+    pub async fn reserve_checked(
+        &self,
+        branch: &BranchId,
+        cmd: ReserveCustomer,
+        now: DateTime<Utc>,
+    ) -> Result<Reservation, ReserveError> {
+        todo!("RF-1: reserve with a typed refusal; {branch:?} {cmd:?} {now}")
     }
 
     pub async fn reserve(

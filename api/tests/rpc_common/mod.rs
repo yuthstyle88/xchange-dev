@@ -641,6 +641,21 @@ impl Answer {
         self.headers.get(name).map(String::as_str)
     }
 
+    /// RF-D9: fails unless this is the refusal `status` `{"error": sentence, "field": field}`, byte for byte,
+    /// as JSON, never cached, where (`route`, `action`) is in [`V3_REFUSAL_FIELDS`] and `field` is one of
+    /// [`REFUSAL_FIELD_NAMES`].
+    pub fn assert_refused_at(
+        &self,
+        route: &str,
+        action: &str,
+        status: u16,
+        sentence: &str,
+        field: &str,
+        label: &str,
+    ) {
+        todo!("RF-2: {route} {action} {status} {sentence} {field} {label}")
+    }
+
     /// Fails unless this is the refusal `status` `{"error": sentence}`, byte
     /// for byte, as JSON, never cached.
     pub fn assert_refused(&self, status: u16, sentence: &str, label: &str) {
@@ -1013,7 +1028,25 @@ pub enum Rule {
     /// with `ShiftError::NoOpenShift` (`กรุณาเปิดกะจากหน้าแอดมินก่อน`) because the owner has no open
     /// shift on the recorded day; those v2 accepted are then applied behind the routes (`save_behind`).
     OwnerNoOpenShift(&'static str),
+    /// RF-D9 (`docs/design/rpc-refusal-field.md`): a refusal v3 answers with v2's status and sentence plus
+    /// `"field": <key>` after `error`, on a (route, action) of [`V3_REFUSAL_FIELDS`] — a decided difference,
+    /// counted in [`Tally::differences`].
+    RefusedAt(&'static str),
 }
+
+/// RF-D9: the (route, action) pairs whose refusals may name the payload key at fault. A `field` on any
+/// other refusal fails the replay; every other refusal is still held byte for byte.
+pub const V3_REFUSAL_FIELDS: &[(&str, &str)] = &[(RPC, "reserveCustomer"), (STAFF_RPC, "reserveCustomer")];
+
+/// RF-D5: the keys a listed refusal may name.
+pub const REFUSAL_FIELD_NAMES: [&str; 6] = [
+    "name",
+    "passportNo",
+    "nationality",
+    "birthDate",
+    "passportExpiry",
+    "mode",
+];
 
 /// Recorded steps where v2 refused the caller at the policy gate and RBAC §11.2 (`RoleGrants`,
 /// `rbac-groups.md` §11.2, #3659) widens the caller's role so `Policy::authorize` lets them
@@ -1823,6 +1856,21 @@ impl<'f> Replay<'f> {
                 self.ids.learn(&expected, &actual);
                 assert_same(&self.ids.to_actual(&expected), &actual, &label);
                 self.tally.blueprint.push(step.n);
+            }
+            Rule::RefusedAt(field) => {
+                let action = action_of(step).unwrap_or_else(|| panic!("{label}: no action"));
+                let sentence = step
+                    .error()
+                    .unwrap_or_else(|| panic!("{label}: v2 did not refuse this one"));
+                answer.assert_refused_at(
+                    step.path().unwrap_or_default(),
+                    &action,
+                    step.status.unwrap_or(400),
+                    sentence,
+                    field,
+                    &label,
+                );
+                self.tally.differences.push(step.n);
             }
             Rule::Excluded(_) => unreachable!("handled above"),
         }

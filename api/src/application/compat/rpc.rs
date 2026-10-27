@@ -397,6 +397,7 @@ fn policy_refusal(refusal: PolicyError) -> RpcRefusal {
         status: refusal.status(),
         sentence: refusal.to_string(),
         no_store: true,
+        field: None,
     }
 }
 

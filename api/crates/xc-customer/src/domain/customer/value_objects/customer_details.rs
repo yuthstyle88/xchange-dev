@@ -6,6 +6,7 @@ use xc_kernel::input::{InputError, calendar_date, text};
 use xc_kernel::mode::Mode;
 
 use crate::domain::customer::commands::reserve_customer::ReserveCustomer;
+use crate::domain::customer::value_objects::customer_field::CustomerRefusal;
 
 pub const INVALID_NATIONALITY: &str = "สัญชาติไม่ถูกต้อง";
 pub const NOT_THIS_PASSPORT: &str = "รหัสลูกค้าไม่ตรงกับพาสปอร์ต กรุณายืนยันข้อมูลลูกค้าใหม่";
@@ -25,6 +26,12 @@ pub struct CustomerDetails {
 }
 
 impl CustomerDetails {
+    /// The details, or the first fault in payload order with the field it is about
+    /// (`rpc-refusal-field.md` RF-D2, RF-D6).
+    pub fn check(cmd: &ReserveCustomer) -> Result<Self, CustomerRefusal> {
+        todo!("RF-1: name the field of each refusal; {cmd:?}")
+    }
+
     pub fn parse(cmd: &ReserveCustomer) -> AppResult<Self> {
         let name = parse_text(&cmd.name, 100, true)?.to_owned();
         let passport_no = parse_text(&cmd.passport_no, 30, true)?.to_uppercase();
