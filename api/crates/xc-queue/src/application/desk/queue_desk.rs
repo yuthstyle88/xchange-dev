@@ -607,6 +607,19 @@ impl QueueDesk {
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
 
+        if let (Some(request_id), Some(events)) = (&ticket.kiosk_request_id, &self.kiosk_events) {
+            events
+                .on_ticket_ended_in(
+                    tx,
+                    branch,
+                    request_id,
+                    &xc_kernel::kiosk_queue_events::KioskTicketEnd::Skipped,
+                    &actor.user_id,
+                    now,
+                )
+                .await?;
+        }
+
         Ok(QueueTicket {
             status: TicketStatus::NoShow,
             ..ticket
@@ -828,6 +841,21 @@ impl QueueDesk {
         };
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
+
+        if let (Some(request_id), Some(events)) = (&ticket.kiosk_request_id, &self.kiosk_events) {
+            events
+                .on_ticket_ended_in(
+                    tx,
+                    branch,
+                    request_id,
+                    &xc_kernel::kiosk_queue_events::KioskTicketEnd::Cancelled {
+                        reason: reason.to_owned(),
+                    },
+                    &actor.user_id,
+                    now,
+                )
+                .await?;
+        }
 
         Ok(QueueTicket {
             status: TicketStatus::Cancelled,

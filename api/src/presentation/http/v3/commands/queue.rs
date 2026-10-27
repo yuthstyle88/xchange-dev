@@ -69,11 +69,14 @@ impl QueueServices {
             pool.clone(),
             Arc::new(TemplateRegistry::generated()),
         ));
+        let kiosk_events =
+            crate::infrastructure::kiosk::web_request_wiring::kiosk_queue_events(&pool);
         let booking_events: Arc<dyn xc_kernel::booking_queue_events::BookingQueueEvents> =
             pg_booking_lifecycle(pool);
         Self {
             desk: QueueDesk::new(branch_tx.clone(), repo.clone(), status.clone())
                 .with_booking_events(booking_events.clone())
+                .with_kiosk_events(kiosk_events)
                 .with_notifications(notifications),
             counters: CounterService::new(branch_tx.clone(), repo.clone(), status.clone()),
             issuer: TicketIssuer::new(branch_tx, repo).with_booking_events(booking_events),

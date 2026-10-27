@@ -12,9 +12,16 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::kiosk_queue_events::{KioskQueueEvents, KioskTicketEnd};
 use xc_kernel::queue_tickets::QueueTickets;
 
+use crate::domain::kiosk::entities::kiosk_machine::KioskMachine;
 use crate::domain::kiosk::repositories::kiosk_ports::KioskPorts;
+use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
 use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
+use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
+use crate::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use crate::infrastructure::kiosk::kiosk_repository::PgKioskRepository;
+
+use super::desk::cancel_in;
+use super::service::{cut_to_millis, time};
 
 pub struct KioskQueueEnded {
     repo: PgKioskRepository,
@@ -37,8 +44,17 @@ impl KioskQueueEnded {
     ///   that code with no note;
     /// - any other `Cancelled` reason ⇒ `OTHER` with the reason, trimmed, as its note.
     pub fn reason_for(end: &KioskTicketEnd) -> CancelReason {
-        let _ = end;
-        todo!("XC-BE-GAPS-A row 6")
+        match end {
+            KioskTicketEnd::Skipped => CancelReason::CustomerLeft { note: None },
+            KioskTicketEnd::Cancelled { reason } => match reason.as_str() {
+                "CUSTOMER_LEFT" => CancelReason::CustomerLeft { note: None },
+                "CUSTOMER_CHANGED_MIND" => CancelReason::CustomerChangedMind { note: None },
+                "DUPLICATE" => CancelReason::Duplicate { note: None },
+                other => CancelReason::Other {
+                    note: other.trim().to_owned(),
+                },
+            },
+        }
     }
 }
 
@@ -52,17 +68,29 @@ impl KioskQueueEvents for KioskQueueEnded {
         actor_id: &'a str,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<()>> {
-        let _ = (
-            &self.repo,
-            &self.ports,
-            &self.queue,
-            tx,
-            branch,
-            request_id,
-            end,
-            actor_id,
-            now,
-        );
-        todo!("XC-BE-GAPS-A row 6")
+        Box::pin(async move {
+            let stored = self.repo.find_in(tx, branch, request_id).await?;
+            let actor = KioskActor::Staff {
+                username: actor_id.to_owned(),
+                role: KioskRole::Manager,
+            };
+            let reason = Self::reason_for(end);
+            if let Ok(Some(_)) = KioskMachine::cancel(stored.as_ref(), &actor, &reason) {
+                cancel_in(
+                    tx,
+                    &self.repo,
+                    &*self.ports,
+                    &*self.queue,
+                    branch,
+                    stored,
+                    &actor,
+                    reason,
+                    cut_to_millis(now),
+                    time(now),
+                )
+                .await?;
+            }
+            Ok(())
+        })
     }
 }
