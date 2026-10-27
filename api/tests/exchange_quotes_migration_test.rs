@@ -318,12 +318,19 @@ async fn the_quotes_checks_admit_the_design_values_and_refuse_the_rest() {
         CHECK,
         "ACTIVE with a transaction"
     );
-    // INDICATIVE only until #555
+    // BINDING is admitted since the binding-quote migration (BQ-0 #5231, `binding_quote_migration_test.rs`); any
+    // other type is still refused.
     assert_eq!(
         db.outcome(&f.quote(&new_id(), &[("type", "'BINDING'")]))
             .await,
-        CHECK,
+        "ok",
         "type BINDING"
+    );
+    assert_eq!(
+        db.outcome(&f.quote(&new_id(), &[("type", "'FIRM'")]))
+            .await,
+        CHECK,
+        "type FIRM"
     );
     assert_eq!(
         db.outcome(&f.quote(&new_id(), &[("channel", "'WEB'")]))
