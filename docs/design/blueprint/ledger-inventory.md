@@ -450,6 +450,10 @@ dispatch follows N-1).** Measured on `main` `1998f955`: the gate sent `{"shortfa
   - the reversal post (`PostReversal::run_in` + `ReversalPostCommand`, row 2);
   - the transfer dispatch (`TransferFlow::dispatch_approved_in` + `TransferDispatch`, row 3). The dispatch's own
     pre-check against `expected_in` is removed, so the port is the one check and its refusal carries the shortfall.
+    `post_in` runs **before** `mark_dispatched`: the request was opened while the transfer was APPROVED, and the
+    transfer's `version_hash` covers its status, so posting after the status moves to DISPATCHED would never match an
+    approval. `mark_dispatched` keeps its `status = 'APPROVED'` guard, and the source branch's lock still orders two
+    dispatches.
 - **`version_hash`** of a reversal: `source_hash` gains a `reversal:` arm (the reversal's status and original
   transaction), beside the exchange's and the transfer's.
 
