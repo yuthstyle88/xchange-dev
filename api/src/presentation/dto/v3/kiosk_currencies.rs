@@ -57,6 +57,9 @@ pub struct KioskCurrency {
     pub partner_cost: Option<Rate>,
     pub enabled: bool,
     pub kbank: Vec<KbankComparison>,
+    /// pricing-tiers.md §15.8a: true only when the currency is kiosk-enabled and its line is not `hidden`. A
+    /// board-only currency is listed with `false` ("contact staff").
+    pub quote_enabled: bool,
 }
 
 /// The `kiosk_currencies` view data.

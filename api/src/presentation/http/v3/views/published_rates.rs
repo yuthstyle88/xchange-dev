@@ -22,8 +22,8 @@ use xc_rate::domain::publication::freshness::Freshness;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::published_rates::{
-    PublishedBandDto, PublishedBandHeadingDto, PublishedLineDto, PublishedPublicationDto,
-    PublishedRatesData,
+    PublishedBandDto, PublishedBandHeadingDto, PublishedDisplayDto, PublishedLineDto,
+    PublishedPublicationDto, PublishedRatesData,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -88,6 +88,7 @@ pub async fn published_rates_data(
                 stale: false,
                 lines: vec![],
                 band_headings: vec![],
+                display: skeleton_display(&[]),
             });
         }
     };
@@ -206,6 +207,11 @@ pub async fn published_rates_data(
             sell_rate,
             line_id: line_id.to_string(),
             bands,
+            // SKELETON (XC-V9-PRICING): today's lines are all AUTO and visible; PV-i reads `source_snapshot.pricing`
+            // and `FollowVisibility::of`.
+            pricing_source: "AUTO".to_string(),
+            hidden: false,
+            hidden_reason: None,
         });
     }
 
@@ -221,6 +227,7 @@ pub async fn published_rates_data(
             .source_date
             .map(|d| d.format("%Y-%m-%d").to_string()),
         stale: pub_freshness.stale,
+        display: skeleton_display(&lines),
         lines,
         band_headings: headings,
     })
@@ -259,6 +266,25 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     PublishedBandDto::export_all(&cfg)?;
     PublishedBandHeadingDto::export_all(&cfg)?;
     PublishedLineDto::export_all(&cfg)?;
+    PublishedDisplayDto::export_all(&cfg)?;
     PublishedRatesData::export_all(&cfg)?;
     Ok(())
+}
+
+/// SKELETON (XC-V9-PRICING): V.9's default tiers, no featured codes, the lines' own order and no `more`. PV-i replaces
+/// it with the effective `DisplaySettings` and `DisplaySettings::order`.
+fn skeleton_display(lines: &[PublishedLineDto]) -> PublishedDisplayDto {
+    let mut order: Vec<String> = Vec::new();
+    for line in lines {
+        if !order.contains(&line.currency) {
+            order.push(line.currency.clone());
+        }
+    }
+    PublishedDisplayDto {
+        tiers: vec![1, 2, 3, 4],
+        featured: vec![],
+        highlight: true,
+        order,
+        more: vec![],
+    }
 }

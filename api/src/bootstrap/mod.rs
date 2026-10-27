@@ -93,6 +93,23 @@ pub struct AppState {
     /// `settings.recognize` is `Ok`, else `UnconfiguredReader`.
     pub passport_reader: Arc<dyn PassportReader>,
     pub loyalty_rule_writer: Option<Arc<dyn LoyaltyRuleWriter>>,
+    /// The market sources `marketRatesRefresh` fetches (pricing-tiers.md §15.5 gap 6): TT and Super Rich, live.
+    /// Tests swap them with `with_market_sources`.
+    pub market_sources: Vec<(MarketSource, Arc<dyn RateSource>)>,
+}
+
+/// TT and Super Rich, live (pricing-tiers.md §4).
+fn live_market_sources() -> Vec<(MarketSource, Arc<dyn RateSource>)> {
+    vec![
+        (
+            MarketSource::Tt,
+            Arc::new(MarketRateSource::new(Arc::new(TtFeed::live()))),
+        ),
+        (
+            MarketSource::SuperRich,
+            Arc::new(MarketRateSource::new(Arc::new(SuperRichFeed::live()))),
+        ),
+    ]
 }
 
 struct LazyDocumentStore {
@@ -190,7 +207,16 @@ impl AppState {
             loyalty_summary: Arc::new(UnavailableLoyaltySummary),
             passport_reader,
             loyalty_rule_writer,
+            market_sources: live_market_sources(),
         }
+    }
+
+    pub fn with_market_sources(
+        mut self,
+        sources: Vec<(MarketSource, Arc<dyn RateSource>)>,
+    ) -> Self {
+        self.market_sources = sources;
+        self
     }
 
     pub fn with_build(mut self, build: BuildInfo) -> Self {
@@ -484,17 +510,7 @@ impl Application {
         // build this Application and must not reach the internet).
         let market_config = MarketRefreshConfig::from_env();
         if market_config.enabled {
-            let sources: Vec<(MarketSource, Arc<dyn RateSource>)> = vec![
-                (
-                    MarketSource::Tt,
-                    Arc::new(MarketRateSource::new(Arc::new(TtFeed::live()))),
-                ),
-                (
-                    MarketSource::SuperRich,
-                    Arc::new(MarketRateSource::new(Arc::new(SuperRichFeed::live()))),
-                ),
-            ];
-            let market_refresh = MarketRefresh::new(state.db.clone(), sources);
+            let market_refresh = MarketRefresh::new(state.db.clone(), state.market_sources.clone());
             tokio::spawn(Arc::new(market_refresh).run(market_config.interval, stop_rx.clone()));
         }
         let rate_feed = tokio::spawn(Arc::new(rate_feed_loop).run(stop_rx));

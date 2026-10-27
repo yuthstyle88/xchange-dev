@@ -85,4 +85,32 @@ impl PricingSuggestionSettingsStore {
         }
         Ok(())
     }
+
+    /// gap 10 (pricing-tiers.md §15.10): the branch `'*'` row's `min_spread_pct`.
+    ///
+    /// SKELETON (XC-V9-PRICING): PV-l's.
+    pub async fn branch_min_spread(
+        conn: &mut PgConnection,
+        branch: &str,
+    ) -> Result<Option<Decimal>, RateEngineError> {
+        let _ = (&conn, branch);
+        let _ = (&conn, branch);
+        todo!("PV-l: PricingSuggestionSettingsStore::branch_min_spread")
+    }
+
+    /// Sets (or with `None` clears) the branch `'*'` row's `min_spread_pct` (0..=5). A `'*'` row that does not exist
+    /// yet is created with V.9's default `better`.
+    ///
+    /// SKELETON (XC-V9-PRICING): PV-l's.
+    pub async fn save_branch_min_spread(
+        conn: &mut PgConnection,
+        branch: &str,
+        min_spread_pct: Option<Decimal>,
+        by: &str,
+        at: DateTime<Utc>,
+    ) -> Result<(), RateEngineError> {
+        let _ = (&conn, branch, min_spread_pct, by, at);
+        let _ = (&conn, branch, min_spread_pct, by, at);
+        todo!("PV-l: PricingSuggestionSettingsStore::save_branch_min_spread")
+    }
 }

@@ -47,6 +47,18 @@ impl SuggestionSettings {
         }
     }
 
+    /// gap 10 (pricing-tiers.md §15.10): the effective `min_spread_pct` is the currency override's, else the branch
+    /// `'*'` row's `pricing_suggestion_settings.min_spread_pct`, else V.9's 0.3.
+    ///
+    /// SKELETON (XC-V9-PRICING): PV-l's.
+    pub fn min_spread_for(
+        currency_override: Option<Decimal>,
+        branch_default: Option<Decimal>,
+    ) -> Decimal {
+        let _ = (currency_override, branch_default);
+        todo!("PV-l: SuggestionSettings::min_spread_for")
+    }
+
     /// V.9 `configure`'s checks (`src/pricing.mjs:204-206`): exactly 4 values, each in [−2, 2], each ≥ the previous.
     /// `Err` carries the reason for `validationFailed`. Returns the 4 values rescaled to 4 places.
     pub fn validate(values: &[Decimal]) -> Result<[Decimal; 4], String> {

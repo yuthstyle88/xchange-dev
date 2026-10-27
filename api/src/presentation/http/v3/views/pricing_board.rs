@@ -36,8 +36,9 @@ use xc_rate::infrastructure::pricing::suggestion_settings_store::PricingSuggesti
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::pricing_board::{
-    PricingBandDto, PricingBoardData, PricingQuoteDto, PricingRecommendationDto, PricingRowDto,
-    PricingSourceDto, PricingTierMarginDto, PricingTierRateDto,
+    PricingBandDto, PricingBoardData, PricingBpDto, PricingBranchPolicyDto, PricingDisplayDto,
+    PricingFollowResultDto, PricingQuoteDto, PricingRecommendationDto, PricingRowDto, PricingSourceDto,
+    PricingTierMarginDto, PricingTierRateDto, PricingTierSetDto,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -623,6 +624,17 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             flags,
             selectable,
             status,
+            // SKELETON (XC-V9-PRICING): every currency reads as today's AUTO; PV-k fills these (§15.8a).
+            mode: "AUTO".to_string(),
+            tier_set: None,
+            follow_result: None,
+            branch_policy: PricingBranchPolicyDto {
+                buy_bp: 0,
+                sell_bp: 0,
+                own: false,
+                follow: false,
+                from: "default".to_string(),
+            },
         });
     }
 
@@ -656,6 +668,19 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
         sources,
         rows,
         recommendations,
+        // SKELETON (XC-V9-PRICING): PV-k reads the `'*'` row, the effective display settings and MAIN.
+        branch_default: PricingBpDto {
+            buy_bp: 0,
+            sell_bp: 0,
+        },
+        display: PricingDisplayDto {
+            tiers: vec![1, 2, 3, 4],
+            featured: vec![],
+            highlight: true,
+            all_market: true,
+            from: "default".to_string(),
+        },
+        is_main: false,
     })
 }
 
@@ -672,6 +697,11 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     PricingTierMarginDto::export_all(&cfg)?;
     PricingRowDto::export_all(&cfg)?;
     PricingRecommendationDto::export_all(&cfg)?;
+    PricingBpDto::export_all(&cfg)?;
+    PricingDisplayDto::export_all(&cfg)?;
+    PricingTierSetDto::export_all(&cfg)?;
+    PricingFollowResultDto::export_all(&cfg)?;
+    PricingBranchPolicyDto::export_all(&cfg)?;
     PricingBoardData::export_all(&cfg)?;
     Ok(())
 }

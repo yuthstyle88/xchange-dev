@@ -408,6 +408,8 @@ impl BranchView for KioskCurrenciesView {
                     partner_cost,
                     enabled,
                     kbank: kbank_comparisons,
+                    // SKELETON (XC-V9-PRICING): no line is hidden yet; PV-m adds `!hidden` and board-only currencies.
+                    quote_enabled: enabled,
                 });
             }
 

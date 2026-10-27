@@ -4,8 +4,36 @@ export type PublishedBandDto = { tier: string, buyRate: string | null, sellRate:
 
 export type PublishedBandHeadingDto = { tier: string, lowerExclusiveThb: string | null, upperInclusiveThb: string | null, };
 
-export type PublishedLineDto = { currency: string, group: string, unitSize: string, buyRate: string | null, sellRate: string | null, lineId: string, bands: Array<PublishedBandDto>, };
+/**
+ * What the storefront shows (pricing-tiers.md §15.8).
+ */
+export type PublishedDisplayDto = { tiers: Array<number>, featured: Array<string>, highlight: boolean, 
+/**
+ * The priced currencies: featured first in their set order, then Super Rich's market order, then by code.
+ */
+order: Array<string>, 
+/**
+ * With `allMarket`: currencies Super Rich lists that the branch has no price for — "contact the counter",
+ * never a price.
+ */
+more: Array<string>, };
+
+export type PublishedLineDto = { currency: string, group: string, unitSize: string, buyRate: string | null, sellRate: string | null, lineId: string, bands: Array<PublishedBandDto>, 
+/**
+ * `AUTO` · `MANUAL` · `FOLLOW` (pricing-tiers.md §15.7): from `source_snapshot.pricing.source`; `MAIN_PUSH` reads
+ * as `MANUAL`.
+ */
+pricingSource: string, 
+/**
+ * The board and the public feed drop a hidden line; the kiosk lists it `quoteEnabled: false`. `MANUAL` and
+ * `AUTO` are never hidden.
+ */
+hidden: boolean, 
+/**
+ * `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
+ */
+hiddenReason: string | null, };
 
 export type PublishedPublicationDto = { id: string, version: number, publishedAt: string, };
 
-export type PublishedRatesData = { publication: PublishedPublicationDto | null, sourceDate: string | null, stale: boolean, lines: Array<PublishedLineDto>, bandHeadings: Array<PublishedBandHeadingDto>, };
+export type PublishedRatesData = { publication: PublishedPublicationDto | null, sourceDate: string | null, stale: boolean, lines: Array<PublishedLineDto>, bandHeadings: Array<PublishedBandHeadingDto>, display: PublishedDisplayDto, };

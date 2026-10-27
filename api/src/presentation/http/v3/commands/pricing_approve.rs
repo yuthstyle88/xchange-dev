@@ -76,6 +76,11 @@ pub struct PricingApproveRowInput {
     pub currency: String,
     /// Exactly four tiers 1..=4.
     pub tiers: Vec<PricingTierPriceInput>,
+    /// pricing-tiers.md §15.3: the latest `pricing_tier_sets.id` the page saw for this currency (`tierSet.id` on the
+    /// board), or omitted when it saw none. A newer one ⇒ `conflict`, nothing written.
+    #[serde(default)]
+    #[ts(optional)]
+    pub tier_set_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -98,6 +103,38 @@ pub struct PricingApproveOutput {
     pub draft_id: String,
     /// The draft's state after submit: `PUBLISHED` when in bound, `PENDING_APPROVAL` when it waits in A06.
     pub draft_state: String,
+    /// pricing-tiers.md §15.8a: one result per currency. SKELETON (XC-V9-PRICING): PV-c fills it and removes the four
+    /// fields above (the answer becomes `{currencies}`).
+    pub currencies: Vec<PricingApproveCurrencyResult>,
+}
+
+/// One currency's approve result (§15.8a).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "pricing_approve.ts")]
+pub struct PricingApproveCurrencyResult {
+    pub currency: String,
+    /// `PUBLISHED` · `REFUSED`.
+    pub state: String,
+    pub tier_set_id: Option<String>,
+    /// The v3 error code when `REFUSED`.
+    pub error: Option<String>,
+    /// MAIN only: one per other branch (§15.4). Absent at any other branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub branches: Option<Vec<PricingApproveBranchResult>>,
+}
+
+/// One branch's push result (§15.4, §15.8a).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "pricing_approve.ts")]
+pub struct PricingApproveBranchResult {
+    pub branch_id: String,
+    /// `PUBLISHED` · `SKIPPED_OWN` · `FAILED` · `ALREADY_DONE`.
+    pub state: String,
+    pub tier_set_id: Option<String>,
+    pub error: Option<String>,
 }
 
 pub struct PricingApproveCommand {
@@ -512,6 +549,7 @@ impl CommandAction for PricingApproveCommand {
                 buy: LineSide::Auto,
                 sell: LineSide::Auto,
                 reason: Some(reason.clone()),
+                tiers: None,
             });
         }
 
@@ -576,6 +614,7 @@ impl CommandAction for PricingApproveCommand {
             version: written.version,
             draft_id: draft.id.to_string(),
             draft_state: draft_state.to_string(),
+            currencies: Vec::new(),
         })
     }
 }
@@ -595,6 +634,8 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     PricingTierPriceInput::export_all(&cfg)?;
     PricingApproveRowInput::export_all(&cfg)?;
     PricingApproveInput::export_all(&cfg)?;
+    PricingApproveCurrencyResult::export_all(&cfg)?;
+    PricingApproveBranchResult::export_all(&cfg)?;
     PricingApproveOutput::export_all(&cfg)?;
     Ok(())
 }
