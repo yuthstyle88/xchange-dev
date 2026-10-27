@@ -1267,8 +1267,87 @@ impl CashPostings for LedgerCashPostings {
         tx: &'a mut Transaction<'_, Postgres>,
         reqs: &'a [RevalueRequest],
     ) -> BoxFuture<'a, AppResult<PostingId>> {
-        let _ = (tx, reqs);
-        todo!("LA-8")
+        Box::pin(async move {
+            if reqs.is_empty() {
+                return Err(validation("a revaluation has at least one request"));
+            }
+            let source = &reqs[0].source;
+            for r in reqs {
+                if r.source != *source {
+                    return Err(validation(
+                        "every request of one posting has the same source",
+                    ));
+                }
+                if r.source.source_type != SourceType::Adjustment {
+                    return Err(validation("a revaluation has source_type ADJUSTMENT"));
+                }
+                if is_thb(r.currency) {
+                    return Err(validation("THB has no inventory position to revalue"));
+                }
+            }
+            let branch = reqs[0].branch.as_str().to_owned();
+            let organization_id: String =
+                sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
+                    .bind(&branch)
+                    .fetch_optional(&mut **tx)
+                    .await?
+                    .ok_or_else(|| validation("the posting's branch does not exist"))?;
+            let existing: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM ledger_postings \
+                 WHERE organization_id = $1::uuid AND source_type = $2 AND source_id = $3 AND source_key = $4",
+            )
+            .bind(&organization_id)
+            .bind(source.source_type.as_str())
+            .bind(&source.source_id)
+            .bind(&source.source_key)
+            .fetch_optional(&mut **tx)
+            .await?;
+            if let Some(id) = existing {
+                return Ok(PostingId(id));
+            }
+
+            let mut plan = Plan {
+                organization_id,
+                branch,
+                positions: HashMap::new(),
+                entries: Vec::new(),
+                lots: Vec::new(),
+                movements: Vec::new(),
+                line_updates: Vec::new(),
+                costs: Vec::new(),
+                reversed: Vec::new(),
+                goes_negative: false,
+                missing_buy_rate: None,
+            };
+            for r in reqs {
+                let delta = Decimal::try_from_i128_with_scale(r.cost_delta_thb.minor(), 2)
+                    .map_err(|_| validation("cost delta out of range"))?;
+                let pos = plan.position(tx, r.branch.as_str(), r.currency).await?;
+                if pos.now.quantity <= Decimal::ZERO {
+                    return Err(validation("a revaluation requires a positive position"));
+                }
+                let new_cost = pos.now.cost_thb + delta;
+                if new_cost < Decimal::ZERO {
+                    return Err(validation(
+                        "a revaluation cannot take a position's cost below zero",
+                    ));
+                }
+                pos.now.cost_thb = new_cost;
+                let average_after = average(pos.now);
+                pos.last_average = average_after;
+                plan.movements.push(MovementPlan {
+                    branch: r.branch.as_str().to_owned(),
+                    currency: r.currency,
+                    lot_id: None,
+                    line: None,
+                    movement_type: MovementType::Adjust,
+                    quantity_signed: Decimal::ZERO,
+                    cost_thb_signed: delta,
+                    average_after,
+                });
+            }
+            Ok(write(tx, &plan, source).await?.posting_id)
+        })
     }
 
     /// Σ of the place's account entries per currency (§4.2, L-4). A balance below zero, or one
