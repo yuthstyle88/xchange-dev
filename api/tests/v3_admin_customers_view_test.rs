@@ -86,8 +86,9 @@ const JPEG: &[u8] = &[
     0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 9,
 ];
 
-/// A row of `admin_customers`, and nothing else.
-const CUSTOMER_FIELDS: [&str; 8] = [
+/// A row of `admin_customers`, and nothing else. Restated for E-4 (feat/be-gaps-b, claude/2ef7d5a6): the three
+/// 12-rolling-month figures `rfmCompleted`, `rfmVolume`, `rfmLastAt` (`executive-finance.md` §3 `rfm`).
+const CUSTOMER_FIELDS: [&str; 11] = [
     "id",
     "name",
     "nationality",
@@ -96,6 +97,9 @@ const CUSTOMER_FIELDS: [&str; 8] = [
     "completed",
     "volume",
     "lastAt",
+    "rfmCompleted",
+    "rfmVolume",
+    "rfmLastAt",
 ];
 
 /// `TransactionRow`'s fields (design §12.2), the shape every row of the history has.

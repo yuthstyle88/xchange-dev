@@ -11,6 +11,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 
+use crate::application::workflows::documents::ending;
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::{FileService, MAX_UPLOAD_BYTES, StoredFile};
 use crate::presentation::extractors::origin::same_origin;
@@ -221,17 +222,6 @@ async fn staff_upload(req: HttpRequest, payload: web::Payload) -> HttpResponse {
         .map(|u| u.user_id.as_str())
         .unwrap_or("");
     store(&req, &grant.branch, actor_id, &bytes, true).await
-}
-
-fn ending(mime: &str) -> &'static str {
-    match mime {
-        "image/jpeg" => "jpg",
-        "image/png" => "png",
-        "image/webp" => "webp",
-        "application/pdf" => "pdf",
-        "text/html" => "html",
-        _ => "bin",
-    }
 }
 
 fn page_file(stored: StoredFile, disposition: Option<String>) -> HttpResponse {

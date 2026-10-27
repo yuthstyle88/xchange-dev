@@ -199,7 +199,7 @@ export function createDeskStore(
   const [valueDate, setValueDate] = createSignal(bangkokToday());
   const [booking, setBooking] = createSignal('');
 
-  const [method, setMethod] = createSignal('');
+  const [method, setMethodS] = createSignal('');
   const [ref, setRef] = createSignal('');
   const [account, setAccount] = createSignal('');
   const [fee, setFeeS] = createSignal('');
@@ -289,6 +289,7 @@ export function createDeskStore(
         },
       ],
       ...(coupon !== '' ? { couponCode: coupon } : {}),
+      ...(method() !== '' ? { paymentMethod: method() } : {}),
     };
     try {
       const answered = await api.command<QuotesCommandInput, QuoteDto>(
@@ -331,6 +332,11 @@ export function createDeskStore(
   function setCouponCode(c: string): void {
     setCouponCodeS(c);
     scheduleQuote();
+  }
+  function setMethod(v: string): void {
+    const wasCash = method() === 'Cash';
+    setMethodS(v);
+    if ((v === 'Cash') !== wasCash) scheduleQuote();
   }
   function setFee(v: string): void {
     setFeeS(v);
@@ -462,7 +468,7 @@ export function createDeskStore(
     setCustomerId('');
     setStaffDraftId('');
     setBooking('');
-    setMethod('');
+    setMethodS('');
     setRef('');
     setAccount('');
     setFeeS('');

@@ -306,6 +306,17 @@ fn refused_with<T: std::fmt::Debug>(result: Result<T, AppError>, expected: Trans
     }
 }
 
+/// The posting port's `stockInsufficient` refusal (XC-BE-GAPS-A row 3: the dispatch's own pre-check is gone, R1).
+fn refused_stock_insufficient<T: std::fmt::Debug>(result: Result<T, AppError>) {
+    match result {
+        Err(AppError::Domain(sentence)) => assert!(
+            sentence.starts_with("stockInsufficient"),
+            "expected the port's stockInsufficient refusal, got {sentence:?}"
+        ),
+        other => panic!("expected AppError::Domain(stockInsufficient…), got {other:?}"),
+    }
+}
+
 // ── the permission (gap 5) ──────────────────────────────────────────────────
 
 #[test]
@@ -514,10 +525,9 @@ async fn a_dispatch_beyond_the_source_safe_is_refused_and_nothing_moves() {
     flow.decide(&c.exec, &t.id, Outcome::Approved, "ok", at(20))
         .await
         .expect("approve above the limit");
-    refused_with(
-        flow.dispatch(&c.creator, &t.id, at(30)).await,
-        TransferError::StockInsufficient,
-    );
+    // Restated by the sub-controller (claude/491239fc, XC-BE-GAPS-A row 3): owner R1 (2026-10-27, #564
+    // issuecomment-6439994453) makes the posting port the one check, so the refusal is its `stockInsufficient: …`.
+    refused_stock_insufficient(flow.dispatch(&c.creator, &t.id, at(30)).await);
     assert_eq!(db.status(&t.id).await, "APPROVED");
     assert_eq!(db.safe_usd(&c.b1).await, 50_000);
 }

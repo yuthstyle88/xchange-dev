@@ -204,13 +204,42 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
 
 ### 3.7 Not in this design (follow-ups, each its own ticket later)
 
-- A staff `ticketCancel` / skip on a kiosk-linked ticket should also cancel the request. Today it leaves it stuck (§1 last bullet). This needs a queue → kiosk hook, so it comes after this lands.
+- ~~A staff `ticketCancel` / skip on a kiosk-linked ticket should also cancel the request.~~ Designed in §3.8 (XC-BE-GAPS-A row 6, 2026-10-27).
 - Day close cancelling leftovers. `QueueDayHook::on_day_closed` (`xc-queue/src/application/day/queue_day_hook.rs:44-146`) has no production caller, and it notifies bookings only. The day closes on the last CLOSE-count verify (`count_service.rs:1252-1261` → `ShiftService::close_on_verified`). The handover path calls the same function (`handover_service.rs:586`), so the trigger can't simply be "0 open shifts". Once that is wired, it calls this design's cancel path for every unfinished request (`WAITING`, `ACCEPTED`, `ID_CHECKED`; owner 2026-10-21, K-4), with reason **`DAY_CLOSED`** (KC-5; design `queue-day-close.md` §7):
   - the request becomes `CANCELLED` with `cancel_reason = 'DAY_CLOSED'` and a `KIOSK_CANCELLED` line, exactly as a staff cancel is recorded;
   - its ticket becomes `CANCELLED` with `ended_reason = 'kioskCancelled:DAY_CLOSED'` and a `CANCEL` event, never `NO_SHOW` (`is_no_show` is true only for `CUSTOMER_LEFT`). This matches `queue-tickets.md` Q8, which already says `CANCELLED` at day close;
   - `cancelled_by` and the line's actor are the user whose action closed the day;
   - the code is in this design's migration (§3.1), so the follow-up needs no second migration. The follow-up itself is #4147's.
 - F13 (the kiosk journey in `qa/e2e`) is cut once this and #4113 merge; its cleanup step is this cancel.
+
+### 3.8 A staff skip or cancel of a kiosk-linked ticket closes its request (XC-BE-GAPS-A row 6, claude/491239fc, 2026-10-27)
+
+Measured on `main` `1998f955`: `QueueDesk::skip_in` and `cancel_in` (`xc-queue/src/application/desk/queue_desk.rs`)
+write only `queue_tickets` and a `QueueEvent`, so a request whose ticket staff skipped or cancelled stays `WAITING`
+(or `ACCEPTED`/`ID_CHECKED`) behind an ended ticket.
+
+- **A port in `xc-kernel`, the way `BookingQueueEvents` is** (`xc-kernel/src/kiosk_queue_events.rs`):
+  `KioskQueueEvents::on_ticket_ended_in(tx, branch, request_id, end: &KioskTicketEnd, actor_id, now)`, with
+  `KioskTicketEnd::{Skipped, Cancelled { reason }}`. `xc-queue` never names `xc-kiosk`.
+- **`QueueDesk::with_kiosk_events`.** `skip_in` / `cancel_in` call the port after the ticket's guarded `UPDATE` and its
+  event, when `ticket.kiosk_request_id` is set, in the desk's transaction. An error rolls the queue action back.
+  `QueueServices::new` (`api/src/presentation/http/v3/commands/queue.rs`) wires it with
+  `kiosk_queue_events(&pool)` (`api/src/infrastructure/kiosk/web_request_wiring.rs`).
+- **`KioskQueueEnded` implements it** (`xc-kiosk/src/application/kiosk/queue_ended.rs`), mirroring `KioskDayCloser`:
+  it loads the request and, when `KioskMachine::cancel` answers `Ok(Some(_))`, runs `desk.rs`'s `cancel_in`. So the
+  request ends `CANCELLED` with a reason and one `KIOSK_CANCELLED` line, exactly as a staff cancel is recorded. A
+  request already ended, unknown, or refused by the machine is left as it is (`Ok(())`). Its ticket is already
+  `NO_SHOW`/`CANCELLED`, so `cancel_active_for_kiosk_in` writes nothing (§3.2's last row).
+- **The actor** is `KioskActor::Staff { username: <the queue actor's user id>, role: Manager }`. The queue has already
+  authorised this caller to end the ticket (`authorize_in`, and for a skip `check_ticket_owner`); the kiosk adds no
+  second holder check, so a teller's skip is never refused for a request another teller accepted.
+- **The reason mapping** (`KioskQueueEnded::reason_for`), decided here:
+
+  | Queue action | Request's `cancel_reason` | `cancel_note` |
+  |---|---|---|
+  | `skip` (CALLED → `NO_SHOW`) | `CUSTOMER_LEFT` (§2: `NO_SHOW` ⇔ `CUSTOMER_LEFT`) | none |
+  | `ticketCancel` with `reason` = `CUSTOMER_LEFT`, `CUSTOMER_CHANGED_MIND` or `DUPLICATE` | that code | none |
+  | `ticketCancel` with any other `reason` (free text, `OTHER`, and the two codes staff may not send, `CUSTOMER_CANCELLED`, `DAY_CLOSED`) | `OTHER` | the reason, trimmed (`ticketCancel` bounds it 1–200, `queue.rs:380`) |
 
 ## 4. Class diagram
 
@@ -283,6 +312,28 @@ classDiagram
   DeskKioskEntry ..> KioskRoute : POST /api/kiosk cancel
   KioskApp ..> KioskRoute : customerCancel (cancelToken)
   KioskApp ..> KioskRoute : status (reads CANCELLED)
+  class KioskQueueEvents {
+    <<xc-kernel kiosk_queue_events.rs · new §3.8>>
+    +on_ticket_ended_in(tx, branch, request_id, end: KioskTicketEnd, actor_id, now) Result
+  }
+  class KioskTicketEnd {
+    <<xc-kernel kiosk_queue_events.rs · new>>
+    Skipped · Cancelled(reason)
+  }
+  class QueueDesk {
+    <<xc-queue application/desk/queue_desk.rs>>
+    +with_kiosk_events(Arc~dyn KioskQueueEvents~) Self  «new»
+    +skip_in(...) · cancel_in(...)  «call the port for a kiosk-linked ticket»
+  }
+  class KioskQueueEnded {
+    <<xc-kiosk application/kiosk/queue_ended.rs · new §3.8>>
+    +new(repo, ports, queue) Self
+    +reason_for(end: KioskTicketEnd)$ CancelReason
+  }
+  KioskQueueEnded ..|> KioskQueueEvents
+  QueueDesk --> KioskQueueEvents : skip / cancel of a kiosk-linked ticket (same tx)
+  KioskQueueEnded --> KioskDesk : cancel_in (as KioskDayCloser)
+  KioskQueueEvents --> KioskTicketEnd
 ```
 
 ## 5. Tickets → files (disjoint; Gemini workers; released in the order shown)

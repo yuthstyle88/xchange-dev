@@ -285,6 +285,17 @@ fn refused_with<T: std::fmt::Debug>(result: Result<T, AppError>, expected: Trans
     }
 }
 
+/// The posting port's `stockInsufficient` refusal (XC-BE-GAPS-A row 3: the dispatch's own pre-check is gone, R1).
+fn refused_stock_insufficient<T: std::fmt::Debug>(result: Result<T, AppError>) {
+    match result {
+        Err(AppError::Domain(sentence)) => assert!(
+            sentence.starts_with("stockInsufficient"),
+            "expected the port's stockInsufficient refusal, got {sentence:?}"
+        ),
+        other => panic!("expected AppError::Domain(stockInsufficient…), got {other:?}"),
+    }
+}
+
 // ── pure: the registry and each kind's ends and postings ───────────────────
 
 fn ends(kind: TransferKind) -> Arc<dyn TransferEnds> {
@@ -632,9 +643,10 @@ async fn a_move_out_of_a_drawer_beyond_its_expected_is_refused_and_nothing_moves
     let db = Db::fresh().await;
     let s = shop(&db).await;
     let shift = db.drawer(&s.b1, &s.teller, &s.manager, 2).await; // USD 100
-    refused_with(
+    // Restated by the sub-controller (claude/491239fc, XC-BE-GAPS-A row 3): owner R1 (2026-10-27, #564
+    // issuecomment-6439994453) makes the posting port the one check, so the refusal is its `stockInsufficient: …`.
+    refused_stock_insufficient(
         dispatched(&db, &s, TransferKind::DrawerToSafe, Some(&shift), None, 3).await,
-        TransferError::StockInsufficient,
     );
     assert_eq!(db.drawer_usd(&shift).await, d("100"));
     assert_eq!(
@@ -688,9 +700,10 @@ async fn safe_to_drawer_takes_from_the_safe_and_only_the_drawers_own_teller_rece
 async fn a_move_out_of_the_safe_beyond_its_expected_is_refused() {
     let db = Db::fresh().await;
     let s = shop(&db).await;
-    refused_with(
+    // Restated by the sub-controller (claude/491239fc, XC-BE-GAPS-A row 3): owner R1 (2026-10-27, #564
+    // issuecomment-6439994453) makes the posting port the one check, so the refusal is its `stockInsufficient: …`.
+    refused_stock_insufficient(
         dispatched(&db, &s, TransferKind::ExternalOut, None, None, 11).await, // USD 550 > 500
-        TransferError::StockInsufficient,
     );
     assert_eq!(db.safe_usd(&s.b1).await, 50_000);
 }

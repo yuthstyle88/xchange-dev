@@ -3,7 +3,7 @@
 /**
  * Row in the `admin_customers` page.
  */
-export type AdminCustomerRow = { id: string, name: string, nationality: string, created: string, member: boolean, completed: number, volume: string, lastAt: string | null, };
+export type AdminCustomerRow = { id: string, name: string, nationality: string, created: string, member: boolean, completed: number, volume: string, lastAt: string | null, rfmCompleted: number, rfmVolume: string, rfmLastAt: string | null, };
 
 /**
  * Filter for the `admin_customers` view.

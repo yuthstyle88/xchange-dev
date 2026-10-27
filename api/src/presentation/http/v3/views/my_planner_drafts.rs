@@ -62,14 +62,17 @@ impl BranchView for MyPlannerDraftsView {
         async move {
             let drafts = match owner {
                 None => Vec::new(),
-                Some(owner) => service.list(&owner).await.map_err(|e| {
-                    // `CustomerAppError` has no `Display`; log its message or code, never `Debug`.
-                    let why = match e {
-                        CustomerAppError::Server(why) => why,
-                        other => other.code().to_owned(),
-                    };
-                    AppError::Internal(format!("my_planner_drafts: {why}"))
-                })?,
+                Some(owner) => service
+                    .list(&owner, chrono::Utc::now())
+                    .await
+                    .map_err(|e| {
+                        // `CustomerAppError` has no `Display`; log its message or code, never `Debug`.
+                        let why = match e {
+                            CustomerAppError::Server(why) => why,
+                            other => other.code().to_owned(),
+                        };
+                        AppError::Internal(format!("my_planner_drafts: {why}"))
+                    })?,
             };
             Ok(MyPlannerDraftsData {
                 drafts: drafts.iter().map(PlannerDraftDto::of).collect(),

@@ -429,9 +429,10 @@ async fn kiosk_check_in_by_valid_qr_token_issues_ticket() {
         "qrToken": qr_token
     });
 
+    // Owner ruling R2 (2026-10-27, "kioskBookingCheckIn becomes staff-only", #564 issuecomment-6439994453).
     let res = call(
         &db,
-        None,
+        Some("TELLER@XC-B01"),
         Method::POST,
         uri,
         Some(payload),
@@ -574,9 +575,10 @@ async fn kiosk_check_in_idempotency_replay_and_conflict() {
         "qrToken": qr_token
     });
 
+    // Owner ruling R2 (2026-10-27, "kioskBookingCheckIn becomes staff-only", #564 issuecomment-6439994453).
     let res1 = call(
         &db,
-        None,
+        Some("TELLER@XC-B01"),
         Method::POST,
         uri,
         Some(payload.clone()),
@@ -586,13 +588,21 @@ async fn kiosk_check_in_idempotency_replay_and_conflict() {
     assert_eq!(res1.status, StatusCode::OK);
 
     // Replay
-    let res2 = call(&db, None, Method::POST, uri, Some(payload), Some(key)).await;
+    let res2 = call(
+        &db,
+        Some("TELLER@XC-B01"),
+        Method::POST,
+        uri,
+        Some(payload),
+        Some(key),
+    )
+    .await;
     assert_eq!(res2.status, StatusCode::OK);
 
     // Conflict with different payload
     let res3 = call(
         &db,
-        None,
+        Some("TELLER@XC-B01"),
         Method::POST,
         uri,
         Some(json!({ "branch": B01, "qrToken": "different-token" })),
