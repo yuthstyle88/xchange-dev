@@ -14,7 +14,9 @@ state: string, tierSetId: string | null, error: string | null, };
  */
 export type PricingApproveCurrencyResult = { currency: string, 
 /**
- * `PUBLISHED` · `REFUSED`.
+ * `PUBLISHED` · `REFUSED`. A row that fails parsing or `TierCheck` answers the whole request 400
+ * `validationFailed` and writes nothing (§15.3 step 2); `REFUSED` is a currency that passed the checks but whose
+ * publish was refused (e.g. `approvalRequired` from another line of the copied publication).
  */
 state: string, tierSetId: string | null, 
 /**
@@ -54,7 +56,7 @@ export type PricingApproveRowInput = { currency: string,
 tiers: Array<PricingTierPriceInput>, 
 /**
  * pricing-tiers.md §15.3: the latest `pricing_tier_sets.id` the page saw for this currency (`tierSet.id` on the
- * board), or omitted when it saw none. A newer one ⇒ `conflict`, nothing written.
+ * board), or omitted when it saw none. Not the latest ⇒ 409 `staleVersion`, nothing written.
  */
 tierSetId?: string, };
 

@@ -12,7 +12,9 @@ currency: string,
 betterPct: Array<string> | null, 
 /**
  * pricing-tiers.md §15.10 (gap 10): the branch `'*'` min spread %, 0..=5, a decimal string; `null` clears it.
- * Only with `currency: "*"`; omitted leaves it as it is. SKELETON (XC-V9-PRICING): PV-l1 reads it.
+ * Only with `currency: "*"` (another currency ⇒ `validationFailed`). A request that carries the key changes only
+ * the min spread and leaves `betterPct` as stored; omitted ⇒ today's `betterPct` save. SKELETON (XC-V9-PRICING):
+ * PV-l1 reads it.
  */
 minSpreadPct?: string | null, };
 
