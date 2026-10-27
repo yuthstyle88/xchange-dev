@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgConnection, Row};
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
+use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
 use crate::domain::pricing::suggestion_settings::SuggestionSettings;
 
 pub struct PricingSuggestionSettingsStore;
@@ -93,9 +94,15 @@ impl PricingSuggestionSettingsStore {
         conn: &mut PgConnection,
         branch: &str,
     ) -> Result<Option<Decimal>, RateEngineError> {
-        let _ = (&conn, branch);
-        let _ = (&conn, branch);
-        todo!("PV-l1: PricingSuggestionSettingsStore::branch_min_spread")
+        let row = sqlx::query(
+            "SELECT min_spread_pct FROM pricing_suggestion_settings WHERE branch_id = $1 AND scope = '*'",
+        )
+        .bind(branch)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        Ok(row.and_then(|r| r.get("min_spread_pct")))
     }
 
     /// Sets (or with `None` clears) the branch `'*'` row's `min_spread_pct` (0..=5). A `'*'` row that does not exist
@@ -109,8 +116,24 @@ impl PricingSuggestionSettingsStore {
         by: &str,
         at: DateTime<Utc>,
     ) -> Result<(), RateEngineError> {
-        let _ = (&conn, branch, min_spread_pct, by, at);
-        let _ = (&conn, branch, min_spread_pct, by, at);
-        todo!("PV-l1: PricingSuggestionSettingsStore::save_branch_min_spread")
+        let default_better = SuggestionConfig::v9_default().better;
+        sqlx::query(
+            "INSERT INTO pricing_suggestion_settings (branch_id, scope, better_pct, min_spread_pct, updated_by, updated_at) \
+             VALUES ($1, '*', $2, $3, $4, $5) \
+             ON CONFLICT (branch_id, scope) DO UPDATE \
+             SET min_spread_pct = EXCLUDED.min_spread_pct, \
+                 updated_by = EXCLUDED.updated_by, \
+                 updated_at = EXCLUDED.updated_at",
+        )
+        .bind(branch)
+        .bind(default_better.as_slice())
+        .bind(min_spread_pct)
+        .bind(by)
+        .bind(at)
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        Ok(())
     }
 }

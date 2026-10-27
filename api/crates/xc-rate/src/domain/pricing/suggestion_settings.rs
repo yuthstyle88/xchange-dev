@@ -55,8 +55,9 @@ impl SuggestionSettings {
         currency_override: Option<Decimal>,
         branch_default: Option<Decimal>,
     ) -> Decimal {
-        let _ = (currency_override, branch_default);
-        todo!("PV-l1: SuggestionSettings::min_spread_for")
+        currency_override
+            .or(branch_default)
+            .unwrap_or(SuggestionConfig::v9_default().min_spread_pct)
     }
 
     /// V.9 `configure`'s checks (`src/pricing.mjs:204-206`): exactly 4 values, each in [−2, 2], each ≥ the previous.
