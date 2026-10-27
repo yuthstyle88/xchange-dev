@@ -10,7 +10,6 @@ export function makeStaffAttendanceRow(o: Partial<StaffAttendanceRow> = {}): Sta
     id: 'staff_attendance_row-1',
     name: 'name',
     in: 'in',
-    out: null,
     ...o,
   };
 }

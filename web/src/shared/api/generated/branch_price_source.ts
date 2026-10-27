@@ -2,4 +2,4 @@
 
 export type BranchPriceSourceInput = { priceSource: "BOT_DRAFT" | "RATE_BOARD", draftId: string | null, expectedVersion: number | null, };
 
-export type BranchPriceSourceOutput = { branchId: string, priceSource: "BOT_DRAFT" | "RATE_BOARD", publicationId: string | null, version: number | null, };
+export type BranchPriceSourceOutput = { branchId: string, priceSource: "BOT_DRAFT" | "RATE_BOARD", publicationId?: string | null, version?: number | null, };

@@ -8,4 +8,4 @@ export type StaffFloorMyShift = { id: string, openedAt: string, };
 
 export type StaffFloorTarget = { amounts: { [key in string]: string }, at: string, };
 
-export type StaffFloorView = { phase: string, hours: StaffFloorHours | null, myClockIn: string | null, myShift: StaffFloorMyShift | null, cutoff: StaffFloorCutoff | null, target: StaffFloorTarget | null, safe: { [key in string]: string } | null, };
+export type StaffFloorView = { phase: string, hours?: StaffFloorHours | null, myClockIn?: string | null, myShift?: StaffFloorMyShift | null, cutoff?: StaffFloorCutoff | null, target?: StaffFloorTarget | null, safe?: { [key in string]: string } | null, };

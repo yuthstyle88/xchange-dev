@@ -50,8 +50,10 @@ pub struct BranchPriceSourceOutput {
     #[ts(type = "\"BOT_DRAFT\" | \"RATE_BOARD\"")]
     pub price_source: PriceSource,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub publication_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub version: Option<i32>,
 }
 
